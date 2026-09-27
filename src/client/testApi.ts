@@ -157,6 +157,8 @@ export interface TestApi {
     groundY: number;
   };
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
+  /** Change photo mode's settings directly (dev scenes). */
+  setPhoto(patch: Partial<PhotoState>): void;
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -418,6 +420,7 @@ export function installTestApi(game: Game): TestApi {
       };
     },
     followNearest: (kinds) => game.followNearest(kinds),
+    setPhoto: (patch) => game.setPhoto(patch),
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

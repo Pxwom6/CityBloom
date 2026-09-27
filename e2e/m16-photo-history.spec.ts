@@ -21,15 +21,27 @@ test('M16: city history charts the city and survives save and load exactly; phot
   const cz = (await state(page)).highwayZ;
   await buildTownViaApi(page);
   await serveTownViaApi(page);
-  // Half a year of growth, with a meteor in the middle of it for the timeline.
+  // Services too, or the town burns and empties out before it's a village.
   await page.evaluate(async (cz) => {
     const g = window.__game!;
-    await g.advance(3 * 1440);
-    await g.dispatch({ type: 'disaster', kind: 'meteor', at: { x: 420, z: cz + 260 } });
-    await g.advance(3 * 1440);
+    for (const def of ['firestation', 'police', 'clinic', 'primary', 'park_small'])
+      await g.placeCivic(def, { x: 200, z: cz - 60 });
   }, cz);
+  // Growth until the town becomes a village, with a meteor early on for the timeline.
+  const grown = await page.evaluate(async (cz) => {
+    const g = window.__game!;
+    let months = 0;
+    while (months < 30) {
+      if (months === 3) await g.dispatch({ type: 'disaster', kind: 'meteor', at: { x: 420, z: cz + 260 } });
+      await g.advance(1440);
+      months++;
+      if (months >= 6 && (await g.getState()).milestone >= 1) break;
+    }
+    return { months, pop: (await g.getState()).population };
+  }, cz);
+  console.log(`[m16] ${grown.months} months, ${grown.pop} residents`);
   const c0 = await chronicle(page);
-  expect(c0.series[0]!.length).toBe(6);
+  expect(c0.series[0]!.length).toBe(grown.months);
   expect(c0.events.map((e) => e.kind)).toEqual(expect.arrayContaining(['milestone', 'disaster']));
 
   // --- City history from the top bar. ---

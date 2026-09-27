@@ -79,23 +79,23 @@ preview, a first-launch graphics check, and the README's simulation claim correc
 suite runs against a production-mode build served from `/Sim-Cities/`. Publishing needs the two
 clicks at the top of this file.
 
-M16 Photo mode and city history is under way (committed as work in progress): the sim records ten
-figures each month (save v14, unit-tested for exact save/load and the migration), the City history
-panel (Y) and photo mode (K: lens pass for depth of field, tilt-shift and grades; eye-level and
-follow cameras; PNG capture at 1× or 2×) are written. Not yet seen in the browser; the e2e spec
-`e2e/m16-photo-history.spec.ts` is written but not yet run.
+M16 Photo mode and city history: code, unit tests and the e2e spec pass
+(`e2e/m16-photo-history.spec.ts`), screenshots reviewed (history panel, photo panel, 2× photo,
+five looks from `scripts/dev/photoshot.mjs`); two lens bugs fixed on the way (HDR highlights
+blooming into blobs, grain in blurred areas). Remaining before `M16 complete:`: the full e2e suite,
+bench and balance, PROGRESS numbers.
 
 ## Next tasks
-1. M16: run `e2e/m16-photo-history.spec.ts`, look at the photo (depth of field, grades, low and
-   follow shots) and history screenshots and fix what's off; README (controls: Y, K), DESIGN
-   (§3.17 history, photo mode), DECISIONS and SPEC_REVIEW sections (drafts were in the session
-   scratchpad, rewrite from the code if lost); bench and balance; `M16 complete:`.
+1. M16 wrap-up: `npm run e2e` (all specs), `bench.ts 8 --big`, `balance.ts 20`, log numbers,
+   commit `M16 complete:`.
 2. Then M17 Big projects and elections.
 3. Performance watch: at the big city's growth burst (months 4–5, 97–111k) the tick average is
    1.1–1.3 ms on this VM for both M13 and M14 code (0.7–1.0 ms when M13 was measured). Look for
    savings in the growth months before M19 adds car-following.
 
 ## Known issues
+- Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
+- The follow camera loses a car when it parks (the panel says so); buses loop for good.
 - Mature cities run a big surplus (≈ +$35k/month at 18k residents with 6 % taxes); intended as money for landmarks and big projects.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
 - Visible cars and walkers follow trip samples from the last assignment round, so for up to two game hours after a road closes some still drive along it; commuters, services and utilities reroute at once.
@@ -133,6 +133,7 @@ follow cameras; PNG capture at 1× or 2×) are written. Not yet seen in the brow
 - Graded roads (M13): how cuttings, embankments and civic pads look at full resolution (`node scripts/dev/earthshot.mjs` scene, or build a street over a hill on the highlands preset), and whether the road ghost's grade colours and the see-through ghost read well while drawing.
 - Trackpad (M14): two-finger swipe pans, pinch zooms, ⌥/Alt + swipe turns and tilts, and Safari's rotate gesture; check that the automatic mouse/trackpad detection guesses right on a MacBook trackpad and a Magic Mouse, and that ⌘Z / ⇧⌘Z undo and redo.
 - Published app (M15), once Pages is on: open https://pxwom6.github.io/Sim-Cities/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
+- Photo mode (M16): frame rate with depth of field and tilt-shift on (the lens pass costs two full-screen passes, 48 depth-aware taps a pixel) at Retina resolution; how long a 2× save takes (should be well under a second); whether the six grades and the golden-hour light look right on a calibrated screen; the follow camera's ride along a busy street at 60 fps.
 - Frame rate while panning the overview and street presets (expect 60 fps).
 - Fire/smoke particles and siren lights: check they read well and cost little at 60 fps.
 - Visible traffic at 360 cars: frame time while panning; cars overlap at junctions (no car-following model).

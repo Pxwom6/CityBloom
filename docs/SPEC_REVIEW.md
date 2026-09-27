@@ -140,3 +140,20 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | README no longer claims every resident is simulated | README intro: residents counted per building, trips routed over real roads, visible vehicles are samples |
 | What to click, at the top of PROGRESS.md | PROGRESS.md "What you need to do" |
 | Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /Sim-Cities/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
+
+## M16 Photo mode and city history
+
+| Item | Where |
+|---|---|
+| Photo mode hides all UI | `Game.enterPhoto` (K, toolbar camera): the app renders only `src/ui/PhotoMode.tsx`, H hides that too; the renderer hides icons, ghost, selection, ribbons, zone markings and street labels (`GameRenderer.setPhoto`) |
+| Free camera lower and closer than normal | `CameraController.photo`: 2.5 m from its target, near-level pitch, eye-height target, 0.6 m above ground |
+| Time of day, tilt-shift and depth-of-field strength, field of view | photo panel sliders; `PhotoLens` in `src/render/photo.ts` (two-pass lens); `PhotoView.hour` and `fov` in the renderer |
+| A few colour grades | six original grades (`GRADES` in `src/render/photo.ts`) |
+| Follow camera riding with a car, bus or walker | Pick / Car / Bus / Person in the panel; `Game.followNearest`, `CameraController.follow` |
+| Save a PNG at up to twice screen resolution | `GameRenderer.capture(scale)`: the frame redrawn at 1× or 2× the screen's physical pixels and copied from the canvas |
+| The city can pause or keep running | "Keep the city running" (Space) |
+| City history: population, approval, jobs and unemployment, treasury, income and spending, pollution, crime, traffic over the whole life | `src/sim/systems/chronicle.ts` (`SimState.chronicle`, recorded as each month closes) |
+| Downsampled so saves stay small | at most 240 points per figure, buckets doubling as the city ages |
+| History panel in the budget's style, milestones and disasters marked | `src/ui/History.tsx` with `TimeChart` (`src/ui/charts.tsx`); `docs/screenshots/m16-history.png` |
+| Older saves start their history when loaded | migration 13 → 14; `tests/chronicle.test.ts` loads the version-10 playtest save and plays on |
+| Done when: photo mode saves a full-resolution PNG with no UI, and history survives save/load exactly | `e2e/m16-photo-history.spec.ts` (PNG at 2× the viewport from the canvas with helpers hidden and no interface mounted; history equal and state hash equal after save and load through the UI); `tests/chronicle.test.ts` |

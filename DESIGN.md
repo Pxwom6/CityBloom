@@ -635,6 +635,18 @@ at both ends, and returning vehicles are re-routed to the new site.
 
 ---
 
+### 3.17 City history (M16)
+
+`SimState.chronicle` (`src/sim/systems/chronicle.ts`): ten figures recorded as each month closes
+(population, approval, jobs, unemployment %, treasury, the closed month's income and spending from
+the ledger, resident-weighted air pollution and crime %, average commute minutes), summed into a
+bucket of `step` months and pushed as its average. When a series reaches 240 points, neighbouring
+pairs are averaged and `step` doubles, so the whole life fits in ≤ 240 points per figure (monthly
+for 20 years, then 2 months a point to 40 years, 4 to 80, and so on). Milestones and disasters are
+appended as events (`{tick, kind, ref}`, at most 300). It is saved and hashed with the rest of the
+state (save v14; a v13 city starts an empty history at its current tick). The client reads it with
+the `chronicle` query; `src/ui/History.tsx` charts it with `TimeChart` (`src/ui/charts.tsx`).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -684,6 +696,24 @@ at both ends, and returning vehicles are re-routed to the new site.
   (cars, buildings, construction, fires, emergency vehicles, tree density, zoom, night, paused) and the
   pure `ambientMix()` turns that into layer levels. Master/effects/ambience volumes and mute are
   player settings; the context starts on the first gesture and suspends when the tab is hidden.
+
+### 4.1 Photo mode (M16)
+
+`Game.enterPhoto()` (K or the toolbar's camera): the app renders only `PhotoMode.tsx`; the renderer
+(`setPhoto`) hides the helper groups (icons, ghost and selection, route and coverage ribbons, zone
+markings unless asked) and street labels; the camera (`CameraController.photo`) allows 2.5 m
+distance, a near-level pitch and an eye-height target, and can `follow` a pose each frame (the
+follow camera: heading from smoothed motion, player turns kept as an offset). The renderer lights
+the scene at the photo hour and uses the photo field of view. When a lens effect or grade is on,
+`PhotoLens` (`src/render/photo.ts`) draws the scene into a half-float MSAA target with depth and
+runs two passes: a 48-tap spiral gather for depth of field (radius from relative distance to the
+focus = camera-to-target distance) and tilt-shift (from the distance to the middle band), keeping
+each pixel's blur radius (samples are clamped first, so a stray huge highlight in the HDR frame
+can't bloom into a blob); then a light smoothing of blurred areas (the gather's grain), tone
+mapping, the grade (tint, saturation, contrast, lift, vignette) and sRGB.
+`GameRenderer.capture(scale)` redraws the frame at `scale` × the screen's physical pixels (capped by
+GPU limits and ~36 MP) and copies the canvas to a PNG with `toBlob`, so only the 3D view can be in
+the picture.
 
 ## 5. UI
 

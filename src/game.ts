@@ -713,12 +713,39 @@ export class Game {
     else this.setPhoto({ note: 'Nothing to follow there: click a car, bus or person.' });
   }
 
-  /** Follow the nearest car, bus, person or service vehicle to the middle of the view. */
+  /**
+   * Follow a car, bus, person or service vehicle near the middle of the view: of those within a few
+   * hundred metres, one with a good stretch of its trip still ahead (a car about to park makes a
+   * short ride).
+   */
   followNearest(kinds?: FollowTarget['kind'][]): boolean {
-    const t = this.renderer.controller.current;
-    const f = this.followableNear(t.x, t.z, 800, kinds);
+    const r = this.renderer;
+    const t = r.controller.current;
+    const want = (k: FollowTarget['kind']) => !kinds || kinds.includes(k);
+    let best: FollowTarget | null = null;
+    let score = -Infinity;
+    const consider = (f: FollowTarget, x: number, z: number, ahead: number) => {
+      const d = Math.hypot(x - t.x, z - t.z);
+      if (d > 400) return;
+      // Nearer is better, but a long way still to go matters more.
+      const s = Math.min(ahead, 600) - d * 0.5;
+      if (s > score) {
+        score = s;
+        best = f;
+      }
+    };
+    if (want('car'))
+      for (const c of r.traffic.cars) consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c));
+    if (want('walker'))
+      for (const w of r.pedestrians.walkers)
+        consider({ kind: 'walker', id: w.id }, w.x, w.z, r.pedestrians.remaining(w) * 4);
+    // Buses run their loop for good; service vehicles are followed to wherever they're going.
+    if (want('bus')) r.transit.busPoses.forEach((b, i) => consider({ kind: 'bus', id: i }, b.x, b.z, 600));
+    if (want('vehicle'))
+      for (const [id, v] of r.vehicles.positions) consider({ kind: 'vehicle', id }, v.x, v.z, 300);
+    const f = best as FollowTarget | null;
     if (f) this.setPhoto({ follow: f, picking: false, note: null });
-    else this.setPhoto({ note: 'Nothing is moving near here to follow.' });
+    else this.setPhoto({ note: 'Nothing like that is moving near here to follow.' });
     return !!f;
   }
 

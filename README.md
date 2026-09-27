@@ -70,6 +70,13 @@ New buildings, services, policies and landmarks unlock as the population passes 
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
 
+**City history** (Y, or the chart button in the top bar) charts the city's life month by month:
+population, approval, jobs and unemployment, the treasury, income and spending, air pollution, crime
+and commute times, with milestones and disasters marked on the timeline. **Photo mode** (K, or the
+camera at the end of the toolbar) hides the interface and lets the camera come down to eye level;
+set the time of day, field of view, depth of field, tilt-shift and one of six colour grades, ride
+along with a car, bus or passer-by, and save a PNG at up to twice the screen's resolution.
+
 ### Controls
 
 | Action | Mouse | Trackpad | Keys |
@@ -86,6 +93,8 @@ ground holds them.
 | Undo / redo (last 30 actions) | toolbar | | ⌘Z / ⇧⌘Z on a Mac, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere; U / Shift+U |
 | Pause / speeds | top bar | | Space, 1, 2, 3 |
 | Budget / advisors / notifications / city | top bar | | M / J / N / P |
+| City history | top bar | | Y |
+| Photo mode (H hides its panel, Enter saves, Esc leaves) | toolbar camera | | K |
 | Data maps | toolbar | | L toggles the power map |
 | Every shortcut on one card | | | ? |
 | Debug panel (FPS, cheats) | | | backtick |

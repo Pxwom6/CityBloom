@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
 import { GameContext } from './hooks';
@@ -45,7 +45,15 @@ function Shortcuts({ game }: { game: Game }) {
   return null;
 }
 
+/** Whether photo mode is on, re-rendering only when that changes (the rest of the app updates itself). */
+function usePhotoMode(game: Game): boolean {
+  const [on, setOn] = useState(!!game.photo);
+  useEffect(() => game.subscribe(() => setOn(!!game.photo)), [game]);
+  return on;
+}
+
 export function App({ game }: { game: Game }) {
+  const photo = usePhotoMode(game);
   // The main menu shows only itself over the backdrop map.
   if (game.mode === 'menu')
     return (
@@ -55,7 +63,7 @@ export function App({ game }: { game: Game }) {
       </GameContext.Provider>
     );
   // Photo mode shows only its own panel (M16).
-  if (game.photo)
+  if (photo)
     return (
       <GameContext.Provider value={game}>
         <PhotoMode />

@@ -213,6 +213,13 @@ export class TrafficRenderer {
     return this.cars.find((c) => c.id === id);
   }
 
+  /** Metres a car still has to drive on its trip (photo mode's follow camera picks long ones). */
+  remaining(c: Car): number {
+    let m = -c.t;
+    for (let i = c.leg; i < c.legs.length; i++) m += Math.abs(c.legs[i]!.s1 - c.legs[i]!.s0);
+    return Math.max(0, m);
+  }
+
   /** Metres per tick on a segment at the current hour (congested). */
   private speed(seg: number, share: number): number {
     let v = this.speedCache.get(seg);

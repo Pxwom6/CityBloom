@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe0f5"/>
+      <stop offset="0.7" stop-color="#e8f2e4"/>
+    </linearGradient>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <!-- the bloom rising over the skyline -->
+    <g transform="translate(256 150)">
+      <g fill="#f7a8b8">
+        <ellipse rx="34" ry="58" transform="rotate(0) translate(0 -46)"/>
+        <ellipse rx="34" ry="58" transform="rotate(72) translate(0 -46)"/>
+        <ellipse rx="34" ry="58" transform="rotate(144) translate(0 -46)"/>
+        <ellipse rx="34" ry="58" transform="rotate(216) translate(0 -46)"/>
+        <ellipse rx="34" ry="58" transform="rotate(288) translate(0 -46)"/>
+      </g>
+      <circle r="30" fill="#f2b233"/>
+    </g>
+    <!-- rolling ground -->
+    <path d="M0 404 C120 380 200 392 256 396 C330 400 420 380 512 388 V512 H0 Z" fill="#7cc38e"/>
+    <path d="M0 440 C140 424 260 436 512 424 V512 H0 Z" fill="#5aa874"/>
+    <!-- three buildings: homes, shops, industry -->
+    <g>
+      <rect x="92" y="262" width="104" height="170" rx="10" fill="#4caf7d"/>
+      <path d="M86 270 L144 222 L202 270 Z" fill="#3a9468"/>
+      <rect x="226" y="222" width="96" height="214" rx="10" fill="#3d8bfd"/>
+      <rect x="350" y="300" width="84" height="136" rx="10" fill="#f2b233"/>
+      <g fill="#fffdf8" opacity="0.92">
+        <rect x="112" y="292" width="24" height="26" rx="4"/>
+        <rect x="152" y="292" width="24" height="26" rx="4"/>
+        <rect x="112" y="340" width="24" height="26" rx="4"/>
+        <rect x="152" y="340" width="24" height="26" rx="4"/>
+        <rect x="244" y="248" width="22" height="22" rx="4"/>
+        <rect x="282" y="248" width="22" height="22" rx="4"/>
+        <rect x="244" y="288" width="22" height="22" rx="4"/>
+        <rect x="282" y="288" width="22" height="22" rx="4"/>
+        <rect x="244" y="328" width="22" height="22" rx="4"/>
+        <rect x="282" y="328" width="22" height="22" rx="4"/>
+        <rect x="366" y="324" width="52" height="18" rx="4"/>
+        <rect x="366" y="358" width="52" height="18" rx="4"/>
+      </g>
+    </g>
+    <!-- the road -->
+    <path d="M0 452 C170 440 340 446 512 438 V470 C340 478 170 472 0 484 Z" fill="#5d6670"/>
+    <path d="M24 468 L80 465 M130 462 L186 460 M236 459 L292 458 M342 457 L398 455 M448 453 L500 451" stroke="#f6f3ea" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

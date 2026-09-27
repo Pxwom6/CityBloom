@@ -4,13 +4,29 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', 'dist-test', 'node_modules', 'test-results', 'playwright-report', 'docs'] },
+  {
+    ignores: [
+      'dist',
+      'dist-test',
+      'dist-e2e',
+      'dist-e2e-next',
+      'node_modules',
+      'test-results',
+      'playwright-report',
+      'docs',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'e2e/**/*.mjs'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
+    // The service worker template; the build fills in __FILES__ (scripts/vite-pwa.ts).
+    files: ['src/pwa/sw.js'],
+    languageOptions: { globals: { ...globals.serviceworker, __FILES__: 'readonly' } },
   },
   {
     rules: {

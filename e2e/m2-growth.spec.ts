@@ -72,7 +72,7 @@ test('M2: a town grows from zoning, buildings can be inspected, and save/load ro
   await expect(page.getByTestId('toast')).toContainText('Saved');
   const hashBefore = await page.evaluate(() => window.__game!.hash());
   errs.check();
-  await page.goto('/?load=quick&paused=1');
+  await page.goto('./?load=quick&paused=1');
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
   const hashAfter = await page.evaluate(() => window.__game!.hash());
   expect(hashAfter).toBe(hashBefore);

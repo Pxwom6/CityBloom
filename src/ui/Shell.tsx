@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { GAME_TITLE, GAME_VERSION } from '../config';
+import { BUILD_ID, GAME_TITLE, GAME_VERSION } from '../config';
 import { MAP_PRESETS, type MapPreset } from '../data/world';
 import { DIFFICULTY, type Difficulty } from '../data/economy';
 import { dateOf, formatDate } from '../sim/time';
@@ -97,7 +97,7 @@ function Segmented<T extends string | number>(props: {
 }
 
 function MainMenu() {
-  const game = useGame();
+  const game = useGameUpdates(500);
   const [slots] = useSlots();
   const latest = slots?.[0];
   return (
@@ -131,7 +131,10 @@ function MainMenu() {
           <span>Settings</span>
         </button>
       </nav>
-      <footer class="shell-foot">Version {GAME_VERSION}</footer>
+      <footer class="shell-foot" data-testid="shell-foot">
+        Version {GAME_VERSION} · build {BUILD_ID}
+        {game.updates.offlineReady && ' · works offline'}
+      </footer>
     </div>
   );
 }
@@ -564,6 +567,22 @@ function SettingsScreen() {
       <div class="settings-grid">
         <section>
           <h3>Graphics</h3>
+          <p class="settings-note" data-testid="graphics-auto">
+            {game.graphicsCheck
+              ? 'Checking what this device can draw smoothly…'
+              : s.autoGraphics
+                ? `Picked for this device: ${s.autoGraphics[0]!.toUpperCase()}${s.autoGraphics.slice(1)}.`
+                : 'Chosen by hand.'}{' '}
+            <button
+              class="btn small"
+              data-testid="graphics-recheck"
+              disabled={!!game.graphicsCheck}
+              title="Time a few seconds of drawing and pick the quality this device can hold"
+              onClick={() => game.startGraphicsCheck()}
+            >
+              Check again
+            </button>
+          </p>
           <div class="field">
             <span>Quality</span>
             <Segmented

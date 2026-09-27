@@ -17,6 +17,8 @@ import type { ToolHint } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
+import { AppUpdates } from './client/pwa';
+import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { TIPS, TUTORIAL, type Tip } from './client/tutorial';
 import {
   DRAW_DISTANCE_PARAMS,
@@ -115,6 +117,13 @@ export class Game {
   tip: Tip | null = null;
   readonly tools: ToolManager;
   readonly overlay: OverlayController;
+  /** New versions of the app (the service worker, M15). */
+  readonly updates = new AppUpdates(() => this.notify());
+  /** Saving the city before switching to a new version. */
+  updating = false;
+  /** The graphics check in progress (first launch, or Settings → Check again), and its last answer. */
+  graphicsCheck: GraphicsCheck | null = null;
+  graphicsResult: CheckResult | null = null;
   private listeners = new Set<Listener>();
   private lastFrameAt = 0;
 
@@ -411,10 +420,38 @@ export class Game {
   }
 
   updateSettings(patch: Partial<Settings>): void {
+    // Choosing graphics by hand ends a check in progress: the player has decided.
+    if (this.graphicsCheck && ('quality' in patch || 'shadows' in patch || 'drawDistance' in patch)) {
+      this.graphicsCheck = null;
+      patch = { ...patch, graphicsChecked: true };
+    }
     this.settings = { ...this.settings, ...patch };
     saveSettings(this.settings);
     this.applySettings();
     this.notify();
+  }
+
+  /**
+   * Time the next few seconds of frames at the high preset and switch to the preset this device can
+   * hold (M15): on the first launch's main menu, and from Settings.
+   */
+  startGraphicsCheck(): void {
+    const gl = this.renderer.renderer.getContext();
+    this.updateSettings(GRAPHICS_PRESETS.high);
+    this.graphicsCheck = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0);
+    this.notify();
+  }
+
+  private finishGraphicsCheck(r: CheckResult): void {
+    this.graphicsCheck = null;
+    this.graphicsResult = r;
+    this.updateSettings({ ...GRAPHICS_PRESETS[r.preset], graphicsChecked: true, autoGraphics: r.preset });
+    const name = r.preset[0]!.toUpperCase() + r.preset.slice(1);
+    this.toast(
+      `Graphics set to ${name} for this device (${r.reason}). Change them any time in Settings.`,
+      'info',
+      7000,
+    );
   }
 
   /** Push the settings to the audio engine, renderer, camera and interface. */
@@ -520,6 +557,27 @@ export class Game {
       return;
     }
     location.href = location.pathname;
+  }
+
+  /** Switch to a downloaded new version: save the city first (to the autosave), then reload. */
+  async applyUpdate(): Promise<void> {
+    if (this.updating) return;
+    this.updating = true;
+    this.notify();
+    if (
+      this.mode === 'play' &&
+      !this.world.stats.bankrupt &&
+      !(await this.saveTo('auto', 'Autosave', true))
+    ) {
+      this.updating = false;
+      this.toast(
+        'The city could not be saved, so the new version waits. Try again after saving.',
+        'bad',
+        8000,
+      );
+      return;
+    }
+    this.updates.apply();
   }
 
   /** Start the first-city tutorial from its first step. */
@@ -653,6 +711,8 @@ export class Game {
       const next = w.displayTick + dt * SPEED_TICKS_PER_SECOND[this.speed];
       w.displayTick = Math.min(next, w.stats.tick + 8);
     }
+    const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
+    if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);

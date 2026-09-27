@@ -10,6 +10,8 @@ import type { BuildingData, CityStats, DisasterData } from '../sim/protocol';
 import { ZONED_DEFS } from '../data/buildings';
 import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
+import { BUILD_ID } from '../config';
+import type { CheckResult } from './graphicsCheck';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { AmbientMix } from '../audio/mix';
 
@@ -131,7 +133,14 @@ export interface TestApi {
     };
     randomDisasters: boolean;
     tip: string | null;
+    /** The build shown in the menu, and the service worker's state (M15). */
+    build: string;
+    app: { waiting: boolean; offlineReady: boolean; controlled: boolean };
+    /** First-launch graphics check: running, and its last answer. */
+    graphics: { checking: boolean; result: CheckResult | null };
   };
+  /** Ask the server for a new version of the app now (M15). */
+  checkForUpdate(): Promise<void>;
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -367,7 +376,15 @@ export function installTestApi(game: Game): TestApi {
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,
+      build: BUILD_ID,
+      app: {
+        waiting: game.updates.waiting,
+        offlineReady: game.updates.offlineReady,
+        controlled: !!navigator.serviceWorker?.controller,
+      },
+      graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
     }),
+    checkForUpdate: () => game.updates.check(),
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

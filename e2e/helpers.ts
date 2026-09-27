@@ -13,6 +13,18 @@ export function watchErrors(page: Page): { errors: string[]; check: () => void }
   };
 }
 
+/**
+ * Mark the first-launch graphics check as done, so a test that starts at the main menu keeps the
+ * default (high) graphics for its screenshots; m15-publish tests the check itself.
+ */
+export async function skipGraphicsCheck(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const key = 'citybloom.settings';
+    const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(key, JSON.stringify({ ...s, graphicsChecked: true }));
+  });
+}
+
 export async function openGame(page: Page, query = ''): Promise<void> {
   // Contextual tips are for new players; keep them out of these scripted towns and their screenshots
   // (m11-shell checks them). Merge, so other settings still persist across reloads.
@@ -21,7 +33,7 @@ export async function openGame(page: Page, query = ''): Promise<void> {
     const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
     localStorage.setItem(key, JSON.stringify({ ...s, tips: false }));
   });
-  await page.goto(`/?paused=1${query}`);
+  await page.goto(`./?paused=1${query}`);
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
   await page.evaluate(() => window.__game!.waitFrames(2));
 }

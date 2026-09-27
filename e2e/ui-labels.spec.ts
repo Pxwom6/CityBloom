@@ -51,7 +51,7 @@ test('every visible button has a readable label or accessible name, across the i
   };
 
   // The main menu and the screens behind it.
-  await page.goto('/');
+  await page.goto('./');
   await menuBooted(page);
   // The audit itself catches a nameless icon button and red-on-red text.
   await page.evaluate(() => {

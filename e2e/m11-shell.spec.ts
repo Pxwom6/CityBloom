@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, serveTownViaApi, shot, watchErrors } from './helpers';
+import { buildTownViaApi, serveTownViaApi, shot, skipGraphicsCheck, watchErrors } from './helpers';
 
 /** Wait for the game on a freshly loaded page to be up, in the given mode. */
 async function booted(page: Page, mode: 'menu' | 'play') {
@@ -22,7 +22,8 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   const errs = watchErrors(page);
 
   // A first visit: the main menu over the backdrop map, with nothing to continue yet.
-  await page.goto('/');
+  await skipGraphicsCheck(page);
+  await page.goto('./');
   await booted(page, 'menu');
   await expect(page.getByTestId('main-menu')).toBeVisible();
   await expect(page.getByTestId('main-new')).toBeVisible();

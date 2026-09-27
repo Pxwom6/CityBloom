@@ -7,3 +7,5 @@ playwright-report
 *.log
 bench-results
 balance-results
+dist-e2e
+dist-e2e-next

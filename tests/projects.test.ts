@@ -3,8 +3,14 @@ import { CIVIC } from '../src/data/civic';
 import { Sim } from '../src/sim/sim';
 import { advise } from '../src/sim/systems/advisors';
 import { civicOnline, civicUpkeep } from '../src/sim/world/civic';
-import { monthsLeft, projectBlocked, projectCost, projectRequirements } from '../src/sim/systems/projects';
-import { TICKS_PER_MONTH } from '../src/sim/time';
+import {
+  launchCheer,
+  monthsLeft,
+  projectBlocked,
+  projectCost,
+  projectRequirements,
+} from '../src/sim/systems/projects';
+import { dateOf, TICKS_PER_MONTH } from '../src/sim/time';
 import { buildTown, connectPoint, newSim, placeAlong, road, serveTown } from './helpers';
 
 /** A served town with a long empty avenue to the north for big projects. */
@@ -36,6 +42,19 @@ function projectTown(seed = 'proj') {
     return { sim, seg: pieces[0]!.id };
   }
   throw new Error('no room for the project avenue');
+}
+
+/** Place a building along whichever connected road takes it first. */
+function placeAnywhere(sim: Sim, def: string): number {
+  for (const sg of [...sim.state.net.segments.values()].sort((a, b) => b.id - a.id)) {
+    if (sg.type === 'highway' || !sim.isSegmentConnected(sg.id)) continue;
+    try {
+      return placeAlong(sim, def, sg.id);
+    } catch {
+      // No room along this one.
+    }
+  }
+  throw new Error(`nowhere to place ${def}`);
 }
 
 /** Stand in for a grown city: the population peak that project requirements look at. */
@@ -123,9 +142,13 @@ describe('big projects (M17)', () => {
     const { sim, seg } = projectTown('proj2');
     grown(sim, 41_000);
     sim.state.totals.eduWorkforce = [0.9, 0.5];
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 4_500_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 7_000_000 });
     const helio = placeAlong(sim, 'helioarray', seg);
     const stadium = placeAlong(sim, 'stadium', seg);
+    // The launch complex needs a research park running (and the educated workforce above).
+    placeAnywhere(sim, 'university');
+    placeAnywhere(sim, 'techpark');
+    const launch = placeAnywhere(sim, 'launchsite');
     const supply0 = sim.state.utilityStats.power.supply;
     for (let m = 0; m < 11; m++) nextMonth(sim);
     expect(sim.state.civics.get(helio)!.build).toBeUndefined();
@@ -140,6 +163,12 @@ describe('big projects (M17)', () => {
     sim.finishMatching();
     const trips = sim.trafficData().trips.filter((t) => t.purpose === 'event');
     expect(trips.length).toBeGreaterThan(0);
+    // The launch complex lifts the city's mood in launch months (every third), by the calendar.
+    expect(sim.state.civics.get(launch)!.build).toBeUndefined();
+    const month = dateOf(sim.state.tick).totalMonths;
+    expect(launchCheer(sim)).toBe(month % 3 === 0 ? 0.02 : 0);
+    while (dateOf(sim.state.tick).totalMonths % 3 !== 0) nextMonth(sim);
+    expect(launchCheer(sim)).toBe(0.02);
   });
 
   it('save and load mid-build exactly, and older saves load with elections scheduled', () => {

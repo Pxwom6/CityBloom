@@ -3,7 +3,7 @@ import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, buildingCapacity } from '../world/buildings';
 import { workforceEducation } from './health';
-import { matchDayNow } from './projects';
+import { launchCheer, matchDayNow } from './projects';
 import { honeymoon } from './elections';
 
 /** City-wide totals, recomputed each hour and saved (they feed demand and the UI). */
@@ -95,7 +95,7 @@ export function computeTotals(sim: Sim): CityTotals {
   // A match day at the stadium cheers the whole city (M17).
   // So does a won election, for a year.
   const md = matchDayNow(sim);
-  const cheer = (md?.approval ?? 0) + honeymoon(sim);
+  const cheer = (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim);
   if (cheer && resW > 0) t.approval = Math.min(1, t.approval + cheer);
   t.highwayConnected = sim.highwayConnectedBlocks() > 0;
   const [e1, e2] = workforceEducation(sim);

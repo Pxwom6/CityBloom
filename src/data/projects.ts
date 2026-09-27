@@ -31,7 +31,7 @@ export interface ProjectInfo {
   /** Stadium: match days every so many months draw this many visitors and a crowd by road. */
   matchDays?: { every: number; visitors: number; trips: number; approval: number };
   /** Launch complex: research income and high-tech demand multiplied. */
-  research?: { income: number; demand: number };
+  research?: { income: number; demand: number; every: number; approval: number };
   /** Convention centre: extra commercial demand. */
   commerce?: { demand: number };
 }
@@ -142,7 +142,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
         { kind: 'education', level: 2, share: 0.35 },
       ],
       perk: 'Research parks earn half as much again and high-tech industry wants to move in; each launch lifts the city’s mood.',
-      research: { income: 1.5, demand: 0.15 },
+      research: { income: 1.5, demand: 0.15, every: 3, approval: 0.02 },
     },
   },
   {

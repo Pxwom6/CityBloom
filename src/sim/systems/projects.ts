@@ -117,7 +117,15 @@ export function projectEvents(sim: Sim): void {
     sim.events.push({ kind: 'matchDay', id: stadium.id });
   } else if (s.matchDay && s.tick >= s.matchDay.until) s.matchDay = null;
   const launch = openProject(sim, 'launchsite');
-  if (launch && month % 3 === 0) sim.events.push({ kind: 'launch', id: launch.id });
+  const every = CIVIC.get('launchsite')?.project?.research?.every ?? 3;
+  if (launch && month % every === 0) sim.events.push({ kind: 'launch', id: launch.id });
+}
+
+/** A launch month's lift to approval (the whole month after a launch), or 0. */
+export function launchCheer(sim: Sim): number {
+  const r = CIVIC.get('launchsite')?.project?.research;
+  if (!r || !openProject(sim, 'launchsite')) return 0;
+  return dateOf(sim.state.tick).totalMonths % r.every === 0 ? r.approval : 0;
 }
 
 /** The match day under way, if any: visitors it draws, cars to the ground, and the city's cheer. */

@@ -73,6 +73,9 @@ test('M17: a big project is placed from the toolbar and built stage by stage; an
   await page.getByTestId('place-stadium').hover();
   await expect(page.getByRole('tooltip')).toContainText('$1,600,000 over 10 months');
   await expect(page.getByRole('tooltip')).toContainText('Perk:');
+  await page.getByTestId('place-launchsite').hover();
+  await expect(page.getByRole('tooltip')).toContainText('✗');
+  await shot(page, 'm17-projects-toolbar');
   await page.getByTestId('place-stadium').click();
   // The placement hint names the first stage's price and the total.
   for (const [x, z] of [

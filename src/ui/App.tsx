@@ -14,6 +14,7 @@ import { ThoughtsFeed } from './Thoughts';
 import { CityPanel, MilestoneBanner } from './CityPanel';
 import { Shell } from './Shell';
 import { TipCard, TutorialCard } from './Guide';
+import { ShortcutSheet } from './ShortcutSheet';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -68,6 +69,7 @@ export function App({ game }: { game: Game }) {
       <MoneyBanner />
       <TutorialCard />
       <TipCard />
+      <ShortcutSheet />
       <ToastLayer />
       <Shell />
     </GameContext.Provider>

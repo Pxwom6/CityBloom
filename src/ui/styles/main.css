@@ -1154,6 +1154,77 @@ body {
   padding-left: 1.1rem;
 }
 
+/* Shortcut sheet (M14) */
+.shortcut-sheet {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--z-modal);
+  width: min(52rem, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.shortcut-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.shortcut-sheet h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.shortcut-sheet .columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+}
+.shortcut-sheet h3 {
+  margin: var(--space-2) 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.shortcut-sheet dl {
+  margin: 0;
+}
+.shortcut-sheet dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+.shortcut-sheet dd {
+  margin: 0;
+  text-align: right;
+}
+.shortcut-sheet kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--color-surface-strong);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  text-align: center;
+  white-space: nowrap;
+}
+.shortcut-sheet .or {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+.shortcut-sheet > p {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-sm);
+}
+
 /* Toasts */
 .toasts {
   position: absolute;

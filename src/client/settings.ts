@@ -4,6 +4,9 @@
  */
 export type Quality = 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
+/** How wheel input is read (M14): detected automatically, or fixed to a mouse or a trackpad. */
+export type PointerDevice = 'auto' | 'mouse' | 'trackpad';
+export const POINTER_DEVICES: PointerDevice[] = ['auto', 'mouse', 'trackpad'];
 
 export interface Settings {
   /** Volumes, 0–1. */
@@ -22,6 +25,8 @@ export interface Settings {
   uiScale: number;
   /** Pan the camera when the pointer is at the edge of the screen. */
   edgeScroll: boolean;
+  /** Mouse wheel zooms; a trackpad's two-finger swipe pans and pinch zooms. */
+  pointer: PointerDevice;
   /** Random disasters for new cities (the current city's switch is in its disasters menu). */
   disasters: boolean;
   /** Minutes of real time between autosaves; 0 turns autosave off. */
@@ -44,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   drawDistance: 'medium',
   uiScale: 1,
   edgeScroll: false,
+  pointer: 'auto',
   disasters: true,
   autosaveMinutes: 5,
   tips: true,
@@ -99,6 +105,7 @@ export function parseSettings(raw: unknown): Settings {
     drawDistance: oneOf(r.drawDistance, DRAW_DISTANCES, d.drawDistance),
     uiScale: num(r.uiScale, d.uiScale, UI_SCALE.min, UI_SCALE.max),
     edgeScroll: bool(r.edgeScroll, d.edgeScroll),
+    pointer: oneOf(r.pointer, POINTER_DEVICES, d.pointer),
     disasters: bool(r.disasters, d.disasters),
     autosaveMinutes: oneOf(r.autosaveMinutes, AUTOSAVE_CHOICES, d.autosaveMinutes),
     tips: bool(r.tips, d.tips),

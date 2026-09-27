@@ -433,6 +433,7 @@ export class Game {
       crowd: q.crowd,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
+    this.renderer.controller.pointerDevice = s.pointer;
     applyUiScale(s.uiScale);
   }
 
@@ -567,10 +568,25 @@ export class Game {
     this.notify();
   }
 
+  /** Undo or redo the last action (M14), saying what was taken back or why it can't be. */
   async undo(): Promise<CommandResult> {
-    const r = await this.dispatch({ type: 'undo' });
-    if (!r.ok)
-      this.setHint({ x: window.innerWidth / 2, y: window.innerHeight - 140, text: r.reason, tone: 'bad' });
+    return this.history('undo');
+  }
+
+  async redo(): Promise<CommandResult> {
+    return this.history('redo');
+  }
+
+  private async history(dir: 'undo' | 'redo'): Promise<CommandResult> {
+    const r = await this.dispatch({ type: dir });
+    const label = (r.info?.label as string | undefined) ?? '';
+    if (r.ok) {
+      this.audio?.play(dir === 'undo' ? 'bulldoze' : 'build');
+      this.toast(`${dir === 'undo' ? 'Undone' : 'Redone'}: ${label}`, 'info', 1800);
+    } else {
+      this.audio?.play('error');
+      this.toast(r.reason.endsWith('.') ? r.reason : `${r.reason}.`, 'bad', 4000);
+    }
     return r;
   }
 
@@ -615,6 +631,14 @@ export class Game {
 
   toggleDebug(): void {
     this.debugOpen = !this.debugOpen;
+    this.notify();
+  }
+
+  /** The keyboard and trackpad cheat sheet (M14), on `?`. */
+  shortcutsOpen = false;
+
+  toggleShortcuts(open = !this.shortcutsOpen): void {
+    this.shortcutsOpen = open;
     this.notify();
   }
 

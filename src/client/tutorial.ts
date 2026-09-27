@@ -1,5 +1,6 @@
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
+import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 
 /**
@@ -148,6 +149,13 @@ export const TIPS: Tip[] = [
       'allows (streets 16 %, boulevards 8 %). The ghost turns amber near the limit and red where it is ' +
       'too steep; a longer, winding route is cheaper to grade.',
     when: (g) => g.tools.road.sawEarthworks,
+  },
+  {
+    id: 'trackpad',
+    text:
+      `Trackpad: swipe with two fingers to pan, pinch to zoom, and hold ${isMac ? 'Option' : 'Alt'} while ` +
+      'swiping to turn and tilt. Press ? for every shortcut.',
+    when: (g) => g.renderer.controller.detected === 'trackpad',
   },
   {
     id: 'milestone',

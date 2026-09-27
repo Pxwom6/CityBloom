@@ -1,3 +1,4 @@
+import { modDown } from '../client/platform';
 import type { Game } from '../game';
 import { BulldozeTool } from './bulldozeTool';
 import { RoadTool } from './roadTool';
@@ -44,6 +45,13 @@ export class ToolManager {
 
   get activeId(): ToolId {
     return this.active.id as ToolId;
+  }
+
+  /** Pick up a civic building to move it (M14): the place tool carries it until it's put down. */
+  startMove(civicId: number, def: string): void {
+    this.game.select(null);
+    this.use('place');
+    this.place.startMove(civicId, def);
   }
 
   use(id: ToolId): void {
@@ -121,7 +129,18 @@ export class ToolManager {
       this.escape();
       return;
     }
-    if ((e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) || e.code === 'KeyU') {
+    // Undo: ⌘Z / Ctrl+Z or U; redo: ⇧⌘Z / Ctrl+Shift+Z, Ctrl+Y or Shift+U (M14).
+    const mod = modDown(e);
+    if (
+      (e.code === 'KeyZ' && mod && e.shiftKey) ||
+      (e.code === 'KeyY' && mod) ||
+      (e.code === 'KeyU' && e.shiftKey)
+    ) {
+      e.preventDefault();
+      void this.game.redo();
+      return;
+    }
+    if ((e.code === 'KeyZ' && mod) || (e.code === 'KeyU' && !mod)) {
       e.preventDefault();
       void this.game.undo();
       return;

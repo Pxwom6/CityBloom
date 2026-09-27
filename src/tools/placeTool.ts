@@ -21,12 +21,15 @@ export class PlaceTool implements Tool {
   /** Coverage preview: last requested pose key and whether a request is in flight. */
   private covKey = '';
   private covBusy = false;
+  /** The civic building being moved (M14), or null when placing new ones. */
+  moving: number | null = null;
 
   constructor(private game: Game) {}
 
   activate(): void {}
 
   deactivate(): void {
+    this.moving = null;
     this.pose = null;
     this.covKey = '';
     this.game.renderer.ghost.showFootprint(null, 'ok');
@@ -35,7 +38,26 @@ export class PlaceTool implements Tool {
   }
 
   cancel(): boolean {
-    return false;
+    if (this.moving === null) return false;
+    // Escape puts a building being moved back where it was (nothing has changed yet).
+    this.stopMove();
+    return true;
+  }
+
+  startMove(civicId: number, def: string): void {
+    this.setDef(def);
+    this.moving = civicId;
+    this.last = null;
+    this.game.notify();
+  }
+
+  private stopMove(): void {
+    this.moving = null;
+    this.pose = null;
+    this.game.renderer.ghost.showFootprint(null, 'ok');
+    this.game.renderer.ghost.showCoverage(null);
+    this.game.setHint(null);
+    this.game.tools.use('select');
   }
 
   setDef(id: string): void {
@@ -50,7 +72,37 @@ export class PlaceTool implements Tool {
 
   private command(): Command | null {
     if (!this.pose) return null;
+    if (this.moving !== null) return { type: 'moveBuilding', id: this.moving, ...this.pose };
     return { type: 'placeBuilding', def: this.def, ...this.pose };
+  }
+
+  /** The hint for the current preview: what it costs, or why it can't go here. */
+  private hintFor(res: CommandResult | undefined): void {
+    const def = CIVIC.get(this.def)!;
+    if (this.moving !== null) {
+      const text = !res
+        ? `Move the ${def.name.toLowerCase()} · Esc to leave it`
+        : res.ok
+          ? `Move the ${def.name.toLowerCase()} here · $${res.cost.toLocaleString('en-US')}`
+          : res.reason;
+      this.game.setHint({ ...this.pointer, text, tone: !res ? 'info' : res.ok ? 'ok' : 'bad' });
+      return;
+    }
+    const upkeep = `$${def.upkeep}/mo upkeep`;
+    if (!res)
+      this.game.setHint({
+        ...this.pointer,
+        text: `${def.name} · $${def.cost.toLocaleString('en-US')}`,
+        tone: 'info',
+      });
+    else if (res.ok) {
+      const demolish = (res.info?.demolish as number) ?? 0;
+      this.game.setHint({
+        ...this.pointer,
+        text: `${def.name} · $${def.cost.toLocaleString('en-US')} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
+        tone: 'ok',
+      });
+    } else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
   }
 
   private computePose(p: { x: number; z: number }): void {
@@ -73,28 +125,14 @@ export class PlaceTool implements Tool {
     const def = CIVIC.get(this.def)!;
     const cmd = this.command();
     const g = this.game.renderer.ghost;
-    if (!cmd || cmd.type !== 'placeBuilding') {
+    if (!cmd || (cmd.type !== 'placeBuilding' && cmd.type !== 'moveBuilding')) {
       g.showFootprint(null, 'ok');
       return;
     }
     const res = this.last?.res;
     const state = !res ? 'pending' : res.ok ? 'ok' : 'bad';
     g.showFootprint({ x: cmd.x, z: cmd.z, hw: def.w / 2, hd: def.d / 2, angle: cmd.angle }, state, 8);
-    const upkeep = `$${def.upkeep}/mo upkeep`;
-    if (!res)
-      this.game.setHint({
-        ...this.pointer,
-        text: `${def.name} · $${def.cost.toLocaleString('en-US')}`,
-        tone: 'info',
-      });
-    else if (res.ok) {
-      const demolish = (res.info?.demolish as number) ?? 0;
-      this.game.setHint({
-        ...this.pointer,
-        text: `${def.name} · $${def.cost.toLocaleString('en-US')} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
-        tone: 'ok',
-      });
-    } else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
+    this.hintFor(res);
     this.previewCoverage();
     const seq = ++this.seq;
     void this.game.client.preview(cmd).then((r) => {
@@ -102,14 +140,7 @@ export class PlaceTool implements Tool {
       this.last = { seq, res: r };
       const st = r.ok ? 'ok' : 'bad';
       g.showFootprint({ x: cmd.x, z: cmd.z, hw: def.w / 2, hd: def.d / 2, angle: cmd.angle }, st, 8);
-      if (r.ok) {
-        const demolish = (r.info?.demolish as number) ?? 0;
-        this.game.setHint({
-          ...this.pointer,
-          text: `${def.name} · $${def.cost.toLocaleString('en-US')} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
-          tone: 'ok',
-        });
-      } else this.game.setHint({ ...this.pointer, text: r.reason, tone: 'bad' });
+      this.hintFor(r);
     });
   }
 
@@ -157,10 +188,15 @@ export class PlaceTool implements Tool {
     this.computePose(p.ground);
     const cmd = this.command();
     if (!cmd) return;
+    const moving = this.moving;
     void this.game.dispatch(cmd).then((r) => {
       if (r.ok) {
         this.game.audio?.play('place');
-        this.game.toast(`${CIVIC.get(this.def)!.name} built`, 'ok', 2000);
+        this.game.toast(`${CIVIC.get(this.def)!.name} ${moving !== null ? 'moved' : 'built'}`, 'ok', 2000);
+        if (moving !== null) {
+          this.stopMove();
+          return;
+        }
       } else {
         this.game.audio?.play('error');
         this.game.setHint({ ...this.pointer, text: r.reason, tone: 'bad' });

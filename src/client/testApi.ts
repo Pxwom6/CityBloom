@@ -120,7 +120,15 @@ export interface TestApi {
     screens: string[];
     slot: string | null;
     settings: Record<string, unknown>;
-    applied: { pixelRatio: number; shadows: boolean; fogScale: number; uiScale: string; edgeScroll: boolean };
+    applied: {
+      pixelRatio: number;
+      shadows: boolean;
+      fogScale: number;
+      uiScale: string;
+      edgeScroll: boolean;
+      pointer: 'auto' | 'mouse' | 'trackpad';
+      detected: 'mouse' | 'trackpad';
+    };
     randomDisasters: boolean;
     tip: string | null;
   };
@@ -354,6 +362,8 @@ export function installTestApi(game: Game): TestApi {
         fogScale: game.renderer.fogScale,
         uiScale: getComputedStyle(document.documentElement).getPropertyValue('--ui-scale').trim(),
         edgeScroll: game.renderer.controller.edgeScroll,
+        pointer: game.renderer.controller.pointerDevice,
+        detected: game.renderer.controller.detected,
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,

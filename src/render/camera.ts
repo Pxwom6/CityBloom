@@ -19,8 +19,8 @@ const MAX_DIST = 3400;
 const BOUND = 300;
 
 /**
- * Eased city-builder camera: pan (drag / WASD / edge scroll), rotate (right-drag / Q E), zoom
- * (wheel, towards the cursor). The pitch follows the zoom level, from a low street view to a
+ * Eased city-builder camera: pan (drag / WASD / edge scroll / two-finger swipe), rotate (right-drag
+ * / Q E / Option-swipe / rotate gesture), zoom (wheel or pinch, towards the cursor). The pitch follows the zoom level, from a low street view to a
  * high overview, and the player can tilt on top of that.
  */
 export class CameraController {
@@ -31,6 +31,15 @@ export class CameraController {
   edgeScroll = false;
   /** Off while a menu covers the game: keys and screen edges don't move the camera. */
   inputEnabled = true;
+  /**
+   * How wheel input is read (M14): a mouse wheel zooms, a trackpad's two-finger swipe pans (and
+   * rotates and tilts with Option/Alt or Shift held), a pinch zooms either way. `auto` goes by what
+   * the device sends; `detected` is what it last looked like.
+   */
+  pointerDevice: 'auto' | 'mouse' | 'trackpad' = 'auto';
+  detected: 'mouse' | 'trackpad' = 'mouse';
+  /** Safari's pinch-and-rotate gesture in progress: its last scale and rotation. */
+  private gesture: { scale: number; rotation: number } | null = null;
   /** Set by the app so presets can focus on where the city is. */
   focus: () => { x: number; z: number } = () => ({ x: MAP_SIZE / 2, z: MAP_SIZE / 2 });
   private keys = new Set<string>();
@@ -52,6 +61,10 @@ export class CameraController {
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
     dom.addEventListener('wheel', this.onWheel, { passive: false });
+    // Safari (macOS) reports trackpad pinch and rotate as gesture events.
+    dom.addEventListener('gesturestart', this.onGesture as EventListener);
+    dom.addEventListener('gesturechange', this.onGesture as EventListener);
+    dom.addEventListener('gestureend', this.onGesture as EventListener);
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     dom.addEventListener('pointerleave', () => (this.pointer.inside = false));
     window.addEventListener('keydown', this.onKeyDown);
@@ -199,9 +212,69 @@ export class CameraController {
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    const delta = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
-    const f = Math.exp(clamp(delta, -300, 300) * 0.0016);
+    const lines = e.deltaMode === 1 ? 30 : e.deltaMode === 2 ? 600 : 1;
+    const dx = e.deltaX * lines;
+    const dy = e.deltaY * lines;
+    // A pinch arrives as a wheel with Ctrl held (Chrome, Firefox, Edge); Safari sends gestures.
+    if (e.ctrlKey && !e.metaKey) {
+      if (this.gesture) return;
+      this.detected = 'trackpad';
+      this.zoomBy(Math.exp(clamp(dy, -80, 80) * 0.012), e.clientX, e.clientY);
+      return;
+    }
+    const device = this.pointerDevice === 'auto' ? this.classify(e) : this.pointerDevice;
+    if (device === 'trackpad') {
+      if (e.altKey || e.shiftKey) {
+        // Two fingers with Option/Alt or Shift: sideways turns, up and down tilts.
+        this.goal.yaw -= dx * 0.005;
+        this.goal.tilt -= dy * 0.003;
+      } else this.panBy(dx, dy, this.goal.distance * 0.0012);
+      this.clampGoal();
+      return;
+    }
+    const f = Math.exp(clamp(dy, -300, 300) * 0.0016);
     this.zoomBy(f, e.clientX, e.clientY);
+  };
+
+  /**
+   * Mouse or trackpad? A mouse wheel moves in coarse notches (lines, or whole pixels in large steps
+   * straight up and down); a trackpad streams small, often fractional, two-axis deltas.
+   */
+  private classify(e: WheelEvent): 'mouse' | 'trackpad' {
+    if (e.deltaMode !== 0) this.detected = 'mouse';
+    else if (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 12)
+      this.detected = 'trackpad';
+    else if (Math.abs(e.deltaY) >= 50) this.detected = 'mouse';
+    return this.detected;
+  }
+
+  /** Move the camera by a screen-space amount (a trackpad swipe): the map follows the fingers. */
+  private panBy(dx: number, dy: number, perPixel: number): void {
+    const s = Math.sin(this.goal.yaw);
+    const c = Math.cos(this.goal.yaw);
+    this.goal.x += (dx * c + dy * s) * perPixel;
+    this.goal.z += (-dx * s + dy * c) * perPixel;
+  }
+
+  private onGesture = (
+    e: Event & { scale?: number; rotation?: number; clientX?: number; clientY?: number },
+  ): void => {
+    e.preventDefault();
+    const scale = e.scale ?? 1;
+    const rotation = e.rotation ?? 0;
+    if (e.type === 'gesturestart') {
+      this.gesture = { scale, rotation };
+      this.detected = 'trackpad';
+      return;
+    }
+    if (e.type === 'gestureend' || !this.gesture) {
+      this.gesture = null;
+      return;
+    }
+    if (scale > 0) this.zoomBy(this.gesture.scale / scale, e.clientX, e.clientY);
+    this.goal.yaw -= ((rotation - this.gesture.rotation) * Math.PI) / 180;
+    this.gesture = { scale, rotation };
+    this.clampGoal();
   };
 
   zoomBy(f: number, clientX?: number, clientY?: number): void {

@@ -13,7 +13,14 @@ import {
   writeSlot,
   type SlotInfo,
 } from '../client/saves';
-import { AUTOSAVE_CHOICES, DRAW_DISTANCES, QUALITIES, UI_SCALE, type Settings } from '../client/settings';
+import {
+  AUTOSAVE_CHOICES,
+  DRAW_DISTANCES,
+  POINTER_DEVICES,
+  QUALITIES,
+  UI_SCALE,
+  type Settings,
+} from '../client/settings';
 import { useGame, useGameUpdates } from './hooks';
 import { drawMapPreview } from './mapPreview';
 
@@ -603,6 +610,20 @@ function SettingsScreen() {
               onInput={(e) => set({ uiScale: Number((e.target as HTMLInputElement).value) / 100 })}
             />
           </label>
+          <div class="field">
+            <span>Pointing device</span>
+            <Segmented
+              value={s.pointer}
+              options={POINTER_DEVICES}
+              label={(d) => (d === 'auto' ? 'Automatic' : d === 'mouse' ? 'Mouse' : 'Trackpad')}
+              testid="pointer"
+              onChange={(pointer) => set({ pointer })}
+            />
+            <small class="muted">
+              Trackpad: swipe with two fingers to pan, pinch to zoom, hold Option (Alt) or Shift while swiping
+              to turn and tilt. A mouse wheel zooms.
+            </small>
+          </div>
           <Check
             on={s.edgeScroll}
             testid="edge-scroll"

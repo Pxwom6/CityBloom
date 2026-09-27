@@ -106,6 +106,16 @@ export const IconUndo = (p: P) => (
     <path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" />
   </svg>
 );
+export const IconRedo = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" />
+  </svg>
+);
+export const IconMove = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />
+  </svg>
+);
 export const IconLock = (p: P) => (
   <svg {...base} {...p}>
     <rect x="5" y="11" width="14" height="10" rx="2" />

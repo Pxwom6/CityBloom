@@ -32,6 +32,7 @@ import {
   IconRoad,
   IconShop,
   IconStraight,
+  IconRedo,
   IconUndo,
   IconZone,
   IconAlert,
@@ -43,6 +44,7 @@ import {
   IconCrate,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
+import { modKey } from '../client/platform';
 import { DISASTER_INFO } from '../tools/disasterTool';
 
 interface TipContent {
@@ -464,12 +466,27 @@ export function Toolbar() {
           disabled={!game.world.stats.undoAvailable}
           onClick={() => void game.undo()}
           tip={{
-            title: 'Undo',
-            lines: ['Reverse the most recent placement, with a full refund.'],
-            key: 'Ctrl+Z',
+            title: game.world.stats.undoLabel ? `Undo the ${game.world.stats.undoLabel}` : 'Undo',
+            lines: [
+              'Take back the last action (up to 30), with its money: roads, zoning, buildings, bulldozing, moves.',
+            ],
+            key: `${modKey('Z')} or U`,
           }}
         >
           <IconUndo />
+        </ToolButton>
+        <ToolButton
+          id="tool-redo"
+          active={false}
+          disabled={!game.world.stats.redoAvailable}
+          onClick={() => void game.redo()}
+          tip={{
+            title: game.world.stats.redoLabel ? `Redo the ${game.world.stats.redoLabel}` : 'Redo',
+            lines: ['Put back what you just undid.'],
+            key: modKey('Z', true),
+          }}
+        >
+          <IconRedo />
         </ToolButton>
       </div>
     </div>

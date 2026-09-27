@@ -11,7 +11,7 @@ import type { Dijkstra, Leg, RoadGraph } from './graph';
  * BPR curve on volume over capacity, scaled by the hour's share of the rush-hour peak.
  */
 
-export type TripPurpose = 'work' | 'shop' | 'freight' | 'export' | 'import';
+export type TripPurpose = 'work' | 'shop' | 'freight' | 'export' | 'import' | 'event';
 
 /** A real trip carried by a visible vehicle: which buildings, why, and the roads it takes. */
 export interface TripSample {

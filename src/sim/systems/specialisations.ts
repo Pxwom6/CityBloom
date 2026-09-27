@@ -1,9 +1,10 @@
-import { SPECIALISATION } from '../../data/civic';
+import { CIVIC, SPECIALISATION } from '../../data/civic';
 import { POLICY_EFFECTS } from '../../data/policies';
 import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { civicDef, civicOnline, civicRect, resourceRichness, type Civic } from '../world/civic';
+import { matchDayNow, openProject } from './projects';
 
 /** Visitors a day and how many of them stay the night (saved; recomputed hourly). */
 export interface TourismState {
@@ -66,7 +67,9 @@ export function specialisationsHour(sim: Sim): void {
   const eff = Math.min(1.25, sim.fundingEff('tourism'));
   const appeal = SPECIALISATION.appealBase + (1 - SPECIALISATION.appealBase) * s.totals.approval;
   const campaign = sim.policy('tourismCampaign') ? POLICY_EFFECTS.tourismCampaign : 1;
-  const visitors = draw * eff * appeal * campaign;
+  // Match days at the stadium (M17) fill the stands on top of the usual visitors.
+  const match = matchDayNow(sim)?.visitors ?? 0;
+  const visitors = draw * eff * appeal * campaign + match * eff;
   const overnight = Math.min(visitors * SPECIALISATION.overnightShare, rooms * eff);
   s.tourism = { visitors: Math.round(visitors), overnight: Math.round(overnight) };
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
@@ -98,6 +101,10 @@ export function specialisationIncome(sim: Sim): Record<string, number> {
     out.trade = industrialJobs(sim) * per * (hubs.length > 1 ? 1.5 : 1) * eff;
   }
   const parks = working(sim, (c) => !!civicDef(c).research);
-  if (parks.length) out.technology = highTechJobs(sim) * civicDef(parks[0]!).research!.perJob * eff;
+  // The launch complex (M17) makes research worth half as much again.
+  const boost = openProject(sim, 'launchsite')
+    ? (CIVIC.get('launchsite')?.project?.research?.income ?? 1)
+    : 1;
+  if (parks.length) out.technology = highTechJobs(sim) * civicDef(parks[0]!).research!.perJob * eff * boost;
   return out;
 }

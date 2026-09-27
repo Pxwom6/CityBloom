@@ -98,7 +98,8 @@ export function updateLandValue(sim: Sim, instant = false): void {
   const civicEffect = new Float32Array(n);
   for (const c of sim.state.civics.values()) {
     const lvDef = civicDef(c).landValue;
-    if (!lvDef) continue;
+    // A big project changes land value once it opens (M17).
+    if (!lvDef || c.build) continue;
     const ci = Math.floor(c.x / GRID_CELL);
     const cj = Math.floor(c.z / GRID_CELL);
     const kern = kernel(lvDef.radius / GRID_CELL);

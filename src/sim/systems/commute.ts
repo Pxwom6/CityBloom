@@ -14,6 +14,7 @@ import {
   type TripSample,
 } from './traffic';
 import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
+import { matchDayNow } from './projects';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -342,10 +343,29 @@ function runFreight(
   const hwNode = g.index.get(hw.connect);
   if (hwNode === undefined) return;
   let external = 0;
-  const loads: { node: number; amount: number; b: Building; purpose: 'export' | 'import' }[] = [];
-  for (const [node, e] of exports) loads.push({ node, amount: e.amount, b: e.b, purpose: 'export' });
-  for (const [node, list] of need)
-    for (const c of list) if (c.open > 0) loads.push({ node, amount: c.open, b: c.b, purpose: 'import' });
+  const loads: {
+    node: number;
+    amount: number;
+    id: number;
+    acc: { seg: number; s: number } | null;
+    purpose: 'export' | 'import' | 'event';
+    /** Cars rather than trucks (the match-day crowd). */
+    cars?: boolean;
+  }[] = [];
+  const load = (node: number, amount: number, b: Building, purpose: 'export' | 'import') =>
+    loads.push({ node, amount, id: b.id, acc: accessOf(sim, b), purpose });
+  for (const [node, e] of exports) load(node, e.amount, e.b, 'export');
+  for (const [node, list] of need) for (const c of list) if (c.open > 0) load(node, c.open, c.b, 'import');
+  // A match day (M17): the crowd drives in from the highway to the stadium.
+  const match = matchDayNow(sim);
+  const acc = match?.civic.access;
+  const seg = acc && sim.state.net.segments.get(acc.seg);
+  if (match && acc && seg) {
+    const len = sim.net.curve(seg.id).length;
+    const node = g.index.get(acc.s <= len / 2 ? seg.a : seg.b);
+    if (node !== undefined)
+      loads.push({ node, amount: match.trips, id: match.civic.id, acc, purpose: 'event', cars: true });
+  }
   if (!loads.length) return;
   const reach = new Set<number>();
   dijkstra.run(
@@ -359,13 +379,16 @@ function runFreight(
     costs,
     true,
   );
+  let crowd = 0;
   for (const l of loads) {
     if (!reach.has(l.node)) continue;
-    external += l.amount;
-    flows.addLoad(l.node, l.amount * pcu);
-    flows.addSegment(accessOf(sim, l.b)?.seg ?? -1, l.amount * pcu);
-    trips.offer(l.amount * pcu, () => {
-      const legs = legsThroughTree(sim, g, dijkstra, null, l.node, accessOf(sim, l.b));
+    const units = l.amount * (l.cars ? 1 : pcu);
+    if (l.cars) crowd += l.amount;
+    else external += l.amount;
+    flows.addLoad(l.node, units);
+    flows.addSegment(l.acc?.seg ?? -1, units);
+    trips.offer(units, () => {
+      const legs = legsThroughTree(sim, g, dijkstra, null, l.node, l.acc);
       const out = sim.net.curve(hw.segment).length;
       const hwSeg = sim.state.net.segments.get(hw.segment)!;
       const toOutside = hwSeg.a === hw.connect ? { s0: 0, s1: out } : { s0: out, s1: 0 };
@@ -373,16 +396,16 @@ function runFreight(
       const inbound = [{ seg: hw.segment, s0: toOutside.s1, s1: toOutside.s0 }, ...legs];
       const outbound = [...inbound].reverse().map((x) => ({ seg: x.seg, s0: x.s1, s1: x.s0 }));
       return {
-        from: l.b.id,
+        from: l.id,
         to: 0,
         purpose: l.purpose,
         legs: l.purpose === 'export' ? outbound : inbound,
-        weight: l.amount * pcu,
+        weight: units,
       };
     });
   }
   flows.accumulate(dijkstra);
-  flows.addSegment(hw.segment, external * pcu);
+  flows.addSegment(hw.segment, external * pcu + crowd);
 }
 
 /** A sampled trip from building `a` to building `b` (reached at node `u` of the current tree). */

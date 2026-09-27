@@ -165,6 +165,7 @@ const PURPOSE: Record<string, [string, string]> = {
   freight: ['Delivery truck', 'Taking goods from industry to a shop'],
   export: ['Export truck', 'Taking goods out to the region'],
   import: ['Import truck', 'Bringing goods in from the region'],
+  event: ['Match-day fan', 'Driving in from the region for the match at the stadium'],
 };
 
 const WALKING: Record<string, [string, string]> = {

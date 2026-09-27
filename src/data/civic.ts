@@ -2,6 +2,7 @@
  * Player-placed civic buildings: utilities now (M4), services, parks and landmarks later.
  * Footprints are in metres (w along the road, d away from it). DESIGN.md §3.6–3.7.
  */
+import { PROJECT_DEFS, type ProjectInfo } from './projects';
 import type { Dept } from './economy';
 
 export type Utility = 'power' | 'water' | 'sewage';
@@ -18,7 +19,8 @@ export type CivicCategory =
   | 'parks'
   | 'transit'
   | 'landmark'
-  | 'special';
+  | 'special'
+  | 'project';
 
 export interface CivicDef {
   id: string;
@@ -79,6 +81,8 @@ export interface CivicDef {
   requires?: string;
   /** Model family for the renderer. */
   model: string;
+  /** Big projects (M17): built in stages with requirements and a perk; see src/data/projects.ts. */
+  project?: ProjectInfo;
 }
 
 export const CIVIC_DEFS: CivicDef[] = [
@@ -636,6 +640,9 @@ CIVIC_DEFS.push(
     model: 'techpark',
   },
 );
+
+// Big projects (M17).
+CIVIC_DEFS.push(...PROJECT_DEFS);
 
 export const CIVIC = new Map(CIVIC_DEFS.map((d) => [d.id, d]));
 

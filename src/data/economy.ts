@@ -109,6 +109,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   tourism: 'Tourism',
   resources: 'Ore and oil sales',
   technology: 'Research licences',
+  projects: 'Big projects',
+  grants: 'Regional grant (election)',
 };
 
 export function ledgerLabel(key: string): string {

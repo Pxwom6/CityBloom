@@ -1,4 +1,5 @@
 import { emptyChronicle } from './systems/chronicle';
+import { newElectionState } from './systems/elections';
 import { MILESTONES } from '../data/progression';
 import { HEIGHT_RES } from '../data/world';
 import { GAME_TITLE } from '../config';
@@ -6,7 +7,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -154,6 +155,17 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   },
   // v13 → v14 (M16): city history. An older city's history starts on the day it's loaded.
   13: (s) => ({ ...s, chronicle: emptyChronicle(s.tick as number) }),
+  // v14 → v15 (M17): big projects (civics gain an optional build state), match days and elections.
+  // An older city gets elections from its next four-year mark, unless it's a sandbox.
+  14: (s) => {
+    const options: Record<string, unknown> = { ...(s.options as Record<string, unknown>), elections: true };
+    return {
+      ...s,
+      options,
+      matchDay: null,
+      election: newElectionState(s.tick as number, !options.sandbox),
+    };
+  },
 };
 
 export function encodeState(state: SimState): unknown {

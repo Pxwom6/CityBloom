@@ -1,3 +1,4 @@
+import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
 import { MODULE } from '../../data/modules';
 import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
 import { GRADING, ROAD_RULES, ROAD_TYPES } from '../../data/roads';
@@ -37,6 +38,8 @@ export interface Civic {
   modules: string[];
   /** Garbage facilities: what their trucks brought back today and the day before (playtest fixes). */
   collection?: { today: CollectionDay; last: CollectionDay };
+  /** Big projects (M17): the construction in hand; absent once finished (and for everything else). */
+  build?: ProjectBuild;
 }
 
 /** A day of garbage collection at one facility: units unloaded, rounds finished, their minutes and stops. */
@@ -68,6 +71,8 @@ export function civicBuses(c: Civic): number {
 }
 /** Monthly upkeep at 100 % funding, modules included. */
 export function civicUpkeep(c: Civic): number {
+  // A project costs its stages while it's built, and upkeep only once it opens.
+  if (c.build) return 0;
   return civicDef(c).upkeep + c.modules.reduce((a, m) => a + (MODULE.get(m)?.upkeep ?? 0), 0);
 }
 
@@ -112,7 +117,7 @@ export function resourceRichness(sim: Sim, kind: 'ore' | 'oil', r: ORect): numbe
 
 /** A civic building works unless it's damaged or flooded. */
 export function civicOnline(c: Civic): boolean {
-  return c.damage <= 0 && !c.flooded;
+  return c.damage <= 0 && !c.flooded && !c.build;
 }
 
 export function civicDef(c: Civic): CivicDef {
@@ -246,6 +251,10 @@ export function checkPlacement(
   }
   if (!ignoreCivic && !sim.isUnlocked(def.unlockPopulation))
     return { ...res, reason: `Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents` };
+  if (def.project && !ignoreCivic) {
+    const why = projectBlocked(sim, def);
+    if (why) return { ...res, reason: why };
+  }
   // Uneven ground: level a pad at the height where the building meets its road (M13).
   if (hi - lo > GRADING.padFrom) {
     const away = awayDir(angle, side);
@@ -262,7 +271,10 @@ export function checkPlacement(
       return false;
     });
   }
-  if (!sim.state.options.sandbox && sim.state.treasury < (price ?? def.cost) + (res.pad?.cost ?? 0))
+  if (
+    !sim.state.options.sandbox &&
+    sim.state.treasury < (price ?? placementPrice(def)) + (res.pad?.cost ?? 0)
+  )
     return { ...res, reason: 'Not enough money' };
   res.ok = true;
   return res;
@@ -282,7 +294,8 @@ export function placeCivic(
   const earth = chk.pad ? { volume: chk.pad.volume, cost: chk.pad.cost } : null;
   const info = { demolish: chk.demolish.length, access: !!chk.access, earth };
   if (!chk.ok || !def) return fail(chk.reason ?? 'Invalid placement', { at: { x, z }, info });
-  const total = def.cost + (earth?.cost ?? 0);
+  const price = placementPrice(def);
+  const total = price + (earth?.cost ?? 0);
   if (dryRun) return ok(total, { info });
   const s = sim.state;
   const civ: Civic = {
@@ -298,16 +311,19 @@ export function placeCivic(
     processedToday: 0,
     lastDay: 0,
     out: 0,
-    cost: def.cost,
+    cost: price,
     born: s.tick,
     variant: sim.rng.world.int(1 << 16),
     damage: 0,
     flooded: false,
     modules: [],
   };
+  // A big project starts on its first stage (M17).
+  if (def.project) civ.build = { stage: 0, months: 0, waiting: false };
   for (const id of chk.demolish) sim.removeBuilding(id);
   sim.addCivic(civ);
-  sim.spend(total, 'construction');
+  sim.spend(price, def.project ? 'projects' : 'construction');
+  if (earth?.cost) sim.spend(earth.cost, 'construction');
   if (chk.pad?.idx.length) {
     reshapeGround(sim, chk.pad.idx, chk.pad.to);
     sim.net.revalidate(chk.pad.box!);

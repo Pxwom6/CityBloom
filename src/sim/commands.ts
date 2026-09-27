@@ -1,3 +1,4 @@
+import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { Vec2 } from './geom';
@@ -31,6 +32,8 @@ export type Command =
   | { type: 'setTax'; zone: 'R' | 'C' | 'I'; wealth: 0 | 1 | 2 | 'all'; rate: number }
   | { type: 'setFunding'; dept: Dept; pct: number }
   | { type: 'takeLoan'; amount: number }
+  /** Elections (M17): make or withdraw a campaign promise. */
+  | { type: 'promise'; promise: PromiseId; on: boolean }
   | { type: 'repayLoan'; id: number }
   /** Place a civic building: centre, road tangent angle and which side of the road it stands on. */
   | { type: 'placeBuilding'; def: string; x: number; z: number; angle: number; side: 1 | -1 }

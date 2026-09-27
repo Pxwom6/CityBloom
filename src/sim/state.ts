@@ -1,4 +1,5 @@
 import type { Chronicle } from './systems/chronicle';
+import type { ElectionState } from './systems/elections';
 import type { MapPreset } from '../data/world';
 import type { Difficulty } from '../data/economy';
 import type { RngState } from './rng';
@@ -24,6 +25,8 @@ export interface GameOptions {
   difficulty: Difficulty;
   sandbox: boolean;
   disasters: boolean;
+  /** Elections every four years (M17); never in sandbox cities. */
+  elections: boolean;
   cityName: string;
   /** Terrain generator version the city was founded with (see TERRAIN_VERSION). */
   terrain: number;
@@ -35,6 +38,7 @@ export const DEFAULT_OPTIONS: GameOptions = {
   difficulty: 'normal',
   sandbox: false,
   disasters: true,
+  elections: true,
   cityName: 'New Town',
   terrain: TERRAIN_VERSION,
 };
@@ -108,4 +112,8 @@ export interface SimState {
   tourism: TourismState;
   /** City history (M16): key figures over the city's life, and its milestones and disasters. */
   chronicle: Chronicle;
+  /** The stadium's match day under way (M17): which stadium, and the tick it ends. */
+  matchDay: { civic: number; until: number } | null;
+  /** Elections (M17): the next vote, promises made, results, and a term's perk or limits. */
+  election: ElectionState;
 }

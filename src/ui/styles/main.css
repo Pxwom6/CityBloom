@@ -1527,6 +1527,28 @@ body {
 .chart-marker.milestone circle {
   fill: var(--color-positive);
 }
+.chart-marker.election line {
+  stroke: var(--color-info);
+}
+.chart-marker.election circle {
+  fill: var(--color-info);
+}
+.chart-tip-event.election::before,
+.history-events li.election::before {
+  content: '● ';
+  color: var(--color-info);
+}
+.chart-marker.project line {
+  stroke: var(--color-accent);
+}
+.chart-marker.project circle {
+  fill: var(--color-accent);
+}
+.chart-tip-event.project::before,
+.history-events li.project::before {
+  content: '◆ ';
+  color: var(--color-accent);
+}
 .chart-marker.disaster line {
   stroke: var(--color-warning);
 }

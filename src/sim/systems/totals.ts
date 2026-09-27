@@ -3,6 +3,8 @@ import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, buildingCapacity } from '../world/buildings';
 import { workforceEducation } from './health';
+import { matchDayNow } from './projects';
+import { honeymoon } from './elections';
 
 /** City-wide totals, recomputed each hour and saved (they feed demand and the UI). */
 export interface CityTotals {
@@ -90,6 +92,11 @@ export function computeTotals(sim: Sim): CityTotals {
   const res = resW > 0 ? resH / resW : DEMAND.appealNeutral;
   const biz = bizW > 0 ? bizH / bizW : res;
   t.approval = resW > 0 ? res * 0.85 + biz * 0.15 : DEMAND.appealNeutral;
+  // A match day at the stadium cheers the whole city (M17).
+  // So does a won election, for a year.
+  const md = matchDayNow(sim);
+  const cheer = (md?.approval ?? 0) + honeymoon(sim);
+  if (cheer && resW > 0) t.approval = Math.min(1, t.approval + cheer);
   t.highwayConnected = sim.highwayConnectedBlocks() > 0;
   const [e1, e2] = workforceEducation(sim);
   t.eduWorkforce = [Math.round(e1 * 1000) / 1000, Math.round(e2 * 1000) / 1000];

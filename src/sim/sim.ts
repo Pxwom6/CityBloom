@@ -83,6 +83,8 @@ import {
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
+import { projectEvents, projectsMonth } from './systems/projects';
+import { councilUntil, electionsMonth, newElectionState, setPromise } from './systems/elections';
 import { segSpeed, stepVehicles } from './systems/vehicles';
 import { computeOverlay } from './systems/overlays';
 import {
@@ -152,7 +154,16 @@ export type SimEvent = {
     | 'decayed'
     | 'collapsed'
     | 'milestone'
-    | 'achievement';
+    | 'achievement'
+    // Big projects and elections (M17).
+    | 'projectStage'
+    | 'projectWaiting'
+    | 'projectDone'
+    | 'matchDay'
+    | 'launch'
+    | 'campaign'
+    | 'electionWon'
+    | 'electionLost';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -250,6 +261,8 @@ export class Sim {
       policies: [],
       tourism: { visitors: 0, overnight: 0 },
       chronicle: emptyChronicle(0),
+      matchDay: null,
+      election: newElectionState(0, options.elections && !options.sandbox),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -773,12 +786,33 @@ export class Sim {
         return this.undoRedo('undo', dryRun);
       case 'redo':
         return this.undoRedo('redo', dryRun);
-      case 'setTax':
+      case 'setTax': {
+        // After a lost election the council blocks tax rises for a year (M17).
+        const until = councilUntil(this);
+        if (until) {
+          const t = this.state.economy.taxes[cmd.zone];
+          const rising = cmd.wealth === 'all' ? t.some((r) => cmd.rate > r) : cmd.rate > t[cmd.wealth]!;
+          if (rising)
+            return {
+              ok: false,
+              reason: `The council blocks tax rises until ${until}, after the lost election`,
+            };
+        }
         return setTax(this, cmd.zone, cmd.wealth, cmd.rate, dryRun);
+      }
       case 'setFunding':
         return setFunding(this, cmd.dept, cmd.pct, dryRun);
-      case 'takeLoan':
+      case 'takeLoan': {
+        const until = councilUntil(this);
+        if (until)
+          return {
+            ok: false,
+            reason: `The council blocks new loans until ${until}, after the lost election`,
+          };
         return takeLoan(this, cmd.amount, dryRun);
+      }
+      case 'promise':
+        return setPromise(this, cmd.promise, cmd.on, dryRun);
       case 'repayLoan':
         return repayLoan(this, cmd.id, dryRun);
       case 'disaster': {
@@ -1000,6 +1034,9 @@ export class Sim {
       run('month', () => {
         closeMonth(this, dateOf(t).totalMonths - 1);
         recordMonth(s.chronicle, monthFigures(this));
+        projectsMonth(this);
+        projectEvents(this);
+        electionsMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
           c.processedToday = 0;
@@ -1312,6 +1349,7 @@ export class Sim {
       damage: c.damage,
       flooded: c.flooded,
       modules: [...c.modules],
+      stage: c.build?.stage,
     };
   }
 

@@ -182,7 +182,7 @@ export interface TimeSeries {
 export interface TimeMarker {
   /** Month since the city began (fractional). */
   month: number;
-  kind: 'milestone' | 'disaster';
+  kind: 'milestone' | 'disaster' | 'project' | 'election';
   label: string;
 }
 
@@ -244,7 +244,7 @@ export function TimeChart(props: {
         {markers.map((m, k) => (
           <g key={k} class={`chart-marker ${m.kind}`}>
             <line x1={x(m.month)} x2={x(m.month)} y1={PAD.t} y2={H - PAD.b} />
-            {m.kind === 'milestone' ? (
+            {m.kind !== 'disaster' ? (
               <circle cx={x(m.month)} cy={PAD.t - 3} r={3} />
             ) : (
               <path d={`M${x(m.month) - 3.5},${PAD.t} l3.5,-6 l3.5,6 z`} />

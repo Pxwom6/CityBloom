@@ -274,6 +274,8 @@ export interface CivicData {
   flooded: boolean;
   /** Add-on modules installed. */
   modules: string[];
+  /** Big projects (M17): the stage under construction, absent once finished. */
+  stage?: number;
 }
 
 export interface VehicleData {

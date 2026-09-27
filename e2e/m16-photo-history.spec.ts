@@ -15,7 +15,7 @@ function pngSize(buf: Buffer): { width: number; height: number } {
 test('M16: city history charts the city and survives save and load exactly; photo mode saves a full-resolution PNG with no UI', async ({
   page,
 }) => {
-  test.setTimeout(420_000);
+  test.setTimeout(600_000);
   const errs = watchErrors(page);
   await openGame(page);
   const cz = (await state(page)).highwayZ;
@@ -156,13 +156,26 @@ test('M16: city history charts the city and survives save and load exactly; phot
   }, png.toString('base64'));
   expect(spread).toBeGreaterThan(40);
 
-  // Follow a car along its trip.
+  // Follow a car along its trip. The city is paused first: on this slow renderer the sim runs ahead
+  // of the frames and a whole trip can pass in a few of them.
+  await page.getByTestId('photo-running').uncheck();
   await page.getByTestId('photo-follow-car').click();
   await expect(page.getByTestId('photo-following')).toContainText('a car');
-  await page.evaluate(() => window.__game!.waitFrames(4));
+  await page.evaluate(() => window.__game!.waitFrames(3));
   ph = await photo(page);
   expect(ph.follow).not.toBeNull();
-  const cam = await page.evaluate(() => window.__game!.getCamera());
+  let cam = await page.evaluate(() => window.__game!.getCamera());
+  expect(Math.hypot(cam.x - ph.follow!.x, cam.z - ph.follow!.z)).toBeLessThan(3);
+  const from = ph.follow!;
+  // A few minutes on: the car has moved on and the camera with it.
+  await page.evaluate(async () => {
+    await window.__game!.advance(4);
+    await window.__game!.waitFrames(3);
+  });
+  ph = await photo(page);
+  expect(ph.follow).not.toBeNull();
+  expect(Math.hypot(ph.follow!.x - from.x, ph.follow!.z - from.z)).toBeGreaterThan(2);
+  cam = await page.evaluate(() => window.__game!.getCamera());
   expect(Math.hypot(cam.x - ph.follow!.x, cam.z - ph.follow!.z)).toBeLessThan(3);
   await shot(page, 'm16-follow');
   await page.getByTestId('photo-follow-stop').click();

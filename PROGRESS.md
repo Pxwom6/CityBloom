@@ -102,16 +102,15 @@ e2e specs pass (M16's rerun after the full run, see DECISIONS), 174 unit tests.
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.
-- Mature cities run a big surplus (≈ +$35k/month at 18k residents with 6 % taxes); intended as money for landmarks and big projects.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
 - Visible cars and walkers follow trip samples from the last assignment round, so for up to two game hours after a road closes some still drive along it; commuters, services and utilities reroute at once.
 - Buildings along a road closed for repairs lose power and water until it reopens (lines run under the roads); with 6–24 h repairs this rarely empties them, but a big quake still costs a town a lot.
 - Visible cars don't queue or yield at junctions; they overlap when paths cross. Speeds do follow congestion.
 - Bus riders' door-to-door time includes walking and waiting, so a bus line mainly helps by taking cars off jammed roads (≈10–20 % less traffic in the test town), not by being faster than driving.
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
-- Commercial demand runs slightly negative once a town has zoned a strip of shops (the careful balance player's commercial zones stay part-empty); fine for play, worth a second look.
+- Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
 - Visitors (M10) are counted, spend money and shop, but don't drive through the traffic model yet.
-- Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); a scripted careful player tops out around 18k because its district plan runs out of land.
+- Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); the scripted careful mayor fills the river map at about 67k (M17).
 - Tree count is high in forests (~25k in-map); LOD switches to low-poly beyond 750 m.
 - Cutting faces and embankments read softly: the terrain is 8 m height samples, so a 1:1 cut face shows as a brown bank over one cell rather than a crisp edge.
 - Roads can't join or cross a viaduct mid-span (no grade separation until M19); the planner says to meet it where it's back on the ground.

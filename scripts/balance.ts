@@ -65,7 +65,11 @@ const MONTHS_PER_YEAR = 12;
 const DW = 480;
 const ROW = 380;
 const HALF = 160;
-/** Nearest the highway first (the original 15), then the far bank beyond the river. */
+/**
+ * Nearest the highway first (the original 15), then the far bank beyond the river, then rows
+ * farther up and down the map for highways that enter near an edge (`nextSlot` skips any that
+ * don't fit on the map).
+ */
 const DISTRICT_ORDER: [number, number][] = [
   [0, 0],
   [1, 0],
@@ -87,6 +91,7 @@ const DISTRICT_ORDER: [number, number][] = [
   [3, 1],
   [3, -2],
   [3, 2],
+  ...[-3, 3, -4, 4].flatMap((j) => [0, 1, 2, 3].map((i): [number, number] => [i, j])),
 ];
 
 /**
@@ -192,6 +197,10 @@ class Player {
    * side streets or zoning: room for landmarks and big projects.
    */
   buildDistrict(quarter = false): boolean {
+    // The careful mayor keeps the first slot after 8,000 residents as a quarter for landmarks and
+    // projects, before the map fills up.
+    if (this.strategy === 'careful' && this.sim.reached(8_000) && !this.districts.some((d) => d.quarter))
+      quarter = true;
     const next = this.nextSlot();
     if (!next || this.sim.state.treasury < this.districtCost() + 2_000) return false;
     while (DISTRICT_ORDER[this.districts.length] !== next) {
@@ -208,7 +217,16 @@ class Player {
       const zNear = this.c.z + (j > 0 ? j - 1 : j + 1) * ROW;
       segs.push(...this.road('avenue', { x: x0 + 12, z: zNear }, { x: x0 + 12, z }));
     }
+    // Roads that didn't join the network (a failed crossing) get no zoning or buildings.
+    const cutOff = () => {
+      if (segs.some((id) => this.sim.state.net.segments.has(id) && this.sim.isSegmentConnected(id)))
+        return false;
+      this.districts.push({ i, j, segs, dead: true });
+      this.log.push(`m${this.month()}: district ${i},${j} cut off`);
+      return true;
+    };
     if (quarter) {
+      if (cutOff()) return false;
       this.districts.push({ i, j, segs, quarter: true });
       this.log.push(`m${this.month()}: quarter ${i},${j}`);
       return true;
@@ -225,6 +243,7 @@ class Player {
           if (!d.quarter) segs.push(...this.road('street', { x, z: a }, { x, z: b }));
         }
     }
+    if (cutOff()) return false;
     const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
       this.sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
     // The careful mayor zones shops only while shops are wanted; otherwise homes face the avenue.
@@ -273,7 +292,10 @@ class Player {
     const d = CIVIC.get(def);
     if (!d || !this.sim.isUnlocked(d.unlockPopulation)) return false;
     if (this.sim.state.treasury < d.cost + 1_000) return false;
-    const segs = [...this.sim.state.net.segments.values()].filter((s) => s.type !== 'highway');
+    // Only roads joined to the highway: a building on a cut-off piece of road serves nobody.
+    const segs = [...this.sim.state.net.segments.values()].filter(
+      (s) => s.type !== 'highway' && this.sim.isSegmentConnected(s.id),
+    );
     const mid = (id: number) => {
       const cv = this.sim.net.curve(id);
       return cv.pointAt(cv.length / 2);
@@ -478,12 +500,12 @@ class Player {
       else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
       // Comfortably off: trade money for happier residents and more demand.
       else if (s.netMonthly > 0 && s.treasury > 250_000 && rate > 6) this.setTaxes(rate - 1);
-      // Goals met and money piling up: hand it back, a point every six months, down to 3 %.
+      // Goals met and money piling up: hand it back, a point every six months, down to 2 %.
       else if (
         s.netMonthly > 0 &&
         s.treasury > 1_500_000 &&
         this.goalsDone() &&
-        rate > 3 &&
+        rate > 2 &&
         this.sim.state.tick - this.lastTaxCut > TICKS_PER_MONTH * 6
       ) {
         this.setTaxes(rate - 1);
@@ -569,7 +591,9 @@ class Player {
 
   /** Every goal the city has reached is met: nothing left to save for until the next milestone. */
   goalsDone(): boolean {
-    return GOALS.every((g) => this.goalsMet.has(g.def) || !this.sim.reached(g.at));
+    return GOALS.every(
+      (g) => this.goalsMet.has(g.def) || !this.sim.reached(g.at) || this.goalTried.has(g.def),
+    );
   }
 
   private lastTaxCut = -1e9;
@@ -596,16 +620,22 @@ class Player {
         continue;
       }
       if (d.project && projectBlocked(this.sim, d)) continue;
+      // Nowhere to put it last time: try the others, and this one again in six months.
+      if (s.tick - (this.goalTried.get(g.def) ?? -1e9) < TICKS_PER_MONTH * 6) continue;
       const price = d.project ? projectCost(d).total : d.cost;
       if (s.treasury < price + this.reserve()) return;
       const before = s.treasury;
       if (this.placeGoal(g.def)) {
         this.goalsMet.set(g.def, this.month());
-        this.goalSpend += before - s.treasury;
+        // Projects' stages are counted from the ledger as they're paid (see sample()).
+        if (!d.project) this.goalSpend += before - s.treasury;
+        return;
       }
-      return;
+      this.goalTried.set(g.def, s.tick);
     }
   }
+
+  private goalTried = new Map<string, number>();
 
   /** A goal's building: along a quarter's avenue, else any free roadside, else a new quarter. */
   placeGoal(def: string): boolean {
@@ -613,8 +643,8 @@ class Player {
     const tryQuarters = () => {
       for (const q of this.districts.filter((x) => x.quarter))
         for (const id of q.segs) {
-          if (!this.sim.state.net.segments.has(id) || this.sim.state.net.segments.get(id)!.type !== 'avenue')
-            continue;
+          const sg = this.sim.state.net.segments.get(id);
+          if (!sg || sg.type !== 'avenue' || !this.sim.isSegmentConnected(id)) continue;
           const len = this.sim.net.curve(id).length;
           for (let at = d.w / 2 + 12; at < len - d.w / 2 - 12; at += 10)
             for (const side of [1, -1] as const) {
@@ -653,7 +683,13 @@ class Player {
     return this.sim.state.election.promises.some((p) => p.id === 'taxes');
   }
 
+  private ledgerSeen = 0;
+
   sample(): Sample {
+    // Every project stage paid in the months closed since the last sample.
+    const h = this.sim.state.economy.history;
+    for (; this.ledgerSeen < h.length; this.ledgerSeen++)
+      this.goalSpend -= h[this.ledgerSeen]!.lines.projects ?? 0;
     const s = this.stats();
     return {
       month: this.month(),

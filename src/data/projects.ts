@@ -99,7 +99,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 120,
     d: 96,
     cost: 0,
-    upkeep: 6_000,
+    upkeep: 10_000,
     blurb: 'A 30,000-seat bowl for the home team. Match days fill the stands and the roads around it.',
     unlockPopulation: 20_000,
     landValue: { radius: 260, value: 0.06 },
@@ -124,7 +124,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 112,
     d: 112,
     cost: 0,
-    upkeep: 8_000,
+    upkeep: 12_000,
     blurb:
       'A launch pad, assembly hall and tower for the technology city: satellites built here fly from here.',
     unlockPopulation: 40_000,
@@ -154,7 +154,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 128,
     d: 128,
     cost: 0,
-    upkeep: 4_000,
+    upkeep: 6_000,
     blurb:
       'A field of mirrors aimed at a tall receiver tower: clean power for a whole city, day and night from stored heat.',
     unlockPopulation: 20_000,
@@ -182,7 +182,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 144,
     d: 112,
     cost: 0,
-    upkeep: 6_500,
+    upkeep: 10_000,
     blurb:
       'A world fair of gardens and pavilions; when the fair closes, the grounds stay a park the region visits.',
     unlockPopulation: 40_000,
@@ -212,7 +212,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 120,
     d: 80,
     cost: 0,
-    upkeep: 5_000,
+    upkeep: 8_000,
     blurb:
       'Exhibition halls and an auditorium under a long wave roof: trade fairs bring business visitors all year.',
     unlockPopulation: 20_000,

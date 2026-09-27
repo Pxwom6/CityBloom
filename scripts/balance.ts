@@ -683,13 +683,15 @@ class Player {
     return this.sim.state.election.promises.some((p) => p.id === 'taxes');
   }
 
-  private ledgerSeen = 0;
+  private ledgerSeen = -1;
 
   sample(): Sample {
-    // Every project stage paid in the months closed since the last sample.
-    const h = this.sim.state.economy.history;
-    for (; this.ledgerSeen < h.length; this.ledgerSeen++)
-      this.goalSpend -= h[this.ledgerSeen]!.lines.projects ?? 0;
+    // Every project stage paid in the months closed since the last sample (the ledger keeps 24).
+    for (const m of this.sim.state.economy.history)
+      if (m.month > this.ledgerSeen) {
+        this.goalSpend -= m.lines.projects ?? 0;
+        this.ledgerSeen = m.month;
+      }
     const s = this.stats();
     return {
       month: this.month(),

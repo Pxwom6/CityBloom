@@ -2,7 +2,6 @@ import type { MapPreset } from '../data/world';
 import type { Difficulty } from '../data/economy';
 import type { RngState } from './rng';
 import type { NetworkState } from './world/network';
-import type { UndoRecord } from './undo';
 import type { Building } from './world/buildings';
 import type { CityTotals } from './systems/totals';
 import type { DemandState } from './systems/demand';
@@ -60,7 +59,6 @@ export interface SimState {
   net: NetworkState;
   /** The regional highway: off-map node and the connection node inside the map. */
   highway: { outside: number; connect: number; segment: number };
-  undo: UndoRecord[];
   buildings: Map<number, Building>;
   totals: CityTotals;
   demand: DemandState;

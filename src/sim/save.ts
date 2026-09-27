@@ -5,7 +5,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -146,6 +146,11 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   },
   // v11 → v12 (M13): road earthworks change the terrain; older cities have none.
   11: (s) => ({ ...s, terrainDelta: encodeValue(new Float32Array(HEIGHT_RES * HEIGHT_RES)) }),
+  // v12 → v13 (M14): undo history lives with the running game, not in saves.
+  12: (s) => {
+    const { undo: _undo, ...rest } = s as Record<string, unknown>;
+    return rest;
+  },
 };
 
 export function encodeState(state: SimState): unknown {

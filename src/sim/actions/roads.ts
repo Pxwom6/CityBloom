@@ -5,15 +5,8 @@ import { Curve, pointRectDistance, type Vec2 } from '../geom';
 import { footprint } from '../world/buildings';
 import { bulldozeCivic, civicRect } from '../world/civic';
 import type { Sim } from '../sim';
-import { UNDO_LIMIT } from '../undo';
 import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
-import {
-  planEarthworks,
-  reshapeGround,
-  samplesBox,
-  type EarthPlan,
-  type TerrainEdit,
-} from '../world/earthworks';
+import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
 
@@ -45,23 +38,13 @@ export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: bo
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
-  let terrain: TerrainEdit | undefined;
   const res = applyRoadPlan(sim.net, plan, () => {
     if (!plan.earth?.idx.length) return null;
-    terrain = reshapeGround(sim, plan.earth.idx, plan.earth.to);
+    reshapeGround(sim, plan.earth.idx, plan.earth.to);
     return plan.earth.box;
   });
   sim.spend(plan.cost, 'roads');
   clearTreesAlong(sim, res.segments);
-  sim.pushUndo({
-    kind: 'road',
-    tick: s.tick,
-    cost: plan.cost,
-    segments: res.segments,
-    nodes: res.nodes,
-    splits: res.splits,
-    ...(terrain ? { terrain } : {}),
-  });
   sim.markNetworkChanged();
   return ok(plan.cost, { created: res.segments, info: preview });
 }
@@ -163,23 +146,13 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
     earth: earth ? { volume: earth.volume, cost: earth.cost } : null,
   };
   if (dryRun) return ok(total, { info });
-  const from = seg.type;
   sim.net.setSegmentType(segId, road);
-  let terrain: TerrainEdit | undefined;
-  if (earth?.idx.length) terrain = reshapeGround(sim, earth.idx, earth.to);
+  if (earth?.idx.length) reshapeGround(sim, earth.idx, earth.to);
   sim.relocateBuildingsOn(segId);
   const around = sim.net.segmentInfluenceBox(segId);
   sim.net.revalidate(earth?.box ? union(around, earth.box) : around);
   sim.spend(total, 'roads');
   clearTreesAlong(sim, [segId]);
-  sim.pushUndo({
-    kind: 'upgrade',
-    tick: s.tick,
-    cost: total,
-    seg: segId,
-    from,
-    ...(terrain ? { terrain } : {}),
-  });
   sim.markNetworkChanged();
   return ok(total, { info });
 }
@@ -240,23 +213,6 @@ function regrade(
     new Set([segId]),
   );
   return { earth };
-}
-
-export function undoUpgrade(
-  sim: Sim,
-  rec: Extract<import('../undo').UndoRecord, { kind: 'upgrade' }>,
-  dryRun: boolean,
-): CommandResult {
-  if (!sim.state.net.segments.has(rec.seg)) return fail("Can't undo: that road has changed since");
-  if (dryRun) return ok(-rec.cost);
-  sim.net.setSegmentType(rec.seg, rec.from);
-  if (rec.terrain) reshapeGround(sim, rec.terrain.idx, rec.terrain.before, true);
-  sim.relocateBuildingsOn(rec.seg);
-  const box = sim.net.segmentInfluenceBox(rec.seg);
-  sim.net.revalidate(rec.terrain ? union(box, samplesBox(rec.terrain.idx)) : box);
-  sim.earn(rec.cost, 'refunds');
-  sim.markNetworkChanged();
-  return ok(-rec.cost);
 }
 
 function articled(name: string): string {
@@ -356,48 +312,3 @@ export function clearTreesAlong(sim: Sim, segments: number[]): void {
     }
   }
 }
-
-export function undoRoad(
-  sim: Sim,
-  rec: Extract<import('../undo').UndoRecord, { kind: 'road' }>,
-  dryRun: boolean,
-): CommandResult {
-  for (const id of rec.segments)
-    if (!sim.state.net.segments.has(id)) return fail("Can't undo: that road has changed since");
-  if (dryRun) return ok(-rec.cost);
-  let box: { minX: number; minZ: number; maxX: number; maxZ: number } | null = null;
-  const grow = (b: typeof box) => {
-    if (!b) return;
-    box = box
-      ? {
-          minX: Math.min(box.minX, b.minX),
-          minZ: Math.min(box.minZ, b.minZ),
-          maxX: Math.max(box.maxX, b.maxX),
-          maxZ: Math.max(box.maxZ, b.maxZ),
-        }
-      : b;
-  };
-  for (const id of rec.segments) {
-    grow(sim.net.segmentInfluenceBox(id));
-    const seg = sim.net.segment(id);
-    sim.net.removeSegment(id);
-    sim.net.removeNodeIfOrphan(seg.a);
-    sim.net.removeNodeIfOrphan(seg.b);
-  }
-  for (const sp of [...rec.splits].reverse()) {
-    if (sim.state.net.segments.has(sp.first)) grow(sim.net.segmentInfluenceBox(sp.first));
-    if (sim.state.net.segments.has(sp.second)) grow(sim.net.segmentInfluenceBox(sp.second));
-    sim.net.mergeSplit(sp);
-  }
-  for (const n of rec.nodes) sim.net.removeNodeIfOrphan(n);
-  if (rec.terrain) {
-    reshapeGround(sim, rec.terrain.idx, rec.terrain.before, true);
-    grow(samplesBox(rec.terrain.idx));
-  }
-  if (box) sim.net.revalidate(box);
-  sim.earn(rec.cost, 'refunds');
-  sim.markNetworkChanged();
-  return ok(-rec.cost);
-}
-
-export { UNDO_LIMIT };

@@ -6,7 +6,7 @@ import { fail, ok, type CommandResult } from '../commands';
 import { pointRectDistance, rectsOverlap, type ORect, type Vec2 } from '../geom';
 import type { Sim } from '../sim';
 import { clearTreesUnder, footprint as zonedFootprint } from './buildings';
-import { planPad, reshapeGround, type EarthPlan, type TerrainEdit } from './earthworks';
+import { planPad, reshapeGround, type EarthPlan } from './earthworks';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -305,19 +305,11 @@ export function placeCivic(
   for (const id of chk.demolish) sim.removeBuilding(id);
   sim.addCivic(civ);
   sim.spend(total, 'construction');
-  let terrain: TerrainEdit | undefined;
   if (chk.pad?.idx.length) {
-    terrain = reshapeGround(sim, chk.pad.idx, chk.pad.to);
+    reshapeGround(sim, chk.pad.idx, chk.pad.to);
     sim.net.revalidate(chk.pad.box!);
   }
   clearTreesUnder(sim, civicRect(civ, 0));
-  sim.pushUndo({
-    kind: 'civic',
-    tick: s.tick,
-    id: civ.id,
-    cost: def.cost,
-    ...(terrain ? { terrain, earthCost: earth!.cost } : {}),
-  });
   return ok(total, { created: [civ.id], info });
 }
 

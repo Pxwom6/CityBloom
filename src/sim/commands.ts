@@ -25,7 +25,9 @@ export type Command =
   | { type: 'upgradeRoad'; seg: number; road: RoadTypeId }
   /** `stroke` groups several paint commands from one drag into a single undo step. */
   | { type: 'zone'; zone: ZoneLetter | 'none'; area: ZoneArea; stroke?: number }
+  /** Take back the last action, or put back the last one taken back (M14). */
   | { type: 'undo' }
+  | { type: 'redo' }
   | { type: 'setTax'; zone: 'R' | 'C' | 'I'; wealth: 0 | 1 | 2 | 'all'; rate: number }
   | { type: 'setFunding'; dept: Dept; pct: number }
   | { type: 'takeLoan'; amount: number }

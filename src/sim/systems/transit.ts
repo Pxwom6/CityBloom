@@ -64,7 +64,6 @@ export function placeStop(sim: Sim, x: number, z: number, dryRun: boolean): Comm
   const stop: BusStop = { id: s.nextId++, x: at.x, z: at.z, seg: at.seg, s: at.s };
   s.transit.stops.set(stop.id, stop);
   sim.spend(TRANSIT.stopCost, 'transit');
-  sim.pushUndo({ kind: 'stop', tick: s.tick, id: stop.id, cost: TRANSIT.stopCost });
   sim.transitChanged();
   return ok(TRANSIT.stopCost, { created: [stop.id] });
 }

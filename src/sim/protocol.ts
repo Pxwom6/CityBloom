@@ -20,6 +20,10 @@ export interface CityStats {
   cityName: string;
   population: number;
   undoAvailable: boolean;
+  /** Undo and redo (M14): whether there's a step, and what it was ("road", "bulldozing"). */
+  redoAvailable: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
   jobs: number;
   jobsFilled: number;
   unemployed: number;

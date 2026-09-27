@@ -25,9 +25,20 @@ import type {
 } from './protocol';
 import { checkInvariants } from './invariants';
 import { Network, type ZoneBlock } from './world/network';
-import { UNDO_LIMIT, type UndoRecord } from './undo';
-import { buildRoad, bulldoze, undoRoad, undoUpgrade, upgradeRoad } from './actions/roads';
-import { undoZone, zone } from './actions/zoning';
+import {
+  FULL_SCOPE,
+  HISTORY_LIMIT,
+  ZONING_SCOPE,
+  applyEdit,
+  capture,
+  diff,
+  merge,
+  type Edit,
+  type Scope,
+  type Touched,
+} from './history';
+import { buildRoad, bulldoze, upgradeRoad } from './actions/roads';
+import { zone } from './actions/zoning';
 import { v2 } from './geom';
 import { GRID_RES, HEIGHT_RES } from '../data/world';
 import {
@@ -42,7 +53,7 @@ import {
 } from './world/buildings';
 import { RoadGraph } from './systems/graph';
 import { SpatialHash } from './world/spatial';
-import { reshapeGround, samplesBox, seatHeight } from './world/earthworks';
+import { seatHeight } from './world/earthworks';
 import { computeTotals, emptyTotals } from './systems/totals';
 import { emptyDemand, updateDemand } from './systems/demand';
 import { updateLandValue, waterDistance } from './systems/landValue';
@@ -52,21 +63,13 @@ import { MatchRound } from './systems/commute';
 import { advise } from './systems/advisors';
 import { thoughts } from './systems/thoughts';
 import { deckAt, deckProfile, viaductDeck, type DeckProfile } from './world/bridge';
-import {
-  computeLines,
-  emptyTransit,
-  placeStop,
-  relocateStops,
-  removeStop,
-  type BusLine,
-} from './systems/transit';
+import { computeLines, emptyTransit, placeStop, relocateStops, type BusLine } from './systems/transit';
 import { congestedEdgeCosts, congestedSeconds, hourShare, segVC, type TripSample } from './systems/traffic';
 import { GROWTH, HAPPINESS, TRANSIT } from '../data/balance';
 import { ZONE_I, ZONE_R } from '../data/zones';
 import { HOURLY_AT, MATCH_SLICES, TICKS_PER_HOUR, dateOf, isMonthStart } from './time';
 import {
   addModule,
-  bulldozeCivic,
   civicCapacity,
   civicDef,
   civicRect,
@@ -97,7 +100,7 @@ import { extractionPerDay, specialisationsHour } from './systems/specialisations
 import { POLICY, type PolicyId } from '../data/policies';
 import { decayCrime, splatField } from './systems/pollution';
 import type { ServiceKind } from '../data/civic';
-import { GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
+import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
@@ -219,7 +222,6 @@ export class Sim {
       trees: terrain.initialTrees.slice(),
       net: { nodes: new Map(), segments: new Map(), blocks: new Map() },
       highway: { outside: 0, connect: 0, segment: 0 },
-      undo: [],
       buildings: new Map(),
       totals: emptyTotals(),
       demand: emptyDemand(),
@@ -688,8 +690,14 @@ export class Sim {
   // ---------------------------------------------------------------- commands
 
   dispatch(cmd: Command): CommandResult {
+    const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
+    if (scope) this.syncRng();
+    const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
-    if (result.ok) this.log.push({ tick: this.state.tick, cmd: JSON.parse(JSON.stringify(cmd)) as Command });
+    if (result.ok) {
+      this.log.push({ tick: this.state.tick, cmd: JSON.parse(JSON.stringify(cmd)) as Command });
+      if (pre) this.record(cmd, pre);
+    }
     return result;
   }
 
@@ -735,9 +743,11 @@ export class Sim {
       case 'placeStop':
         return placeStop(this, cmd.x, cmd.z, dryRun);
       case 'zone':
-        return zone(this, cmd.zone, cmd.area, dryRun, cmd.stroke);
+        return zone(this, cmd.zone, cmd.area, dryRun);
       case 'undo':
-        return this.undo(dryRun);
+        return this.undoRedo('undo', dryRun);
+      case 'redo':
+        return this.undoRedo('redo', dryRun);
       case 'setTax':
         return setTax(this, cmd.zone, cmd.wealth, cmd.rate, dryRun);
       case 'setFunding':
@@ -777,34 +787,146 @@ export class Sim {
     }
   }
 
-  pushUndo(rec: UndoRecord): void {
-    this.state.undo.push(rec);
-    if (this.state.undo.length > UNDO_LIMIT) this.state.undo.shift();
+  // ---------------------------------------------------------------- undo and redo (M14)
+
+  /** The last actions, for undo, and those taken back, for redo. Not saved. */
+  readonly history: { undo: Edit[]; redo: Edit[] } = { undo: [], redo: [] };
+
+  /** What an undoable command may change; null for commands that aren't undone. */
+  private undoScope(cmd: Command): Scope | null {
+    switch (cmd.type) {
+      case 'zone':
+        return ZONING_SCOPE;
+      case 'buildRoad':
+      case 'bulldoze':
+      case 'placeStop':
+      case 'upgradeRoad':
+      case 'placeBuilding':
+      case 'addModule':
+        return FULL_SCOPE;
+      default:
+        return null;
+    }
   }
 
-  private undo(dryRun: boolean): CommandResult {
-    const rec = this.state.undo[this.state.undo.length - 1];
-    if (!rec) return fail('Nothing to undo');
-    let res: CommandResult;
-    if (rec.kind === 'road') res = undoRoad(this, rec, dryRun);
-    else if (rec.kind === 'upgrade') res = undoUpgrade(this, rec, dryRun);
-    else if (rec.kind === 'stop') {
-      if (!this.state.transit.stops.has(rec.id)) return fail("Can't undo: that stop is gone");
-      res = removeStop(this, rec.id, dryRun, 1);
-    } else if (rec.kind === 'zone') res = undoZone(this, rec.cells, dryRun);
+  private undoLabel(cmd: Command): string {
+    switch (cmd.type) {
+      case 'buildRoad':
+        return 'road';
+      case 'zone':
+        return cmd.zone === 'none' ? 'dezoning' : 'zoning';
+      case 'bulldoze':
+        return 'bulldozing';
+      case 'placeStop':
+        return 'bus stop';
+      case 'upgradeRoad':
+        return 'road change';
+      case 'placeBuilding':
+        return (CIVIC.get(cmd.def)?.name ?? 'building').toLowerCase();
+      case 'addModule':
+        return (MODULE.get(cmd.module)?.name ?? 'add-on').toLowerCase();
+      default:
+        return cmd.type;
+    }
+  }
+
+  /** Keep the difference a command made, as the newest undo step (a zoning stroke is one step). */
+  private record(cmd: Command, pre: ReturnType<typeof capture>): void {
+    this.syncRng();
+    const d = diff(pre, capture(this.state, pre.scope));
+    if (!d.changes.length && !d.treasury) return;
+    const top = this.history.undo[this.history.undo.length - 1];
+    const stroke = cmd.type === 'zone' ? cmd.stroke : undefined;
+    if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
-      if (!this.state.civics.has(rec.id)) return fail("Can't undo: that building is gone");
-      res = bulldozeCivic(this, rec.id, dryRun, 1);
-      if (res.ok && rec.earthCost) res = { ...res, cost: (res.cost ?? 0) - rec.earthCost };
-      if (res.ok && !dryRun && rec.terrain) {
-        // Put the ground back the way it was before the pad was levelled (M13).
-        reshapeGround(this, rec.terrain.idx, rec.terrain.before, true);
-        this.net.revalidate(samplesBox(rec.terrain.idx));
-        this.earn(rec.earthCost ?? 0, 'refunds');
+      this.history.undo.push({
+        label: this.undoLabel(cmd),
+        tick: this.state.tick,
+        ...d,
+        ...(stroke !== undefined ? { stroke } : {}),
+      });
+      if (this.history.undo.length > HISTORY_LIMIT) this.history.undo.shift();
+    }
+    this.history.redo = [];
+  }
+
+  private undoRedo(dir: 'undo' | 'redo', dryRun: boolean): CommandResult {
+    const from = dir === 'undo' ? this.history.undo : this.history.redo;
+    const edit = from[from.length - 1];
+    if (!edit) return fail(dir === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
+    const cost = dir === 'undo' ? edit.treasury : -edit.treasury;
+    if (dryRun) return ok(cost, { info: { label: edit.label } });
+    this.syncRng();
+    const r = applyEdit(this.state, edit, dir);
+    if (!r.ok) return fail(`Can't ${dir} the ${edit.label}: ${r.reason}`, { info: { label: edit.label } });
+    from.pop();
+    (dir === 'undo' ? this.history.redo : this.history.undo).push(edit);
+    this.afterEdit(r.touched);
+    return ok(cost, { info: { label: edit.label } });
+  }
+
+  /** Re-index and tell the client about everything an undo or redo changed. */
+  private afterEdit(t: Touched): void {
+    if (t.values.has('rng')) for (const s of RNG_STREAMS) this.rng[s] = new Rng(this.state.rng[s]);
+    const net = this.net;
+    if (t.ids.nodes || t.ids.segments || t.ids.blocks) {
+      net.rebuildDerived();
+      const kinds = [
+        ['nodes', this.state.net.nodes],
+        ['segments', this.state.net.segments],
+        ['blocks', this.state.net.blocks],
+      ] as const;
+      for (const [k, map] of kinds)
+        for (const id of t.ids[k] ?? []) {
+          if (map.has(id)) {
+            net.dirty[k].add(id);
+            net.removed[k].delete(id);
+          } else {
+            net.dirty[k].delete(id);
+            net.removed[k].add(id);
+          }
+        }
+      this.markNetworkChanged();
+      this.deckCache.clear();
+    }
+    for (const id of t.ids.buildings ?? []) {
+      if (this.state.buildings.has(id)) {
+        this.removedBuildings.delete(id);
+        this.markBuildingDirty(id);
+      } else {
+        this.bldHash.remove(id);
+        this.dirtyBuildings.delete(id);
+        this.removedBuildings.add(id);
       }
     }
-    if (!dryRun) this.state.undo.pop();
-    return res;
+    for (const id of t.ids.civics ?? []) {
+      const c = this.state.civics.get(id);
+      if (c) {
+        this.indexCivic(c);
+        this.removedCivics.delete(id);
+        this.dirtyCivics.add(id);
+      } else {
+        this.civHash.remove(id);
+        this.dirtyCivics.delete(id);
+        this.removedCivics.add(id);
+      }
+    }
+    if (t.ids.civics || t.ids.stops || t.ids.segments) {
+      this.coverageCache = null;
+      this.transitChanged();
+    }
+    if (t.ids.vehicles || t.ids.incidents) this.vehiclesDirty = true;
+    const ground = t.arrays.terrainDelta;
+    if (ground?.length) {
+      for (const i of ground) {
+        this.terrain.heights[i] = this.terrain.base[i]! + this.state.terrainDelta[i]!;
+        this.markTerrainDirty(i);
+      }
+      this.waterDistCache = null;
+      this.deckCache.clear();
+    }
+    for (const i of t.arrays.trees ?? []) this.markTreesDirty(i);
+    this.flagCache.clear();
   }
 
   // ---------------------------------------------------------------- time
@@ -972,7 +1094,10 @@ export class Sim {
       treasury: this.state.treasury,
       cityName: this.state.cityName,
       population: t.population,
-      undoAvailable: this.state.undo.length > 0,
+      undoAvailable: this.history.undo.length > 0,
+      redoAvailable: this.history.redo.length > 0,
+      undoLabel: this.history.undo[this.history.undo.length - 1]?.label ?? null,
+      redoLabel: this.history.redo[this.history.redo.length - 1]?.label ?? null,
       jobs: t.jobs,
       jobsFilled: t.jobsFilled,
       unemployed: t.unemployed,

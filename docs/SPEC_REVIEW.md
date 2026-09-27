@@ -157,3 +157,20 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | History panel in the budget's style, milestones and disasters marked | `src/ui/History.tsx` with `TimeChart` (`src/ui/charts.tsx`); `docs/screenshots/m16-history.png` |
 | Older saves start their history when loaded | migration 13 → 14; `tests/chronicle.test.ts` loads the version-10 playtest save and plays on |
 | Done when: photo mode saves a full-resolution PNG with no UI, and history survives save/load exactly | `e2e/m16-photo-history.spec.ts` (PNG at 2× the viewport from the canvas with helpers hidden and no interface mounted; history equal and state hash equal after save and load through the UI); `tests/chronicle.test.ts` |
+
+## M17 Big projects and elections
+
+| Item | Where |
+|---|---|
+| Four to six original big projects, expensive and multi-stage over months | five in `src/data/projects.ts`: city stadium, solar tower array, convention centre (20k), garden expo, launch complex (40k); three stages each over 9–10 months, $1.2M–$2.0M; `src/sim/systems/projects.ts` pays each stage as it starts and waits when it can't |
+| Requirements (population, education, a specialisation or resources) | `requires` per project: population; 35 % of workers with a high-school education and the research park (launch complex); a hotel (convention centre); 1,500 visitors a day (garden expo); checked on placement (`projectBlocked`) and listed ✓/✗ in the toolbar tooltip |
+| Visible construction stages | a model per stage (`src/render/assets/projectModels.ts`): hoardings, cranes and the structure rising; `docs/screenshots/m17-stadium-*.png`; `scripts/dev/projectshot.mjs` shows all five at every stage |
+| A lasting perk | match days every other month (8,000 visitors, fans driving in from the highway, a cheer), 4,000 units of clean power, research income and industrial demand with launches, tourism and land value, commercial demand; wired into the systems that already handle each (`tests/projects.test.ts`) |
+| Elections every four game years, decided mainly by approval | `src/sim/systems/elections.ts`: votes at the four-year marks, share from approval (50 % at 55 % approval) with a small seeded swing |
+| One or two promises beforehand that voters judge | six promises (`PROMISES` in `src/data/elections.ts`), two at most, made in the six-month campaign from the city panel's Election tab and judged against where the city stood when each was made |
+| Winning brings a perk | the region's grant ($4 a resident) and +3 points of approval for a year |
+| Losing never ends the game but brings a year of limits | the council refuses tax rises and new loans for a year, saying until when (`tests/elections.test.ts`) |
+| Off in sandbox, with a setting to turn them off | new-city option and Settings → Game → Elections (`setElections`); sandbox cities never vote |
+| New saved state: version bump, migration and a test | save v15 (`matchDay`, `election`, `Civic.build`); migration 14 → 15 schedules elections from the next four-year mark; `tests/elections.test.ts` loads the version-10 playtest save and plays on |
+| Careful mayor plans the whole map and grows past 50k | `scripts/balance.ts`: 20 district slots on both banks with river crossings, zoning that follows demand (industry when jobs are short, shops only while wanted), side streets widened to avenues after high-rises unlock, a quarter kept for landmarks and projects, services scaled with the city |
+| Late-game economy retuned so projects, landmarks and specialisations soak up the surplus | project prices and upkeep, and the 40k+ landmarks (conservatory, sky needle, grand arch), raised; nothing below 20k changed (DECISIONS M17) |

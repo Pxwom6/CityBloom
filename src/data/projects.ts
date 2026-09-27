@@ -99,16 +99,16 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 120,
     d: 96,
     cost: 0,
-    upkeep: 2_400,
+    upkeep: 6_000,
     blurb: 'A 30,000-seat bowl for the home team. Match days fill the stands and the roads around it.',
     unlockPopulation: 20_000,
     landValue: { radius: 260, value: 0.06 },
     model: 'stadium',
     project: {
       stages: [
-        { name: 'Groundworks', months: 3, cost: 140_000 },
-        { name: 'Stands', months: 4, cost: 260_000 },
-        { name: 'Roof and pitch', months: 3, cost: 200_000 },
+        { name: 'Groundworks', months: 3, cost: 380_000 },
+        { name: 'Stands', months: 4, cost: 700_000 },
+        { name: 'Roof and pitch', months: 3, cost: 520_000 },
       ],
       requires: [{ kind: 'population', min: 20_000 }],
       perk: 'Every other month a match day draws 8,000 visitors (and their spending), a crowd on the roads around the ground, and cheers the whole city.',
@@ -124,7 +124,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 112,
     d: 112,
     cost: 0,
-    upkeep: 3_000,
+    upkeep: 8_000,
     blurb:
       'A launch pad, assembly hall and tower for the technology city: satellites built here fly from here.',
     unlockPopulation: 40_000,
@@ -132,9 +132,9 @@ export const PROJECT_DEFS: ProjectDef[] = [
     model: 'launchsite',
     project: {
       stages: [
-        { name: 'Pad and flame trench', months: 4, cost: 220_000 },
-        { name: 'Assembly hall and tower', months: 4, cost: 320_000 },
-        { name: 'First launch', months: 2, cost: 160_000 },
+        { name: 'Pad and flame trench', months: 4, cost: 600_000 },
+        { name: 'Assembly hall and tower', months: 4, cost: 950_000 },
+        { name: 'First launch', months: 2, cost: 450_000 },
       ],
       requires: [
         { kind: 'population', min: 40_000 },
@@ -154,7 +154,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 128,
     d: 128,
     cost: 0,
-    upkeep: 2_000,
+    upkeep: 4_000,
     blurb:
       'A field of mirrors aimed at a tall receiver tower: clean power for a whole city, day and night from stored heat.',
     unlockPopulation: 20_000,
@@ -162,9 +162,9 @@ export const PROJECT_DEFS: ProjectDef[] = [
     model: 'helioarray',
     project: {
       stages: [
-        { name: 'Mirror field', months: 3, cost: 160_000 },
-        { name: 'Receiver tower', months: 4, cost: 240_000 },
-        { name: 'Heat store and grid link', months: 2, cost: 120_000 },
+        { name: 'Mirror field', months: 3, cost: 420_000 },
+        { name: 'Receiver tower', months: 4, cost: 600_000 },
+        { name: 'Heat store and grid link', months: 2, cost: 280_000 },
       ],
       requires: [
         { kind: 'population', min: 20_000 },
@@ -182,7 +182,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 144,
     d: 112,
     cost: 0,
-    upkeep: 2_600,
+    upkeep: 6_500,
     blurb:
       'A world fair of gardens and pavilions; when the fair closes, the grounds stay a park the region visits.',
     unlockPopulation: 40_000,
@@ -192,9 +192,9 @@ export const PROJECT_DEFS: ProjectDef[] = [
     model: 'gardenexpo',
     project: {
       stages: [
-        { name: 'Grounds and lakes', months: 3, cost: 180_000 },
-        { name: 'Pavilions', months: 5, cost: 340_000 },
-        { name: 'Opening', months: 2, cost: 140_000 },
+        { name: 'Grounds and lakes', months: 3, cost: 500_000 },
+        { name: 'Pavilions', months: 5, cost: 950_000 },
+        { name: 'Opening', months: 2, cost: 350_000 },
       ],
       requires: [
         { kind: 'population', min: 40_000 },
@@ -212,7 +212,7 @@ export const PROJECT_DEFS: ProjectDef[] = [
     w: 120,
     d: 80,
     cost: 0,
-    upkeep: 2_200,
+    upkeep: 5_000,
     blurb:
       'Exhibition halls and an auditorium under a long wave roof: trade fairs bring business visitors all year.',
     unlockPopulation: 20_000,
@@ -221,9 +221,9 @@ export const PROJECT_DEFS: ProjectDef[] = [
     model: 'convention',
     project: {
       stages: [
-        { name: 'Foundations', months: 3, cost: 120_000 },
-        { name: 'Exhibition halls', months: 4, cost: 220_000 },
-        { name: 'Wave roof and fit-out', months: 2, cost: 110_000 },
+        { name: 'Foundations', months: 3, cost: 320_000 },
+        { name: 'Exhibition halls', months: 4, cost: 560_000 },
+        { name: 'Wave roof and fit-out', months: 2, cost: 320_000 },
       ],
       requires: [
         { kind: 'population', min: 20_000 },

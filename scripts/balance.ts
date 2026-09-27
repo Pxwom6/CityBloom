@@ -107,6 +107,8 @@ const GOALS: { def: string; at: number }[] = [
   { def: 'conservatory', at: 40_000 },
   { def: 'gardenexpo', at: 40_000 },
   { def: 'launchsite', at: 40_000 },
+  { def: 'skyneedle', at: 70_000 },
+  { def: 'grandarch', at: 100_000 },
 ];
 
 interface Sample {
@@ -231,9 +233,11 @@ class Player {
       this.districts.length < 2 ||
       this.vacancy(ZONE_C) < 0.5 ||
       this.stats().demand.C > 0.1;
+    // Short of jobs (industry wanted, homes not): the whole south side goes to industry.
+    const jobs = this.strategy === 'careful' && this.jobsShort();
     zone('R', { x: x0 + 20, z: z - 100 }, { x: x0 + DW, z: z - 100 }, 70);
     zone(shops ? 'C' : 'R', { x: x0 + 20, z: z + 20 }, { x: x0 + DW, z: z + 20 }, 22);
-    zone('R', { x: x0 + 20, z: z + 90 }, { x: x0 + DW / 2, z: z + 90 }, 50);
+    zone(jobs ? 'I' : 'R', { x: x0 + 20, z: z + 90 }, { x: x0 + DW / 2, z: z + 90 }, 50);
     zone('I', { x: x0 + DW / 2 + 20, z: z + 110 }, { x: x0 + DW, z: z + 110 }, 50);
     this.districts.push({ i, j, segs });
     this.log.push(`m${this.month()}: district ${i},${j}`);
@@ -461,7 +465,11 @@ class Player {
       if (this.count('park_small') < this.districts.filter((d) => !d.quarter && !d.dead).length)
         this.place('park_small');
       this.densify();
+      this.rebalanceZoning();
       this.pursueGoals();
+      // Beat and station cover grows with the city (one of each per 5,000 residents).
+      if (this.count('police') < Math.floor(s.population / 5_000)) this.place('police');
+      if (this.count('firestation') < Math.floor(s.population / 5_000)) this.place('firestation');
       this.campaign();
       // Taxes: nudge up while losing money (never against a promise), back down when comfortable.
       const rate = e.taxes.R[0]!;
@@ -470,6 +478,18 @@ class Player {
       else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
       // Comfortably off: trade money for happier residents and more demand.
       else if (s.netMonthly > 0 && s.treasury > 250_000 && rate > 6) this.setTaxes(rate - 1);
+      // Goals met and money piling up: hand it back, a point every six months, down to 3 %.
+      else if (
+        s.netMonthly > 0 &&
+        s.treasury > 1_500_000 &&
+        this.goalsDone() &&
+        rate > 3 &&
+        this.sim.state.tick - this.lastTaxCut > TICKS_PER_MONTH * 6
+      ) {
+        this.setTaxes(rate - 1);
+        this.lastTaxCut = this.sim.state.tick;
+        this.log.push(`m${this.month()}: taxes ${rate - 1}%`);
+      }
       if (s.treasury < 3_000 && e.loans.length === 0) this.sim.dispatch({ type: 'takeLoan', amount: 25_000 });
     } else if (this.strategy === 'greedy') {
       // Squeeze taxes, underfund services, zone as fast as money allows, build only utilities.
@@ -511,6 +531,48 @@ class Player {
     this.log.push(`m${this.month()}: widened ${n} streets in ${d.i},${d.j}`);
     return true;
   }
+
+  /** The city is short of jobs: industry is wanted while homes are not. */
+  jobsShort(): boolean {
+    const d = this.stats().demand;
+    return d.I > 0.3 && d.R < 0.15;
+  }
+
+  private lastRezone = -1e9;
+
+  /**
+   * Every few months, when jobs are short and homes stand empty, rezone the empty home lots on
+   * each district's south side (beside its industry) for industry; when shops and offices are
+   * wanted and full, give them the empty home lots facing the avenue. Built lots keep their zone.
+   */
+  rebalanceZoning(): void {
+    const now = this.sim.state.tick;
+    if (now - this.lastRezone < TICKS_PER_MONTH * 3) return;
+    this.lastRezone = now;
+    const d = this.stats().demand;
+    const zone = (letter: 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      this.sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    const areas = this.districts.filter((x) => !x.quarter && !x.dead);
+    if (this.jobsShort() && this.vacancy(ZONE_R) > 0.2 && this.vacancy(ZONE_I) < 0.25)
+      for (const a of areas) {
+        const x0 = this.c.x + a.i * DW;
+        const z = this.c.z + a.j * ROW;
+        zone('I', { x: x0 + 20, z: z + 90 }, { x: x0 + DW / 2, z: z + 90 }, 50);
+      }
+    if (d.C > 0.15 && this.vacancy(ZONE_C) < 0.1 && this.vacancy(ZONE_R) > 0.2)
+      for (const a of areas) {
+        const x0 = this.c.x + a.i * DW;
+        const z = this.c.z + a.j * ROW;
+        zone('C', { x: x0 + 20, z: z - 22 }, { x: x0 + DW, z: z - 22 }, 16);
+      }
+  }
+
+  /** Every goal the city has reached is met: nothing left to save for until the next milestone. */
+  goalsDone(): boolean {
+    return GOALS.every((g) => this.goalsMet.has(g.def) || !this.sim.reached(g.at));
+  }
+
+  private lastTaxCut = -1e9;
 
   /** Months of running costs to keep in hand before spending on a goal. */
   reserve(): number {
@@ -748,6 +810,8 @@ for (const id of strategies) {
       `goals: ${[...p.goalsMet].map(([d, m]) => `${d} ${when(m)}${opened.has(d) ? ` (open ${when(opened.get(d)!)})` : ''}`).join(', ')}`,
     );
   }
+  const cuts = p.log.filter((l) => / taxes \d+%$/.test(l));
+  if (cuts.length) console.log(`tax cuts: ${cuts.join(', ')}`);
   for (const r of p.sim.state.election.results)
     console.log(
       `election ${`y${Math.floor(r.tick / TICKS_PER_MONTH / 12) + 1}`}: ${r.won ? 'won' : 'lost'} with ${Math.round(r.share * 100)}% (approval ${Math.round(r.approval * 100)}%)${r.promises.length ? `; ${r.promises.map((q) => `${q.id} ${q.kept ? 'kept' : 'broken'}`).join(', ')}` : ''}`,
@@ -785,5 +849,11 @@ for (const id of strategies) {
       `${csvDir}/${id}.csv`,
       [keys.join(','), ...samples.map((s) => keys.map((k) => s[k]).join(','))].join('\n'),
     );
+    // Goals met and project openings by month, for charts (scripts/dev/moneychart.mjs).
+    const rows = [...p.goalsMet].map(([d, m]) => `${m},goal,${d}`);
+    for (const e of p.sim.state.chronicle.events)
+      if (e.kind === 'project' || e.kind === 'election')
+        rows.push(`${Math.floor(e.tick / TICKS_PER_MONTH)},${e.kind},${e.ref}`);
+    writeFileSync(`${csvDir}/${id}-events.csv`, ['month,kind,ref', ...rows].join('\n'));
   }
 }

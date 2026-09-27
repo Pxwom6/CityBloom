@@ -38,7 +38,7 @@ test('M17: a big project is placed from the toolbar and built stage by stage; an
   // An avenue north of the town for the stadium, joined to its first side street.
   const dz = await page.evaluate(async (cz) => {
     const g = window.__game!;
-    await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_500_000 });
+    await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_500_000 });
     for (const dz of [-330, -360, -300, -390]) {
       const r = await g.dispatch({
         type: 'buildRoad',
@@ -71,7 +71,7 @@ test('M17: a big project is placed from the toolbar and built stage by stage; an
   );
   await page.getByTestId('tool-project').click();
   await page.getByTestId('place-stadium').hover();
-  await expect(page.getByRole('tooltip')).toContainText('$600,000 over 10 months');
+  await expect(page.getByRole('tooltip')).toContainText('$1,600,000 over 10 months');
   await expect(page.getByRole('tooltip')).toContainText('Perk:');
   await page.getByTestId('place-stadium').click();
   // The placement hint names the first stage's price and the total.

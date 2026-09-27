@@ -67,7 +67,7 @@ describe('big projects (M17)', () => {
     grown(sim, 41_000);
     // The launch complex also needs a research park and a well-educated workforce.
     expect(tryPlace('launchsite')).toBeNull();
-    expect(projectCost(stadium)).toEqual({ total: 600_000, first: 140_000 });
+    expect(projectCost(stadium)).toEqual({ total: 1_600_000, first: 380_000 });
     expect(tryPlace('stadium')).not.toBeNull();
     // Sandbox cities skip the requirements.
     const sb = newSim({ seed: 'proj-sb', sandbox: true });
@@ -78,12 +78,12 @@ describe('big projects (M17)', () => {
   it('are built stage by stage, paying for each as it starts, and open when the last is done', () => {
     const { sim, seg } = projectTown();
     grown(sim, 41_000);
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_500_000 });
     const before = sim.state.treasury;
     const id = placeAlong(sim, 'stadium', seg);
     const c = sim.state.civics.get(id)!;
-    expect(before - sim.state.treasury).toBeGreaterThanOrEqual(140_000);
-    expect(sim.state.economy.month.projects).toBe(-140_000);
+    expect(before - sim.state.treasury).toBeGreaterThanOrEqual(380_000);
+    expect(sim.state.economy.month.projects).toBe(-380_000);
     expect(c.build).toEqual({ stage: 0, months: 0, waiting: false });
     expect(civicOnline(c)).toBe(false);
     expect(civicUpkeep(c)).toBe(0);
@@ -98,21 +98,21 @@ describe('big projects (M17)', () => {
     expect(c.build).toBeUndefined();
     expect(civicOnline(c)).toBe(true);
     expect(civicUpkeep(c)).toBe(CIVIC.get('stadium')!.upkeep);
-    expect(c.cost).toBe(600_000);
+    expect(c.cost).toBe(1_600_000);
     expect(sim.state.chronicle.events.some((e) => e.kind === 'project' && e.ref === 'stadium')).toBe(true);
   });
 
   it('wait when the city cannot pay for the next stage, and carry on once it can', () => {
     const { sim, seg } = projectTown();
     grown(sim, 41_000);
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 500_000 });
     const id = placeAlong(sim, 'stadium', seg);
     const c = sim.state.civics.get(id)!;
     // Spend the rest so the stands can't be paid for.
     sim.spend(sim.state.treasury - 10_000, 'cheats');
     for (let m = 0; m < 5; m++) nextMonth(sim);
     expect(c.build).toMatchObject({ stage: 0, waiting: true });
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 400_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
     nextMonth(sim);
     expect(c.build).toMatchObject({ stage: 1, months: 0, waiting: false });
   });
@@ -121,7 +121,7 @@ describe('big projects (M17)', () => {
     const { sim, seg } = projectTown('proj2');
     grown(sim, 41_000);
     sim.state.totals.eduWorkforce = [0.9, 0.5];
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 3_000_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 4_500_000 });
     const helio = placeAlong(sim, 'helioarray', seg);
     const stadium = placeAlong(sim, 'stadium', seg);
     const supply0 = sim.state.utilityStats.power.supply;
@@ -143,7 +143,7 @@ describe('big projects (M17)', () => {
   it('save and load mid-build exactly, and older saves load with elections scheduled', () => {
     const { sim, seg } = projectTown();
     grown(sim, 41_000);
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
     placeAlong(sim, 'stadium', seg);
     nextMonth(sim);
     const loaded = Sim.fromSave(JSON.parse(JSON.stringify(sim.save())));

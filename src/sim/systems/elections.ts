@@ -1,7 +1,7 @@
 import { ELECTIONS, PROMISES, type PromiseId } from '../../data/elections';
 import type { CommandResult } from '../commands';
 import type { Sim } from '../sim';
-import { dateOf, START_TICK_OFFSET, TICKS_PER_MONTH } from '../time';
+import { dateOf, formatMonth, START_TICK_OFFSET, TICKS_PER_MONTH } from '../time';
 import { BState } from '../world/buildings';
 import { civicOnline } from '../world/civic';
 import { ZONE_R } from '../../data/zones';
@@ -42,13 +42,30 @@ export interface ElectionState {
 
 /** Elections for a city founded (or loaded) at `tick`: off in sandbox or when switched off. */
 export function newElectionState(tick: number, on: boolean): ElectionState {
+  return { nextMonth: on ? firstVote(tick) : -1, promises: [], results: [], term: null };
+}
+
+/** The first vote for elections starting at `tick`: the next four-year mark with a full campaign ahead. */
+function firstVote(tick: number): number {
   const month = dateOf(tick).totalMonths;
-  return {
-    nextMonth: on ? (Math.floor(month / ELECTIONS.every) + 1) * ELECTIONS.every : -1,
-    promises: [],
-    results: [],
-    term: null,
-  };
+  let next = (Math.floor(month / ELECTIONS.every) + 1) * ELECTIONS.every;
+  if (next - month <= ELECTIONS.campaign) next += ELECTIONS.every;
+  return next;
+}
+
+/**
+ * Switch elections on or off for this city (the settings screen). Off drops the coming vote and its
+ * promises; a term already in force runs its course. Back on, the next vote comes at the next
+ * four-year mark with a full campaign ahead. Sandbox cities never vote.
+ */
+export function setElections(sim: Sim, on: boolean, dryRun: boolean): CommandResult {
+  const s = sim.state;
+  if (on && s.options.sandbox) return { ok: false, reason: 'Sandbox cities have no elections' };
+  if (dryRun || on === electionsOn(sim)) return { ok: true, cost: 0 };
+  s.options = { ...s.options, elections: on };
+  s.election.nextMonth = on ? firstVote(s.tick) : -1;
+  s.election.promises = [];
+  return { ok: true, cost: 0 };
 }
 
 export function electionsOn(sim: Sim): boolean {
@@ -77,11 +94,8 @@ export function termNow(sim: Sim): { won: boolean; until: number } | null {
 export function councilUntil(sim: Sim): string | null {
   const t = termNow(sim);
   if (!t || t.won) return null;
-  const d = dateOf(t.until);
-  return `${MONTHS[d.month]}, Year ${d.year}`;
+  return formatMonth(t.until);
 }
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Resident-weighted crime and air pollution at homes, and the average commute (seconds). */
 function measures(sim: Sim): { crime: number; air: number; commute: number } {

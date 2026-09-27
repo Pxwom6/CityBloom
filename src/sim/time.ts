@@ -76,6 +76,12 @@ export function formatDate(d: GameDate): string {
   return `${MONTH_NAMES[d.month]}, Year ${d.year} — ${hh}:${mm}`;
 }
 
+/** "Mar, Year 4": the month a tick falls in. */
+export function formatMonth(tick: number): string {
+  const d = dateOf(tick);
+  return `${MONTH_NAMES[d.month]}, Year ${d.year}`;
+}
+
 /** True when this tick is the first tick of a new hour. */
 export function isHourStart(tick: number): boolean {
   return (tick + START_TICK_OFFSET) % TICKS_PER_HOUR === 0;

@@ -45,6 +45,7 @@ function optionsFrom(params: URLSearchParams): Partial<GameOptions> {
   if (difficulty && ['easy', 'normal', 'hard'].includes(difficulty)) o.difficulty = difficulty;
   if (params.has('sandbox')) o.sandbox = params.get('sandbox') === '1';
   o.disasters = params.has('disasters') ? params.get('disasters') === '1' : loadSettings().disasters;
+  o.elections = params.has('elections') ? params.get('elections') === '1' : loadSettings().elections;
   const name = params.get('name')?.trim();
   if (name) o.cityName = name.slice(0, 40);
   return o;

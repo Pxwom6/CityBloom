@@ -40,10 +40,13 @@ export type Command =
   | { type: 'cheat'; cheat: 'unlockAll' }
   /** Start a fire in a building (debug panel, tests). */
   | { type: 'cheat'; cheat: 'ignite'; id: number }
+  /** Test mode only: bring the next vote to `months` months away (e2e). */
+  | { type: 'cheat'; cheat: 'electionIn'; months: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
   | { type: 'setDisasters'; on: boolean }
+  | { type: 'setElections'; on: boolean }
   /** Enact or repeal a policy. */
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
   /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */

@@ -33,8 +33,9 @@ export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[
   return (def.project?.requires ?? []).map((r) => requirementStatus(r, ctx));
 }
 
-/** Why a project can't be started yet, or null. */
+/** Why a project can't be started yet, or null. Sandbox cities (and unlock-all) skip requirements. */
 export function projectBlocked(sim: Sim, def: CivicDef): string | null {
+  if (sim.state.unlockAll || sim.state.options.sandbox) return null;
   const missing = projectRequirements(sim, def).find((r) => !r.met);
   return missing
     ? `Needs ${missing.label.charAt(0).toLowerCase()}${missing.label.slice(1)} (${missing.now})`

@@ -148,6 +148,7 @@ function NewGame() {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [sandbox, setSandbox] = useState(false);
   const [disasters, setDisasters] = useState(game.settings.disasters);
+  const [elections, setElections] = useState(game.settings.elections);
   const [tutorial, setTutorial] = useState<boolean | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   // The tutorial is on by default for a first city.
@@ -164,9 +165,10 @@ function NewGame() {
       difficulty,
       sandbox: sandbox ? '1' : '0',
       disasters: disasters ? '1' : '0',
+      elections: elections && !sandbox ? '1' : '0',
     });
     if (tut && !sandbox) q.set('tutorial', '1');
-    game.updateSettings({ disasters });
+    game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
   };
   return (
@@ -251,6 +253,18 @@ function NewGame() {
             />
             <span>
               Random disasters <small class="muted">rare earthquakes, tornadoes, floods and meteors</small>
+            </span>
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={elections && !sandbox}
+              disabled={sandbox}
+              data-testid="new-elections"
+              onChange={(e) => setElections((e.target as HTMLInputElement).checked)}
+            />
+            <span>
+              Elections <small class="muted">every four years, won mostly on approval</small>
             </span>
           </label>
           <label class="check">
@@ -691,6 +705,23 @@ function SettingsScreen() {
             set={(disasters) => {
               set({ disasters });
               if (game.mode === 'play') game.setRandomDisasters(disasters);
+            }}
+          />
+          <Check
+            on={game.mode === 'play' ? game.world.stats.election !== null : s.elections}
+            testid="set-elections"
+            label="Elections"
+            hint={
+              game.mode === 'play'
+                ? game.world.options.sandbox
+                  ? 'never in sandbox cities; on for new ones'
+                  : 'in this city, and new ones'
+                : 'in new cities'
+            }
+            set={(elections) => {
+              set({ elections });
+              if (game.mode === 'play' && !game.world.options.sandbox)
+                void game.dispatch({ type: 'setElections', on: elections });
             }}
           />
           <div class="field">

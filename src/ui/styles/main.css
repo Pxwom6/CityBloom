@@ -2341,3 +2341,61 @@ body {
   margin: var(--space-1) 0 0;
   color: var(--color-text-muted);
 }
+
+/* Elections (M17) */
+.vote-bar {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  margin: var(--space-2) 0;
+  overflow: hidden;
+}
+.vote-bar span {
+  display: block;
+  height: 100%;
+}
+.vote-bar span.win {
+  background: var(--color-positive);
+}
+.vote-bar span.lose {
+  background: var(--color-negative);
+}
+.vote-bar i {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text);
+  opacity: 0.55;
+}
+.promise-state {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+.promise-state.kept {
+  color: var(--color-positive);
+}
+.promise-state.not {
+  color: var(--color-warning);
+}
+.note.warn {
+  color: var(--color-negative);
+}
+.city-btn.campaign {
+  position: relative;
+}
+.city-btn.campaign::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}

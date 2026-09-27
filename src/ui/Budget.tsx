@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
-import { MONTH_NAMES } from '../sim/time';
+import { formatMonth, MONTH_NAMES } from '../sim/time';
 import { BarChart, LineChart } from './charts';
 import { formatMoney, useGameUpdates } from './hooks';
 
@@ -81,6 +81,8 @@ export function BudgetPanel() {
   const income = rows.filter((r) => (r[2] ?? r[1]) > 0 || (r[2] === undefined && r[1] > 0));
   const expense = rows.filter((r) => !income.includes(r));
   const net = Object.values(b.projection).reduce((s, v) => s + v, 0);
+  const term = game.world.stats.election?.term;
+  const council = term && !term.won ? formatMonth(term.until) : null;
   return (
     <aside class="budget panel" data-testid="budget">
       <header>
@@ -126,6 +128,11 @@ export function BudgetPanel() {
             Higher taxes raise money but cool demand for that zone and wealth level, and residents notice
             them.
           </p>
+          {council && (
+            <p class="note warn" data-testid="council-block">
+              After the lost election the council blocks tax rises and new loans until {council}.
+            </p>
+          )}
           {(['R', 'C', 'I'] as const).map((z) => (
             <div key={z} class="tax-zone">
               <h3>{{ R: 'Residential', C: 'Commercial', I: 'Industrial' }[z]}</h3>
@@ -150,7 +157,10 @@ export function BudgetPanel() {
                             wealth: w as 0 | 1 | 2,
                             rate: Number((e.target as HTMLInputElement).value),
                           })
-                          .then(refresh);
+                          .then((r) => {
+                            if (!r.ok) game.toast(r.reason, 'bad');
+                            refresh();
+                          });
                       }}
                     />
                     <span class="val">{v}%</span>

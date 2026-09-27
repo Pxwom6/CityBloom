@@ -176,4 +176,11 @@ export const TIPS: Tip[] = [
       'down to the street and saves a PNG, with its own light, lens and colours.',
     when: (g) => g.world.stats.milestone >= 2,
   },
+  {
+    id: 'projects',
+    text:
+      'Big projects unlocked (the crane button): a stadium, a solar tower and a convention centre. Each is ' +
+      'built in stages over months, paid for as each stage starts, and gives the city a lasting perk.',
+    when: (g) => g.world.stats.peak >= 20_000 && !g.world.options.sandbox,
+  },
 ];

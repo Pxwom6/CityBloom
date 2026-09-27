@@ -89,10 +89,12 @@ import {
   campaignOpen,
   councilUntil,
   electionsMonth,
+  electionsOn,
   monthsToVote,
   newElectionState,
   projectedShare,
   promiseKept,
+  setElections,
   setPromise,
   termNow,
 } from './systems/elections';
@@ -771,6 +773,12 @@ export class Sim {
           if (!dryRun) ignite(this, b);
           return ok(0);
         }
+        if (cmd.cheat === 'electionIn') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!electionsOn(this)) return fail('This city has no elections');
+          if (!dryRun) this.state.election.nextMonth = dateOf(this.state.tick).totalMonths + cmd.months;
+          return ok(0);
+        }
         if (!Number.isFinite(cmd.amount)) return fail('Invalid amount');
         if (!dryRun) this.earn(cmd.amount, 'cheats');
         return ok(0);
@@ -852,6 +860,8 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setElections':
+        return setElections(this, cmd.on, dryRun);
       default: {
         const never: never = cmd;
         return fail(`Unknown command ${(never as { type: string }).type}`);

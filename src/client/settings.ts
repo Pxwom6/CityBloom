@@ -29,6 +29,8 @@ export interface Settings {
   pointer: PointerDevice;
   /** Random disasters for new cities (the current city's switch is in its disasters menu). */
   disasters: boolean;
+  /** Elections every four years for new cities (M17; never in sandbox). */
+  elections: boolean;
   /** Minutes of real time between autosaves; 0 turns autosave off. */
   autosaveMinutes: number;
   /** Contextual tips for new players, and the ones already shown. */
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   edgeScroll: false,
   pointer: 'auto',
   disasters: true,
+  elections: true,
   autosaveMinutes: 5,
   tips: true,
   seenTips: [],
@@ -113,6 +116,7 @@ export function parseSettings(raw: unknown): Settings {
     edgeScroll: bool(r.edgeScroll, d.edgeScroll),
     pointer: oneOf(r.pointer, POINTER_DEVICES, d.pointer),
     disasters: bool(r.disasters, d.disasters),
+    elections: bool(r.elections, d.elections),
     autosaveMinutes: oneOf(r.autosaveMinutes, AUTOSAVE_CHOICES, d.autosaveMinutes),
     tips: bool(r.tips, d.tips),
     seenTips: Array.isArray(r.seenTips)

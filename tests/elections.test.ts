@@ -93,6 +93,24 @@ describe('elections (M17)', () => {
     expect(sim.dispatch({ type: 'setTax', zone: 'R', wealth: 0, rate: rate + 1 }).ok).toBe(true);
   });
 
+  it('can be switched off and back on in a city; never in sandbox', () => {
+    const sim = townBeforeVote(4, 'vote5');
+    sim.dispatch({ type: 'promise', promise: 'jobs', on: true });
+    expect(sim.dispatch({ type: 'setElections', on: false }).ok).toBe(true);
+    expect(sim.state.election).toMatchObject({ nextMonth: -1, promises: [] });
+    expect(sim.state.options.elections).toBe(false);
+    sim.advance(6 * TICKS_PER_MONTH);
+    expect(sim.state.election.results).toEqual([]);
+    // Back on: the next four-year mark with a full campaign ahead.
+    expect(sim.dispatch({ type: 'setElections', on: true }).ok).toBe(true);
+    const month = dateOf(sim.state.tick).totalMonths;
+    expect(sim.state.election.nextMonth % 48).toBe(0);
+    expect(sim.state.election.nextMonth - month).toBeGreaterThan(ELECTIONS.campaign);
+    expect(campaignOpen(sim)).toBe(false);
+    const sandbox = newSim({ seed: 'e4', sandbox: true });
+    expect(sandbox.dispatch({ type: 'setElections', on: true })).toMatchObject({ ok: false });
+  });
+
   it('survive save and load, and older saves get elections from their next four-year mark', () => {
     const sim = townBeforeVote(3, 'vote4');
     sim.dispatch({ type: 'promise', promise: 'jobs', on: true });

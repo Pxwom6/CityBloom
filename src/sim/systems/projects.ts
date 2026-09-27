@@ -25,7 +25,8 @@ export interface ProjectBuild {
 export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[] {
   const s = sim.state;
   const ctx: RequirementContext = {
-    population: Math.max(s.progress.peak, s.totals.population),
+    // Unlock-all lifts the population bars, as it does every other unlock.
+    population: s.unlockAll ? Infinity : Math.max(s.progress.peak, s.totals.population),
     education: s.totals.eduWorkforce,
     visitors: s.tourism.visitors,
     runs: (id) => [...s.civics.values()].some((c) => c.def === id && !c.build),
@@ -33,9 +34,9 @@ export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[
   return (def.project?.requires ?? []).map((r) => requirementStatus(r, ctx));
 }
 
-/** Why a project can't be started yet, or null. Sandbox cities (and unlock-all) skip requirements. */
+/** Why a project can't be started yet, or null. Sandbox cities skip the requirements. */
 export function projectBlocked(sim: Sim, def: CivicDef): string | null {
-  if (sim.state.unlockAll || sim.state.options.sandbox) return null;
+  if (sim.state.options.sandbox) return null;
   const missing = projectRequirements(sim, def).find((r) => !r.met);
   return missing
     ? `Needs ${missing.label.charAt(0).toLowerCase()}${missing.label.slice(1)} (${missing.now})`

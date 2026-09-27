@@ -677,15 +677,16 @@ function ProjectButton({ def }: { def: CivicDef }) {
   const st = game.world.stats;
   const p = def.project!;
   const civics = [...game.world.civics.values()];
+  const sandbox = game.world.options.sandbox;
   const ctx: RequirementContext = {
-    population: st.peak,
+    population: st.unlockAll ? Infinity : st.peak,
     education: st.eduWorkforce,
     visitors: st.visitors,
     runs: (id) => civics.some((c) => c.def === id && c.stage === undefined),
   };
   const reqs = p.requires.map((r) => requirementStatus(r, ctx));
   const built = civics.find((c) => c.def === def.id);
-  const blocked = !st.unlockAll && reqs.some((r) => !r.met);
+  const blocked = !sandbox && reqs.some((r) => !r.met);
   const total = p.stages.reduce((a, s) => a + s.cost, 0);
   const months = p.stages.reduce((a, s) => a + s.months, 0);
   return (

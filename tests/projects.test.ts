@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CIVIC } from '../src/data/civic';
 import { Sim } from '../src/sim/sim';
 import { civicOnline, civicUpkeep } from '../src/sim/world/civic';
-import { monthsLeft, projectCost } from '../src/sim/systems/projects';
+import { monthsLeft, projectBlocked, projectCost, projectRequirements } from '../src/sim/systems/projects';
 import { TICKS_PER_MONTH } from '../src/sim/time';
 import { buildTown, connectPoint, newSim, placeAlong, road, serveTown } from './helpers';
 
@@ -50,6 +50,8 @@ function nextMonth(sim: Sim) {
 describe('big projects (M17)', () => {
   it('need their requirements met, and say what is missing', () => {
     const { sim, seg } = projectTown();
+    // The served town unlocked everything, which lifts population bars; put them back.
+    sim.state.unlockAll = false;
     sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
     const stadium = CIVIC.get('stadium')!;
     const tryPlace = (def: string) => {
@@ -67,6 +69,10 @@ describe('big projects (M17)', () => {
     expect(tryPlace('launchsite')).toBeNull();
     expect(projectCost(stadium)).toEqual({ total: 600_000, first: 140_000 });
     expect(tryPlace('stadium')).not.toBeNull();
+    // Sandbox cities skip the requirements.
+    const sb = newSim({ seed: 'proj-sb', sandbox: true });
+    expect(projectRequirements(sb, CIVIC.get('launchsite')!).some((q) => !q.met)).toBe(true);
+    expect(projectBlocked(sb, CIVIC.get('launchsite')!)).toBeNull();
   });
 
   it('are built stage by stage, paying for each as it starts, and open when the last is done', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CIVIC } from '../src/data/civic';
 import { Sim } from '../src/sim/sim';
+import { advise } from '../src/sim/systems/advisors';
 import { civicOnline, civicUpkeep } from '../src/sim/world/civic';
 import { monthsLeft, projectBlocked, projectCost, projectRequirements } from '../src/sim/systems/projects';
 import { TICKS_PER_MONTH } from '../src/sim/time';
@@ -112,6 +113,7 @@ describe('big projects (M17)', () => {
     sim.spend(sim.state.treasury - 10_000, 'cheats');
     for (let m = 0; m < 5; m++) nextMonth(sim);
     expect(c.build).toMatchObject({ stage: 0, waiting: true });
+    expect(advise(sim).find((a) => /waiting for money/.test(a.title))?.text).toMatch(/\$700,000/);
     sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
     nextMonth(sim);
     expect(c.build).toMatchObject({ stage: 1, months: 0, waiting: false });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeSave } from '../src/client/saves';
 import { ELECTIONS } from '../src/data/elections';
 import { Sim } from '../src/sim/sim';
+import { advise } from '../src/sim/systems/advisors';
 import { campaignOpen, monthsToVote, projectedShare } from '../src/sim/systems/elections';
 import { dateOf, TICKS_PER_MONTH } from '../src/sim/time';
 import { buildTown, newSim, serveTown } from './helpers';
@@ -45,6 +46,9 @@ describe('elections (M17)', () => {
   it('take up to two promises during the campaign, judged against where the city stood', () => {
     const sim = townBeforeVote(4);
     expect(campaignOpen(sim)).toBe(true);
+    // The advisors bring the campaign up, with the promises still to make.
+    const tip = advise(sim).find((a) => a.advisor === 'planning' && /election/i.test(a.title));
+    expect(tip?.text).toMatch(/make 2 promises/);
     expect(sim.dispatch({ type: 'promise', promise: 'taxes', on: true }).ok).toBe(true);
     expect(sim.dispatch({ type: 'promise', promise: 'hospital', on: true }).ok).toBe(true);
     expect(sim.dispatch({ type: 'promise', promise: 'jobs', on: true })).toMatchObject({ ok: false });
@@ -88,6 +92,7 @@ describe('elections (M17)', () => {
     );
     expect(sim.dispatch({ type: 'setTax', zone: 'R', wealth: 0, rate: rate - 1 }).ok).toBe(true);
     expect(sim.dispatch({ type: 'takeLoan', amount: 25_000 })).toMatchObject({ ok: false });
+    expect(advise(sim).some((a) => a.title === 'The council blocks tax rises')).toBe(true);
     // A year later the limits lift.
     sim.advance(ELECTIONS.term * TICKS_PER_MONTH + 10);
     expect(sim.dispatch({ type: 'setTax', zone: 'R', wealth: 0, rate: rate + 1 }).ok).toBe(true);

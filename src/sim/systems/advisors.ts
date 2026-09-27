@@ -9,6 +9,9 @@ import { trucksFor } from './garbage';
 import { fieldAt } from './pollution';
 import { segVC } from './traffic';
 import { monthlyRates } from './economy';
+import { campaignOpen, councilUntil, monthsToVote, projectedShare } from './elections';
+import { ELECTIONS } from '../../data/elections';
+import { CIVIC } from '../../data/civic';
 
 export type AdvisorId =
   'finance' | 'utilities' | 'safety' | 'health' | 'education' | 'transport' | 'environment' | 'planning';
@@ -105,6 +108,42 @@ export function advise(sim: Sim): Advice[] {
       title: 'Taxes are high',
       text: `High ${high.join('/')} taxes are putting people off. Every point above 9 % slows growth.`,
     });
+  // Big projects waiting for money, and the council after a lost election (M17).
+  for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
+    const def = CIVIC.get(c.def);
+    const next = c.build?.waiting ? def?.project?.stages[c.build.stage + 1] : undefined;
+    if (!def || !next) continue;
+    out.push({
+      advisor: 'finance',
+      severity: 1,
+      title: `The ${def.name.toLowerCase()} is waiting for money`,
+      text: `Its ${next.name.toLowerCase()} needs ${money(next.cost)}. Work carries on the month the treasury can pay.`,
+      at: { x: c.x, z: c.z },
+    });
+  }
+  const council = councilUntil(sim);
+  if (council)
+    out.push({
+      advisor: 'finance',
+      severity: 1,
+      title: 'The council blocks tax rises',
+      text: `After the lost election the council refuses tax rises and new loans until ${council}. Rates can still come down.`,
+    });
+  if (campaignOpen(sim)) {
+    const share = projectedShare(sim);
+    const months = Math.max(1, Math.ceil(monthsToVote(sim)));
+    const left = ELECTIONS.maxPromises - s.election.promises.length;
+    out.push({
+      advisor: 'planning',
+      severity: share < 0.5 ? 2 : 1,
+      title: share < 0.5 ? 'We would lose the election' : `An election in ${plural(months, 'month')}`,
+      text:
+        `If the vote were today we'd get ${Math.round(share * 100)} %. Voters follow approval above all.` +
+        (left > 0
+          ? ` You can still make ${plural(left, 'promise')} (city panel, Election); each one kept adds ${Math.round(ELECTIONS.kept * 100)} points.`
+          : ''),
+    });
+  }
 
   // Utilities.
   const util = [

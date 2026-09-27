@@ -40,7 +40,7 @@ export class CivicRenderer {
   }
 
   private look(c: CivicData): string {
-    return `${c.def}:${c.variant}:${c.fill ?? 0}:${c.modules?.length ?? 0}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}`;
+    return `${c.def}:${c.variant}:${c.fill ?? 0}:${c.modules?.length ?? 0}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}`;
   }
 
   private place(id: number, dirty: Set<number>): void {
@@ -84,7 +84,7 @@ export class CivicRenderer {
       for (const id of [...ch.ids].sort((a, b) => a - b)) {
         const c = this.world.civics.get(id);
         if (!c) continue;
-        const m = assets.civic(c.def, c.variant, c.fill, c.modules?.length ?? 0);
+        const m = assets.civic(c.def, c.variant, c.fill, c.modules?.length ?? 0, c.stage);
         appendModel(arr, m, c.x, c.y, c.z, buildingYaw(c));
         this.heights.set(id, m.height);
       }

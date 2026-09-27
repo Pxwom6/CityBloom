@@ -404,6 +404,39 @@ export class Game {
           at,
           false,
         );
+      // Big projects and elections (M17).
+      else if (e.kind === 'projectStage')
+        this.notice(`project:${e.id}`, `The ${civicName()} moves on to its next stage.`, 'info', at, false);
+      else if (e.kind === 'projectWaiting')
+        this.notice(
+          `projectWaiting:${e.id}`,
+          `Work on the ${civicName()} has stopped: the treasury can't pay for the next stage yet.`,
+          'bad',
+          at,
+        );
+      else if (e.kind === 'projectDone') {
+        this.notice(`projectDone:${e.id}`, `The ${civicName()} is open!`, 'ok', at);
+        this.audio?.play('place');
+      } else if (e.kind === 'matchDay')
+        this.notice('matchDay', 'Match day at the stadium: fans are driving in from all over.', 'info', at);
+      else if (e.kind === 'launch')
+        this.notice('launch', 'A rocket lifted off from the launch complex.', 'ok', at, false);
+      else if (e.kind === 'campaign')
+        this.notice(
+          'campaign',
+          'The election is six months away. Make up to two promises in the city panel (P → Election).',
+          'info',
+        );
+      else if (e.kind === 'electionWon' || e.kind === 'electionLost') {
+        const share = Math.round(Number(e.info?.share ?? 0) * 100);
+        this.notice(
+          'election',
+          e.kind === 'electionWon'
+            ? `Re-elected with ${share} % of the vote! The region sends a grant, and residents are in a good mood.`
+            : `Lost the election with ${share} % of the vote. For a year the council blocks tax rises and new loans.`,
+          e.kind === 'electionWon' ? 'ok' : 'bad',
+        );
+      }
     }
   }
 

@@ -89,17 +89,24 @@ export class PlaceTool implements Tool {
       return;
     }
     const upkeep = `$${def.upkeep}/mo upkeep`;
+    // Big projects (M17): the first stage is paid now, the rest as each stage starts.
+    const p = def.project;
+    const price = p
+      ? `$${p.stages[0]!.cost.toLocaleString('en-US')} now for the ${p.stages[0]!.name.toLowerCase()}, $${p.stages
+          .reduce((a, s) => a + s.cost, 0)
+          .toLocaleString('en-US')} in all over ${p.stages.reduce((a, s) => a + s.months, 0)} months`
+      : `$${def.cost.toLocaleString('en-US')}`;
     if (!res)
       this.game.setHint({
         ...this.pointer,
-        text: `${def.name} · $${def.cost.toLocaleString('en-US')}`,
+        text: `${def.name} · ${price}`,
         tone: 'info',
       });
     else if (res.ok) {
       const demolish = (res.info?.demolish as number) ?? 0;
       this.game.setHint({
         ...this.pointer,
-        text: `${def.name} · $${def.cost.toLocaleString('en-US')} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
+        text: `${def.name} · ${price} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
         tone: 'ok',
       });
     } else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });

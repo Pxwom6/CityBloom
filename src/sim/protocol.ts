@@ -53,6 +53,22 @@ export interface CityStats {
   avgCommute: number;
   /** Bus trips per day across all lines. */
   busRiders: number;
+  /** Share of the workforce educated to level 1 and 2 (big project requirements, M17). */
+  eduWorkforce: [number, number];
+  /** Elections (M17): the next vote, the campaign, promises made, a term in force, the last result. */
+  election: ElectionSummary | null;
+}
+
+export interface ElectionSummary {
+  /** Month (since the city began) of the next vote, and months to go. */
+  nextMonth: number;
+  monthsToVote: number;
+  campaign: boolean;
+  promises: { id: string; kept: boolean }[];
+  /** Vote share if the vote were held now. */
+  projected: number;
+  term: { won: boolean; until: number } | null;
+  last: { tick: number; share: number; won: boolean; promises: { id: string; kept: boolean }[] } | null;
 }
 
 export interface CivicDetails {
@@ -109,6 +125,18 @@ export interface CivicDetails {
     | { kind: 'resource'; perDay: number; left: number }
     | { kind: 'tourism'; draw: number; rooms: number }
     | null;
+  /** Big projects (M17): the stages, how far along it is, and its perk. */
+  project: {
+    stages: { name: string; months: number; cost: number }[];
+    /** Stage in hand (stages.length once open), months into it, and waiting for money. */
+    stage: number;
+    months: number;
+    waiting: boolean;
+    monthsLeft: number;
+    perk: string;
+    /** Match days or launches, when open. */
+    nextEvent: string | null;
+  } | null;
 }
 
 export interface BudgetReport {

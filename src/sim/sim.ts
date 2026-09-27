@@ -22,6 +22,7 @@ import type {
   TransitData,
   BuildingDetails,
   Query,
+  ElectionSummary,
 } from './protocol';
 import { checkInvariants } from './invariants';
 import { Network, type ZoneBlock } from './world/network';
@@ -83,8 +84,18 @@ import {
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
-import { projectEvents, projectsMonth } from './systems/projects';
-import { councilUntil, electionsMonth, newElectionState, setPromise } from './systems/elections';
+import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
+import {
+  campaignOpen,
+  councilUntil,
+  electionsMonth,
+  monthsToVote,
+  newElectionState,
+  projectedShare,
+  promiseKept,
+  setPromise,
+  termNow,
+} from './systems/elections';
 import { segSpeed, stepVehicles } from './systems/vehicles';
 import { computeOverlay } from './systems/overlays';
 import {
@@ -1192,6 +1203,24 @@ export class Sim {
       vehicles: this.state.vehicles.size,
       avgCommute: this.avgCommute(),
       busRiders: [...this.state.transit.riders.values()].reduce((a, b) => a + b, 0),
+      eduWorkforce: [t.eduWorkforce[0], t.eduWorkforce[1]],
+      election: this.electionSummary(),
+    };
+  }
+
+  /** Where the election stands, for the city panel (M17). */
+  private electionSummary(): ElectionSummary | null {
+    const e = this.state.election;
+    if (e.nextMonth < 0) return null;
+    const last = e.results[e.results.length - 1];
+    return {
+      nextMonth: e.nextMonth,
+      monthsToVote: monthsToVote(this),
+      campaign: campaignOpen(this),
+      promises: e.promises.map((p) => ({ id: p.id, kept: promiseKept(this, p) })),
+      projected: projectedShare(this),
+      term: termNow(this),
+      last: last ? { tick: last.tick, share: last.share, won: last.won, promises: last.promises } : null,
     };
   }
 
@@ -1588,6 +1617,22 @@ export class Sim {
         : d.tourism
           ? { kind: 'tourism', draw: d.tourism.draw ?? 0, rooms: d.tourism.rooms ?? 0 }
           : null,
+      project: d.project
+        ? {
+            stages: d.project.stages.map((st) => ({ ...st })),
+            stage: c.build?.stage ?? d.project.stages.length,
+            months: c.build?.months ?? 0,
+            waiting: c.build?.waiting ?? false,
+            monthsLeft: monthsLeft(c),
+            perk: d.project.perk,
+            nextEvent:
+              c.build || !d.project.matchDays
+                ? null
+                : this.state.matchDay && this.state.tick < this.state.matchDay.until
+                  ? 'Match day today'
+                  : `Next match day in ${d.project.matchDays.every - (dateOf(this.state.tick).totalMonths % d.project.matchDays.every)} month(s)`,
+          }
+        : null,
     };
   }
 

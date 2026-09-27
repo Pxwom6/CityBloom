@@ -2292,3 +2292,52 @@ body {
     opacity: 0;
   }
 }
+
+/* Big projects in the inspector (M17). */
+.project-progress {
+  margin: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+.project-stages {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+}
+.project-stages li {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0 2px var(--space-4);
+  position: relative;
+  color: var(--color-text-muted);
+}
+.project-stages li::before {
+  content: '○';
+  position: absolute;
+  left: 0;
+}
+.project-stages li.done::before {
+  content: '●';
+  color: var(--color-positive);
+}
+.project-stages li.now {
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+.project-stages li.now::before {
+  content: '◐';
+  color: var(--color-accent);
+}
+.project-status {
+  margin: var(--space-1) 0;
+}
+.project-status.ok {
+  color: var(--color-positive);
+  font-weight: var(--font-weight-medium);
+}
+.project-status.warn {
+  color: var(--color-negative);
+}
+.project-perk {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}

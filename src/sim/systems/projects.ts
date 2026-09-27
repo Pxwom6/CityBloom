@@ -1,5 +1,5 @@
 import { CIVIC, type CivicDef } from '../../data/civic';
-import type { ProjectRequirement } from '../../data/projects';
+import { requirementStatus, type RequirementContext, type RequirementStatus } from '../../data/projects';
 import type { Sim } from '../sim';
 import type { Civic } from '../world/civic';
 import { dateOf, TICKS_PER_MONTH } from '../time';
@@ -21,51 +21,16 @@ export interface ProjectBuild {
   waiting: boolean;
 }
 
-export interface RequirementStatus {
-  label: string;
-  met: boolean;
-  /** Where the city stands ("12,400 residents"). */
-  now: string;
-}
-
-const pct = (v: number) => `${Math.round(v * 100)} %`;
-
-function requirement(sim: Sim, r: ProjectRequirement): RequirementStatus {
-  const s = sim.state;
-  switch (r.kind) {
-    case 'population': {
-      const pop = Math.max(s.progress.peak, s.totals.population);
-      return {
-        label: `${r.min.toLocaleString('en-US')} residents`,
-        met: pop >= r.min,
-        now: `${pop.toLocaleString('en-US')} so far`,
-      };
-    }
-    case 'education': {
-      const share = s.totals.eduWorkforce[r.level - 1] ?? 0;
-      const what = r.level === 1 ? 'a basic education' : 'a high-school education';
-      return {
-        label: `${pct(r.share)} of workers with ${what}`,
-        met: share >= r.share,
-        now: `${pct(share)} now`,
-      };
-    }
-    case 'civic': {
-      const has = [...s.civics.values()].some((c) => c.def === r.def && !c.build);
-      return { label: `The city runs ${r.label}`, met: has, now: has ? 'yes' : 'not yet' };
-    }
-    case 'visitors':
-      return {
-        label: `${r.min.toLocaleString('en-US')} visitors a day`,
-        met: s.tourism.visitors >= r.min,
-        now: `${s.tourism.visitors.toLocaleString('en-US')} now`,
-      };
-  }
-}
-
 /** Every requirement of a project and whether the city meets it. */
 export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[] {
-  return (def.project?.requires ?? []).map((r) => requirement(sim, r));
+  const s = sim.state;
+  const ctx: RequirementContext = {
+    population: Math.max(s.progress.peak, s.totals.population),
+    education: s.totals.eduWorkforce,
+    visitors: s.tourism.visitors,
+    runs: (id) => [...s.civics.values()].some((c) => c.def === id && !c.build),
+  };
+  return (def.project?.requires ?? []).map((r) => requirementStatus(r, ctx));
 }
 
 /** Why a project can't be started yet, or null. */

@@ -2,6 +2,7 @@ import { Color } from 'three';
 import type { CivicDef } from '../../data/civic';
 import { ModelBuilder, modelRng, type ModelData } from './builder';
 import { buildSpecialModel, moduleAnnex } from './specialModels';
+import { buildProjectModel } from './projectModels';
 
 const C = (hex: string) => new Color(hex);
 const CONCRETE = C('#c9c6bf');
@@ -131,7 +132,14 @@ function stack(m: ModelBuilder, x: number, z: number, r: number, h: number): voi
   m.frustum(x, z, r * 1.02, r * 1.02, h - 12, h - 9, RED, 12, false);
 }
 
-export function buildCivicModel(def: CivicDef, variant: number, fill = 0, modules = 0): ModelData {
+export function buildCivicModel(
+  def: CivicDef,
+  variant: number,
+  fill = 0,
+  modules = 0,
+  /** Big projects (M17): the stage under construction; absent once finished. */
+  stage?: number,
+): ModelData {
   const W = def.w;
   const D = def.d;
   const r = modelRng(variant * 131 + W * 7 + D);
@@ -635,7 +643,10 @@ export function buildCivicModel(def: CivicDef, variant: number, fill = 0, module
       break;
     }
     default:
-      if (!buildSpecialModel(def.model, m, W, D, r)) {
+      if (def.project) {
+        const n = def.project.stages.length;
+        buildProjectModel(def.model, m, W, D, stage ?? n, n, r);
+      } else if (!buildSpecialModel(def.model, m, W, D, r)) {
         base(m, W, D, CONCRETE);
         m.box(-W / 2 + 2, W / 2 - 2, 0, 8, -D / 2 + 2, D / 2 - 2, WHITE);
       }

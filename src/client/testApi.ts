@@ -1,3 +1,4 @@
+import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
@@ -95,6 +96,8 @@ export interface TestApi {
    * row per def and `variants` columns. Screenshots only; the sim knows nothing about them.
    */
   showGallery(defs: string[], at: { x: number; z: number }, variants: number): void;
+  /** Every big project at every construction stage and finished, in rows from `at` (dev, M17). */
+  showProjects(at: { x: number; z: number }): void;
   /** Disasters under way, damaged and flooded roads and craters, as the client sees them. */
   getDisasters(): DisasterData;
   /** What a click at this screen position would select. */
@@ -458,6 +461,38 @@ export function installTestApi(game: Game): TestApi {
         z += D + 6;
       }
       w.applyFrame({ tick: w.stats.tick, stats: w.stats, buildings: { upserts, removed: [] } });
+    },
+    showProjects: (at) => {
+      const w = game.world;
+      const upserts: CivicData[] = [];
+      let id = 9_500_000;
+      let z = at.z;
+      for (const def of [...CIVIC.values()].filter((d) => d.project)) {
+        const n = def.project!.stages.length;
+        let x = at.x;
+        for (let stage = 0; stage <= n; stage++) {
+          upserts.push({
+            id: id++,
+            def: def.id,
+            x: x + def.w / 2,
+            z: z + def.d / 2,
+            y: Math.max(0, w.heightAt(x + def.w / 2, z + def.d / 2)),
+            angle: 0,
+            side: 1,
+            access: true,
+            fill: 0,
+            out: 0,
+            variant: 0,
+            damage: 0,
+            flooded: false,
+            modules: [],
+            stage: stage < n ? stage : undefined,
+          });
+          x += def.w + 12;
+        }
+        z += def.d + 14;
+      }
+      w.applyFrame({ tick: w.stats.tick, stats: w.stats, civics: { upserts, removed: [] } });
     },
     getAudio: () => ({
       running: game.audio?.running ?? false,

@@ -38,6 +38,57 @@ export interface ProjectInfo {
 
 export type ProjectDef = CivicDef & { project: ProjectInfo };
 
+/** What a project's requirements are checked against (the sim's state, or the client's mirror of it). */
+export interface RequirementContext {
+  /** Highest population reached (what unlocks go by). */
+  population: number;
+  /** Share of the workforce educated to level 1 and to level 2. */
+  education: [number, number];
+  visitors: number;
+  /** Whether the city runs a finished building of this kind. */
+  runs: (def: string) => boolean;
+}
+
+export interface RequirementStatus {
+  label: string;
+  met: boolean;
+  /** Where the city stands ("12,400 so far"). */
+  now: string;
+}
+
+const pct = (v: number) => `${Math.round(v * 100)} %`;
+const num = (v: number) => v.toLocaleString('en-US');
+
+export function requirementStatus(r: ProjectRequirement, ctx: RequirementContext): RequirementStatus {
+  switch (r.kind) {
+    case 'population':
+      return {
+        label: `${num(r.min)} residents`,
+        met: ctx.population >= r.min,
+        now: `${num(ctx.population)} so far`,
+      };
+    case 'education': {
+      const share = ctx.education[r.level - 1] ?? 0;
+      const what = r.level === 1 ? 'a basic education' : 'a high-school education';
+      return {
+        label: `${pct(r.share)} of workers with ${what}`,
+        met: share >= r.share,
+        now: `${pct(share)} now`,
+      };
+    }
+    case 'civic': {
+      const has = ctx.runs(r.def);
+      return { label: `The city runs ${r.label}`, met: has, now: has ? 'yes' : 'not yet' };
+    }
+    case 'visitors':
+      return {
+        label: `${num(r.min)} visitors a day`,
+        met: ctx.visitors >= r.min,
+        now: `${num(ctx.visitors)} now`,
+      };
+  }
+}
+
 export const PROJECT_DEFS: ProjectDef[] = [
   {
     id: 'stadium',

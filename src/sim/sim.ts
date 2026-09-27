@@ -995,16 +995,17 @@ export class Sim {
       if (this.testMode) checkInvariants(this);
       return;
     }
-    if (isMonthStart(t)) {
-      closeMonth(this, dateOf(t).totalMonths - 1);
-      recordMonth(s.chronicle, monthFigures(this));
-      for (const c of s.civics.values()) {
-        c.lastDay = c.processedToday;
-        c.processedToday = 0;
-        rollCollectionDay(c);
-      }
-    }
     const run = this.timer ?? ((_name: string, fn: () => void) => fn());
+    if (isMonthStart(t))
+      run('month', () => {
+        closeMonth(this, dateOf(t).totalMonths - 1);
+        recordMonth(s.chronicle, monthFigures(this));
+        for (const c of s.civics.values()) {
+          c.lastDay = c.processedToday;
+          c.processedToday = 0;
+          rollCollectionDay(c);
+        }
+      });
     run('vehicles', () => stepVehicles(this));
     run('incidents', () => incidentsTick(this));
     run('disasters', () => disastersTick(this));

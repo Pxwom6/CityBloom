@@ -647,6 +647,33 @@ appended as events (`{tick, kind, ref}`, at most 300). It is saved and hashed wi
 state (save v14; a v13 city starts an empty history at its current tick). The client reads it with
 the `chronicle` query; `src/ui/History.tsx` charts it with `TimeChart` (`src/ui/charts.tsx`).
 
+### 3.18 Big projects and elections (M17)
+
+**Projects** are civic defs with a `project` block (`src/data/projects.ts`: stages with months and
+cost, requirements, perk text and perk numbers), appended to `CIVIC_DEFS` with category `project`.
+Placing one (`placeCivic`) pays `placementPrice` (the first stage) and sets `Civic.build = {stage,
+months, waiting}`; `civicOnline` is false and `civicUpkeep` 0 while `build` is set, so every system
+that reads civic output or service ignores a site for free. `projectsMonth` (month close) counts
+months on the current stage and, when it's done, pays the next stage from the treasury (ledger line
+`projects`) or sets `waiting`; after the last stage it deletes `build`, marks the civic changed and
+records a chronicle event. Requirements are checked in `checkPlacement` via `projectBlocked`
+(population peak, education shares of the workforce from `totals.eduWorkforce`, visitors, a running
+civic). Scheduled perks run in `projectEvents` at month close: the stadium's match day
+(`SimState.matchDay = {civic, until}`) is read by totals (approval), specialisations (visitors) and
+the freight/visitor loads in `commute.ts` (fans as `event` trips from the highway to the stadium);
+the launch complex's launches are events only. Static perks are plain numbers read by the systems
+that already handle them (power output, tourism draw, demand factors, research income). Models per
+stage are in `src/render/assets/projectModels.ts`; `CivicData.stage` keys the model cache.
+
+**Elections** (`src/sim/systems/elections.ts`, `src/data/elections.ts`): `SimState.election =
+{nextMonth, promises, results, term}` (save v15). `electionsMonth` opens the campaign six months
+ahead (an event) and holds the vote at `nextMonth`: `projectedShare` (approval, plus or minus each
+promise kept or broken, measured by `promiseKept` against the baseline stored when it was made) plus
+a seeded swing from the events stream. A result sets `term` for 12 months: a win adds the grant
+(ledger `grants`) and approval via `honeymoon`; a loss makes `setTax` refuse rises and `takeLoan`
+refuse loans until `term.until`. `nextMonth = -1` means no elections (sandbox, or switched off by
+`setElections`). The summary for the UI is `CityStats.election`.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

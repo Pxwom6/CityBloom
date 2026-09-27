@@ -22,6 +22,10 @@ import { BState } from '../src/sim/world/buildings';
 import { GROWTH } from '../src/data/balance';
 import { MODULE } from '../src/data/modules';
 import { trucksFor } from '../src/sim/systems/garbage';
+import { MAP_SIZE } from '../src/data/world';
+import { campaignOpen } from '../src/sim/systems/elections';
+import { projectBlocked, projectCost } from '../src/sim/systems/projects';
+import { ZONE_C, ZONE_I, ZONE_R } from '../src/data/zones';
 
 type Vec2 = { x: number; z: number };
 type StrategyId = 'careful' | 'greedy' | 'neglectful';
@@ -61,6 +65,7 @@ const MONTHS_PER_YEAR = 12;
 const DW = 480;
 const ROW = 380;
 const HALF = 160;
+/** Nearest the highway first (the original 15), then the far bank beyond the river. */
 const DISTRICT_ORDER: [number, number][] = [
   [0, 0],
   [1, 0],
@@ -77,6 +82,31 @@ const DISTRICT_ORDER: [number, number][] = [
   [2, 1],
   [2, -2],
   [2, 2],
+  [3, 0],
+  [3, -1],
+  [3, 1],
+  [3, -2],
+  [3, 2],
+];
+
+/**
+ * The careful mayor's spending goals once the city can afford them: tourism and landmarks, a
+ * university and research park, and the big projects (M17), each at the size a player would reach
+ * for it. `reserve` is kept back in months of expenses so a goal never empties the treasury.
+ */
+const GOALS: { def: string; at: number }[] = [
+  { def: 'park_large', at: 5_000 },
+  { def: 'hotel', at: 10_000 },
+  { def: 'clocktower', at: 10_000 },
+  { def: 'stadium', at: 20_000 },
+  { def: 'wheel', at: 20_000 },
+  { def: 'university', at: 20_000 },
+  { def: 'helioarray', at: 20_000 },
+  { def: 'techpark', at: 20_000 },
+  { def: 'convention', at: 20_000 },
+  { def: 'conservatory', at: 40_000 },
+  { def: 'gardenexpo', at: 40_000 },
+  { def: 'launchsite', at: 40_000 },
 ];
 
 interface Sample {
@@ -91,13 +121,25 @@ interface Sample {
   abandoned: number;
   districts: number;
   civics: number;
+  /** Spent this month on goals (landmarks, projects, the university...). */
+  goals: number;
 }
 
 class Player {
   readonly sim: Sim;
   readonly c: Vec2;
-  districts: { i: number; j: number; segs: number[] }[] = [];
+  districts: {
+    i: number;
+    j: number;
+    segs: number[];
+    dense?: boolean;
+    quarter?: boolean;
+    dead?: boolean;
+  }[] = [];
   log: string[] = [];
+  /** Goals reached (def → month), elections held, and money spent on goals this month. */
+  goalsMet = new Map<string, number>();
+  goalSpend = 0;
 
   constructor(readonly strategy: StrategyId) {
     this.sim = Sim.create({ seed, preset: 'river', cityName: demo ? 'Bloomfield' : strategy, difficulty });
@@ -118,15 +160,57 @@ class Player {
     return DW * ROAD_TYPES.avenue.costPerMetre + 4 * 2 * HALF * ROAD_TYPES.street.costPerMetre;
   }
 
-  /** Lay out and zone the next district, if there's money for it. */
-  buildDistrict(): boolean {
-    const next = DISTRICT_ORDER[this.districts.length];
+  /**
+   * A road from a to b, or, where one piece won't go (a river crossing needs land for its ramps),
+   * two pieces split where both will.
+   */
+  roadAcross(type: RoadTypeId, a: Vec2, b: Vec2): number[] {
+    const direct = this.road(type, a, b);
+    if (direct.length) return direct;
+    for (let f = 0.15; f < 0.9; f += 0.05) {
+      const m = { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f };
+      const p1 = this.sim.preview({ type: 'buildRoad', road: type, points: [a, m] });
+      const p2 = this.sim.preview({ type: 'buildRoad', road: type, points: [m, b] });
+      if (p1.ok && p2.ok) return [...this.road(type, a, m), ...this.road(type, m, b)];
+    }
+    return [];
+  }
+
+  /** The next district slot on the map, if any fits. */
+  nextSlot(): [number, number] | undefined {
+    return DISTRICT_ORDER.slice(this.districts.length).find(([i, j]) => {
+      const x0 = this.c.x + i * DW;
+      const z = this.c.z + j * ROW;
+      return x0 + DW <= MAP_SIZE - 40 && z - HALF >= 40 && z + HALF <= MAP_SIZE - 40;
+    });
+  }
+
+  /**
+   * Lay out and zone the next district, if there's money for it. A `quarter` is an avenue with no
+   * side streets or zoning: room for landmarks and big projects.
+   */
+  buildDistrict(quarter = false): boolean {
+    const next = this.nextSlot();
     if (!next || this.sim.state.treasury < this.districtCost() + 2_000) return false;
+    while (DISTRICT_ORDER[this.districts.length] !== next) {
+      const [si, sj] = DISTRICT_ORDER[this.districts.length]!;
+      this.districts.push({ i: si, j: sj, segs: [], dead: true });
+    }
     const [i, j] = next;
     const x0 = this.c.x + i * DW;
     const z = this.c.z + j * ROW;
     const segs: number[] = [];
-    segs.push(...this.road('avenue', { x: x0, z }, { x: x0 + DW, z }));
+    segs.push(...this.roadAcross('avenue', { x: x0, z }, { x: x0 + DW, z }));
+    // Avenue rows off the highway row are also joined end to end at the district's west edge.
+    if (j !== 0 && i === 0) {
+      const zNear = this.c.z + (j > 0 ? j - 1 : j + 1) * ROW;
+      segs.push(...this.road('avenue', { x: x0 + 12, z: zNear }, { x: x0 + 12, z }));
+    }
+    if (quarter) {
+      this.districts.push({ i, j, segs, quarter: true });
+      this.log.push(`m${this.month()}: quarter ${i},${j}`);
+      return true;
+    }
     for (let k = 1; k <= 4; k++) {
       const x = x0 + (DW * k) / 5;
       segs.push(...this.road('street', { x, z: z - HALF }, { x, z: z + HALF }));
@@ -136,18 +220,19 @@ class Player {
           const zn = this.c.z + d.j * ROW;
           const a = d.j < j ? zn + HALF : z + HALF;
           const b = d.j < j ? z - HALF : zn - HALF;
-          segs.push(...this.road('street', { x, z: a }, { x, z: b }));
+          if (!d.quarter) segs.push(...this.road('street', { x, z: a }, { x, z: b }));
         }
-    }
-    // Avenue rows off the highway row are also joined end to end at the district's west edge.
-    if (j !== 0 && i === 0) {
-      const zNear = this.c.z + (j > 0 ? j - 1 : j + 1) * ROW;
-      segs.push(...this.road('avenue', { x: x0 + 12, z: zNear }, { x: x0 + 12, z }));
     }
     const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
       this.sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    // The careful mayor zones shops only while shops are wanted; otherwise homes face the avenue.
+    const shops =
+      this.strategy !== 'careful' ||
+      this.districts.length < 2 ||
+      this.vacancy(ZONE_C) < 0.5 ||
+      this.stats().demand.C > 0.1;
     zone('R', { x: x0 + 20, z: z - 100 }, { x: x0 + DW, z: z - 100 }, 70);
-    zone('C', { x: x0 + 20, z: z + 20 }, { x: x0 + DW, z: z + 20 }, 22);
+    zone(shops ? 'C' : 'R', { x: x0 + 20, z: z + 20 }, { x: x0 + DW, z: z + 20 }, 22);
     zone('R', { x: x0 + 20, z: z + 90 }, { x: x0 + DW / 2, z: z + 90 }, 50);
     zone('I', { x: x0 + DW / 2 + 20, z: z + 110 }, { x: x0 + DW, z: z + 110 }, 50);
     this.districts.push({ i, j, segs });
@@ -359,8 +444,12 @@ class Player {
       this.utilities(false);
       // Services once there's a town to serve.
       if (s.population >= 250) this.followAdvice();
-      // Expand when the city wants room, borrowing for it while the budget is in the black.
-      if (this.districts.length === 0 || (growRoom && this.vacancy() < 0.3)) {
+      // Expand when a zone in demand runs short of room (homes or industry; shops follow homes),
+      // borrowing for it while the budget is in the black.
+      if (
+        this.districts.length === 0 ||
+        (growRoom && Math.min(this.vacancy(ZONE_R), this.vacancy(ZONE_I)) < 0.25)
+      ) {
         if (
           this.sim.state.treasury < this.districtCost() + 2_000 &&
           s.netMonthly > 300 &&
@@ -369,10 +458,15 @@ class Player {
           this.sim.dispatch({ type: 'takeLoan', amount: 25_000 });
         this.buildDistrict();
       }
-      if (this.count('park_small') < this.districts.length) this.place('park_small');
-      // Taxes: nudge up while losing money, back down when comfortable.
+      if (this.count('park_small') < this.districts.filter((d) => !d.quarter && !d.dead).length)
+        this.place('park_small');
+      this.densify();
+      this.pursueGoals();
+      this.campaign();
+      // Taxes: nudge up while losing money (never against a promise), back down when comfortable.
       const rate = e.taxes.R[0]!;
-      if (s.netMonthly < 0 && s.treasury < -s.netMonthly * 6 && rate < 12) this.setTaxes(rate + 1);
+      if (s.netMonthly < 0 && s.treasury < -s.netMonthly * 6 && rate < 12 && !this.taxPromise())
+        this.setTaxes(rate + 1);
       else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
       // Comfortably off: trade money for happier residents and more demand.
       else if (s.netMonthly > 0 && s.treasury > 250_000 && rate > 6) this.setTaxes(rate - 1);
@@ -394,6 +488,109 @@ class Player {
     }
   }
 
+  /**
+   * High-rises unlocked: widen a district's side streets into avenues (streets cap buildings at
+   * medium density), oldest district first, one a round while homes are wanted.
+   */
+  densify(): boolean {
+    if (!this.sim.reached(5_000) || this.stats().demand.R < 0.15) return false;
+    if (this.sim.state.treasury < 150_000) return false;
+    const d = this.districts.find((x) => !x.dense && !x.quarter && !x.dead);
+    if (!d) return false;
+    d.dense = true;
+    const x0 = this.c.x + d.i * DW;
+    const z = this.c.z + d.j * ROW;
+    let n = 0;
+    for (const sg of [...this.sim.state.net.segments.values()]) {
+      if (sg.type !== 'street') continue;
+      const cv = this.sim.net.curve(sg.id);
+      const m = cv.pointAt(cv.length / 2);
+      if (m.x < x0 || m.x > x0 + DW || Math.abs(m.z - z) > HALF + 40) continue;
+      if (this.sim.dispatch({ type: 'upgradeRoad', seg: sg.id, road: 'avenue' }).ok) n++;
+    }
+    this.log.push(`m${this.month()}: widened ${n} streets in ${d.i},${d.j}`);
+    return true;
+  }
+
+  /** Months of running costs to keep in hand before spending on a goal. */
+  reserve(): number {
+    const r = this.sim.projectedNet();
+    const upkeep = Object.values(this.sim.state.economy.month).reduce((a, v) => a + Math.min(0, v), 0);
+    return Math.max(100_000, -upkeep * 3 - Math.min(0, r) * 6);
+  }
+
+  /**
+   * Work down the spending goals: the first one the city has reached and can afford is placed on
+   * a free roadside, or failing that in a quarter kept for landmarks and projects. One a round.
+   */
+  pursueGoals(): void {
+    const s = this.sim.state;
+    for (const g of GOALS) {
+      if (this.goalsMet.has(g.def)) continue;
+      const d = CIVIC.get(g.def)!;
+      if (!this.sim.reached(g.at) || !this.sim.isUnlocked(d.unlockPopulation)) return;
+      if (this.count(g.def) > 0) {
+        this.goalsMet.set(g.def, this.month());
+        continue;
+      }
+      if (d.project && projectBlocked(this.sim, d)) continue;
+      const price = d.project ? projectCost(d).total : d.cost;
+      if (s.treasury < price + this.reserve()) return;
+      const before = s.treasury;
+      if (this.placeGoal(g.def)) {
+        this.goalsMet.set(g.def, this.month());
+        this.goalSpend += before - s.treasury;
+      }
+      return;
+    }
+  }
+
+  /** A goal's building: along a quarter's avenue, else any free roadside, else a new quarter. */
+  placeGoal(def: string): boolean {
+    const d = CIVIC.get(def)!;
+    const tryQuarters = () => {
+      for (const q of this.districts.filter((x) => x.quarter))
+        for (const id of q.segs) {
+          if (!this.sim.state.net.segments.has(id) || this.sim.state.net.segments.get(id)!.type !== 'avenue')
+            continue;
+          const len = this.sim.net.curve(id).length;
+          for (let at = d.w / 2 + 12; at < len - d.w / 2 - 12; at += 10)
+            for (const side of [1, -1] as const) {
+              const pose = roadsidePose(this.sim.net, id, at, side, d.d);
+              if (this.sim.dispatch({ type: 'placeBuilding', def, ...pose }).ok) {
+                this.log.push(`m${this.month()}: ${def} (quarter)`);
+                return true;
+              }
+            }
+        }
+      return false;
+    };
+    if (tryQuarters()) return true;
+    if (!d.project && this.place(def, 'homes')) return true;
+    return this.buildDistrict(true) && tryQuarters();
+  }
+
+  /** In the campaign, promise what the city can deliver: no tax rises, and jobs or a hospital. */
+  campaign(): void {
+    if (!campaignOpen(this.sim)) return;
+    const e = this.sim.state.election;
+    const has = (id: string) => e.promises.some((p) => p.id === id);
+    if (!has('taxes')) this.sim.dispatch({ type: 'promise', promise: 'taxes', on: true });
+    if (e.promises.length >= 2) return;
+    const t = this.sim.state.totals;
+    if (t.workers > 0 && t.unemployed / t.workers < 0.025)
+      this.sim.dispatch({ type: 'promise', promise: 'jobs', on: true });
+    else if (t.population > 6_000 && this.sim.state.treasury > 200_000) {
+      this.sim.dispatch({ type: 'promise', promise: 'hospital', on: true });
+      this.place('hospital');
+    }
+  }
+
+  /** A promise not to raise taxes is in force. */
+  taxPromise(): boolean {
+    return this.sim.state.election.promises.some((p) => p.id === 'taxes');
+  }
+
   sample(): Sample {
     const s = this.stats();
     return {
@@ -406,8 +603,9 @@ class Player {
       I: s.demand.I,
       net: s.netMonthly,
       abandoned: s.abandoned,
-      districts: this.districts.length,
+      districts: this.districts.filter((d) => !d.dead).length,
       civics: this.sim.state.civics.size,
+      goals: this.goalSpend,
     };
   }
 }
@@ -526,12 +724,13 @@ for (const id of strategies) {
   const secs = ((performance.now() - t0) / 1000).toFixed(0);
   console.log(`\n=== ${id} (${years} years, ${secs} s) ===`);
   console.log(
-    'year  population   treasury   approval   demand R/C/I      net/mo  abandoned districts civics',
+    'year  population   treasury   approval   demand R/C/I      net/mo  abandoned districts civics  on goals',
   );
   for (let y = 1; y <= years; y++) {
     const s = samples[y * MONTHS_PER_YEAR - 1]!;
+    const spent = s.goals - (samples[(y - 1) * MONTHS_PER_YEAR - 1]?.goals ?? 0);
     console.log(
-      `${String(y).padStart(4)} ${fmt(s.population).padStart(11)} ${fmt(s.treasury).padStart(10)} ${`${Math.round(s.approval * 100)}%`.padStart(10)}   ${[s.R, s.C, s.I].map((d) => d.toFixed(2).padStart(5)).join(' ')} ${fmt(s.net).padStart(10)} ${String(s.abandoned).padStart(10)} ${String(s.districts).padStart(9)} ${String(s.civics).padStart(6)}`,
+      `${String(y).padStart(4)} ${fmt(s.population).padStart(11)} ${fmt(s.treasury).padStart(10)} ${`${Math.round(s.approval * 100)}%`.padStart(10)}   ${[s.R, s.C, s.I].map((d) => d.toFixed(2).padStart(5)).join(' ')} ${fmt(s.net).padStart(10)} ${String(s.abandoned).padStart(10)} ${String(s.districts).padStart(9)} ${String(s.civics).padStart(6)} ${fmt(spent).padStart(9)}`,
     );
   }
   const col = (k: keyof Sample) => samples.map((s) => s[k] as number);
@@ -540,6 +739,24 @@ for (const id of strategies) {
   console.log(`approval   ${spark(col('approval'), 0, 1)}`);
   console.log(`demand R   ${spark(col('R'), -1, 1)}`);
   console.log(`first moves: ${p.log.slice(0, 14).join(', ')}`);
+  if (p.goalsMet.size) {
+    const when = (m: number) => `y${Math.floor(m / 12) + 1}m${(m % 12) + 1}`;
+    const opened = new Map<string, number>();
+    for (const e of p.sim.state.chronicle.events)
+      if (e.kind === 'project') opened.set(String(e.ref), Math.floor(e.tick / TICKS_PER_MONTH));
+    console.log(
+      `goals: ${[...p.goalsMet].map(([d, m]) => `${d} ${when(m)}${opened.has(d) ? ` (open ${when(opened.get(d)!)})` : ''}`).join(', ')}`,
+    );
+  }
+  for (const r of p.sim.state.election.results)
+    console.log(
+      `election ${`y${Math.floor(r.tick / TICKS_PER_MONTH / 12) + 1}`}: ${r.won ? 'won' : 'lost'} with ${Math.round(r.share * 100)}% (approval ${Math.round(r.approval * 100)}%)${r.promises.length ? `; ${r.promises.map((q) => `${q.id} ${q.kept ? 'kept' : 'broken'}`).join(', ')}` : ''}`,
+    );
+  const late = samples.slice(-Math.min(samples.length, 5 * MONTHS_PER_YEAR));
+  if (late.length > 1)
+    console.log(
+      `last ${late.length / 12} years: treasury ${fmt(late[0]!.treasury)} → ${fmt(late[late.length - 1]!.treasury)}, spent on goals ${fmt(late[late.length - 1]!.goals - late[0]!.goals)}`,
+    );
   const trucks = p.log.filter((l) => l.endsWith(': truck')).map((l) => l.split(':')[0]);
   if (trucks.length) console.log(`trucks bought: ${trucks.length} (${trucks.join(', ')})`);
   const built = new Map<string, number>();

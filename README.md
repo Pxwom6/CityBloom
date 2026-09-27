@@ -50,7 +50,7 @@ produced, so any change makes a new version.
 
 The main menu opens over a small town that keeps living in the background. Choose **New city**,
 pick a map (river, coast, lakes or highlands), a seed, a difficulty, and whether you want sandbox
-money or random disasters. The tutorial is on for your first city and walks through the basics:
+money, random disasters or elections. The tutorial is on for your first city and walks through the basics:
 
 1. **Roads** off the highway: drag to draw a straight road, or click point to point to keep going;
    the curve tool takes a start, a bend and an end, and the free tool follows the mouse. Over hills
@@ -69,6 +69,21 @@ money or random disasters. The tutorial is on for your first city and walks thro
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
+
+**Big projects** (the crane in the toolbar) open at 20,000 and 40,000 residents: a city stadium, a
+solar tower array, a convention centre, a garden expo and a launch complex. Each has requirements
+(population, and for some an educated workforce, a hotel, a research park or visitors), is built in
+stages over months that you watch rise on site, pays for each stage as it starts (the site waits,
+and says so, if the treasury can't) and gives a lasting perk once open: match days that fill the
+city with visitors and the roads with fans, clean power, trade and research, tourism. The
+inspector follows the build.
+
+**Elections** come every four years and are won mostly on approval. In the six months before a
+vote, the city panel's Election tab (P) lets you make up to two promises (cut crime, open a
+hospital, shorter commutes, cleaner air, jobs for all, no tax rises), each judged on the day against
+where the city stood when you made it. A win brings the region's grant and a year's goodwill; a
+loss never ends the game, but the council blocks tax rises and new loans for a year. There are
+none in sandbox, and Settings can switch them off.
 
 **City history** (Y, or the chart button in the top bar) charts the city's life month by month:
 population, approval, jobs and unemployment, the treasury, income and spending, air pollution, crime
@@ -92,7 +107,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Cancel, leave a tool, close a panel, pause menu | right click | | Escape |
 | Undo / redo (last 30 actions) | toolbar | | ⌘Z / ⇧⌘Z on a Mac, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere; U / Shift+U |
 | Pause / speeds | top bar | | Space, 1, 2, 3 |
-| Budget / advisors / notifications / city | top bar | | M / J / N / P |
+| Budget / advisors / notifications / city (progress, policies, election, achievements) | top bar | | M / J / N / P |
 | City history | top bar | | Y |
 | Photo mode (H hides its panel, Enter saves, Esc leaves) | toolbar camera | | K |
 | Data maps | toolbar | | L toggles the power map |
@@ -104,7 +119,7 @@ one or the other. Undo reaches back 30 actions (building, zoning, bulldozing, ro
 and gives the money back; if something has grown on top since, it says so instead.
 
 The pause menu (Escape) has save, load, settings (graphics quality, shadows, draw distance,
-interface size, pointing device, volumes, edge scrolling, disasters, autosave) and export/import of `.citybloom`
+interface size, pointing device, volumes, edge scrolling, disasters, elections, autosave) and export/import of `.citybloom`
 save files. The city autosaves every few minutes.
 
 ## Develop

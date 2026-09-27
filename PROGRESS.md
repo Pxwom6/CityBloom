@@ -86,12 +86,14 @@ field of view and six grades, follows a car, bus or person, and saves a PNG at 1
 e2e specs pass (M16's rerun after the full run, see DECISIONS), 174 unit tests.
 
 ## Next tasks
-1. M17 Big projects and elections: 4–6 multi-stage projects with requirements, stages and perks;
-   elections every 4 years with up to two promises, a perk for winning and a year of limits for
-   losing (off in sandbox, and a setting); the balance tool's careful mayor planning the whole map
-   past 50k, completing a project and winning an election; late-game money soaked up without
-   tightening the early game. Drafts of the project and election data are in the session
-   scratchpad (`m17/`); rewrite from SPEC-2 if lost.
+1. M17 Big projects and elections, in progress. Done and pushed: five projects (stadium, launch
+   complex, solar tower array, garden expo, convention centre) built in stages with requirements,
+   models per stage and perks; elections every four years with promises, a win's grant and
+   goodwill, a loss's year of council limits (save v15); the Big projects toolbar, inspector
+   progress, the city panel's Election tab, the elections setting; unit tests and the M17 e2e spec
+   (passes). Left: the balance tool's careful mayor (whole-map plan, spending goals, promises;
+   being tuned in `scripts/balance.ts`) passing 50k with a project built and an election won; a
+   late-game money check; README, DESIGN, DECISIONS, SPEC_REVIEW; bench and balance reruns.
 2. Then M18 Scenarios.
 3. Performance watch: tick average at the big city's growth burst varies 0.9–1.3 ms by VM day;
    one unprofiled M16 run had one-off 64–92 ms ticks. Look for savings before M19 adds

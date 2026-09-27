@@ -26,7 +26,7 @@
 - [x] M12 Balance, performance and polish
 - [x] M13 Gentler roads
 - [x] M14 Controls and editing
-- [ ] M15 Publish it
+- [x] M15 Publish it
 - [ ] M16 Photo mode and city history
 - [ ] M17 Big projects and elections
 - [ ] M18 Scenarios
@@ -41,18 +41,21 @@
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
 demo town) a player founds a city on one of four seeded maps with a difficulty, sandbox and
 disasters option and an optional tutorial, then lays straight, curved and free-form roads and
-bridges off the highway (graded into the hills with cuttings, embankments and viaducts, M13), zones homes, shops and industry, and keeps the city supplied with power
-(five plant types), water and sewage, garbage collection, fire, police, health, schools and parks.
-Residents are aggregated per building but travel for real: rush-hour commutes congest roads, buses
-take cars off them, service vehicles drive to incidents, and any car or walker can be clicked. Air
-pollution drifts on the wind, sickness and education follow services, land value shapes wealth,
-and the budget books every dollar (taxes by zone and wealth, funding, loans, policies). Milestones
-unlock buildings, landmarks and three specialisations (tourism, trade, technology) plus ore and
-oil. Fires, earthquakes, tornadoes, floods and meteors strike and the city rebuilds. Saves are
-versioned and compressed with autosave, slots and file export. Everything runs from a deterministic
-sim in a Web Worker: ~0.7 ms per tick at 100k residents, with 288 draw calls at the city overview.
-Checked by 166 unit and scenario tests, 18 UI tests, a 10-minute soak and a full playthrough through the UI
-(`docs/SPEC_REVIEW.md` maps every SPEC item to where it's done).
+bridges off the highway (graded into the hills with cuttings, embankments and viaducts, M13), zones
+homes, shops and industry, and keeps the city supplied with power (five plant types), water and
+sewage, garbage collection, fire, police, health, schools and parks. Residents are aggregated per
+building but travel for real: rush-hour commutes congest roads, buses take cars off them, service
+vehicles drive to incidents, and any car or walker can be clicked. Air pollution drifts on the wind,
+sickness and education follow services, land value shapes wealth, and the budget books every dollar
+(taxes by zone and wealth, funding, loans, policies). Milestones unlock buildings, landmarks and
+three specialisations (tourism, trade, technology) plus ore and oil. Fires, earthquakes, tornadoes,
+floods and meteors strike and the city rebuilds. Saves are versioned and compressed with autosave,
+slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
+offers each new version (M15). Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
+per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
+calls at the city overview. Checked by 170 unit and scenario tests, 19 UI tests, a 10-minute soak
+and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
+done).
 
 ## Ideas for what's next
 1. **Real-hardware pass** (the list under "To check on the Mac"): frame rate at 100k, and
@@ -70,22 +73,27 @@ Checked by 166 unit and scenario tests, 18 UI tests, a 10-minute soak and a full
    surplus; a second tuning pass once real players have tried it.
 
 ## In progress
-Phase 2 (SPEC-2.md, M13–M24). M14 Controls and editing is complete: trackpad pan, pinch and rotate
-(auto-detected, with a Pointing device setting), ⌘ shortcuts on macOS, undo and redo of the last 30
-actions by state diff (exact to the state hash; a toast explains a refused undo), moving civic,
-landmark and specialisation buildings for a fee, and a `?` shortcut sheet. Next: M15 Publish it.
+Phase 2 (SPEC-2.md, M13–M24). M15 Publish it is complete: a Pages deploy workflow, an installable
+app that plays offline after one visit and offers "New version, reload" (autosaving first), a share
+preview, a first-launch graphics check, and the README's simulation claim corrected. The whole e2e
+suite runs against a production-mode build served from `/Sim-Cities/`. Publishing needs the two
+clicks at the top of this file.
+
+M16 Photo mode and city history is under way (committed as work in progress): the sim records ten
+figures each month (save v14, unit-tested for exact save/load and the migration), the City history
+panel (Y) and photo mode (K: lens pass for depth of field, tilt-shift and grades; eye-level and
+follow cameras; PNG capture at 1× or 2×) are written. Not yet seen in the browser; the e2e spec
+`e2e/m16-photo-history.spec.ts` is written but not yet run.
 
 ## Next tasks
-1. M15 Publish it: GitHub Pages workflow (Vite base path from the Pages config); installable
-   offline app (manifest, original icons, service worker with "New version, reload"; saves survive
-   updates); share preview (title, description, image from a screenshot); first-launch graphics
-   preset from a quick performance check; README fix (residents are aggregated per building); what
-   to click at the top of this file. Done when a production build served from a subpath passes the
-   e2e suite, works offline after one visit, and detects and applies an update.
-2. Then M16 Photo mode and city history.
+1. M16: run `e2e/m16-photo-history.spec.ts`, look at the photo (depth of field, grades, low and
+   follow shots) and history screenshots and fix what's off; README (controls: Y, K), DESIGN
+   (§3.17 history, photo mode), DECISIONS and SPEC_REVIEW sections (drafts were in the session
+   scratchpad, rewrite from the code if lost); bench and balance; `M16 complete:`.
+2. Then M17 Big projects and elections.
 3. Performance watch: at the big city's growth burst (months 4–5, 97–111k) the tick average is
-   1.1–1.3 ms on this VM today for both M13 and M14 code (0.7–1.0 ms when M13 was measured). Look
-   for savings in the growth months before M19 adds car-following.
+   1.1–1.3 ms on this VM for both M13 and M14 code (0.7–1.0 ms when M13 was measured). Look for
+   savings in the growth months before M19 adds car-following.
 
 ## Known issues
 - Mature cities run a big surplus (≈ +$35k/month at 18k residents with 6 % taxes); intended as money for landmarks and big projects.
@@ -105,7 +113,8 @@ landmark and specialisation buildings for a fee, and a `?` shortcut sheet. Next:
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
-## Performance (latest: M14)
+## Performance (latest: M15)
+- M15 changes no sim code; reruns match M14. `bench.ts 8 --big` at 97–111k: tick avg 0.87–1.15 ms, p99 7–10 ms, worst per month 11–20 ms; `balance.ts 20`: careful 18,906 / 68 %, greedy 102 / 14 %, neglectful 346 / 38 % (identical).
 - `npx tsx scripts/bench.ts 30 --big` (M14): ~111k residents by month 5. At 97–111k: tick avg 0.91–1.28 ms, p99 7–11 ms, worst per month 10–21 ms. No regression from M14 (it changes no tick system): an A/B run back to back on this VM gave M13 code 0.83–1.22 ms / worst 10–17 ms and M14 0.91–1.20 ms / 10–20 ms, with identical populations. The VM measures about 25 % slower today than when M13 was logged (M13: 0.69–0.96 ms, worst 7–15 ms; M12: 0.68–0.81 ms and 11–14 ms at 84–110k). One-off 65–85 ms ticks in the first game hour of a freshly built big city (cold caches, JIT).
 - `npx tsx scripts/balance.ts 20` (M13, identical at M14): careful 18,906 residents / 68 % approval at year 20 (22,214 / 69 % before; path-dependent, see DECISIONS M13: on seeds s1–s3 the careful city now reaches 16.5–17k by year 8 where the old roads left two of them at 700–1,050); greedy 102 / 14 %, neglectful 346 / 38 %, unchanged.
 - `npx tsx scripts/bench.ts 12 9` (the older ~12k town): tick avg ~0.12–0.21 ms.

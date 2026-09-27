@@ -154,7 +154,7 @@ test('every visible button has a readable label or accessible name, across the i
   await shot(page, 'playtest-bulldoze');
   const civics = (await page.evaluate(() => window.__game!.getCivics())).length;
   await bulldoze.click();
-  await expect(page.getByTestId('bulldoze-confirm')).toContainText("can't be undone");
+  await expect(page.getByTestId('bulldoze-confirm')).toContainText(/Undo \((Ctrl\+Z|⌘Z)\) brings it back/);
   await check('inspector: bulldoze confirmation');
   await shot(page, 'playtest-bulldoze-confirm');
   await page.getByTestId('bulldoze-cancel').click();

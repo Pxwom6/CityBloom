@@ -339,6 +339,8 @@ export type Query =
   | { type: 'summary' }
   | { type: 'building'; id: number }
   | { type: 'budget' }
+  /** City history (M16): the recorded figures, their spacing and the timeline events. */
+  | { type: 'chronicle' }
   | { type: 'civic'; id: number }
   | { type: 'overlay'; map: OverlayMap }
   | { type: 'coveragePreview'; def: string; x: number; z: number; angle: number; side: 1 | -1 }

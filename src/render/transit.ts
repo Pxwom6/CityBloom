@@ -68,8 +68,9 @@ export class TransitRenderer {
   private p = new Vector3();
   private s = new Vector3(1, 1, 1);
   private up = new Vector3(0, 1, 0);
-  /** Latest bus positions (tests and stats). */
+  /** Latest bus positions (tests and stats), and each bus's place this frame (the follow camera). */
   busCount = 0;
+  readonly busPoses: { x: number; y: number; z: number }[] = [];
 
   constructor(
     private world: ClientWorld,
@@ -143,6 +144,10 @@ export class TransitRenderer {
         const x = pt.x - hz * 2.4;
         const z = pt.z + hx * 2.4;
         this.p.set(x, this.heightOn(l.seg, sArc, x, z) + 0.25, z);
+        const pose = this.busPoses[n] ?? (this.busPoses[n] = { x: 0, y: 0, z: 0 });
+        pose.x = this.p.x;
+        pose.y = this.p.y;
+        pose.z = this.p.z;
         this.q.setFromAxisAngle(this.up, -Math.atan2(hz, hx));
         this.m.compose(this.p, this.q, this.s);
         this.buses.setMatrixAt(n++, this.m);
@@ -151,6 +156,7 @@ export class TransitRenderer {
     this.buses.count = n;
     this.buses.instanceMatrix.needsUpdate = true;
     this.busCount = n;
+    this.busPoses.length = n;
   }
 
   /** Meshes for picking tests. */

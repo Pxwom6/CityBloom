@@ -71,7 +71,7 @@ function SlotLine({ s, city = true }: { s: SlotInfo; city?: boolean }) {
 }
 
 /** A picker for one of a few values. */
-function Segmented<T extends string | number>(props: {
+export function Segmented<T extends string | number>(props: {
   value: T;
   options: readonly T[];
   label: (v: T) => string;
@@ -533,7 +533,7 @@ const VOLUMES: [keyof Settings, string][] = [
   ['ambientVolume', 'Ambience'],
 ];
 
-function Check(props: {
+export function Check(props: {
   on: boolean;
   testid: string;
   label: string;

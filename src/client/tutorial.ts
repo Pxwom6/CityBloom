@@ -162,4 +162,18 @@ export const TIPS: Tip[] = [
     text: 'New buildings, policies and a bigger loan unlocked. The city panel (P) shows them and what comes next.',
     when: (g) => g.world.stats.milestone >= 1,
   },
+  {
+    id: 'history',
+    text:
+      'Two years in: the city history (Y) charts population, money, jobs, pollution, crime and commutes ' +
+      'month by month, with milestones and disasters marked.',
+    when: (g) => g.world.stats.tick >= 24 * 1440 && g.world.stats.population > 0,
+  },
+  {
+    id: 'photo',
+    text:
+      'A town worth a picture: photo mode (K, or the camera button) hides the interface, brings the camera ' +
+      'down to the street and saves a PNG, with its own light, lens and colours.',
+    when: (g) => g.world.stats.milestone >= 2,
+  },
 ];

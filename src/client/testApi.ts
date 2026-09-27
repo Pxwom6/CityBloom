@@ -12,6 +12,8 @@ import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
+import type { Chronicle } from '../sim/systems/chronicle';
+import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { AmbientMix } from '../audio/mix';
 
@@ -141,6 +143,20 @@ export interface TestApi {
   };
   /** Ask the server for a new version of the app now (M15). */
   checkForUpdate(): Promise<void>;
+  /** City history as the sim holds it (M16). */
+  getChronicle(): Promise<Chronicle>;
+  /** Photo mode (M16): its state, what the renderer hides and draws, and where the camera is. */
+  getPhoto(): {
+    on: boolean;
+    state: PhotoState | null;
+    hidden: string[];
+    lens: boolean;
+    fov: number;
+    follow: { x: number; z: number } | null;
+    cameraY: number;
+    groundY: number;
+  };
+  followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -385,6 +401,23 @@ export function installTestApi(game: Game): TestApi {
       graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
     }),
     checkForUpdate: () => game.updates.check(),
+    getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getPhoto: () => {
+      const r = game.renderer;
+      const p = game.photo;
+      const cam = r.camera.position;
+      return {
+        on: !!p,
+        state: p ? { ...p } : null,
+        hidden: r.photoHidden,
+        lens: !!p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural'),
+        fov: r.camera.fov,
+        follow: r.controller.follow ? { x: r.controller.follow.x, z: r.controller.follow.z } : null,
+        cameraY: cam.y,
+        groundY: game.world.heightAt(cam.x, cam.z),
+      };
+    },
+    followNearest: (kinds) => game.followNearest(kinds),
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

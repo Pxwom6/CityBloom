@@ -15,6 +15,8 @@ import { CityPanel, MilestoneBanner } from './CityPanel';
 import { Shell } from './Shell';
 import { TipCard, TutorialCard } from './Guide';
 import { ShortcutSheet } from './ShortcutSheet';
+import { HistoryPanel } from './History';
+import { PhotoMode } from './PhotoMode';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -33,6 +35,7 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
+      else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
       else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey)
         game.overlay.set(game.overlay.active ? null : 'power');
     };
@@ -51,6 +54,13 @@ export function App({ game }: { game: Game }) {
         <ToastLayer />
       </GameContext.Provider>
     );
+  // Photo mode shows only its own panel (M16).
+  if (game.photo)
+    return (
+      <GameContext.Provider value={game}>
+        <PhotoMode />
+      </GameContext.Provider>
+    );
   return (
     <GameContext.Provider value={game}>
       <Shortcuts game={game} />
@@ -64,6 +74,7 @@ export function App({ game }: { game: Game }) {
       <AdvisorsPanel />
       <NotificationsPanel />
       <CityPanel />
+      <HistoryPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

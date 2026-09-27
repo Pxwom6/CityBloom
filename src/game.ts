@@ -4,7 +4,7 @@ import type { GameRenderer } from './render/renderer';
 import type { CameraPresetName, CameraPose } from './render/camera';
 import type { Command, CommandResult } from './sim/commands';
 import type { WorkerPerf } from './sim/protocol';
-import { SPEED_TICKS_PER_SECOND, type Speed } from './sim/time';
+import { MONTH_NAMES, SPEED_TICKS_PER_SECOND, dateOf, type Speed } from './sim/time';
 import { ToolManager } from './tools/manager';
 import { CIVIC } from './data/civic';
 import { MILESTONES } from './data/progression';
@@ -19,6 +19,7 @@ import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { AppUpdates } from './client/pwa';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
+import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TIPS, TUTORIAL, type Tip } from './client/tutorial';
 import {
   DRAW_DISTANCE_PARAMS,
@@ -29,6 +30,28 @@ import {
 } from './client/settings';
 
 type Listener = () => void;
+
+/** What photo mode's camera can ride with (M16). */
+export interface FollowTarget {
+  kind: 'car' | 'walker' | 'bus' | 'vehicle';
+  id: number;
+}
+
+/** Photo mode (M16): the view (lens, hour, field of view) plus the panel's own state. */
+export interface PhotoState extends PhotoView {
+  /** The panel is showing (H hides it for a clear view). */
+  panel: boolean;
+  /** The city keeps running behind the camera. */
+  running: boolean;
+  /** Saved photos are 1× or 2× the screen's resolution. */
+  scale: 1 | 2;
+  follow: FollowTarget | null;
+  /** Waiting for a click on something to follow. */
+  picking: boolean;
+  /** The last photo saved (size), or why following stopped. */
+  saved: { width: number; height: number; bytes: number } | null;
+  note: string | null;
+}
 
 let uiScale = 1;
 
@@ -82,7 +105,7 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | null = null;
+  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | null = null;
   /** Milestone being celebrated (index into MILESTONES), if any. */
   celebration: number | null = null;
   private celebrationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,6 +144,10 @@ export class Game {
   readonly updates = new AppUpdates(() => this.notify());
   /** Saving the city before switching to a new version. */
   updating = false;
+  /** Photo mode, while it's on (M16). */
+  photo: PhotoState | null = null;
+  private photoSpeed: Speed = 1;
+  private followLast: { x: number; z: number; dx: number; dz: number; yaw: number } | null = null;
   /** The graphics check in progress (first launch, or Settings → Check again), and its last answer. */
   graphicsCheck: GraphicsCheck | null = null;
   graphicsResult: CheckResult | null = null;
@@ -580,6 +607,175 @@ export class Game {
     this.updates.apply();
   }
 
+  // ------------------------------------------------------------------ photo mode (M16)
+
+  /** Photo mode: the interface hides and the camera is free to come down to street level. */
+  enterPhoto(): void {
+    if (this.photo || this.mode !== 'play' || this.screen) return;
+    this.tools.use('select');
+    this.select(null);
+    this.overlay.set(null);
+    this.panel = null;
+    this.shortcutsOpen = false;
+    this.setHint(null);
+    this.photoSpeed = this.speed || 1;
+    this.photo = {
+      hour: null,
+      fov: DEFAULT_FOV,
+      zones: false,
+      dof: 0,
+      tiltShift: 0,
+      focus: 100,
+      grade: 'natural',
+      panel: true,
+      running: this.speed > 0,
+      scale: 1,
+      follow: null,
+      picking: false,
+      saved: null,
+      note: null,
+    };
+    this.renderer.setPhoto(this.photo);
+    this.notify();
+  }
+
+  exitPhoto(): void {
+    if (!this.photo) return;
+    this.photo = null;
+    this.followLast = null;
+    this.renderer.controller.follow = null;
+    this.renderer.setPhoto(null);
+    this.notify();
+  }
+
+  setPhoto(patch: Partial<PhotoState>): void {
+    const p = this.photo;
+    if (!p) return;
+    if ('running' in patch && patch.running !== p.running) {
+      if (patch.running) this.setSpeed(this.photoSpeed);
+      else {
+        this.photoSpeed = this.speed || this.photoSpeed;
+        this.setSpeed(0);
+      }
+    }
+    if ('follow' in patch) {
+      this.followLast = null;
+      if (!patch.follow) this.renderer.controller.follow = null;
+      else this.renderer.controller.setPose({ distance: 16, tilt: -0.12 });
+    }
+    Object.assign(p, patch);
+    this.notify();
+  }
+
+  /** Where something that can be followed is this frame. */
+  private followPose(f: FollowTarget): { x: number; y: number; z: number } | null {
+    const r = this.renderer;
+    if (f.kind === 'car') return r.traffic.car(f.id) ?? null;
+    if (f.kind === 'walker') return r.pedestrians.walker(f.id) ?? null;
+    if (f.kind === 'bus') return r.transit.busPoses[f.id] ?? null;
+    return r.vehicles.positions.get(f.id) ?? null;
+  }
+
+  /** The car, bus, walker or service vehicle nearest a point on the ground, within `reach` metres. */
+  private followableNear(
+    x: number,
+    z: number,
+    reach: number,
+    kinds?: FollowTarget['kind'][],
+  ): FollowTarget | null {
+    const r = this.renderer;
+    let best: FollowTarget | null = null;
+    let bestD = reach;
+    const consider = (kind: FollowTarget['kind'], id: number, px: number, pz: number) => {
+      if (kinds && !kinds.includes(kind)) return;
+      const d = Math.hypot(px - x, pz - z);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind, id };
+      }
+    };
+    const car = r.traffic.carAt(x, z, reach);
+    if (car) consider('car', car.id, car.x, car.z);
+    const walker = r.pedestrians.walkerAt(x, z, Math.min(reach, 6));
+    if (walker) consider('walker', walker.id, walker.x, walker.z);
+    r.transit.busPoses.forEach((b, i) => consider('bus', i, b.x, b.z));
+    for (const [id, v] of r.vehicles.positions) consider('vehicle', id, v.x, v.z);
+    return best;
+  }
+
+  /** A click in photo mode: while picking, follow what's under it. */
+  photoClick(clientX: number, clientY: number): void {
+    const p = this.photo;
+    if (!p?.picking) return;
+    const g = this.renderer.controller.screenToGround(clientX, clientY);
+    const f = g ? this.followableNear(g.x, g.z, 12) : null;
+    if (f) this.setPhoto({ follow: f, picking: false, note: null });
+    else this.setPhoto({ note: 'Nothing to follow there: click a car, bus or person.' });
+  }
+
+  /** Follow the nearest car, bus, person or service vehicle to the middle of the view. */
+  followNearest(kinds?: FollowTarget['kind'][]): boolean {
+    const t = this.renderer.controller.current;
+    const f = this.followableNear(t.x, t.z, 800, kinds);
+    if (f) this.setPhoto({ follow: f, picking: false, note: null });
+    else this.setPhoto({ note: 'Nothing is moving near here to follow.' });
+    return !!f;
+  }
+
+  /** Each frame in photo mode: keep the follow camera on its target and focus on what it looks at. */
+  private photoFrame(dt: number): void {
+    const p = this.photo!;
+    const c = this.renderer.controller;
+    if (p.follow) {
+      const pos = this.followPose(p.follow);
+      if (!pos) {
+        this.setPhoto({
+          follow: null,
+          note: `The ${p.follow.kind === 'vehicle' ? 'vehicle' : p.follow.kind} has arrived.`,
+        });
+      } else {
+        const l = this.followLast;
+        if (!l) this.followLast = { x: pos.x, z: pos.z, dx: 0, dz: 0, yaw: c.goal.yaw };
+        else {
+          // Heading from how it moved, smoothed; the camera sits behind it.
+          const k = 1 - Math.exp(-dt * 4);
+          l.dx += (pos.x - l.x - l.dx) * k;
+          l.dz += (pos.z - l.z - l.dz) * k;
+          l.x = pos.x;
+          l.z = pos.z;
+          if (Math.hypot(l.dx, l.dz) > 1e-3) l.yaw = Math.atan2(-l.dx, -l.dz);
+        }
+        c.follow = { x: pos.x, y: pos.y, z: pos.z, yaw: this.followLast!.yaw };
+      }
+    }
+    // Autofocus: keep what the camera looks at sharp.
+    p.focus = c.current.distance;
+  }
+
+  /** Save the view as a PNG (photo mode), downloaded to the player's computer. */
+  async savePhoto(): Promise<{ width: number; height: number; bytes: number } | null> {
+    const p = this.photo;
+    if (!p) return null;
+    const shot = this.renderer.capture(p.scale);
+    const blob = await shot.blob;
+    if (!blob) {
+      this.setPhoto({ note: 'The photo could not be saved (the browser refused to encode it).' });
+      return null;
+    }
+    const d = dateOf(this.world.stats.tick);
+    const name = `${this.world.stats.cityName} ${MONTH_NAMES[d.month]} year ${d.year}.png`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    this.audio?.play('place');
+    const saved = { width: shot.width, height: shot.height, bytes: blob.size };
+    this.setPhoto({ saved, note: null });
+    return saved;
+  }
+
   /** Start the first-city tutorial from its first step. */
   startTutorial(): void {
     this.updateSettings({ tutorialStep: 0 });
@@ -711,6 +907,7 @@ export class Game {
       const next = w.displayTick + dt * SPEED_TICKS_PER_SECOND[this.speed];
       w.displayTick = Math.min(next, w.stats.tick + 8);
     }
+    if (this.photo) this.photoFrame(dt);
     const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.

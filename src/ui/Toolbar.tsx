@@ -33,6 +33,7 @@ import {
   IconShop,
   IconStraight,
   IconRedo,
+  IconCamera,
   IconUndo,
   IconZone,
   IconAlert,
@@ -487,6 +488,20 @@ export function Toolbar() {
           }}
         >
           <IconRedo />
+        </ToolButton>
+        <ToolButton
+          id="tool-photo"
+          active={false}
+          onClick={() => game.enterPhoto()}
+          tip={{
+            title: 'Photo mode',
+            lines: [
+              'Hide the interface, bring the camera down to street level, set the light, lens and colour, ride along with a car, and save a picture.',
+            ],
+            key: 'K',
+          }}
+        >
+          <IconCamera />
         </ToolButton>
       </div>
     </div>

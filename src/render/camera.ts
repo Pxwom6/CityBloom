@@ -16,6 +16,9 @@ export type CameraPresetName = 'overview' | 'city' | 'street' | 'aerial' | 'high
 
 const MIN_DIST = 14;
 const MAX_DIST = 3400;
+/** Photo mode (M16) lets the camera come down to a person's eye level. */
+const PHOTO_MIN_DIST = 2.5;
+const EYE_HEIGHT = 1.6;
 const BOUND = 300;
 
 /**
@@ -38,6 +41,15 @@ export class CameraController {
    */
   pointerDevice: 'auto' | 'mouse' | 'trackpad' = 'auto';
   detected: 'mouse' | 'trackpad' = 'mouse';
+  /** Photo mode (M16): the camera may come lower and closer, down to eye level. */
+  photo = false;
+  /**
+   * Something to ride with (photo mode's follow camera): the camera stays on it, looking the way it
+   * travels unless the player turns (the turn is kept as an offset from its heading).
+   */
+  follow: { x: number; y: number; z: number; yaw: number } | null = null;
+  private followOffset = 0;
+  private followYaw: number | null = null;
   /** Safari's pinch-and-rotate gesture in progress: its last scale and rotation. */
   private gesture: { scale: number; rotation: number } | null = null;
   /** Set by the app so presets can focus on where the city is. */
@@ -76,7 +88,12 @@ export class CameraController {
 
   pitchFor(pose: CameraPose): number {
     const base = lerp(0.32, 1.0, smoothstep(25, 2600, pose.distance));
-    return clamp(base + pose.tilt, 0.1, 1.52);
+    return clamp(base + pose.tilt, this.photo ? 0.005 : 0.1, 1.52);
+  }
+
+  /** How far the point the camera looks at sits above the ground: eye level when close in photo mode. */
+  private lift(distance: number): number {
+    return this.photo ? EYE_HEIGHT * (1 - smoothstep(10, 150, distance)) : 0;
   }
 
   private groundY(x: number, z: number): number {
@@ -116,10 +133,10 @@ export class CameraController {
 
   private clampGoal(): void {
     const g = this.goal;
-    g.distance = clamp(g.distance, MIN_DIST, MAX_DIST);
+    g.distance = clamp(g.distance, this.photo ? PHOTO_MIN_DIST : MIN_DIST, MAX_DIST);
     g.x = clamp(g.x, -BOUND, MAP_SIZE + BOUND);
     g.z = clamp(g.z, -BOUND, MAP_SIZE + BOUND);
-    g.tilt = clamp(g.tilt, -0.35, 0.6);
+    g.tilt = clamp(g.tilt, this.photo ? -1.2 : -0.35, 0.6);
   }
 
   /** Ground point under a screen position (ray-marched against the terrain), or null. */
@@ -331,33 +348,52 @@ export class CameraController {
     if (k.has('KeyF')) g.tilt -= 0.8 * dt;
     if (k.has('Equal') || k.has('NumpadAdd')) g.distance *= Math.exp(-1.8 * dt);
     if (k.has('Minus') || k.has('NumpadSubtract')) g.distance *= Math.exp(1.8 * dt);
+    const f = this.follow;
+    if (f) {
+      // Keep any turn the player made since the last frame as an offset from the heading.
+      if (this.followYaw !== null) this.followOffset += g.yaw - this.followYaw;
+      g.yaw = f.yaw + this.followOffset;
+      this.followYaw = g.yaw;
+      g.x = f.x;
+      g.z = f.z;
+    } else {
+      this.followYaw = null;
+      this.followOffset = 0;
+    }
     this.clampGoal();
 
     const a = 1 - Math.exp(-dt * 9);
     const c = this.current;
-    c.x += (g.x - c.x) * a;
-    c.z += (g.z - c.z) * a;
+    if (f) {
+      // Ride with it: no easing on position, or the camera trails behind.
+      c.x = g.x;
+      c.z = g.z;
+    } else {
+      c.x += (g.x - c.x) * a;
+      c.z += (g.z - c.z) * a;
+    }
     c.distance *= Math.exp((Math.log(g.distance) - Math.log(c.distance)) * a);
     c.yaw += (g.yaw - c.yaw) * a;
     c.tilt += (g.tilt - c.tilt) * a;
-    this.targetY += (this.groundY(c.x, c.z) - this.targetY) * (1 - Math.exp(-dt * 5));
+    const ground = f ? f.y : this.groundY(c.x, c.z);
+    this.targetY += (ground - this.targetY) * (f ? 1 : 1 - Math.exp(-dt * 5));
     this.apply();
   }
 
   private apply(): void {
     const c = this.current;
     const pitch = this.pitchFor(c);
-    this.target.set(c.x, this.targetY, c.z);
+    this.target.set(c.x, this.targetY + this.lift(c.distance), c.z);
     const cp = Math.cos(pitch);
     const pos = this.camera.position;
     pos.set(
       c.x + Math.sin(c.yaw) * cp * c.distance,
-      this.targetY + Math.sin(pitch) * c.distance,
+      this.target.y + Math.sin(pitch) * c.distance,
       c.z + Math.cos(c.yaw) * cp * c.distance,
     );
-    const floor = this.groundY(pos.x, pos.z) + 4;
+    const floor = this.groundY(pos.x, pos.z) + (this.photo ? 0.6 : 4);
     if (pos.y < floor) pos.y = floor;
-    this.camera.near = clamp(c.distance * 0.02, 0.5, 20);
+    this.camera.near = clamp(c.distance * 0.02, this.photo ? 0.25 : 0.5, 20);
     this.camera.far = Math.max(14000, c.distance * 6);
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(this.target);

@@ -242,6 +242,19 @@ export const IconTrophy = (p: P) => (
     <path d="M7 4h10v5a5 5 0 01-10 0zM7 6H4a3 3 0 003 4M17 6h3a3 3 0 01-3 4M12 14v4M8 21h8M9 18h6" />
   </svg>
 );
+/** A camera: photo mode. */
+export const IconCamera = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 8h4l2-3h6l2 3h4v11H3z" />
+    <circle cx="12" cy="13" r="3.5" />
+  </svg>
+);
+/** A line climbing over a timeline with a marker: the city history. */
+export const IconHistory = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 3v18h18M6 16l4-5 3 3 6-7M17 7h2v2" />
+  </svg>
+);
 export const IconCity = (p: P) => (
   <svg {...base} {...p}>
     <path d="M3 21V10l5-3v14M8 21V4l7 3v14M15 21v-9l6 2v7M2 21h20" />

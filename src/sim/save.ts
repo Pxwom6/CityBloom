@@ -1,3 +1,4 @@
+import { emptyChronicle } from './systems/chronicle';
 import { MILESTONES } from '../data/progression';
 import { HEIGHT_RES } from '../data/world';
 import { GAME_TITLE } from '../config';
@@ -5,7 +6,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -151,6 +152,8 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
     const { undo: _undo, ...rest } = s as Record<string, unknown>;
     return rest;
   },
+  // v13 → v14 (M16): city history. An older city's history starts on the day it's loaded.
+  13: (s) => ({ ...s, chronicle: emptyChronicle(s.tick as number) }),
 };
 
 export function encodeState(state: SimState): unknown {

@@ -1490,6 +1490,87 @@ body {
   stroke: var(--color-surface-strong);
   stroke-width: 2;
 }
+.chart-line-2 {
+  fill: none;
+  stroke: var(--chart-negative);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-dot.second {
+  fill: var(--chart-negative);
+}
+.chart-legend {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.chart-key {
+  display: inline-block;
+  width: 12px;
+  height: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-top: 2px solid var(--chart-series-1);
+}
+.chart-key.chart-line-2 {
+  border-top-color: var(--chart-negative);
+}
+.chart-marker line {
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.chart-marker.milestone line {
+  stroke: var(--color-positive);
+}
+.chart-marker.milestone circle {
+  fill: var(--color-positive);
+}
+.chart-marker.disaster line {
+  stroke: var(--color-warning);
+}
+.chart-marker.disaster path {
+  fill: var(--color-warning);
+}
+.chart-tip-event {
+  font-weight: var(--font-weight-medium);
+}
+.chart-tip-event.milestone::before {
+  content: '● ';
+  color: var(--color-positive);
+}
+.chart-tip-event.disaster::before {
+  content: '▲ ';
+  color: var(--color-warning);
+}
+.history .tab-body {
+  overflow-y: auto;
+}
+.history-figure h3 {
+  cursor: help;
+}
+.history-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-xs);
+}
+.history-events li {
+  padding: 2px 0;
+}
+.history-events li.milestone::before {
+  content: '● ';
+  color: var(--color-positive);
+}
+.history-events li.disaster::before {
+  content: '▲ ';
+  color: var(--color-warning);
+}
+.history-events .when {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .chart-bar-pos {
   fill: var(--chart-positive);
 }
@@ -2091,4 +2172,101 @@ body {
   color: var(--color-positive);
   font-size: var(--font-size-xs);
   font-weight: 600;
+}
+
+/* Photo mode (M16): one compact panel over the view; nothing else. */
+.photo-panel {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 19rem;
+  max-height: calc(100vh - var(--space-3) * 2);
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  pointer-events: auto;
+  z-index: var(--z-panel);
+}
+.photo-panel header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.photo-panel h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.photo-panel h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.photo-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+.photo-slider span {
+  display: flex;
+  justify-content: space-between;
+}
+.photo-slider strong {
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+.photo-slider input {
+  width: 100%;
+}
+.photo-follow,
+.photo-grades,
+.photo-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.photo-follow > span:first-child {
+  margin-right: auto;
+}
+.photo-save {
+  margin-top: var(--space-3);
+  gap: var(--space-2);
+}
+.photo-note-line {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.photo-note-line.warn {
+  color: var(--color-negative);
+}
+.photo-keys {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.photo-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-dark);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-xs);
+  animation: photo-hint 2.5s ease-out forwards;
+}
+@keyframes photo-hint {
+  0%,
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
 }

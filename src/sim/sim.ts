@@ -82,6 +82,7 @@ import {
 } from './world/civic';
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
+import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { segSpeed, stepVehicles } from './systems/vehicles';
 import { computeOverlay } from './systems/overlays';
 import {
@@ -248,6 +249,7 @@ export class Sim {
       progress: { peak: 0, milestone: 0, achievements: {}, recoverTo: 0 },
       policies: [],
       tourism: { visitors: 0, overnight: 0 },
+      chronicle: emptyChronicle(0),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -995,6 +997,7 @@ export class Sim {
     }
     if (isMonthStart(t)) {
       closeMonth(this, dateOf(t).totalMonths - 1);
+      recordMonth(s.chronicle, monthFigures(this));
       for (const c of s.civics.values()) {
         c.lastDay = c.processedToday;
         c.processedToday = 0;
@@ -1484,6 +1487,8 @@ export class Sim {
         return this.stats();
       case 'building':
         return this.buildingDetails(q.id);
+      case 'chronicle':
+        return structuredClone(this.state.chronicle);
       case 'budget':
         return this.budget();
       case 'civic':

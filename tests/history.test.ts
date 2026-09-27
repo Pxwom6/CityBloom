@@ -209,13 +209,17 @@ describe('undo and redo (M14)', () => {
     const loaded = Sim.fromSave(save as never);
     expect(loaded.history.undo.length).toBe(0);
     expect(loaded.hash()).toBe(sim.hash());
-    // A version-12 save still carries its old undo list.
+    // A version-12 save still carries its old undo list (and has no city history, M16).
+    const { chronicle: _history, ...v12 } = save.state;
     const old = {
       ...save,
       version: 12,
-      state: { ...save.state, undo: [{ kind: 'road', tick: 0, cost: 0 }] },
+      state: { ...v12, undo: [{ kind: 'road', tick: 0, cost: 0 }] },
     };
     const fromOld = Sim.fromSave(old as never);
+    // Its history starts when it's loaded; everything else is as saved.
+    expect(fromOld.state.chronicle.series[0]).toEqual([]);
+    fromOld.state.chronicle = structuredClone(sim.state.chronicle);
     expect(fromOld.hash()).toBe(sim.hash());
     fromOld.advance(60);
   });

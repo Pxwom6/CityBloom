@@ -42,6 +42,7 @@ function sections(): [string, Row[]][] {
         ['Pause, speeds', ['Space', '1', '2', '3']],
         ['Budget, advisors', ['M', 'J']],
         ['Notifications, city', ['N', 'P']],
+        ['City history, photo mode', ['Y', 'K']],
         ['Data maps', ['L']],
         ['Pause menu', ['Esc']],
         ['This card', ['?']],

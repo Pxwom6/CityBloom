@@ -1,3 +1,4 @@
+import type { Chronicle } from './systems/chronicle';
 import type { MapPreset } from '../data/world';
 import type { Difficulty } from '../data/economy';
 import type { RngState } from './rng';
@@ -105,4 +106,6 @@ export interface SimState {
   policies: string[];
   /** Visitors a day and overnight guests (tourism specialisation). */
   tourism: TourismState;
+  /** City history (M16): key figures over the city's life, and its milestones and disasters. */
+  chronicle: Chronicle;
 }

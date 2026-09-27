@@ -27,7 +27,7 @@
 - [x] M13 Gentler roads
 - [x] M14 Controls and editing
 - [x] M15 Publish it
-- [ ] M16 Photo mode and city history
+- [x] M16 Photo mode and city history
 - [ ] M17 Big projects and elections
 - [ ] M18 Scenarios
 - [ ] M19 Traffic tools
@@ -53,7 +53,7 @@ floods and meteors strike and the city rebuilds. Saves are versioned and compres
 slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
 offers each new version (M15). Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 170 unit and scenario tests, 19 UI tests, a 10-minute soak
+calls at the city overview. Checked by 174 unit and scenario tests, 20 UI tests, a 10-minute soak
 and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
 done).
 
@@ -79,19 +79,23 @@ preview, a first-launch graphics check, and the README's simulation claim correc
 suite runs against a production-mode build served from `/Sim-Cities/`. Publishing needs the two
 clicks at the top of this file.
 
-M16 Photo mode and city history: code, unit tests and the e2e spec pass
-(`e2e/m16-photo-history.spec.ts`), screenshots reviewed (history panel, photo panel, 2× photo,
-five looks from `scripts/dev/photoshot.mjs`); two lens bugs fixed on the way (HDR highlights
-blooming into blobs, grain in blurred areas). Remaining before `M16 complete:`: the full e2e suite,
-bench and balance, PROGRESS numbers.
+M16 Photo mode and city history is complete: the sim records ten figures each month (save v14)
+and the City history panel (Y) charts them with milestones and disasters marked; photo mode (K)
+hides the interface, brings the camera to eye level, sets light, lens (depth of field, tilt-shift),
+field of view and six grades, follows a car, bus or person, and saves a PNG at 1× or 2×. All 20
+e2e specs pass (M16's rerun after the full run, see DECISIONS), 174 unit tests.
 
 ## Next tasks
-1. M16 wrap-up: `npm run e2e` (all specs), `bench.ts 8 --big`, `balance.ts 20`, log numbers,
-   commit `M16 complete:`.
-2. Then M17 Big projects and elections.
-3. Performance watch: at the big city's growth burst (months 4–5, 97–111k) the tick average is
-   1.1–1.3 ms on this VM for both M13 and M14 code (0.7–1.0 ms when M13 was measured). Look for
-   savings in the growth months before M19 adds car-following.
+1. M17 Big projects and elections: 4–6 multi-stage projects with requirements, stages and perks;
+   elections every 4 years with up to two promises, a perk for winning and a year of limits for
+   losing (off in sandbox, and a setting); the balance tool's careful mayor planning the whole map
+   past 50k, completing a project and winning an election; late-game money soaked up without
+   tightening the early game. Drafts of the project and election data are in the session
+   scratchpad (`m17/`); rewrite from SPEC-2 if lost.
+2. Then M18 Scenarios.
+3. Performance watch: tick average at the big city's growth burst varies 0.9–1.3 ms by VM day;
+   one unprofiled M16 run had one-off 64–92 ms ticks. Look for savings before M19 adds
+   car-following.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

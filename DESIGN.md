@@ -605,6 +605,34 @@ zoning). The client rebuilds the terrain chunks (tinting cut faces earth-brown, 
 green), roads, zone cells and trees in the box. Undo records keep the deltas they replaced. Road
 upgrades regrade to the new type between the road's two junctions, or say why they can't.
 
+### 3.16 Undo, redo and moving buildings (M14)
+
+`history.ts` keeps the last 30 actions. `Sim.dispatch` brackets each undoable command
+(`buildRoad`, `zone`, `bulldoze`, `placeBuilding`, `moveBuilding`, `addModule`, `upgradeRoad`,
+`placeStop`) with two captures of what it can touch: the entity maps (buildings, civic buildings,
+vehicles, incidents, road nodes and segments, lots, bus stops, traffic and damage entries), the
+terrain delta and tree rasters, a few values (the id counter, the random generators, the burning
+list, bus ridership) and the treasury and this month's ledger. Zoning captures lots only. The diff
+between the captures is the edit: per entity, whole (added or removed) or per changed field, and per
+changed element of typed arrays (a lot's zone, validity and building cells; terrain samples), plus
+the key order of any map the command reordered, and the money as deltas per ledger line.
+
+Undo applies an edit backwards, redo forwards. First every structural change is checked against
+the state (roads and lots, a building's type and place, a civic building's place and add-ons, bus
+stops, the ground): if any differs from what the edit left, nothing is applied and the reason is
+returned ("Can't undo the road: buildings have grown or lots have changed there since"). Then each
+change is applied; volatile ones (residents, vehicles, trees, generators) only where untouched
+since, and a zone cell isn't taken from under a building that grew there since. Map order is
+restored, money booked back on its lines, and the sim re-indexes what changed (road network
+derived data, spatial hashes, heights from the terrain delta, caches) and marks it dirty for the
+client. Edits of one zoning drag (same `stroke`) merge into one step; a new action clears redo.
+History is not saved (save v13 dropped the old undo list), and the state hash covers the city only.
+
+`moveBuilding` moves a civic building: the same placement check as a new building of that kind
+(ignoring itself and unlocks), a fee of 10 % of its price (at least $250) plus earthworks for a
+level pad, then `Sim.relocateCivic` updates its pose and access, re-indexes it, rechecks the lots
+at both ends, and returning vehicles are re-routed to the new site.
+
 ---
 
 ## 4. Rendering

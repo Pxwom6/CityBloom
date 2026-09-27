@@ -52,24 +52,30 @@ ground holds them.
 
 ### Controls
 
-| Action | Mouse | Keys |
-| --- | --- | --- |
-| Pan | drag with the left button (when the tool doesn't use it) or middle button; screen edge (setting) | W A S D / arrow keys |
-| Rotate and tilt | drag with the right button | Q / E rotate, R / F tilt |
-| Zoom | wheel | |
-| Road tool | | T |
-| Zone residential / commercial / industrial / dezone | | Z / X / C / V |
-| Bulldoze | | B |
-| Select and inspect | click a building, car, walker or road | H |
-| Cancel, leave a tool, close a panel, pause menu | right click | Escape |
-| Undo | | Ctrl+Z or U |
-| Pause / speeds | top bar | Space, 1, 2, 3 |
-| Budget / advisors / notifications / city | top bar | M / J / N / P |
-| Data maps | toolbar | L toggles the power map |
-| Debug panel (FPS, cheats) | | backtick |
+| Action | Mouse | Trackpad | Keys |
+| --- | --- | --- | --- |
+| Pan | drag with the left button (when the tool doesn't use it) or middle button; screen edge (setting) | swipe with two fingers | W A S D / arrow keys |
+| Rotate and tilt | drag with the right button | Option (Alt) or Shift + two-finger swipe; rotate gesture | Q / E rotate, R / F tilt |
+| Zoom | wheel | pinch | + / − |
+| Road tool | | | T |
+| Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
+| Bulldoze | | | B |
+| Select and inspect | click a building, car, walker or road | click | H |
+| Move a civic building | select it, then Move | | |
+| Cancel, leave a tool, close a panel, pause menu | right click | | Escape |
+| Undo / redo (last 30 actions) | toolbar | | ⌘Z / ⇧⌘Z on a Mac, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere; U / Shift+U |
+| Pause / speeds | top bar | | Space, 1, 2, 3 |
+| Budget / advisors / notifications / city | top bar | | M / J / N / P |
+| Data maps | toolbar | | L toggles the power map |
+| Every shortcut on one card | | | ? |
+| Debug panel (FPS, cheats) | | | backtick |
+
+The game tells a trackpad from a mouse by what it sends; Settings → Pointing device fixes it to
+one or the other. Undo reaches back 30 actions (building, zoning, bulldozing, road changes, moves)
+and gives the money back; if something has grown on top since, it says so instead.
 
 The pause menu (Escape) has save, load, settings (graphics quality, shadows, draw distance,
-interface size, volumes, edge scrolling, disasters, autosave) and export/import of `.citybloom`
+interface size, pointing device, volumes, edge scrolling, disasters, autosave) and export/import of `.citybloom`
 save files. The city autosaves every few minutes.
 
 ## Develop

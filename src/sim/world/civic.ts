@@ -6,6 +6,7 @@ import { fail, ok, type CommandResult } from '../commands';
 import { pointRectDistance, rectsOverlap, type ORect, type Vec2 } from '../geom';
 import type { Sim } from '../sim';
 import { clearTreesUnder, footprint as zonedFootprint } from './buildings';
+import { sendHome } from '../systems/vehicles';
 import { planPad, reshapeGround, type EarthPlan } from './earthworks';
 
 /** A player-placed civic building (utility, service, park, landmark). */
@@ -347,6 +348,8 @@ export function moveCivic(
   if (dryRun) return ok(total, { info });
   for (const bid of chk.demolish) sim.removeBuilding(bid);
   sim.relocateCivic(c, { x, z, angle, side, y: chk.y, access: chk.access });
+  // Vehicles on their way back head for the new site; those still out find it when they turn home.
+  for (const v of [...sim.state.vehicles.values()]) if (v.home === id && v.phase === 'back') sendHome(sim, v);
   sim.spend(total, 'construction');
   if (chk.pad?.idx.length) {
     reshapeGround(sim, chk.pad.idx, chk.pad.to);

@@ -265,6 +265,36 @@ describe('moving buildings (M14)', () => {
     expect(again.ok, again.ok ? '' : again.reason).toBe(true);
   });
 
+  it("vehicles on their way back drive to the building's new site", () => {
+    const { sim, streets } = grownTown();
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 100_000 });
+    const lf = [...sim.state.civics.values()].find((c) => c.def === 'landfill')!;
+    const returning = () =>
+      [...sim.state.vehicles.values()].filter((v) => v.home === lf.id && v.phase === 'back');
+    for (let h = 0; h < 48 && !returning().length; h++) sim.advance(60);
+    expect(returning().length).toBeGreaterThan(0);
+    let to: ReturnType<typeof roadsidePose> | null = null;
+    for (const seg of [...streets].reverse().filter((id) => sim.state.net.segments.has(id))) {
+      const curve = sim.net.curve(seg);
+      for (let s = 30; s < curve.length - 30 && !to; s += 8)
+        for (const side of [1, -1] as const) {
+          const pose = roadsidePose(sim, seg, s, side, CIVIC.get('landfill')!.d);
+          if (
+            Math.hypot(pose.x - lf.x, pose.z - lf.z) > 100 &&
+            sim.preview({ type: 'moveBuilding', id: lf.id, ...pose }).ok
+          ) {
+            to = pose;
+            break;
+          }
+        }
+      if (to) break;
+    }
+    expect(to).not.toBeNull();
+    expect(sim.dispatch({ type: 'moveBuilding', id: lf.id, ...to! }).ok).toBe(true);
+    const access = sim.state.civics.get(lf.id)!.access!;
+    for (const v of returning()) expect(v.legs.at(-1)!.seg).toBe(access.seg);
+  });
+
   it('refuses a site a new building would be refused, with the same reason', () => {
     const { sim } = grownTown();
     const [a, b] = [...sim.state.civics.values()];

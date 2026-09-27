@@ -94,7 +94,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Rule | Where |
 |---|---|
 | Work in order, each milestone playable, UI-tested with screenshots, `M<n> complete:` commits | git history; `e2e/m13-*.spec.ts` onwards; `docs/screenshots/m13-*.png` onwards |
-| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save |
+| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save |
 | M12 performance budget kept; bench and balance rerun per milestone | numbers per milestone in PROGRESS.md |
 | Everything original | procedural models, icons and sounds, as in phase 1 |
 | Player kept informed (tooltips, shortcuts, tips, advisor hints, maps and inspector lines) | per milestone below |
@@ -114,3 +114,15 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Nearby zone cells, buildings and trees adapt; nothing floats or sinks | `Sim.groundMoved` (re-seat), cells revalidated, trees cleared on moved ground; level pads for civic buildings; tested in `tests/grading.test.ts` |
 | Existing saves load unchanged | migration 11 → 12 (zero delta); test loads the v10 playtest save and checks the ground is the seed's |
 | Done when: sampled random streets across all presets refused only on extreme ground (before/after), screenshots of clean earthworks with buildings beside them | before 20.7 % refused (90 % on 8–15 % ground), after 0.7 %, only on ≥ 35 % ground (`scripts/dev/grades.ts`, `tests/grading.test.ts`); `scripts/dev/earthshot.mjs` town on a ridge |
+
+## M14 Controls and editing
+
+| Item | Where |
+|---|---|
+| Trackpad: two-finger swipe pans, pinch zooms, modifier + swipe or Safari's rotate gesture turns and tilts; auto-detected, setting to override | `src/render/camera.ts` (`onWheel`, `classify`, `onGesture`), Settings → Pointing device (`src/client/settings.ts`, `src/ui/Shell.tsx`), trackpad tip |
+| Mouse and keyboard unchanged; Cmd on macOS | `src/client/platform.ts` (`modKey`, `modDown`); `src/tools/manager.ts` |
+| Undo and redo for the last ~30 actions incl. bulldozing (roads, civic and zoned buildings with add-ons), zoning and dezoning, road changes and moves | `src/sim/history.ts` (generic state diff), `Sim.undoRedo`; toolbar undo and redo buttons, ⌘Z / ⇧⌘Z; DESIGN.md §3.16 |
+| Toast when an undo can't be clean, saying why | `Game.history` toasts the reason ("Can't undo the road: buildings have grown …") |
+| Move civic buildings, landmarks and specialisation buildings for a small fee, keeping add-ons, funding and upgrades | `moveBuilding` (`moveCivic` in `src/sim/world/civic.ts`), Move button in the civic inspector, place tool move mode |
+| Shortcut cheat sheet on `?` | `src/ui/ShortcutSheet.tsx` |
+| Done when: e2e pans, zooms and rotates with synthesized trackpad events, undoes and redoes a bulldoze and a zoning stroke exactly (state hash), moves a building | `e2e/m14-controls.spec.ts`; unit tests in `tests/history.test.ts` (exact round trips of every kind, conflicts, the limit, migration, moves) |

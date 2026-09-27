@@ -1,5 +1,16 @@
 # PROGRESS
 
+## What you need to do (to publish the game, M15)
+1. **Merge this branch into `main`**: open a pull request from `claude/city-building-game-design-yk7dix`
+   to `main` on GitHub and merge it. The deploy workflow (`.github/workflows/deploy.yml`, already
+   pushed) runs on every push to `main`.
+2. **Turn on Pages**: the repository's **Settings → Pages → Build and deployment → Source:
+   "GitHub Actions"**. (Pages on a private repository needs a paid plan; on a free plan, make the
+   repository public first.)
+3. That's all. The merge starts the first deploy (or **Actions → Deploy to GitHub Pages → Run
+   workflow**); after about two minutes the game is at **https://pxwom6.github.io/Sim-Cities/**.
+   Later pushes to `main` redeploy, and open copies of the game offer "New version, reload".
+
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
 - [x] M2 Growth
@@ -112,6 +123,7 @@ landmark and specialisation buildings for a fee, and a `?` shortcut sheet. Next:
 - Pedestrians at street level: frame time with 240 walkers.
 - Graded roads (M13): how cuttings, embankments and civic pads look at full resolution (`node scripts/dev/earthshot.mjs` scene, or build a street over a hill on the highlands preset), and whether the road ghost's grade colours and the see-through ghost read well while drawing.
 - Trackpad (M14): two-finger swipe pans, pinch zooms, ⌥/Alt + swipe turns and tilts, and Safari's rotate gesture; check that the automatic mouse/trackpad detection guesses right on a MacBook trackpad and a Magic Mouse, and that ⌘Z / ⇧⌘Z undo and redo.
+- Published app (M15), once Pages is on: open https://pxwom6.github.io/Sim-Cities/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
 - Frame rate while panning the overview and street presets (expect 60 fps).
 - Fire/smoke particles and siren lights: check they read well and cost little at 60 fps.
 - Visible traffic at 360 cars: frame time while panning; cars overlap at junctions (no car-following model).

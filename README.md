@@ -2,13 +2,28 @@
 
 An original 3D city-building game for the browser. Lay roads across a green valley, zone homes,
 shops and industry, and keep the city powered, watered, safe, healthy and solvent while it grows
-from a hamlet into a city of a hundred thousand. Every resident, car and bus is simulated; pollution
-drifts on the wind; fires, earthquakes, tornadoes, floods and meteors test the city from time to time.
+from a hamlet into a city of a hundred thousand. Residents are counted per building rather than
+simulated one by one (each home knows how many live there, how many work or study and how happy they
+are), but their trips are routed over the real roads: commuting, shopping and freight add up to the
+traffic on every street, so jams form where the city sends them, and the cars, buses and walkers you
+see follow samples of those trips. Fire engines, police cars, ambulances and garbage trucks drive to
+each call. Pollution drifts on the wind; fires, earthquakes, tornadoes, floods and meteors test the
+city from time to time.
 
 ![A grown city at street level](docs/screenshots/m12-100k-street.png)
 
 Built with TypeScript, Vite, Three.js and Preact. All models, icons and sounds are generated in
 code; there are no bought or borrowed assets (see `CREDITS.md` for the open-source libraries).
+
+## Play online
+
+Once GitHub Pages is on for this repository (see the top of `PROGRESS.md`), every push to `main`
+publishes the game at **https://pxwom6.github.io/Sim-Cities/**. It's an installable app: after one
+visit it plays offline, your browser's install button (or Share → Add to Home Screen on iPhone and
+iPad) puts it in a window of its own, and when a new version is out the game offers to reload into
+it, saving your city first. Saves stay in your browser across updates; export them from the load
+screen to keep a copy. On the first launch a quick check picks graphics that suit the device (a
+lighter preset on older laptops); Settings shows the pick and can check again.
 
 ## Run it
 
@@ -24,7 +39,12 @@ To build a static copy you can host anywhere (it's plain files; saves live in th
 ```sh
 npm run build        # type-checks, then writes dist/
 npm run preview      # serves dist/ at http://localhost:4173
+BASE_PATH=/my-city/ npm run build   # for a site served from a subpath
 ```
+
+The deploy workflow is `.github/workflows/deploy.yml` (unit tests, then a build with the Pages
+path, then publish). The service worker (`sw.js`) is written by the build with every file it
+produced, so any change makes a new version.
 
 ## Play
 
@@ -83,7 +103,8 @@ save files. The city autosaves every few minutes.
 ```sh
 npm run typecheck && npm run lint && npm test && npm run e2e   # everything
 npm test             # unit and scenario tests (Vitest)
-npm run e2e          # end-to-end tests through the real UI (Playwright), with screenshots
+npm run e2e          # end-to-end tests through the real UI (Playwright), with screenshots,
+                     # against a production-mode build served from /Sim-Cities/ as on Pages
 npm run soak         # ten minutes of top-speed play with disasters; fails on any console error
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful

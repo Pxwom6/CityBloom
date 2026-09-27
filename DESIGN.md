@@ -750,12 +750,43 @@ Export writes a `.citybloom` file (gzip JSON); import accepts it (or plain JSON)
 `migrations[v]` upgrades version v → v+1 on load. Round-trip is tested by state hash, including through
 the main menu's Continue and an exported-then-imported file (e2e `m11-shell`).
 
+### 6.1 Publishing, offline play and updates (M15)
+
+- **Deploy.** `.github/workflows/deploy.yml` runs on pushes to `main`: `npm ci`, unit tests, then
+  `npm run build` with `BASE_PATH` (Vite `base`) and `SITE_URL` (absolute share-preview URLs) from
+  `actions/configure-pages`, and `BUILD_ID` = the commit; the `dist/` folder goes to Pages.
+- **Offline.** `scripts/vite-pwa.ts` writes `sw.js` after each build from `src/pwa/sw.js`, filled in
+  with every built file (minus source maps and the share image) and a version hashed from their
+  contents. The worker precaches them (past the HTTP cache) under `citybloom-<version>`, answers
+  every same-origin GET from that cache first (page navigations, with any query, get `index.html`),
+  deletes older caches when it activates, and claims open pages. So the game opens offline after
+  one visit, and a page always runs one version's files.
+- **Updates.** `src/client/pwa.ts` registers the worker in built pages and checks for a new one on
+  each visit, hourly and on returning to the tab. A new worker installs and then waits; the page
+  shows "New version of Citybloom" with Reload, which autosaves a city in play, tells the waiting
+  worker to take over (`skipWaiting`) and reloads on `controllerchange`. Saves (IndexedDB) and
+  settings (localStorage) are outside the cache, so they carry over; save migrations handle format
+  changes.
+- **Install.** `public/manifest.webmanifest` (relative `start_url` and `scope`, so any base path
+  works), icons in `public/icons` (SVG sources; PNGs from `scripts/dev/icons.mjs`), theme colour,
+  Apple touch icon.
+- **Share preview.** Title, description, Open Graph and Twitter card tags in `index.html`; the
+  image is `public/social.jpg` (1200×630, from `scripts/dev/socialshot.mjs`), linked absolutely
+  when the build knows its address.
+- **First-launch graphics.** `src/client/graphicsCheck.ts`: on the first main menu, frames at the
+  high preset are timed after a 1.5 s warm-up (at least 2.5 s and 8 frames, at most 9 s of visible
+  time) and the median picks high (< 22 ms), medium (< 40 ms) or low; software renderers go straight
+  to low and dual-core machines get medium at most. The pick is kept in the settings
+  (`graphicsChecked`, `autoGraphics`) and shown in Settings, which can run the check again.
+
 ## 7. Testing and tooling
 
 - Vitest unit tests for every system; scenario tests build cities by commands and run for years with
   per-tick invariants in test mode (no NaN/Infinity, no negatives, in bounds, money balances).
-- Playwright e2e against a `--mode test` build: builds a small town through the real UI, runs time,
-  opens panels, screenshots presets into `docs/screenshots/`, fails on console errors.
+- Playwright e2e against a `--mode test` build served from `/Sim-Cities/` by `e2e/serve.mjs`, as
+  on Pages (M15; the server can also switch to another build or drop every request, for the update
+  and offline tests): builds a small town through the real UI, runs time, opens panels,
+  screenshots presets into `docs/screenshots/`, fails on console errors.
 - `scripts/bench.ts` (large city: sim tick ms, draw calls, triangles) and `scripts/balance.ts`
   (careful / greedy / neglectful strategies over 20+ years, CSV + ASCII curves).
 

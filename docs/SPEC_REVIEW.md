@@ -126,3 +126,17 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Move civic buildings, landmarks and specialisation buildings for a small fee, keeping add-ons, funding and upgrades | `moveBuilding` (`moveCivic` in `src/sim/world/civic.ts`), Move button in the civic inspector, place tool move mode |
 | Shortcut cheat sheet on `?` | `src/ui/ShortcutSheet.tsx` |
 | Done when: e2e pans, zooms and rotates with synthesized trackpad events, undoes and redoes a bulldoze and a zoning stroke exactly (state hash), moves a building | `e2e/m14-controls.spec.ts`; unit tests in `tests/history.test.ts` (exact round trips of every kind, conflicts, the limit, migration, moves) |
+
+## M15 Publish it
+
+| Item | Where |
+|---|---|
+| Deploy to GitHub Pages with a workflow on pushes to main, with the right Vite base path | `.github/workflows/deploy.yml` (pushed from this session; base path and site address from `actions/configure-pages`, unit tests first); `base` from `BASE_PATH` in `vite.config.ts` |
+| Installable app: web app manifest, original icons | `public/manifest.webmanifest`, `public/icons/` (SVG sources, PNGs from `scripts/dev/icons.mjs`), links in `index.html` |
+| Service worker that caches the game and offers "New version, reload" | `src/pwa/sw.js` (filled in by `scripts/vite-pwa.ts`), `src/client/pwa.ts`, the update notice in `src/ui/SystemMenu.tsx`; `docs/screenshots/m15-update.png`; DESIGN.md §6.1 |
+| Saves survive updates | saves in IndexedDB and settings in localStorage, never in the cache; Reload autosaves first; e2e continues the city after the update |
+| Link previews well: title, description, image from a game screenshot | meta and Open Graph/Twitter tags in `index.html`, absolute URLs from `SITE_URL`; `public/social.jpg` (`scripts/dev/socialshot.mjs`) |
+| First launch picks a graphics preset from a quick performance check | `src/client/graphicsCheck.ts`, `Game.startGraphicsCheck`; shown and re-runnable in Settings; `tests/graphicsCheck.test.ts` |
+| README no longer claims every resident is simulated | README intro: residents counted per building, trips routed over real roads, visible vehicles are samples |
+| What to click, at the top of PROGRESS.md | PROGRESS.md "What you need to do" |
+| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /Sim-Cities/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |

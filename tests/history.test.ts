@@ -3,7 +3,9 @@ import { Sim } from '../src/sim/sim';
 import { HISTORY_LIMIT } from '../src/sim/history';
 import { SAVE_VERSION } from '../src/sim/save';
 import { TICKS_PER_MONTH as TICKS_PER_DAY } from '../src/sim/time';
-import { buildTown, connectPoint, newSim, placeAlong, road, serveTown } from './helpers';
+import { buildTown, connectPoint, newSim, placeAlong, road, roadsidePose, serveTown } from './helpers';
+import { moveFee } from '../src/sim/world/civic';
+import { CIVIC } from '../src/data/civic';
 
 /** A served town a day old: roads, zoned lots with buildings, utilities and services. */
 function grownTown(): { sim: Sim; streets: number[] } {
@@ -216,5 +218,66 @@ describe('undo and redo (M14)', () => {
     const fromOld = Sim.fromSave(old as never);
     expect(fromOld.hash()).toBe(sim.hash());
     fromOld.advance(60);
+  });
+});
+
+describe('moving buildings (M14)', () => {
+  it('a civic building moves with its add-ons for a small fee, frees its old site, and undoes exactly', () => {
+    const { sim, streets } = grownTown();
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 100_000 });
+    const fs = [...sim.state.civics.values()].find((c) => c.def === 'firestation')!;
+    expect(sim.dispatch({ type: 'addModule', civic: fs.id, module: 'engineBay' }).ok).toBe(true);
+    const was = { x: fs.x, z: fs.z, angle: fs.angle, side: fs.side, modules: [...fs.modules] };
+    // Somewhere else: the far end of a side street.
+    const seg = streets.filter((id) => sim.state.net.segments.has(id)).at(-1)!;
+    const curve = sim.net.curve(seg);
+    let to: ReturnType<typeof roadsidePose> | null = null;
+    for (let s = 20; s < curve.length - 20 && !to; s += 8)
+      for (const side of [1, -1] as const) {
+        const pose = roadsidePose(sim, seg, s, side, 30);
+        if (Math.hypot(pose.x - fs.x, pose.z - fs.z) < 80) continue;
+        if (sim.preview({ type: 'moveBuilding', id: fs.id, ...pose }).ok) {
+          to = pose;
+          break;
+        }
+      }
+    expect(to).not.toBeNull();
+    const t0 = sim.state.treasury;
+    const cmd = { type: 'moveBuilding' as const, id: fs.id, ...to! };
+    const pre = sim.preview(cmd);
+    const { before, after } = roundTrip(sim, cmd);
+    expect(before).not.toBe(after);
+    const moved = sim.state.civics.get(fs.id)!;
+    expect(Math.hypot(moved.x - was.x, moved.z - was.z)).toBeGreaterThan(80);
+    expect(moved.modules).toEqual(was.modules);
+    expect(pre.ok && t0 - sim.state.treasury).toBe(pre.ok ? pre.cost : -1);
+    expect(pre.ok && pre.cost).toBeGreaterThanOrEqual(moveFee('firestation'));
+    expect(moveFee('firestation')).toBeLessThan(CIVIC.get('firestation')!.cost / 5);
+    // Its old site can be built on again: another building fits where it stood.
+    const again = sim.preview({
+      type: 'placeBuilding',
+      def: 'firestation',
+      x: was.x,
+      z: was.z,
+      angle: was.angle,
+      side: was.side,
+    });
+    expect(again.ok, again.ok ? '' : again.reason).toBe(true);
+  });
+
+  it('refuses a site a new building would be refused, with the same reason', () => {
+    const { sim } = grownTown();
+    const [a, b] = [...sim.state.civics.values()];
+    const r = sim.preview({
+      type: 'moveBuilding',
+      id: a!.id,
+      x: b!.x + 1,
+      z: b!.z,
+      angle: b!.angle,
+      side: b!.side,
+    });
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toMatch(/Overlaps/);
+    expect(sim.preview({ type: 'moveBuilding', id: 999_999, x: 0, z: 0, angle: 0, side: 1 }).ok).toBe(false);
   });
 });

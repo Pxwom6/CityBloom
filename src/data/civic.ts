@@ -708,6 +708,9 @@ export const UTILITIES = {
   pollutedWater: -0.1,
 };
 
+/** Moving a civic building (M14): a share of its price, with a floor. */
+export const MOVE = { share: 0.1, minFee: 250 };
+
 export const GARBAGE = {
   /** Garbage made per day (one month cycle) per resident / job. */
   perResident: 0.35,

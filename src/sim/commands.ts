@@ -43,6 +43,8 @@ export type Command =
   | { type: 'setDisasters'; on: boolean }
   /** Enact or repeal a policy. */
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
+  /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */
+  | { type: 'moveBuilding'; id: number; x: number; z: number; angle: number; side: 1 | -1 }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

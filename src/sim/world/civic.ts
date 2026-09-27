@@ -1,5 +1,5 @@
 import { MODULE } from '../../data/modules';
-import { CIVIC, SPECIALISATION, type CivicDef } from '../../data/civic';
+import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
 import { GRADING, ROAD_RULES, ROAD_TYPES } from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT, GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type CommandResult } from '../commands';
@@ -166,6 +166,8 @@ export function checkPlacement(
   angle: number,
   side: 1 | -1,
   ignoreCivic = 0,
+  /** What it costs here (a move's fee rather than the building's price). */
+  price?: number,
 ): PlacementCheck {
   const def = CIVIC.get(defId);
   const res: PlacementCheck = { ok: false, demolish: [], access: null, y: 0, pad: null };
@@ -241,7 +243,7 @@ export function checkPlacement(
     const b = sim.state.buildings.get(id)!;
     if (rectsOverlap(shrunk, zonedFootprint(b, 0.5))) res.demolish.push(id);
   }
-  if (!sim.isUnlocked(def.unlockPopulation))
+  if (!ignoreCivic && !sim.isUnlocked(def.unlockPopulation))
     return { ...res, reason: `Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents` };
   // Uneven ground: level a pad at the height where the building meets its road (M13).
   if (hi - lo > GRADING.padFrom) {
@@ -259,7 +261,7 @@ export function checkPlacement(
       return false;
     });
   }
-  if (!sim.state.options.sandbox && sim.state.treasury < def.cost + (res.pad?.cost ?? 0))
+  if (!sim.state.options.sandbox && sim.state.treasury < (price ?? def.cost) + (res.pad?.cost ?? 0))
     return { ...res, reason: 'Not enough money' };
   res.ok = true;
   return res;
@@ -311,6 +313,47 @@ export function placeCivic(
   }
   clearTreesUnder(sim, civicRect(civ, 0));
   return ok(total, { created: [civ.id], info });
+}
+
+/** What moving a civic building costs, before any earthworks for its new site (M14). */
+export function moveFee(defId: string): number {
+  const def = CIVIC.get(defId)!;
+  return Math.max(MOVE.minFee, Math.round(def.cost * MOVE.share));
+}
+
+/**
+ * Pick up a civic building and put it down elsewhere (M14): it keeps its add-ons, stock and
+ * everything else, and faces its new road. The same placement rules apply as for a new one.
+ */
+export function moveCivic(
+  sim: Sim,
+  id: number,
+  x: number,
+  z: number,
+  angle: number,
+  side: 1 | -1,
+  dryRun: boolean,
+): CommandResult {
+  const c = sim.state.civics.get(id);
+  if (!c) return fail('Nothing to move');
+  if (Math.hypot(x - c.x, z - c.z) < 1 && Math.abs(angle - c.angle) < 1e-3 && side === c.side)
+    return fail('It is already here');
+  const fee = moveFee(c.def);
+  const chk = checkPlacement(sim, c.def, x, z, angle, side, id, fee);
+  const earth = chk.pad ? { volume: chk.pad.volume, cost: chk.pad.cost } : null;
+  const info = { demolish: chk.demolish.length, access: !!chk.access, earth, fee };
+  if (!chk.ok) return fail(chk.reason ?? 'Invalid placement', { at: { x, z }, info });
+  const total = fee + (earth?.cost ?? 0);
+  if (dryRun) return ok(total, { info });
+  for (const bid of chk.demolish) sim.removeBuilding(bid);
+  sim.relocateCivic(c, { x, z, angle, side, y: chk.y, access: chk.access });
+  sim.spend(total, 'construction');
+  if (chk.pad?.idx.length) {
+    reshapeGround(sim, chk.pad.idx, chk.pad.to);
+    sim.net.revalidate(chk.pad.box!);
+  }
+  clearTreesUnder(sim, civicRect(c, 0));
+  return ok(total, { info });
 }
 
 export function bulldozeCivic(

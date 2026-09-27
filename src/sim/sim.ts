@@ -76,6 +76,7 @@ import {
   civicUpkeep,
   civicVehicles,
   findAccess,
+  moveCivic,
   placeCivic,
   type Civic,
 } from './world/civic';
@@ -140,6 +141,7 @@ export type SimEvent = {
     | 'closed'
     | 'civicBuilt'
     | 'civicRemoved'
+    | 'civicMoved'
     | 'disaster'
     | 'disasterOver'
     | 'civicDamaged'
@@ -611,6 +613,27 @@ export class Sim {
     this.events.push({ kind: 'civicBuilt', id: c.id });
   }
 
+  /** A civic building moved (M14): re-index it and recheck the lots at both ends of the move. */
+  relocateCivic(
+    c: Civic,
+    to: { x: number; z: number; angle: number; side: 1 | -1; y: number; access: Civic['access'] },
+  ): void {
+    const box = (k: Civic) => {
+      const r = civicRect(k);
+      const pad = Math.hypot(r.hw, r.hd) + 40;
+      return { minX: k.x - pad, minZ: k.z - pad, maxX: k.x + pad, maxZ: k.z + pad };
+    };
+    const from = box(c);
+    Object.assign(c, to);
+    this.indexCivic(c);
+    this.coverageCache = null;
+    this.transitChanged();
+    this.dirtyCivics.add(c.id);
+    this.net.revalidate(from);
+    this.net.revalidate(box(c));
+    this.events.push({ kind: 'civicMoved', id: c.id });
+  }
+
   removeCivic(id: number): void {
     const c = this.state.civics.get(id);
     if (!c) return;
@@ -777,6 +800,8 @@ export class Sim {
       }
       case 'addModule':
         return addModule(this, cmd.civic, cmd.module, dryRun);
+      case 'moveBuilding':
+        return moveCivic(this, cmd.id, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
@@ -803,6 +828,7 @@ export class Sim {
       case 'upgradeRoad':
       case 'placeBuilding':
       case 'addModule':
+      case 'moveBuilding':
         return FULL_SCOPE;
       default:
         return null;
@@ -825,6 +851,8 @@ export class Sim {
         return (CIVIC.get(cmd.def)?.name ?? 'building').toLowerCase();
       case 'addModule':
         return (MODULE.get(cmd.module)?.name ?? 'add-on').toLowerCase();
+      case 'moveBuilding':
+        return 'move';
       default:
         return cmd.type;
     }

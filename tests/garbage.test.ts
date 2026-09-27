@@ -44,7 +44,8 @@ function farTown(
   const ends = [...sim.state.net.nodes.values()].filter(
     (n) => n.x > 0 && sim.net.segmentsAt(n.id).length === 1,
   );
-  let seg = -1;
+  // The cheapest way out of town (since M13 hilly routes can be built too, at a price).
+  let best: { pts: { x: number; z: number }[]; cost: number } | null = null;
   for (const n of ends) {
     for (const [dx, dz] of [
       [0, -1],
@@ -55,12 +56,11 @@ function farTown(
         { x: n.x, z: n.z },
         { x: n.x + dx * far, z: n.z + dz * far },
       ];
-      if (!sim.preview({ type: 'buildRoad', road: 'street', points: pts }).ok) continue;
-      seg = road(sim, pts, 'street').created!.at(-1)!;
-      break;
+      const p = sim.preview({ type: 'buildRoad', road: 'street', points: pts });
+      if (p.ok && (!best || p.cost! < best.cost)) best = { pts, cost: p.cost! };
     }
-    if (seg >= 0) break;
   }
+  const seg = road(sim, best!.pts, 'street').created!.at(-1)!;
   const len = sim.net.curve(seg).length;
   const pose = roadsidePose(sim.net, seg, len - 40, 1, 48);
   if (late) return { sim, lf: null as unknown as Civic, pose };
@@ -105,10 +105,10 @@ describe('garbage in the early game (playtest fixes)', () => {
   });
 
   it('extra trucks keep up where the starting ones fall behind (a landfill far out of town)', () => {
-    const base = farTown(900, 0);
+    const base = farTown(1100, 0);
     base.sim.advance(TICKS_PER_DAY * 3);
     const without = measure(base.sim, base.lf, 3);
-    const more = farTown(900, 3);
+    const more = farTown(1100, 3);
     more.sim.advance(TICKS_PER_DAY * 3);
     const withTrucks = measure(more.sim, more.lf, 3);
     expect(without.avgPiles).toBeGreaterThan(3);

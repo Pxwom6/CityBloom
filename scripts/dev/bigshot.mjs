@@ -20,7 +20,9 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
-  await page.addInitScript(() => localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false })));
+  await page.addInitScript(() =>
+    localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true })),
+  );
   await page.goto('http://localhost:4195/');
   await page.getByTestId('main-load').click({ timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);

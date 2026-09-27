@@ -1,3 +1,4 @@
+import { modDown } from '../client/platform';
 import type { Game } from '../game';
 import { BulldozeTool } from './bulldozeTool';
 import { RoadTool } from './roadTool';
@@ -42,8 +43,18 @@ export class ToolManager {
     window.addEventListener('keydown', (e) => this.onKey(e));
   }
 
+  /** Where a left click began in photo mode (a click, not a drag, picks what to follow). */
+  private photoDown: { x: number; y: number } | null = null;
+
   get activeId(): ToolId {
     return this.active.id as ToolId;
+  }
+
+  /** Pick up a civic building to move it (M14): the place tool carries it until it's put down. */
+  startMove(civicId: number, def: string): void {
+    this.game.select(null);
+    this.use('place');
+    this.place.startMove(civicId, def);
   }
 
   use(id: ToolId): void {
@@ -71,6 +82,11 @@ export class ToolManager {
   }
 
   private onDown(e: PointerEvent): void {
+    // Photo mode (M16) has no tools: a click only picks something to follow.
+    if (this.game.photo) {
+      if (e.button === 0) this.photoDown = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (e.button === 2) {
       this.rightDown = { x: e.clientX, y: e.clientY };
       return;
@@ -79,11 +95,19 @@ export class ToolManager {
   }
 
   private onMove(e: PointerEvent): void {
+    if (this.game.photo) return;
     if (this.game.renderer.controller.isDragging && !this.active.usesLeftDrag) return;
     this.active.pointerMove(this.pointer(e));
   }
 
   private onUp(e: PointerEvent): void {
+    if (this.game.photo) {
+      const d = this.photoDown;
+      this.photoDown = null;
+      if (d && e.button === 0 && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5)
+        this.game.photoClick(e.clientX, e.clientY);
+      return;
+    }
     if (e.button === 2) {
       const d = this.rightDown;
       this.rightDown = null;
@@ -111,6 +135,10 @@ export class ToolManager {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
     // Menus handle their own keys.
     if (this.game.screen) return;
+    if (this.game.photo) {
+      if (this.photoKey(e)) e.preventDefault();
+      return;
+    }
     if (this.active.key?.(e)) {
       e.preventDefault();
       return;
@@ -121,7 +149,18 @@ export class ToolManager {
       this.escape();
       return;
     }
-    if ((e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) || e.code === 'KeyU') {
+    // Undo: ⌘Z / Ctrl+Z or U; redo: ⇧⌘Z / Ctrl+Shift+Z, Ctrl+Y or Shift+U (M14).
+    const mod = modDown(e);
+    if (
+      (e.code === 'KeyZ' && mod && e.shiftKey) ||
+      (e.code === 'KeyY' && mod) ||
+      (e.code === 'KeyU' && e.shiftKey)
+    ) {
+      e.preventDefault();
+      void this.game.redo();
+      return;
+    }
+    if ((e.code === 'KeyZ' && mod) || (e.code === 'KeyU' && !mod)) {
       e.preventDefault();
       void this.game.undo();
       return;
@@ -153,6 +192,38 @@ export class ToolManager {
       case 'KeyH':
         this.use('select');
         break;
+      case 'KeyK':
+        this.game.enterPhoto();
+        break;
     }
+  }
+
+  /** Photo mode's keys (M16); the camera keys still work through the camera controller. */
+  private photoKey(e: KeyboardEvent): boolean {
+    const g = this.game;
+    const p = g.photo!;
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    // A focused button in the photo panel answers Enter and Space itself.
+    if ((e.code === 'Enter' || e.code === 'Space') && (e.target as HTMLElement | null)?.tagName === 'BUTTON')
+      return false;
+    switch (e.code) {
+      case 'Escape':
+        if (p.picking) g.setPhoto({ picking: false });
+        else g.exitPhoto();
+        return true;
+      case 'KeyK':
+        g.exitPhoto();
+        return true;
+      case 'KeyH':
+        g.setPhoto({ panel: !p.panel });
+        return true;
+      case 'Space':
+        g.setPhoto({ running: !p.running });
+        return true;
+      case 'Enter':
+        void g.savePhoto();
+        return true;
+    }
+    return false;
   }
 }

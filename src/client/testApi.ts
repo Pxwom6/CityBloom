@@ -10,6 +10,11 @@ import type { BuildingData, CityStats, DisasterData } from '../sim/protocol';
 import { ZONED_DEFS } from '../data/buildings';
 import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
+import { BUILD_ID } from '../config';
+import type { CheckResult } from './graphicsCheck';
+import type { Chronicle } from '../sim/systems/chronicle';
+import type { PhotoState } from '../game';
+import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { AmbientMix } from '../audio/mix';
 
 export interface TestApi {
@@ -64,6 +69,19 @@ export interface TestApi {
   }[];
   /** Client (CSS pixel) coordinates of a world point on the ground. */
   worldToScreen(x: number, z: number): { x: number; y: number };
+  /**
+   * Earthworks as the client sees them (M13): samples changed from the generated terrain, the box
+   * around them, the biggest cut and fill, and the terrain version.
+   */
+  /** The road ghost's last graded drawing (M13): quads per grade colour and cut/fill posts. */
+  ghostGrade(): { ok: number; warn: number; bad: number; viaduct: number; posts: number };
+  getTerrainEdits(): {
+    edited: number;
+    box: { minX: number; minZ: number; maxX: number; maxZ: number } | null;
+    maxCut: number;
+    maxFill: number;
+    version: number;
+  };
   advance(ticks: number): Promise<number>;
   setCamera(preset: CameraPresetName | Partial<CameraPose>): void;
   getCamera(): CameraPose;
@@ -106,10 +124,41 @@ export interface TestApi {
     screens: string[];
     slot: string | null;
     settings: Record<string, unknown>;
-    applied: { pixelRatio: number; shadows: boolean; fogScale: number; uiScale: string; edgeScroll: boolean };
+    applied: {
+      pixelRatio: number;
+      shadows: boolean;
+      fogScale: number;
+      uiScale: string;
+      edgeScroll: boolean;
+      pointer: 'auto' | 'mouse' | 'trackpad';
+      detected: 'mouse' | 'trackpad';
+    };
     randomDisasters: boolean;
     tip: string | null;
+    /** The build shown in the menu, and the service worker's state (M15). */
+    build: string;
+    app: { waiting: boolean; offlineReady: boolean; controlled: boolean };
+    /** First-launch graphics check: running, and its last answer. */
+    graphics: { checking: boolean; result: CheckResult | null };
   };
+  /** Ask the server for a new version of the app now (M15). */
+  checkForUpdate(): Promise<void>;
+  /** City history as the sim holds it (M16). */
+  getChronicle(): Promise<Chronicle>;
+  /** Photo mode (M16): its state, what the renderer hides and draws, and where the camera is. */
+  getPhoto(): {
+    on: boolean;
+    state: PhotoState | null;
+    hidden: string[];
+    lens: boolean;
+    fov: number;
+    follow: { x: number; z: number } | null;
+    cameraY: number;
+    groundY: number;
+  };
+  followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
+  /** Change photo mode's settings directly (dev scenes). */
+  setPhoto(patch: Partial<PhotoState>): void;
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -175,6 +224,31 @@ export function installTestApi(game: Game): TestApi {
       return null;
     },
     heightAt: (x, z) => game.world.heightAt(x, z),
+    ghostGrade: () => ({ ...game.renderer.ghost.gradeStats }),
+    getTerrainEdits: () => {
+      const d = game.world.terrainDelta;
+      let edited = 0;
+      let maxCut = 0;
+      let maxFill = 0;
+      let box: { minX: number; minZ: number; maxX: number; maxZ: number } | null = null;
+      for (let i = 0; i < d.length; i++) {
+        if (!d[i]) continue;
+        edited++;
+        maxCut = Math.max(maxCut, -d[i]!);
+        maxFill = Math.max(maxFill, d[i]!);
+        const x = (i % HEIGHT_RES) * HEIGHT_STEP;
+        const z = Math.floor(i / HEIGHT_RES) * HEIGHT_STEP;
+        box = box
+          ? {
+              minX: Math.min(box.minX, x),
+              minZ: Math.min(box.minZ, z),
+              maxX: Math.max(box.maxX, x),
+              maxZ: Math.max(box.maxZ, z),
+            }
+          : { minX: x, minZ: z, maxX: x, maxZ: z };
+      }
+      return { edited, box, maxCut, maxFill, version: game.world.terrainVersion };
+    },
     segmentAt: (x, z) => {
       const hit = game.world.net.nearestSegment({ x, z }, 20);
       return hit ? { id: hit.seg, type: game.world.net.segment(hit.seg).type } : null;
@@ -315,10 +389,38 @@ export function installTestApi(game: Game): TestApi {
         fogScale: game.renderer.fogScale,
         uiScale: getComputedStyle(document.documentElement).getPropertyValue('--ui-scale').trim(),
         edgeScroll: game.renderer.controller.edgeScroll,
+        pointer: game.renderer.controller.pointerDevice,
+        detected: game.renderer.controller.detected,
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,
+      build: BUILD_ID,
+      app: {
+        waiting: game.updates.waiting,
+        offlineReady: game.updates.offlineReady,
+        controlled: !!navigator.serviceWorker?.controller,
+      },
+      graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
     }),
+    checkForUpdate: () => game.updates.check(),
+    getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getPhoto: () => {
+      const r = game.renderer;
+      const p = game.photo;
+      const cam = r.camera.position;
+      return {
+        on: !!p,
+        state: p ? { ...p } : null,
+        hidden: r.photoHidden,
+        lens: !!p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural'),
+        fov: r.camera.fov,
+        follow: r.controller.follow ? { x: r.controller.follow.x, z: r.controller.follow.z } : null,
+        cameraY: cam.y,
+        groundY: game.world.heightAt(cam.x, cam.z),
+      };
+    },
+    followNearest: (kinds) => game.followNearest(kinds),
+    setPhoto: (patch) => game.setPhoto(patch),
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

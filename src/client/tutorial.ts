@@ -1,5 +1,6 @@
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
+import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 
 /**
@@ -142,8 +143,37 @@ export const TIPS: Tip[] = [
     when: (g) => g.world.stats.avgCommute > 28 && g.world.stats.population > 500,
   },
   {
+    id: 'earthworks',
+    text:
+      'Roads are laid into hills: the ground is cut and filled so they climb no steeper than their type ' +
+      'allows (streets 16 %, boulevards 8 %). The ghost turns amber near the limit and red where it is ' +
+      'too steep; a longer, winding route is cheaper to grade.',
+    when: (g) => g.tools.road.sawEarthworks,
+  },
+  {
+    id: 'trackpad',
+    text:
+      `Trackpad: swipe with two fingers to pan, pinch to zoom, and hold ${isMac ? 'Option' : 'Alt'} while ` +
+      'swiping to turn and tilt. Press ? for every shortcut.',
+    when: (g) => g.renderer.controller.detected === 'trackpad',
+  },
+  {
     id: 'milestone',
     text: 'New buildings, policies and a bigger loan unlocked. The city panel (P) shows them and what comes next.',
     when: (g) => g.world.stats.milestone >= 1,
+  },
+  {
+    id: 'history',
+    text:
+      'Two years in: the city history (Y) charts population, money, jobs, pollution, crime and commutes ' +
+      'month by month, with milestones and disasters marked.',
+    when: (g) => g.world.stats.tick >= 24 * 1440 && g.world.stats.population > 0,
+  },
+  {
+    id: 'photo',
+    text:
+      'A town worth a picture: photo mode (K, or the camera button) hides the interface, brings the camera ' +
+      'down to the street and saves a PNG, with its own light, lens and colours.',
+    when: (g) => g.world.stats.milestone >= 2,
   },
 ];

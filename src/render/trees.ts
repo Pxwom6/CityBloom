@@ -91,6 +91,13 @@ export class TreeRenderer {
     for (let r = 0; r < REGIONS * REGIONS; r++) this.rebuildRegion(r);
   }
 
+  /** Rebuild the in-map regions overlapping a box (the ground moved there, M13). */
+  rebuildBox(box: { minX: number; minZ: number; maxX: number; maxZ: number }): void {
+    const r0 = (v: number) => Math.min(REGIONS - 1, Math.max(0, Math.floor(v / REGION)));
+    for (let j = r0(box.minZ); j <= r0(box.maxZ); j++)
+      for (let i = r0(box.minX); i <= r0(box.maxX); i++) this.rebuildRegion(j * REGIONS + i);
+  }
+
   /** Rebuild the in-map regions that contain any of these points (after roads/buildings change). */
   rebuildAround(points: { x: number; z: number }[]): void {
     const set = new Set<number>();

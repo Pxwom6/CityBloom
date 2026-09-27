@@ -31,6 +31,7 @@ import { TransitRenderer } from './transit';
 import { StreetLightRenderer } from './streetLights';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
+import { PhotoLens, type PhotoLook } from './photo';
 import { DisasterRenderer } from './disasters';
 
 export interface RenderStats {
@@ -60,6 +61,18 @@ export interface RenderStats {
   smoke: number;
 }
 
+/** Photo mode's view (M16): the lens, time of day, field of view and whether zones show. */
+export interface PhotoView extends PhotoLook {
+  /** Hour to light the scene at, or null for the city's own clock. */
+  hour: number | null;
+  /** Vertical field of view, degrees. */
+  fov: number;
+  zones: boolean;
+}
+
+/** Normal vertical field of view, degrees. */
+export const DEFAULT_FOV = 45;
+
 /** Owns the Three.js scene. Reads ClientWorld; never mutates the simulation. */
 export class GameRenderer {
   readonly renderer: WebGLRenderer;
@@ -84,6 +97,11 @@ export class GameRenderer {
   readonly streetLights: StreetLightRenderer;
   readonly pedestrians: PedestrianRenderer;
   readonly tiltShift = new TiltShift();
+  readonly lens = new PhotoLens();
+  /** Photo mode's view while it's on (M16). */
+  photo: PhotoView | null = null;
+  /** Helpers hidden for photo mode, and whether each was showing. */
+  private hidden: { obj: { visible: boolean }; was: boolean }[] = [];
   readonly disasters: DisasterRenderer;
   /** Tilt-shift blur when zoomed in (a player setting). */
   tiltShiftOn = false;
@@ -223,6 +241,13 @@ export class GameRenderer {
       }
       if (pts.length) this.trees.rebuildAround(pts);
     });
+    // Earthworks (M13): everything laid on the ground follows it.
+    world.onTerrain((box) => {
+      this.terrain.refresh(box);
+      this.roads.refresh(box);
+      this.zones.refresh(box);
+      this.trees.rebuildBox(box);
+    });
 
     this.controller = new CameraController(this.camera, canvas, (x, z) => world.heightAt(x, z));
     this.resize();
@@ -322,11 +347,75 @@ export class GameRenderer {
     this.traffic.maxCars = Math.round(360 * g.crowd);
   }
 
+  /**
+   * Photo mode on or off (M16): hides what isn't part of the city (problem icons, the tool ghost and
+   * selection, route and coverage ribbons), and lets the camera come lower and closer.
+   */
+  setPhoto(view: PhotoView | null): void {
+    if (view && !this.photo) {
+      this.hidden = [
+        this.icons.points,
+        this.ghost.group,
+        this.routeTint.group,
+        this.coverageMap.group,
+        this.zones.group,
+      ].map((obj) => ({ obj, was: obj.visible }));
+      for (const h of this.hidden) h.obj.visible = false;
+    } else if (!view && this.photo) {
+      for (const h of this.hidden) h.obj.visible = h.was;
+      this.hidden = [];
+      this.camera.fov = DEFAULT_FOV;
+      this.lens.dispose();
+    }
+    this.photo = view;
+    this.controller.photo = !!view;
+  }
+
+  /** Scene groups hidden in photo mode (tests check nothing of the interface is drawn). */
+  get photoHidden(): string[] {
+    return this.photo
+      ? ['icons', 'ghost', 'routeTint', 'coverageMap', ...(this.photo.zones ? [] : ['zones'])]
+      : [];
+  }
+
+  /**
+   * The view as a PNG at `scale` times the screen's resolution (M16): the frame is drawn again at
+   * that size and read straight from the canvas, so nothing of the interface can be in it.
+   */
+  capture(scale: number): { blob: Promise<Blob | null>; width: number; height: number } {
+    const prev = this.renderer.getPixelRatio();
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    const gl = this.renderer.getContext();
+    const maxSide = Math.min(
+      this.renderer.capabilities.maxTextureSize,
+      gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+    );
+    // Up to `scale` × the screen's pixels, within what the GPU can hold (and ~36 MP).
+    let ratio = (window.devicePixelRatio || 1) * scale;
+    ratio = Math.min(ratio, maxSide / Math.max(w, h), Math.sqrt(36e6 / (w * h)));
+    this.renderer.setPixelRatio(ratio);
+    this.resize();
+    this.frame(0);
+    const size = this.renderer.getDrawingBufferSize(new Vector2());
+    // toBlob copies the canvas as it is now, so the size can go back straight away.
+    const blob = new Promise<Blob | null>((res) => this.canvas.toBlob(res, 'image/png'));
+    this.renderer.setPixelRatio(prev);
+    this.resize();
+    return { blob, width: size.x, height: size.y };
+  }
+
   frame(dt: number): void {
     this.time += dt;
+    const p = this.photo;
+    if (p) {
+      this.camera.fov = p.fov;
+      this.zones.group.visible = p.zones;
+    }
     this.controller.update(dt);
-    // Data maps are read in flat daylight, whatever the time.
-    const hour = this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : hourOfDay(this.world.displayTick);
+    // Data maps are read in flat daylight, whatever the time; photo mode can pick its own hour.
+    const hour =
+      this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : (p?.hour ?? hourOfDay(this.world.displayTick));
     const l = this.lighting;
     l.update(hour);
     l.follow(
@@ -369,10 +458,13 @@ export class GameRenderer {
     wu.uLight!.value = l.light;
 
     this.renderer.info.reset();
-    this.renderer.render(this.scene, this.camera);
+    // Photo mode draws through its lens when it has anything to do.
+    const lensOn = p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural');
+    if (lensOn) this.lens.render(this.renderer, this.scene, this.camera, p);
+    else this.renderer.render(this.scene, this.camera);
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };
-    if (this.tiltShiftOn) {
+    if (this.tiltShiftOn && !p) {
       const d = this.controller.current.distance;
       this.tiltShift.apply(this.renderer, Math.min(1, Math.max(0, (520 - d) / 380)));
     }

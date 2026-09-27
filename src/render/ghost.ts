@@ -8,8 +8,9 @@ import {
   RingGeometry,
   type Material,
 } from 'three';
-import type { RoadTypeId } from '../data/roads';
+import { GRADING, type RoadTypeId } from '../data/roads';
 import { Curve, v2, type Vec2 } from '../sim/geom';
+import { profileAt } from '../sim/world/grading';
 import { GeoBuffer, mergeChunks } from './geoBuffer';
 import { ROAD_STYLES } from './roadStyle';
 import { RoadTint, type RoadTintPiece } from './roadTint';
@@ -17,6 +18,19 @@ import { RoadTint, type RoadTintPiece } from './roadTint';
 const OK = new Color('#3fa7ff');
 const BAD = new Color('#ff4d4d');
 const WARN = new Color('#ffb020');
+const VIADUCT = new Color('#a98bff');
+const CUT = new Color('#c8894f');
+const FILL = new Color('#f4f1e6');
+
+/** A road piece's graded profile from a build preview (M13), for the ghost. */
+export interface GhostProfile {
+  step: number;
+  h: number[];
+  ground: number[];
+  raised: number[];
+  /** Sample where grading failed, or −1. */
+  fail: number;
+}
 
 /** Translucent tool feedback: road ghosts, highlights, brush and snap markers. */
 export class GhostRenderer {
@@ -106,6 +120,7 @@ export class GhostRenderer {
     pieces: { a: Vec2; c: Vec2; b: Vec2 }[] | null,
     type: RoadTypeId,
     state: 'ok' | 'bad' | 'pending',
+    grade?: { limit: number; pieces: (GhostProfile | null)[] } | null,
   ): void {
     if (this.roadMesh) {
       this.group.remove(this.roadMesh);
@@ -113,12 +128,122 @@ export class GhostRenderer {
       this.roadMesh = null;
     }
     if (!pieces || !pieces.length) return;
+    const graded =
+      grade && grade.pieces.some((p) => p) && (state !== 'bad' || grade.pieces.some((p) => p && p.fail >= 0));
+    if (graded) {
+      const geo = this.gradedRibbon(pieces, ROAD_STYLES[type].totalHalf, grade);
+      if (!geo) return;
+      this.roadMesh = new Mesh(geo, this.gradedMat);
+      this.roadMesh.renderOrder = 10;
+      this.group.add(this.roadMesh);
+      return;
+    }
     const geo = this.ribbon(pieces, ROAD_STYLES[type].totalHalf);
     if (!geo) return;
     this.roadMat.color.copy(state === 'ok' ? OK : state === 'bad' ? BAD : WARN);
     this.roadMesh = new Mesh(geo, this.roadMat);
     this.roadMesh.renderOrder = 10;
     this.group.add(this.roadMesh);
+  }
+
+  /** Last graded ghost: how many quads were drawn in each colour (for tests). */
+  gradeStats = { ok: 0, warn: 0, bad: 0, viaduct: 0, posts: 0 };
+
+  private gradedMat = new MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false,
+    // Seen through hills: a cutting's road runs below today's ground.
+    depthTest: false,
+  });
+
+  /**
+   * The ghost of a graded road (M13): at the height the road will be built, coloured by how steep
+   * it climbs against its type's limit (blue, turning amber near it, red where it's too steep;
+   * violet on a viaduct), with posts down to the ground where it's cut or filled.
+   */
+  private gradedRibbon(
+    pieces: { a: Vec2; c: Vec2; b: Vec2 }[],
+    half: number,
+    grade: { limit: number; pieces: (GhostProfile | null)[] },
+  ): BufferGeometry | null {
+    const buf = new GeoBuffer(1024);
+    const stats = { ok: 0, warn: 0, bad: 0, viaduct: 0, posts: 0 };
+    const col = new Color();
+    pieces.forEach((p, k) => {
+      const prof = grade.pieces[k] ?? null;
+      const curve = new Curve(p.a, p.c, p.b);
+      const L = curve.length;
+      // Too-steep samples: a cutting deeper than allowed, a viaduct at an end; else all of a
+      // failing piece (its ends are further apart in height than it can climb).
+      let bad: (i: number) => boolean = () => false;
+      if (prof && prof.fail >= 0) {
+        const n = prof.h.length;
+        const flagged = prof.h.map(
+          (h, i) =>
+            prof.ground[i]! - h > GRADING.maxCut ||
+            (!!prof.raised[i] && (prof.raised[0] || prof.raised[n - 1])) ||
+            false,
+        );
+        bad = flagged.some((f) => f) ? (i) => !!flagged[i] : () => true;
+      }
+      const hAt = (s: number, x: number, z: number) => (prof ? profileAt(prof, s) : this.y(x, z)) + 0.5;
+      const n = Math.max(1, Math.ceil(L / 3));
+      for (let i = 0; i < n; i++) {
+        const s0 = (L * i) / n;
+        const s1 = (L * (i + 1)) / n;
+        const a = curve.pointAt(s0);
+        const b = curve.pointAt(s1);
+        const ta = curve.tangentAt(s0);
+        const tb = curve.tangentAt(s1);
+        const pt = (q: Vec2, t: Vec2, o: number, s: number) => {
+          const x = q.x + t.z * o;
+          const z = q.z - t.x * o;
+          return [x, hAt(s, q.x, q.z), z];
+        };
+        const si = prof ? Math.min(prof.h.length - 1, Math.round((s0 + s1) / 2 / prof.step)) : 0;
+        if (prof && bad(si)) {
+          col.copy(BAD);
+          stats.bad++;
+        } else if (prof && prof.raised[si]) {
+          col.copy(VIADUCT);
+          stats.viaduct++;
+        } else {
+          // Grade over about 8 m around this stretch.
+          const m = (s0 + s1) / 2;
+          const g = prof
+            ? Math.abs(profileAt(prof, Math.min(L, m + 4)) - profileAt(prof, Math.max(0, m - 4))) /
+              (Math.min(L, m + 4) - Math.max(0, m - 4) || 1)
+            : 0;
+          const t = Math.min(1, Math.max(0, (g / grade.limit - 0.55) / 0.45));
+          col.copy(OK).lerp(WARN, t);
+          if (t > 0.5) stats.warn++;
+          else stats.ok++;
+        }
+        buf.quad(pt(a, ta, -half, s0), pt(a, ta, half, s0), pt(b, tb, half, s1), pt(b, tb, -half, s1), col);
+      }
+      // Posts from the road down (fill) or up (cut) to today's ground, every 12 m.
+      if (prof)
+        for (let s = 6; s < L - 3; s += 12) {
+          const q = curve.pointAt(s);
+          const t = curve.tangentAt(s);
+          const top = hAt(s, q.x, q.z) - 0.5;
+          const ground = Math.max(0, this.y(q.x, q.z));
+          if (Math.abs(top - ground) < 1) continue;
+          col.copy(top > ground ? FILL : CUT);
+          const w = 0.5;
+          const x0 = q.x - t.x * w;
+          const z0 = q.z - t.z * w;
+          const x1 = q.x + t.x * w;
+          const z1 = q.z + t.z * w;
+          buf.quad([x0, ground, z0], [x1, ground, z1], [x1, top, z1], [x0, top, z0], col, false);
+          buf.quad([x1, ground, z1], [x0, ground, z0], [x0, top, z0], [x1, top, z1], col, false);
+          stats.posts++;
+        }
+    });
+    this.gradeStats = stats;
+    return buf.n ? mergeChunks([buf.trimmed()]) : null;
   }
 
   highlightSegment(curve: Curve | null, half: number, color: 'bad' | 'ok' = 'bad'): void {

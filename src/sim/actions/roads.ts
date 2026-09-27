@@ -5,8 +5,9 @@ import { Curve, pointRectDistance, type Vec2 } from '../geom';
 import { footprint } from '../world/buildings';
 import { bulldozeCivic, civicRect } from '../world/civic';
 import type { Sim } from '../sim';
-import { UNDO_LIMIT } from '../undo';
-import { applyRoadPlan, planRoad } from '../world/roadPlanner';
+import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
+import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
+import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
 
 /** Refusal reason if a road type isn't available yet, else null. */
@@ -22,28 +23,74 @@ export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: bo
   const s = sim.state;
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
-  const plan = planRoad(sim.net, sim.terrain, road, points, s.treasury, s.options.sandbox);
+  // Earthworks leave the ground under buildings alone, except those the road will replace.
+  let doomed = new Set<number>();
+  const plan = planRoad(sim.net, sim.terrain, road, points, s.treasury, s.options.sandbox, (pieces) => {
+    doomed = new Set(buildingsInTheWay(sim, pieces, road));
+    return keepUnder(sim, doomed);
+  });
   const preview = {
     pieces: plan.pieces.map((p) => ({ a: p.a, c: p.c, b: p.b })),
     length: plan.length,
     splits: plan.splits.length,
-    demolish: plan.ok ? buildingsInTheWay(sim, plan.pieces, road).length : 0,
+    demolish: doomed.size,
+    grade: gradeInfo(plan),
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
-  const res = applyRoadPlan(sim.net, plan);
+  const res = applyRoadPlan(sim.net, plan, () => {
+    if (!plan.earth?.idx.length) return null;
+    reshapeGround(sim, plan.earth.idx, plan.earth.to);
+    return plan.earth.box;
+  });
   sim.spend(plan.cost, 'roads');
   clearTreesAlong(sim, res.segments);
-  sim.pushUndo({
-    kind: 'road',
-    tick: s.tick,
-    cost: plan.cost,
-    segments: res.segments,
-    nodes: res.nodes,
-    splits: res.splits,
-  });
   sim.markNetworkChanged();
   return ok(plan.cost, { created: res.segments, info: preview });
+}
+
+/** What the road preview shows about grading (M13): the profile of each piece and the earthworks. */
+function gradeInfo(plan: RoadPlan) {
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  let steepest = 0;
+  let ground = 0;
+  for (const p of plan.profiles) {
+    if (!p) continue;
+    steepest = Math.max(steepest, p.grade);
+    ground = Math.max(ground, p.groundGrade);
+  }
+  return {
+    limit: ROAD_TYPES[plan.type].maxGrade,
+    max: r2(steepest),
+    ground: r2(ground),
+    earth: plan.earth
+      ? { volume: plan.earth.volume, cut: plan.earth.cut, fill: plan.earth.fill, cost: plan.earth.cost }
+      : null,
+    viaduct: Math.round(plan.profiles.reduce((a, p) => a + (p?.raisedLength ?? 0), 0)),
+    pieces: plan.profiles.map((p) =>
+      p
+        ? {
+            step: p.step,
+            h: Array.from(p.h, r2),
+            ground: Array.from(p.ground, r2),
+            raised: Array.from(p.raised),
+            fail: p.fail?.at ?? -1,
+          }
+        : null,
+    ),
+  };
+}
+
+/** Ground the earthworks must not move: under buildings and civic buildings that stay. */
+function keepUnder(sim: Sim, doomed: Set<number>): (x: number, z: number) => boolean {
+  return (x, z) => {
+    const p = { x, z };
+    for (const id of sim.bldHash.queryPoint(x, z, 3))
+      if (!doomed.has(id) && pointRectDistance(p, footprint(sim.state.buildings.get(id)!)) < 2) return true;
+    for (const id of sim.civHash.queryPoint(x, z, 3))
+      if (pointRectDistance(p, civicRect(sim.state.civics.get(id)!)) < 2) return true;
+    return false;
+  };
 }
 
 /**
@@ -85,32 +132,87 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
     for (const p of pts)
       if (pointRectDistance(p, r) < hwNew) return fail('A civic building is in the way', { at: p });
   }
-  const info = { length: Math.round(len), from: seg.type, to: road };
-  if (dryRun) return ok(cost, { info });
-  const from = seg.type;
+  // The new type's grade limit (M13): regrade the road between its junctions and widen its
+  // formation; bridges and viaducts keep their decks, which must not climb too steeply.
+  const graded = regrade(sim, segId, road);
+  if (graded.reason) return fail(graded.reason, { at: graded.at ?? at });
+  const earth = graded.earth;
+  const total = cost + (earth?.cost ?? 0);
+  if (total > s.treasury && !s.options.sandbox) return fail('Not enough money', { at });
+  const info = {
+    length: Math.round(len),
+    from: seg.type,
+    to: road,
+    earth: earth ? { volume: earth.volume, cost: earth.cost } : null,
+  };
+  if (dryRun) return ok(total, { info });
   sim.net.setSegmentType(segId, road);
+  if (earth?.idx.length) reshapeGround(sim, earth.idx, earth.to);
   sim.relocateBuildingsOn(segId);
-  sim.net.revalidate(sim.net.segmentInfluenceBox(segId));
-  sim.spend(cost, 'roads');
+  const around = sim.net.segmentInfluenceBox(segId);
+  sim.net.revalidate(earth?.box ? union(around, earth.box) : around);
+  sim.spend(total, 'roads');
   clearTreesAlong(sim, [segId]);
-  sim.pushUndo({ kind: 'upgrade', tick: s.tick, cost, seg: segId, from });
   sim.markNetworkChanged();
-  return ok(cost, { info });
+  return ok(total, { info });
 }
 
-export function undoUpgrade(
+type Box = { minX: number; minZ: number; maxX: number; maxZ: number };
+const union = (a: Box, b: Box): Box => ({
+  minX: Math.min(a.minX, b.minX),
+  minZ: Math.min(a.minZ, b.minZ),
+  maxX: Math.max(a.maxX, b.maxX),
+  maxZ: Math.max(a.maxZ, b.maxZ),
+});
+
+/**
+ * Grading for a road changed to `road` (M13): a profile within the new type's limit between the
+ * road's two junctions and the earthworks for it, or why it can't be done.
+ */
+function regrade(
   sim: Sim,
-  rec: Extract<import('../undo').UndoRecord, { kind: 'upgrade' }>,
-  dryRun: boolean,
-): CommandResult {
-  if (!sim.state.net.segments.has(rec.seg)) return fail("Can't undo: that road has changed since");
-  if (dryRun) return ok(-rec.cost);
-  sim.net.setSegmentType(rec.seg, rec.from);
-  sim.relocateBuildingsOn(rec.seg);
-  sim.net.revalidate(sim.net.segmentInfluenceBox(rec.seg));
-  sim.earn(rec.cost, 'refunds');
-  sim.markNetworkChanged();
-  return ok(-rec.cost);
+  segId: number,
+  road: RoadTypeId,
+): { earth: EarthPlan | null; reason?: string; at?: Vec2 } {
+  const seg = sim.net.segment(segId);
+  const curve = sim.net.curve(segId);
+  const limit = ROAD_TYPES[road].maxGrade;
+  const name = articled(ROAD_TYPES[road].name);
+  const deck = sim.deck(segId);
+  if (deck) {
+    // A bridge or viaduct: check the deck's climb over any 16 m.
+    const w = Math.max(1, Math.round(16 / deck.step));
+    for (let i = 0; i + w < deck.h.length; i++) {
+      const g = Math.abs(deck.h[i + w]! - deck.h[i]!) / (w * deck.step);
+      if (g > limit * 1.02)
+        return {
+          earth: null,
+          reason: `Too steep for ${name}: this bridge climbs ${Math.round(g * 100)}\u00a0% and ${name} can climb ${Math.round(limit * 100)}\u00a0%`,
+          at: curve.pointAt(Math.min(curve.length, i * deck.step)),
+        };
+    }
+    return { earth: null };
+  }
+  const A = sim.net.node(seg.a);
+  const B = sim.net.node(seg.b);
+  const fine = new Curve(curve.a, curve.c, curve.b, 4);
+  const heightAt = (x: number, z: number) => sim.terrain.heightAt(x, z);
+  const prof = gradeProfile(fine, heightAt, road, heightAt(A.x, A.z), heightAt(B.x, B.z));
+  if (prof.fail) return { earth: null, reason: prof.fail.reason, at: fine.pointAt(prof.s[prof.fail.at]!) };
+  if (prof.raisedLength > 0)
+    return {
+      earth: null,
+      reason: `Too steep for ${name}: it would need a ${Math.round(prof.maxFill)} m embankment here. Rebuild it as a new road to carry it on a viaduct`,
+      at: fine.pointAt(prof.s[prof.raised.indexOf(1)]!),
+    };
+  const earth = planEarthworks(
+    sim.terrain,
+    sim.net,
+    [{ curve: fine, type: road, prof, joined: [true, true] }],
+    keepUnder(sim, new Set()),
+    new Set([segId]),
+  );
+  return { earth };
 }
 
 function articled(name: string): string {
@@ -210,44 +312,3 @@ export function clearTreesAlong(sim: Sim, segments: number[]): void {
     }
   }
 }
-
-export function undoRoad(
-  sim: Sim,
-  rec: Extract<import('../undo').UndoRecord, { kind: 'road' }>,
-  dryRun: boolean,
-): CommandResult {
-  for (const id of rec.segments)
-    if (!sim.state.net.segments.has(id)) return fail("Can't undo: that road has changed since");
-  if (dryRun) return ok(-rec.cost);
-  let box: { minX: number; minZ: number; maxX: number; maxZ: number } | null = null;
-  const grow = (b: typeof box) => {
-    if (!b) return;
-    box = box
-      ? {
-          minX: Math.min(box.minX, b.minX),
-          minZ: Math.min(box.minZ, b.minZ),
-          maxX: Math.max(box.maxX, b.maxX),
-          maxZ: Math.max(box.maxZ, b.maxZ),
-        }
-      : b;
-  };
-  for (const id of rec.segments) {
-    grow(sim.net.segmentInfluenceBox(id));
-    const seg = sim.net.segment(id);
-    sim.net.removeSegment(id);
-    sim.net.removeNodeIfOrphan(seg.a);
-    sim.net.removeNodeIfOrphan(seg.b);
-  }
-  for (const sp of [...rec.splits].reverse()) {
-    if (sim.state.net.segments.has(sp.first)) grow(sim.net.segmentInfluenceBox(sp.first));
-    if (sim.state.net.segments.has(sp.second)) grow(sim.net.segmentInfluenceBox(sp.second));
-    sim.net.mergeSplit(sp);
-  }
-  for (const n of rec.nodes) sim.net.removeNodeIfOrphan(n);
-  if (box) sim.net.revalidate(box);
-  sim.earn(rec.cost, 'refunds');
-  sim.markNetworkChanged();
-  return ok(-rec.cost);
-}
-
-export { UNDO_LIMIT };

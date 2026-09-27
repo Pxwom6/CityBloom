@@ -3,6 +3,10 @@ import { Sim } from '../src/sim/sim';
 import { ROAD_TYPES } from '../src/data/roads';
 import { deckAt } from '../src/sim/world/bridge';
 import { ROWS } from '../src/data/zones';
+
+/** What a built or previewed road paid for earthworks (M13). */
+const earthCost = (r: { info?: unknown }) =>
+  (r.info as { grade?: { earth: { cost: number } | null } } | undefined)?.grade?.earth?.cost ?? 0;
 import {
   cellsOf,
   connectPoint,
@@ -30,7 +34,10 @@ describe('building roads', () => {
     const c = connectPoint(sim);
     const before = sim.state.treasury;
     const r = road(sim, [c, { x: c.x + 300, z: c.z }]);
-    expect(r.cost).toBe(Math.round(sim.net.curve(r.created![0]!).length * ROAD_TYPES.street.costPerMetre));
+    // The road by the metre, plus the earthworks that lay it into the ground (M13).
+    expect(r.cost).toBe(
+      Math.round(sim.net.curve(r.created![0]!).length * ROAD_TYPES.street.costPerMetre) + earthCost(r),
+    );
     expect(sim.state.treasury).toBe(before - r.cost);
     expect(r.cost).toBeGreaterThan(2900);
     const segs = r.created!;
@@ -203,7 +210,8 @@ describe('bulldoze and undo', () => {
     const t = sim.state.treasury;
     const res = sim.dispatch({ type: 'bulldoze', target: { kind: 'segment', id: seg.id } });
     expect(res.ok).toBe(true);
-    expect(sim.state.treasury - t).toBe(Math.round(r.cost * 0.25));
+    // A quarter of the road itself back; earthworks aren't refunded.
+    expect(sim.state.treasury - t).toBe(Math.round((r.cost - earthCost(r)) * 0.25));
     expect(sim.state.net.segments.has(seg.id)).toBe(false);
     expect(sim.state.net.blocks.has(seg.left)).toBe(false);
     expect(sim.state.net.nodes.has(seg.b)).toBe(false);
@@ -373,9 +381,11 @@ describe('bridges', () => {
     });
     const r = sim.dispatch({ type: 'buildRoad', road: 'street', points: across });
     expect(r.ok).toBe(true);
-    // Per metre, the bridge costs several times a road on land.
+    // Per metre, the bridge costs several times a road on land (earthworks aside).
     const len = across[1]!.x - across[0]!.x;
-    expect(r.ok && land.ok && r.cost / len).toBeGreaterThan(((land.ok ? land.cost : 0) / 270) * 1.8);
+    expect(r.ok && land.ok && (r.cost - earthCost(r)) / len).toBeGreaterThan(
+      ((land.ok ? land.cost - earthCost(land) : 0) / 270) * 1.8,
+    );
     const seg = r.ok ? r.created![0]! : -1;
     const deck = sim.deck(seg)!;
     expect(deck).not.toBeNull();

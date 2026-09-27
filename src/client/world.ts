@@ -12,14 +12,14 @@ import type {
   DisasterData,
 } from '../sim/protocol';
 import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '../sim/world/network';
-import { SpatialHash } from '../sim/world/spatial';
+import { SpatialHash, type Box } from '../sim/world/spatial';
 import { CIVIC } from '../data/civic';
-import { deckAt, deckProfile, type DeckProfile } from '../sim/world/bridge';
+import { deckAt, deckProfile, viaductDeck, type DeckProfile } from '../sim/world/bridge';
 import { ROAD_TYPES } from '../data/roads';
 import { TRAFFIC } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
-import { MAP_SIZE } from '../data/world';
+import { HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
 
 type Listener = () => void;
 
@@ -37,6 +37,11 @@ export class ClientWorld {
   readonly options: GameOptions;
   readonly gen: TerrainGen;
   readonly heights: Float32Array;
+  /** Earthworks (M13): each height sample's change from the generated terrain. */
+  readonly terrainDelta: Float32Array;
+  /** Bumped whenever earthworks change the ground. */
+  terrainVersion = 0;
+  private terrainListeners: ((box: Box) => void)[] = [];
   readonly trees: Uint8Array;
   readonly groundwater: Uint8Array;
   readonly ore: Uint8Array;
@@ -80,6 +85,7 @@ export class ClientWorld {
     this.options = snap.options;
     this.gen = new TerrainGen(snap.terrainParams);
     this.heights = snap.heights;
+    this.terrainDelta = snap.terrainDelta ?? new Float32Array(snap.heights.length);
     this.trees = snap.trees;
     this.groundwater = snap.groundwater;
     this.ore = snap.ore;
@@ -139,9 +145,12 @@ export class ClientWorld {
   deck(segId: number): DeckProfile | null {
     let d = this.deckCache.get(segId);
     if (d === undefined) {
-      d = this.netState.segments.has(segId)
-        ? deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z))
-        : null;
+      const seg = this.netState.segments.get(segId);
+      d = !seg
+        ? null
+        : seg.deck
+          ? viaductDeck(seg.deck, this.net.curve(segId), (x, z) => this.heightAt(x, z))
+          : deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z));
       this.deckCache.set(segId, d);
     }
     return d;
@@ -311,8 +320,47 @@ export class ClientWorld {
     return this.gen.height(x, z);
   }
 
+  /** Earthworks changed the ground in `box` (M13): terrain, roads, zones and trees follow it. */
+  onTerrain(l: (box: Box) => void): () => void {
+    this.terrainListeners.push(l);
+    return () => {
+      this.terrainListeners = this.terrainListeners.filter((x) => x !== l);
+    };
+  }
+
+  private applyTerrain(t: NonNullable<FrameDiff['terrain']>): void {
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (let k = 0; k < t.idx.length; k++) {
+      const i = t.idx[k]!;
+      this.heights[i] = t.h[k]!;
+      this.terrainDelta[i] = t.d[k]!;
+      const x = (i % HEIGHT_RES) * HEIGHT_STEP;
+      const z = Math.floor(i / HEIGHT_RES) * HEIGHT_STEP;
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+    // Everything drawn on the ground within a sample spacing of a changed sample moved with it.
+    const box = {
+      minX: minX - HEIGHT_STEP,
+      minZ: minZ - HEIGHT_STEP,
+      maxX: maxX + HEIGHT_STEP,
+      maxZ: maxZ + HEIGHT_STEP,
+    };
+    for (const id of this.net.segHash.query(box)) this.deckCache.delete(id);
+    this.terrainVersion++;
+    for (const l of this.terrainListeners) l(box);
+    this.emit('terrain');
+  }
+
   applyFrame(diff: FrameDiff): void {
     this.stats = diff.stats;
+    // Ground first, so roads and buildings arriving in the same frame are laid on it.
+    if (diff.terrain) this.applyTerrain(diff.terrain);
     if (diff.net) this.applyNet(diff.net);
     if (diff.buildings) {
       for (const id of diff.buildings.removed) {

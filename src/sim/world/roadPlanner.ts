@@ -1,9 +1,11 @@
-import { ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { GRADING, ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import { Curve, angleDiff, angleOf, curveCrossings, dist, mid, splitBezier, v2, type Vec2 } from '../geom';
 import type { Terrain } from '../terrain/terrain';
 import type { Network } from './network';
 import { BRIDGE, deckAt, deckProfile, rampLength } from './bridge';
+import { gradeProfile, profileAt, type GradeProfile } from './grading';
+import { planEarthworks, type EarthPiece, type EarthPlan } from './earthworks';
 
 /**
  * Road planning: turns a drawn path into validated pieces with automatic intersections.
@@ -36,6 +38,10 @@ export interface RoadPlan {
   pieces: PlanPiece[];
   /** Existing segments that will be split, with the arc lengths (descending per segment). */
   splits: { seg: number; s: number; x: number; z: number }[];
+  /** Graded profile of each piece on dry land (null where it crosses water on a bridge). M13. */
+  profiles: (GradeProfile | null)[];
+  /** The cut and fill that lays it into the ground; its cost is included in `cost`. */
+  earth: EarthPlan | null;
 }
 
 const DEG = Math.PI / 180;
@@ -104,8 +110,20 @@ export function planRoad(
   points: Vec2[],
   treasury: number,
   sandbox: boolean,
+  /** Given the validated pieces, the ground the earthworks must leave alone (under buildings). */
+  keep?: (pieces: PlanPiece[]) => (x: number, z: number) => boolean,
 ): RoadPlan {
-  const plan: RoadPlan = { ok: true, type, cost: 0, length: 0, bridgeLength: 0, pieces: [], splits: [] };
+  const plan: RoadPlan = {
+    ok: true,
+    type,
+    cost: 0,
+    length: 0,
+    bridgeLength: 0,
+    pieces: [],
+    splits: [],
+    profiles: [],
+    earth: null,
+  };
   const rt = ROAD_TYPES[type];
   if (!rt || !rt.buildable) return fail(plan, 'This road type cannot be built');
   const raw = parsePath(points);
@@ -223,9 +241,22 @@ export function planRoad(
   }
   plan.pieces = finalPieces;
   plan.splits = [...splitMap.values()].sort((p, q) => p.seg - q.seg || q.s - p.s);
+  // A viaduct can only be joined where it's back on the ground (M13; no grade separation yet).
+  for (const sp of plan.splits) {
+    const deck = net.segment(sp.seg).deck;
+    if (deck && profileAt({ step: GRADING.step, h: deck }, sp.s) > terrain.heightAt(sp.x, sp.z) + 1)
+      return fail(
+        plan,
+        "Roads can't meet on a viaduct: join it where it's back on the ground",
+        v2(sp.x, sp.z),
+      );
+  }
 
   // 4. Validation.
   const hwNew = roadHalfWidth(type);
+  const endKey = (e: Endpoint) => (e.kind === 'node' ? `n${e.id}` : `p${e.x.toFixed(2)},${e.z.toFixed(2)}`);
+  /** Graded heights at the ends of pieces checked so far, for the pieces that follow them. */
+  const endHeights = new Map<string, number>();
   for (const p of finalPieces) {
     if (p.length < ROAD_RULES.minLength)
       return fail(plan, 'Too close to another road or junction', mid(p.a, p.b));
@@ -239,8 +270,15 @@ export function planRoad(
       }
     }
     const curve = new Curve(p.a, p.c, p.b, 4);
+    for (let i = 0; i < curve.xs.length; i++) {
+      const x = curve.xs[i]!;
+      const z = curve.zs[i]!;
+      if (x < 4 || z < 4 || x > MAP_SIZE - 4 || z > MAP_SIZE - 4)
+        return fail(plan, 'Outside the city limits', v2(x, z));
+    }
     const deck = deckProfile(curve, (x, z) => terrain.heightAt(x, z));
     if (deck) {
+      // Across water: a bridge with ramps; the land either side is checked the old way (M6).
       const at = firstWet(curve, terrain);
       if (type === 'dirt') return fail(plan, "Dirt roads can't cross water: use a street or wider", at);
       if (deck.longestSpan > BRIDGE.maxSpan)
@@ -252,26 +290,55 @@ export function planRoad(
           at,
         );
       plan.bridgeLength += deck.overWater;
-    }
-    const heights: number[] = [];
-    for (let i = 0; i < curve.xs.length; i++) {
-      const x = curve.xs[i]!;
-      const z = curve.zs[i]!;
-      if (x < 4 || z < 4 || x > MAP_SIZE - 4 || z > MAP_SIZE - 4)
-        return fail(plan, 'Outside the city limits', v2(x, z));
-      heights.push(deck ? deckAt(deck, curve.cum[i]!) : terrain.heightAt(x, z));
-    }
-    const win = Math.max(1, Math.round(ROAD_RULES.gradeWindow / 4));
-    for (let i = 0; i + win < heights.length; i++) {
-      const run = curve.cum[i + win]! - curve.cum[i]!;
-      if (run > 0 && Math.abs(heights[i + win]! - heights[i]!) / run > ROAD_RULES.maxGrade) {
-        return fail(plan, 'Too steep', v2(curve.xs[i]!, curve.zs[i]!));
+      const heights: number[] = [];
+      for (let i = 0; i < curve.xs.length; i++) heights.push(deckAt(deck, curve.cum[i]!));
+      const win = Math.max(1, Math.round(ROAD_RULES.gradeWindow / 4));
+      for (let i = 0; i + win < heights.length; i++) {
+        const run = curve.cum[i + win]! - curve.cum[i]!;
+        if (run > 0 && Math.abs(heights[i + win]! - heights[i]!) / run > rt.maxGrade)
+          return fail(
+            plan,
+            'Too steep beside the bridge: bring it in over flatter banks',
+            v2(curve.xs[i]!, curve.zs[i]!),
+          );
       }
+      plan.profiles.push(null);
+      continue;
     }
-    if (heights.length <= win && heights.length > 1) {
-      if (Math.abs(heights[heights.length - 1]! - heights[0]!) / curve.length > ROAD_RULES.maxGrade * 1.5)
-        return fail(plan, 'Too steep', p.a);
+    // On dry land: a graded profile, cut and filled (M13). Ends that join an existing road, or an
+    // earlier piece of this one, are pinned to its height; a new dead end is free.
+    const pin = (e: Endpoint): number | null => {
+      if (e.kind === 'new') return endHeights.get(endKey(e)) ?? null;
+      return terrain.heightAt(e.x, e.z);
+    };
+    const prof = gradeProfile(curve, (x, z) => terrain.heightAt(x, z), type, pin(p.ea), pin(p.eb));
+    const pointAt = (i: number) => curve.pointAt(prof.s[i]!);
+    if (prof.fail) {
+      plan.profiles.push(prof);
+      return fail(plan, prof.fail.reason, pointAt(prof.fail.at));
     }
+    if (prof.raisedLength > 0) {
+      const first = prof.raised.indexOf(1);
+      if (type === 'dirt')
+        return fail(
+          plan,
+          `Dirt roads can't go on a viaduct: a ${Math.round(prof.maxFill)} m embankment is too tall`,
+          pointAt(first),
+        );
+      const endAt = prof.raised[0] ? 0 : prof.raised[prof.raised.length - 1] ? prof.raised.length - 1 : -1;
+      if (endAt >= 0)
+        return fail(
+          plan,
+          `Too steep to end here: it would stand on a ${Math.round(prof.h[endAt]! - prof.ground[endAt]!)} m embankment (${GRADING.maxFill} m at most; the ground falls ${Math.round(prof.groundGrade * 100)}\u00a0% and ${articled(ROAD_TYPES[type].name)} can climb ${Math.round(rt.maxGrade * 100)}\u00a0%). Carry it on across the valley, or wind down the slope`,
+          pointAt(endAt),
+        );
+      if (prof.raisedLength > BRIDGE.maxSpan)
+        return fail(plan, `Too long for a viaduct (${BRIDGE.maxSpan} m at most)`, pointAt(first));
+      plan.bridgeLength += prof.raisedLength;
+    }
+    endHeights.set(endKey(p.eb), prof.h[prof.h.length - 1]!);
+    if (!endHeights.has(endKey(p.ea))) endHeights.set(endKey(p.ea), prof.h[0]!);
+    plan.profiles.push(prof);
   }
 
   // Angles at every endpoint, counting existing roads, split halves and new pieces.
@@ -361,9 +428,22 @@ export function planRoad(
   }
 
   plan.length = finalPieces.reduce((s, p) => s + p.length, 0);
-  plan.cost = Math.round(
-    plan.length * rt.costPerMetre + plan.bridgeLength * rt.costPerMetre * (BRIDGE.costFactor - 1),
-  );
+  const earthPieces: EarthPiece[] = [];
+  finalPieces.forEach((p, i) => {
+    const prof = plan.profiles[i];
+    if (prof)
+      earthPieces.push({
+        curve: new Curve(p.a, p.c, p.b, 4),
+        type,
+        prof,
+        joined: [p.ea.kind !== 'new', p.eb.kind !== 'new'],
+      });
+  });
+  plan.earth = planEarthworks(terrain, net, earthPieces, keep?.(finalPieces));
+  plan.cost =
+    Math.round(
+      plan.length * rt.costPerMetre + plan.bridgeLength * rt.costPerMetre * (BRIDGE.costFactor - 1),
+    ) + plan.earth.cost;
   if (!sandbox && plan.cost > treasury) return fail(plan, 'Not enough money', finalPieces[0]!.b);
   return plan;
 }
@@ -379,6 +459,7 @@ export interface SplitRecord {
     left: number;
     right: number;
     layouts: { left?: [number, number]; right?: [number, number] };
+    deck?: number[];
   };
   node: number;
   first: number;
@@ -391,8 +472,15 @@ export interface RoadApplyResult {
   splits: SplitRecord[];
 }
 
-/** Perform a valid plan. The caller handles money, trees and undo bookkeeping. */
-export function applyRoadPlan(net: Network, plan: RoadPlan): RoadApplyResult {
+/**
+ * Perform a valid plan. The caller handles money, trees and undo bookkeeping; `earthworks` runs
+ * once the roads exist and before zone cells are rechecked, and returns the ground it changed.
+ */
+export function applyRoadPlan(
+  net: Network,
+  plan: RoadPlan,
+  earthworks?: () => { minX: number; minZ: number; maxX: number; maxZ: number } | null,
+): RoadApplyResult {
   const result: RoadApplyResult = { segments: [], nodes: [], splits: [] };
   const splitNode = new Map<string, number>();
   // Group splits by segment and split from the far end so earlier arc lengths stay valid.
@@ -421,6 +509,7 @@ export function applyRoadPlan(net: Network, plan: RoadPlan): RoadApplyResult {
         left: seg.left,
         right: seg.right,
         layouts: { left: blockLayout(seg.left), right: blockLayout(seg.right) },
+        ...(seg.deck ? { deck: seg.deck.slice() } : {}),
       };
       const r = net.splitSegment(cur, sp.s);
       result.splits.push({ original, node: r.node.id, first: r.first.id, second: r.second.id });
@@ -440,7 +529,7 @@ export function applyRoadPlan(net: Network, plan: RoadPlan): RoadApplyResult {
     result.nodes.push(n.id);
     return n.id;
   };
-  for (const p of plan.pieces) {
+  plan.pieces.forEach((p, i) => {
     const a = nodeFor(p.ea);
     const b = nodeFor(p.eb);
     const na = net.node(a);
@@ -448,8 +537,12 @@ export function applyRoadPlan(net: Network, plan: RoadPlan): RoadApplyResult {
     // Keep the control point consistent with the exact node positions.
     const c = v2(p.c.x + (na.x - p.a.x + nb.x - p.b.x) / 2, p.c.z + (na.z - p.a.z + nb.z - p.b.z) / 2);
     const seg = net.createSegment(a, b, c, plan.type);
+    // A viaduct over dry ground keeps its graded heights (M13).
+    const prof = plan.profiles[i];
+    if (prof && prof.raisedLength > 0) seg.deck = Array.from(prof.h, (h) => Math.round(h * 100) / 100);
     result.segments.push(seg.id);
-  }
+  });
+  const earthBox = earthworks?.() ?? null;
   // Zone validity around everything that changed.
   const affected = [...result.segments, ...result.splits.flatMap((s) => [s.first, s.second])].filter((id) =>
     net.st.segments.has(id),
@@ -465,6 +558,13 @@ export function applyRoadPlan(net: Network, plan: RoadPlan): RoadApplyResult {
         maxZ: Math.max(box.maxZ, b.maxZ),
       };
     }
+    if (earthBox)
+      box = {
+        minX: Math.min(box.minX, earthBox.minX),
+        minZ: Math.min(box.minZ, earthBox.minZ),
+        maxX: Math.max(box.maxX, earthBox.maxX),
+        maxZ: Math.max(box.maxZ, earthBox.maxZ),
+      };
     net.revalidate(box);
   }
   return result;
@@ -474,4 +574,8 @@ function firstWet(curve: Curve, terrain: Terrain): Vec2 {
   for (let i = 0; i < curve.xs.length; i++)
     if (terrain.heightAt(curve.xs[i]!, curve.zs[i]!) < SHORE_HEIGHT) return v2(curve.xs[i]!, curve.zs[i]!);
   return v2(curve.xs[0]!, curve.zs[0]!);
+}
+
+function articled(name: string): string {
+  return /^[aeiou]/i.test(name) ? `an ${name.toLowerCase()}` : `a ${name.toLowerCase()}`;
 }

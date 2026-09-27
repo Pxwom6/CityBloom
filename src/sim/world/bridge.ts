@@ -107,3 +107,28 @@ export function deckAt(p: DeckProfile, s: number): number {
   const k = Math.min(1, f - i);
   return p.h[i]! * (1 - k) + p.h[i + 1]! * k;
 }
+
+/**
+ * The deck of a road carried on a viaduct over dry ground (M13): the stored road heights, with the
+ * raised stretches (well above the ground) counted like water for cost and upkeep.
+ */
+export function viaductDeck(
+  heights: number[],
+  curve: Curve,
+  heightAt: (x: number, z: number) => number,
+): DeckProfile {
+  const step = BRIDGE.step;
+  const h = Float32Array.from(heights);
+  let raised = 0;
+  let run = 0;
+  let longest = 0;
+  for (let i = 0; i < h.length; i++) {
+    const p = curve.pointAt(Math.min(curve.length, i * step));
+    if (h[i]! > heightAt(p.x, p.z) + 1) {
+      run++;
+      raised += step;
+    } else run = 0;
+    longest = Math.max(longest, run * step);
+  }
+  return { step, h, overWater: raised, longestSpan: longest, landA: 0, landB: 0 };
+}

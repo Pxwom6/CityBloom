@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { watchErrors } from './helpers';
+import { skipGraphicsCheck, watchErrors } from './helpers';
 
 /**
  * Final playthrough (M12): a new player's first city, start to finish through the real UI. The main
@@ -104,7 +104,8 @@ test('playthrough: a first city from the main menu to a thriving town @playthrou
   const log = (msg: string) => console.log(`[playthrough] ${msg}`);
 
   // Main menu over the demo town.
-  await page.goto('/');
+  await skipGraphicsCheck(page);
+  await page.goto('./');
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 90_000,
   });

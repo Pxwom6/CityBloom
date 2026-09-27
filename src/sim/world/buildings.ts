@@ -2,6 +2,7 @@ import { ZONED_DEFS, type Density, type Level, type Wealth, type ZonedDef } from
 import { CELL, ROWS, type ZoneCode } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { pointInRect, type ORect, type Vec2 } from '../geom';
+import { seatHeight } from './earthworks';
 import type { Sim } from '../sim';
 
 export const BState = { Construction: 0, Active: 1, Abandoned: 2, Rubble: 3 } as const;
@@ -121,22 +122,7 @@ export function placeOnLot(sim: Sim, b: Building): void {
   }
   b.angle = Math.atan2(sz, sx);
   b.side = block.side;
-  let hi = -Infinity;
-  const r = footprint(b);
-  const ca = Math.cos(r.angle);
-  const sa = Math.sin(r.angle);
-  for (const [u, v] of [
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1],
-    [0, 0],
-  ] as const) {
-    const px = r.x + u * r.hw * ca - v * r.hd * sa;
-    const pz = r.z + u * r.hw * sa + v * r.hd * ca;
-    hi = Math.max(hi, sim.terrain.heightAt(px, pz));
-  }
-  b.y = hi;
+  b.y = seatHeight((x, z) => sim.terrain.heightAt(x, z), footprint(b), false);
 }
 
 /** The point on the road where the building's lot meets it: segment and arc length. */

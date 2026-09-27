@@ -57,6 +57,18 @@ export class ZoneRenderer {
     for (const c of this.chunks.values()) if (c.grid) c.grid.visible = on;
   }
 
+  /** The ground moved in `box` (earthworks, M13): redrape the zone blocks there. */
+  refresh(box: { minX: number; minZ: number; maxX: number; maxZ: number }): void {
+    const m = 48; // blocks reach this far from their road's centre line
+    const grown = { minX: box.minX - m, minZ: box.minZ - m, maxX: box.maxX + m, maxZ: box.maxZ + m };
+    for (const id of this.world.net.segHash.query(grown)) {
+      const s = this.world.netState.segments.get(id);
+      if (s?.left) this.dirtyBlocks.add(s.left);
+      if (s?.right) this.dirtyBlocks.add(s.right);
+    }
+    this.flush();
+  }
+
   private buildBlock(id: number): { chunk: number; zoned: GeoChunk | null; grid: GeoChunk | null } | null {
     const b = this.world.netState.blocks.get(id);
     if (!b) return null;

@@ -155,92 +155,123 @@ uniform float uGridOn;`,
     return ((a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz) / 255;
   }
 
+  private chunks: Mesh[] = [];
+
   private buildBuildable(): void {
-    const H = this.world.heights;
-    const per = (HEIGHT_RES - 1) / CHUNKS; // quads per chunk side
-    const c = new Color();
-    for (let cj = 0; cj < CHUNKS; cj++) {
+    for (let cj = 0; cj < CHUNKS; cj++)
       for (let ci = 0; ci < CHUNKS; ci++) {
-        const vx = per + 1;
-        const skirtVerts = 4 * vx;
-        const pos = new Float32Array((vx * vx + skirtVerts) * 3);
-        const col = new Float32Array((vx * vx + skirtVerts) * 3);
-        const idx: number[] = [];
-        for (let j = 0; j <= per; j++) {
-          for (let i = 0; i <= per; i++) {
-            const gi = ci * per + i;
-            const gj = cj * per + j;
-            const x = gi * HEIGHT_STEP;
-            const z = gj * HEIGHT_STEP;
-            const h = H[gj * HEIGHT_RES + gi]!;
-            const hx =
-              H[gj * HEIGHT_RES + Math.min(HEIGHT_RES - 1, gi + 1)]! -
-              H[gj * HEIGHT_RES + Math.max(0, gi - 1)]!;
-            const hz =
-              H[Math.min(HEIGHT_RES - 1, gj + 1) * HEIGHT_RES + gi]! -
-              H[Math.max(0, gj - 1) * HEIGHT_RES + gi]!;
-            const slope = Math.hypot(hx, hz) / (2 * HEIGHT_STEP);
-            const v = j * vx + i;
-            pos[v * 3] = x;
-            pos[v * 3 + 1] = h;
-            pos[v * 3 + 2] = z;
-            this.colourAt(x, z, h, slope, this.forestAt(x, z), c);
-            col[v * 3] = c.r;
-            col[v * 3 + 1] = c.g;
-            col[v * 3 + 2] = c.b;
-          }
-        }
-        for (let j = 0; j < per; j++) {
-          for (let i = 0; i < per; i++) {
-            const a = j * vx + i;
-            const b = a + 1;
-            const d = a + vx;
-            const e = d + 1;
-            idx.push(a, d, b, b, d, e);
-          }
-        }
-        // Skirts hide cracks against the coarser scenery mesh.
-        let s = vx * vx;
-        const edges: number[][] = [
-          Array.from({ length: vx }, (_, i) => i), // top row
-          Array.from({ length: vx }, (_, i) => per * vx + i), // bottom row
-          Array.from({ length: vx }, (_, j) => j * vx), // left col
-          Array.from({ length: vx }, (_, j) => j * vx + per), // right col
-        ];
-        const onMapEdge = [cj === 0, cj === CHUNKS - 1, ci === 0, ci === CHUNKS - 1];
-        edges.forEach((edge, e) => {
-          const start = s;
-          for (const v of edge) {
-            pos[s * 3] = pos[v * 3]!;
-            pos[s * 3 + 1] = pos[v * 3 + 1]! - 4;
-            pos[s * 3 + 2] = pos[v * 3 + 2]!;
-            col[s * 3] = col[v * 3]!;
-            col[s * 3 + 1] = col[v * 3 + 1]!;
-            col[s * 3 + 2] = col[v * 3 + 2]!;
-            s++;
-          }
-          if (!onMapEdge[e]) return;
-          for (let k = 0; k < vx - 1; k++) {
-            const a = edge[k]!;
-            const b = edge[k + 1]!;
-            const a2 = start + k;
-            const b2 = start + k + 1;
-            idx.push(a, a2, b, b, a2, b2, a, b, a2, b, b2, a2); // both windings
-          }
-        });
-        const geo = new BufferGeometry();
-        geo.setAttribute('position', new BufferAttribute(pos, 3));
-        geo.setAttribute('color', new BufferAttribute(col, 3));
-        geo.setIndex(idx);
-        geo.computeVertexNormals();
-        geo.computeBoundingSphere();
-        geo.computeBoundingBox();
-        const mesh = new Mesh(geo, this.material);
+        const mesh = new Mesh(this.chunkGeometry(ci, cj), this.material);
         mesh.receiveShadow = true;
         mesh.name = `terrain-${ci}-${cj}`;
+        this.chunks.push(mesh);
         this.group.add(mesh);
       }
+  }
+
+  /** Earthworks changed the ground in `box`: rebuild the chunks it touches (M13). */
+  refresh(box: { minX: number; minZ: number; maxX: number; maxZ: number }): void {
+    const size = MAP_SIZE / CHUNKS;
+    const c0 = (v: number) => clamp(Math.floor(v / size), 0, CHUNKS - 1);
+    for (let cj = c0(box.minZ - HEIGHT_STEP); cj <= c0(box.maxZ + HEIGHT_STEP); cj++)
+      for (let ci = c0(box.minX - HEIGHT_STEP); ci <= c0(box.maxX + HEIGHT_STEP); ci++) {
+        const mesh = this.chunks[cj * CHUNKS + ci]!;
+        mesh.geometry.dispose();
+        mesh.geometry = this.chunkGeometry(ci, cj);
+      }
+  }
+
+  private chunkGeometry(ci: number, cj: number): BufferGeometry {
+    const H = this.world.heights;
+    const D = this.world.terrainDelta;
+    const per = (HEIGHT_RES - 1) / CHUNKS; // quads per chunk side
+    const c = new Color();
+    const vx = per + 1;
+    const skirtVerts = 4 * vx;
+    const pos = new Float32Array((vx * vx + skirtVerts) * 3);
+    const col = new Float32Array((vx * vx + skirtVerts) * 3);
+    const idx: number[] = [];
+    for (let j = 0; j <= per; j++) {
+      for (let i = 0; i <= per; i++) {
+        const gi = ci * per + i;
+        const gj = cj * per + j;
+        const x = gi * HEIGHT_STEP;
+        const z = gj * HEIGHT_STEP;
+        const h = H[gj * HEIGHT_RES + gi]!;
+        const hx =
+          H[gj * HEIGHT_RES + Math.min(HEIGHT_RES - 1, gi + 1)]! - H[gj * HEIGHT_RES + Math.max(0, gi - 1)]!;
+        const hz =
+          H[Math.min(HEIGHT_RES - 1, gj + 1) * HEIGHT_RES + gi]! - H[Math.max(0, gj - 1) * HEIGHT_RES + gi]!;
+        const slope = Math.hypot(hx, hz) / (2 * HEIGHT_STEP);
+        const v = j * vx + i;
+        pos[v * 3] = x;
+        pos[v * 3 + 1] = h;
+        pos[v * 3 + 2] = z;
+        this.colourAt(x, z, h, slope, this.forestAt(x, z), c);
+        const d = D[gj * HEIGHT_RES + gi]!;
+        if (d !== 0) this.earthworks(d, slope, c);
+        col[v * 3] = c.r;
+        col[v * 3 + 1] = c.g;
+        col[v * 3 + 2] = c.b;
+      }
     }
+    for (let j = 0; j < per; j++) {
+      for (let i = 0; i < per; i++) {
+        const a = j * vx + i;
+        const b = a + 1;
+        const d = a + vx;
+        const e = d + 1;
+        idx.push(a, d, b, b, d, e);
+      }
+    }
+    // Skirts hide cracks against the coarser scenery mesh.
+    let s = vx * vx;
+    const edges: number[][] = [
+      Array.from({ length: vx }, (_, i) => i), // top row
+      Array.from({ length: vx }, (_, i) => per * vx + i), // bottom row
+      Array.from({ length: vx }, (_, j) => j * vx), // left col
+      Array.from({ length: vx }, (_, j) => j * vx + per), // right col
+    ];
+    const onMapEdge = [cj === 0, cj === CHUNKS - 1, ci === 0, ci === CHUNKS - 1];
+    edges.forEach((edge, e) => {
+      const start = s;
+      for (const v of edge) {
+        pos[s * 3] = pos[v * 3]!;
+        pos[s * 3 + 1] = pos[v * 3 + 1]! - 4;
+        pos[s * 3 + 2] = pos[v * 3 + 2]!;
+        col[s * 3] = col[v * 3]!;
+        col[s * 3 + 1] = col[v * 3 + 1]!;
+        col[s * 3 + 2] = col[v * 3 + 2]!;
+        s++;
+      }
+      if (!onMapEdge[e]) return;
+      for (let k = 0; k < vx - 1; k++) {
+        const a = edge[k]!;
+        const b = edge[k + 1]!;
+        const a2 = start + k;
+        const b2 = start + k + 1;
+        idx.push(a, a2, b, b, a2, b2, a, b, a2, b, b2, a2); // both windings
+      }
+    });
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(pos, 3));
+    geo.setAttribute('color', new BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+    return geo;
+  }
+
+  /**
+   * Ground reshaped by earthworks (M13): cutting faces show bare earth, embankments fresh turf,
+   * and the level verges beside a road a lighter, mown green.
+   */
+  private earthworks(delta: number, slope: number, out: Color): void {
+    const amount = smoothstep(0.15, 1.2, Math.abs(delta));
+    if (amount <= 0) return;
+    const face = smoothstep(0.08, 0.24, slope);
+    if (face > 0) out.lerp(delta < 0 ? PAL.cutFace : PAL.bank, amount * face * (delta < 0 ? 0.95 : 0.8));
+    else out.lerp(PAL.meadow, amount * 0.25);
   }
 
   private buildScenery(): void {

@@ -3,7 +3,9 @@ import { MODULE, modulesFor } from '../data/modules';
 import { DENSITY_NAMES, INDUSTRY_TIER_NAMES, WEALTH_NAMES, ZONED_DEFS } from '../data/buildings';
 import type { BuildingDetails, CivicDetails } from '../sim/protocol';
 import { formatNumber, useGameUpdates } from './hooks';
-import { IconBulldozer } from './icons';
+import { modKey } from '../client/platform';
+import { moveFee } from '../sim/world/civic';
+import { IconBulldozer, IconMove } from './icons';
 
 const ZONE_NAMES = ['', 'Residential', 'Commercial', 'Industrial'];
 const EDU_NAMES = ['Little schooling', 'Primary school', 'High school', 'University'];
@@ -25,12 +27,30 @@ function Mood({ value }: { value: number }) {
  * Demolish the inspected building. Bulldozing can't be undone, so the first click asks: the
  * confirmation names the building and what the city gets back.
  */
-function BulldozeButton(props: { name: string; refund: number; onConfirm: () => void }) {
+function BulldozeButton(props: {
+  name: string;
+  refund: number;
+  onConfirm: () => void;
+  /** Civic buildings can be moved instead (M14). */
+  onMove?: () => void;
+  moveFee?: number;
+}) {
   const [asking, setAsking] = useState(false);
   const refund = props.refund > 0 ? `refund $${props.refund.toLocaleString('en-US')}` : 'no refund';
   if (!asking)
     return (
       <footer>
+        {props.onMove && (
+          <button
+            class="btn"
+            data-testid="move-civic"
+            onClick={props.onMove}
+            title={`Pick it up and put it down beside another road, keeping its add-ons ($${(props.moveFee ?? 0).toLocaleString('en-US')} plus any levelling)`}
+          >
+            <IconMove />
+            <span>Move (${(props.moveFee ?? 0).toLocaleString('en-US')})</span>
+          </button>
+        )}
         <button class="btn danger" data-testid="bulldoze" onClick={() => setAsking(true)}>
           <IconBulldozer />
           <span>Bulldoze ({refund})</span>
@@ -41,8 +61,8 @@ function BulldozeButton(props: { name: string; refund: number; onConfirm: () => 
     <footer class="confirm" data-testid="bulldoze-confirm" role="alertdialog" aria-label="Confirm bulldozing">
       <p>
         Bulldoze the {props.name.toLowerCase()}?{' '}
-        {props.refund > 0 ? `The city gets $${props.refund.toLocaleString('en-US')} back. ` : ''}This can't be
-        undone.
+        {props.refund > 0 ? `The city gets $${props.refund.toLocaleString('en-US')} back. ` : ''}Undo (
+        {modKey('Z')}) brings it back.
       </p>
       <div class="actions">
         <button class="btn" data-testid="bulldoze-cancel" onClick={() => setAsking(false)} autoFocus>
@@ -414,6 +434,8 @@ function CivicInspector({ id }: { id: number }) {
         key={d.id}
         name={d.name}
         refund={d.refund}
+        moveFee={moveFee(d.def)}
+        onMove={() => game.tools.startMove(d.id, d.def)}
         onConfirm={() => {
           void game.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: d.id } });
           game.select(null);

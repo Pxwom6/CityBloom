@@ -1,0 +1,18 @@
+{
+  "name": "Citybloom",
+  "short_name": "Citybloom",
+  "description": "Grow a city from a hamlet to a metropolis: roads, zones, services, traffic and disasters, in your browser.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#dbeaeb",
+  "theme_color": "#2f86c9",
+  "categories": ["games", "simulation"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

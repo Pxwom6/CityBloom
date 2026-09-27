@@ -1,6 +1,6 @@
 import { render, h } from 'preact';
 import './ui/styles/main.css';
-import { GAME_TITLE, IS_TEST_BUILD } from './config';
+import { BUILD_ID, GAME_TITLE, IS_TEST_BUILD } from './config';
 import { SimClient } from './client/simClient';
 import { ClientWorld } from './client/world';
 import { installTestApi } from './client/testApi';
@@ -11,6 +11,7 @@ import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { decodeSave, readSlot } from './client/saves';
 import { AudioEngine } from './audio/engine';
 import { loadSettings } from './client/settings';
+import { justUpdated } from './client/pwa';
 import type { Difficulty, GameOptions } from './sim/state';
 import type { SaveFile } from './sim/save';
 
@@ -83,6 +84,8 @@ async function boot(): Promise<void> {
   if (menu) {
     game.mode = 'menu';
     game.openScreen('main');
+    // A first launch picks graphics to suit the device from the menu's first few seconds.
+    if (!game.settings.graphicsChecked) game.startGraphicsCheck();
     // The demo town carries on growing behind the menu (quietly: no notices in menu mode).
     game.setSpeed(opened ? 1 : 0);
     game.setCamera(menuPose(world), true);
@@ -100,6 +103,14 @@ async function boot(): Promise<void> {
   }
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);
+  // Built pages keep a copy of the game for offline play and offer new versions (not the dev server).
+  if (import.meta.env.PROD) game.updates.start(`${import.meta.env.BASE_URL}sw.js`, import.meta.env.BASE_URL);
+  if (justUpdated())
+    game.toast(
+      `Citybloom is up to date (build ${BUILD_ID}). Your cities are where you left them.`,
+      'ok',
+      6000,
+    );
 
   const loop = (now: number) => {
     game.frame(now);

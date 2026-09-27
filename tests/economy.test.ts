@@ -140,14 +140,27 @@ describe('bankruptcy', () => {
     const sim = newSim({ difficulty: 'hard' });
     const c = connectPoint(sim);
     road(sim, [c, { x: c.x + 60, z: c.z }], 'street');
-    // Build avenues until the money is nearly gone.
+    // Build avenues until the money is nearly gone (sized by preview, since earthworks vary).
     for (let k = 0; k < 20 && sim.state.treasury > 2000; k++) {
       const z = c.z - 300 + k * 40;
-      const pts = [
-        { x: c.x + 60, z },
-        { x: c.x + 60 + Math.min(700, sim.state.treasury / 26 - 20), z },
-      ];
-      sim.dispatch({ type: 'buildRoad', road: 'avenue', points: pts });
+      let len = Math.min(700, sim.state.treasury / 26 - 20);
+      for (let tries = 0; tries < 8 && len > 40; tries++) {
+        const cmd = {
+          type: 'buildRoad' as const,
+          road: 'avenue' as const,
+          points: [
+            { x: c.x + 60, z },
+            { x: c.x + 60 + len, z },
+          ],
+        };
+        const p = sim.preview(cmd);
+        if (p.ok) {
+          sim.dispatch(cmd);
+          break;
+        }
+        if (p.reason !== 'Not enough money') break;
+        len *= 0.85;
+      }
     }
     expect(sim.state.treasury).toBeLessThan(6000);
     let warned = false;

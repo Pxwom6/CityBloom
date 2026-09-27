@@ -7,13 +7,7 @@ import { cellKey, keyBlock, keyIdx } from '../world/network';
  * Paint zoning onto cells. Only valid, empty cells change: buildings keep their cells until they
  * are bulldozed (logged in docs/DECISIONS.md).
  */
-export function zone(
-  sim: Sim,
-  letter: ZoneLetter | 'none',
-  area: ZoneArea,
-  dryRun: boolean,
-  stroke?: number,
-): CommandResult {
+export function zone(sim: Sim, letter: ZoneLetter | 'none', area: ZoneArea, dryRun: boolean): CommandResult {
   const code: ZoneCode = letter === 'none' ? ZONE_NONE : ZONE_LETTERS[letter];
   if (code === undefined) return fail('Unknown zone');
   let keys: number[];
@@ -42,28 +36,6 @@ export function zone(
       b.zone[i] = code;
       sim.net.dirty.blocks.add(bid);
     }
-    const top = sim.state.undo[sim.state.undo.length - 1];
-    if (stroke !== undefined && top && top.kind === 'zone' && top.stroke === stroke)
-      top.cells.push(...changes);
-    else
-      sim.pushUndo({
-        kind: 'zone',
-        tick: sim.state.tick,
-        cells: changes,
-        ...(stroke !== undefined ? { stroke } : {}),
-      });
   }
   return ok(0, { info: { cells: changes.length } });
-}
-
-export function undoZone(sim: Sim, cells: [number, number, number][], dryRun: boolean): CommandResult {
-  if (dryRun) return ok(0);
-  // Reverse order so a cell painted twice in one stroke returns to its first value.
-  for (const [bid, i, prev] of [...cells].reverse()) {
-    const b = sim.state.net.blocks.get(bid);
-    if (!b || !b.valid[i] || b.bld[i]) continue;
-    b.zone[i] = prev;
-    sim.net.dirty.blocks.add(bid);
-  }
-  return ok(0);
 }

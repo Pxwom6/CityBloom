@@ -51,7 +51,7 @@ test('every visible button has a readable label or accessible name, across the i
   };
 
   // The main menu and the screens behind it.
-  await page.goto('/');
+  await page.goto('./');
   await menuBooted(page);
   // The audit itself catches a nameless icon button and red-on-red text.
   await page.evaluate(() => {
@@ -88,6 +88,8 @@ test('every visible button has a readable label or accessible name, across the i
   await serveTownViaApi(page);
   await page.evaluate(async () => {
     const g = window.__game!;
+    // Enough for every service below (roads cost more with earthworks since M13; money isn't under test).
+    await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 100_000 });
     for (const def of ['firestation', 'police', 'clinic', 'primary', 'park_small', 'busdepot'])
       await g.placeCivic(def, { x: 300, z: (await g.getState()).highwayZ + 170 });
     await g.advance(1440 * 2);
@@ -152,7 +154,7 @@ test('every visible button has a readable label or accessible name, across the i
   await shot(page, 'playtest-bulldoze');
   const civics = (await page.evaluate(() => window.__game!.getCivics())).length;
   await bulldoze.click();
-  await expect(page.getByTestId('bulldoze-confirm')).toContainText("can't be undone");
+  await expect(page.getByTestId('bulldoze-confirm')).toContainText(/Undo \((Ctrl\+Z|⌘Z)\) brings it back/);
   await check('inspector: bulldoze confirmation');
   await shot(page, 'playtest-bulldoze-confirm');
   await page.getByTestId('bulldoze-cancel').click();

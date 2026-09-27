@@ -106,6 +106,16 @@ export const IconUndo = (p: P) => (
     <path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" />
   </svg>
 );
+export const IconRedo = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" />
+  </svg>
+);
+export const IconMove = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />
+  </svg>
+);
 export const IconLock = (p: P) => (
   <svg {...base} {...p}>
     <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -230,6 +240,19 @@ export const IconCrate = (p: P) => (
 export const IconTrophy = (p: P) => (
   <svg {...base} {...p}>
     <path d="M7 4h10v5a5 5 0 01-10 0zM7 6H4a3 3 0 003 4M17 6h3a3 3 0 01-3 4M12 14v4M8 21h8M9 18h6" />
+  </svg>
+);
+/** A camera: photo mode. */
+export const IconCamera = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 8h4l2-3h6l2 3h4v11H3z" />
+    <circle cx="12" cy="13" r="3.5" />
+  </svg>
+);
+/** A line climbing over a timeline with a marker: the city history. */
+export const IconHistory = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 3v18h18M6 16l4-5 3 3 6-7M17 7h2v2" />
   </svg>
 );
 export const IconCity = (p: P) => (

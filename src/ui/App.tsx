@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
 import { GameContext } from './hooks';
@@ -14,6 +14,9 @@ import { ThoughtsFeed } from './Thoughts';
 import { CityPanel, MilestoneBanner } from './CityPanel';
 import { Shell } from './Shell';
 import { TipCard, TutorialCard } from './Guide';
+import { ShortcutSheet } from './ShortcutSheet';
+import { HistoryPanel } from './History';
+import { PhotoMode } from './PhotoMode';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -32,6 +35,7 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
+      else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
       else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey)
         game.overlay.set(game.overlay.active ? null : 'power');
     };
@@ -41,13 +45,28 @@ function Shortcuts({ game }: { game: Game }) {
   return null;
 }
 
+/** Whether photo mode is on, re-rendering only when that changes (the rest of the app updates itself). */
+function usePhotoMode(game: Game): boolean {
+  const [on, setOn] = useState(!!game.photo);
+  useEffect(() => game.subscribe(() => setOn(!!game.photo)), [game]);
+  return on;
+}
+
 export function App({ game }: { game: Game }) {
+  const photo = usePhotoMode(game);
   // The main menu shows only itself over the backdrop map.
   if (game.mode === 'menu')
     return (
       <GameContext.Provider value={game}>
         <Shell />
         <ToastLayer />
+      </GameContext.Provider>
+    );
+  // Photo mode shows only its own panel (M16).
+  if (photo)
+    return (
+      <GameContext.Provider value={game}>
+        <PhotoMode />
       </GameContext.Provider>
     );
   return (
@@ -63,11 +82,13 @@ export function App({ game }: { game: Game }) {
       <AdvisorsPanel />
       <NotificationsPanel />
       <CityPanel />
+      <HistoryPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />
       <TutorialCard />
       <TipCard />
+      <ShortcutSheet />
       <ToastLayer />
       <Shell />
     </GameContext.Provider>

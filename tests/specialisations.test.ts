@@ -113,6 +113,8 @@ describe('service modules', () => {
 describe('specialisations', () => {
   it('landmarks draw visitors who spend money and shop; hotels keep them overnight; one of each landmark', () => {
     const { sim } = servedTown();
+    // Enough for both buildings and any level pads they need (the budget isn't under test here).
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 60_000 });
     place(sim, 'clocktower');
     sim.advance(TICKS_PER_HOUR);
     const dayOnly = sim.state.tourism;

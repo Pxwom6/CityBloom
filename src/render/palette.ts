@@ -14,6 +14,9 @@ export const PAL = {
   rock: new Color('#9a8f80'),
   rockDark: new Color('#7a7064'),
   snow: new Color('#f4f6f8'),
+  /** Earthworks (M13): the face of a cutting, and a freshly turfed embankment. */
+  cutFace: new Color('#b48b5f'),
+  bank: new Color('#b9d27a'),
   water: new Color('#3f9fc4'),
   waterDeep: new Color('#1f6f9a'),
   trunk: new Color('#7a5a3c'),

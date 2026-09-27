@@ -104,6 +104,13 @@ export class PedestrianRenderer {
     return this.walkers.length;
   }
 
+  /** Metres a walker still has to go. */
+  remaining(w: Walker): number {
+    let m = -w.t;
+    for (let i = w.leg; i < w.legs.length; i++) m += Math.abs(w.legs[i]!.s1 - w.legs[i]!.s0);
+    return Math.max(0, m);
+  }
+
   walker(id: number): Walker | undefined {
     return this.walkers.find((w) => w.id === id);
   }

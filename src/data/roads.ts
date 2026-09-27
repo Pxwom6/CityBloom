@@ -18,6 +18,11 @@ export interface RoadType {
   upkeepPerMetre: number;
   /** Highest zone density that can grow along it: 0 low, 1 medium, 2 high. */
   maxDensity: 0 | 1 | 2;
+  /**
+   * Steepest grade (rise over run) of its graded profile (M13). Close to real practice: local
+   * streets climb far more than arterials.
+   */
+  maxGrade: number;
   /** Population needed to unlock. */
   unlockPopulation: number;
   buildable: boolean;
@@ -27,6 +32,7 @@ export interface RoadType {
 export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   dirt: {
     id: 'dirt',
+    maxGrade: 0.2,
     name: 'Dirt road',
     width: 6,
     sidewalk: 1,
@@ -42,6 +48,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   street: {
     id: 'street',
+    maxGrade: 0.16,
     name: 'Street',
     width: 8,
     sidewalk: 2,
@@ -57,6 +64,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   avenue: {
     id: 'avenue',
+    maxGrade: 0.12,
     name: 'Avenue',
     width: 16,
     sidewalk: 2.5,
@@ -72,6 +80,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   boulevard: {
     id: 'boulevard',
+    maxGrade: 0.08,
     name: 'Boulevard',
     width: 22,
     sidewalk: 3,
@@ -87,6 +96,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   highway: {
     id: 'highway',
+    maxGrade: 0.06,
     name: 'Regional highway',
     width: 20,
     sidewalk: 2,
@@ -112,8 +122,7 @@ export const ROAD_RULES = {
   minLength: 12,
   /** Longest single segment (longer paths are split automatically). */
   maxSegmentLength: 400,
-  /** Steepest grade allowed (rise over run), measured over GRADE_WINDOW metres. */
-  maxGrade: 0.12,
+  /** Roads that cross water (on bridges) are checked the old way: grade over this many metres. */
   gradeWindow: 16,
   /** Minimum angle between roads meeting at a node or crossing. */
   minAngleDeg: 28,
@@ -137,4 +146,47 @@ export const SNAP = {
   segment: 8,
   angleDeg: 5,
   grid: 8,
+};
+
+/**
+ * Road grading (M13): each road gets a smoothed vertical profile within its type's grade limit, and
+ * the ground under it and a little to each side is cut or filled to match. DESIGN.md §3.15.
+ */
+export const GRADING = {
+  /** Profile sample spacing, metres (the bridge deck spacing too). */
+  step: 4,
+  /** The ground is averaged over this many metres before grading, so small bumps are shaved off. */
+  smooth: 40,
+  /** Deepest cutting, metres: beyond it the route really is too steep (no tunnels). */
+  maxCut: 14,
+  /** Tallest embankment, metres: beyond it the road goes over on a viaduct instead. */
+  maxFill: 8,
+  /**
+   * Side slopes, metres out per metre of height: embankments 1 in 3 (gentle enough that lots
+   * across their fall stay buildable), cuttings 1 in 1 (so they meet the ground on steep hills).
+   */
+  fillSlope: 3,
+  cutSlope: 1,
+  /** Level ground beyond the road's edge on each side, metres. */
+  shoulder: 1.5,
+  /**
+   * Further level ground beyond the shoulder where the road is cut or filled: `benchPerDepth`
+   * metres per metre of cut or fill, up to `bench`. It keeps the road surface (draped on 8 m height
+   * samples) flat across in a cutting or on an embankment and gives the first lots a level site;
+   * a road at grade leaves the lots beside it alone.
+   */
+  bench: 8,
+  benchPerDepth: 2,
+  /** Height changes smaller than this (metres) aren't worth making, or charging for. */
+  minEdit: 0.25,
+  /** Level ground around a civic building's pad, metres. */
+  padMargin: 4,
+  /**
+   * Civic buildings on ground that varies by more than `padFrom` metres get a level pad; beyond
+   * `padMax` the site really is too steep.
+   */
+  padFrom: 1,
+  padMax: 12,
+  /** Cost of moving earth, dollars per cubic metre. */
+  costPerCubicMetre: 0.4,
 };

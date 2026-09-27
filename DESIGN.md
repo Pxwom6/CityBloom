@@ -139,6 +139,7 @@ SimState {
   rng: {growth, events, traffic, world, disasters}          // sfc32 states
   terrain: { heights: Float32Array(257²) }                  // regenerated from seed + options.terrain
                                                             // (generator version), not saved
+  terrainDelta: Float32Array(257²)                          // earthworks (M13): heights = seed + delta
   grids:   { trees, groundwater, ore, oil,                  // Uint8/Float32, 128²
              airPollution, groundPollution, landValue, crime, garbageField, ... }
   roads:   { nodes: Map<id, RoadNode>, segments: Map<id, RoadSegment>, nextId }
@@ -160,7 +161,8 @@ Key entities:
 
 ```ts
 RoadNode    { id, x, z, y, segs: number[] }                 // segs is derived, rebuilt on load
-RoadSegment { id, a, b, cx, cz, type: RoadTypeId, length, blocks: [left, right], name }
+RoadSegment { id, a, b, cx, cz, type: RoadTypeId, length, blocks: [left, right], name,
+              deck?: number[] }                             // viaduct over dry ground: heights / 4 m (M13)
 ZoneBlock   { id, seg, side: 1 | -1, s0, cols, rows,        // cell (c, r) centre = P(s0 + (c+½)·8) +
               zone: Uint8Array, valid: Uint8Array,          //   N·(halfWidth + (r+½)·8), angle = tangent
               bld: Int32Array }                             // building id or 0
@@ -560,7 +562,90 @@ disasters menu can set any one off at a chosen point whatever that setting.
             └── decline / abandonment ◄── unhappiness, unmet needs ◄─────────────────┘
 ```
 
+### 3.15 Road grading and earthworks (M13)
+
+Roads no longer drape over the raw ground. `world/grading.ts` gives each dry-land piece a vertical
+profile sampled every 4 m:
+
+1. The ground along the centre line is averaged over 40 m (the window narrows symmetrically at the
+   ends), so short bumps are shaved off rather than followed.
+2. Ends that join an existing road (or an earlier piece of the same road) are pinned to its height;
+   a new dead end is free. If two pinned ends are further apart in height than the type can climb
+   over the length, the piece fails ("make it longer, or wind it up the slope").
+3. The profile is the one within the type's grade limit (`RoadType.maxGrade`: dirt 20 %, street
+   16 %, avenue 12 %, boulevard 8 %) that strays least from the smoothed ground: a bisection on the
+   worst cut, with fill held to 8/14 of it, finds the smallest tolerance for which a forward pass of
+   reachable heights (grade-limited, inside the pins' band) stays non-empty; a backward pass then
+   picks the height closest to the ground at each sample. If that needs a cutting deeper than
+   14 m, a second fit lets fill run tall instead (a viaduct beats an impossible cutting).
+4. Samples more than 8 m above the ground are carried on a viaduct (stored on the segment as
+   `deck`, drawn and costed like a bridge; not at a road's end, not for dirt roads, at most
+   `BRIDGE.maxSpan`). A cutting deeper than 14 m fails with the ground's steepness, the limit and
+   the fix. Pieces over water keep the M6 bridge rules.
+
+`world/earthworks.ts` turns profiles into terrain edits. Each height sample within reach of the
+road is claimed by the nearest piece: out to the road's half-width plus a 1.5 m shoulder plus a
+bench (2 m per metre of cut or fill nearby, up to 8 m, so that in a cutting or on an embankment
+the road, draped on 8 m samples, comes out flat across and the first lots are level) it is set to
+the profile; beyond, side slopes run back to the natural ground, 1:1 in cuttings and 1:3 on
+embankments (gentle enough that lots on them stay buildable). Changes under 0.25 m are skipped,
+so a road at grade leaves the ground beside it alone and costs nothing extra. Water, other
+roads' corridors (road + shoulder), ground beyond an end that joins another road, samples under a
+viaduct, and ground under buildings that stay are left alone. Earth moved costs $0.40 per cubic
+metre, part of the road's price (not refunded by bulldozing). Civic buildings whose footprint
+varies by more than 1 m get a level pad at the height where they meet their road (4 m margin,
+same side slopes, same price); beyond 12 m the site is too steep.
+
+Edits are written as `terrainDelta` in whole centimetres (height = seed terrain + delta, computed
+the same way live and on load, so saves and undo are exact) and sent to the client as `FrameDiff.terrain`. After any edit
+the sim re-seats buildings and civic buildings (highest ground under their corners and centre),
+clears trees on ground that moved more than half a metre, forgets bridge decks and the water
+distance / land-setting cache, and rechecks zone cells there (a lot on a steep cut face loses its
+zoning). The client rebuilds the terrain chunks (tinting cut faces earth-brown, embankments fresh
+green), roads, zone cells and trees in the box. Undo records keep the deltas they replaced. Road
+upgrades regrade to the new type between the road's two junctions, or say why they can't.
+
+### 3.16 Undo, redo and moving buildings (M14)
+
+`history.ts` keeps the last 30 actions. `Sim.dispatch` brackets each undoable command
+(`buildRoad`, `zone`, `bulldoze`, `placeBuilding`, `moveBuilding`, `addModule`, `upgradeRoad`,
+`placeStop`) with two captures of what it can touch: the entity maps (buildings, civic buildings,
+vehicles, incidents, road nodes and segments, lots, bus stops, traffic and damage entries), the
+terrain delta and tree rasters, a few values (the id counter, the random generators, the burning
+list, bus ridership) and the treasury and this month's ledger. Zoning captures lots only. The diff
+between the captures is the edit: per entity, whole (added or removed) or per changed field, and per
+changed element of typed arrays (a lot's zone, validity and building cells; terrain samples), plus
+the key order of any map the command reordered, and the money as deltas per ledger line.
+
+Undo applies an edit backwards, redo forwards. First every structural change is checked against
+the state (roads and lots, a building's type and place, a civic building's place and add-ons, bus
+stops, the ground): if any differs from what the edit left, nothing is applied and the reason is
+returned ("Can't undo the road: buildings have grown or lots have changed there since"). Then each
+change is applied; volatile ones (residents, vehicles, trees, generators) only where untouched
+since, and a zone cell isn't taken from under a building that grew there since. Map order is
+restored, money booked back on its lines, and the sim re-indexes what changed (road network
+derived data, spatial hashes, heights from the terrain delta, caches) and marks it dirty for the
+client. Edits of one zoning drag (same `stroke`) merge into one step; a new action clears redo.
+History is not saved (save v13 dropped the old undo list), and the state hash covers the city only.
+
+`moveBuilding` moves a civic building: the same placement check as a new building of that kind
+(ignoring itself and unlocks), a fee of 10 % of its price (at least $250) plus earthworks for a
+level pad, then `Sim.relocateCivic` updates its pose and access, re-indexes it, rechecks the lots
+at both ends, and returning vehicles are re-routed to the new site.
+
 ---
+
+### 3.17 City history (M16)
+
+`SimState.chronicle` (`src/sim/systems/chronicle.ts`): ten figures recorded as each month closes
+(population, approval, jobs, unemployment %, treasury, the closed month's income and spending from
+the ledger, resident-weighted air pollution and crime %, average commute minutes), summed into a
+bucket of `step` months and pushed as its average. When a series reaches 240 points, neighbouring
+pairs are averaged and `step` doubles, so the whole life fits in ≤ 240 points per figure (monthly
+for 20 years, then 2 months a point to 40 years, 4 to 80, and so on). Milestones and disasters are
+appended as events (`{tick, kind, ref}`, at most 300). It is saved and hashed with the rest of the
+state (save v14; a v13 city starts an empty history at its current tick). The client reads it with
+the `chronicle` query; `src/ui/History.tsx` charts it with `TimeChart` (`src/ui/charts.tsx`).
 
 ## 4. Rendering
 
@@ -611,6 +696,24 @@ disasters menu can set any one off at a chosen point whatever that setting.
   (cars, buildings, construction, fires, emergency vehicles, tree density, zoom, night, paused) and the
   pure `ambientMix()` turns that into layer levels. Master/effects/ambience volumes and mute are
   player settings; the context starts on the first gesture and suspends when the tab is hidden.
+
+### 4.1 Photo mode (M16)
+
+`Game.enterPhoto()` (K or the toolbar's camera): the app renders only `PhotoMode.tsx`; the renderer
+(`setPhoto`) hides the helper groups (icons, ghost and selection, route and coverage ribbons, zone
+markings unless asked) and street labels; the camera (`CameraController.photo`) allows 2.5 m
+distance, a near-level pitch and an eye-height target, and can `follow` a pose each frame (the
+follow camera: heading from smoothed motion, player turns kept as an offset). The renderer lights
+the scene at the photo hour and uses the photo field of view. When a lens effect or grade is on,
+`PhotoLens` (`src/render/photo.ts`) draws the scene into a half-float MSAA target with depth and
+runs two passes: a 48-tap spiral gather for depth of field (radius from relative distance to the
+focus = camera-to-target distance) and tilt-shift (from the distance to the middle band), keeping
+each pixel's blur radius (samples are clamped first, so a stray huge highlight in the HDR frame
+can't bloom into a blob); then a light smoothing of blurred areas (the gather's grain), tone
+mapping, the grade (tint, saturation, contrast, lift, vignette) and sRGB.
+`GameRenderer.capture(scale)` redraws the frame at `scale` × the screen's physical pixels (capped by
+GPU limits and ~36 MP) and copies the canvas to a PNG with `toBlob`, so only the 3D view can be in
+the picture.
 
 ## 5. UI
 
@@ -677,12 +780,43 @@ Export writes a `.citybloom` file (gzip JSON); import accepts it (or plain JSON)
 `migrations[v]` upgrades version v → v+1 on load. Round-trip is tested by state hash, including through
 the main menu's Continue and an exported-then-imported file (e2e `m11-shell`).
 
+### 6.1 Publishing, offline play and updates (M15)
+
+- **Deploy.** `.github/workflows/deploy.yml` runs on pushes to `main`: `npm ci`, unit tests, then
+  `npm run build` with `BASE_PATH` (Vite `base`) and `SITE_URL` (absolute share-preview URLs) from
+  `actions/configure-pages`, and `BUILD_ID` = the commit; the `dist/` folder goes to Pages.
+- **Offline.** `scripts/vite-pwa.ts` writes `sw.js` after each build from `src/pwa/sw.js`, filled in
+  with every built file (minus source maps and the share image) and a version hashed from their
+  contents. The worker precaches them (past the HTTP cache) under `citybloom-<version>`, answers
+  every same-origin GET from that cache first (page navigations, with any query, get `index.html`),
+  deletes older caches when it activates, and claims open pages. So the game opens offline after
+  one visit, and a page always runs one version's files.
+- **Updates.** `src/client/pwa.ts` registers the worker in built pages and checks for a new one on
+  each visit, hourly and on returning to the tab. A new worker installs and then waits; the page
+  shows "New version of Citybloom" with Reload, which autosaves a city in play, tells the waiting
+  worker to take over (`skipWaiting`) and reloads on `controllerchange`. Saves (IndexedDB) and
+  settings (localStorage) are outside the cache, so they carry over; save migrations handle format
+  changes.
+- **Install.** `public/manifest.webmanifest` (relative `start_url` and `scope`, so any base path
+  works), icons in `public/icons` (SVG sources; PNGs from `scripts/dev/icons.mjs`), theme colour,
+  Apple touch icon.
+- **Share preview.** Title, description, Open Graph and Twitter card tags in `index.html`; the
+  image is `public/social.jpg` (1200×630, from `scripts/dev/socialshot.mjs`), linked absolutely
+  when the build knows its address.
+- **First-launch graphics.** `src/client/graphicsCheck.ts`: on the first main menu, frames at the
+  high preset are timed after a 1.5 s warm-up (at least 2.5 s and 8 frames, at most 9 s of visible
+  time) and the median picks high (< 22 ms), medium (< 40 ms) or low; software renderers go straight
+  to low and dual-core machines get medium at most. The pick is kept in the settings
+  (`graphicsChecked`, `autoGraphics`) and shown in Settings, which can run the check again.
+
 ## 7. Testing and tooling
 
 - Vitest unit tests for every system; scenario tests build cities by commands and run for years with
   per-tick invariants in test mode (no NaN/Infinity, no negatives, in bounds, money balances).
-- Playwright e2e against a `--mode test` build: builds a small town through the real UI, runs time,
-  opens panels, screenshots presets into `docs/screenshots/`, fails on console errors.
+- Playwright e2e against a `--mode test` build served from `/Sim-Cities/` by `e2e/serve.mjs`, as
+  on Pages (M15; the server can also switch to another build or drop every request, for the update
+  and offline tests): builds a small town through the real UI, runs time, opens panels,
+  screenshots presets into `docs/screenshots/`, fails on console errors.
 - `scripts/bench.ts` (large city: sim tick ms, draw calls, triangles) and `scripts/balance.ts`
   (careful / greedy / neglectful strategies over 20+ years, CSV + ASCII curves).
 

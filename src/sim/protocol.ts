@@ -20,6 +20,10 @@ export interface CityStats {
   cityName: string;
   population: number;
   undoAvailable: boolean;
+  /** Undo and redo (M14): whether there's a step, and what it was ("road", "bulldozing"). */
+  redoAvailable: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
   jobs: number;
   jobsFilled: number;
   unemployed: number;
@@ -208,6 +212,8 @@ export interface SegmentData {
   type: RoadTypeId;
   left: number;
   right: number;
+  /** Viaduct deck heights (M13), see RoadSegment.deck. */
+  deck?: number[];
 }
 export interface BlockData {
   id: number;
@@ -233,6 +239,8 @@ export interface Snapshot {
   options: GameOptions;
   terrainParams: TerrainParams;
   heights: Float32Array;
+  /** Earthworks (M13): height change at each sample, on top of the seed's terrain. */
+  terrainDelta: Float32Array;
   trees: Uint8Array;
   groundwater: Uint8Array;
   ore: Uint8Array;
@@ -283,6 +291,8 @@ export interface FrameDiff {
   stats: CityStats;
   /** Tree density changes: raster index → new density. */
   trees?: { idx: number[]; val: number[] };
+  /** Earthworks (M13): terrain samples whose height changed, their new height and delta. */
+  terrain?: { idx: number[]; h: number[]; d: number[] };
   net?: NetDiff;
   buildings?: { upserts: BuildingData[]; removed: number[] };
   civics?: { upserts: CivicData[]; removed: number[] };
@@ -329,6 +339,8 @@ export type Query =
   | { type: 'summary' }
   | { type: 'building'; id: number }
   | { type: 'budget' }
+  /** City history (M16): the recorded figures, their spacing and the timeline events. */
+  | { type: 'chronicle' }
   | { type: 'civic'; id: number }
   | { type: 'overlay'; map: OverlayMap }
   | { type: 'coveragePreview'; def: string; x: number; z: number; angle: number; side: 1 | -1 }

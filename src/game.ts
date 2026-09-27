@@ -4,7 +4,7 @@ import type { GameRenderer } from './render/renderer';
 import type { CameraPresetName, CameraPose } from './render/camera';
 import type { Command, CommandResult } from './sim/commands';
 import type { WorkerPerf } from './sim/protocol';
-import { SPEED_TICKS_PER_SECOND, type Speed } from './sim/time';
+import { MONTH_NAMES, SPEED_TICKS_PER_SECOND, dateOf, type Speed } from './sim/time';
 import { ToolManager } from './tools/manager';
 import { CIVIC } from './data/civic';
 import { MILESTONES } from './data/progression';
@@ -17,6 +17,9 @@ import type { ToolHint } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
+import { AppUpdates } from './client/pwa';
+import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
+import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TIPS, TUTORIAL, type Tip } from './client/tutorial';
 import {
   DRAW_DISTANCE_PARAMS,
@@ -27,6 +30,28 @@ import {
 } from './client/settings';
 
 type Listener = () => void;
+
+/** What photo mode's camera can ride with (M16). */
+export interface FollowTarget {
+  kind: 'car' | 'walker' | 'bus' | 'vehicle';
+  id: number;
+}
+
+/** Photo mode (M16): the view (lens, hour, field of view) plus the panel's own state. */
+export interface PhotoState extends PhotoView {
+  /** The panel is showing (H hides it for a clear view). */
+  panel: boolean;
+  /** The city keeps running behind the camera. */
+  running: boolean;
+  /** Saved photos are 1× or 2× the screen's resolution. */
+  scale: 1 | 2;
+  follow: FollowTarget | null;
+  /** Waiting for a click on something to follow. */
+  picking: boolean;
+  /** The last photo saved (size), or why following stopped. */
+  saved: { width: number; height: number; bytes: number } | null;
+  note: string | null;
+}
 
 let uiScale = 1;
 
@@ -80,7 +105,7 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | null = null;
+  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | null = null;
   /** Milestone being celebrated (index into MILESTONES), if any. */
   celebration: number | null = null;
   private celebrationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,6 +140,17 @@ export class Game {
   tip: Tip | null = null;
   readonly tools: ToolManager;
   readonly overlay: OverlayController;
+  /** New versions of the app (the service worker, M15). */
+  readonly updates = new AppUpdates(() => this.notify());
+  /** Saving the city before switching to a new version. */
+  updating = false;
+  /** Photo mode, while it's on (M16). */
+  photo: PhotoState | null = null;
+  private photoSpeed: Speed = 1;
+  private followLast: { x: number; z: number; dx: number; dz: number; yaw: number } | null = null;
+  /** The graphics check in progress (first launch, or Settings → Check again), and its last answer. */
+  graphicsCheck: GraphicsCheck | null = null;
+  graphicsResult: CheckResult | null = null;
   private listeners = new Set<Listener>();
   private lastFrameAt = 0;
 
@@ -411,10 +447,38 @@ export class Game {
   }
 
   updateSettings(patch: Partial<Settings>): void {
+    // Choosing graphics by hand ends a check in progress: the player has decided.
+    if (this.graphicsCheck && ('quality' in patch || 'shadows' in patch || 'drawDistance' in patch)) {
+      this.graphicsCheck = null;
+      patch = { ...patch, graphicsChecked: true };
+    }
     this.settings = { ...this.settings, ...patch };
     saveSettings(this.settings);
     this.applySettings();
     this.notify();
+  }
+
+  /**
+   * Time the next few seconds of frames at the high preset and switch to the preset this device can
+   * hold (M15): on the first launch's main menu, and from Settings.
+   */
+  startGraphicsCheck(): void {
+    const gl = this.renderer.renderer.getContext();
+    this.updateSettings(GRAPHICS_PRESETS.high);
+    this.graphicsCheck = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0);
+    this.notify();
+  }
+
+  private finishGraphicsCheck(r: CheckResult): void {
+    this.graphicsCheck = null;
+    this.graphicsResult = r;
+    this.updateSettings({ ...GRAPHICS_PRESETS[r.preset], graphicsChecked: true, autoGraphics: r.preset });
+    const name = r.preset[0]!.toUpperCase() + r.preset.slice(1);
+    this.toast(
+      `Graphics set to ${name} for this device (${r.reason}). Change them any time in Settings.`,
+      'info',
+      7000,
+    );
   }
 
   /** Push the settings to the audio engine, renderer, camera and interface. */
@@ -433,6 +497,7 @@ export class Game {
       crowd: q.crowd,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
+    this.renderer.controller.pointerDevice = s.pointer;
     applyUiScale(s.uiScale);
   }
 
@@ -521,6 +586,223 @@ export class Game {
     location.href = location.pathname;
   }
 
+  /** Switch to a downloaded new version: save the city first (to the autosave), then reload. */
+  async applyUpdate(): Promise<void> {
+    if (this.updating) return;
+    this.updating = true;
+    this.notify();
+    if (
+      this.mode === 'play' &&
+      !this.world.stats.bankrupt &&
+      !(await this.saveTo('auto', 'Autosave', true))
+    ) {
+      this.updating = false;
+      this.toast(
+        'The city could not be saved, so the new version waits. Try again after saving.',
+        'bad',
+        8000,
+      );
+      return;
+    }
+    this.updates.apply();
+  }
+
+  // ------------------------------------------------------------------ photo mode (M16)
+
+  /** Photo mode: the interface hides and the camera is free to come down to street level. */
+  enterPhoto(): void {
+    if (this.photo || this.mode !== 'play' || this.screen) return;
+    this.tools.use('select');
+    this.select(null);
+    this.overlay.set(null);
+    this.panel = null;
+    this.shortcutsOpen = false;
+    this.setHint(null);
+    this.photoSpeed = this.speed || 1;
+    this.photo = {
+      hour: null,
+      fov: DEFAULT_FOV,
+      zones: false,
+      dof: 0,
+      tiltShift: 0,
+      focus: 100,
+      grade: 'natural',
+      panel: true,
+      running: this.speed > 0,
+      scale: 1,
+      follow: null,
+      picking: false,
+      saved: null,
+      note: null,
+    };
+    this.renderer.setPhoto(this.photo);
+    this.notify();
+  }
+
+  exitPhoto(): void {
+    if (!this.photo) return;
+    this.photo = null;
+    this.followLast = null;
+    this.renderer.controller.follow = null;
+    this.renderer.setPhoto(null);
+    this.notify();
+  }
+
+  setPhoto(patch: Partial<PhotoState>): void {
+    const p = this.photo;
+    if (!p) return;
+    if ('running' in patch && patch.running !== p.running) {
+      if (patch.running) this.setSpeed(this.photoSpeed);
+      else {
+        this.photoSpeed = this.speed || this.photoSpeed;
+        this.setSpeed(0);
+      }
+    }
+    if ('follow' in patch) {
+      this.followLast = null;
+      if (!patch.follow) this.renderer.controller.follow = null;
+      else this.renderer.controller.setPose({ distance: 16, tilt: -0.12 });
+    }
+    Object.assign(p, patch);
+    this.notify();
+  }
+
+  /** Where something that can be followed is this frame. */
+  private followPose(f: FollowTarget): { x: number; y: number; z: number } | null {
+    const r = this.renderer;
+    if (f.kind === 'car') return r.traffic.car(f.id) ?? null;
+    if (f.kind === 'walker') return r.pedestrians.walker(f.id) ?? null;
+    if (f.kind === 'bus') return r.transit.busPoses[f.id] ?? null;
+    return r.vehicles.positions.get(f.id) ?? null;
+  }
+
+  /** The car, bus, walker or service vehicle nearest a point on the ground, within `reach` metres. */
+  private followableNear(
+    x: number,
+    z: number,
+    reach: number,
+    kinds?: FollowTarget['kind'][],
+  ): FollowTarget | null {
+    const r = this.renderer;
+    let best: FollowTarget | null = null;
+    let bestD = reach;
+    const consider = (kind: FollowTarget['kind'], id: number, px: number, pz: number) => {
+      if (kinds && !kinds.includes(kind)) return;
+      const d = Math.hypot(px - x, pz - z);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind, id };
+      }
+    };
+    const car = r.traffic.carAt(x, z, reach);
+    if (car) consider('car', car.id, car.x, car.z);
+    const walker = r.pedestrians.walkerAt(x, z, Math.min(reach, 6));
+    if (walker) consider('walker', walker.id, walker.x, walker.z);
+    r.transit.busPoses.forEach((b, i) => consider('bus', i, b.x, b.z));
+    for (const [id, v] of r.vehicles.positions) consider('vehicle', id, v.x, v.z);
+    return best;
+  }
+
+  /** A click in photo mode: while picking, follow what's under it. */
+  photoClick(clientX: number, clientY: number): void {
+    const p = this.photo;
+    if (!p?.picking) return;
+    const g = this.renderer.controller.screenToGround(clientX, clientY);
+    const f = g ? this.followableNear(g.x, g.z, 12) : null;
+    if (f) this.setPhoto({ follow: f, picking: false, note: null });
+    else this.setPhoto({ note: 'Nothing to follow there: click a car, bus or person.' });
+  }
+
+  /**
+   * Follow a car, bus, person or service vehicle near the middle of the view: of those within a few
+   * hundred metres, one with a good stretch of its trip still ahead (a car about to park makes a
+   * short ride).
+   */
+  followNearest(kinds?: FollowTarget['kind'][]): boolean {
+    const r = this.renderer;
+    const t = r.controller.current;
+    const want = (k: FollowTarget['kind']) => !kinds || kinds.includes(k);
+    let best: FollowTarget | null = null;
+    let score = -Infinity;
+    const consider = (f: FollowTarget, x: number, z: number, ahead: number) => {
+      const d = Math.hypot(x - t.x, z - t.z);
+      if (d > 400) return;
+      // Nearer is better, but a long way still to go matters more.
+      const s = Math.min(ahead, 600) - d * 0.5;
+      if (s > score) {
+        score = s;
+        best = f;
+      }
+    };
+    if (want('car'))
+      for (const c of r.traffic.cars) consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c));
+    if (want('walker'))
+      for (const w of r.pedestrians.walkers)
+        consider({ kind: 'walker', id: w.id }, w.x, w.z, r.pedestrians.remaining(w) * 4);
+    // Buses run their loop for good; service vehicles are followed to wherever they're going.
+    if (want('bus')) r.transit.busPoses.forEach((b, i) => consider({ kind: 'bus', id: i }, b.x, b.z, 600));
+    if (want('vehicle'))
+      for (const [id, v] of r.vehicles.positions) consider({ kind: 'vehicle', id }, v.x, v.z, 300);
+    const f = best as FollowTarget | null;
+    if (f) this.setPhoto({ follow: f, picking: false, note: null });
+    else this.setPhoto({ note: 'Nothing like that is moving near here to follow.' });
+    return !!f;
+  }
+
+  /** Each frame in photo mode: keep the follow camera on its target and focus on what it looks at. */
+  private photoFrame(dt: number): void {
+    const p = this.photo!;
+    const c = this.renderer.controller;
+    if (p.follow) {
+      const pos = this.followPose(p.follow);
+      if (!pos) {
+        this.setPhoto({
+          follow: null,
+          note: `The ${p.follow.kind === 'vehicle' ? 'vehicle' : p.follow.kind} has arrived.`,
+        });
+      } else {
+        const l = this.followLast;
+        if (!l) this.followLast = { x: pos.x, z: pos.z, dx: 0, dz: 0, yaw: c.goal.yaw };
+        else {
+          // Heading from how it moved, smoothed; the camera sits behind it.
+          const k = 1 - Math.exp(-dt * 4);
+          l.dx += (pos.x - l.x - l.dx) * k;
+          l.dz += (pos.z - l.z - l.dz) * k;
+          l.x = pos.x;
+          l.z = pos.z;
+          if (Math.hypot(l.dx, l.dz) > 1e-3) l.yaw = Math.atan2(-l.dx, -l.dz);
+        }
+        c.follow = { x: pos.x, y: pos.y, z: pos.z, yaw: this.followLast!.yaw };
+      }
+    }
+    // Autofocus: keep what the camera looks at sharp.
+    p.focus = c.current.distance;
+  }
+
+  /** Save the view as a PNG (photo mode), downloaded to the player's computer. */
+  async savePhoto(): Promise<{ width: number; height: number; bytes: number } | null> {
+    const p = this.photo;
+    if (!p) return null;
+    const shot = this.renderer.capture(p.scale);
+    const blob = await shot.blob;
+    if (!blob) {
+      this.setPhoto({ note: 'The photo could not be saved (the browser refused to encode it).' });
+      return null;
+    }
+    const d = dateOf(this.world.stats.tick);
+    const name = `${this.world.stats.cityName} ${MONTH_NAMES[d.month]} year ${d.year}.png`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    this.audio?.play('place');
+    const saved = { width: shot.width, height: shot.height, bytes: blob.size };
+    this.setPhoto({ saved, note: null });
+    return saved;
+  }
+
   /** Start the first-city tutorial from its first step. */
   startTutorial(): void {
     this.updateSettings({ tutorialStep: 0 });
@@ -567,10 +849,25 @@ export class Game {
     this.notify();
   }
 
+  /** Undo or redo the last action (M14), saying what was taken back or why it can't be. */
   async undo(): Promise<CommandResult> {
-    const r = await this.dispatch({ type: 'undo' });
-    if (!r.ok)
-      this.setHint({ x: window.innerWidth / 2, y: window.innerHeight - 140, text: r.reason, tone: 'bad' });
+    return this.history('undo');
+  }
+
+  async redo(): Promise<CommandResult> {
+    return this.history('redo');
+  }
+
+  private async history(dir: 'undo' | 'redo'): Promise<CommandResult> {
+    const r = await this.dispatch({ type: dir });
+    const label = (r.info?.label as string | undefined) ?? '';
+    if (r.ok) {
+      this.audio?.play(dir === 'undo' ? 'bulldoze' : 'build');
+      this.toast(`${dir === 'undo' ? 'Undone' : 'Redone'}: ${label}`, 'info', 1800);
+    } else {
+      this.audio?.play('error');
+      this.toast(r.reason.endsWith('.') ? r.reason : `${r.reason}.`, 'bad', 4000);
+    }
     return r;
   }
 
@@ -618,6 +915,14 @@ export class Game {
     this.notify();
   }
 
+  /** The keyboard and trackpad cheat sheet (M14), on `?`. */
+  shortcutsOpen = false;
+
+  toggleShortcuts(open = !this.shortcutsOpen): void {
+    this.shortcutsOpen = open;
+    this.notify();
+  }
+
   /** Called every animation frame. */
   frame(now: number): void {
     const dt = this.lastFrameAt ? Math.min(0.1, (now - this.lastFrameAt) / 1000) : 1 / 60;
@@ -629,6 +934,9 @@ export class Game {
       const next = w.displayTick + dt * SPEED_TICKS_PER_SECOND[this.speed];
       w.displayTick = Math.min(next, w.stats.tick + 8);
     }
+    if (this.photo) this.photoFrame(dt);
+    const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
+    if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);

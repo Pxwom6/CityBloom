@@ -1,3 +1,4 @@
+import { chronicleEvent } from './chronicle';
 import { DISASTERS } from '../../data/balance';
 import { ROAD_TYPES } from '../../data/roads';
 import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../data/world';
@@ -194,6 +195,7 @@ export function startDisaster(
   s.disasters.push(d);
   sim.disastersChanged();
   sim.events.push({ kind: 'disaster', id: d.id });
+  chronicleEvent(sim, 'disaster', d.kind);
   return { ok: true, cost: 0, created: [d.id] };
 }
 

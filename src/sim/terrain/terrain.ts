@@ -2,10 +2,15 @@ import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SHORE_HEIGHT } 
 import type { MapPreset } from '../../data/world';
 import { TERRAIN_VERSION, TerrainGen, generateTerrain, sampleHeights } from './generate';
 
-/** Terrain derived from the seed: heights and static resource grids. Not saved (regenerated). */
+/**
+ * Terrain derived from the seed: heights and static resource grids, regenerated on load. Earthworks
+ * (M13) are kept as a saved per-sample delta on top: `heights` = `base` + delta.
+ */
 export class Terrain {
   readonly gen: TerrainGen;
   readonly heights: Float32Array;
+  /** Heights as generated from the seed, before any earthworks. */
+  readonly base: Float32Array;
   readonly groundwater: Uint8Array;
   readonly ore: Uint8Array;
   readonly oil: Uint8Array;
@@ -15,10 +20,16 @@ export class Terrain {
     this.gen = TerrainGen.create(seed, preset, version);
     const data = generateTerrain(this.gen);
     this.heights = data.heights;
+    this.base = data.heights.slice();
     this.groundwater = data.groundwater;
     this.ore = data.ore;
     this.oil = data.oil;
     this.initialTrees = data.trees;
+  }
+
+  /** Lay saved earthworks over the generated ground. */
+  applyDelta(delta: Float32Array): void {
+    for (let i = 0; i < this.heights.length; i++) this.heights[i] = this.base[i]! + delta[i]!;
   }
 
   heightAt(x: number, z: number): number {

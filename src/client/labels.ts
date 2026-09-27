@@ -23,6 +23,9 @@ export class StreetLabels {
   }
 
   update(): void {
+    // Photo mode hides them at once rather than on the next refresh.
+    const display = this.game.photo ? 'none' : '';
+    if (this.root.style.display !== display) this.root.style.display = display;
     if (++this.frame % 6) return;
     const r = this.game.renderer;
     const cam = r.controller.current;

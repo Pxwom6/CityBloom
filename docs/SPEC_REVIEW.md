@@ -82,3 +82,78 @@ screenshots are in `docs/screenshots/`. Anything not done is explained at the en
   traffic model.
 - **Render triangle budget**: 2.5M at the whole-city overview of a 100k city (half of it the shadow
   pass) against an early 1.5M target; draw calls are within budget. Flagged for the Mac check.
+
+---
+
+# SPEC-2.md (phase 2, M13–M24)
+
+Each phase-2 milestone mapped to where it's done. Filled in as milestones complete.
+
+## Rules for all of phase 2
+
+| Rule | Where |
+|---|---|
+| Work in order, each milestone playable, UI-tested with screenshots, `M<n> complete:` commits | git history; `e2e/m13-*.spec.ts` onwards; `docs/screenshots/m13-*.png` onwards |
+| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save |
+| M12 performance budget kept; bench and balance rerun per milestone | numbers per milestone in PROGRESS.md |
+| Everything original | procedural models, icons and sounds, as in phase 1 |
+| Player kept informed (tooltips, shortcuts, tips, advisor hints, maps and inspector lines) | per milestone below |
+| README and this section kept current; real-hardware checks under "To check on the Mac" | README.md, PROGRESS.md |
+
+## M13 Gentler roads
+
+| Item | Where |
+|---|---|
+| Smoothed vertical profile per road; grade measured on it | `src/sim/world/grading.ts` (40 m smoothing, fit within the limit, pinned at junctions); DESIGN.md §3.15 |
+| Cut and fill under the road and to each side, visible embankments and cuttings | `src/sim/world/earthworks.ts` (formation, a bench that widens with the cut or fill, 1:1 cuttings, 1:3 embankments); terrain tint in `src/render/terrain.ts`; `docs/screenshots/m13-cutting.png` |
+| Per-type grade limits; only extreme ground fails | `RoadType.maxGrade` in `src/data/roads.ts` (streets 16 %, boulevards 8 %); a cutting deeper than 14 m is the only land failure |
+| Bridge over dry ground where fill is very tall | viaducts (`RoadSegment.deck`) where fill passes 8 m |
+| Earthworks cost ∝ volume | $0.40/m³ in the road's price (`GRADING.costPerCubicMetre`): nothing extra at grade, a median 73 % on a street over 15 %+ ground; civic pads likewise |
+| Preview shows grade along the ghost, colours too-steep sections, says by how much and what fixes it | `src/render/ghost.ts` (graded ghost, colours, cut/fill posts), `src/tools/roadTool.ts` (hint), reasons in `grading.ts`; `docs/screenshots/m13-preview.png`, `m13-too-steep.png` |
+| Terrain edits saved as deltas on the seed | `SimState.terrainDelta`, save v12, `FrameDiff.terrain` |
+| Nearby zone cells, buildings and trees adapt; nothing floats or sinks | `Sim.groundMoved` (re-seat), cells revalidated, trees cleared on moved ground; level pads for civic buildings; tested in `tests/grading.test.ts` |
+| Existing saves load unchanged | migration 11 → 12 (zero delta); test loads the v10 playtest save and checks the ground is the seed's |
+| Done when: sampled random streets across all presets refused only on extreme ground (before/after), screenshots of clean earthworks with buildings beside them | before 20.7 % refused (90 % on 8–15 % ground), after 0.7 %, only on ≥ 35 % ground (`scripts/dev/grades.ts`, `tests/grading.test.ts`); `scripts/dev/earthshot.mjs` town on a ridge |
+
+## M14 Controls and editing
+
+| Item | Where |
+|---|---|
+| Trackpad: two-finger swipe pans, pinch zooms, modifier + swipe or Safari's rotate gesture turns and tilts; auto-detected, setting to override | `src/render/camera.ts` (`onWheel`, `classify`, `onGesture`), Settings → Pointing device (`src/client/settings.ts`, `src/ui/Shell.tsx`), trackpad tip |
+| Mouse and keyboard unchanged; Cmd on macOS | `src/client/platform.ts` (`modKey`, `modDown`); `src/tools/manager.ts` |
+| Undo and redo for the last ~30 actions incl. bulldozing (roads, civic and zoned buildings with add-ons), zoning and dezoning, road changes and moves | `src/sim/history.ts` (generic state diff), `Sim.undoRedo`; toolbar undo and redo buttons, ⌘Z / ⇧⌘Z; DESIGN.md §3.16 |
+| Toast when an undo can't be clean, saying why | `Game.history` toasts the reason ("Can't undo the road: buildings have grown …") |
+| Move civic buildings, landmarks and specialisation buildings for a small fee, keeping add-ons, funding and upgrades | `moveBuilding` (`moveCivic` in `src/sim/world/civic.ts`), Move button in the civic inspector, place tool move mode |
+| Shortcut cheat sheet on `?` | `src/ui/ShortcutSheet.tsx` |
+| Done when: e2e pans, zooms and rotates with synthesized trackpad events, undoes and redoes a bulldoze and a zoning stroke exactly (state hash), moves a building | `e2e/m14-controls.spec.ts`; unit tests in `tests/history.test.ts` (exact round trips of every kind, conflicts, the limit, migration, moves) |
+
+## M15 Publish it
+
+| Item | Where |
+|---|---|
+| Deploy to GitHub Pages with a workflow on pushes to main, with the right Vite base path | `.github/workflows/deploy.yml` (pushed from this session; base path and site address from `actions/configure-pages`, unit tests first); `base` from `BASE_PATH` in `vite.config.ts` |
+| Installable app: web app manifest, original icons | `public/manifest.webmanifest`, `public/icons/` (SVG sources, PNGs from `scripts/dev/icons.mjs`), links in `index.html` |
+| Service worker that caches the game and offers "New version, reload" | `src/pwa/sw.js` (filled in by `scripts/vite-pwa.ts`), `src/client/pwa.ts`, the update notice in `src/ui/SystemMenu.tsx`; `docs/screenshots/m15-update.png`; DESIGN.md §6.1 |
+| Saves survive updates | saves in IndexedDB and settings in localStorage, never in the cache; Reload autosaves first; e2e continues the city after the update |
+| Link previews well: title, description, image from a game screenshot | meta and Open Graph/Twitter tags in `index.html`, absolute URLs from `SITE_URL`; `public/social.jpg` (`scripts/dev/socialshot.mjs`) |
+| First launch picks a graphics preset from a quick performance check | `src/client/graphicsCheck.ts`, `Game.startGraphicsCheck`; shown and re-runnable in Settings; `tests/graphicsCheck.test.ts` |
+| README no longer claims every resident is simulated | README intro: residents counted per building, trips routed over real roads, visible vehicles are samples |
+| What to click, at the top of PROGRESS.md | PROGRESS.md "What you need to do" |
+| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /Sim-Cities/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
+
+## M16 Photo mode and city history
+
+| Item | Where |
+|---|---|
+| Photo mode hides all UI | `Game.enterPhoto` (K, toolbar camera): the app renders only `src/ui/PhotoMode.tsx`, H hides that too; the renderer hides icons, ghost, selection, ribbons, zone markings and street labels (`GameRenderer.setPhoto`) |
+| Free camera lower and closer than normal | `CameraController.photo`: 2.5 m from its target, near-level pitch, eye-height target, 0.6 m above ground |
+| Time of day, tilt-shift and depth-of-field strength, field of view | photo panel sliders; `PhotoLens` in `src/render/photo.ts` (two-pass lens); `PhotoView.hour` and `fov` in the renderer |
+| A few colour grades | six original grades (`GRADES` in `src/render/photo.ts`) |
+| Follow camera riding with a car, bus or walker | Pick / Car / Bus / Person in the panel; `Game.followNearest`, `CameraController.follow` |
+| Save a PNG at up to twice screen resolution | `GameRenderer.capture(scale)`: the frame redrawn at 1× or 2× the screen's physical pixels and copied from the canvas |
+| The city can pause or keep running | "Keep the city running" (Space) |
+| City history: population, approval, jobs and unemployment, treasury, income and spending, pollution, crime, traffic over the whole life | `src/sim/systems/chronicle.ts` (`SimState.chronicle`, recorded as each month closes) |
+| Downsampled so saves stay small | at most 240 points per figure, buckets doubling as the city ages |
+| History panel in the budget's style, milestones and disasters marked | `src/ui/History.tsx` with `TimeChart` (`src/ui/charts.tsx`); `docs/screenshots/m16-history.png` |
+| Older saves start their history when loaded | migration 13 → 14; `tests/chronicle.test.ts` loads the version-10 playtest save and plays on |
+| Done when: photo mode saves a full-resolution PNG with no UI, and history survives save/load exactly | `e2e/m16-photo-history.spec.ts` (PNG at 2× the viewport from the canvas with helpers hidden and no interface mounted; history equal and state hash equal after save and load through the UI); `tests/chronicle.test.ts` |

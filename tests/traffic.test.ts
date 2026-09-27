@@ -143,9 +143,10 @@ describe('traffic', () => {
     expect(preview.ok).toBe(true);
     const r = sim.dispatch({ type: 'upgradeRoad', seg: segId, road: 'avenue' });
     expect(r.ok).toBe(true);
-    const expected = Math.round(
-      curve.length * (ROAD_TYPES.avenue.costPerMetre - ROAD_TYPES.street.costPerMetre),
-    );
+    // The difference in road price, plus earthworks to widen its formation (M13).
+    const earth = (r.info as { earth: { cost: number } | null }).earth?.cost ?? 0;
+    const expected =
+      Math.round(curve.length * (ROAD_TYPES.avenue.costPerMetre - ROAD_TYPES.street.costPerMetre)) + earth;
     expect(t0 - sim.state.treasury).toBe(expected);
     expect(sim.state.net.segments.get(segId)!.type).toBe('avenue');
     const kept = before.filter((id) => sim.state.buildings.has(id));

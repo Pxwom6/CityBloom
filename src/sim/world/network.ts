@@ -1,9 +1,10 @@
-import { ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { GRADING, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { CELL, CELL_OVERLAP_SHRINK, MAX_CELL_SLOPE, ROWS, ZONE_NONE } from '../../data/zones';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import { Curve, rectsOverlap, splitBezier, v2, type ORect, type Vec2 } from '../geom';
 import { SpatialHash, type Box } from './spatial';
 import type { Terrain } from '../terrain/terrain';
+import { profileAt } from './grading';
 
 export interface RoadNode {
   id: number;
@@ -21,6 +22,11 @@ export interface RoadSegment {
   /** Zone block ids on the left (+1) and right (−1) side, 0 if none. */
   left: number;
   right: number;
+  /**
+   * Road surface heights every GRADING.step metres, for a road carried on a viaduct over dry ground
+   * (M13); absent for roads on the ground and for water bridges (derived from the terrain).
+   */
+  deck?: number[];
 }
 
 /**
@@ -450,6 +456,10 @@ export class Network {
       layouts: layouts.second,
       zoned: seg.left !== 0 || seg.right !== 0,
     });
+    if (seg.deck) {
+      first.deck = resampleDeck(seg.deck, 0, s);
+      second.deck = resampleDeck(seg.deck, s, curve.length);
+    }
 
     for (const { side, block } of transfers) {
       const b1 = this.st.blocks.get(side === 1 ? first.left : first.right);
@@ -504,6 +514,7 @@ export class Network {
       cz: number;
       type: RoadTypeId;
       layouts: { left?: [number, number]; right?: [number, number] };
+      deck?: number[];
     };
     node: number;
     first: number;
@@ -535,6 +546,7 @@ export class Network {
       layouts: o.layouts,
       zoned: !!(o.layouts.left || o.layouts.right),
     });
+    if (o.deck) merged.deck = o.deck.slice();
     this.removeNodeIfOrphan(rec.node);
     const moved = new Map<number, { block: number; col: number } | null>();
     for (const side of ['left', 'right'] as const) {
@@ -732,3 +744,13 @@ export class Network {
 }
 
 export { keyBlock, keyIdx };
+
+/** The stretch [s0, s1] of a viaduct's deck heights, resampled from its own start (M13). */
+function resampleDeck(deck: number[], s0: number, s1: number): number[] {
+  const step = GRADING.step;
+  const n = Math.max(2, Math.ceil((s1 - s0) / step - 1e-6) + 1);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++)
+    out.push(Math.round(profileAt({ step, h: deck }, s0 + Math.min(s1 - s0, i * step)) * 100) / 100);
+  return out;
+}

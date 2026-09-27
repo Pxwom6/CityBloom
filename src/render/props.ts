@@ -25,6 +25,11 @@ export class GarbageProps {
   private s = new Vector3();
   private up = new Vector3(0, 1, 0);
 
+  /** The ground moved (earthworks): re-seat the piles. */
+  groundMoved(): void {
+    this.dirty = true;
+  }
+
   constructor(private world: ClientWorld) {
     const bags = mergeGeometries([
       painted(new IcosahedronGeometry(0.55, 0).translate(0, 0.45, 0), new Color('#2f3a2f')),
@@ -38,6 +43,7 @@ export class GarbageProps {
     this.mesh.castShadow = true;
     this.mesh.name = 'garbage-piles';
     world.onBuildings(() => (this.dirty = true));
+    world.onTerrain(() => this.groundMoved());
   }
 
   update(): void {

@@ -1,3 +1,4 @@
+import { chronicleEvent } from './chronicle';
 import { ACHIEVEMENTS } from '../../data/achievements';
 import { MILESTONES } from '../../data/progression';
 import { ZONE_R } from '../../data/zones';
@@ -63,6 +64,7 @@ export function progressHour(sim: Sim): void {
   while (p.milestone + 1 < MILESTONES.length && p.peak >= MILESTONES[p.milestone + 1]!.population) {
     p.milestone++;
     sim.events.push({ kind: 'milestone', id: p.milestone });
+    chronicleEvent(sim, 'milestone', p.milestone);
   }
   // A disaster that flattened ten buildings sets a comeback target: the peak so far.
   for (const e of sim.events)

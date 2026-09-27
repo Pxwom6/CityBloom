@@ -21,10 +21,15 @@ sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
 const hw = sim.state.net.nodes.get(sim.state.highway.connect)!;
 let built = 0;
 let failed = 0;
+const whyFailed = new Map<string, number>();
 const tryRoad = (road: 'avenue' | 'street', points: { x: number; z: number }[]) => {
   const r = sim.dispatch({ type: 'buildRoad', road, points });
   if (r.ok) built++;
-  else failed++;
+  else {
+    failed++;
+    const why = r.reason.replace(/[\d.,]+/g, '#');
+    whyFailed.set(why, (whyFailed.get(why) ?? 0) + 1);
+  }
 };
 const zone = (z: 'R' | 'C' | 'I', x: number, y: number, radius: number) =>
   sim.dispatch({ type: 'zone', zone: z, area: { kind: 'brush', points: [{ x, z: y }], radius } });
@@ -164,6 +169,7 @@ if (big) {
 console.log(
   `roads built ${built}, failed ${failed}, segments ${sim.state.net.segments.size}, civics ${civics}`,
 );
+for (const [why, n] of whyFailed) console.log(`  ${n} × ${why}`);
 // --profile: time each system; report the costliest per month (total and worst single run).
 const profile = new Map<string, { total: number; worst: number }>();
 if (args.includes('--profile'))

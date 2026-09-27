@@ -179,6 +179,19 @@ export class RoadRenderer {
     this.dirtyChunks.clear();
   }
 
+  /** The ground moved in `box` (earthworks, M13): redrape the roads and junctions there. */
+  refresh(box: { minX: number; minZ: number; maxX: number; maxZ: number }): void {
+    for (const id of this.world.net.segHash.query(box)) {
+      this.dirtySegs.add(id);
+      const s = this.world.netState.segments.get(id);
+      if (s) {
+        this.dirtyNodes.add(s.a);
+        this.dirtyNodes.add(s.b);
+      }
+    }
+    this.flush();
+  }
+
   /** The regional highway running north–south outside the map (scenery). */
   private buildRegionalHighway(): void {
     const hw = this.world.gen.params.highway;

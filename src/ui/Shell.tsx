@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { GAME_TITLE, GAME_VERSION } from '../config';
+import { BUILD_ID, GAME_TITLE, GAME_VERSION } from '../config';
 import { MAP_PRESETS, type MapPreset } from '../data/world';
 import { DIFFICULTY, type Difficulty } from '../data/economy';
 import { dateOf, formatDate } from '../sim/time';
@@ -13,7 +13,14 @@ import {
   writeSlot,
   type SlotInfo,
 } from '../client/saves';
-import { AUTOSAVE_CHOICES, DRAW_DISTANCES, QUALITIES, UI_SCALE, type Settings } from '../client/settings';
+import {
+  AUTOSAVE_CHOICES,
+  DRAW_DISTANCES,
+  POINTER_DEVICES,
+  QUALITIES,
+  UI_SCALE,
+  type Settings,
+} from '../client/settings';
 import { useGame, useGameUpdates } from './hooks';
 import { drawMapPreview } from './mapPreview';
 
@@ -64,7 +71,7 @@ function SlotLine({ s, city = true }: { s: SlotInfo; city?: boolean }) {
 }
 
 /** A picker for one of a few values. */
-function Segmented<T extends string | number>(props: {
+export function Segmented<T extends string | number>(props: {
   value: T;
   options: readonly T[];
   label: (v: T) => string;
@@ -90,7 +97,7 @@ function Segmented<T extends string | number>(props: {
 }
 
 function MainMenu() {
-  const game = useGame();
+  const game = useGameUpdates(500);
   const [slots] = useSlots();
   const latest = slots?.[0];
   return (
@@ -124,7 +131,10 @@ function MainMenu() {
           <span>Settings</span>
         </button>
       </nav>
-      <footer class="shell-foot">Version {GAME_VERSION}</footer>
+      <footer class="shell-foot" data-testid="shell-foot">
+        Version {GAME_VERSION} · build {BUILD_ID}
+        {game.updates.offlineReady && ' · works offline'}
+      </footer>
     </div>
   );
 }
@@ -523,7 +533,7 @@ const VOLUMES: [keyof Settings, string][] = [
   ['ambientVolume', 'Ambience'],
 ];
 
-function Check(props: {
+export function Check(props: {
   on: boolean;
   testid: string;
   label: string;
@@ -557,6 +567,22 @@ function SettingsScreen() {
       <div class="settings-grid">
         <section>
           <h3>Graphics</h3>
+          <p class="settings-note" data-testid="graphics-auto">
+            {game.graphicsCheck
+              ? 'Checking what this device can draw smoothly…'
+              : s.autoGraphics
+                ? `Picked for this device: ${s.autoGraphics[0]!.toUpperCase()}${s.autoGraphics.slice(1)}.`
+                : 'Chosen by hand.'}{' '}
+            <button
+              class="btn small"
+              data-testid="graphics-recheck"
+              disabled={!!game.graphicsCheck}
+              title="Time a few seconds of drawing and pick the quality this device can hold"
+              onClick={() => game.startGraphicsCheck()}
+            >
+              Check again
+            </button>
+          </p>
           <div class="field">
             <span>Quality</span>
             <Segmented
@@ -603,6 +629,20 @@ function SettingsScreen() {
               onInput={(e) => set({ uiScale: Number((e.target as HTMLInputElement).value) / 100 })}
             />
           </label>
+          <div class="field">
+            <span>Pointing device</span>
+            <Segmented
+              value={s.pointer}
+              options={POINTER_DEVICES}
+              label={(d) => (d === 'auto' ? 'Automatic' : d === 'mouse' ? 'Mouse' : 'Trackpad')}
+              testid="pointer"
+              onChange={(pointer) => set({ pointer })}
+            />
+            <small class="muted">
+              Trackpad: swipe with two fingers to pan, pinch to zoom, hold Option (Alt) or Shift while swiping
+              to turn and tilt. A mouse wheel zooms.
+            </small>
+          </div>
           <Check
             on={s.edgeScroll}
             testid="edge-scroll"

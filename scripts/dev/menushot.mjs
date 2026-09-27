@@ -18,6 +18,10 @@ try {
     'console',
     (m) => (m.type() === 'error' || m.type() === 'warning') && console.log('console:', m.text()),
   );
+  // Keep the default graphics (a first launch would pick the light preset on SwiftShader).
+  await page.addInitScript(() =>
+    localStorage.setItem('citybloom.settings', JSON.stringify({ graphicsChecked: true })),
+  );
   await page.goto('http://localhost:4196/');
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 120000,

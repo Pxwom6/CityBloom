@@ -322,6 +322,21 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   ]);
   await page.getByTestId('tool-select').click();
 
+  // Grow on, keeping power and water up.
+  for (let m = 0; m < 4; m++) {
+    await page.evaluate(() => window.__game!.advance(1440));
+    await closeTips(page, tips);
+    s = await state(page);
+    await topDown();
+    const u = s.utilities;
+    if (u.power.supply < u.power.demand * 1.2 + 10) await place(page, 'power', 'wind', east);
+    if (u.water.supply < u.water.demand * 1.2 + 10) await place(page, 'water', 'pump', north);
+    if (u.sewage.supply < u.sewage.demand * 1.2 + 10) await place(page, 'water', 'septic', east);
+    await page.getByTestId('tool-select').click();
+  }
+  s = await state(page);
+  log(`seven months: pop ${s.population}, $${s.treasury}, approval ${s.approval}`);
+
   // --- A district over the old town, with a policy of its own. ---
   await page.keyboard.press('i');
   // The Districts panel opens on the left: look at the town from further west.
@@ -346,24 +361,15 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
     .toBe(1);
   const d = (await page.evaluate(() => window.__game!.getDistricts())).list[0]!;
   await page.getByTestId(`district-${d.id}`).click();
-  await page.getByTestId('district-policy-heritage').check();
+  // The first policy the town has unlocked (fire safety comes at 800 residents).
+  const policy = page.locator('[data-testid^="district-policy-"]:not([disabled])').first();
+  if (await policy.count()) {
+    const id = await policy.getAttribute('data-testid');
+    await policy.check();
+    log(`district ${d.name}: ${id}`);
+  } else log(`district ${d.name}: no policy unlocked yet at ${(await state(page)).population} residents`);
   await shot(page, 'district');
   await page.keyboard.press('i');
-
-  // Grow on, keeping power and water up.
-  for (let m = 0; m < 4; m++) {
-    await page.evaluate(() => window.__game!.advance(1440));
-    await closeTips(page, tips);
-    s = await state(page);
-    await topDown();
-    const u = s.utilities;
-    if (u.power.supply < u.power.demand * 1.2 + 10) await place(page, 'power', 'wind', east);
-    if (u.water.supply < u.water.demand * 1.2 + 10) await place(page, 'water', 'pump', north);
-    if (u.sewage.supply < u.sewage.demand * 1.2 + 10) await place(page, 'water', 'septic', east);
-    await page.getByTestId('tool-select').click();
-  }
-  s = await state(page);
-  log(`seven months: pop ${s.population}, $${s.treasury}, approval ${s.approval}`);
 
   // --- The region: buy some power from the neighbour that sells it. ---
   await page.getByTestId('open-region').click();

@@ -53,7 +53,7 @@ floods and meteors strike and the city rebuilds. Saves are versioned and compres
 slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
 offers each new version (M15). Cities keep their history for charts and photos (M16), and past
 20,000 residents raise big projects in stages (a stadium, a solar tower, a convention centre, a
-garden expo, a launch complex) and face elections every four years (M17). Twelve scenarios, each
+garden expo, a launch complex) and face elections every four years (M17). Thirteen scenarios, each
 a ready-made city with goals, limits and a time limit, are played from the main menu for one to
 three stars (M18). Roads can be one-way, junctions take roundabouts, and past 10,000 residents a city
 highway passes over the town's streets, joined by ramps; visible cars queue and give way (M19). Past
@@ -63,7 +63,10 @@ Districts are painted and named, and take their own policies, including a heavy-
 heritage status, with their own figures, budget share and data maps (M21). The year turns through
 four seasons with rain, snow, fog, storms and heatwaves drawn from each map's climate: heating lifts
 winter power demand, heatwaves raise power and water, dry spells weaken pumps, heavy rain lifts the
-river, and snow slows traffic until a public works depot's ploughs clear it (M22).
+river, and snow slows traffic until a public works depot's ploughs clear it (M22). Three neighbouring
+towns send commuters and shoppers, take the city's unemployed and trade power, water and garbage
+processing under deals; a seaport ships goods and an airport flies visitors in, loud along its
+runway (M23).
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
 calls at the city overview. Checked by 251 unit and scenario tests, the UI specs in `e2e/`, a 10-minute soak
@@ -88,19 +91,21 @@ done).
    tried it.
 
 ## In progress
-M23 Region, airport and seaport (SPEC-2.md), not started. M22 is complete: full UI suite green
-(29 specs, 44 min), 251 unit and scenario tests.
+M23 Region, airport and seaport: done and pushed (neighbours and deals, regional commuters, shoppers
+and visitors through traffic, airport, seaport, noise, Region panel, planes and ships, Harbour Lights,
+`e2e/m23-region.spec.ts`, docs). Left: bench and balance numbers, full `npm run e2e`, the
+`M23 complete:` commit. Then M24.
 
 ## Next tasks
-1. M23 sim: two or three neighbouring cities beyond the map edges (an industrial town, a resort, a
-   commuter suburb) that grow or shrink; deals to buy or sell power, water and garbage processing;
-   regional commuters and shoppers by highway and rail (keep it readable: inspector lines and a
-   "where from" data map). Save v21 with a migration test.
-2. M23 airport (big footprint, unlocked by population; tourism and business; noise map; planes) and
-   seaport (maps with deep water; freight and trade; ships); visitors arriving by highway, rail, air
-   and sea through the traffic model (closing M10's gap).
-3. M23 scenario tests: a power deal covering a shortage, regional commuters filling jobs, the
-   airport raising visitors; UI test, bench, balance, docs.
+1. Log bench and balance (running), full `npm run e2e`, tick M23, commit `M23 complete:`.
+2. M24 terraforming: raise, lower, level and smooth tools on M13's terrain deltas, a cost per volume,
+   limits near buildings, undo.
+3. M24 map editor from the main menu: sculpt, paint water (rivers, lakes, coastline), place
+   resources, forests, highway and rail entries; a playability check; save and share maps as files;
+   they appear on the new-city screen. Scripted test: a map made in the editor saves, reloads and
+   grows a city.
+4. The end of the brief: summary and ideas in PROGRESS, SPEC_REVIEW's last section, a final
+   playthrough through the UI using the new features.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -112,7 +117,7 @@ M23 Region, airport and seaport (SPEC-2.md), not started. M22 is complete: full 
 - Bus riders' door-to-door time includes walking and waiting, so a bus line mainly helps by taking cars off jammed roads (≈10–20 % less traffic in the test town), not by being faster than driving.
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
-- Visitors (M10) are counted, spend money and shop, but don't drive through the traffic model yet.
+- Visitors drive from where they arrive to the landmarks and hotels (M23); with no sight in town they're counted but stay put. Ships sail a straight line from the berth out to sea, so on a very irregular coast one could cross a headland.
 - The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
 - Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.
 - Once a big city has bought every project and landmark it can reach, its treasury still creeps up (≈ $0.3M a year for the careful mayor at 2 % taxes); later milestones add things to buy.
@@ -125,7 +130,10 @@ M23 Region, airport and seaport (SPEC-2.md), not started. M22 is complete: full 
 - Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains); visible trams and trains follow their line's timetable rather than the traffic (a tram passes through queued cars, and cars don't visibly stop at level crossings, though crossings slow them in the model); level-crossing barriers are drawn raised. An old save whose west edge is built up gets no regional rail link.
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
-## Performance (latest: M22)
+## Performance (latest: M23)
+- `bench.ts 8 --big --profile` (M23: the bench city has its neighbours, so regional commuters, shoppers and visitors run in every matching round): at 97–110k tick avg 0.67–1.04 ms, p99 5.4–8.8 ms, worst per month 8.3–17.3 ms (M22: 0.87–1.02 ms, 10.5–16.4 ms); the matcher, which now does the regional pass, peaks at 12.5 ms and is usually under 8; noise and the region don't show among the costliest. Rendering the saved city (`bigshot.mjs`): 289 draw calls / 2.59M triangles at the overview, 157 / 1.77M at the city preset, 94 / 0.94M at street level (M13: 288, 158, 95); planes and ships are one instanced draw each, only when there are any. `balance.ts 20`: careful 66,127 / 71 % at year 20 (peak ≈68k in year 12; M22 56,406 / 75 %), every election won, treasury $25M; greedy 420 / 16 % (M22 292: the neighbours' commuters staff its industry), neglectful 354 / 36 % (M22 485).
+
+## Performance (M22)
 - `bench.ts 8 --big --profile` (M22: the bench city has the lakes preset's continental weather; its eight months run March to October, so the snowstorm case is timed separately below): at 99–111k tick avg 0.87–1.02 ms, worst per month 10.5–16.4 ms (M21: 0.65–1.04 ms, 9.4–15.5 ms); the weather system doesn't show among the costliest. `snowbench.ts` on the saved 100k city (four depots, ten hours of heavy snow, the first day after loading): tick avg 3.58 ms vs 3.47 ms for the same day without snow, p99 19 vs 18 ms, weather (with plough dispatch) ≤ 7.3 ms; the heavy first day is the cold start after a load, with or without snow. `balance.ts 20`: careful 56,406 / 75 % at year 20 (peak ≈57.8k; M21 67,411 / 71 %), every goal met including the launch complex, five elections won, taxes handed back down to 2 % once rich (so net ≈ −$5k a month on a $3.6M treasury by year 20); greedy 292 / 16 %, neglectful 485 / 41 %. The smaller careful city isn't the weather: an A/B with `--weather 0 --seasons off` goes both ways across four seeds (see DECISIONS M22); those runs found and fixed a mayor dead end on seed s1. The menu demo town (M19's, 27k) holds 26–28k through a year of M22 weather.
 - `bench.ts 8 --big --profile` (M21: the bench city paints no districts, so this checks the per-building `policyAt` lookups and the rest idle): at 100–110k tick avg 0.65–1.04 ms, p99 5.6–9.4 ms, worst per month 9.4–15.5 ms over two runs, except one 52 ms utilities tick in month 6 of the first run that the second didn't reproduce (the VM or GC; watch for it). An A/B run of the M20 commit straight after: 0.77–1.04 ms, worst 12.0–16.0 ms, identical populations, so M21 costs nothing measurable. `balance.ts 20`: identical to M20 (careful 67,411 / 71 % at year 20, five elections won, treasury $32M; greedy 368 / 22 %; neglectful 490 / 36 %); the balance mayors paint no districts. Draw calls are unchanged in normal play: the district view draws through the data-map overlay texture and names are DOM labels.
 - `bench.ts 8 --big` (M20: the bench city builds no rail, so this checks the cost of the new systems idle): at 100–110k tick avg 0.65–0.92 ms, p99 5.5–8.6 ms, worst per month 9.4–17.2 ms over two runs (the worst at month 5's growth burst: utilities 14.5 ms once, 17.2 ms once; ~51–57 ms once in month 1, the cold start). An A/B run of the M19 commit the same hour: 0.64–0.87 ms, worst 9.7–15.9 ms (landValue 15.9 at month 5), with identical populations, so M20 costs nothing measurable and the month-5 spikes near 15 ms predate it. Rendering the saved 100k city (`bigshot.mjs`): 289 draw calls / 2.65M triangles at the overview, 156 / 1.78M at the city preset, 94 / 0.96M at street level (M13: 288 / 2.67M, 158, 95). `balance.ts 20`: careful 67,411 / 71 % at year 20 (peak 71.8k in year 9; M19 64,907 / 72 %, path-dependent), four of five projects open (the launch complex still waits on education), five elections won, treasury $32M; greedy 368 / 22 %, neglectful 490 / 36 % (unchanged). The balance mayors don't build rail. Rail scenes on SwiftShader: a 1,200-resident town with a train line, a tram loop and a freight train draws 137 calls / 0.57M triangles at street level (`railshot.mjs`).

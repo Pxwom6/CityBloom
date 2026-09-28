@@ -293,6 +293,12 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   log(`levelled north of town for $${money - s.treasury}`);
   expect(s.treasury).toBeLessThan(money);
   await shot(page, 'terrain');
+  // Back up to see the service road and the levelled ground together.
+  await page.evaluate(
+    (cz) => window.__game!.setCamera({ x: 260, z: cz - 280, distance: 760, yaw: 0, tilt: 0.55 }),
+    cz,
+  );
+  await page.evaluate(() => window.__game!.waitFrames(2));
   await page.getByTestId('tool-road').click();
   await page.getByTestId('road-street').click();
   await drag(page, [

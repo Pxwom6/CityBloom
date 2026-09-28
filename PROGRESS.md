@@ -30,7 +30,7 @@
 - [x] M16 Photo mode and city history
 - [x] M17 Big projects and elections
 - [x] M18 Scenarios
-- [ ] M19 Traffic tools
+- [x] M19 Traffic tools
 - [ ] M20 Rail
 - [ ] M21 Districts
 - [ ] M22 Seasons and weather
@@ -80,24 +80,28 @@ done).
    tried it.
 
 ## In progress
-Phase 2 (SPEC-2.md, M13–M24). M19 Traffic tools is built and tested; the full e2e run and the
-`M19 complete:` commit are what's left. One-way roads (drawn with O or switched on any road, free),
-junctions with their own capacity and roundabouts (road tool → Roundabout, or the road inspector),
-the city highway (10,000 residents: no zoning, passes over what it crosses, joined by one-way ramps
-and to the regional highway where it ends), visible cars that queue, wait their turn and drive round
-roundabouts, a traffic map with junction discs and one-way chevrons, a road inspector (click a
-road), advisor hints and tips, save v17, and a ninth scenario (Crossroads). Done-criterion tests:
-`tests/junctions.test.ts` (roundabout relieves a jammed crossroads) and `tests/highway.test.ts`
-(bypass takes over a fifth of the centre's traffic). 218 unit tests; `e2e/m19-traffic-tools.spec.ts`
-passes.
+Phase 2 (SPEC-2.md, M13–M24). M19 Traffic tools is complete: one-way roads (drawn with O or switched
+on any road, free), junctions with their own capacity and roundabouts (road tool → Roundabout, or the
+road inspector: click a road), the city highway (10,000 residents: no zoning, passes over what it
+crosses, joined by one-way ramps and to the regional highway where it ends), visible cars that queue,
+wait their turn and drive round roundabouts, a traffic map with junction discs and one-way chevrons,
+advisor hints and tips, save v17, and a ninth scenario (Crossroads). Done-criterion tests:
+`tests/junctions.test.ts` (a roundabout relieves a jammed crossroads) and `tests/highway.test.ts` (a
+bypass takes over a fifth of the centre's traffic). 218 unit tests. Full e2e run: 23 of 24 passed;
+the new M19 spec caught a visible-car bug (a car leaving a roundabout mid-step), fixed, and the M19
+spec then passed twice.
 
 ## Next tasks
-1. Full e2e run (`npm run e2e`), then the `M19 complete:` commit.
-2. M20 Rail (SPEC-2): trams on streets and avenues, trains on their own track with stations, crossing
-   roads on bridges or level crossings (reuse `gradeSeparated`, `Crossing` and `GradeLimit` from
-   M19), mode choice with tram and train, freight rail; scenario tests for a train line cutting car
-   traffic on a jammed corridor and freight rail cutting trucks. Add or update a scenario for rail.
-3. Performance watch: tick average at the big city's growth burst varies 0.6–1.3 ms by VM day.
+1. M20 Rail (SPEC-2): trams on streets, avenues and boulevards (track on an existing road) with stops
+   and a depot; trains on their own track with stations, crossing roads on bridges (reuse
+   `gradeSeparated`, `Crossing`, `GradeLimit` and decks from M19) or at level crossings, on gentle
+   grades; mode choice with tram and train beside car, bus and walking, a ridership map, line and
+   stop inspectors; freight rail (a regional rail link at the map edge and a freight terminal serving
+   industry and trade); animated trams and trains. Done when scenario tests show a train line cutting
+   car traffic on a jammed corridor and freight rail cutting truck traffic. Add or update a scenario.
+   Plan: rail as a network segment type left out of the road graph (its own graph), trams as a flag
+   on road segments; lines like bus lines (`src/sim/systems/transit.ts`).
+2. Performance watch: tick average at the big city's growth burst varies 0.6–1.3 ms by VM day.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

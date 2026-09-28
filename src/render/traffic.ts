@@ -520,7 +520,9 @@ export class TrafficRenderer {
       // Give way to cars on the ring about to pass the entry.
       const entry = this.angleOn(c, c.leg, Math.abs(c.legs[c.leg]!.s1 - c.legs[c.leg]!.s0) - info.r, info);
       for (const o of onRing) {
-        const at = o.ring!.a0 - o.ring!.t / o.ring!.r;
+        // (The list is from the start of the step: a car may have left the ring since.)
+        if (!o.ring || o.ring.node !== node) continue;
+        const at = o.ring.a0 - o.ring.t / o.ring.r;
         let d = at - entry;
         d = ((d % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
         // Coming up to the entry (anticlockwise means decreasing angle), or just passing it.
@@ -541,7 +543,7 @@ export class TrafficRenderer {
     let room = Infinity;
     const mine = ring.a0 - ring.t / ring.r;
     for (const o of onRing) {
-      if (o === c || !o.ring) continue;
+      if (o === c || !o.ring || o.ring.node !== ring.node) continue;
       const theirs = o.ring.a0 - o.ring.t / o.ring.r;
       // Ahead means further round (a smaller angle), within half a turn.
       let d = mine - theirs;

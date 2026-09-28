@@ -54,6 +54,11 @@ export interface CivicDef {
     revenuePerUnit?: number;
     powerPerUnit?: number;
   };
+  /**
+   * Public works depot (M22): snow ploughs it sends out (scaled by road maintenance funding), how
+   * far along the roads they work (m), and how many roads a plough clears before it heads home.
+   */
+  plough?: { ploughs: number; reach: number; stops: number };
   /** Bus depot (M6): buses it runs and passengers per bus. */
   transit?: { buses: number; capacity: number };
   /**
@@ -275,6 +280,22 @@ export const CIVIC_DEFS: CivicDef[] = [
     blurb: 'Trucks collect garbage and bury it here until it fills up.',
     unlockPopulation: 0,
     model: 'landfill',
+  },
+  {
+    id: 'works',
+    name: 'Public works depot',
+    category: 'garbage',
+    dept: 'roads',
+    w: 36,
+    d: 32,
+    cost: 7_500,
+    upkeep: 200,
+    plough: { ploughs: 3, reach: 3_000, stops: 12 },
+    landValue: { radius: 80, value: -0.03 },
+    blurb:
+      'Snow ploughs clear the roads within about 3 km, busiest first, whenever snow settles. Road maintenance funding sets how many go out.',
+    unlockPopulation: 500,
+    model: 'works',
   },
   {
     id: 'recycling',

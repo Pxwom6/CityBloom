@@ -113,6 +113,7 @@ import {
 } from './world/civic';
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
+import { dispatchPloughs } from './systems/ploughs';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
 import {
@@ -865,6 +866,13 @@ export class Sim {
     this.events.push({ kind: 'civicRemoved', id });
   }
 
+  /** Roads whose snow changed since the last frame (M22). */
+  private snowDirty = new Set<number>();
+
+  roadSnowChanged(id: number): void {
+    this.snowDirty.add(id);
+  }
+
   markVehiclesDirty(): void {
     this.vehiclesDirty = true;
   }
@@ -1346,7 +1354,10 @@ export class Sim {
     const hour = Math.floor(t / TICKS_PER_HOUR);
     switch (minute) {
       case HOURLY_AT.utilities:
-        run('weather', () => weatherHour(this));
+        run('weather', () => {
+          weatherHour(this);
+          dispatchPloughs(this);
+        });
         run('disastersHour', () => disastersHour(this));
         run('utilities', () => {
           updateUtilities(this);
@@ -1602,6 +1613,7 @@ export class Sim {
       this.removedCivics,
     ])
       set.clear();
+    this.snowDirty.clear();
     this.vehiclesDirty = false;
     this.trafficDirty = false;
     this.transitDirty = false;
@@ -1823,6 +1835,12 @@ export class Sim {
     if (this.disastersDirty) {
       frame.disasters = this.disasterData();
       this.disastersDirty = false;
+    }
+    if (this.snowDirty.size) {
+      frame.roadSnow = [...this.snowDirty]
+        .sort((a, b) => a - b)
+        .map((id) => [id, this.state.net.segments.get(id)?.snow ?? 0] as [number, number]);
+      this.snowDirty.clear();
     }
     if (this.events.length) {
       frame.events = this.events;

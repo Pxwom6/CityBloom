@@ -119,6 +119,9 @@ export class ClientWorld {
     this.setDistricts(snap.districts);
   }
 
+  /** Bumped whenever snow on any road changes (M22); segments carry `snow`. */
+  roadSnowVersion = 0;
+
   /** Districts (M21): each by id, and the district of every raster cell (0: none). */
   districts = new Map<number, DistrictData['list'][number]>();
   districtCells: Uint8Array = new Uint8Array(GRID_RES * GRID_RES);
@@ -477,6 +480,15 @@ export class ClientWorld {
       this.emit('transit');
     }
     if (diff.districts) this.setDistricts(diff.districts);
+    if (diff.roadSnow) {
+      for (const [id, v] of diff.roadSnow) {
+        const seg = this.netState.segments.get(id);
+        if (!seg) continue;
+        if (v > 0) seg.snow = v;
+        else delete seg.snow;
+      }
+      this.roadSnowVersion++;
+    }
     if (diff.disasters) {
       this.setDisasters(diff.disasters);
       this.emit('disasters');

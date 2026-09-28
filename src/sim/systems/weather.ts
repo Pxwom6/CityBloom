@@ -194,6 +194,7 @@ function roadSnowHour(sim: Sim, fall: number, melt: number): void {
     const v = clamp01(had + fall - melt * (1 + WEATHER.trafficMelt * load));
     if (v < 0.005) delete seg.snow;
     else seg.snow = Math.round(v * 1000) / 1000;
+    if ((seg.snow ?? 0) !== had) sim.roadSnowChanged(seg.id);
   }
 }
 

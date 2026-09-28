@@ -364,6 +364,8 @@ export interface FrameDiff {
   transit?: TransitData;
   disasters?: DisasterData;
   districts?: DistrictData;
+  /** Snow on roads (M22): segments whose snow changed, with their new depth (0 = clear). */
+  roadSnow?: [number, number][];
 }
 
 /** Disasters under way and what they've left: damaged or flooded roads, craters. */

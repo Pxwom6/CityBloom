@@ -4,7 +4,7 @@ import { VEHICLE_SPEED_SCALE } from '../../data/civic';
 import type { Sim } from '../sim';
 import { routeBetween, type Leg } from './graph';
 
-export type VehicleKind = 'garbage' | 'fire' | 'police' | 'ambulance' | 'bus';
+export type VehicleKind = 'garbage' | 'fire' | 'police' | 'ambulance' | 'bus' | 'plough';
 
 /** A dispatched service vehicle driving along road legs. DESIGN §3.7. */
 export interface Vehicle {
@@ -60,6 +60,8 @@ export interface VehicleHandlers {
   arrive(sim: Sim, v: Vehicle): void;
   workDone(sim: Sim, v: Vehicle): void;
   home(sim: Sim, v: Vehicle): void;
+  /** Called as the vehicle reaches the end of each leg (snow ploughs clear the road behind them). */
+  passed?(sim: Sim, v: Vehicle, seg: number): void;
 }
 
 const handlers = new Map<VehicleKind, VehicleHandlers>();
@@ -165,6 +167,7 @@ export function stepVehicles(sim: Sim): void {
         break;
       }
       budget -= left;
+      handlers.get(v.kind)?.passed?.(sim, v, l.seg);
       v.leg++;
       v.t = 0;
       if (budget <= 0) {

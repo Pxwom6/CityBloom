@@ -17,6 +17,7 @@ import type { ScenarioState } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
+import type { District } from './systems/districts';
 
 export type { Difficulty };
 
@@ -124,4 +125,7 @@ export interface SimState {
   election: ElectionState;
   /** The scenario this city is playing (M18), or null. */
   scenario: ScenarioState | null;
+  /** Districts (M21) by id, and the district each raster cell (GRID_RES²) belongs to (0: none). */
+  districts: Map<number, District>;
+  districtCells: Uint8Array;
 }

@@ -61,6 +61,18 @@ export type Command =
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
   /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */
   | { type: 'moveBuilding'; id: number; x: number; z: number; angle: number; side: 1 | -1 }
+  /** Districts (M21): name a new one; paint (0 erases) with a brush, a drag as one undo step. */
+  | { type: 'createDistrict'; name: string }
+  | {
+      type: 'paintDistrict';
+      district: number;
+      area: { kind: 'brush'; points: Vec2[]; radius: number };
+      stroke?: number;
+    }
+  | { type: 'renameDistrict'; district: number; name: string }
+  | { type: 'removeDistrict'; district: number }
+  /** Put a policy in force in one district, or lift it (M21). */
+  | { type: 'setDistrictPolicy'; district: number; policy: PolicyId; on: boolean }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

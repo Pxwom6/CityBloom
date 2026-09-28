@@ -308,6 +308,8 @@ export interface Snapshot {
   traffic: TrafficData;
   transit: TransitData;
   disasters: DisasterData;
+  /** Districts (M21). */
+  districts: DistrictData;
 }
 
 export interface CivicData {
@@ -358,6 +360,7 @@ export interface FrameDiff {
   traffic?: TrafficData;
   transit?: TransitData;
   disasters?: DisasterData;
+  districts?: DistrictData;
 }
 
 /** Disasters under way and what they've left: damaged or flooded roads, craters. */
@@ -428,7 +431,31 @@ export type Query =
   | { type: 'advisors' }
   | { type: 'thoughts'; count?: number }
   /** Coverage samples along every road for one service (for the coverage data maps). */
-  | { type: 'coverageRoads'; kind: ServiceKind };
+  | { type: 'coverageRoads'; kind: ServiceKind }
+  /** Districts' figures and budgets (M21). */
+  | { type: 'districts' };
+
+/** Districts (M21) for the client: each district, and the district of every raster cell. */
+export interface DistrictData {
+  list: { id: number; name: string; color: number; policies: string[] }[];
+  cells: Uint8Array;
+}
+
+/** One district's figures for its panel (M21); id 0 is everywhere outside a district. */
+export interface DistrictReport {
+  id: number;
+  population: number;
+  jobs: number;
+  workers: number;
+  happiness: number;
+  landValue: number;
+  buildings: number;
+  cells: number;
+  /** Monthly: taxes its homes and businesses pay, upkeep of the civic buildings in it, its policies. */
+  taxes: number;
+  upkeep: number;
+  policies: number;
+}
 
 export type MainToWorker =
   | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean }

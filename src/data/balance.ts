@@ -203,6 +203,18 @@ export const TRAM = {
   minHeadway: 120,
 };
 
+/** Districts (M21). */
+export const DISTRICT = {
+  /** Most districts a city can have, colours in the palette, and the longest name. */
+  limit: 24,
+  colors: 12,
+  nameLength: 32,
+  /** Heavy-traffic ban: trucks see the district's roads as this many times slower. */
+  truckBan: 6,
+  /** Heritage district: land value there rises by this much (its charm). */
+  heritageLandValue: 0.05,
+};
+
 /** Environment, health and education (DESIGN §3.11). */
 export const ENVIRONMENT = {
   /** Air: cells the plume moves downwind per 3-hour update, diffusion, decay per update. */

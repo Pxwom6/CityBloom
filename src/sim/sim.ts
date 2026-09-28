@@ -11,6 +11,7 @@ import type {
   CivicData,
   CivicDetails,
   DisasterData,
+  DistrictData,
   VehicleData,
   BuildingData,
   CityStats,
@@ -28,6 +29,7 @@ import type {
 import { checkInvariants } from './invariants';
 import { Network, type ZoneBlock } from './world/network';
 import {
+  DISTRICT_SCOPE,
   FULL_SCOPE,
   HISTORY_LIMIT,
   ZONING_SCOPE,
@@ -62,6 +64,15 @@ import {
   type Building,
 } from './world/buildings';
 import { RoadGraph, routeBetween } from './systems/graph';
+import {
+  createDistrict,
+  districtAt,
+  emptyDistrictCells,
+  paintDistrict,
+  removeDistrict,
+  renameDistrict,
+  setDistrictPolicy,
+} from './systems/districts';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
@@ -145,6 +156,7 @@ import {
   book,
   closeMonth,
   defaultEconomy,
+  districtReports,
   economyHour,
   monthlyRates,
   repayLoan,
@@ -300,6 +312,8 @@ export class Sim {
       matchDay: null,
       election: newElectionState(0, options.elections && !options.sandbox),
       scenario: null,
+      districts: new Map(),
+      districtCells: emptyDistrictCells(),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -570,9 +584,47 @@ export class Sim {
 
   // ---------------------------------------------------------------- derived caches
 
-  /** Is a policy in force? */
+  /** Is a policy in force across the city? */
   policy(id: PolicyId): boolean {
     return this.state.policies.includes(id);
+  }
+
+  /** District policies (M21): which districts have each policy, rebuilt when districts change. */
+  private districtPolicyCache: Map<string, Set<number>> | null = null;
+
+  /** Is a policy in force at (x, z): across the city, or in the district there (M21)? */
+  policyAt(id: PolicyId, x: number, z: number): boolean {
+    if (this.state.policies.includes(id)) return true;
+    const by = this.districtPolicies().get(id);
+    return !!by && by.has(districtAt(this.state.districtCells, x, z));
+  }
+
+  /** Is a policy in force anywhere (the city or any district)? */
+  policyAnywhere(id: PolicyId): boolean {
+    return this.state.policies.includes(id) || this.districtPolicies().has(id);
+  }
+
+  /** Policy → districts where it's in force. */
+  districtPolicies(): Map<string, Set<number>> {
+    if (!this.districtPolicyCache) {
+      const m = new Map<string, Set<number>>();
+      for (const d of this.state.districts.values())
+        for (const p of d.policies) {
+          const set = m.get(p) ?? new Set<number>();
+          set.add(d.id);
+          m.set(p, set);
+        }
+      this.districtPolicyCache = m;
+    }
+    return this.districtPolicyCache;
+  }
+
+  private districtsDirty = true;
+
+  /** Districts were painted, named or given policies (M21): tell the client, re-read policies. */
+  districtsChanged(): void {
+    this.districtsDirty = true;
+    this.districtPolicyCache = null;
   }
 
   /** Is something that unlocks at `population` available? (Unlocks keep once reached.) */
@@ -987,6 +1039,8 @@ export class Sim {
       case 'setPolicy': {
         const def = POLICY.get(cmd.id);
         if (!def) return fail('No such policy');
+        if (def.scope === 'district')
+          return fail(`${def.name} is for districts: set it in a district's panel`);
         if (cmd.on && !this.isUnlocked(def.unlockPopulation))
           return fail(`Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`);
         if (!dryRun) {
@@ -1000,6 +1054,16 @@ export class Sim {
       }
       case 'addModule':
         return addModule(this, cmd.civic, cmd.module, dryRun);
+      case 'createDistrict':
+        return createDistrict(this, cmd.name, dryRun);
+      case 'paintDistrict':
+        return paintDistrict(this, cmd.district, cmd.area, dryRun);
+      case 'renameDistrict':
+        return renameDistrict(this, cmd.district, cmd.name, dryRun);
+      case 'removeDistrict':
+        return removeDistrict(this, cmd.district, dryRun);
+      case 'setDistrictPolicy':
+        return setDistrictPolicy(this, cmd.district, cmd.policy, cmd.on, dryRun);
       case 'moveBuilding':
         return moveCivic(this, cmd.id, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
       case 'setDisasters':
@@ -1027,6 +1091,12 @@ export class Sim {
     switch (cmd.type) {
       case 'zone':
         return ZONING_SCOPE;
+      case 'createDistrict':
+      case 'paintDistrict':
+      case 'renameDistrict':
+      case 'removeDistrict':
+      case 'setDistrictPolicy':
+        return DISTRICT_SCOPE;
       case 'buildRoad':
       case 'setOneWay':
       case 'setTram':
@@ -1056,6 +1126,16 @@ export class Sim {
         return cmd.tram ? 'tram stop' : 'bus stop';
       case 'setTram':
         return 'tram track';
+      case 'createDistrict':
+        return 'new district';
+      case 'paintDistrict':
+        return cmd.district ? 'district painting' : 'district erasing';
+      case 'renameDistrict':
+        return 'district name';
+      case 'removeDistrict':
+        return 'district removal';
+      case 'setDistrictPolicy':
+        return 'district policy';
       case 'upgradeRoad':
         return 'road change';
       case 'setOneWay':
@@ -1080,7 +1160,8 @@ export class Sim {
     const d = diff(pre, capture(this.state, pre.scope));
     if (!d.changes.length && !d.treasury) return;
     const top = this.history.undo[this.history.undo.length - 1];
-    const stroke = cmd.type === 'zone' || cmd.type === 'setTram' ? cmd.stroke : undefined;
+    const stroke =
+      cmd.type === 'zone' || cmd.type === 'setTram' || cmd.type === 'paintDistrict' ? cmd.stroke : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
       this.history.undo.push({
@@ -1170,6 +1251,7 @@ export class Sim {
       this.deckCache.clear();
     }
     for (const i of t.arrays.trees ?? []) this.markTreesDirty(i);
+    if (t.ids.districts || t.arrays.districtCells?.length) this.districtsChanged();
     this.flagCache.clear();
   }
 
@@ -1481,6 +1563,7 @@ export class Sim {
     this.vehiclesDirty = false;
     this.trafficDirty = false;
     this.transitDirty = false;
+    this.districtsDirty = false;
     this.events = [];
     return {
       options: { ...this.state.options },
@@ -1501,6 +1584,15 @@ export class Sim {
       traffic: this.trafficData(),
       transit: this.transitData(),
       disasters: this.disasterData(),
+      districts: this.districtData(),
+    };
+  }
+
+  /** Districts for the client (M21). */
+  districtData(): DistrictData {
+    return {
+      list: [...this.state.districts.values()].map((d) => ({ ...d, policies: [...d.policies] })),
+      cells: this.state.districtCells.slice(),
     };
   }
 
@@ -1682,6 +1774,10 @@ export class Sim {
       frame.transit = this.transitData();
       this.transitDirty = false;
     }
+    if (this.districtsDirty) {
+      frame.districts = this.districtData();
+      this.districtsDirty = false;
+    }
     if (this.disastersDirty) {
       frame.disasters = this.disasterData();
       this.disastersDirty = false;
@@ -1745,6 +1841,8 @@ export class Sim {
         return this.budget();
       case 'civic':
         return this.civicDetails(q.id);
+      case 'districts':
+        return districtReports(this);
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':

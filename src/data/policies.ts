@@ -10,7 +10,9 @@ export type PolicyId =
   | 'neighbourhoodWatch'
   | 'cleanIndustry'
   | 'highRiseBan'
-  | 'tourismCampaign';
+  | 'tourismCampaign'
+  | 'heavyTrafficBan'
+  | 'heritage';
 
 export interface PolicyDef {
   id: PolicyId;
@@ -20,6 +22,11 @@ export interface PolicyDef {
   costBase: number;
   costPerResident: number;
   unlockPopulation: number;
+  /**
+   * Where it can apply (M21): the whole city only, one district only, or either (the default). A
+   * district pays its population's share of the city-wide cost.
+   */
+  scope?: 'city' | 'district';
 }
 
 export const POLICIES: PolicyDef[] = [
@@ -86,6 +93,27 @@ export const POLICIES: PolicyDef[] = [
     costBase: 400,
     costPerResident: 0.02,
     unlockPopulation: 10_000,
+    scope: 'city',
+  },
+  // District-only policies (M21).
+  {
+    id: 'heavyTrafficBan',
+    name: 'Heavy-traffic ban',
+    effect: 'Trucks keep off its roads where there is another way round; deliveries still get in.',
+    costBase: 150,
+    costPerResident: 0.01,
+    unlockPopulation: 5_000,
+    scope: 'district',
+  },
+  {
+    id: 'heritage',
+    name: 'Heritage district',
+    effect:
+      'Buildings keep their character: none is rebuilt bigger or grander, new ones stay low or medium density, and the charm lifts land value.',
+    costBase: 100,
+    costPerResident: 0.01,
+    unlockPopulation: 5_000,
+    scope: 'district',
   },
 ];
 

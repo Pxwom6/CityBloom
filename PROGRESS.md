@@ -53,11 +53,13 @@ floods and meteors strike and the city rebuilds. Saves are versioned and compres
 slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
 offers each new version (M15). Cities keep their history for charts and photos (M16), and past
 20,000 residents raise big projects in stages (a stadium, a solar tower, a convention centre, a
-garden expo, a launch complex) and face elections every four years (M17). Eight scenarios, each
+garden expo, a launch complex) and face elections every four years (M17). Nine scenarios, each
 a ready-made city with goals, limits and a time limit, are played from the main menu for one to
-three stars (M18). Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
+three stars (M18). Roads can be one-way, junctions take roundabouts, and past 10,000 residents a city
+highway passes over the town's streets, joined by ramps; visible cars queue and give way (M19).
+Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 205 unit and scenario tests, 22 UI tests, a 10-minute soak
+calls at the city overview. Checked by 218 unit and scenario tests, 23 UI tests, a 10-minute soak
 and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
 done).
 
@@ -66,8 +68,8 @@ done).
    per-building LOD if 2.5M triangles at the overview is too much for the GPU.
 2. **Trams and trains**: the transit system (lines, stops, riders) and road graph are ready for
    rail lines with their own right of way; a rail freight link would feed the trade specialisation.
-3. **Visible traffic that queues**: car-following and junction yielding for the drawn cars (the
-   sim's congestion already works); tourists driving in from the highway.
+3. **Traffic lights** as a third junction type between a plain junction and a roundabout, and
+   tourists driving in from the highway (visitors aren't in the traffic model yet).
 4. **Neighbouring cities** that trade power, water and garbage and share the highway's demand.
 5. **Weather and seasons**: snow on roofs, rain lowering park use, heating demand in winter.
 6. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
@@ -78,23 +80,24 @@ done).
    tried it.
 
 ## In progress
-Phase 2 (SPEC-2.md, M13–M24). M18 Scenarios is complete: eight scenarios (Clean Slate, Back from the
-Brink, Vote of Confidence, Big Game, Gridlock, Smokestack Valley, After the Flood, Seaside Resort) on
-three maps, each a shipped save with goals checked at month close, limits and a time limit (save
-v16); a scenario screen off the main menu with previews and best stars kept on this device, the
-brief, the goals panel (G, from the city's name in the top bar) and a win screen with one to three
-stars. In the test suite a scripted player wins each scenario and a neglectful one loses it
-(`tests/scenarios/`). All 22 e2e specs pass, 205 unit tests.
+Phase 2 (SPEC-2.md, M13–M24). M19 Traffic tools is built and tested; the full e2e run and the
+`M19 complete:` commit are what's left. One-way roads (drawn with O or switched on any road, free),
+junctions with their own capacity and roundabouts (road tool → Roundabout, or the road inspector),
+the city highway (10,000 residents: no zoning, passes over what it crosses, joined by one-way ramps
+and to the regional highway where it ends), visible cars that queue, wait their turn and drive round
+roundabouts, a traffic map with junction discs and one-way chevrons, a road inspector (click a
+road), advisor hints and tips, save v17, and a ninth scenario (Crossroads). Done-criterion tests:
+`tests/junctions.test.ts` (roundabout relieves a jammed crossroads) and `tests/highway.test.ts`
+(bypass takes over a fifth of the centre's traffic). 218 unit tests; `e2e/m19-traffic-tools.spec.ts`
+passes.
 
 ## Next tasks
-1. M19 Traffic tools (SPEC-2): roundabouts, traffic lights or junction priority, one-way roads,
-   grade-separated crossings/interchanges, a highway bypass; scenario tests showing a roundabout
-   relieving a jammed junction and a bypass taking through traffic off local streets. Per the
-   phase-2 rules, add or update a scenario (M18) that shows the new tools off (Gridlock is the
-   natural one to extend).
-2. Then M20 Rail.
+1. Full e2e run (`npm run e2e`), then the `M19 complete:` commit.
+2. M20 Rail (SPEC-2): trams on streets and avenues, trains on their own track with stations, crossing
+   roads on bridges or level crossings (reuse `gradeSeparated`, `Crossing` and `GradeLimit` from
+   M19), mode choice with tram and train, freight rail; scenario tests for a train line cutting car
+   traffic on a jammed corridor and freight rail cutting trucks. Add or update a scenario for rail.
 3. Performance watch: tick average at the big city's growth burst varies 0.6–1.3 ms by VM day.
-   Look for savings before M19 adds car-following.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -102,7 +105,7 @@ stars. In the test suite a scripted player wins each scenario and a neglectful o
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
 - Visible cars and walkers follow trip samples from the last assignment round, so for up to two game hours after a road closes some still drive along it; commuters, services and utilities reroute at once.
 - Buildings along a road closed for repairs lose power and water until it reopens (lines run under the roads); with 6–24 h repairs this rarely empties them, but a big quake still costs a town a lot.
-- Visible cars don't queue or yield at junctions; they overlap when paths cross. Speeds do follow congestion.
+- Visible cars queue and wait at junctions (M19) but don't change lanes, and a car can still sit briefly on top of one in the next road's lane for one step when both move at once; roundabout rings have one lane.
 - Bus riders' door-to-door time includes walking and waiting, so a bus line mainly helps by taking cars off jammed roads (≈10–20 % less traffic in the test town), not by being faster than driving.
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
@@ -113,12 +116,13 @@ stars. In the test suite a scripted player wins each scenario and a neglectful o
 - Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); the scripted careful mayor fills the river map at about 67k (M17).
 - Tree count is high in forests (~25k in-map); LOD switches to low-poly beyond 750 m.
 - Cutting faces and embankments read softly: the terrain is 8 m height samples, so a 1:1 cut face shows as a brown bank over one cell rather than a crisp edge.
-- Roads can't join or cross a viaduct mid-span (no grade separation until M19); the planner says to meet it where it's back on the ground.
+- Roads can't join a viaduct mid-span; the planner says to meet it where it's back on the ground. They can pass under one high enough (M19), and local roads crossing each other always meet at a junction (only the city and regional highways pass over).
 - Undo history costs a snapshot per command (about 25 ms in a 12k town, ~55 ms at 112k, on the worker, so the UI doesn't stall); it isn't saved, so undo starts fresh after loading.
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
-## Performance (latest: M18)
+## Performance (latest: M19)
+- `bench.ts 8 --big --profile` (M19: junction delays in every route cost): at 100–110k tick avg 0.64–0.92 ms, p99 5.5–8.8 ms, worst per month 9.4–14.5 ms (61.8 ms once in month 1, the cold start). An M18 baseline run the same hour: 0.64–0.97 ms, worst 9.6–25.7 ms, and the same populations within 1 % (both cities lose jobs in months 7–8: that's the bench city, not M19). Visible cars (following, junctions, roundabouts) cost 0.44 ms a frame for 122 cars in the 100k city here (`renderStats.trafficMs`). `balance.ts 20`: careful 64,907 / 72 % at year 20 (peak 67.6k in year 7; M18 67,137 / 78 %: junction delays lengthen commutes a little), four of the five projects open (the launch complex waits on high-school education, 19 % of the 35 % it needs), five elections won, treasury $26.6M by year 20; greedy 368 / 22 %, neglectful 490 / 36 % (both lose every election). The menu demo town: 27k residents, 147 draw calls behind the menu.
 - `bench.ts 8 --big` (M18; the sandbox bench plays no scenario, populations identical to M17): at 97–111k tick avg 0.66–0.94 ms, p99 5.6–8.2 ms, worst per month 10–14 ms (54.8 ms once in month 1 at 639 residents, the cold start). `balance.ts 20` (M18: the careful mayor starts a big project once the first stage is in hand and the treasury plus its income over the build will cover the rest, and refused commands skip the undo snapshot): careful 67,137 / 78 % at year 20 (passes 50k in year 11, peak 68.6k in year 14), all five projects open, the sky needle built, five elections won; greedy 234 / 16 %, neglectful 288 / 41 % (both unchanged). The careful 20-year run takes about 3 minutes (M17: about 5).
 - `bench.ts 8 --big` (M17): at 97–111k tick avg 0.61–0.92 ms, p99 5–8 ms, worst per month 7–15 ms (66.8 ms once in month 1 at 639 residents, the known cold start). `balance.ts 25` (the careful mayor now plans the whole map, so its numbers aren't comparable with M16's): careful 64,733 / 78 % at year 20 (passes 50k in year 11, peak 67.5k), all five projects open, six elections won; greedy 234 / 16 %, neglectful 288 / 41 % at year 20 (both lose every election). Chart of the careful mayor's money: `docs/screenshots/m17-money.png`.
 - `bench.ts 8 --big` (M16; history recorded each month): at 97–111k tick avg 0.65–1.02 ms, p99 5–10 ms. Worst per month 8–17 ms in a profiled run (month-start work now timed separately); an unprofiled run the same hour had one-off 92 ms (month 4) and 64 ms (month 6) ticks that the profiled rerun didn't reproduce (GC or the VM; watch for it). `balance.ts 20`: careful 18,906 / 68 % (treasury $9.8M by year 20: the surplus M17 has to find uses for), greedy 102 / 14 %, neglectful 346 / 38 %, identical to M15.
@@ -131,6 +135,7 @@ stars. In the test suite a scripted player wins each scenario and a neglectful o
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Visible cars (M19): 360 cars following, queueing and going round roundabouts at 60 fps in a big city (`renderStats.trafficMs` in the debug panel should stay well under 1 ms); how the ring, the flyover decks and the ramp merges look close up.
 - The ~100k city (`npx tsx scripts/bench.ts 6 --big --save city.gz`, then Load city → Import from file): frame rate while panning the overview and the city preset at 3× speed (target 60 fps); 2.5M triangles at the overview, if the GPU struggles, per-building LOD is the next step.
 - Game shell: the main menu's slow orbit over the backdrop should be smooth; the three quality levels should look and perform distinctly; interface size 140 % on a laptop screen (the top bar drops the Jobs stat and city name when it would not fit).
 - Landmarks and specialisation buildings (clock tower, wheel, sky needle, arch, hotel, mine, well, freight terminal, research park): how they look close up at full resolution, and the milestone banner's confetti at 60 fps.

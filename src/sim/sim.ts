@@ -34,6 +34,7 @@ import {
   FULL_SCOPE,
   HISTORY_LIMIT,
   ZONING_SCOPE,
+  TERRAIN_SCOPE,
   applyEdit,
   capture,
   diff,
@@ -52,6 +53,15 @@ import {
   removeRoundabout,
 } from './actions/roads';
 import { zone } from './actions/zoning';
+import { terraform } from './actions/terraform';
+
+/** Undo labels for the terrain tools (M24). */
+const TERRAFORM_LABEL = {
+  raise: 'raising ground',
+  lower: 'lowering ground',
+  level: 'levelling',
+  smooth: 'smoothing',
+} as const;
 import { v2 } from './geom';
 import { GRID_RES, HEIGHT_RES, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
 import {
@@ -1088,6 +1098,8 @@ export class Sim {
         return createDistrict(this, cmd.name, dryRun);
       case 'paintDistrict':
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
+      case 'terraform':
+        return terraform(this, cmd.mode, cmd.points, cmd.radius, cmd.level, dryRun);
       case 'renameDistrict':
         return renameDistrict(this, cmd.district, cmd.name, dryRun);
       case 'removeDistrict':
@@ -1140,6 +1152,8 @@ export class Sim {
     switch (cmd.type) {
       case 'zone':
         return ZONING_SCOPE;
+      case 'terraform':
+        return TERRAIN_SCOPE;
       case 'createDistrict':
       case 'paintDistrict':
       case 'renameDistrict':
@@ -1169,6 +1183,8 @@ export class Sim {
         return 'road';
       case 'zone':
         return cmd.zone === 'none' ? 'dezoning' : 'zoning';
+      case 'terraform':
+        return TERRAFORM_LABEL[cmd.mode];
       case 'bulldoze':
         return 'bulldozing';
       case 'placeStop':
@@ -1210,7 +1226,12 @@ export class Sim {
     if (!d.changes.length && !d.treasury) return;
     const top = this.history.undo[this.history.undo.length - 1];
     const stroke =
-      cmd.type === 'zone' || cmd.type === 'setTram' || cmd.type === 'paintDistrict' ? cmd.stroke : undefined;
+      cmd.type === 'zone' ||
+      cmd.type === 'setTram' ||
+      cmd.type === 'paintDistrict' ||
+      cmd.type === 'terraform'
+        ? cmd.stroke
+        : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
       this.history.undo.push({

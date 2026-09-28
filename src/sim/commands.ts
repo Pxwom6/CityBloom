@@ -7,6 +7,7 @@ import type { Vec2 } from './geom';
 import type { Dept } from '../data/economy';
 import type { DisasterKind } from './systems/disasters';
 import type { PolicyId } from '../data/policies';
+import type { TerraformMode } from '../data/terraform';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -81,6 +82,18 @@ export type Command =
   | { type: 'removeDistrict'; district: number }
   /** Put a policy in force in one district, or lift it (M21). */
   | { type: 'setDistrictPolicy'; district: number; policy: PolicyId; on: boolean }
+  /**
+   * Terraforming (M24): raise, lower, level (to `level` metres) or smooth the ground with a round
+   * brush along `points`; `stroke` groups a drag into one undo step.
+   */
+  | {
+      type: 'terraform';
+      mode: TerraformMode;
+      points: Vec2[];
+      radius: number;
+      level?: number;
+      stroke?: number;
+    }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

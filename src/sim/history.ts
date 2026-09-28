@@ -123,6 +123,8 @@ export interface Scope {
 }
 export const FULL_SCOPE: Scope = { containers: CONTAINERS, arrays: ['terrainDelta', 'trees'] };
 export const ZONING_SCOPE: Scope = { containers: ['blocks'], arrays: [] };
+/** Terraforming (M24): the ground, the trees on it and the lots it makes (un)buildable. */
+export const TERRAIN_SCOPE: Scope = { containers: ['blocks'], arrays: ['terrainDelta', 'trees'] };
 /** Districts (M21): their records and the painted cells. */
 export const DISTRICT_SCOPE: Scope = { containers: ['districts'], arrays: ['districtCells'] };
 

@@ -29,7 +29,9 @@ export type GoalMeasure =
   /** Vehicles a day on the link to the regional highway: the estate's trucks (M20). */
   | 'trucks'
   /** Riders a day on train and tram lines (M20). */
-  | 'riders';
+  | 'riders'
+  /** Vehicles a day on the busiest road in district `district` (M21). */
+  | 'districtTraffic';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -38,6 +40,8 @@ export interface ScenarioGoal {
   max?: number;
   /** For `project`: which one. */
   def?: string;
+  /** For `districtTraffic`: the district's id in the starting city. */
+  district?: number;
   /** Month closes in a row the goal must hold (default 1). */
   hold?: number;
   /** As the goals panel says it. */
@@ -271,6 +275,42 @@ export const SCENARIOS: ScenarioDef[] = [
       'Lay a railway (Roads → Railway) from the regional rail link at the west edge out to the works; it climbs gently and curves wide, and crosses streets at level crossings.',
       'A rail freight terminal faces a road with the railway along its back: industry nearer to it than to the highway ships by train.',
       'Trams on the avenue or a train line with two stations take commuters off the roads too.',
+    ],
+  },
+  {
+    id: 'market',
+    name: 'Market Town',
+    blurb: 'Lorries rattle through the old market square. Give it back to the shoppers.',
+    brief:
+      'Kingsmere’s old market sits on the only road from the highway to the works and the new estates ' +
+      'beyond, and every lorry to and from the works squeezes through it. The council has marked out ' +
+      'Old Market as a district. Get the busiest road in Old Market under 2,500 vehicles a day for two ' +
+      'months running, and keep 5,500 residents.',
+    save: 'market.citybloom',
+    months: 12,
+    stars: [
+      { months: 4, label: 'Within 4 months' },
+      {
+        goal: { measure: 'approval', min: 65, label: '65 % approval' },
+        label: '65 % approval when you win',
+      },
+    ],
+    goals: [
+      {
+        measure: 'districtTraffic',
+        district: 1,
+        max: 2_500,
+        hold: 2,
+        label: 'Busiest road in Old Market under 2,500 vehicles a day, 2 months running',
+      },
+      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'The district tool (I) and the Districts panel show Old Market; the traffic map, filtered to it, shows where the load is.',
+      'A heavy-traffic ban on Old Market keeps lorries out only where they have another way round: build them one first.',
     ],
   },
   {

@@ -122,6 +122,42 @@ export const RECIPES: Record<string, () => Sim> = {
     sim.earn(100_000, 'grants');
     return sim;
   },
+  // Kingsmere (M21): the old market on the only road from the highway to the works and the estates
+  // beyond, so every lorry passes through it; the council has painted it as the Old Market district.
+  market: () => {
+    const sim = Sim.create({ seed: 'kings', preset: 'river', cityName: 'Kingsmere' });
+    const p = new Player('careful', sim);
+    sim.earn(200_000, 'grants');
+    const { x, z } = p.c;
+    const at = (dx: number, dz: number): Vec2 => ({ x: x + dx, z: z + dz });
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', at(0, 0), at(920, 0));
+    for (const dx of [120, 240]) road('street', at(dx, -90), at(dx, 90));
+    for (const dx of [600, 680, 760, 840, 920]) road('street', at(dx, -520), at(dx, 200));
+    road('street', at(600, -520), at(920, -520));
+    road('street', at(600, -300), at(920, -300));
+    zone('C', at(60, 0), at(300, 0), 50);
+    zone('I', at(580, 110), at(940, 110), 90);
+    zone('R', at(580, -160), at(940, -160), 120);
+    zone('R', at(580, -420), at(940, -420), 110);
+    sim.dispatch({ type: 'createDistrict', name: 'Old Market' });
+    sim.dispatch({
+      type: 'paintDistrict',
+      district: 1,
+      area: { kind: 'brush', points: [at(60, 0), at(300, 0)], radius: 100 },
+    });
+    for (let m = 0; m < 10; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    sim.earn(60_000, 'grants');
+    return sim;
+  },
   // Cinderford: a mill town along one avenue. Homes to the north; heavy industry and coal plants to
   // the south, where the prevailing wind comes from, so the smoke rolls over the houses. No schools,
   // so the mills stay heavy.

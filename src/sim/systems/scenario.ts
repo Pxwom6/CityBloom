@@ -68,6 +68,8 @@ export function startScenario(sim: Sim, id: string, dryRun: boolean): CommandRes
   if (dryRun) return { ok: true, cost: 0 };
   const s = sim.state;
   s.options = { ...s.options, sandbox: false, disasters: def.disasters, elections: def.elections };
+  s.weather.seasons = def.weather?.seasons ?? true;
+  s.weather.intensity = def.weather?.intensity ?? 2;
   if (!def.elections) {
     s.election.nextMonth = -1;
     s.election.promises = [];

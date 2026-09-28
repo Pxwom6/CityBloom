@@ -37,6 +37,8 @@ export interface RoadSegment {
   oneway?: 1 | -1;
   /** Tram track laid along it (M20): streets, avenues and boulevards only. */
   tram?: true;
+  /** Snow lying on it (M22), 0–1; absent when clear. Slows traffic until it melts or is ploughed. */
+  snow?: number;
 }
 
 /**

@@ -3,6 +3,7 @@
  * all hold at once as a month closes, limits on what the mayor may do, and a time limit. Winning
  * gives one star, and each of the two star rules met on the day adds another.
  */
+import type { WeatherIntensity } from './climate';
 
 /** What a goal measures. The first ten are the city history's monthly figures (M16). */
 export type GoalMeasure =
@@ -78,6 +79,8 @@ export interface ScenarioDef {
   limits: ScenarioLimit[];
   disasters: boolean;
   elections: boolean;
+  /** Its weather (M22); seasons on at normal intensity when absent. The player can't change it. */
+  weather?: { seasons: boolean; intensity: WeatherIntensity };
   /** Advice on the brief card. */
   hints: string[];
   /** Losing the next election loses the scenario. */

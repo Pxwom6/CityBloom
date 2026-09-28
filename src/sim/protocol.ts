@@ -1,3 +1,4 @@
+import type { WeatherSummary } from './systems/weather';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
@@ -60,6 +61,8 @@ export interface CityStats {
   election: ElectionSummary | null;
   /** The scenario being played (M18), or null. */
   scenario: ScenarioSummary | null;
+  /** Season and weather (M22). */
+  weather: WeatherSummary;
 }
 
 export interface ElectionSummary {

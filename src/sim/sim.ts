@@ -1,3 +1,4 @@
+import { WEATHER_KINDS } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
@@ -73,6 +74,13 @@ import {
   renameDistrict,
   setDistrictPolicy,
 } from './systems/districts';
+import {
+  initialWeather,
+  setSpell,
+  weatherHour,
+  weatherSummary,
+  type WeatherSummary,
+} from './systems/weather';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
@@ -314,6 +322,7 @@ export class Sim {
       scenario: null,
       districts: new Map(),
       districtCells: emptyDistrictCells(),
+      weather: initialWeather(options.preset),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -956,6 +965,12 @@ export class Sim {
           if (!dryRun) ignite(this, b);
           return ok(0);
         }
+        if (cmd.cheat === 'weather') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!WEATHER_KINDS.includes(cmd.kind)) return fail('Unknown weather');
+          if (!dryRun) setSpell(this, cmd.kind, cmd.strength, cmd.hours);
+          return ok(0);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -1069,6 +1084,21 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setWeather': {
+        const w = this.state.weather;
+        if (cmd.intensity !== undefined && ![0, 1, 2, 3].includes(cmd.intensity))
+          return fail('Unknown weather intensity');
+        if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own weather');
+        if (!dryRun) {
+          if (cmd.seasons !== undefined) w.seasons = cmd.seasons;
+          if (cmd.intensity !== undefined) {
+            w.intensity = cmd.intensity;
+            // A change of heart takes effect with the next spell, or now if the weather is off.
+            if (cmd.intensity === 0) w.until = this.state.tick;
+          }
+        }
+        return ok(0);
+      }
       case 'setElections':
         if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own elections');
         return setElections(this, cmd.on, dryRun);
@@ -1316,6 +1346,7 @@ export class Sim {
     const hour = Math.floor(t / TICKS_PER_HOUR);
     switch (minute) {
       case HOURLY_AT.utilities:
+        run('weather', () => weatherHour(this));
         run('disastersHour', () => disastersHour(this));
         run('utilities', () => {
           updateUtilities(this);
@@ -1459,7 +1490,18 @@ export class Sim {
       eduWorkforce: [t.eduWorkforce[0], t.eduWorkforce[1]],
       election: this.electionSummary(),
       scenario: this.scenarioStats(),
+      weather: this.weatherStats(),
     };
+  }
+
+  private weatherCache: { key: string; value: WeatherSummary } | null = null;
+
+  /** Season and weather for the client, worked out once a game hour (it walks every road). */
+  private weatherStats(): WeatherSummary {
+    const w = this.state.weather;
+    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${w.kind}:${w.until}:${w.intensity}:${w.seasons}`;
+    if (this.weatherCache?.key !== key) this.weatherCache = { key, value: weatherSummary(this) };
+    return this.weatherCache.value;
   }
 
   private scenarioCache: { key: string; value: ScenarioSummary | null } | null = null;

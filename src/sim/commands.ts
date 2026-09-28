@@ -1,3 +1,4 @@
+import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -54,6 +55,10 @@ export type Command =
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
   | { type: 'setDisasters'; on: boolean }
+  /** Seasons on or off and how wild the weather is (M22). */
+  | { type: 'setWeather'; seasons?: boolean; intensity?: WeatherIntensity }
+  /** Test mode only: set the weather now for `hours` (e2e and dev scenes). */
+  | { type: 'cheat'; cheat: 'weather'; kind: WeatherKind; strength: number; hours: number }
   | { type: 'setElections'; on: boolean }
   /** Begin a scenario (M18) on the loaded starting city. */
   | { type: 'startScenario'; id: string }

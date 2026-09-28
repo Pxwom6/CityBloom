@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
-import { formatMonth, MONTH_NAMES } from '../sim/time';
+import { calendarMonth, formatMonth, MONTH_NAMES } from '../sim/time';
 import { BarChart, LineChart } from './charts';
 import { formatMoney, useGameUpdates } from './hooks';
 
@@ -17,7 +17,7 @@ const WEALTH = ['Low', 'Medium', 'High'];
 const TIERS = ['Heavy', 'Manufacturing', 'High-tech'];
 
 function monthLabel(m: number): string {
-  return `${MONTH_NAMES[m % 12]} Y${Math.floor(m / 12) + 1}`;
+  return `${MONTH_NAMES[calendarMonth(m)]} Y${Math.floor(m / 12) + 1}`;
 }
 
 function Lines({ rows, title }: { rows: [string, number, number | undefined][]; title: string }) {

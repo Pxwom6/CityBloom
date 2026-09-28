@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { CIVIC } from '../data/civic';
 import { MILESTONES } from '../data/progression';
 import { CHRONICLE_SERIES, type Chronicle, type SeriesKey } from '../sim/systems/chronicle';
-import { MONTH_NAMES, dateOf } from '../sim/time';
+import { calendarMonth, MONTH_NAMES, dateOf } from '../sim/time';
 import { DISASTER_INFO } from '../tools/disasterTool';
 import { TimeChart, compactMoney, type TimeMarker } from './charts';
 import { formatNumber, useGameUpdates } from './hooks';
@@ -98,7 +98,7 @@ const FIGURES: Figure[] = [
 /** "Mar, Year 3" for a month index since the city began (fractional months round down). */
 export function monthName(m: number): string {
   const k = Math.max(0, Math.floor(m));
-  return `${MONTH_NAMES[k % 12]}, Year ${Math.floor(k / 12) + 1}`;
+  return `${MONTH_NAMES[calendarMonth(k)]}, Year ${Math.floor(k / 12) + 1}`;
 }
 
 function eventLabel(e: Chronicle['events'][number]): string {

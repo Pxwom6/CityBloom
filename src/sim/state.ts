@@ -18,6 +18,7 @@ import type { Crater, Disaster } from './systems/disasters';
 import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
 import type { District } from './systems/districts';
+import type { WeatherState } from './systems/weather';
 
 export type { Difficulty };
 
@@ -45,7 +46,7 @@ export const DEFAULT_OPTIONS: GameOptions = {
   terrain: TERRAIN_VERSION,
 };
 
-export const RNG_STREAMS = ['world', 'growth', 'events', 'traffic', 'disasters'] as const;
+export const RNG_STREAMS = ['world', 'growth', 'events', 'traffic', 'disasters', 'weather'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 /**
@@ -128,4 +129,6 @@ export interface SimState {
   /** Districts (M21) by id, and the district each raster cell (GRID_RES²) belongs to (0: none). */
   districts: Map<number, District>;
   districtCells: Uint8Array;
+  /** Seasons and weather (M22): the spell now, temperature, snow, wet ground, river and dryness. */
+  weather: WeatherState;
 }

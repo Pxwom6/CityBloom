@@ -70,15 +70,17 @@ describe('fnv1a', () => {
 });
 
 describe('time', () => {
-  it('starts at 07:00 in Jan of year 1 and rolls months at midnight', () => {
+  it('starts at 07:00 in March of year 1 (spring, M22) and rolls months at midnight', () => {
     const d0 = dateOf(0);
-    expect(d0).toMatchObject({ year: 1, month: 0, hour: 7, minute: 0 });
-    expect(formatDate(d0)).toBe('Jan, Year 1 — 07:00');
+    expect(d0).toMatchObject({ year: 1, month: 2, hour: 7, minute: 0, totalMonths: 0 });
+    expect(formatDate(d0)).toBe('Mar, Year 1 — 07:00');
     const midnight = ticksUntilHour(0, 0);
     expect(midnight).toBe(17 * 60);
     expect(isMonthStart(midnight)).toBe(true);
-    expect(dateOf(midnight)).toMatchObject({ month: 1, hour: 0 });
-    expect(dateOf(midnight + 11 * TICKS_PER_MONTH)).toMatchObject({ year: 2, month: 0 });
+    expect(dateOf(midnight)).toMatchObject({ month: 3, hour: 0, totalMonths: 1 });
+    // Year 1 runs March to February.
+    expect(dateOf(midnight + 9 * TICKS_PER_MONTH)).toMatchObject({ year: 1, month: 0 });
+    expect(dateOf(midnight + 11 * TICKS_PER_MONTH)).toMatchObject({ year: 2, month: 2 });
   });
 
   it('computes hour of day for fractional ticks', () => {

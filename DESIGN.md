@@ -763,6 +763,81 @@ The done-criterion tests are town-scale: `tests/junctions.test.ts` grows the cro
 compares the same city with and without a roundabout; `tests/highway.test.ts` does the same for a
 bypass round a main-street town (`tests/bypassTown.ts`). The Crossroads scenario is the first town.
 
+### 3.21 Rail (M20)
+
+**Track.** Railways are network segments of type `rail` ("Railway": two tracks, 110 km/h, 3.5 %
+grade, 100 m minimum radius, $70/m, unlocks at 5,000) and `mainline` (the regional link, not
+buildable); `isRail` covers both. They are drawn, graded, bridged and put on decks like roads, and
+cross the city highway or roads on viaducts through M19's crossings and grade limits; the planner
+chains grade limits across a stroke's internal joints so a long straight run reaches its bridges.
+`RoadGraph` takes a `kind`: the road graph leaves railways out, `Sim.railGraph()` has only them, and
+`Sim.tramGraph()` only roads with tram track. A railway can't be made one-way or carry a roundabout,
+and railways can't join roads at existing nodes. **Level crossings**: a dirt road, street or avenue
+drawn across the middle of a railway (both new ends off the track) splits both at a shared node,
+junction kind `crossing` (capacity `JUNCTION.crossingShare` 0.8 of a plain junction's, delay
+`crossingDelay` 8 s for cars); bigger roads must pass over or under. Railway joints and switches
+have no junction polygon: the tracks run on into each other.
+
+**The regional railway.** `SimState.railway` (save v18) holds the link: a `mainline` segment from the
+regional highway's line to the west edge at x = 24, 260–700 m north or south of the highway's link,
+on the flattest dry stretch clear of roads and buildings (`Sim.buildRailway`). New cities get it at
+creation; older saves get one on load where it fits (`railway` undefined → laid; null → none fits).
+It is drawn off the map as a north–south line beside the regional highway, joined by a curve.
+
+**Stations and train lines.** A station (`CivicDef.rail`, `track: 'rail'`) faces a railway. Every
+station on one connected stretch of track makes one line (`trainLines`): ordered by running time
+from the station farthest from the first, trains shuttle end to end at `RAIL.speedShare` (0.7) of
+the line speed, standing `RAIL.dwell` (40 s) at each. Trains = 1.5 per station × transit funding,
+but no closer than `RAIL.minHeadway` (300 s) apart; capacity 480 a train. Lines carry `stopPos` and
+`stopDist` (metres along the line to each stop) as well as bus-style times. **Mode choice**
+(`busTime`) weighs every line: walking reach is `TRANSIT.walkRadius` × 1.6 for stations (× 1.15 for
+tram stops), and a train ride counts `RAIL.trainBonus` (150 s) better than the same time on a bus,
+a tram `TRAM.bonus` (60 s). Riders per stop (`Sim.stopUse`) and per line are recorded each
+assignment round (stops per line are not saved; line riders are).
+
+**Trams.** `RoadSegment.tram` marks tram track on a street, avenue or boulevard (`ROAD_TYPES.tram`):
+`setTram` lays it (`TRAM.trackCost` $45/m; `trackUpkeep` 0.04 $/m a month, booked with road
+upkeep) or takes it up (free); a drag lays a line as one undo step (`stroke`, like zoning). Splits,
+merges and upgrades keep it; an upgrade to a type without it is refused. A **tram depot**
+(`CivicDef.tram`: 5 trams of 140) must face a tracked road. **Tram stops** are `BusStop.tram`, on
+tracked roads (they follow the track and go when it does). `loopLines(sim, 'bus' | 'tram')` builds
+both kinds of loop: stops go to the depot that reaches them soonest; trams route on the tram graph
+and feel `TRAM.trafficShare` (0.5) of the road's congestion, stand 25 s at a stop, run no closer
+than `TRAM.minHeadway` (120 s) and add `TRAM.pcu` (2) per pass to their roads' traffic.
+
+**Rail freight.** A rail freight terminal (`CivicDef.railFreight`, 700 truckloads a day) faces a road
+and needs a railway within `RAIL.sidingReach` (30 m) of its back (`railSiding`), linked to the
+regional railway (`railTerminals`: same rail-graph component as the link). In the freight step of the
+assignment (`railFreight` in `commute.ts`), each terminal runs a search from its road entrance seeded
+with `RAIL.freightHandling` (20 s); every export or import load whose node reaches the terminal
+sooner than the highway sends its trucks there instead (up to the terminal's capacity), with trip
+samples for visible trucks; the rest drive to the highway as before. `Sim.railFreight` records each
+terminal's truckloads a day. Terminals count as freight hubs for industrial demand and trade.
+
+**Client.** `TransitData` lines carry stop distances, headway, capacity, load and riders, plus riders
+per stop (`use`) and each shipping terminal's track from the regional link (`freight`). Visible
+trams and trains (`src/render/railVehicles.ts`) run a timetable per line on the display clock
+(directions × stops × dwells) as consists whose cars follow the path: trams (three cars) round their
+loop in the lane next to the centre line, trains (four cars) out on the right-hand track and back on
+the other, standing alongside each platform, and one container freight train per terminal in off
+the regional railway and back. Roads with tram track draw rails, a darker band, overhead wires and
+masts, joined through junctions (tracked approaches paired straightest first); level crossings draw
+rails and panels across the road, crossbucks and raised barriers. The Ridership data map shades each
+line by rush-hour riders over capacity and each stop by its riders.
+
+**Tools and UI.** The road tool gets Railway and a Tram track mode (click a road to lay or take up
+track, drag along roads for a line); the transit bar gets tram stops. Stations snap to railways and
+tram depots to tracked roads. Clicking a stop selects it (`Selection.kind` 'stop'): its line, how
+often it runs and its riders; stations and depots show their line (or why there's none), freight
+terminals their truckloads, railways their trains and crossings, and roads their tram track. The
+transport advisor suggests trams or trains for a jammed corridor, a terminal when trucks crowd the
+highway link, and flags stations and depots that run nothing.
+
+The done-criterion tests: `tests/trains.test.ts` grows the M6 jam town and runs a railway with two
+stations beside its link (`tests/railTown.ts`); `tests/freight.test.ts` grows an industrial town a
+kilometre from the highway (`tests/freightTown.ts`) and links a terminal to the regional railway;
+`tests/trams.test.ts` puts trams through the same jam town. The Railhead scenario is the freight town.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -896,7 +971,11 @@ Export writes a `.citybloom` file (gzip JSON); import accepts it (or plain JSON)
 `migrations[v]` upgrades version v → v+1 on load. Round-trip is tested by state hash, including through
 the main menu's Continue and an exported-then-imported file (e2e `m11-shell`). v17 (M19) adds only
 optional fields (one-way roads, roundabouts; city highway and ramp segments are new type values), so
-its migration is the identity and older cities load with two-way roads and plain junctions.
+its migration is the identity and older cities load with two-way roads and plain junctions. v18
+(M20) adds `railway` (the regional rail link) and optional fields (tram track, tram stops); its
+migration is also the identity, and `Sim.fromSave` lays the rail link on a city that has none
+(`railway` missing) where it fits, so an older city loads, gains its link and plays on
+(`tests/trains.test.ts` loads the version-10 playtest save).
 
 ### 6.1 Publishing, offline play and updates (M15)
 

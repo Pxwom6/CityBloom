@@ -6,7 +6,8 @@ from a hamlet into a city of a hundred thousand. Residents are counted per build
 simulated one by one (each home knows how many live there, how many work or study and how happy they
 are), but their trips are routed over the real roads: commuting, shopping and freight add up to the
 traffic on every street, so jams form where the city sends them, and the cars, buses and walkers you
-see follow samples of those trips. Fire engines, police cars, ambulances and garbage trucks drive to
+see follow samples of those trips. Trams and trains take people out of their cars, and freight trains
+take the trucks off the roads. Fire engines, police cars, ambulances and garbage trucks drive to
 each call. Pollution drifts on the wind; fires, earthquakes, tornadoes, floods and meteors test the
 city from time to time.
 
@@ -77,6 +78,18 @@ its traffic, switch its direction, and add or remove a roundabout at its ends; t
 shades junctions by their load and marks one-way roads and ramps with chevrons. Visible cars queue
 behind each other, wait their turn at busy junctions and give way to cars already on a roundabout.
 
+**Rail** unlocks at 5,000 residents. Pick **Railway** in the road tool and draw track anywhere (it
+climbs gently and curves wide): across the middle of a street, avenue or dirt road it makes a level
+crossing, and it bridges over boulevards and highways. Two **railway stations** on connected track
+start a train line that shuttles between them; people walk further to catch a train than a bus and
+like the ride, so a line beside a jammed road takes cars off it. The **Tram track** mode in the road
+tool lays track along streets, avenues and boulevards (click a road, or drag along a route); a **tram
+depot** on the track runs trams round the **tram stops** you place. The regional railway comes in at
+the map's west edge: lay track from it to a **rail freight terminal** near your industry, and the
+trucks that drove to the highway take their goods there to go on by train. Click a stop, a station, a
+depot or the track to see its line, how often it runs and who rides it; the **Ridership** map shows
+every line by how full it runs.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -96,11 +109,12 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are nine set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are ten set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
-unjam a town that queues at one crossroads, clear the smoke from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal
-town into a resort. Each opens with a brief; the city's name in the top bar opens its goals (G),
+unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
+from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal town into a
+resort. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -120,11 +134,11 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Rotate and tilt | drag with the right button | Option (Alt) or Shift + two-finger swipe; rotate gesture | Q / E rotate, R / F tilt |
 | Zoom | wheel | pinch | + / − |
 | Road tool | | | T |
-| Road modes: straight, curve, free, upgrade, one-way, roundabout | road options | | Tab |
+| Road modes: straight, curve, free, upgrade, one-way, roundabout, tram track | road options | | Tab |
 | Draw one-way roads, grid snap | road options | | O, G |
 | Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
 | Bulldoze | | | B |
-| Select and inspect | click a building, car, walker or road | click | H |
+| Select and inspect | click a building, car, walker, road, railway or stop | click | H |
 | Move a civic building | select it, then Move | | |
 | Cancel, leave a tool, close a panel, pause menu | right click | | Escape |
 | Undo / redo (last 30 actions) | toolbar | | ⌘Z / ⇧⌘Z on a Mac, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere; U / Shift+U |

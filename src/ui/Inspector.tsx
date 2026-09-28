@@ -1,4 +1,7 @@
-import { ROAD_TYPES } from '../data/roads';
+import { snowFactor } from '../data/climate';
+import { ROAD_TYPES, isRail } from '../data/roads';
+import { CIVIC } from '../data/civic';
+import { TRAM, TRANSIT } from '../data/balance';
 import { compass } from '../tools/roadTool';
 import type { Command } from '../sim/commands';
 import { useEffect, useState } from 'preact/hooks';
@@ -87,7 +90,164 @@ export function Inspector() {
   if (game.selected?.kind === 'car') return <CarInspector id={game.selected.id} />;
   if (game.selected?.kind === 'walker') return <CarInspector id={game.selected.id} walker />;
   if (game.selected?.kind === 'road') return <RoadInspector id={game.selected.id} />;
+  if (game.selected?.kind === 'stop') return <StopInspector id={game.selected.id} />;
   return <BuildingInspector id={game.selected?.id ?? null} />;
+}
+
+/** A bus or tram stop (M20): the line that calls there, how often, and how many use it. */
+function StopInspector({ id }: { id: number }) {
+  const game = useGameUpdates(400);
+  const w = game.world;
+  const stop = w.stops.get(id);
+  const close = (
+    <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
+      ×
+    </button>
+  );
+  if (!stop)
+    return (
+      <aside class="inspector panel" data-testid="inspector">
+        <header>
+          <div>
+            <h2>Stop removed</h2>
+          </div>
+          {close}
+        </header>
+      </aside>
+    );
+  const tram = !!stop.tram;
+  const mode = tram ? 'tram' : 'bus';
+  const line = w.lines.find((l) => l.mode === mode && l.stops.includes(id));
+  const depot = line ? w.civics.get(line.depot) : undefined;
+  const vehicles = tram ? 'trams' : 'buses';
+  return (
+    <aside class="inspector panel" data-testid="inspector">
+      <header>
+        <div>
+          <h2>{tram ? 'Tram stop' : 'Bus stop'}</h2>
+          <div class="sub address">{game.names.street(stop.seg)}</div>
+          <div class="sub">
+            {tram
+              ? `People walk up to ${Math.round(TRANSIT.walkRadius * TRAM.walkFactor)} m to catch a tram here.`
+              : `People walk up to ${TRANSIT.walkRadius} m to catch a bus here.`}
+          </div>
+        </div>
+        {close}
+      </header>
+      {!line && (
+        <div class="warn" data-testid="stop-unserved">
+          {tram
+            ? 'No trams call here: it needs a tram depot on connected track and at least one more tram stop.'
+            : 'No buses call here: it needs a bus depot whose buses can reach it and at least one more stop.'}
+        </div>
+      )}
+      {line && (
+        <dl data-testid="stop-line">
+          <dt>Line</dt>
+          <dd>
+            {line.stops.length} stops from the {tram ? 'tram' : 'bus'} depot
+            {depot ? ` at ${game.names.address(depot.x, depot.z)}` : ''}
+          </dd>
+          <dt>{tram ? 'Trams' : 'Buses'}</dt>
+          <dd>
+            {line.buses} · every {Math.max(1, Math.round(line.headway / 60))} min
+          </dd>
+          <dt>Here</dt>
+          <dd data-testid="stop-use">
+            {(w.stopUse.get(id) ?? 0).toLocaleString('en-US')} getting on or off a day
+          </dd>
+          <dt>On the line</dt>
+          <dd class={line.load < 0.95 ? 'neg' : ''}>
+            {line.riders.toLocaleString('en-US')} trips/day{line.load < 0.95 ? ` (${vehicles} full)` : ''}
+          </dd>
+        </dl>
+      )}
+      <BulldozeButton
+        name={tram ? 'tram stop' : 'bus stop'}
+        refund={Math.round(TRANSIT.stopCost * 0.25)}
+        onConfirm={() =>
+          void game.dispatch({ type: 'bulldoze', target: { kind: 'stop', id } }).then((r) => {
+            if (r.ok) {
+              game.audio?.play('bulldoze');
+              game.select(null);
+            } else game.toast(r.reason, 'bad');
+          })
+        }
+      />
+    </aside>
+  );
+}
+
+/**
+ * A railway (M20): the trains along it, the line's riders, and its level crossings.
+ */
+function RailInspector({ id }: { id: number }) {
+  const game = useGameUpdates(400);
+  const w = game.world;
+  const seg = w.netState.segments.get(id)!;
+  const rt = ROAD_TYPES[seg.type];
+  const curve = w.net.curve(id);
+  const lines = w.lines.filter((l) => l.mode === 'train' && l.legs.some((x) => x.seg === id));
+  // The most frequent line along it sets how often a train comes by each way.
+  const every = lines.length ? Math.min(...lines.map((l) => l.headway)) : 0;
+  const riders = lines.reduce((n, l) => n + l.riders, 0);
+  const freight = w.freight.filter((f) => f.legs.some((x) => x.seg === id));
+  const freightTrains = freight.reduce((n, f) => n + Math.max(1, Math.round(f.trucks / 40)), 0);
+  const crossings = [seg.a, seg.b].filter((n) => w.junctionKind(n) === 'crossing').length;
+  const regional = seg.type === 'mainline';
+  return (
+    <aside class="inspector panel" data-testid="inspector">
+      <header>
+        <div>
+          <h2>{regional ? 'Regional railway' : game.names.street(id)}</h2>
+          <div class="sub">
+            {regional
+              ? 'The link to the regional railway. Lay track from here to bring trains into town.'
+              : `${rt.name} · two tracks`}
+          </div>
+        </div>
+        <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
+          ×
+        </button>
+      </header>
+      <dl data-testid="rail-traffic">
+        <dt>Passenger trains</dt>
+        <dd>
+          {lines.length
+            ? `Every ${Math.max(1, Math.round(every / 60))} min each way`
+            : 'None: stations on connected track start a line'}
+        </dd>
+        {lines.length > 0 && (
+          <>
+            <dt>Riders</dt>
+            <dd>{riders.toLocaleString('en-US')} trips/day on the line</dd>
+          </>
+        )}
+        <dt>Freight trains</dt>
+        <dd>
+          {freight.length
+            ? `about ${freightTrains * 2} a day (in and out)`
+            : 'None: a rail freight terminal on track linked to the regional railway loads them'}
+        </dd>
+        <dt>Length</dt>
+        <dd>
+          {Math.round(curve.length)} m · up to {rt.speed} km/h
+        </dd>
+        {crossings > 0 && (
+          <>
+            <dt>Level crossings</dt>
+            <dd>{crossings} at its ends: cars wait a little as trains pass</dd>
+          </>
+        )}
+      </dl>
+    </aside>
+  );
+}
+
+/** Freight trains for so many truckloads a day (about forty a train, M20). */
+function trainsText(trucks: number): string {
+  const n = Math.max(1, Math.round(trucks / 40));
+  return `about ${n} train${n === 1 ? '' : 's'}`;
 }
 
 /** How full a road or junction is at the rush hour, in words. */
@@ -147,6 +307,9 @@ function RoadInspector({ id }: { id: number }) {
     const kind = w.junctionKind(n);
     return { n, node, kind, arms: w.net.segmentsAt(n).length, vc: w.junctionVC(n, 1) };
   });
+  if (isRail(seg.type)) return <RailInspector id={id} />;
+  // Trams along it (M20).
+  const tramLine = w.lines.find((l) => l.mode === 'tram' && l.legs.some((x) => x.seg === id));
   return (
     <aside class="inspector panel" data-testid="inspector">
       <header>
@@ -172,6 +335,19 @@ function RoadInspector({ id }: { id: number }) {
         <dd>
           {Math.round(curve.length)} m · {rt.speed} km/h
         </dd>
+        {(seg.snow ?? 0) >= 0.05 && (
+          <>
+            <dt>Snow</dt>
+            <dd class="neg" data-testid="road-snow">
+              {Math.round(seg.snow! * 100)} % · traffic {snowFactor(seg.snow).toFixed(1)}× slower
+              <div class="muted">
+                {[...w.civics.values()].some((c) => c.def === 'works')
+                  ? 'Ploughs clear roads within about 3 km of a public works depot, busiest first.'
+                  : 'No public works depot: it lies until it melts.'}
+              </div>
+            </dd>
+          </>
+        )}
       </dl>
       {rt.buildable && (
         <section class="road-way" data-testid="road-oneway">
@@ -210,11 +386,13 @@ function RoadInspector({ id }: { id: number }) {
                   {compass(e.node.x - (a.x + b.x) / 2, e.node.z - (a.z + b.z) / 2)}):{' '}
                   {e.kind === 'roundabout'
                     ? 'roundabout'
-                    : e.kind === 'plain'
-                      ? `junction of ${e.arms} roads`
-                      : e.arms === 1
-                        ? 'dead end'
-                        : 'bend'}
+                    : e.kind === 'crossing'
+                      ? 'level crossing'
+                      : e.kind === 'plain'
+                        ? `junction of ${e.arms} roads`
+                        : e.arms === 1
+                          ? 'dead end'
+                          : 'bend'}
                 </strong>
                 {e.kind !== 'none' && <div class={`muted ${e.vc >= 1 ? 'neg' : ''}`}>{loadText(e.vc)}</div>}
               </div>
@@ -226,7 +404,7 @@ function RoadInspector({ id }: { id: number }) {
                 >
                   Remove
                 </button>
-              ) : e.arms >= 2 ? (
+              ) : e.arms >= 2 && e.kind !== 'crossing' ? (
                 <button
                   class="btn small"
                   data-testid="add-roundabout"
@@ -238,6 +416,35 @@ function RoadInspector({ id }: { id: number }) {
               ) : null}
             </div>
           ))}
+        </section>
+      )}
+      {rt.tram && (
+        <section class="road-tram" data-testid="road-tram">
+          <h3>Tram track</h3>
+          <div class="module-row">
+            <div>
+              <strong>{seg.tram ? 'Tram track laid' : 'No tram track'}</strong>
+              <div class="muted">
+                {tramLine
+                  ? `Trams every ${Math.max(1, Math.round(tramLine.headway / 60))} min · ${tramLine.riders.toLocaleString('en-US')} trips/day on the line`
+                  : seg.tram
+                    ? 'No trams run here yet: a tram depot and tram stops on the track start a line.'
+                    : `$${Math.round(curve.length * TRAM.trackCost).toLocaleString('en-US')} to lay along this road`}
+              </div>
+            </div>
+            <button
+              class="btn small"
+              data-testid={seg.tram ? 'tram-remove' : 'tram-lay'}
+              onClick={() =>
+                act(
+                  { type: 'setTram', seg: id, on: !seg.tram },
+                  seg.tram ? 'Tram track taken up' : 'Tram track laid',
+                )
+              }
+            >
+              {seg.tram ? 'Take up' : 'Lay track'}
+            </button>
+          </div>
         </section>
       )}
       {!rt.access && seg.type !== 'highway' && (
@@ -345,7 +552,11 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
   const name = (bid: number) => {
     if (!bid) return 'the regional highway';
     const b = game.world.buildings.get(bid);
-    return b ? (ZONED_DEFS.get(b.def)?.name ?? 'a building') : 'a building (since demolished)';
+    if (b) return ZONED_DEFS.get(b.def)?.name ?? 'a building';
+    // Rail freight (M20): trucks to and from a terminal.
+    const c = game.world.civics.get(bid);
+    if (c) return `the ${(CIVIC.get(c.def)?.name ?? 'building').toLowerCase()}`;
+    return 'a building (since demolished)';
   };
   if (!car)
     return (
@@ -361,7 +572,12 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
         </header>
       </aside>
     );
-  const [title, what] = (walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', ''];
+  const byRail = !walker && game.world.civics.get(car.trip.to)?.def === 'railfreight';
+  const [title, what] = byRail
+    ? car.trip.purpose === 'export'
+      ? ['Export truck', 'Taking goods to the rail freight terminal, to go on by train']
+      : ['Import truck', 'Bringing goods off the train at the rail freight terminal']
+    : ((walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', '']);
   const forward = car.legs[0] === car.trip.legs[0];
   const [from, to] = forward ? [car.trip.from, car.trip.to] : [car.trip.to, car.trip.from];
   const home = car.trip.purpose === 'work' && !forward;
@@ -442,7 +658,13 @@ function CivicInspector({ id }: { id: number }) {
           ×
         </button>
       </header>
-      {!d.access && <div class="warn">Not facing a road: it can't reach anyone.</div>}
+      {!d.access && (
+        <div class="warn">
+          {d.transit?.mode === 'train'
+            ? 'Not facing a railway: no trains can call.'
+            : "Not facing a road: it can't reach anyone."}
+        </div>
+      )}
       {(() => {
         const c = game.world.civics.get(d.id);
         if (c?.flooded)
@@ -460,8 +682,16 @@ function CivicInspector({ id }: { id: number }) {
         return null;
       })()}
       {d.project && <ProjectProgress p={d.project} />}
-      {d.transit && d.transit.stops < 2 && (
-        <div class="warn">Place at least two bus stops on roads this depot can reach to start a line.</div>
+      {d.transit?.why && (
+        <div class="warn" data-testid="transit-why">
+          {d.transit.why}
+        </div>
+      )}
+      {d.railFreight && !d.railFreight.linked && (
+        <div class="warn" data-testid="freight-unlinked">
+          Its railway isn't linked to the regional railway: lay track from the rail link at the map's west
+          edge.
+        </div>
       )}
       {d.polluted && (
         <div class="warn">
@@ -528,6 +758,21 @@ function CivicInspector({ id }: { id: number }) {
         )}
       </dl>
       {d.garbage && <GarbageTrucks civicId={d.id} g={d.garbage} />}
+      {d.plough && (
+        <dl data-testid="plough-details">
+          <dt>Ploughs out</dt>
+          <dd>
+            {d.plough.out} of {d.plough.ploughs}
+          </dd>
+          <dt>Reach</dt>
+          <dd>about {(d.plough.reach / 1000).toFixed(0)} km of road</dd>
+          <dt>Cleared</dt>
+          <dd>
+            {(d.plough.today / 1000).toFixed(1)} km today, {(d.plough.yesterday / 1000).toFixed(1)} km
+            yesterday
+          </dd>
+        </dl>
+      )}
       <dl>
         {d.service && (
           <>
@@ -553,15 +798,44 @@ function CivicInspector({ id }: { id: number }) {
         )}
         {d.transit && (
           <>
-            <dt>Stops served</dt>
+            <dt>{d.transit.mode === 'train' ? 'Stations on the line' : 'Stops served'}</dt>
             <dd data-testid="depot-stops">{d.transit.stops}</dd>
-            <dt>Buses</dt>
-            <dd>{d.transit.buses}</dd>
-            <dt>Round trip</dt>
+            <dt>{d.transit.mode === 'train' ? 'Trains' : d.transit.mode === 'tram' ? 'Trams' : 'Buses'}</dt>
+            <dd data-testid="depot-vehicles">
+              {d.transit.buses}
+              {d.transit.headwayMinutes ? ` · every ${d.transit.headwayMinutes} min` : ''}
+            </dd>
+            <dt>{d.transit.mode === 'train' ? 'There and back' : 'Round trip'}</dt>
             <dd>{d.transit.loopMinutes ? `${d.transit.loopMinutes} min` : '—'}</dd>
             <dt>Riders</dt>
             <dd data-testid="depot-riders" class={d.transit.full ? 'neg' : ''}>
-              {d.transit.riders.toLocaleString('en-US')} trips/day{d.transit.full ? ' (buses full)' : ''}
+              {d.transit.riders.toLocaleString('en-US')} trips/day
+              {d.transit.full
+                ? ` (${d.transit.mode === 'train' ? 'trains' : d.transit.mode === 'tram' ? 'trams' : 'buses'} full)`
+                : ''}
+            </dd>
+            {d.transit.capacity > 0 && (
+              <>
+                <dt>Carries</dt>
+                <dd>{d.transit.capacity.toLocaleString('en-US')} passengers an hour</dd>
+              </>
+            )}
+            {d.transit.mode === 'train' && (
+              <>
+                <dt>Here</dt>
+                <dd data-testid="station-use">
+                  {d.transit.here.toLocaleString('en-US')} getting on or off a day
+                </dd>
+              </>
+            )}
+          </>
+        )}
+        {d.railFreight && (
+          <>
+            <dt>Onto trains</dt>
+            <dd data-testid="freight-trucks">
+              {d.railFreight.trucks.toLocaleString('en-US')} truckloads/day
+              {d.railFreight.trucks > 0 ? ` · ${trainsText(d.railFreight.trucks)}` : ''}
             </dd>
           </>
         )}

@@ -25,7 +25,8 @@ export type OverlayMap =
   | 'wealth'
   | 'traffic'
   | 'airPollution'
-  | 'eduLevel';
+  | 'eduLevel'
+  | 'transit';
 
 export interface OverlayResult {
   map: OverlayMap;
@@ -181,5 +182,9 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
     case 'wealth':
       stampBuildings(sim, values, (b) => (b.state === BState.Active && b.zone !== 3 ? b.wealth / 2 : null));
       return { map, values, ramp: 'sequential', legend: ['Low wealth', 'High wealth'] };
+    case 'transit':
+      // Ridership (M20): drawn by the client over the roads and track, each line by how full it runs
+      // and each stop or station by how many use it.
+      return { map, values, ramp: 'sequential', legend: ['Few riders', 'Many riders'] };
   }
 }

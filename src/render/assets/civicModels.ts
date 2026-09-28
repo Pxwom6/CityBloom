@@ -295,6 +295,28 @@ export function buildCivicModel(
       fence(m, W, D, C('#8a8d91'));
       break;
     }
+    case 'works': {
+      // Public works depot (M22): a garage for the ploughs, a salt dome and a small office.
+      base(m, W, D, CONCRETE);
+      m.box(-W / 2 + 2, W / 2 - 13, 0, 7, D / 2 - 13, D / 2 - 2, C('#cfc6b6'), CONCRETE_DARK);
+      for (let k = 0; k < 3; k++) {
+        const x = -W / 2 + 4 + k * 6.6;
+        m.box(x, x + 4.6, 0, 4.6, D / 2 - 13.15, D / 2 - 12.9, C('#e8792a'));
+      }
+      m.frustum(W / 2 - 7, D / 2 - 7, 5.5, 1.2, 0, 6.5, C('#d8d2c4'), 12);
+      m.frustum(W / 2 - 7, D / 2 - 7, 2.6, 0.8, 0, 2.2, C('#f2f0ea'), 10);
+      m.box(-W / 2 + 2, -W / 2 + 10, 0, 3.4, -D / 2 + 2, -D / 2 + 7, C('#e7e2da'));
+      m.windows('front', -W / 2 + 2, -W / 2 + 10, -D / 2 + 2, -D / 2 + 7, 0, 1, 3.4, {
+        col: GLASS,
+        lit: lit(r),
+      });
+      for (const x of [-2, 5]) {
+        m.box(x, x + 2.3, 0.4, 2.6, -D / 2 + 9, -D / 2 + 16, C('#e8792a'));
+        m.box(x - 0.6, x + 2.9, 0.1, 1.1, -D / 2 + 16, -D / 2 + 16.5, C('#f2c230'));
+      }
+      fence(m, W, D);
+      break;
+    }
     case 'recycling': {
       base(m, W, D, CONCRETE);
       m.box(-W / 2 + 2, W / 2 - 2, 0, 9, -D / 2 + 4, D / 2 - 8, C('#dfe7df'), GREEN_ROOF);
@@ -581,6 +603,103 @@ export function buildCivicModel(
         const x = -W / 2 + 3 + k * 4.5;
         m.box(x, x + 2.5, 0.4, 3.1, -D / 2 + 1.5, -D / 2 + 1.5 + 10, C('#f2b31b'));
         m.box(x - 0.02, x + 2.52, 1.7, 2.5, -D / 2 + 1.6, -D / 2 + 1.4 + 10, GLASS);
+      }
+      break;
+    }
+    case 'tramdepot': {
+      // A tram depot (M20): a long brick shed with three bays open to the road, tracks running out
+      // of them across the forecourt, a tram nosing out of the middle bay and a small office.
+      base(m, W, D, PAVING);
+      const zf = -D / 2;
+      const z0 = zf + 8;
+      m.box(-W / 2 + 2, W / 4 + 2, 0, 8, z0, D / 2 - 1.5, BRICK);
+      m.gable(-W / 2 + 2, W / 4 + 2, z0, D / 2 - 1.5, 8, 2.5, ROOF_GREY, BRICK, true);
+      const bays = [-W / 2 + 5, -W / 2 + 14, -W / 2 + 23];
+      for (const x of bays) {
+        m.box(x, x + 6, 0, 5.8, z0 - 0.05, z0 + 0.02, C('#2f3439'));
+        m.box(x - 0.4, x + 6.4, 5.8, 6.4, z0 - 0.2, z0 + 0.05, CREAM);
+        // Rails from the bay to the road.
+        for (const dx of [1.9, 4.1]) m.box(x + dx - 0.08, x + dx + 0.08, 0.02, 0.09, zf + 0.2, z0, STEEL);
+      }
+      // A tram half out of the middle bay: cream body, green skirt, windows, pantograph.
+      const tx = bays[1]! + 3;
+      m.box(tx - 1.3, tx + 1.3, 0.35, 1.3, z0 - 7, z0 + 4, C('#2f6b52'));
+      m.box(tx - 1.3, tx + 1.3, 1.3, 3.3, z0 - 7, z0 + 4, C('#efe6cf'));
+      m.box(tx - 1.32, tx + 1.32, 1.8, 2.9, z0 - 6.6, z0 + 3.6, GLASS);
+      m.box(tx - 0.08, tx + 0.08, 3.3, 4.1, z0 - 3, z0 - 2.8, SLATE);
+      m.box(tx - 0.7, tx + 0.7, 4.05, 4.15, z0 - 3.1, z0 - 2.7, SLATE);
+      // Office with windows at the side.
+      m.box(W / 4 + 3, W / 2 - 2, 0, 6, zf + 3, zf + 13, CREAM, SLATE);
+      allWindows(m, W / 4 + 3, W / 2 - 2, zf + 3, zf + 13, 0, 2, 3, {
+        col: GLASS,
+        lit: lit(r, 0.7),
+        spacing: 2.4,
+      });
+      // Poles for the overhead wires along the forecourt.
+      for (const x of [-W / 2 + 3, -W / 2 + 12.5, -W / 2 + 21.5, -W / 2 + 30.5])
+        m.cylinder(x, zf + 4, 0.12, 0, 6.2, STEEL, 6);
+      break;
+    }
+    case 'station': {
+      // A railway station (M20): the platform along the front (the track side) under a long canopy,
+      // and a brick booking hall with a clock over its door behind it.
+      base(m, W, D, PAVING);
+      const zf = -D / 2;
+      m.box(-W / 2 + 1, W / 2 - 1, 0, 1.1, zf + 0.3, zf + 6.5, CONCRETE, PAVING);
+      m.box(-W / 2 + 1, W / 2 - 1, 1.1, 1.13, zf + 0.3, zf + 0.9, YELLOW);
+      for (let x = -W / 2 + 4; x <= W / 2 - 4; x += 8) m.cylinder(x, zf + 4.2, 0.18, 1.1, 4.5, STEEL, 6);
+      m.box(-W / 2 + 2.5, W / 2 - 2.5, 4.5, 4.8, zf + 1.4, zf + 6.4, C('#3f6b5a'));
+      for (const x of [-18, -6, 6, 18]) bench(m, x, zf + 5, true);
+      // Booking hall.
+      m.box(-12, 12, 0, 7, zf + 7, D / 2 - 1, BRICK);
+      m.gable(-12, 12, zf + 7, D / 2 - 1, 7, 3, ROOF_GREY, BRICK, true);
+      allWindows(m, -12, 12, zf + 7, D / 2 - 1, 0.6, 1, 4.5, { col: GLASS, lit: lit(r, 0.7), spacing: 3 }, [
+        'front',
+      ]);
+      m.box(-1.2, 1.2, 7.4, 9.6, zf + 6.7, zf + 7, WHITE);
+      m.box(-0.1, 0.1, 8.2, 9.2, zf + 6.6, zf + 6.7, SLATE);
+      // Low wings either side.
+      for (const s of [-1, 1]) {
+        const x0 = s < 0 ? -W / 2 + 2 : 13;
+        const x1 = s < 0 ? -13 : W / 2 - 2;
+        m.box(x0, x1, 0, 4, zf + 8, D / 2 - 2, CREAM, SLATE);
+      }
+      break;
+    }
+    case 'railfreight': {
+      // A rail freight terminal (M20): a shed facing the road, stacked containers, a loading track
+      // along the back (the railway side) under a gantry crane, and trucks waiting at the gate.
+      base(m, W, D, CONCRETE);
+      const zf = -D / 2;
+      const zb = D / 2;
+      m.box(-W / 2 + 3, -4, 0, 9, zf + 5, zb - 12, C('#c8c2b4'), ROOF_GREY);
+      for (let k = 0; k < 4; k++) {
+        const x = -W / 2 + 6 + k * 7.5;
+        m.box(x, x + 4.5, 0, 5, zf + 4.9, zf + 5, C('#56606b'));
+      }
+      // Loading track inside the yard, along the back.
+      m.box(-W / 2 + 1, W / 2 - 1, 0.06, 0.25, zb - 8, zb - 3, C('#8d8579'));
+      for (const z of [zb - 6.2, zb - 4.8])
+        m.box(-W / 2 + 1, W / 2 - 1, 0.25, 0.4, z - 0.07, z + 0.07, STEEL);
+      // Containers.
+      const boxes = [C('#b8432f'), C('#2f5d9e'), C('#3f6b4a'), C('#d08a2c'), C('#e6e1d3')];
+      for (let i = 0; i < 5; i++)
+        for (let j = 0; j < 2; j++)
+          for (let k = 0; k < 1 + ((i + j) % 3); k++) {
+            const x = 2 + i * 6.6;
+            const z = zf + 7 + j * 3.2;
+            m.box(x, x + 6, k * 2.6, k * 2.6 + 2.5, z, z + 2.9, boxes[(i * 3 + j + k) % boxes.length]!);
+          }
+      // Gantry crane over the loading track.
+      const crane = C('#e0b030');
+      for (const x of [4, W / 2 - 4])
+        for (const z of [zb - 11, zb - 1.5]) m.box(x - 0.5, x + 0.5, 0, 13, z - 0.5, z + 0.5, crane);
+      m.box(3, W / 2 - 3, 13, 14.2, zb - 11.6, zb - 0.9, crane);
+      m.box(14, 17, 10.5, 13, zb - 7, zb - 4, C('#56606b'));
+      // Trucks at the gate.
+      for (const x of [-W / 2 + 8, -W / 2 + 16]) {
+        m.box(x - 1.2, x + 1.2, 0.5, 3.2, zf + 1, zf + 3.5, C('#d0342c'));
+        m.box(x - 1.3, x + 1.3, 0.7, 3.6, zf + 3.6, zf + 11, WHITE);
       }
       break;
     }

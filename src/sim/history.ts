@@ -29,7 +29,8 @@ export type Container =
   | 'blocks'
   | 'stops'
   | 'traffic'
-  | 'roadDamage';
+  | 'roadDamage'
+  | 'districts';
 
 export const CONTAINERS: readonly Container[] = [
   'buildings',
@@ -42,6 +43,7 @@ export const CONTAINERS: readonly Container[] = [
   'stops',
   'traffic',
   'roadDamage',
+  'districts',
 ];
 
 /**
@@ -73,10 +75,11 @@ const STRUCTURAL: Record<Container, true | false | readonly string[]> = {
   stops: true,
   traffic: false,
   roadDamage: false,
+  districts: false,
 };
 
 /** Whole-array state changed element by element: the ground is structural, trees aren't. */
-const ARRAYS = { terrainDelta: true, trees: false } as const;
+const ARRAYS = { terrainDelta: true, trees: false, districtCells: false } as const;
 type ArrayKey = keyof typeof ARRAYS;
 
 /** Other values a command can change (restored where untouched). */
@@ -120,6 +123,8 @@ export interface Scope {
 }
 export const FULL_SCOPE: Scope = { containers: CONTAINERS, arrays: ['terrainDelta', 'trees'] };
 export const ZONING_SCOPE: Scope = { containers: ['blocks'], arrays: [] };
+/** Districts (M21): their records and the painted cells. */
+export const DISTRICT_SCOPE: Scope = { containers: ['districts'], arrays: ['districtCells'] };
 
 /**
  * A captured entity: its JSON, or for one holding typed arrays (lots), the JSON of its other fields

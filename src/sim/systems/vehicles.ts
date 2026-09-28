@@ -1,9 +1,10 @@
+import { snowFactor } from '../../data/climate';
 import { ROAD_TYPES } from '../../data/roads';
 import { VEHICLE_SPEED_SCALE } from '../../data/civic';
 import type { Sim } from '../sim';
 import { routeBetween, type Leg } from './graph';
 
-export type VehicleKind = 'garbage' | 'fire' | 'police' | 'ambulance' | 'bus';
+export type VehicleKind = 'garbage' | 'fire' | 'police' | 'ambulance' | 'bus' | 'plough';
 
 /** A dispatched service vehicle driving along road legs. DESIGN §3.7. */
 export interface Vehicle {
@@ -31,7 +32,19 @@ export interface Vehicle {
 export function segSpeed(sim: Sim, segId: number): number {
   const seg = sim.state.net.segments.get(segId);
   if (!seg) return 10;
-  return (ROAD_TYPES[seg.type].speed / 3.6) * sim.congestionFactor(segId);
+  return ((ROAD_TYPES[seg.type].speed / 3.6) * sim.congestionFactor(segId)) / snowFactor(seg.snow);
+}
+
+/**
+ * Snow ploughs (M22) work at four times a service vehicle's pace and aren't slowed by the snow they
+ * clear: a snowfall lasts hours of the compressed calendar, and at the usual pace a plough would
+ * clear a street or two before it melted.
+ */
+const PLOUGH_PACE = 4;
+
+function speedOf(sim: Sim, kind: VehicleKind, segId: number): number {
+  if (kind !== 'plough') return segSpeed(sim, segId);
+  return segSpeed(sim, segId) * snowFactor(sim.state.net.segments.get(segId)?.snow) * PLOUGH_PACE;
 }
 
 export function route(
@@ -59,6 +72,8 @@ export interface VehicleHandlers {
   arrive(sim: Sim, v: Vehicle): void;
   workDone(sim: Sim, v: Vehicle): void;
   home(sim: Sim, v: Vehicle): void;
+  /** Called as the vehicle reaches the end of each leg (snow ploughs clear the road behind them). */
+  passed?(sim: Sim, v: Vehicle, seg: number): void;
 }
 
 const handlers = new Map<VehicleKind, VehicleHandlers>();
@@ -155,7 +170,7 @@ export function stepVehicles(sim: Sim): void {
     let budget = 0;
     while (v.leg < v.legs.length) {
       const l = v.legs[v.leg]!;
-      if (budget === 0) budget = VEHICLE_SPEED_SCALE * segSpeed(sim, l.seg);
+      if (budget === 0) budget = VEHICLE_SPEED_SCALE * speedOf(sim, v.kind, l.seg);
       const len = Math.abs(l.s1 - l.s0);
       const left = len - v.t;
       if (budget < left) {
@@ -164,6 +179,7 @@ export function stepVehicles(sim: Sim): void {
         break;
       }
       budget -= left;
+      handlers.get(v.kind)?.passed?.(sim, v, l.seg);
       v.leg++;
       v.t = 0;
       if (budget <= 0) {

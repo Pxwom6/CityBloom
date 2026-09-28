@@ -1,3 +1,4 @@
+import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
 import { ScenarioScreen } from './Scenario';
 import { SCENARIOS } from '../data/scenarios';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -79,6 +80,7 @@ export function Segmented<T extends string | number>(props: {
   label: (v: T) => string;
   testid: string;
   onChange: (v: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <div class="segmented" role="radiogroup">
@@ -88,6 +90,7 @@ export function Segmented<T extends string | number>(props: {
           role="radio"
           aria-checked={props.value === o}
           class={props.value === o ? 'active' : ''}
+          disabled={props.disabled}
           data-testid={`${props.testid}-${o}`}
           onClick={() => props.onChange(o)}
         >
@@ -198,6 +201,9 @@ function NewGame() {
               </button>
             ))}
           </div>
+          <p class="muted climate-note" data-testid="new-climate">
+            {CLIMATES[PRESET_CLIMATE[preset]].name} climate: {CLIMATES[PRESET_CLIMATE[preset]].blurb}
+          </p>
         </div>
         <div class="new-game-form">
           <label class="field">
@@ -559,12 +565,14 @@ export function Check(props: {
   label: string;
   hint?: string;
   set: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <label class="check">
       <input
         type="checkbox"
         checked={props.on}
+        disabled={props.disabled}
         data-testid={props.testid}
         onChange={(e) => props.set((e.target as HTMLInputElement).checked)}
       />
@@ -579,6 +587,18 @@ function SettingsScreen() {
   const game = useGameUpdates(100);
   const s = game.settings;
   const set = (patch: Partial<Settings>) => game.updateSettings(patch);
+  // This city's seasons and weather as just chosen, shown until the sim's stats agree (a click would
+  // otherwise flick back for a moment while the change goes through the worker).
+  const [pending, setPending] = useState<{ seasons?: boolean; intensity?: WeatherIntensity }>({});
+  const cityWeather = game.world.stats.weather;
+  useEffect(() => {
+    if (
+      (pending.seasons === undefined || pending.seasons === cityWeather.seasons) &&
+      (pending.intensity === undefined || pending.intensity === cityWeather.intensity) &&
+      (pending.seasons !== undefined || pending.intensity !== undefined)
+    )
+      setPending({});
+  });
   return (
     <div class="shell-card panel settings-screen" data-testid="settings-screen">
       <header>
@@ -730,6 +750,52 @@ function SettingsScreen() {
                 void game.dispatch({ type: 'setElections', on: elections });
             }}
           />
+          {(() => {
+            // Seasons and weather (M22): this city's (unless a scenario sets them), and new ones'.
+            const w = { ...cityWeather, ...pending };
+            const inCity = game.mode === 'play';
+            const locked = inCity && game.world.stats.scenario?.status === 'playing';
+            const apply = (patch: { seasons?: boolean; intensity?: WeatherIntensity }) => {
+              set({
+                ...(patch.seasons !== undefined ? { seasons: patch.seasons } : {}),
+                ...(patch.intensity !== undefined ? { weather: patch.intensity } : {}),
+              });
+              if (inCity && !locked) {
+                setPending((p) => ({ ...p, ...patch }));
+                void game.dispatch({ type: 'setWeather', ...patch }).then((r) => {
+                  if (!r.ok) setPending({});
+                });
+              }
+            };
+            const hint = locked
+              ? 'this scenario sets its own'
+              : inCity
+                ? 'in this city, and new ones'
+                : 'in new cities';
+            return (
+              <>
+                <Check
+                  on={inCity ? w.seasons : s.seasons}
+                  testid="set-seasons"
+                  label="Seasons"
+                  hint={`${hint}: winter snow, summer heat`}
+                  disabled={locked}
+                  set={(seasons) => apply({ seasons })}
+                />
+                <div class="field" title={`Weather ${hint}`}>
+                  <span>Weather</span>
+                  <Segmented
+                    value={(inCity ? w.intensity : s.weather) as WeatherIntensity}
+                    options={[0, 1, 2, 3] as WeatherIntensity[]}
+                    label={(i) => INTENSITY_NAMES[i]}
+                    testid="weather-intensity"
+                    disabled={locked}
+                    onChange={(intensity) => apply({ intensity })}
+                  />
+                </div>
+              </>
+            );
+          })()}
           <div class="field">
             <span>Autosave</span>
             <Segmented

@@ -41,6 +41,8 @@ export class AmbientBed {
   private roar: NoiseLayer;
   private storm: NoiseLayer;
   private water: NoiseLayer;
+  private rain: NoiseLayer;
+  private patter: NoiseLayer;
   private mix: AmbientMix = {
     traffic: 0,
     wind: 0,
@@ -51,6 +53,7 @@ export class AmbientBed {
     fire: 0,
     storm: 0,
     water: 0,
+    rain: 0,
   };
   /** Next time (ctx seconds) each kind of event may start. */
   private next = { birds: 0, crickets: 0, construction: 0, sirens: 0, fire: 0 };
@@ -69,6 +72,9 @@ export class AmbientBed {
     this.roar = new NoiseLayer(ctx, out, 'brown', 'lowpass', 260, 0.7);
     this.storm = new NoiseLayer(ctx, out, 'pink', 'bandpass', 320, 1.6);
     this.water = new NoiseLayer(ctx, out, 'white', 'lowpass', 900, 0.5);
+    // Rain (M22): a bright hiss of drops over a softer patter on roofs and leaves.
+    this.rain = new NoiseLayer(ctx, out, 'white', 'bandpass', 3200, 0.45);
+    this.patter = new NoiseLayer(ctx, out, 'pink', 'bandpass', 900, 0.9);
   }
 
   get levels(): AmbientMix {
@@ -86,6 +92,8 @@ export class AmbientBed {
     ride(this.roar.gain.gain, m.fire * 0.5);
     ride(this.storm.gain.gain, m.storm * 0.9);
     ride(this.water.gain.gain, m.water * 0.18);
+    ride(this.rain.gain.gain, m.rain * 0.16);
+    ride(this.patter.gain.gain, m.rain * 0.12);
   }
 
   /** Schedule upcoming events; call a few times a second. */

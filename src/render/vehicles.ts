@@ -40,7 +40,27 @@ function carModel(body: Color, lightbar?: Color): ModelData {
   return m.build();
 }
 
+/** Snow plough (M22): an orange truck with a salt spreader, a wide angled blade and a beacon. */
+function ploughModel(): ModelData {
+  const m = new ModelBuilder();
+  const orange = C('#e8792a');
+  m.box(-3.4, 0.9, 0.6, 2.6, -1.15, 1.15, orange);
+  m.box(-3.5, 0.95, 2.6, 2.8, -1.2, 1.2, C('#4a4f55'));
+  m.box(0.9, 3.0, 0.6, 2.8, -1.1, 1.1, orange);
+  m.box(2.95, 3.02, 1.7, 2.5, -0.9, 0.9, C('#2d3b48'));
+  m.box(1.5, 2.1, 2.8, 3.05, -0.35, 0.35, C('#ffb21e'));
+  // The blade, wider than the truck and set forward.
+  m.box(3.3, 3.8, 0.1, 1.2, -1.75, 1.75, C('#f2c230'));
+  m.box(3.0, 3.3, 0.5, 0.8, -0.4, 0.4, C('#555b61'));
+  for (const x of [-2.3, 2.0]) {
+    m.box(x - 0.45, x + 0.45, 0, 0.9, -1.2, -0.95, C('#222'));
+    m.box(x - 0.45, x + 0.45, 0, 0.9, 0.95, 1.2, C('#222'));
+  }
+  return m.build();
+}
+
 export const VEHICLE_MODELS: Record<string, ModelData> = {
+  plough: ploughModel(),
   garbage: truckModel(C('#3f8f4f'), C('#e8e8e2'), C('#f0c040')),
   fire: truckModel(C('#d0342c'), C('#d0342c'), C('#f4f4f4'), 8),
   ambulance: truckModel(C('#f4f4f2'), C('#f4f4f2'), C('#d0342c'), 6),

@@ -50,7 +50,7 @@ export function sicknessRate(sim: Sim, b: Building): number {
   const ground = fieldAt(s.groundPollution, b.x, b.z);
   const water = b.water > 0 ? b.polluted : 0;
   const garbage = Math.min(1, b.garbage / GARBAGE.bad);
-  const k = sim.policy('healthyLiving') ? POLICY_EFFECTS.healthyLiving : 1;
+  const k = sim.policyAt('healthyLiving', b.x, b.z) ? POLICY_EFFECTS.healthyLiving : 1;
   return (
     k *
     (HEALTH.baseRate +

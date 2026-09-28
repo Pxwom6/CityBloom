@@ -1,4 +1,5 @@
-import { ROAD_TYPES } from '../data/roads';
+import { WEATHER_KINDS } from '../data/climate';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
 import { fail, ok, type Command, type CommandLogEntry, type CommandResult } from './commands';
@@ -11,6 +12,7 @@ import type {
   CivicData,
   CivicDetails,
   DisasterData,
+  DistrictData,
   VehicleData,
   BuildingData,
   CityStats,
@@ -28,6 +30,7 @@ import type {
 import { checkInvariants } from './invariants';
 import { Network, type ZoneBlock } from './world/network';
 import {
+  DISTRICT_SCOPE,
   FULL_SCOPE,
   HISTORY_LIMIT,
   ZONING_SCOPE,
@@ -44,12 +47,13 @@ import {
   bulldoze,
   upgradeRoad,
   setOneWay,
+  setTram,
   placeRoundabout,
   removeRoundabout,
 } from './actions/roads';
 import { zone } from './actions/zoning';
 import { v2 } from './geom';
-import { GRID_RES, HEIGHT_RES } from '../data/world';
+import { GRID_RES, HEIGHT_RES, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
 import {
   BState,
   accessOf,
@@ -60,7 +64,24 @@ import {
   setLotCells,
   type Building,
 } from './world/buildings';
-import { RoadGraph } from './systems/graph';
+import { RoadGraph, routeBetween } from './systems/graph';
+import {
+  createDistrict,
+  districtAt,
+  emptyDistrictCells,
+  paintDistrict,
+  removeDistrict,
+  renameDistrict,
+  setDistrictPolicy,
+} from './systems/districts';
+import {
+  initialWeather,
+  setSpell,
+  weatherHour,
+  weatherSummary,
+  type WeatherSummary,
+} from './systems/weather';
+import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
 import { computeTotals, emptyTotals } from './systems/totals';
@@ -87,10 +108,12 @@ import {
   findAccess,
   moveCivic,
   placeCivic,
+  railSiding,
   type Civic,
 } from './world/civic';
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
+import { dispatchPloughs, ploughsFor } from './systems/ploughs';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
 import {
@@ -142,6 +165,7 @@ import {
   book,
   closeMonth,
   defaultEconomy,
+  districtReports,
   economyHour,
   monthlyRates,
   repayLoan,
@@ -195,7 +219,9 @@ export type SimEvent = {
     | 'electionLost'
     // Scenarios (M18): id is the stars won.
     | 'scenarioWon'
-    | 'scenarioLost';
+    | 'scenarioLost'
+    | 'season'
+    | 'weather';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -268,6 +294,7 @@ export class Sim {
       trees: terrain.initialTrees.slice(),
       net: { nodes: new Map(), segments: new Map(), blocks: new Map() },
       highway: { outside: 0, connect: 0, segment: 0 },
+      railway: null,
       buildings: new Map(),
       totals: emptyTotals(),
       demand: emptyDemand(),
@@ -296,9 +323,13 @@ export class Sim {
       matchDay: null,
       election: newElectionState(0, options.elections && !options.sandbox),
       scenario: null,
+      districts: new Map(),
+      districtCells: emptyDistrictCells(),
+      weather: initialWeather(options.preset),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
+    sim.buildRailway();
     updateLandValue(sim, true);
     updateDemand(sim);
     return sim;
@@ -307,7 +338,56 @@ export class Sim {
   static fromSave(save: SaveFile): Sim {
     const state = readSaveFile(save);
     const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain);
-    return new Sim(state, terrain);
+    const sim = new Sim(state, terrain);
+    // Cities from before M20 get their rail link where it fits among what they've built.
+    if (state.railway === undefined) {
+      state.railway = null;
+      sim.buildRailway();
+    }
+    return sim;
+  }
+
+  /**
+   * The regional railway's link into the map (M20): the flattest dry, empty stretch of the west
+   * edge between 260 and 700 m from the highway, entering at the same x as the highway does.
+   */
+  private buildRailway(): void {
+    const hw = this.terrain.gen.params.highway;
+    let best: { z: number; score: number } | null = null;
+    for (let d = 260; d <= 700; d += 20)
+      for (const z of [hw.connectZ + d, hw.connectZ - d]) {
+        if (z < 120 || z > MAP_SIZE - 120) continue;
+        let lo = Infinity;
+        let hi = -Infinity;
+        let ok = true;
+        for (let x = 4; x <= 160 && ok; x += 8) {
+          const h = this.terrain.heightAt(x, z);
+          if (h < SHORE_HEIGHT + 0.5) ok = false;
+          lo = Math.min(lo, h);
+          hi = Math.max(hi, h);
+          // Room for track to run in: no roads, buildings or civic buildings near.
+          if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
+          if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length)
+            ok = false;
+        }
+        if (!ok || hi - lo > 8) continue;
+        const score = hi - lo + d / 400;
+        if (!best || score < best.score) best = { z, score };
+      }
+    if (!best) {
+      this.state.railway = null;
+      return;
+    }
+    const outside = this.net.createNode(hw.lineX, best.z);
+    const connect = this.net.createNode(HIGHWAY_CONNECT_X, best.z);
+    const seg = this.net.createSegment(
+      outside.id,
+      connect.id,
+      v2((hw.lineX + HIGHWAY_CONNECT_X) / 2, best.z),
+      'mainline',
+      { zoned: false },
+    );
+    this.state.railway = { outside: outside.id, connect: connect.id, segment: seg.id };
   }
 
   private buildHighway(): void {
@@ -388,7 +468,11 @@ export class Sim {
         ? null
         : seg.deck
           ? viaductDeck(seg.deck, this.net.curve(segId), (x, z) => this.terrain.heightAt(x, z))
-          : deckProfile(this.net.curve(segId), (x, z) => this.terrain.heightAt(x, z));
+          : deckProfile(
+              this.net.curve(segId),
+              (x, z) => this.terrain.heightAt(x, z),
+              ROAD_TYPES[seg.type].maxGrade,
+            );
       this.deckCache.set(segId, d);
     }
     return d;
@@ -399,6 +483,8 @@ export class Sim {
     this.trafficDirty = true;
     this.linesCache = null;
     this.peakCache = null;
+    // Riders per line and stop come with each round (M20: the ridership map, line inspectors).
+    this.transitDirty = true;
   }
 
   private peakCache: Float64Array | null = null;
@@ -430,14 +516,39 @@ export class Sim {
     return {
       stops: [...t.stops.values()].sort((a, b) => a.id - b.id).map((x) => ({ ...x })),
       lines: this.lines().map((l) => ({
+        mode: l.mode,
+        shuttle: l.shuttle,
         depot: l.depot,
         stops: [...l.stops],
+        stopDist: [...l.stopDist],
         legs: l.legs.map((x) => ({ ...x })),
         loopTime: l.loopTime,
+        headway: l.headway,
+        capacity: Math.round(l.capacityPerHour),
         buses: l.buses,
         riders: t.riders.get(l.depot) ?? 0,
+        load: t.load.get(l.depot) ?? 1,
       })),
+      use: [...this.stopUse].sort((a, b) => a[0] - b[0]),
+      freight: this.freightRoutes(),
     };
+  }
+
+  /** Track from the regional railway's link to each shipping terminal's siding (M20, for the client). */
+  private freightRoutes(): TransitData['freight'] {
+    const r = this.state.railway;
+    if (!r) return [];
+    const out: TransitData['freight'] = [];
+    const from = { seg: r.segment, s: this.net.curve(r.segment).length };
+    const speed = (id: number) => ROAD_TYPES[this.net.segment(id).type].speed / 3.6;
+    for (const c of railTerminals(this)) {
+      const trucks = this.railFreight.get(c.id) ?? 0;
+      const siding = railSiding(this, c);
+      if (!siding || trucks <= 0) continue;
+      const legs = routeBetween(this.railGraph(), this.net, from, siding, speed);
+      if (legs) out.push({ id: c.id, trucks, legs });
+    }
+    return out;
   }
 
   trafficData(): TrafficData {
@@ -485,9 +596,47 @@ export class Sim {
 
   // ---------------------------------------------------------------- derived caches
 
-  /** Is a policy in force? */
+  /** Is a policy in force across the city? */
   policy(id: PolicyId): boolean {
     return this.state.policies.includes(id);
+  }
+
+  /** District policies (M21): which districts have each policy, rebuilt when districts change. */
+  private districtPolicyCache: Map<string, Set<number>> | null = null;
+
+  /** Is a policy in force at (x, z): across the city, or in the district there (M21)? */
+  policyAt(id: PolicyId, x: number, z: number): boolean {
+    if (this.state.policies.includes(id)) return true;
+    const by = this.districtPolicies().get(id);
+    return !!by && by.has(districtAt(this.state.districtCells, x, z));
+  }
+
+  /** Is a policy in force anywhere (the city or any district)? */
+  policyAnywhere(id: PolicyId): boolean {
+    return this.state.policies.includes(id) || this.districtPolicies().has(id);
+  }
+
+  /** Policy → districts where it's in force. */
+  districtPolicies(): Map<string, Set<number>> {
+    if (!this.districtPolicyCache) {
+      const m = new Map<string, Set<number>>();
+      for (const d of this.state.districts.values())
+        for (const p of d.policies) {
+          const set = m.get(p) ?? new Set<number>();
+          set.add(d.id);
+          m.set(p, set);
+        }
+      this.districtPolicyCache = m;
+    }
+    return this.districtPolicyCache;
+  }
+
+  private districtsDirty = true;
+
+  /** Districts were painted, named or given policies (M21): tell the client, re-read policies. */
+  districtsChanged(): void {
+    this.districtsDirty = true;
+    this.districtPolicyCache = null;
   }
 
   /** Is something that unlocks at `population` available? (Unlocks keep once reached.) */
@@ -521,6 +670,8 @@ export class Sim {
   roadsBlockedChanged(): void {
     this.blockedCache = null;
     this.graphCache = null;
+    this.railGraphCache = null;
+    this.tramGraphCache = null;
     this.coverageCache = null;
     this.peakCache = null;
     this.transitChanged();
@@ -565,6 +716,21 @@ export class Sim {
 
   private fullGraphCache: RoadGraph | null = null;
   private fullHighwayComponent = -1;
+  private railGraphCache: RoadGraph | null = null;
+
+  /** The railways (M20): their own graph, which trains route on. */
+  railGraph(): RoadGraph {
+    if (!this.railGraphCache) this.railGraphCache = new RoadGraph(this.net, this.blockedSegments(), 'rail');
+    return this.railGraphCache;
+  }
+
+  private tramGraphCache: RoadGraph | null = null;
+
+  /** The roads with tram track (M20), which trams route on. */
+  tramGraph(): RoadGraph {
+    if (!this.tramGraphCache) this.tramGraphCache = new RoadGraph(this.net, this.blockedSegments(), 'tram');
+    return this.tramGraphCache;
+  }
 
   /**
    * The network as built, ignoring temporary closures (damaged or flooded roads): whether a place is
@@ -585,7 +751,8 @@ export class Sim {
 
   isSegmentConnected(segId: number): boolean {
     const seg = this.state.net.segments.get(segId);
-    if (!seg) return false;
+    // Railways aren't roads: nothing drives onto them from the highway (M20).
+    if (!seg || isRail(seg.type)) return false;
     const g = this.fullGraph();
     return g.componentOfNode(seg.a) === this.fullHighwayComponent;
   }
@@ -614,6 +781,8 @@ export class Sim {
   markNetworkChanged(): void {
     this.graphCache = null;
     this.fullGraphCache = null;
+    this.railGraphCache = null;
+    this.tramGraphCache = null;
     this.blockedCache = null;
     this.disastersDirty = true;
     // A damaged road that was bulldozed or rebuilt is no longer damaged.
@@ -697,6 +866,13 @@ export class Sim {
     const pad = Math.hypot(r.hw, r.hd) + 40;
     this.net.revalidate({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad });
     this.events.push({ kind: 'civicRemoved', id });
+  }
+
+  /** Roads whose snow changed since the last frame (M22). */
+  private snowDirty = new Set<number>();
+
+  roadSnowChanged(id: number): void {
+    this.snowDirty.add(id);
   }
 
   markVehiclesDirty(): void {
@@ -799,6 +975,12 @@ export class Sim {
           if (!dryRun) ignite(this, b);
           return ok(0);
         }
+        if (cmd.cheat === 'weather') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!WEATHER_KINDS.includes(cmd.kind)) return fail('Unknown weather');
+          if (!dryRun) setSpell(this, cmd.kind, cmd.strength, cmd.hours);
+          return ok(0);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -821,6 +1003,8 @@ export class Sim {
         return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
       case 'setOneWay':
         return setOneWay(this, cmd.seg, cmd.dir, dryRun);
+      case 'setTram':
+        return setTram(this, cmd.seg, cmd.on, dryRun);
       case 'roundabout':
         return placeRoundabout(this, { node: cmd.node, x: cmd.at?.x, z: cmd.at?.z }, cmd.radius, dryRun);
       case 'removeRoundabout':
@@ -830,7 +1014,7 @@ export class Sim {
       case 'upgradeRoad':
         return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
       case 'placeStop':
-        return placeStop(this, cmd.x, cmd.z, dryRun);
+        return placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
       case 'zone': {
         const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
         return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
@@ -880,6 +1064,8 @@ export class Sim {
       case 'setPolicy': {
         const def = POLICY.get(cmd.id);
         if (!def) return fail('No such policy');
+        if (def.scope === 'district')
+          return fail(`${def.name} is for districts: set it in a district's panel`);
         if (cmd.on && !this.isUnlocked(def.unlockPopulation))
           return fail(`Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`);
         if (!dryRun) {
@@ -893,11 +1079,36 @@ export class Sim {
       }
       case 'addModule':
         return addModule(this, cmd.civic, cmd.module, dryRun);
+      case 'createDistrict':
+        return createDistrict(this, cmd.name, dryRun);
+      case 'paintDistrict':
+        return paintDistrict(this, cmd.district, cmd.area, dryRun);
+      case 'renameDistrict':
+        return renameDistrict(this, cmd.district, cmd.name, dryRun);
+      case 'removeDistrict':
+        return removeDistrict(this, cmd.district, dryRun);
+      case 'setDistrictPolicy':
+        return setDistrictPolicy(this, cmd.district, cmd.policy, cmd.on, dryRun);
       case 'moveBuilding':
         return moveCivic(this, cmd.id, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setWeather': {
+        const w = this.state.weather;
+        if (cmd.intensity !== undefined && ![0, 1, 2, 3].includes(cmd.intensity))
+          return fail('Unknown weather intensity');
+        if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own weather');
+        if (!dryRun) {
+          if (cmd.seasons !== undefined) w.seasons = cmd.seasons;
+          if (cmd.intensity !== undefined) {
+            w.intensity = cmd.intensity;
+            // A change of heart takes effect with the next spell, or now if the weather is off.
+            if (cmd.intensity === 0) w.until = this.state.tick;
+          }
+        }
+        return ok(0);
+      }
       case 'setElections':
         if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own elections');
         return setElections(this, cmd.on, dryRun);
@@ -920,8 +1131,15 @@ export class Sim {
     switch (cmd.type) {
       case 'zone':
         return ZONING_SCOPE;
+      case 'createDistrict':
+      case 'paintDistrict':
+      case 'renameDistrict':
+      case 'removeDistrict':
+      case 'setDistrictPolicy':
+        return DISTRICT_SCOPE;
       case 'buildRoad':
       case 'setOneWay':
+      case 'setTram':
       case 'roundabout':
       case 'removeRoundabout':
       case 'bulldoze':
@@ -945,7 +1163,19 @@ export class Sim {
       case 'bulldoze':
         return 'bulldozing';
       case 'placeStop':
-        return 'bus stop';
+        return cmd.tram ? 'tram stop' : 'bus stop';
+      case 'setTram':
+        return 'tram track';
+      case 'createDistrict':
+        return 'new district';
+      case 'paintDistrict':
+        return cmd.district ? 'district painting' : 'district erasing';
+      case 'renameDistrict':
+        return 'district name';
+      case 'removeDistrict':
+        return 'district removal';
+      case 'setDistrictPolicy':
+        return 'district policy';
       case 'upgradeRoad':
         return 'road change';
       case 'setOneWay':
@@ -970,7 +1200,8 @@ export class Sim {
     const d = diff(pre, capture(this.state, pre.scope));
     if (!d.changes.length && !d.treasury) return;
     const top = this.history.undo[this.history.undo.length - 1];
-    const stroke = cmd.type === 'zone' ? cmd.stroke : undefined;
+    const stroke =
+      cmd.type === 'zone' || cmd.type === 'setTram' || cmd.type === 'paintDistrict' ? cmd.stroke : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
       this.history.undo.push({
@@ -1060,6 +1291,7 @@ export class Sim {
       this.deckCache.clear();
     }
     for (const i of t.arrays.trees ?? []) this.markTreesDirty(i);
+    if (t.ids.districts || t.arrays.districtCells?.length) this.districtsChanged();
     this.flagCache.clear();
   }
 
@@ -1124,6 +1356,10 @@ export class Sim {
     const hour = Math.floor(t / TICKS_PER_HOUR);
     switch (minute) {
       case HOURLY_AT.utilities:
+        run('weather', () => {
+          weatherHour(this);
+          dispatchPloughs(this);
+        });
         run('disastersHour', () => disastersHour(this));
         run('utilities', () => {
           updateUtilities(this);
@@ -1267,7 +1503,18 @@ export class Sim {
       eduWorkforce: [t.eduWorkforce[0], t.eduWorkforce[1]],
       election: this.electionSummary(),
       scenario: this.scenarioStats(),
+      weather: this.weatherStats(),
     };
+  }
+
+  private weatherCache: { key: string; value: WeatherSummary } | null = null;
+
+  /** Season and weather for the client, worked out once a game hour (it walks every road). */
+  private weatherStats(): WeatherSummary {
+    const w = this.state.weather;
+    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${w.kind}:${w.until}:${w.intensity}:${w.seasons}`;
+    if (this.weatherCache?.key !== key) this.weatherCache = { key, value: weatherSummary(this) };
+    return this.weatherCache.value;
   }
 
   private scenarioCache: { key: string; value: ScenarioSummary | null } | null = null;
@@ -1368,9 +1615,11 @@ export class Sim {
       this.removedCivics,
     ])
       set.clear();
+    this.snowDirty.clear();
     this.vehiclesDirty = false;
     this.trafficDirty = false;
     this.transitDirty = false;
+    this.districtsDirty = false;
     this.events = [];
     return {
       options: { ...this.state.options },
@@ -1384,12 +1633,22 @@ export class Sim {
       stats: this.stats(),
       net: this.netData(),
       highway: { ...this.state.highway },
+      railway: this.state.railway ? { ...this.state.railway } : null,
       buildings: [...this.state.buildings.values()].map((b) => this.buildingData(b)),
       civics: [...this.state.civics.values()].map((c) => this.civicData(c)),
       vehicles: this.vehicleData(),
       traffic: this.trafficData(),
       transit: this.transitData(),
       disasters: this.disasterData(),
+      districts: this.districtData(),
+    };
+  }
+
+  /** Districts for the client (M21). */
+  districtData(): DistrictData {
+    return {
+      list: [...this.state.districts.values()].map((d) => ({ ...d, policies: [...d.policies] })),
+      cells: this.state.districtCells.slice(),
     };
   }
 
@@ -1571,9 +1830,19 @@ export class Sim {
       frame.transit = this.transitData();
       this.transitDirty = false;
     }
+    if (this.districtsDirty) {
+      frame.districts = this.districtData();
+      this.districtsDirty = false;
+    }
     if (this.disastersDirty) {
       frame.disasters = this.disasterData();
       this.disastersDirty = false;
+    }
+    if (this.snowDirty.size) {
+      frame.roadSnow = [...this.snowDirty]
+        .sort((a, b) => a - b)
+        .map((id) => [id, this.state.net.segments.get(id)?.snow ?? 0] as [number, number]);
+      this.snowDirty.clear();
     }
     if (this.events.length) {
       frame.events = this.events;
@@ -1634,6 +1903,8 @@ export class Sim {
         return this.budget();
       case 'civic':
         return this.civicDetails(q.id);
+      case 'districts':
+        return districtReports(this);
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':
@@ -1679,7 +1950,10 @@ export class Sim {
         this.groundPollutionAt(c.x, c.z) > UTILITIES.pollutedPumpThreshold,
       garbage: d.garbage ? this.garbageDetails(c) : null,
       service: d.service ? this.serviceDetails(c) : null,
-      transit: d.transit ? this.transitDetails(c) : null,
+      transit: d.transit || d.tram || d.rail ? this.transitDetails(c) : null,
+      railFreight: d.railFreight
+        ? { linked: railTerminals(this).some((t) => t.id === c.id), trucks: this.railFreight.get(c.id) ?? 0 }
+        : null,
       refund: Math.round(c.cost * 0.25),
       special: d.resource
         ? {
@@ -1690,6 +1964,15 @@ export class Sim {
         : d.tourism
           ? { kind: 'tourism', draw: d.tourism.draw ?? 0, rooms: d.tourism.rooms ?? 0 }
           : null,
+      plough: d.plough
+        ? {
+            ploughs: ploughsFor(this, c),
+            out: c.out,
+            reach: d.plough.reach,
+            today: c.processedToday,
+            yesterday: c.lastDay,
+          }
+        : null,
       project: d.project
         ? {
             stages: d.project.stages.map((st) => ({ ...st })),
@@ -1710,18 +1993,49 @@ export class Sim {
   }
 
   private transitDetails(c: Civic): NonNullable<CivicDetails['transit']> {
-    const line = this.lines().find((l) => l.depot === c.id);
+    const d = civicDef(c);
+    const mode = d.rail ? 'train' : d.tram ? 'tram' : 'bus';
+    const line = this.lines().find((l) =>
+      mode === 'train' ? l.mode === 'train' && l.stops.includes(c.id) : l.depot === c.id,
+    );
+    const key = line?.depot ?? c.id;
+    const min = (sec: number) => Math.round(sec / 6) / 10;
+    let why: string | null = null;
+    if (!line) {
+      const stops = [...this.state.transit.stops.values()].filter(
+        (s) => !!s.tram === (mode === 'tram'),
+      ).length;
+      why =
+        mode === 'train'
+          ? 'Build another station on track connected to this one to start a train line.'
+          : mode === 'tram' && !(c.access && this.state.net.segments.get(c.access.seg)?.tram)
+            ? 'The road in front has no tram track: lay track on it (Roads → Tram track).'
+            : stops < 2
+              ? `Place at least two ${mode} stops on ${mode === 'tram' ? 'tram track' : 'roads'} this depot can reach to start a line.`
+              : `No ${mode} stops this depot can reach${mode === 'tram' ? ' along the track' : ''} (another depot may be nearer).`;
+    }
     return {
+      mode,
       stops: line?.stops.length ?? 0,
       buses: line?.buses ?? 0,
-      loopMinutes: line ? Math.round(line.loopTime / 6) / 10 : 0,
-      riders: this.state.transit.riders.get(c.id) ?? 0,
-      full: (this.state.transit.load.get(c.id) ?? 1) < 0.95,
+      loopMinutes: line ? min(line.loopTime) : 0,
+      headwayMinutes: line ? min(line.headway) : 0,
+      capacity: line ? Math.round(line.capacityPerHour) : 0,
+      riders: this.state.transit.riders.get(key) ?? 0,
+      full: (this.state.transit.load.get(key) ?? 1) < 0.95,
+      here: mode === 'train' ? (this.stopUse.get(c.id) ?? 0) : 0,
+      why,
     };
   }
 
   /** Seats filled per school at the last hourly coverage pass (UI only; not saved). */
   schoolUse = new Map<number, number>();
+
+  /** Trucks a day each rail freight terminal loaded at the last assignment round (M20; not saved). */
+  railFreight = new Map<number, number>();
+
+  /** Riders a day getting on or off at each stop or station at the last assignment round (M20; not saved). */
+  stopUse = new Map<number, number>();
 
   /** What a garbage facility's inspector shows: its trucks, rounds and collection against production. */
   private garbageDetails(c: Civic): NonNullable<CivicDetails['garbage']> {

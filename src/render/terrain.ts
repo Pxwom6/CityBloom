@@ -14,6 +14,7 @@ import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SCENERY_MARGIN 
 import { Noise2D, clamp, smoothstep } from '../sim/terrain/noise';
 import type { ClientWorld } from '../client/world';
 import { PAL } from './palette';
+import { GRADE_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
 const CHUNKS = 4; // buildable terrain split into CHUNKS² meshes for culling
 const SCENERY_STEP = 32;
@@ -35,6 +36,8 @@ export class TerrainRenderer {
   readonly group = new Group();
   readonly material: MeshLambertMaterial;
   readonly uniforms: TerrainUniforms;
+  /** Season, snow and wet ground (M22); set by the renderer before the first frame. */
+  weather: WeatherUniforms | null = null;
   private noise = new Noise2D('terrain-colour');
   private tmp = new Color();
 
@@ -52,13 +55,14 @@ export class TerrainRenderer {
       uGridOn: { value: 0 },
     };
     this.material = new MeshLambertMaterial({ vertexColors: true });
+    this.material.customProgramCacheKey = () => 'terrain-weather';
     this.material.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, this.uniforms);
+      Object.assign(shader.uniforms, this.uniforms, this.weather);
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nvarying float vUp;')
         .replace(
           '#include <worldpos_vertex>',
-          '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+          '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -69,7 +73,14 @@ uniform sampler2D uOverlay;
 uniform float uOverlayOn;
 uniform float uTime;
 uniform float uMapSize;
-uniform float uGridOn;`,
+uniform float uGridOn;
+uniform float uSnow;
+uniform float uWet;
+uniform vec4 uSeason;
+uniform vec2 uGrade;
+varying float vUp;
+${SNOW_NOISE_GLSL}
+${GRADE_GLSL}`,
         )
         .replace(
           '#include <color_fragment>',
@@ -89,6 +100,24 @@ uniform float uGridOn;`,
   float inRange = step(-4.0, p.x) * step(p.x, uMapSize + 4.0) * step(-4.0, p.y) * step(p.y, uMapSize + 4.0);
   float border = (1.0 - smoothstep(0.8, 2.5, dEdge)) * inRange;
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.85), border * 0.6);
+  // Seasons (M22): grass takes the season's colour (fresh in spring, gold in autumn, dull in
+  // winter); wet ground darkens; snow settles on the flatter ground, patchy as it starts.
+  {
+    vec3 c0 = diffuseColor.rgb;
+    float grassy = clamp((c0.g - max(c0.r, c0.b)) * 8.0, 0.0, 1.0);
+    float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
+    vec3 spring = c0 * vec3(1.03, 1.13, 0.84) + vec3(0.015, 0.03, 0.0);
+    vec3 autumn = mix(c0, vec3(l0) * vec3(1.22, 1.12, 0.6), 0.55);
+    vec3 winter = mix(c0, vec3(l0) * vec3(1.1, 1.05, 0.9), 0.6);
+    vec3 seasonal = spring * uSeason.x + c0 * uSeason.y + autumn * uSeason.z + winter * uSeason.w;
+    diffuseColor.rgb = mix(c0, seasonal, grassy);
+    diffuseColor.rgb *= 1.0 - 0.12 * uWet * step(0.6, vWorldPos.y);
+    float n = wNoise(p * 0.045) * 0.6 + wNoise(p * 0.19) * 0.4;
+    float level = smoothstep(0.5, 0.88, vUp) * step(0.6, vWorldPos.y);
+    float cover = smoothstep(0.0, 0.45, uSnow * 1.6 - n * 0.75 + 0.05) * level;
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${SNOW_COLOUR} * (0.93 + 0.07 * n), cover);
+    diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
+  }
   // Data-map overlay.
   if (uOverlayOn > 0.5) {
     // Data maps: mute the scene, then paint the data on top.

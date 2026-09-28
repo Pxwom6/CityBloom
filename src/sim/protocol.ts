@@ -1,3 +1,4 @@
+import type { WeatherSummary } from './systems/weather';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
@@ -60,6 +61,8 @@ export interface CityStats {
   election: ElectionSummary | null;
   /** The scenario being played (M18), or null. */
   scenario: ScenarioSummary | null;
+  /** Season and weather (M22). */
+  weather: WeatherSummary;
 }
 
 export interface ElectionSummary {
@@ -109,6 +112,8 @@ export interface CivicDetails {
     loadPerRound: number;
     truckCapacity: number;
   } | null;
+  /** Public works depot (M22): ploughs at current funding, out now, reach (m) and road cleared. */
+  plough: { ploughs: number; out: number; reach: number; today: number; yesterday: number } | null;
   service: {
     kind: string;
     /** Vehicles the station can run at current funding, and how many are out now. */
@@ -120,8 +125,24 @@ export interface CivicDetails {
     seats: number;
     used: number;
   } | null;
-  /** Bus depots: its line. */
-  transit: { stops: number; buses: number; loopMinutes: number; riders: number; full: boolean } | null;
+  /**
+   * Bus and tram depots: their line; stations (M20): the train line they're on. `here` is riders a
+   * day getting on or off at a station; `why` says why there's no line yet.
+   */
+  transit: {
+    mode: 'bus' | 'tram' | 'train';
+    stops: number;
+    buses: number;
+    loopMinutes: number;
+    headwayMinutes: number;
+    capacity: number;
+    riders: number;
+    full: boolean;
+    here: number;
+    why: string | null;
+  } | null;
+  /** Rail freight terminals (M20): linked to the regional railway, and truckloads a day onto trains. */
+  railFreight: { linked: boolean; trucks: number } | null;
   refund: number;
   /** Mines and wells: units a day and the share of the deposit left; landmarks and hotels. */
   special:
@@ -249,6 +270,8 @@ export interface SegmentData {
   deck?: number[];
   /** One-way direction (M19), see RoadSegment.oneway. */
   oneway?: 1 | -1;
+  /** Tram track (M20). */
+  tram?: true;
 }
 export interface BlockData {
   id: number;
@@ -283,12 +306,15 @@ export interface Snapshot {
   stats: CityStats;
   net: { nodes: NodeData[]; segments: SegmentData[]; blocks: BlockData[] };
   highway: { outside: number; connect: number; segment: number };
+  railway: { outside: number; connect: number; segment: number } | null;
   buildings: BuildingData[];
   civics: CivicData[];
   vehicles: VehicleData[];
   traffic: TrafficData;
   transit: TransitData;
   disasters: DisasterData;
+  /** Districts (M21). */
+  districts: DistrictData;
 }
 
 export interface CivicData {
@@ -339,6 +365,9 @@ export interface FrameDiff {
   traffic?: TrafficData;
   transit?: TransitData;
   disasters?: DisasterData;
+  districts?: DistrictData;
+  /** Snow on roads (M22): segments whose snow changed, with their new depth (0 = clear). */
+  roadSnow?: [number, number][];
 }
 
 /** Disasters under way and what they've left: damaged or flooded roads, craters. */
@@ -361,7 +390,32 @@ export interface TrafficData {
 /** Bus stops and lines for the client. */
 export interface TransitData {
   stops: BusStop[];
-  lines: { depot: number; stops: number[]; legs: Leg[]; loopTime: number; buses: number; riders: number }[];
+  lines: {
+    /** Buses, trams or trains (M20). */
+    mode: 'bus' | 'tram' | 'train';
+    shuttle: boolean;
+    depot: number;
+    stops: number[];
+    /** Metres along `legs` to each stop (M20). */
+    stopDist: number[];
+    legs: Leg[];
+    /** Seconds round the loop (there and back for a shuttle), and between vehicles. */
+    loopTime: number;
+    headway: number;
+    /** Passengers an hour it can carry past any point. */
+    capacity: number;
+    buses: number;
+    riders: number;
+    /** Share of would-be riders who fit (1 unless it's full). */
+    load: number;
+  }[];
+  /** Riders a day getting on or off at each stop or station (M20), by stop or station id. */
+  use: [number, number][];
+  /**
+   * Rail freight (M20): each terminal loading trains, the truckloads it moves a day and the track
+   * from the regional railway's link (at the map edge) to its siding, for the visible freight trains.
+   */
+  freight: { id: number; trucks: number; legs: Leg[] }[];
 }
 
 export interface WorkerPerf {
@@ -384,7 +438,31 @@ export type Query =
   | { type: 'advisors' }
   | { type: 'thoughts'; count?: number }
   /** Coverage samples along every road for one service (for the coverage data maps). */
-  | { type: 'coverageRoads'; kind: ServiceKind };
+  | { type: 'coverageRoads'; kind: ServiceKind }
+  /** Districts' figures and budgets (M21). */
+  | { type: 'districts' };
+
+/** Districts (M21) for the client: each district, and the district of every raster cell. */
+export interface DistrictData {
+  list: { id: number; name: string; color: number; policies: string[] }[];
+  cells: Uint8Array;
+}
+
+/** One district's figures for its panel (M21); id 0 is everywhere outside a district. */
+export interface DistrictReport {
+  id: number;
+  population: number;
+  jobs: number;
+  workers: number;
+  happiness: number;
+  landValue: number;
+  buildings: number;
+  cells: number;
+  /** Monthly: taxes its homes and businesses pay, upkeep of the civic buildings in it, its policies. */
+  taxes: number;
+  upkeep: number;
+  policies: number;
+}
 
 export type MainToWorker =
   | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean }

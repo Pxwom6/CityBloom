@@ -81,7 +81,7 @@ export function buildSegmentRibbon(
         [a.x + ta.z * (m.offset + m.width / 2), a.z - ta.x * (m.offset + m.width / 2)],
         [b.x + tb.z * (m.offset + m.width / 2), b.z - tb.x * (m.offset + m.width / 2)],
         [b.x + tb.z * (m.offset - m.width / 2), b.z - tb.x * (m.offset - m.width / 2)],
-      ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03, z!]);
+      ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03 + (m.lift ?? 0), z!]);
       // Long solid lines: subdivide so they follow the terrain.
       if (e - s > 6) {
         const sub = Math.ceil((e - s) / 3);
@@ -97,7 +97,7 @@ export function buildSegmentRibbon(
             [pa.x + qa.z * (m.offset + m.width / 2), pa.z - qa.x * (m.offset + m.width / 2)],
             [pb.x + qb.z * (m.offset + m.width / 2), pb.z - qb.x * (m.offset + m.width / 2)],
             [pb.x + qb.z * (m.offset - m.width / 2), pb.z - qb.x * (m.offset - m.width / 2)],
-          ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03, z!]);
+          ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03 + (m.lift ?? 0), z!]);
           out.quad(q[0]!, q[1]!, q[2]!, q[3]!, m.color);
         }
       } else {
@@ -283,6 +283,8 @@ export interface Approach {
   /** Unit direction pointing away from the node. */
   dir: Vec2;
   style: RoadStyle;
+  /** The segment it belongs to. */
+  seg?: number;
 }
 
 /** Intersection polygon: asphalt fan through the approach edges plus sidewalk corner quads. */
@@ -290,7 +292,8 @@ export function buildJunction(out: GeoBuffer, centre: Vec2, approaches: Approach
   const list = [...approaches].sort((a, b) => Math.atan2(a.dir.z, a.dir.x) - Math.atan2(b.dir.z, b.dir.x));
   const lift = Math.max(...list.map((a) => a.style.lift));
   const walkLift = Math.max(...list.map((a) => a.style.sidewalkLift));
-  const asphalt = list[0]!.style.asphalt;
+  // A level crossing (M20) is paved like its road, not ballasted.
+  const asphalt = (list.find((a) => !a.style.rail) ?? list[0]!).style.asphalt;
   const edge = (a: Approach, sign: number, w: number): Vec2 => ({
     x: a.p.x + -a.dir.z * sign * w,
     z: a.p.z + a.dir.x * sign * w,
@@ -412,6 +415,244 @@ export function buildBridgeStructure(
         PIER,
         false,
       );
+    }
+  }
+}
+
+const TRAM_BAND = new Color('#6b6f74');
+const TRAM_RAIL = new Color('#b7bac0');
+const WIRE = new Color('#2f3439');
+const MAST = new Color('#5d636a');
+const GAUGE = 0.72;
+
+/** A thin strip `w` wide from a to b (points with heights), lying flat. */
+function flatStrip(out: GeoBuffer, a: number[], b: number[], w: number, col: Color): void {
+  const dx = b[0]! - a[0]!;
+  const dz = b[2]! - a[2]!;
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = (-dz / len) * (w / 2);
+  const nz = (dx / len) * (w / 2);
+  out.quad(
+    [a[0]! - nx, a[1]!, a[2]! - nz],
+    [a[0]! + nx, a[1]!, a[2]! + nz],
+    [b[0]! + nx, b[1]!, b[2]! + nz],
+    [b[0]! - nx, b[1]!, b[2]! - nz],
+    col,
+  );
+}
+
+/** An upright box (posts, masts), both windings so it shows from every side. */
+export function postBox(
+  out: GeoBuffer,
+  x: number,
+  z: number,
+  y0: number,
+  y1: number,
+  r: number,
+  col: Color,
+): void {
+  const c = [
+    [x - r, z - r],
+    [x + r, z - r],
+    [x + r, z + r],
+    [x - r, z + r],
+  ] as const;
+  for (let i = 0; i < 4; i++) {
+    const a = c[i]!;
+    const b = c[(i + 1) % 4]!;
+    const q = [
+      [a[0], y0, a[1]],
+      [b[0], y0, b[1]],
+      [b[0], y1, b[1]],
+      [a[0], y1, a[1]],
+    ];
+    out.quad(q[0]!, q[1]!, q[2]!, q[3]!, col, false);
+    out.quad(q[3]!, q[2]!, q[1]!, q[0]!, col, false);
+  }
+  out.quad(
+    [c[0][0], y1, c[0][1]],
+    [c[1][0], y1, c[1][1]],
+    [c[2][0], y1, c[2][1]],
+    [c[3][0], y1, c[3][1]],
+    col,
+  );
+}
+
+/** A beam between two points in the air (barrier arms, span wires), seen from both sides. */
+function beam(out: GeoBuffer, a: number[], b: number[], thick: number, col: Color): void {
+  const q = [
+    [a[0]!, a[1]! - thick / 2, a[2]!],
+    [b[0]!, b[1]! - thick / 2, b[2]!],
+    [b[0]!, b[1]! + thick / 2, b[2]!],
+    [a[0]!, a[1]! + thick / 2, a[2]!],
+  ];
+  out.quad(q[0]!, q[1]!, q[2]!, q[3]!, col, false);
+  out.quad(q[3]!, q[2]!, q[1]!, q[0]!, col, false);
+  flatStrip(out, [a[0]!, a[1]! + thick / 2, a[2]!], [b[0]!, b[1]! + thick / 2, b[2]!], thick, col);
+}
+
+/**
+ * Tram track along a road (M20): a darker band with two rails for each direction's track at
+ * `offset` from the centre line, the overhead wire above each and masts with span wires every 36 m.
+ */
+export function buildTramTrack(
+  out: GeoBuffer,
+  curve: Curve,
+  style: RoadStyle,
+  s0: number,
+  s1: number,
+  hs: HeightFn,
+  offset: number,
+): void {
+  if (s1 - s0 < 0.5) return;
+  const y = style.lift + 0.035;
+  const n = Math.max(1, Math.ceil((s1 - s0) / 3));
+  const at = (s: number, off: number, lift: number): number[] => {
+    const p = curve.pointAt(s);
+    const t = curve.tangentAt(s);
+    const x = p.x + t.z * off;
+    const z = p.z - t.x * off;
+    return [x, hs(x, z) + lift, z];
+  };
+  for (const c of [-offset, offset]) {
+    for (let i = 0; i < n; i++) {
+      const sa = s0 + ((s1 - s0) * i) / n;
+      const sb = s0 + ((s1 - s0) * (i + 1)) / n;
+      out.quad(at(sa, c - 1.25, y), at(sa, c + 1.25, y), at(sb, c + 1.25, y), at(sb, c - 1.25, y), TRAM_BAND);
+      for (const r of [-GAUGE, GAUGE])
+        out.quad(
+          at(sa, c + r - 0.07, y + 0.01),
+          at(sa, c + r + 0.07, y + 0.01),
+          at(sb, c + r + 0.07, y + 0.01),
+          at(sb, c + r - 0.07, y + 0.01),
+          TRAM_RAIL,
+        );
+      const wa = at(sa, c, 0);
+      const wb = at(sb, c, 0);
+      wa[1] = Math.max(wa[1]!, wb[1]!) + 5.8;
+      wb[1] = wa[1]!;
+      beam(out, wa, wb, 0.05, WIRE);
+    }
+  }
+  // Masts at the kerbs with a span wire across.
+  const edge = style.asphaltHalf + 0.5;
+  for (let s = s0 + 8; s < s1 - 4; s += 36) {
+    const l = at(s, -edge, 0);
+    const r = at(s, edge, 0);
+    const top = Math.max(l[1]!, r[1]!) + 6.3;
+    postBox(out, l[0]!, l[2]!, l[1]!, top, 0.12, MAST);
+    postBox(out, r[0]!, r[2]!, r[1]!, top, 0.12, MAST);
+    beam(out, [l[0]!, top - 0.4, l[2]!], [r[0]!, top - 0.4, r[2]!], 0.05, WIRE);
+  }
+}
+
+/**
+ * Tram track through a junction (M20): each pair of tracked approaches is joined along a curve
+ * through the middle, the track on each side meeting its continuation on the other.
+ */
+export function buildTramJunction(
+  out: GeoBuffer,
+  centre: Vec2,
+  pairs: [{ a: Approach; offset: number }, { a: Approach; offset: number }][],
+  h: HeightFn,
+): void {
+  const y = Math.max(...pairs.flatMap(([p, q]) => [p.a.style.lift, q.a.style.lift])) + 0.035;
+  const side = (a: Approach, sign: number, w: number): Vec2 => ({
+    x: a.p.x + -a.dir.z * sign * w,
+    z: a.p.z + a.dir.x * sign * w,
+  });
+  for (const [p, q] of pairs) {
+    for (const sign of [-1, 1]) {
+      for (const [r, w, col, lift] of [
+        [0, 2.5, TRAM_BAND, 0],
+        [-GAUGE, 0.14, TRAM_RAIL, 0.01],
+        [GAUGE, 0.14, TRAM_RAIL, 0.01],
+      ] as const) {
+        const a = side(p.a, sign, p.offset + r * sign);
+        const b = side(q.a, -sign, q.offset + r * sign);
+        // Quadratic through the node's centre line: control point where the approaches' lines meet.
+        const cx = (a.x + b.x) / 2 + (centre.x - (p.a.p.x + q.a.p.x) / 2);
+        const cz = (a.z + b.z) / 2 + (centre.z - (p.a.p.z + q.a.p.z) / 2);
+        const steps = 6;
+        let prev: number[] | null = null;
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps;
+          const x = (1 - t) * (1 - t) * a.x + 2 * t * (1 - t) * cx + t * t * b.x;
+          const z = (1 - t) * (1 - t) * a.z + 2 * t * (1 - t) * cz + t * t * b.z;
+          const pt = [x, h(x, z) + y + lift, z];
+          if (prev) flatStrip(out, prev, pt, w, col);
+          prev = pt;
+        }
+      }
+    }
+  }
+}
+
+const XBUCK = new Color('#f4f2ea');
+const XRED = new Color('#c8342c');
+const PANEL = new Color('#5f5a55');
+
+/**
+ * A level crossing (M20): the rails and a rubber panel across the road between the railway's two
+ * approaches, and at each road approach a crossbuck on a post with a red-and-white barrier arm
+ * raised beside it.
+ */
+export function buildLevelCrossing(
+  out: GeoBuffer,
+  rail: [Approach, Approach],
+  roads: Approach[],
+  trackOffset: number,
+  h: HeightFn,
+): void {
+  const [p, q] = rail;
+  const y = Math.max(...roads.map((r) => r.style.lift), p.style.lift) + 0.04;
+  const side = (a: Approach, sign: number, w: number): Vec2 => ({
+    x: a.p.x + -a.dir.z * sign * w,
+    z: a.p.z + a.dir.x * sign * w,
+  });
+  const v = (pt: Vec2, lift: number) => [pt.x, h(pt.x, pt.z) + lift, pt.z];
+  for (const c of [-trackOffset, trackOffset]) {
+    out.quad(
+      v(side(p, 1, c - 1.3), y),
+      v(side(p, 1, c + 1.3), y),
+      v(side(q, -1, c + 1.3), y),
+      v(side(q, -1, c - 1.3), y),
+      PANEL,
+    );
+    for (const r of [-GAUGE, GAUGE])
+      flatStrip(out, v(side(p, 1, c + r), y + 0.03), v(side(q, -1, c + r), y + 0.03), 0.14, TRAM_RAIL);
+  }
+  for (const a of roads) {
+    // On the road's right-hand verge, a little back from the track.
+    const back = 1.5;
+    const base = { x: a.p.x + a.dir.x * back, z: a.p.z + a.dir.z * back };
+    const n = { x: -a.dir.z, z: a.dir.x };
+    const off = a.style.asphaltHalf + 0.7;
+    const px = base.x - n.x * off;
+    const pz = base.z - n.z * off;
+    const gy = h(px, pz) + a.style.sidewalkLift;
+    postBox(out, px, pz, gy, gy + 3.1, 0.07, MAST);
+    // Crossbuck: two crossed boards facing the road.
+    const u = { x: n.x * 0.62, z: n.z * 0.62 };
+    const f = { x: px + a.dir.x * 0.1, z: pz + a.dir.z * 0.1 };
+    for (const s of [-1, 1])
+      beam(
+        out,
+        [f.x - u.x, gy + 2.7 - 0.45 * s, f.z - u.z],
+        [f.x + u.x, gy + 2.7 + 0.45 * s, f.z + u.z],
+        0.2,
+        XBUCK,
+      );
+    // Red lights box and a raised barrier arm (striped).
+    postBox(out, px + a.dir.x * 0.25, pz + a.dir.z * 0.25, gy + 1.8, gy + 2.1, 0.18, XRED);
+    const len = Math.min(a.style.asphaltHalf * 1.6, 7);
+    const segs = 6;
+    for (let k = 0; k < segs; k++) {
+      const t0 = k / segs;
+      const t1 = (k + 1) / segs;
+      // Raised almost upright, leaning over the verge.
+      const at = (t: number) => [px + n.x * 0.25 * t, gy + 1.2 + len * t, pz + n.z * 0.25 * t];
+      beam(out, at(t0), at(t1), 0.14, k % 2 ? XBUCK : XRED);
     }
   }
 }

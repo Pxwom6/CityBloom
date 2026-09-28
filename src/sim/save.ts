@@ -1,13 +1,15 @@
 import { emptyChronicle } from './systems/chronicle';
 import { newElectionState } from './systems/elections';
 import { MILESTONES } from '../data/progression';
-import { HEIGHT_RES } from '../data/world';
+import { GRID_RES, HEIGHT_RES, type MapPreset } from '../data/world';
+import { Rng } from './rng';
+import { initialWeather } from './systems/weather';
 import { GAME_TITLE } from '../config';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 20;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -170,6 +172,26 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   15: (s) => ({ ...s, scenario: null }),
   // v16 → v17 (M19): one-way roads (an optional direction on segments). Older roads are two-way.
   16: (s) => s,
+  // v17 → v18 (M20): railways, stations and trams. An older city has no regional rail link; it needs
+  // the terrain and the network to place, so `Sim.fromSave` lays one where it fits.
+  17: (s) => s,
+  // v18 → v19 (M21): districts. An older city has none.
+  18: (s) => ({
+    ...s,
+    districts: { $m: [] },
+    districtCells: encodeValue(new Uint8Array(GRID_RES * GRID_RES)),
+  }),
+  // v19 → v20 (M22): seasons and weather. An older city gets its preset's climate, a fair spell to
+  // start with, and its own weather dice.
+  19: (s) => {
+    const options = s.options as { seed: string; preset: MapPreset };
+    const rng = s.rng as Record<string, unknown>;
+    return {
+      ...s,
+      weather: s.weather ?? initialWeather(options.preset, s.tick as number),
+      rng: { ...rng, weather: rng.weather ?? Rng.fromSeed(`${options.seed}:weather`).getState() },
+    };
+  },
 };
 
 export function encodeState(state: SimState): unknown {

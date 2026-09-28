@@ -1,13 +1,15 @@
 import { requirementStatus, type RequirementContext } from '../data/projects';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { BUILDABLE_ROADS, ROAD_TYPES, type RoadTypeId } from '../data/roads';
+import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
-import { TRANSIT } from '../data/balance';
+import { TRAM, TRANSIT } from '../data/balance';
+import { POLICY, type PolicyId } from '../data/policies';
+import { districtColour } from '../client/districtView';
 import { MAPS } from '../client/overlay';
 import {
   IconBolt,
@@ -48,6 +50,8 @@ import {
   IconOneWay,
   IconDrawOneWay,
   IconRoundabout,
+  IconTram,
+  IconDistrict,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
 import { modKey } from '../client/platform';
@@ -111,6 +115,8 @@ const ROAD_ICON_COLOURS: Record<RoadTypeId, string> = {
   boulevard: '#3a3f46',
   motorway: '#2f343a',
   ramp: '#5a6068',
+  rail: '#7a6a58',
+  mainline: '#7a6a58',
   highway: '#333',
 };
 const ZONES: {
@@ -180,18 +186,29 @@ export function Toolbar() {
                 onClick={() => tools.road.setType(id)}
                 tip={{
                   title: rt.name,
-                  lines: [
-                    `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
-                    `${rt.lanes} lane${rt.lanes === 1 ? '' : 's'} · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
-                    rt.access
-                      ? `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`
-                      : 'No zoning or buildings along it',
-                    `Climbs up to ${Math.round(rt.maxGrade * 100)}\u00a0%: steeper ground is cut and filled (earthworks cost extra)`,
-                    rt.blurb,
-                    ...(locked
-                      ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
-                      : []),
-                  ],
+                  lines: isRail(id)
+                    ? [
+                        `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
+                        `Two tracks · trains up to ${rt.speed} km/h · no cars`,
+                        'Crosses dirt roads, streets and avenues at level crossings (drawn across the middle of a road); goes over boulevards and highways on a bridge',
+                        `Climbs up to ${(rt.maxGrade * 100).toFixed(1)}\u00a0% and curves no tighter than ${rt.minRadius ?? 0} m radius`,
+                        'Stations on connected track run a train line; a rail freight terminal needs track linked to the regional railway',
+                        ...(locked
+                          ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
+                          : []),
+                      ]
+                    : [
+                        `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
+                        `${rt.lanes} lane${rt.lanes === 1 ? '' : 's'} · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
+                        rt.access
+                          ? `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`
+                          : 'No zoning or buildings along it',
+                        `Climbs up to ${Math.round(rt.maxGrade * 100)}\u00a0%: steeper ground is cut and filled (earthworks cost extra)`,
+                        rt.blurb,
+                        ...(locked
+                          ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
+                          : []),
+                      ],
                 }}
               >
                 {locked ? (
@@ -234,16 +251,23 @@ export function Toolbar() {
                 'Roundabout',
                 'Click a junction (or a road) for a roundabout; drag out to size the ring. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
               ],
+              [
+                'tram',
+                IconTram,
+                'Tram track',
+                `Click a street, avenue or boulevard to lay tram track ($${TRAM.trackCost}/m); click again to take it up. Drag along roads to lay a whole line. A tram depot on the track runs trams round the tram stops.${pop < TRAM.unlockPopulation ? ` Unlocks at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents.` : ''}`,
+              ],
             ] as [RoadMode, typeof IconCurve, string, string][]
           ).map(([m, Icon, name, how]) => (
             <ToolButton
               key={m}
               id={`mode-${m}`}
               active={tools.road.mode === m}
+              disabled={m === 'tram' && pop < TRAM.unlockPopulation}
               onClick={() => tools.road.setMode(m)}
               tip={{ title: name, lines: [how], key: 'Tab' }}
             >
-              <Icon />
+              {m === 'tram' && pop < TRAM.unlockPopulation ? <IconLock /> : <Icon />}
             </ToolButton>
           ))}
           <ToolButton
@@ -274,6 +298,7 @@ export function Toolbar() {
           </ToolButton>
         </div>
       )}
+      {active === 'district' && <DistrictOptions />}
       {active === 'zone' && (
         <div class="subbar panel" data-testid="zone-options">
           {ZONES.map(({ z, name, Icon, key, cls, effect }) => (
@@ -349,8 +374,12 @@ export function Toolbar() {
           {(active === 'stop' || tools.place.category === 'transit') && (
             <ToolButton
               id="place-busstop"
-              active={active === 'stop'}
-              onClick={() => tools.use('stop')}
+              active={active === 'stop' && !tools.stop.tram}
+              onClick={() => {
+                tools.stop.tram = false;
+                tools.use('stop');
+                game.notify();
+              }}
               tip={{
                 title: 'Bus stop',
                 lines: [
@@ -361,6 +390,32 @@ export function Toolbar() {
               }}
             >
               <span class="tool-label">Bus stop</span>
+            </ToolButton>
+          )}
+          {(active === 'stop' || tools.place.category === 'transit') && (
+            <ToolButton
+              id="place-tramstop"
+              active={active === 'stop' && tools.stop.tram}
+              disabled={pop < TRAM.unlockPopulation}
+              onClick={() => {
+                tools.stop.tram = true;
+                tools.use('stop');
+                game.notify();
+              }}
+              tip={{
+                title: 'Tram stop',
+                lines: [
+                  `$${TRANSIT.stopCost} each · $${TRANSIT.stopUpkeep}/month`,
+                  'Click a road with tram track (lay it with the road tool’s Tram track mode).',
+                  `People walk a little further to a tram (up to ${Math.round(TRANSIT.walkRadius * TRAM.walkFactor)} m) and like the smoother ride; a tram depot on the track runs its trams through every stop they reach.`,
+                  ...(pop < TRAM.unlockPopulation
+                    ? [`Unlocks at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`]
+                    : []),
+                ],
+              }}
+            >
+              {pop < TRAM.unlockPopulation ? <IconLock /> : null}
+              <span class="tool-label">Tram stop</span>
             </ToolButton>
           )}
         </div>
@@ -400,6 +455,20 @@ export function Toolbar() {
         >
           <IconZone />
         </ToolButton>
+        <ToolButton
+          id="tool-district"
+          active={active === 'district'}
+          onClick={() => use('district')}
+          tip={{
+            title: 'Districts',
+            lines: [
+              'Paint named districts over the city, each with its own policies. The Districts panel shows their figures.',
+            ],
+            key: 'I',
+          }}
+        >
+          <IconDistrict />
+        </ToolButton>
         {(
           [
             ['power', IconBolt, 'Power', 'Power plants. Electricity flows along the roads.'],
@@ -409,7 +478,12 @@ export function Toolbar() {
               'Water and sewage',
               'Pumps bring water in; outflows or treatment plants take sewage away.',
             ],
-            ['garbage', IconTrash, 'Garbage', 'Trucks collect garbage from buildings in reach.'],
+            [
+              'garbage',
+              IconTrash,
+              'Garbage and snow',
+              'Trucks collect garbage from buildings in reach; a public works depot sends ploughs to clear snow.',
+            ],
             ['fire', IconFlame, 'Fire', 'Fire stations cover what their engines can reach quickly by road.'],
             ['police', IconShield, 'Police', 'Police stations deter crime and answer calls along the roads.'],
             ['health', IconHealth, 'Health', 'Clinics and hospitals treat the sick and run ambulances.'],
@@ -688,7 +762,9 @@ export function MapLegend() {
         : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
   return (
     <div
-      class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''}`}
+      class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''} ${
+        ['road', 'zone', 'place', 'stop', 'district'].includes(game.tools.activeId) ? 'above-subbar' : ''
+      }`}
       data-testid="map-legend"
     >
       <div class="legend-head">
@@ -702,11 +778,92 @@ export function MapLegend() {
         <span>{res.legend[0]}</span>
         <span>{res.legend[1]}</span>
       </div>
+      {game.overlay.district !== null && game.world.districts.get(game.overlay.district) && (
+        <div class="legend-note" data-testid="legend-district">
+          Only {game.world.districts.get(game.overlay.district)!.name}{' '}
+          <button class="btn small" onClick={() => game.overlay.setDistrict(null)}>
+            Whole city
+          </button>
+        </div>
+      )}
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
         </div>
       )}
+    </div>
+  );
+}
+
+/** The district tool's options (M21): the district to paint, a new one, the eraser, the brush. */
+function DistrictOptions() {
+  const game = useGameUpdates(200);
+  const t = game.tools.district;
+  const list = [...game.world.districts.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  return (
+    <div class="subbar panel" data-testid="district-options">
+      <ToolButton
+        id="district-new"
+        active={t.district === 'new'}
+        onClick={() => t.pick('new')}
+        tip={{
+          title: 'New district',
+          lines: ['Your next stroke starts a district, named after the neighbourhood you start it in.'],
+        }}
+      >
+        <span class="tool-label">+ New</span>
+      </ToolButton>
+      {list.map((d) => (
+        <ToolButton
+          key={d.id}
+          id={`district-pick-${d.id}`}
+          active={t.district === d.id}
+          onClick={() => t.pick(d.id)}
+          tip={{
+            title: d.name,
+            lines: [
+              d.policies.length
+                ? `Policies here: ${d.policies.map((p) => POLICY.get(p as PolicyId)?.name ?? p).join(', ')}`
+                : 'No policies of its own yet: set them in the Districts panel.',
+            ],
+          }}
+        >
+          <span class="district-swatch" style={{ background: districtColour(d.color) }} />
+          <span class="tool-label">{d.name}</span>
+        </ToolButton>
+      ))}
+      <ToolButton
+        id="district-erase"
+        active={t.district === 0}
+        onClick={() => t.pick(0)}
+        tip={{ title: 'Erase', lines: ['Take cells out of any district.'] }}
+      >
+        <IconEraser />
+      </ToolButton>
+      <span class="sep" />
+      <label class="brush">
+        Brush
+        <input
+          type="range"
+          min={16}
+          max={192}
+          step={16}
+          value={t.radius}
+          onInput={(e) => {
+            t.radius = Number((e.target as HTMLInputElement).value);
+            game.notify();
+          }}
+        />
+        <span>{t.radius} m</span>
+      </label>
+      <ToolButton
+        id="district-panel"
+        active={game.panel === 'districts'}
+        onClick={() => game.openPanel('districts')}
+        tip={{ title: 'Districts panel', lines: ['Figures, names and policies for each district.'] }}
+      >
+        <span class="tool-label">Panel</span>
+      </ToolButton>
     </div>
   );
 }

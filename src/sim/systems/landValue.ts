@@ -1,3 +1,4 @@
+import { DISTRICT } from '../../data/balance';
 import { GRID_CELL, GRID_RES, SHORE_HEIGHT } from '../../data/world';
 import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
@@ -127,6 +128,9 @@ export function updateLandValue(sim: Sim, instant = false): void {
   const svcWBlur = blur(svcW, 4);
   const trees = sim.state.trees;
   const setting = settingValue(sim, water);
+  // Heritage districts (M21): their charm adds a little to the value of the land in them.
+  const heritage = sim.districtPolicies().get('heritage');
+  const cells = sim.state.districtCells;
   for (let k = 0; k < n; k++) {
     const neighbour = wSum[k]! > 0 ? hSum[k]! / wSum[k]! - 0.5 : 0;
     let target = setting[k]! + 0.05 * (trees[k]! / 255) + 0.2 * neighbour;
@@ -137,6 +141,7 @@ export function updateLandValue(sim: Sim, instant = false): void {
     target -= 0.3 * Math.min(1, air[k]!);
     target -= 0.2 * Math.min(1, crime[k]!);
     if (svcWBlur[k]! > 0) target += 0.12 * (svcBlur[k]! / svcWBlur[k]!);
+    if (heritage?.has(cells[k]!)) target += DISTRICT.heritageLandValue;
     target = Math.max(0, Math.min(1, target));
     lv[k] = instant ? target : lv[k]! + (target - lv[k]!) * 0.25;
   }

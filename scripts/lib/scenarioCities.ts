@@ -1,6 +1,7 @@
 // Scenario starting cities (M18): each scenario's city, built headlessly with the balance tool's
 // mayor (plus the scenario's twist). scripts/scenarios.ts writes them to public/scenarios/.
 import { Sim } from '../../src/sim/sim';
+import { CIVIC } from '../../src/data/civic';
 import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DW, Player, type Vec2 } from './mayor';
@@ -90,6 +91,120 @@ export const RECIPES: Record<string, () => Sim> = {
         m.lines.grants = (m.lines.grants ?? 0) + m.lines.cheats;
         delete m.lines.cheats;
       }
+    return sim;
+  },
+  // Ironbridge (M20): homes by the highway, an ironworks estate a kilometre east along one avenue, so
+  // every load the works ships goes by truck through town and out along the highway link. The
+  // regional railway comes in at the west edge, unused; the county has put up a grant towards rail.
+  railhead: () => {
+    const sim = Sim.create({ seed: 'goods', preset: 'river', cityName: 'Ironbridge' });
+    const p = new Player('careful', sim);
+    sim.earn(300_000, 'grants');
+    const { x, z } = p.c;
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', { x, z }, { x: x + 1120, z });
+    for (let k = 1; k <= 7; k++) road('street', { x: x + k * 70, z: z - 230 }, { x: x + k * 70, z: z + 230 });
+    for (let k = 0; k < 5; k++)
+      road('street', { x: x + 800 + k * 70, z: z - 220 }, { x: x + 800 + k * 70, z: z + 220 });
+    zone('R', { x: x + 20, z: z - 125 }, { x: x + 530, z: z - 125 }, 105);
+    zone('R', { x: x + 20, z: z + 125 }, { x: x + 530, z: z + 125 }, 105);
+    zone('C', { x: x + 20, z }, { x: x + 560, z }, 16);
+    zone('I', { x: x + 790, z: z - 120 }, { x: x + 1100, z: z - 120 }, 110);
+    zone('I', { x: x + 790, z: z + 120 }, { x: x + 1100, z: z + 120 }, 110);
+    for (let m = 0; m < 8; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    sim.earn(100_000, 'grants');
+    return sim;
+  },
+  // Kingsmere (M21): the old market on the only road from the highway to the works and the estates
+  // beyond, so every lorry passes through it; the council has painted it as the Old Market district.
+  market: () => {
+    const sim = Sim.create({ seed: 'kings', preset: 'river', cityName: 'Kingsmere' });
+    const p = new Player('careful', sim);
+    sim.earn(200_000, 'grants');
+    const { x, z } = p.c;
+    const at = (dx: number, dz: number): Vec2 => ({ x: x + dx, z: z + dz });
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', at(0, 0), at(920, 0));
+    // The old town: shops on the avenue, homes up its two side streets to the north.
+    for (const dx of [120, 240]) road('street', at(dx, -260), at(dx, 90));
+    road('street', at(120, -260), at(240, -260));
+    for (const dx of [600, 680, 760, 840, 920]) road('street', at(dx, -520), at(dx, 200));
+    road('street', at(600, -520), at(920, -520));
+    road('street', at(600, -300), at(920, -300));
+    zone('C', at(60, 0), at(300, 0), 50);
+    zone('R', at(180, -80), at(180, -250), 90);
+    zone('I', at(580, 110), at(940, 110), 90);
+    zone('R', at(580, -160), at(940, -160), 120);
+    zone('R', at(580, -420), at(940, -420), 110);
+    sim.dispatch({ type: 'createDistrict', name: 'Old Market' });
+    sim.dispatch({
+      type: 'paintDistrict',
+      district: 1,
+      area: { kind: 'brush', points: [at(60, 0), at(300, 0)], radius: 100 },
+    });
+    sim.dispatch({
+      type: 'paintDistrict',
+      district: 1,
+      area: { kind: 'brush', points: [at(180, -100), at(180, -250)], radius: 100 },
+    });
+    for (let m = 0; m < 10; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    sim.earn(60_000, 'grants');
+    return sim;
+  },
+  // Frostvale (M22): an alpine town going into its first hard winter, with power for the autumn and
+  // no snow ploughs. Grown from March to the end of October.
+  winter: () => {
+    const sim = Sim.create({ seed: 'frost', preset: 'highlands', cityName: 'Frostvale' });
+    const p = new Player('careful', sim);
+    p.avoid = ['works'];
+    sim.earn(150_000, 'grants');
+    const { x, z } = p.c;
+    const at = (dx: number, dz: number): Vec2 => ({ x: x + dx, z: z + dz });
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', at(0, 0), at(900, 0));
+    for (const dx of [120, 240, 360, 480, 600, 720, 840]) road('street', at(dx, -220), at(dx, 220));
+    road('street', at(120, -220), at(840, -220));
+    road('street', at(120, 220), at(840, 220));
+    zone('C', at(100, 0), at(620, 0), 45);
+    zone('R', at(100, -130), at(620, -130), 85);
+    zone('R', at(100, 130), at(620, 130), 85);
+    zone('I', at(700, -130), at(860, -130), 90);
+    zone('R', at(700, 130), at(860, 130), 90);
+    for (let m = 0; m < 8; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    // Power for the autumn: coal and wind just over October's demand, nothing for winter's heating.
+    const output = (def: string) => CIVIC.get(def)!.output?.power ?? 0;
+    const target = sim.state.utilityStats.power.demand * 1.01;
+    for (const c of [...sim.state.civics.values()].filter((c) => CIVIC.get(c.def)?.category === 'power'))
+      sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    let supply = 0;
+    while (supply + output('coal') <= target && p.place('coal', 'industry')) supply += output('coal');
+    while (supply < target && p.place('wind', 'industry')) supply += output('wind');
+    sim.advance(TICKS_PER_HOUR * 2);
+    sim.earn(40_000, 'grants');
     return sim;
   },
   // Cinderford: a mill town along one avenue. Homes to the north; heavy industry and coal plants to

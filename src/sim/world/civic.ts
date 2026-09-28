@@ -2,7 +2,7 @@ import { scenarioForbids } from '../systems/scenario';
 import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
 import { MODULE } from '../../data/modules';
 import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
-import { GRADING, ROAD_RULES, ROAD_TYPES } from '../../data/roads';
+import { GRADING, ROAD_RULES, ROAD_TYPES, isRail } from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT, GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type CommandResult } from '../commands';
 import { pointRectDistance, rectsOverlap, type ORect, type Vec2 } from '../geom';
@@ -10,6 +10,7 @@ import type { Sim } from '../sim';
 import { clearTreesUnder, footprint as zonedFootprint } from './buildings';
 import { sendHome } from '../systems/vehicles';
 import { planPad, reshapeGround, type EarthPlan } from './earthworks';
+import { RAIL } from '../../data/balance';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -143,13 +144,34 @@ export function frontPoint(c: { x: number; z: number; angle: number; side: 1 | -
   return { x: c.x - a.x * (d.d / 2), z: c.z - a.z * (d.d / 2) };
 }
 
+/**
+ * The railway along the back of a building (a rail freight terminal's siding, M20), if one runs
+ * within RAIL.sidingReach of it.
+ */
+export function railSiding(
+  sim: Sim,
+  c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
+): { seg: number; s: number; x: number; z: number } | null {
+  const d = CIVIC.get(c.def);
+  if (!d) return null;
+  const away = awayDir(c.angle, c.side);
+  const back = { x: c.x + away.x * (d.d / 2), z: c.z + away.z * (d.d / 2) };
+  const hit = sim.net.nearestSegment(back, RAIL.sidingReach + 12, (id) => isRail(sim.net.segment(id).type));
+  if (!hit || hit.d > RAIL.sidingReach + sim.net.halfWidth(hit.seg)) return null;
+  return { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
+}
+
 /** Nearest road the front edge touches (within its corridor plus a few metres). */
 export function findAccess(
   sim: Sim,
   c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
 ): { seg: number; s: number } | null {
   const f = frontPoint(c);
-  const hit = sim.net.nearestSegment(f, 24, (id) => ROAD_TYPES[sim.net.segment(id).type].access);
+  // Stations face their railway (M20); everything else faces a road.
+  const rail = CIVIC.get(c.def)?.track === 'rail';
+  const hit = sim.net.nearestSegment(f, 24, (id) =>
+    rail ? isRail(sim.net.segment(id).type) : ROAD_TYPES[sim.net.segment(id).type].access,
+  );
   if (!hit) return null;
   if (hit.d > sim.net.halfWidth(hit.seg) + 4) return null;
   return { seg: hit.seg, s: hit.s };
@@ -247,7 +269,17 @@ export function checkPlacement(
     if (rectsOverlap(shrunk, civicRect(other))) return { ...res, reason: 'Overlaps another building' };
   }
   res.access = findAccess(sim, { x, z, angle, side, def: defId });
-  if (!res.access) return { ...res, reason: 'Must face a road' };
+  if (!res.access)
+    return { ...res, reason: def.track === 'rail' ? 'Must face a railway' : 'Must face a road' };
+  // A tram depot's trams leave along the tracked road it faces (M20).
+  if (def.tram && !sim.net.segment(res.access.seg).tram)
+    return { ...res, reason: 'Must face a road with tram track' };
+  // A rail freight terminal needs its railway along the back (M20).
+  if (def.railFreight && !railSiding(sim, { x, z, angle, side, def: defId }))
+    return {
+      ...res,
+      reason: `Needs a railway along its back (within ${RAIL.sidingReach} m) to load trains`,
+    };
   // Zoned buildings in the way are demolished.
   for (const id of sim.bldHash.queryPoint(x, z, rad + 40)) {
     const b = sim.state.buildings.get(id)!;

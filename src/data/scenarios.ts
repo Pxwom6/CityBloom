@@ -3,6 +3,7 @@
  * all hold at once as a month closes, limits on what the mayor may do, and a time limit. Winning
  * gives one star, and each of the two star rules met on the day adds another.
  */
+import type { WeatherIntensity } from './climate';
 
 /** What a goal measures. The first ten are the city history's monthly figures (M16). */
 export type GoalMeasure =
@@ -25,7 +26,15 @@ export type GoalMeasure =
   /** 1 once the big project `def` is open. */
   | 'project'
   /** 1 once an election has been won since the scenario began. */
-  | 'election';
+  | 'election'
+  /** Vehicles a day on the link to the regional highway: the estate's trucks (M20). */
+  | 'trucks'
+  /** Riders a day on train and tram lines (M20). */
+  | 'riders'
+  /** Vehicles a day on the busiest road in district `district` (M21). */
+  | 'districtTraffic'
+  /** Share of buildings with all the power they need, % (M22). */
+  | 'powered';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -34,6 +43,8 @@ export interface ScenarioGoal {
   max?: number;
   /** For `project`: which one. */
   def?: string;
+  /** For `districtTraffic`: the district's id in the starting city. */
+  district?: number;
   /** Month closes in a row the goal must hold (default 1). */
   hold?: number;
   /** As the goals panel says it. */
@@ -70,6 +81,8 @@ export interface ScenarioDef {
   limits: ScenarioLimit[];
   disasters: boolean;
   elections: boolean;
+  /** Its weather (M22); seasons on at normal intensity when absent. The player can't change it. */
+  weather?: { seasons: boolean; intensity: WeatherIntensity };
   /** Advice on the brief card. */
   hints: string[];
   /** Losing the next election loses the scenario. */
@@ -230,6 +243,115 @@ export const SCENARIOS: ScenarioDef[] = [
       'The traffic map shades junctions as discs: a red one is where cars queue to get through.',
       'A roundabout passes far more traffic than a plain junction: pick Roundabout in the road tool and click the crossroads, or click one of its roads.',
       'A city highway round the town, joined by ramps, takes trucks off the crossroads too.',
+    ],
+  },
+  {
+    id: 'railhead',
+    name: 'Railhead',
+    blurb: 'Every crate from the works goes by truck through town. Put it on the train.',
+    brief:
+      'Ironbridge grew up between the highway and its ironworks a kilometre east, and every load the ' +
+      'works sends out or takes in goes by truck down the one avenue and out along the highway link. ' +
+      'The regional railway comes in at the west edge, unused, and the county has put up $100,000 ' +
+      'towards using it. Get the link under 300 trucks a day for two months running, and keep 5,500 ' +
+      'residents.',
+    save: 'railhead.citybloom',
+    months: 10,
+    stars: [
+      { months: 4, label: 'Within 4 months' },
+      {
+        goal: { measure: 'riders', min: 600, label: '600 train or tram riders a day' },
+        label: '600 train or tram riders a day when you win',
+      },
+    ],
+    goals: [
+      {
+        measure: 'trucks',
+        max: 300,
+        hold: 2,
+        label: 'Under 300 trucks a day on the highway link, 2 months running',
+      },
+      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Lay a railway (Roads → Railway) from the regional rail link at the west edge out to the works; it climbs gently and curves wide, and crosses streets at level crossings.',
+      'A rail freight terminal faces a road with the railway along its back: industry nearer to it than to the highway ships by train.',
+      'Trams on the avenue or a train line with two stations take commuters off the roads too.',
+    ],
+  },
+  {
+    id: 'market',
+    name: 'Market Town',
+    blurb: 'Lorries rattle through the old market square. Give it back to the shoppers.',
+    brief:
+      'Kingsmere’s old market, its shops on the avenue and homes up the side streets, sits on the only ' +
+      'road from the highway to the works and the new estates beyond, and every lorry to and from the ' +
+      'works squeezes through it. The council has marked out Old Market as a district. Get the busiest ' +
+      'road in Old Market under 2,000 vehicles a day for two months running, and keep 4,500 residents.',
+    save: 'market.citybloom',
+    months: 12,
+    stars: [
+      { months: 4, label: 'Within 4 months' },
+      {
+        goal: { measure: 'approval', min: 65, label: '65 % approval' },
+        label: '65 % approval when you win',
+      },
+    ],
+    goals: [
+      {
+        measure: 'districtTraffic',
+        district: 1,
+        max: 2_000,
+        hold: 2,
+        label: 'Busiest road in Old Market under 2,000 vehicles a day, 2 months running',
+      },
+      { measure: 'population', min: 4_500, label: '4,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'The district tool (I) and the Districts panel show Old Market; the traffic map, filtered to it, shows where the load is.',
+      'A heavy-traffic ban on Old Market keeps lorries out only where they have another way round: build them one first.',
+    ],
+  },
+  {
+    id: 'winter',
+    name: 'Long Winter',
+    blurb: 'Keep an alpine town warm and moving through its first hard winter.',
+    brief:
+      'Frostvale grew up over a mild summer. Its power was built for the autumn, and nobody thought ' +
+      'about snow. Now it is November in the mountains: heating will push power demand up month by ' +
+      'month, and snow will slow every car until it melts or is ploughed. Keep every building powered ' +
+      'and the average commute under 1.88 minutes for three months running before the spring thaw.',
+    save: 'winter.citybloom',
+    months: 5,
+    stars: [
+      { months: 3, label: 'Won by the end of January' },
+      {
+        goal: { measure: 'approval', min: 60, label: '60 % approval' },
+        label: '60 % approval when you win',
+      },
+    ],
+    goals: [
+      { measure: 'powered', min: 99, hold: 3, label: 'Every building powered (99 %), 3 months running' },
+      {
+        measure: 'traffic',
+        max: 1.88,
+        hold: 3,
+        label: 'Average commute under 1.88 minutes, 3 months running',
+      },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    weather: { seasons: true, intensity: 2 },
+    hints: [
+      'The advisors say how much power midwinter will need; the date in the top bar shows the weather.',
+      'A public works depot (Garbage and snow) sends ploughs to clear the busiest roads first.',
     ],
   },
   {

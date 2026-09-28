@@ -28,11 +28,14 @@ import { EffectsRenderer } from './effects';
 import { RoadTint } from './roadTint';
 import { TrafficRenderer } from './traffic';
 import { TransitRenderer } from './transit';
+import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
 import { DisasterRenderer } from './disasters';
+import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
+import type { Season, WeatherKind } from '../data/climate';
 
 export interface RenderStats {
   calls: number;
@@ -60,6 +63,8 @@ export interface RenderStats {
     closures: number;
   };
   buses: number;
+  /** Trams, passenger trains and freight trains drawn (M20). */
+  rail: { tram: number; train: number; freight: number };
   smoke: number;
 }
 
@@ -67,9 +72,28 @@ export interface RenderStats {
 export interface PhotoView extends PhotoLook {
   /** Hour to light the scene at, or null for the city's own clock. */
   hour: number | null;
+  /** Season and weather to show (M22), or null for the city's own. */
+  season: Season | null;
+  weather: WeatherKind | null;
   /** Vertical field of view, degrees. */
   fov: number;
   zones: boolean;
+}
+
+/** Photo mode's season and weather over the city's own look (M22). */
+function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
+  const out: Partial<WeatherLook> = {};
+  if (p.season) {
+    out.season = pureSeason(p.season);
+    out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;
+  }
+  if (p.weather) {
+    out.kind = p.weather;
+    out.strength = p.weather === 'clear' ? 0 : 0.85;
+    out.wet = p.weather === 'rain' || p.weather === 'storm' ? 1 : p.weather === 'heat' ? 0 : base.wet;
+    if (p.weather === 'snow') out.snow = Math.max(0.7, out.snow ?? base.snow);
+  }
+  return out;
 }
 
 /** Normal vertical field of view, degrees. */
@@ -98,6 +122,8 @@ export class GameRenderer {
   /** Milliseconds per frame the visible cars take to move (smoothed). */
   trafficMs = 0;
   readonly transit: TransitRenderer;
+  /** Trams and trains (M20). */
+  readonly railVehicles: RailVehicleRenderer;
   readonly streetLights: StreetLightRenderer;
   readonly pedestrians: PedestrianRenderer;
   readonly tiltShift = new TiltShift();
@@ -107,6 +133,9 @@ export class GameRenderer {
   /** Helpers hidden for photo mode, and whether each was showing. */
   private hidden: { obj: { visible: boolean }; was: boolean }[] = [];
   readonly disasters: DisasterRenderer;
+  readonly weather: WeatherRenderer;
+  /** A look to show instead of the city's own weather (photo mode, dev scenes); null for the city's. */
+  weatherOverride: Partial<WeatherLook> | null = null;
   /** Tilt-shift blur when zoomed in (a player setting). */
   tiltShiftOn = false;
   /** Draw-distance setting: scales how far the fog sits. */
@@ -135,6 +164,7 @@ export class GameRenderer {
     night: 0,
     disasters: { dust: 0, funnels: 0, floods: 0, meteors: 0, craters: 0, closures: 0 },
     buses: 0,
+    rail: { tram: 0, train: 0, freight: 0 },
     smoke: 0,
   };
 
@@ -153,15 +183,20 @@ export class GameRenderer {
     this.renderer.info.autoReset = false;
 
     this.lighting = new Lighting(this.scene);
+    // Seasons and weather (M22): shared uniforms for the ground, roads, buildings and trees.
+    this.weather = new WeatherRenderer(world);
+    this.scene.add(this.weather.points);
     this.terrain = new TerrainRenderer(world);
+    this.terrain.weather = this.weather.uniforms;
     this.scene.add(this.terrain.group);
     this.water = new WaterRenderer();
     this.scene.add(this.water.mesh);
     this.roads = new RoadRenderer(world);
+    this.roads.useWeather(this.weather.uniforms);
     this.scene.add(this.roads.group);
     this.zones = new ZoneRenderer(world);
     this.scene.add(this.zones.group);
-    this.buildings = new BuildingRenderer(world, this.terrain.uniforms);
+    this.buildings = new BuildingRenderer(world, this.terrain.uniforms, this.weather.uniforms);
     this.scene.add(this.buildings.group);
     this.civics = new CivicRenderer(world, this.buildings.material);
     this.scene.add(this.civics.group);
@@ -183,6 +218,8 @@ export class GameRenderer {
     this.scene.add(this.disasters.group);
     this.transit = new TransitRenderer(world, (seg, s, x, z) => world.roadHeight(seg, s, x, z));
     this.scene.add(this.transit.group);
+    this.railVehicles = new RailVehicleRenderer(world, (seg, s, x, z) => world.roadHeight(seg, s, x, z));
+    this.scene.add(this.railVehicles.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
     this.routeTint = new RoadTint((x, z) => world.heightAt(x, z), 'sequential', 0.7);
@@ -190,6 +227,7 @@ export class GameRenderer {
     this.ghost = new GhostRenderer((x, z) => world.heightAt(x, z));
     this.scene.add(this.ghost.group);
     this.trees = new TreeRenderer(world);
+    this.trees.weather = this.weather.uniforms;
     this.trees.blocked = (x, z) =>
       this.roads.onRoad(x, z, 1.5) || this.onBuilding(x, z) || this.world.civicAt(x, z) !== null;
     this.trees.rebuildAll();
@@ -211,6 +249,7 @@ export class GameRenderer {
       [this.pedestrians.group, 'pedestrians'],
       [this.disasters.group, 'disasters'],
       [this.transit.group, 'transit'],
+      [this.railVehicles.group, 'railVehicles'],
       [this.streetLights.group, 'streetLights'],
       [this.routeTint.group, 'routeTint'],
       [this.ghost.group, 'ghost'],
@@ -263,13 +302,16 @@ export class GameRenderer {
   pick(
     clientX: number,
     clientY: number,
-  ): { kind: 'building' | 'civic' | 'car' | 'walker' | 'road'; id: number } | null {
+  ): { kind: 'building' | 'civic' | 'car' | 'walker' | 'road' | 'stop'; id: number } | null {
     const ground = this.controller.screenToGround(clientX, clientY);
     if (ground) {
       const walker = this.pedestrians.walkerAt(ground.x, ground.z, 1.4);
       if (walker) return { kind: 'walker', id: walker.id };
       const car = this.traffic.carAt(ground.x, ground.z, 3.5);
       if (car) return { kind: 'car', id: car.id };
+      // Bus and tram stops (M20), for their line.
+      const stop = this.transit.stopAt(ground.x, ground.z);
+      if (stop !== null) return { kind: 'stop', id: stop };
     }
     const cam = this.camera.position;
     const end = ground ?? cam.clone().add(new Vector3(0, -1, 0));
@@ -355,6 +397,7 @@ export class GameRenderer {
     this.fogScale = g.fogScale;
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
+    this.weather.drops = Math.round(9000 * g.crowd);
     this.traffic.maxCars = Math.round(360 * g.crowd);
   }
 
@@ -428,7 +471,24 @@ export class GameRenderer {
     const hour =
       this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : (p?.hour ?? hourOfDay(this.world.displayTick));
     const l = this.lighting;
+    const bufH0 = this.renderer.getDrawingBufferSize(this.tmpSize).y;
+    const pxm = bufH0 / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+    // Data maps are read in clear weather too.
+    const mapOn = this.terrain.uniforms.uOverlayOn.value > 0.5;
+    const base = worldLook(this.world);
+    const look = { ...base, ...(this.weatherOverride ?? {}), ...(p ? photoWeather(p, base) : {}) };
+    if (mapOn) Object.assign(look, { kind: 'clear', strength: 0 });
+    this.weather.update(
+      dt,
+      this.time,
+      look,
+      this.controller.target,
+      this.controller.current.distance,
+      pxm,
+      this.camera.position,
+    );
     l.update(hour);
+    l.applyWeather(this.weather);
     l.follow(
       this.camera.position,
       this.controller.target,
@@ -437,7 +497,11 @@ export class GameRenderer {
     );
     l.fog.near = Math.max(900, this.controller.current.distance * 1.1) * this.fogScale;
     l.fog.far = Math.max(7500, this.controller.current.distance * 3.5) * this.fogScale;
-    this.renderer.toneMappingExposure = 1.0 + l.night * 0.12;
+    // Fog, rain and snow close the view in; heat hazes the distance (M22).
+    const wf = this.weather.fog;
+    l.fog.near *= (1 - 0.92 * wf) * (1 - 0.3 * this.weather.haze);
+    l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
+    this.renderer.toneMappingExposure = (1.0 + l.night * 0.12) * (1 - 0.12 * this.weather.overcast);
     this.terrain.update(this.time);
     this.buildings.update(l.night);
     this.vehicles.update(this.world.displayTick);
@@ -449,6 +513,7 @@ export class GameRenderer {
     this.pedestrians.update(this.world.displayTick, this.controller.current);
     this.streetLights.update(l.night);
     this.transit.update(this.world.displayTick);
+    this.railVehicles.update(this.world.displayTick);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
@@ -498,6 +563,7 @@ export class GameRenderer {
       night: this.lighting.night,
       disasters: { ...this.disasters.stats },
       buses: this.transit.busCount,
+      rail: { ...this.railVehicles.counts },
       smoke: this.effects.smokeParticles,
     };
   }

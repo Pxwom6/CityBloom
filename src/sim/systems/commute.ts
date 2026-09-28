@@ -1,5 +1,7 @@
 import { POLICY_EFFECTS } from '../../data/policies';
-import { COMMUTE, DEMAND, TRAFFIC } from '../../data/balance';
+import { COMMUTE, DEMAND, DISTRICT, RAIL, TRAFFIC } from '../../data/balance';
+import { districtAt } from './districts';
+import { CIVIC } from '../../data/civic';
 import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
@@ -16,6 +18,7 @@ import {
 } from './traffic';
 import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
+import { railTerminals } from './rail';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -76,8 +79,11 @@ export class MatchRound {
   private readonly lines: ReturnType<Sim['lines']>;
   private readonly near: ReturnType<typeof stopsNearNodes>;
   private readonly riders: Float64Array;
+  /** Riders boarding or leaving at each stop of each line this round (M20). */
+  private readonly stopUse: Float64Array[];
   private readonly loadOf: number[];
-  private readonly freeRide: number;
+  /** Free buses in force somewhere (M21: across the city or in some districts). */
+  private readonly freeAnywhere: boolean;
   private readonly car = TRAFFIC.carShare / TRAFFIC.occupancy;
   private openJobs = 0;
   private openShops = 0;
@@ -127,9 +133,10 @@ export class MatchRound {
     this.lines = sim.lines();
     this.near = this.lines.length ? stopsNearNodes(sim, this.lines) : new Map();
     this.riders = new Float64Array(this.lines.length);
+    this.stopUse = this.lines.map((l) => new Float64Array(l.stops.length));
     this.loadOf = this.lines.map((l) => s.transit.load.get(l.depot) ?? 1);
     // Free buses: no fare makes the bus feel quicker in the choice between bus and car.
-    this.freeRide = sim.policy('freeTransit') ? POLICY_EFFECTS.freeTransitSeconds : 0;
+    this.freeAnywhere = sim.policyAnywhere('freeTransit');
     this.startAt = this.order.length ? s.cursors.matchRound % this.order.length : 0;
     if (this.order.length) s.cursors.matchRound++;
   }
@@ -161,6 +168,10 @@ export class MatchRound {
           shoppers: all.list.reduce((n, e) => n + (live(e.b) ? e.shoppers : 0), 0),
         };
     if (!o.list.length) return;
+    // Free buses where people live (the city, or their district: M21) make the bus feel quicker.
+    const at = sim.state.net.nodes.get(g.ids[node]!)!;
+    const freeRide =
+      this.freeAnywhere && sim.policyAt('freeTransit', at.x, at.z) ? POLICY_EFFECTS.freeTransitSeconds : 0;
     let workersLeft = o.workers;
     let shoppersLeft = o.shoppers;
     let employed = 0;
@@ -195,10 +206,14 @@ export class MatchRound {
             workersLeft -= take;
             employed += take;
             const bus = lines.length ? busTime(lines, near, node, u) : null;
-            const share =
-              bus && bus.line >= 0 ? busShare(t, bus.t - this.freeRide, this.loadOf[bus.line]!) : 0;
+            const share = bus && bus.line >= 0 ? busShare(t, bus.t - freeRide, this.loadOf[bus.line]!) : 0;
             commuteSum += take * (share > 0 ? share * bus!.t + (1 - share) * t : t);
-            if (share > 0) this.riders[bus!.line] += take * share * TRAFFIC.tripsPerWorker;
+            if (share > 0) {
+              const r = take * share * TRAFFIC.tripsPerWorker;
+              this.riders[bus!.line] += r;
+              this.stopUse[bus!.line]![bus!.a] += r;
+              this.stopUse[bus!.line]![bus!.b] += r;
+            }
             const n = take * TRAFFIC.tripsPerWorker * car * (1 - share);
             load(u, n);
             flows.addSegment(accessOf(sim, j.b)?.seg ?? -1, n);
@@ -289,12 +304,16 @@ export class MatchRound {
           sh.b.shop = capacity > 0 ? (this.customers.get(sh.b.id) ?? 0) / capacity : 0;
         }
       }
-    runFreight(sim, this.g, this.costs, flows, this.trips, this.jobsAt);
+    runFreight(sim, this.g, truckCosts(sim, this.g, this.costs), flows, this.trips, this.jobsAt);
     // Buses add a little traffic along their loops; full buses turn riders away next round.
     busTraffic(lines, (seg, pcu) => flows.addSegment(seg, pcu));
     s.transit.riders = new Map();
     s.transit.load = new Map();
+    sim.stopUse = new Map();
     lines.forEach((line, i) => {
+      line.stops.forEach((id, k) =>
+        sim.stopUse.set(id, (sim.stopUse.get(id) ?? 0) + Math.round(this.stopUse[i]![k]!)),
+      );
       const r = Math.round(this.riders[i]!);
       s.transit.riders.set(line.depot, r);
       const load = this.loadOf[i]!;
@@ -306,6 +325,30 @@ export class MatchRound {
     sim.tripSamples = this.trips.samples;
     sim.trafficChanged();
   }
+}
+
+/**
+ * Trucks' edge costs (M21): a road in a district with a heavy-traffic ban counts DISTRICT.truckBan
+ * times its time, so trucks go round where there's another way and still get in where there isn't.
+ */
+export function truckCosts(sim: Sim, g: RoadGraph, costs: Float64Array): Float64Array {
+  const banned = sim.districtPolicies().get('heavyTrafficBan');
+  if (!banned?.size) return costs;
+  const cells = sim.state.districtCells;
+  const out = costs.slice();
+  const inside = new Map<number, boolean>();
+  for (let k = 0; k < g.seg.length; k++) {
+    const sid = g.seg[k]!;
+    let b = inside.get(sid);
+    if (b === undefined) {
+      const c = sim.net.curve(sid);
+      const p = c.pointAt(c.length / 2);
+      b = banned.has(districtAt(cells, p.x, p.z));
+      inside.set(sid, b);
+    }
+    if (b) out[k] = costs[k]! * DISTRICT.truckBan;
+  }
+  return out;
 }
 
 /**
@@ -397,6 +440,8 @@ function runFreight(
     if (node !== undefined)
       loads.push({ node, amount: match.trips, id: match.civic.id, acc, purpose: 'event', cars: true });
   }
+  sim.railFreight = new Map();
+  railFreight(sim, g, costs, flows, trips, loads, hwNode);
   if (!loads.length) return;
   const reach = new Set<number>();
   dijkstra.run(
@@ -469,6 +514,99 @@ function runFreight(
     flows.accumulateReverse(dijkstra);
   }
   flows.addSegment(hw.segment, external * pcu + crowd);
+}
+
+/** An export, import or match-day crowd heading for the highway (see runFreight). */
+interface ExternalLoad {
+  node: number;
+  amount: number;
+  id: number;
+  acc: { seg: number; s: number } | null;
+  purpose: 'export' | 'import' | 'event';
+  cars?: boolean;
+}
+
+/**
+ * Rail freight (M20): exports and imports go through a rail freight terminal linked to the regional
+ * railway when the drive there plus loading (RAIL.freightHandling) beats the drive to the highway,
+ * up to what the terminal can load a day; trains take them on from there, off the roads. Takes those
+ * trucks out of `loads` and records each terminal's day in `sim.railFreight`.
+ */
+function railFreight(
+  sim: Sim,
+  g: RoadGraph,
+  costs: Float64Array,
+  flows: FlowAccumulator,
+  trips: TripReservoir,
+  loads: ExternalLoad[],
+  hwNode: number,
+): void {
+  const terminals = railTerminals(sim);
+  if (!terminals.length || !loads.some((l) => l.purpose !== 'event')) return;
+  const pcu = TRAFFIC.truckPcu;
+  // Drive times to the highway, to weigh against.
+  const toHw = new Float64Array(g.size).fill(Infinity);
+  dijkstra.run(
+    g,
+    [{ node: hwNode, cost: 0 }],
+    Infinity,
+    (u, cost) => {
+      toHw[u] = cost;
+      return true;
+    },
+    costs,
+    true,
+  );
+  for (const t of terminals) {
+    const acc = t.access!;
+    const seg = sim.state.net.segments.get(acc.seg);
+    if (!seg) continue;
+    const len = sim.net.curve(acc.seg).length;
+    const node = g.index.get(acc.s <= len / 2 ? seg.a : seg.b);
+    if (node === undefined) continue;
+    let left = CIVIC.get(t.def)!.railFreight!.trucks;
+    const at = new Float64Array(g.size).fill(Infinity);
+    dijkstra.run(
+      g,
+      [{ node, cost: RAIL.freightHandling }],
+      Infinity,
+      (u, cost) => {
+        at[u] = cost;
+        return true;
+      },
+      costs,
+      true,
+    );
+    let moved = 0;
+    for (const l of loads) {
+      if (l.purpose === 'event' || l.amount <= 0 || left <= 0) continue;
+      if (!(at[l.node]! < toHw[l.node]!)) continue;
+      const take = Math.min(l.amount, left);
+      left -= take;
+      l.amount -= take;
+      moved += take;
+      const units = take * pcu;
+      flows.addLoad(l.node, units);
+      flows.addSegment(l.acc?.seg ?? -1, units);
+      trips.offer(units, () => {
+        const legs = legsThroughTree(sim, g, dijkstra, acc, l.node, l.acc);
+        if (!legs.length) return null;
+        const out = [...legs].reverse().map((x) => ({ seg: x.seg, s0: x.s1, s1: x.s0 }));
+        return {
+          from: l.id,
+          to: t.id,
+          purpose: l.purpose,
+          legs: l.purpose === 'export' ? out : legs,
+          weight: units,
+        };
+      });
+    }
+    flows.accumulate(dijkstra);
+    flows.addSegment(acc.seg, moved * pcu);
+    sim.railFreight.set(t.id, Math.round(moved));
+  }
+  // Loads the terminals took in full drop out; the rest drive to the highway as before.
+  for (let i = loads.length - 1; i >= 0; i--) if (loads[i]!.amount <= 1e-9) loads.splice(i, 1);
 }
 
 /** A sampled trip from building `a` to building `b` (reached at node `u` of the current tree). */

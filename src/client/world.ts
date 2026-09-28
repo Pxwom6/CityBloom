@@ -10,16 +10,17 @@ import type {
   TransitData,
   VehicleData,
   DisasterData,
+  DistrictData,
 } from '../sim/protocol';
 import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '../sim/world/network';
 import { SpatialHash, type Box } from '../sim/world/spatial';
 import { CIVIC } from '../data/civic';
 import { deckAt, deckProfile, viaductDeck, type DeckProfile } from '../sim/world/bridge';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import { TRAFFIC, JUNCTION } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
-import { HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
+import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
 
 type Listener = () => void;
 
@@ -33,6 +34,9 @@ export interface NetChanges {
  * Read-only mirror of the sim state that rendering and UI need, updated from worker frames.
  * Nothing here mutates the simulation; all changes go through commands.
  */
+/** A railway segment type (M20). */
+const isRailType = (t: RoadTypeId | undefined): boolean => !!t && isRail(t);
+
 export class ClientWorld {
   readonly options: GameOptions;
   readonly gen: TerrainGen;
@@ -51,6 +55,8 @@ export class ClientWorld {
   /** Geometry-only view of the road network (curves, adjacency, cells, spatial queries). */
   readonly net: Network;
   readonly highway: Snapshot['highway'];
+  /** The regional railway's link at the west edge (M20), if it fitted. */
+  readonly railway: Snapshot['railway'];
   private netListeners: ((c: NetChanges) => void)[] = [];
   readonly buildings = new Map<number, BuildingData>();
   /** Spatial index of building footprints (by bounding circle). */
@@ -71,6 +77,10 @@ export class ClientWorld {
   /** Bus stops and lines. */
   stops = new Map<number, TransitData['stops'][number]>();
   lines: TransitData['lines'] = [];
+  /** Riders a day at each stop or station (M20). */
+  stopUse = new Map<number, number>();
+  /** Terminals loading freight trains and their track from the regional link (M20). */
+  freight: TransitData['freight'] = [];
   transitVersion = 0;
   /** Disasters under way, damaged and flooded roads, craters (bumped version on change). */
   disasters: DisasterData = { active: [], damaged: [], flooded: [], craters: [] };
@@ -93,6 +103,7 @@ export class ClientWorld {
     this.stats = snap.stats;
     this.displayTick = snap.stats.tick;
     this.highway = snap.highway;
+    this.railway = snap.railway;
     this.netState = { nodes: new Map(), segments: new Map(), blocks: new Map() };
     for (const n of snap.net.nodes) this.netState.nodes.set(n.id, { ...n });
     for (const sg of snap.net.segments) this.netState.segments.set(sg.id, { ...sg });
@@ -105,6 +116,29 @@ export class ClientWorld {
     this.setTraffic(snap.traffic);
     this.setTransit(snap.transit);
     this.setDisasters(snap.disasters);
+    this.setDistricts(snap.districts);
+  }
+
+  /** Bumped whenever snow on any road changes (M22); segments carry `snow`. */
+  roadSnowVersion = 0;
+
+  /** Districts (M21): each by id, and the district of every raster cell (0: none). */
+  districts = new Map<number, DistrictData['list'][number]>();
+  districtCells: Uint8Array = new Uint8Array(GRID_RES * GRID_RES);
+  districtsVersion = 0;
+
+  private setDistricts(d: DistrictData): void {
+    this.districts = new Map(d.list.map((x) => [x.id, x]));
+    this.districtCells = d.cells;
+    this.districtsVersion++;
+  }
+
+  /** The district at a point (0: none). */
+  districtAt(x: number, z: number): number {
+    const i = Math.floor(x / GRID_CELL);
+    const j = Math.floor(z / GRID_CELL);
+    if (i < 0 || j < 0 || i >= GRID_RES || j >= GRID_RES) return 0;
+    return this.districtCells[j * GRID_RES + i]!;
   }
 
   private setDisasters(d: DisasterData): void {
@@ -115,6 +149,8 @@ export class ClientWorld {
   private setTransit(t: TransitData): void {
     this.stops = new Map(t.stops.map((x) => [x.id, x]));
     this.lines = t.lines;
+    this.stopUse = new Map(t.use);
+    this.freight = t.freight;
     this.transitVersion++;
   }
 
@@ -150,7 +186,7 @@ export class ClientWorld {
         ? null
         : seg.deck
           ? viaductDeck(seg.deck, this.net.curve(segId), (x, z) => this.heightAt(x, z))
-          : deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z));
+          : deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z), ROAD_TYPES[seg.type].maxGrade);
       this.deckCache.set(segId, d);
     }
     return d;
@@ -178,11 +214,13 @@ export class ClientWorld {
   }
 
   /** What kind of junction a node is (mirrors junctionKind in the sim, M19). */
-  junctionKind(nodeId: number): 'none' | 'plain' | 'roundabout' {
+  junctionKind(nodeId: number): 'none' | 'plain' | 'roundabout' | 'crossing' {
     const node = this.netState.nodes.get(nodeId);
     if (!node) return 'none';
     if (node.roundabout) return 'roundabout';
     const segs = this.net.segmentsAt(nodeId);
+    const rail = segs.filter((id) => isRailType(this.netState.segments.get(id)?.type)).length;
+    if (rail) return rail < segs.length ? 'crossing' : 'none';
     if (segs.length < 3) return 'none';
     if (segs.some((id) => this.netState.segments.get(id)?.type === 'motorway')) return 'none';
     return 'plain';
@@ -208,10 +246,16 @@ export class ClientWorld {
     let cap = 0;
     let vol = 0;
     for (const id of this.net.segmentsAt(nodeId)) {
+      if (isRailType(this.netState.segments.get(id)?.type)) continue;
       cap += this.segCapacity(id);
       vol += this.traffic.get(id) ?? 0;
     }
-    const share2 = kind === 'roundabout' ? JUNCTION.roundaboutShare : JUNCTION.plainShare;
+    const share2 =
+      kind === 'roundabout'
+        ? JUNCTION.roundaboutShare
+        : kind === 'crossing'
+          ? JUNCTION.crossingShare
+          : JUNCTION.plainShare;
     return ((vol / 2) * TRAFFIC.peakShare * share) / ((cap / 2) * share2);
   }
 
@@ -434,6 +478,16 @@ export class ClientWorld {
     if (diff.transit) {
       this.setTransit(diff.transit);
       this.emit('transit');
+    }
+    if (diff.districts) this.setDistricts(diff.districts);
+    if (diff.roadSnow) {
+      for (const [id, v] of diff.roadSnow) {
+        const seg = this.netState.segments.get(id);
+        if (!seg) continue;
+        if (v > 0) seg.snow = v;
+        else delete seg.snow;
+      }
+      this.roadSnowVersion++;
     }
     if (diff.disasters) {
       this.setDisasters(diff.disasters);

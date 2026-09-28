@@ -1,12 +1,16 @@
-import { ROAD_TYPES } from '../../data/roads';
+import { ROAD_TYPES, isRail } from '../../data/roads';
+import { CLIMATES, WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
-import { EDUCATION } from '../../data/balance';
+import { EDUCATION, TRAM } from '../../data/balance';
+import { railTerminals } from './rail';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
+import { unploughable } from './ploughs';
+import { monthsToWinter, weatherUse } from './weather';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
@@ -389,9 +393,18 @@ export function advise(sim: Sim): Advice[] {
     const vc = segVC(sim, id, 1);
     if (vc > 1.1 && (!jam || vc > jam.vc)) jam = { seg: id, vc };
   }
+  // Trams and trains (M20): once unlocked, a line along a jammed corridor takes commuters off it.
+  const railOpen = sim.isUnlocked(TRAM.unlockPopulation);
+  const lines = sim.lines();
   if (jam) {
     const c = sim.net.curve(jam.seg);
     const seg = s.net.segments.get(jam.seg)!;
+    const transit =
+      railOpen && !lines.some((l) => l.mode !== 'bus')
+        ? ROAD_TYPES[seg.type].tram
+          ? ' Or lay tram track along it (Roads → Tram track) with a tram depot and stops, or run a train line beside it: riders leave their cars at home.'
+          : ' Or run a train line beside it: stations on connected track, and riders leave their cars at home.'
+        : '';
     // Big towns with a jammed main road: a city highway round it takes the through traffic (M19).
     const bypass =
       (seg.type === 'avenue' || seg.type === 'boulevard') &&
@@ -401,9 +414,11 @@ export function advise(sim: Sim): Advice[] {
       advisor: 'transport',
       severity: jam.vc > 1.6 ? 2 : 1,
       title: 'Rush-hour jam',
-      text: bypass
-        ? 'This road carries more than it can. A city highway round the town, joined by ramps, would take the through traffic off it; or build a parallel route, or run buses.'
-        : 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it. One-way pairs of streets carry a quarter more.',
+      text:
+        (bypass
+          ? 'This road carries more than it can. A city highway round the town, joined by ramps, would take the through traffic off it; or build a parallel route, or run buses.'
+          : 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it. One-way pairs of streets carry a quarter more.') +
+        transit,
       at: c.pointAt(c.length / 2),
       map: 'traffic',
     });
@@ -425,6 +440,45 @@ export function advise(sim: Sim): Advice[] {
       at: { x: n.x, z: n.z },
       map: 'traffic',
     });
+  }
+  // Rail freight (M20): a busy highway link with industry behind it, and no terminal yet.
+  const link = s.railway ? s.net.nodes.get(s.railway.connect) : undefined;
+  const hwLoad = s.traffic.get(s.highway.segment) ?? 0;
+  if (
+    link &&
+    railOpen &&
+    CIVIC.get('railfreight') &&
+    sim.isUnlocked(CIVIC.get('railfreight')!.unlockPopulation) &&
+    s.totals.iJobs > 400 &&
+    hwLoad > 1500 &&
+    !railTerminals(sim).length
+  )
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: 'Freight trucks crowd the highway link',
+      text: 'Industry sends all its goods out by truck. Lay a railway from the regional rail link here to a rail freight terminal near the factories: goods go on by train instead, off the roads.',
+      at: { x: link.x, z: link.z },
+      map: 'traffic',
+    });
+  // Stations and tram depots that run nothing yet (M20).
+  for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
+    const d = civicDef(c);
+    if (!(d.rail || d.tram) || !civicOnline(c)) continue;
+    const runs = lines.some((l) =>
+      d.rail ? l.mode === 'train' && l.stops.includes(c.id) : l.depot === c.id,
+    );
+    if (runs) continue;
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: d.rail ? 'A station with no trains' : 'A tram depot with no line',
+      text: d.rail
+        ? 'Trains run between two or more stations on connected track. Build another station along this railway.'
+        : 'Its trams need the road in front to have tram track, and at least two tram stops on track they can reach.',
+      at: { x: c.x, z: c.z },
+    });
+    break;
   }
   const commute = sim.avgCommute();
   if (commute > 20 * 60)
@@ -450,7 +504,11 @@ export function advise(sim: Sim): Advice[] {
       advisor: 'environment',
       severity: smoggy.length > homes.length * 0.2 ? 2 : 1,
       title: `Smog over ${plural(smoggy.length, 'home')}`,
-      text: 'Smoke from industry and power plants drifts downwind. Move them, switch to cleaner power, or plant parks in the way.',
+      text:
+        'Smoke from industry and power plants drifts downwind. Move them, switch to cleaner power, or plant parks in the way.' +
+        (sim.isUnlocked(5_000) && !sim.policyAnywhere('cleanIndustry')
+          ? ' Clean industry grants on a district painted over the works cost only its share.'
+          : ''),
       at: centre(smoggy.slice(0, 20)),
       map: 'airPollution',
     });
@@ -468,6 +526,14 @@ export function advise(sim: Sim): Advice[] {
       at: centre(abandoned.slice(0, 10) as Building[]),
       map: 'happiness',
     });
+  // Districts (M21): a bigger town can give its parts rules of their own.
+  if (pop >= 5_000 && !s.districts.size)
+    out.push({
+      advisor: 'planning',
+      severity: 0,
+      title: 'Parts of town with their own rules',
+      text: 'Paint districts (I) for the old centre, the works or a quiet suburb, then give each its own policies in the Districts panel: a heavy-traffic ban round the homes, a heritage district, recycling where it pays.',
+    });
   const d = s.demand;
   const names = { R: 'homes', C: 'shops and offices', I: 'industry' } as const;
   for (const z of ['R', 'C', 'I'] as const)
@@ -478,5 +544,79 @@ export function advise(sim: Sim): Advice[] {
         title: `The city wants more ${names[z]}`,
         text: `Zone more ${z === 'R' ? 'residential' : z === 'C' ? 'commercial' : 'industrial'} land along roads with access to the highway.`,
       });
+  out.push(...weatherAdvice(sim));
   return out.sort((a, b) => b.severity - a.severity);
+}
+
+/**
+ * Seasons and weather (M22): heating headroom as winter nears, snow the ploughs aren't clearing, a
+ * dry spell on tight water, and a river near its banks.
+ */
+function weatherAdvice(sim: Sim): Advice[] {
+  const s = sim.state;
+  const w = s.weather;
+  const out: Advice[] = [];
+  if (!s.totals.population) return out;
+  const power = s.utilityStats.power;
+  const toWinter = monthsToWinter(w, s.tick);
+  if (toWinter > 0 && toWinter <= 3 && power.demand > 0) {
+    // Demand in the coldest month, from today's with the heating that month would bring.
+    const coldest = Math.min(...CLIMATES[w.climate].temps);
+    const k = weatherUse({ ...w, mean: coldest }).power.R / weatherUse(w).power.R;
+    const need = power.demand * k;
+    if (power.supply < need * 1.05)
+      out.push({
+        advisor: 'utilities',
+        severity: power.supply < need * 0.95 ? 2 : 1,
+        title: 'Winter will need more power',
+        text: `Heating will lift demand to about ${Math.round(need).toLocaleString('en-US')} MW by midwinter; we make ${Math.round(power.supply).toLocaleString('en-US')} MW. Build more power before ${toWinter === 1 ? 'next month' : `${toWinter} months are out`}.`,
+        map: 'power',
+      });
+  }
+  let snowy = 0;
+  let total = 0;
+  for (const seg of s.net.segments.values()) {
+    if (isRail(seg.type)) continue;
+    const len = sim.net.curve(seg.id).length;
+    total += len;
+    if ((seg.snow ?? 0) >= 0.3) snowy += len;
+  }
+  const share = total ? snowy / total : 0;
+  if (share > 0.2) {
+    const depots = [...s.civics.values()].filter((c) => civicDef(c).plough && civicOnline(c));
+    if (!depots.length)
+      out.push({
+        advisor: 'transport',
+        severity: share > 0.5 ? 2 : 1,
+        title: 'Snow is slowing traffic',
+        text: `Deep snow lies on ${Math.round(share * 100)} % of the roads and it stays until it melts. A public works depot (Garbage and snow) sends ploughs to clear it, busiest roads first.`,
+      });
+    else {
+      const beyond = unploughable(sim);
+      if (beyond > 0.3)
+        out.push({
+          advisor: 'transport',
+          severity: 1,
+          title: "Snow beyond the ploughs' reach",
+          text: `${Math.round(beyond * 100)} % of the snowy roads are more than 3 km of road from a public works depot. Another depot nearer them would clear them.`,
+        });
+    }
+  }
+  const water = s.utilityStats.water;
+  if (w.dryness > 0.35 && water.demand > 0 && water.supply < water.demand * 1.1)
+    out.push({
+      advisor: 'utilities',
+      severity: water.supply < water.demand ? 2 : 1,
+      title: 'A dry spell',
+      text: `The land is drying out: groundwater pumps give ${Math.round(WEATHER.droughtPump * w.dryness * 100)} % less. A river pump doesn't mind the drought.`,
+      map: 'water',
+    });
+  if (s.options.disasters && w.river > WEATHER.floodRise * 0.75)
+    out.push({
+      advisor: 'safety',
+      severity: w.river > WEATHER.floodRise ? 2 : 1,
+      title: 'The river is high',
+      text: `Rain has lifted the river ${w.river.toFixed(1)} m above normal. ${w.river > WEATHER.floodRise ? 'Homes by the water may flood.' : 'Much more and homes by the water may flood.'}`,
+    });
+  return out;
 }

@@ -1,10 +1,13 @@
 import { CIVIC, UTILITIES, UTILITY_USE, type Utility } from '../../data/civic';
+import { WEATHER } from '../../data/climate';
 import { GRID_CELL, GRID_RES } from '../../data/world';
+import { ZONE_C, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline, type Civic } from '../world/civic';
 import { attachmentOf } from './commute';
 import { Dijkstra } from './graph';
+import { pumpShare, solarShare, weatherUse } from './weather';
 
 export interface UtilityStat {
   supply: number;
@@ -37,12 +40,24 @@ export function civicOutput(sim: Sim, c: Civic, u: Utility): number {
     const i = Math.min(GRID_RES - 1, Math.max(0, Math.floor(c.x / GRID_CELL)));
     const j = Math.min(GRID_RES - 1, Math.max(0, Math.floor(c.z / GRID_CELL)));
     out *= 0.3 + 0.7 * (sim.terrain.groundwater[j * GRID_RES + i]! / 255);
+    // A dry spell lowers the water table (M22).
+    out *= pumpShare(sim.state.weather);
   }
+  // Sun and wind follow the weather (M22).
+  if (u === 'power' && def.id === 'solar') out *= solarShare(sim.state.weather, sim.state.tick);
+  if (u === 'power' && def.id === 'wind' && sim.state.weather.kind === 'storm') out *= WEATHER.windStorm;
   return out * sim.fundingEff(def.dept);
 }
 
-export function buildingUse(b: Building, u: Utility): number {
-  return b.cap * UTILITY_USE[u][b.zone]!;
+/**
+ * A building's use of a utility. `k` scales it for the weather (M22: heating and cooling power,
+ * water in the heat) — `weatherUse(sim.state.weather)` — and is 1 when left out.
+ */
+export function buildingUse(b: Building, u: Utility, k?: ReturnType<typeof weatherUse>): number {
+  const base = b.cap * UTILITY_USE[u][b.zone]!;
+  if (!k || u === 'sewage') return base;
+  const z = b.zone === ZONE_R ? 'R' : b.zone === ZONE_C ? 'C' : 'I';
+  return base * k[u][z];
 }
 
 /**
@@ -53,6 +68,7 @@ export function updateUtilities(sim: Sim): void {
   const s = sim.state;
   const g = sim.graph();
   const stats = emptyUtilityStats();
+  const use = weatherUse(s.weather);
   const consumers: { b: Building; node: number; offset: number }[] = [];
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Active) continue;
@@ -102,7 +118,7 @@ export function updateUtilities(sim: Sim): void {
       .sort((a, b) => a.comp - b.comp || a.d - b.d || a.b.id - b.b.id);
     const left = new Map(compCap);
     for (const e of order) {
-      const need = buildingUse(e.b, u);
+      const need = buildingUse(e.b, u, use);
       stats[u].demand += need;
       let served = 0;
       if (Number.isFinite(e.d)) {

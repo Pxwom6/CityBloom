@@ -10,7 +10,14 @@ const all = [...src.matchAll(/^ {4}id: '([a-z]+)',$/gm)].map((m) => m[1]);
 const ids = (process.argv[2] ?? all.join(',')).split(',');
 const hour = Number(process.argv[3] ?? 15.5);
 // Views that need more than the town's middle: the resort looks out to sea.
-const VIEW = { resort: { x: 1150, yaw: 5.2, distance: 900 } };
+const LOOK = {
+  winter: { season: [0, 0, 0, 1], kind: 'snow', strength: 0.6, snow: 0.75, wet: 0.2 },
+};
+const VIEW = {
+  resort: { x: 1150, yaw: 5.2, distance: 900 },
+  // Market Town: the old market on the avenue in front, the works and estates behind it.
+  market: { x: 330, z: 905, yaw: 0.55, distance: 460, tilt: 0.22 },
+};
 const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4197', '--strictPort'], {
   stdio: 'ignore',
   detached: true,
@@ -40,6 +47,8 @@ try {
       return { x, z, distance: Math.min(1400, Math.max(260, span * 0.85)), yaw: 0.55, tilt: 0.2 };
     });
     Object.assign(pose, VIEW[id] ?? {});
+    // Some cards show their season (M22): Long Winter under snow.
+    if (LOOK[id]) await page.evaluate((l) => window.__game.setWeatherLook(l), LOOK[id]);
     await page.evaluate((p) => window.__game.setCamera(p), pose);
     await page.evaluate((h) => window.__game.setPhoto?.({ hour: h }), hour).catch(() => {});
     await page.evaluate(() => window.__game.waitFrames(3));

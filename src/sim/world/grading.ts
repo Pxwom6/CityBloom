@@ -65,6 +65,8 @@ export function gradeProfile(
   pinA: number | null,
   pinB: number | null,
   limits: readonly GradeLimit[] = [],
+  /** Ends that carry on into the next piece of the same stroke, where a deck may run on (M20). */
+  joins: readonly [boolean, boolean] = [false, false],
 ): GradeProfile {
   const step = GRADING.step;
   const L = curve.length;
@@ -162,7 +164,7 @@ export function gradeProfile(
       };
       return out;
     }
-    if (deck[i] && (i === 0 || i === n - 1)) {
+    if (deck[i] && ((i === 0 && !joins[0]) || (i === n - 1 && !joins[1]))) {
       out.fail = { reason: 'Too close to the road it passes over: end it further away', at: i };
       return out;
     }

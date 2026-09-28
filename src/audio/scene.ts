@@ -1,3 +1,4 @@
+import type { WeatherLook } from '../render/weather';
 import type { ClientWorld } from '../client/world';
 import type { GameRenderer } from '../render/renderer';
 import { GRID_CELL, GRID_RES } from '../data/world';
@@ -66,5 +67,16 @@ export function ambientScene(world: ClientWorld, renderer: GameRenderer, paused:
     trees: n ? sum / n : 0,
     night: renderer.lighting.night,
     paused,
+    // Weather as it looks on screen (M22).
+    ...weatherSounds(renderer.weather.look),
+  };
+}
+
+function weatherSounds(l: WeatherLook): { rain: number; gale: number; snow: number } {
+  const st = l.kind === 'clear' ? 0 : l.strength;
+  return {
+    rain: l.kind === 'rain' || l.kind === 'storm' ? st : 0,
+    gale: l.kind === 'storm' ? st : 0,
+    snow: l.kind === 'snow' ? st : 0,
   };
 }

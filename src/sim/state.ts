@@ -17,6 +17,8 @@ import type { ScenarioState } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
+import type { District } from './systems/districts';
+import type { WeatherState } from './systems/weather';
 
 export type { Difficulty };
 
@@ -44,7 +46,7 @@ export const DEFAULT_OPTIONS: GameOptions = {
   terrain: TERRAIN_VERSION,
 };
 
-export const RNG_STREAMS = ['world', 'growth', 'events', 'traffic', 'disasters'] as const;
+export const RNG_STREAMS = ['world', 'growth', 'events', 'traffic', 'disasters', 'weather'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 /**
@@ -65,6 +67,11 @@ export interface SimState {
   net: NetworkState;
   /** The regional highway: off-map node and the connection node inside the map. */
   highway: { outside: number; connect: number; segment: number };
+  /**
+   * The regional railway (M20): off-map node, the connection node inside the map, and the segment
+   * between them. Placed on the west edge near the highway where there's room; null if none fits.
+   */
+  railway: { outside: number; connect: number; segment: number } | null;
   buildings: Map<number, Building>;
   totals: CityTotals;
   demand: DemandState;
@@ -119,4 +126,9 @@ export interface SimState {
   election: ElectionState;
   /** The scenario this city is playing (M18), or null. */
   scenario: ScenarioState | null;
+  /** Districts (M21) by id, and the district each raster cell (GRID_RES²) belongs to (0: none). */
+  districts: Map<number, District>;
+  districtCells: Uint8Array;
+  /** Seasons and weather (M22): the spell now, temperature, snow, wet ground, river and dryness. */
+  weather: WeatherState;
 }

@@ -9,6 +9,11 @@ export const MONTHS_PER_YEAR = 12;
 export const TICKS_PER_YEAR = TICKS_PER_MONTH * MONTHS_PER_YEAR;
 /** The game starts at 07:00 on the first month so the first view is in daylight. */
 export const START_HOUR = 7;
+/**
+ * Calendar month a city is founded in (M22): March, so a new city's first season is spring and
+ * winter comes once it can afford ploughs. Year 1 runs from March to February.
+ */
+export const START_MONTH = 2;
 export const START_TICK_OFFSET = START_HOUR * TICKS_PER_HOUR;
 
 /** Ticks per real second at each speed (index = speed setting; 0 = paused). */
@@ -47,12 +52,22 @@ export function dateOf(tick: number): GameDate {
   const inDay = t - totalMonths * TICKS_PER_MONTH;
   return {
     year: Math.floor(totalMonths / MONTHS_PER_YEAR) + 1,
-    month: totalMonths % MONTHS_PER_YEAR,
+    month: calendarMonth(totalMonths),
     hour: Math.floor(inDay / TICKS_PER_HOUR),
     minute: inDay % TICKS_PER_HOUR,
     dayFraction: inDay / TICKS_PER_MONTH,
     totalMonths,
   };
+}
+
+/** Calendar month (0 = Jan) of the `k`th month since the city was founded. */
+export function calendarMonth(k: number): number {
+  return (((k + START_MONTH) % MONTHS_PER_YEAR) + MONTHS_PER_YEAR) % MONTHS_PER_YEAR;
+}
+
+/** "Mar, Year 1" for the `k`th month since the city was founded. */
+export function monthLabel(k: number): string {
+  return `${MONTH_NAMES[calendarMonth(k)]}, Year ${Math.floor(k / MONTHS_PER_YEAR) + 1}`;
 }
 
 /** Time of day in hours [0, 24) for a possibly fractional tick. */

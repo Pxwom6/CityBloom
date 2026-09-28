@@ -87,7 +87,7 @@ export function dispatch(
 /** Hourly chance a building catches fire by itself. */
 export function fireRisk(sim: Sim, b: Building): number {
   let p = SERVICES.fireBase * (1 - SERVICES.fireCoverageCut * b.covFire);
-  if (sim.policy('fireSafety')) p *= POLICY_EFFECTS.fireSafety;
+  if (sim.policyAt('fireSafety', b.x, b.z)) p *= POLICY_EFFECTS.fireSafety;
   if (b.state === BState.Abandoned) p *= 4;
   if (b.zone === ZONE_I) p *= 1.5;
   return p;
@@ -113,7 +113,7 @@ export function crimeRisk(sim: Sim, b: Building): number {
   const workers = Math.max(1, b.seekers);
   const unemp = b.zone === ZONE_R ? Math.max(0, b.seekers - b.employed) / workers : 0;
   return (
-    (sim.policy('neighbourhoodWatch') ? POLICY_EFFECTS.neighbourhoodWatch : 1) *
+    (sim.policyAt('neighbourhoodWatch', b.x, b.z) ? POLICY_EFFECTS.neighbourhoodWatch : 1) *
     SERVICES.crimeBase *
     (1 + 2 * unemp + (b.wealth === 0 ? 0.5 : 0) + 1.5 * Math.max(0, 0.5 - b.happiness)) *
     (1 - SERVICES.crimePoliceCut * b.covPolice) *

@@ -245,7 +245,8 @@ describe('bulldoze and undo', () => {
     );
     // Cells under the crossing road were lost when it was built; everything else comes back.
     expect(zonedAfter).toBeGreaterThan(zonedBefore - 48);
-    expect(sim.state.net.nodes.size).toBe(3);
+    // The highway's two nodes and the road's end, and the regional railway's two (M20).
+    expect(sim.state.net.nodes.size).toBe(3 + 2);
     expect(overlappingValidCells(sim)).toBe(0);
     expect(hashBefore).toBeTruthy();
   });

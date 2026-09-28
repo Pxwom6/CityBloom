@@ -87,6 +87,12 @@ export const JUNCTION = {
   roundaboutDelay: 4,
   /** Seconds of queue added per unit of overload, as for roads. */
   queueSeconds: 300,
+  /**
+   * Level crossings (M20): the road through one keeps this share of its capacity (the barriers
+   * come down for trains), and a car waits this long on average.
+   */
+  crossingShare: 0.8,
+  crossingDelay: 8,
   /** Roundabouts: the ring's centre-line radius, its carriageway width, and the price per metre. */
   minRadius: 12,
   maxRadius: 40,
@@ -151,6 +157,62 @@ export const TRANSIT = {
   carPenalty: 300,
   /** A bus counts as this many cars on the road. */
   busPcu: 2.5,
+};
+
+/** Rail (M20): trains between stations, and later trams. */
+export const RAIL = {
+  /** Seconds a train stands at each station. */
+  dwell: 40,
+  /** A train's average speed as a share of the line speed (stops, speeding up, slowing down). */
+  speedShare: 0.7,
+  /** A station draws riders from this many times the bus stop walking distance. */
+  walkFactor: 1.6,
+  /** Seconds a train ride is worth over the same time on a bus when people choose (comfort). */
+  trainBonus: 150,
+  /** Trains run no closer than this many seconds apart; a short line leaves the rest in the sidings. */
+  minHeadway: 300,
+  /**
+   * Rail freight (M20): seconds of loading added to the drive to a freight terminal before it is weighed
+   * against the drive to the highway (the journey beyond the map takes as long either way); and how far
+   * from the terminal's back its railway may run, metres.
+   */
+  freightHandling: 20,
+  sidingReach: 30,
+};
+
+/** Trams (M20): track laid along streets, avenues and boulevards, a depot and tram stops. */
+export const TRAM = {
+  /** Laying track, per metre of road, and its upkeep per metre a month (paid with the roads). */
+  trackCost: 45,
+  trackUpkeep: 0.04,
+  unlockPopulation: 5_000,
+  /** Seconds a tram spends at each stop. */
+  dwell: 25,
+  /**
+   * Trams share the road with cars but have right of way at lights: this share of the road's
+   * congestion delay slows them.
+   */
+  trafficShare: 0.5,
+  /** A tram stop draws riders from this many times the bus stop walking distance. */
+  walkFactor: 1.15,
+  /** Seconds a tram ride is worth over the same time on a bus when people choose (comfort). */
+  bonus: 60,
+  /** A tram counts as this many cars on the road (it keeps to its own lane at junctions). */
+  pcu: 2,
+  /** Trams run no closer than this many seconds apart; a short line leaves the rest in the depot. */
+  minHeadway: 120,
+};
+
+/** Districts (M21). */
+export const DISTRICT = {
+  /** Most districts a city can have, colours in the palette, and the longest name. */
+  limit: 24,
+  colors: 12,
+  nameLength: 32,
+  /** Heavy-traffic ban: trucks see the district's roads as this many times slower. */
+  truckBan: 6,
+  /** Heritage district: land value there rises by this much (its charm). */
+  heritageLandValue: 0.05,
 };
 
 /** Environment, health and education (DESIGN §3.11). */

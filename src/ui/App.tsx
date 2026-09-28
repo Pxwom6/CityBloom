@@ -18,6 +18,7 @@ import { ShortcutSheet } from './ShortcutSheet';
 import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
+import { DistrictsPanel } from './Districts';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -87,6 +88,7 @@ export function App({ game }: { game: Game }) {
       <CityPanel />
       <HistoryPanel />
       <GoalsPanel />
+      <DistrictsPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

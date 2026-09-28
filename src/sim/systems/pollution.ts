@@ -5,7 +5,7 @@ import { seedFromString } from '../rng';
 import { TICKS_PER_MONTH } from '../time';
 import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
-import { BState } from '../world/buildings';
+import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 
 /**
@@ -55,10 +55,11 @@ export function updateGroundPollution(sim: Sim, hours: number): void {
   const s = sim.state;
   const field = s.groundPollution;
   const add = new Float32Array(field.length);
-  const clean = sim.policy('cleanIndustry') ? POLICY_EFFECTS.cleanIndustry : 1;
+  // Clean industry grants, across the city or in a district (M21).
+  const clean = (b: Building) => (sim.policyAt('cleanIndustry', b.x, b.z) ? POLICY_EFFECTS.cleanIndustry : 1);
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Active) continue;
-    if (b.zone === ZONE_I && b.wealth === 0) splat(add, b.x, b.z, 0.012 * b.w * b.d * hours * clean, 3);
+    if (b.zone === ZONE_I && b.wealth === 0) splat(add, b.x, b.z, 0.012 * b.w * b.d * hours * clean(b), 3);
     if (b.sewage < 0.99) splat(add, b.x, b.z, 0.01 * (1 - b.sewage) * b.w * b.d * hours, 2);
   }
   for (const c of s.civics.values()) {
@@ -121,7 +122,7 @@ export function windAngle(seed: string, tick: number): number {
  * decay, and let trees and parks absorb some.
  */
 export function updateAirPollution(sim: Sim, hours: number): void {
-  const clean = sim.policy('cleanIndustry') ? POLICY_EFFECTS.cleanIndustry : 1;
+  const clean = (b: Building) => (sim.policyAt('cleanIndustry', b.x, b.z) ? POLICY_EFFECTS.cleanIndustry : 1);
   const s = sim.state;
   const E = ENVIRONMENT;
   const field = s.airPollution;
@@ -130,7 +131,7 @@ export function updateAirPollution(sim: Sim, hours: number): void {
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Active || b.zone !== ZONE_I) continue;
     const busy = b.cap > 0 ? Math.min(1, b.pop / b.cap) : 0;
-    splat(add, b.x, b.z, E.industryAir[b.wealth]! * b.w * b.d * busy * k * clean, 2);
+    splat(add, b.x, b.z, E.industryAir[b.wealth]! * b.w * b.d * busy * k * clean(b), 2);
   }
   for (const c of s.civics.values()) {
     const def = civicDef(c);

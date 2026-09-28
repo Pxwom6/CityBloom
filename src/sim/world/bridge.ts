@@ -36,12 +36,22 @@ export function rampLength(): number {
   return (WATER_LEVEL + BRIDGE.clearance - SHORE_HEIGHT) / BRIDGE.rampGrade;
 }
 
+/** Ramp length for a bridge whose ramps climb at `grade` (railways ramp more gently, M20). */
+export function rampLengthAt(grade: number): number {
+  return (WATER_LEVEL + BRIDGE.clearance - SHORE_HEIGHT) / Math.min(BRIDGE.rampGrade, grade);
+}
+
 /**
  * The deck profile of a road, or null if it never crosses water. Over water the deck sits at
  * `clearance` above the water; within a ramp length of each stretch of water it slopes down to
  * the ground. Deterministic, so the sim and the renderer agree.
  */
-export function deckProfile(curve: Curve, heightAt: (x: number, z: number) => number): DeckProfile | null {
+export function deckProfile(
+  curve: Curve,
+  heightAt: (x: number, z: number) => number,
+  /** Grade of the ramps, if gentler than BRIDGE.rampGrade (railways, M20). */
+  grade: number = BRIDGE.rampGrade,
+): DeckProfile | null {
   const step = BRIDGE.step;
   const n = Math.max(2, Math.ceil(curve.length / step) + 1);
   const ground = new Float32Array(n);
@@ -87,7 +97,7 @@ export function deckProfile(curve: Curve, heightAt: (x: number, z: number) => nu
     distWet[i] = Math.min(distWet[i]!, (last - i) * step);
   }
   for (let i = 0; i < n; i++) {
-    const ramp = top - distWet[i]! * BRIDGE.rampGrade;
+    const ramp = top - distWet[i]! * Math.min(BRIDGE.rampGrade, grade);
     h[i] = Math.max(ground[i]!, Math.max(WATER_LEVEL, ramp));
   }
   return {

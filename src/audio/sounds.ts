@@ -13,7 +13,8 @@ export type SoundName =
   | 'quake'
   | 'whoosh'
   | 'boom'
-  | 'fanfare';
+  | 'fanfare'
+  | 'thunder';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -130,6 +131,23 @@ export const SOUNDS: Record<
     burst(ctx, out, t, { f0: 2400, f1: 600, q: 0.7, gain: 0.45, dur: 0.12 });
     burst(ctx, out, t, { colour: 'brown', filter: 'lowpass', f0: 900, f1: 60, gain: 0.8, dur: 2.2 });
     return tone(ctx, out, t, { f0: 70 + v * 10, f1: 28, gain: 0.55, dur: 1.8 });
+  },
+
+  /** Thunder (M22): a crack for a near strike, then a long rolling rumble that fades out. */
+  thunder: (ctx, out, t, v) => {
+    const near = v < 0.35;
+    if (near) burst(ctx, out, t, { f0: 1800, f1: 400, q: 0.6, gain: 0.35, dur: 0.18 });
+    const start = t + (near ? 0.05 : 0.2 + v * 0.6);
+    burst(ctx, out, start, {
+      colour: 'brown',
+      filter: 'lowpass',
+      f0: near ? 700 : 380,
+      f1: 70,
+      gain: near ? 0.75 : 0.5,
+      attack: 0.15 + v * 0.4,
+      dur: 2.8 + v * 1.4,
+    });
+    return tone(ctx, out, start, { f0: 55 + v * 12, f1: 32, gain: 0.3, attack: 0.3, dur: 2.6 });
   },
 
   /** A milestone: a bright rising fanfare ending on a chord. */

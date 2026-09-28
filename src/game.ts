@@ -10,6 +10,7 @@ import { CIVIC } from './data/civic';
 import { MILESTONES } from './data/progression';
 import { ACHIEVEMENTS } from './data/achievements';
 import type { Advice } from './sim/systems/advisors';
+import { DistrictView } from './client/districtView';
 import { OverlayController } from './client/overlay';
 import { StreetNames } from './client/names';
 import { StreetLabels } from './client/labels';
@@ -80,7 +81,8 @@ export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
-  kind: 'building' | 'civic' | 'car' | 'walker' | 'road';
+  /** `stop`: a bus or tram stop (M20). */
+  kind: 'building' | 'civic' | 'car' | 'walker' | 'road' | 'stop';
   id: number;
 }
 
@@ -106,7 +108,7 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | null = null;
+  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | 'districts' | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
   /** How the scenario ended, shown until the player carries on. */
@@ -145,6 +147,8 @@ export class Game {
   tip: Tip | null = null;
   readonly tools: ToolManager;
   readonly overlay: OverlayController;
+  /** Districts on the map while the district tool or panel is open (M21). */
+  readonly districts: DistrictView;
   /** New versions of the app (the service worker, M15). */
   readonly updates = new AppUpdates(() => this.notify());
   /** Saving the city before switching to a new version. */
@@ -184,10 +188,14 @@ export class Game {
     });
     this.randomDisasters = world.options.disasters;
     renderer.disasters.onImpact = () => this.audio?.play('boom');
+    // Thunder follows the flash by the time sound takes to cover the distance (M22).
+    renderer.weather.onStrike = (distance) =>
+      setTimeout(() => this.audio?.play('thunder'), Math.min(4000, (distance / 343) * 1000));
     this.names = new StreetNames(world);
     this.labels = new StreetLabels(this);
     this.tools = new ToolManager(this);
     this.overlay = new OverlayController(this);
+    this.districts = new DistrictView(this);
     renderer.controller.focus = () => {
       const hw = this.world.gen.params.highway;
       return { x: 260, z: hw.connectZ };
@@ -228,7 +236,13 @@ export class Game {
         : sel?.kind === 'walker'
           ? this.renderer.pedestrians.walker(sel.id)
           : undefined;
-    const line = sel?.kind === 'civic' ? this.world.lines.find((l) => l.depot === sel.id) : undefined;
+    // A depot or station, or a stop (M20), shows the line it runs or is on.
+    const line =
+      sel?.kind === 'civic'
+        ? this.world.lines.find((l) => l.depot === sel.id || (l.mode === 'train' && l.stops.includes(sel.id)))
+        : sel?.kind === 'stop'
+          ? this.world.lines.find((l) => l.mode !== 'train' && l.stops.includes(sel.id))
+          : undefined;
     const legs = car?.legs ?? line?.legs;
     const net = this.world.net;
     const road = sel?.kind === 'road' ? this.world.netState.segments.get(sel.id) : undefined;
@@ -414,7 +428,24 @@ export class Game {
         );
       } else if (e.kind === 'civicRepaired')
         this.notice('civicRepaired', `The ${civicName()} is repaired and back in service.`, 'ok', at, false);
-      else if (e.kind === 'roadRepaired')
+      else if (e.kind === 'season') {
+        // Seasons and weather (M22).
+        const text = [
+          'Spring has come.',
+          'Summer is here: heatwaves raise power and water use.',
+          'Autumn: winter is three months away, and heating will push up power demand.',
+          'Winter has come: heating raises power demand, and snow slows traffic until it is ploughed.',
+        ][e.id];
+        if (text) this.notice('season', text, 'info', undefined, true);
+      } else if (e.kind === 'weather') {
+        // Kinds by their index in WEATHER_KINDS: 3 storm, 4 snow, 6 heat.
+        const text = {
+          3: 'A thunderstorm is rolling in: heavy rain, and the river will rise.',
+          4: 'Heavy snow is falling: it will slow traffic until ploughs clear it or it melts.',
+          6: 'A heatwave: homes and shops use more power and water.',
+        }[e.id as 3 | 4 | 6];
+        if (text) this.notice('weather', text, 'info', undefined, true);
+      } else if (e.kind === 'roadRepaired')
         this.notice('roadRepaired', 'A damaged road reopened.', 'ok', undefined, false);
       else if (e.kind === 'decayed')
         this.notice(
@@ -682,6 +713,8 @@ export class Game {
     this.photoSpeed = this.speed || 1;
     this.photo = {
       hour: null,
+      season: null,
+      weather: null,
       fov: DEFAULT_FOV,
       zones: false,
       dof: 0,
@@ -712,6 +745,8 @@ export class Game {
   setPhoto(patch: Partial<PhotoState>): void {
     const p = this.photo;
     if (!p) return;
+    // A season or weather picked for the photo shows at once (M22).
+    if ('season' in patch || 'weather' in patch) this.renderer.weather.snapNext = true;
     if ('running' in patch && patch.running !== p.running) {
       if (patch.running) this.setSpeed(this.photoSpeed);
       else {
@@ -795,8 +830,10 @@ export class Game {
         best = f;
       }
     };
+    // A car held at a junction makes a dull start to a ride: prefer one on the move.
     if (want('car'))
-      for (const c of r.traffic.cars) consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c));
+      for (const c of r.traffic.cars)
+        consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c) - (c.waited > 0 ? 400 : 0));
     if (want('walker'))
       for (const w of r.pedestrians.walkers)
         consider({ kind: 'walker', id: w.id }, w.x, w.z, r.pedestrians.remaining(w) * 4);
@@ -1001,6 +1038,7 @@ export class Game {
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);
+    this.districts.update();
     this.renderer.frame(dt);
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {

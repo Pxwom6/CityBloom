@@ -1,3 +1,4 @@
+import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -21,12 +22,14 @@ export type Command =
   /** `oneway`: the new road runs one way, as drawn (M19). */
   | { type: 'buildRoad'; road: RoadTypeId; points: Vec2[]; oneway?: boolean }
   | { type: 'bulldoze'; target: BulldozeTarget }
-  /** Place a bus stop beside the road nearest (x, z). */
-  | { type: 'placeStop'; x: number; z: number }
+  /** Place a bus stop beside the road nearest (x, z), or a tram stop on a road with tram track (M20). */
+  | { type: 'placeStop'; x: number; z: number; tram?: boolean }
   /** Change a road segment to another type in place. */
   | { type: 'upgradeRoad'; seg: number; road: RoadTypeId }
   /** Make a road one-way (1: from its start to its end, -1: the other way) or two-way (0) (M19). */
   | { type: 'setOneWay'; seg: number; dir: 0 | 1 | -1 }
+  /** Lay (`on`) or take up tram track along a road (M20); `stroke` groups a drag into one undo step. */
+  | { type: 'setTram'; seg: number; on: boolean; stroke?: number }
   /** A roundabout on a junction (`node`) or a road (`at`), with the ring's radius (M19). */
   | { type: 'roundabout'; node?: number; at?: Vec2; radius?: number }
   | { type: 'removeRoundabout'; node: number }
@@ -52,6 +55,10 @@ export type Command =
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
   | { type: 'setDisasters'; on: boolean }
+  /** Seasons on or off and how wild the weather is (M22). */
+  | { type: 'setWeather'; seasons?: boolean; intensity?: WeatherIntensity }
+  /** Test mode only: set the weather now for `hours` (e2e and dev scenes). */
+  | { type: 'cheat'; cheat: 'weather'; kind: WeatherKind; strength: number; hours: number }
   | { type: 'setElections'; on: boolean }
   /** Begin a scenario (M18) on the loaded starting city. */
   | { type: 'startScenario'; id: string }
@@ -59,6 +66,18 @@ export type Command =
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
   /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */
   | { type: 'moveBuilding'; id: number; x: number; z: number; angle: number; side: 1 | -1 }
+  /** Districts (M21): name a new one; paint (0 erases) with a brush, a drag as one undo step. */
+  | { type: 'createDistrict'; name: string }
+  | {
+      type: 'paintDistrict';
+      district: number;
+      area: { kind: 'brush'; points: Vec2[]; radius: number };
+      stroke?: number;
+    }
+  | { type: 'renameDistrict'; district: number; name: string }
+  | { type: 'removeDistrict'; district: number }
+  /** Put a policy in force in one district, or lift it (M21). */
+  | { type: 'setDistrictPolicy'; district: number; policy: PolicyId; on: boolean }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

@@ -763,6 +763,189 @@ The done-criterion tests are town-scale: `tests/junctions.test.ts` grows the cro
 compares the same city with and without a roundabout; `tests/highway.test.ts` does the same for a
 bypass round a main-street town (`tests/bypassTown.ts`). The Crossroads scenario is the first town.
 
+### 3.21 Rail (M20)
+
+**Track.** Railways are network segments of type `rail` ("Railway": two tracks, 110 km/h, 3.5 %
+grade, 100 m minimum radius, $70/m, unlocks at 5,000) and `mainline` (the regional link, not
+buildable); `isRail` covers both. They are drawn, graded, bridged and put on decks like roads, and
+cross the city highway or roads on viaducts through M19's crossings and grade limits; the planner
+chains grade limits across a stroke's internal joints so a long straight run reaches its bridges.
+`RoadGraph` takes a `kind`: the road graph leaves railways out, `Sim.railGraph()` has only them, and
+`Sim.tramGraph()` only roads with tram track. A railway can't be made one-way or carry a roundabout,
+and railways can't join roads at existing nodes. **Level crossings**: a dirt road, street or avenue
+drawn across the middle of a railway (both new ends off the track) splits both at a shared node,
+junction kind `crossing` (capacity `JUNCTION.crossingShare` 0.8 of a plain junction's, delay
+`crossingDelay` 8 s for cars); bigger roads must pass over or under. Railway joints and switches
+have no junction polygon: the tracks run on into each other.
+
+**The regional railway.** `SimState.railway` (save v18) holds the link: a `mainline` segment from the
+regional highway's line to the west edge at x = 24, 260–700 m north or south of the highway's link,
+on the flattest dry stretch clear of roads and buildings (`Sim.buildRailway`). New cities get it at
+creation; older saves get one on load where it fits (`railway` undefined → laid; null → none fits).
+It is drawn off the map as a north–south line beside the regional highway, joined by a curve.
+
+**Stations and train lines.** A station (`CivicDef.rail`, `track: 'rail'`) faces a railway. Every
+station on one connected stretch of track makes one line (`trainLines`): ordered by running time
+from the station farthest from the first, trains shuttle end to end at `RAIL.speedShare` (0.7) of
+the line speed, standing `RAIL.dwell` (40 s) at each. Trains = 1.5 per station × transit funding,
+but no closer than `RAIL.minHeadway` (300 s) apart; capacity 480 a train. Lines carry `stopPos` and
+`stopDist` (metres along the line to each stop) as well as bus-style times. **Mode choice**
+(`busTime`) weighs every line: walking reach is `TRANSIT.walkRadius` × 1.6 for stations (× 1.15 for
+tram stops), and a train ride counts `RAIL.trainBonus` (150 s) better than the same time on a bus,
+a tram `TRAM.bonus` (60 s). Riders per stop (`Sim.stopUse`) and per line are recorded each
+assignment round (stops per line are not saved; line riders are).
+
+**Trams.** `RoadSegment.tram` marks tram track on a street, avenue or boulevard (`ROAD_TYPES.tram`):
+`setTram` lays it (`TRAM.trackCost` $45/m; `trackUpkeep` 0.04 $/m a month, booked with road
+upkeep) or takes it up (free); a drag lays a line as one undo step (`stroke`, like zoning). Splits,
+merges and upgrades keep it; an upgrade to a type without it is refused. A **tram depot**
+(`CivicDef.tram`: 5 trams of 140) must face a tracked road. **Tram stops** are `BusStop.tram`, on
+tracked roads (they follow the track and go when it does). `loopLines(sim, 'bus' | 'tram')` builds
+both kinds of loop: stops go to the depot that reaches them soonest; trams route on the tram graph
+and feel `TRAM.trafficShare` (0.5) of the road's congestion, stand 25 s at a stop, run no closer
+than `TRAM.minHeadway` (120 s) and add `TRAM.pcu` (2) per pass to their roads' traffic.
+
+**Rail freight.** A rail freight terminal (`CivicDef.railFreight`, 700 truckloads a day) faces a road
+and needs a railway within `RAIL.sidingReach` (30 m) of its back (`railSiding`), linked to the
+regional railway (`railTerminals`: same rail-graph component as the link). In the freight step of the
+assignment (`railFreight` in `commute.ts`), each terminal runs a search from its road entrance seeded
+with `RAIL.freightHandling` (20 s); every export or import load whose node reaches the terminal
+sooner than the highway sends its trucks there instead (up to the terminal's capacity), with trip
+samples for visible trucks; the rest drive to the highway as before. `Sim.railFreight` records each
+terminal's truckloads a day. Terminals count as freight hubs for industrial demand and trade.
+
+**Client.** `TransitData` lines carry stop distances, headway, capacity, load and riders, plus riders
+per stop (`use`) and each shipping terminal's track from the regional link (`freight`). Visible
+trams and trains (`src/render/railVehicles.ts`) run a timetable per line on the display clock
+(directions × stops × dwells) as consists whose cars follow the path: trams (three cars) round their
+loop in the lane next to the centre line, trains (four cars) out on the right-hand track and back on
+the other, standing alongside each platform, and one container freight train per terminal in off
+the regional railway and back. Roads with tram track draw rails, a darker band, overhead wires and
+masts, joined through junctions (tracked approaches paired straightest first); level crossings draw
+rails and panels across the road, crossbucks and raised barriers. The Ridership data map shades each
+line by rush-hour riders over capacity and each stop by its riders.
+
+**Tools and UI.** The road tool gets Railway and a Tram track mode (click a road to lay or take up
+track, drag along roads for a line); the transit bar gets tram stops. Stations snap to railways and
+tram depots to tracked roads. Clicking a stop selects it (`Selection.kind` 'stop'): its line, how
+often it runs and its riders; stations and depots show their line (or why there's none), freight
+terminals their truckloads, railways their trains and crossings, and roads their tram track. The
+transport advisor suggests trams or trains for a jammed corridor, a terminal when trucks crowd the
+highway link, and flags stations and depots that run nothing.
+
+The done-criterion tests: `tests/trains.test.ts` grows the M6 jam town and runs a railway with two
+stations beside its link (`tests/railTown.ts`); `tests/freight.test.ts` grows an industrial town a
+kilometre from the highway (`tests/freightTown.ts`) and links a terminal to the regional railway;
+`tests/trams.test.ts` puts trams through the same jam town. The Railhead scenario is the freight town.
+
+### 3.22 Districts (M21)
+
+**State.** `SimState.districts` (save v19) maps id (1–255) → `{id, name, color, policies}`;
+`districtCells` is a `Uint8Array` on the 128 × 128 land-value raster (16 m cells), 0 for no district.
+A raster rather than polygons: painting, erasing, lookups (`districtAt`, one array read) and the
+per-cell systems (land value, the data-map filter) all index it directly, and a 16 m cell is finer
+than a lot. `createDistrict` takes the lowest free id and the lowest colour slot no district uses
+(12 slots, up to `DISTRICT.limit` 24 districts, names up to 32 characters); `paintDistrict` sets
+every cell whose centre lies within a brush path's radius (0 erases) and refuses a stroke that
+changes nothing; `removeDistrict` clears its cells. All five commands are undoable (`DISTRICT_SCOPE`:
+the `districts` container and the `districtCells` array); a paint drag carries a `stroke` id and
+merges into one undo step, like zoning.
+
+**Policies.** A policy's `scope` is `'city'` (tourism campaign: visitors come to the city, not a
+street), `'district'` (heavy-traffic ban, heritage), or both (the rest). `Sim.policyAt(id, x, z)`
+answers "in force here?" (city-wide, or the cell's district has it) and every per-place policy reads
+it: recycling per building in garbage, healthy living per home, fire safety and neighbourhood watch
+per building in incidents, clean industry per polluter (air and ground), free transit per trip
+origin in the mode choice, the high-rise ban and heritage per lot in growth (`densityAt`). A
+district policy costs the city-wide price × the district's share of the people who live or work in
+the city (residents plus filled jobs; `districtPolicyCosts`,
+booked under Policies), and nothing where the city already has it; `setDistrictPolicy` refuses a
+policy that is locked, city-only, or already city-wide, and `setPolicy` refuses district-only ones.
+`districtPolicies()` caches policy → districts and is dropped by `districtsChanged()` after any
+district edit or undo.
+
+- **Heavy-traffic ban**: the freight assignment routes trucks on `truckCosts`, which multiplies
+  the cost of every road whose midpoint lies in a banned district by `DISTRICT.truckBan` (6). Trucks
+  go round where another way exists and still reach shops and industry inside (deliveries get in).
+  Cars and buses are untouched.
+- **Heritage**: no building in it is rebuilt at a higher density or tier or retooled (the
+  lifecycle skips upgrades there), new growth stays low or medium density, and its land is worth
+  `DISTRICT.heritageLandValue` (0.05) more.
+
+**Figures.** `districtReports` (query `districts`) returns, per district and for the rest of the
+city (id 0): residents, jobs, workers, mean happiness, mean land value over its cells, buildings,
+cells, the taxes its buildings pay a month (`buildingTax`), the upkeep of civic buildings standing
+in it, and its policies' cost.
+
+**Client.** `ClientWorld` mirrors the districts and cells (`FrameDiff.districts` when they change);
+`names.neighbourhood()` prefers a district's name over the generated one. `DistrictView` tints
+painted cells in their colour through the data-map overlay texture, draws borders stronger and
+floats each name over its cells while the district tool or panel is open. The district tool (I)
+paints with a round brush (16–192 m, [ ]), picks a district, erases, or starts a new one named after
+the neighbourhood under the first stroke (numbered if taken). The Districts panel lists them with
+their figures and policies, renames and dissolves them, and sets the data-map filter
+(`Overlay.district`): every data map masks its terrain and road tints to that district's cells.
+
+The done-criterion tests (`tests/districtPolicies.test.ts`): a heavy-traffic ban on a freight
+town's housing estate cuts truck traffic through its homes and moves it to the back road while the
+other side's roads carry the same; recycling in one half of a town cuts garbage there and nowhere
+else, for its share of the cost; heritage on the Big Game city stops rebuilding inside and raises
+land value there, with the rest unchanged. The Market Town scenario puts the ban to work.
+
+### 3.23 Seasons and weather (M22)
+
+**Calendar.** One day/night cycle is a month, so a season is three months: Dec–Feb winter, Mar–May
+spring and so on. `START_MONTH` (2) makes a new city start in March; Year 1 runs March to February
+(`calendarMonth(k)` for labels). Only display code reads the calendar month; elections and the
+chronicle count months since founding.
+
+**Climates** (`src/data/climate.ts`). Each map preset has one (`PRESET_CLIMATE`: river temperate,
+coast maritime, lakes continental, highlands alpine): monthly mean temperatures, a day–night swing,
+and per-season weights for clear, cloudy, rain, storm, fog and heatwave spells.
+
+**State** (`SimState.weather`, save v20; `src/sim/systems/weather.ts`): the climate, `seasons` and
+`intensity` (0 off … 3 wild), the spell (`kind`, `strength`, `until`, its temperature `offset`), the
+temperature now and the day's mean, ground `snow`, `wet`, `river` rise (m) and `dryness`, plus
+`RoadSegment.snow` per road. Hourly, before utilities (`weatherHour`): when the spell ends, draw the
+next from the season's weights on its own RNG stream (`weather`; intensity scales the weights of
+anything but clear and the strength); rain and storms fall as snow when the spell's mean is ≤ 1 °C,
+and a storm that falls as snow is a blizzard. A new city's first 12 hours are fair. With seasons off
+every month has May's temperatures (no snow, no heatwaves); with weather off it's always clear.
+Then snow falls on the ground and every road (0.07 an hour at full strength) and melts above 0 °C
+(faster in rain and, on roads, with traffic); rain soaks the ground and raises the river, which
+drains a little each hour; warm dry weather raises dryness and rain lowers it. `season` and
+`weather` events (storms, heavy snow, heatwaves) drive notices.
+
+**Effects**, each where it acts:
+- *Power and water* (`buildingUse` with `weatherUse`): heating adds up to 60 % (homes), 40 % (shops)
+  and 20 % (industry) as the day's mean falls from 14 °C to −10 °C; above 23 °C cooling adds up to
+  30–35 % and water use up to 30 %. Groundwater pumps lose up to 45 % of their output with dryness;
+  solar follows the cloud and the season (0.35–1.05), wind turbines run 35 % harder in storms.
+- *Traffic*: a road's travel time × `snowFactor` (1 + 0.9 × snow) in route costs
+  (`congestedEdgeCosts`) and for visible vehicles (`segSpeed`).
+- *Parks* count for up to half as much in rain and snow (`parkShare`).
+- *Floods*: with disasters on, a river more than 1.2 m up gives an hourly chance (5 % per metre over)
+  of M9's flood at a home near the water (`riverFlood` in `disasters.ts`).
+
+**Ploughs** (`src/sim/systems/ploughs.ts`). A public works depot (`CivicDef.plough`: 3 ploughs,
+3 km of road, 12 roads a round; road maintenance funding scales the ploughs) sends idle ploughs each
+hour to the busiest snowy roads (snow ≥ 0.1) within its reach. A plough clears every road it drives
+along (the vehicle `passed` hook), works on to the nearest snowy road left, and after its round
+heads home; ploughs run at four times a service vehicle's pace and aren't slowed by snow.
+Metres cleared are the depot's `processedToday`/`lastDay`. Road snow reaches the client as
+per-segment changes (`FrameDiff.roadSnow`).
+
+**Interface.** The top bar's date shows the weather, temperature and season and opens a panel of
+what the weather is doing (`src/ui/weather.ts`); Settings set seasons and intensity for this city
+(`setWeather`, refused while a scenario plays; scenarios set theirs at start) and new ones; road
+inspectors show snow, depot inspectors their ploughs; advisors warn of winter power headroom
+(demand at the climate's coldest month), snow no plough clears, a dry spell on tight water and a
+high river.
+
+The done-criterion tests: `tests/winter.test.ts` (the alpine test town uses 26 % more power per
+resident in January than July, snow lifts its commute 98 → 115 s and a depot brings it back to
+98 s) and the Long Winter scenario (`tests/scenarios/winter.test.ts`).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -812,6 +995,22 @@ bypass round a main-street town (`tests/bypassTown.ts`). The Crossroads scenario
   (cars, buildings, construction, fires, emergency vehicles, tree density, zoom, night, paused) and the
   pure `ambientMix()` turns that into layer levels. Master/effects/ambience volumes and mute are
   player settings; the context starts on the first gesture and suspends when the tab is hidden.
+
+### 4.2 Seasons and weather on screen (M22)
+
+`src/render/weather.ts` eases a *look* (season weights, weather kind and strength, snow, wet)
+towards the city's — or photo mode's — over a few seconds and writes shared uniforms (`uSnow`,
+`uWet`, `uSeason`, `uGrade`, `uRoadSnow`) that the terrain, tree, building and road materials read:
+grass takes the season's colour and snow settles on flat ground (patchy as it starts); broadleaf
+crowns (their green vertices) blossom, turn gold and red, then thin out bare; roofs and trees carry
+snow on upward faces. Every road vertex carries its road's (or junction's) id (`aTag`), so snow per
+road is a lookup in a 512² data texture — grey slush that still reads as road — rewritten at most
+four times a second when `roadSnowVersion` changes. Cloud greys, dims and desaturates everything
+(`weatherGrade`) and hides the sun disc; fog and falling rain or snow pull the fog in; heat warms the
+grade and hazes the distance; storms flash (sky and fill light) and schedule thunder. Rain and snow
+are one `Points` draw (up to 9,000 × the crowd quality) in a box between the camera and its target,
+animated entirely in the shader. Data maps are shown in clear weather. Ambient sound adds rain and
+patter layers, storm wind and muffles traffic under snow.
 
 ### 4.1 Photo mode (M16)
 
@@ -896,7 +1095,14 @@ Export writes a `.citybloom` file (gzip JSON); import accepts it (or plain JSON)
 `migrations[v]` upgrades version v → v+1 on load. Round-trip is tested by state hash, including through
 the main menu's Continue and an exported-then-imported file (e2e `m11-shell`). v17 (M19) adds only
 optional fields (one-way roads, roundabouts; city highway and ramp segments are new type values), so
-its migration is the identity and older cities load with two-way roads and plain junctions.
+its migration is the identity and older cities load with two-way roads and plain junctions. v18
+(M20) adds `railway` (the regional rail link) and optional fields (tram track, tram stops); its
+migration is also the identity, and `Sim.fromSave` lays the rail link on a city that has none
+(`railway` missing) where it fits, so an older city loads, gains its link and plays on
+(`tests/trains.test.ts` loads the version-10 playtest save). v19 (M21) adds `districts` (an empty
+map) and `districtCells` (all zero); `tests/districts.test.ts` loads the version-10 playtest save,
+paints a district and round-trips it. v20 (M22) adds `weather` (the preset's climate, a fair first spell) and the `weather` RNG
+stream; `tests/weather.test.ts` loads the version-10 playtest save, plays on and round-trips it.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

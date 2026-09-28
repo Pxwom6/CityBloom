@@ -1,8 +1,9 @@
+import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Game } from '../game';
 import type { ClientWorld } from './world';
 import type { Command, CommandResult } from '../sim/commands';
@@ -27,6 +28,8 @@ export interface TestApi {
       renderStats: RenderStats;
       tick: number;
       highwayZ: number;
+      /** Where the regional railway comes in (M20). */
+      railway: { x: number; z: number } | null;
       segments: number;
       nodes: number;
       zoned: { R: number; C: number; I: number };
@@ -49,7 +52,7 @@ export interface TestApi {
   segmentAt(
     x: number,
     z: number,
-  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number } | null;
+  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number; tram: boolean } | null;
   /** The junction nearest a point within 20 m (M19): its roads, and its roundabout's radius. */
   junctionAt(x: number, z: number): { id: number; arms: number; roundabout: number; kind: string } | null;
   /** Volume/capacity on a segment at the rush-hour peak. */
@@ -58,8 +61,22 @@ export interface TestApi {
   getCars(): { id: number; x: number; z: number; heading: number; waited: number; ring: number | null }[];
   /** Pedestrians on screen (close zoom only), with their trip purpose and route length. */
   getWalkers(): { id: number; x: number; z: number; purpose: string; route: number }[];
-  /** Bus stops and lines on the client mirror. */
-  getTransit(): { stops: number; lines: number[] };
+  /** Bus stops and lines on the client mirror: stops per line, and each line's mode and riders (M20). */
+  getTransit(): {
+    stops: number;
+    lines: number[];
+    modes: { mode: string; stops: number; vehicles: number; riders: number }[];
+    freight: { id: number; trucks: number }[];
+    /** Where each stop's shelter stands (click there to select it). */
+    shelters: { id: number; x: number; z: number; tram: boolean }[];
+  };
+  /** Districts on the client mirror (M21): each with its cells painted, and the one selected. */
+  getDistricts(): {
+    list: { id: number; name: string; color: number; policies: string[]; cells: number }[];
+    selected: number;
+  };
+  /** Trams and trains as last drawn (M20): the front of each. */
+  getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
   /** Terrain height (water below 0.6). */
   heightAt(x: number, z: number): number;
   /** Show a data map (or null to hide). */
@@ -174,6 +191,16 @@ export interface TestApi {
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
   /** Change photo mode's settings directly (dev scenes). */
   setPhoto(patch: Partial<PhotoState>): void;
+  /** Seasons and weather (M22): force a look on screen (null for the city's own), and read it. */
+  setWeatherLook(look: Partial<WeatherLook> | null): void;
+  getWeather(): {
+    sim: CityStats['weather'];
+    look: WeatherLook;
+    particles: number;
+    strikes: number;
+    overcast: number;
+    fog: number;
+  };
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -199,6 +226,7 @@ export function installTestApi(game: Game): TestApi {
         ...stats,
         renderStats: game.renderer.lastStats,
         highwayZ: w.netState.nodes.get(w.highway.connect)!.z,
+        railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,
         zoned: countZones(game),
@@ -218,8 +246,11 @@ export function installTestApi(game: Game): TestApi {
       const d = CIVIC.get(def);
       if (!d) return null;
       const net = game.world.net;
+      // Stations face a railway, tram depots a road with tram track (M20).
       const segs = [...game.world.netState.segments.values()]
-        .filter((s) => ROAD_TYPES[s.type].access)
+        .filter((s) =>
+          d.track === 'rail' ? isRail(s.type) : ROAD_TYPES[s.type].access && (!d.tram || s.tram),
+        )
         .map((s) => ({ s, mid: net.curve(s.id).pointAt(net.curve(s.id).length / 2) }))
         .sort((a, b) =>
           near
@@ -268,7 +299,15 @@ export function installTestApi(game: Game): TestApi {
       const hit = game.world.net.nearestSegment({ x, z }, 20);
       if (!hit) return null;
       const s = game.world.net.segment(hit.seg);
-      return { id: hit.seg, type: s.type, oneway: s.oneway ?? 0, deck: !!s.deck, a: s.a, b: s.b };
+      return {
+        id: hit.seg,
+        type: s.type,
+        oneway: s.oneway ?? 0,
+        deck: !!s.deck,
+        a: s.a,
+        b: s.b,
+        tram: !!s.tram,
+      };
     },
     junctionAt: (x, z) => {
       const n = game.world.net.nearestNode({ x, z }, 20);
@@ -298,7 +337,35 @@ export function installTestApi(game: Game): TestApi {
         purpose: w.trip.purpose,
         route: w.legs.reduce((s, l) => s + Math.abs(l.s1 - l.s0), 0),
       })),
-    getTransit: () => ({ stops: game.world.stops.size, lines: game.world.lines.map((l) => l.stops.length) }),
+    getTransit: () => ({
+      stops: game.world.stops.size,
+      lines: game.world.lines.map((l) => l.stops.length),
+      modes: game.world.lines.map((l) => ({
+        mode: l.mode,
+        stops: l.stops.length,
+        vehicles: l.buses,
+        riders: l.riders,
+      })),
+      freight: game.world.freight.map((f) => ({ id: f.id, trucks: f.trucks })),
+      shelters: game.renderer.transit.shelters.map((s) => ({
+        ...s,
+        tram: !!game.world.stops.get(s.id)?.tram,
+      })),
+    }),
+    getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getDistricts: () => {
+      const w = game.world;
+      const count = new Map<number, number>();
+      for (const d of w.districtCells) if (d) count.set(d, (count.get(d) ?? 0) + 1);
+      return {
+        list: [...w.districts.values()].map((d) => ({
+          ...d,
+          policies: [...d.policies],
+          cells: count.get(d.id) ?? 0,
+        })),
+        selected: game.districts.selected,
+      };
+    },
     findCivic: (def) => [...game.world.civics.values()].find((c) => c.def === def)?.id ?? null,
     getCivics: () =>
       [...game.world.civics.values()].map((c) => ({
@@ -468,6 +535,21 @@ export function installTestApi(game: Game): TestApi {
     },
     followNearest: (kinds) => game.followNearest(kinds),
     setPhoto: (patch) => game.setPhoto(patch),
+    setWeatherLook: (look) => {
+      game.renderer.weatherOverride = look;
+      game.renderer.weather.snapNext = true;
+    },
+    getWeather: () => {
+      const w = game.renderer.weather;
+      return {
+        sim: game.world.stats.weather,
+        look: { ...w.look, season: [...w.look.season] as WeatherLook['season'] },
+        particles: w.stats.particles,
+        strikes: w.stats.strikes,
+        overcast: w.overcast,
+        fog: w.fog,
+      };
+    },
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

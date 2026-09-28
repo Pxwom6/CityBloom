@@ -3,8 +3,9 @@ import { POLICY_EFFECTS } from '../../data/policies';
 import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
-import { civicDef, civicOnline, civicRect, resourceRichness, type Civic } from '../world/civic';
+import { civicDef, civicOnline, civicRect, railSiding, resourceRichness, type Civic } from '../world/civic';
 import { matchDayNow, openProject } from './projects';
+import { linkedToRegion } from './rail';
 
 /** Visitors a day and how many of them stay the night (saved; recomputed hourly). */
 export interface TourismState {
@@ -45,9 +46,21 @@ function industrialJobs(sim: Sim): number {
   return n;
 }
 
-/** Freight terminals in service (a second one helps, more don't). */
+/**
+ * Ships goods: a freight hub, or a rail freight terminal whose siding is linked to the regional
+ * railway (M20).
+ */
+function ships(sim: Sim, c: Civic): boolean {
+  const d = civicDef(c);
+  if (!d.freight) return false;
+  if (!d.railFreight) return true;
+  const siding = railSiding(sim, c);
+  return !!siding && linkedToRegion(sim, siding.seg);
+}
+
+/** Freight hubs and terminals in service (a second one helps, more don't). */
 export function freightHubs(sim: Sim): number {
-  return Math.min(2, working(sim, (c) => !!civicDef(c).freight).length);
+  return Math.min(2, working(sim, (c) => ships(sim, c)).length);
 }
 
 export function hasResearchPark(sim: Sim): boolean {
@@ -94,7 +107,7 @@ export function specialisationIncome(sim: Sim): Record<string, number> {
   }
   if (resources > 0) out.resources = resources;
   const eff = Math.min(1.25, sim.fundingEff('trade'));
-  const hubs = working(sim, (c) => !!civicDef(c).freight);
+  const hubs = working(sim, (c) => ships(sim, c));
   if (hubs.length) {
     // The first terminal ships at full rate; a second adds half as much again.
     const per = civicDef(hubs[0]!).freight!.perJob;

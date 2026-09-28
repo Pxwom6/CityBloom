@@ -73,6 +73,8 @@ const SUFFIX: Record<RoadTypeId, string[]> = {
   boulevard: ['Boulevard'],
   motorway: ['Expressway', 'Bypass', 'Freeway'],
   ramp: ['Ramp'],
+  rail: ['Line', 'Railway'],
+  mainline: ['Main Line'],
   highway: ['Regional Highway'],
 };
 const HOODS = [
@@ -189,7 +191,14 @@ export class StreetNames {
     return this.names.get(segId) ?? 'an unnamed road';
   }
 
+  /** The district painted here (M21), or else the generated neighbourhood name. */
   neighbourhood(x: number, z: number): string {
+    const d = this.world.districts.get(this.world.districtAt(x, z));
+    return d ? d.name : this.generatedNeighbourhood(x, z);
+  }
+
+  /** The name the map gives a place: neighbourhoods per 384 m cell (a new district's default name). */
+  generatedNeighbourhood(x: number, z: number): string {
     const i = Math.floor(x / 384);
     const j = Math.floor(z / 384);
     return HOODS[Math.floor(hash(this.seed, i * 131 + j * 7919 + 17) * HOODS.length)]!;

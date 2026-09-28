@@ -136,6 +136,11 @@ async function boot(): Promise<void> {
     } else if (scenario)
       game.toast('That scenario could not be opened; here is a fresh map instead.', 'bad', 6000);
     if (params.get('tutorial') === '1') game.startTutorial();
+    // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
+    if (!save && !scenario) {
+      const { seasons, weather } = game.settings;
+      if (!seasons || weather !== 2) void game.dispatch({ type: 'setWeather', seasons, intensity: weather });
+    }
     // A reload goes back to the main menu (Continue picks up the latest save) rather than
     // re-creating this city from scratch.
     if (params.has('new') || params.has('load') || scenario)

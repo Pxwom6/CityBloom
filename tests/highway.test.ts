@@ -122,7 +122,9 @@ describe('the city highway (M19)', () => {
     expect(junctionKind(sim, n)).toBe('none');
     const old = Sim.fromSave(decodeSave(readFileSync('Saves/Ashton.citybloom')));
     expect(
-      [...old.state.net.segments.values()].some((s) => !ROAD_TYPES[s.type].access && s.type !== 'highway'),
+      [...old.state.net.segments.values()].some(
+        (s) => !ROAD_TYPES[s.type].access && s.type !== 'highway' && s.type !== 'mainline',
+      ),
     ).toBe(false);
   });
 

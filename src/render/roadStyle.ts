@@ -13,6 +13,8 @@ export interface Marking {
   dash: number;
   gap: number;
   color: Color;
+  /** Extra height above the road's markings (rails over their sleepers, M20). */
+  lift?: number;
 }
 export interface RoadStyle {
   strips: Strip[];
@@ -25,6 +27,8 @@ export interface RoadStyle {
   sidewalk: Color;
   lift: number;
   sidewalkLift: number;
+  /** A railway's ballast bed (M20). */
+  rail?: boolean;
 }
 
 const ASPHALT = new Color('#767b82');
@@ -35,6 +39,9 @@ const VERGE = new Color('#9aa36a');
 const MEDIAN = new Color('#7da65c');
 const YELLOW = new Color('#f1cf63');
 const WHITE = new Color('#f4f2ea');
+const BALLAST = new Color('#8d8579');
+const SLEEPER = new Color('#5a4a3b');
+const RAIL = new Color('#c8cbd0');
 
 const L = 0.2; // asphalt lift above the terrain
 const S = 0.34; // sidewalk lift
@@ -60,6 +67,27 @@ function build(id: RoadTypeId): RoadStyle {
       sidewalk: VERGE,
       lift: L,
       sidewalkLift: L - 0.02,
+    };
+  }
+  if (id === 'rail') {
+    // Railway (M20): a ballast bed with two tracks of sleepers and rails.
+    strips.push({ from: -tot, to: tot, lift: L, color: BALLAST });
+    for (const c of [-2, 2]) {
+      markings.push({ offset: c, width: 2.6, dash: 0.35, gap: 0.55, color: SLEEPER });
+      for (const r of [-0.72, 0.72])
+        markings.push({ offset: c + r, width: 0.14, dash: 1000, gap: 0, color: RAIL, lift: 0.08 });
+    }
+    return {
+      strips,
+      markings,
+      kerbs,
+      asphaltHalf: hw,
+      totalHalf: tot,
+      asphalt: BALLAST,
+      sidewalk: BALLAST,
+      lift: L,
+      sidewalkLift: L,
+      rail: true,
     };
   }
   if (id === 'ramp' || id === 'motorway') {
@@ -139,6 +167,20 @@ function build(id: RoadTypeId): RoadStyle {
   };
 }
 
+/**
+ * Tram track (M20): how far each direction's track runs from the road's centre line, in the lane
+ * next to the centre line (or the median).
+ */
+export function tramOffset(id: RoadTypeId): number {
+  const t = ROAD_TYPES[id];
+  const hw = t.width / 2;
+  const med = id === 'street' ? 0 : id === 'avenue' ? 1 : id === 'boulevard' ? 1.5 : 0.6;
+  return med + (hw - med) / Math.max(1, t.lanes / 2) / 2;
+}
+
+/** A railway's two tracks run this far either side of its centre line (M20). */
+export const RAIL_TRACK_OFFSET = 2;
+
 export const ROAD_STYLES: Record<RoadTypeId, RoadStyle> = {
   dirt: build('dirt'),
   street: build('street'),
@@ -146,5 +188,7 @@ export const ROAD_STYLES: Record<RoadTypeId, RoadStyle> = {
   boulevard: build('boulevard'),
   motorway: build('motorway'),
   ramp: build('ramp'),
+  rail: build('rail'),
+  mainline: build('rail'),
   highway: build('highway'),
 };

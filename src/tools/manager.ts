@@ -8,8 +8,9 @@ import { ZoneTool } from './zoneTool';
 import { PlaceTool } from './placeTool';
 import { StopTool } from './stopTool';
 import { DisasterTool } from './disasterTool';
+import { DistrictTool } from './districtTool';
 
-export type ToolId = 'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster';
+export type ToolId = 'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district';
 
 /** Routes canvas pointer and keyboard input to the active tool. */
 export class ToolManager {
@@ -20,6 +21,8 @@ export class ToolManager {
   readonly place: PlaceTool;
   readonly stop: StopTool;
   readonly disaster: DisasterTool;
+  /** District painting (M21). */
+  readonly district: DistrictTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
 
@@ -31,6 +34,7 @@ export class ToolManager {
     this.place = new PlaceTool(game);
     this.stop = new StopTool(game);
     this.disaster = new DisasterTool(game);
+    this.district = new DistrictTool(game);
     this.active = this.select;
     const canvas = game.renderer.canvas;
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -188,6 +192,9 @@ export class ToolManager {
         break;
       case 'KeyB':
         this.use('bulldoze');
+        break;
+      case 'KeyI':
+        this.use(this.active === this.district ? 'select' : 'district');
         break;
       case 'KeyH':
         this.use('select');

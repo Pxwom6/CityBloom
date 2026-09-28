@@ -1,3 +1,4 @@
+import { WEATHER } from '../../data/climate';
 import { chronicleEvent } from './chronicle';
 import { DISASTERS } from '../../data/balance';
 import { ROAD_TYPES } from '../../data/roads';
@@ -490,6 +491,29 @@ export function disastersHour(sim: Sim): void {
   s.craters = s.craters.filter((c) => s.tick - c.tick < DISASTERS.meteor.scorchTicks);
   if (s.craters.length !== craters) sim.disastersChanged();
   randomDisaster(sim);
+  riverFlood(sim);
+}
+
+/**
+ * Heavy rain and melting snow raise the river (M22); well above its banks, homes by the water can
+ * flood. Only with disasters on, and the weather's dice decide.
+ */
+function riverFlood(sim: Sim): void {
+  const s = sim.state;
+  const over = s.weather.river - WEATHER.floodRise;
+  if (over <= 0 || !s.options.disasters || s.disasters.length) return;
+  if (s.totals.population < DISASTERS.minPopulation) return;
+  const rng = sim.rng.weather;
+  if (!rng.chance(WEATHER.floodChance * over)) return;
+  const near = [...s.buildings.values()]
+    .filter(
+      (b) =>
+        b.state === BState.Active && waterDistanceAt(sim, b.x, b.z) < DISASTERS.flood.maxWaterDistance - 60,
+    )
+    .sort((a, b) => a.id - b.id);
+  if (!near.length) return;
+  const target = near[Math.floor(rng.next() * near.length)]!;
+  startDisaster(sim, 'flood', { x: target.x, z: target.z });
 }
 
 function hasWet(sim: Sim): boolean {

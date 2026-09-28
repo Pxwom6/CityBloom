@@ -6,6 +6,7 @@ import { BState, type Building } from '../world/buildings';
 import type { Factor } from './demand';
 import { landValueAt } from './landValue';
 import { fieldAt } from './pollution';
+import { parkShare } from './weather';
 
 const ZONE_LETTER = ['R', 'R', 'C', 'I'] as const;
 
@@ -49,12 +50,22 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
     svc('Police', b.covPolice, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
     svc('Health care', b.covHealth, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
     svc('School', b.covEdu, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
-    if (b.covPark > 0.05) f.push({ label: 'Park nearby', value: HAPPINESS.park * b.covPark });
+    if (b.covPark > 0.05) {
+      // Nobody uses the park much in the rain or snow (M22).
+      const k = parkShare(sim.state.weather);
+      f.push({
+        label: k < 1 ? 'Park nearby (wet today)' : 'Park nearby',
+        value: HAPPINESS.park * b.covPark * k,
+      });
+    }
   } else {
     svc('Fire station', b.covFire, HAPPINESS.bizServiceGain, HAPPINESS.bizServiceLoss);
     svc('Police', b.covPolice, HAPPINESS.bizServiceGain, HAPPINESS.bizServiceLoss);
     if (b.zone === ZONE_C && b.covPark > 0.05)
-      f.push({ label: 'Park nearby', value: HAPPINESS.park * 0.5 * b.covPark });
+      f.push({
+        label: 'Park nearby',
+        value: HAPPINESS.park * 0.5 * b.covPark * parkShare(sim.state.weather),
+      });
   }
   const crime = sim.crimeAt(b.x, b.z);
   if (crime > 0.02)

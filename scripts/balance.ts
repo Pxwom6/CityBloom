@@ -1,6 +1,7 @@
 // Balance tool: plays scripted strategies headlessly for years of game time and prints curves of
 // population, treasury, approval and demand (SPEC §8).
 // Usage: npx tsx scripts/balance.ts [years=20] [careful,greedy,neglectful] [--csv dir] [--seed s]
+//   [--weather 0-3] [--seasons off] (this city's weather intensity and seasons, for A/B runs)
 //   [--save dir] (keeps each strategy's city as <dir>/<strategy>.citybloom, loadable in the game)
 //   [--demo] (with --save: no random disasters, unused zoning cleared and a mid-afternoon clock, for
 //   the main menu's town)
@@ -46,6 +47,9 @@ if (scale.tax)
   for (const z of ['R', 'C', 'I'] as const) TAX_BASE[z] = TAX_BASE[z].map((v) => v * scale.tax!) as never;
 if (scale.upkeep) for (const d of CIVIC.values()) d.upkeep = Math.round(d.upkeep * scale.upkeep);
 if (scale.road) for (const r of Object.values(ROAD_TYPES)) r.upkeepPerMetre *= scale.road;
+// Seasons and weather (M22), for A/B runs: --weather 0|1|2|3 (intensity) and --seasons off.
+const weatherIntensity = flag('--weather');
+const seasonsOff = flag('--seasons') === 'off';
 const years = Number(args[0] ?? 20);
 const strategies = (args[1] ?? 'careful,greedy,neglectful').split(',') as StrategyId[];
 const MONTHS_PER_YEAR = 12;
@@ -67,9 +71,10 @@ function moods(p: Player): void {
         sum.set(f.label, (sum.get(f.label) ?? 0) + f.value / list.length);
     const low = list.filter((b) => b.happiness < GROWTH.distressHappiness).length;
     const mean = list.reduce((a, b) => a + b.happiness, 0) / list.length;
+    // MOODALL=1: every factor, not just the five that hurt most.
     const top = [...sum.entries()]
       .sort((a, b) => a[1] - b[1])
-      .slice(0, 5)
+      .slice(0, process.env.MOODALL ? undefined : 5)
       .map(([k, v]) => `${k} ${v.toFixed(2)}`)
       .join(', ');
     console.log(`      ${label}: ${list.length} active, mood ${mean.toFixed(2)}, ${low} distressed | ${top}`);
@@ -88,6 +93,12 @@ const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 for (const id of strategies) {
   const t0 = performance.now();
   const p = new Player(id, { seed, difficulty, cityName: demo ? 'Bloomfield' : id });
+  if (weatherIntensity !== undefined || seasonsOff)
+    p.sim.dispatch({
+      type: 'setWeather',
+      ...(weatherIntensity !== undefined ? { intensity: Number(weatherIntensity) as 0 | 1 | 2 | 3 } : {}),
+      ...(seasonsOff ? { seasons: false } : {}),
+    });
   const samples: Sample[] = [];
   const months = years * MONTHS_PER_YEAR;
   for (let m = 0; m < months; m++) {

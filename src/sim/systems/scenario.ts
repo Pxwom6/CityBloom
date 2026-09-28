@@ -1,6 +1,7 @@
 import { goalMet, SCENARIO, starMet, type ScenarioDef, type ScenarioGoal } from '../../data/scenarios';
 import type { CommandResult } from '../commands';
 import type { Sim } from '../sim';
+import { districtAt } from './districts';
 import { START_TICK_OFFSET, TICKS_PER_MONTH } from '../time';
 import { BState } from '../world/buildings';
 import { CHRONICLE_SERIES, monthFigures, type SeriesKey } from './chronicle';
@@ -67,6 +68,8 @@ export function startScenario(sim: Sim, id: string, dryRun: boolean): CommandRes
   if (dryRun) return { ok: true, cost: 0 };
   const s = sim.state;
   s.options = { ...s.options, sandbox: false, disasters: def.disasters, elections: def.elections };
+  s.weather.seasons = def.weather?.seasons ?? true;
+  s.weather.intensity = def.weather?.intensity ?? 2;
   if (!def.elections) {
     s.election.nextMonth = -1;
     s.election.promises = [];
@@ -109,6 +112,30 @@ export function goalValue(sim: Sim, g: ScenarioGoal, figures?: number[]): number
       const start = s.scenario?.start ?? 0;
       return s.election.results.some((r) => r.won && r.tick >= start) ? 1 : 0;
     }
+    case 'trucks':
+      return Math.round(s.traffic.get(s.highway.segment) ?? 0);
+    case 'districtTraffic': {
+      // A district that's gone (dissolved) can't meet the goal.
+      if (g.district === undefined || !s.districts.has(g.district)) return Infinity;
+      let most = 0;
+      for (const seg of s.net.segments.values()) {
+        const c = sim.net.curve(seg.id);
+        const p = c.pointAt(c.length / 2);
+        if (districtAt(s.districtCells, p.x, p.z) === g.district)
+          most = Math.max(most, s.traffic.get(seg.id) ?? 0);
+      }
+      return Math.round(most);
+    }
+    case 'powered': {
+      const u = s.utilityStats.power;
+      const n = u.served + u.unserved;
+      return n ? Math.round((u.served / n) * 1000) / 10 : 100;
+    }
+    case 'riders':
+      return sim
+        .lines()
+        .filter((l) => l.mode !== 'bus')
+        .reduce((n, l) => n + (s.transit.riders.get(l.depot) ?? 0), 0);
     default:
       return 0;
   }

@@ -1,4 +1,4 @@
-import { ROAD_RULES, ROAD_TYPES, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { ROAD_RULES, ROAD_TYPES, isRail, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type BulldozeTarget, type CommandResult } from '../commands';
 import { Curve, pointRectDistance, type Vec2 } from '../geom';
@@ -9,7 +9,7 @@ import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
 import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
-import { JUNCTION } from '../../data/balance';
+import { JUNCTION, TRAM } from '../../data/balance';
 
 /** Refusal reason if a road type isn't available yet, else null. */
 function roadLocked(sim: Sim, road: RoadTypeId): string | null {
@@ -45,7 +45,8 @@ export function buildRoad(
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
-  plan.oneway = oneway;
+  // Railways run both ways (M20).
+  plan.oneway = oneway && road !== 'rail';
   const res = applyRoadPlan(sim.net, plan, () => {
     if (!plan.earth?.idx.length) return null;
     reshapeGround(sim, plan.earth.idx, plan.earth.to);
@@ -121,6 +122,8 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
     );
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
+  if (seg.tram && !ROAD_TYPES[road].tram)
+    return fail('Take up the tram track first: trams run only on streets, avenues and boulevards');
   const curve = sim.net.curve(segId);
   const len = curve.length;
   const cost = Math.max(
@@ -364,6 +367,7 @@ export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: bool
   if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
   if (dir !== 0 && dir !== 1 && dir !== -1) return fail('Invalid direction');
   if (dir === 0 && ROAD_TYPES[seg.type].oneWay) return fail('A ramp is always one-way');
+  if (isRail(seg.type)) return fail('Railways have a track each way');
   if ((seg.oneway ?? 0) === dir)
     return fail(dir ? 'This road already runs that way' : 'This road is already two-way');
   if (dryRun) return ok(0);
@@ -372,6 +376,36 @@ export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: bool
   sim.net.dirty.segments.add(segId);
   sim.markNetworkChanged();
   return ok(0);
+}
+
+/**
+ * Lay tram track along a road, or take it up (M20). Track goes on streets, avenues and boulevards,
+ * costs TRAM.trackCost a metre and is taken up for nothing.
+ */
+export function setTram(sim: Sim, segId: number, on: boolean, dryRun: boolean): CommandResult {
+  const s = sim.state;
+  const seg = s.net.segments.get(segId);
+  if (!seg) return fail('No road here');
+  const curve = sim.net.curve(segId);
+  const at = curve.pointAt(curve.length / 2);
+  if (!on) {
+    if (!seg.tram) return fail('No tram track here', { at });
+    if (dryRun) return ok(0);
+    delete seg.tram;
+  } else {
+    if (seg.tram) return fail('This road already has tram track', { at });
+    if (!ROAD_TYPES[seg.type].tram) return fail('Tram track goes on streets, avenues and boulevards', { at });
+    if (!sim.isUnlocked(TRAM.unlockPopulation))
+      return fail(`Trams unlock at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`, { at });
+    const cost = Math.round(curve.length * TRAM.trackCost);
+    if (cost > s.treasury && !s.options.sandbox) return fail('Not enough money', { at });
+    if (dryRun) return ok(cost, { info: { length: Math.round(curve.length) } });
+    seg.tram = true;
+    sim.spend(cost, 'roads');
+  }
+  sim.net.dirty.segments.add(segId);
+  sim.markNetworkChanged();
+  return ok(on ? Math.round(curve.length * TRAM.trackCost) : 0);
 }
 
 /** Where a roundabout goes: a junction, or a point along a road that will be split there. */
@@ -405,6 +439,11 @@ export function placeRoundabout(
     }
   }
   if (!site) return fail('Put a roundabout on a junction or a road');
+  const onRail =
+    'node' in site
+      ? net.segmentsAt(site.node).some((id) => isRail(net.segment(id).type))
+      : isRail(net.segment(site.seg).type);
+  if (onRail) return fail("A roundabout can't go on a railway or a level crossing");
   const centre = 'node' in site ? net.node(site.node) : { x: site.x, z: site.z };
   // The roads that will meet the ring, with how far each runs to its next junction.
   const arms: { seg: number; len: number }[] = [];

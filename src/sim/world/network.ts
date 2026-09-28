@@ -35,6 +35,10 @@ export interface RoadSegment {
    * for two-way roads.
    */
   oneway?: 1 | -1;
+  /** Tram track laid along it (M20): streets, avenues and boulevards only. */
+  tram?: true;
+  /** Snow lying on it (M22), 0–1; absent when clear. Slows traffic until it melts or is ploughed. */
+  snow?: number;
 }
 
 /**
@@ -473,6 +477,7 @@ export class Network {
       first.oneway = seg.oneway;
       second.oneway = seg.oneway;
     }
+    if (seg.tram) first.tram = second.tram = true;
 
     for (const { side, block } of transfers) {
       const b1 = this.st.blocks.get(side === 1 ? first.left : first.right);
@@ -528,6 +533,8 @@ export class Network {
       type: RoadTypeId;
       layouts: { left?: [number, number]; right?: [number, number] };
       deck?: number[];
+      oneway?: 1 | -1;
+      tram?: true;
     };
     node: number;
     first: number;
@@ -560,6 +567,8 @@ export class Network {
       zoned: !!(o.layouts.left || o.layouts.right),
     });
     if (o.deck) merged.deck = o.deck.slice();
+    if (o.oneway) merged.oneway = o.oneway;
+    if (o.tram) merged.tram = true;
     this.removeNodeIfOrphan(rec.node);
     const moved = new Map<number, { block: number; col: number } | null>();
     for (const side of ['left', 'right'] as const) {

@@ -225,6 +225,12 @@ body {
   align-items: center;
   gap: var(--space-2);
   z-index: var(--z-hud);
+  /*
+   * As wide as its widest bar, up to the screen: centred with left: 50%, it would otherwise only get
+   * the main toolbar's width, and the road options (M20: seven road types) would wrap inside it.
+   */
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-3));
 }
 .toolbar,
 .subbar {
@@ -1807,6 +1813,13 @@ body {
   border-left: 4px solid var(--color-positive);
 }
 .advisor.notice {
+  /* Not the notifications list's .notice row (a flex row that squeezed the advice into columns). */
+  display: block;
+  width: auto;
+  padding: var(--space-2) var(--space-3);
+  font-size: inherit;
+  color: inherit;
+  cursor: auto;
   border-left-color: #6da7ec;
 }
 .advisor.warning {
@@ -2056,6 +2069,14 @@ body {
 .policy input {
   accent-color: var(--color-accent);
 }
+/* A district-only policy in the city list (M21): no checkbox, lined up with the names above it. */
+.policy-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: 1.7rem;
+}
 .policy-name {
   font-weight: var(--font-weight-bold);
 }
@@ -2257,6 +2278,23 @@ body {
 }
 .photo-follow > span:first-child {
   margin-right: auto;
+}
+/* Season's five choices wrap three and two to fit the panel. */
+.photo-panel .segmented {
+  display: flex;
+  flex-wrap: wrap;
+}
+.photo-panel .segmented button {
+  flex: 1 1 28%;
+  padding: var(--space-1) var(--space-2);
+}
+.photo-weather {
+  margin-top: var(--space-1);
+}
+.photo-weather .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .photo-save {
   margin-top: var(--space-3);
@@ -2627,4 +2665,170 @@ body {
 .legend-note {
   margin-top: var(--space-1);
   font-size: var(--font-size-xs);
+}
+
+/* Districts (M21): names over the map, the panel's list and the tool's swatches. */
+.district-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.district-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 10px;
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--district, #666);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.district-label.selected {
+  font-size: var(--font-size-md, 1rem);
+  outline: 2px solid var(--district, #666);
+}
+.district-swatch {
+  display: inline-block;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  border-radius: 3px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-sm);
+}
+.district-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.district-row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.district-row:hover {
+  background: var(--color-accent-soft);
+}
+.district-row.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.district-row-name {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+}
+.district-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--space-2);
+}
+.district-rename input {
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+}
+.district-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.policy-name .badge {
+  margin-left: var(--space-2);
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  vertical-align: middle;
+}
+/* The district tool's options sit above the toolbar while this panel is open: stop above them. */
+.advisors.districts {
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 9rem);
+}
+/* A tool's options bar sits above the toolbar: the legend goes above it too (M21). */
+.legend.above-subbar {
+  bottom: calc(var(--toolbar-height) + 5rem);
+}
+.district-detail dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+.district-detail dt {
+  color: var(--color-text-muted);
+}
+.district-detail dd {
+  margin: 0;
+  text-align: right;
+  font-weight: var(--font-weight-medium);
+}
+
+/* Seasons and weather in the top bar (M22): icon, temperature and season over the date. */
+.weather-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.weather-label svg {
+  flex: none;
+}
+.climate-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  max-width: 22rem;
+}
+.weather-pop {
+  white-space: normal;
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: var(--space-6);
+  width: 22rem;
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  z-index: 5;
+}
+.weather-pop header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.weather-pop header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.weather-pop p {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+}
+.weather-pop p:first-of-type {
+  color: inherit;
 }

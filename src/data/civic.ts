@@ -54,8 +54,22 @@ export interface CivicDef {
     revenuePerUnit?: number;
     powerPerUnit?: number;
   };
+  /**
+   * Public works depot (M22): snow ploughs it sends out (scaled by road maintenance funding), how
+   * far along the roads they work (m), and how many roads a plough clears before it heads home.
+   */
+  plough?: { ploughs: number; reach: number; stops: number };
   /** Bus depot (M6): buses it runs and passengers per bus. */
   transit?: { buses: number; capacity: number };
+  /**
+   * Rail (M20): a passenger station on a railway, with the trains it adds to its line and their
+   * seats. Faces a railway, not a road.
+   */
+  rail?: { trains: number; capacity: number };
+  /** Tram depot (M20): trams it runs round its tram stops and passengers per tram. */
+  tram?: { trams: number; capacity: number };
+  /** The track a building faces (M20): a railway instead of a road. */
+  track?: 'rail';
   /** Service coverage and capacity (M5). */
   service?: {
     kind: ServiceKind;
@@ -71,8 +85,13 @@ export interface CivicDef {
   tourism?: { draw?: number; rooms?: number };
   /** Mines and wells: extracted units a day on a rich deposit, export price, and units in a deposit. */
   resource?: { kind: 'ore' | 'oil'; perDay: number; price: number; reserve: number };
-  /** Freight terminal: trade income per industrial job a day, and extra industrial demand. */
+  /** Freight hub: trade income per industrial job a day, and extra industrial demand. */
   freight?: { perJob: number; demand: number };
+  /**
+   * Rail freight terminal (M20): trucks a day it can load onto trains. It faces a road for the trucks
+   * and needs a railway beside it linked to the regional railway.
+   */
+  railFreight?: { trucks: number };
   /** Research park: income per high-tech job a day; high-tech industry needs less education. */
   research?: { perJob: number };
   /** Only one can be built (landmarks). */
@@ -261,6 +280,22 @@ export const CIVIC_DEFS: CivicDef[] = [
     blurb: 'Trucks collect garbage and bury it here until it fills up.',
     unlockPopulation: 0,
     model: 'landfill',
+  },
+  {
+    id: 'works',
+    name: 'Public works depot',
+    category: 'garbage',
+    dept: 'roads',
+    w: 36,
+    d: 32,
+    cost: 7_500,
+    upkeep: 200,
+    plough: { ploughs: 3, reach: 3_000, stops: 12 },
+    landValue: { radius: 80, value: -0.03 },
+    blurb:
+      'Snow ploughs clear the roads within about 3 km, busiest first, whenever snow settles. Road maintenance funding sets how many go out.',
+    unlockPopulation: 800,
+    model: 'works',
   },
   {
     id: 'recycling',
@@ -472,6 +507,60 @@ CIVIC_DEFS.push({
   model: 'busdepot',
 });
 
+// Trams (M20): a depot on a road with tram track runs trams round the tram stops it can reach.
+CIVIC_DEFS.push({
+  id: 'tramdepot',
+  name: 'Tram depot',
+  category: 'transit',
+  dept: 'transit',
+  w: 44,
+  d: 30,
+  cost: 26_000,
+  upkeep: 760,
+  tram: { trams: 5, capacity: 140 },
+  blurb:
+    'Runs trams round the tram stops on the tracks it can reach. Trams carry nearly three busloads, ride more smoothly and draw riders from a little further. Faces a road with tram track.',
+  unlockPopulation: 5_000,
+  model: 'tramdepot',
+});
+
+// Rail (M20). Stations face a railway; each set of stations on connected track runs one line.
+CIVIC_DEFS.push({
+  id: 'station',
+  name: 'Railway station',
+  category: 'transit',
+  dept: 'transit',
+  w: 64,
+  d: 20,
+  cost: 36_000,
+  upkeep: 1_100,
+  track: 'rail',
+  rail: { trains: 1.5, capacity: 480 },
+  blurb:
+    'A platform and booking hall beside a railway. Two or more stations on connected track run a train line; people walk up to 9 minutes to catch it.',
+  unlockPopulation: 5_000,
+  model: 'station',
+});
+
+// The rail freight terminal (M20): trucks bring goods to it rather than to the highway.
+CIVIC_DEFS.push({
+  id: 'railfreight',
+  name: 'Rail freight terminal',
+  category: 'special',
+  dept: 'trade',
+  w: 72,
+  d: 36,
+  cost: 58_000,
+  upkeep: 950,
+  freight: { perJob: 0.5, demand: 0.1 },
+  railFreight: { trucks: 700 },
+  landValue: { radius: 160, value: -0.1 },
+  blurb:
+    'Moves goods between trucks and trains: industry nearby ships by rail instead of driving to the highway, and it counts towards trade. Faces a road, with a railway linked to the regional railway along its back.',
+  unlockPopulation: 5_000,
+  model: 'railfreight',
+});
+
 // Specialisations (M10): tourism, trade and technology. All designs are original.
 CIVIC_DEFS.push(
   {
@@ -575,7 +664,7 @@ CIVIC_DEFS.push(
   },
   {
     id: 'freighthub',
-    name: 'Freight terminal',
+    name: 'Freight hub',
     category: 'special',
     dept: 'trade',
     w: 56,

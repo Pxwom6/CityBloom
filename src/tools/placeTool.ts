@@ -1,5 +1,5 @@
 import { CIVIC, type CivicCategory } from '../data/civic';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
 import { roadsidePose } from '../sim/world/civic';
 import type { Game } from '../game';
@@ -115,7 +115,16 @@ export class PlaceTool implements Tool {
   private computePose(p: { x: number; z: number }): void {
     const def = CIVIC.get(this.def)!;
     const net = this.game.world.net;
-    const hit = net.nearestSegment(p, def.d + 30, (id) => ROAD_TYPES[net.segment(id).type].buildable);
+    // Stations face a railway, tram depots a road with tram track, everything else a road (M20).
+    const faces = (id: number) => {
+      const seg = net.segment(id);
+      const t = ROAD_TYPES[seg.type];
+      if (def.track === 'rail') return isRail(seg.type) && t.buildable;
+      return t.buildable && !isRail(seg.type) && (!def.tram || !!seg.tram);
+    };
+    const hit =
+      net.nearestSegment(p, def.d + 30, faces) ??
+      (def.tram ? net.nearestSegment(p, def.d + 30, (id) => ROAD_TYPES[net.segment(id).type].access) : null);
     if (!hit) {
       this.pose = { x: p.x, z: p.z, angle: 0, side: 1 };
       return;

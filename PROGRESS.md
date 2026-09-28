@@ -34,7 +34,7 @@
 - [x] M20 Rail
 - [x] M21 Districts
 - [x] M22 Seasons and weather
-- [ ] M23 Region, airport and seaport
+- [x] M23 Region, airport and seaport
 - [ ] M24 Terrain and map editor
 
 ## Summary
@@ -91,19 +91,21 @@ done).
    tried it.
 
 ## In progress
-M23 Region, airport and seaport: done and pushed (neighbours and deals, regional commuters, shoppers
-and visitors through traffic, airport, seaport, noise, Region panel, planes and ships, Harbour Lights,
-`e2e/m23-region.spec.ts`, docs). Left: bench and balance numbers, full `npm run e2e`, the
-`M23 complete:` commit. Then M24.
+M24 Terrain and map editor. Done and pushed: the terrain tool (Shift+T: raise, lower, level, smooth,
+paid by the cubic metre, holding the ground under roads and buildings, one undo step per drag);
+custom maps (heights, forests, ore, oil, highway and railway entries) kept in the city's save (v22);
+the map editor from the main menu (sculpt, river and lake, sea, land, forest, ore and oil brushes
+with undo, entries, climate, a playability check, save, `.citymap` export and import, play), and
+"Your maps" on the new-city screen; `tests/terraform.test.ts`, `customMap.test.ts`,
+`mapEditor.test.ts` (a map made in the editor saves, reloads and grows a city). Working on: the
+Terraces scenario (a hill town on an editor-format map, `scripts/lib/ridgeMap.ts`).
 
 ## Next tasks
-1. Log bench and balance (running), full `npm run e2e`, tick M23, commit `M23 complete:`.
-2. M24 terraforming: raise, lower, level and smooth tools on M13's terrain deltas, a cost per volume,
-   limits near buildings, undo.
-3. M24 map editor from the main menu: sculpt, paint water (rivers, lakes, coastline), place
-   resources, forests, highway and rail entries; a playability check; save and share maps as files;
-   they appear on the new-city screen. Scripted test: a map made in the editor saves, reloads and
-   grows a city.
+1. Terraces scenario: recipe, def, tests (won by cutting the pass, lost on the shelf alone), preview.
+2. `e2e/m24-terrain.spec.ts` through the UI (terrain tool in a city; the editor from the main menu to
+   a city on the map), screenshots reviewed.
+3. Docs (README, DESIGN §3.25, DECISIONS, SPEC_REVIEW, CLAUDE.md), bench and balance, full e2e,
+   `M24 complete:`.
 4. The end of the brief: summary and ideas in PROGRESS, SPEC_REVIEW's last section, a final
    playthrough through the UI using the new features.
 
@@ -118,6 +120,7 @@ and visitors through traffic, airport, seaport, noise, Region panel, planes and 
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
 - Visitors drive from where they arrive to the landmarks and hotels (M23); with no sight in town they're counted but stay put. Ships sail a straight line from the berth out to sea, so on a very irregular coast one could cross a headland.
+- The M23 full e2e run had two old specs fail on view-dependent details (M14 clicked a warehouse that M23's regional commuters grew in front of the police station at a low camera angle; M16 hovered the history chart before its panel settled). Both now click and hover robustly and pass.
 - The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
 - Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.
 - Once a big city has bought every project and landmark it can reach, its treasury still creeps up (≈ $0.3M a year for the careful mayor at 2 % taxes); later milestones add things to buy.

@@ -271,6 +271,43 @@ export const RECIPES: Record<string, () => Sim> = {
     return sim;
   },
   // Saltmarsh, on the coast: a busy town with beaches and no reason yet for anyone to visit.
+  // Harbourside (M23): a coastal town of about 11,000 whose newest coal plants have closed, with a road out
+  // to the shore where a seaport could stand, and neighbours up the highway with power to sell.
+  harbour: () => {
+    const p = new Player('careful', { seed: 'port', preset: 'coast', cityName: 'Harbourside' });
+    p.avoid = ['seaport', 'airport'];
+    const sim = p.sim;
+    for (let m = 0; m < 72 && sim.state.totals.population < 11_000; m++) govern(p, 1);
+    // The avenue carries on east to the sea, with a street along the shore.
+    const z = p.c.z;
+    let shore = p.c.x + 2 * DW;
+    while (shore < MAP_SIZE - 40 && sim.terrain.heightAt(shore, z) >= 0.6) shore += 8;
+    const end = { x: shore - 110, z };
+    p.roadAcross('avenue', { x: p.c.x + 2 * DW, z }, end);
+    sim.dispatch({
+      type: 'buildRoad',
+      road: 'street',
+      points: [
+        { x: end.x, z: z - 400 },
+        { x: end.x, z: z + 400 },
+      ],
+    });
+    // The newest coal plants close: what's left gives about four-fifths of what the town needs.
+    const output = (def: string) => CIVIC.get(def)!.output?.power ?? 0;
+    const target = sim.state.utilityStats.power.demand * 0.8;
+    const plants = [...sim.state.civics.values()]
+      .filter((c) => CIVIC.get(c.def)?.category === 'power')
+      .sort((a, b) => a.id - b.id);
+    let supply = plants.reduce((n, c) => n + output(c.def), 0);
+    for (const c of [...plants].reverse()) {
+      if (c.def === 'wind' || supply - output(c.def) < target * 0.97) continue;
+      supply -= output(c.def);
+      sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    }
+    sim.advance(TICKS_PER_HOUR * 2);
+    sim.earn(150_000, 'grants');
+    return sim;
+  },
   resort: () => {
     const p = new Player('careful', { seed: 'saltmarsh', preset: 'coast', cityName: 'Saltmarsh' });
     p.avoid = [

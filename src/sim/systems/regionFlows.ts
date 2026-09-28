@@ -312,8 +312,10 @@ export function regionRound(sim: Sim, r: RegionRoundInput): RegionFlows {
   }
   const sights = sightsByNode(sim, g);
   for (const v of visitorEntries) {
-    if (v.people <= 0 || !v.nodes.length || !sights.size) continue;
+    if (v.people <= 0 || !v.nodes.length) continue;
+    // They come whether or not there's a sight to drive to; with none, they stay near where they arrive.
     out.visitors[v.mode] += v.people;
+    if (!sights.size) continue;
     for (const node of v.nodes) {
       const people = v.people / v.nodes.length;
       let cars = 0;

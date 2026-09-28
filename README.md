@@ -113,6 +113,16 @@ date in the top bar shows the weather, the temperature and the season, and opens
 the weather is doing to the city. Settings turn seasons off or set the weather from off to wild, and
 photo mode can pick any season and weather for a shot.
 
+**The region.** Three neighbouring towns lie beyond the map, each with a character (an industrial
+town, a commuter suburb, a resort) and fortunes of its own. Their people drive in along the highway,
+or come by train to a station on the regional line, to take jobs your residents can't fill and to
+shop; your residents without work take jobs there; and the region panel (the towns button in the top
+bar, Shift+N) signs deals to buy or sell power, water and garbage processing, paid for what actually
+comes through. Past 10,000 residents a **seaport** on deep water puts the city's goods on ships and
+brings ferry passengers; past 20,000 an **airport** flies visitors and business travellers in, loud
+along its runway (see the noise map). Visitors now arrive by road, train, air and sea and drive
+through town to the sights; the region traffic map shows where they and the commuters go.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -132,13 +142,13 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are twelve set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are thirteen set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
 from a mill town, rebuild a lake town's waterworks after a flood, turn a coastal town into a
-resort, keep the lorries out of an old market street, and see an alpine town through its first
-hard winter. Each opens with a brief; the city's name in the top bar opens its goals (G),
+resort, keep the lorries out of an old market street, see an alpine town through its first
+hard winter, and keep a harbour town lit while opening it to the sea. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -171,6 +181,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Pause / speeds | top bar | | Space, 1, 2, 3 |
 | Budget / advisors / notifications / city (progress, policies, election, achievements) | top bar | | M / J / N / P |
 | City history | top bar | | Y |
+| Region: neighbours, deals, commuters and visitors | top bar towns button | | Shift+N |
 | Scenario goals | the city's name in the top bar | | G |
 | Photo mode (H hides its panel, Enter saves, Esc leaves) | toolbar camera | | K |
 | Data maps | toolbar | | L toggles the power map |

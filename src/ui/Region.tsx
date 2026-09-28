@@ -49,7 +49,6 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
   const deals = game.world.stats.region.deals;
   const deal = deals.find((d) => d.neighbour === n.id && d.resource === res && d.direction === dir);
   const cap = n.offers[dir][res];
-  const step = Math.max(1, Math.round(cap / 20));
   const [want, setWant] = useState<number | null>(null);
   const value = Math.min(cap, want ?? deal?.amount ?? Math.round(cap / 2));
   const price = REGION.price[dir][res];
@@ -94,7 +93,7 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
           type="range"
           min={0}
           max={cap}
-          step={step}
+          step={1}
           value={value}
           aria-label={`${dir === 'buy' ? 'Buy' : 'Sell'} how much ${WHAT[res]}`}
           data-testid={`${id}-amount`}

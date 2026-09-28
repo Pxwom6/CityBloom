@@ -946,6 +946,57 @@ The done-criterion tests: `tests/winter.test.ts` (the alpine test town uses 26 %
 resident in January than July, snow lifts its commute 98 → 115 s and a depot brings it back to
 98 s) and the Long Winter scenario (`tests/scenarios/winter.test.ts`).
 
+### 3.24 Region, airport and seaport (M23)
+
+**Neighbours** (`src/data/region.ts`, `src/sim/systems/region.ts`; `SimState.region`, save v21).
+Three towns beyond the map edges, one of each character (industrial town, commuter suburb, resort),
+named and sized from the seed and placed north and south up and down the regional highway and west
+along the railway. Each month their growth rate drifts on their own RNG stream (`region`) within the
+kind's bounds, and their population follows. Per 1,000 residents a kind sells and buys power, water
+and garbage processing, sends workers and shoppers, and has jobs for the city's unemployed
+(`NEIGHBOUR_KIND[k].per`). An industrial town has up to 30 % less spare power in the cold; resort
+shoppers follow the season.
+
+**Deals.** `setDeal` signs, changes or ends one contract per neighbour, resource and direction, up to
+what the neighbour offers now. Bought power and water come into `updateUtilities` as a producer at
+the highway's connection node; sold power and water take what the highway's component has left after
+the city's own buildings are served, so a sale never blacks out a home. Garbage deals move garbage
+hourly: a neighbour that takes it empties the fullest landfills; one that sends it has it burnt or
+recycled where there's room, else buried. Everything is paid monthly (hourly accrual) for what was
+actually delivered, on the 'Bought from / Sold to neighbours' ledger lines.
+
+**Commuters, shoppers and visitors** (`src/sim/systems/regionFlows.ts`), in each matching round after
+the city's own residents are matched, so locals always get first pick:
+- The neighbours' workers take jobs still open within a commute (30 min, of which 12 on the regional
+  highway) of the way in: the highway's connection node, or a station on track linked to the
+  regional railway (30 % come by train when there is one, entering at the station's road node).
+  Their pull grows with the city: 10 % of the pool at first, all of it at 8,000 jobs (shoppers: at
+  2,000 shop jobs).
+- Half of the residents without a job in town take one in a neighbour, those nearest the highway
+  first; their commute includes the drive out.
+- The neighbours' shoppers fill shop capacity left within a shopping trip of the edge.
+- Visitors (M10's count) now arrive by road, rail, air and sea (`tourism.by`) and travel from where
+  they arrive to the landmarks and hotels.
+All of it loads the roads and is sampled as trips (`incommute`, `outcommute`, `regionshop`,
+`visit`). Buildings keep `fromRegion` (workers from out of town, counted in `pop`) and `toRegion`
+(residents working out of town, counted in `employed`). Demand treats jobs held by commuters as open
+to newcomers, and residents working out of town as still looking, so the region fills gaps without
+choking the city's own growth. Scenarios play without neighbours unless they set `region: true`;
+`GameOptions.region: false` founds a city without them (controlled test towns).
+
+**Airport and seaport** (special category, unique). The airport (20,000 residents, 300 × 130 m)
+brings its own visitors by air plus half as many again of the city's others, lifts commercial demand
+and is loud along its runway's line. The seaport (10,000, coast) needs deep water (≤ −6 m) within 60 m
+of its back; its quay may stand over the water and a sloping shore. It works as a freight terminal
+without the wait to load a train: exports and imports go by sea when the drive there is less than ten
+minutes longer than to the highway, up to 360 loads a day; plus trade income per industrial job,
+industrial demand and ferry visitors.
+
+**Noise** (`src/sim/systems/noise.ts`): a raster rebuilt every three game hours from the airport (an
+ellipse along the runway's line), motorway and highway traffic, and heavy industry; residents mind it
+above 0.35 ('Noise' mood factor, the advisors' 'Homes under the noise'). Data maps: Noise, and Region
+traffic (roads used by trips to and from the region, from the sampled trips).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -1103,6 +1154,8 @@ migration is also the identity, and `Sim.fromSave` lays the rail link on a city 
 map) and `districtCells` (all zero); `tests/districts.test.ts` loads the version-10 playtest save,
 paints a district and round-trips it. v20 (M22) adds `weather` (the preset's climate, a fair first spell) and the `weather` RNG
 stream; `tests/weather.test.ts` loads the version-10 playtest save, plays on and round-trips it.
+v21 (M23) adds `region` (the seed's neighbours, no deals) and the `region` RNG stream;
+`tests/region.test.ts` loads the version-10 playtest save, signs a deal, plays on and round-trips it.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

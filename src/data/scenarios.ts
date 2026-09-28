@@ -34,7 +34,9 @@ export type GoalMeasure =
   /** Vehicles a day on the busiest road in district `district` (M21). */
   | 'districtTraffic'
   /** Share of buildings with all the power they need, % (M22). */
-  | 'powered';
+  | 'powered'
+  /** Truckloads a day put on ships at the seaport (M23). */
+  | 'shipped';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -354,6 +356,44 @@ export const SCENARIOS: ScenarioDef[] = [
     hints: [
       'The advisors say how much power midwinter will need; the date in the top bar shows the weather.',
       'A public works depot (Garbage and snow) sends ploughs to clear the busiest roads first.',
+    ],
+  },
+  {
+    id: 'harbour',
+    name: 'Harbour Lights',
+    blurb: 'Keep a coastal town lit after its power stations close, and open it to the sea.',
+    brief:
+      'Harbourside’s coal plants have closed, and the council has banned new fossil power on the bay: ' +
+      'the wind turbines give about four-fifths of what the town needs. Up the highway, the neighbours ' +
+      'have power to sell. Down at the shore there is room for a seaport, to put the town’s goods on ' +
+      'ships and bring ferry passengers in. Keep every building powered and ship goods by sea, both ' +
+      'for two months running.',
+    save: 'harbour.citybloom',
+    months: 6,
+    stars: [
+      { months: 3, label: 'Within 3 months' },
+      {
+        goal: { measure: 'visitors', min: 600, label: '600 visitors a day' },
+        label: '600 visitors a day when you win',
+      },
+    ],
+    goals: [
+      { measure: 'powered', min: 99, hold: 2, label: 'Every building powered (99 %), 2 months running' },
+      { measure: 'shipped', min: 120, hold: 2, label: '120 truckloads a day onto ships, 2 months running' },
+    ],
+    limits: [
+      {
+        kind: 'noCivic',
+        defs: ['coal', 'gas', 'nuclear'],
+        label: 'No new coal, gas or nuclear power on the bay',
+      },
+    ],
+    disasters: false,
+    elections: false,
+    region: true,
+    hints: [
+      'The Region panel (Shift+N, top bar) lists what each neighbour will sell: power bought comes in along the highway.',
+      'A seaport (Trade, research and ports) needs deep water along its back; the shore street is ready for one.',
     ],
   },
   {

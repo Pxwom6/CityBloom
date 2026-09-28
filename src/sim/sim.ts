@@ -38,7 +38,7 @@ import {
   type Scope,
   type Touched,
 } from './history';
-import { buildRoad, bulldoze, upgradeRoad } from './actions/roads';
+import { buildRoad, bulldoze, upgradeRoad, setOneWay } from './actions/roads';
 import { zone } from './actions/zoning';
 import { v2 } from './geom';
 import { GRID_RES, HEIGHT_RES } from '../data/world';
@@ -810,7 +810,9 @@ export class Sim {
         return ok(0);
       }
       case 'buildRoad':
-        return buildRoad(this, cmd.road, cmd.points, dryRun);
+        return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      case 'setOneWay':
+        return setOneWay(this, cmd.seg, cmd.dir, dryRun);
       case 'bulldoze':
         return bulldoze(this, cmd.target, dryRun);
       case 'upgradeRoad':
@@ -907,6 +909,7 @@ export class Sim {
       case 'zone':
         return ZONING_SCOPE;
       case 'buildRoad':
+      case 'setOneWay':
       case 'bulldoze':
       case 'placeStop':
       case 'upgradeRoad':
@@ -931,6 +934,8 @@ export class Sim {
         return 'bus stop';
       case 'upgradeRoad':
         return 'road change';
+      case 'setOneWay':
+        return 'one-way change';
       case 'placeBuilding':
         return (CIVIC.get(cmd.def)?.name ?? 'building').toLowerCase();
       case 'addModule':

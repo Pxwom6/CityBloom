@@ -19,7 +19,13 @@ function roadLocked(sim: Sim, road: RoadTypeId): string | null {
   return null;
 }
 
-export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: boolean): CommandResult {
+export function buildRoad(
+  sim: Sim,
+  road: RoadTypeId,
+  points: Vec2[],
+  dryRun: boolean,
+  oneway = false,
+): CommandResult {
   const s = sim.state;
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
@@ -38,6 +44,7 @@ export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: bo
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
+  plan.oneway = oneway;
   const res = applyRoadPlan(sim.net, plan, () => {
     if (!plan.earth?.idx.length) return null;
     reshapeGround(sim, plan.earth.idx, plan.earth.to);
@@ -311,4 +318,23 @@ export function clearTreesAlong(sim: Sim, segments: number[]): void {
       }
     }
   }
+}
+
+/**
+ * Make a road one-way or two-way again (M19): 1 runs from its start node to its end node, -1 the
+ * other way. Signs and paint only, so it's free; the regional highway can't be changed.
+ */
+export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: boolean): CommandResult {
+  const seg = sim.state.net.segments.get(segId);
+  if (!seg) return fail('No road here');
+  if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
+  if (dir !== 0 && dir !== 1 && dir !== -1) return fail('Invalid direction');
+  if ((seg.oneway ?? 0) === dir)
+    return fail(dir ? 'This road already runs that way' : 'This road is already two-way');
+  if (dryRun) return ok(0);
+  if (dir) seg.oneway = dir;
+  else delete seg.oneway;
+  sim.net.dirty.segments.add(segId);
+  sim.markNetworkChanged();
+  return ok(0);
 }

@@ -42,6 +42,8 @@ export interface RoadPlan {
   profiles: (GradeProfile | null)[];
   /** The cut and fill that lays it into the ground; its cost is included in `cost`. */
   earth: EarthPlan | null;
+  /** New pieces are one-way, in the direction they were drawn (M19). */
+  oneway?: boolean;
 }
 
 const DEG = Math.PI / 180;
@@ -510,6 +512,7 @@ export function applyRoadPlan(
         right: seg.right,
         layouts: { left: blockLayout(seg.left), right: blockLayout(seg.right) },
         ...(seg.deck ? { deck: seg.deck.slice() } : {}),
+        ...(seg.oneway ? { oneway: seg.oneway } : {}),
       };
       const r = net.splitSegment(cur, sp.s);
       result.splits.push({ original, node: r.node.id, first: r.first.id, second: r.second.id });
@@ -537,6 +540,8 @@ export function applyRoadPlan(
     // Keep the control point consistent with the exact node positions.
     const c = v2(p.c.x + (na.x - p.a.x + nb.x - p.b.x) / 2, p.c.z + (na.z - p.a.z + nb.z - p.b.z) / 2);
     const seg = net.createSegment(a, b, c, plan.type);
+    // One-way roads run the way they were drawn (M19).
+    if (plan.oneway) seg.oneway = 1;
     // A viaduct over dry ground keeps its graded heights (M13).
     const prof = plan.profiles[i];
     if (prof && prof.raisedLength > 0) seg.deck = Array.from(prof.h, (h) => Math.round(h * 100) / 100);

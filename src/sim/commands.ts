@@ -18,12 +18,15 @@ export type Command =
   | { type: 'cheat'; cheat: 'addMoney'; amount: number }
   | { type: 'renameCity'; name: string }
   /** points = [a, c, b, c, b, ...] (anchors and quadratic control points) or [a, b] for a straight road. */
-  | { type: 'buildRoad'; road: RoadTypeId; points: Vec2[] }
+  /** `oneway`: the new road runs one way, as drawn (M19). */
+  | { type: 'buildRoad'; road: RoadTypeId; points: Vec2[]; oneway?: boolean }
   | { type: 'bulldoze'; target: BulldozeTarget }
   /** Place a bus stop beside the road nearest (x, z). */
   | { type: 'placeStop'; x: number; z: number }
   /** Change a road segment to another type in place. */
   | { type: 'upgradeRoad'; seg: number; road: RoadTypeId }
+  /** Make a road one-way (1: from its start to its end, -1: the other way) or two-way (0) (M19). */
+  | { type: 'setOneWay'; seg: number; dir: 0 | 1 | -1 }
   /** `stroke` groups several paint commands from one drag into a single undo step. */
   | { type: 'zone'; zone: ZoneLetter | 'none'; area: ZoneArea; stroke?: number }
   /** Take back the last action, or put back the last one taken back (M14). */

@@ -27,6 +27,11 @@ export interface RoadSegment {
    * (M13); absent for roads on the ground and for water bridges (derived from the terrain).
    */
   deck?: number[];
+  /**
+   * One-way road (M19): traffic may only drive from `a` to `b` (1) or from `b` to `a` (-1). Absent
+   * for two-way roads.
+   */
+  oneway?: 1 | -1;
 }
 
 /**
@@ -459,6 +464,11 @@ export class Network {
     if (seg.deck) {
       first.deck = resampleDeck(seg.deck, 0, s);
       second.deck = resampleDeck(seg.deck, s, curve.length);
+    }
+    // Both halves keep the road's direction (they run a → node → b, as it did).
+    if (seg.oneway) {
+      first.oneway = seg.oneway;
+      second.oneway = seg.oneway;
     }
 
     for (const { side, block } of transfers) {

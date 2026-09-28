@@ -246,7 +246,7 @@ export class TrafficRenderer {
     const r = Math.random();
     const model: ModelName = freight ? 'truck' : r < 0.55 ? 'sedan' : r < 0.85 ? 'hatch' : 'van';
     const paint = freight ? TRUCK_PAINT : PAINT;
-    const legs = back ? reversed(trip.legs) : trip.legs;
+    const legs = back ? (trip.back ?? reversed(trip.legs)) : trip.legs;
     const first = this.world.netState.segments.get(legs[0]!.seg)!;
     const lanes = ROAD_TYPES[first.type].lanes;
     this.cars.push({

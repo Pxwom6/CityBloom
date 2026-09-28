@@ -21,6 +21,8 @@ export interface TripSample {
   legs: Leg[];
   /** Trips per day this sample stands for (relative weight for spawning). */
   weight: number;
+  /** The way back, when it isn't the way there reversed (one-way roads, M19). */
+  back?: Leg[];
 }
 
 /** Travel-time multiplier for a volume/capacity ratio. */
@@ -42,7 +44,8 @@ export function hourShare(tick: number): number {
 export function segCapacity(sim: Sim, segId: number): number {
   const seg = sim.state.net.segments.get(segId);
   if (!seg) return 1;
-  return ROAD_TYPES[seg.type].capacity * (0.8 + 0.2 * Math.min(1, sim.fundingEff('roads')));
+  const oneWay = seg.oneway ? TRAFFIC.oneWayCapacity : 1;
+  return ROAD_TYPES[seg.type].capacity * oneWay * (0.8 + 0.2 * Math.min(1, sim.fundingEff('roads')));
 }
 
 /** Volume over capacity for a segment at `share` of the peak hour. */
@@ -83,8 +86,32 @@ export class FlowAccumulator {
     this.load[node] = this.load[node]! + v;
   }
 
+  /** Drop a node's pending load (it had nowhere to go). */
+  clearLoad(node: number): void {
+    this.load[node] = 0;
+  }
+
   addSegment(seg: number, v: number): void {
     if (v > 0) this.next.set(seg, (this.next.get(seg) ?? 0) + v);
+  }
+
+  /**
+   * Push loads back along the tree of a reverse Dijkstra (M19: the way home on a network with
+   * one-way roads): from each node towards the source, along the edges leaving it.
+   */
+  accumulateReverse(d: Dijkstra): void {
+    const g = this.g;
+    for (let i = d.settledCount - 1; i >= 0; i--) {
+      const u = d.settled[i]!;
+      const l = this.load[u]!;
+      if (l <= 0) continue;
+      this.load[u] = 0;
+      const k = d.pred[u]!;
+      if (k < 0) continue;
+      this.addSegment(g.seg[k]!, l);
+      const p = g.to[k]!;
+      this.load[p] = this.load[p]! + l;
+    }
   }
 
   /** Push the loads added since the last call back along the tree of the Dijkstra that just ran. */

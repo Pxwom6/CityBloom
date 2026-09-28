@@ -100,6 +100,11 @@ export const TRAFFIC = {
   freightPerCommercialJob: 0.06,
   /** A truck counts as this many cars. */
   truckPcu: 2.5,
+  /**
+   * A one-way road's capacity against the same road two-way (M19): every lane runs with the
+   * traffic, with no oncoming cars to wait for when turning.
+   */
+  oneWayCapacity: 1.25,
   /** Hourly traffic as a share of the rush-hour peak, 00:00 to 23:00. */
   profile: [
     0.08, 0.05, 0.04, 0.05, 0.1, 0.25, 0.5, 0.85, 1, 0.7, 0.5, 0.5, 0.55, 0.5, 0.5, 0.55, 0.75, 1, 0.85, 0.55,

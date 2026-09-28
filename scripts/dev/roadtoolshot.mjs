@@ -46,7 +46,6 @@ try {
       [250, -200],
       [250, 420],
     ]);
-    const n = g.nodeAt ? null : null;
     const rb = await g.dispatch({ type: 'roundabout', at: at(250, 0) });
     log.push(`roundabout ${rb.ok ? 'ok ' + JSON.stringify(rb.info) : rb.reason}`);
     await b(

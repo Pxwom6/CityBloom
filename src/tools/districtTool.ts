@@ -32,6 +32,8 @@ export class DistrictTool implements Tool {
   }
 
   deactivate(): void {
+    // The panel goes with the tool, so it doesn't cover the map for the next one.
+    if (this.game.panel === 'districts') this.game.openPanel('districts');
     this.painting = false;
     this.game.renderer.ghost.showBrush(null, 1);
     this.game.setHint(null);

@@ -43,6 +43,7 @@ function sections(): [string, Row[]][] {
         ['Budget, advisors', ['M', 'J']],
         ['Notifications, city', ['N', 'P']],
         ['City history, photo mode', ['Y', 'K']],
+        ['Scenario goals', ['G']],
         ['Data maps', ['L']],
         ['Pause menu', ['Esc']],
         ['This card', ['?']],

@@ -674,6 +674,32 @@ a seeded swing from the events stream. A result sets `term` for 12 months: a win
 refuse loans until `term.until`. `nextMonth = -1` means no elections (sandbox, or switched off by
 `setElections`). The summary for the UI is `CityStats.election`.
 
+### 3.19 Scenarios (M18)
+
+A scenario is data (`src/data/scenarios.ts`): the starting city as a save in `public/scenarios/`,
+goals (a measure with a `min` or `max` and months it must `hold`), limits (forbidden civic buildings
+or zones, no loans, a tax cap), a time limit in months, two star rules (win within so many months,
+or with a bonus goal met on the day) and whether disasters and elections are on. The measures are the
+city history's monthly figures (population, approval, jobs, unemployment, treasury, income, spending,
+air pollution and crime at homes, the average commute) plus the month's net, visitors, abandoned
+buildings, loans owed, a big project open, and an election won since the start.
+
+`SimState.scenario` (save v16; a v15 city has none) holds the id, start tick, status, stars, end
+tick, reason and each goal's months held. `startScenario` begins it on the loaded city (setting
+disasters and elections as the scenario says). `scenarioMonth` runs at month close after the ledger,
+history and elections: each goal's held count goes up or back to 0, every goal at its hold wins
+(stars from the rules), and the first month close at or after the deadline (start plus the months,
+rounded up to a month close) loses. Bankruptcy and, where `mustWinElection`, a lost vote lose at
+once. Limits are checked in `dispatch` (`scenarioForbids`) before the command: placement, zoning,
+loans and taxes. `CityStats.scenario` carries the goals panel's summary, worked out once a game hour.
+
+Starting cities are built by `scripts/scenarios.ts` from recipes in `scripts/lib/scenarioCities.ts`,
+most with the balance tool's mayor (`scripts/lib/mayor.ts`, which can take over a city it laid out
+with `adopt()`), two with purpose-built layouts (Gridlock, Smokestack Valley). The client boots
+`?scenario=<id>` by fetching the save, loading it and dispatching `startScenario`; progress (best
+stars and months per scenario) is in localStorage (`src/client/scenarioProgress.ts`); the screens are
+in `src/ui/Scenario.tsx`.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

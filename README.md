@@ -85,6 +85,15 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
+**Scenarios** (from the main menu) are eight set challenges, each a ready-made city with goals, limits
+and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
+win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
+clear the smoke from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal
+town into a resort. Each opens with a brief; the city's name in the top bar opens its goals (G),
+showing each against its target and the time left. Goals are checked as each month closes. A win
+earns one to three stars (the card says what the second and third ask for), kept on this device;
+win or lose, the city plays on.
+
 **City history** (Y, or the chart button in the top bar) charts the city's life month by month:
 population, approval, jobs and unemployment, the treasury, income and spending, air pollution, crime
 and commute times, with milestones and disasters marked on the timeline. **Photo mode** (K, or the
@@ -109,6 +118,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Pause / speeds | top bar | | Space, 1, 2, 3 |
 | Budget / advisors / notifications / city (progress, policies, election, achievements) | top bar | | M / J / N / P |
 | City history | top bar | | Y |
+| Scenario goals | the city's name in the top bar | | G |
 | Photo mode (H hides its panel, Enter saves, Esc leaves) | toolbar camera | | K |
 | Data maps | toolbar | | L toggles the power map |
 | Every shortcut on one card | | | ? |

@@ -97,23 +97,18 @@ done).
    tried it (and the scenario star thresholds with it).
 
 ## In progress
-M24 Terrain and map editor. Done and pushed: the terrain tool (Shift+T: raise, lower, level, smooth,
-paid by the cubic metre, holding the ground under roads and buildings, one undo step per drag);
-custom maps (heights, forests, ore, oil, highway and railway entries) kept in the city's save (v22);
-the map editor from the main menu (sculpt, river and lake, sea, land, forest, ore and oil brushes
-with undo, entries, climate, a playability check, save, `.citymap` export and import, play), and
-"Your maps" on the new-city screen; `tests/terraform.test.ts`, `customMap.test.ts`,
-`mapEditor.test.ts` (a map made in the editor saves, reloads and grows a city). Working on: the
-Terraces scenario (a hill town on an editor-format map, `scripts/lib/ridgeMap.ts`).
+M24 Terrain and map editor: everything built, tested and pushed (terrain tool, custom maps in saves
+v22, the map editor, "Your maps" on the new-city screen, Over the Ridge, docs); `e2e/m24-terrain.spec.ts`
+passes both tests (Over the Ridge won through the UI; menu → editor → save, export, import → a city
+that grows), screenshots reviewed. Left: bench and balance (running), the full `npm run e2e`, the
+`M24 complete:` commit, then the finale playthrough (`npm run finale`, not yet run) for the end of
+the brief.
 
 ## Next tasks
-1. Terraces scenario: recipe, def, tests (won by cutting the pass, lost on the shelf alone), preview.
-2. `e2e/m24-terrain.spec.ts` through the UI (terrain tool in a city; the editor from the main menu to
-   a city on the map), screenshots reviewed.
-3. Docs (README, DESIGN §3.25, DECISIONS, SPEC_REVIEW, CLAUDE.md), bench and balance, full e2e,
-   `M24 complete:`.
-4. The end of the brief: summary and ideas in PROGRESS, SPEC_REVIEW's last section, a final
-   playthrough through the UI using the new features.
+1. Log bench and balance, full `npm run e2e`, tick M24, commit `M24 complete:`.
+2. Run `npm run finale` (the phase-2 playthrough through the UI), review `docs/screenshots/final-*.png`,
+   fix what it finds, commit.
+3. Final pass over the summary and SPEC_REVIEW once the finale has run.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

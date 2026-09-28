@@ -51,6 +51,8 @@ export interface BusLine {
   legs: Leg[];
   /** Seconds from leaving the depot to reaching each stop. */
   stopTime: number[];
+  /** Metres along `legs` to each stop (M20: where visible trams and trains call). */
+  stopDist: number[];
   loopTime: number;
   buses: number;
   headway: number;
@@ -219,7 +221,9 @@ function loopLines(sim: Sim, mode: 'bus' | 'tram'): BusLine[] {
     const points = [d.access!, ...order.map((st) => ({ seg: st.seg, s: st.s })), d.access!];
     const legs: Leg[] = [];
     const stopTime: number[] = [];
+    const stopDist: number[] = [];
     let t = 0;
+    let dist = 0;
     let okLine = true;
     for (let i = 0; i + 1 < points.length; i++) {
       const part = route(points[i]!, points[i + 1]!);
@@ -230,9 +234,11 @@ function loopLines(sim: Sim, mode: 'bus' | 'tram'): BusLine[] {
       for (const l of part) {
         legs.push(l);
         t += secs(l);
+        dist += Math.abs(l.s1 - l.s0);
       }
       if (i < order.length) {
         stopTime.push(t);
+        stopDist.push(dist);
         t += dwell;
       }
     }
@@ -250,6 +256,7 @@ function loopLines(sim: Sim, mode: 'bus' | 'tram'): BusLine[] {
       stopPos: order.map((st) => ({ x: st.x, z: st.z })),
       legs,
       stopTime,
+      stopDist,
       loopTime: t,
       buses,
       headway: t / buses,
@@ -302,13 +309,17 @@ export function trainLines(sim: Sim): BusLine[] {
     if (order.length < 2) continue;
     const legs: Leg[] = [];
     const stopTime: number[] = [0];
+    const stopDist: number[] = [0];
     let t = RAIL.dwell;
+    let dist = 0;
     for (let i = 0; i + 1 < order.length; i++) {
       const part = route(order[i]!.access!, order[i + 1]!.access!);
       if (!part) break;
       legs.push(...part);
       t += seconds(part);
+      dist += part.reduce((d, l) => d + Math.abs(l.s1 - l.s0), 0);
       stopTime.push(t);
+      stopDist.push(dist);
       t += RAIL.dwell;
     }
     if (stopTime.length < order.length) continue;
@@ -328,6 +339,7 @@ export function trainLines(sim: Sim): BusLine[] {
       stopPos: order.map((x) => ({ x: x.x, z: x.z })),
       legs,
       stopTime,
+      stopDist,
       loopTime,
       buses: trains,
       headway: loopTime / trains,
@@ -363,16 +375,16 @@ export function stopsNearNodes(
   return out;
 }
 
-/** Door-to-door seconds by bus between two nodes, or Infinity. */
+/** Door-to-door seconds by bus (tram, train) between two nodes, the line and the stops used, or Infinity. */
 export function busTime(
   lines: BusLine[],
   near: Map<number, { line: number; stop: number; walk: number }[]>,
   from: number,
   to: number,
-): { t: number; line: number } {
+): { t: number; line: number; a: number; b: number } {
   const a = near.get(from);
   const b = near.get(to);
-  let best = { t: Infinity, line: -1 };
+  let best = { t: Infinity, line: -1, a: -1, b: -1 };
   if (!a || !b) return best;
   for (const x of a) {
     for (const y of b) {
@@ -383,7 +395,7 @@ export function busTime(
         : (line.stopTime[y.stop]! - line.stopTime[x.stop]! + line.loopTime) % line.loopTime;
       const comfort = line.mode === 'train' ? RAIL.trainBonus : line.mode === 'tram' ? TRAM.bonus : 0;
       const t = x.walk + line.headway / 2 + ride + y.walk - comfort;
-      if (t < best.t) best = { t, line: x.line };
+      if (t < best.t) best = { t, line: x.line, a: x.stop, b: y.stop };
     }
   }
   return best;

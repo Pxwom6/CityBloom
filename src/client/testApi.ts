@@ -2,7 +2,7 @@ import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Game } from '../game';
 import type { ClientWorld } from './world';
 import type { Command, CommandResult } from '../sim/commands';
@@ -27,6 +27,8 @@ export interface TestApi {
       renderStats: RenderStats;
       tick: number;
       highwayZ: number;
+      /** Where the regional railway comes in (M20). */
+      railway: { x: number; z: number } | null;
       segments: number;
       nodes: number;
       zoned: { R: number; C: number; I: number };
@@ -58,8 +60,15 @@ export interface TestApi {
   getCars(): { id: number; x: number; z: number; heading: number; waited: number; ring: number | null }[];
   /** Pedestrians on screen (close zoom only), with their trip purpose and route length. */
   getWalkers(): { id: number; x: number; z: number; purpose: string; route: number }[];
-  /** Bus stops and lines on the client mirror. */
-  getTransit(): { stops: number; lines: number[] };
+  /** Bus stops and lines on the client mirror: stops per line, and each line's mode and riders (M20). */
+  getTransit(): {
+    stops: number;
+    lines: number[];
+    modes: { mode: string; stops: number; vehicles: number; riders: number }[];
+    freight: { id: number; trucks: number }[];
+  };
+  /** Trams and trains as last drawn (M20): the front of each. */
+  getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
   /** Terrain height (water below 0.6). */
   heightAt(x: number, z: number): number;
   /** Show a data map (or null to hide). */
@@ -199,6 +208,7 @@ export function installTestApi(game: Game): TestApi {
         ...stats,
         renderStats: game.renderer.lastStats,
         highwayZ: w.netState.nodes.get(w.highway.connect)!.z,
+        railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,
         zoned: countZones(game),
@@ -218,8 +228,11 @@ export function installTestApi(game: Game): TestApi {
       const d = CIVIC.get(def);
       if (!d) return null;
       const net = game.world.net;
+      // Stations face a railway, tram depots a road with tram track (M20).
       const segs = [...game.world.netState.segments.values()]
-        .filter((s) => ROAD_TYPES[s.type].access)
+        .filter((s) =>
+          d.track === 'rail' ? isRail(s.type) : ROAD_TYPES[s.type].access && (!d.tram || s.tram),
+        )
         .map((s) => ({ s, mid: net.curve(s.id).pointAt(net.curve(s.id).length / 2) }))
         .sort((a, b) =>
           near
@@ -298,7 +311,18 @@ export function installTestApi(game: Game): TestApi {
         purpose: w.trip.purpose,
         route: w.legs.reduce((s, l) => s + Math.abs(l.s1 - l.s0), 0),
       })),
-    getTransit: () => ({ stops: game.world.stops.size, lines: game.world.lines.map((l) => l.stops.length) }),
+    getTransit: () => ({
+      stops: game.world.stops.size,
+      lines: game.world.lines.map((l) => l.stops.length),
+      modes: game.world.lines.map((l) => ({
+        mode: l.mode,
+        stops: l.stops.length,
+        vehicles: l.buses,
+        riders: l.riders,
+      })),
+      freight: game.world.freight.map((f) => ({ id: f.id, trucks: f.trucks })),
+    }),
+    getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
     findCivic: (def) => [...game.world.civics.values()].find((c) => c.def === def)?.id ?? null,
     getCivics: () =>
       [...game.world.civics.values()].map((c) => ({

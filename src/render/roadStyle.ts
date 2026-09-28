@@ -27,6 +27,8 @@ export interface RoadStyle {
   sidewalk: Color;
   lift: number;
   sidewalkLift: number;
+  /** A railway's ballast bed (M20). */
+  rail?: boolean;
 }
 
 const ASPHALT = new Color('#767b82');
@@ -85,6 +87,7 @@ function build(id: RoadTypeId): RoadStyle {
       sidewalk: BALLAST,
       lift: L,
       sidewalkLift: L,
+      rail: true,
     };
   }
   if (id === 'ramp' || id === 'motorway') {
@@ -163,6 +166,20 @@ function build(id: RoadTypeId): RoadStyle {
     sidewalkLift: S,
   };
 }
+
+/**
+ * Tram track (M20): how far each direction's track runs from the road's centre line, in the lane
+ * next to the centre line (or the median).
+ */
+export function tramOffset(id: RoadTypeId): number {
+  const t = ROAD_TYPES[id];
+  const hw = t.width / 2;
+  const med = id === 'street' ? 0 : id === 'avenue' ? 1 : id === 'boulevard' ? 1.5 : 0.6;
+  return med + (hw - med) / Math.max(1, t.lanes / 2) / 2;
+}
+
+/** A railway's two tracks run this far either side of its centre line (M20). */
+export const RAIL_TRACK_OFFSET = 2;
 
 export const ROAD_STYLES: Record<RoadTypeId, RoadStyle> = {
   dirt: build('dirt'),

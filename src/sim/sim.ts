@@ -61,7 +61,8 @@ import {
   setLotCells,
   type Building,
 } from './world/buildings';
-import { RoadGraph } from './systems/graph';
+import { RoadGraph, routeBetween } from './systems/graph';
+import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
 import { computeTotals, emptyTotals } from './systems/totals';
@@ -88,6 +89,7 @@ import {
   findAccess,
   moveCivic,
   placeCivic,
+  railSiding,
   type Civic,
 } from './world/civic';
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
@@ -455,6 +457,8 @@ export class Sim {
     this.trafficDirty = true;
     this.linesCache = null;
     this.peakCache = null;
+    // Riders per line and stop come with each round (M20: the ridership map, line inspectors).
+    this.transitDirty = true;
   }
 
   private peakCache: Float64Array | null = null;
@@ -490,12 +494,35 @@ export class Sim {
         shuttle: l.shuttle,
         depot: l.depot,
         stops: [...l.stops],
+        stopDist: [...l.stopDist],
         legs: l.legs.map((x) => ({ ...x })),
         loopTime: l.loopTime,
+        headway: l.headway,
+        capacity: Math.round(l.capacityPerHour),
         buses: l.buses,
         riders: t.riders.get(l.depot) ?? 0,
+        load: t.load.get(l.depot) ?? 1,
       })),
+      use: [...this.stopUse].sort((a, b) => a[0] - b[0]),
+      freight: this.freightRoutes(),
     };
+  }
+
+  /** Track from the regional railway's link to each shipping terminal's siding (M20, for the client). */
+  private freightRoutes(): TransitData['freight'] {
+    const r = this.state.railway;
+    if (!r) return [];
+    const out: TransitData['freight'] = [];
+    const from = { seg: r.segment, s: this.net.curve(r.segment).length };
+    const speed = (id: number) => ROAD_TYPES[this.net.segment(id).type].speed / 3.6;
+    for (const c of railTerminals(this)) {
+      const trucks = this.railFreight.get(c.id) ?? 0;
+      const siding = railSiding(this, c);
+      if (!siding || trucks <= 0) continue;
+      const legs = routeBetween(this.railGraph(), this.net, from, siding, speed);
+      if (legs) out.push({ id: c.id, trucks, legs });
+    }
+    return out;
   }
 
   trafficData(): TrafficData {
@@ -1809,6 +1836,9 @@ export class Sim {
 
   /** Trucks a day each rail freight terminal loaded at the last assignment round (M20; not saved). */
   railFreight = new Map<number, number>();
+
+  /** Riders a day getting on or off at each stop or station at the last assignment round (M20; not saved). */
+  stopUse = new Map<number, number>();
 
   /** What a garbage facility's inspector shows: its trucks, rounds and collection against production. */
   private garbageDetails(c: Civic): NonNullable<CivicDetails['garbage']> {

@@ -78,6 +78,8 @@ export class MatchRound {
   private readonly lines: ReturnType<Sim['lines']>;
   private readonly near: ReturnType<typeof stopsNearNodes>;
   private readonly riders: Float64Array;
+  /** Riders boarding or leaving at each stop of each line this round (M20). */
+  private readonly stopUse: Float64Array[];
   private readonly loadOf: number[];
   private readonly freeRide: number;
   private readonly car = TRAFFIC.carShare / TRAFFIC.occupancy;
@@ -129,6 +131,7 @@ export class MatchRound {
     this.lines = sim.lines();
     this.near = this.lines.length ? stopsNearNodes(sim, this.lines) : new Map();
     this.riders = new Float64Array(this.lines.length);
+    this.stopUse = this.lines.map((l) => new Float64Array(l.stops.length));
     this.loadOf = this.lines.map((l) => s.transit.load.get(l.depot) ?? 1);
     // Free buses: no fare makes the bus feel quicker in the choice between bus and car.
     this.freeRide = sim.policy('freeTransit') ? POLICY_EFFECTS.freeTransitSeconds : 0;
@@ -200,7 +203,12 @@ export class MatchRound {
             const share =
               bus && bus.line >= 0 ? busShare(t, bus.t - this.freeRide, this.loadOf[bus.line]!) : 0;
             commuteSum += take * (share > 0 ? share * bus!.t + (1 - share) * t : t);
-            if (share > 0) this.riders[bus!.line] += take * share * TRAFFIC.tripsPerWorker;
+            if (share > 0) {
+              const r = take * share * TRAFFIC.tripsPerWorker;
+              this.riders[bus!.line] += r;
+              this.stopUse[bus!.line]![bus!.a] += r;
+              this.stopUse[bus!.line]![bus!.b] += r;
+            }
             const n = take * TRAFFIC.tripsPerWorker * car * (1 - share);
             load(u, n);
             flows.addSegment(accessOf(sim, j.b)?.seg ?? -1, n);
@@ -296,7 +304,11 @@ export class MatchRound {
     busTraffic(lines, (seg, pcu) => flows.addSegment(seg, pcu));
     s.transit.riders = new Map();
     s.transit.load = new Map();
+    sim.stopUse = new Map();
     lines.forEach((line, i) => {
+      line.stops.forEach((id, k) =>
+        sim.stopUse.set(id, (sim.stopUse.get(id) ?? 0) + Math.round(this.stopUse[i]![k]!)),
+      );
       const r = Math.round(this.riders[i]!);
       s.transit.riders.set(line.depot, r);
       const load = this.loadOf[i]!;

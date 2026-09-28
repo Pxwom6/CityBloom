@@ -38,6 +38,23 @@ function shelterModel(): ModelData {
   return m.build();
 }
 
+/** A tram stop (M20): a long raised platform at the kerb, a green glass shelter and a "T" sign. */
+function tramStopModel(): ModelData {
+  const m = new ModelBuilder();
+  const green = new Color('#2f6b52');
+  m.box(-7, 7, 0, 0.3, -0.3, 1.8, new Color('#c9c3b6'));
+  m.box(-7, 7, 0.3, 0.32, -0.3, -0.05, new Color('#f1cf63'));
+  m.box(-2, 2, 0.3, 2.5, 1.45, 1.55, new Color('#9fc3b4'));
+  for (const x of [-2, 2]) m.box(x - 0.08, x + 0.08, 0.3, 2.5, 0.2, 1.55, green);
+  m.box(-2.2, 2.2, 2.5, 2.65, 0.1, 1.75, green);
+  m.box(-1, 1, 0.75, 0.9, 1.05, 1.35, new Color('#8a6a4a'));
+  m.box(5.2, 5.3, 0.3, 3.2, 0.3, 0.4, POLE);
+  m.box(4.95, 5.55, 2.6, 3.2, 0.26, 0.44, green);
+  m.box(5.2, 5.3, 2.7, 3.1, 0.24, 0.46, SHELTER);
+  m.box(5.0, 5.5, 3.0, 3.1, 0.24, 0.46, SHELTER);
+  return m.build();
+}
+
 function toGeometry(m: ModelData): BufferGeometry {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(m.pos, 3));
@@ -60,6 +77,7 @@ interface LineRun {
 export class TransitRenderer {
   readonly group = new Group();
   private stops: InstancedMesh;
+  private tramStops: InstancedMesh;
   private buses: InstancedMesh;
   private version = -1;
   private runs: LineRun[] = [];
@@ -81,21 +99,26 @@ export class TransitRenderer {
     this.stops.count = 0;
     this.stops.castShadow = true;
     this.stops.name = 'bus-stops';
+    this.tramStops = new InstancedMesh(toGeometry(tramStopModel()), mat, 512);
+    this.tramStops.count = 0;
+    this.tramStops.castShadow = true;
+    this.tramStops.name = 'tram-stops';
     this.buses = new InstancedMesh(toGeometry(VEHICLE_MODELS.bus!), mat, 256);
     this.buses.instanceMatrix.setUsage(DynamicDrawUsage);
     this.buses.count = 0;
     this.buses.castShadow = true;
     this.buses.frustumCulled = false;
     this.buses.name = 'buses';
-    this.group.add(this.stops, this.buses);
+    this.group.add(this.stops, this.tramStops, this.buses);
   }
 
   private rebuild(): void {
     const w = this.world;
     let i = 0;
+    let j = 0;
     for (const st of [...w.stops.values()].sort((a, b) => a.id - b.id)) {
       const seg = w.netState.segments.get(st.seg);
-      if (!seg || i >= 1024) continue;
+      if (!seg || i >= 1024 || j >= 512) continue;
       const curve = w.net.curve(st.seg);
       const t = curve.tangentAt(st.s);
       // Stand on the right-hand verge (driving on the right).
@@ -105,10 +128,13 @@ export class TransitRenderer {
       this.p.set(x, w.roadHeight(st.seg, st.s, st.x, st.z) + 0.15, z);
       this.q.setFromAxisAngle(this.up, -Math.atan2(t.z, t.x));
       this.m.compose(this.p, this.q, this.s);
-      this.stops.setMatrixAt(i++, this.m);
+      if (st.tram) this.tramStops.setMatrixAt(j++, this.m);
+      else this.stops.setMatrixAt(i++, this.m);
     }
     this.stops.count = i;
     this.stops.instanceMatrix.needsUpdate = true;
+    this.tramStops.count = j;
+    this.tramStops.instanceMatrix.needsUpdate = true;
     // Buses only here; trains have their own renderer (M20).
     this.runs = w.lines
       .filter((l) => l.mode === 'bus' && l.legs.every((x) => w.netState.segments.has(x.seg)))
@@ -162,6 +188,6 @@ export class TransitRenderer {
 
   /** Meshes for picking tests. */
   get meshes(): Mesh[] {
-    return [this.stops, this.buses];
+    return [this.stops, this.tramStops, this.buses];
   }
 }

@@ -28,6 +28,7 @@ import { EffectsRenderer } from './effects';
 import { RoadTint } from './roadTint';
 import { TrafficRenderer } from './traffic';
 import { TransitRenderer } from './transit';
+import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
@@ -60,6 +61,8 @@ export interface RenderStats {
     closures: number;
   };
   buses: number;
+  /** Trams, passenger trains and freight trains drawn (M20). */
+  rail: { tram: number; train: number; freight: number };
   smoke: number;
 }
 
@@ -98,6 +101,8 @@ export class GameRenderer {
   /** Milliseconds per frame the visible cars take to move (smoothed). */
   trafficMs = 0;
   readonly transit: TransitRenderer;
+  /** Trams and trains (M20). */
+  readonly railVehicles: RailVehicleRenderer;
   readonly streetLights: StreetLightRenderer;
   readonly pedestrians: PedestrianRenderer;
   readonly tiltShift = new TiltShift();
@@ -135,6 +140,7 @@ export class GameRenderer {
     night: 0,
     disasters: { dust: 0, funnels: 0, floods: 0, meteors: 0, craters: 0, closures: 0 },
     buses: 0,
+    rail: { tram: 0, train: 0, freight: 0 },
     smoke: 0,
   };
 
@@ -183,6 +189,8 @@ export class GameRenderer {
     this.scene.add(this.disasters.group);
     this.transit = new TransitRenderer(world, (seg, s, x, z) => world.roadHeight(seg, s, x, z));
     this.scene.add(this.transit.group);
+    this.railVehicles = new RailVehicleRenderer(world, (seg, s, x, z) => world.roadHeight(seg, s, x, z));
+    this.scene.add(this.railVehicles.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
     this.routeTint = new RoadTint((x, z) => world.heightAt(x, z), 'sequential', 0.7);
@@ -211,6 +219,7 @@ export class GameRenderer {
       [this.pedestrians.group, 'pedestrians'],
       [this.disasters.group, 'disasters'],
       [this.transit.group, 'transit'],
+      [this.railVehicles.group, 'railVehicles'],
       [this.streetLights.group, 'streetLights'],
       [this.routeTint.group, 'routeTint'],
       [this.ghost.group, 'ghost'],
@@ -449,6 +458,7 @@ export class GameRenderer {
     this.pedestrians.update(this.world.displayTick, this.controller.current);
     this.streetLights.update(l.night);
     this.transit.update(this.world.displayTick);
+    this.railVehicles.update(this.world.displayTick);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
@@ -498,6 +508,7 @@ export class GameRenderer {
       night: this.lighting.night,
       disasters: { ...this.disasters.stats },
       buses: this.transit.busCount,
+      rail: { ...this.railVehicles.counts },
       smoke: this.effects.smokeParticles,
     };
   }

@@ -370,11 +370,26 @@ export interface TransitData {
     shuttle: boolean;
     depot: number;
     stops: number[];
+    /** Metres along `legs` to each stop (M20). */
+    stopDist: number[];
     legs: Leg[];
+    /** Seconds round the loop (there and back for a shuttle), and between vehicles. */
     loopTime: number;
+    headway: number;
+    /** Passengers an hour it can carry past any point. */
+    capacity: number;
     buses: number;
     riders: number;
+    /** Share of would-be riders who fit (1 unless it's full). */
+    load: number;
   }[];
+  /** Riders a day getting on or off at each stop or station (M20), by stop or station id. */
+  use: [number, number][];
+  /**
+   * Rail freight (M20): each terminal loading trains, the truckloads it moves a day and the track
+   * from the regional railway's link (at the map edge) to its siding, for the visible freight trains.
+   */
+  freight: { id: number; trucks: number; legs: Leg[] }[];
 }
 
 export interface WorkerPerf {

@@ -54,6 +54,8 @@ export class ClientWorld {
   /** Geometry-only view of the road network (curves, adjacency, cells, spatial queries). */
   readonly net: Network;
   readonly highway: Snapshot['highway'];
+  /** The regional railway's link at the west edge (M20), if it fitted. */
+  readonly railway: Snapshot['railway'];
   private netListeners: ((c: NetChanges) => void)[] = [];
   readonly buildings = new Map<number, BuildingData>();
   /** Spatial index of building footprints (by bounding circle). */
@@ -74,6 +76,10 @@ export class ClientWorld {
   /** Bus stops and lines. */
   stops = new Map<number, TransitData['stops'][number]>();
   lines: TransitData['lines'] = [];
+  /** Riders a day at each stop or station (M20). */
+  stopUse = new Map<number, number>();
+  /** Terminals loading freight trains and their track from the regional link (M20). */
+  freight: TransitData['freight'] = [];
   transitVersion = 0;
   /** Disasters under way, damaged and flooded roads, craters (bumped version on change). */
   disasters: DisasterData = { active: [], damaged: [], flooded: [], craters: [] };
@@ -96,6 +102,7 @@ export class ClientWorld {
     this.stats = snap.stats;
     this.displayTick = snap.stats.tick;
     this.highway = snap.highway;
+    this.railway = snap.railway;
     this.netState = { nodes: new Map(), segments: new Map(), blocks: new Map() };
     for (const n of snap.net.nodes) this.netState.nodes.set(n.id, { ...n });
     for (const sg of snap.net.segments) this.netState.segments.set(sg.id, { ...sg });
@@ -118,6 +125,8 @@ export class ClientWorld {
   private setTransit(t: TransitData): void {
     this.stops = new Map(t.stops.map((x) => [x.id, x]));
     this.lines = t.lines;
+    this.stopUse = new Map(t.use);
+    this.freight = t.freight;
     this.transitVersion++;
   }
 

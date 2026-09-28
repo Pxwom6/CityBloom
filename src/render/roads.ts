@@ -5,14 +5,24 @@ import { GeoBuffer, mergeChunks, type GeoChunk } from './geoBuffer';
 import {
   buildBridgeStructure,
   buildJunction,
+  buildLevelCrossing,
   buildRoundabout,
   buildSegmentRibbon,
+  buildTramJunction,
+  buildTramTrack,
   type Approach,
 } from './roadMesh';
 import { JUNCTION } from '../data/balance';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import { deckAt } from '../sim/world/bridge';
-import { ROAD_STYLES } from './roadStyle';
+import { RAIL_TRACK_OFFSET, ROAD_STYLES, tramOffset } from './roadStyle';
+
+/**
+ * The regional railway (M20) runs north–south this far east of the regional highway's line, off the
+ * map's west edge; the link into the map leaves it on a curve of this radius.
+ */
+export const REGIONAL_RAIL_DX = 48;
+export const REGIONAL_RAIL_CURVE = 60;
 
 const CHUNK = 512;
 
@@ -97,7 +107,14 @@ export class RoadRenderer {
       for (const sid of segs) trims.set(sid, ROAD_STYLES.highway.totalHalf);
       return { trims, approaches: [] };
     }
+    if (nodeId === this.world.railway?.outside) {
+      // The rail link stops where it curves into the regional railway (drawn as scenery).
+      for (const sid of segs) trims.set(sid, REGIONAL_RAIL_DX + REGIONAL_RAIL_CURVE);
+      return { trims, approaches: [] };
+    }
     if (segs.length < 2) return { trims, approaches: [] };
+    // Railway joints and switches (M20): the tracks simply run on into each other.
+    if (segs.every((sid) => isRail(net.segment(sid).type))) return { trims, approaches: [] };
     const items = segs.map((sid) => {
       const d = net.directionAt(sid, nodeId);
       return { sid, dir: d, ang: angleOf(d), style: ROAD_STYLES[net.segment(sid).type] };
@@ -128,7 +145,7 @@ export class RoadRenderer {
       const p = curve.pointAt(s);
       const tan = curve.tangentAt(s);
       const dir = seg.a === nodeId ? tan : v2(-tan.x, -tan.z);
-      approaches.push({ p, dir, style: it.style });
+      approaches.push({ p, dir, style: it.style, seg: it.sid });
     });
     return { trims, approaches };
   }
@@ -172,6 +189,12 @@ export class RoadRenderer {
       const oneway = seg.oneway ? { dir: seg.oneway, lanes: ROAD_TYPES[seg.type].lanes } : undefined;
       buildSegmentRibbon(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, this.h, deckFn, oneway);
       if (deck && deckFn) buildBridgeStructure(buf, curve, ROAD_STYLES[seg.type], this.h, deckFn);
+      if (seg.tram && ROAD_TYPES[seg.type].tram) {
+        const hs = deckFn
+          ? (x: number, z: number) => Math.max(this.h(x, z), deckFn(curve.project({ x, z }).s))
+          : this.h;
+        buildTramTrack(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, hs, tramOffset(seg.type));
+      }
       this.setElement(`s${id}`, curve.pointAt(curve.length / 2), buf);
     }
     for (const id of this.dirtyNodes) {
@@ -198,8 +221,10 @@ export class RoadRenderer {
         continue;
       }
       const buf = new GeoBuffer(256);
-      buildJunction(buf, v2(node.x, node.z), layout.approaches, this.h);
-      this.setElement(`n${id}`, v2(node.x, node.z), buf);
+      const centre = v2(node.x, node.z);
+      buildJunction(buf, centre, layout.approaches, this.h);
+      this.decorateJunction(buf, centre, layout.approaches);
+      this.setElement(`n${id}`, centre, buf);
     }
     this.dirtySegs.clear();
     this.dirtyNodes.clear();
@@ -220,6 +245,38 @@ export class RoadRenderer {
       this.group.add(mesh);
     }
     this.dirtyChunks.clear();
+  }
+
+  /** Level crossings and tram track through a junction (M20). */
+  private decorateJunction(buf: GeoBuffer, centre: Vec2, approaches: Approach[]): void {
+    const st = this.world.netState;
+    const rail = approaches.filter((a) => a.style.rail);
+    const roads = approaches.filter((a) => !a.style.rail);
+    if (rail.length === 2 && roads.length)
+      buildLevelCrossing(buf, [rail[0]!, rail[1]!], roads, RAIL_TRACK_OFFSET, this.h);
+    const tram = roads.filter((a) => a.seg !== undefined && st.segments.get(a.seg)?.tram);
+    if (tram.length < 2) return;
+    // Pair the tracked roads straightest first: each carries on into the one most nearly opposite.
+    const cands: { i: number; j: number; turn: number }[] = [];
+    for (let i = 0; i < tram.length; i++)
+      for (let j = i + 1; j < tram.length; j++) {
+        const dot = tram[i]!.dir.x * tram[j]!.dir.x + tram[i]!.dir.z * tram[j]!.dir.z;
+        cands.push({ i, j, turn: dot });
+      }
+    cands.sort((a, b) => a.turn - b.turn || a.i - b.i || a.j - b.j);
+    const used = new Set<number>();
+    const pairs: Parameters<typeof buildTramJunction>[2] = [];
+    for (const c of cands) {
+      if (used.has(c.i) || used.has(c.j) || c.turn > 0.5) continue;
+      used.add(c.i);
+      used.add(c.j);
+      const off = (a: Approach) => tramOffset(st.segments.get(a.seg!)!.type);
+      pairs.push([
+        { a: tram[c.i]!, offset: off(tram[c.i]!) },
+        { a: tram[c.j]!, offset: off(tram[c.j]!) },
+      ]);
+    }
+    if (pairs.length) buildTramJunction(buf, centre, pairs, this.h);
   }
 
   /** The ground moved in `box` (earthworks, M13): redrape the roads and junctions there. */
@@ -250,6 +307,35 @@ export class RoadRenderer {
     const mesh = new Mesh(mergeChunks([buf.trimmed()]), this.material);
     mesh.receiveShadow = true;
     mesh.name = 'regional-highway';
+    this.group.add(mesh);
+    this.buildRegionalRailway();
+  }
+
+  /**
+   * The regional railway (M20, scenery): north–south between the regional highway and the map,
+   * running away from the highway's connector, with the link into the map curving off it.
+   */
+  private buildRegionalRailway(): void {
+    const r = this.world.railway;
+    const link = r ? this.world.netState.nodes.get(r.outside) : undefined;
+    if (!r || !link) return;
+    const hw = this.world.gen.params.highway;
+    const x = hw.lineX + REGIONAL_RAIL_DX;
+    const away = Math.sign(link.z - hw.connectZ) || 1;
+    const rad = REGIONAL_RAIL_CURVE;
+    const buf = new GeoBuffer(8192);
+    const style = ROAD_STYLES.rail;
+    const bend = new Curve(v2(x + rad, link.z), v2(x, link.z), v2(x, link.z + away * rad));
+    buildSegmentRibbon(buf, bend, style, 0, bend.length, this.h);
+    const end = away > 0 ? 2048 + 3000 : -3000;
+    const step = 400 * away;
+    for (let z = link.z + away * rad; away > 0 ? z < end : z > end; z += step) {
+      const curve = new Curve(v2(x, z), v2(x, z + step / 2), v2(x, z + step));
+      buildSegmentRibbon(buf, curve, style, 0, curve.length, this.h);
+    }
+    const mesh = new Mesh(mergeChunks([buf.trimmed()]), this.material);
+    mesh.receiveShadow = true;
+    mesh.name = 'regional-railway';
     this.group.add(mesh);
   }
 

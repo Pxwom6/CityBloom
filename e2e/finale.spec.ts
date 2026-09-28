@@ -323,16 +323,21 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await page.getByTestId('tool-select').click();
 
   // --- A district over the old town, with a policy of its own. ---
-  await topDown();
   await page.keyboard.press('i');
+  // The Districts panel opens on the left: look at the town from further west.
+  await page.evaluate(
+    (cz) => window.__game!.setCamera({ x: 120, z: cz, distance: 700, yaw: 0, tilt: 0.55 }),
+    cz,
+  );
+  await page.evaluate(() => window.__game!.waitFrames(2));
   await page.getByTestId('district-new').click();
   await drag(
     page,
     [
-      [100, cz - 120],
+      [200, cz - 120],
       [420, cz - 120],
       [420, cz + 120],
-      [100, cz + 120],
+      [200, cz + 120],
     ],
     300,
   );

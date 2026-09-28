@@ -296,6 +296,32 @@ export function buildingsInTheWay(
 }
 
 /** Thin the tree-density grid under new roads (the renderer also hides individual trees). */
+/** Thin out trees within `r` metres of `c` (a roundabout's ring and island, M19). */
+function clearTreesIn(sim: Sim, c: Vec2, r: number): void {
+  const trees = sim.state.trees;
+  const i0 = Math.max(0, Math.floor((c.x - r) / GRID_CELL));
+  const i1 = Math.min(GRID_RES - 1, Math.floor((c.x + r) / GRID_CELL));
+  const j0 = Math.max(0, Math.floor((c.z - r) / GRID_CELL));
+  const j1 = Math.min(GRID_RES - 1, Math.floor((c.z + r) / GRID_CELL));
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const k = j * GRID_RES + i;
+      if (!trees[k]) continue;
+      let hit = 0;
+      for (let u = 0; u < 4; u++)
+        for (let v = 0; v < 4; v++) {
+          const x = (i + (u + 0.5) / 4) * GRID_CELL;
+          const z = (j + (v + 0.5) / 4) * GRID_CELL;
+          if (Math.hypot(x - c.x, z - c.z) <= r) hit++;
+        }
+      const next = Math.round(trees[k]! * (1 - hit / 16));
+      if (next !== trees[k]) {
+        trees[k] = next;
+        sim.markTreesDirty(k);
+      }
+    }
+}
+
 export function clearTreesAlong(sim: Sim, segments: number[]): void {
   const trees = sim.state.trees;
   for (const id of segments) {
@@ -448,6 +474,7 @@ export function placeRoundabout(
   if ('node' in site) nodeId = site.node;
   else nodeId = net.splitSegment(site.seg, site.s).node.id;
   for (const id of doomed) sim.removeBuilding(id);
+  clearTreesIn(sim, centre, outer + 1);
   net.node(nodeId).roundabout = r;
   net.dirty.nodes.add(nodeId);
   net.revalidate({ minX: box.minX - 20, minZ: box.minZ - 20, maxX: box.maxX + 20, maxZ: box.maxZ + 20 });

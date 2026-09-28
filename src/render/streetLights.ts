@@ -1,3 +1,4 @@
+import { JUNCTION } from '../data/balance';
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -87,8 +88,13 @@ export class StreetLightRenderer {
       if (seg.type === 'highway' || seg.type === 'dirt') continue;
       const curve = w.net.curve(seg.id);
       const half = t.width / 2 + Math.min(1.2, t.sidewalk * 0.5);
+      // No lamps on a roundabout's ring or island (M19).
+      const ringA = w.netState.nodes.get(seg.a)?.roundabout;
+      const ringB = w.netState.nodes.get(seg.b)?.roundabout;
+      const clearA = ringA ? ringA + JUNCTION.ringWidth / 2 + 4 : 12;
+      const clearB = ringB ? ringB + JUNCTION.ringWidth / 2 + 4 : 12;
       let side = 1;
-      for (let d = 12; d < curve.length - 12 && n < MAX; d += SPACING) {
+      for (let d = clearA; d < curve.length - clearB && n < MAX; d += SPACING) {
         const pt = curve.pointAt(d);
         const tan = curve.tangentAt(d);
         const nx = tan.z * side;

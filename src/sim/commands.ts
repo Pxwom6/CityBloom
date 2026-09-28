@@ -8,6 +8,8 @@ import type { Dept } from '../data/economy';
 import type { DisasterKind } from './systems/disasters';
 import type { PolicyId } from '../data/policies';
 import type { TerraformMode } from '../data/terraform';
+import type { MapBrush } from '../data/mapEditor';
+import type { ClimateId } from '../data/climate';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -94,6 +96,22 @@ export type Command =
       level?: number;
       stroke?: number;
     }
+  /**
+   * The map editor (M24): a brush along `points` (sculpt, water, forests, ore and oil); `level` is
+   * the height the level brush flattens to; `stroke` groups a drag into one undo step.
+   */
+  | {
+      type: 'editMap';
+      brush: MapBrush;
+      points: Vec2[];
+      radius: number;
+      strength?: number;
+      level?: number;
+      stroke?: number;
+    }
+  /** Where the highway or railway comes in on the map's west edge (null: no railway). */
+  | { type: 'setMapEntry'; entry: 'highway' | 'rail'; z: number | null }
+  | { type: 'setMapInfo'; name?: string; climate?: ClimateId }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

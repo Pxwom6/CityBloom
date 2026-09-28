@@ -35,6 +35,7 @@ import {
   HISTORY_LIMIT,
   ZONING_SCOPE,
   TERRAIN_SCOPE,
+  EDITOR_SCOPE,
   applyEdit,
   capture,
   diff,
@@ -54,7 +55,12 @@ import {
 } from './actions/roads';
 import { zone } from './actions/zoning';
 import { terraform } from './actions/terraform';
+import { editMap, exportMap, setMapEntry, setMapInfo } from './actions/mapEdit';
+import { MAP_BRUSHES } from '../data/mapEditor';
 import { ENTRY_SPACING, type MapData } from './terrain/customMap';
+
+/** What the map editor's city (M24) takes. */
+const EDITOR_COMMANDS = new Set<Command['type']>(['editMap', 'setMapEntry', 'setMapInfo', 'undo', 'redo']);
 
 /** Undo labels for the terrain tools (M24). */
 const TERRAFORM_LABEL = {
@@ -995,6 +1001,8 @@ export class Sim {
 
   private apply(cmd: Command, dryRun: boolean): CommandResult {
     if (this.state.economy.bankrupt && cmd.type !== 'cheat') return fail('The city is bankrupt');
+    // The map editor's city (M24) takes only the editor's own commands.
+    if (this.state.options.editor && !EDITOR_COMMANDS.has(cmd.type)) return fail('Not in the map editor');
     switch (cmd.type) {
       case 'cheat': {
         if (cmd.cheat === 'unlockAll') {
@@ -1119,6 +1127,12 @@ export class Sim {
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
       case 'terraform':
         return terraform(this, cmd.mode, cmd.points, cmd.radius, cmd.level, dryRun);
+      case 'editMap':
+        return editMap(this, cmd.brush, cmd.points, cmd.radius, cmd.strength ?? 1, cmd.level, dryRun);
+      case 'setMapEntry':
+        return setMapEntry(this, cmd.entry, cmd.z, dryRun);
+      case 'setMapInfo':
+        return setMapInfo(this, cmd.name, cmd.climate, dryRun);
       case 'renameDistrict':
         return renameDistrict(this, cmd.district, cmd.name, dryRun);
       case 'removeDistrict':
@@ -1173,6 +1187,8 @@ export class Sim {
         return ZONING_SCOPE;
       case 'terraform':
         return TERRAIN_SCOPE;
+      case 'editMap':
+        return EDITOR_SCOPE;
       case 'createDistrict':
       case 'paintDistrict':
       case 'renameDistrict':
@@ -1204,6 +1220,8 @@ export class Sim {
         return cmd.zone === 'none' ? 'dezoning' : 'zoning';
       case 'terraform':
         return TERRAFORM_LABEL[cmd.mode];
+      case 'editMap':
+        return (MAP_BRUSHES.find((b) => b.id === cmd.brush)?.name ?? 'brush').toLowerCase();
       case 'bulldoze':
         return 'bulldozing';
       case 'placeStop':
@@ -1248,7 +1266,8 @@ export class Sim {
       cmd.type === 'zone' ||
       cmd.type === 'setTram' ||
       cmd.type === 'paintDistrict' ||
-      cmd.type === 'terraform'
+      cmd.type === 'terraform' ||
+      cmd.type === 'editMap'
         ? cmd.stroke
         : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
@@ -1373,6 +1392,8 @@ export class Sim {
   timer: ((name: string, fn: () => void) => void) | null = null;
 
   step(): void {
+    // The map editor's city (M24) is a map, not a town: time doesn't pass in it.
+    if (this.state.options.editor) return;
     const s = this.state;
     s.tick++;
     const t = s.tick;
@@ -1957,6 +1978,8 @@ export class Sim {
         return this.civicDetails(q.id);
       case 'districts':
         return districtReports(this);
+      case 'exportMap':
+        return exportMap(this);
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':

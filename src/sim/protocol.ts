@@ -448,7 +448,9 @@ export type Query =
   /** Coverage samples along every road for one service (for the coverage data maps). */
   | { type: 'coverageRoads'; kind: ServiceKind }
   /** Districts' figures and budgets (M21). */
-  | { type: 'districts' };
+  | { type: 'districts' }
+  /** The map editor's map as edited, and its playability check (M24). */
+  | { type: 'exportMap' };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {

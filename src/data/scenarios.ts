@@ -178,6 +178,64 @@ export const SCENARIOS: ScenarioDef[] = [
       'The stadium takes ten months to build once work starts. Save for the first stage, then keep the money coming.',
     ],
   },
+  {
+    id: 'gridlock',
+    name: 'Gridlock',
+    blurb: 'Every commuter in town crawls down one dirt track. Get them moving.',
+    brief:
+      'Twin Fords grew up on two sides of a field: homes to the west, every job to the east, and a ' +
+      'single dirt track between them. At rush hour it takes most of an hour to cross. Get the ' +
+      'average commute under three minutes for three months running, without losing the town.',
+    save: 'gridlock.citybloom',
+    months: 12,
+    stars: [
+      { months: 5, label: 'Within 5 months' },
+      { months: 3, label: 'Within 3 months' },
+    ],
+    goals: [
+      { measure: 'traffic', max: 3, hold: 3, label: 'Average commute under 3 minutes, 3 months running' },
+      { measure: 'population', min: 2_000, label: '2,000 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'The traffic map shows where the jam is; click a road to see how full it is.',
+      'A wider road carries more cars, and a second route splits them.',
+    ],
+  },
+  {
+    id: 'smokestack',
+    name: 'Smokestack Valley',
+    blurb: 'Clear the smoke from a mill town without shutting its mills.',
+    brief:
+      'Cinderford grew up around its mills and three coal plants, all on the south side of town, and ' +
+      'the wind blows from the south. On a still day you can taste it. Bring air pollution where ' +
+      'people live under 4.5 % for three months running, and keep at least 3,000 jobs.',
+    save: 'smokestack.citybloom',
+    months: 24,
+    stars: [
+      { months: 15, label: 'Within 15 months' },
+      { months: 11, label: 'Within 11 months' },
+    ],
+    goals: [
+      {
+        measure: 'pollution',
+        max: 4.5,
+        hold: 3,
+        label: 'Air pollution at homes under 4.5 %, 3 months running',
+      },
+      { measure: 'jobs', min: 3_000, label: '3,000 jobs or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'The air pollution map shows where the smoke goes; the wind carries it north over the houses.',
+      'Wind turbines are clean power. Build them before you close a coal plant, or the lights go out.',
+      'Schooled workers let mills retool to cleaner processes.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

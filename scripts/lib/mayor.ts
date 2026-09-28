@@ -325,7 +325,7 @@ export class Player {
   /** Place a civic building, trying industrial side streets first (utilities) or anywhere. */
   place(def: string, near: 'industry' | 'homes' | 'clean' | 'edge' = 'homes'): boolean {
     const d = CIVIC.get(def);
-    if (!d || !this.sim.isUnlocked(d.unlockPopulation)) return false;
+    if (!d || this.avoid.includes(def) || !this.sim.isUnlocked(d.unlockPopulation)) return false;
     if (this.sim.state.treasury < d.cost + 1_000) return false;
     // Only roads joined to the highway: a building on a cut-off piece of road serves nobody.
     const segs = [...this.sim.state.net.segments.values()].filter(
@@ -374,6 +374,31 @@ export class Player {
         }
     }
     return near === 'homes' && this.makeRoom(def);
+  }
+
+  /** Place a civic building on the connected road nearest a point (scenario recipes and scripts). */
+  placeNear(def: string, p: Vec2, within = 400): boolean {
+    const d = CIVIC.get(def);
+    if (!d) return false;
+    const segs = [...this.sim.state.net.segments.values()]
+      .filter((sg) => sg.type !== 'highway' && this.sim.isSegmentConnected(sg.id))
+      .map((sg) => {
+        const cv = this.sim.net.curve(sg.id);
+        const m = cv.pointAt(cv.length / 2);
+        return { id: sg.id, len: cv.length, dist: Math.hypot(m.x - p.x, m.z - p.z) };
+      })
+      .filter((x) => x.dist < within)
+      .sort((a, b) => a.dist - b.dist || a.id - b.id);
+    for (const sg of segs)
+      for (let at = d.w / 2 + 8; at < sg.len - d.w / 2 - 8; at += 8)
+        for (const side of [1, -1] as const) {
+          const pose = roadsidePose(this.sim.net, sg.id, at, side, d.d);
+          if (this.sim.dispatch({ type: 'placeBuilding', def, ...pose }).ok) {
+            this.log.push(`m${this.month()}: ${def} (near)`);
+            return true;
+          }
+        }
+    return false;
   }
 
   /**

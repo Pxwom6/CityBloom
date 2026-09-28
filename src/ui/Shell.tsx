@@ -1,3 +1,5 @@
+import { ScenarioScreen } from './Scenario';
+import { SCENARIOS } from '../data/scenarios';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { BUILD_ID, GAME_TITLE, GAME_VERSION } from '../config';
 import { MAP_PRESETS, type MapPreset } from '../data/world';
@@ -122,6 +124,10 @@ function MainMenu() {
           onClick={() => game.openScreen('newGame')}
         >
           <span>New city</span>
+        </button>
+        <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
+          <span>Scenarios</span>
+          <small>{SCENARIOS.length} challenges</small>
         </button>
         <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
           <span>Load city</span>
@@ -775,6 +781,7 @@ export function Shell() {
     <div class={`shell ${game.mode}`} data-testid="shell">
       {screen === 'main' && <MainMenu />}
       {screen === 'newGame' && <NewGame />}
+      {screen === 'scenarios' && <ScenarioScreen />}
       {screen === 'pause' && <PauseMenu />}
       {screen === 'save' && <SaveScreen />}
       {screen === 'load' && <LoadScreen />}

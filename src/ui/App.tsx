@@ -17,6 +17,7 @@ import { TipCard, TutorialCard } from './Guide';
 import { ShortcutSheet } from './ShortcutSheet';
 import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
+import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -36,6 +37,8 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
+      else if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey && game.world.stats.scenario)
+        game.openPanel('goals');
       else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey)
         game.overlay.set(game.overlay.active ? null : 'power');
     };
@@ -83,12 +86,15 @@ export function App({ game }: { game: Game }) {
       <NotificationsPanel />
       <CityPanel />
       <HistoryPanel />
+      <GoalsPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />
       <TutorialCard />
       <TipCard />
       <ShortcutSheet />
+      <ScenarioBrief />
+      <ScenarioEnd />
       <ToastLayer />
       <Shell />
     </GameContext.Provider>

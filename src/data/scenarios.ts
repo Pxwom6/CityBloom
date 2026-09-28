@@ -270,8 +270,8 @@ export const SCENARIOS: ScenarioDef[] = [
     save: 'resort.citybloom',
     months: 24,
     stars: [
-      { months: 16, label: 'Within 16 months' },
-      { months: 12, label: 'Within a year' },
+      { months: 9, label: 'Within 9 months' },
+      { months: 6, label: 'Within 6 months' },
     ],
     goals: [
       { measure: 'visitors', min: 2_000, hold: 2, label: '2,000 visitors a day, 2 months running' },

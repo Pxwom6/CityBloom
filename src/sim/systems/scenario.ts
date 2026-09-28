@@ -35,6 +35,7 @@ export interface ScenarioSummary {
   monthsLeft: number;
   monthsTaken: number;
   goals: {
+    measure: ScenarioGoal['measure'];
     label: string;
     value: number;
     min?: number;
@@ -194,6 +195,7 @@ export function scenarioSummary(sim: Sim): ScenarioSummary | null {
     goals: def.goals.map((g, i) => {
       const value = goalValue(sim, g, figures);
       return {
+        measure: g.measure,
         label: g.label,
         value,
         min: g.min,

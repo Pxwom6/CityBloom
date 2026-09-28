@@ -148,6 +148,12 @@ export interface TestApi {
   checkForUpdate(): Promise<void>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
+  /** The scenario being played (M18): its goals summary, and whether the brief or end screen is up. */
+  getScenario(): {
+    summary: CityStats['scenario'];
+    brief: boolean;
+    end: Game['scenarioEnd'];
+  };
   /** Photo mode (M16): its state, what the renderer hides and draws, and where the camera is. */
   getPhoto(): {
     on: boolean;
@@ -414,6 +420,11 @@ export function installTestApi(game: Game): TestApi {
     }),
     checkForUpdate: () => game.updates.check(),
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getScenario: () => ({
+      summary: game.world.stats.scenario,
+      brief: game.scenarioBrief,
+      end: game.scenarioEnd,
+    }),
     getPhoto: () => {
       const r = game.renderer;
       const p = game.photo;

@@ -1,9 +1,9 @@
 // Scenario starting cities (M18): each scenario's city, built headlessly with the balance tool's
 // mayor (plus the scenario's twist). scripts/scenarios.ts writes them to public/scenarios/.
 import { Sim } from '../../src/sim/sim';
-import { GRID_CELL, GRID_RES } from '../../src/data/world';
+import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
-import { Player, type Vec2 } from './mayor';
+import { DW, Player, type Vec2 } from './mayor';
 import { twoDistricts } from '../../tests/trafficTown';
 
 /** Let a mayor run the city for some months (four decisions a month, as the balance tool). */
@@ -142,7 +142,7 @@ export const RECIPES: Record<string, () => Sim> = {
   },
   // Saltmarsh, on the coast: a busy town with beaches and no reason yet for anyone to visit.
   resort: () => {
-    const p = new Player('careful', { seed: 'dunes', preset: 'coast', cityName: 'Saltmarsh' });
+    const p = new Player('careful', { seed: 'saltmarsh', preset: 'coast', cityName: 'Saltmarsh' });
     p.avoid = [
       'hotel',
       'clocktower',
@@ -156,8 +156,29 @@ export const RECIPES: Record<string, () => Sim> = {
       'techpark',
       'university',
     ];
-    p.sim.earn(100_000, 'grants');
+    const sim = p.sim;
+    sim.earn(100_000, 'grants');
     govern(p, 20);
-    return p.sim;
+    // The avenue carries on east to the sea, with a promenade along the beach.
+    const z = p.c.z;
+    let shore = p.c.x + 2 * DW;
+    while (shore < MAP_SIZE - 40 && sim.terrain.heightAt(shore, z) >= 0.6) shore += 8;
+    const end = { x: shore - 70, z };
+    p.roadAcross('avenue', { x: p.c.x + 2 * DW, z }, end);
+    sim.dispatch({
+      type: 'buildRoad',
+      road: 'street',
+      points: [
+        { x: end.x, z: z - 200 },
+        { x: end.x, z: z + 200 },
+      ],
+    });
+    const zone = (letter: 'R' | 'C', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    zone('C', { x: p.c.x + 2 * DW + 20, z: z + 20 }, { x: end.x - 20, z: z + 20 }, 22);
+    zone('R', { x: p.c.x + 2 * DW + 20, z: z - 60 }, { x: end.x - 20, z: z - 60 }, 50);
+    zone('R', { x: end.x - 40, z: z - 190 }, { x: end.x - 40, z: z + 190 }, 36);
+    govern(p, 3);
+    return sim;
   },
 };

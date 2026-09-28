@@ -77,12 +77,12 @@ done).
 
 ## In progress
 M18 Scenarios. Done: the scenario system in the sim (save v16; `src/sim/systems/scenario.ts`, data in
-`src/data/scenarios.ts`), the starting-city builder (`npx tsx scripts/scenarios.ts [ids]`, writes
-`public/scenarios/*.citybloom` using the balance mayor from `scripts/lib/mayor.ts`), and the first
-scenario, Clean Slate, with its test (`tests/scenarios/`: careful mayor wins, nobody loses). Next:
-the other scenarios (Back from the Brink, Vote of Confidence, Big Game, Gridlock, Smokestack
-Valley, After the Flood, Seaside Resort), then the scenario screen, goals panel and win screen.
-M17 is complete (see git log).
+`src/data/scenarios.ts`), starting cities built by `npx tsx scripts/scenarios.ts [ids]` (recipes in
+`scripts/lib/scenarioCities.ts`, the balance mayor in `scripts/lib/mayor.ts`), and all eight
+scenarios with tests in `tests/scenarios/` (a scripted player wins each, a neglectful one loses):
+Clean Slate, Back from the Brink, Vote of Confidence, Big Game, Gridlock, Smokestack Valley, After
+the Flood, Seaside Resort. Next: the scenario screen from the main menu (previews, best stars),
+the brief, the in-game goals panel, the win/lose screen with stars, progress per device, e2e.
 
 ## Next tasks
 1. M18 Scenarios: six to eight scenarios (fixed map, starting city as a save, goals, limits, time

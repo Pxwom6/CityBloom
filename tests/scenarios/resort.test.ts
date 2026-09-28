@@ -23,10 +23,10 @@ describe('scenario: Seaside Resort', () => {
     ];
     expect(sim.dispatch({ type: 'setPolicy', id: 'tourismCampaign', on: true }).ok).toBe(true);
     expect(sim.dispatch({ type: 'setFunding', dept: 'tourism', pct: 120 }).ok).toBe(true);
-    // The clock tower first (the draw), then hotels (where visitors spend).
-    expect(mayor.place('clocktower')).toBe(true);
+    // The clock tower as soon as it's affordable (the draw), then hotels (where visitors spend).
     const end = playOut(sim, () => {
-      if (mayor.count('hotel') < 3) mayor.place('hotel');
+      if (mayor.count('clocktower') === 0) mayor.place('clocktower');
+      else if (mayor.count('hotel') < 3) mayor.place('hotel');
       mayor.play();
     });
     expect(end).toMatchObject({ status: 'won' });

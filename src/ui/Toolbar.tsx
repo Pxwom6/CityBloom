@@ -112,6 +112,7 @@ const ROAD_ICON_COLOURS: Record<RoadTypeId, string> = {
   motorway: '#2f343a',
   ramp: '#5a6068',
   rail: '#7a6a58',
+  mainline: '#7a6a58',
   highway: '#333',
 };
 const ZONES: {

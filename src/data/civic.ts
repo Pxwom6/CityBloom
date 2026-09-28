@@ -56,6 +56,13 @@ export interface CivicDef {
   };
   /** Bus depot (M6): buses it runs and passengers per bus. */
   transit?: { buses: number; capacity: number };
+  /**
+   * Rail (M20): a passenger station on a railway, with the trains it adds to its line and their
+   * seats. Faces a railway, not a road.
+   */
+  rail?: { trains: number; capacity: number };
+  /** The track a building faces (M20): a railway instead of a road. */
+  track?: 'rail';
   /** Service coverage and capacity (M5). */
   service?: {
     kind: ServiceKind;
@@ -470,6 +477,24 @@ CIVIC_DEFS.push({
   blurb: 'Runs buses round the bus stops you place, in one loop. Riders leave their cars at home.',
   unlockPopulation: 800,
   model: 'busdepot',
+});
+
+// Rail (M20). Stations face a railway; each set of stations on connected track runs one line.
+CIVIC_DEFS.push({
+  id: 'station',
+  name: 'Railway station',
+  category: 'transit',
+  dept: 'transit',
+  w: 64,
+  d: 20,
+  cost: 36_000,
+  upkeep: 1_100,
+  track: 'rail',
+  rail: { trains: 1.5, capacity: 480 },
+  blurb:
+    'A platform and booking hall beside a railway. Two or more stations on connected track run a train line; people walk up to 9 minutes to catch it.',
+  unlockPopulation: 5_000,
+  model: 'station',
 });
 
 // Specialisations (M10): tourism, trade and technology. All designs are original.

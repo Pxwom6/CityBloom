@@ -1,4 +1,4 @@
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
 import { fail, ok, type Command, type CommandLogEntry, type CommandResult } from './commands';
@@ -49,7 +49,7 @@ import {
 } from './actions/roads';
 import { zone } from './actions/zoning';
 import { v2 } from './geom';
-import { GRID_RES, HEIGHT_RES } from '../data/world';
+import { GRID_RES, HEIGHT_RES, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
 import {
   BState,
   accessOf,
@@ -268,6 +268,7 @@ export class Sim {
       trees: terrain.initialTrees.slice(),
       net: { nodes: new Map(), segments: new Map(), blocks: new Map() },
       highway: { outside: 0, connect: 0, segment: 0 },
+      railway: null,
       buildings: new Map(),
       totals: emptyTotals(),
       demand: emptyDemand(),
@@ -299,6 +300,7 @@ export class Sim {
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
+    sim.buildRailway();
     updateLandValue(sim, true);
     updateDemand(sim);
     return sim;
@@ -307,7 +309,56 @@ export class Sim {
   static fromSave(save: SaveFile): Sim {
     const state = readSaveFile(save);
     const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain);
-    return new Sim(state, terrain);
+    const sim = new Sim(state, terrain);
+    // Cities from before M20 get their rail link where it fits among what they've built.
+    if (state.railway === undefined) {
+      state.railway = null;
+      sim.buildRailway();
+    }
+    return sim;
+  }
+
+  /**
+   * The regional railway's link into the map (M20): the flattest dry, empty stretch of the west
+   * edge between 260 and 700 m from the highway, entering at the same x as the highway does.
+   */
+  private buildRailway(): void {
+    const hw = this.terrain.gen.params.highway;
+    let best: { z: number; score: number } | null = null;
+    for (let d = 260; d <= 700; d += 20)
+      for (const z of [hw.connectZ + d, hw.connectZ - d]) {
+        if (z < 120 || z > MAP_SIZE - 120) continue;
+        let lo = Infinity;
+        let hi = -Infinity;
+        let ok = true;
+        for (let x = 4; x <= 160 && ok; x += 8) {
+          const h = this.terrain.heightAt(x, z);
+          if (h < SHORE_HEIGHT + 0.5) ok = false;
+          lo = Math.min(lo, h);
+          hi = Math.max(hi, h);
+          // Room for track to run in: no roads, buildings or civic buildings near.
+          if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
+          if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length)
+            ok = false;
+        }
+        if (!ok || hi - lo > 8) continue;
+        const score = hi - lo + d / 400;
+        if (!best || score < best.score) best = { z, score };
+      }
+    if (!best) {
+      this.state.railway = null;
+      return;
+    }
+    const outside = this.net.createNode(hw.lineX, best.z);
+    const connect = this.net.createNode(HIGHWAY_CONNECT_X, best.z);
+    const seg = this.net.createSegment(
+      outside.id,
+      connect.id,
+      v2((hw.lineX + HIGHWAY_CONNECT_X) / 2, best.z),
+      'mainline',
+      { zoned: false },
+    );
+    this.state.railway = { outside: outside.id, connect: connect.id, segment: seg.id };
   }
 
   private buildHighway(): void {
@@ -434,6 +485,8 @@ export class Sim {
     return {
       stops: [...t.stops.values()].sort((a, b) => a.id - b.id).map((x) => ({ ...x })),
       lines: this.lines().map((l) => ({
+        mode: l.mode,
+        shuttle: l.shuttle,
         depot: l.depot,
         stops: [...l.stops],
         legs: l.legs.map((x) => ({ ...x })),
@@ -598,7 +651,7 @@ export class Sim {
   isSegmentConnected(segId: number): boolean {
     const seg = this.state.net.segments.get(segId);
     // Railways aren't roads: nothing drives onto them from the highway (M20).
-    if (!seg || seg.type === 'rail') return false;
+    if (!seg || isRail(seg.type)) return false;
     const g = this.fullGraph();
     return g.componentOfNode(seg.a) === this.fullHighwayComponent;
   }
@@ -1398,6 +1451,7 @@ export class Sim {
       stats: this.stats(),
       net: this.netData(),
       highway: { ...this.state.highway },
+      railway: this.state.railway ? { ...this.state.railway } : null,
       buildings: [...this.state.buildings.values()].map((b) => this.buildingData(b)),
       civics: [...this.state.civics.values()].map((c) => this.civicData(c)),
       vehicles: this.vehicleData(),

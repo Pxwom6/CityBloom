@@ -15,7 +15,7 @@ import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '..
 import { SpatialHash, type Box } from '../sim/world/spatial';
 import { CIVIC } from '../data/civic';
 import { deckAt, deckProfile, viaductDeck, type DeckProfile } from '../sim/world/bridge';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import { TRAFFIC, JUNCTION } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
@@ -33,6 +33,9 @@ export interface NetChanges {
  * Read-only mirror of the sim state that rendering and UI need, updated from worker frames.
  * Nothing here mutates the simulation; all changes go through commands.
  */
+/** A railway segment type (M20). */
+const isRailType = (t: RoadTypeId | undefined): boolean => !!t && isRail(t);
+
 export class ClientWorld {
   readonly options: GameOptions;
   readonly gen: TerrainGen;
@@ -183,7 +186,7 @@ export class ClientWorld {
     if (!node) return 'none';
     if (node.roundabout) return 'roundabout';
     const segs = this.net.segmentsAt(nodeId);
-    const rail = segs.filter((id) => this.netState.segments.get(id)?.type === 'rail').length;
+    const rail = segs.filter((id) => isRailType(this.netState.segments.get(id)?.type)).length;
     if (rail) return rail < segs.length ? 'crossing' : 'none';
     if (segs.length < 3) return 'none';
     if (segs.some((id) => this.netState.segments.get(id)?.type === 'motorway')) return 'none';
@@ -210,7 +213,7 @@ export class ClientWorld {
     let cap = 0;
     let vol = 0;
     for (const id of this.net.segmentsAt(nodeId)) {
-      if (this.netState.segments.get(id)?.type === 'rail') continue;
+      if (isRailType(this.netState.segments.get(id)?.type)) continue;
       cap += this.segCapacity(id);
       vol += this.traffic.get(id) ?? 0;
     }

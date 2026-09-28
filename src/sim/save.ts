@@ -7,7 +7,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -170,6 +170,9 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   15: (s) => ({ ...s, scenario: null }),
   // v16 → v17 (M19): one-way roads (an optional direction on segments). Older roads are two-way.
   16: (s) => s,
+  // v17 → v18 (M20): railways, stations and trams. An older city has no regional rail link; it needs
+  // the terrain and the network to place, so `Sim.fromSave` lays one where it fits.
+  17: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

@@ -3,7 +3,7 @@ import { Color } from 'three';
 import type { Game } from '../game';
 import type { OverlayMap, OverlayResult } from '../sim/systems/overlays';
 import { SERVICE_KINDS, type ServiceKind } from '../data/civic';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
 import { JUNCTION, TRAFFIC } from '../data/balance';
 import { hourOfDay } from '../sim/time';
 
@@ -123,7 +123,7 @@ export class OverlayController {
     this.roadsKey = key;
     const list: RoadTintPiece[] = [];
     for (const seg of w.netState.segments.values()) {
-      if (seg.type === 'highway' || seg.type === 'rail') continue;
+      if (seg.type === 'highway' || isRail(seg.type)) continue;
       const vc = w.segVC(seg.id, share);
       list.push({
         curve: w.net.curve(seg.id),

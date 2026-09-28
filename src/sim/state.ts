@@ -65,6 +65,11 @@ export interface SimState {
   net: NetworkState;
   /** The regional highway: off-map node and the connection node inside the map. */
   highway: { outside: number; connect: number; segment: number };
+  /**
+   * The regional railway (M20): off-map node, the connection node inside the map, and the segment
+   * between them. Placed on the west edge near the highway where there's room; null if none fits.
+   */
+  railway: { outside: number; connect: number; segment: number } | null;
   buildings: Map<number, Building>;
   totals: CityTotals;
   demand: DemandState;

@@ -2,7 +2,7 @@ import { scenarioForbids } from '../systems/scenario';
 import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
 import { MODULE } from '../../data/modules';
 import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
-import { GRADING, ROAD_RULES, ROAD_TYPES } from '../../data/roads';
+import { GRADING, ROAD_RULES, ROAD_TYPES, isRail } from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT, GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type CommandResult } from '../commands';
 import { pointRectDistance, rectsOverlap, type ORect, type Vec2 } from '../geom';
@@ -149,7 +149,11 @@ export function findAccess(
   c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
 ): { seg: number; s: number } | null {
   const f = frontPoint(c);
-  const hit = sim.net.nearestSegment(f, 24, (id) => ROAD_TYPES[sim.net.segment(id).type].access);
+  // Stations face their railway (M20); everything else faces a road.
+  const rail = CIVIC.get(c.def)?.track === 'rail';
+  const hit = sim.net.nearestSegment(f, 24, (id) =>
+    rail ? isRail(sim.net.segment(id).type) : ROAD_TYPES[sim.net.segment(id).type].access,
+  );
   if (!hit) return null;
   if (hit.d > sim.net.halfWidth(hit.seg) + 4) return null;
   return { seg: hit.seg, s: hit.s };
@@ -247,7 +251,8 @@ export function checkPlacement(
     if (rectsOverlap(shrunk, civicRect(other))) return { ...res, reason: 'Overlaps another building' };
   }
   res.access = findAccess(sim, { x, z, angle, side, def: defId });
-  if (!res.access) return { ...res, reason: 'Must face a road' };
+  if (!res.access)
+    return { ...res, reason: def.track === 'rail' ? 'Must face a railway' : 'Must face a road' };
   // Zoned buildings in the way are demolished.
   for (const id of sim.bldHash.queryPoint(x, z, rad + 40)) {
     const b = sim.state.buildings.get(id)!;

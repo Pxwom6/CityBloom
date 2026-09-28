@@ -283,6 +283,7 @@ export interface Snapshot {
   stats: CityStats;
   net: { nodes: NodeData[]; segments: SegmentData[]; blocks: BlockData[] };
   highway: { outside: number; connect: number; segment: number };
+  railway: { outside: number; connect: number; segment: number } | null;
   buildings: BuildingData[];
   civics: CivicData[];
   vehicles: VehicleData[];
@@ -361,7 +362,17 @@ export interface TrafficData {
 /** Bus stops and lines for the client. */
 export interface TransitData {
   stops: BusStop[];
-  lines: { depot: number; stops: number[]; legs: Leg[]; loopTime: number; buses: number; riders: number }[];
+  lines: {
+    /** Buses or trains (M20). */
+    mode: 'bus' | 'train';
+    shuttle: boolean;
+    depot: number;
+    stops: number[];
+    legs: Leg[];
+    loopTime: number;
+    buses: number;
+    riders: number;
+  }[];
 }
 
 export interface WorkerPerf {

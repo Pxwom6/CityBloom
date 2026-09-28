@@ -312,7 +312,13 @@ export function planRoad(
   plan.splits = [...splitMap.values()].sort((p, q) => p.seg - q.seg || q.s - p.s);
   for (const sp of plan.splits)
     if (!ROAD_TYPES[net.segment(sp.seg).type].buildable)
-      return fail(plan, 'Roads join the regional highway only where it ends', v2(sp.x, sp.z));
+      return fail(
+        plan,
+        net.segment(sp.seg).type === 'mainline'
+          ? 'Railways join the regional railway only where it ends'
+          : 'Roads join the regional highway only where it ends',
+        v2(sp.x, sp.z),
+      );
   // Railways meet roads only at level crossings (M20): a railway and a street or avenue crossing
   // mid-way, both going straight on. They never end on each other.
   const newEnds = new Map<string, number>();

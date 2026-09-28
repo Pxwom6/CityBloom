@@ -172,5 +172,6 @@ export const ROAD_STYLES: Record<RoadTypeId, RoadStyle> = {
   motorway: build('motorway'),
   ramp: build('ramp'),
   rail: build('rail'),
+  mainline: build('rail'),
   highway: build('highway'),
 };

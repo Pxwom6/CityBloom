@@ -1,4 +1,4 @@
-import { ROAD_TYPES } from '../../data/roads';
+import { ROAD_TYPES, isRail } from '../../data/roads';
 import type { Network } from '../world/network';
 
 /**
@@ -42,7 +42,7 @@ export class RoadGraph {
     const n = nodes.length;
     const deg = new Int32Array(n);
     const segs = [...net.st.segments.values()]
-      .filter((s) => !blocked?.has(s.id) && (s.type === 'rail') === (kind === 'rail'))
+      .filter((s) => !blocked?.has(s.id) && isRail(s.type) === (kind === 'rail'))
       .sort((a, b) => a.id - b.id);
     for (const s of segs) {
       deg[this.index.get(s.a)!]!++;

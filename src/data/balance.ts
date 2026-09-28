@@ -159,6 +159,18 @@ export const TRANSIT = {
   busPcu: 2.5,
 };
 
+/** Rail (M20): trains between stations, and later trams. */
+export const RAIL = {
+  /** Seconds a train stands at each station. */
+  dwell: 40,
+  /** A train's average speed as a share of the line speed (stops, speeding up, slowing down). */
+  speedShare: 0.7,
+  /** A station draws riders from this many times the bus stop walking distance. */
+  walkFactor: 1.6,
+  /** Seconds a train ride is worth over the same time on a bus when people choose (comfort). */
+  trainBonus: 150,
+};
+
 /** Environment, health and education (DESIGN §3.11). */
 export const ENVIRONMENT = {
   /** Air: cells the plume moves downwind per 3-hour update, diffusion, decay per update. */

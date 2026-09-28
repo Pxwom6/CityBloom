@@ -109,8 +109,9 @@ export class TransitRenderer {
     }
     this.stops.count = i;
     this.stops.instanceMatrix.needsUpdate = true;
+    // Buses only here; trains have their own renderer (M20).
     this.runs = w.lines
-      .filter((l) => l.legs.every((x) => w.netState.segments.has(x.seg)))
+      .filter((l) => l.mode === 'bus' && l.legs.every((x) => w.netState.segments.has(x.seg)))
       .map((l) => {
         const cum = [0];
         for (const x of l.legs) cum.push(cum[cum.length - 1]! + Math.abs(x.s1 - x.s0));

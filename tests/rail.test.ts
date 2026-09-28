@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GRADE_SEP, ROAD_TYPES } from '../src/data/roads';
+import { GRADE_SEP, ROAD_TYPES, isRail } from '../src/data/roads';
 import { Sim } from '../src/sim/sim';
 import { junctionKind } from '../src/sim/systems/traffic';
 import { profileAt } from '../src/sim/world/grading';
@@ -48,7 +48,7 @@ describe('railways in the network (M20)', () => {
     for (let k = 0; k < g.seg.length; k++) expect(sim.net.segment(g.seg[k]!).type).not.toBe('rail');
     const rg = sim.railGraph();
     expect(rg.seg.length).toBeGreaterThan(0);
-    for (let k = 0; k < rg.seg.length; k++) expect(sim.net.segment(rg.seg[k]!).type).toBe('rail');
+    for (let k = 0; k < rg.seg.length; k++) expect(isRail(sim.net.segment(rg.seg[k]!).type)).toBe(true);
     // Street traffic still crosses at the level crossing.
     const north = sim.net.nearestSegment(at(60, -350), 2)!.seg;
     const south = sim.net.nearestSegment(at(60, -100), 2)!.seg;

@@ -1,5 +1,5 @@
 import { JUNCTION, TRAFFIC } from '../../data/balance';
-import { ROAD_TYPES } from '../../data/roads';
+import { ROAD_TYPES, isRail } from '../../data/roads';
 import type { Sim } from '../sim';
 import { hourOfDay } from '../time';
 import type { Dijkstra, Leg, RoadGraph } from './graph';
@@ -54,6 +54,12 @@ export function segVC(sim: Sim, segId: number, share: number): number {
   return (vol * TRAFFIC.peakShare * share) / segCapacity(sim, segId);
 }
 
+/** A railway segment (M20). */
+const isRailSeg = (sim: Sim, id: number): boolean => {
+  const t = sim.state.net.segments.get(id)?.type;
+  return !!t && isRail(t);
+};
+
 export type JunctionKind = 'none' | 'plain' | 'roundabout' | 'crossing';
 
 /** What kind of junction a node is (M19): a roundabout, an ordinary junction, or just a bend. */
@@ -63,7 +69,7 @@ export function junctionKind(sim: Sim, nodeId: number): JunctionKind {
   if (node.roundabout) return 'roundabout';
   const segs = sim.net.segmentsAt(nodeId);
   // A railway across a road (M20): a level crossing for the road; rail nodes are no junction at all.
-  const rail = segs.filter((id) => sim.state.net.segments.get(id)?.type === 'rail').length;
+  const rail = segs.filter((id) => isRailSeg(sim, id)).length;
   if (rail) return rail < segs.length ? 'crossing' : 'none';
   if (segs.length < 3) return 'none';
   // Where ramps join the city highway, traffic merges without stopping (M19); the ramp's own lane
@@ -77,8 +83,7 @@ export function junctionCapacity(sim: Sim, nodeId: number): number {
   const kind = junctionKind(sim, nodeId);
   if (kind === 'none') return Infinity;
   let approaches = 0;
-  for (const sid of sim.net.segmentsAt(nodeId))
-    if (sim.state.net.segments.get(sid)?.type !== 'rail') approaches += segCapacity(sim, sid);
+  for (const sid of sim.net.segmentsAt(nodeId)) if (!isRailSeg(sim, sid)) approaches += segCapacity(sim, sid);
   const share =
     kind === 'roundabout'
       ? JUNCTION.roundaboutShare

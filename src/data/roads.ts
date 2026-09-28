@@ -1,6 +1,6 @@
 /** Road types and road-building rules. DESIGN.md §2, SPEC §5 Roads. */
 export type RoadTypeId =
-  'dirt' | 'street' | 'avenue' | 'boulevard' | 'motorway' | 'ramp' | 'rail' | 'highway';
+  'dirt' | 'street' | 'avenue' | 'boulevard' | 'motorway' | 'ramp' | 'rail' | 'mainline' | 'highway';
 
 export interface RoadType {
   id: RoadTypeId;
@@ -163,6 +163,24 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
     blurb:
       'Double track for trains, on gentle grades and wide curves. Crosses streets at level crossings and passes over bigger roads.',
   },
+  mainline: {
+    id: 'mainline',
+    access: false,
+    maxGrade: 0.035,
+    minRadius: 100,
+    name: 'Regional railway',
+    width: 8,
+    sidewalk: 2,
+    lanes: 2,
+    speed: 110,
+    capacity: 0,
+    costPerMetre: 0,
+    upkeepPerMetre: 0,
+    maxDensity: 0,
+    unlockPopulation: 0,
+    buildable: false,
+    blurb: 'Links the city to the region by rail: freight trains run in and out here.',
+  },
   highway: {
     id: 'highway',
     access: false,
@@ -185,7 +203,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
 export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boulevard', 'motorway', 'ramp'];
 
 /** Track (M20): railways live in the network beside roads but have a graph of their own. */
-export const isRail = (t: RoadTypeId): boolean => t === 'rail';
+export const isRail = (t: RoadTypeId): boolean => t === 'rail' || t === 'mainline';
 
 /** Roads a railway crosses at a level crossing (M20); it passes over anything bigger. */
 export const levelCrossing = (t: RoadTypeId): boolean => t === 'dirt' || t === 'street' || t === 'avenue';
@@ -198,7 +216,7 @@ export const gradeSeparated = (t: RoadTypeId): boolean => t === 'motorway' || t 
 
 /** Road families that may meet at a junction: local roads; the city highway, ramps and highway. */
 export const roadClass = (t: RoadTypeId): 'local' | 'motorway' | 'ramp' | 'rail' =>
-  t === 'motorway' || t === 'highway' ? 'motorway' : t === 'ramp' ? 'ramp' : t === 'rail' ? 'rail' : 'local';
+  t === 'motorway' || t === 'highway' ? 'motorway' : t === 'ramp' ? 'ramp' : isRail(t) ? 'rail' : 'local';
 
 /** Half the corridor a road occupies (carriageway + sidewalks). */
 export const roadHalfWidth = (t: RoadTypeId): number => ROAD_TYPES[t].width / 2 + ROAD_TYPES[t].sidewalk;

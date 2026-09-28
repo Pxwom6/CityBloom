@@ -1,4 +1,4 @@
-import { TRAFFIC, TRANSIT } from '../../data/balance';
+import { RAIL, TRAFFIC, TRANSIT } from '../../data/balance';
 import { ROAD_TYPES } from '../../data/roads';
 import { fail, ok, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
@@ -32,9 +32,19 @@ export function emptyTransit(): TransitState {
 }
 
 export interface BusLine {
+  /** Buses from a depot, or trains between stations (M20). */
+  mode: 'bus' | 'train';
+  /** The depot (buses), or the station at one end of the line (trains). */
   depot: number;
-  /** Stop ids in the order the buses visit them. */
+  /** Stop ids in the order the buses visit them (station ids for trains). */
   stops: number[];
+  /** Where each stop is, for walking to it. */
+  stopPos: { x: number; z: number }[];
+  /**
+   * Trains shuttle along their line and back (a ride between two stations is the time between them,
+   * either way); buses go round a loop.
+   */
+  shuttle: boolean;
   /** The whole loop from the depot through every stop and back. */
   legs: Leg[];
   /** Seconds from leaving the depot to reaching each stop. */
@@ -124,7 +134,8 @@ export function computeLines(sim: Sim): BusLine[] {
   const depots = [...s.civics.values()]
     .filter((c) => civicDef(c).transit && c.access && civicOnline(c))
     .sort((a, b) => a.id - b.id);
-  if (!depots.length || s.transit.stops.size < 2) return [];
+  // Trains run without depots or bus stops (M20).
+  if (!depots.length || s.transit.stops.size < 2) return trainLines(sim);
   const speed = (id: number) => (ROAD_TYPES[sim.net.segment(id).type].speed / 3.6) * 0.999;
   const route = (a: { seg: number; s: number }, b: { seg: number; s: number }) =>
     routeBetween(g, sim.net, a, b, speed, (k) => peak[k]!);
@@ -189,8 +200,11 @@ export function computeLines(sim: Sim): BusLine[] {
     const def = civicDef(d).transit!;
     const buses = Math.max(1, Math.round(civicBuses(d) * Math.min(1.25, sim.fundingEff('transit'))));
     lines.push({
+      mode: 'bus',
+      shuttle: false,
       depot: d.id,
       stops: order.map((st) => st.id),
+      stopPos: order.map((st) => ({ x: st.x, z: st.z })),
       legs,
       stopTime,
       loopTime: t,
@@ -199,7 +213,86 @@ export function computeLines(sim: Sim): BusLine[] {
       capacityPerHour: (buses * def.capacity * 3600) / t,
     });
   }
+  lines.push(...trainLines(sim));
   return lines;
+}
+
+/**
+ * Train lines (M20): the stations on each connected stretch of track run one line, shuttling from
+ * the station at one end to the far end and back, calling at the others in order along the way.
+ */
+export function trainLines(sim: Sim): BusLine[] {
+  const s = sim.state;
+  const rg = sim.railGraph();
+  const stations = [...s.civics.values()]
+    .filter((c) => civicDef(c).rail && c.access && civicOnline(c) && s.net.segments.has(c.access.seg))
+    .sort((a, b) => a.id - b.id);
+  if (stations.length < 2) return [];
+  const groups = new Map<number, typeof stations>();
+  for (const st of stations) {
+    const comp = rg.componentOfNode(sim.net.segment(st.access!.seg).a);
+    const list = groups.get(comp) ?? [];
+    list.push(st);
+    groups.set(comp, list);
+  }
+  const speed = (id: number) => (ROAD_TYPES[sim.net.segment(id).type].speed / 3.6) * RAIL.speedShare;
+  const route = (a: { seg: number; s: number }, b: { seg: number; s: number }) =>
+    routeBetween(rg, sim.net, a, b, speed);
+  const seconds = (legs: Leg[]) =>
+    legs.reduce((t, l) => t + Math.abs(l.s1 - l.s0) / Math.max(0.1, speed(l.seg)), 0);
+  const out: BusLine[] = [];
+  for (const group of [...groups.values()].sort((a, b) => a[0]!.id - b[0]!.id)) {
+    if (group.length < 2) continue;
+    // One end: the station farthest from the first; then every station in order of time from it.
+    const from = (x: (typeof group)[number]) =>
+      new Map(
+        group.map((y) => {
+          const r = x === y ? [] : route(x.access!, y.access!);
+          return [y.id, r ? seconds(r) : Infinity] as const;
+        }),
+      );
+    const t0 = from(group[0]!);
+    const end = group.reduce((a, b) => (t0.get(b.id)! > t0.get(a.id)! ? b : a));
+    const tEnd = from(end);
+    const order = group
+      .filter((x) => Number.isFinite(tEnd.get(x.id)!))
+      .sort((a, b) => tEnd.get(a.id)! - tEnd.get(b.id)!);
+    if (order.length < 2) continue;
+    const legs: Leg[] = [];
+    const stopTime: number[] = [0];
+    let t = RAIL.dwell;
+    for (let i = 0; i + 1 < order.length; i++) {
+      const part = route(order[i]!.access!, order[i + 1]!.access!);
+      if (!part) break;
+      legs.push(...part);
+      t += seconds(part);
+      stopTime.push(t);
+      t += RAIL.dwell;
+    }
+    if (stopTime.length < order.length) continue;
+    const trains = Math.max(
+      1,
+      Math.round(
+        order.reduce((n, x) => n + civicDef(x).rail!.trains, 0) * Math.min(1.25, sim.fundingEff('transit')),
+      ),
+    );
+    const loopTime = 2 * t;
+    const seats = civicDef(order[0]!).rail!.capacity;
+    out.push({
+      mode: 'train',
+      shuttle: true,
+      depot: order[0]!.id,
+      stops: order.map((x) => x.id),
+      stopPos: order.map((x) => ({ x: x.x, z: x.z })),
+      legs,
+      stopTime,
+      loopTime,
+      buses: trains,
+      headway: loopTime / trains,
+      capacityPerHour: (trains * seats * 3600) / loopTime,
+    });
+  }
+  return out;
 }
 
 /** Stops within walking distance of each graph node: line index, stop index and walking seconds. */
@@ -209,14 +302,14 @@ export function stopsNearNodes(
 ): Map<number, { line: number; stop: number; walk: number }[]> {
   const g = sim.graph();
   const out = new Map<number, { line: number; stop: number; walk: number }[]>();
-  const stops = sim.state.transit.stops;
   lines.forEach((line, li) => {
-    line.stops.forEach((id, si) => {
-      const st = stops.get(id)!;
+    // People walk further to a train (M20).
+    const reach = TRANSIT.walkRadius * (line.mode === 'train' ? RAIL.walkFactor : 1);
+    line.stopPos.forEach((st, si) => {
       for (let n = 0; n < g.size; n++) {
         const node = sim.state.net.nodes.get(g.ids[n]!)!;
         const d = Math.hypot(node.x - st.x, node.z - st.z);
-        if (d > TRANSIT.walkRadius) continue;
+        if (d > reach) continue;
         const list = out.get(n) ?? [];
         list.push({ line: li, stop: si, walk: (d * 1.3) / TRANSIT.walkSpeed });
         out.set(n, list);
@@ -241,8 +334,11 @@ export function busTime(
     for (const y of b) {
       if (x.line !== y.line || x.stop === y.stop) continue;
       const line = lines[x.line]!;
-      const ride = (line.stopTime[y.stop]! - line.stopTime[x.stop]! + line.loopTime) % line.loopTime;
-      const t = x.walk + line.headway / 2 + ride + y.walk;
+      const ride = line.shuttle
+        ? Math.abs(line.stopTime[y.stop]! - line.stopTime[x.stop]!)
+        : (line.stopTime[y.stop]! - line.stopTime[x.stop]! + line.loopTime) % line.loopTime;
+      const comfort = line.mode === 'train' ? RAIL.trainBonus : 0;
+      const t = x.walk + line.headway / 2 + ride + y.walk - comfort;
       if (t < best.t) best = { t, line: x.line };
     }
   }
@@ -259,6 +355,7 @@ export function busShare(carSeconds: number, busSeconds: number, load: number): 
 /** Bus passes a day add a little traffic along each line (buses run all day, not at the peak). */
 export function busTraffic(lines: BusLine[], add: (seg: number, pcu: number) => void): void {
   for (const line of lines) {
+    if (line.mode !== 'bus') continue;
     const passes = (18 * 3600) / line.headway;
     const pcu = (passes * TRANSIT.busPcu * (1 / 18)) / TRAFFIC.peakShare;
     const segs = new Set(line.legs.map((l) => l.seg));

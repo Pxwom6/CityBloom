@@ -1,4 +1,4 @@
-import { ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { ROAD_RULES, ROAD_TYPES, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type BulldozeTarget, type CommandResult } from '../commands';
 import { Curve, pointRectDistance, type Vec2 } from '../geom';
@@ -112,6 +112,13 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
   if (!seg) return fail('No road here');
   if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
   if (seg.type === road) return fail(`This is already ${articled(ROAD_TYPES[road].name)}`);
+  // The city highway and its ramps are their own roads (M19): no zoning, no junctions.
+  if (roadClass(seg.type) !== roadClass(road))
+    return fail(
+      roadClass(road) === 'local'
+        ? `${ROAD_TYPES[seg.type].name}s can't become local roads: bulldoze and rebuild`
+        : `Local roads can't become ${articled(ROAD_TYPES[road].name)}: build it as a new road`,
+    );
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
   const curve = sim.net.curve(segId);
@@ -330,6 +337,7 @@ export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: bool
   if (!seg) return fail('No road here');
   if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
   if (dir !== 0 && dir !== 1 && dir !== -1) return fail('Invalid direction');
+  if (dir === 0 && ROAD_TYPES[seg.type].oneWay) return fail('A ramp is always one-way');
   if ((seg.oneway ?? 0) === dir)
     return fail(dir ? 'This road already runs that way' : 'This road is already two-way');
   if (dryRun) return ok(0);
@@ -386,6 +394,7 @@ export function placeRoundabout(
   for (const a of arms) {
     const t = net.segment(a.seg).type;
     if (!ROAD_TYPES[t].buildable) return fail("The regional highway can't have a roundabout");
+    if (!ROAD_TYPES[t].access) return fail('Roundabouts are for local roads: the city highway uses ramps');
     widest = Math.max(widest, roadHalfWidth(t));
   }
   const minR = Math.max(JUNCTION.minRadius, Math.ceil(widest + 6));

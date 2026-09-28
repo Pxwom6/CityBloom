@@ -61,7 +61,12 @@ export function junctionKind(sim: Sim, nodeId: number): JunctionKind {
   const node = sim.state.net.nodes.get(nodeId);
   if (!node) return 'none';
   if (node.roundabout) return 'roundabout';
-  return sim.net.segmentsAt(nodeId).length >= 3 ? 'plain' : 'none';
+  const segs = sim.net.segmentsAt(nodeId);
+  if (segs.length < 3) return 'none';
+  // Where ramps join the city highway, traffic merges without stopping (M19); the ramp's own lane
+  // is the limit.
+  if (segs.some((id) => sim.state.net.segments.get(id)?.type === 'motorway')) return 'none';
+  return 'plain';
 }
 
 /** Cars per hour a junction passes before it slows (M19). */

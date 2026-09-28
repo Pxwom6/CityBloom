@@ -106,6 +106,8 @@ const ROAD_ICON_COLOURS: Record<RoadTypeId, string> = {
   street: '#6b7079',
   avenue: '#4d5259',
   boulevard: '#3a3f46',
+  motorway: '#2f343a',
+  ramp: '#5a6068',
   highway: '#333',
 };
 const ZONES: {

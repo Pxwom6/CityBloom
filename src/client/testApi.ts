@@ -2,6 +2,7 @@ import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
+import { ROAD_TYPES } from '../data/roads';
 import type { Game } from '../game';
 import type { ClientWorld } from './world';
 import type { Command, CommandResult } from '../sim/commands';
@@ -213,7 +214,7 @@ export function installTestApi(game: Game): TestApi {
       if (!d) return null;
       const net = game.world.net;
       const segs = [...game.world.netState.segments.values()]
-        .filter((s) => s.type !== 'highway')
+        .filter((s) => ROAD_TYPES[s.type].access)
         .map((s) => ({ s, mid: net.curve(s.id).pointAt(net.curve(s.id).length / 2) }))
         .sort((a, b) =>
           near

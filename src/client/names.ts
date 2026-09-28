@@ -71,6 +71,8 @@ const SUFFIX: Record<RoadTypeId, string[]> = {
   street: ['Street', 'Road', 'Way', 'Close', 'Row', 'Terrace'],
   avenue: ['Avenue', 'Parade'],
   boulevard: ['Boulevard'],
+  motorway: ['Expressway', 'Bypass', 'Freeway'],
+  ramp: ['Ramp'],
   highway: ['Regional Highway'],
 };
 const HOODS = [

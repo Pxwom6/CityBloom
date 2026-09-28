@@ -1,3 +1,4 @@
+import { ROAD_TYPES } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
 import { fail, ok, type Command, type CommandLogEntry, type CommandResult } from './commands';
@@ -1645,7 +1646,7 @@ export class Sim {
         const cov = this.coverage.kinds[q.kind];
         const out: { seg: number; v: number[] }[] = [];
         for (const seg of this.state.net.segments.values()) {
-          if (seg.type === 'highway') continue;
+          if (!ROAD_TYPES[seg.type].access) continue;
           const arr = cov.get(seg.id);
           out.push({ seg: seg.id, v: arr ? [...arr].map((x) => Math.round(x * 100) / 100) : [0, 0] });
         }

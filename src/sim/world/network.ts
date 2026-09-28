@@ -345,7 +345,7 @@ export class Network {
     this.dirty.segments.add(seg.id);
     this.dirty.nodes.add(a);
     this.dirty.nodes.add(b);
-    if (opts.zoned !== false && ROAD_TYPES[type].buildable) {
+    if (opts.zoned !== false && ROAD_TYPES[type].access) {
       const len = this.curve(seg.id).length;
       for (const side of [1, -1] as const) {
         const given = side === 1 ? opts.layouts?.left : opts.layouts?.right;

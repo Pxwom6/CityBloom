@@ -1,11 +1,20 @@
-import { GRADING, ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import {
+  GRADE_SEP,
+  GRADING,
+  ROAD_RULES,
+  ROAD_TYPES,
+  gradeSeparated,
+  roadClass,
+  roadHalfWidth,
+  type RoadTypeId,
+} from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import { JUNCTION } from '../../data/balance';
 import { Curve, angleDiff, angleOf, curveCrossings, dist, mid, splitBezier, v2, type Vec2 } from '../geom';
 import type { Terrain } from '../terrain/terrain';
 import type { Network } from './network';
 import { BRIDGE, deckAt, deckProfile, rampLength } from './bridge';
-import { gradeProfile, profileAt, type GradeProfile } from './grading';
+import { gradeProfile, profileAt, type GradeLimit, type GradeProfile } from './grading';
 import { planEarthworks, type EarthPiece, type EarthPlan } from './earthworks';
 
 /**
@@ -24,6 +33,19 @@ export interface PlanPiece {
   ea: Endpoint;
   eb: Endpoint;
   length: number;
+  /**
+   * Roads this piece passes over or under without meeting them (M19): arc length along the piece,
+   * the height limit there, and how far either side other roads may come close.
+   */
+  crossings?: Crossing[];
+}
+
+export interface Crossing extends GradeLimit {
+  seg: number;
+  /** Passing over the other road (on a deck), or under its viaduct. */
+  over: boolean;
+  /** Metres either side of `s` where the other road's corridor overlaps this one. */
+  skip: number;
 }
 
 export interface RoadPlan {
@@ -187,11 +209,20 @@ export function planRoad(
     addSplit(r.eb);
     const box = curve.bbox(2);
     const cuts: { s: number; ep: Endpoint }[] = [];
+    const over: Crossing[] = [];
     for (const sid of net.segHash.query(box)) {
       const other = net.curve(sid);
       for (const x of curveCrossings(curve, other)) {
         if (x.sa < 2 || x.sa > curve.length - 2) continue;
         const seg = net.segment(sid);
+        // Grade separation (M19): the city highway and the regional highway pass over or under what
+        // they cross, and anything passes under a viaduct high enough.
+        const sep = separation(net, terrain, type, sid, x, curve);
+        if (sep) {
+          if (typeof sep === 'string') return fail(plan, sep, x);
+          over.push(sep);
+          continue;
+        }
         if (ROAD_TYPES[seg.type].buildable === false)
           return fail(plan, "Can't cross the regional highway", x);
         let ep: Endpoint;
@@ -217,6 +248,12 @@ export function planRoad(
       if ((r.ea.kind === 'node' && r.ea.id === n.id) || (r.eb.kind === 'node' && r.eb.id === n.id)) continue;
       const pr = curve.project(n);
       if (pr.d > ROAD_RULES.nodeOnPath || pr.s < 2 || pr.s > curve.length - 2) continue;
+      // A highway passes over local junctions in its way (M19).
+      if (
+        gradeSeparated(type) &&
+        net.segmentsAt(n.id).some((sid) => roadClass(net.segment(sid).type) === 'local')
+      )
+        continue;
       if (!cuts.some((c) => Math.abs(c.s - pr.s) < 1))
         cuts.push({ s: pr.s, ep: { kind: 'node', id: n.id, x: n.x, z: n.z } });
     }
@@ -230,6 +267,7 @@ export function planRoad(
       cuts.map((c) => c.s),
     );
     const eps = [r.ea, ...cuts.map((c) => c.ep), r.eb];
+    const bounds = [0, ...cuts.map((c) => c.s), curve.length];
     for (let k = 0; k < subs.length; k++) {
       const [a, c, b] = subs[k]!;
       const ea = eps[k]!;
@@ -239,11 +277,41 @@ export function planRoad(
       const pb = epPos(eb);
       const cc = v2(c.x + (pa.x - a.x + pb.x - b.x) / 2, c.z + (pa.z - a.z + pb.z - b.z) / 2);
       const len = new Curve(pa, cc, pb).length;
-      finalPieces.push({ a: pa, c: cc, b: pb, ea, eb, length: len });
+      const piece: PlanPiece = { a: pa, c: cc, b: pb, ea, eb, length: len };
+      // Crossings on this stretch, measured from its start (a Bézier split keeps its shape).
+      const mine = over
+        .filter((o) => o.s > bounds[k]! && o.s < bounds[k + 1]!)
+        .map((o) => ({ ...o, s: o.s - bounds[k]! }));
+      if (mine.length) piece.crossings = mine;
+      finalPieces.push(piece);
     }
   }
   plan.pieces = finalPieces;
   plan.splits = [...splitMap.values()].sort((p, q) => p.seg - q.seg || q.s - p.s);
+  for (const sp of plan.splits)
+    if (!ROAD_TYPES[net.segment(sp.seg).type].buildable)
+      return fail(plan, 'Roads join the regional highway only where it ends', v2(sp.x, sp.z));
+  // The city highway meets other roads only through ramps, and the regional highway at the
+  // interchange where it ends (M19).
+  for (const p of finalPieces)
+    for (const e of [p.ea, p.eb]) {
+      const types =
+        e.kind === 'node'
+          ? net.segmentsAt(e.id).map((sid) => net.segment(sid).type)
+          : e.kind === 'split'
+            ? [net.segment(e.seg).type]
+            : [];
+      types.push(type);
+      if (types.includes('highway') || !types.includes('motorway')) continue;
+      if (types.some((t) => roadClass(t) === 'local'))
+        return fail(
+          plan,
+          type === 'motorway'
+            ? 'The city highway meets other roads only by ramps: pass over this road, or end short of it'
+            : 'Join the city highway with a ramp',
+          epPos(e),
+        );
+    }
   // A viaduct can only be joined where it's back on the ground (M13; no grade separation yet).
   for (const sp of plan.splits) {
     const deck = net.segment(sp.seg).deck;
@@ -305,6 +373,11 @@ export function planRoad(
           `A bridge needs about ${Math.round(rampLength())} m of land on each side of the water for its ramps`,
           at,
         );
+      for (const o of p.crossings ?? []) {
+        const h = deckAt(deck, o.s);
+        if (o.min !== undefined ? h < o.min : h > o.max!)
+          return fail(plan, "Can't pass over or under another road on a bridge here", pc.pointAt(o.s));
+      }
       plan.bridgeLength += deck.overWater;
       const heights: number[] = [];
       for (let i = 0; i < curve.xs.length; i++) heights.push(deckAt(deck, curve.cum[i]!));
@@ -327,7 +400,14 @@ export function planRoad(
       if (e.kind === 'new') return endHeights.get(endKey(e)) ?? null;
       return terrain.heightAt(e.x, e.z);
     };
-    const prof = gradeProfile(curve, (x, z) => terrain.heightAt(x, z), type, pin(p.ea), pin(p.eb));
+    const prof = gradeProfile(
+      curve,
+      (x, z) => terrain.heightAt(x, z),
+      type,
+      pin(p.ea),
+      pin(p.eb),
+      p.crossings ?? [],
+    );
     const pointAt = (i: number) => curve.pointAt(prof.s[i]!);
     if (prof.fail) {
       plan.profiles.push(prof);
@@ -358,22 +438,27 @@ export function planRoad(
   }
 
   // Angles at every endpoint, counting existing roads, split halves and new pieces.
-  const endpointDirs = new Map<string, { dirs: number[]; newDirs: number[]; hw: number[]; pos: Vec2 }>();
+  const endpointDirs = new Map<
+    string,
+    { dirs: number[]; newDirs: number[]; hw: number[]; types: RoadTypeId[]; pos: Vec2 }
+  >();
   const keyOf = (e: Endpoint) => (e.kind === 'node' ? `n${e.id}` : `p${e.x.toFixed(2)},${e.z.toFixed(2)}`);
   const entry = (e: Endpoint) => {
     const k = keyOf(e);
     let v = endpointDirs.get(k);
     if (!v) {
-      v = { dirs: [], newDirs: [], hw: [], pos: epPos(e) };
+      v = { dirs: [], newDirs: [], hw: [], types: [], pos: epPos(e) };
       if (e.kind === 'node') {
         for (const sid of net.segmentsAt(e.id)) {
           v.dirs.push(angleOf(net.directionAt(sid, e.id)));
           v.hw.push(net.halfWidth(sid));
+          v.types.push(net.segment(sid).type);
         }
       } else if (e.kind === 'split') {
         const t = net.curve(e.seg).tangentAt(e.s);
         v.dirs.push(angleOf(t), angleOf(v2(-t.x, -t.z)));
         v.hw.push(net.halfWidth(e.seg), net.halfWidth(e.seg));
+        v.types.push(net.segment(e.seg).type, net.segment(e.seg).type);
       }
       endpointDirs.set(k, v);
     }
@@ -386,23 +471,32 @@ export function planRoad(
     entry(p.eb).newDirs.push(angleOf(dist(p.c, p.b) > 0.01 ? db : v2(p.a.x - p.b.x, p.a.z - p.b.z)));
   }
   const skipAt = new Map<string, number>();
+  // Ramps slip onto and off the city highway at a shallow angle (M19); other roads meet squarer.
+  const merging = (t: RoadTypeId, u: RoadTypeId) =>
+    (t === 'ramp' && roadClass(u) !== 'local') || (u === 'ramp' && roadClass(t) !== 'local');
   for (const [k, v] of endpointDirs) {
     const all = [...v.dirs, ...v.newDirs];
+    const types = [...v.types, ...v.newDirs.map(() => type)];
     let minAng = Math.PI;
+    let limit = ROAD_RULES.minAngleDeg * DEG;
     for (let i = 0; i < v.newDirs.length; i++) {
       for (let j = 0; j < all.length; j++) {
         if (j === v.dirs.length + i) continue;
         const d = angleDiff(v.newDirs[i]!, all[j]!);
-        minAng = Math.min(minAng, d);
+        const need = (merging(type, types[j]!) ? ROAD_RULES.mergeAngleDeg : ROAD_RULES.minAngleDeg) * DEG;
+        if (all.length > 1 && d < need) return fail(plan, 'Roads meet at too sharp an angle', v.pos);
+        if (d < minAng) {
+          minAng = d;
+          limit = need;
+        }
       }
     }
-    if (all.length > 1 && minAng < ROAD_RULES.minAngleDeg * DEG)
-      return fail(plan, 'Roads meet at too sharp an angle', v.pos);
     const maxHw = Math.max(hwNew, ...v.hw);
-    const effective = Math.min(Math.PI / 2, Math.max(minAng, ROAD_RULES.minAngleDeg * DEG));
+    const effective = Math.min(Math.PI / 2, Math.max(minAng, limit));
+    const cap = type === 'ramp' || v.types.includes('ramp') ? 200 : 80;
     skipAt.set(
       k,
-      all.length > 1 ? Math.min(80, (hwNew + maxHw + ROAD_RULES.clearance) / Math.sin(effective) + 2) : 0,
+      all.length > 1 ? Math.min(cap, (hwNew + maxHw + ROAD_RULES.clearance) / Math.sin(effective) + 2) : 0,
     );
   }
 
@@ -414,6 +508,13 @@ export function planRoad(
     const skipA = skipAt.get(keyOf(p.ea)) ?? 0;
     const skipB = skipAt.get(keyOf(p.eb)) ?? 0;
     const splitSegs = new Set(plan.splits.map((s) => s.seg));
+    // A ramp slipping off the city highway runs close beside it for a while (M19).
+    const mergesAt = (e: Endpoint): Set<number> => {
+      const segs = e.kind === 'node' ? net.segmentsAt(e.id) : e.kind === 'split' ? [e.seg] : [];
+      return new Set(segs.filter((sid) => merging(type, net.segment(sid).type)));
+    };
+    const mergeA = mergesAt(p.ea);
+    const mergeB = mergesAt(p.eb);
     for (let k = 0; k < curve.xs.length; k++) {
       const s = curve.cum[k]!;
       if (s < skipA || s > curve.length - skipB) continue;
@@ -424,6 +525,9 @@ export function planRoad(
         if (d < need) {
           // Samples near a crossing with this segment are expected to be close.
           if (splitSegs.has(sid) && d < 0.5) continue;
+          // So are those passing over or under it (M19), and a ramp beside the road it merges with.
+          if (p.crossings?.some((o) => o.seg === sid && Math.abs(s - o.s) < o.skip)) continue;
+          if ((mergeA.has(sid) && s < 200) || (mergeB.has(sid) && s > curve.length - 200)) continue;
           return fail(plan, 'Too close to another road', pt);
         }
       }
@@ -555,7 +659,7 @@ export function applyRoadPlan(
     const c = v2(p.c.x + (na.x - p.a.x + nb.x - p.b.x) / 2, p.c.z + (na.z - p.a.z + nb.z - p.b.z) / 2);
     const seg = net.createSegment(a, b, c, plan.type);
     // One-way roads run the way they were drawn (M19).
-    if (plan.oneway) seg.oneway = 1;
+    if (plan.oneway || ROAD_TYPES[plan.type].oneWay) seg.oneway = 1;
     // A viaduct over dry ground keeps its graded heights (M13).
     const prof = plan.profiles[i];
     if (prof && prof.raisedLength > 0) seg.deck = Array.from(prof.h, (h) => Math.round(h * 100) / 100);
@@ -597,4 +701,41 @@ function firstWet(curve: Curve, terrain: Terrain): Vec2 {
 
 function articled(name: string): string {
   return /^[aeiou]/i.test(name) ? `an ${name.toLowerCase()}` : `a ${name.toLowerCase()}`;
+}
+
+/**
+ * How a new road of `type` crossing segment `sid` at `x` avoids meeting it (M19): over it on a deck
+ * when either is a highway, under it when it's a viaduct high enough, or null for an ordinary
+ * junction. A string is a reason it can't cross there at all.
+ */
+function separation(
+  net: Network,
+  terrain: Terrain,
+  type: RoadTypeId,
+  sid: number,
+  x: { sa: number; sb: number; x: number; z: number },
+  curve: Curve,
+): Crossing | string | null {
+  const seg = net.segment(sid);
+  const other = net.curve(sid);
+  const ground = terrain.heightAt(x.x, x.z);
+  // The other road's surface there: its viaduct deck, its bridge over water, or the ground.
+  const bridge = seg.deck ? null : deckProfile(other, (px, pz) => terrain.heightAt(px, pz));
+  const surface = seg.deck
+    ? profileAt({ step: GRADING.step, h: seg.deck }, x.sb)
+    : bridge
+      ? Math.max(ground, deckAt(bridge, x.sb))
+      : ground;
+  const under = surface - Math.max(ground, SHORE_HEIGHT) >= GRADE_SEP.clearance;
+  if (!under && !gradeSeparated(type) && !gradeSeparated(seg.type)) return null;
+  const ta = curve.tangentAt(x.sa);
+  const tb = other.tangentAt(x.sb);
+  const ang = angleDiff(angleOf(ta), angleOf(tb));
+  const sin = Math.sin(Math.min(ang, Math.PI - ang));
+  if (sin < Math.sin(ROAD_RULES.minAngleDeg * DEG)) return 'Roads cross at too shallow an angle';
+  const hwOther = net.halfWidth(sid);
+  const half = (hwOther + GRADING.shoulder + GRADE_SEP.margin) / sin;
+  const skip = (roadHalfWidth(type) + hwOther + ROAD_RULES.clearance) / sin + 2;
+  if (under) return { seg: sid, over: false, s: x.sa, half, max: surface - GRADE_SEP.clearance, skip };
+  return { seg: sid, over: true, s: x.sa, half, min: surface + GRADE_SEP.clearance, skip };
 }

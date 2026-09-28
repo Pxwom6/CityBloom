@@ -37,7 +37,7 @@ export class StreetLabels {
       const rect = r.canvas.getBoundingClientRect();
       const seen = new Set<string>();
       const segs = [...w.netState.segments.values()]
-        .filter((s) => s.type !== 'highway')
+        .filter((s) => s.type !== 'highway' && s.type !== 'ramp')
         .map((s) => {
           const c = w.net.curve(s.id);
           const m = c.pointAt(c.length / 2);

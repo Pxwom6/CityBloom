@@ -169,6 +169,13 @@ export const RAIL = {
   walkFactor: 1.6,
   /** Seconds a train ride is worth over the same time on a bus when people choose (comfort). */
   trainBonus: 150,
+  /**
+   * Rail freight (M20): seconds of loading added to the drive to a freight terminal before it is weighed
+   * against the drive to the highway (the journey beyond the map takes as long either way); and how far
+   * from the terminal's back its railway may run, metres.
+   */
+  freightHandling: 20,
+  sidingReach: 30,
 };
 
 /** Environment, health and education (DESIGN §3.11). */

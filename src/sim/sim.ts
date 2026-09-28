@@ -1791,6 +1791,9 @@ export class Sim {
   /** Seats filled per school at the last hourly coverage pass (UI only; not saved). */
   schoolUse = new Map<number, number>();
 
+  /** Trucks a day each rail freight terminal loaded at the last assignment round (M20; not saved). */
+  railFreight = new Map<number, number>();
+
   /** What a garbage facility's inspector shows: its trucks, rounds and collection against production. */
   private garbageDetails(c: Civic): NonNullable<CivicDetails['garbage']> {
     const g = civicDef(c).garbage!;

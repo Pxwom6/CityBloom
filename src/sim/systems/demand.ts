@@ -74,7 +74,10 @@ export function updateDemand(sim: Sim): void {
     { label: 'Workers looking for jobs', value: (DEMAND.iWorkforceWeight * t.unemployed) / (t.workers + 50) },
     { label: 'Regional demand for goods', value: t.highwayConnected ? DEMAND.exports : 0 },
     { label: 'Industrial taxes', value: DEMAND.taxPerPoint * (taxI - DEMAND.neutralTax) },
-    { label: 'Freight terminal', value: freightHubs(sim) * (CIVIC.get('freighthub')?.freight?.demand ?? 0) },
+    {
+      label: 'Freight hubs and terminals',
+      value: freightHubs(sim) * (CIVIC.get('freighthub')?.freight?.demand ?? 0),
+    },
     {
       label: 'Launch complex',
       value: openProject(sim, 'launchsite') ? (CIVIC.get('launchsite')?.project?.research?.demand ?? 0) : 0,

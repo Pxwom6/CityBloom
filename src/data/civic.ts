@@ -78,8 +78,13 @@ export interface CivicDef {
   tourism?: { draw?: number; rooms?: number };
   /** Mines and wells: extracted units a day on a rich deposit, export price, and units in a deposit. */
   resource?: { kind: 'ore' | 'oil'; perDay: number; price: number; reserve: number };
-  /** Freight terminal: trade income per industrial job a day, and extra industrial demand. */
+  /** Freight hub: trade income per industrial job a day, and extra industrial demand. */
   freight?: { perJob: number; demand: number };
+  /**
+   * Rail freight terminal (M20): trucks a day it can load onto trains. It faces a road for the trucks
+   * and needs a railway beside it linked to the regional railway.
+   */
+  railFreight?: { trucks: number };
   /** Research park: income per high-tech job a day; high-tech industry needs less education. */
   research?: { perJob: number };
   /** Only one can be built (landmarks). */
@@ -497,6 +502,25 @@ CIVIC_DEFS.push({
   model: 'station',
 });
 
+// The rail freight terminal (M20): trucks bring goods to it rather than to the highway.
+CIVIC_DEFS.push({
+  id: 'railfreight',
+  name: 'Rail freight terminal',
+  category: 'special',
+  dept: 'trade',
+  w: 72,
+  d: 36,
+  cost: 58_000,
+  upkeep: 950,
+  freight: { perJob: 0.5, demand: 0.1 },
+  railFreight: { trucks: 700 },
+  landValue: { radius: 160, value: -0.1 },
+  blurb:
+    'Moves goods between trucks and trains: industry nearby ships by rail instead of driving to the highway, and it counts towards trade. Faces a road, with a railway linked to the regional railway along its back.',
+  unlockPopulation: 5_000,
+  model: 'railfreight',
+});
+
 // Specialisations (M10): tourism, trade and technology. All designs are original.
 CIVIC_DEFS.push(
   {
@@ -600,7 +624,7 @@ CIVIC_DEFS.push(
   },
   {
     id: 'freighthub',
-    name: 'Freight terminal',
+    name: 'Freight hub',
     category: 'special',
     dept: 'trade',
     w: 56,

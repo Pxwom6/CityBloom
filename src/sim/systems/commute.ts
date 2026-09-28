@@ -1,5 +1,6 @@
 import { POLICY_EFFECTS } from '../../data/policies';
-import { COMMUTE, DEMAND, TRAFFIC } from '../../data/balance';
+import { COMMUTE, DEMAND, RAIL, TRAFFIC } from '../../data/balance';
+import { CIVIC } from '../../data/civic';
 import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
@@ -16,6 +17,7 @@ import {
 } from './traffic';
 import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
+import { railTerminals } from './rail';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -397,6 +399,8 @@ function runFreight(
     if (node !== undefined)
       loads.push({ node, amount: match.trips, id: match.civic.id, acc, purpose: 'event', cars: true });
   }
+  sim.railFreight = new Map();
+  railFreight(sim, g, costs, flows, trips, loads, hwNode);
   if (!loads.length) return;
   const reach = new Set<number>();
   dijkstra.run(
@@ -469,6 +473,99 @@ function runFreight(
     flows.accumulateReverse(dijkstra);
   }
   flows.addSegment(hw.segment, external * pcu + crowd);
+}
+
+/** An export, import or match-day crowd heading for the highway (see runFreight). */
+interface ExternalLoad {
+  node: number;
+  amount: number;
+  id: number;
+  acc: { seg: number; s: number } | null;
+  purpose: 'export' | 'import' | 'event';
+  cars?: boolean;
+}
+
+/**
+ * Rail freight (M20): exports and imports go through a rail freight terminal linked to the regional
+ * railway when the drive there plus loading (RAIL.freightHandling) beats the drive to the highway,
+ * up to what the terminal can load a day; trains take them on from there, off the roads. Takes those
+ * trucks out of `loads` and records each terminal's day in `sim.railFreight`.
+ */
+function railFreight(
+  sim: Sim,
+  g: RoadGraph,
+  costs: Float64Array,
+  flows: FlowAccumulator,
+  trips: TripReservoir,
+  loads: ExternalLoad[],
+  hwNode: number,
+): void {
+  const terminals = railTerminals(sim);
+  if (!terminals.length || !loads.some((l) => l.purpose !== 'event')) return;
+  const pcu = TRAFFIC.truckPcu;
+  // Drive times to the highway, to weigh against.
+  const toHw = new Float64Array(g.size).fill(Infinity);
+  dijkstra.run(
+    g,
+    [{ node: hwNode, cost: 0 }],
+    Infinity,
+    (u, cost) => {
+      toHw[u] = cost;
+      return true;
+    },
+    costs,
+    true,
+  );
+  for (const t of terminals) {
+    const acc = t.access!;
+    const seg = sim.state.net.segments.get(acc.seg);
+    if (!seg) continue;
+    const len = sim.net.curve(acc.seg).length;
+    const node = g.index.get(acc.s <= len / 2 ? seg.a : seg.b);
+    if (node === undefined) continue;
+    let left = CIVIC.get(t.def)!.railFreight!.trucks;
+    const at = new Float64Array(g.size).fill(Infinity);
+    dijkstra.run(
+      g,
+      [{ node, cost: RAIL.freightHandling }],
+      Infinity,
+      (u, cost) => {
+        at[u] = cost;
+        return true;
+      },
+      costs,
+      true,
+    );
+    let moved = 0;
+    for (const l of loads) {
+      if (l.purpose === 'event' || l.amount <= 0 || left <= 0) continue;
+      if (!(at[l.node]! < toHw[l.node]!)) continue;
+      const take = Math.min(l.amount, left);
+      left -= take;
+      l.amount -= take;
+      moved += take;
+      const units = take * pcu;
+      flows.addLoad(l.node, units);
+      flows.addSegment(l.acc?.seg ?? -1, units);
+      trips.offer(units, () => {
+        const legs = legsThroughTree(sim, g, dijkstra, acc, l.node, l.acc);
+        if (!legs.length) return null;
+        const out = [...legs].reverse().map((x) => ({ seg: x.seg, s0: x.s1, s1: x.s0 }));
+        return {
+          from: l.id,
+          to: t.id,
+          purpose: l.purpose,
+          legs: l.purpose === 'export' ? out : legs,
+          weight: units,
+        };
+      });
+    }
+    flows.accumulate(dijkstra);
+    flows.addSegment(acc.seg, moved * pcu);
+    sim.railFreight.set(t.id, Math.round(moved));
+  }
+  // Loads the terminals took in full drop out; the rest drive to the highway as before.
+  for (let i = loads.length - 1; i >= 0; i--) if (loads[i]!.amount <= 1e-9) loads.splice(i, 1);
 }
 
 /** A sampled trip from building `a` to building `b` (reached at node `u` of the current tree). */

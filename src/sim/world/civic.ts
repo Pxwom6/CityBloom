@@ -10,6 +10,7 @@ import type { Sim } from '../sim';
 import { clearTreesUnder, footprint as zonedFootprint } from './buildings';
 import { sendHome } from '../systems/vehicles';
 import { planPad, reshapeGround, type EarthPlan } from './earthworks';
+import { RAIL } from '../../data/balance';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -143,6 +144,23 @@ export function frontPoint(c: { x: number; z: number; angle: number; side: 1 | -
   return { x: c.x - a.x * (d.d / 2), z: c.z - a.z * (d.d / 2) };
 }
 
+/**
+ * The railway along the back of a building (a rail freight terminal's siding, M20), if one runs
+ * within RAIL.sidingReach of it.
+ */
+export function railSiding(
+  sim: Sim,
+  c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
+): { seg: number; s: number; x: number; z: number } | null {
+  const d = CIVIC.get(c.def);
+  if (!d) return null;
+  const away = awayDir(c.angle, c.side);
+  const back = { x: c.x + away.x * (d.d / 2), z: c.z + away.z * (d.d / 2) };
+  const hit = sim.net.nearestSegment(back, RAIL.sidingReach + 12, (id) => isRail(sim.net.segment(id).type));
+  if (!hit || hit.d > RAIL.sidingReach + sim.net.halfWidth(hit.seg)) return null;
+  return { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
+}
+
 /** Nearest road the front edge touches (within its corridor plus a few metres). */
 export function findAccess(
   sim: Sim,
@@ -253,6 +271,12 @@ export function checkPlacement(
   res.access = findAccess(sim, { x, z, angle, side, def: defId });
   if (!res.access)
     return { ...res, reason: def.track === 'rail' ? 'Must face a railway' : 'Must face a road' };
+  // A rail freight terminal needs its railway along the back (M20).
+  if (def.railFreight && !railSiding(sim, { x, z, angle, side, def: defId }))
+    return {
+      ...res,
+      reason: `Needs a railway along its back (within ${RAIL.sidingReach} m) to load trains`,
+    };
   // Zoned buildings in the way are demolished.
   for (const id of sim.bldHash.queryPoint(x, z, rad + 40)) {
     const b = sim.state.buildings.get(id)!;

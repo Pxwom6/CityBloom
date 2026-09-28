@@ -49,6 +49,7 @@ export async function renderSounds(): Promise<SoundCheck[]> {
     fire: 1,
     storm: 1,
     water: 1,
+    rain: 1,
   });
   bed.tick();
   out.push(measure('ambient', await ctx.startRendering()));

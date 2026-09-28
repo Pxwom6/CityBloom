@@ -478,7 +478,12 @@ export function Toolbar() {
               'Water and sewage',
               'Pumps bring water in; outflows or treatment plants take sewage away.',
             ],
-            ['garbage', IconTrash, 'Garbage', 'Trucks collect garbage from buildings in reach.'],
+            [
+              'garbage',
+              IconTrash,
+              'Garbage and snow',
+              'Trucks collect garbage from buildings in reach; a public works depot sends ploughs to clear snow.',
+            ],
             ['fire', IconFlame, 'Fire', 'Fire stations cover what their engines can reach quickly by road.'],
             ['police', IconShield, 'Police', 'Police stations deter crime and answer calls along the roads.'],
             ['health', IconHealth, 'Health', 'Clinics and hospitals treat the sick and run ambulances.'],

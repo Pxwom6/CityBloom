@@ -6,6 +6,7 @@ import {
   Mesh,
   MeshLambertMaterial,
   type Material,
+  Vector2,
 } from 'three';
 import type { ClientWorld } from '../client/world';
 import type { BuildingData } from '../sim/protocol';
@@ -13,6 +14,7 @@ import { CELL } from '../data/zones';
 import { assets } from './assets/registry';
 import type { ModelData } from './assets/builder';
 import type { TerrainUniforms } from './terrain';
+import { GRADE_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
 const CHUNK = 256;
 const MAX_CHUNK_REBUILDS_PER_FRAME = 1;
@@ -32,7 +34,12 @@ export function buildingYaw(b: { angle: number; side: number }): number {
   return -b.angle + (b.side === 1 ? Math.PI : 0);
 }
 
-export function makeMaterial(uniforms: BuildingUniforms, terrain: TerrainUniforms, clip: boolean): Material {
+export function makeMaterial(
+  uniforms: BuildingUniforms,
+  terrain: TerrainUniforms,
+  clip: boolean,
+  weather: WeatherUniforms | null = null,
+): Material {
   const mat = new MeshLambertMaterial({ vertexColors: true });
   // three.js caches programs by the onBeforeCompile source, which is the same text for both
   // variants: without distinct keys, whichever compiled first (in a new city, the clipped
@@ -43,6 +50,9 @@ export function makeMaterial(uniforms: BuildingUniforms, terrain: TerrainUniform
       uOverlay: terrain.uOverlay,
       uOverlayOn: terrain.uOverlayOn,
       uMapSize: terrain.uMapSize,
+      uSnow: weather?.uSnow ?? { value: 0 },
+      uWet: weather?.uWet ?? { value: 0 },
+      uGrade: weather?.uGrade ?? { value: new Vector2() },
     });
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -51,6 +61,7 @@ export function makeMaterial(uniforms: BuildingUniforms, terrain: TerrainUniform
 attribute float emissive;
 varying float vEmi;
 varying vec3 vWorldPos;
+varying float vUp;
 ${clip ? 'attribute float clipY;\nvarying float vClip;' : ''}`,
       )
       .replace(
@@ -58,6 +69,7 @@ ${clip ? 'attribute float clipY;\nvarying float vClip;' : ''}`,
         `#include <worldpos_vertex>
 vEmi = emissive;
 vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vUp = normalize(mat3(modelMatrix) * objectNormal).y;
 ${clip ? 'vClip = clipY;' : ''}`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -69,14 +81,28 @@ uniform vec3 uWindow;
 uniform sampler2D uOverlay;
 uniform float uOverlayOn;
 uniform float uMapSize;
+uniform float uSnow;
+uniform float uWet;
+uniform vec2 uGrade;
 varying float vEmi;
 varying vec3 vWorldPos;
+varying float vUp;
+${SNOW_NOISE_GLSL}
+${GRADE_GLSL}
 ${clip ? 'varying float vClip;' : ''}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
 ${clip ? 'if (vWorldPos.y > vClip) discard;' : ''}
+// Snow on roofs and other flat tops, and rain-darkened ones (M22).
+{
+  float up = smoothstep(0.62, 0.9, vUp);
+  float cover = smoothstep(0.0, 0.4, uSnow * 1.5 - wNoise(vWorldPos.xz * 0.6) * 0.5) * up;
+  diffuseColor.rgb = mix(diffuseColor.rgb, ${SNOW_COLOUR}, cover * 0.95);
+  diffuseColor.rgb *= 1.0 - 0.08 * uWet * up;
+  diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
+}
 if (uOverlayOn > 0.5) {
   float g2 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(g2), 0.8);
@@ -118,9 +144,10 @@ export class BuildingRenderer {
   constructor(
     private world: ClientWorld,
     terrain: TerrainUniforms,
+    weather: WeatherUniforms | null = null,
   ) {
-    this.material = makeMaterial(this.uniforms, terrain, false);
-    this.clipMaterial = makeMaterial(this.uniforms, terrain, true);
+    this.material = makeMaterial(this.uniforms, terrain, false, weather);
+    this.clipMaterial = makeMaterial(this.uniforms, terrain, true, weather);
     for (const b of world.buildings.values()) this.place(b.id);
     world.onBuildings((changed, removed) => {
       for (const id of removed) this.place(id);

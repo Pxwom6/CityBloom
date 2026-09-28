@@ -294,7 +294,7 @@ export const CIVIC_DEFS: CivicDef[] = [
     landValue: { radius: 80, value: -0.03 },
     blurb:
       'Snow ploughs clear the roads within about 3 km, busiest first, whenever snow settles. Road maintenance funding sets how many go out.',
-    unlockPopulation: 500,
+    unlockPopulation: 800,
     model: 'works',
   },
   {

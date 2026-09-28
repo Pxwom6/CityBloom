@@ -35,6 +35,18 @@ export function segSpeed(sim: Sim, segId: number): number {
   return ((ROAD_TYPES[seg.type].speed / 3.6) * sim.congestionFactor(segId)) / snowFactor(seg.snow);
 }
 
+/**
+ * Snow ploughs (M22) work at four times a service vehicle's pace and aren't slowed by the snow they
+ * clear: a snowfall lasts hours of the compressed calendar, and at the usual pace a plough would
+ * clear a street or two before it melted.
+ */
+const PLOUGH_PACE = 4;
+
+function speedOf(sim: Sim, kind: VehicleKind, segId: number): number {
+  if (kind !== 'plough') return segSpeed(sim, segId);
+  return segSpeed(sim, segId) * snowFactor(sim.state.net.segments.get(segId)?.snow) * PLOUGH_PACE;
+}
+
 export function route(
   sim: Sim,
   from: { seg: number; s: number },
@@ -158,7 +170,7 @@ export function stepVehicles(sim: Sim): void {
     let budget = 0;
     while (v.leg < v.legs.length) {
       const l = v.legs[v.leg]!;
-      if (budget === 0) budget = VEHICLE_SPEED_SCALE * segSpeed(sim, l.seg);
+      if (budget === 0) budget = VEHICLE_SPEED_SCALE * speedOf(sim, v.kind, l.seg);
       const len = Math.abs(l.s1 - l.s0);
       const left = len - v.t;
       if (budget < left) {

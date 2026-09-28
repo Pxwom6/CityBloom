@@ -188,6 +188,9 @@ export class Game {
     });
     this.randomDisasters = world.options.disasters;
     renderer.disasters.onImpact = () => this.audio?.play('boom');
+    // Thunder follows the flash by the time sound takes to cover the distance (M22).
+    renderer.weather.onStrike = (distance) =>
+      setTimeout(() => this.audio?.play('thunder'), Math.min(4000, (distance / 343) * 1000));
     this.names = new StreetNames(world);
     this.labels = new StreetLabels(this);
     this.tools = new ToolManager(this);

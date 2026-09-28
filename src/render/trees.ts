@@ -10,7 +10,9 @@ import {
   Matrix4,
   MeshLambertMaterial,
   Quaternion,
+  Vector2,
   Vector3,
+  Vector4,
   type BufferGeometry,
 } from 'three';
 import { GRID_CELL, GRID_RES, MAP_SIZE, SCENERY_MARGIN } from '../data/world';
@@ -19,6 +21,7 @@ import { smoothstep } from '../sim/terrain/noise';
 import type { ClientWorld } from '../client/world';
 import { mergeGeometries, painted } from './geom';
 import { PAL } from './palette';
+import { GRADE_GLSL, type WeatherUniforms } from './weather';
 
 const REGION = 512; // in-map regions (for culling and incremental rebuilds)
 const REGIONS = MAP_SIZE / REGION;
@@ -52,6 +55,87 @@ function broadleafGeometry(): BufferGeometry {
   return mergeGeometries([trunk, crown, tuft]);
 }
 
+/**
+ * Tree material (M22). Broadleaf crowns (their green vertices) take the season's colours — fresh
+ * green with some trees in blossom in spring, golds and reds in autumn, bare grey-brown and thinner
+ * in winter — and every tree carries snow on its upward faces.
+ */
+function treeMaterial(broadleaf: boolean, weather: () => WeatherUniforms | null): MeshLambertMaterial {
+  const mat = new MeshLambertMaterial({ vertexColors: true });
+  mat.customProgramCacheKey = () => (broadleaf ? 'tree-broadleaf' : 'tree-conifer');
+  mat.onBeforeCompile = (shader) => {
+    const w = weather();
+    Object.assign(shader.uniforms, {
+      uSnow: w?.uSnow ?? { value: 0 },
+      uSeason: w?.uSeason ?? { value: new Vector4(0, 1, 0, 0) },
+      uGrade: w?.uGrade ?? { value: new Vector2() },
+    });
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform vec4 uSeason;
+varying float vCrown;
+varying float vHash;
+varying float vUp;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vCrown = step(color.r + 0.02, color.g);
+${broadleaf ? 'transformed.xz *= mix(1.0, 0.7, uSeason.w * vCrown); // bare in winter: a thinner crown' : ''}`,
+      )
+      .replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+#ifdef USE_INSTANCING
+vec2 ip = instanceMatrix[3].xz;
+vUp = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal).y;
+#else
+vec2 ip = modelMatrix[3].xz;
+vUp = normalize(mat3(modelMatrix) * objectNormal).y;
+#endif
+vHash = fract(sin(dot(ip, vec2(12.9898, 78.233))) * 43758.5453);`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uSnow;
+uniform vec4 uSeason;
+uniform vec2 uGrade;
+varying float vCrown;
+varying float vHash;
+varying float vUp;
+${GRADE_GLSL}`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec3 c0 = diffuseColor.rgb;
+  float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
+${
+  broadleaf
+    ? `  vec3 spring = c0 * vec3(1.05, 1.13, 0.8) + 0.02;
+  vec3 blossom = mix(vec3(0.96, 0.74, 0.84), vec3(0.97, 0.94, 0.9), fract(vHash * 5.0));
+  spring = mix(spring, blossom, step(0.74, vHash) * 0.85);
+  vec3 autumn = mix(vec3(0.93, 0.52, 0.12), vec3(0.8, 0.2, 0.08), fract(vHash * 7.0)) * (0.55 + l0 * 1.5);
+  autumn = mix(autumn, vec3(0.88, 0.72, 0.18) * (0.6 + l0), step(0.62, fract(vHash * 3.0)));
+  vec3 winter = vec3(0.37, 0.32, 0.28) * (0.8 + l0);
+  vec3 seasonal = spring * uSeason.x + c0 * uSeason.y + autumn * uSeason.z + winter * uSeason.w;
+  diffuseColor.rgb = mix(c0, seasonal, vCrown);`
+    : '  diffuseColor.rgb *= 1.0 - 0.1 * uSeason.w * vCrown;'
+}
+  float up = smoothstep(0.15, 0.75, vUp);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), uSnow * up * mix(0.35, ${broadleaf ? '0.6' : '0.85'}, vCrown));
+  diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
+}`,
+      );
+  };
+  return mat;
+}
+
 interface Placement {
   x: number;
   z: number;
@@ -66,7 +150,10 @@ export class TreeRenderer {
   readonly group = new Group();
   private geos: BufferGeometry[] = [coniferGeometry(), broadleafGeometry()];
   private lowGeos: BufferGeometry[] = [coniferLow(), broadleafLow()];
-  private material = new MeshLambertMaterial({ vertexColors: true });
+  /** Conifers and broadleaves (M22: broadleaves change with the seasons; both carry snow). */
+  private materials = [treeMaterial(false, () => this.weather), treeMaterial(true, () => this.weather)];
+  /** Season and snow (M22); set by the renderer before the first frame. */
+  weather: WeatherUniforms | null = null;
   private regionMeshes: (InstancedMesh | null)[][] = [];
   /** Optional filter: return true where a tree must not stand (roads, buildings). */
   blocked: ((x: number, z: number) => boolean) | null = null;
@@ -167,7 +254,7 @@ export class TreeRenderer {
         }
         mesh = new InstancedMesh(
           this.geos[species]!,
-          this.material,
+          this.materials[species]!,
           Math.max(16, Math.ceil(list.length * 1.2)),
         );
         mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -224,7 +311,7 @@ export class TreeRenderer {
         for (const species of [0, 1] as const) {
           const list = lists[species]!;
           if (!list.length) continue;
-          const mesh = new InstancedMesh(this.geos[species]!, this.material, list.length);
+          const mesh = new InstancedMesh(this.geos[species]!, this.materials[species]!, list.length);
           // Placement heights in the scenery come from the generator.
           for (let k = 0; k < list.length; k++) {
             const p = list[k]!;

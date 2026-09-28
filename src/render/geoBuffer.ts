@@ -118,6 +118,8 @@ export interface GeoChunk {
   pos: Float32Array;
   nrm: Float32Array;
   col: Float32Array;
+  /** Per-vertex id of the road or junction it belongs to (M22: snow per road); −1 when absent. */
+  tag?: Float32Array;
 }
 
 export function mergeChunks(parts: GeoChunk[]): BufferGeometry {
@@ -137,6 +139,15 @@ export function mergeChunks(parts: GeoChunk[]): BufferGeometry {
   g.setAttribute('position', new BufferAttribute(pos, 3));
   g.setAttribute('normal', new BufferAttribute(nrm, 3));
   g.setAttribute('color', new BufferAttribute(col, 3));
+  if (parts.some((p) => p.tag)) {
+    const tag = new Float32Array(n / 3).fill(-1);
+    let v = 0;
+    for (const p of parts) {
+      if (p.tag) tag.set(p.tag, v);
+      v += p.pos.length / 3;
+    }
+    g.setAttribute('aTag', new BufferAttribute(tag, 1));
+  }
   g.computeBoundingSphere();
   return g;
 }

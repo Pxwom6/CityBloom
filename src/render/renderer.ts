@@ -34,6 +34,7 @@ import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
 import { DisasterRenderer } from './disasters';
+import { WeatherRenderer, worldLook, type WeatherLook } from './weather';
 
 export interface RenderStats {
   calls: number;
@@ -112,6 +113,9 @@ export class GameRenderer {
   /** Helpers hidden for photo mode, and whether each was showing. */
   private hidden: { obj: { visible: boolean }; was: boolean }[] = [];
   readonly disasters: DisasterRenderer;
+  readonly weather: WeatherRenderer;
+  /** A look to show instead of the city's own weather (photo mode, dev scenes); null for the city's. */
+  weatherOverride: Partial<WeatherLook> | null = null;
   /** Tilt-shift blur when zoomed in (a player setting). */
   tiltShiftOn = false;
   /** Draw-distance setting: scales how far the fog sits. */
@@ -159,15 +163,20 @@ export class GameRenderer {
     this.renderer.info.autoReset = false;
 
     this.lighting = new Lighting(this.scene);
+    // Seasons and weather (M22): shared uniforms for the ground, roads, buildings and trees.
+    this.weather = new WeatherRenderer(world);
+    this.scene.add(this.weather.points);
     this.terrain = new TerrainRenderer(world);
+    this.terrain.weather = this.weather.uniforms;
     this.scene.add(this.terrain.group);
     this.water = new WaterRenderer();
     this.scene.add(this.water.mesh);
     this.roads = new RoadRenderer(world);
+    this.roads.useWeather(this.weather.uniforms);
     this.scene.add(this.roads.group);
     this.zones = new ZoneRenderer(world);
     this.scene.add(this.zones.group);
-    this.buildings = new BuildingRenderer(world, this.terrain.uniforms);
+    this.buildings = new BuildingRenderer(world, this.terrain.uniforms, this.weather.uniforms);
     this.scene.add(this.buildings.group);
     this.civics = new CivicRenderer(world, this.buildings.material);
     this.scene.add(this.civics.group);
@@ -198,6 +207,7 @@ export class GameRenderer {
     this.ghost = new GhostRenderer((x, z) => world.heightAt(x, z));
     this.scene.add(this.ghost.group);
     this.trees = new TreeRenderer(world);
+    this.trees.weather = this.weather.uniforms;
     this.trees.blocked = (x, z) =>
       this.roads.onRoad(x, z, 1.5) || this.onBuilding(x, z) || this.world.civicAt(x, z) !== null;
     this.trees.rebuildAll();
@@ -367,6 +377,7 @@ export class GameRenderer {
     this.fogScale = g.fogScale;
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
+    this.weather.drops = Math.round(9000 * g.crowd);
     this.traffic.maxCars = Math.round(360 * g.crowd);
   }
 
@@ -440,7 +451,23 @@ export class GameRenderer {
     const hour =
       this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : (p?.hour ?? hourOfDay(this.world.displayTick));
     const l = this.lighting;
+    const bufH0 = this.renderer.getDrawingBufferSize(this.tmpSize).y;
+    const pxm = bufH0 / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+    // Data maps are read in clear weather too.
+    const mapOn = this.terrain.uniforms.uOverlayOn.value > 0.5;
+    const look = { ...worldLook(this.world), ...(this.weatherOverride ?? {}) };
+    if (mapOn) Object.assign(look, { kind: 'clear', strength: 0 });
+    this.weather.update(
+      dt,
+      this.time,
+      look,
+      this.controller.target,
+      this.controller.current.distance,
+      pxm,
+      this.camera.position,
+    );
     l.update(hour);
+    l.applyWeather(this.weather);
     l.follow(
       this.camera.position,
       this.controller.target,
@@ -449,7 +476,11 @@ export class GameRenderer {
     );
     l.fog.near = Math.max(900, this.controller.current.distance * 1.1) * this.fogScale;
     l.fog.far = Math.max(7500, this.controller.current.distance * 3.5) * this.fogScale;
-    this.renderer.toneMappingExposure = 1.0 + l.night * 0.12;
+    // Fog, rain and snow close the view in; heat hazes the distance (M22).
+    const wf = this.weather.fog;
+    l.fog.near *= (1 - 0.92 * wf) * (1 - 0.3 * this.weather.haze);
+    l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
+    this.renderer.toneMappingExposure = (1.0 + l.night * 0.12) * (1 - 0.12 * this.weather.overcast);
     this.terrain.update(this.time);
     this.buildings.update(l.night);
     this.vehicles.update(this.world.displayTick);

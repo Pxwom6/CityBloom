@@ -1,3 +1,4 @@
+import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
@@ -190,6 +191,16 @@ export interface TestApi {
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
   /** Change photo mode's settings directly (dev scenes). */
   setPhoto(patch: Partial<PhotoState>): void;
+  /** Seasons and weather (M22): force a look on screen (null for the city's own), and read it. */
+  setWeatherLook(look: Partial<WeatherLook> | null): void;
+  getWeather(): {
+    sim: CityStats['weather'];
+    look: WeatherLook;
+    particles: number;
+    strikes: number;
+    overcast: number;
+    fog: number;
+  };
   /** Live audio state: context running, effects played, ambient mix and scheduled events. */
   getAudio(): {
     running: boolean;
@@ -524,6 +535,21 @@ export function installTestApi(game: Game): TestApi {
     },
     followNearest: (kinds) => game.followNearest(kinds),
     setPhoto: (patch) => game.setPhoto(patch),
+    setWeatherLook: (look) => {
+      game.renderer.weatherOverride = look;
+      game.renderer.weather.snapNext = true;
+    },
+    getWeather: () => {
+      const w = game.renderer.weather;
+      return {
+        sim: game.world.stats.weather,
+        look: { ...w.look, season: [...w.look.season] as WeatherLook['season'] },
+        particles: w.stats.particles,
+        strikes: w.stats.strikes,
+        overcast: w.overcast,
+        fog: w.fog,
+      };
+    },
     showGallery: (defs, at, variants) => {
       const w = game.world;
       const upserts: BuildingData[] = [];

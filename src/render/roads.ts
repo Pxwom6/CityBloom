@@ -16,6 +16,7 @@ import { JUNCTION } from '../data/balance';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { deckAt } from '../sim/world/bridge';
 import { RAIL_TRACK_OFFSET, ROAD_STYLES, tramOffset } from './roadStyle';
+import { GRADE_GLSL, ROAD_SNOW_GLSL, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
 /**
  * The regional railway (M20) runs north–south this far east of the regional highway's line, off the
@@ -49,6 +50,64 @@ export class RoadRenderer {
   private dirtySegs = new Set<number>();
   private dirtyNodes = new Set<number>();
   private h: (x: number, z: number) => number;
+
+  /**
+   * Snow on each road, looked up by the id every vertex carries, and wet asphalt (M22). Called
+   * once by the renderer before the first frame.
+   */
+  useWeather(u: WeatherUniforms): void {
+    const m = this.material;
+    m.customProgramCacheKey = () => 'road-weather';
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, u);
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+attribute float aTag;
+uniform sampler2D uRoadSnow;
+varying float vRoadSnow;
+varying vec3 vWPos;
+varying float vUp;
+${ROAD_SNOW_GLSL}`,
+        )
+        .replace(
+          '#include <worldpos_vertex>',
+          `#include <worldpos_vertex>
+vRoadSnow = roadSnowAt(aTag);
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vUp = normalize(mat3(modelMatrix) * objectNormal).y;`,
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+uniform float uWet;
+uniform vec2 uGrade;
+varying float vRoadSnow;
+varying vec3 vWPos;
+varying float vUp;
+${SNOW_NOISE_GLSL}
+${GRADE_GLSL}`,
+        )
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+{
+  float up = smoothstep(0.5, 0.85, vUp);
+  // Wet asphalt: darker and a little blue.
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.7, 0.73, 0.79), uWet * up);
+  // Snow: patchy at first, then packed grey slush that still reads as road against white fields.
+  float n = wNoise(vWPos.xz * 0.3) * 0.6 + wNoise(vWPos.xz * 1.6) * 0.4;
+  float cover = smoothstep(0.0, 0.5, vRoadSnow * 1.7 - n * 0.65) * up;
+  vec3 slush = vec3(0.76, 0.78, 0.81) * (0.92 + 0.08 * n);
+  diffuseColor.rgb = mix(diffuseColor.rgb, slush, cover * 0.85);
+  diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
+}`,
+        );
+    };
+    m.needsUpdate = true;
+  }
 
   constructor(private world: ClientWorld) {
     this.h = (x, z) => Math.max(world.heightAt(x, z), 0);
@@ -159,7 +218,10 @@ export class RoadRenderer {
     }
     if (!buf || buf.n === 0) return;
     const chunk = Math.floor(anchor.x / CHUNK) * 1000 + Math.floor(anchor.z / CHUNK);
-    this.elements.set(key, { chunk, geo: buf.trimmed() });
+    // Each vertex carries its road's or junction's id, for snow per road (M22).
+    const geo: GeoChunk = buf.trimmed();
+    geo.tag = new Float32Array(buf.n).fill(Number(key.slice(1)));
+    this.elements.set(key, { chunk, geo });
     let c = this.chunks.get(chunk);
     if (!c) this.chunks.set(chunk, (c = { mesh: null, keys: new Set() }));
     c.keys.add(key);

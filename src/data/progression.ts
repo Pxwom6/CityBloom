@@ -11,7 +11,11 @@ export interface Milestone {
 
 export const MILESTONES: Milestone[] = [
   { population: 0, name: 'Hamlet', blurb: 'A few homes by the highway.' },
-  { population: 800, name: 'Village', blurb: 'Enough people for a bus route and a town square.' },
+  {
+    population: 800,
+    name: 'Village',
+    blurb: 'Enough people for a bus route, a town square and snow ploughs.',
+  },
   { population: 2_000, name: 'Town', blurb: 'A proper town: high schools, sewage treatment and recycling.' },
   {
     population: 5_000,

@@ -295,6 +295,28 @@ export function buildCivicModel(
       fence(m, W, D, C('#8a8d91'));
       break;
     }
+    case 'works': {
+      // Public works depot (M22): a garage for the ploughs, a salt dome and a small office.
+      base(m, W, D, CONCRETE);
+      m.box(-W / 2 + 2, W / 2 - 13, 0, 7, D / 2 - 13, D / 2 - 2, C('#cfc6b6'), CONCRETE_DARK);
+      for (let k = 0; k < 3; k++) {
+        const x = -W / 2 + 4 + k * 6.6;
+        m.box(x, x + 4.6, 0, 4.6, D / 2 - 13.15, D / 2 - 12.9, C('#e8792a'));
+      }
+      m.frustum(W / 2 - 7, D / 2 - 7, 5.5, 1.2, 0, 6.5, C('#d8d2c4'), 12);
+      m.frustum(W / 2 - 7, D / 2 - 7, 2.6, 0.8, 0, 2.2, C('#f2f0ea'), 10);
+      m.box(-W / 2 + 2, -W / 2 + 10, 0, 3.4, -D / 2 + 2, -D / 2 + 7, C('#e7e2da'));
+      m.windows('front', -W / 2 + 2, -W / 2 + 10, -D / 2 + 2, -D / 2 + 7, 0, 1, 3.4, {
+        col: GLASS,
+        lit: lit(r),
+      });
+      for (const x of [-2, 5]) {
+        m.box(x, x + 2.3, 0.4, 2.6, -D / 2 + 9, -D / 2 + 16, C('#e8792a'));
+        m.box(x - 0.6, x + 2.9, 0.1, 1.1, -D / 2 + 16, -D / 2 + 16.5, C('#f2c230'));
+      }
+      fence(m, W, D);
+      break;
+    }
     case 'recycling': {
       base(m, W, D, CONCRETE);
       m.box(-W / 2 + 2, W / 2 - 2, 0, 9, -D / 2 + 4, D / 2 - 8, C('#dfe7df'), GREEN_ROOF);

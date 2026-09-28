@@ -246,6 +246,38 @@ export class Lighting {
     u.uNight!.value = this.night;
   }
 
+  /**
+   * Weather over the time of day (M22), after `update`: cloud greys the sky and softens the sun and
+   * its shadows, heat hazes the horizon warm, and lightning flashes the sky and the fill light.
+   */
+  applyWeather(w: { overcast: number; haze: number; flash: number }): void {
+    const oc = w.overcast;
+    if (oc > 0) {
+      const dark = this.night > 0.5;
+      this.zenith.lerp(this.cA.set(dark ? '#2b3036' : '#a3abb3'), oc * 0.8);
+      this.horizon.lerp(this.cB.set(dark ? '#32373d' : '#c3c9ce'), oc * 0.7);
+      this.sun.intensity *= 1 - 0.72 * oc;
+      this.hemi.intensity *= 1 - 0.3 * oc;
+      this.light *= 1 - 0.25 * oc;
+    }
+    if (w.haze > 0) {
+      this.horizon.lerp(this.cB.set('#eadcc0'), 0.5 * w.haze);
+      this.sunColor.lerp(this.cA.set('#ffd49c'), 0.35 * w.haze);
+      this.sun.color.copy(this.sunColor);
+    }
+    if (w.flash > 0) {
+      this.hemi.intensity += 2.4 * w.flash;
+      this.zenith.lerp(this.cA.set('#e2e8ff'), 0.6 * w.flash);
+      this.horizon.lerp(this.cB.set('#eef1ff'), 0.5 * w.flash);
+    }
+    this.fog.color.copy(this.horizon);
+    const u = this.skyMat.uniforms;
+    u.uZenith!.value.copy(this.zenith);
+    u.uHorizon!.value.copy(this.horizon);
+    // No sun disc behind the cloud.
+    u.uSunColor!.value.copy(this.sunColor).multiplyScalar(1 - 0.92 * oc);
+  }
+
   /** Keep the sky centred on the camera and the shadow camera around the view target. */
   follow(cameraPos: Vector3, target: Vector3, viewSize: number, far: number): void {
     this.sky.position.copy(cameraPos);

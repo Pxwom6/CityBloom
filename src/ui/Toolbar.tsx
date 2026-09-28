@@ -89,7 +89,7 @@ function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }
   );
 }
 
-function ToolButton(props: {
+export function ToolButton(props: {
   id: string;
   active: boolean;
   onClick: () => void;

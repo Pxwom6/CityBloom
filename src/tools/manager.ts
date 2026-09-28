@@ -10,9 +10,10 @@ import { StopTool } from './stopTool';
 import { DisasterTool } from './disasterTool';
 import { DistrictTool } from './districtTool';
 import { TerrainTool } from './terrainTool';
+import { MapTool } from './mapTool';
 
 export type ToolId =
-  'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain';
+  'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain' | 'map';
 
 /** Routes canvas pointer and keyboard input to the active tool. */
 export class ToolManager {
@@ -27,6 +28,8 @@ export class ToolManager {
   readonly district: DistrictTool;
   /** Terraforming (M24). */
   readonly terrain: TerrainTool;
+  /** The map editor's brushes and entries (M24). */
+  readonly map: MapTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
 
@@ -40,6 +43,7 @@ export class ToolManager {
     this.disaster = new DisasterTool(game);
     this.district = new DistrictTool(game);
     this.terrain = new TerrainTool(game);
+    this.map = new MapTool(game);
     this.active = this.select;
     const canvas = game.renderer.canvas;
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -134,6 +138,8 @@ export class ToolManager {
   /** Escape: cancel or leave the tool; with nothing left, close the open panel or pause. */
   private escape(): void {
     if (this.active.cancel()) return;
+    // The map editor (M24) keeps its brush; its own bar has the way out.
+    if (this.game.mode === 'editor') return;
     if (this.active !== this.select) this.use('select');
     else if (this.game.panel) this.game.openPanel(this.game.panel);
     else this.game.openScreen('pause');
@@ -175,6 +181,8 @@ export class ToolManager {
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // The city's tools aren't in the map editor.
+    if (this.game.mode === 'editor') return;
     switch (e.code) {
       case 'KeyT':
         // Shift+T: the terrain tools (M24).

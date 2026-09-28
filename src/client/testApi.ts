@@ -151,7 +151,7 @@ export interface TestApi {
   }[];
   /** Game shell state: menu or city, open screens, settings and what the renderer applied. */
   getShell(): {
-    mode: 'menu' | 'play';
+    mode: 'menu' | 'play' | 'editor';
     screens: string[];
     slot: string | null;
     settings: Record<string, unknown>;
@@ -230,7 +230,7 @@ export function installTestApi(game: Game): TestApi {
       return {
         ...stats,
         renderStats: game.renderer.lastStats,
-        highwayZ: w.netState.nodes.get(w.highway.connect)!.z,
+        highwayZ: w.netState.nodes.get(w.highway.connect)?.z ?? w.gen.params.highway.connectZ,
         railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,

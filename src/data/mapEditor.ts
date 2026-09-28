@@ -35,8 +35,18 @@ export const MAP_BRUSHES: { id: MapBrush; group: MapBrushGroup; name: string; bl
   { id: 'land', group: 'Water', name: 'Land', blurb: 'Fill water back in to a low shore.' },
   { id: 'forest', group: 'Forests', name: 'Plant forest', blurb: 'Thicken the woods on dry land.' },
   { id: 'clearForest', group: 'Forests', name: 'Clear trees', blurb: 'Fell the trees under the brush.' },
-  { id: 'ore', group: 'Resources', name: 'Ore', blurb: 'Lay an ore deposit for mines (the mining specialisation).' },
-  { id: 'oil', group: 'Resources', name: 'Oil', blurb: 'Lay an oil field for wells (the oil specialisation).' },
+  {
+    id: 'ore',
+    group: 'Resources',
+    name: 'Ore',
+    blurb: 'Lay an ore deposit for mines (the mining specialisation).',
+  },
+  {
+    id: 'oil',
+    group: 'Resources',
+    name: 'Oil',
+    blurb: 'Lay an oil field for wells (the oil specialisation).',
+  },
   { id: 'clearResources', group: 'Resources', name: 'Clear', blurb: 'Take ore and oil out.' },
 ];
 

@@ -25,7 +25,10 @@ import {
   type Settings,
 } from '../client/settings';
 import { useGame, useGameUpdates } from './hooks';
-import { drawMapPreview } from './mapPreview';
+import { drawCustomMapPreview, drawMapPreview } from './mapPreview';
+import { decodeMapFile, listMaps, newMapId, readMap, writeMap, type MapInfo } from '../client/maps';
+import { checkMap, type MapData } from '../sim/terrain/customMap';
+import { MapsScreen } from './Maps';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
 const NAME_B = ['Marsh', 'Oak', 'Pine', 'Rowan', 'Sorrel', 'Thistle', 'Willow', 'Yarrow', 'Alder', 'Birch'];
@@ -132,6 +135,10 @@ function MainMenu() {
           <span>Scenarios</span>
           <small>{SCENARIOS.length} challenges</small>
         </button>
+        <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
+          <span>Map editor</span>
+          <small>make and share your own maps</small>
+        </button>
         <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
           <span>Load city</span>
           {slots && slots.length > 0 && <small>{slots.length} saved</small>}
@@ -159,12 +166,48 @@ function NewGame() {
   const [disasters, setDisasters] = useState(game.settings.disasters);
   const [elections, setElections] = useState(game.settings.elections);
   const [tutorial, setTutorial] = useState<boolean | null>(null);
+  // A map of the player's own (M24) instead of a generated one.
+  const [maps, setMaps] = useState<MapInfo[]>([]);
+  const [mine, setMine] = useState<{ id: string; map: MapData } | null>(null);
+  const mapFile = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   // The tutorial is on by default for a first city.
   const tut = tutorial ?? slots?.length === 0;
+  const refreshMaps = () =>
+    void listMaps()
+      .then((l) => setMaps(l.filter((m) => m.playable)))
+      .catch(() => setMaps([]));
+  useEffect(refreshMaps, []);
   useEffect(() => {
-    if (canvas.current) drawMapPreview(canvas.current, seed.trim() || 'citybloom', preset);
-  }, [seed, preset]);
+    if (!canvas.current) return;
+    if (mine) drawCustomMapPreview(canvas.current, mine.map);
+    else drawMapPreview(canvas.current, seed.trim() || 'citybloom', preset);
+  }, [seed, preset, mine]);
+  const pickMap = (id: string) =>
+    void readMap(id).then((map) => {
+      if (map) setMine({ id, map });
+    });
+  const importMap = async (f: File) => {
+    try {
+      const map = decodeMapFile(new Uint8Array(await f.arrayBuffer()));
+      const check = checkMap(map);
+      const id = newMapId();
+      await writeMap(id, map, check.ok);
+      if (!check.ok) {
+        game.toast(
+          `“${map.name}” isn’t playable yet: ${check.problems[0]!.text} Open it in the map editor.`,
+          'bad',
+          7000,
+        );
+        return;
+      }
+      refreshMaps();
+      setMine({ id, map });
+    } catch (err) {
+      game.toast(err instanceof Error ? err.message : 'That file could not be read', 'bad', 5000);
+    }
+  };
+  const climate = mine ? mine.map.climate : PRESET_CLIMATE[preset];
   const start = () => {
     const q = new URLSearchParams({
       new: '1',
@@ -176,6 +219,7 @@ function NewGame() {
       disasters: disasters ? '1' : '0',
       elections: elections && !sandbox ? '1' : '0',
     });
+    if (mine) q.set('map', mine.id);
     if (tut && !sandbox) q.set('tutorial', '1');
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
@@ -192,17 +236,46 @@ function NewGame() {
             {MAP_PRESETS.map((p) => (
               <button
                 key={p.id}
-                class={`preset ${preset === p.id ? 'active' : ''}`}
+                class={`preset ${!mine && preset === p.id ? 'active' : ''}`}
                 data-testid={`preset-${p.id}`}
-                onClick={() => setPreset(p.id)}
+                onClick={() => {
+                  setMine(null);
+                  setPreset(p.id);
+                }}
               >
                 <strong>{p.name}</strong>
                 <span>{p.blurb}</span>
               </button>
             ))}
+            {maps.map((m) => (
+              <button
+                key={m.id}
+                class={`preset mine ${mine?.id === m.id ? 'active' : ''}`}
+                data-testid={`newmap-${m.id}`}
+                onClick={() => pickMap(m.id)}
+              >
+                <strong>{m.name}</strong>
+                <span>Your map, from the map editor</span>
+              </button>
+            ))}
+            <button class="preset mine" data-testid="newmap-file" onClick={() => mapFile.current?.click()}>
+              <strong>Open a map file…</strong>
+              <span>A .citymap made in the map editor</span>
+            </button>
+            <input
+              ref={mapFile}
+              type="file"
+              accept=".citymap"
+              hidden
+              data-testid="newmap-input"
+              onChange={(e) => {
+                const f = (e.target as HTMLInputElement).files?.[0];
+                if (f) void importMap(f);
+              }}
+            />
           </div>
           <p class="muted climate-note" data-testid="new-climate">
-            {CLIMATES[PRESET_CLIMATE[preset]].name} climate: {CLIMATES[PRESET_CLIMATE[preset]].blurb}
+            {CLIMATES[climate].name} climate: {CLIMATES[climate].blurb}
           </p>
         </div>
         <div class="new-game-form">
@@ -217,16 +290,17 @@ function NewGame() {
             />
           </label>
           <label class="field">
-            <span>Map seed</span>
+            <span>{mine ? 'Map' : 'Map seed'}</span>
             <div class="field-row">
               <input
                 type="text"
                 maxLength={24}
-                value={seed}
+                value={mine ? mine.map.name : seed}
+                disabled={!!mine}
                 data-testid="new-seed"
                 onInput={(e) => setSeed((e.target as HTMLInputElement).value)}
               />
-              <button class="btn" title="Another map" onClick={() => setSeed(randomSeed())}>
+              <button class="btn" title="Another map" disabled={!!mine} onClick={() => setSeed(randomSeed())}>
                 Shuffle
               </button>
             </div>
@@ -852,6 +926,7 @@ export function Shell() {
       {screen === 'save' && <SaveScreen />}
       {screen === 'load' && <LoadScreen />}
       {screen === 'settings' && <SettingsScreen />}
+      {screen === 'maps' && <MapsScreen />}
     </div>
   );
 }

@@ -1577,6 +1577,15 @@ export class Sim {
       scenario: this.scenarioStats(),
       weather: this.weatherStats(),
       region: regionSummary(this),
+      map: this.state.map
+        ? {
+            name: this.state.map.name,
+            climate: this.state.map.climate,
+            highwayZ: this.state.map.highwayZ,
+            railZ: this.state.map.railZ,
+            editor: !!this.state.options.editor,
+          }
+        : null,
     };
   }
 

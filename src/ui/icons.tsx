@@ -402,3 +402,62 @@ export const IconSmooth = (p: P) => (
     <path d="M3 18c4-3 7-4 9-4s5 1 9 4" />
   </svg>
 );
+
+/** Map editor brushes (M24). */
+export const IconWater = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+    <path d="M3 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+  </svg>
+);
+export const IconSea = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+    <path d="M3 13c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+    <path d="M3 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+  </svg>
+);
+export const IconLand = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 17c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0" opacity="0.5" />
+    <path d="M5 13l4-5 3 3 3-2 4 4z" />
+  </svg>
+);
+export const IconForest = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M8 3l-4 7h3l-3 5h8l-3-5h3z" />
+    <path d="M8 15v5" />
+    <path d="M17 7l-3 6h6z" />
+    <path d="M17 13v7" />
+  </svg>
+);
+export const IconClearForest = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M8 4l-4 8h8z" opacity="0.5" />
+    <path d="M8 12v6" opacity="0.5" />
+    <path d="M13 20l7-7M15 11l3-3 3 3-3 3" />
+  </svg>
+);
+export const IconOre = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 16l4-7 5 2 4-4 3 6-5 5H7z" />
+    <path d="M10 13l2 2M15 12l1 2" />
+  </svg>
+);
+export const IconOil = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3c3 4 6 8 6 11a6 6 0 01-12 0c0-3 3-7 6-11z" />
+  </svg>
+);
+export const IconHighwayEntry = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 5v14M3 12h14M13 8l4 4-4 4" />
+    <path d="M20 9v6" stroke-dasharray="1.5 2.5" />
+  </svg>
+);
+export const IconRailEntry = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 5v14M3 10h15M3 14h15" />
+    <path d="M7 8v8M11 8v8M15 8v8" />
+  </svg>
+);

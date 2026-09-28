@@ -1,3 +1,4 @@
+import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
 import type { GameRenderer } from './render/renderer';
@@ -78,7 +79,7 @@ export function applyUiScale(scale: number): void {
 }
 
 /** Full-screen menus: the main menu and new-game screen, the pause menu and the screens inside it. */
-export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load' | 'settings';
+export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load' | 'settings' | 'maps';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -110,8 +111,17 @@ export class Game {
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
   panel:
-    'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | 'districts' | 'region' | null =
-    null;
+    | 'budget'
+    | 'advisors'
+    | 'notifications'
+    | 'city'
+    | 'history'
+    | 'goals'
+    | 'districts'
+    | 'region'
+    /** The map editor's playability check (M24). */
+    | 'editorCheck'
+    | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
   /** How the scenario ended, shown until the player carries on. */
@@ -138,7 +148,10 @@ export class Game {
   settings: Settings = loadSettings();
   private ambientAt = 0;
   /** 'menu': the main menu over a backdrop map; 'play': a city. */
-  mode: 'menu' | 'play' = 'play';
+  /** The main menu, a city, or the map editor (M24). */
+  mode: 'menu' | 'play' | 'editor' = 'play';
+  /** The map editor, while it's open (M24). */
+  editor: MapEditor | null = null;
   /** Open menu screens, innermost last (the pause menu, then save/load/settings inside it). */
   screens: Screen[] = [];
   private speedBeforeMenu: Speed | null = null;
@@ -1045,6 +1058,7 @@ export class Game {
     else this.autosave(now);
     this.districts.update();
     this.regionView.update();
+    this.editor?.update();
     this.renderer.frame(dt);
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {

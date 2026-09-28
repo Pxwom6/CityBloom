@@ -75,7 +75,7 @@ setInterval(loop, 50);
 function handle(msg: MainToWorker): void {
   switch (msg.type) {
     case 'init':
-      sim = Sim.create(msg.options);
+      sim = Sim.create(msg.options, msg.map ?? null);
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;

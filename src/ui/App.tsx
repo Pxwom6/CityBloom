@@ -20,6 +20,7 @@ import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
+import { EditorApp } from './Editor';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -65,6 +66,14 @@ export function App({ game }: { game: Game }) {
     return (
       <GameContext.Provider value={game}>
         <Shell />
+        <ToastLayer />
+      </GameContext.Provider>
+    );
+  // The map editor (M24) has its own bars.
+  if (game.mode === 'editor')
+    return (
+      <GameContext.Provider value={game}>
+        <EditorApp />
         <ToastLayer />
       </GameContext.Provider>
     );

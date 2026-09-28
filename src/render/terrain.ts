@@ -212,6 +212,7 @@ ${GRADE_GLSL}`,
   private chunkGeometry(ci: number, cj: number): BufferGeometry {
     const H = this.world.heights;
     const D = this.world.terrainDelta;
+    const editing = !!this.world.stats.map?.editor;
     const per = (HEIGHT_RES - 1) / CHUNKS; // quads per chunk side
     const c = new Color();
     const vx = per + 1;
@@ -237,7 +238,8 @@ ${GRADE_GLSL}`,
         pos[v * 3 + 2] = z;
         this.colourAt(x, z, h, slope, this.forestAt(x, z), c);
         const d = D[gj * HEIGHT_RES + gi]!;
-        if (d !== 0) this.earthworks(d, slope, c);
+        // In the map editor (M24) sculpted ground is the map itself, not fresh earthworks.
+        if (d !== 0 && !editing) this.earthworks(d, slope, c);
         col[v * 3] = c.r;
         col[v * 3 + 1] = c.g;
         col[v * 3 + 2] = c.b;
@@ -304,7 +306,6 @@ ${GRADE_GLSL}`,
   }
 
   private buildScenery(): void {
-    const gen = this.world.gen;
     const start = -Math.ceil(SCENERY_MARGIN / SCENERY_STEP) * SCENERY_STEP;
     const end = MAP_SIZE - start;
     const n = (end - start) / SCENERY_STEP; // quads per side
@@ -316,8 +317,8 @@ ${GRADE_GLSL}`,
       for (let i = 0; i < vx; i++) {
         const x = start + i * SCENERY_STEP;
         const z = start + j * SCENERY_STEP;
-        const inside = x >= 0 && x <= MAP_SIZE && z >= 0 && z <= MAP_SIZE;
-        heights[j * vx + i] = inside ? this.world.heightAt(x, z) : gen.height(x, z);
+        // The generator beyond the map (a custom map's edge blends into it, M24).
+        heights[j * vx + i] = this.world.heightAt(x, z);
       }
     }
     const c = new Color();

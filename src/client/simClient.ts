@@ -2,6 +2,7 @@ import type { Command, CommandResult } from '../sim/commands';
 import type { FrameDiff, MainToWorker, Query, Snapshot, WorkerPerf, WorkerToMain } from '../sim/protocol';
 import type { SaveFile } from '../sim/save';
 import type { GameOptions } from '../sim/state';
+import type { MapData } from '../sim/terrain/customMap';
 import type { Speed } from '../sim/time';
 
 type FrameListener = (diff: FrameDiff, perf: WorkerPerf, speed: Speed) => void;
@@ -59,10 +60,10 @@ export class SimClient {
     });
   }
 
-  init(options: Partial<GameOptions>, testMode = false): Promise<Snapshot> {
+  init(options: Partial<GameOptions>, testMode = false, map: MapData | null = null): Promise<Snapshot> {
     return new Promise((resolve) => {
       this.readyResolve = resolve;
-      this.post({ type: 'init', options, testMode });
+      this.post({ type: 'init', options, testMode, map });
     });
   }
 

@@ -2911,3 +2911,110 @@ body {
 .region-label {
   border-left-color: var(--color-accent);
 }
+
+/* Map editor (M24) */
+.editor-bar {
+  gap: var(--space-3);
+}
+.editor-name {
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  width: 12rem;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.editor-climate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.editor-climate select {
+  font: inherit;
+}
+.editor-status {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-3);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.editor-status.ok {
+  color: var(--color-positive);
+  border-color: var(--color-positive);
+}
+.editor-status.bad {
+  color: var(--color-negative);
+  border-color: var(--color-negative);
+}
+.editor-group {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-1);
+}
+.editor-tools {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.editor-issue {
+  appearance: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+  margin: 0 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-warning);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.editor-issue.bad {
+  border-left-color: var(--color-negative);
+}
+.editor-check .good {
+  color: var(--color-positive);
+  font-weight: var(--font-weight-bold);
+}
+.editor-check .bad {
+  color: var(--color-negative);
+}
+.editor-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-3);
+}
+.editor-stats dt {
+  color: var(--color-text-muted);
+}
+.editor-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.editor-label.entry {
+  border-left-color: #4d5259;
+}
+.editor-label.entry.rail {
+  border-left-color: #8a6a45;
+}
+.editor-label.problem {
+  border-left-color: var(--color-negative);
+  color: var(--color-negative);
+  max-width: 22rem;
+  white-space: normal;
+}

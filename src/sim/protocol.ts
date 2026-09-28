@@ -4,6 +4,8 @@ import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
 import type { TerrainParams } from './terrain/generate';
+import type { MapData } from './terrain/customMap';
+import type { ClimateId } from '../data/climate';
 import type { Command, CommandResult } from './commands';
 import type { GameOptions } from './state';
 import type { SaveFile } from './save';
@@ -66,6 +68,17 @@ export interface CityStats {
   weather: WeatherSummary;
   /** The region (M23): neighbours, what they offer now, and the deals. */
   region: RegionSummary;
+  /**
+   * The custom map the city stands on (M24), or null: its name and climate, where the highway and
+   * railway come in, and whether this is the map editor.
+   */
+  map: {
+    name: string;
+    climate: ClimateId;
+    highwayZ: number;
+    railZ: number | null;
+    editor: boolean;
+  } | null;
 }
 
 export interface ElectionSummary {
@@ -475,7 +488,8 @@ export interface DistrictReport {
 }
 
 export type MainToWorker =
-  | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean }
+  /** A new city (or the map editor's), on a custom map if one is given (M24). */
+  | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean; map?: MapData | null }
   | { type: 'load'; save: SaveFile; testMode?: boolean }
   | { type: 'command'; id: number; cmd: Command }
   | { type: 'preview'; id: number; cmd: Command }

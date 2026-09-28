@@ -71,7 +71,15 @@ test('M21: Market Town: paint and name districts, a heavy-traffic ban on Old Mar
   await page.keyboard.press(']');
   const hoverAt = await screen(page, X(640), Z(-200));
   await page.mouse.move(hoverAt.x, hoverAt.y, { steps: 3 });
-  await expect(page.getByTestId('tool-hint')).toContainText('New district: ');
+  // Read the hint once it has settled on the pointer's last position (it follows every move).
+  const hint = async () => {
+    const a = await page.getByTestId('tool-hint').textContent();
+    await page.evaluate(() => window.__game!.waitFrames(3));
+    return (
+      a !== null && a.includes('New district: ') && a === (await page.getByTestId('tool-hint').textContent())
+    );
+  };
+  await expect.poll(hint, { timeout: 20_000 }).toBe(true);
   const offered = (await page.getByTestId('tool-hint').textContent())!
     .match(/New district: ([^·]+) ·/)![1]!
     .trim();

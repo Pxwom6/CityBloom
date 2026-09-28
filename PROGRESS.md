@@ -32,7 +32,7 @@
 - [x] M18 Scenarios
 - [x] M19 Traffic tools
 - [x] M20 Rail
-- [ ] M21 Districts
+- [x] M21 Districts
 - [ ] M22 Seasons and weather
 - [ ] M23 Region, airport and seaport
 - [ ] M24 Terrain and map editor
@@ -84,19 +84,25 @@ done).
    tried it.
 
 ## In progress
-M21 Districts: done apart from the full UI run. Districts are painted with a brush (I) on a 16 m
-raster and named after their neighbourhood; most policies apply per district at its share of the
-city-wide price (by the people who live or work there), and the heavy-traffic ban and heritage are
-district-only. The Districts panel shows residents, jobs, happiness, land value, taxes and upkeep,
-and filters data maps to one district. Save v19, an eleventh scenario (Market Town), and
-`tests/districtPolicies.test.ts` for the done criterion (a ban, recycling and heritage each change
-their own district and nothing else). 240 unit and scenario tests pass, and `e2e/m21-districts.spec.ts`
-passes (Market Town won through the UI in 1.7 months). Running the full UI suite next.
+M21 Districts is complete: districts painted with a brush (I) on a 16 m raster and named after their
+neighbourhood; most policies apply per district at its share of the city-wide price (by the people
+who live or work there), with the heavy-traffic ban and heritage for districts only; the Districts
+panel (residents, jobs, happiness, land value, taxes, upkeep, policies) and data maps filtered to one
+district; save v19; an eleventh scenario, Market Town. Done-criterion tests in
+`tests/districtPolicies.test.ts` (a ban, recycling and heritage each change their own district and
+nothing else). 240 unit and scenario tests and all 26 UI tests pass (the full run took 37 minutes).
 
 ## Next tasks
-1. Full `npm run e2e`, then the `M21 complete:` commit.
-2. M22 Seasons and weather (SPEC-2).
-3. Performance watch: the worst tick at the big city's month-5/6 growth burst is 15–17 ms on this VM
+1. M22 Seasons and weather (SPEC-2). Plan: seasons from the calendar (a season is three months;
+   Dec–Feb winter); `SimState.weather` (save v20) with spells drawn hourly from a per-preset climate
+   (clear, cloudy, rain, storm, snow, fog, heatwave; temperature, ground snow, river rise, dryness);
+   effects through `buildingUse` (heating/cooling power, heat water), `civicOutput` (pumps × dryness,
+   solar × cloud), `congestedEdgeCosts`/`segSpeed` (snow on each road), park use in rain, river
+   level → flood risk; a public works depot with ploughs; rendering (terrain and tree season tints,
+   snow cover on ground, roofs and roads, rain/snow particles as one Points system, fog, clouds,
+   lightning, wet roads), sounds; settings (seasons on/off, weather intensity), climates per
+   preset, photo-mode season/weather controls; a winter scenario.
+2. Performance watch: the worst tick at the big city's month-5/6 growth burst is 15–17 ms on this VM
    with M19–M21 code alike (utilities, matcher, landValue), and one unrepeated 52 ms utilities tick.
 
 ## Known issues

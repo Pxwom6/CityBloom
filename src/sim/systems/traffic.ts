@@ -1,4 +1,5 @@
 import { JUNCTION, TRAFFIC } from '../../data/balance';
+import { snowFactor } from '../../data/climate';
 import { ROAD_TYPES, isRail } from '../../data/roads';
 import type { Sim } from '../sim';
 import { hourOfDay } from '../time';
@@ -130,6 +131,7 @@ export function congestedEdgeCosts(sim: Sim, g: RoadGraph, share: number): Float
   const cache = new Map<number, number>();
   const delays = new Float64Array(g.size);
   for (let v = 0; v < g.size; v++) delays[v] = junctionDelay(sim, g.ids[v]!, share);
+  const segs = sim.state.net.segments;
   for (let k = 0; k < out.length; k++) {
     const seg = g.seg[k]!;
     let vc = cache.get(seg);
@@ -137,7 +139,9 @@ export function congestedEdgeCosts(sim: Sim, g: RoadGraph, share: number): Float
       vc = segVC(sim, seg, share);
       cache.set(seg, vc);
     }
-    out[k] = congestedSeconds(g.cost[k]!, vc) + delays[g.to[k]!]!;
+    // Snow on the road slows everyone on it until it melts or is ploughed (M22).
+    const snow = segs.get(seg)?.snow;
+    out[k] = congestedSeconds(snow ? g.cost[k]! * snowFactor(snow) : g.cost[k]!, vc) + delays[g.to[k]!]!;
   }
   return out;
 }

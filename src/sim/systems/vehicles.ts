@@ -1,3 +1,4 @@
+import { snowFactor } from '../../data/climate';
 import { ROAD_TYPES } from '../../data/roads';
 import { VEHICLE_SPEED_SCALE } from '../../data/civic';
 import type { Sim } from '../sim';
@@ -31,7 +32,7 @@ export interface Vehicle {
 export function segSpeed(sim: Sim, segId: number): number {
   const seg = sim.state.net.segments.get(segId);
   if (!seg) return 10;
-  return (ROAD_TYPES[seg.type].speed / 3.6) * sim.congestionFactor(segId);
+  return ((ROAD_TYPES[seg.type].speed / 3.6) * sim.congestionFactor(segId)) / snowFactor(seg.snow);
 }
 
 export function route(

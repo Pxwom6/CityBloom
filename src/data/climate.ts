@@ -206,3 +206,8 @@ export const WEATHER = {
   /** Parks count for this much less while it rains, storms or snows (at full strength). */
   parkRain: 0.5,
 };
+
+/** Travel time factor on a road with this much snow on it (M22). */
+export function snowFactor(snow: number | undefined): number {
+  return snow ? 1 + WEATHER.snowSlow * snow : 1;
+}

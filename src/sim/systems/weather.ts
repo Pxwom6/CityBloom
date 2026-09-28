@@ -228,11 +228,6 @@ export function parkShare(w: WeatherState): number {
   return w.kind === 'rain' || w.kind === 'storm' || w.kind === 'snow' ? 1 - WEATHER.parkRain * w.strength : 1;
 }
 
-/** Travel time factor on a road with this much snow. */
-export function snowFactor(snow: number | undefined): number {
-  return snow ? 1 + WEATHER.snowSlow * snow : 1;
-}
-
 /** Test and scenario hook: set the weather now (the spell lasts `hours`). */
 export function setSpell(sim: Sim, kind: WeatherKind, strength: number, hours: number): void {
   const w = sim.state.weather;

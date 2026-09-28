@@ -81,6 +81,7 @@ import {
   weatherSummary,
   type WeatherSummary,
 } from './systems/weather';
+import { garbageDealsHour, initialRegion, regionMonth, regionSummary, setDeal } from './systems/region';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
@@ -326,6 +327,7 @@ export class Sim {
       districts: new Map(),
       districtCells: emptyDistrictCells(),
       weather: initialWeather(options.preset),
+      region: initialRegion(options.seed),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -1094,6 +1096,10 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setDeal': {
+        const r = setDeal(this, cmd.neighbour, cmd.resource, cmd.direction, cmd.amount, !dryRun);
+        return r.ok ? ok(0) : fail(r.reason);
+      }
       case 'setWeather': {
         const w = this.state.weather;
         if (cmd.intensity !== undefined && ![0, 1, 2, 3].includes(cmd.intensity))
@@ -1340,6 +1346,7 @@ export class Sim {
         projectsMonth(this);
         projectEvents(this);
         electionsMonth(this);
+        regionMonth(this);
         scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
@@ -1385,6 +1392,7 @@ export class Sim {
         run('garbage', () => {
           garbageHour(this);
           dispatchGarbage(this);
+          garbageDealsHour(this);
         });
         break;
       case HOURLY_AT.pollution:
@@ -1504,6 +1512,7 @@ export class Sim {
       election: this.electionSummary(),
       scenario: this.scenarioStats(),
       weather: this.weatherStats(),
+      region: regionSummary(this),
     };
   }
 

@@ -19,6 +19,7 @@ import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
 import type { District } from './systems/districts';
 import type { WeatherState } from './systems/weather';
+import type { RegionState } from './systems/region';
 
 export type { Difficulty };
 
@@ -46,7 +47,15 @@ export const DEFAULT_OPTIONS: GameOptions = {
   terrain: TERRAIN_VERSION,
 };
 
-export const RNG_STREAMS = ['world', 'growth', 'events', 'traffic', 'disasters', 'weather'] as const;
+export const RNG_STREAMS = [
+  'world',
+  'growth',
+  'events',
+  'traffic',
+  'disasters',
+  'weather',
+  'region',
+] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 /**
@@ -131,4 +140,6 @@ export interface SimState {
   districtCells: Uint8Array;
   /** Seasons and weather (M22): the spell now, temperature, snow, wet ground, river and dryness. */
   weather: WeatherState;
+  /** The region (M23): neighbouring towns and the deals made with them. */
+  region: RegionState;
 }

@@ -1,3 +1,4 @@
+import { regionRates } from './region';
 import { specialisationIncome } from './specialisations';
 import { POLICY, policyCost, type PolicyId } from '../../data/policies';
 import { ROAD_TYPES } from '../../data/roads';
@@ -202,6 +203,9 @@ export function monthlyRates(sim: Sim): Record<string, number> {
   for (const [dept, cost] of Object.entries(sim.departmentUpkeep()))
     add(`upkeep:${dept}`, -cost * (e.funding[dept as Dept] / 100) * scale);
   for (const [k, v] of Object.entries(specialisationIncome(sim))) add(k, v);
+  const deals = regionRates(sim);
+  add('imports', deals.imports);
+  add('exports', deals.exports);
   for (const id of s.policies) {
     const p = POLICY.get(id as PolicyId);
     if (p) add('policies', -policyCost(p, s.totals.population));

@@ -1,4 +1,5 @@
 import type { WeatherIntensity, WeatherKind } from '../data/climate';
+import type { DealDirection, DealResource } from '../data/region';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -57,6 +58,8 @@ export type Command =
   | { type: 'setDisasters'; on: boolean }
   /** Seasons on or off and how wild the weather is (M22). */
   | { type: 'setWeather'; seasons?: boolean; intensity?: WeatherIntensity }
+  /** Sign, change or end (amount 0) a deal with a neighbouring town (M23). */
+  | { type: 'setDeal'; neighbour: number; resource: DealResource; direction: DealDirection; amount: number }
   /** Test mode only: set the weather now for `hours` (e2e and dev scenes). */
   | { type: 'cheat'; cheat: 'weather'; kind: WeatherKind; strength: number; hours: number }
   | { type: 'setElections'; on: boolean }

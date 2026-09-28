@@ -94,6 +94,9 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
         const seg = s.net.segments.get(c.access.seg);
         if (seg) supplied.add(g.componentOfNode(seg.a));
       }
+      // Power or water bought from a neighbour comes in along the highway (M23).
+      if (s.region.deals.some((d) => d.resource === map && d.direction === 'buy' && d.delivered > 0))
+        supplied.add(g.componentOfNode(s.highway.connect));
       stampRoads(sim, values, (id) => {
         const seg = s.net.segments.get(id)!;
         if (!ROAD_TYPES[seg.type].access) return null;

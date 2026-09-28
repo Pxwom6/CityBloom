@@ -2,7 +2,8 @@ import { ROAD_TYPES } from '../../data/roads';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
-import { EDUCATION } from '../../data/balance';
+import { EDUCATION, TRAM } from '../../data/balance';
+import { railTerminals } from './rail';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
@@ -389,9 +390,18 @@ export function advise(sim: Sim): Advice[] {
     const vc = segVC(sim, id, 1);
     if (vc > 1.1 && (!jam || vc > jam.vc)) jam = { seg: id, vc };
   }
+  // Trams and trains (M20): once unlocked, a line along a jammed corridor takes commuters off it.
+  const railOpen = sim.isUnlocked(TRAM.unlockPopulation);
+  const lines = sim.lines();
   if (jam) {
     const c = sim.net.curve(jam.seg);
     const seg = s.net.segments.get(jam.seg)!;
+    const transit =
+      railOpen && !lines.some((l) => l.mode !== 'bus')
+        ? ROAD_TYPES[seg.type].tram
+          ? ' Or lay tram track along it (Roads → Tram track) with a tram depot and stops, or run a train line beside it: riders leave their cars at home.'
+          : ' Or run a train line beside it: stations on connected track, and riders leave their cars at home.'
+        : '';
     // Big towns with a jammed main road: a city highway round it takes the through traffic (M19).
     const bypass =
       (seg.type === 'avenue' || seg.type === 'boulevard') &&
@@ -401,9 +411,11 @@ export function advise(sim: Sim): Advice[] {
       advisor: 'transport',
       severity: jam.vc > 1.6 ? 2 : 1,
       title: 'Rush-hour jam',
-      text: bypass
-        ? 'This road carries more than it can. A city highway round the town, joined by ramps, would take the through traffic off it; or build a parallel route, or run buses.'
-        : 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it. One-way pairs of streets carry a quarter more.',
+      text:
+        (bypass
+          ? 'This road carries more than it can. A city highway round the town, joined by ramps, would take the through traffic off it; or build a parallel route, or run buses.'
+          : 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it. One-way pairs of streets carry a quarter more.') +
+        transit,
       at: c.pointAt(c.length / 2),
       map: 'traffic',
     });
@@ -425,6 +437,45 @@ export function advise(sim: Sim): Advice[] {
       at: { x: n.x, z: n.z },
       map: 'traffic',
     });
+  }
+  // Rail freight (M20): a busy highway link with industry behind it, and no terminal yet.
+  const link = s.railway ? s.net.nodes.get(s.railway.connect) : undefined;
+  const hwLoad = s.traffic.get(s.highway.segment) ?? 0;
+  if (
+    link &&
+    railOpen &&
+    CIVIC.get('railfreight') &&
+    sim.isUnlocked(CIVIC.get('railfreight')!.unlockPopulation) &&
+    s.totals.iJobs > 400 &&
+    hwLoad > 1500 &&
+    !railTerminals(sim).length
+  )
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: 'Freight trucks crowd the highway link',
+      text: 'Industry sends all its goods out by truck. Lay a railway from the regional rail link here to a rail freight terminal near the factories: goods go on by train instead, off the roads.',
+      at: { x: link.x, z: link.z },
+      map: 'traffic',
+    });
+  // Stations and tram depots that run nothing yet (M20).
+  for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
+    const d = civicDef(c);
+    if (!(d.rail || d.tram) || !civicOnline(c)) continue;
+    const runs = lines.some((l) =>
+      d.rail ? l.mode === 'train' && l.stops.includes(c.id) : l.depot === c.id,
+    );
+    if (runs) continue;
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: d.rail ? 'A station with no trains' : 'A tram depot with no line',
+      text: d.rail
+        ? 'Trains run between two or more stations on connected track. Build another station along this railway.'
+        : 'Its trams need the road in front to have tram track, and at least two tram stops on track they can reach.',
+      at: { x: c.x, z: c.z },
+    });
+    break;
   }
   const commute = sim.avgCommute();
   if (commute > 20 * 60)

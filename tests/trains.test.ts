@@ -7,6 +7,7 @@ import { CHRONICLE_SERIES, monthFigures } from '../src/sim/systems/chronicle';
 import { TICKS_PER_MONTH } from '../src/sim/time';
 import { connectPoint, newSim, placeAlong, road } from './helpers';
 import { trainCorridor } from './railTown';
+import { advise } from '../src/sim/systems/advisors';
 import { twoDistricts } from './trafficTown';
 
 describe('trains (M20)', () => {
@@ -53,10 +54,13 @@ describe('trains (M20)', () => {
     const segAt = (x: number) => sim.net.nearestSegment({ x: c.x + x, z: c.z + 160 }, 4)!.seg;
     const a = placeAlong(sim, 'station', segAt(120));
     expect(sim.lines().filter((l) => l.mode === 'train')).toHaveLength(0);
+    // The transport advisor points out a station with nothing to run to.
+    expect(advise(sim).some((x) => x.title === 'A station with no trains')).toBe(true);
     const b = placeAlong(sim, 'station', segAt(800));
     const mid = placeAlong(sim, 'station', segAt(480));
     const lines = sim.lines().filter((l) => l.mode === 'train');
     expect(lines).toHaveLength(1);
+    expect(advise(sim).some((x) => x.title === 'A station with no trains')).toBe(false);
     const line = lines[0]!;
     expect(line.shuttle).toBe(true);
     // Trains run at least five minutes apart: a short line needs few of the stations' trains.

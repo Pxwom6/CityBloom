@@ -20,7 +20,7 @@ function sections(): [string, Row[]][] {
       'Build',
       [
         ['Roads', ['T']],
-        ['Road modes: curve, free, upgrade, one-way, roundabout', ['Tab']],
+        ['Road modes: curve, free, upgrade, one-way, roundabout, tram track', ['Tab']],
         ['Draw one-way, grid snap', ['O', 'G']],
         ['Zone homes, shops, industry', ['Z', 'X', 'C']],
         ['Dezone', ['V']],

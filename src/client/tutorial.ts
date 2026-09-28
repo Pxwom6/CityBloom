@@ -3,6 +3,7 @@ import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
+import { TRAM } from '../data/balance';
 
 /**
  * The first-city tutorial and contextual tips (DESIGN.md §5). Steps finish by themselves when the
@@ -160,6 +161,24 @@ export const TIPS: Tip[] = [
     when: (g) =>
       (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= ROAD_TYPES.motorway.unlockPopulation &&
       g.world.stats.population > 0,
+  },
+  {
+    id: 'rail',
+    text:
+      'Trams and trains unlocked. Lay tram track along busy streets (Roads → Tram track) and add a tram ' +
+      'depot and tram stops; or build a railway (Roads → Railway) with two stations. The regional railway ' +
+      'comes in at the west edge: link a rail freight terminal to it and industry ships by train.',
+    when: (g) =>
+      (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= TRAM.unlockPopulation &&
+      g.world.stats.population > 0,
+  },
+  {
+    id: 'railway',
+    text:
+      'Railways climb no more than 3.5 % and curve no tighter than 100 m, so they need room. Draw one ' +
+      'across the middle of a street, avenue or dirt road for a level crossing; over boulevards and ' +
+      'highways it goes on a bridge. Stations face the track.',
+    when: (g) => g.tools.activeId === 'road' && g.tools.road.type === 'rail',
   },
   {
     id: 'earthworks',

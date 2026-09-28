@@ -1,4 +1,5 @@
 import { ROAD_TYPES, isRail } from '../data/roads';
+import { CIVIC } from '../data/civic';
 import { TRAM, TRANSIT } from '../data/balance';
 import { compass } from '../tools/roadTool';
 import type { Command } from '../sim/commands';
@@ -531,7 +532,11 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
   const name = (bid: number) => {
     if (!bid) return 'the regional highway';
     const b = game.world.buildings.get(bid);
-    return b ? (ZONED_DEFS.get(b.def)?.name ?? 'a building') : 'a building (since demolished)';
+    if (b) return ZONED_DEFS.get(b.def)?.name ?? 'a building';
+    // Rail freight (M20): trucks to and from a terminal.
+    const c = game.world.civics.get(bid);
+    if (c) return `the ${(CIVIC.get(c.def)?.name ?? 'building').toLowerCase()}`;
+    return 'a building (since demolished)';
   };
   if (!car)
     return (
@@ -547,7 +552,12 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
         </header>
       </aside>
     );
-  const [title, what] = (walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', ''];
+  const byRail = !walker && game.world.civics.get(car.trip.to)?.def === 'railfreight';
+  const [title, what] = byRail
+    ? car.trip.purpose === 'export'
+      ? ['Export truck', 'Taking goods to the rail freight terminal, to go on by train']
+      : ['Import truck', 'Bringing goods off the train at the rail freight terminal']
+    : ((walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', '']);
   const forward = car.legs[0] === car.trip.legs[0];
   const [from, to] = forward ? [car.trip.from, car.trip.to] : [car.trip.to, car.trip.from];
   const home = car.trip.purpose === 'work' && !forward;

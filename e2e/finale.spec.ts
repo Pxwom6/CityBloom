@@ -173,11 +173,21 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 120_000,
   });
-  await page.keyboard.press('Space');
+  // Hold the clock: time moves only when the playthrough fast-forwards it.
+  await page.evaluate(() => window.__game!.setSpeed(0));
   const s0 = await state(page);
   expect(s0.map?.name).toBe('Kestrel Vale');
   const cz = s0.highwayZ;
   log(`Kestrelford: $${s0.treasury}, highway at z ${cz}, climate ${s0.map?.climate}`);
+  /** On to late morning, so the next picture is in daylight. */
+  const daylight = async () => {
+    await page.evaluate(async () => {
+      const g = window.__game!;
+      const now = ((await g.getState()).tick + 420) % 1440;
+      await g.advance((11 * 60 - now + 1440) % 1440);
+    });
+    await closeTips(page, tips);
+  };
   const topDown = async () => {
     await page.evaluate(
       (cz) => window.__game!.setCamera({ x: 290, z: cz + 50, distance: 700, yaw: 0, tilt: 0.55 }),
@@ -256,10 +266,23 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
     [x, cz + 30],
   ]);
   const north: [number, number][] = [140, 170, 200, 230, 260, 290, 320, 350, 380].map((x) => [x, cz - 190]);
-  expect(await place(page, 'power', 'wind', east)).toBe(true);
-  expect(await place(page, 'power', 'wind', east)).toBe(true);
+  for (let k = 0; k < 3; k++) expect(await place(page, 'power', 'wind', east)).toBe(true);
   expect(await place(page, 'water', 'pump', north)).toBe(true);
   expect(await place(page, 'water', 'septic', east)).toBe(true);
+  await page.getByTestId('tool-select').click();
+  // A loan from the budget panel, and the first services along the service and utility roads.
+  await page.getByTestId('open-budget').click();
+  await page.getByTestId('budget-tab-loans').click();
+  await page.getByTestId('loan-25000').click();
+  await page.getByTestId('open-budget').click();
+  for (const [cat, def] of [
+    ['fire', 'firestation'],
+    ['health', 'clinic'],
+    ['police', 'police'],
+    ['education', 'primary'],
+    ['parks', 'park_small'],
+  ] as const)
+    log(`${def}: ${(await place(page, cat, def, [...north, ...east])) ? 'placed' : 'no room or money'}`);
   await page.getByTestId('tool-select').click();
   for (let m = 0; m < 3; m++) {
     await page.evaluate(() => window.__game!.advance(1440));
@@ -292,6 +315,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   s = await state(page);
   log(`levelled north of town for $${money - s.treasury}`);
   expect(s.treasury).toBeLessThan(money);
+  await daylight();
   await shot(page, 'terrain');
   // Back up to see the service road and the levelled ground together.
   await page.evaluate(
@@ -329,7 +353,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
     s = await state(page);
     await topDown();
     const u = s.utilities;
-    if (u.power.supply < u.power.demand * 1.2 + 10) await place(page, 'power', 'wind', east);
+    if (u.power.supply < u.power.demand * 1.3 + 10) await place(page, 'power', 'wind', east);
     if (u.water.supply < u.water.demand * 1.2 + 10) await place(page, 'water', 'pump', north);
     if (u.sewage.supply < u.sewage.demand * 1.2 + 10) await place(page, 'water', 'septic', east);
     await page.getByTestId('tool-select').click();
@@ -368,6 +392,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
     await policy.check();
     log(`district ${d.name}: ${id}`);
   } else log(`district ${d.name}: no policy unlocked yet at ${(await state(page)).population} residents`);
+  await daylight();
   await shot(page, 'district');
   await page.keyboard.press('i');
 
@@ -383,6 +408,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
     await expect.poll(async () => (await state(page)).region.deals.length).toBe(1);
     log(`bought ${amount} MW from ${seller.name}`);
   }
+  await daylight();
   await shot(page, 'region');
   await page.getByTestId('open-region').click();
 

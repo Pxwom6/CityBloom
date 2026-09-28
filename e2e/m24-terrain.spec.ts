@@ -278,12 +278,18 @@ test('M24: the map editor from the main menu: brushes, entries, the check, save 
   );
   // The highway comes in further north.
   await page.getByTestId('entry-highway').click();
+  // Close in over the west edge, as a player would to put it just so.
+  await page.evaluate(() => window.__game!.setCamera({ x: 250, z: 800, distance: 700, yaw: 0, tilt: 1.1 }));
+  await frames(page);
   const e = await screen(page, 30, 800);
   await page.mouse.click(e.x, e.y);
   await expect
     .poll(async () => Math.abs(((await state(page)).map?.highwayZ ?? 0) - 800), { timeout: 20_000 })
     .toBeLessThan(80);
   await page.getByTestId('brush-raise').click();
+  await page.evaluate(() =>
+    window.__game!.setCamera({ x: 1024, z: 1100, distance: 2300, yaw: 0, tilt: 0.9 }),
+  );
   await frames(page);
   await expect(page.getByTestId('editor-status')).toContainText('Playable', { timeout: 20_000 });
   await page.getByTestId('editor-status').click();

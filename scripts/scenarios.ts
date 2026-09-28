@@ -4,7 +4,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { encodeSave } from '../src/client/saves';
 import { Sim } from '../src/sim/sim';
-import { TICKS_PER_HOUR } from '../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../src/sim/time';
 import { SCENARIO } from '../src/data/scenarios';
 import { Player } from './lib/mayor';
 
@@ -26,6 +26,29 @@ const RECIPES: Record<string, () => Sim> = {
     govern(p, 12);
     return p.sim;
   },
+  // A town whose last mayor cut taxes to 3 %, borrowed to the limit, spent it on hospitals, schools
+  // and plazas, and over-funded every department: a deficit, three loans and an empty treasury.
+  brink: () => {
+    const p = new Player('careful', { seed: 'ledger', cityName: 'Marlow' });
+    govern(p, 40);
+    const sim = p.sim;
+    for (const amount of [100_000, 50_000, 25_000]) sim.dispatch({ type: 'takeLoan', amount });
+    const spree = [
+      'hospital',
+      'highschool',
+      'hospital',
+      'busdepot',
+      'highschool',
+      'park_large',
+      'park_large',
+    ];
+    for (let k = 0; sim.state.treasury > 15_000 && k < 40; k++) p.place(spree[k % spree.length]!);
+    for (let k = 0; sim.state.treasury > 15_000 && k < 40; k++) p.place('plaza');
+    p.setFunding(125);
+    p.setTaxes(3);
+    sim.advance(TICKS_PER_HOUR * 24);
+    return sim;
+  },
 };
 
 const wanted = (process.argv[2] ?? Object.keys(RECIPES).join(',')).split(',');
@@ -39,6 +62,11 @@ for (const id of wanted) {
   const bytes = encodeSave(sim.save());
   writeFileSync(`public/scenarios/${id}.citybloom`, bytes);
   const st = sim.stats();
+  if (process.env.DETAIL)
+    console.log(
+      `  net ${st.netMonthly}/mo, loans ${sim.state.economy.loans.length}, taxes ${sim.state.economy.taxes.R.join('/')}, ` +
+        `unemployed ${st.unemployed}, month ${Math.floor((sim.state.tick + 420) / TICKS_PER_MONTH)}`,
+    );
   console.log(
     `${id}: ${st.population} residents, $${st.treasury.toLocaleString('en-US')}, approval ${Math.round(st.approval * 100)} %, ` +
       `${(bytes.length / 1024).toFixed(0)} KB, ${((performance.now() - t0) / 1000).toFixed(0)} s` +

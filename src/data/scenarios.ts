@@ -99,6 +99,34 @@ export const SCENARIOS: ScenarioDef[] = [
       'Keep power, water and sewage ahead of demand, and add services as the town grows.',
     ],
   },
+  {
+    id: 'brink',
+    name: 'Back from the Brink',
+    blurb: 'Pay off a spendthrift mayor’s loans and put money back in the bank.',
+    brief:
+      'Marlow’s last mayor cut taxes to 3 %, borrowed to the limit, spent it all on hospitals, schools ' +
+      'and plazas, and paid every department over the odds. The treasury is empty and three loans ' +
+      'are owed. Pay them off, put $250,000 in the bank, and keep the town behind you.',
+    save: 'brink.citybloom',
+    months: 36,
+    stars: [
+      { months: 18, label: 'Within 18 months' },
+      { months: 12, label: 'Within a year' },
+    ],
+    goals: [
+      { measure: 'loans', max: 0, label: 'Every loan repaid' },
+      { measure: 'treasury', min: 250_000, label: '$250,000 in the bank' },
+      { measure: 'approval', min: 60, label: 'Approval of 60 % or more' },
+    ],
+    limits: [{ kind: 'noLoans', label: 'New loans are not allowed' }],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Taxes of 9–10 % are normal; residents notice each point above that.',
+      'Funding over 100 % costs more than it gives back. The budget shows every line.',
+      'Repay a loan early from the budget’s Loans tab once the treasury can cover it.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

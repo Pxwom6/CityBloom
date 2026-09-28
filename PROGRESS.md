@@ -76,14 +76,13 @@ done).
    tried it.
 
 ## In progress
-Phase 2 (SPEC-2.md, M13–M24). M17 Big projects and elections is complete: five original projects
-built in stages over months with requirements, a model per stage and a lasting perk; elections every
-four years with promises, a win's grant and goodwill, a loss's year of council limits, off in
-sandbox and switchable (save v15); advisors, tips, the Election tab and notices. The balance tool's
-careful mayor now plans the whole map, passes 50k in year 11, opens all five projects and wins every
-election, and the late-game retune (project and late-landmark prices and upkeep) keeps its treasury
-at $0.2–2.4M while it buys its goals (`docs/screenshots/m17-money.png`). All 21 e2e specs pass,
-185 unit tests.
+M18 Scenarios. Done: the scenario system in the sim (save v16; `src/sim/systems/scenario.ts`, data in
+`src/data/scenarios.ts`), the starting-city builder (`npx tsx scripts/scenarios.ts [ids]`, writes
+`public/scenarios/*.citybloom` using the balance mayor from `scripts/lib/mayor.ts`), and the first
+scenario, Clean Slate, with its test (`tests/scenarios/`: careful mayor wins, nobody loses). Next:
+the other scenarios (Back from the Brink, Vote of Confidence, Big Game, Gridlock, Smokestack
+Valley, After the Flood, Seaside Resort), then the scenario screen, goals panel and win screen.
+M17 is complete (see git log).
 
 ## Next tasks
 1. M18 Scenarios: six to eight scenarios (fixed map, starting city as a save, goals, limits, time

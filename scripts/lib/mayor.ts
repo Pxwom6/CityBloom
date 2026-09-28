@@ -9,7 +9,7 @@ import type { CityStats } from '../../src/sim/protocol';
 import type { Dept } from '../../src/data/economy';
 import type { Difficulty } from '../../src/sim/state';
 import { CELL, ROWS, ZONE_C, ZONE_I, ZONE_NONE, ZONE_R } from '../../src/data/zones';
-import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
+import { GRID_CELL, GRID_RES, MAP_SIZE, type MapPreset } from '../../src/data/world';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
 import { roadsidePose } from '../../src/sim/world/civic';
 import { BState } from '../../src/sim/world/buildings';
@@ -114,14 +114,14 @@ export class Player {
   /** A mayor for a new city on the river map, or for a city that's already running. */
   constructor(
     readonly strategy: StrategyId,
-    city: Sim | { seed: string; difficulty?: Difficulty; cityName?: string },
+    city: Sim | { seed: string; preset?: MapPreset; difficulty?: Difficulty; cityName?: string },
   ) {
     this.sim =
       city instanceof Sim
         ? city
         : Sim.create({
             seed: city.seed,
-            preset: 'river',
+            preset: city.preset ?? 'river',
             cityName: city.cityName ?? strategy,
             difficulty: city.difficulty ?? 'normal',
           });
@@ -630,7 +630,11 @@ export class Player {
   /** Every goal the city has reached is met: nothing left to save for until the next milestone. */
   goalsDone(): boolean {
     return GOALS.every(
-      (g) => this.goalsMet.has(g.def) || !this.sim.reached(g.at) || this.goalTried.has(g.def),
+      (g) =>
+        this.goalsMet.has(g.def) ||
+        this.avoid.includes(g.def) ||
+        !this.sim.reached(g.at) ||
+        this.goalTried.has(g.def),
     );
   }
 
@@ -650,7 +654,7 @@ export class Player {
   pursueGoals(): void {
     const s = this.sim.state;
     for (const g of GOALS) {
-      if (this.goalsMet.has(g.def)) continue;
+      if (this.goalsMet.has(g.def) || this.avoid.includes(g.def)) continue;
       const d = CIVIC.get(g.def)!;
       if (!this.sim.reached(g.at) || !this.sim.isUnlocked(d.unlockPopulation)) return;
       if (this.count(g.def) > 0) {

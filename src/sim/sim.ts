@@ -754,7 +754,13 @@ export class Sim {
 
   dispatch(cmd: Command): CommandResult {
     const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
-    if (scope) this.syncRng();
+    if (scope) {
+      // A command that will be refused changes nothing: skip the undo snapshot, which costs
+      // milliseconds in a big city (scripted players try many spots before one fits).
+      const dry = this.apply(cmd, true);
+      if (!dry.ok) return dry;
+      this.syncRng();
+    }
     const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
     if (result.ok) {

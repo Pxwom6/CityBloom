@@ -81,13 +81,13 @@ try {
       [560, 460],
     ]);
     await b('street', [
-      [640, 180],
-      [760, 180],
+      [380, 200],
+      [520, 200],
     ]);
     await b('ramp', [
-      [680, 300],
-      [720, 300],
-      [740, 180],
+      [430, 300],
+      [470, 288],
+      [490, 200],
     ]);
     await g.dispatch({
       type: 'zone',
@@ -114,8 +114,31 @@ try {
   await snap('rt-oneway', { x: x + 460, z: z - 110, distance: 180, yaw: 0.3, tilt: 0.15 });
   await snap('rt-flyover', { x: x + 250, z: z + 300, distance: 140, yaw: 1.1, tilt: -0.05 });
   await snap('rt-overpass', { x: x + 560, z: z + 300, distance: 150, yaw: 2.2, tilt: -0.05 });
-  await snap('rt-ramp', { x: x + 700, z: z + 250, distance: 170, yaw: 0.8, tilt: 0.1 });
+  await snap('rt-ramp', { x: x + 460, z: z + 250, distance: 170, yaw: 0.8, tilt: 0.1 });
   await snap('rt-overview', { x: x + 420, z: z + 120, distance: 700, yaw: 0.5, tilt: 0.3 });
+  // The interface: the road tool's modes, a road's inspector and the traffic map (UI=1).
+  if (process.env.UI) {
+    await page.evaluate(() => window.__game.advance(1440 * 3));
+    await page.evaluate((p) => window.__game.setCamera(p), {
+      x: x + 330,
+      z: z - 40,
+      distance: 260,
+      yaw: 0.4,
+      tilt: 0.2,
+    });
+    await page.evaluate(() => window.__game.waitFrames(2));
+    await page.click('[data-testid=tool-road]');
+    await page.click('[data-testid=mode-roundabout]');
+    await page.screenshot({ path: `${out}/rt-ui-toolbar.png` });
+    await page.click('[data-testid=tool-select]');
+    const pt = await page.evaluate(({ x, z }) => window.__game.worldToScreen(x + 420, z - 120), { x, z });
+    await page.mouse.click(pt.x, pt.y);
+    await page.evaluate(() => window.__game.waitFrames(2));
+    await page.screenshot({ path: `${out}/rt-ui-inspector.png` });
+    await page.evaluate(() => window.__game.setOverlay('traffic'));
+    await page.evaluate(() => window.__game.waitFrames(2));
+    await page.screenshot({ path: `${out}/rt-ui-traffic.png` });
+  }
   if (errors.length) console.log('ERRORS:\n' + errors.join('\n'));
 } finally {
   await browser.close();

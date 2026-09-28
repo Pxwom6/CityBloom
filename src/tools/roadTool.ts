@@ -1,3 +1,4 @@
+import { JUNCTION } from '../data/balance';
 import { ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
 import { mid, type Vec2 } from '../sim/geom';
@@ -37,7 +38,34 @@ export function gradeNotes(info: PreviewInfo | undefined): string[] {
   return out;
 }
 
-export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade';
+export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade' | 'oneway' | 'roundabout';
+
+const MODES: RoadMode[] = ['straight', 'curve', 'free', 'upgrade', 'oneway', 'roundabout'];
+
+/** Compass direction of a heading in the ground plane (−z is north). */
+export function compass(dx: number, dz: number): string {
+  const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+  const k = Math.round(Math.atan2(dz, dx) / (Math.PI / 4));
+  return names[(k + 8) % 8]!;
+}
+
+/** Four quadratic pieces round a circle (the ghost of a roundabout's ring). */
+function ringPieces(c: Vec2, r: number): { a: Vec2; c: Vec2; b: Vec2 }[] {
+  const out: { a: Vec2; c: Vec2; b: Vec2 }[] = [];
+  const n = 8;
+  for (let k = 0; k < n; k++) {
+    const a0 = (Math.PI * 2 * k) / n;
+    const a1 = (Math.PI * 2 * (k + 1)) / n;
+    const am = (a0 + a1) / 2;
+    const rc = r / Math.cos(Math.PI / n);
+    out.push({
+      a: { x: c.x + Math.cos(a0) * r, z: c.z + Math.sin(a0) * r },
+      c: { x: c.x + Math.cos(am) * rc, z: c.z + Math.sin(am) * rc },
+      b: { x: c.x + Math.cos(a1) * r, z: c.z + Math.sin(a1) * r },
+    });
+  }
+  return out;
+}
 
 /**
  * Road drawing. Straight: drag or click–click (chains from the last end). Curve: click start,
@@ -51,6 +79,11 @@ export class RoadTool implements Tool {
   type: RoadTypeId = 'street';
   mode: RoadMode = 'straight';
   grid = false;
+  /** New roads are one-way, in the direction they're drawn (M19; ramps always are). */
+  oneWay = false;
+  /** Roundabout mode: where the ring goes, and its radius while it's being dragged out. */
+  private ring: { node?: number; at?: Vec2; centre: Vec2; radius?: number } | null = null;
+  private ringDrag = false;
   private start: SnapResult | null = null;
   private control: Vec2 | null = null;
   private cursor: SnapResult | null = null;
@@ -82,6 +115,8 @@ export class RoadTool implements Tool {
 
   private reset(): void {
     this.hoverSeg = null;
+    this.ring = null;
+    this.ringDrag = false;
     this.game.renderer.ghost.highlightSegment(null, 0);
     this.start = null;
     this.control = null;
@@ -112,15 +147,44 @@ export class RoadTool implements Tool {
     const c = this.cursor;
     if (this.mode === 'upgrade')
       return this.hoverSeg !== null ? { type: 'upgradeRoad', seg: this.hoverSeg, road: this.type } : null;
+    if (this.mode === 'oneway') {
+      const seg = this.hoverSeg !== null ? this.game.world.netState.segments.get(this.hoverSeg) : undefined;
+      return seg ? { type: 'setOneWay', seg: seg.id, dir: this.nextDir(seg.oneway ?? 0, seg.type) } : null;
+    }
+    if (this.mode === 'roundabout') {
+      const r = this.ring;
+      if (!r) return null;
+      return {
+        type: 'roundabout',
+        ...(r.node !== undefined ? { node: r.node } : { at: r.at! }),
+        ...(r.radius !== undefined ? { radius: r.radius } : {}),
+      };
+    }
+    const way = this.oneWay && !ROAD_TYPES[this.type].oneWay ? { oneway: true } : {};
     if (this.mode === 'free') {
       if (this.freePath.length < 2) return null;
-      return { type: 'buildRoad', road: this.type, points: fitFreeform(this.freePath) };
+      return { type: 'buildRoad', road: this.type, points: fitFreeform(this.freePath), ...way };
     }
     if (!this.start || !c) return null;
     if (Math.hypot(c.x - this.start.x, c.z - this.start.z) < 1) return null;
     if (this.mode === 'curve' && this.control)
-      return { type: 'buildRoad', road: this.type, points: [this.start, this.control, c] };
-    return { type: 'buildRoad', road: this.type, points: [this.start, c] };
+      return { type: 'buildRoad', road: this.type, points: [this.start, this.control, c], ...way };
+    return { type: 'buildRoad', road: this.type, points: [this.start, c], ...way };
+  }
+
+  /** One-way mode cycles two-way → one way → the other way → two-way (ramps skip two-way). */
+  private nextDir(cur: number, type: RoadTypeId): 0 | 1 | -1 {
+    if (ROAD_TYPES[type].oneWay) return cur === 1 ? -1 : 1;
+    return cur === 0 ? 1 : cur === 1 ? -1 : 0;
+  }
+
+  /** Where a roundabout would go under the cursor: a junction, or a point on a road. */
+  private ringSite(p: Vec2): { node?: number; at?: Vec2; centre: Vec2 } | null {
+    const net = this.game.world.net;
+    const n = net.nearestNode(p, 14);
+    if (n) return { node: n.id, centre: { x: n.x, z: n.z } };
+    const hit = net.nearestSegment(p, 10, (id) => ROAD_TYPES[net.segment(id).type].access);
+    return hit ? { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } } : null;
   }
 
   private requestPreview(cmd: Command | null): void {
@@ -178,9 +242,84 @@ export class RoadTool implements Tool {
     else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
   }
 
+  private drawOneWay(): void {
+    const g = this.game.renderer.ghost;
+    g.showRoad(null, this.type, 'ok');
+    const id = this.hoverSeg;
+    const w = this.game.world;
+    const seg = id !== null ? w.netState.segments.get(id) : undefined;
+    if (!seg) {
+      g.highlightSegment(null, 0);
+      g.showMarker(null);
+      this.game.setHint({
+        ...this.pointer,
+        text: 'Click a road to make it one-way, then click again to turn it round',
+        tone: 'info',
+      });
+      return;
+    }
+    const res = this.lastResult?.res;
+    const curve = w.net.curve(seg.id);
+    g.highlightSegment(
+      curve,
+      ROAD_TYPES[seg.type].width / 2 + ROAD_TYPES[seg.type].sidewalk,
+      res && !res.ok ? 'bad' : 'ok',
+    );
+    g.showMarker(null);
+    const next = this.nextDir(seg.oneway ?? 0, seg.type);
+    const a = w.net.node(seg.a);
+    const b = w.net.node(seg.b);
+    const heading = (d: number) => compass((b.x - a.x) * d, (b.z - a.z) * d);
+    const now = seg.oneway ? `one-way ${heading(seg.oneway)}` : 'two-way';
+    const then = next ? `one-way ${heading(next)}` : 'two-way';
+    if (res && !res.ok) this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
+    else this.game.setHint({ ...this.pointer, text: `${now} → ${then} · free`, tone: 'ok' });
+  }
+
+  private drawRoundabout(): void {
+    const g = this.game.renderer.ghost;
+    g.highlightSegment(null, 0);
+    const r = this.ring;
+    if (!r) {
+      g.showRoad(null, 'street', 'ok');
+      g.showMarker(null);
+      this.game.setHint({
+        ...this.pointer,
+        text: 'Click a junction or a road for a roundabout; drag out to size the ring',
+        tone: 'info',
+      });
+      return;
+    }
+    const res = this.lastResult?.res;
+    const info = (res?.info ?? {}) as { radius?: number; demolish?: number };
+    const radius = info.radius ?? r.radius ?? JUNCTION.minRadius + 2;
+    g.showRoad(ringPieces(r.centre, radius), 'street', !res ? 'pending' : res.ok ? 'ok' : 'bad');
+    g.showMarker(res && !res.ok && res.at ? res.at : null);
+    if (!res) this.game.setHint({ ...this.pointer, text: 'Roundabout', tone: 'info' });
+    else if (res.ok)
+      this.game.setHint({
+        ...this.pointer,
+        text: [
+          `Roundabout · $${res.cost.toLocaleString('en-US')}`,
+          `${Math.round(radius * 2)} m across`,
+          ...(info.demolish ? [`replaces ${info.demolish} building${info.demolish === 1 ? '' : 's'}`] : []),
+        ].join(' · '),
+        tone: 'ok',
+      });
+    else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
+  }
+
   private drawGhost(): void {
     if (this.mode === 'upgrade') {
       this.drawUpgrade();
+      return;
+    }
+    if (this.mode === 'oneway') {
+      this.drawOneWay();
+      return;
+    }
+    if (this.mode === 'roundabout') {
+      this.drawRoundabout();
       return;
     }
     const g = this.game.renderer.ghost;
@@ -220,12 +359,22 @@ export class RoadTool implements Tool {
       this.game.setHint({
         x: this.pointer.x,
         y: this.pointer.y,
-        text: [`$${res.cost.toLocaleString('en-US')} · ${Math.round(len)} m`, ...gradeNotes(info)].join(
-          ' · ',
-        ),
+        text: [
+          `$${res.cost.toLocaleString('en-US')} · ${Math.round(len)} m`,
+          ...this.wayNotes(pieces),
+          ...gradeNotes(info),
+        ].join(' · '),
         tone: 'ok',
       });
     else this.game.setHint({ x: this.pointer.x, y: this.pointer.y, text: res.reason, tone: 'bad' });
+  }
+
+  /** One-way roads and ramps say which way they'll run (M19). */
+  private wayNotes(pieces: { a: Vec2; b: Vec2 }[]): string[] {
+    if (!this.oneWay && !ROAD_TYPES[this.type].oneWay) return [];
+    const a = pieces[0]!.a;
+    const b = pieces[pieces.length - 1]!.b;
+    return [`one-way ${compass(b.x - a.x, b.z - a.z)}`];
   }
 
   private hintIdle(): void {
@@ -242,10 +391,11 @@ export class RoadTool implements Tool {
           : this.start
             ? 'Click or release to place'
             : 'Click or drag to draw';
+    const way = this.oneWay && !rt.oneWay ? ' · one-way (O)' : rt.oneWay ? ' · one-way, as drawn' : '';
     this.game.setHint({
       x: this.pointer.x,
       y: this.pointer.y,
-      text: `${rt.name} · $${rt.costPerMetre}/m — ${what}`,
+      text: `${rt.name}${way} · $${rt.costPerMetre}/m — ${what}`,
       tone: 'info',
     });
   }
@@ -256,6 +406,31 @@ export class RoadTool implements Tool {
     this.game.renderer.ghost.showSnap(
       this.cursor && (this.cursor.kind === 'node' || this.cursor.kind === 'segment') ? this.cursor : null,
     );
+  }
+
+  /** One-way switch or roundabout (M19). */
+  private async commitEdit(): Promise<void> {
+    const cmd = this.currentCommand();
+    if (!cmd || (cmd.type !== 'setOneWay' && cmd.type !== 'roundabout')) return;
+    const res = await this.game.dispatch(cmd);
+    if (res.ok) {
+      this.game.audio?.play('build');
+      if (cmd.type === 'roundabout') {
+        this.game.toast('Roundabout built', 'ok', 2000);
+        this.ring = null;
+      }
+      this.lastResult = null;
+    } else {
+      this.game.audio?.play('error');
+      this.lastResult = { seq: this.previewSeq, res };
+      if (cmd.type === 'roundabout')
+        this.game.toast(
+          `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
+          'bad',
+          3000,
+        );
+    }
+    this.refresh();
   }
 
   private async commitUpgrade(): Promise<void> {
@@ -308,6 +483,18 @@ export class RoadTool implements Tool {
       void this.commitUpgrade();
       return;
     }
+    if (this.mode === 'oneway') {
+      void this.commitEdit();
+      return;
+    }
+    if (this.mode === 'roundabout') {
+      const site = this.ringSite(p.ground);
+      this.ring = site;
+      this.ringDrag = !!site;
+      this.lastResult = null;
+      this.refresh();
+      return;
+    }
     if (this.mode === 'free') {
       const s = this.snap(p.ground, null);
       this.freePath = [s];
@@ -334,7 +521,34 @@ export class RoadTool implements Tool {
   pointerMove(p: ToolPointer): void {
     this.pointer = { x: p.clientX, y: p.clientY };
     if (!p.ground) return;
-    if (this.mode === 'upgrade') {
+    if (this.mode === 'roundabout') {
+      if (this.ringDrag && this.ring) {
+        // Dragging out from the middle draws the ring at that size.
+        const d = Math.hypot(p.ground.x - this.ring.centre.x, p.ground.z - this.ring.centre.z);
+        const radius =
+          d > 8 ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.minRadius, d))) : undefined;
+        if (radius !== this.ring.radius) {
+          this.ring = { ...this.ring, ...(radius !== undefined ? { radius } : {}) };
+          if (radius === undefined) delete this.ring.radius;
+          this.lastResult = null;
+        }
+      } else {
+        const site = this.ringSite(p.ground);
+        const same =
+          site &&
+          this.ring &&
+          site.node === this.ring.node &&
+          site.at?.x === this.ring.at?.x &&
+          site.at?.z === this.ring.at?.z;
+        if (!same) {
+          this.ring = site;
+          this.lastResult = null;
+        }
+      }
+      this.refresh();
+      return;
+    }
+    if (this.mode === 'upgrade' || this.mode === 'oneway') {
       const net = this.game.world.net;
       const hit = net.nearestSegment(p.ground, 14, (id) => ROAD_TYPES[net.segment(id).type].buildable);
       const id = hit ? hit.seg : null;
@@ -361,6 +575,11 @@ export class RoadTool implements Tool {
   pointerUp(p: ToolPointer): void {
     if (p.button !== 0) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    if (this.mode === 'roundabout' && this.ringDrag) {
+      this.ringDrag = false;
+      void this.commitEdit();
+      return;
+    }
     if (this.mode === 'free' && this.dragging) {
       this.dragging = false;
       if (p.ground) {
@@ -384,15 +603,14 @@ export class RoadTool implements Tool {
       return true;
     }
     if (e.code === 'Tab') {
-      this.mode =
-        this.mode === 'straight'
-          ? 'curve'
-          : this.mode === 'curve'
-            ? 'free'
-            : this.mode === 'free'
-              ? 'upgrade'
-              : 'straight';
+      this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]!;
       this.reset();
+      this.game.notify();
+      return true;
+    }
+    if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.oneWay = !this.oneWay;
+      this.refresh();
       this.game.notify();
       return true;
     }

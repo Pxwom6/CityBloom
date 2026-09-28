@@ -258,7 +258,7 @@ export class GameRenderer {
   pick(
     clientX: number,
     clientY: number,
-  ): { kind: 'building' | 'civic' | 'car' | 'walker'; id: number } | null {
+  ): { kind: 'building' | 'civic' | 'car' | 'walker' | 'road'; id: number } | null {
     const ground = this.controller.screenToGround(clientX, clientY);
     if (ground) {
       const walker = this.pedestrians.walkerAt(ground.x, ground.z, 1.4);
@@ -280,6 +280,12 @@ export class GameRenderer {
       const b = this.world.buildingAt(x, z, -0.5);
       if (b && y <= b.y + (this.buildings.heights.get(b.id) ?? 5) + 0.5)
         return { kind: 'building', id: b.id };
+    }
+    // Roads (M19): the one under the cursor, for its traffic and one-way and junction controls.
+    if (ground) {
+      const net = this.world.net;
+      const hit = net.nearestSegment(ground, 20);
+      if (hit && hit.d <= net.halfWidth(hit.seg) + 1) return { kind: 'road', id: hit.seg };
     }
     return null;
   }

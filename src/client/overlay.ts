@@ -1,9 +1,10 @@
+import type { JunctionTint, RoadTintPiece } from '../render/roadTint';
 import { Color } from 'three';
 import type { Game } from '../game';
 import type { OverlayMap, OverlayResult } from '../sim/systems/overlays';
 import { SERVICE_KINDS, type ServiceKind } from '../data/civic';
 import { ROAD_TYPES } from '../data/roads';
-import { TRAFFIC } from '../data/balance';
+import { JUNCTION, TRAFFIC } from '../data/balance';
 import { hourOfDay } from '../sim/time';
 
 /** Colour ramps for data maps (see the data-viz reference palette). */
@@ -120,7 +121,7 @@ export class OverlayController {
     const key = `traffic:${w.trafficVersion}:${share}`;
     if (key === this.roadsKey) return;
     this.roadsKey = key;
-    const list = [];
+    const list: RoadTintPiece[] = [];
     for (const seg of w.netState.segments.values()) {
       if (seg.type === 'highway') continue;
       const vc = w.segVC(seg.id, share);
@@ -128,9 +129,22 @@ export class OverlayController {
         curve: w.net.curve(seg.id),
         v: [Math.min(1, vc / 1.5), Math.min(1, vc / 1.5)],
         half: ROAD_TYPES[seg.type].width / 2 + 0.5,
+        // Flyovers are tinted on their decks; one-way roads and ramps show which way they run (M19).
+        ...(seg.deck ? { surface: (s: number, x: number, z: number) => w.roadHeight(seg.id, s, x, z) } : {}),
+        ...(seg.oneway ? { dir: seg.oneway } : {}),
       });
     }
-    this.game.renderer.coverageMap.show(list, 'traffic');
+    // Junctions shaded by their own load, and roundabouts by theirs (M19).
+    const junctions: JunctionTint[] = [];
+    for (const node of w.netState.nodes.values()) {
+      const kind = w.junctionKind(node.id);
+      if (kind === 'none') continue;
+      const vc = w.junctionVC(node.id, share);
+      const widest = Math.max(...w.net.segmentsAt(node.id).map((id) => w.net.halfWidth(id)));
+      const r = kind === 'roundabout' ? node.roundabout! + JUNCTION.ringWidth / 2 + 1 : widest + 3;
+      junctions.push({ x: node.x, z: node.z, r, v: Math.min(1, vc / 1.5) });
+    }
+    this.game.renderer.coverageMap.show(list, 'traffic', junctions);
   }
 
   /** Service maps also tint the roads themselves, so coverage visibly follows them. */

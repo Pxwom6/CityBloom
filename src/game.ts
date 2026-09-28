@@ -80,7 +80,7 @@ export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
-  kind: 'building' | 'civic' | 'car' | 'walker';
+  kind: 'building' | 'civic' | 'car' | 'walker' | 'road';
   id: number;
 }
 
@@ -231,12 +231,27 @@ export class Game {
     const line = sel?.kind === 'civic' ? this.world.lines.find((l) => l.depot === sel.id) : undefined;
     const legs = car?.legs ?? line?.legs;
     const net = this.world.net;
+    const road = sel?.kind === 'road' ? this.world.netState.segments.get(sel.id) : undefined;
     this.renderer.routeTint.show(
       legs
         ? [...new Set(legs.map((l) => l.seg))]
             .filter((id) => this.world.netState.segments.has(id))
-            .map((id) => ({ curve: net.curve(id), v: [1, 1], half: 2.5 }))
-        : null,
+            .map((id) => ({
+              curve: net.curve(id),
+              v: [1, 1],
+              half: 2.5,
+              surface: (s: number, x: number, z: number) => this.world.roadHeight(id, s, x, z),
+            }))
+        : road
+          ? [
+              {
+                curve: net.curve(road.id),
+                v: [1, 1],
+                half: net.halfWidth(road.id),
+                surface: (s: number, x: number, z: number) => this.world.roadHeight(road.id, s, x, z),
+              },
+            ]
+          : null,
     );
     if (sel?.kind === 'building') {
       const b = this.world.buildings.get(sel.id);

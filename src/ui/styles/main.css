@@ -236,6 +236,10 @@ body {
 }
 .subbar {
   border-radius: var(--radius-md);
+  /* Many options (the road tool's types and modes, M19) wrap onto a second row. */
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 2 * var(--space-3));
 }
 .toolbar .sep,
 .subbar .sep {
@@ -2592,4 +2596,35 @@ body {
 #ui[data-width='s'] .scenarios-body,
 #ui[data-width='xs'] .scenarios-body {
   grid-template-columns: 1fr;
+}
+
+/* Roads in the inspector (M19): which way it runs, and the junctions at its ends */
+.road-way,
+.road-ends {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.road-way h3,
+.road-ends h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.road-way p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+}
+.seg-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.road-ends .btn {
+  flex: none;
+}
+.road-ends .neg {
+  color: var(--color-negative);
+}
+.legend-note {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
 }

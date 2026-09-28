@@ -45,6 +45,9 @@ import {
   IconMeteor,
   IconLandmark,
   IconCrate,
+  IconOneWay,
+  IconDrawOneWay,
+  IconRoundabout,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
 import { modKey } from '../client/platform';
@@ -179,8 +182,10 @@ export function Toolbar() {
                   title: rt.name,
                   lines: [
                     `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
-                    `${rt.lanes} lanes · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
-                    `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`,
+                    `${rt.lanes} lane${rt.lanes === 1 ? '' : 's'} · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
+                    rt.access
+                      ? `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`
+                      : 'No zoning or buildings along it',
                     `Climbs up to ${Math.round(rt.maxGrade * 100)}\u00a0%: steeper ground is cut and filled (earthworks cost extra)`,
                     rt.blurb,
                     ...(locked
@@ -194,7 +199,9 @@ export function Toolbar() {
                 ) : (
                   <span class="road-swatch" style={{ background: ROAD_ICON_COLOURS[id] }} />
                 )}
-                <span class="tool-label">{rt.name.replace(' road', '')}</span>
+                <span class="tool-label">
+                  {rt.name.replace(' road', '').replace('City highway', 'Highway')}
+                </span>
               </ToolButton>
             );
           })}
@@ -215,6 +222,18 @@ export function Toolbar() {
                 'Upgrade',
                 'Click a road to change it to the selected type. Buildings along it stay where they can; a gentler type may need its slope regraded.',
               ],
+              [
+                'oneway',
+                IconOneWay,
+                'One-way',
+                'Click a road to make it one-way; click again to turn it round, and again for two-way. Free. One-way roads carry a quarter more traffic, but trips may have to go round.',
+              ],
+              [
+                'roundabout',
+                IconRoundabout,
+                'Roundabout',
+                'Click a junction (or a road) for a roundabout; drag out to size the ring. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
+              ],
             ] as [RoadMode, typeof IconCurve, string, string][]
           ).map(([m, Icon, name, how]) => (
             <ToolButton
@@ -227,6 +246,21 @@ export function Toolbar() {
               <Icon />
             </ToolButton>
           ))}
+          <ToolButton
+            id="draw-oneway"
+            active={tools.road.oneWay}
+            onClick={() => {
+              tools.road.oneWay = !tools.road.oneWay;
+              game.notify();
+            }}
+            tip={{
+              title: 'Draw one-way',
+              lines: ['New roads run one-way, in the direction you draw them. Ramps always do.'],
+              key: 'O',
+            }}
+          >
+            <IconDrawOneWay />
+          </ToolButton>
           <ToolButton
             id="grid-snap"
             active={tools.road.grid}
@@ -668,6 +702,11 @@ export function MapLegend() {
         <span>{res.legend[0]}</span>
         <span>{res.legend[1]}</span>
       </div>
+      {game.overlay.active === 'traffic' && (
+        <div class="legend-note muted" data-testid="traffic-legend-note">
+          Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
+        </div>
+      )}
     </div>
   );
 }

@@ -93,6 +93,34 @@ export function CityPanel() {
             {POLICIES.map((p) => {
               const on = st.policies.includes(p.id);
               const locked = !st.unlockAll && st.peak < p.unlockPopulation;
+              if (p.scope === 'district') {
+                // District-only policies (M21) are set in the Districts panel; say where they're on.
+                const where = [...game.world.districts.values()]
+                  .filter((d) => d.policies.includes(p.id))
+                  .map((d) => d.name);
+                return (
+                  <li
+                    key={p.id}
+                    class={`policy ${where.length ? 'on' : ''} ${locked ? 'locked' : ''}`}
+                    data-testid={`policy-${p.id}`}
+                  >
+                    <div class="policy-row">
+                      <span class="policy-name">
+                        {p.name}
+                        <span class="badge">District</span>
+                      </span>
+                      <span class="policy-cost">Per district</span>
+                    </div>
+                    <div class="policy-effect">
+                      {locked ? `Unlocks at ${p.unlockPopulation.toLocaleString('en-US')} residents. ` : ''}
+                      {p.effect}{' '}
+                      {where.length
+                        ? `On in ${where.join(', ')}.`
+                        : 'Set it on a district in the Districts panel (I).'}
+                    </div>
+                  </li>
+                );
+              }
               return (
                 <li key={p.id} class={`policy ${on ? 'on' : ''} ${locked ? 'locked' : ''}`}>
                   <label>

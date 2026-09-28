@@ -2062,6 +2062,14 @@ body {
 .policy input {
   accent-color: var(--color-accent);
 }
+/* A district-only policy in the city list (M21): no checkbox, lined up with the names above it. */
+.policy-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: 1.7rem;
+}
 .policy-name {
   font-weight: var(--font-weight-bold);
 }

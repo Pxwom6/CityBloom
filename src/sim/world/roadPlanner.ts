@@ -730,6 +730,7 @@ export function applyRoadPlan(
         layouts: { left: blockLayout(seg.left), right: blockLayout(seg.right) },
         ...(seg.deck ? { deck: seg.deck.slice() } : {}),
         ...(seg.oneway ? { oneway: seg.oneway } : {}),
+        ...(seg.tram ? { tram: true as const } : {}),
       };
       const r = net.splitSegment(cur, sp.s);
       result.splits.push({ original, node: r.node.id, first: r.first.id, second: r.second.id });

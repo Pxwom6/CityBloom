@@ -1,6 +1,7 @@
 import { specialisationIncome } from './specialisations';
 import { POLICY, policyCost, type PolicyId } from '../../data/policies';
 import { ROAD_TYPES } from '../../data/roads';
+import { TRAM } from '../../data/balance';
 import {
   BANKRUPTCY,
   DEPTS,
@@ -117,7 +118,7 @@ export function monthlyRates(sim: Sim): Record<string, number> {
   let roadUpkeep = 0;
   for (const seg of s.net.segments.values()) {
     const perMetre = ROAD_TYPES[seg.type].upkeepPerMetre;
-    roadUpkeep += sim.net.curve(seg.id).length * perMetre;
+    roadUpkeep += sim.net.curve(seg.id).length * (perMetre + (seg.tram ? TRAM.trackUpkeep : 0));
     const deck = sim.deck(seg.id);
     if (deck) roadUpkeep += deck.overWater * perMetre * (BRIDGE.upkeepFactor - 1);
   }

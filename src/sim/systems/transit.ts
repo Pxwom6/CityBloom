@@ -1,4 +1,4 @@
-import { RAIL, TRAFFIC, TRANSIT } from '../../data/balance';
+import { RAIL, TRAFFIC, TRAM, TRANSIT } from '../../data/balance';
 import { ROAD_TYPES } from '../../data/roads';
 import { fail, ok, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
@@ -17,6 +17,8 @@ export interface BusStop {
   z: number;
   seg: number;
   s: number;
+  /** A tram stop (M20), on a road with tram track; bus stops otherwise. */
+  tram?: true;
 }
 
 export interface TransitState {
@@ -32,9 +34,9 @@ export function emptyTransit(): TransitState {
 }
 
 export interface BusLine {
-  /** Buses from a depot, or trains between stations (M20). */
-  mode: 'bus' | 'train';
-  /** The depot (buses), or the station at one end of the line (trains). */
+  /** Buses or trams (M20) from a depot, or trains between stations (M20). */
+  mode: 'bus' | 'tram' | 'train';
+  /** The depot (buses, trams), or the station at one end of the line (trains). */
   depot: number;
   /** Stop ids in the order the buses visit them (station ids for trains). */
   stops: number[];
@@ -58,20 +60,43 @@ export interface BusLine {
 
 const SNAP = 14;
 
-function snapToRoad(sim: Sim, x: number, z: number): { seg: number; s: number; x: number; z: number } | null {
-  const hit = sim.net.nearestSegment({ x, z }, SNAP, (id) => ROAD_TYPES[sim.net.segment(id).type].access);
+/** The nearest road a stop can go on: any local road for buses, one with tram track for trams. */
+function snapToRoad(
+  sim: Sim,
+  x: number,
+  z: number,
+  tram: boolean,
+): { seg: number; s: number; x: number; z: number } | null {
+  const hit = sim.net.nearestSegment({ x, z }, SNAP, (id) => {
+    const seg = sim.net.segment(id);
+    return tram ? !!seg.tram : ROAD_TYPES[seg.type].access;
+  });
   return hit ? { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z } : null;
 }
 
-export function placeStop(sim: Sim, x: number, z: number, dryRun: boolean): CommandResult {
+export function placeStop(sim: Sim, x: number, z: number, dryRun: boolean, tram = false): CommandResult {
   const s = sim.state;
-  const at = snapToRoad(sim, x, z);
-  if (!at) return fail('Bus stops go beside a road', { at: { x, z } });
+  const at = snapToRoad(sim, x, z, tram);
+  if (!at)
+    return fail(tram ? 'Tram stops go on a road with tram track' : 'Bus stops go beside a road', {
+      at: { x, z },
+    });
+  if (tram && !sim.isUnlocked(TRAM.unlockPopulation))
+    return fail(`Trams unlock at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`, { at });
+  // A tram stop can stand beside a bus stop (people change there), not beside another tram stop.
   for (const st of s.transit.stops.values())
-    if (Math.hypot(st.x - at.x, st.z - at.z) < 40) return fail('Too close to another stop', { at });
+    if (!!st.tram === tram && Math.hypot(st.x - at.x, st.z - at.z) < 40)
+      return fail('Too close to another stop', { at });
   if (TRANSIT.stopCost > s.treasury && !s.options.sandbox) return fail('Not enough money', { at });
   if (dryRun) return ok(TRANSIT.stopCost, { info: { x: at.x, z: at.z, seg: at.seg } });
-  const stop: BusStop = { id: s.nextId++, x: at.x, z: at.z, seg: at.seg, s: at.s };
+  const stop: BusStop = {
+    id: s.nextId++,
+    x: at.x,
+    z: at.z,
+    seg: at.seg,
+    s: at.s,
+    ...(tram ? { tram: true } : {}),
+  };
   s.transit.stops.set(stop.id, stop);
   sim.spend(TRANSIT.stopCost, 'transit');
   sim.transitChanged();
@@ -89,15 +114,16 @@ export function removeStop(sim: Sim, id: number, dryRun: boolean, refundShare = 
   return ok(-refund, { info: { refund } });
 }
 
-/** After the road network changes, stops follow their road or go if it's gone. */
+/** After the road network changes, stops follow their road (tram stops, its track) or go if it's gone. */
 export function relocateStops(sim: Sim): boolean {
   let changed = false;
   for (const st of [...sim.state.transit.stops.values()].sort((a, b) => a.id - b.id)) {
-    if (sim.state.net.segments.has(st.seg)) {
+    const seg = sim.state.net.segments.get(st.seg);
+    if (seg && (!st.tram || seg.tram)) {
       const p = sim.net.curve(st.seg).project({ x: st.x, z: st.z });
       if (p.d < 1) continue;
     }
-    const at = snapToRoad(sim, st.x, st.z);
+    const at = snapToRoad(sim, st.x, st.z, !!st.tram);
     if (!at) sim.state.transit.stops.delete(st.id);
     else Object.assign(st, at);
     changed = true;
@@ -105,8 +131,10 @@ export function relocateStops(sim: Sim): boolean {
   return changed;
 }
 
-/** Seconds to drive a leg at rush-hour speeds. */
-function legSeconds(sim: Sim, l: Leg, peak: Float64Array): number {
+/**
+ * Seconds to drive a leg at rush-hour speeds; trams (M20) feel `share` of the road's congestion delay.
+ */
+function legSeconds(sim: Sim, l: Leg, peak: Float64Array, share = 1): number {
   const g = sim.graph();
   const seg = sim.state.net.segments.get(l.seg);
   if (!seg) return 0;
@@ -120,33 +148,44 @@ function legSeconds(sim: Sim, l: Leg, peak: Float64Array): number {
       ratio = peak[k]! / Math.max(1e-6, g.cost[k]!);
       break;
     }
-  return (Math.abs(l.s1 - l.s0) / Math.max(1e-6, len)) * free * ratio;
+  return (Math.abs(l.s1 - l.s0) / Math.max(1e-6, len)) * free * (1 + (ratio - 1) * share);
+}
+
+/** Every bus, tram (M20) and train (M20) line. A pure function of the network, depots, stops, funding and traffic. */
+export function computeLines(sim: Sim): BusLine[] {
+  return [...loopLines(sim, 'bus'), ...loopLines(sim, 'tram'), ...trainLines(sim)];
 }
 
 /**
- * Every depot's loop. Stops go to the depot that reaches them soonest; each loop visits its stops
- * nearest-first from the depot. A pure function of roads, depots, stops, funding and traffic.
+ * Every bus or tram depot's loop. Stops go to the depot that reaches them soonest; each loop visits
+ * its stops nearest-first from the depot. Buses drive any road; trams keep to their track.
  */
-export function computeLines(sim: Sim): BusLine[] {
+function loopLines(sim: Sim, mode: 'bus' | 'tram'): BusLine[] {
   const s = sim.state;
-  const g = sim.graph();
-  const peak = sim.peakCosts();
+  const tram = mode === 'tram';
   const depots = [...s.civics.values()]
-    .filter((c) => civicDef(c).transit && c.access && civicOnline(c))
+    .filter((c) => (tram ? civicDef(c).tram : civicDef(c).transit) && c.access && civicOnline(c))
+    // Trams leave the depot along the tracked road it faces.
+    .filter((c) => !tram || !!s.net.segments.get(c.access!.seg)?.tram)
     .sort((a, b) => a.id - b.id);
-  // Trains run without depots or bus stops (M20).
-  if (!depots.length || s.transit.stops.size < 2) return trainLines(sim);
+  const stops = [...s.transit.stops.values()].filter((st) => !!st.tram === tram).sort((a, b) => a.id - b.id);
+  if (!depots.length || stops.length < 2) return [];
+  const g = tram ? sim.tramGraph() : sim.graph();
+  const peak = sim.peakCosts();
+  const share = tram ? TRAM.trafficShare : 1;
+  const secs = (l: Leg) => legSeconds(sim, l, peak, share);
   const speed = (id: number) => (ROAD_TYPES[sim.net.segment(id).type].speed / 3.6) * 0.999;
+  // Buses pick their way round the rush-hour traffic; trams follow the track.
   const route = (a: { seg: number; s: number }, b: { seg: number; s: number }) =>
-    routeBetween(g, sim.net, a, b, speed, (k) => peak[k]!);
+    tram ? routeBetween(g, sim.net, a, b, speed) : routeBetween(g, sim.net, a, b, speed, (k) => peak[k]!);
   // Assign stops to depots by drive time.
   const byDepot = new Map<number, { stop: BusStop; t: number }[]>();
-  for (const st of [...s.transit.stops.values()].sort((a, b) => a.id - b.id)) {
+  for (const st of stops) {
     let best: { depot: number; t: number } | null = null;
     for (const d of depots) {
       const legs = route(d.access!, { seg: st.seg, s: st.s });
       if (!legs) continue;
-      const t = legs.reduce((sum, l) => sum + legSeconds(sim, l, peak), 0);
+      const t = legs.reduce((sum, l) => sum + secs(l), 0);
       if (!best || t < best.t) best = { depot: d.id, t };
     }
     if (!best) continue;
@@ -154,6 +193,7 @@ export function computeLines(sim: Sim): BusLine[] {
     list.push({ stop: st, t: best.t });
     byDepot.set(best.depot, list);
   }
+  const dwell = tram ? TRAM.dwell : TRANSIT.dwell;
   const lines: BusLine[] = [];
   for (const d of depots) {
     const list = byDepot.get(d.id);
@@ -189,18 +229,21 @@ export function computeLines(sim: Sim): BusLine[] {
       }
       for (const l of part) {
         legs.push(l);
-        t += legSeconds(sim, l, peak);
+        t += secs(l);
       }
       if (i < order.length) {
         stopTime.push(t);
-        t += TRANSIT.dwell;
+        t += dwell;
       }
     }
     if (!okLine || t <= 0) continue;
-    const def = civicDef(d).transit!;
-    const buses = Math.max(1, Math.round(civicBuses(d) * Math.min(1.25, sim.fundingEff('transit'))));
+    const def = civicDef(d);
+    const fleet = tram ? def.tram!.trams : civicBuses(d);
+    const funded = Math.max(1, Math.round(fleet * Math.min(1.25, sim.fundingEff('transit'))));
+    const buses = tram ? Math.max(1, Math.min(funded, Math.floor(t / TRAM.minHeadway))) : funded;
+    const seats = tram ? def.tram!.capacity : def.transit!.capacity;
     lines.push({
-      mode: 'bus',
+      mode,
       shuttle: false,
       depot: d.id,
       stops: order.map((st) => st.id),
@@ -210,10 +253,9 @@ export function computeLines(sim: Sim): BusLine[] {
       loopTime: t,
       buses,
       headway: t / buses,
-      capacityPerHour: (buses * def.capacity * 3600) / t,
+      capacityPerHour: (buses * seats * 3600) / t,
     });
   }
-  lines.push(...trainLines(sim));
   return lines;
 }
 
@@ -303,8 +345,10 @@ export function stopsNearNodes(
   const g = sim.graph();
   const out = new Map<number, { line: number; stop: number; walk: number }[]>();
   lines.forEach((line, li) => {
-    // People walk further to a train (M20).
-    const reach = TRANSIT.walkRadius * (line.mode === 'train' ? RAIL.walkFactor : 1);
+    // People walk further to a train or a tram (M20).
+    const reach =
+      TRANSIT.walkRadius *
+      (line.mode === 'train' ? RAIL.walkFactor : line.mode === 'tram' ? TRAM.walkFactor : 1);
     line.stopPos.forEach((st, si) => {
       for (let n = 0; n < g.size; n++) {
         const node = sim.state.net.nodes.get(g.ids[n]!)!;
@@ -337,7 +381,7 @@ export function busTime(
       const ride = line.shuttle
         ? Math.abs(line.stopTime[y.stop]! - line.stopTime[x.stop]!)
         : (line.stopTime[y.stop]! - line.stopTime[x.stop]! + line.loopTime) % line.loopTime;
-      const comfort = line.mode === 'train' ? RAIL.trainBonus : 0;
+      const comfort = line.mode === 'train' ? RAIL.trainBonus : line.mode === 'tram' ? TRAM.bonus : 0;
       const t = x.walk + line.headway / 2 + ride + y.walk - comfort;
       if (t < best.t) best = { t, line: x.line };
     }
@@ -352,12 +396,15 @@ export function busShare(carSeconds: number, busSeconds: number, load: number): 
   return (TRANSIT.maxShare * load) / (1 + Math.exp(-x));
 }
 
-/** Bus passes a day add a little traffic along each line (buses run all day, not at the peak). */
+/**
+ * Bus and tram passes a day add a little traffic along each line (they run all day, not at the peak);
+ * trains run on their own track.
+ */
 export function busTraffic(lines: BusLine[], add: (seg: number, pcu: number) => void): void {
   for (const line of lines) {
-    if (line.mode !== 'bus') continue;
+    if (line.mode === 'train') continue;
     const passes = (18 * 3600) / line.headway;
-    const pcu = (passes * TRANSIT.busPcu * (1 / 18)) / TRAFFIC.peakShare;
+    const pcu = (passes * (line.mode === 'tram' ? TRAM.pcu : TRANSIT.busPcu) * (1 / 18)) / TRAFFIC.peakShare;
     const segs = new Set(line.legs.map((l) => l.seg));
     for (const seg of [...segs].sort((a, b) => a - b)) add(seg, pcu);
   }

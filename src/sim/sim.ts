@@ -44,6 +44,7 @@ import {
   bulldoze,
   upgradeRoad,
   setOneWay,
+  setTram,
   placeRoundabout,
   removeRoundabout,
 } from './actions/roads';
@@ -579,6 +580,7 @@ export class Sim {
     this.blockedCache = null;
     this.graphCache = null;
     this.railGraphCache = null;
+    this.tramGraphCache = null;
     this.coverageCache = null;
     this.peakCache = null;
     this.transitChanged();
@@ -631,6 +633,14 @@ export class Sim {
     return this.railGraphCache;
   }
 
+  private tramGraphCache: RoadGraph | null = null;
+
+  /** The roads with tram track (M20), which trams route on. */
+  tramGraph(): RoadGraph {
+    if (!this.tramGraphCache) this.tramGraphCache = new RoadGraph(this.net, this.blockedSegments(), 'tram');
+    return this.tramGraphCache;
+  }
+
   /**
    * The network as built, ignoring temporary closures (damaged or flooded roads): whether a place is
    * linked to the highway at all. Routing uses `graph()`, which leaves closed roads out.
@@ -681,6 +691,7 @@ export class Sim {
     this.graphCache = null;
     this.fullGraphCache = null;
     this.railGraphCache = null;
+    this.tramGraphCache = null;
     this.blockedCache = null;
     this.disastersDirty = true;
     // A damaged road that was bulldozed or rebuilt is no longer damaged.
@@ -888,6 +899,8 @@ export class Sim {
         return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
       case 'setOneWay':
         return setOneWay(this, cmd.seg, cmd.dir, dryRun);
+      case 'setTram':
+        return setTram(this, cmd.seg, cmd.on, dryRun);
       case 'roundabout':
         return placeRoundabout(this, { node: cmd.node, x: cmd.at?.x, z: cmd.at?.z }, cmd.radius, dryRun);
       case 'removeRoundabout':
@@ -897,7 +910,7 @@ export class Sim {
       case 'upgradeRoad':
         return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
       case 'placeStop':
-        return placeStop(this, cmd.x, cmd.z, dryRun);
+        return placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
       case 'zone': {
         const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
         return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
@@ -989,6 +1002,7 @@ export class Sim {
         return ZONING_SCOPE;
       case 'buildRoad':
       case 'setOneWay':
+      case 'setTram':
       case 'roundabout':
       case 'removeRoundabout':
       case 'bulldoze':
@@ -1012,7 +1026,9 @@ export class Sim {
       case 'bulldoze':
         return 'bulldozing';
       case 'placeStop':
-        return 'bus stop';
+        return cmd.tram ? 'tram stop' : 'bus stop';
+      case 'setTram':
+        return 'tram track';
       case 'upgradeRoad':
         return 'road change';
       case 'setOneWay':
@@ -1037,7 +1053,7 @@ export class Sim {
     const d = diff(pre, capture(this.state, pre.scope));
     if (!d.changes.length && !d.treasury) return;
     const top = this.history.undo[this.history.undo.length - 1];
-    const stroke = cmd.type === 'zone' ? cmd.stroke : undefined;
+    const stroke = cmd.type === 'zone' || cmd.type === 'setTram' ? cmd.stroke : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
       this.history.undo.push({

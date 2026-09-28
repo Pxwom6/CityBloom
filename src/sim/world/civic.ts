@@ -271,6 +271,9 @@ export function checkPlacement(
   res.access = findAccess(sim, { x, z, angle, side, def: defId });
   if (!res.access)
     return { ...res, reason: def.track === 'rail' ? 'Must face a railway' : 'Must face a road' };
+  // A tram depot's trams leave along the tracked road it faces (M20).
+  if (def.tram && !sim.net.segment(res.access.seg).tram)
+    return { ...res, reason: 'Must face a road with tram track' };
   // A rail freight terminal needs its railway along the back (M20).
   if (def.railFreight && !railSiding(sim, { x, z, angle, side, def: defId }))
     return {

@@ -27,12 +27,13 @@ export class RoadGraph {
 
   /**
    * `blocked` segments (damaged or flooded roads) are left out: nothing can drive along them. The
-   * road graph leaves railways out, and the rail graph (M20) has only them.
+   * road graph leaves railways out, the rail graph (M20) has only them and the tram graph only the
+   * roads with tram track.
    */
   constructor(
     net: Network,
     blocked?: ReadonlySet<number>,
-    readonly kind: 'road' | 'rail' = 'road',
+    readonly kind: 'road' | 'rail' | 'tram' = 'road',
   ) {
     const nodes = [...net.st.nodes.keys()].sort((a, b) => a - b);
     nodes.forEach((id, i) => {
@@ -42,7 +43,9 @@ export class RoadGraph {
     const n = nodes.length;
     const deg = new Int32Array(n);
     const segs = [...net.st.segments.values()]
-      .filter((s) => !blocked?.has(s.id) && isRail(s.type) === (kind === 'rail'))
+      .filter(
+        (s) => !blocked?.has(s.id) && (kind === 'tram' ? !!s.tram : isRail(s.type) === (kind === 'rail')),
+      )
       .sort((a, b) => a.id - b.id);
     for (const s of segs) {
       deg[this.index.get(s.a)!]!++;

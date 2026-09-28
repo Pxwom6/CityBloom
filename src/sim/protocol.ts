@@ -249,6 +249,8 @@ export interface SegmentData {
   deck?: number[];
   /** One-way direction (M19), see RoadSegment.oneway. */
   oneway?: 1 | -1;
+  /** Tram track (M20). */
+  tram?: true;
 }
 export interface BlockData {
   id: number;
@@ -363,8 +365,8 @@ export interface TrafficData {
 export interface TransitData {
   stops: BusStop[];
   lines: {
-    /** Buses or trains (M20). */
-    mode: 'bus' | 'train';
+    /** Buses, trams or trains (M20). */
+    mode: 'bus' | 'tram' | 'train';
     shuttle: boolean;
     depot: number;
     stops: number[];

@@ -584,6 +584,40 @@ export function buildCivicModel(
       }
       break;
     }
+    case 'tramdepot': {
+      // A tram depot (M20): a long brick shed with three bays open to the road, tracks running out
+      // of them across the forecourt, a tram nosing out of the middle bay and a small office.
+      base(m, W, D, PAVING);
+      const zf = -D / 2;
+      const z0 = zf + 8;
+      m.box(-W / 2 + 2, W / 4 + 2, 0, 8, z0, D / 2 - 1.5, BRICK);
+      m.gable(-W / 2 + 2, W / 4 + 2, z0, D / 2 - 1.5, 8, 2.5, ROOF_GREY, BRICK, true);
+      const bays = [-W / 2 + 5, -W / 2 + 14, -W / 2 + 23];
+      for (const x of bays) {
+        m.box(x, x + 6, 0, 5.8, z0 - 0.05, z0 + 0.02, C('#2f3439'));
+        m.box(x - 0.4, x + 6.4, 5.8, 6.4, z0 - 0.2, z0 + 0.05, CREAM);
+        // Rails from the bay to the road.
+        for (const dx of [1.9, 4.1]) m.box(x + dx - 0.08, x + dx + 0.08, 0.02, 0.09, zf + 0.2, z0, STEEL);
+      }
+      // A tram half out of the middle bay: cream body, green skirt, windows, pantograph.
+      const tx = bays[1]! + 3;
+      m.box(tx - 1.3, tx + 1.3, 0.35, 1.3, z0 - 7, z0 + 4, C('#2f6b52'));
+      m.box(tx - 1.3, tx + 1.3, 1.3, 3.3, z0 - 7, z0 + 4, C('#efe6cf'));
+      m.box(tx - 1.32, tx + 1.32, 1.8, 2.9, z0 - 6.6, z0 + 3.6, GLASS);
+      m.box(tx - 0.08, tx + 0.08, 3.3, 4.1, z0 - 3, z0 - 2.8, SLATE);
+      m.box(tx - 0.7, tx + 0.7, 4.05, 4.15, z0 - 3.1, z0 - 2.7, SLATE);
+      // Office with windows at the side.
+      m.box(W / 4 + 3, W / 2 - 2, 0, 6, zf + 3, zf + 13, CREAM, SLATE);
+      allWindows(m, W / 4 + 3, W / 2 - 2, zf + 3, zf + 13, 0, 2, 3, {
+        col: GLASS,
+        lit: lit(r, 0.7),
+        spacing: 2.4,
+      });
+      // Poles for the overhead wires along the forecourt.
+      for (const x of [-W / 2 + 3, -W / 2 + 12.5, -W / 2 + 21.5, -W / 2 + 30.5])
+        m.cylinder(x, zf + 4, 0.12, 0, 6.2, STEEL, 6);
+      break;
+    }
     case 'station': {
       // A railway station (M20): the platform along the front (the track side) under a long canopy,
       // and a brick booking hall with a clock over its door behind it.

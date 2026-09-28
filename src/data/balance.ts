@@ -178,6 +178,29 @@ export const RAIL = {
   sidingReach: 30,
 };
 
+/** Trams (M20): track laid along streets, avenues and boulevards, a depot and tram stops. */
+export const TRAM = {
+  /** Laying track, per metre of road, and its upkeep per metre a month (paid with the roads). */
+  trackCost: 45,
+  trackUpkeep: 0.04,
+  unlockPopulation: 5_000,
+  /** Seconds a tram spends at each stop. */
+  dwell: 25,
+  /**
+   * Trams share the road with cars but have right of way at lights: this share of the road's
+   * congestion delay slows them.
+   */
+  trafficShare: 0.5,
+  /** A tram stop draws riders from this many times the bus stop walking distance. */
+  walkFactor: 1.15,
+  /** Seconds a tram ride is worth over the same time on a bus when people choose (comfort). */
+  bonus: 60,
+  /** A tram counts as this many cars on the road (it keeps to its own lane at junctions). */
+  pcu: 2,
+  /** Trams run no closer than this many seconds apart; a short line leaves the rest in the depot. */
+  minHeadway: 120,
+};
+
 /** Environment, health and education (DESIGN §3.11). */
 export const ENVIRONMENT = {
   /** Air: cells the plume moves downwind per 3-hour update, diffusion, decay per update. */

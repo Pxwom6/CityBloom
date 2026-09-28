@@ -21,12 +21,14 @@ export type Command =
   /** `oneway`: the new road runs one way, as drawn (M19). */
   | { type: 'buildRoad'; road: RoadTypeId; points: Vec2[]; oneway?: boolean }
   | { type: 'bulldoze'; target: BulldozeTarget }
-  /** Place a bus stop beside the road nearest (x, z). */
-  | { type: 'placeStop'; x: number; z: number }
+  /** Place a bus stop beside the road nearest (x, z), or a tram stop on a road with tram track (M20). */
+  | { type: 'placeStop'; x: number; z: number; tram?: boolean }
   /** Change a road segment to another type in place. */
   | { type: 'upgradeRoad'; seg: number; road: RoadTypeId }
   /** Make a road one-way (1: from its start to its end, -1: the other way) or two-way (0) (M19). */
   | { type: 'setOneWay'; seg: number; dir: 0 | 1 | -1 }
+  /** Lay (`on`) or take up tram track along a road (M20); `stroke` groups a drag into one undo step. */
+  | { type: 'setTram'; seg: number; on: boolean; stroke?: number }
   /** A roundabout on a junction (`node`) or a road (`at`), with the ring's radius (M19). */
   | { type: 'roundabout'; node?: number; at?: Vec2; radius?: number }
   | { type: 'removeRoundabout'; node: number }

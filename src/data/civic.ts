@@ -61,6 +61,8 @@ export interface CivicDef {
    * seats. Faces a railway, not a road.
    */
   rail?: { trains: number; capacity: number };
+  /** Tram depot (M20): trams it runs round its tram stops and passengers per tram. */
+  tram?: { trams: number; capacity: number };
   /** The track a building faces (M20): a railway instead of a road. */
   track?: 'rail';
   /** Service coverage and capacity (M5). */
@@ -482,6 +484,23 @@ CIVIC_DEFS.push({
   blurb: 'Runs buses round the bus stops you place, in one loop. Riders leave their cars at home.',
   unlockPopulation: 800,
   model: 'busdepot',
+});
+
+// Trams (M20): a depot on a road with tram track runs trams round the tram stops it can reach.
+CIVIC_DEFS.push({
+  id: 'tramdepot',
+  name: 'Tram depot',
+  category: 'transit',
+  dept: 'transit',
+  w: 44,
+  d: 30,
+  cost: 26_000,
+  upkeep: 760,
+  tram: { trams: 5, capacity: 140 },
+  blurb:
+    'Runs trams round the tram stops on the tracks it can reach. Trams carry nearly three busloads, ride more smoothly and draw riders from a little further. Faces a road with tram track.',
+  unlockPopulation: 5_000,
+  model: 'tramdepot',
 });
 
 // Rail (M20). Stations face a railway; each set of stations on connected track runs one line.

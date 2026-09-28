@@ -36,6 +36,8 @@ export interface RoadType {
   oneWay?: boolean;
   /** Tightest curve radius, metres (ROAD_RULES.minRadius if absent). */
   minRadius?: number;
+  /** Tram track can be laid along it (M20). */
+  tram?: boolean;
   blurb: string;
 }
 
@@ -60,6 +62,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   street: {
     id: 'street',
     access: true,
+    tram: true,
     maxGrade: 0.16,
     name: 'Street',
     width: 8,
@@ -77,6 +80,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   avenue: {
     id: 'avenue',
     access: true,
+    tram: true,
     maxGrade: 0.12,
     name: 'Avenue',
     width: 16,
@@ -94,6 +98,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   boulevard: {
     id: 'boulevard',
     access: true,
+    tram: true,
     maxGrade: 0.08,
     name: 'Boulevard',
     width: 22,

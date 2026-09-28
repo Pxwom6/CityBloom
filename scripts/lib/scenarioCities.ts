@@ -135,11 +135,14 @@ export const RECIPES: Record<string, () => Sim> = {
     const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
       sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
     road('avenue', at(0, 0), at(920, 0));
-    for (const dx of [120, 240]) road('street', at(dx, -90), at(dx, 90));
+    // The old town: shops on the avenue, homes up its two side streets to the north.
+    for (const dx of [120, 240]) road('street', at(dx, -260), at(dx, 90));
+    road('street', at(120, -260), at(240, -260));
     for (const dx of [600, 680, 760, 840, 920]) road('street', at(dx, -520), at(dx, 200));
     road('street', at(600, -520), at(920, -520));
     road('street', at(600, -300), at(920, -300));
     zone('C', at(60, 0), at(300, 0), 50);
+    zone('R', at(180, -80), at(180, -250), 90);
     zone('I', at(580, 110), at(940, 110), 90);
     zone('R', at(580, -160), at(940, -160), 120);
     zone('R', at(580, -420), at(940, -420), 110);
@@ -148,6 +151,11 @@ export const RECIPES: Record<string, () => Sim> = {
       type: 'paintDistrict',
       district: 1,
       area: { kind: 'brush', points: [at(60, 0), at(300, 0)], radius: 100 },
+    });
+    sim.dispatch({
+      type: 'paintDistrict',
+      district: 1,
+      area: { kind: 'brush', points: [at(180, -100), at(180, -250)], radius: 100 },
     });
     for (let m = 0; m < 10; m++)
       for (let h = 0; h < 4; h++) {

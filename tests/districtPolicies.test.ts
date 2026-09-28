@@ -4,6 +4,7 @@ import { decodeSave } from '../src/client/saves';
 import { ZONE_R } from '../src/data/zones';
 import { Sim } from '../src/sim/sim';
 import { districtAt } from '../src/sim/systems/districts';
+import { monthlyRates } from '../src/sim/systems/economy';
 import { garbageRate } from '../src/sim/systems/garbage';
 import { BState } from '../src/sim/world/buildings';
 import { TICKS_PER_MONTH } from '../src/sim/time';
@@ -102,17 +103,23 @@ describe('district policies (M21)', () => {
     console.log(`[recycling] garbage made: West ×${w.toFixed(2)}, East ×${e.toFixed(2)}`);
     expect(w).toBeLessThan(0.85);
     expect(Math.abs(e - 1)).toBeLessThan(0.05);
-    // The district pays its residents' share of what the scheme would cost the whole city.
+    // The district pays its share of what the scheme would cost the whole city, by the people who
+    // live or work there, and the budget books that.
     const reports = sim.query({ type: 'districts' }) as {
       id: number;
       population: number;
+      jobs: number;
       policies: number;
     }[];
     const rw = reports.find((x) => x.id === west)!;
-    const share = rw.population / sim.state.totals.population;
-    expect(rw.policies).toBeGreaterThan(0);
+    const everyone = reports.reduce((a, r) => a + r.population + r.jobs, 0);
+    const share = (rw.population + rw.jobs) / everyone;
+    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeLessThan(0.9);
     expect(rw.policies).toBeCloseTo((120 + 0.02 * sim.state.totals.population) * share, -1);
     expect(reports.find((x) => x.id === eastId)!.policies).toBe(0);
+    const booked = -(monthlyRates(sim).policies ?? 0);
+    expect(Math.abs(booked - rw.policies) / rw.policies).toBeLessThan(0.05);
   });
 
   it('a heritage district keeps its buildings as they are, and the rest of the city goes on as before', () => {

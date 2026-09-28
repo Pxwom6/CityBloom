@@ -43,6 +43,14 @@ describe('scenario: Market Town (M21)', () => {
     expect(playOut(sim)).toMatchObject({ status: 'lost', reason: 'time' });
   });
 
+  it('is not won by the ban alone: with no other way round, the lorries still come through', () => {
+    const sim = openScenario('market');
+    expect(
+      sim.dispatch({ type: 'setDistrictPolicy', district: 1, policy: 'heavyTrafficBan', on: true }),
+    ).toMatchObject({ ok: true });
+    expect(playOut(sim)).toMatchObject({ status: 'lost', reason: 'time' });
+  });
+
   it('is lost by a neglectful one: the lorries keep coming', () => {
     const end = playOut(openScenario('market'));
     expect(end).toMatchObject({ status: 'lost', reason: 'time' });

@@ -113,21 +113,24 @@ export function buildingTax(sim: Sim, b: Building): number {
 
 /**
  * Monthly cost of each district's policies (M21): the city-wide price times the district's share of
- * the residents. A policy already in force across the city costs nothing more in a district.
+ * the people who live or work in the city (`people` per district over `everyone`), so a shopping street
+ * or an industrial estate pays its part too. A policy already in force across the city costs nothing
+ * more in a district.
  */
 export function districtPolicyCosts(
   sim: Sim,
-  districtPop: Map<number, number>,
+  people: Map<number, number>,
+  everyone: number,
 ): { total: number; by: Map<number, number> } {
   const s = sim.state;
-  const city = Math.max(1, s.totals.population);
+  const city = Math.max(1, everyone);
   const by = new Map<number, number>();
   let total = 0;
   for (const d of s.districts.values())
     for (const id of d.policies) {
       const p = POLICY.get(id as PolicyId);
       if (!p || s.policies.includes(id)) continue;
-      const cost = (policyCost(p, s.totals.population) * (districtPop.get(d.id) ?? 0)) / city;
+      const cost = (policyCost(p, s.totals.population) * (people.get(d.id) ?? 0)) / city;
       by.set(d.id, (by.get(d.id) ?? 0) + cost);
       total += cost;
     }
@@ -151,8 +154,9 @@ export function districtReports(sim: Sim): DistrictReport[] {
     const d = districtAt(s.districtCells, c.x, c.z);
     upkeep.set(d, (upkeep.get(d) ?? 0) + civicUpkeep(c) * (s.economy.funding[def.dept] / 100) * scale);
   }
-  const pops = new Map([...figs].map(([id, f]) => [id, f.population]));
-  const policies = districtPolicyCosts(sim, pops).by;
+  const people = new Map([...figs].map(([id, f]) => [id, f.population + f.jobs]));
+  const everyone = [...people.values()].reduce((a, b) => a + b, 0);
+  const policies = districtPolicyCosts(sim, people, everyone).by;
   return [...figs].map(([id, f]) => ({
     id,
     ...f,
@@ -170,17 +174,20 @@ export function monthlyRates(sim: Sim): Record<string, number> {
   const add = (k: string, v: number) => {
     if (v) out[k] = (out[k] ?? 0) + v;
   };
-  // District policies (M21) cost their district's share of the city-wide price, by residents.
+  // District policies (M21) cost their district's share of the city-wide price, by the people who
+  // live or work there.
   const districtPolicies = sim.districtPolicies();
-  const districtPop = districtPolicies.size ? new Map<number, number>() : null;
+  const districtPeople = districtPolicies.size ? new Map<number, number>() : null;
+  let everyone = 0;
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Active && !(b.state === BState.Construction && b.pop > 0)) continue;
     const z = ZONE_KEY[b.zone];
     if (!z || b.pop <= 0) continue;
     add(`tax${z}${b.wealth}`, buildingTax(sim, b));
-    if (districtPop && z === 'R') {
+    if (districtPeople) {
+      everyone += b.pop;
       const d = districtAt(s.districtCells, b.x, b.z);
-      if (d) districtPop.set(d, (districtPop.get(d) ?? 0) + b.pop);
+      if (d) districtPeople.set(d, (districtPeople.get(d) ?? 0) + b.pop);
     }
   }
   let roadUpkeep = 0;
@@ -199,7 +206,7 @@ export function monthlyRates(sim: Sim): Record<string, number> {
     const p = POLICY.get(id as PolicyId);
     if (p) add('policies', -policyCost(p, s.totals.population));
   }
-  if (districtPop) add('policies', -districtPolicyCosts(sim, districtPop).total);
+  if (districtPeople) add('policies', -districtPolicyCosts(sim, districtPeople, everyone).total);
   for (const loan of e.loans) {
     const r = loan.annualRate / 12;
     const interest = Math.min(loan.balance * r, loan.payment);

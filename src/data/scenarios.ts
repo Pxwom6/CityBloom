@@ -282,10 +282,10 @@ export const SCENARIOS: ScenarioDef[] = [
     name: 'Market Town',
     blurb: 'Lorries rattle through the old market square. Give it back to the shoppers.',
     brief:
-      'Kingsmere’s old market sits on the only road from the highway to the works and the new estates ' +
-      'beyond, and every lorry to and from the works squeezes through it. The council has marked out ' +
-      'Old Market as a district. Get the busiest road in Old Market under 2,500 vehicles a day for two ' +
-      'months running, and keep 5,500 residents.',
+      'Kingsmere’s old market, its shops on the avenue and homes up the side streets, sits on the only ' +
+      'road from the highway to the works and the new estates beyond, and every lorry to and from the ' +
+      'works squeezes through it. The council has marked out Old Market as a district. Get the busiest ' +
+      'road in Old Market under 2,000 vehicles a day for two months running, and keep 4,500 residents.',
     save: 'market.citybloom',
     months: 12,
     stars: [
@@ -299,11 +299,11 @@ export const SCENARIOS: ScenarioDef[] = [
       {
         measure: 'districtTraffic',
         district: 1,
-        max: 2_500,
+        max: 2_000,
         hold: 2,
-        label: 'Busiest road in Old Market under 2,500 vehicles a day, 2 months running',
+        label: 'Busiest road in Old Market under 2,000 vehicles a day, 2 months running',
       },
-      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+      { measure: 'population', min: 4_500, label: '4,500 residents or more' },
     ],
     limits: [],
     disasters: false,

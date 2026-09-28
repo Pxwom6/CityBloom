@@ -37,6 +37,8 @@ export function DistrictsPanel() {
   const d = sel ? w.districts.get(sel)! : undefined;
   const rep = reports.find((r) => r.id === sel);
   const allTaxes = reports.reduce((s, r) => s + r.taxes, 0);
+  // Policies cost a district its share of the people who live or work in the city.
+  const everyone = reports.reduce((s, r) => s + r.population + r.jobs, 0);
   // Picking a district also points the brush at it; with none picked the brush starts a new one
   // (never the eraser, which the tool's 0 means).
   const pick = (id: number) => {
@@ -135,7 +137,7 @@ export function DistrictsPanel() {
                 const city = st.policies.includes(p.id);
                 const on = d.policies.includes(p.id);
                 const locked = peak < p.unlockPopulation;
-                const share = rep && st.population > 0 ? rep.population / st.population : 0;
+                const share = rep && everyone > 0 ? (rep.population + rep.jobs) / everyone : 0;
                 return (
                   <li key={p.id} class={`policy ${on || city ? 'on' : ''} ${locked ? 'locked' : ''}`}>
                     <label>

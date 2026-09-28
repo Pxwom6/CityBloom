@@ -92,12 +92,13 @@ every line by how full it runs.
 
 **Districts** (I, or the flag in the toolbar) are parts of the city you paint with a brush and name
 (each takes its neighbourhood's name to start with). Most policies can be switched on for one
-district instead of the whole city, and cost its share of the city-wide price; a **high-rise ban**
-keeps one district low while the rest grows up. Two are for districts only: a **heavy-traffic ban**
-sends lorries round it (if there's another way), and **heritage** keeps it as it stands (nothing is
-rebuilt bigger, new buildings stay low or medium, and its land is worth more). The Districts panel shows each one's residents,
-jobs, happiness, land value, the taxes it pays and what its services and policies cost, and can
-show any data map for that district alone.
+district instead of the whole city, and cost its share (by the people who live and work there) of
+the city-wide price; a **high-rise ban** keeps one district low while the rest grows up. Two are for
+districts only: a **heavy-traffic ban** sends lorries round it (if there's another way), and
+**heritage** keeps it as it stands (nothing is rebuilt bigger, new buildings stay low or medium, and
+its land is worth more). The Districts panel shows each one's residents, jobs, happiness, land
+value, the taxes it pays and what its services and policies cost, and can show any data map for that
+district alone.
 
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the

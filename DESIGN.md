@@ -857,7 +857,8 @@ answers "in force here?" (city-wide, or the cell's district has it) and every pe
 it: recycling per building in garbage, healthy living per home, fire safety and neighbourhood watch
 per building in incidents, clean industry per polluter (air and ground), free transit per trip
 origin in the mode choice, the high-rise ban and heritage per lot in growth (`densityAt`). A
-district policy costs the city-wide price × the district's share of the residents (`districtPolicyCosts`,
+district policy costs the city-wide price × the district's share of the people who live or work in
+the city (residents plus filled jobs; `districtPolicyCosts`,
 booked under Policies), and nothing where the city already has it; `setDistrictPolicy` refuses a
 policy that is locked, city-only, or already city-wide, and `setPolicy` refuses district-only ones.
 `districtPolicies()` caches policy → districts and is dropped by `districtsChanged()` after any

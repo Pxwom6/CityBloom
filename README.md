@@ -90,6 +90,15 @@ trucks that drove to the highway take their goods there to go on by train. Click
 depot or the track to see its line, how often it runs and who rides it; the **Ridership** map shows
 every line by how full it runs.
 
+**Districts** (I, or the flag in the toolbar) are parts of the city you paint with a brush and name
+(each takes its neighbourhood's name to start with). Most policies can be switched on for one
+district instead of the whole city, and cost its share of the city-wide price; a **high-rise ban**
+keeps one district low while the rest grows up. Two are for districts only: a **heavy-traffic ban**
+sends lorries round it (if there's another way), and **heritage** keeps it as it stands (nothing is
+rebuilt bigger, new buildings stay low or medium, and its land is worth more). The Districts panel shows each one's residents,
+jobs, happiness, land value, the taxes it pays and what its services and policies cost, and can
+show any data map for that district alone.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -109,12 +118,12 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are ten set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are eleven set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
-from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal town into a
-resort. Each opens with a brief; the city's name in the top bar opens its goals (G),
+from a mill town, rebuild a lake town's waterworks after a flood, turn a coastal town into a
+resort, and keep the lorries out of an old market street. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -138,6 +147,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Draw one-way roads, grid snap | road options | | O, G |
 | Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
 | Bulldoze | | | B |
+| Districts: paint, erase, and their panel | toolbar flag | | I, [ ] brush size |
 | Select and inspect | click a building, car, walker, road, railway or stop | click | H |
 | Move a civic building | select it, then Move | | |
 | Cancel, leave a tool, close a panel, pause menu | right click | | Escape |

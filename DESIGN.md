@@ -838,6 +838,59 @@ stations beside its link (`tests/railTown.ts`); `tests/freight.test.ts` grows an
 kilometre from the highway (`tests/freightTown.ts`) and links a terminal to the regional railway;
 `tests/trams.test.ts` puts trams through the same jam town. The Railhead scenario is the freight town.
 
+### 3.22 Districts (M21)
+
+**State.** `SimState.districts` (save v19) maps id (1–255) → `{id, name, color, policies}`;
+`districtCells` is a `Uint8Array` on the 128 × 128 land-value raster (16 m cells), 0 for no district.
+A raster rather than polygons: painting, erasing, lookups (`districtAt`, one array read) and the
+per-cell systems (land value, the data-map filter) all index it directly, and a 16 m cell is finer
+than a lot. `createDistrict` takes the lowest free id and the lowest colour slot no district uses
+(12 slots, up to `DISTRICT.limit` 24 districts, names up to 32 characters); `paintDistrict` sets
+every cell whose centre lies within a brush path's radius (0 erases) and refuses a stroke that
+changes nothing; `removeDistrict` clears its cells. All five commands are undoable (`DISTRICT_SCOPE`:
+the `districts` container and the `districtCells` array); a paint drag carries a `stroke` id and
+merges into one undo step, like zoning.
+
+**Policies.** A policy's `scope` is `'city'` (tourism campaign: visitors come to the city, not a
+street), `'district'` (heavy-traffic ban, heritage), or both (the rest). `Sim.policyAt(id, x, z)`
+answers "in force here?" (city-wide, or the cell's district has it) and every per-place policy reads
+it: recycling per building in garbage, healthy living per home, fire safety and neighbourhood watch
+per building in incidents, clean industry per polluter (air and ground), free transit per trip
+origin in the mode choice, the high-rise ban and heritage per lot in growth (`densityAt`). A
+district policy costs the city-wide price × the district's share of the residents (`districtPolicyCosts`,
+booked under Policies), and nothing where the city already has it; `setDistrictPolicy` refuses a
+policy that is locked, city-only, or already city-wide, and `setPolicy` refuses district-only ones.
+`districtPolicies()` caches policy → districts and is dropped by `districtsChanged()` after any
+district edit or undo.
+
+- **Heavy-traffic ban**: the freight assignment routes trucks on `truckCosts`, which multiplies
+  the cost of every road whose midpoint lies in a banned district by `DISTRICT.truckBan` (6). Trucks
+  go round where another way exists and still reach shops and industry inside (deliveries get in).
+  Cars and buses are untouched.
+- **Heritage**: no building in it is rebuilt at a higher density or tier or retooled (the
+  lifecycle skips upgrades there), new growth stays low or medium density, and its land is worth
+  `DISTRICT.heritageLandValue` (0.05) more.
+
+**Figures.** `districtReports` (query `districts`) returns, per district and for the rest of the
+city (id 0): residents, jobs, workers, mean happiness, mean land value over its cells, buildings,
+cells, the taxes its buildings pay a month (`buildingTax`), the upkeep of civic buildings standing
+in it, and its policies' cost.
+
+**Client.** `ClientWorld` mirrors the districts and cells (`FrameDiff.districts` when they change);
+`names.neighbourhood()` prefers a district's name over the generated one. `DistrictView` tints
+painted cells in their colour through the data-map overlay texture, draws borders stronger and
+floats each name over its cells while the district tool or panel is open. The district tool (I)
+paints with a round brush (16–192 m, [ ]), picks a district, erases, or starts a new one named after
+the neighbourhood under the first stroke (numbered if taken). The Districts panel lists them with
+their figures and policies, renames and dissolves them, and sets the data-map filter
+(`Overlay.district`): every data map masks its terrain and road tints to that district's cells.
+
+The done-criterion tests (`tests/districtPolicies.test.ts`): a heavy-traffic ban on a freight
+town's housing estate cuts truck traffic through its homes and moves it to the back road while the
+other side's roads carry the same; recycling in one half of a town cuts garbage there and nowhere
+else, for its share of the cost; heritage on the Big Game city stops rebuilding inside and raises
+land value there, with the rest unchanged. The Market Town scenario puts the ban to work.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -975,7 +1028,9 @@ its migration is the identity and older cities load with two-way roads and plain
 (M20) adds `railway` (the regional rail link) and optional fields (tram track, tram stops); its
 migration is also the identity, and `Sim.fromSave` lays the rail link on a city that has none
 (`railway` missing) where it fits, so an older city loads, gains its link and plays on
-(`tests/trains.test.ts` loads the version-10 playtest save).
+(`tests/trains.test.ts` loads the version-10 playtest save). v19 (M21) adds `districts` (an empty
+map) and `districtCells` (all zero); `tests/districts.test.ts` loads the version-10 playtest save,
+paints a district and round-trips it.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

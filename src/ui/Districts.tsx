@@ -37,9 +37,11 @@ export function DistrictsPanel() {
   const d = sel ? w.districts.get(sel)! : undefined;
   const rep = reports.find((r) => r.id === sel);
   const allTaxes = reports.reduce((s, r) => s + r.taxes, 0);
+  // Picking a district also points the brush at it; with none picked the brush starts a new one
+  // (never the eraser, which the tool's 0 means).
   const pick = (id: number) => {
     game.districts.selected = id;
-    if (game.tools.activeId === 'district') game.tools.district.pick(id);
+    if (game.tools.activeId === 'district') game.tools.district.pick(id || 'new');
     game.notify();
   };
   const act = (cmd: Parameters<typeof game.dispatch>[0], done?: string) =>
@@ -75,7 +77,7 @@ export function DistrictsPanel() {
                     role="option"
                     aria-selected={x.id === sel}
                     data-testid={`district-${x.id}`}
-                    onClick={() => pick(x.id === sel ? 0 : x.id)}
+                    onClick={() => pick(x.id)}
                   >
                     <span class="district-swatch" style={{ background: districtColour(x.color) }} />
                     <span class="district-row-name">{x.name}</span>

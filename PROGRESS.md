@@ -56,18 +56,20 @@ offers each new version (M15). Cities keep their history for charts and photos (
 garden expo, a launch complex) and face elections every four years (M17). Nine scenarios, each
 a ready-made city with goals, limits and a time limit, are played from the main menu for one to
 three stars (M18). Roads can be one-way, junctions take roundabouts, and past 10,000 residents a city
-highway passes over the town's streets, joined by ramps; visible cars queue and give way (M19).
+highway passes over the town's streets, joined by ramps; visible cars queue and give way (M19). Past
+5,000, railways with level crossings and stations run train lines, tram track on the streets runs
+trams, and a freight terminal linked to the regional railway puts industry's goods on trains (M20).
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 218 unit and scenario tests, 23 UI tests, a 10-minute soak
+calls at the city overview. Checked by 230 unit and scenario tests, 24 UI tests, a 10-minute soak
 and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
 done).
 
 ## Ideas for what's next
 1. **Real-hardware pass** (the list under "To check on the Mac"): frame rate at 100k, and
    per-building LOD if 2.5M triangles at the overview is too much for the GPU.
-2. **Trams and trains**: the transit system (lines, stops, riders) and road graph are ready for
-   rail lines with their own right of way; a rail freight link would feed the trade specialisation.
+2. **Rail, further**: branching train lines with services per branch, tram and bus stops shared as
+   interchanges, and level-crossing barriers that close when a train passes.
 3. **Traffic lights** as a third junction type between a plain junction and a roundabout, and
    tourists driving in from the highway (visitors aren't in the traffic model yet).
 4. **Neighbouring cities** that trade power, water and garbage and share the highway's demand.
@@ -115,9 +117,11 @@ DESIGN, DECISIONS, SPEC_REVIEW, CLAUDE.md notes), the M20 e2e spec and the full 
 - Roads can't join a viaduct mid-span; the planner says to meet it where it's back on the ground. They can pass under one high enough (M19), and local roads crossing each other always meet at a junction (only the city and regional highways pass over).
 - Undo history costs a snapshot per command (about 25 ms in a 12k town, ~55 ms at 112k, on the worker, so the UI doesn't stall); it isn't saved, so undo starts fresh after loading.
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
+- Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains); visible trams and trains follow their line's timetable rather than the traffic (a tram passes through queued cars, and cars don't visibly stop at level crossings, though crossings slow them in the model); level-crossing barriers are drawn raised. An old save whose west edge is built up gets no regional rail link.
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
-## Performance (latest: M19)
+## Performance (latest: M20)
+- `bench.ts 8 --big --profile` (M20: the bench city builds no rail, so this checks the cost of the new systems idle): at 100–110k tick avg 0.69–0.91 ms, p99 5.8–8.2 ms, worst per month 9.8–15.9 ms (utilities 14.5 ms in month 5; 56.7 ms once in month 1, the cold start). M19 the same way: 0.64–0.92 ms, p99 5.5–8.8 ms, worst 9.4–14.5 ms. `balance.ts 20`: careful 67,411 / 71 % at year 20 (peak 71.8k in year 9; M19 64,907 / 72 %, path-dependent), four of five projects open (the launch complex still waits on education), five elections won, treasury $32M; greedy 368 / 22 %, neglectful 490 / 36 % (unchanged). The balance mayors don't build rail. Rail scenes on SwiftShader: a 1,200-resident town with a train line, a tram loop and a freight train draws 137 calls / 0.57M triangles at street level (`railshot.mjs`).
 - `bench.ts 8 --big --profile` (M19: junction delays in every route cost): at 100–110k tick avg 0.64–0.92 ms, p99 5.5–8.8 ms, worst per month 9.4–14.5 ms (61.8 ms once in month 1, the cold start). An M18 baseline run the same hour: 0.64–0.97 ms, worst 9.6–25.7 ms, and the same populations within 1 % (both cities lose jobs in months 7–8: that's the bench city, not M19). Visible cars (following, junctions, roundabouts) cost 0.44 ms a frame for 122 cars in the 100k city here (`renderStats.trafficMs`). `balance.ts 20`: careful 64,907 / 72 % at year 20 (peak 67.6k in year 7; M18 67,137 / 78 %: junction delays lengthen commutes a little), four of the five projects open (the launch complex waits on high-school education, 19 % of the 35 % it needs), five elections won, treasury $26.6M by year 20; greedy 368 / 22 %, neglectful 490 / 36 % (both lose every election). The menu demo town: 27k residents, 147 draw calls behind the menu.
 - `bench.ts 8 --big` (M18; the sandbox bench plays no scenario, populations identical to M17): at 97–111k tick avg 0.66–0.94 ms, p99 5.6–8.2 ms, worst per month 10–14 ms (54.8 ms once in month 1 at 639 residents, the cold start). `balance.ts 20` (M18: the careful mayor starts a big project once the first stage is in hand and the treasury plus its income over the build will cover the rest, and refused commands skip the undo snapshot): careful 67,137 / 78 % at year 20 (passes 50k in year 11, peak 68.6k in year 14), all five projects open, the sky needle built, five elections won; greedy 234 / 16 %, neglectful 288 / 41 % (both unchanged). The careful 20-year run takes about 3 minutes (M17: about 5).
 - `bench.ts 8 --big` (M17): at 97–111k tick avg 0.61–0.92 ms, p99 5–8 ms, worst per month 7–15 ms (66.8 ms once in month 1 at 639 residents, the known cold start). `balance.ts 25` (the careful mayor now plans the whole map, so its numbers aren't comparable with M16's): careful 64,733 / 78 % at year 20 (passes 50k in year 11, peak 67.5k), all five projects open, six elections won; greedy 234 / 16 %, neglectful 288 / 41 % at year 20 (both lose every election). Chart of the careful mayor's money: `docs/screenshots/m17-money.png`.
@@ -131,6 +135,7 @@ DESIGN, DECISIONS, SPEC_REVIEW, CLAUDE.md notes), the M20 e2e spec and the full 
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Rail (M20): trams, trains and freight trains at 60 fps in a big city with several lines; how the tram wires, level crossings, stations and the freight yard look close up; whether cars following round the tram depot and crossings read well.
 - Visible cars (M19): 360 cars following, queueing and going round roundabouts at 60 fps in a big city (`renderStats.trafficMs` in the debug panel should stay well under 1 ms); how the ring, the flyover decks and the ramp merges look close up.
 - The ~100k city (`npx tsx scripts/bench.ts 6 --big --save city.gz`, then Load city → Import from file): frame rate while panning the overview and the city preset at 3× speed (target 60 fps); 2.5M triangles at the overview, if the GPU struggles, per-building LOD is the next step.
 - Game shell: the main menu's slow orbit over the backdrop should be smooth; the three quality levels should look and perform distinctly; interface size 140 % on a laptop screen (the top bar drops the Jobs stat and city name when it would not fit).

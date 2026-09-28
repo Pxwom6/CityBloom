@@ -33,7 +33,7 @@
 - [x] M19 Traffic tools
 - [x] M20 Rail
 - [x] M21 Districts
-- [ ] M22 Seasons and weather
+- [x] M22 Seasons and weather
 - [ ] M23 Region, airport and seaport
 - [ ] M24 Terrain and map editor
 
@@ -88,19 +88,18 @@ done).
    tried it.
 
 ## In progress
-M22 Seasons and weather is finished apart from the full UI suite run (`npm run e2e`) before the
-`M22 complete:` commit. After that: M23 Region, airport and seaport (SPEC-2.md).
+M23 Region, airport and seaport (SPEC-2.md), not started. M22 is complete: full UI suite green
+(29 specs, 44 min), 251 unit and scenario tests.
 
 ## Next tasks
-1. Finish M22: full `npm run e2e` green, tick M22, commit `M22 complete: Seasons and weather`.
-2. M23 sim: two or three neighbouring cities beyond the map edges (an industrial town, a resort, a
+1. M23 sim: two or three neighbouring cities beyond the map edges (an industrial town, a resort, a
    commuter suburb) that grow or shrink; deals to buy or sell power, water and garbage processing;
    regional commuters and shoppers by highway and rail (keep it readable: inspector lines and a
    "where from" data map). Save v21 with a migration test.
-3. M23 airport (big footprint, unlocked by population; tourism and business; noise map; planes) and
+2. M23 airport (big footprint, unlocked by population; tourism and business; noise map; planes) and
    seaport (maps with deep water; freight and trade; ships); visitors arriving by highway, rail, air
    and sea through the traffic model (closing M10's gap).
-4. M23 scenario tests: a power deal covering a shortage, regional commuters filling jobs, the
+3. M23 scenario tests: a power deal covering a shortage, regional commuters filling jobs, the
    airport raising visitors; UI test, bench, balance, docs.
 
 ## Known issues

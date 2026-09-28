@@ -830,8 +830,10 @@ export class Game {
         best = f;
       }
     };
+    // A car held at a junction makes a dull start to a ride: prefer one on the move.
     if (want('car'))
-      for (const c of r.traffic.cars) consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c));
+      for (const c of r.traffic.cars)
+        consider({ kind: 'car', id: c.id }, c.x, c.z, r.traffic.remaining(c) - (c.waited > 0 ? 400 : 0));
     if (want('walker'))
       for (const w of r.pedestrians.walkers)
         consider({ kind: 'walker', id: w.id }, w.x, w.z, r.pedestrians.remaining(w) * 4);

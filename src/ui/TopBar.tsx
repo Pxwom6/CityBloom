@@ -1,3 +1,4 @@
+import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
@@ -21,7 +22,7 @@ export function TopBar() {
   const date = dateOf(Math.floor(game.world.displayTick));
   return (
     <div class="topbar panel" data-testid="topbar">
-      <span class="city">{st.cityName}</span>
+      {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
       <span class="divider" />
       <button
         class="stat stat-btn"

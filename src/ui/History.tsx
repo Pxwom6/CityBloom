@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { CIVIC } from '../data/civic';
 import { MILESTONES } from '../data/progression';
 import { CHRONICLE_SERIES, type Chronicle, type SeriesKey } from '../sim/systems/chronicle';
 import { MONTH_NAMES, dateOf } from '../sim/time';
@@ -101,6 +102,9 @@ export function monthName(m: number): string {
 }
 
 function eventLabel(e: Chronicle['events'][number]): string {
+  if (e.kind === 'election') return e.ref === 'won' ? 'Won the election' : 'Lost the election';
+  if (e.kind === 'project')
+    return `Opened the ${CIVIC.get(e.ref as string)?.name.toLowerCase() ?? 'project'}`;
   if (e.kind === 'milestone') {
     const m = MILESTONES[e.ref as number];
     return m ? `Became a ${m.name.toLowerCase()} (${formatNumber(m.population)} residents)` : 'Milestone';

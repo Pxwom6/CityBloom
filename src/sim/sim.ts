@@ -22,6 +22,7 @@ import type {
   TransitData,
   BuildingDetails,
   Query,
+  ElectionSummary,
 } from './protocol';
 import { checkInvariants } from './invariants';
 import { Network, type ZoneBlock } from './world/network';
@@ -83,6 +84,28 @@ import {
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
+import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
+import {
+  campaignOpen,
+  councilUntil,
+  electionsMonth,
+  electionsOn,
+  monthsToVote,
+  newElectionState,
+  projectedShare,
+  promiseKept,
+  setElections,
+  setPromise,
+  termNow,
+} from './systems/elections';
+import {
+  scenarioBankrupt,
+  scenarioForbids,
+  scenarioMonth,
+  scenarioSummary,
+  startScenario,
+  type ScenarioSummary,
+} from './systems/scenario';
 import { segSpeed, stepVehicles } from './systems/vehicles';
 import { computeOverlay } from './systems/overlays';
 import {
@@ -152,7 +175,19 @@ export type SimEvent = {
     | 'decayed'
     | 'collapsed'
     | 'milestone'
-    | 'achievement';
+    | 'achievement'
+    // Big projects and elections (M17).
+    | 'projectStage'
+    | 'projectWaiting'
+    | 'projectDone'
+    | 'matchDay'
+    | 'launch'
+    | 'campaign'
+    | 'electionWon'
+    | 'electionLost'
+    // Scenarios (M18): id is the stars won.
+    | 'scenarioWon'
+    | 'scenarioLost';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -250,6 +285,9 @@ export class Sim {
       policies: [],
       tourism: { visitors: 0, overnight: 0 },
       chronicle: emptyChronicle(0),
+      matchDay: null,
+      election: newElectionState(0, options.elections && !options.sandbox),
+      scenario: null,
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -716,7 +754,13 @@ export class Sim {
 
   dispatch(cmd: Command): CommandResult {
     const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
-    if (scope) this.syncRng();
+    if (scope) {
+      // A command that will be refused changes nothing: skip the undo snapshot, which costs
+      // milliseconds in a big city (scripted players try many spots before one fits).
+      const dry = this.apply(cmd, true);
+      if (!dry.ok) return dry;
+      this.syncRng();
+    }
     const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
     if (result.ok) {
@@ -747,6 +791,12 @@ export class Sim {
           if (!dryRun) ignite(this, b);
           return ok(0);
         }
+        if (cmd.cheat === 'electionIn') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!electionsOn(this)) return fail('This city has no elections');
+          if (!dryRun) this.state.election.nextMonth = dateOf(this.state.tick).totalMonths + cmd.months;
+          return ok(0);
+        }
         if (!Number.isFinite(cmd.amount)) return fail('Invalid amount');
         if (!dryRun) this.earn(cmd.amount, 'cheats');
         return ok(0);
@@ -767,18 +817,45 @@ export class Sim {
         return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
       case 'placeStop':
         return placeStop(this, cmd.x, cmd.z, dryRun);
-      case 'zone':
-        return zone(this, cmd.zone, cmd.area, dryRun);
+      case 'zone': {
+        const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
+        return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
+      }
       case 'undo':
         return this.undoRedo('undo', dryRun);
       case 'redo':
         return this.undoRedo('redo', dryRun);
-      case 'setTax':
+      case 'setTax': {
+        const capped = scenarioForbids(this, { tax: cmd.rate });
+        if (capped) return fail(capped);
+        // After a lost election the council blocks tax rises for a year (M17).
+        const until = councilUntil(this);
+        if (until) {
+          const t = this.state.economy.taxes[cmd.zone];
+          const rising = cmd.wealth === 'all' ? t.some((r) => cmd.rate > r) : cmd.rate > t[cmd.wealth]!;
+          if (rising)
+            return {
+              ok: false,
+              reason: `The council blocks tax rises until ${until}, after the lost election`,
+            };
+        }
         return setTax(this, cmd.zone, cmd.wealth, cmd.rate, dryRun);
+      }
       case 'setFunding':
         return setFunding(this, cmd.dept, cmd.pct, dryRun);
-      case 'takeLoan':
+      case 'takeLoan': {
+        const no = scenarioForbids(this, { loan: true });
+        if (no) return fail(no);
+        const until = councilUntil(this);
+        if (until)
+          return {
+            ok: false,
+            reason: `The council blocks new loans until ${until}, after the lost election`,
+          };
         return takeLoan(this, cmd.amount, dryRun);
+      }
+      case 'promise':
+        return setPromise(this, cmd.promise, cmd.on, dryRun);
       case 'repayLoan':
         return repayLoan(this, cmd.id, dryRun);
       case 'disaster': {
@@ -807,6 +884,11 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setElections':
+        if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own elections');
+        return setElections(this, cmd.on, dryRun);
+      case 'startScenario':
+        return startScenario(this, cmd.id, dryRun);
       default: {
         const never: never = cmd;
         return fail(`Unknown command ${(never as { type: string }).type}`);
@@ -992,6 +1074,7 @@ export class Sim {
     s.tick++;
     const t = s.tick;
     if (s.economy.bankrupt) {
+      scenarioBankrupt(this);
       if (this.testMode) checkInvariants(this);
       return;
     }
@@ -1000,6 +1083,10 @@ export class Sim {
       run('month', () => {
         closeMonth(this, dateOf(t).totalMonths - 1);
         recordMonth(s.chronicle, monthFigures(this));
+        projectsMonth(this);
+        projectEvents(this);
+        electionsMonth(this);
+        scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
           c.processedToday = 0;
@@ -1155,6 +1242,36 @@ export class Sim {
       vehicles: this.state.vehicles.size,
       avgCommute: this.avgCommute(),
       busRiders: [...this.state.transit.riders.values()].reduce((a, b) => a + b, 0),
+      eduWorkforce: [t.eduWorkforce[0], t.eduWorkforce[1]],
+      election: this.electionSummary(),
+      scenario: this.scenarioStats(),
+    };
+  }
+
+  private scenarioCache: { key: string; value: ScenarioSummary | null } | null = null;
+
+  /** The scenario's goals panel (M18), worked out once a game hour (it walks every home). */
+  private scenarioStats(): ScenarioSummary | null {
+    const sc = this.state.scenario;
+    if (!sc) return null;
+    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${sc.status}`;
+    if (this.scenarioCache?.key !== key) this.scenarioCache = { key, value: scenarioSummary(this) };
+    return this.scenarioCache.value;
+  }
+
+  /** Where the election stands, for the city panel (M17). */
+  private electionSummary(): ElectionSummary | null {
+    const e = this.state.election;
+    if (e.nextMonth < 0) return null;
+    const last = e.results[e.results.length - 1];
+    return {
+      nextMonth: e.nextMonth,
+      monthsToVote: monthsToVote(this),
+      campaign: campaignOpen(this),
+      promises: e.promises.map((p) => ({ id: p.id, kept: promiseKept(this, p) })),
+      projected: projectedShare(this),
+      term: termNow(this),
+      last: last ? { tick: last.tick, share: last.share, won: last.won, promises: last.promises } : null,
     };
   }
 
@@ -1312,6 +1429,7 @@ export class Sim {
       damage: c.damage,
       flooded: c.flooded,
       modules: [...c.modules],
+      stage: c.build?.stage,
     };
   }
 
@@ -1550,6 +1668,22 @@ export class Sim {
         : d.tourism
           ? { kind: 'tourism', draw: d.tourism.draw ?? 0, rooms: d.tourism.rooms ?? 0 }
           : null,
+      project: d.project
+        ? {
+            stages: d.project.stages.map((st) => ({ ...st })),
+            stage: c.build?.stage ?? d.project.stages.length,
+            months: c.build?.months ?? 0,
+            waiting: c.build?.waiting ?? false,
+            monthsLeft: monthsLeft(c),
+            perk: d.project.perk,
+            nextEvent:
+              c.build || !d.project.matchDays
+                ? null
+                : this.state.matchDay && this.state.tick < this.state.matchDay.until
+                  ? 'Match day today'
+                  : `Next match day in ${d.project.matchDays.every - (dateOf(this.state.tick).totalMonths % d.project.matchDays.every)} month(s)`,
+          }
+        : null,
     };
   }
 

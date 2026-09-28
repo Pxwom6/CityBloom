@@ -1,3 +1,5 @@
+import { ScenarioScreen } from './Scenario';
+import { SCENARIOS } from '../data/scenarios';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { BUILD_ID, GAME_TITLE, GAME_VERSION } from '../config';
 import { MAP_PRESETS, type MapPreset } from '../data/world';
@@ -123,6 +125,10 @@ function MainMenu() {
         >
           <span>New city</span>
         </button>
+        <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
+          <span>Scenarios</span>
+          <small>{SCENARIOS.length} challenges</small>
+        </button>
         <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
           <span>Load city</span>
           {slots && slots.length > 0 && <small>{slots.length} saved</small>}
@@ -148,6 +154,7 @@ function NewGame() {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [sandbox, setSandbox] = useState(false);
   const [disasters, setDisasters] = useState(game.settings.disasters);
+  const [elections, setElections] = useState(game.settings.elections);
   const [tutorial, setTutorial] = useState<boolean | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   // The tutorial is on by default for a first city.
@@ -164,9 +171,10 @@ function NewGame() {
       difficulty,
       sandbox: sandbox ? '1' : '0',
       disasters: disasters ? '1' : '0',
+      elections: elections && !sandbox ? '1' : '0',
     });
     if (tut && !sandbox) q.set('tutorial', '1');
-    game.updateSettings({ disasters });
+    game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
   };
   return (
@@ -251,6 +259,18 @@ function NewGame() {
             />
             <span>
               Random disasters <small class="muted">rare earthquakes, tornadoes, floods and meteors</small>
+            </span>
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={elections && !sandbox}
+              disabled={sandbox}
+              data-testid="new-elections"
+              onChange={(e) => setElections((e.target as HTMLInputElement).checked)}
+            />
+            <span>
+              Elections <small class="muted">every four years, won mostly on approval</small>
             </span>
           </label>
           <label class="check">
@@ -693,6 +713,23 @@ function SettingsScreen() {
               if (game.mode === 'play') game.setRandomDisasters(disasters);
             }}
           />
+          <Check
+            on={game.mode === 'play' ? game.world.stats.election !== null : s.elections}
+            testid="set-elections"
+            label="Elections"
+            hint={
+              game.mode === 'play'
+                ? game.world.options.sandbox
+                  ? 'never in sandbox cities; on for new ones'
+                  : 'in this city, and new ones'
+                : 'in new cities'
+            }
+            set={(elections) => {
+              set({ elections });
+              if (game.mode === 'play' && !game.world.options.sandbox)
+                void game.dispatch({ type: 'setElections', on: elections });
+            }}
+          />
           <div class="field">
             <span>Autosave</span>
             <Segmented
@@ -744,6 +781,7 @@ export function Shell() {
     <div class={`shell ${game.mode}`} data-testid="shell">
       {screen === 'main' && <MainMenu />}
       {screen === 'newGame' && <NewGame />}
+      {screen === 'scenarios' && <ScenarioScreen />}
       {screen === 'pause' && <PauseMenu />}
       {screen === 'save' && <SaveScreen />}
       {screen === 'load' && <LoadScreen />}

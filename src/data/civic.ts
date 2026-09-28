@@ -2,6 +2,7 @@
  * Player-placed civic buildings: utilities now (M4), services, parks and landmarks later.
  * Footprints are in metres (w along the road, d away from it). DESIGN.md §3.6–3.7.
  */
+import { PROJECT_DEFS, type ProjectInfo } from './projects';
 import type { Dept } from './economy';
 
 export type Utility = 'power' | 'water' | 'sewage';
@@ -18,7 +19,8 @@ export type CivicCategory =
   | 'parks'
   | 'transit'
   | 'landmark'
-  | 'special';
+  | 'special'
+  | 'project';
 
 export interface CivicDef {
   id: string;
@@ -79,6 +81,8 @@ export interface CivicDef {
   requires?: string;
   /** Model family for the renderer. */
   model: string;
+  /** Big projects (M17): built in stages with requirements and a perk; see src/data/projects.ts. */
+  project?: ProjectInfo;
 }
 
 export const CIVIC_DEFS: CivicDef[] = [
@@ -526,8 +530,8 @@ CIVIC_DEFS.push(
     dept: 'tourism',
     w: 48,
     d: 40,
-    cost: 90_000,
-    upkeep: 520,
+    cost: 350_000,
+    upkeep: 1_600,
     tourism: { draw: 1_200 },
     landValue: { radius: 280, value: 0.15 },
     service: { kind: 'park', range: 18 },
@@ -543,8 +547,8 @@ CIVIC_DEFS.push(
     dept: 'tourism',
     w: 32,
     d: 32,
-    cost: 160_000,
-    upkeep: 800,
+    cost: 700_000,
+    upkeep: 2_600,
     tourism: { draw: 2_000 },
     landValue: { radius: 320, value: 0.15 },
     unique: true,
@@ -559,8 +563,8 @@ CIVIC_DEFS.push(
     dept: 'tourism',
     w: 48,
     d: 32,
-    cost: 250_000,
-    upkeep: 900,
+    cost: 1_200_000,
+    upkeep: 3_600,
     tourism: { draw: 3_000 },
     landValue: { radius: 360, value: 0.18 },
     service: { kind: 'park', range: 20 },
@@ -636,6 +640,9 @@ CIVIC_DEFS.push(
     model: 'techpark',
   },
 );
+
+// Big projects (M17).
+CIVIC_DEFS.push(...PROJECT_DEFS);
 
 export const CIVIC = new Map(CIVIC_DEFS.map((d) => [d.id, d]));
 

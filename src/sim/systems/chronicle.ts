@@ -34,8 +34,8 @@ export const CHRONICLE = {
 
 export interface ChronicleEvent {
   tick: number;
-  kind: 'milestone' | 'disaster';
-  /** Milestone index, or the disaster's kind. */
+  kind: 'milestone' | 'disaster' | 'project' | 'election';
+  /** Milestone index, the disaster's kind, or the finished project. */
   ref: number | string;
 }
 

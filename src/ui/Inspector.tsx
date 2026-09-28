@@ -165,6 +165,7 @@ const PURPOSE: Record<string, [string, string]> = {
   freight: ['Delivery truck', 'Taking goods from industry to a shop'],
   export: ['Export truck', 'Taking goods out to the region'],
   import: ['Import truck', 'Bringing goods in from the region'],
+  event: ['Match-day fan', 'Driving in from the region for the match at the stadium'],
 };
 
 const WALKING: Record<string, [string, string]> = {
@@ -293,6 +294,7 @@ function CivicInspector({ id }: { id: number }) {
           );
         return null;
       })()}
+      {d.project && <ProjectProgress p={d.project} />}
       {d.transit && d.transit.stops < 2 && (
         <div class="warn">Place at least two bus stops on roads this depot can reach to start a line.</div>
       )}
@@ -710,5 +712,49 @@ function BuildingInspector({ id }: { id: number | null }) {
         }}
       />
     </aside>
+  );
+}
+
+/** A big project's stages, how far along it is, what it's waiting for, and its perk (M17). */
+function ProjectProgress({ p }: { p: NonNullable<CivicDetails['project']> }) {
+  const open = p.stage >= p.stages.length;
+  const cur = p.stages[Math.min(p.stage, p.stages.length - 1)]!;
+  const next = p.stages[p.stage + 1];
+  return (
+    <section class="project-progress" data-testid="project-progress">
+      <ol class="project-stages">
+        {p.stages.map((st, k) => (
+          <li key={k} class={k < p.stage ? 'done' : k === p.stage ? 'now' : ''}>
+            <span>{st.name}</span>
+            <small>
+              {st.months} mo · ${st.cost.toLocaleString('en-US')}
+            </small>
+          </li>
+        ))}
+      </ol>
+      {open ? (
+        <p class="project-status ok" data-testid="project-status">
+          Open{p.nextEvent ? ` · ${p.nextEvent}` : ''}
+        </p>
+      ) : p.waiting && next ? (
+        <p class="project-status warn" data-testid="project-status">
+          Waiting for ${next.cost.toLocaleString('en-US')} to start the {next.name.toLowerCase()}. The site
+          carries on as soon as the treasury can pay.
+        </p>
+      ) : (
+        <>
+          <div class="milestone-bar" aria-label="Progress on this stage">
+            <span style={{ width: `${Math.round((p.months / cur.months) * 100)}%` }} />
+          </div>
+          <p class="project-status" data-testid="project-status">
+            {cur.name}: {p.months} of {cur.months} months · opens in about {p.monthsLeft} month
+            {p.monthsLeft === 1 ? '' : 's'}
+          </p>
+        </>
+      )}
+      <p class="project-perk">
+        <strong>{open ? 'Perk' : 'When it opens'}:</strong> {p.perk}
+      </p>
+    </section>
   );
 }

@@ -1,3 +1,4 @@
+import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
@@ -40,7 +41,7 @@ export interface TestApi {
   /** Id of the first civic building with this def, or null. */
   findCivic(def: string): number | null;
   /** Civic buildings on the client mirror. */
-  getCivics(): { id: number; def: string; x: number; z: number; angle: number }[];
+  getCivics(): { id: number; def: string; x: number; z: number; angle: number; stage?: number }[];
   /** Vehicles as last drawn. */
   getVehicles(): { id: number; kind: string; phase: string; x: number; z: number }[];
   /** Road segment nearest (x, z) within 20 m. */
@@ -95,6 +96,8 @@ export interface TestApi {
    * row per def and `variants` columns. Screenshots only; the sim knows nothing about them.
    */
   showGallery(defs: string[], at: { x: number; z: number }, variants: number): void;
+  /** Every big project at every construction stage and finished, in rows from `at` (dev, M17). */
+  showProjects(at: { x: number; z: number }): void;
   /** Disasters under way, damaged and flooded roads and craters, as the client sees them. */
   getDisasters(): DisasterData;
   /** What a click at this screen position would select. */
@@ -145,6 +148,12 @@ export interface TestApi {
   checkForUpdate(): Promise<void>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
+  /** The scenario being played (M18): its goals summary, and whether the brief or end screen is up. */
+  getScenario(): {
+    summary: CityStats['scenario'];
+    brief: boolean;
+    end: Game['scenarioEnd'];
+  };
   /** Photo mode (M16): its state, what the renderer hides and draws, and where the camera is. */
   getPhoto(): {
     on: boolean;
@@ -266,7 +275,14 @@ export function installTestApi(game: Game): TestApi {
     getTransit: () => ({ stops: game.world.stops.size, lines: game.world.lines.map((l) => l.stops.length) }),
     findCivic: (def) => [...game.world.civics.values()].find((c) => c.def === def)?.id ?? null,
     getCivics: () =>
-      [...game.world.civics.values()].map((c) => ({ id: c.id, def: c.def, x: c.x, z: c.z, angle: c.angle })),
+      [...game.world.civics.values()].map((c) => ({
+        id: c.id,
+        def: c.def,
+        x: c.x,
+        z: c.z,
+        angle: c.angle,
+        stage: c.stage,
+      })),
     getVehicles: () =>
       [...game.renderer.vehicles.positions].map(([id, v]) => ({
         id,
@@ -404,6 +420,11 @@ export function installTestApi(game: Game): TestApi {
     }),
     checkForUpdate: () => game.updates.check(),
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getScenario: () => ({
+      summary: game.world.stats.scenario,
+      brief: game.scenarioBrief,
+      end: game.scenarioEnd,
+    }),
     getPhoto: () => {
       const r = game.renderer;
       const p = game.photo;
@@ -458,6 +479,38 @@ export function installTestApi(game: Game): TestApi {
         z += D + 6;
       }
       w.applyFrame({ tick: w.stats.tick, stats: w.stats, buildings: { upserts, removed: [] } });
+    },
+    showProjects: (at) => {
+      const w = game.world;
+      const upserts: CivicData[] = [];
+      let id = 9_500_000;
+      let z = at.z;
+      for (const def of [...CIVIC.values()].filter((d) => d.project)) {
+        const n = def.project!.stages.length;
+        let x = at.x;
+        for (let stage = 0; stage <= n; stage++) {
+          upserts.push({
+            id: id++,
+            def: def.id,
+            x: x + def.w / 2,
+            z: z + def.d / 2,
+            y: Math.max(0, w.heightAt(x + def.w / 2, z + def.d / 2)),
+            angle: 0,
+            side: 1,
+            access: true,
+            fill: 0,
+            out: 0,
+            variant: 0,
+            damage: 0,
+            flooded: false,
+            modules: [],
+            stage: stage < n ? stage : undefined,
+          });
+          x += def.w + 12;
+        }
+        z += def.d + 14;
+      }
+      w.applyFrame({ tick: w.stats.tick, stats: w.stats, civics: { upserts, removed: [] } });
     },
     getAudio: () => ({
       running: game.audio?.running ?? false,

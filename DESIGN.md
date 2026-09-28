@@ -647,6 +647,59 @@ appended as events (`{tick, kind, ref}`, at most 300). It is saved and hashed wi
 state (save v14; a v13 city starts an empty history at its current tick). The client reads it with
 the `chronicle` query; `src/ui/History.tsx` charts it with `TimeChart` (`src/ui/charts.tsx`).
 
+### 3.18 Big projects and elections (M17)
+
+**Projects** are civic defs with a `project` block (`src/data/projects.ts`: stages with months and
+cost, requirements, perk text and perk numbers), appended to `CIVIC_DEFS` with category `project`.
+Placing one (`placeCivic`) pays `placementPrice` (the first stage) and sets `Civic.build = {stage,
+months, waiting}`; `civicOnline` is false and `civicUpkeep` 0 while `build` is set, so every system
+that reads civic output or service ignores a site for free. `projectsMonth` (month close) counts
+months on the current stage and, when it's done, pays the next stage from the treasury (ledger line
+`projects`) or sets `waiting`; after the last stage it deletes `build`, marks the civic changed and
+records a chronicle event. Requirements are checked in `checkPlacement` via `projectBlocked`
+(population peak, education shares of the workforce from `totals.eduWorkforce`, visitors, a running
+civic). Scheduled perks run in `projectEvents` at month close: the stadium's match day
+(`SimState.matchDay = {civic, until}`) is read by totals (approval), specialisations (visitors) and
+the freight/visitor loads in `commute.ts` (fans as `event` trips from the highway to the stadium);
+the launch complex's launches are events only. Static perks are plain numbers read by the systems
+that already handle them (power output, tourism draw, demand factors, research income). Models per
+stage are in `src/render/assets/projectModels.ts`; `CivicData.stage` keys the model cache.
+
+**Elections** (`src/sim/systems/elections.ts`, `src/data/elections.ts`): `SimState.election =
+{nextMonth, promises, results, term}` (save v15). `electionsMonth` opens the campaign six months
+ahead (an event) and holds the vote at `nextMonth`: `projectedShare` (approval, plus or minus each
+promise kept or broken, measured by `promiseKept` against the baseline stored when it was made) plus
+a seeded swing from the events stream. A result sets `term` for 12 months: a win adds the grant
+(ledger `grants`) and approval via `honeymoon`; a loss makes `setTax` refuse rises and `takeLoan`
+refuse loans until `term.until`. `nextMonth = -1` means no elections (sandbox, or switched off by
+`setElections`). The summary for the UI is `CityStats.election`.
+
+### 3.19 Scenarios (M18)
+
+A scenario is data (`src/data/scenarios.ts`): the starting city as a save in `public/scenarios/`,
+goals (a measure with a `min` or `max` and months it must `hold`), limits (forbidden civic buildings
+or zones, no loans, a tax cap), a time limit in months, two star rules (win within so many months,
+or with a bonus goal met on the day) and whether disasters and elections are on. The measures are the
+city history's monthly figures (population, approval, jobs, unemployment, treasury, income, spending,
+air pollution and crime at homes, the average commute) plus the month's net, visitors, abandoned
+buildings, loans owed, a big project open, and an election won since the start.
+
+`SimState.scenario` (save v16; a v15 city has none) holds the id, start tick, status, stars, end
+tick, reason and each goal's months held. `startScenario` begins it on the loaded city (setting
+disasters and elections as the scenario says). `scenarioMonth` runs at month close after the ledger,
+history and elections: each goal's held count goes up or back to 0, every goal at its hold wins
+(stars from the rules), and the first month close at or after the deadline (start plus the months,
+rounded up to a month close) loses. Bankruptcy and, where `mustWinElection`, a lost vote lose at
+once. Limits are checked in `dispatch` (`scenarioForbids`) before the command: placement, zoning,
+loans and taxes. `CityStats.scenario` carries the goals panel's summary, worked out once a game hour.
+
+Starting cities are built by `scripts/scenarios.ts` from recipes in `scripts/lib/scenarioCities.ts`,
+most with the balance tool's mayor (`scripts/lib/mayor.ts`, which can take over a city it laid out
+with `adopt()`), two with purpose-built layouts (Gridlock, Smokestack Valley). The client boots
+`?scenario=<id>` by fetching the save, loading it and dispatching `startScenario`; progress (best
+stars and months per scenario) is in localStorage (`src/client/scenarioProgress.ts`); the screens are
+in `src/ui/Scenario.tsx`.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

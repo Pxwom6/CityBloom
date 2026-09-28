@@ -15,8 +15,16 @@ export const MILESTONES: Milestone[] = [
   { population: 2_000, name: 'Town', blurb: 'A proper town: high schools, sewage treatment and recycling.' },
   { population: 5_000, name: 'Large town', blurb: 'Tall buildings, hospitals and the first city policies.' },
   { population: 10_000, name: 'Small city', blurb: 'Tourism and trade open up, with landmarks to match.' },
-  { population: 20_000, name: 'City', blurb: 'Boulevards, a university town and a research park.' },
-  { population: 40_000, name: 'Large city', blurb: 'Nuclear power and grand landmarks.' },
+  {
+    population: 20_000,
+    name: 'City',
+    blurb: 'Boulevards, a university, a research park and the first big projects.',
+  },
+  {
+    population: 40_000,
+    name: 'Large city',
+    blurb: 'Nuclear power, grand landmarks, a launch complex and a garden expo.',
+  },
   { population: 70_000, name: 'Major city', blurb: 'A skyline to be proud of.' },
   { population: 100_000, name: 'Metropolis', blurb: 'One hundred thousand people call it home.' },
 ];

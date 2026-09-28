@@ -1,15 +1,20 @@
 import { useState } from 'preact/hooks';
 import { ACHIEVEMENTS } from '../data/achievements';
+import { ELECTIONS, PROMISES } from '../data/elections';
 import { MILESTONES } from '../data/progression';
 import { POLICIES, policyCost } from '../data/policies';
 import { unlocksAt } from '../data/unlocks';
+import type { CityStats, ElectionSummary } from '../sim/protocol';
+import { formatMonth, START_TICK_OFFSET, TICKS_PER_MONTH } from '../sim/time';
+import type { Game } from '../game';
 import { useGameUpdates } from './hooks';
 import { IconCity, IconTrophy } from './icons';
 
-type Tab = 'progress' | 'policies' | 'achievements';
+type Tab = 'progress' | 'policies' | 'election' | 'achievements';
 const TABS: { id: Tab; name: string }[] = [
   { id: 'progress', name: 'Progress' },
   { id: 'policies', name: 'Policies' },
+  { id: 'election', name: 'Election' },
   { id: 'achievements', name: 'Achievements' },
 ];
 
@@ -34,7 +39,7 @@ export function CityPanel() {
         </button>
       </header>
       <nav class="tabs" role="tablist">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.id !== 'election' || st.election).map((t) => (
           <button
             key={t.id}
             role="tab"
@@ -118,6 +123,7 @@ export function CityPanel() {
             })}
           </ul>
         )}
+        {tab === 'election' && st.election && <ElectionTab game={game} st={st} e={st.election} />}
         {tab === 'achievements' && (
           <ul class="achievement-list" data-testid="achievements">
             {ACHIEVEMENTS.map((a) => {
@@ -139,15 +145,129 @@ export function CityPanel() {
   );
 }
 
+const pct = (x: number) => `${Math.round(x * 100)} %`;
+
+/** The next vote: when, how it looks, the campaign's promises, and the last result and its term. */
+function ElectionTab({ game, st, e }: { game: Game; st: CityStats; e: ElectionSummary }) {
+  const voteTick = e.nextMonth * TICKS_PER_MONTH - START_TICK_OFFSET;
+  const months = Math.max(0, Math.ceil(e.monthsToVote - 1e-6));
+  const winning = e.projected >= 0.5;
+  const made = new Map(e.promises.map((p) => [p.id, p.kept]));
+  const full = e.promises.length >= ELECTIONS.maxPromises;
+  const opens = Math.max(0, months - ELECTIONS.campaign);
+  return (
+    <>
+      <section class="milestone-card" data-testid="election-card">
+        <h3>
+          Next vote: {formatMonth(voteTick)}{' '}
+          <span class="muted">
+            (in {months} month{months === 1 ? '' : 's'})
+          </span>
+        </h3>
+        <div class="vote-bar" aria-label="Projected vote share">
+          <span class={winning ? 'win' : 'lose'} style={{ width: pct(e.projected) }} />
+          <i aria-hidden="true" />
+        </div>
+        <div class="milestone-next" data-testid="election-projected">
+          If the vote were today: <strong>{pct(e.projected)}</strong> —{' '}
+          {winning ? 'you would win' : 'you would lose'}.
+        </div>
+        <p class="muted">
+          Voters mostly follow approval (now {pct(st.approval)}; {pct(ELECTIONS.neutralApproval)} is an even
+          race). Each promise kept adds {Math.round(ELECTIONS.kept * 100)} points on the day; each broken one
+          costs {Math.round(-ELECTIONS.broken * 100)}.
+        </p>
+      </section>
+      <section class="milestone-card">
+        <h3>Promises</h3>
+        <p class="muted">
+          {e.campaign
+            ? `The campaign is on: make up to ${ELECTIONS.maxPromises}. Each is judged against where the city stands when you make it.`
+            : `Promises open ${ELECTIONS.campaign} months before the vote (in ${opens} month${opens === 1 ? '' : 's'}).`}
+        </p>
+        <ul class="policy-list promise-list">
+          {PROMISES.map((p) => {
+            const on = made.has(p.id);
+            const kept = made.get(p.id);
+            return (
+              <li key={p.id} class={`policy ${on ? 'on' : ''} ${!e.campaign ? 'locked' : ''}`}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!e.campaign || (!on && full)}
+                    data-testid={`promise-${p.id}`}
+                    onChange={(ev) =>
+                      void game
+                        .dispatch({
+                          type: 'promise',
+                          promise: p.id,
+                          on: (ev.target as HTMLInputElement).checked,
+                        })
+                        .then((r) => {
+                          if (!r.ok) game.toast(r.reason, 'bad');
+                        })
+                    }
+                  />
+                  <span class="policy-name">{p.text}</span>
+                  {on && (
+                    <span
+                      class={`promise-state ${kept ? 'kept' : 'not'}`}
+                      data-testid={`promise-state-${p.id}`}
+                    >
+                      {kept ? '✓ On track' : '✗ Not yet'}
+                    </span>
+                  )}
+                </label>
+                <div class="policy-effect">{p.test}</div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      {(e.term || e.last) && (
+        <section class="milestone-card" data-testid="election-last">
+          <h3>Last election</h3>
+          {e.last && (
+            <p>
+              {formatMonth(e.last.tick)}: {e.last.won ? 'won' : 'lost'} with {pct(e.last.share)}.
+              {e.last.promises.length > 0 &&
+                ` Promises: ${e.last.promises
+                  .map(
+                    (p) =>
+                      `${PROMISES.find((d) => d.id === p.id)?.text ?? p.id} (${p.kept ? 'kept' : 'broken'})`,
+                  )
+                  .join(', ')}.`}
+            </p>
+          )}
+          {e.term &&
+            (e.term.won ? (
+              <p class="muted">
+                Goodwill until {formatMonth(e.term.until)}: approval +{Math.round(ELECTIONS.honeymoon * 100)}{' '}
+                points.
+              </p>
+            ) : (
+              <p class="note warn">
+                The council blocks tax rises and new loans until {formatMonth(e.term.until)}.
+              </p>
+            ))}
+        </section>
+      )}
+    </>
+  );
+}
+
 /** Top-bar button for the city panel. */
 export function CityButton() {
   const game = useGameUpdates(500);
   const got = Object.keys(game.world.stats.achievements).length;
+  const e = game.world.stats.election;
+  const vote = e?.campaign ? ` · Election in ${Math.max(1, Math.ceil(e.monthsToVote))} months` : '';
   return (
     <button
-      class={`btn icon city-btn ${game.panel === 'city' ? 'active' : ''}`}
+      class={`btn icon city-btn ${game.panel === 'city' ? 'active' : ''} ${e?.campaign ? 'campaign' : ''}`}
       data-testid="open-city"
-      title={`City: progress, policies and achievements (P) · ${got} of ${ACHIEVEMENTS.length} achievements`}
+      title={`City: progress, policies, elections and achievements (P) · ${got} of ${ACHIEVEMENTS.length} achievements${vote}`}
       aria-label="City"
       onClick={() => game.openPanel('city')}
     >

@@ -242,7 +242,7 @@ export class TrafficRenderer {
     let back = false;
     if (trip.purpose === 'work') back = hour >= 13 || hour < 4 ? Math.random() < 0.85 : Math.random() < 0.15;
     else if (trip.purpose === 'shop') back = Math.random() < 0.5;
-    const freight = trip.purpose !== 'work' && trip.purpose !== 'shop';
+    const freight = trip.purpose !== 'work' && trip.purpose !== 'shop' && trip.purpose !== 'event';
     const r = Math.random();
     const model: ModelName = freight ? 'truck' : r < 0.55 ? 'sedan' : r < 0.85 ? 'hatch' : 'van';
     const paint = freight ? TRUCK_PAINT : PAINT;

@@ -1,10 +1,11 @@
+import { requirementStatus, type RequirementContext } from '../data/projects';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BUILDABLE_ROADS, ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
-import { useGameUpdates } from './hooks';
+import { useGame, useGameUpdates } from './hooks';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
 import { TRANSIT } from '../data/balance';
 import { MAPS } from '../client/overlay';
@@ -34,6 +35,7 @@ import {
   IconStraight,
   IconRedo,
   IconCamera,
+  IconCrane,
   IconUndo,
   IconZone,
   IconAlert,
@@ -278,6 +280,7 @@ export function Toolbar() {
           {CIVIC_DEFS.filter(
             (d) => d.category === (active === 'stop' ? 'transit' : tools.place.category),
           ).map((d) => {
+            if (d.project) return <ProjectButton key={d.id} def={d} />;
             const locked = pop < d.unlockPopulation;
             const out = d.output ? Object.entries(d.output).map(([k, v]) => `${v} ${k} units`) : [];
             return (
@@ -398,6 +401,12 @@ export function Toolbar() {
               IconCrate,
               'Trade and research',
               'Freight, ore mines and oil wells earn export income; a research park grows high-tech industry.',
+            ],
+            [
+              'project',
+              IconCrane,
+              'Big projects',
+              'A stadium, a launch complex, a solar tower array, a garden expo, a convention centre: built in stages over months, each with a lasting perk.',
             ],
           ] as [CivicCategory, typeof IconBolt, string, string][]
         ).map(([cat, Icon, name, blurb]) => (
@@ -658,5 +667,50 @@ export function MapLegend() {
         <span>{res.legend[1]}</span>
       </div>
     </div>
+  );
+}
+
+/** A big project in the build menu (M17): what it costs and takes, what it needs, and its perk. */
+function ProjectButton({ def }: { def: CivicDef }) {
+  const game = useGame();
+  const tools = game.tools;
+  const st = game.world.stats;
+  const p = def.project!;
+  const civics = [...game.world.civics.values()];
+  const sandbox = game.world.options.sandbox;
+  const ctx: RequirementContext = {
+    population: st.unlockAll ? Infinity : st.peak,
+    education: st.eduWorkforce,
+    visitors: st.visitors,
+    runs: (id) => civics.some((c) => c.def === id && c.stage === undefined),
+  };
+  const reqs = p.requires.map((r) => requirementStatus(r, ctx));
+  const built = civics.find((c) => c.def === def.id);
+  const blocked = !sandbox && reqs.some((r) => !r.met);
+  const total = p.stages.reduce((a, s) => a + s.cost, 0);
+  const months = p.stages.reduce((a, s) => a + s.months, 0);
+  return (
+    <ToolButton
+      id={`place-${def.id}`}
+      active={game.tools.activeId === 'place' && tools.place.def === def.id}
+      disabled={blocked || !!built}
+      onClick={() => {
+        tools.place.setDef(def.id);
+        tools.use('place');
+      }}
+      tip={{
+        title: def.name,
+        lines: [
+          `$${total.toLocaleString('en-US')} over ${months} months, in ${p.stages.length} stages (${p.stages.map((s) => s.name.toLowerCase()).join(', ')}); $${def.upkeep.toLocaleString('en-US')}/month once open`,
+          def.blurb,
+          `Perk: ${p.perk}`,
+          ...reqs.map((r) => `${r.met ? '✓' : '✗'} ${r.label}${r.met ? '' : ` (${r.now})`}`),
+          ...(built ? [built.stage === undefined ? 'Already built' : 'Under construction'] : []),
+        ],
+      }}
+    >
+      {blocked ? <IconLock /> : null}
+      <span class="tool-label">{def.name}</span>
+    </ToolButton>
   );
 }

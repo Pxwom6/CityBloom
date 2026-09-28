@@ -1,3 +1,4 @@
+import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { Vec2 } from './geom';
@@ -31,16 +32,23 @@ export type Command =
   | { type: 'setTax'; zone: 'R' | 'C' | 'I'; wealth: 0 | 1 | 2 | 'all'; rate: number }
   | { type: 'setFunding'; dept: Dept; pct: number }
   | { type: 'takeLoan'; amount: number }
+  /** Elections (M17): make or withdraw a campaign promise. */
+  | { type: 'promise'; promise: PromiseId; on: boolean }
   | { type: 'repayLoan'; id: number }
   /** Place a civic building: centre, road tangent angle and which side of the road it stands on. */
   | { type: 'placeBuilding'; def: string; x: number; z: number; angle: number; side: 1 | -1 }
   | { type: 'cheat'; cheat: 'unlockAll' }
   /** Start a fire in a building (debug panel, tests). */
   | { type: 'cheat'; cheat: 'ignite'; id: number }
+  /** Test mode only: bring the next vote to `months` months away (e2e). */
+  | { type: 'cheat'; cheat: 'electionIn'; months: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
   | { type: 'setDisasters'; on: boolean }
+  | { type: 'setElections'; on: boolean }
+  /** Begin a scenario (M18) on the loaded starting city. */
+  | { type: 'startScenario'; id: string }
   /** Enact or repeal a policy. */
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
   /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */

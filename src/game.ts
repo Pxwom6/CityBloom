@@ -17,6 +17,7 @@ import type { ToolHint } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
+import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
@@ -75,7 +76,7 @@ export function applyUiScale(scale: number): void {
 }
 
 /** Full-screen menus: the main menu and new-game screen, the pause menu and the screens inside it. */
-export type Screen = 'main' | 'newGame' | 'pause' | 'save' | 'load' | 'settings';
+export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load' | 'settings';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -105,7 +106,11 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | null = null;
+  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | null = null;
+  /** A scenario's brief, shown when it begins (M18). */
+  scenarioBrief = false;
+  /** How the scenario ended, shown until the player carries on. */
+  scenarioEnd: { won: boolean; stars: number; reason: string; months: number } | null = null;
   /** Milestone being celebrated (index into MILESTONES), if any. */
   celebration: number | null = null;
   private celebrationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -404,6 +409,47 @@ export class Game {
           at,
           false,
         );
+      // Big projects and elections (M17).
+      else if (e.kind === 'projectStage')
+        this.notice(`project:${e.id}`, `The ${civicName()} moves on to its next stage.`, 'info', at, false);
+      else if (e.kind === 'projectWaiting')
+        this.notice(
+          `projectWaiting:${e.id}`,
+          `Work on the ${civicName()} has stopped: the treasury can't pay for the next stage yet.`,
+          'bad',
+          at,
+        );
+      else if (e.kind === 'projectDone') {
+        this.notice(`projectDone:${e.id}`, `The ${civicName()} is open!`, 'ok', at);
+        this.audio?.play('place');
+      } else if (e.kind === 'matchDay')
+        this.notice('matchDay', 'Match day at the stadium: fans are driving in from all over.', 'info', at);
+      else if (e.kind === 'launch')
+        this.notice('launch', 'A rocket lifted off from the launch complex.', 'ok', at, false);
+      else if (e.kind === 'campaign')
+        this.notice(
+          'campaign',
+          'The election is six months away. Make up to two promises in the city panel (P → Election).',
+          'info',
+        );
+      else if (e.kind === 'scenarioWon' || e.kind === 'scenarioLost') {
+        const sc = this.world.stats.scenario;
+        const months = sc ? sc.monthsTaken : 0;
+        const won = e.kind === 'scenarioWon';
+        this.scenarioEnd = { won, stars: e.id, reason: String(e.info?.reason ?? ''), months };
+        if (won && sc) recordWin(sc.id, e.id, months);
+        this.setSpeed(0);
+        this.notify();
+      } else if (e.kind === 'electionWon' || e.kind === 'electionLost') {
+        const share = Math.round(Number(e.info?.share ?? 0) * 100);
+        this.notice(
+          'election',
+          e.kind === 'electionWon'
+            ? `Re-elected with ${share} % of the vote! The region sends a grant, and residents are in a good mood.`
+            : `Lost the election with ${share} % of the vote. For a year the council blocks tax rises and new loans.`,
+          e.kind === 'electionWon' ? 'ok' : 'bad',
+        );
+      }
     }
   }
 

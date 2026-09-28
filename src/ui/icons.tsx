@@ -242,6 +242,12 @@ export const IconTrophy = (p: P) => (
     <path d="M7 4h10v5a5 5 0 01-10 0zM7 6H4a3 3 0 003 4M17 6h3a3 3 0 01-3 4M12 14v4M8 21h8M9 18h6" />
   </svg>
 );
+/** A tower crane: big projects. */
+export const IconCrane = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M6 21V4M6 4h14M6 4 3 7M6 8l4-4M16 4v5M14 9h4v3h-4zM3 21h8" />
+  </svg>
+);
 /** A camera: photo mode. */
 export const IconCamera = (p: P) => (
   <svg {...base} {...p}>

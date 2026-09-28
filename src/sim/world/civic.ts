@@ -1,3 +1,4 @@
+import { scenarioForbids } from '../systems/scenario';
 import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
 import { MODULE } from '../../data/modules';
 import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
@@ -178,6 +179,9 @@ export function checkPlacement(
   const def = CIVIC.get(defId);
   const res: PlacementCheck = { ok: false, demolish: [], access: null, y: 0, pad: null };
   if (!def) return { ...res, reason: 'Unknown building' };
+  // A scenario's limits (M18) come first: no spot would do.
+  const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id });
+  if (forbidden) return { ...res, reason: forbidden };
   if (![x, z, angle].every(Number.isFinite)) return { ...res, reason: 'Invalid position' };
   const rect: ORect = { x, z, hw: def.w / 2, hd: def.d / 2, angle };
   const c = Math.cos(angle);

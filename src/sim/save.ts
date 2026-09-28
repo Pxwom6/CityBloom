@@ -7,7 +7,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -166,6 +166,8 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
       election: newElectionState(s.tick as number, !options.sandbox),
     };
   },
+  // v15 → v16 (M18): scenarios. An older city isn't playing one.
+  15: (s) => ({ ...s, scenario: null }),
 };
 
 export function encodeState(state: SimState): unknown {

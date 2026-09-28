@@ -98,6 +98,14 @@ import {
   setPromise,
   termNow,
 } from './systems/elections';
+import {
+  scenarioBankrupt,
+  scenarioForbids,
+  scenarioMonth,
+  scenarioSummary,
+  startScenario,
+  type ScenarioSummary,
+} from './systems/scenario';
 import { segSpeed, stepVehicles } from './systems/vehicles';
 import { computeOverlay } from './systems/overlays';
 import {
@@ -176,7 +184,10 @@ export type SimEvent = {
     | 'launch'
     | 'campaign'
     | 'electionWon'
-    | 'electionLost';
+    | 'electionLost'
+    // Scenarios (M18): id is the stars won.
+    | 'scenarioWon'
+    | 'scenarioLost';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -276,6 +287,7 @@ export class Sim {
       chronicle: emptyChronicle(0),
       matchDay: null,
       election: newElectionState(0, options.elections && !options.sandbox),
+      scenario: null,
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -799,13 +811,17 @@ export class Sim {
         return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
       case 'placeStop':
         return placeStop(this, cmd.x, cmd.z, dryRun);
-      case 'zone':
-        return zone(this, cmd.zone, cmd.area, dryRun);
+      case 'zone': {
+        const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
+        return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
+      }
       case 'undo':
         return this.undoRedo('undo', dryRun);
       case 'redo':
         return this.undoRedo('redo', dryRun);
       case 'setTax': {
+        const capped = scenarioForbids(this, { tax: cmd.rate });
+        if (capped) return fail(capped);
         // After a lost election the council blocks tax rises for a year (M17).
         const until = councilUntil(this);
         if (until) {
@@ -822,6 +838,8 @@ export class Sim {
       case 'setFunding':
         return setFunding(this, cmd.dept, cmd.pct, dryRun);
       case 'takeLoan': {
+        const no = scenarioForbids(this, { loan: true });
+        if (no) return fail(no);
         const until = councilUntil(this);
         if (until)
           return {
@@ -861,7 +879,10 @@ export class Sim {
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
       case 'setElections':
+        if (this.state.scenario?.status === 'playing') return fail('A scenario sets its own elections');
         return setElections(this, cmd.on, dryRun);
+      case 'startScenario':
+        return startScenario(this, cmd.id, dryRun);
       default: {
         const never: never = cmd;
         return fail(`Unknown command ${(never as { type: string }).type}`);
@@ -1047,6 +1068,7 @@ export class Sim {
     s.tick++;
     const t = s.tick;
     if (s.economy.bankrupt) {
+      scenarioBankrupt(this);
       if (this.testMode) checkInvariants(this);
       return;
     }
@@ -1058,6 +1080,7 @@ export class Sim {
         projectsMonth(this);
         projectEvents(this);
         electionsMonth(this);
+        scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
           c.processedToday = 0;
@@ -1215,7 +1238,19 @@ export class Sim {
       busRiders: [...this.state.transit.riders.values()].reduce((a, b) => a + b, 0),
       eduWorkforce: [t.eduWorkforce[0], t.eduWorkforce[1]],
       election: this.electionSummary(),
+      scenario: this.scenarioStats(),
     };
+  }
+
+  private scenarioCache: { key: string; value: ScenarioSummary | null } | null = null;
+
+  /** The scenario's goals panel (M18), worked out once a game hour (it walks every home). */
+  private scenarioStats(): ScenarioSummary | null {
+    const sc = this.state.scenario;
+    if (!sc) return null;
+    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${sc.status}`;
+    if (this.scenarioCache?.key !== key) this.scenarioCache = { key, value: scenarioSummary(this) };
+    return this.scenarioCache.value;
   }
 
   /** Where the election stands, for the city panel (M17). */

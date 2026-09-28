@@ -1,3 +1,4 @@
+import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
 import type { TerrainParams } from './terrain/generate';
@@ -57,6 +58,8 @@ export interface CityStats {
   eduWorkforce: [number, number];
   /** Elections (M17): the next vote, the campaign, promises made, a term in force, the last result. */
   election: ElectionSummary | null;
+  /** The scenario being played (M18), or null. */
+  scenario: ScenarioSummary | null;
 }
 
 export interface ElectionSummary {

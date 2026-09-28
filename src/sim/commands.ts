@@ -47,6 +47,8 @@ export type Command =
   /** Random disasters on or off. */
   | { type: 'setDisasters'; on: boolean }
   | { type: 'setElections'; on: boolean }
+  /** Begin a scenario (M18) on the loaded starting city. */
+  | { type: 'startScenario'; id: string }
   /** Enact or repeal a policy. */
   | { type: 'setPolicy'; id: PolicyId; on: boolean }
   /** Pick up a civic building and put it down elsewhere, keeping its add-ons (M14). */

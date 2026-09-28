@@ -13,6 +13,7 @@ import type { Vehicle } from './systems/vehicles';
 import type { UtilityStats } from './systems/utilities';
 import type { Incident } from './systems/incidents';
 import type { TransitState } from './systems/transit';
+import type { ScenarioState } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
@@ -116,4 +117,6 @@ export interface SimState {
   matchDay: { civic: number; until: number } | null;
   /** Elections (M17): the next vote, promises made, results, and a term's perk or limits. */
   election: ElectionState;
+  /** The scenario this city is playing (M18), or null. */
+  scenario: ScenarioState | null;
 }

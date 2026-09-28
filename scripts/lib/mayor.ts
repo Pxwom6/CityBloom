@@ -17,6 +17,7 @@ import { MODULE } from '../../src/data/modules';
 import { trucksFor } from '../../src/sim/systems/garbage';
 import { campaignOpen } from '../../src/sim/systems/elections';
 import { projectBlocked, projectCost } from '../../src/sim/systems/projects';
+import { scenarioForbids } from '../../src/sim/systems/scenario';
 
 export type Vec2 = { x: number; z: number };
 export type StrategyId = 'careful' | 'greedy' | 'neglectful';
@@ -104,6 +105,8 @@ export class Player {
     dead?: boolean;
   }[] = [];
   log: string[] = [];
+  /** Civic buildings this mayor won't build (a scenario's starting city built without coal). */
+  avoid: string[] = [];
   /** Goals reached (def → month), elections held, and money spent on goals this month. */
   goalsMet = new Map<string, number>();
   goalSpend = 0;
@@ -124,6 +127,64 @@ export class Player {
           });
     const hw = this.sim.state.net.nodes.get(this.sim.state.highway.connect)!;
     this.c = { x: hw.x, z: hw.z };
+  }
+
+  /**
+   * Take over a city this planner laid out (a scenario's starting city): find which district slots
+   * have their avenue, whether each is zoned (a district) or not (a quarter), and whether its side
+   * streets are already avenues. Slots without roads are skipped, as the planner itself does.
+   */
+  adopt(): this {
+    const net = this.sim.state.net;
+    const mids = [...net.segments.values()]
+      .filter((sg) => sg.type !== 'highway')
+      .map((sg) => {
+        const cv = this.sim.net.curve(sg.id);
+        return { sg, cv, mid: cv.pointAt(cv.length / 2) };
+      });
+    let last = -1;
+    const found: (typeof this.districts)[number][] = [];
+    DISTRICT_ORDER.forEach(([i, j], k) => {
+      const x0 = this.c.x + i * DW;
+      const z = this.c.z + j * ROW;
+      const segs = mids
+        .filter(({ sg, cv }) => {
+          if (sg.type !== 'avenue' && sg.type !== 'street') return false;
+          const a = cv.pointAt(0);
+          const b = cv.pointAt(cv.length);
+          return (
+            Math.abs(a.z - z) < 4 &&
+            Math.abs(b.z - z) < 4 &&
+            Math.min(a.x, b.x) >= x0 - 4 &&
+            Math.max(a.x, b.x) <= x0 + DW + 4
+          );
+        })
+        .map(({ sg }) => sg.id);
+      if (!segs.length) {
+        found.push({ i, j, segs: [], dead: true });
+        return;
+      }
+      last = k;
+      let zoned = false;
+      for (const b of net.blocks.values()) {
+        const p = this.sim.net.cellCenter(b.id, 0);
+        if (p.x < x0 || p.x > x0 + DW || Math.abs(p.z - z) > HALF) continue;
+        if (b.zone.some((c) => c !== ZONE_NONE)) zoned = true;
+      }
+      const sides = mids.filter(
+        ({ mid }) =>
+          mid.x > x0 + 20 && mid.x < x0 + DW - 20 && Math.abs(mid.z - z) > 20 && Math.abs(mid.z - z) < HALF,
+      );
+      found.push({
+        i,
+        j,
+        segs,
+        quarter: !zoned,
+        dense: sides.length > 0 && sides.every(({ sg }) => sg.type === 'avenue'),
+      });
+    });
+    this.districts = found.slice(0, last + 1);
+    return this;
   }
 
   stats(): CityStats {
@@ -365,8 +426,13 @@ export class Player {
   /** Keep power, water and sewage ahead of demand. */
   utilities(cheap: boolean): void {
     const u = this.stats().utilities;
-    if (u.power.supply < u.power.demand * 1.15 + 10)
-      this.place(!cheap && u.power.demand > 60 ? 'coal' : 'wind', 'industry');
+    if (u.power.supply < u.power.demand * 1.15 + 10) {
+      let plant = !cheap && u.power.demand > 60 ? 'coal' : 'wind';
+      // A scenario that bans fossil power (M18): solar once it's unlocked, wind until then.
+      if (this.avoid.includes(plant) || scenarioForbids(this.sim, { civic: plant }))
+        plant = this.sim.isUnlocked(CIVIC.get('solar')!.unlockPopulation) ? 'solar' : 'wind';
+      this.place(plant, 'industry');
+    }
     if (u.water.supply < u.water.demand * 1.15 + 10) this.place('pump', cheap ? 'industry' : 'clean');
     if (u.sewage.supply < u.sewage.demand * 1.15 + 10) {
       const big = u.sewage.demand > 300 && !cheap && this.sim.isUnlocked(2_000);

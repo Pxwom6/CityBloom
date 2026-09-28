@@ -737,7 +737,10 @@ export class Player {
     };
     if (tryQuarters()) return true;
     if (!d.project && this.place(def, 'homes')) return true;
-    return this.buildDistrict(true) && tryQuarters();
+    if (this.buildDistrict(true) && tryQuarters()) return true;
+    // The map is full and the quarter taken: a project goes on any roadside with room, as a
+    // player's would.
+    return !!d.project && this.place(def, 'homes');
   }
 
   /** In the campaign, promise what the city can deliver: no tax rises, and jobs or a hospital. */

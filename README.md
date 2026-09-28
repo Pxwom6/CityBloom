@@ -66,6 +66,17 @@ money, random disasters or elections. The tutorial is on for your first city and
    buy extra trucks there before you need a second landfill.
 5. **Taxes and budget**: the budget panel shows every line of income and cost. Keep an eye on it.
 
+**Traffic tools** in the road tool help once the town starts to queue. Junctions have their own
+capacity, so a busy crossroads jams before its roads do: the **Roundabout** mode puts a ring on a
+junction or a road (drag out to size it), and it passes far more traffic. The **One-way** mode turns
+a road one way, round, or back (free), and **O** draws new roads one-way in the direction you draw;
+a one-way road carries a quarter more. At 10,000 residents the **city highway** unlocks: four fast
+lanes with no zoning or junctions, passing over the roads it crosses (or under a viaduct), joined to
+them only by one-way **ramps** and to the regional highway where it ends. Click any road to inspect
+its traffic, switch its direction, and add or remove a roundabout at its ends; the traffic map
+shades junctions by their load and marks one-way roads and ramps with chevrons. Visible cars queue
+behind each other, wait their turn at busy junctions and give way to cars already on a roundabout.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -85,10 +96,10 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are eight set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are nine set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
-clear the smoke from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal
+unjam a town that queues at one crossroads, clear the smoke from a mill town, rebuild a lake town's waterworks after a flood, and turn a coastal
 town into a resort. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
@@ -109,6 +120,8 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Rotate and tilt | drag with the right button | Option (Alt) or Shift + two-finger swipe; rotate gesture | Q / E rotate, R / F tilt |
 | Zoom | wheel | pinch | + / − |
 | Road tool | | | T |
+| Road modes: straight, curve, free, upgrade, one-way, roundabout | road options | | Tab |
+| Draw one-way roads, grid snap | road options | | O, G |
 | Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
 | Bulldoze | | | B |
 | Select and inspect | click a building, car, walker or road | click | H |

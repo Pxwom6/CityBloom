@@ -61,7 +61,8 @@ try {
       closest: Math.round(closest * 10) / 10,
     };
   }, at);
-  console.log(JSON.stringify(stats));
+  const rs = await page.evaluate(async () => (await window.__game.getState()).renderStats);
+  console.log(JSON.stringify({ ...stats, trafficMs: rs.trafficMs, calls: rs.calls, cars: rs.cars }));
 } finally {
   await browser.close();
   process.kill(-server.pid);

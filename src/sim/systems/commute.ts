@@ -1,5 +1,6 @@
 import { POLICY_EFFECTS } from '../../data/policies';
-import { COMMUTE, DEMAND, RAIL, TRAFFIC } from '../../data/balance';
+import { COMMUTE, DEMAND, DISTRICT, RAIL, TRAFFIC } from '../../data/balance';
+import { districtAt } from './districts';
 import { CIVIC } from '../../data/civic';
 import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
@@ -81,7 +82,8 @@ export class MatchRound {
   /** Riders boarding or leaving at each stop of each line this round (M20). */
   private readonly stopUse: Float64Array[];
   private readonly loadOf: number[];
-  private readonly freeRide: number;
+  /** Free buses in force somewhere (M21: across the city or in some districts). */
+  private readonly freeAnywhere: boolean;
   private readonly car = TRAFFIC.carShare / TRAFFIC.occupancy;
   private openJobs = 0;
   private openShops = 0;
@@ -134,7 +136,7 @@ export class MatchRound {
     this.stopUse = this.lines.map((l) => new Float64Array(l.stops.length));
     this.loadOf = this.lines.map((l) => s.transit.load.get(l.depot) ?? 1);
     // Free buses: no fare makes the bus feel quicker in the choice between bus and car.
-    this.freeRide = sim.policy('freeTransit') ? POLICY_EFFECTS.freeTransitSeconds : 0;
+    this.freeAnywhere = sim.policyAnywhere('freeTransit');
     this.startAt = this.order.length ? s.cursors.matchRound % this.order.length : 0;
     if (this.order.length) s.cursors.matchRound++;
   }
@@ -166,6 +168,10 @@ export class MatchRound {
           shoppers: all.list.reduce((n, e) => n + (live(e.b) ? e.shoppers : 0), 0),
         };
     if (!o.list.length) return;
+    // Free buses where people live (the city, or their district: M21) make the bus feel quicker.
+    const at = sim.state.net.nodes.get(g.ids[node]!)!;
+    const freeRide =
+      this.freeAnywhere && sim.policyAt('freeTransit', at.x, at.z) ? POLICY_EFFECTS.freeTransitSeconds : 0;
     let workersLeft = o.workers;
     let shoppersLeft = o.shoppers;
     let employed = 0;
@@ -200,8 +206,7 @@ export class MatchRound {
             workersLeft -= take;
             employed += take;
             const bus = lines.length ? busTime(lines, near, node, u) : null;
-            const share =
-              bus && bus.line >= 0 ? busShare(t, bus.t - this.freeRide, this.loadOf[bus.line]!) : 0;
+            const share = bus && bus.line >= 0 ? busShare(t, bus.t - freeRide, this.loadOf[bus.line]!) : 0;
             commuteSum += take * (share > 0 ? share * bus!.t + (1 - share) * t : t);
             if (share > 0) {
               const r = take * share * TRAFFIC.tripsPerWorker;
@@ -299,7 +304,7 @@ export class MatchRound {
           sh.b.shop = capacity > 0 ? (this.customers.get(sh.b.id) ?? 0) / capacity : 0;
         }
       }
-    runFreight(sim, this.g, this.costs, flows, this.trips, this.jobsAt);
+    runFreight(sim, this.g, truckCosts(sim, this.g, this.costs), flows, this.trips, this.jobsAt);
     // Buses add a little traffic along their loops; full buses turn riders away next round.
     busTraffic(lines, (seg, pcu) => flows.addSegment(seg, pcu));
     s.transit.riders = new Map();
@@ -320,6 +325,30 @@ export class MatchRound {
     sim.tripSamples = this.trips.samples;
     sim.trafficChanged();
   }
+}
+
+/**
+ * Trucks' edge costs (M21): a road in a district with a heavy-traffic ban counts DISTRICT.truckBan
+ * times its time, so trucks go round where there's another way and still get in where there isn't.
+ */
+export function truckCosts(sim: Sim, g: RoadGraph, costs: Float64Array): Float64Array {
+  const banned = sim.districtPolicies().get('heavyTrafficBan');
+  if (!banned?.size) return costs;
+  const cells = sim.state.districtCells;
+  const out = costs.slice();
+  const inside = new Map<number, boolean>();
+  for (let k = 0; k < g.seg.length; k++) {
+    const sid = g.seg[k]!;
+    let b = inside.get(sid);
+    if (b === undefined) {
+      const c = sim.net.curve(sid);
+      const p = c.pointAt(c.length / 2);
+      b = banned.has(districtAt(cells, p.x, p.z));
+      inside.set(sid, b);
+    }
+    if (b) out[k] = costs[k]! * DISTRICT.truckBan;
+  }
+  return out;
 }
 
 /**

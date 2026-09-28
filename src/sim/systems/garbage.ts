@@ -22,7 +22,7 @@ const dijkstra = new Dijkstra();
 /** Garbage made per hour by a building. */
 export function garbageRate(sim: Sim, b: Building): number {
   if (b.state !== BState.Active || b.pop <= 0) return 0;
-  const k = sim.policy('recycling') ? POLICY_EFFECTS.recycling : 1;
+  const k = sim.policyAt('recycling', b.x, b.z) ? POLICY_EFFECTS.recycling : 1;
   return (k * (b.zone === ZONE_R ? b.pop * GARBAGE.perResident : b.pop * GARBAGE.perJob[b.zone]!)) / 24;
 }
 

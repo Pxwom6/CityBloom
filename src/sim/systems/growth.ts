@@ -52,6 +52,15 @@ export function unlockedDensity(sim: Sim): Density {
   return sim.reached(DENSITY_UNLOCK_POPULATION[1]) ? 1 : 0;
 }
 
+/**
+ * Densest buildings allowed at (x, z) (M21): a high-rise ban or a heritage district there keeps new
+ * buildings to medium density.
+ */
+export function densityAt(sim: Sim, dens: Density, x: number, z: number): Density {
+  if (dens < 2) return dens;
+  return sim.policyAt('highRiseBan', x, z) || sim.policyAt('heritage', x, z) ? 1 : dens;
+}
+
 function lotFits(
   sim: Sim,
   block: ZoneBlock,
@@ -234,7 +243,7 @@ export function growthPass(sim: Sim): void {
       const demand = spawnDemand(sim, zone, wealth);
       if (demand <= 0) continue;
       let def: ZonedDef | null = null;
-      for (let dd = Math.min(roadDensity, dens); dd >= 0 && !def; dd--) {
+      for (let dd = Math.min(roadDensity, densityAt(sim, dens, cell.x, cell.z)); dd >= 0 && !def; dd--) {
         const cand = zonedDef(zone, dd as Density, wealth, 1);
         if (lotFits(sim, block, c, cand.w, cand.d, zone)) def = cand;
       }
@@ -276,6 +285,8 @@ export function lifecycle(sim: Sim): void {
       continue;
     }
     if (b.state !== BState.Active) continue;
+    // Heritage districts (M21): buildings keep their character, never retooled or rebuilt grander.
+    const heritage = sim.policyAt('heritage', b.x, b.z);
     const unhappy = b.happiness < GROWTH.distressHappiness;
     const cut = !sim.isBuildingConnected(b);
     // Nobody stays long in a building without power or water, however nice the neighbourhood.
@@ -291,6 +302,10 @@ export function lifecycle(sim: Sim): void {
       b.good = 0;
       sim.markBuildingDirty(b.id);
       sim.events.push({ kind: 'abandoned', id: b.id });
+      continue;
+    }
+    if (heritage) {
+      b.good = 0;
       continue;
     }
     // Industry retools to the cleaner tier an educated workforce supports.
@@ -328,7 +343,7 @@ export function lifecycle(sim: Sim): void {
           ) as Wealth);
     let next: ZonedDef | null = null;
     if (b.level < 3) next = zonedDef(b.zone, b.density, wealth, (b.level + 1) as Level);
-    else if (b.density < Math.min(roadDensity, dens))
+    else if (b.density < Math.min(roadDensity, densityAt(sim, dens, b.x, b.z)))
       next = zonedDef(b.zone, (b.density + 1) as Density, wealth, 1);
     if (!next) {
       b.good = 0;

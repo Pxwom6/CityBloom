@@ -1,6 +1,7 @@
 // Scenario starting cities (M18): each scenario's city, built headlessly with the balance tool's
 // mayor (plus the scenario's twist). scripts/scenarios.ts writes them to public/scenarios/.
 import { Sim } from '../../src/sim/sim';
+import { GRID_CELL, GRID_RES } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { Player, type Vec2 } from './mayor';
 import { twoDistricts } from '../../tests/trafficTown';
@@ -107,5 +108,56 @@ export const RECIPES: Record<string, () => Sim> = {
         sim.advance(TICKS_PER_HOUR * 6);
       }
     return sim;
+  },
+  // Mereside, on the lakes map: a growing lake town the day after a flood. The water has gone down,
+  // but the waterworks went with it.
+  flood: () => {
+    const p = new Player('careful', { seed: 'b', preset: 'lakes', cityName: 'Mereside' });
+    const sim = p.sim;
+    // A regional grant got the town going on this tight lake shore.
+    sim.earn(150_000, 'grants');
+    govern(p, 22);
+    // The flood comes in from the shore nearest the highway, across the town's low south side.
+    const wd = sim.waterDist();
+    let best = { d: Infinity, x: 0, z: 0 };
+    for (let j = 0; j < GRID_RES; j++)
+      for (let i = 0; i < GRID_RES; i++) {
+        if (wd[j * GRID_RES + i]! > 0) continue;
+        const x = (i + 0.5) * GRID_CELL;
+        const z = (j + 0.5) * GRID_CELL;
+        const d = Math.hypot(x - p.c.x, z - p.c.z);
+        if (d < best.d) best = { d, x, z };
+      }
+    const k = (best.d - 80) / best.d;
+    const at = { x: p.c.x + (best.x - p.c.x) * k, z: p.c.z + (best.z - p.c.z) * k };
+    const r = sim.dispatch({ type: 'disaster', kind: 'flood', at });
+    if (!r.ok) throw new Error(`flood: ${r.reason}`);
+    sim.advance(TICKS_PER_HOUR * 30);
+    // It took the pumps, the treatment works and the outflows with it.
+    for (const c of [...sim.state.civics.values()])
+      if (['pump', 'riverpump', 'treatment', 'septic', 'outflow'].includes(c.def))
+        sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    sim.advance(TICKS_PER_HOUR * 2);
+    return sim;
+  },
+  // Saltmarsh, on the coast: a busy town with beaches and no reason yet for anyone to visit.
+  resort: () => {
+    const p = new Player('careful', { seed: 'dunes', preset: 'coast', cityName: 'Saltmarsh' });
+    p.avoid = [
+      'hotel',
+      'clocktower',
+      'wheel',
+      'conservatory',
+      'stadium',
+      'helioarray',
+      'convention',
+      'gardenexpo',
+      'launchsite',
+      'techpark',
+      'university',
+    ];
+    p.sim.earn(100_000, 'grants');
+    govern(p, 20);
+    return p.sim;
   },
 };

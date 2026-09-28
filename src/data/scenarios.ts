@@ -236,6 +236,55 @@ export const SCENARIOS: ScenarioDef[] = [
       'Schooled workers let mills retool to cleaner processes.',
     ],
   },
+  {
+    id: 'flood',
+    name: 'After the Flood',
+    blurb: 'The lake has gone back down, and taken the waterworks with it.',
+    brief:
+      'Yesterday the lake came over its banks and through the south of Mereside. The water has ' +
+      'drained, but the pumps, the treatment works and the outflows are gone, and without clean water ' +
+      'people will not stay. Get the taps running again and grow the town to 24,000 within a year.',
+    save: 'flood.citybloom',
+    months: 12,
+    stars: [
+      { months: 8, label: 'Within 8 months' },
+      { months: 5, label: 'Within 5 months' },
+    ],
+    goals: [{ measure: 'population', min: 24_000, hold: 2, label: '24,000 residents, 2 months running' }],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Homes without water empty within days: pumps and a way to deal with sewage come first.',
+      'The water map shows clean ground for pumps; keep them away from sewage and industry.',
+    ],
+  },
+  {
+    id: 'resort',
+    name: 'Seaside Resort',
+    blurb: 'Turn a coastal town into a place people travel to see.',
+    brief:
+      'Saltmarsh has sand, sea and sunsets, and nobody comes. The council wants a resort, not more ' +
+      'factories: draw 2,000 visitors a day and keep residents happy with it, 65 % approval for two ' +
+      'months running.',
+    save: 'resort.citybloom',
+    months: 24,
+    stars: [
+      { months: 16, label: 'Within 16 months' },
+      { months: 12, label: 'Within a year' },
+    ],
+    goals: [
+      { measure: 'visitors', min: 2_000, hold: 2, label: '2,000 visitors a day, 2 months running' },
+      { measure: 'approval', min: 65, hold: 2, label: 'Approval of 65 %, 2 months running' },
+    ],
+    limits: [{ kind: 'noZone', zone: 'I', label: 'New industry zoning is not allowed' }],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Landmarks draw visitors; hotels keep them overnight, when they spend the most.',
+      'The tourism campaign policy brings more, as does funding the tourism office; good approval makes the town more inviting.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

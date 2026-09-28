@@ -243,6 +243,12 @@ function RailInspector({ id }: { id: number }) {
   );
 }
 
+/** Freight trains for so many truckloads a day (about forty a train, M20). */
+function trainsText(trucks: number): string {
+  const n = Math.max(1, Math.round(trucks / 40));
+  return `about ${n} train${n === 1 ? '' : 's'}`;
+}
+
 /** How full a road or junction is at the rush hour, in words. */
 function loadText(vc: number): string {
   const pct = `${Math.round(vc * 100)}% of capacity`;
@@ -800,9 +806,7 @@ function CivicInspector({ id }: { id: number }) {
             <dt>Onto trains</dt>
             <dd data-testid="freight-trucks">
               {d.railFreight.trucks.toLocaleString('en-US')} truckloads/day
-              {d.railFreight.trucks > 0
-                ? ` · about ${Math.max(1, Math.round(d.railFreight.trucks / 40))} trains`
-                : ''}
+              {d.railFreight.trucks > 0 ? ` · ${trainsText(d.railFreight.trucks)}` : ''}
             </dd>
           </>
         )}

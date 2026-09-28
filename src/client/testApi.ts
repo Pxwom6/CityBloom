@@ -51,7 +51,7 @@ export interface TestApi {
   segmentAt(
     x: number,
     z: number,
-  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number } | null;
+  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number; tram: boolean } | null;
   /** The junction nearest a point within 20 m (M19): its roads, and its roundabout's radius. */
   junctionAt(x: number, z: number): { id: number; arms: number; roundabout: number; kind: string } | null;
   /** Volume/capacity on a segment at the rush-hour peak. */
@@ -283,7 +283,15 @@ export function installTestApi(game: Game): TestApi {
       const hit = game.world.net.nearestSegment({ x, z }, 20);
       if (!hit) return null;
       const s = game.world.net.segment(hit.seg);
-      return { id: hit.seg, type: s.type, oneway: s.oneway ?? 0, deck: !!s.deck, a: s.a, b: s.b };
+      return {
+        id: hit.seg,
+        type: s.type,
+        oneway: s.oneway ?? 0,
+        deck: !!s.deck,
+        a: s.a,
+        b: s.b,
+        tram: !!s.tram,
+      };
     },
     junctionAt: (x, z) => {
       const n = game.world.net.nearestNode({ x, z }, 20);

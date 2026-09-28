@@ -63,7 +63,7 @@ Districts are painted and named, and take their own policies, including a heavy-
 heritage status, with their own figures, budget share and data maps (M21).
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 230 unit and scenario tests, 24 UI tests, a 10-minute soak
+calls at the city overview. Checked by 240 unit and scenario tests, the UI specs in `e2e/`, a 10-minute soak
 and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
 done).
 
@@ -84,27 +84,20 @@ done).
    tried it.
 
 ## In progress
-M20 Rail is complete: railways (3.5 %, 100 m curves) with level crossings over streets, avenues and
-dirt roads and bridges over bigger roads, stations and shuttle train lines, the regional rail link at
-the west edge, rail freight terminals that take industry's trucks off the roads, tram track on
-streets, avenues and boulevards with tram depots and stops, mode choice with trams and trains,
-animated trams, trains and freight trains, the Railway and Tram track tools, stop, station, depot,
-terminal and railway inspectors, the Ridership map, tips and advisor hints, save v18, and a tenth
-scenario (Railhead). Done-criterion tests: `tests/trains.test.ts` (a train line takes a quarter of the
-cars off a jammed link) and `tests/freight.test.ts` (a terminal takes the estate's trucks off the
-highway link and the avenue). 230 unit and scenario tests; all 25 UI specs pass (22 in the full run;
-M1, M18 and M19 failed there because the road options bar had started wrapping onto two rows, fixed
-and rerun green, and the M18 spec now counts scenarios from the data).
+M21 Districts: done apart from the full UI run. Districts are painted with a brush (I) on a 16 m
+raster and named after their neighbourhood; most policies apply per district at its share of the
+city-wide price (by the people who live or work there), and the heavy-traffic ban and heritage are
+district-only. The Districts panel shows residents, jobs, happiness, land value, taxes and upkeep,
+and filters data maps to one district. Save v19, an eleventh scenario (Market Town), and
+`tests/districtPolicies.test.ts` for the done criterion (a ban, recycling and heritage each change
+their own district and nothing else). 240 unit and scenario tests pass, and `e2e/m21-districts.spec.ts`
+passes (Market Town won through the UI in 1.7 months). Running the full UI suite next.
 
 ## Next tasks
-1. M21 Districts (SPEC-2): paint named districts (neighbourhood names as defaults), district-scoped
-   policies with scaled costs plus district-only ones (heavy-traffic ban, high-rise ban, heritage),
-   a district panel (population, jobs, happiness, land value, budget share) and data maps filtered
-   to one district. Done when a district policy measurably changes its own district and not the rest.
-   Plan: `districtMap` (Uint8, 16 m cells) and `districts` in the state (save v19); `sim.policyAt(id,
-   x, z)` at the nine policy sites; freight routing avoids banned districts.
-2. Performance watch: the worst tick at the big city's month-5 growth burst is 15–17 ms on this VM
-   with M19 and M20 code alike (landValue, utilities, matcher).
+1. Full `npm run e2e`, then the `M21 complete:` commit.
+2. M22 Seasons and weather (SPEC-2).
+3. Performance watch: the worst tick at the big city's month-5/6 growth burst is 15–17 ms on this VM
+   with M19–M21 code alike (utilities, matcher, landValue), and one unrepeated 52 ms utilities tick.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

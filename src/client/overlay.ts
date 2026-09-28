@@ -123,7 +123,7 @@ export class OverlayController {
     this.roadsKey = key;
     const list: RoadTintPiece[] = [];
     for (const seg of w.netState.segments.values()) {
-      if (seg.type === 'highway') continue;
+      if (seg.type === 'highway' || seg.type === 'rail') continue;
       const vc = w.segVC(seg.id, share);
       list.push({
         curve: w.net.curve(seg.id),

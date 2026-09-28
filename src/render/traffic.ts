@@ -335,7 +335,8 @@ export class TrafficRenderer {
         continue;
       }
       const kind = this.world.junctionKind(n.id);
-      if (kind === 'none') continue;
+      // Cars cross a level crossing both ways at once; trains are what stop them (M20).
+      if (kind === 'none' || kind === 'crossing') continue;
       const widest = Math.max(...segs.map((id) => net.halfWidth(id)));
       this.nodeInfo.set(n.id, { kind: 'plain', x: n.x, z: n.z, r: 0, stop: widest + 1.5 });
     }

@@ -81,7 +81,7 @@ export function buildSegmentRibbon(
         [a.x + ta.z * (m.offset + m.width / 2), a.z - ta.x * (m.offset + m.width / 2)],
         [b.x + tb.z * (m.offset + m.width / 2), b.z - tb.x * (m.offset + m.width / 2)],
         [b.x + tb.z * (m.offset - m.width / 2), b.z - tb.x * (m.offset - m.width / 2)],
-      ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03, z!]);
+      ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03 + (m.lift ?? 0), z!]);
       // Long solid lines: subdivide so they follow the terrain.
       if (e - s > 6) {
         const sub = Math.ceil((e - s) / 3);
@@ -97,7 +97,7 @@ export function buildSegmentRibbon(
             [pa.x + qa.z * (m.offset + m.width / 2), pa.z - qa.x * (m.offset + m.width / 2)],
             [pb.x + qb.z * (m.offset + m.width / 2), pb.z - qb.x * (m.offset + m.width / 2)],
             [pb.x + qb.z * (m.offset - m.width / 2), pb.z - qb.x * (m.offset - m.width / 2)],
-          ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03, z!]);
+          ].map(([x, z]) => [x!, hs(x!, z!) + style.lift + 0.03 + (m.lift ?? 0), z!]);
           out.quad(q[0]!, q[1]!, q[2]!, q[3]!, m.color);
         }
       } else {

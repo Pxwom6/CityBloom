@@ -1,5 +1,6 @@
 /** Road types and road-building rules. DESIGN.md §2, SPEC §5 Roads. */
-export type RoadTypeId = 'dirt' | 'street' | 'avenue' | 'boulevard' | 'motorway' | 'ramp' | 'highway';
+export type RoadTypeId =
+  'dirt' | 'street' | 'avenue' | 'boulevard' | 'motorway' | 'ramp' | 'rail' | 'highway';
 
 export interface RoadType {
   id: RoadTypeId;
@@ -33,6 +34,8 @@ export interface RoadType {
   access: boolean;
   /** Always one-way, in the direction it's drawn (ramps). */
   oneWay?: boolean;
+  /** Tightest curve radius, metres (ROAD_RULES.minRadius if absent). */
+  minRadius?: number;
   blurb: string;
 }
 
@@ -141,6 +144,25 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
     buildable: true,
     blurb: 'One lane on or off the city highway, one-way in the direction you draw it.',
   },
+  rail: {
+    id: 'rail',
+    access: false,
+    maxGrade: 0.035,
+    minRadius: 100,
+    name: 'Railway',
+    width: 8,
+    sidewalk: 2,
+    lanes: 2,
+    speed: 110,
+    capacity: 0,
+    costPerMetre: 70,
+    upkeepPerMetre: 0.25,
+    maxDensity: 0,
+    unlockPopulation: 5_000,
+    buildable: true,
+    blurb:
+      'Double track for trains, on gentle grades and wide curves. Crosses streets at level crossings and passes over bigger roads.',
+  },
   highway: {
     id: 'highway',
     access: false,
@@ -162,6 +184,12 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
 
 export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boulevard', 'motorway', 'ramp'];
 
+/** Track (M20): railways live in the network beside roads but have a graph of their own. */
+export const isRail = (t: RoadTypeId): boolean => t === 'rail';
+
+/** Roads a railway crosses at a level crossing (M20); it passes over anything bigger. */
+export const levelCrossing = (t: RoadTypeId): boolean => t === 'dirt' || t === 'street' || t === 'avenue';
+
 /**
  * Roads that pass over or under the roads they cross instead of meeting them (M19): the city highway
  * and the regional highway. Rail (M20) joins them.
@@ -169,8 +197,8 @@ export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boule
 export const gradeSeparated = (t: RoadTypeId): boolean => t === 'motorway' || t === 'highway';
 
 /** Road families that may meet at a junction: local roads; the city highway, ramps and highway. */
-export const roadClass = (t: RoadTypeId): 'local' | 'motorway' | 'ramp' =>
-  t === 'motorway' || t === 'highway' ? 'motorway' : t === 'ramp' ? 'ramp' : 'local';
+export const roadClass = (t: RoadTypeId): 'local' | 'motorway' | 'ramp' | 'rail' =>
+  t === 'motorway' || t === 'highway' ? 'motorway' : t === 'ramp' ? 'ramp' : t === 'rail' ? 'rail' : 'local';
 
 /** Half the corridor a road occupies (carriageway + sidewalks). */
 export const roadHalfWidth = (t: RoadTypeId): number => ROAD_TYPES[t].width / 2 + ROAD_TYPES[t].sidewalk;

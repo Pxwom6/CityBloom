@@ -388,7 +388,11 @@ export class Sim {
         ? null
         : seg.deck
           ? viaductDeck(seg.deck, this.net.curve(segId), (x, z) => this.terrain.heightAt(x, z))
-          : deckProfile(this.net.curve(segId), (x, z) => this.terrain.heightAt(x, z));
+          : deckProfile(
+              this.net.curve(segId),
+              (x, z) => this.terrain.heightAt(x, z),
+              ROAD_TYPES[seg.type].maxGrade,
+            );
       this.deckCache.set(segId, d);
     }
     return d;
@@ -521,6 +525,7 @@ export class Sim {
   roadsBlockedChanged(): void {
     this.blockedCache = null;
     this.graphCache = null;
+    this.railGraphCache = null;
     this.coverageCache = null;
     this.peakCache = null;
     this.transitChanged();
@@ -565,6 +570,13 @@ export class Sim {
 
   private fullGraphCache: RoadGraph | null = null;
   private fullHighwayComponent = -1;
+  private railGraphCache: RoadGraph | null = null;
+
+  /** The railways (M20): their own graph, which trains route on. */
+  railGraph(): RoadGraph {
+    if (!this.railGraphCache) this.railGraphCache = new RoadGraph(this.net, this.blockedSegments(), 'rail');
+    return this.railGraphCache;
+  }
 
   /**
    * The network as built, ignoring temporary closures (damaged or flooded roads): whether a place is
@@ -585,7 +597,8 @@ export class Sim {
 
   isSegmentConnected(segId: number): boolean {
     const seg = this.state.net.segments.get(segId);
-    if (!seg) return false;
+    // Railways aren't roads: nothing drives onto them from the highway (M20).
+    if (!seg || seg.type === 'rail') return false;
     const g = this.fullGraph();
     return g.componentOfNode(seg.a) === this.fullHighwayComponent;
   }
@@ -614,6 +627,7 @@ export class Sim {
   markNetworkChanged(): void {
     this.graphCache = null;
     this.fullGraphCache = null;
+    this.railGraphCache = null;
     this.blockedCache = null;
     this.disastersDirty = true;
     // A damaged road that was bulldozed or rebuilt is no longer damaged.

@@ -45,7 +45,8 @@ export function buildRoad(
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
-  plan.oneway = oneway;
+  // Railways run both ways (M20).
+  plan.oneway = oneway && road !== 'rail';
   const res = applyRoadPlan(sim.net, plan, () => {
     if (!plan.earth?.idx.length) return null;
     reshapeGround(sim, plan.earth.idx, plan.earth.to);

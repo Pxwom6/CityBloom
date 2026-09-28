@@ -87,6 +87,12 @@ export const JUNCTION = {
   roundaboutDelay: 4,
   /** Seconds of queue added per unit of overload, as for roads. */
   queueSeconds: 300,
+  /**
+   * Level crossings (M20): the road through one keeps this share of its capacity (the barriers
+   * come down for trains), and a car waits this long on average.
+   */
+  crossingShare: 0.8,
+  crossingDelay: 8,
   /** Roundabouts: the ring's centre-line radius, its carriageway width, and the price per metre. */
   minRadius: 12,
   maxRadius: 40,

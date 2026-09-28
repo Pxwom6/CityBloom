@@ -54,7 +54,7 @@ export function segVC(sim: Sim, segId: number, share: number): number {
   return (vol * TRAFFIC.peakShare * share) / segCapacity(sim, segId);
 }
 
-export type JunctionKind = 'none' | 'plain' | 'roundabout';
+export type JunctionKind = 'none' | 'plain' | 'roundabout' | 'crossing';
 
 /** What kind of junction a node is (M19): a roundabout, an ordinary junction, or just a bend. */
 export function junctionKind(sim: Sim, nodeId: number): JunctionKind {
@@ -62,6 +62,9 @@ export function junctionKind(sim: Sim, nodeId: number): JunctionKind {
   if (!node) return 'none';
   if (node.roundabout) return 'roundabout';
   const segs = sim.net.segmentsAt(nodeId);
+  // A railway across a road (M20): a level crossing for the road; rail nodes are no junction at all.
+  const rail = segs.filter((id) => sim.state.net.segments.get(id)?.type === 'rail').length;
+  if (rail) return rail < segs.length ? 'crossing' : 'none';
   if (segs.length < 3) return 'none';
   // Where ramps join the city highway, traffic merges without stopping (M19); the ramp's own lane
   // is the limit.
@@ -74,8 +77,15 @@ export function junctionCapacity(sim: Sim, nodeId: number): number {
   const kind = junctionKind(sim, nodeId);
   if (kind === 'none') return Infinity;
   let approaches = 0;
-  for (const sid of sim.net.segmentsAt(nodeId)) approaches += segCapacity(sim, sid);
-  return (approaches / 2) * (kind === 'roundabout' ? JUNCTION.roundaboutShare : JUNCTION.plainShare);
+  for (const sid of sim.net.segmentsAt(nodeId))
+    if (sim.state.net.segments.get(sid)?.type !== 'rail') approaches += segCapacity(sim, sid);
+  const share =
+    kind === 'roundabout'
+      ? JUNCTION.roundaboutShare
+      : kind === 'crossing'
+        ? JUNCTION.crossingShare
+        : JUNCTION.plainShare;
+  return (approaches / 2) * share;
 }
 
 /** Cars a day through a junction: half the traffic on the roads that meet there. */
@@ -97,7 +107,12 @@ export function junctionDelay(sim: Sim, nodeId: number, share: number): number {
   const kind = junctionKind(sim, nodeId);
   if (kind === 'none') return 0;
   const vc = junctionVC(sim, nodeId, share);
-  const base = kind === 'roundabout' ? JUNCTION.roundaboutDelay : JUNCTION.plainDelay;
+  const base =
+    kind === 'roundabout'
+      ? JUNCTION.roundaboutDelay
+      : kind === 'crossing'
+        ? JUNCTION.crossingDelay
+        : JUNCTION.plainDelay;
   return base * slowdown(vc) + (vc > 1 ? JUNCTION.queueSeconds * (1 - 1 / vc) : 0);
 }
 

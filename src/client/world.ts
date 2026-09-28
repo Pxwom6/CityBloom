@@ -150,7 +150,7 @@ export class ClientWorld {
         ? null
         : seg.deck
           ? viaductDeck(seg.deck, this.net.curve(segId), (x, z) => this.heightAt(x, z))
-          : deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z));
+          : deckProfile(this.net.curve(segId), (x, z) => this.heightAt(x, z), ROAD_TYPES[seg.type].maxGrade);
       this.deckCache.set(segId, d);
     }
     return d;
@@ -178,11 +178,13 @@ export class ClientWorld {
   }
 
   /** What kind of junction a node is (mirrors junctionKind in the sim, M19). */
-  junctionKind(nodeId: number): 'none' | 'plain' | 'roundabout' {
+  junctionKind(nodeId: number): 'none' | 'plain' | 'roundabout' | 'crossing' {
     const node = this.netState.nodes.get(nodeId);
     if (!node) return 'none';
     if (node.roundabout) return 'roundabout';
     const segs = this.net.segmentsAt(nodeId);
+    const rail = segs.filter((id) => this.netState.segments.get(id)?.type === 'rail').length;
+    if (rail) return rail < segs.length ? 'crossing' : 'none';
     if (segs.length < 3) return 'none';
     if (segs.some((id) => this.netState.segments.get(id)?.type === 'motorway')) return 'none';
     return 'plain';
@@ -208,10 +210,16 @@ export class ClientWorld {
     let cap = 0;
     let vol = 0;
     for (const id of this.net.segmentsAt(nodeId)) {
+      if (this.netState.segments.get(id)?.type === 'rail') continue;
       cap += this.segCapacity(id);
       vol += this.traffic.get(id) ?? 0;
     }
-    const share2 = kind === 'roundabout' ? JUNCTION.roundaboutShare : JUNCTION.plainShare;
+    const share2 =
+      kind === 'roundabout'
+        ? JUNCTION.roundaboutShare
+        : kind === 'crossing'
+          ? JUNCTION.crossingShare
+          : JUNCTION.plainShare;
     return ((vol / 2) * TRAFFIC.peakShare * share) / ((cap / 2) * share2);
   }
 

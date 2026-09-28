@@ -85,7 +85,7 @@ export class StreetLightRenderer {
     let n = 0;
     for (const seg of [...w.netState.segments.values()].sort((a, b) => a.id - b.id)) {
       const t = ROAD_TYPES[seg.type];
-      if (seg.type === 'highway' || seg.type === 'dirt') continue;
+      if (seg.type === 'highway' || seg.type === 'dirt' || seg.type === 'rail') continue;
       const curve = w.net.curve(seg.id);
       const half = t.width / 2 + Math.min(1.2, t.sidewalk * 0.5);
       // No lamps on a roundabout's ring or island (M19).

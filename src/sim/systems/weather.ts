@@ -1,7 +1,9 @@
 import {
   CLIMATES,
   PRESET_CLIMATE,
+  SEASONS,
   WEATHER,
+  WEATHER_KINDS,
   seasonOf,
   type ClimateId,
   type Season,
@@ -135,6 +137,9 @@ function nextSpell(sim: Sim): void {
   // A storm that falls as snow is a blizzard.
   if (kind === 'snow' && drawn === 'storm') w.strength = Math.max(w.strength, 0.85);
   w.until = s.tick + Math.round(rng.range(lo, hi)) * TICKS_PER_HOUR;
+  // Weather worth a notice (M22): storms, heavy snow, heatwaves.
+  if (kind === 'storm' || kind === 'heat' || (kind === 'snow' && w.strength >= 0.6))
+    sim.events.push({ kind: 'weather', id: WEATHER_KINDS.indexOf(kind), info: { strength: w.strength } });
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -149,6 +154,10 @@ export function weatherHour(sim: Sim): void {
     w.offset = 0;
   } else if (s.tick >= w.until) nextSpell(sim);
   updateTemperature(w, s.tick);
+  // A new season (on the calendar's turn from one month to the next).
+  const now = seasonAt(w, s.tick);
+  if (w.seasons && now !== seasonAt(w, s.tick - TICKS_PER_HOUR))
+    sim.events.push({ kind: 'season', id: SEASONS.indexOf(now) });
   const k = w.kind;
   const st = w.strength;
   const raining = k === 'rain' || k === 'storm';

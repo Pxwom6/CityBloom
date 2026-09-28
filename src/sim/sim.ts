@@ -113,7 +113,7 @@ import {
 } from './world/civic';
 import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
 import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
-import { dispatchPloughs } from './systems/ploughs';
+import { dispatchPloughs, ploughsFor } from './systems/ploughs';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
 import {
@@ -219,7 +219,9 @@ export type SimEvent = {
     | 'electionLost'
     // Scenarios (M18): id is the stars won.
     | 'scenarioWon'
-    | 'scenarioLost';
+    | 'scenarioLost'
+    | 'season'
+    | 'weather';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -1962,6 +1964,15 @@ export class Sim {
         : d.tourism
           ? { kind: 'tourism', draw: d.tourism.draw ?? 0, rooms: d.tourism.rooms ?? 0 }
           : null,
+      plough: d.plough
+        ? {
+            ploughs: ploughsFor(this, c),
+            out: c.out,
+            reach: d.plough.reach,
+            today: c.processedToday,
+            yesterday: c.lastDay,
+          }
+        : null,
       project: d.project
         ? {
             stages: d.project.stages.map((st) => ({ ...st })),

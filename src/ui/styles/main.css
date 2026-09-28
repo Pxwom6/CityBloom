@@ -1813,6 +1813,13 @@ body {
   border-left: 4px solid var(--color-positive);
 }
 .advisor.notice {
+  /* Not the notifications list's .notice row (a flex row that squeezed the advice into columns). */
+  display: block;
+  width: auto;
+  padding: var(--space-2) var(--space-3);
+  font-size: inherit;
+  color: inherit;
+  cursor: auto;
   border-left-color: #6da7ec;
 }
 .advisor.warning {
@@ -2763,4 +2770,48 @@ body {
   margin: 0;
   text-align: right;
   font-weight: var(--font-weight-medium);
+}
+
+/* Seasons and weather in the top bar (M22): icon, temperature and season over the date. */
+.weather-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.weather-label svg {
+  flex: none;
+}
+.climate-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  max-width: 22rem;
+}
+.weather-pop {
+  white-space: normal;
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: var(--space-6);
+  width: 22rem;
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  z-index: 5;
+}
+.weather-pop header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.weather-pop header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.weather-pop p {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+}
+.weather-pop p:first-of-type {
+  color: inherit;
 }

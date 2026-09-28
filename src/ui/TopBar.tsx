@@ -1,6 +1,8 @@
+import { useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
+import { WEATHER_ICON, weatherBrief, weatherLines, weatherName } from './weather';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
 import { Rci } from './Rci';
 import { SystemMenu } from './SystemMenu';
@@ -20,6 +22,8 @@ export function TopBar() {
   const game = useGameUpdates(200);
   const st = game.world.stats;
   const date = dateOf(Math.floor(game.world.displayTick));
+  const WeatherIcon = WEATHER_ICON[st.weather.kind];
+  const [weatherOpen, setWeatherOpen] = useState(false);
   return (
     <div class="topbar panel" data-testid="topbar">
       {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
@@ -63,12 +67,36 @@ export function TopBar() {
       <AdvisorsButton />
       <NotificationsButton />
       <span class="divider" />
-      <div class="stat stat-date">
-        <span class="label">Date</span>
+      <button
+        class="stat stat-btn stat-date"
+        data-testid="weather"
+        aria-expanded={weatherOpen}
+        title={weatherLines(st.weather).join('\n')}
+        onClick={() => setWeatherOpen(!weatherOpen)}
+      >
+        <span class="label weather-label">
+          <WeatherIcon width={13} height={13} />
+          {weatherBrief(st.weather)}
+        </span>
         <span class="value" data-testid="date">
           {formatDate(date)}
         </span>
-      </div>
+      </button>
+      {weatherOpen && (
+        <div class="weather-pop panel" data-testid="weather-panel" role="dialog" aria-label="Weather">
+          <header>
+            <strong>
+              <WeatherIcon width={16} height={16} /> {weatherName(st.weather.kind, st.weather.strength)}
+            </strong>
+            <button class="btn icon" aria-label="Close" onClick={() => setWeatherOpen(false)}>
+              ×
+            </button>
+          </header>
+          {weatherLines(st.weather).map((l) => (
+            <p key={l}>{l}</p>
+          ))}
+        </div>
+      )}
       <div class="speed" role="group" aria-label="Simulation speed">
         {SPEEDS.map(({ s, label, Icon, key }) => (
           <button

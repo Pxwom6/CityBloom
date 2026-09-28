@@ -1,4 +1,5 @@
-import { ROAD_TYPES } from '../../data/roads';
+import { ROAD_TYPES, isRail } from '../../data/roads';
+import { CLIMATES, WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
@@ -8,6 +9,8 @@ import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
+import { unploughable } from './ploughs';
+import { monthsToWinter, weatherUse } from './weather';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
@@ -541,5 +544,79 @@ export function advise(sim: Sim): Advice[] {
         title: `The city wants more ${names[z]}`,
         text: `Zone more ${z === 'R' ? 'residential' : z === 'C' ? 'commercial' : 'industrial'} land along roads with access to the highway.`,
       });
+  out.push(...weatherAdvice(sim));
   return out.sort((a, b) => b.severity - a.severity);
+}
+
+/**
+ * Seasons and weather (M22): heating headroom as winter nears, snow the ploughs aren't clearing, a
+ * dry spell on tight water, and a river near its banks.
+ */
+function weatherAdvice(sim: Sim): Advice[] {
+  const s = sim.state;
+  const w = s.weather;
+  const out: Advice[] = [];
+  if (!s.totals.population) return out;
+  const power = s.utilityStats.power;
+  const toWinter = monthsToWinter(w, s.tick);
+  if (toWinter > 0 && toWinter <= 3 && power.demand > 0) {
+    // Demand in the coldest month, from today's with the heating that month would bring.
+    const coldest = Math.min(...CLIMATES[w.climate].temps);
+    const k = weatherUse({ ...w, mean: coldest }).power.R / weatherUse(w).power.R;
+    const need = power.demand * k;
+    if (power.supply < need * 1.05)
+      out.push({
+        advisor: 'utilities',
+        severity: power.supply < need * 0.95 ? 2 : 1,
+        title: 'Winter will need more power',
+        text: `Heating will lift demand to about ${Math.round(need).toLocaleString('en-US')} MW by midwinter; we make ${Math.round(power.supply).toLocaleString('en-US')} MW. Build more power before ${toWinter === 1 ? 'next month' : `${toWinter} months are out`}.`,
+        map: 'power',
+      });
+  }
+  let snowy = 0;
+  let total = 0;
+  for (const seg of s.net.segments.values()) {
+    if (isRail(seg.type)) continue;
+    const len = sim.net.curve(seg.id).length;
+    total += len;
+    if ((seg.snow ?? 0) >= 0.3) snowy += len;
+  }
+  const share = total ? snowy / total : 0;
+  if (share > 0.2) {
+    const depots = [...s.civics.values()].filter((c) => civicDef(c).plough && civicOnline(c));
+    if (!depots.length)
+      out.push({
+        advisor: 'transport',
+        severity: share > 0.5 ? 2 : 1,
+        title: 'Snow is slowing traffic',
+        text: `Deep snow lies on ${Math.round(share * 100)} % of the roads and it stays until it melts. A public works depot (Garbage and snow) sends ploughs to clear it, busiest roads first.`,
+      });
+    else {
+      const beyond = unploughable(sim);
+      if (beyond > 0.3)
+        out.push({
+          advisor: 'transport',
+          severity: 1,
+          title: "Snow beyond the ploughs' reach",
+          text: `${Math.round(beyond * 100)} % of the snowy roads are more than 3 km of road from a public works depot. Another depot nearer them would clear them.`,
+        });
+    }
+  }
+  const water = s.utilityStats.water;
+  if (w.dryness > 0.35 && water.demand > 0 && water.supply < water.demand * 1.1)
+    out.push({
+      advisor: 'utilities',
+      severity: water.supply < water.demand ? 2 : 1,
+      title: 'A dry spell',
+      text: `The land is drying out: groundwater pumps give ${Math.round(WEATHER.droughtPump * w.dryness * 100)} % less. A river pump doesn't mind the drought.`,
+      map: 'water',
+    });
+  if (s.options.disasters && w.river > WEATHER.floodRise * 0.75)
+    out.push({
+      advisor: 'safety',
+      severity: w.river > WEATHER.floodRise ? 2 : 1,
+      title: 'The river is high',
+      text: `Rain has lifted the river ${w.river.toFixed(1)} m above normal. ${w.river > WEATHER.floodRise ? 'Homes by the water may flood.' : 'Much more and homes by the water may flood.'}`,
+    });
+  return out;
 }

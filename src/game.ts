@@ -428,7 +428,24 @@ export class Game {
         );
       } else if (e.kind === 'civicRepaired')
         this.notice('civicRepaired', `The ${civicName()} is repaired and back in service.`, 'ok', at, false);
-      else if (e.kind === 'roadRepaired')
+      else if (e.kind === 'season') {
+        // Seasons and weather (M22).
+        const text = [
+          'Spring has come.',
+          'Summer is here: heatwaves raise power and water use.',
+          'Autumn: winter is three months away, and heating will push up power demand.',
+          'Winter has come: heating raises power demand, and snow slows traffic until it is ploughed.',
+        ][e.id];
+        if (text) this.notice('season', text, 'info', undefined, true);
+      } else if (e.kind === 'weather') {
+        // Kinds by their index in WEATHER_KINDS: 3 storm, 4 snow, 6 heat.
+        const text = {
+          3: 'A thunderstorm is rolling in: heavy rain, and the river will rise.',
+          4: 'Heavy snow is falling: it will slow traffic until ploughs clear it or it melts.',
+          6: 'A heatwave: homes and shops use more power and water.',
+        }[e.id as 3 | 4 | 6];
+        if (text) this.notice('weather', text, 'info', undefined, true);
+      } else if (e.kind === 'roadRepaired')
         this.notice('roadRepaired', 'A damaged road reopened.', 'ok', undefined, false);
       else if (e.kind === 'decayed')
         this.notice(
@@ -696,6 +713,8 @@ export class Game {
     this.photoSpeed = this.speed || 1;
     this.photo = {
       hour: null,
+      season: null,
+      weather: null,
       fov: DEFAULT_FOV,
       zones: false,
       dof: 0,
@@ -726,6 +745,8 @@ export class Game {
   setPhoto(patch: Partial<PhotoState>): void {
     const p = this.photo;
     if (!p) return;
+    // A season or weather picked for the photo shows at once (M22).
+    if ('season' in patch || 'weather' in patch) this.renderer.weather.snapNext = true;
     if ('running' in patch && patch.running !== p.running) {
       if (patch.running) this.setSpeed(this.photoSpeed);
       else {

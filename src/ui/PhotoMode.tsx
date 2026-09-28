@@ -1,3 +1,5 @@
+import { WEATHER_KINDS } from '../data/climate';
+import { WEATHER_ICON, weatherName } from './weather';
 import { useEffect, useState } from 'preact/hooks';
 import type { FollowTarget } from '../game';
 import { GRADES, GRADE_IDS } from '../render/photo';
@@ -172,6 +174,37 @@ export function PhotoMode() {
           label="Follow the city's clock"
           set={(live) => game.setPhoto({ hour: live ? null : liveHour })}
         />
+      </section>
+
+      <section>
+        <h3>Season and weather</h3>
+        <Segmented
+          value={p.season ?? 'city'}
+          options={['city', 'spring', 'summer', 'autumn', 'winter'] as const}
+          label={(v) => (v === 'city' ? "City's" : v[0]!.toUpperCase() + v.slice(1))}
+          testid="photo-season"
+          onChange={(v) => game.setPhoto({ season: v === 'city' ? null : v })}
+        />
+        <div class="photo-grades photo-weather" role="radiogroup" aria-label="Weather">
+          {(['city', ...WEATHER_KINDS] as const).map((k) => {
+            const Icon = k === 'city' ? null : WEATHER_ICON[k];
+            const on = (p.weather ?? 'city') === k;
+            return (
+              <button
+                key={k}
+                role="radio"
+                aria-checked={on}
+                class={`btn small ${on ? 'active' : ''}`}
+                data-testid={`photo-weather-${k}`}
+                title={k === 'city' ? "The city's own weather" : weatherName(k, 0.85)}
+                onClick={() => game.setPhoto({ weather: k === 'city' ? null : k })}
+              >
+                {Icon ? <Icon width={14} height={14} /> : null}
+                {k === 'city' ? "City's" : weatherName(k, 0.6)}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <section>

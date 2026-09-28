@@ -173,6 +173,30 @@ export const TIPS: Tip[] = [
       g.world.stats.population > 0,
   },
   {
+    id: 'snow',
+    text:
+      'Snow slows every car on the roads it lies on until it melts. A public works depot (in the Garbage ' +
+      'and snow bar) sends ploughs out to clear the busiest roads first. Hover the date for the weather.',
+    when: (g) => g.world.stats.weather.roadsSnowy > 0.2 && !hasCivic(g, (def) => def === 'works'),
+  },
+  {
+    id: 'winter',
+    text:
+      'Winter is coming: heating pushes up power demand, most of all in homes. The advisors say how much ' +
+      'power midwinter will need; the date in the top bar shows the season and the temperature.',
+    when: (g) =>
+      g.world.stats.weather.seasons &&
+      g.world.stats.weather.season === 'autumn' &&
+      g.world.stats.population > 300,
+  },
+  {
+    id: 'heat',
+    text:
+      'A heatwave: homes and shops use more power for cooling and more water, and a long dry spell ' +
+      'lowers what groundwater pumps can give.',
+    when: (g) => g.world.stats.weather.kind === 'heat' && g.world.stats.population > 300,
+  },
+  {
     id: 'districts',
     text:
       'Parts of a city want different things. The district tool (I) paints named districts, and in the ' +

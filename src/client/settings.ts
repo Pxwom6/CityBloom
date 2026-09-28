@@ -2,6 +2,8 @@
  * Player settings, kept in localStorage (they're per device, not per city): sound, graphics, interface
  * and game options. DESIGN.md §5.
  */
+import type { WeatherIntensity } from '../data/climate';
+
 export type Quality = 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
 /** How wheel input is read (M14): detected automatically, or fixed to a mouse or a trackpad. */
@@ -31,6 +33,9 @@ export interface Settings {
   disasters: boolean;
   /** Elections every four years for new cities (M17; never in sandbox). */
   elections: boolean;
+  /** Seasons, and how wild the weather is (0 off … 3 wild), for this city and new ones (M22). */
+  seasons: boolean;
+  weather: WeatherIntensity;
   /** Minutes of real time between autosaves; 0 turns autosave off. */
   autosaveMinutes: number;
   /** Contextual tips for new players, and the ones already shown. */
@@ -58,6 +63,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pointer: 'auto',
   disasters: true,
   elections: true,
+  seasons: true,
+  weather: 2,
   autosaveMinutes: 5,
   tips: true,
   seenTips: [],
@@ -117,6 +124,8 @@ export function parseSettings(raw: unknown): Settings {
     pointer: oneOf(r.pointer, POINTER_DEVICES, d.pointer),
     disasters: bool(r.disasters, d.disasters),
     elections: bool(r.elections, d.elections),
+    seasons: bool(r.seasons, d.seasons),
+    weather: Math.round(num(r.weather, d.weather, 0, 3)) as WeatherIntensity,
     autosaveMinutes: oneOf(r.autosaveMinutes, AUTOSAVE_CHOICES, d.autosaveMinutes),
     tips: bool(r.tips, d.tips),
     seenTips: Array.isArray(r.seenTips)

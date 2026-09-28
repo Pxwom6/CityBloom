@@ -1,3 +1,4 @@
+import { snowFactor } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { CIVIC } from '../data/civic';
 import { TRAM, TRANSIT } from '../data/balance';
@@ -334,6 +335,19 @@ function RoadInspector({ id }: { id: number }) {
         <dd>
           {Math.round(curve.length)} m · {rt.speed} km/h
         </dd>
+        {(seg.snow ?? 0) >= 0.05 && (
+          <>
+            <dt>Snow</dt>
+            <dd class="neg" data-testid="road-snow">
+              {Math.round(seg.snow! * 100)} % · traffic {snowFactor(seg.snow).toFixed(1)}× slower
+              <div class="muted">
+                {[...w.civics.values()].some((c) => c.def === 'works')
+                  ? 'Ploughs clear roads within about 3 km of a public works depot, busiest first.'
+                  : 'No public works depot: it lies until it melts.'}
+              </div>
+            </dd>
+          </>
+        )}
       </dl>
       {rt.buildable && (
         <section class="road-way" data-testid="road-oneway">
@@ -744,6 +758,21 @@ function CivicInspector({ id }: { id: number }) {
         )}
       </dl>
       {d.garbage && <GarbageTrucks civicId={d.id} g={d.garbage} />}
+      {d.plough && (
+        <dl data-testid="plough-details">
+          <dt>Ploughs out</dt>
+          <dd>
+            {d.plough.out} of {d.plough.ploughs}
+          </dd>
+          <dt>Reach</dt>
+          <dd>about {(d.plough.reach / 1000).toFixed(0)} km of road</dd>
+          <dt>Cleared</dt>
+          <dd>
+            {(d.plough.today / 1000).toFixed(1)} km today, {(d.plough.yesterday / 1000).toFixed(1)} km
+            yesterday
+          </dd>
+        </dl>
+      )}
       <dl>
         {d.service && (
           <>

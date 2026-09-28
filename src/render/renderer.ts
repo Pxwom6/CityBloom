@@ -34,7 +34,8 @@ import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
 import { DisasterRenderer } from './disasters';
-import { WeatherRenderer, worldLook, type WeatherLook } from './weather';
+import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
+import type { Season, WeatherKind } from '../data/climate';
 
 export interface RenderStats {
   calls: number;
@@ -71,9 +72,28 @@ export interface RenderStats {
 export interface PhotoView extends PhotoLook {
   /** Hour to light the scene at, or null for the city's own clock. */
   hour: number | null;
+  /** Season and weather to show (M22), or null for the city's own. */
+  season: Season | null;
+  weather: WeatherKind | null;
   /** Vertical field of view, degrees. */
   fov: number;
   zones: boolean;
+}
+
+/** Photo mode's season and weather over the city's own look (M22). */
+function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
+  const out: Partial<WeatherLook> = {};
+  if (p.season) {
+    out.season = pureSeason(p.season);
+    out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;
+  }
+  if (p.weather) {
+    out.kind = p.weather;
+    out.strength = p.weather === 'clear' ? 0 : 0.85;
+    out.wet = p.weather === 'rain' || p.weather === 'storm' ? 1 : p.weather === 'heat' ? 0 : base.wet;
+    if (p.weather === 'snow') out.snow = Math.max(0.7, out.snow ?? base.snow);
+  }
+  return out;
 }
 
 /** Normal vertical field of view, degrees. */
@@ -455,7 +475,8 @@ export class GameRenderer {
     const pxm = bufH0 / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     // Data maps are read in clear weather too.
     const mapOn = this.terrain.uniforms.uOverlayOn.value > 0.5;
-    const look = { ...worldLook(this.world), ...(this.weatherOverride ?? {}) };
+    const base = worldLook(this.world);
+    const look = { ...base, ...(this.weatherOverride ?? {}), ...(p ? photoWeather(p, base) : {}) };
     if (mapOn) Object.assign(look, { kind: 'clear', strength: 0 });
     this.weather.update(
       dt,

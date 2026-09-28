@@ -112,6 +112,8 @@ export interface CivicDetails {
     loadPerRound: number;
     truckCapacity: number;
   } | null;
+  /** Public works depot (M22): ploughs at current funding, out now, reach (m) and road cleared. */
+  plough: { ploughs: number; out: number; reach: number; today: number; yesterday: number } | null;
   service: {
     kind: string;
     /** Vehicles the station can run at current funding, and how many are out now. */

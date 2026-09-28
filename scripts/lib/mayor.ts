@@ -453,18 +453,21 @@ export class Player {
   /** Keep power, water and sewage ahead of demand. */
   utilities(cheap: boolean): void {
     const u = this.stats().utilities;
-    if (u.power.supply < u.power.demand * 1.15 + 10) {
-      let plant = !cheap && u.power.demand > 60 ? 'coal' : 'wind';
-      // A scenario that bans fossil power (M18): solar once it's unlocked, wind until then.
-      if (this.avoid.includes(plant) || scenarioForbids(this.sim, { civic: plant }))
-        plant = this.sim.isUnlocked(CIVIC.get('solar')!.unlockPopulation) ? 'solar' : 'wind';
-      this.place(plant, 'industry');
-    }
+    if (u.power.supply < u.power.demand * 1.15 + 10) this.powerPlant(cheap, u.power.demand);
     if (u.water.supply < u.water.demand * 1.15 + 10) this.place('pump', cheap ? 'industry' : 'clean');
     if (u.sewage.supply < u.sewage.demand * 1.15 + 10) {
       const big = u.sewage.demand > 300 && !cheap && this.sim.isUnlocked(2_000);
       if (!(big && this.place('treatment', 'industry'))) this.place('septic', 'industry');
     }
+  }
+
+  /** Another power plant: coal for a big city (wind when cheap), whatever a scenario allows. */
+  powerPlant(cheap: boolean, demand: number): boolean {
+    let plant = !cheap && demand > 60 ? 'coal' : 'wind';
+    // A scenario that bans fossil power (M18): solar once it's unlocked, wind until then.
+    if (this.avoid.includes(plant) || scenarioForbids(this.sim, { civic: plant }))
+      plant = this.sim.isUnlocked(CIVIC.get('solar')!.unlockPopulation) ? 'solar' : 'wind';
+    return this.place(plant, 'industry');
   }
 
   private lastBuilt = new Map<string, number>();
@@ -483,6 +486,7 @@ export class Player {
       hospital: 10_000,
       primary: 2_500,
       highschool: 6_000,
+      works: 15_000,
     };
     const act = (kind: string, def: string, near: 'industry' | 'homes' | 'edge' = 'homes') => {
       if (now - (this.lastBuilt.get(kind) ?? -1e9) < TICKS_PER_MONTH * 2) return;
@@ -502,7 +506,14 @@ export class Player {
       else if (a.advisor === 'health') {
         if (pop > 6_000) act('health2', 'hospital');
         act('health', 'clinic');
-      } else if (a.advisor === 'education') {
+      } else if (a.advisor === 'utilities' && /winter/.test(t)) {
+        // Build for the heating before the cold comes (M22), once a month at most.
+        if (now - (this.lastBuilt.get('winter') ?? -1e9) >= TICKS_PER_MONTH) {
+          this.powerPlant(false, this.stats().utilities.power.demand);
+          this.lastBuilt.set('winter', now);
+        }
+      } else if (a.advisor === 'transport' && /snow/.test(t)) act('snow', 'works');
+      else if (a.advisor === 'education') {
         act('school', 'primary');
         if (pop > 3_000) act('school2', 'highschool');
       }

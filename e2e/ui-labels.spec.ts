@@ -47,6 +47,13 @@ test('every visible button has a readable label or accessible name, across the i
   const problems: string[] = [];
   const check = async (where: string) => {
     await page.evaluate(() => window.__game!.waitFrames(1));
+    // Judge the settled interface: a button just made active fades its background in while its
+    // text turns white at once, so wait out any transitions still running.
+    await page
+      .waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'), null, {
+        timeout: 5_000,
+      })
+      .catch(() => undefined);
     problems.push(...(await auditButtons(page, where)));
   };
 

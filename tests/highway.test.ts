@@ -131,7 +131,8 @@ describe('the city highway (M19)', () => {
   it('as a bypass, takes through traffic off the main street', () => {
     // A suburb, a centre and an industrial estate on one main street: commuters from the suburb
     // and trucks from the estate all drive through the centre.
-    const sim = newSim({ seed: 'bypass' });
+    // Without neighbours (M23): out-of-town jobs slow the suburb's growth past the 5,000 this needs.
+    const sim = newSim({ seed: 'bypass', region: false });
     const t = mainStreetTown(sim);
     sim.advance(6 * TICKS_PER_MONTH);
     expect(sim.state.totals.population).toBeGreaterThan(5_000);

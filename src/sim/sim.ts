@@ -81,6 +81,7 @@ import {
   weatherSummary,
   type WeatherSummary,
 } from './systems/weather';
+import { emptyRegionFlows, type RegionFlows } from './systems/regionFlows';
 import { garbageDealsHour, initialRegion, regionMonth, regionSummary, setDeal } from './systems/region';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
@@ -327,7 +328,8 @@ export class Sim {
       districts: new Map(),
       districtCells: emptyDistrictCells(),
       weather: initialWeather(options.preset),
-      region: initialRegion(options.seed),
+      region:
+        options.region === false ? { neighbours: [], deals: [], nextDeal: 1 } : initialRegion(options.seed),
     };
     const sim = new Sim(state, terrain);
     sim.buildHighway();
@@ -2042,6 +2044,9 @@ export class Sim {
 
   /** Trucks a day each rail freight terminal loaded at the last assignment round (M20; not saved). */
   railFreight = new Map<number, number>();
+
+  /** Regional commuters, shoppers and visitors at the last assignment round (M23; not saved). */
+  regionFlows: RegionFlows = emptyRegionFlows();
 
   /** Riders a day getting on or off at each stop or station at the last assignment round (M20; not saved). */
   stopUse = new Map<number, number>();

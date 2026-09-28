@@ -83,6 +83,8 @@ export interface ScenarioDef {
   elections: boolean;
   /** Its weather (M22); seasons on at normal intensity when absent. The player can't change it. */
   weather?: { seasons: boolean; intensity: WeatherIntensity };
+  /** Neighbouring towns (M23): played with the seed's neighbours; without any unless set. */
+  region?: boolean;
   /** Advice on the brief card. */
   hints: string[];
   /** Losing the next election loses the scenario. */

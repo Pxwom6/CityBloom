@@ -101,6 +101,15 @@ export const REGION = {
   winterPowerCut: 0.3,
   /** Resort shoppers: more in summer, fewer in winter. */
   resortSeason: { spring: 1, summer: 1.5, autumn: 0.9, winter: 0.6 },
+  /**
+   * Neighbours' commuters and shoppers come as the city draws them: this share at first, rising to
+   * all of them at `attractJobs` jobs (commuters) and `attractShops` shop jobs (shoppers).
+   */
+  attractBase: 0.1,
+  /** Of the residents without a job in town, the share who'll take one in a neighbour. */
+  outShare: 0.5,
+  attractJobs: 8_000,
+  attractShops: 2_000,
   /** Neighbours never shrink below this. */
   minPopulation: 2_000,
 };

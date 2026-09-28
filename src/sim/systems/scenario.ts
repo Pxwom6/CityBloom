@@ -70,6 +70,9 @@ export function startScenario(sim: Sim, id: string, dryRun: boolean): CommandRes
   s.options = { ...s.options, sandbox: false, disasters: def.disasters, elections: def.elections };
   s.weather.seasons = def.weather?.seasons ?? true;
   s.weather.intensity = def.weather?.intensity ?? 2;
+  // Neighbours (M23): a scenario that doesn't mention them is played without them, so the puzzle
+  // is the town's own.
+  if (!def.region) s.region = { neighbours: [], deals: [], nextDeal: s.region.nextDeal };
   if (!def.elections) {
     s.election.nextMonth = -1;
     s.election.promises = [];

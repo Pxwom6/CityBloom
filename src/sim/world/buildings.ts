@@ -35,6 +35,10 @@ export interface Building {
   cap: number;
   /** R: residents with jobs. */
   employed: number;
+  /** R (M23): residents working in a neighbouring town (counted in `employed`). */
+  toRegion?: number;
+  /** C/I (M23): workers who commute in from the neighbours (counted in `pop`). */
+  fromRegion?: number;
   /** R: job seekers counted at the last matching round (new arrivals aren't unemployed yet). */
   seekers: number;
   /** R: average commute in seconds of travel. */

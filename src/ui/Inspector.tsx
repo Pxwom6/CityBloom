@@ -538,6 +538,10 @@ const PURPOSE: Record<string, [string, string]> = {
   export: ['Export truck', 'Taking goods out to the region'],
   import: ['Import truck', 'Bringing goods in from the region'],
   event: ['Match-day fan', 'Driving in from the region for the match at the stadium'],
+  incommute: ['Commuter from out of town', 'Driving in from a neighbouring town to work'],
+  outcommute: ['Commuter', 'Driving out to work in a neighbouring town'],
+  regionshop: ['Shopper from out of town', 'Driving in from a neighbouring town to the shops'],
+  visit: ['Visitor', 'Off to see the sights'],
 };
 
 const WALKING: Record<string, [string, string]> = {
@@ -580,7 +584,7 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
     : ((walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', '']);
   const forward = car.legs[0] === car.trip.legs[0];
   const [from, to] = forward ? [car.trip.from, car.trip.to] : [car.trip.to, car.trip.from];
-  const home = car.trip.purpose === 'work' && !forward;
+  const home = (car.trip.purpose === 'work' || car.trip.purpose === 'outcommute') && !forward;
   const leg = car.legs[car.leg];
   const seg = leg ? game.world.netState.segments.get(leg.seg) : undefined;
   const vc = leg ? game.world.segVC(leg.seg, 1) : 0;

@@ -55,7 +55,8 @@ describe('air pollution', () => {
   });
 
   it('a polluting district harms health downwind, and switching to clean power helps', () => {
-    const sim = newSim();
+    // Without neighbours (M23), whose commuters' traffic adds a little smoke of its own upwind.
+    const sim = newSim({ region: false });
     const t = windStreet(sim);
     sim.advance(TICKS_PER_MONTH * 4);
     const before = sides(sim, t.plants);

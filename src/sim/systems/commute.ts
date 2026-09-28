@@ -19,6 +19,7 @@ import {
 import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
 import { railTerminals } from './rail';
+import { regionRound } from './regionFlows';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -43,13 +44,13 @@ export function attachmentOf(sim: Sim, g: RoadGraph, b: Building): Attachment | 
 
 const dijkstra = new Dijkstra();
 
-interface Slot {
+export interface Slot {
   b: Building;
   att: Attachment;
   open: number;
 }
 
-interface Origin {
+export interface Origin {
   list: { b: Building; att: Attachment; workers: number; shoppers: number }[];
   workers: number;
   shoppers: number;
@@ -103,6 +104,7 @@ export class MatchRound {
         b.employed = 0;
         b.commute = 0;
         b.shop = 0;
+        b.toRegion = 0;
         const workers = Math.round(b.pop * DEMAND.workforceShare);
         b.seekers = workers;
         if (!att || b.pop <= 0) continue;
@@ -114,6 +116,7 @@ export class MatchRound {
         o.shoppers += shoppers;
       } else if (b.zone === ZONE_C || b.zone === ZONE_I) {
         b.pop = 0;
+        b.fromRegion = 0;
         if (b.zone === ZONE_C) b.shop = 0;
         if (!att || b.closed) continue;
         const list = this.jobsAt.get(att.node) ?? [];
@@ -297,7 +300,20 @@ export class MatchRound {
     const { sim, flows, lines } = this;
     const s = sim.state;
     this.step(Infinity);
-    if (this.order.length)
+    // The region (M23): neighbours' commuters and shoppers take what's left, the city's unemployed
+    // take jobs out of town, and visitors travel from where they arrive.
+    sim.regionFlows = regionRound(sim, {
+      g: this.g,
+      costs: this.costs,
+      flows,
+      trips: this.trips,
+      jobsAt: this.jobsAt,
+      shopsAt: this.shopsAt,
+      customers: this.customers,
+      origins: this.origins,
+      car: this.car,
+    });
+    if (this.order.length || sim.regionFlows.shoppersIn > 0)
       for (const list of this.shopsAt.values()) {
         for (const sh of list) {
           const capacity = sh.b.cap * COMMUTE.customersPerJob;

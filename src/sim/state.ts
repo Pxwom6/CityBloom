@@ -34,6 +34,11 @@ export interface GameOptions {
   cityName: string;
   /** Terrain generator version the city was founded with (see TERRAIN_VERSION). */
   terrain: number;
+  /**
+   * Neighbouring towns (M23); on unless set false. A city without them has no regional commuters,
+   * shoppers or deals (controlled test towns; scenarios set their own).
+   */
+  region?: boolean;
 }
 
 export const DEFAULT_OPTIONS: GameOptions = {

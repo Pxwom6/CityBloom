@@ -62,6 +62,16 @@ export interface CivicDef {
   /** Bus depot (M6): buses it runs and passengers per bus. */
   transit?: { buses: number; capacity: number };
   /**
+   * Airport (M23): visitors a day it brings by air (at full funding and appeal), extra visitors as a
+   * share of the city's others, the lift to commercial demand, and how far its noise carries (m).
+   */
+  airport?: { visitors: number; boost: number; commerce: number; noise: number };
+  /**
+   * Seaport (M23): visitors a day by sea, truckloads a day it ships off the highway, the lift to
+   * industrial demand, and trade income per industrial job a day.
+   */
+  seaport?: { visitors: number; freight: number; demand: number; tradePerJob: number };
+  /**
    * Rail (M20): a passenger station on a railway, with the trains it adds to its line and their
    * seats. Faces a railway, not a road.
    */

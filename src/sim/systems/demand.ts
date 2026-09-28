@@ -30,13 +30,16 @@ export function updateDemand(sim: Sim): void {
   const taxR = sim.avgTax('R');
   const taxC = sim.avgTax('C');
   const taxI = sim.avgTax('I');
-  const openJobs = Math.max(0, t.jobs - t.jobsFilled);
+  // Jobs held by the neighbours' commuters (M23) are open to newcomers, who'd take them first; and
+  // residents working out of town would rather work here.
+  const openJobs = Math.max(0, t.jobs - t.jobsFilled + (t.fromRegion ?? 0));
+  const looking = t.unemployed + (t.toRegion ?? 0);
   const R: Factor[] = [
     {
       label: 'Jobs available vs. unemployed',
       value:
         (DEMAND.jobsWeight *
-          (openJobs + t.pendingC + t.pendingI - t.unemployed - t.pendingHomes * DEMAND.workforceShare)) /
+          (openJobs + t.pendingC + t.pendingI - looking - t.pendingHomes * DEMAND.workforceShare)) /
         (t.workers + DEMAND.jobsSoftening),
     },
     {
@@ -57,7 +60,7 @@ export function updateDemand(sim: Sim): void {
       label: 'Shoppers vs. shops',
       value: (DEMAND.shoppersWeight * (t.population * DEMAND.shopJobsPerResident - cAll)) / (cAll + 20),
     },
-    { label: 'Workers looking for jobs', value: (DEMAND.cWorkforceWeight * t.unemployed) / (t.workers + 50) },
+    { label: 'Workers looking for jobs', value: (DEMAND.cWorkforceWeight * looking) / (t.workers + 50) },
     { label: 'Commercial taxes', value: DEMAND.taxPerPoint * (taxC - DEMAND.neutralTax) },
     {
       label: 'Convention centre',
@@ -71,7 +74,7 @@ export function updateDemand(sim: Sim): void {
     },
   ];
   const I: Factor[] = [
-    { label: 'Workers looking for jobs', value: (DEMAND.iWorkforceWeight * t.unemployed) / (t.workers + 50) },
+    { label: 'Workers looking for jobs', value: (DEMAND.iWorkforceWeight * looking) / (t.workers + 50) },
     { label: 'Regional demand for goods', value: t.highwayConnected ? DEMAND.exports : 0 },
     { label: 'Industrial taxes', value: DEMAND.taxPerPoint * (taxI - DEMAND.neutralTax) },
     {

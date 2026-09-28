@@ -12,7 +12,18 @@ import type { Dijkstra, Leg, RoadGraph } from './graph';
  * BPR curve on volume over capacity, scaled by the hour's share of the rush-hour peak.
  */
 
-export type TripPurpose = 'work' | 'shop' | 'freight' | 'export' | 'import' | 'event';
+export type TripPurpose =
+  | 'work'
+  | 'shop'
+  | 'freight'
+  | 'export'
+  | 'import'
+  | 'event'
+  /** Regional (M23): a neighbour's worker coming in, a resident going out to work, a neighbour's shopper, a visitor. */
+  | 'incommute'
+  | 'outcommute'
+  | 'regionshop'
+  | 'visit';
 
 /** A real trip carried by a visible vehicle: which buildings, why, and the roads it takes. */
 export interface TripSample {

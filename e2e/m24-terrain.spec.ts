@@ -4,6 +4,25 @@ import { frames, openScenario, screen, settings, settledHint, state } from './ui
 
 const hash = (page: Page) => page.evaluate(() => window.__game!.hash());
 
+/** The city's hash once the last brush passes are in (two reads a moment apart agree). */
+async function settledHash(page: Page): Promise<string> {
+  let last = await hash(page);
+  for (let k = 0; k < 20; k++) {
+    await page.waitForTimeout(400);
+    const now = await hash(page);
+    if (now === last) return now;
+    last = now;
+  }
+  return last;
+}
+
+/** Open the terrain tool (its toolbar button toggles it off when it's already open). */
+async function terrainTool(page: Page, mode: string): Promise<void> {
+  if (!(await page.getByTestId('terrain-options').isVisible()))
+    await page.getByTestId('tool-terrain').click();
+  await page.getByTestId(`terrain-${mode}`).click();
+}
+
 /** Drag the mouse through world points (a brush stroke), holding a moment at the end. */
 async function drag(page: Page, pts: [number, number][], hold = 300): Promise<void> {
   const a = await screen(page, pts[0]![0], pts[0]![1]);
@@ -56,9 +75,8 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
   // --- The terrain tool, from the toolbar. ---
   await page.getByTestId('tool-terrain').hover();
   await expect(page.getByRole('tooltip')).toContainText('Raise, lower, level or smooth');
-  await page.getByTestId('tool-terrain').click();
+  await terrainTool(page, 'lower');
   await expect(page.getByTestId('terrain-options')).toBeVisible();
-  await page.getByTestId('terrain-lower').click();
   await page.evaluate((p) => window.__game!.setCamera(p), view);
   await frames(page);
   const mid = await screen(page, 750, hz);
@@ -69,25 +87,24 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
   await shot(page, 'm24-terrain-tool');
 
   // One drag is one step, and undo puts the ground and the money back exactly.
-  const h0 = await hash(page);
+  const h0 = await settledHash(page);
   const money0 = (await state(page)).treasury;
   await drag(page, [
     [620, hz],
     [880, hz],
   ]);
-  await expect.poll(() => hash(page), { timeout: 20_000 }).not.toBe(h0);
+  expect(await settledHash(page)).not.toBe(h0);
   await expect.poll(async () => (await state(page)).treasury).toBeLessThan(money0);
-  await page.waitForTimeout(500);
   await page.getByTestId('tool-undo').click();
   await expect.poll(() => hash(page), { timeout: 20_000 }).toBe(h0);
   await expect(page.locator('.toast').filter({ hasText: 'Undone: lowering ground' })).toBeVisible();
 
   // Lower the saddle, a few drags at a time, until the street fits through.
   let through = false;
-  for (let round = 0; round < 6 && !through; round++) {
-    await page.getByTestId('tool-terrain').click();
-    await page.getByTestId('terrain-lower').click();
-    for (let k = 0; k < 4; k++)
+  let drags = 0;
+  for (let round = 0; round < 5 && !through; round++) {
+    await terrainTool(page, 'lower');
+    for (let k = 0; k < 3; k++, drags++)
       await drag(
         page,
         [
@@ -96,12 +113,15 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
         ],
         500,
       );
+    await settledHash(page);
     await page.getByTestId('tool-select').click();
     through = await tryRoad();
   }
   expect(through).toBe(true);
   const spent = money0 - (await state(page)).treasury;
-  console.log(`[m24] pass cut and street built for $${spent.toLocaleString('en-US')}`);
+  console.log(
+    `[m24] pass cut in ${drags} drags, and the street built, for $${spent.toLocaleString('en-US')}`,
+  );
   await expect
     .poll(async () => (await page.evaluate((hz) => window.__game!.segmentAt(800, hz!), hz))?.type)
     .toBe('street');
@@ -212,32 +232,20 @@ test('M24: the map editor from the main menu: brushes, entries, the check, save 
     ],
     1200,
   );
-  const h1 = await hash(page);
+  const h1 = await settledHash(page);
   await page.getByTestId('brush-water').click();
   await page.getByTestId('editor-radius').fill('48');
-  await drag(
-    page,
-    [
-      [1300, 0],
-      [1250, 700],
-      [1500, 1500],
-    ],
-    800,
-  );
-  await expect.poll(() => hash(page), { timeout: 20_000 }).not.toBe(h1);
+  const river: [number, number][] = [
+    [1300, 250],
+    [1250, 700],
+    [1500, 1500],
+  ];
+  await drag(page, river, 800);
+  expect(await settledHash(page)).not.toBe(h1);
   // Undo takes the whole river back.
-  await page.waitForTimeout(500);
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect.poll(() => hash(page), { timeout: 20_000 }).toBe(h1);
-  await drag(
-    page,
-    [
-      [1300, 0],
-      [1250, 700],
-      [1500, 1500],
-    ],
-    800,
-  );
+  await drag(page, river, 800);
   await page.getByTestId('brush-raise').click();
   await page.getByTestId('editor-radius').fill('160');
   await page.getByTestId('editor-strength').fill('3');

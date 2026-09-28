@@ -106,9 +106,9 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await drag(
     page,
     [
-      [2000, 1500],
-      [2000, 2000],
-      [1600, 2000],
+      [1950, 1350],
+      [1950, 1750],
+      [1650, 1750],
     ],
     1200,
   );
@@ -118,8 +118,8 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await drag(
     page,
     [
-      [700, 250],
-      [1000, 300],
+      [700, 420],
+      [1000, 460],
     ],
     2000,
   );
@@ -127,8 +127,8 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await drag(
     page,
     [
-      [700, 250],
-      [1000, 300],
+      [700, 420],
+      [1000, 460],
     ],
     600,
   );
@@ -136,8 +136,8 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await drag(
     page,
     [
-      [650, 250],
-      [1050, 300],
+      [650, 420],
+      [1050, 460],
     ],
     800,
   );
@@ -145,8 +145,8 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await drag(
     page,
     [
-      [800, 260],
-      [900, 280],
+      [800, 430],
+      [900, 450],
     ],
     1000,
   );
@@ -359,7 +359,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await expect(page.getByTestId('region-panel')).toBeVisible();
   const seller = s.region.neighbours.find((n) => n.offers.buy.power > 0);
   if (seller) {
-    const amount = Math.max(1, Math.min(seller.offers.buy.power, 40));
+    const amount = Math.max(1, Math.min(seller.offers.buy.power, 20));
     await page.getByTestId(`deal-${seller.id}-buy-power`).scrollIntoViewIfNeeded();
     await page.getByTestId(`deal-${seller.id}-buy-power-amount`).fill(String(amount));
     await page.getByTestId(`deal-${seller.id}-buy-power-sign`).click();

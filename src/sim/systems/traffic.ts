@@ -1,4 +1,4 @@
-import { TRAFFIC } from '../../data/balance';
+import { JUNCTION, TRAFFIC } from '../../data/balance';
 import { ROAD_TYPES } from '../../data/roads';
 import type { Sim } from '../sim';
 import { hourOfDay } from '../time';
@@ -54,10 +54,57 @@ export function segVC(sim: Sim, segId: number, share: number): number {
   return (vol * TRAFFIC.peakShare * share) / segCapacity(sim, segId);
 }
 
-/** Congested seconds per graph edge at `share` of the peak hour. */
+export type JunctionKind = 'none' | 'plain' | 'roundabout';
+
+/** What kind of junction a node is (M19): a roundabout, an ordinary junction, or just a bend. */
+export function junctionKind(sim: Sim, nodeId: number): JunctionKind {
+  const node = sim.state.net.nodes.get(nodeId);
+  if (!node) return 'none';
+  if (node.roundabout) return 'roundabout';
+  return sim.net.segmentsAt(nodeId).length >= 3 ? 'plain' : 'none';
+}
+
+/** Cars per hour a junction passes before it slows (M19). */
+export function junctionCapacity(sim: Sim, nodeId: number): number {
+  const kind = junctionKind(sim, nodeId);
+  if (kind === 'none') return Infinity;
+  let approaches = 0;
+  for (const sid of sim.net.segmentsAt(nodeId)) approaches += segCapacity(sim, sid);
+  return (approaches / 2) * (kind === 'roundabout' ? JUNCTION.roundaboutShare : JUNCTION.plainShare);
+}
+
+/** Cars a day through a junction: half the traffic on the roads that meet there. */
+export function junctionVolume(sim: Sim, nodeId: number): number {
+  let v = 0;
+  for (const sid of sim.net.segmentsAt(nodeId)) v += sim.state.traffic.get(sid) ?? 0;
+  return v / 2;
+}
+
+/** Volume over capacity for a junction at `share` of the peak hour. */
+export function junctionVC(sim: Sim, nodeId: number, share: number): number {
+  const cap = junctionCapacity(sim, nodeId);
+  if (cap === Infinity) return 0;
+  return (junctionVolume(sim, nodeId) * TRAFFIC.peakShare * share) / cap;
+}
+
+/** Seconds a car loses getting through a junction at `share` of the peak hour (0 for a bend). */
+export function junctionDelay(sim: Sim, nodeId: number, share: number): number {
+  const kind = junctionKind(sim, nodeId);
+  if (kind === 'none') return 0;
+  const vc = junctionVC(sim, nodeId, share);
+  const base = kind === 'roundabout' ? JUNCTION.roundaboutDelay : JUNCTION.plainDelay;
+  return base * slowdown(vc) + (vc > 1 ? JUNCTION.queueSeconds * (1 - 1 / vc) : 0);
+}
+
+/**
+ * Congested seconds per graph edge at `share` of the peak hour: the road's own time plus, where the
+ * edge arrives at a junction, the time lost getting through it (M19).
+ */
 export function congestedEdgeCosts(sim: Sim, g: RoadGraph, share: number): Float64Array {
   const out = new Float64Array(g.cost.length);
   const cache = new Map<number, number>();
+  const delays = new Float64Array(g.size);
+  for (let v = 0; v < g.size; v++) delays[v] = junctionDelay(sim, g.ids[v]!, share);
   for (let k = 0; k < out.length; k++) {
     const seg = g.seg[k]!;
     let vc = cache.get(seg);
@@ -65,7 +112,7 @@ export function congestedEdgeCosts(sim: Sim, g: RoadGraph, share: number): Float
       vc = segVC(sim, seg, share);
       cache.set(seg, vc);
     }
-    out[k] = congestedSeconds(g.cost[k]!, vc);
+    out[k] = congestedSeconds(g.cost[k]!, vc) + delays[g.to[k]!]!;
   }
   return out;
 }

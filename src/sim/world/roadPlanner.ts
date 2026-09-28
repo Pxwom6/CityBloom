@@ -1,5 +1,6 @@
 import { GRADING, ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
+import { JUNCTION } from '../../data/balance';
 import { Curve, angleDiff, angleOf, curveCrossings, dist, mid, splitBezier, v2, type Vec2 } from '../geom';
 import type { Terrain } from '../terrain/terrain';
 import type { Network } from './network';
@@ -262,6 +263,19 @@ export function planRoad(
   for (const p of finalPieces) {
     if (p.length < ROAD_RULES.minLength)
       return fail(plan, 'Too close to another road or junction', mid(p.a, p.b));
+    // Roundabouts (M19): a road may join the ring's junction, from far enough out, but not cut
+    // across the ring.
+    const pc = new Curve(p.a, p.c, p.b);
+    const reach = JUNCTION.maxRadius + JUNCTION.ringWidth + hwNew + 8;
+    for (const n of net.nodesIn(pc.bbox(reach))) {
+      if (!n.roundabout) continue;
+      const outer = n.roundabout + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
+      const joins = (p.ea.kind === 'node' && p.ea.id === n.id) || (p.eb.kind === 'node' && p.eb.id === n.id);
+      if (joins) {
+        if (p.length < outer + 14) return fail(plan, 'Too short to meet the roundabout', mid(p.a, p.b));
+      } else if (pc.project(n).d < outer + hwNew)
+        return fail(plan, 'A roundabout is in the way', v2(n.x, n.z));
+    }
     if (p.ea.kind === 'node' && p.eb.kind === 'node') {
       // Already directly connected by a similar road?
       for (const sid of net.segmentsAt(p.ea.id)) {

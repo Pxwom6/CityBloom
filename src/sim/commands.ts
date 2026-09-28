@@ -27,6 +27,9 @@ export type Command =
   | { type: 'upgradeRoad'; seg: number; road: RoadTypeId }
   /** Make a road one-way (1: from its start to its end, -1: the other way) or two-way (0) (M19). */
   | { type: 'setOneWay'; seg: number; dir: 0 | 1 | -1 }
+  /** A roundabout on a junction (`node`) or a road (`at`), with the ring's radius (M19). */
+  | { type: 'roundabout'; node?: number; at?: Vec2; radius?: number }
+  | { type: 'removeRoundabout'; node: number }
   /** `stroke` groups several paint commands from one drag into a single undo step. */
   | { type: 'zone'; zone: ZoneLetter | 'none'; area: ZoneArea; stroke?: number }
   /** Take back the last action, or put back the last one taken back (M14). */

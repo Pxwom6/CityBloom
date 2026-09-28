@@ -73,6 +73,27 @@ export const COMMUTE = {
 };
 
 /** Traffic (DESIGN §3.8). Volumes are daily passenger-car units (PCU), both directions. */
+/**
+ * Junctions (M19): where three or more roads meet, traffic crossing and turning has to share the
+ * space. A junction passes a share of what its approaches carry (half of each approach, since every
+ * car uses two) before it slows, and a roundabout keeps traffic moving at a much higher share.
+ */
+export const JUNCTION = {
+  /** Capacity as a share of half the approaches' total, for an ordinary junction and a roundabout. */
+  plainShare: 0.5,
+  roundaboutShare: 0.85,
+  /** Seconds a car loses crossing an uncongested junction (a roundabout slows everyone a little). */
+  plainDelay: 3,
+  roundaboutDelay: 4,
+  /** Seconds of queue added per unit of overload, as for roads. */
+  queueSeconds: 300,
+  /** Roundabouts: the ring's centre-line radius, its carriageway width, and the price per metre. */
+  minRadius: 12,
+  maxRadius: 40,
+  ringWidth: 8,
+  costPerMetre: 40,
+};
+
 export const TRAFFIC = {
   /** One-way trips per employed resident per day (there and back). */
   tripsPerWorker: 2,

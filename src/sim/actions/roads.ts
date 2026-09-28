@@ -9,6 +9,7 @@ import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
 import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
+import { JUNCTION } from '../../data/balance';
 
 /** Refusal reason if a road type isn't available yet, else null. */
 function roadLocked(sim: Sim, road: RoadTypeId): string | null {
@@ -337,4 +338,126 @@ export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: bool
   sim.net.dirty.segments.add(segId);
   sim.markNetworkChanged();
   return ok(0);
+}
+
+/** Where a roundabout goes: a junction, or a point along a road that will be split there. */
+type RoundaboutSite = { node: number } | { seg: number; s: number; x: number; z: number };
+
+/**
+ * Put a roundabout on a junction, or on a road at `at` (M19). `radius` is the ring's centre line,
+ * clamped to what the widest road meeting it needs and JUNCTION.maxRadius. The ring needs room:
+ * every road meeting it long enough to approach, no other road through it and no civic building on
+ * it; zoned buildings in its way are demolished. Returns the node in `created`.
+ */
+export function placeRoundabout(
+  sim: Sim,
+  at: { node?: number; x?: number; z?: number },
+  radius: number | undefined,
+  dryRun: boolean,
+): CommandResult {
+  const net = sim.net;
+  const st = sim.state.net;
+  let site: RoundaboutSite | null = null;
+  if (at.node !== undefined) {
+    if (!st.nodes.has(at.node)) return fail('No junction here');
+    site = { node: at.node };
+  } else if (at.x !== undefined && at.z !== undefined && Number.isFinite(at.x) && Number.isFinite(at.z)) {
+    const p = { x: at.x, z: at.z };
+    const n = net.nearestNode(p, 10);
+    if (n) site = { node: n.id };
+    else {
+      const hit = net.nearestSegment(p, 8);
+      if (hit) site = { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
+    }
+  }
+  if (!site) return fail('Put a roundabout on a junction or a road');
+  const centre = 'node' in site ? net.node(site.node) : { x: site.x, z: site.z };
+  // The roads that will meet the ring, with how far each runs to its next junction.
+  const arms: { seg: number; len: number }[] = [];
+  if ('node' in site) {
+    if (net.node(site.node).roundabout) return fail('There is already a roundabout here');
+    for (const sid of net.segmentsAt(site.node)) arms.push({ seg: sid, len: net.curve(sid).length });
+  } else {
+    const len = net.curve(site.seg).length;
+    arms.push({ seg: site.seg, len: site.s }, { seg: site.seg, len: len - site.s });
+  }
+  if (arms.length < 2) return fail('A roundabout needs at least two roads meeting it');
+  let widest = 0;
+  for (const a of arms) {
+    const t = net.segment(a.seg).type;
+    if (!ROAD_TYPES[t].buildable) return fail("The regional highway can't have a roundabout");
+    widest = Math.max(widest, roadHalfWidth(t));
+  }
+  const minR = Math.max(JUNCTION.minRadius, Math.ceil(widest + 6));
+  const r = Math.min(JUNCTION.maxRadius, Math.max(minR, radius ?? minR + 2));
+  const outer = r + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
+  for (const a of arms)
+    if (a.len < outer + 14)
+      return fail('Too close to the next junction for a roundabout this size', {
+        at: { x: centre.x, z: centre.z },
+      });
+  // Other roads through the ring.
+  const armSegs = new Set(arms.map((a) => a.seg));
+  for (const sid of net.segHash.queryPoint(centre.x, centre.z, outer + 30)) {
+    if (armSegs.has(sid)) continue;
+    const seg = net.segment(sid);
+    if ('node' in site && (seg.a === site.node || seg.b === site.node)) continue;
+    if (net.curve(sid).project(centre).d < outer + net.halfWidth(sid))
+      return fail('Another road is in the way of the ring', { at: { x: centre.x, z: centre.z } });
+  }
+  for (const n of net.nodesIn({
+    minX: centre.x - outer - JUNCTION.maxRadius,
+    minZ: centre.z - outer - JUNCTION.maxRadius,
+    maxX: centre.x + outer + JUNCTION.maxRadius,
+    maxZ: centre.z + outer + JUNCTION.maxRadius,
+  }))
+    if (n.roundabout && ('node' in site ? n.id !== site.node : true))
+      if (Math.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout + JUNCTION.ringWidth + 8)
+        return fail('Too close to another roundabout', { at: { x: centre.x, z: centre.z } });
+  // Civic buildings on the ring stop it; zoned buildings are demolished.
+  const box: Box = {
+    minX: centre.x - outer,
+    minZ: centre.z - outer,
+    maxX: centre.x + outer,
+    maxZ: centre.z + outer,
+  };
+  for (const c of sim.state.civics.values())
+    if (pointRectDistance(centre, civicRect(c)) < outer)
+      return fail('A building is in the way of the ring', { at: { x: centre.x, z: centre.z } });
+  const doomed: number[] = [];
+  for (const id of sim.bldHash.query(box)) {
+    const b = sim.state.buildings.get(id)!;
+    if (pointRectDistance(centre, footprint(b)) < outer) doomed.push(id);
+  }
+  doomed.sort((a, b) => a - b);
+  const cost = Math.round(2 * Math.PI * r * JUNCTION.costPerMetre);
+  const info = { radius: r, demolish: doomed.length, arms: arms.length };
+  if (cost > sim.state.treasury && !sim.state.options.sandbox)
+    return fail('Not enough money', { at: centre, info });
+  if (dryRun) return ok(cost, { info });
+  let nodeId: number;
+  if ('node' in site) nodeId = site.node;
+  else nodeId = net.splitSegment(site.seg, site.s).node.id;
+  for (const id of doomed) sim.removeBuilding(id);
+  net.node(nodeId).roundabout = r;
+  net.dirty.nodes.add(nodeId);
+  net.revalidate({ minX: box.minX - 20, minZ: box.minZ - 20, maxX: box.maxX + 20, maxZ: box.maxZ + 20 });
+  sim.spend(cost, 'roads');
+  sim.markNetworkChanged();
+  return ok(cost, { created: [nodeId], info });
+}
+
+/** Take a roundabout out, leaving an ordinary junction (a share of its price back). */
+export function removeRoundabout(sim: Sim, nodeId: number, dryRun: boolean): CommandResult {
+  const n = sim.state.net.nodes.get(nodeId);
+  if (!n?.roundabout) return fail('No roundabout here');
+  const refund = Math.round(2 * Math.PI * n.roundabout * JUNCTION.costPerMetre * ROAD_RULES.bulldozeRefund);
+  if (dryRun) return ok(-refund);
+  const r = n.roundabout + JUNCTION.ringWidth + 20;
+  delete n.roundabout;
+  sim.net.dirty.nodes.add(nodeId);
+  sim.net.revalidate({ minX: n.x - r, minZ: n.z - r, maxX: n.x + r, maxZ: n.z + r });
+  sim.earn(refund, 'refunds');
+  sim.markNetworkChanged();
+  return ok(-refund);
 }

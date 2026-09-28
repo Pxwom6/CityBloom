@@ -1,6 +1,7 @@
 import { GRADING, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { CELL, CELL_OVERLAP_SHRINK, MAX_CELL_SLOPE, ROWS, ZONE_NONE } from '../../data/zones';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
+import { JUNCTION } from '../../data/balance';
 import { Curve, rectsOverlap, splitBezier, v2, type ORect, type Vec2 } from '../geom';
 import { SpatialHash, type Box } from './spatial';
 import type { Terrain } from '../terrain/terrain';
@@ -10,6 +11,8 @@ export interface RoadNode {
   id: number;
   x: number;
   z: number;
+  /** A roundabout on this junction (M19): the ring's centre-line radius, metres. */
+  roundabout?: number;
 }
 
 export interface RoadSegment {
@@ -655,6 +658,18 @@ export class Network {
       const hw = this.halfWidth(sid);
       const curve = this.curve(sid);
       for (const p of pts) if (curve.project(p).d < hw - 0.05) return false;
+    }
+    // A roundabout's ring and island (M19).
+    const reach = JUNCTION.maxRadius + JUNCTION.ringWidth + CELL;
+    for (const n of this.nodesIn({
+      minX: r.x - reach,
+      minZ: r.z - reach,
+      maxX: r.x + reach,
+      maxZ: r.z + reach,
+    })) {
+      if (!n.roundabout) continue;
+      const outer = n.roundabout + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
+      for (const p of pts) if (Math.hypot(p.x - n.x, p.z - n.z) < outer) return false;
     }
     const bld = this.st.blocks.get(blockId)!.bld[idx]!;
     if (this.hooks.footprintBlocked(this.cellRect(blockId, idx), bld)) return false;

@@ -467,7 +467,10 @@ export class Player {
     // A scenario that bans fossil power (M18): solar once it's unlocked, wind until then.
     if (this.avoid.includes(plant) || scenarioForbids(this.sim, { civic: plant }))
       plant = this.sim.isUnlocked(CIVIC.get('solar')!.unlockPopulation) ? 'solar' : 'wind';
-    return this.place(plant, 'industry');
+    if (this.place(plant, 'industry')) return true;
+    // Can't afford the big plant (or find room for it): a wind turbine now beats a town going dark
+    // while the treasury saves up (seed s1 once stalled at 140 MW for good).
+    return plant !== 'wind' && !this.avoid.includes('wind') && this.place('wind', 'industry');
   }
 
   private lastBuilt = new Map<string, number>();

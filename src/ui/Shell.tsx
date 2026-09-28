@@ -587,6 +587,18 @@ function SettingsScreen() {
   const game = useGameUpdates(100);
   const s = game.settings;
   const set = (patch: Partial<Settings>) => game.updateSettings(patch);
+  // This city's seasons and weather as just chosen, shown until the sim's stats agree (a click would
+  // otherwise flick back for a moment while the change goes through the worker).
+  const [pending, setPending] = useState<{ seasons?: boolean; intensity?: WeatherIntensity }>({});
+  const cityWeather = game.world.stats.weather;
+  useEffect(() => {
+    if (
+      (pending.seasons === undefined || pending.seasons === cityWeather.seasons) &&
+      (pending.intensity === undefined || pending.intensity === cityWeather.intensity) &&
+      (pending.seasons !== undefined || pending.intensity !== undefined)
+    )
+      setPending({});
+  });
   return (
     <div class="shell-card panel settings-screen" data-testid="settings-screen">
       <header>
@@ -740,7 +752,7 @@ function SettingsScreen() {
           />
           {(() => {
             // Seasons and weather (M22): this city's (unless a scenario sets them), and new ones'.
-            const w = game.world.stats.weather;
+            const w = { ...cityWeather, ...pending };
             const inCity = game.mode === 'play';
             const locked = inCity && game.world.stats.scenario?.status === 'playing';
             const apply = (patch: { seasons?: boolean; intensity?: WeatherIntensity }) => {
@@ -748,7 +760,12 @@ function SettingsScreen() {
                 ...(patch.seasons !== undefined ? { seasons: patch.seasons } : {}),
                 ...(patch.intensity !== undefined ? { weather: patch.intensity } : {}),
               });
-              if (inCity && !locked) void game.dispatch({ type: 'setWeather', ...patch });
+              if (inCity && !locked) {
+                setPending((p) => ({ ...p, ...patch }));
+                void game.dispatch({ type: 'setWeather', ...patch }).then((r) => {
+                  if (!r.ok) setPending({});
+                });
+              }
             };
             const hint = locked
               ? 'this scenario sets its own'

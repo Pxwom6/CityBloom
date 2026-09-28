@@ -71,9 +71,10 @@ function moods(p: Player): void {
         sum.set(f.label, (sum.get(f.label) ?? 0) + f.value / list.length);
     const low = list.filter((b) => b.happiness < GROWTH.distressHappiness).length;
     const mean = list.reduce((a, b) => a + b.happiness, 0) / list.length;
+    // MOODALL=1: every factor, not just the five that hurt most.
     const top = [...sum.entries()]
       .sort((a, b) => a[1] - b[1])
-      .slice(0, 5)
+      .slice(0, process.env.MOODALL ? undefined : 5)
       .map(([k, v]) => `${k} ${v.toFixed(2)}`)
       .join(', ');
     console.log(`      ${label}: ${list.length} active, mood ${mean.toFixed(2)}, ${low} distressed | ${top}`);

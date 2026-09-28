@@ -2279,6 +2279,23 @@ body {
 .photo-follow > span:first-child {
   margin-right: auto;
 }
+/* Season's five choices wrap three and two to fit the panel. */
+.photo-panel .segmented {
+  display: flex;
+  flex-wrap: wrap;
+}
+.photo-panel .segmented button {
+  flex: 1 1 28%;
+  padding: var(--space-1) var(--space-2);
+}
+.photo-weather {
+  margin-top: var(--space-1);
+}
+.photo-weather .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .photo-save {
   margin-top: var(--space-3);
   gap: var(--space-2);

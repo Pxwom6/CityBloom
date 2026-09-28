@@ -10,6 +10,7 @@ import { CIVIC } from './data/civic';
 import { MILESTONES } from './data/progression';
 import { ACHIEVEMENTS } from './data/achievements';
 import type { Advice } from './sim/systems/advisors';
+import { RegionView } from './client/regionView';
 import { DistrictView } from './client/districtView';
 import { OverlayController } from './client/overlay';
 import { StreetNames } from './client/names';
@@ -108,7 +109,9 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | 'districts' | null = null;
+  panel:
+    'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | 'districts' | 'region' | null =
+    null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
   /** How the scenario ended, shown until the player carries on. */
@@ -149,6 +152,7 @@ export class Game {
   readonly overlay: OverlayController;
   /** Districts on the map while the district tool or panel is open (M21). */
   readonly districts: DistrictView;
+  readonly regionView: RegionView;
   /** New versions of the app (the service worker, M15). */
   readonly updates = new AppUpdates(() => this.notify());
   /** Saving the city before switching to a new version. */
@@ -196,6 +200,7 @@ export class Game {
     this.tools = new ToolManager(this);
     this.overlay = new OverlayController(this);
     this.districts = new DistrictView(this);
+    this.regionView = new RegionView(this);
     renderer.controller.focus = () => {
       const hw = this.world.gen.params.highway;
       return { x: 260, z: hw.connectZ };
@@ -1039,6 +1044,7 @@ export class Game {
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);
     this.districts.update();
+    this.regionView.update();
     this.renderer.frame(dt);
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {

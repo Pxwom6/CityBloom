@@ -77,6 +77,11 @@ export interface TestApi {
   };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
+  /** Planes and ships drawn last frame (M23), with their positions. */
+  getPorts(): {
+    counts: { planes: number; ships: number };
+    shown: { kind: 'plane' | 'ship'; x: number; y: number; z: number }[];
+  };
   /** Terrain height (water below 0.6). */
   heightAt(x: number, z: number): number;
   /** Show a data map (or null to hide). */
@@ -353,6 +358,10 @@ export function installTestApi(game: Game): TestApi {
       })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getPorts: () => ({
+      counts: { ...game.renderer.ports.counts },
+      shown: game.renderer.ports.shown.map((f) => ({ ...f })),
+    }),
     getDistricts: () => {
       const w = game.world;
       const count = new Map<number, number>();

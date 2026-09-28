@@ -11,6 +11,7 @@ import {
 } from '../../data/region';
 import { Rng } from '../rng';
 import type { Sim } from '../sim';
+import type { RegionFlows } from './regionFlows';
 import { civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 
@@ -267,6 +268,10 @@ export interface RegionSummary {
   })[];
   deals: Deal[];
   season: string;
+  /** Commuters, shoppers and visitors at the last traffic round. */
+  flows: RegionFlows;
+  /** Truckloads a day put on ships at the seaport (M23), for the ships on screen. */
+  shipLoads: number;
 }
 
 export function regionSummary(sim: Sim): RegionSummary {
@@ -280,5 +285,9 @@ export function regionSummary(sim: Sim): RegionSummary {
     }),
     deals: r.deals.map((d) => ({ ...d })),
     season: seasonAt(sim.state.weather, sim.state.tick),
+    flows: sim.regionFlows,
+    shipLoads: [...sim.state.civics.values()]
+      .filter((c) => civicDef(c).seaport)
+      .reduce((n, c) => n + (sim.railFreight.get(c.id) ?? 0), 0),
   };
 }

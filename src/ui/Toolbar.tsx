@@ -509,8 +509,8 @@ export function Toolbar() {
             [
               'special',
               IconCrate,
-              'Trade and research',
-              'Freight, ore mines and oil wells earn export income; a research park grows high-tech industry.',
+              'Trade, research and ports',
+              'Freight, ore mines and oil wells earn export income; a research park grows high-tech industry; an airport brings visitors and a seaport ships goods.',
             ],
             [
               'project',

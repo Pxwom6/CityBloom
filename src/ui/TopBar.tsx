@@ -9,6 +9,7 @@ import { SystemMenu } from './SystemMenu';
 import { AdvisorsButton } from './Advisors';
 import { CityButton } from './CityPanel';
 import { HistoryButton } from './History';
+import { RegionButton } from './Region';
 import { NotificationsButton } from './Notifications';
 
 const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[] = [
@@ -64,6 +65,7 @@ export function TopBar() {
       <Rci />
       <CityButton />
       <HistoryButton />
+      <RegionButton />
       <AdvisorsButton />
       <NotificationsButton />
       <span class="divider" />

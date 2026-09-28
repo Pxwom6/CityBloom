@@ -2832,3 +2832,77 @@ body {
 .weather-pop p:first-of-type {
   color: inherit;
 }
+
+/* Region (M23) */
+.region-summary {
+  margin: 0 0 var(--space-2);
+}
+.region-town {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-2) 0;
+}
+.region-town header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.region-town h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.region-kind {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.region-pop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.region-trend {
+  color: var(--color-text-muted);
+  margin-left: auto;
+}
+.region-town p {
+  margin: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.region-deal {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: var(--font-size-sm);
+}
+.region-deal.signed {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+.region-deal-head {
+  display: flex;
+  flex-direction: column;
+}
+.region-deal-now {
+  margin-top: 2px;
+  font-weight: var(--font-weight-medium);
+}
+.region-deal-set {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+.region-deal-set input {
+  flex: 1;
+  min-width: 0;
+}
+.region-deal-value {
+  min-width: 6.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.region-label {
+  border-left-color: var(--color-accent);
+}

@@ -1966,6 +1966,14 @@ export class Sim {
       railFreight: d.railFreight
         ? { linked: railTerminals(this).some((t) => t.id === c.id), trucks: this.railFreight.get(c.id) ?? 0 }
         : null,
+      port:
+        d.airport || d.seaport
+          ? {
+              kind: d.airport ? 'airport' : 'seaport',
+              visitors: d.airport ? (this.state.tourism.by?.air ?? 0) : (this.state.tourism.by?.sea ?? 0),
+              loads: this.railFreight.get(c.id) ?? 0,
+            }
+          : null,
       refund: Math.round(c.cost * 0.25),
       special: d.resource
         ? {
@@ -2142,6 +2150,8 @@ export class Sim {
       pop: b.pop,
       cap: b.cap || buildingCapacity(b),
       employed: b.employed,
+      toRegion: b.toRegion ?? 0,
+      fromRegion: b.fromRegion ?? 0,
       commute: b.commute,
       shop: b.shop,
       happiness: b.happiness,

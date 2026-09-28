@@ -467,8 +467,120 @@ export function buildSpecialModel(
     case 'techpark':
       techpark(m, W, D, r);
       return true;
+    case 'airport':
+      airport(m, W, D, r);
+      return true;
+    case 'seaport':
+      seaport(m, W, D, r);
+      return true;
     default:
       return false;
+  }
+}
+
+/** A parked plane (for the apron): fuselage along x, wings and tail, facing +x. */
+export function plane(m: ModelBuilder, x: number, z: number, y: number, len: number, livery: Color): void {
+  const r = len * 0.06;
+  m.box(x - len / 2, x + len / 2, y, y + r * 2, z - r, z + r, WHITE, WHITE);
+  m.box(x + len / 2 - r, x + len / 2 + r * 0.8, y + r * 0.3, y + r * 1.7, z - r * 0.8, z + r * 0.8, GLASS);
+  m.box(x - len * 0.1, x + len * 0.12, y + r * 0.6, y + r * 0.9, z - len * 0.45, z + len * 0.45, WHITE);
+  m.box(x - len / 2, x - len * 0.38, y + r * 2, y + r * 5, z - r * 0.25, z + r * 0.25, livery);
+  m.box(x - len / 2, x - len * 0.4, y + r * 1.4, y + r * 1.7, z - len * 0.16, z + len * 0.16, WHITE);
+  m.box(x - len * 0.2, x + len * 0.3, y + r * 1.9, y + r * 2.05, z - r * 1.02, z + r * 1.02, livery);
+}
+
+/** Airport (M23): terminal and tower on the landside, apron with parked planes, a runway at the back. */
+function airport(m: ModelBuilder, W: number, D: number, r: () => number): void {
+  base(m, W, D, GRASS);
+  const front = -D / 2;
+  // Forecourt and car park.
+  m.ground(-W / 2 + 4, W / 2 - 4, front + 1, front + 10, 0.08, ASPHALT);
+  // Terminal: a long glass hall with a curved-looking stepped roof.
+  m.box(-70, 70, 0, 11, front + 11, front + 34, C('#e6e8ea'), C('#c3c9cf'));
+  m.box(-66, 66, 11, 14, front + 14, front + 31, C('#dfe3e7'), STEEL);
+  m.windows('front', -70, 70, front + 11, front + 34, 0, 2, 11, {
+    col: GLASS,
+    lit: lit(r, 0.8),
+    band: true,
+    height: 3.5,
+  });
+  // Jet bridges out to the apron.
+  for (const x of [-45, -15, 15, 45]) m.box(x - 1.4, x + 1.4, 4, 6.5, front + 34, front + 46, STEEL);
+  // Control tower.
+  m.cylinder(95, front + 22, 2.8, 0, 34, C('#eef0f2'), 10);
+  m.frustum(95, front + 22, 5.5, 6.5, 34, 38.5, GLASS, 10);
+  m.frustum(95, front + 22, 6.8, 2, 38.5, 40, STEEL_DARK, 10);
+  // Hangar.
+  m.box(-W / 2 + 12, -W / 2 + 62, 0, 16, front + 12, front + 52, C('#b9c0c6'), C('#8f989f'));
+  // Apron and taxiway.
+  m.ground(-100, 100, front + 34, front + 74, 0.1, C('#c2c2bd'));
+  m.ground(-W / 2 + 70, -W / 2 + 84, front + 74, D / 2 - 30, 0.1, C('#c2c2bd'));
+  m.ground(W / 2 - 84, W / 2 - 70, front + 74, D / 2 - 30, 0.1, C('#c2c2bd'));
+  // Runway with its markings.
+  const rz0 = D / 2 - 30;
+  const rz1 = D / 2 - 8;
+  m.ground(-W / 2 + 6, W / 2 - 6, rz0, rz1, 0.12, C('#55595e'));
+  const mid = (rz0 + rz1) / 2;
+  for (let x = -W / 2 + 40; x < W / 2 - 40; x += 18) m.ground(x, x + 9, mid - 0.4, mid + 0.4, 0.14, WHITE);
+  for (const end of [-1, 1])
+    for (let k = -3; k <= 3; k++) {
+      const x = end * (W / 2 - 14);
+      m.ground(x - 5, x + 5, mid + k * 2.4 - 0.6, mid + k * 2.4 + 0.6, 0.14, WHITE);
+    }
+  // Parked planes at the gates.
+  const liveries = [C('#1f6fb2'), C('#c9423a'), TEAL, GOLD];
+  [-45, -15, 15, 45].forEach((x, k) => {
+    if (r() < 0.85) plane(m, x, front + 58, 0.1, 30, liveries[k % liveries.length]!);
+  });
+  // Runway lights.
+  for (let x = -W / 2 + 12; x < W / 2 - 12; x += 24) {
+    m.box(x, x + 0.5, 0.1, 0.6, rz0 - 1, rz0 - 0.5, GOLD, GOLD);
+    m.box(x, x + 0.5, 0.1, 0.6, rz1 + 0.5, rz1 + 1, GOLD, GOLD);
+  }
+}
+
+/** Seaport (M23): warehouses on the landside, container stacks, and gantry cranes on the quay. */
+function seaport(m: ModelBuilder, W: number, D: number, r: () => number): void {
+  // The quay stands in the water: its walls go down to the sea bed.
+  m.box(-W / 2 + 0.2, W / 2 - 0.2, -18, 0.06, -D / 2 + 0.2, D / 2 - 0.2, C('#8d8a84'), C('#c9c6bf'));
+  const front = -D / 2;
+  // Warehouses.
+  for (const [x0, x1] of [
+    [-W / 2 + 6, -W / 2 + 46],
+    [-W / 2 + 50, -W / 2 + 86],
+  ] as const) {
+    m.box(x0, x1, 0, 10, front + 6, front + 30, C('#d7d2c8'), C('#8d6f5a'));
+    m.windows('front', x0, x1, front + 6, front + 30, 0, 1, 10, {
+      col: GLASS,
+      lit: lit(r, 0.5),
+      band: true,
+      height: 1.4,
+    });
+  }
+  // Container stacks in rows.
+  const boxes = [C('#c9423a'), C('#1f6fb2'), C('#2f8f5a'), C('#e0913a'), C('#8a8f96'), C('#d9c23a')];
+  for (let row = 0; row < 4; row++)
+    for (let k = 0; k < 9; k++) {
+      const x = -W / 2 + 96 + k * 9.5;
+      if (x > W / 2 - 10) continue;
+      const z = front + 8 + row * 6.5;
+      const h = 1 + Math.floor(r() * 3);
+      for (let t = 0; t < h; t++)
+        m.box(x, x + 8.5, t * 2.6, t * 2.6 + 2.5, z, z + 5.4, boxes[Math.floor(r() * boxes.length)]!);
+    }
+  // Quay edge with bollards.
+  m.box(-W / 2 + 0.2, W / 2 - 0.2, 0.06, 0.5, D / 2 - 2, D / 2 - 0.2, C('#e6e1d6'));
+  for (let x = -W / 2 + 8; x < W / 2 - 4; x += 16) m.cylinder(x, D / 2 - 1.2, 0.4, 0.5, 1.3, STEEL_DARK, 6);
+  // Gantry cranes: legs on rails along the quay, a boom reaching out over the water.
+  for (const x of [-40, 20, 70]) {
+    if (x > W / 2 - 12) continue;
+    const zb = D / 2 - 16;
+    for (const dx of [-5, 5])
+      for (const z of [zb, D / 2 - 3])
+        m.box(x + dx - 0.7, x + dx + 0.7, 0, 30, z - 0.7, z + 0.7, C('#3c6ea8'));
+    m.box(x - 6, x + 6, 30, 33, zb - 12, D / 2 + 34, C('#3c6ea8'), C('#e0b030'));
+    m.box(x - 2, x + 2, 26, 30, D / 2 + 2, D / 2 + 8, C('#e0b030'));
+    m.box(x - 1.5, x + 1.5, 33, 38, zb - 11, zb - 7, STEEL_DARK);
   }
 }
 

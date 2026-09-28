@@ -1,3 +1,4 @@
+import { RegionPanel } from './Region';
 import { useEffect, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
@@ -35,6 +36,7 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'Digit3') game.setSpeed(3);
       else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
+      else if (e.code === 'KeyN' && e.shiftKey && !e.ctrlKey && !e.metaKey) game.openPanel('region');
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
@@ -89,6 +91,7 @@ export function App({ game }: { game: Game }) {
       <HistoryPanel />
       <GoalsPanel />
       <DistrictsPanel />
+      <RegionPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

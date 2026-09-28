@@ -353,3 +353,19 @@ export const IconHeat = (p: P) => (
     <path d="M12 9v6M19 5v2M21 9h-2" />
   </svg>
 );
+/** The region (M23): towns either side of a road. */
+export const IconRegion = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M2 20h20M12 3v17M3 20v-6l3-2 3 2v6M15 20v-8l3-2 3 2v8" />
+  </svg>
+);
+export const IconPlane = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M2 14l8-2 5-8h2l-2 8 5 1 2-2h1l-1 4 1 4h-1l-2-2-5 1 2 8h-2l-5-8-8-2z" />
+  </svg>
+);
+export const IconShip = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 16l2 4h14l2-4H3zM6 16V9h12v7M9 9V5h6v4M2 21c2 1 4 1 6 0 2 1 4 1 6 0 2 1 4 1 6 0" />
+  </svg>
+);

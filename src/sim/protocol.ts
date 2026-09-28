@@ -146,6 +146,8 @@ export interface CivicDetails {
   } | null;
   /** Rail freight terminals (M20): linked to the regional railway, and truckloads a day onto trains. */
   railFreight: { linked: boolean; trucks: number } | null;
+  /** Airport or seaport (M23): visitors a day it brings, and (seaport) truckloads a day onto ships. */
+  port: { kind: 'airport' | 'seaport'; visitors: number; loads: number } | null;
   refund: number;
   /** Mines and wells: units a day and the share of the deposit left; landmarks and hotels. */
   special:
@@ -227,6 +229,9 @@ export interface BuildingDetails {
   pop: number;
   cap: number;
   employed: number;
+  /** Regional (M23): residents working in a neighbour (homes), workers from the neighbours (jobs). */
+  toRegion: number;
+  fromRegion: number;
   commute: number;
   shop: number;
   happiness: number;

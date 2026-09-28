@@ -397,6 +397,35 @@ export const SCENARIOS: ScenarioDef[] = [
     ],
   },
   {
+    id: 'terraces',
+    name: 'Over the Ridge',
+    blurb: 'A hill town has filled its only flat land: cut a way through the ridge.',
+    brief:
+      'Ridgeholm fills the one shelf of flat land in these hills, and there is nowhere left to build: ' +
+      'the slopes around it are too steep for streets or lots. Beyond the ridge to the east lies a broad ' +
+      'river valley. The council has set aside a fund for the land. Lower the saddle in the ridge with ' +
+      'the terrain tools until a road fits through (or level terraces into the hillsides), then build ' +
+      'beyond it. Grow Ridgeholm to 4,500 residents.',
+    save: 'terraces.citybloom',
+    months: 12,
+    stars: [
+      { months: 3, label: 'Within 3 months' },
+      {
+        goal: { measure: 'treasury', min: 50_000, label: '$50,000 in the bank' },
+        label: '$50,000 still in the bank when you win',
+      },
+    ],
+    goals: [{ measure: 'population', min: 4_500, label: '4,500 residents' }],
+    limits: [],
+    disasters: false,
+    elections: false,
+    weather: { seasons: false, intensity: 2 },
+    hints: [
+      'The terrain tools (Shift+T) raise, lower, level and smooth the ground, paid for by the earth moved.',
+      'Lower the ridge where it dips, straight east of the town, a few passes at a time, until the road ghost stops saying it is too steep.',
+    ],
+  },
+  {
     id: 'smokestack',
     name: 'Smokestack Valley',
     blurb: 'Clear the smoke from a mill town without shutting its mills.',

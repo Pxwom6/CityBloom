@@ -17,6 +17,8 @@ const VIEW = {
   resort: { x: 1150, yaw: 5.2, distance: 900 },
   // Harbour Lights: the town and its road out to the shore where the seaport would go.
   harbour: { x: 1000, yaw: 5.1, distance: 1150 },
+  // Over the Ridge: the town on its shelf, the ridge and its saddle, the valley beyond.
+  terraces: { x: 640, z: 1024, yaw: 1.2, distance: 1000, tilt: -0.05 },
   // Market Town: the old market on the avenue in front, the works and estates behind it.
   market: { x: 330, z: 905, yaw: 0.55, distance: 460, tilt: 0.22 },
 };

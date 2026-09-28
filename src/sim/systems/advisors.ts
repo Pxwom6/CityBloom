@@ -501,7 +501,11 @@ export function advise(sim: Sim): Advice[] {
       advisor: 'environment',
       severity: smoggy.length > homes.length * 0.2 ? 2 : 1,
       title: `Smog over ${plural(smoggy.length, 'home')}`,
-      text: 'Smoke from industry and power plants drifts downwind. Move them, switch to cleaner power, or plant parks in the way.',
+      text:
+        'Smoke from industry and power plants drifts downwind. Move them, switch to cleaner power, or plant parks in the way.' +
+        (sim.isUnlocked(5_000) && !sim.policyAnywhere('cleanIndustry')
+          ? ' Clean industry grants on a district painted over the works cost only its share.'
+          : ''),
       at: centre(smoggy.slice(0, 20)),
       map: 'airPollution',
     });
@@ -518,6 +522,14 @@ export function advise(sim: Sim): Advice[] {
       text: 'Click one to see why its people left; the happiness map shows the unhappy areas.',
       at: centre(abandoned.slice(0, 10) as Building[]),
       map: 'happiness',
+    });
+  // Districts (M21): a bigger town can give its parts rules of their own.
+  if (pop >= 5_000 && !s.districts.size)
+    out.push({
+      advisor: 'planning',
+      severity: 0,
+      title: 'Parts of town with their own rules',
+      text: 'Paint districts (I) for the old centre, the works or a quiet suburb, then give each its own policies in the Districts panel: a heavy-traffic ban round the homes, a heritage district, recycling where it pays.',
     });
   const d = s.demand;
   const names = { R: 'homes', C: 'shops and offices', I: 'industry' } as const;

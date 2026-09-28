@@ -173,6 +173,15 @@ export const TIPS: Tip[] = [
       g.world.stats.population > 0,
   },
   {
+    id: 'districts',
+    text:
+      'Parts of a city want different things. The district tool (I) paints named districts, and in the ' +
+      'Districts panel each gets its own policies and figures: a heavy-traffic ban round the homes, a ' +
+      'heritage district for the old centre.',
+    when: (g) =>
+      (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= 5_000 && g.world.districts.size === 0,
+  },
+  {
     id: 'railway',
     text:
       'Railways climb no more than 3.5 % and curve no tighter than 100 m, so they need room. Draw one ' +

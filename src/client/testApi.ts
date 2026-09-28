@@ -69,6 +69,11 @@ export interface TestApi {
     /** Where each stop's shelter stands (click there to select it). */
     shelters: { id: number; x: number; z: number; tram: boolean }[];
   };
+  /** Districts on the client mirror (M21): each with its cells painted, and the one selected. */
+  getDistricts(): {
+    list: { id: number; name: string; color: number; policies: string[]; cells: number }[];
+    selected: number;
+  };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
   /** Terrain height (water below 0.6). */
@@ -337,6 +342,19 @@ export function installTestApi(game: Game): TestApi {
       })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getDistricts: () => {
+      const w = game.world;
+      const count = new Map<number, number>();
+      for (const d of w.districtCells) if (d) count.set(d, (count.get(d) ?? 0) + 1);
+      return {
+        list: [...w.districts.values()].map((d) => ({
+          ...d,
+          policies: [...d.policies],
+          cells: count.get(d.id) ?? 0,
+        })),
+        selected: game.districts.selected,
+      };
+    },
     findCivic: (def) => [...game.world.civics.values()].find((c) => c.def === def)?.id ?? null,
     getCivics: () =>
       [...game.world.civics.values()].map((c) => ({

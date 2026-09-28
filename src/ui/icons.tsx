@@ -303,3 +303,10 @@ export const IconTrain = (p: P) => (
     <circle cx="14.5" cy="13.5" r="0.6" fill="currentColor" />
   </svg>
 );
+/** Districts (M21): a map with a dashed boundary round part of it. */
+export const IconDistrict = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+    <path d="M8 9.5h5.5v5H8z" stroke-dasharray="2 1.6" />
+  </svg>
+);

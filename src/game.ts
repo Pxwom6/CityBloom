@@ -10,6 +10,7 @@ import { CIVIC } from './data/civic';
 import { MILESTONES } from './data/progression';
 import { ACHIEVEMENTS } from './data/achievements';
 import type { Advice } from './sim/systems/advisors';
+import { DistrictView } from './client/districtView';
 import { OverlayController } from './client/overlay';
 import { StreetNames } from './client/names';
 import { StreetLabels } from './client/labels';
@@ -107,7 +108,7 @@ export class Game {
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
-  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | null = null;
+  panel: 'budget' | 'advisors' | 'notifications' | 'city' | 'history' | 'goals' | 'districts' | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
   /** How the scenario ended, shown until the player carries on. */
@@ -146,6 +147,8 @@ export class Game {
   tip: Tip | null = null;
   readonly tools: ToolManager;
   readonly overlay: OverlayController;
+  /** Districts on the map while the district tool or panel is open (M21). */
+  readonly districts: DistrictView;
   /** New versions of the app (the service worker, M15). */
   readonly updates = new AppUpdates(() => this.notify());
   /** Saving the city before switching to a new version. */
@@ -189,6 +192,7 @@ export class Game {
     this.labels = new StreetLabels(this);
     this.tools = new ToolManager(this);
     this.overlay = new OverlayController(this);
+    this.districts = new DistrictView(this);
     renderer.controller.focus = () => {
       const hw = this.world.gen.params.highway;
       return { x: 260, z: hw.connectZ };
@@ -1008,6 +1012,7 @@ export class Game {
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);
+    this.districts.update();
     this.renderer.frame(dt);
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {

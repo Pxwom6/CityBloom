@@ -24,6 +24,7 @@ function sections(): [string, Row[]][] {
         ['Draw one-way, grid snap', ['O', 'G']],
         ['Zone homes, shops, industry', ['Z', 'X', 'C']],
         ['Dezone', ['V']],
+        ['Districts: paint, and their panel', ['I']],
         ['Brush size', ['[ ]']],
         ['Bulldoze', ['B']],
         ['Select and inspect', ['H', 'Click']],

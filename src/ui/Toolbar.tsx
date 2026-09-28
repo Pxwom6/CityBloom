@@ -8,6 +8,8 @@ import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
 import { TRAM, TRANSIT } from '../data/balance';
+import { POLICY, type PolicyId } from '../data/policies';
+import { districtColour } from '../client/districtView';
 import { MAPS } from '../client/overlay';
 import {
   IconBolt,
@@ -49,6 +51,7 @@ import {
   IconDrawOneWay,
   IconRoundabout,
   IconTram,
+  IconDistrict,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
 import { modKey } from '../client/platform';
@@ -295,6 +298,7 @@ export function Toolbar() {
           </ToolButton>
         </div>
       )}
+      {active === 'district' && <DistrictOptions />}
       {active === 'zone' && (
         <div class="subbar panel" data-testid="zone-options">
           {ZONES.map(({ z, name, Icon, key, cls, effect }) => (
@@ -450,6 +454,20 @@ export function Toolbar() {
           }}
         >
           <IconZone />
+        </ToolButton>
+        <ToolButton
+          id="tool-district"
+          active={active === 'district'}
+          onClick={() => use('district')}
+          tip={{
+            title: 'Districts',
+            lines: [
+              'Paint named districts over the city, each with its own policies. The Districts panel shows their figures.',
+            ],
+            key: 'I',
+          }}
+        >
+          <IconDistrict />
         </ToolButton>
         {(
           [
@@ -739,7 +757,9 @@ export function MapLegend() {
         : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
   return (
     <div
-      class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''}`}
+      class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''} ${
+        ['road', 'zone', 'place', 'stop', 'district'].includes(game.tools.activeId) ? 'above-subbar' : ''
+      }`}
       data-testid="map-legend"
     >
       <div class="legend-head">
@@ -753,11 +773,92 @@ export function MapLegend() {
         <span>{res.legend[0]}</span>
         <span>{res.legend[1]}</span>
       </div>
+      {game.overlay.district !== null && game.world.districts.get(game.overlay.district) && (
+        <div class="legend-note" data-testid="legend-district">
+          Only {game.world.districts.get(game.overlay.district)!.name}{' '}
+          <button class="btn small" onClick={() => game.overlay.setDistrict(null)}>
+            Whole city
+          </button>
+        </div>
+      )}
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
         </div>
       )}
+    </div>
+  );
+}
+
+/** The district tool's options (M21): the district to paint, a new one, the eraser, the brush. */
+function DistrictOptions() {
+  const game = useGameUpdates(200);
+  const t = game.tools.district;
+  const list = [...game.world.districts.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  return (
+    <div class="subbar panel" data-testid="district-options">
+      <ToolButton
+        id="district-new"
+        active={t.district === 'new'}
+        onClick={() => t.pick('new')}
+        tip={{
+          title: 'New district',
+          lines: ['Your next stroke starts a district, named after the neighbourhood you start it in.'],
+        }}
+      >
+        <span class="tool-label">+ New</span>
+      </ToolButton>
+      {list.map((d) => (
+        <ToolButton
+          key={d.id}
+          id={`district-pick-${d.id}`}
+          active={t.district === d.id}
+          onClick={() => t.pick(d.id)}
+          tip={{
+            title: d.name,
+            lines: [
+              d.policies.length
+                ? `Policies here: ${d.policies.map((p) => POLICY.get(p as PolicyId)?.name ?? p).join(', ')}`
+                : 'No policies of its own yet: set them in the Districts panel.',
+            ],
+          }}
+        >
+          <span class="district-swatch" style={{ background: districtColour(d.color) }} />
+          <span class="tool-label">{d.name}</span>
+        </ToolButton>
+      ))}
+      <ToolButton
+        id="district-erase"
+        active={t.district === 0}
+        onClick={() => t.pick(0)}
+        tip={{ title: 'Erase', lines: ['Take cells out of any district.'] }}
+      >
+        <IconEraser />
+      </ToolButton>
+      <span class="sep" />
+      <label class="brush">
+        Brush
+        <input
+          type="range"
+          min={16}
+          max={192}
+          step={16}
+          value={t.radius}
+          onInput={(e) => {
+            t.radius = Number((e.target as HTMLInputElement).value);
+            game.notify();
+          }}
+        />
+        <span>{t.radius} m</span>
+      </label>
+      <ToolButton
+        id="district-panel"
+        active={game.panel === 'districts'}
+        onClick={() => game.openPanel('districts')}
+        tip={{ title: 'Districts panel', lines: ['Figures, names and policies for each district.'] }}
+      >
+        <span class="tool-label">Panel</span>
+      </ToolButton>
     </div>
   );
 }

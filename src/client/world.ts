@@ -10,6 +10,7 @@ import type {
   TransitData,
   VehicleData,
   DisasterData,
+  DistrictData,
 } from '../sim/protocol';
 import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '../sim/world/network';
 import { SpatialHash, type Box } from '../sim/world/spatial';
@@ -19,7 +20,7 @@ import { ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import { TRAFFIC, JUNCTION } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
-import { HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
+import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
 
 type Listener = () => void;
 
@@ -115,6 +116,26 @@ export class ClientWorld {
     this.setTraffic(snap.traffic);
     this.setTransit(snap.transit);
     this.setDisasters(snap.disasters);
+    this.setDistricts(snap.districts);
+  }
+
+  /** Districts (M21): each by id, and the district of every raster cell (0: none). */
+  districts = new Map<number, DistrictData['list'][number]>();
+  districtCells: Uint8Array = new Uint8Array(GRID_RES * GRID_RES);
+  districtsVersion = 0;
+
+  private setDistricts(d: DistrictData): void {
+    this.districts = new Map(d.list.map((x) => [x.id, x]));
+    this.districtCells = d.cells;
+    this.districtsVersion++;
+  }
+
+  /** The district at a point (0: none). */
+  districtAt(x: number, z: number): number {
+    const i = Math.floor(x / GRID_CELL);
+    const j = Math.floor(z / GRID_CELL);
+    if (i < 0 || j < 0 || i >= GRID_RES || j >= GRID_RES) return 0;
+    return this.districtCells[j * GRID_RES + i]!;
   }
 
   private setDisasters(d: DisasterData): void {
@@ -455,6 +476,7 @@ export class ClientWorld {
       this.setTransit(diff.transit);
       this.emit('transit');
     }
+    if (diff.districts) this.setDistricts(diff.districts);
     if (diff.disasters) {
       this.setDisasters(diff.disasters);
       this.emit('disasters');

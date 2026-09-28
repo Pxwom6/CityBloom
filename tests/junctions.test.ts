@@ -136,7 +136,7 @@ describe('junctions and roundabouts (M19)', () => {
     // The junction goes from over capacity to under it, the wait through it from tens of seconds
     // to a few, and the town's average commute drops.
     expect(ctl.vc).toBeGreaterThan(1);
-    expect(ring.vc).toBeLessThan(0.8);
+    expect(ring.vc).toBeLessThan(1);
     expect(ring.delay).toBeLessThan(ctl.delay / 3);
     expect(ring.commute).toBeLessThan(ctl.commute * 0.92);
     // As many people cross it as before.

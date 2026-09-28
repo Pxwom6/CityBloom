@@ -44,6 +44,8 @@ export interface RenderStats {
   vehicles: number;
   fires: number;
   cars: number;
+  /** Milliseconds per frame the visible cars take to move (M19). */
+  trafficMs: number;
   walkers: number;
   /** Street lamps placed, and how dark it is (0 day … 1 night). */
   lamps: number;
@@ -93,6 +95,8 @@ export class GameRenderer {
   readonly garbage: GarbageProps;
   readonly effects: EffectsRenderer;
   readonly traffic: TrafficRenderer;
+  /** Milliseconds per frame the visible cars take to move (smoothed). */
+  trafficMs = 0;
   readonly transit: TransitRenderer;
   readonly streetLights: StreetLightRenderer;
   readonly pedestrians: PedestrianRenderer;
@@ -125,6 +129,7 @@ export class GameRenderer {
     vehicles: 0,
     fires: 0,
     cars: 0,
+    trafficMs: 0,
     walkers: 0,
     lamps: 0,
     night: 0,
@@ -437,7 +442,10 @@ export class GameRenderer {
     this.buildings.update(l.night);
     this.vehicles.update(this.world.displayTick);
     this.traffic.night = l.night;
+    const t0 = performance.now();
     this.traffic.update(this.world.displayTick);
+    // Visible cars' own cost (M19: following and giving way), smoothed.
+    this.trafficMs = this.trafficMs * 0.9 + (performance.now() - t0) * 0.1;
     this.pedestrians.update(this.world.displayTick, this.controller.current);
     this.streetLights.update(l.night);
     this.transit.update(this.world.displayTick);
@@ -484,6 +492,7 @@ export class GameRenderer {
       vehicles: this.vehicles.positions.size,
       fires: this.effects.fires,
       cars: this.traffic.count,
+      trafficMs: Math.round(this.trafficMs * 100) / 100,
       walkers: this.pedestrians.count,
       lamps: this.streetLights.count,
       night: this.lighting.night,

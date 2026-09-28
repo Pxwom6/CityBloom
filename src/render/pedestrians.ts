@@ -1,6 +1,6 @@
 import { Color, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3 } from 'three';
 import type { ClientWorld } from '../client/world';
-import { TRAFFIC } from '../data/balance';
+import { TRAFFIC, JUNCTION } from '../data/balance';
 import { ROAD_TYPES } from '../data/roads';
 import { VEHICLE_SPEED_SCALE } from '../data/civic';
 import { hourOfDay } from '../sim/time';
@@ -245,6 +245,19 @@ export class PedestrianRenderer {
       w.x = pt.x - hz * off;
       w.z = pt.z + hx * off;
       w.heading = Math.atan2(hz, hx);
+      // Round a roundabout on its footway, not across the island (M19).
+      for (const nid of [seg.a, seg.b]) {
+        const nd = this.world.netState.nodes.get(nid);
+        if (!nd?.roundabout) continue;
+        const R = nd.roundabout + JUNCTION.ringWidth / 2 + 1.2;
+        const dx = w.x - nd.x;
+        const dz = w.z - nd.z;
+        const d = Math.hypot(dx, dz);
+        if (d < R) {
+          w.x = nd.x + (dx / Math.max(0.01, d)) * R;
+          w.z = nd.z + (dz / Math.max(0.01, d)) * R;
+        }
+      }
       // Off-screen walkers finish quietly.
       if ((w.x - cam.x) ** 2 + (w.z - cam.z) ** 2 > r * r * 1.6) continue;
       alive.push(w);

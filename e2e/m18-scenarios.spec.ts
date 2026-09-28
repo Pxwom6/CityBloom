@@ -29,8 +29,8 @@ test('M18: pick a scenario from the menu, read the brief, follow the goals, win 
   // --- The scenario screen: every scenario with a preview, none won yet. ---
   await page.getByTestId('main-scenarios').click();
   await expect(page.getByTestId('scenario-screen')).toBeVisible();
-  await expect(page.locator('.scenario-item')).toHaveCount(8);
-  await expect(page.getByTestId('scenario-screen')).toContainText('0 of 8 won');
+  await expect(page.locator('.scenario-item')).toHaveCount(9);
+  await expect(page.getByTestId('scenario-screen')).toContainText('0 of 9 won');
   await page.getByTestId('scenario-gridlock').click();
   await expect(page.getByTestId('scenario-detail')).toContainText('Gridlock');
   await expect(page.getByTestId('scenario-goals')).toContainText('Average commute under 3 minutes');
@@ -107,7 +107,7 @@ test('M18: pick a scenario from the menu, read the brief, follow the goals, win 
   });
   await booted(page, 'menu');
   await expect(page.getByTestId('scenario-screen')).toBeVisible();
-  await expect(page.getByTestId('scenario-screen')).toContainText('1 of 8 won');
+  await expect(page.getByTestId('scenario-screen')).toContainText('1 of 9 won');
   await expect(page.getByTestId('scenario-best')).toBeVisible();
   const stars = await page.evaluate(() => JSON.parse(localStorage.getItem('citybloom.scenarios') ?? '{}'));
   expect(stars.gridlock.stars).toBe(sc.end!.stars);

@@ -49,7 +49,7 @@ export function crossroadsTown(
     { x: c.x + 30, z: c.z + 480 },
   ]).created!;
   const utilities = ['coal', 'coal', 'coal', 'treatment', 'treatment', 'landfill', 'landfill'];
-  for (const def of [...utilities, ...Array<string>(12).fill('pump')]) placeOnAny(sim, def, util);
+  for (const def of [...utilities, ...Array<string>(16).fill('pump')]) placeOnAny(sim, def, util);
   const northStreets = [...sim.state.net.segments.values()]
     .filter((s) => {
       if (s.type !== 'street') return false;

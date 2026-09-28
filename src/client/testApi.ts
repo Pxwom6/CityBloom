@@ -50,7 +50,8 @@ export interface TestApi {
   /** Volume/capacity on a segment at the rush-hour peak. */
   segVC(id: number): number;
   /** Visible cars (id and position). */
-  getCars(): { id: number; x: number; z: number }[];
+  /** Visible cars: where they are, which way they face, ticks spent held up, and the ring they're on. */
+  getCars(): { id: number; x: number; z: number; heading: number; waited: number; ring: number | null }[];
   /** Pedestrians on screen (close zoom only), with their trip purpose and route length. */
   getWalkers(): { id: number; x: number; z: number; purpose: string; route: number }[];
   /** Bus stops and lines on the client mirror. */
@@ -264,7 +265,15 @@ export function installTestApi(game: Game): TestApi {
       return hit ? { id: hit.seg, type: game.world.net.segment(hit.seg).type } : null;
     },
     segVC: (id) => game.world.segVC(id, 1),
-    getCars: () => game.renderer.traffic.cars.map((c) => ({ id: c.id, x: c.x, z: c.z })),
+    getCars: () =>
+      game.renderer.traffic.cars.map((c) => ({
+        id: c.id,
+        x: c.x,
+        z: c.z,
+        heading: c.heading,
+        waited: c.waited,
+        ring: c.ring ? c.ring.node : null,
+      })),
     getWalkers: () =>
       game.renderer.pedestrians.walkers.map((w) => ({
         id: w.id,

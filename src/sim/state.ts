@@ -19,6 +19,7 @@ import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
 import type { District } from './systems/districts';
 import type { WeatherState } from './systems/weather';
+import type { MapData } from './terrain/customMap';
 import type { RegionState } from './systems/region';
 
 export type { Difficulty };
@@ -39,6 +40,11 @@ export interface GameOptions {
    * shoppers or deals (controlled test towns; scenarios set their own).
    */
   region?: boolean;
+  /**
+   * The map editor (M24): a paused city with no highway, railway or neighbours, whose ground,
+   * forests and resources are edited by the map editor's brushes.
+   */
+  editor?: boolean;
 }
 
 export const DEFAULT_OPTIONS: GameOptions = {
@@ -147,4 +153,6 @@ export interface SimState {
   weather: WeatherState;
   /** The region (M23): neighbouring towns and the deals made with them. */
   region: RegionState;
+  /** The custom map the city was founded on (M24), or null for a generated one. */
+  map: MapData | null;
 }

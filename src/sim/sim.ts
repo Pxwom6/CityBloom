@@ -54,6 +54,7 @@ import {
 } from './actions/roads';
 import { zone } from './actions/zoning';
 import { terraform } from './actions/terraform';
+import { ENTRY_SPACING, type MapData } from './terrain/customMap';
 
 /** Undo labels for the terrain tools (M24). */
 const TERRAFORM_LABEL = {
@@ -291,9 +292,17 @@ export class Sim {
     for (const c of state.civics.values()) this.indexCivic(c);
   }
 
-  static create(opts: Partial<GameOptions> = {}): Sim {
+  /**
+   * A new city on a generated map, or on a custom map (M24), whose seed and preset then stand in
+   * for the scenery and the region.
+   */
+  static create(opts: Partial<GameOptions> = {}, map: MapData | null = null): Sim {
     const options: GameOptions = { ...DEFAULT_OPTIONS, ...opts };
-    const terrain = new Terrain(options.seed, options.preset, options.terrain);
+    if (map) {
+      options.seed = map.seed;
+      options.preset = map.preset;
+    }
+    const terrain = new Terrain(options.seed, options.preset, options.terrain, map);
     const rng = {} as SimState['rng'];
     for (const s of RNG_STREAMS) rng[s] = Rng.fromSeed(`${options.seed}:${s}`).getState();
     const state: SimState = {
@@ -338,11 +347,16 @@ export class Sim {
       scenario: null,
       districts: new Map(),
       districtCells: emptyDistrictCells(),
-      weather: initialWeather(options.preset),
+      weather: initialWeather(options.preset, 0, map?.climate),
       region:
-        options.region === false ? { neighbours: [], deals: [], nextDeal: 1 } : initialRegion(options.seed),
+        options.region === false || options.editor
+          ? { neighbours: [], deals: [], nextDeal: 1 }
+          : initialRegion(options.seed),
+      map,
     };
     const sim = new Sim(state, terrain);
+    // The map editor's city has no roads: the highway and railway entries are the map's own.
+    if (options.editor) return sim;
     sim.buildHighway();
     sim.buildRailway();
     updateLandValue(sim, true);
@@ -352,7 +366,7 @@ export class Sim {
 
   static fromSave(save: SaveFile): Sim {
     const state = readSaveFile(save);
-    const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain);
+    const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain, state.map);
     const sim = new Sim(state, terrain);
     // Cities from before M20 get their rail link where it fits among what they've built.
     if (state.railway === undefined) {
@@ -369,26 +383,31 @@ export class Sim {
   private buildRailway(): void {
     const hw = this.terrain.gen.params.highway;
     let best: { z: number; score: number } | null = null;
-    for (let d = 260; d <= 700; d += 20)
-      for (const z of [hw.connectZ + d, hw.connectZ - d]) {
-        if (z < 120 || z > MAP_SIZE - 120) continue;
-        let lo = Infinity;
-        let hi = -Infinity;
-        let ok = true;
-        for (let x = 4; x <= 160 && ok; x += 8) {
-          const h = this.terrain.heightAt(x, z);
-          if (h < SHORE_HEIGHT + 0.5) ok = false;
-          lo = Math.min(lo, h);
-          hi = Math.max(hi, h);
-          // Room for track to run in: no roads, buildings or civic buildings near.
-          if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
-          if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length)
-            ok = false;
-        }
-        if (!ok || hi - lo > 8) continue;
-        const score = hi - lo + d / 400;
-        if (!best || score < best.score) best = { z, score };
+    // A custom map (M24) says where its railway comes in, if anywhere.
+    const map = this.state.map;
+    const spots: [number, number][] = [];
+    if (map) {
+      if (map.railZ !== null && Math.abs(map.railZ - hw.connectZ) >= ENTRY_SPACING)
+        spots.push([0, map.railZ]);
+    } else for (let d = 260; d <= 700; d += 20) spots.push([d, hw.connectZ + d], [d, hw.connectZ - d]);
+    for (const [d, z] of spots) {
+      if (z < 120 || z > MAP_SIZE - 120) continue;
+      let lo = Infinity;
+      let hi = -Infinity;
+      let ok = true;
+      for (let x = 4; x <= 160 && ok; x += 8) {
+        const h = this.terrain.heightAt(x, z);
+        if (h < SHORE_HEIGHT + 0.5) ok = false;
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+        // Room for track to run in: no roads, buildings or civic buildings near.
+        if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
+        if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length) ok = false;
       }
+      if (!ok || hi - lo > 8) continue;
+      const score = hi - lo + d / 400;
+      if (!best || score < best.score) best = { z, score };
+    }
     if (!best) {
       this.state.railway = null;
       return;

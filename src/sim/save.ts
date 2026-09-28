@@ -10,7 +10,7 @@ import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 21;
+export const SAVE_VERSION = 22;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -204,6 +204,8 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
       rng: { ...rng, region: rng.region ?? Rng.fromSeed(`${options.seed}:region`).getState() },
     };
   },
+  // v21 → v22 (M24): custom maps. Every older city was founded on a generated map.
+  21: (s) => ({ ...s, map: s.map ?? null }),
 };
 
 export function encodeState(state: SimState): unknown {

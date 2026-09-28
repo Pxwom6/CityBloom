@@ -25,7 +25,11 @@ export type GoalMeasure =
   /** 1 once the big project `def` is open. */
   | 'project'
   /** 1 once an election has been won since the scenario began. */
-  | 'election';
+  | 'election'
+  /** Vehicles a day on the link to the regional highway: the estate's trucks (M20). */
+  | 'trucks'
+  /** Riders a day on train and tram lines (M20). */
+  | 'riders';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -230,6 +234,43 @@ export const SCENARIOS: ScenarioDef[] = [
       'The traffic map shades junctions as discs: a red one is where cars queue to get through.',
       'A roundabout passes far more traffic than a plain junction: pick Roundabout in the road tool and click the crossroads, or click one of its roads.',
       'A city highway round the town, joined by ramps, takes trucks off the crossroads too.',
+    ],
+  },
+  {
+    id: 'railhead',
+    name: 'Railhead',
+    blurb: 'Every crate from the works goes by truck through town. Put it on the train.',
+    brief:
+      'Ironbridge grew up between the highway and its ironworks a kilometre east, and every load the ' +
+      'works sends out or takes in goes by truck down the one avenue and out along the highway link. ' +
+      'The regional railway comes in at the west edge, unused, and the county has put up $100,000 ' +
+      'towards using it. Get the link under 300 trucks a day for two months running, and keep 5,500 ' +
+      'residents.',
+    save: 'railhead.citybloom',
+    months: 10,
+    stars: [
+      { months: 4, label: 'Within 4 months' },
+      {
+        goal: { measure: 'riders', min: 600, label: '600 train or tram riders a day' },
+        label: '600 train or tram riders a day when you win',
+      },
+    ],
+    goals: [
+      {
+        measure: 'trucks',
+        max: 300,
+        hold: 2,
+        label: 'Under 300 trucks a day on the highway link, 2 months running',
+      },
+      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Lay a railway (Roads → Railway) from the regional rail link at the west edge out to the works; it climbs gently and curves wide, and crosses streets at level crossings.',
+      'A rail freight terminal faces a road with the railway along its back: industry nearer to it than to the highway ships by train.',
+      'Trams on the avenue or a train line with two stations take commuters off the roads too.',
     ],
   },
   {

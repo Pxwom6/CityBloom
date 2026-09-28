@@ -92,6 +92,36 @@ export const RECIPES: Record<string, () => Sim> = {
       }
     return sim;
   },
+  // Ironbridge (M20): homes by the highway, an ironworks estate a kilometre east along one avenue, so
+  // every load the works ships goes by truck through town and out along the highway link. The
+  // regional railway comes in at the west edge, unused; the county has put up a grant towards rail.
+  railhead: () => {
+    const sim = Sim.create({ seed: 'goods', preset: 'river', cityName: 'Ironbridge' });
+    const p = new Player('careful', sim);
+    sim.earn(300_000, 'grants');
+    const { x, z } = p.c;
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', { x, z }, { x: x + 1120, z });
+    for (let k = 1; k <= 7; k++) road('street', { x: x + k * 70, z: z - 230 }, { x: x + k * 70, z: z + 230 });
+    for (let k = 0; k < 5; k++)
+      road('street', { x: x + 800 + k * 70, z: z - 220 }, { x: x + 800 + k * 70, z: z + 220 });
+    zone('R', { x: x + 20, z: z - 125 }, { x: x + 530, z: z - 125 }, 105);
+    zone('R', { x: x + 20, z: z + 125 }, { x: x + 530, z: z + 125 }, 105);
+    zone('C', { x: x + 20, z }, { x: x + 560, z }, 16);
+    zone('I', { x: x + 790, z: z - 120 }, { x: x + 1100, z: z - 120 }, 110);
+    zone('I', { x: x + 790, z: z + 120 }, { x: x + 1100, z: z + 120 }, 110);
+    for (let m = 0; m < 8; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    sim.earn(100_000, 'grants');
+    return sim;
+  },
   // Cinderford: a mill town along one avenue. Homes to the north; heavy industry and coal plants to
   // the south, where the prevailing wind comes from, so the smoke rolls over the houses. No schools,
   // so the mills stay heavy.

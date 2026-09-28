@@ -109,6 +109,13 @@ export function goalValue(sim: Sim, g: ScenarioGoal, figures?: number[]): number
       const start = s.scenario?.start ?? 0;
       return s.election.results.some((r) => r.won && r.tick >= start) ? 1 : 0;
     }
+    case 'trucks':
+      return Math.round(s.traffic.get(s.highway.segment) ?? 0);
+    case 'riders':
+      return sim
+        .lines()
+        .filter((l) => l.mode !== 'bus')
+        .reduce((n, l) => n + (s.transit.riders.get(l.depot) ?? 0), 0);
     default:
       return 0;
   }

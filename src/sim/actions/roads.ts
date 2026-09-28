@@ -1,4 +1,4 @@
-import { ROAD_RULES, ROAD_TYPES, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { ROAD_RULES, ROAD_TYPES, isRail, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type BulldozeTarget, type CommandResult } from '../commands';
 import { Curve, pointRectDistance, type Vec2 } from '../geom';
@@ -367,6 +367,7 @@ export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: bool
   if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
   if (dir !== 0 && dir !== 1 && dir !== -1) return fail('Invalid direction');
   if (dir === 0 && ROAD_TYPES[seg.type].oneWay) return fail('A ramp is always one-way');
+  if (isRail(seg.type)) return fail('Railways have a track each way');
   if ((seg.oneway ?? 0) === dir)
     return fail(dir ? 'This road already runs that way' : 'This road is already two-way');
   if (dryRun) return ok(0);
@@ -438,6 +439,11 @@ export function placeRoundabout(
     }
   }
   if (!site) return fail('Put a roundabout on a junction or a road');
+  const onRail =
+    'node' in site
+      ? net.segmentsAt(site.node).some((id) => isRail(net.segment(id).type))
+      : isRail(net.segment(site.seg).type);
+  if (onRail) return fail("A roundabout can't go on a railway or a level crossing");
   const centre = 'node' in site ? net.node(site.node) : { x: site.x, z: site.z };
   // The roads that will meet the ring, with how far each runs to its next junction.
   const arms: { seg: number; len: number }[] = [];

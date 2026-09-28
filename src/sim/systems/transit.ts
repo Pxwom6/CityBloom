@@ -323,13 +323,14 @@ export function trainLines(sim: Sim): BusLine[] {
       t += RAIL.dwell;
     }
     if (stopTime.length < order.length) continue;
-    const trains = Math.max(
+    const loopTime = 2 * t;
+    const funded = Math.max(
       1,
       Math.round(
         order.reduce((n, x) => n + civicDef(x).rail!.trains, 0) * Math.min(1.25, sim.fundingEff('transit')),
       ),
     );
-    const loopTime = 2 * t;
+    const trains = Math.max(1, Math.min(funded, Math.floor(loopTime / RAIL.minHeadway)));
     const seats = civicDef(order[0]!).rail!.capacity;
     out.push({
       mode: 'train',

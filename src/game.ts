@@ -80,7 +80,8 @@ export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
-  kind: 'building' | 'civic' | 'car' | 'walker' | 'road';
+  /** `stop`: a bus or tram stop (M20). */
+  kind: 'building' | 'civic' | 'car' | 'walker' | 'road' | 'stop';
   id: number;
 }
 
@@ -228,7 +229,13 @@ export class Game {
         : sel?.kind === 'walker'
           ? this.renderer.pedestrians.walker(sel.id)
           : undefined;
-    const line = sel?.kind === 'civic' ? this.world.lines.find((l) => l.depot === sel.id) : undefined;
+    // A depot or station, or a stop (M20), shows the line it runs or is on.
+    const line =
+      sel?.kind === 'civic'
+        ? this.world.lines.find((l) => l.depot === sel.id || (l.mode === 'train' && l.stops.includes(sel.id)))
+        : sel?.kind === 'stop'
+          ? this.world.lines.find((l) => l.mode !== 'train' && l.stops.includes(sel.id))
+          : undefined;
     const legs = car?.legs ?? line?.legs;
     const net = this.world.net;
     const road = sel?.kind === 'road' ? this.world.netState.segments.get(sel.id) : undefined;

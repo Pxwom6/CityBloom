@@ -1,4 +1,4 @@
-import { JUNCTION } from '../data/balance';
+import { JUNCTION, TRAM } from '../data/balance';
 import { ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
 import { mid, type Vec2 } from '../sim/geom';
@@ -38,9 +38,9 @@ export function gradeNotes(info: PreviewInfo | undefined): string[] {
   return out;
 }
 
-export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade' | 'oneway' | 'roundabout';
+export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade' | 'oneway' | 'roundabout' | 'tram';
 
-const MODES: RoadMode[] = ['straight', 'curve', 'free', 'upgrade', 'oneway', 'roundabout'];
+const MODES: RoadMode[] = ['straight', 'curve', 'free', 'upgrade', 'oneway', 'roundabout', 'tram'];
 
 /** Compass direction of a heading in the ground plane (−z is north). */
 export function compass(dx: number, dz: number): string {
@@ -98,6 +98,12 @@ export class RoadTool implements Tool {
   private pointer = { x: 0, y: 0 };
   /** Upgrade mode: the road under the cursor. */
   private hoverSeg: number | null = null;
+  /**
+   * Tram mode (M20): while the button is held, every road the pointer passes gets the same change
+   * as the first (laying or taking up track), as one undo step.
+   */
+  private tramPaint: { on: boolean; stroke: number; done: Set<number> } | null = null;
+  private tramStrokes = 0;
   /** A preview has needed real earthworks or run into steep ground (drives a one-time tip). */
   sawEarthworks = false;
 
@@ -150,6 +156,17 @@ export class RoadTool implements Tool {
     if (this.mode === 'oneway') {
       const seg = this.hoverSeg !== null ? this.game.world.netState.segments.get(this.hoverSeg) : undefined;
       return seg ? { type: 'setOneWay', seg: seg.id, dir: this.nextDir(seg.oneway ?? 0, seg.type) } : null;
+    }
+    if (this.mode === 'tram') {
+      const seg = this.hoverSeg !== null ? this.game.world.netState.segments.get(this.hoverSeg) : undefined;
+      if (!seg) return null;
+      const on = this.tramPaint ? this.tramPaint.on : !seg.tram;
+      return {
+        type: 'setTram',
+        seg: seg.id,
+        on,
+        ...(this.tramPaint ? { stroke: this.tramPaint.stroke } : {}),
+      };
     }
     if (this.mode === 'roundabout') {
       const r = this.ring;
@@ -242,6 +259,42 @@ export class RoadTool implements Tool {
     else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
   }
 
+  /** Tram mode (M20): the road under the pointer and what a click would do to its track. */
+  private drawTram(): void {
+    const g = this.game.renderer.ghost;
+    g.showRoad(null, this.type, 'ok');
+    const id = this.hoverSeg;
+    const w = this.game.world;
+    const seg = id !== null ? w.netState.segments.get(id) : undefined;
+    if (!seg) {
+      g.highlightSegment(null, 0);
+      g.showMarker(null);
+      this.game.setHint({
+        ...this.pointer,
+        text: 'Click a street, avenue or boulevard to lay tram track (click again to take it up); drag along roads to lay a line',
+        tone: 'info',
+      });
+      return;
+    }
+    const res = this.lastResult?.res;
+    g.highlightSegment(
+      w.net.curve(seg.id),
+      ROAD_TYPES[seg.type].width / 2 + ROAD_TYPES[seg.type].sidewalk,
+      res && !res.ok ? 'bad' : 'ok',
+    );
+    g.showMarker(res && !res.ok && res.at ? res.at : null);
+    const on = this.tramPaint ? this.tramPaint.on : !seg.tram;
+    if (res && !res.ok) this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });
+    else
+      this.game.setHint({
+        ...this.pointer,
+        text: on
+          ? `Lay tram track · ${res ? `$${res.cost.toLocaleString('en-US')}` : `$${TRAM.trackCost}/m`}`
+          : 'Take up the tram track · free',
+        tone: 'ok',
+      });
+  }
+
   private drawOneWay(): void {
     const g = this.game.renderer.ghost;
     g.showRoad(null, this.type, 'ok');
@@ -316,6 +369,10 @@ export class RoadTool implements Tool {
     }
     if (this.mode === 'oneway') {
       this.drawOneWay();
+      return;
+    }
+    if (this.mode === 'tram') {
+      this.drawTram();
       return;
     }
     if (this.mode === 'roundabout') {
@@ -408,6 +465,23 @@ export class RoadTool implements Tool {
     );
   }
 
+  /** Lay or take up tram track on the road under the pointer (M20); part of a drag's stroke. */
+  private async commitTram(): Promise<void> {
+    const cmd = this.currentCommand();
+    if (!cmd || cmd.type !== 'setTram') return;
+    this.tramPaint?.done.add(cmd.seg);
+    const res = await this.game.dispatch(cmd);
+    if (res.ok) {
+      this.game.audio?.play('build');
+      this.lastResult = null;
+    } else if (!this.tramPaint || this.tramPaint.done.size <= 1) {
+      // Painting along a line skips roads that already have (or can't take) track quietly.
+      this.game.audio?.play('error');
+      this.lastResult = { seq: this.previewSeq, res };
+    }
+    this.refresh();
+  }
+
   /** One-way switch or roundabout (M19). */
   private async commitEdit(): Promise<void> {
     const cmd = this.currentCommand();
@@ -487,6 +561,13 @@ export class RoadTool implements Tool {
       void this.commitEdit();
       return;
     }
+    if (this.mode === 'tram') {
+      const seg = this.hoverSeg !== null ? this.game.world.netState.segments.get(this.hoverSeg) : undefined;
+      if (!seg) return;
+      this.tramPaint = { on: !seg.tram, stroke: ++this.tramStrokes, done: new Set() };
+      void this.commitTram();
+      return;
+    }
     if (this.mode === 'roundabout') {
       const site = this.ringSite(p.ground);
       this.ring = site;
@@ -548,13 +629,26 @@ export class RoadTool implements Tool {
       this.refresh();
       return;
     }
-    if (this.mode === 'upgrade' || this.mode === 'oneway') {
+    if (this.mode === 'upgrade' || this.mode === 'oneway' || this.mode === 'tram') {
       const net = this.game.world.net;
-      const hit = net.nearestSegment(p.ground, 14, (id) => ROAD_TYPES[net.segment(id).type].buildable);
+      const tram = this.mode === 'tram';
+      const hit = net.nearestSegment(p.ground, 14, (id) =>
+        tram ? !!ROAD_TYPES[net.segment(id).type].tram : ROAD_TYPES[net.segment(id).type].buildable,
+      );
       const id = hit ? hit.seg : null;
       if (id !== this.hoverSeg) {
         this.hoverSeg = id;
         this.lastResult = null;
+        const seg = id !== null ? this.game.world.netState.segments.get(id) : undefined;
+        // Dragging lays (or takes up) track on every road passed that still needs it.
+        if (
+          tram &&
+          this.tramPaint &&
+          seg &&
+          !this.tramPaint.done.has(seg.id) &&
+          !!seg.tram !== this.tramPaint.on
+        )
+          void this.commitTram();
       }
       this.refresh();
       return;
@@ -575,6 +669,11 @@ export class RoadTool implements Tool {
   pointerUp(p: ToolPointer): void {
     if (p.button !== 0) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    if (this.tramPaint) {
+      this.tramPaint = null;
+      this.refresh();
+      return;
+    }
     if (this.mode === 'roundabout' && this.ringDrag) {
       this.ringDrag = false;
       void this.commitEdit();

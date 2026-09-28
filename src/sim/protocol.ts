@@ -120,8 +120,24 @@ export interface CivicDetails {
     seats: number;
     used: number;
   } | null;
-  /** Bus depots: its line. */
-  transit: { stops: number; buses: number; loopMinutes: number; riders: number; full: boolean } | null;
+  /**
+   * Bus and tram depots: their line; stations (M20): the train line they're on. `here` is riders a
+   * day getting on or off at a station; `why` says why there's no line yet.
+   */
+  transit: {
+    mode: 'bus' | 'tram' | 'train';
+    stops: number;
+    buses: number;
+    loopMinutes: number;
+    headwayMinutes: number;
+    capacity: number;
+    riders: number;
+    full: boolean;
+    here: number;
+    why: string | null;
+  } | null;
+  /** Rail freight terminals (M20): linked to the regional railway, and truckloads a day onto trains. */
+  railFreight: { linked: boolean; trucks: number } | null;
   refund: number;
   /** Mines and wells: units a day and the share of the deposit left; landmarks and hotels. */
   special:

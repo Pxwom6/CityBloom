@@ -66,6 +66,8 @@ export interface TestApi {
     lines: number[];
     modes: { mode: string; stops: number; vehicles: number; riders: number }[];
     freight: { id: number; trucks: number }[];
+    /** Where each stop's shelter stands (click there to select it). */
+    shelters: { id: number; x: number; z: number; tram: boolean }[];
   };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
@@ -321,6 +323,10 @@ export function installTestApi(game: Game): TestApi {
         riders: l.riders,
       })),
       freight: game.world.freight.map((f) => ({ id: f.id, trucks: f.trucks })),
+      shelters: game.renderer.transit.shelters.map((s) => ({
+        ...s,
+        tram: !!game.world.stops.get(s.id)?.tram,
+      })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
     findCivic: (def) => [...game.world.civics.values()].find((c) => c.def === def)?.id ?? null,

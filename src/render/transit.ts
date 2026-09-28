@@ -89,6 +89,8 @@ export class TransitRenderer {
   /** Latest bus positions (tests and stats), and each bus's place this frame (the follow camera). */
   busCount = 0;
   readonly busPoses: { x: number; y: number; z: number }[] = [];
+  /** Where each stop's shelter stands (for picking, M20). */
+  shelters: { id: number; x: number; z: number }[] = [];
 
   constructor(
     private world: ClientWorld,
@@ -116,6 +118,7 @@ export class TransitRenderer {
     const w = this.world;
     let i = 0;
     let j = 0;
+    this.shelters = [];
     for (const st of [...w.stops.values()].sort((a, b) => a.id - b.id)) {
       const seg = w.netState.segments.get(st.seg);
       if (!seg || i >= 1024 || j >= 512) continue;
@@ -125,6 +128,8 @@ export class TransitRenderer {
       const off = ROAD_TYPES[seg.type].width / 2 + 0.4;
       const x = st.x - t.z * off;
       const z = st.z + t.x * off;
+      // The shelter's middle, a metre or so back from the kerb (tram platforms are longer).
+      this.shelters.push({ id: st.id, x: x - t.z * 0.8, z: z + t.x * 0.8 });
       this.p.set(x, w.roadHeight(st.seg, st.s, st.x, st.z) + 0.15, z);
       this.q.setFromAxisAngle(this.up, -Math.atan2(t.z, t.x));
       this.m.compose(this.p, this.q, this.s);
@@ -184,6 +189,20 @@ export class TransitRenderer {
     this.buses.instanceMatrix.needsUpdate = true;
     this.busCount = n;
     this.busPoses.length = n;
+  }
+
+  /** The stop whose shelter or platform is at (x, z), if any. */
+  stopAt(x: number, z: number): number | null {
+    let best: number | null = null;
+    let bd = 4.5;
+    for (const s of this.shelters) {
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < bd) {
+        bd = d;
+        best = s.id;
+      }
+    }
+    return best;
   }
 
   /** Meshes for picking tests. */

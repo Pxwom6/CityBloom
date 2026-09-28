@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { decodeSave } from '../src/client/saves';
 import { Sim } from '../src/sim/sim';
+import { RAIL } from '../src/data/balance';
 import { CHRONICLE_SERIES, monthFigures } from '../src/sim/systems/chronicle';
 import { TICKS_PER_MONTH } from '../src/sim/time';
 import { connectPoint, newSim, placeAlong, road } from './helpers';
@@ -58,7 +59,9 @@ describe('trains (M20)', () => {
     expect(lines).toHaveLength(1);
     const line = lines[0]!;
     expect(line.shuttle).toBe(true);
-    expect(line.buses).toBeGreaterThanOrEqual(3);
+    // Trains run at least five minutes apart: a short line needs few of the stations' trains.
+    expect(line.buses).toBeGreaterThanOrEqual(1);
+    expect(line.buses === 1 || line.headway >= RAIL.minHeadway).toBe(true);
     // In order along the track, whichever end it starts from.
     const order = line.stops.join(',');
     expect([`${a},${mid},${b}`, `${b},${mid},${a}`]).toContain(order);

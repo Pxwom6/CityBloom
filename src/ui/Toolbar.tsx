@@ -1,13 +1,13 @@
 import { requirementStatus, type RequirementContext } from '../data/projects';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { BUILDABLE_ROADS, ROAD_TYPES, type RoadTypeId } from '../data/roads';
+import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
-import { TRANSIT } from '../data/balance';
+import { TRAM, TRANSIT } from '../data/balance';
 import { MAPS } from '../client/overlay';
 import {
   IconBolt,
@@ -48,6 +48,7 @@ import {
   IconOneWay,
   IconDrawOneWay,
   IconRoundabout,
+  IconTram,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
 import { modKey } from '../client/platform';
@@ -182,18 +183,29 @@ export function Toolbar() {
                 onClick={() => tools.road.setType(id)}
                 tip={{
                   title: rt.name,
-                  lines: [
-                    `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
-                    `${rt.lanes} lane${rt.lanes === 1 ? '' : 's'} · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
-                    rt.access
-                      ? `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`
-                      : 'No zoning or buildings along it',
-                    `Climbs up to ${Math.round(rt.maxGrade * 100)}\u00a0%: steeper ground is cut and filled (earthworks cost extra)`,
-                    rt.blurb,
-                    ...(locked
-                      ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
-                      : []),
-                  ],
+                  lines: isRail(id)
+                    ? [
+                        `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
+                        `Two tracks · trains up to ${rt.speed} km/h · no cars`,
+                        'Crosses dirt roads, streets and avenues at level crossings (drawn across the middle of a road); goes over boulevards and highways on a bridge',
+                        `Climbs up to ${(rt.maxGrade * 100).toFixed(1)}\u00a0% and curves no tighter than ${rt.minRadius ?? 0} m radius`,
+                        'Stations on connected track run a train line; a rail freight terminal needs track linked to the regional railway',
+                        ...(locked
+                          ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
+                          : []),
+                      ]
+                    : [
+                        `$${rt.costPerMetre}/m to build · $${(rt.upkeepPerMetre * 100).toFixed(0)}/100 m monthly upkeep`,
+                        `${rt.lanes} lane${rt.lanes === 1 ? '' : 's'} · ${rt.speed} km/h · ${rt.capacity.toLocaleString('en-US')} vehicles/h`,
+                        rt.access
+                          ? `Density up to ${['low', 'medium', 'high'][rt.maxDensity]}`
+                          : 'No zoning or buildings along it',
+                        `Climbs up to ${Math.round(rt.maxGrade * 100)}\u00a0%: steeper ground is cut and filled (earthworks cost extra)`,
+                        rt.blurb,
+                        ...(locked
+                          ? [`Unlocks at ${rt.unlockPopulation.toLocaleString('en-US')} residents`]
+                          : []),
+                      ],
                 }}
               >
                 {locked ? (
@@ -236,16 +248,23 @@ export function Toolbar() {
                 'Roundabout',
                 'Click a junction (or a road) for a roundabout; drag out to size the ring. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
               ],
+              [
+                'tram',
+                IconTram,
+                'Tram track',
+                `Click a street, avenue or boulevard to lay tram track ($${TRAM.trackCost}/m); click again to take it up. Drag along roads to lay a whole line. A tram depot on the track runs trams round the tram stops.${pop < TRAM.unlockPopulation ? ` Unlocks at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents.` : ''}`,
+              ],
             ] as [RoadMode, typeof IconCurve, string, string][]
           ).map(([m, Icon, name, how]) => (
             <ToolButton
               key={m}
               id={`mode-${m}`}
               active={tools.road.mode === m}
+              disabled={m === 'tram' && pop < TRAM.unlockPopulation}
               onClick={() => tools.road.setMode(m)}
               tip={{ title: name, lines: [how], key: 'Tab' }}
             >
-              <Icon />
+              {m === 'tram' && pop < TRAM.unlockPopulation ? <IconLock /> : <Icon />}
             </ToolButton>
           ))}
           <ToolButton
@@ -351,8 +370,12 @@ export function Toolbar() {
           {(active === 'stop' || tools.place.category === 'transit') && (
             <ToolButton
               id="place-busstop"
-              active={active === 'stop'}
-              onClick={() => tools.use('stop')}
+              active={active === 'stop' && !tools.stop.tram}
+              onClick={() => {
+                tools.stop.tram = false;
+                tools.use('stop');
+                game.notify();
+              }}
               tip={{
                 title: 'Bus stop',
                 lines: [
@@ -363,6 +386,32 @@ export function Toolbar() {
               }}
             >
               <span class="tool-label">Bus stop</span>
+            </ToolButton>
+          )}
+          {(active === 'stop' || tools.place.category === 'transit') && (
+            <ToolButton
+              id="place-tramstop"
+              active={active === 'stop' && tools.stop.tram}
+              disabled={pop < TRAM.unlockPopulation}
+              onClick={() => {
+                tools.stop.tram = true;
+                tools.use('stop');
+                game.notify();
+              }}
+              tip={{
+                title: 'Tram stop',
+                lines: [
+                  `$${TRANSIT.stopCost} each · $${TRANSIT.stopUpkeep}/month`,
+                  'Click a road with tram track (lay it with the road tool’s Tram track mode).',
+                  `People walk a little further to a tram (up to ${Math.round(TRANSIT.walkRadius * TRAM.walkFactor)} m) and like the smoother ride; a tram depot on the track runs its trams through every stop they reach.`,
+                  ...(pop < TRAM.unlockPopulation
+                    ? [`Unlocks at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`]
+                    : []),
+                ],
+              }}
+            >
+              {pop < TRAM.unlockPopulation ? <IconLock /> : null}
+              <span class="tool-label">Tram stop</span>
             </ToolButton>
           )}
         </div>

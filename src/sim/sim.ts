@@ -1790,7 +1790,10 @@ export class Sim {
         this.groundPollutionAt(c.x, c.z) > UTILITIES.pollutedPumpThreshold,
       garbage: d.garbage ? this.garbageDetails(c) : null,
       service: d.service ? this.serviceDetails(c) : null,
-      transit: d.transit ? this.transitDetails(c) : null,
+      transit: d.transit || d.tram || d.rail ? this.transitDetails(c) : null,
+      railFreight: d.railFreight
+        ? { linked: railTerminals(this).some((t) => t.id === c.id), trucks: this.railFreight.get(c.id) ?? 0 }
+        : null,
       refund: Math.round(c.cost * 0.25),
       special: d.resource
         ? {
@@ -1821,13 +1824,38 @@ export class Sim {
   }
 
   private transitDetails(c: Civic): NonNullable<CivicDetails['transit']> {
-    const line = this.lines().find((l) => l.depot === c.id);
+    const d = civicDef(c);
+    const mode = d.rail ? 'train' : d.tram ? 'tram' : 'bus';
+    const line = this.lines().find((l) =>
+      mode === 'train' ? l.mode === 'train' && l.stops.includes(c.id) : l.depot === c.id,
+    );
+    const key = line?.depot ?? c.id;
+    const min = (sec: number) => Math.round(sec / 6) / 10;
+    let why: string | null = null;
+    if (!line) {
+      const stops = [...this.state.transit.stops.values()].filter(
+        (s) => !!s.tram === (mode === 'tram'),
+      ).length;
+      why =
+        mode === 'train'
+          ? 'Build another station on track connected to this one to start a train line.'
+          : mode === 'tram' && !(c.access && this.state.net.segments.get(c.access.seg)?.tram)
+            ? 'The road in front has no tram track: lay track on it (Roads → Tram track).'
+            : stops < 2
+              ? `Place at least two ${mode} stops on ${mode === 'tram' ? 'tram track' : 'roads'} this depot can reach to start a line.`
+              : `No ${mode} stops this depot can reach${mode === 'tram' ? ' along the track' : ''} (another depot may be nearer).`;
+    }
     return {
+      mode,
       stops: line?.stops.length ?? 0,
       buses: line?.buses ?? 0,
-      loopMinutes: line ? Math.round(line.loopTime / 6) / 10 : 0,
-      riders: this.state.transit.riders.get(c.id) ?? 0,
-      full: (this.state.transit.load.get(c.id) ?? 1) < 0.95,
+      loopMinutes: line ? min(line.loopTime) : 0,
+      headwayMinutes: line ? min(line.headway) : 0,
+      capacity: line ? Math.round(line.capacityPerHour) : 0,
+      riders: this.state.transit.riders.get(key) ?? 0,
+      full: (this.state.transit.load.get(key) ?? 1) < 0.95,
+      here: mode === 'train' ? (this.stopUse.get(c.id) ?? 0) : 0,
+      why,
     };
   }
 

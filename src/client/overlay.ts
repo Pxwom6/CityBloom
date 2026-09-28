@@ -45,6 +45,7 @@ export const MAPS: { id: OverlayMap; name: string; group: string }[] = [
   { id: 'education', name: 'Education', group: 'Services' },
   { id: 'park', name: 'Parks', group: 'Services' },
   { id: 'traffic', name: 'Traffic', group: 'City' },
+  { id: 'transit', name: 'Ridership', group: 'City' },
   { id: 'happiness', name: 'Happiness', group: 'City' },
   { id: 'landValue', name: 'Land value', group: 'City' },
   { id: 'wealth', name: 'Wealth', group: 'City' },
@@ -109,6 +110,7 @@ export class OverlayController {
     u.uOverlayOn.value = 1;
     if ((SERVICE_KINDS as readonly string[]).includes(map)) await this.refreshRoads(map as ServiceKind);
     if (map === 'traffic') this.refreshTraffic();
+    if (map === 'transit') this.refreshRidership();
     this.game.notify();
   }
 
@@ -145,6 +147,51 @@ export class OverlayController {
       junctions.push({ x: node.x, z: node.z, r, v: Math.min(1, vc / 1.5) });
     }
     this.game.renderer.coverageMap.show(list, 'traffic', junctions);
+  }
+
+  /**
+   * Ridership (M20): every bus, tram and train line along its roads and track, shaded by how full it
+   * runs at the rush hour, and each stop or station as a disc sized and shaded by its riders.
+   */
+  private refreshRidership(): void {
+    const w = this.game.world;
+    const key = `transit:${w.transitVersion}`;
+    if (key === this.roadsKey) return;
+    this.roadsKey = key;
+    // Rush-hour riders against what the line can carry, per segment (the busiest line on it).
+    const bySeg = new Map<number, number>();
+    for (const l of w.lines) {
+      const full = l.capacity > 0 ? (l.riders * TRAFFIC.peakShare) / 2 / l.capacity : 0;
+      const v = Math.min(1, 0.35 + 0.65 * Math.min(1, full));
+      for (const x of l.legs) bySeg.set(x.seg, Math.max(bySeg.get(x.seg) ?? 0, v));
+    }
+    const list: RoadTintPiece[] = [];
+    for (const [id, v] of [...bySeg].sort((a, b) => a[0] - b[0])) {
+      const seg = w.netState.segments.get(id);
+      if (!seg) continue;
+      list.push({
+        curve: w.net.curve(id),
+        v: [v, v],
+        half: isRail(seg.type) ? 3.5 : ROAD_TYPES[seg.type].width / 2 - 1,
+        ...(seg.deck ? { surface: (s: number, x: number, z: number) => w.roadHeight(id, s, x, z) } : {}),
+      });
+    }
+    const most = Math.max(1, ...w.stopUse.values());
+    const discs: JunctionTint[] = [];
+    const pos = (id: number) => w.stops.get(id) ?? w.civics.get(id);
+    for (const l of w.lines)
+      for (const id of l.stops) {
+        const p = pos(id);
+        if (!p) continue;
+        const use = w.stopUse.get(id) ?? 0;
+        discs.push({
+          x: p.x,
+          z: p.z,
+          r: 5 + 11 * Math.sqrt(use / most),
+          v: Math.min(1, 0.2 + (0.8 * use) / most),
+        });
+      }
+    this.game.renderer.coverageMap.show(list, 'sequential', discs);
   }
 
   /** Service maps also tint the roads themselves, so coverage visibly follows them. */

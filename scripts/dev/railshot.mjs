@@ -142,6 +142,48 @@ try {
     if (v)
       await snap(kind + 'car', { x: v.x, z: v.z, distance: kind === 'tram' ? 45 : 90, yaw: 0.9, tilt: 0.05 });
   }
+  // Inspectors, opened by clicking things on screen (the real UI).
+  const clickAt = async (name, x, z, pose) => {
+    await page.evaluate((p) => window.__game.setCamera(p), pose);
+    await page.evaluate(() => window.__game.waitFrames(2));
+    const s = await page.evaluate(([x, z]) => window.__game.worldToScreen(x, z), [x, z]);
+    await page.mouse.click(s.x, s.y);
+    await page.evaluate(() => window.__game.waitFrames(3));
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: `${out}/${name}.png` });
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__game.waitFrames(1));
+  };
+  if (want('ui')) {
+    const shelters = (await page.evaluate(() => window.__game.getTransit())).shelters.filter((s) => s.tram);
+    const t = shelters.sort((a, b) => Math.abs(a.x - c.x - 270) - Math.abs(b.x - c.x - 270))[0];
+    await clickAt('insp-tramstop', t.x, t.z, { x: t.x, z: t.z, distance: 60, yaw: 0.4, tilt: 0 });
+    await clickAt('insp-road', c.x + 356, c.z, { x: c.x + 356, z: c.z, distance: 70, yaw: 0.4, tilt: 0 });
+    await clickAt('insp-rail', c.x + 400, c.z + rz, {
+      x: c.x + 400,
+      z: c.z + rz,
+      distance: 70,
+      yaw: 0.4,
+      tilt: 0,
+    });
+    const st = byId(info.stations[0]);
+    if (st) await clickAt('insp-station', st.x, st.z, { x: st.x, z: st.z, distance: 90, yaw: 0.4, tilt: 0 });
+    const fr = byId(info.freight);
+    if (fr) await clickAt('insp-freight', fr.x, fr.z, { x: fr.x, z: fr.z, distance: 110, yaw: 0.4, tilt: 0 });
+    await page.getByTestId('tool-road').click();
+    await page.getByTestId('road-rail').hover();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${out}/ui-roadbar.png` });
+    await page.getByTestId('mode-tram').click();
+    const s2 = await page.evaluate(
+      ([x, z]) => window.__game.worldToScreen(x, z),
+      [c.x + 200, c.z - info.dir * 100],
+    );
+    await page.mouse.move(s2.x, s2.y);
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `${out}/ui-tramtool.png` });
+    await page.getByTestId('tool-select').click();
+  }
   if (want('map')) {
     await page.evaluate(() => window.__game.setOverlay('transit'));
     await page.waitForTimeout(500);

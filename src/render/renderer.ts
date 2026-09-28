@@ -272,13 +272,16 @@ export class GameRenderer {
   pick(
     clientX: number,
     clientY: number,
-  ): { kind: 'building' | 'civic' | 'car' | 'walker' | 'road'; id: number } | null {
+  ): { kind: 'building' | 'civic' | 'car' | 'walker' | 'road' | 'stop'; id: number } | null {
     const ground = this.controller.screenToGround(clientX, clientY);
     if (ground) {
       const walker = this.pedestrians.walkerAt(ground.x, ground.z, 1.4);
       if (walker) return { kind: 'walker', id: walker.id };
       const car = this.traffic.carAt(ground.x, ground.z, 3.5);
       if (car) return { kind: 'car', id: car.id };
+      // Bus and tram stops (M20), for their line.
+      const stop = this.transit.stopAt(ground.x, ground.z);
+      if (stop !== null) return { kind: 'stop', id: stop };
     }
     const cam = this.camera.position;
     const end = ground ?? cam.clone().add(new Vector3(0, -1, 0));

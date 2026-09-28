@@ -284,3 +284,22 @@ export const IconDrawOneWay = (p: P) => (
     <path d="M14 4.5l5 1.5-2 4.8" />
   </svg>
 );
+/** Tram track (M20): a tram under its wire. */
+export const IconTram = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M5 3h14M12 3v3" />
+    <rect x="6" y="6" width="12" height="11" rx="2" />
+    <path d="M6 12h12M9 20l-1 1.5M15 20l1 1.5" />
+    <circle cx="9" cy="15" r="0.6" fill="currentColor" />
+    <circle cx="15" cy="15" r="0.6" fill="currentColor" />
+  </svg>
+);
+/** Trains and stations (M20). */
+export const IconTrain = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="6" y="3" width="12" height="14" rx="3" />
+    <path d="M6 10h12M8 21l2-3M16 21l-2-3" />
+    <circle cx="9.5" cy="13.5" r="0.6" fill="currentColor" />
+    <circle cx="14.5" cy="13.5" r="0.6" fill="currentColor" />
+  </svg>
+);

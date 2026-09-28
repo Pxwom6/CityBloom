@@ -205,7 +205,15 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
 };
 
-export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boulevard', 'motorway', 'ramp'];
+export const BUILDABLE_ROADS: RoadTypeId[] = [
+  'dirt',
+  'street',
+  'avenue',
+  'boulevard',
+  'motorway',
+  'ramp',
+  'rail',
+];
 
 /** Track (M20): railways live in the network beside roads but have a graph of their own. */
 export const isRail = (t: RoadTypeId): boolean => t === 'rail' || t === 'mainline';

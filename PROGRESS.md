@@ -97,14 +97,15 @@ done).
    tried it (and the scenario star thresholds with it).
 
 ## In progress
-Every milestone in SPEC.md and SPEC-2.md is complete. The end of the brief: the summary and ideas
-above are updated and SPEC_REVIEW's last section is written; the final phase-2 playthrough
-(`npm run finale`, `e2e/finale.spec.ts`) is next.
+Nothing: every milestone in SPEC.md and SPEC-2.md is complete, and so is the end of the brief (the
+summary and ideas above, SPEC_REVIEW's last section, and the phase-2 playthrough through the UI:
+`npm run finale`, which makes a map in the editor, founds Kestrelford on it and uses the terrain
+tool, undo, a district, a power deal, the weather panel, history and photo mode, then saves and
+continues; `docs/screenshots/final-*.png`).
 
 ## Next tasks
-1. Run `npm run finale` (the phase-2 playthrough through the UI), review `docs/screenshots/final-*.png`,
-   fix what it finds, commit.
-2. After that, the ideas list above; and the "To check on the Mac" list needs real hardware.
+1. The ideas list above; the "To check on the Mac" list needs real hardware.
+2. When people have played it: the scenario stars and the late-game money curve (see Known issues).
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -117,6 +118,7 @@ above are updated and SPEC_REVIEW's last section is written; the final phase-2 p
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
 - Visitors drive from where they arrive to the landmarks and hotels (M23); with no sight in town they're counted but stay put. Ships sail a straight line from the berth out to sea, so on a very irregular coast one could cross a headland.
+- The finale playthrough's town is a feature tour, not a growth run: it stays around 550 residents at 71 % approval after seven months on relaxed (the M12 playthrough is the one that grows a first city through its first two years). District policies unlock at 800 residents, so its district has none yet and says so.
 - The M24 full e2e run: 32 of 33 passed; the button-label audit caught the Advisors button mid-transition (its text turns white at once while its background fades in over a moment) and now waits for transitions before judging; it also covers the map editor now. Rerun: passes.
 - The M23 full e2e run had two old specs fail on view-dependent details (M14 clicked a warehouse that M23's regional commuters grew in front of the police station at a low camera angle; M16 hovered the history chart before its panel settled). Both now click and hover robustly and pass.
 - The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).

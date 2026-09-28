@@ -330,6 +330,11 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
 }
+.subbar-note {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  padding: 0 var(--space-2);
+}
 
 /* Tooltips */
 .tip-anchor {

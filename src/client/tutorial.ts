@@ -181,6 +181,14 @@ export const TIPS: Tip[] = [
     when: (g) => g.world.stats.population >= 1_500 && g.world.stats.region.neighbours.length > 0,
   },
   {
+    id: 'terrain',
+    text:
+      'The terrain tools reshape the ground: raise, lower, level (to the height where the drag starts) or ' +
+      'smooth. Level a hillside before building a street on it and far more of its lots can be built on. ' +
+      'Roads and buildings hold the ground they stand on, and the earth moved is paid for.',
+    when: (g) => g.tools.activeId === 'terrain',
+  },
+  {
     id: 'airport',
     text:
       'An airport brings visitors by the planeload and business for the shops, but its planes are loud along ' +

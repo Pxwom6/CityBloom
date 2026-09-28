@@ -369,3 +369,36 @@ export const IconShip = (p: P) => (
     <path d="M3 16l2 4h14l2-4H3zM6 16V9h12v7M9 9V5h6v4M2 21c2 1 4 1 6 0 2 1 4 1 6 0 2 1 4 1 6 0" />
   </svg>
 );
+
+/** Terraforming (M24): a hill with a spade's edge cut into it. */
+export const IconTerrain = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M2 19l6-8 4 4 3-3 7 7z" />
+    <path d="M15 4v5M13 6l2-2 2 2" />
+  </svg>
+);
+export const IconRaise = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 19c3-5 6-7 9-7s6 2 9 7" />
+    <path d="M12 3v6M9 6l3-3 3 3" />
+  </svg>
+);
+export const IconLower = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 13c3 4 6 6 9 6s6-2 9-6" />
+    <path d="M12 3v7M9 7l3 3 3-3" />
+  </svg>
+);
+export const IconLevel = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="7" width="18" height="7" rx="2" />
+    <circle cx="12" cy="10.5" r="1.4" />
+    <path d="M3 19h18" />
+  </svg>
+);
+export const IconSmooth = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 15l3-4 2 3 3-5 2 4 2-2 3 3 3-2" stroke-width="1.5" opacity="0.5" />
+    <path d="M3 18c4-3 7-4 9-4s5 1 9 4" />
+  </svg>
+);

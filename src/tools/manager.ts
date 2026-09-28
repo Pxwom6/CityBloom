@@ -9,8 +9,10 @@ import { PlaceTool } from './placeTool';
 import { StopTool } from './stopTool';
 import { DisasterTool } from './disasterTool';
 import { DistrictTool } from './districtTool';
+import { TerrainTool } from './terrainTool';
 
-export type ToolId = 'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district';
+export type ToolId =
+  'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain';
 
 /** Routes canvas pointer and keyboard input to the active tool. */
 export class ToolManager {
@@ -23,6 +25,8 @@ export class ToolManager {
   readonly disaster: DisasterTool;
   /** District painting (M21). */
   readonly district: DistrictTool;
+  /** Terraforming (M24). */
+  readonly terrain: TerrainTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
 
@@ -35,6 +39,7 @@ export class ToolManager {
     this.stop = new StopTool(game);
     this.disaster = new DisasterTool(game);
     this.district = new DistrictTool(game);
+    this.terrain = new TerrainTool(game);
     this.active = this.select;
     const canvas = game.renderer.canvas;
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -172,7 +177,9 @@ export class ToolManager {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (e.code) {
       case 'KeyT':
-        this.use('road');
+        // Shift+T: the terrain tools (M24).
+        if (e.shiftKey) this.use(this.active === this.terrain ? 'select' : 'terrain');
+        else this.use('road');
         break;
       case 'KeyZ':
         this.zone.setZone('R');

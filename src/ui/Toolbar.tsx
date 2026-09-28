@@ -52,10 +52,16 @@ import {
   IconRoundabout,
   IconTram,
   IconDistrict,
+  IconTerrain,
+  IconRaise,
+  IconLower,
+  IconLevel,
+  IconSmooth,
 } from './icons';
 import { DISASTER_KINDS } from '../sim/systems/disasters';
 import { modKey } from '../client/platform';
 import { DISASTER_INFO } from '../tools/disasterTool';
+import { TERRAFORM, TERRAFORM_MODES, type TerraformMode } from '../data/terraform';
 
 interface TipContent {
   title: string;
@@ -299,6 +305,7 @@ export function Toolbar() {
         </div>
       )}
       {active === 'district' && <DistrictOptions />}
+      {active === 'terrain' && <TerrainOptions />}
       {active === 'zone' && (
         <div class="subbar panel" data-testid="zone-options">
           {ZONES.map(({ z, name, Icon, key, cls, effect }) => (
@@ -468,6 +475,21 @@ export function Toolbar() {
           }}
         >
           <IconDistrict />
+        </ToolButton>
+        <ToolButton
+          id="tool-terrain"
+          active={active === 'terrain'}
+          onClick={() => use('terrain')}
+          tip={{
+            title: 'Terrain',
+            lines: [
+              'Raise, lower, level or smooth the ground, paid for by the earth moved. Level a hillside before building for more lots.',
+              'Roads and buildings hold the ground they stand on; water is left alone.',
+            ],
+            key: 'Shift+T',
+          }}
+        >
+          <IconTerrain />
         </ToolButton>
         {(
           [
@@ -763,7 +785,9 @@ export function MapLegend() {
   return (
     <div
       class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''} ${
-        ['road', 'zone', 'place', 'stop', 'district'].includes(game.tools.activeId) ? 'above-subbar' : ''
+        ['road', 'zone', 'place', 'stop', 'district', 'terrain'].includes(game.tools.activeId)
+          ? 'above-subbar'
+          : ''
       }`}
       data-testid="map-legend"
     >
@@ -864,6 +888,55 @@ function DistrictOptions() {
       >
         <span class="tool-label">Panel</span>
       </ToolButton>
+    </div>
+  );
+}
+
+const TERRAIN_ICON: Record<TerraformMode, typeof IconRaise> = {
+  raise: IconRaise,
+  lower: IconLower,
+  level: IconLevel,
+  smooth: IconSmooth,
+};
+
+/** The terrain tool's options (M24): raise, lower, level or smooth, and the brush. */
+function TerrainOptions() {
+  const game = useGameUpdates(200);
+  const t = game.tools.terrain;
+  return (
+    <div class="subbar panel" data-testid="terrain-options">
+      {TERRAFORM_MODES.map((m) => {
+        const Icon = TERRAIN_ICON[m.id];
+        return (
+          <ToolButton
+            key={m.id}
+            id={`terrain-${m.id}`}
+            active={t.mode === m.id}
+            onClick={() => t.setMode(m.id)}
+            tip={{ title: m.name, lines: [m.blurb, 'Tab picks the next one.'] }}
+          >
+            <Icon />
+          </ToolButton>
+        );
+      })}
+      <span class="sep" />
+      <label class="brush">
+        Brush
+        <input
+          type="range"
+          data-testid="terrain-brush"
+          min={TERRAFORM.radius.min}
+          max={TERRAFORM.radius.max}
+          step={16}
+          value={t.radius}
+          onInput={(e) => {
+            t.radius = Number((e.target as HTMLInputElement).value);
+            game.notify();
+          }}
+        />
+        <span>{t.radius} m</span>
+      </label>
+      <span class="subbar-note">${TERRAFORM.costPerCubicMetre.toFixed(2)} per m³ moved</span>
     </div>
   );
 }

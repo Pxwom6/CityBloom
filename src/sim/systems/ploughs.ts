@@ -45,8 +45,25 @@ function nodeOf(sim: Sim, g: RoadGraph, c: Civic): number | undefined {
   return g.index.get(c.access!.s < sim.net.curve(seg.id).length / 2 ? seg.a : seg.b);
 }
 
+/**
+ * Each depot's reach, worked out once per game hour and road graph: a plough asks on every arrival,
+ * and a Dijkstra each time was most of the ploughs' cost in a big city.
+ */
+const reachCache = new WeakMap<RoadGraph, Map<number, { hour: number; reach: Map<number, number> }>>();
+
 /** Road distance (m) from a depot to each node within its reach. */
 function reachOf(sim: Sim, g: RoadGraph, c: Civic): Map<number, number> {
+  const hour = Math.floor(sim.state.tick / 60);
+  let byDepot = reachCache.get(g);
+  if (!byDepot) reachCache.set(g, (byDepot = new Map()));
+  const hit = byDepot.get(c.id);
+  if (hit && hit.hour === hour) return hit.reach;
+  const reach = computeReach(sim, g, c);
+  byDepot.set(c.id, { hour, reach });
+  return reach;
+}
+
+function computeReach(sim: Sim, g: RoadGraph, c: Civic): Map<number, number> {
   const reach = new Map<number, number>();
   const node = nodeOf(sim, g, c);
   if (node === undefined) return reach;

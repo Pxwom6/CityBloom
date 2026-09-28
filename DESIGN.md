@@ -892,6 +892,60 @@ other side's roads carry the same; recycling in one half of a town cuts garbage 
 else, for its share of the cost; heritage on the Big Game city stops rebuilding inside and raises
 land value there, with the rest unchanged. The Market Town scenario puts the ban to work.
 
+### 3.23 Seasons and weather (M22)
+
+**Calendar.** One day/night cycle is a month, so a season is three months: Dec–Feb winter, Mar–May
+spring and so on. `START_MONTH` (2) makes a new city start in March; Year 1 runs March to February
+(`calendarMonth(k)` for labels). Only display code reads the calendar month; elections and the
+chronicle count months since founding.
+
+**Climates** (`src/data/climate.ts`). Each map preset has one (`PRESET_CLIMATE`: river temperate,
+coast maritime, lakes continental, highlands alpine): monthly mean temperatures, a day–night swing,
+and per-season weights for clear, cloudy, rain, storm, fog and heatwave spells.
+
+**State** (`SimState.weather`, save v20; `src/sim/systems/weather.ts`): the climate, `seasons` and
+`intensity` (0 off … 3 wild), the spell (`kind`, `strength`, `until`, its temperature `offset`), the
+temperature now and the day's mean, ground `snow`, `wet`, `river` rise (m) and `dryness`, plus
+`RoadSegment.snow` per road. Hourly, before utilities (`weatherHour`): when the spell ends, draw the
+next from the season's weights on its own RNG stream (`weather`; intensity scales the weights of
+anything but clear and the strength); rain and storms fall as snow when the spell's mean is ≤ 1 °C,
+and a storm that falls as snow is a blizzard. A new city's first 12 hours are fair. With seasons off
+every month has May's temperatures (no snow, no heatwaves); with weather off it's always clear.
+Then snow falls on the ground and every road (0.07 an hour at full strength) and melts above 0 °C
+(faster in rain and, on roads, with traffic); rain soaks the ground and raises the river, which
+drains a little each hour; warm dry weather raises dryness and rain lowers it. `season` and
+`weather` events (storms, heavy snow, heatwaves) drive notices.
+
+**Effects**, each where it acts:
+- *Power and water* (`buildingUse` with `weatherUse`): heating adds up to 60 % (homes), 40 % (shops)
+  and 20 % (industry) as the day's mean falls from 14 °C to −10 °C; above 23 °C cooling adds up to
+  30–35 % and water use up to 30 %. Groundwater pumps lose up to 45 % of their output with dryness;
+  solar follows the cloud and the season (0.35–1.05), wind turbines run 35 % harder in storms.
+- *Traffic*: a road's travel time × `snowFactor` (1 + 0.9 × snow) in route costs
+  (`congestedEdgeCosts`) and for visible vehicles (`segSpeed`).
+- *Parks* count for up to half as much in rain and snow (`parkShare`).
+- *Floods*: with disasters on, a river more than 1.2 m up gives an hourly chance (5 % per metre over)
+  of M9's flood at a home near the water (`riverFlood` in `disasters.ts`).
+
+**Ploughs** (`src/sim/systems/ploughs.ts`). A public works depot (`CivicDef.plough`: 3 ploughs,
+3 km of road, 12 roads a round; road maintenance funding scales the ploughs) sends idle ploughs each
+hour to the busiest snowy roads (snow ≥ 0.1) within its reach. A plough clears every road it drives
+along (the vehicle `passed` hook), works on to the nearest snowy road left, and after its round
+heads home; ploughs run at four times a service vehicle's pace and aren't slowed by snow.
+Metres cleared are the depot's `processedToday`/`lastDay`. Road snow reaches the client as
+per-segment changes (`FrameDiff.roadSnow`).
+
+**Interface.** The top bar's date shows the weather, temperature and season and opens a panel of
+what the weather is doing (`src/ui/weather.ts`); Settings set seasons and intensity for this city
+(`setWeather`, refused while a scenario plays; scenarios set theirs at start) and new ones; road
+inspectors show snow, depot inspectors their ploughs; advisors warn of winter power headroom
+(demand at the climate's coldest month), snow no plough clears, a dry spell on tight water and a
+high river.
+
+The done-criterion tests: `tests/winter.test.ts` (the alpine test town uses 26 % more power per
+resident in January than July, snow lifts its commute 98 → 115 s and a depot brings it back to
+98 s) and the Long Winter scenario (`tests/scenarios/winter.test.ts`).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -941,6 +995,22 @@ land value there, with the rest unchanged. The Market Town scenario puts the ban
   (cars, buildings, construction, fires, emergency vehicles, tree density, zoom, night, paused) and the
   pure `ambientMix()` turns that into layer levels. Master/effects/ambience volumes and mute are
   player settings; the context starts on the first gesture and suspends when the tab is hidden.
+
+### 4.2 Seasons and weather on screen (M22)
+
+`src/render/weather.ts` eases a *look* (season weights, weather kind and strength, snow, wet)
+towards the city's — or photo mode's — over a few seconds and writes shared uniforms (`uSnow`,
+`uWet`, `uSeason`, `uGrade`, `uRoadSnow`) that the terrain, tree, building and road materials read:
+grass takes the season's colour and snow settles on flat ground (patchy as it starts); broadleaf
+crowns (their green vertices) blossom, turn gold and red, then thin out bare; roofs and trees carry
+snow on upward faces. Every road vertex carries its road's (or junction's) id (`aTag`), so snow per
+road is a lookup in a 512² data texture — grey slush that still reads as road — rewritten at most
+four times a second when `roadSnowVersion` changes. Cloud greys, dims and desaturates everything
+(`weatherGrade`) and hides the sun disc; fog and falling rain or snow pull the fog in; heat warms the
+grade and hazes the distance; storms flash (sky and fill light) and schedule thunder. Rain and snow
+are one `Points` draw (up to 9,000 × the crowd quality) in a box between the camera and its target,
+animated entirely in the shader. Data maps are shown in clear weather. Ambient sound adds rain and
+patter layers, storm wind and muffles traffic under snow.
 
 ### 4.1 Photo mode (M16)
 
@@ -1031,7 +1101,8 @@ migration is also the identity, and `Sim.fromSave` lays the rail link on a city 
 (`railway` missing) where it fits, so an older city loads, gains its link and plays on
 (`tests/trains.test.ts` loads the version-10 playtest save). v19 (M21) adds `districts` (an empty
 map) and `districtCells` (all zero); `tests/districts.test.ts` loads the version-10 playtest save,
-paints a district and round-trips it.
+paints a district and round-trips it. v20 (M22) adds `weather` (the preset's climate, a fair first spell) and the `weather` RNG
+stream; `tests/weather.test.ts` loads the version-10 playtest save, plays on and round-trips it.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

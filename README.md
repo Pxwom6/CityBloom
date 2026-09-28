@@ -100,6 +100,19 @@ its land is worth more). The Districts panel shows each one's residents, jobs, h
 value, the taxes it pays and what its services and policies cost, and can show any data map for that
 district alone.
 
+**Seasons and weather.** A season is three months of the game's calendar, and a new city starts in
+spring. Each map has its own climate (temperate by the river, mild and wet on the coast, hot summers
+and snowy winters by the lakes, long alpine winters in the highlands), with clear days, cloud, rain,
+thunderstorms, fog, snow and heatwaves. Grass and trees change with the seasons, from spring blossom
+to autumn gold to bare branches, and snow settles on fields, roofs, trees and roads. The weather
+matters: heating pushes power demand up in winter and heatwaves raise power and water use; snow
+slows every car on the roads it lies on until it melts or a **public works depot** (Garbage and snow
+bar) sends ploughs out; heavy rain raises the river and, with disasters on, can flood homes by the
+water; dry spells lower what groundwater pumps give; and parks see fewer visitors in the rain. The
+date in the top bar shows the weather, the temperature and the season, and opens a panel saying what
+the weather is doing to the city. Settings turn seasons off or set the weather from off to wild, and
+photo mode can pick any season and weather for a shot.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -119,12 +132,13 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are eleven set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are twelve set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
 from a mill town, rebuild a lake town's waterworks after a flood, turn a coastal town into a
-resort, and keep the lorries out of an old market street. Each opens with a brief; the city's name in the top bar opens its goals (G),
+resort, keep the lorries out of an old market street, and see an alpine town through its first
+hard winter. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -149,6 +163,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
 | Bulldoze | | | B |
 | Districts: paint, erase, and their panel | toolbar flag | | I, [ ] brush size |
+| Weather, season and what they're doing to the city | the date in the top bar | click | |
 | Select and inspect | click a building, car, walker, road, railway or stop | click | H |
 | Move a civic building | select it, then Move | | |
 | Cancel, leave a tool, close a panel, pause menu | right click | | Escape |

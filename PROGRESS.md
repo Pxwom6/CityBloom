@@ -84,26 +84,26 @@ done).
    tried it.
 
 ## In progress
-M21 Districts is complete: districts painted with a brush (I) on a 16 m raster and named after their
-neighbourhood; most policies apply per district at its share of the city-wide price (by the people
-who live or work there), with the heavy-traffic ban and heritage for districts only; the Districts
-panel (residents, jobs, happiness, land value, taxes, upkeep, policies) and data maps filtered to one
-district; save v19; an eleventh scenario, Market Town. Done-criterion tests in
-`tests/districtPolicies.test.ts` (a ban, recycling and heritage each change their own district and
-nothing else). 240 unit and scenario tests and all 26 UI tests pass (the full run took 37 minutes).
+M22 Seasons and weather. Done so far: calendar starts in March (seasons are three months; Year 1
+runs March–February); `SimState.weather` (save v20) with per-preset climates (`src/data/climate.ts`)
+and hourly spells (`src/sim/systems/weather.ts`); effects on power (heating/cooling), water, pumps
+(dryness), solar/wind, parks in rain, river rise → floods (disasters on), snow per road slowing
+traffic; public works depot (`works`, 800 residents) with ploughs (`src/sim/systems/ploughs.ts`);
+rendering (`src/render/weather.ts`: season tints on grass and broadleaf trees, snow on ground,
+roofs, trees and each road via a data texture, wet asphalt, overcast grade, fog, heat haze, rain
+and snow particles, lightning) and sound (rain, wind, thunder). Tests: `tests/weather.test.ts`,
+`tests/winter.test.ts` (26 % more power per resident in January; snow lifts the commute 98 → 115 s,
+ploughs bring it back to 98 s). 246 unit tests pass.
 
 ## Next tasks
-1. M22 Seasons and weather (SPEC-2). Plan: seasons from the calendar (a season is three months;
-   Dec–Feb winter); `SimState.weather` (save v20) with spells drawn hourly from a per-preset climate
-   (clear, cloudy, rain, storm, snow, fog, heatwave; temperature, ground snow, river rise, dryness);
-   effects through `buildingUse` (heating/cooling power, heat water), `civicOutput` (pumps × dryness,
-   solar × cloud), `congestedEdgeCosts`/`segSpeed` (snow on each road), park use in rain, river
-   level → flood risk; a public works depot with ploughs; rendering (terrain and tree season tints,
-   snow cover on ground, roofs and roads, rain/snow particles as one Points system, fog, clouds,
-   lightning, wet roads), sounds; settings (seasons on/off, weather intensity), climates per
-   preset, photo-mode season/weather controls; a winter scenario.
-2. Performance watch: the worst tick at the big city's month-5/6 growth burst is 15–17 ms on this VM
-   with M19–M21 code alike (utilities, matcher, landValue), and one unrepeated 52 ms utilities tick.
+1. M22 UI: top-bar weather readout with tooltip; Settings (seasons on/off, weather intensity →
+   `setWeather`, applied to the loaded city unless a scenario sets its own); photo mode season and
+   weather controls (`renderer.weatherOverride`); road inspector snow line; depot inspector
+   (ploughs, metres cleared); advisors (winter power headroom, snow and no depot, drought, high
+   river); tips; notifications for storms, heatwaves and first snow.
+2. M22 scenario (a winter town), README/DESIGN/DECISIONS/SPEC_REVIEW/CLAUDE.md, bench and balance
+   (the balance mayor should build a depot when advised), e2e through the UI with screenshots of
+   every season and weather, full e2e, `M22 complete:`.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

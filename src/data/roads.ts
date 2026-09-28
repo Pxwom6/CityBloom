@@ -1,5 +1,5 @@
 /** Road types and road-building rules. DESIGN.md §2, SPEC §5 Roads. */
-export type RoadTypeId = 'dirt' | 'street' | 'avenue' | 'boulevard' | 'highway';
+export type RoadTypeId = 'dirt' | 'street' | 'avenue' | 'boulevard' | 'motorway' | 'ramp' | 'highway';
 
 export interface RoadType {
   id: RoadTypeId;
@@ -26,12 +26,20 @@ export interface RoadType {
   /** Population needed to unlock. */
   unlockPopulation: number;
   buildable: boolean;
+  /**
+   * Local road (M19): buildings, zones, stops and junctions can front it. The city highway, its
+   * ramps and the regional highway are not: they meet other roads only at ramps and interchanges.
+   */
+  access: boolean;
+  /** Always one-way, in the direction it's drawn (ramps). */
+  oneWay?: boolean;
   blurb: string;
 }
 
 export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   dirt: {
     id: 'dirt',
+    access: true,
     maxGrade: 0.2,
     name: 'Dirt road',
     width: 6,
@@ -48,6 +56,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   street: {
     id: 'street',
+    access: true,
     maxGrade: 0.16,
     name: 'Street',
     width: 8,
@@ -64,6 +73,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   avenue: {
     id: 'avenue',
+    access: true,
     maxGrade: 0.12,
     name: 'Avenue',
     width: 16,
@@ -80,6 +90,7 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
   boulevard: {
     id: 'boulevard',
+    access: true,
     maxGrade: 0.08,
     name: 'Boulevard',
     width: 22,
@@ -94,8 +105,45 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
     buildable: true,
     blurb: 'Six lanes for a growing metropolis. Highest capacity on the map.',
   },
+  motorway: {
+    id: 'motorway',
+    access: false,
+    maxGrade: 0.05,
+    name: 'City highway',
+    width: 24,
+    sidewalk: 2,
+    lanes: 4,
+    speed: 90,
+    capacity: 6000,
+    costPerMetre: 90,
+    upkeepPerMetre: 0.35,
+    maxDensity: 0,
+    unlockPopulation: 10_000,
+    buildable: true,
+    blurb:
+      'Four fast lanes with no junctions and no zoning. Join it with ramps; it passes over the roads it crosses.',
+  },
+  ramp: {
+    id: 'ramp',
+    access: false,
+    oneWay: true,
+    maxGrade: 0.07,
+    name: 'Ramp',
+    width: 7,
+    sidewalk: 1,
+    lanes: 1,
+    speed: 50,
+    capacity: 1500,
+    costPerMetre: 30,
+    upkeepPerMetre: 0.1,
+    maxDensity: 0,
+    unlockPopulation: 10_000,
+    buildable: true,
+    blurb: 'One lane on or off the city highway, one-way in the direction you draw it.',
+  },
   highway: {
     id: 'highway',
+    access: false,
     maxGrade: 0.06,
     name: 'Regional highway',
     width: 20,
@@ -112,7 +160,17 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   },
 };
 
-export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boulevard'];
+export const BUILDABLE_ROADS: RoadTypeId[] = ['dirt', 'street', 'avenue', 'boulevard', 'motorway', 'ramp'];
+
+/**
+ * Roads that pass over or under the roads they cross instead of meeting them (M19): the city highway
+ * and the regional highway. Rail (M20) joins them.
+ */
+export const gradeSeparated = (t: RoadTypeId): boolean => t === 'motorway' || t === 'highway';
+
+/** Road families that may meet at a junction: local roads; the city highway, ramps and highway. */
+export const roadClass = (t: RoadTypeId): 'local' | 'motorway' | 'ramp' =>
+  t === 'motorway' || t === 'highway' ? 'motorway' : t === 'ramp' ? 'ramp' : 'local';
 
 /** Half the corridor a road occupies (carriageway + sidewalks). */
 export const roadHalfWidth = (t: RoadTypeId): number => ROAD_TYPES[t].width / 2 + ROAD_TYPES[t].sidewalk;
@@ -138,6 +196,16 @@ export const ROAD_RULES = {
   clearance: 2,
   /** Share of the build cost refunded when bulldozing. */
   bulldozeRefund: 0.25,
+  /** Ramps may meet the city highway at this shallow an angle (M19). */
+  mergeAngleDeg: 8,
+};
+
+/** Grade separation (M19): a road passing over another, or under a viaduct. */
+export const GRADE_SEP = {
+  /** Height of the upper road's surface above the lower one's, metres (headroom plus deck). */
+  clearance: 7.5,
+  /** Extra deck beyond the lower road's corridor on each side, metres. */
+  margin: 3,
 };
 
 /** Client-side snapping radii (input convenience; the sim still validates). */

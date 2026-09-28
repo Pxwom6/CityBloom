@@ -233,6 +233,8 @@ export interface NodeData {
   id: number;
   x: number;
   z: number;
+  /** Roundabout ring radius (M19). */
+  roundabout?: number;
 }
 export interface SegmentData {
   id: number;
@@ -245,6 +247,8 @@ export interface SegmentData {
   right: number;
   /** Viaduct deck heights (M13), see RoadSegment.deck. */
   deck?: number[];
+  /** One-way direction (M19), see RoadSegment.oneway. */
+  oneway?: 1 | -1;
 }
 export interface BlockData {
   id: number;

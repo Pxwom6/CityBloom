@@ -62,6 +62,39 @@ function build(id: RoadTypeId): RoadStyle {
       sidewalkLift: L - 0.02,
     };
   }
+  if (id === 'ramp' || id === 'motorway') {
+    // The city highway and its ramps (M19): grass verges, no kerbs; a concrete barrier down the
+    // highway's middle and solid edge lines.
+    strips.push({ from: -tot, to: -hw, lift: L - 0.02, color: VERGE });
+    strips.push({ from: hw, to: tot, lift: L - 0.02, color: VERGE });
+    if (id === 'ramp') strips.push({ from: -hw, to: hw, lift: L, color: HIGHWAY_ASPHALT });
+    else {
+      const med = 0.8;
+      strips.push({ from: -hw, to: -med, lift: L, color: HIGHWAY_ASPHALT });
+      strips.push({ from: med, to: hw, lift: L, color: HIGHWAY_ASPHALT });
+      strips.push({ from: -med, to: med, lift: L + 0.6, color: SIDEWALK });
+      kerbs.push({ at: -med, low: L, high: L + 0.6 }, { at: med, low: L, high: L + 0.6 });
+      const laneW = (hw - med - 1.5) / (t.lanes / 2);
+      for (let k = 1; k < t.lanes / 2; k++) {
+        const o = med + 0.5 + laneW * k;
+        markings.push({ offset: o, width: 0.18, dash: 4, gap: 8, color: WHITE });
+        markings.push({ offset: -o, width: 0.18, dash: 4, gap: 8, color: WHITE });
+      }
+    }
+    markings.push({ offset: hw - 0.6, width: 0.18, dash: 1000, gap: 0, color: WHITE });
+    markings.push({ offset: -hw + 0.6, width: 0.18, dash: 1000, gap: 0, color: WHITE });
+    return {
+      strips,
+      markings,
+      kerbs,
+      asphaltHalf: hw,
+      totalHalf: tot,
+      asphalt: HIGHWAY_ASPHALT,
+      sidewalk: VERGE,
+      lift: L,
+      sidewalkLift: L - 0.02,
+    };
+  }
   const asphalt = id === 'highway' ? HIGHWAY_ASPHALT : ASPHALT;
   strips.push({ from: -tot, to: -hw, lift: S, color: SIDEWALK });
   strips.push({ from: hw, to: tot, lift: S, color: SIDEWALK });
@@ -111,5 +144,7 @@ export const ROAD_STYLES: Record<RoadTypeId, RoadStyle> = {
   street: build('street'),
   avenue: build('avenue'),
   boulevard: build('boulevard'),
+  motorway: build('motorway'),
+  ramp: build('ramp'),
   highway: build('highway'),
 };

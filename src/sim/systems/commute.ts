@@ -4,7 +4,8 @@ import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, accessOf, type Building } from '../world/buildings';
-import { Dijkstra, type RoadGraph } from './graph';
+import { Dijkstra, routeBetween, type RoadGraph } from './graph';
+import { segSpeed } from './vehicles';
 import {
   FlowAccumulator,
   TripReservoir,
@@ -166,6 +167,14 @@ export class MatchRound {
     let commuteSum = 0;
     let shopped = 0;
     const baseOffset = o.list.reduce((sum, e) => sum + e.att.offset, 0) / o.list.length;
+    // With one-way roads (M19) the way home can differ from the way there: half of each trip's
+    // load goes out along this tree and half comes back along a reverse search, below.
+    const back = g.hasOneWay ? new Map<number, number>() : null;
+    const load = (u: number, n: number) => {
+      if (!back) return flows.addLoad(u, n);
+      flows.addLoad(u, n / 2);
+      back.set(u, (back.get(u) ?? 0) + n / 2);
+    };
     let pick = 0;
     const home = () => o.list[pick++ % o.list.length]!.b;
     dijkstra.run(
@@ -191,7 +200,7 @@ export class MatchRound {
             commuteSum += take * (share > 0 ? share * bus!.t + (1 - share) * t : t);
             if (share > 0) this.riders[bus!.line] += take * share * TRAFFIC.tripsPerWorker;
             const n = take * TRAFFIC.tripsPerWorker * car * (1 - share);
-            flows.addLoad(u, n);
+            load(u, n);
             flows.addSegment(accessOf(sim, j.b)?.seg ?? -1, n);
             trips.offer(n, () => trip(sim, g, home(), j.b, u, 'work'));
           }
@@ -207,7 +216,7 @@ export class MatchRound {
             shopped += take;
             customers.set(sh.b.id, (customers.get(sh.b.id) ?? 0) + take);
             const n = take * TRAFFIC.shopTripsPerResident * car;
-            flows.addLoad(u, n);
+            load(u, n);
             flows.addSegment(accessOf(sim, sh.b)?.seg ?? -1, n);
             trips.offer(n, () => trip(sim, g, home(), sh.b, u, 'shop'));
           }
@@ -223,6 +232,28 @@ export class MatchRound {
       true,
     );
     flows.accumulate(dijkstra);
+    if (back?.size) {
+      for (const [u, l] of back) flows.addLoad(u, l);
+      let left = back.size;
+      const reached = new Set<number>();
+      dijkstra.runReverse(
+        g,
+        [{ node, cost: 0 }],
+        Infinity,
+        (u) => {
+          if (back.has(u)) {
+            reached.add(u);
+            left--;
+          }
+          return left > 0;
+        },
+        this.costs,
+        true,
+      );
+      flows.accumulateReverse(dijkstra);
+      // A job with no way home (a one-way dead end) keeps no phantom load for the next origin.
+      for (const u of back.keys()) if (!reached.has(u)) flows.clearLoad(u);
+    }
     // Share results among the origin's buildings (largest remainder, deterministic).
     const avgCommute = employed > 0 ? commuteSum / employed : 0;
     distribute(
@@ -380,8 +411,10 @@ function runFreight(
     true,
   );
   let crowd = 0;
+  // With one-way roads (M19) exports leave by their own route to the highway (below).
+  const outbound = g.hasOneWay ? loads.filter((l) => l.purpose === 'export') : [];
   for (const l of loads) {
-    if (!reach.has(l.node)) continue;
+    if (!reach.has(l.node) || outbound.includes(l)) continue;
     const units = l.amount * (l.cars ? 1 : pcu);
     if (l.cars) crowd += l.amount;
     else external += l.amount;
@@ -405,6 +438,36 @@ function runFreight(
     });
   }
   flows.accumulate(dijkstra);
+  if (outbound.length) {
+    const out = sim.net.curve(hw.segment).length;
+    const hwSeg = sim.state.net.segments.get(hw.segment)!;
+    const outside = { seg: hw.segment, s: hwSeg.a === hw.connect ? out : 0 };
+    const reachOut = new Set<number>();
+    dijkstra.runReverse(
+      g,
+      [{ node: hwNode, cost: 0 }],
+      Infinity,
+      (u) => {
+        reachOut.add(u);
+        return true;
+      },
+      costs,
+      true,
+    );
+    for (const l of outbound) {
+      if (!reachOut.has(l.node)) continue;
+      const units = l.amount * pcu;
+      external += l.amount;
+      flows.addLoad(l.node, units);
+      flows.addSegment(l.acc?.seg ?? -1, units);
+      const acc = l.acc;
+      trips.offer(units, () => {
+        const legs = acc ? routeBetween(g, sim.net, acc, outside, (sg) => segSpeed(sim, sg)) : null;
+        return legs?.length ? { from: l.id, to: 0, purpose: 'export', legs, weight: units } : null;
+      });
+    }
+    flows.accumulateReverse(dijkstra);
+  }
   flows.addSegment(hw.segment, external * pcu + crowd);
 }
 
@@ -418,7 +481,16 @@ function trip(
   purpose: 'work' | 'shop' | 'freight',
 ): TripSample | null {
   const legs = legsThroughTree(sim, g, dijkstra, accessOf(sim, a), u, accessOf(sim, b));
-  return legs.length ? { from: a.id, to: b.id, purpose, legs, weight: 1 } : null;
+  if (!legs.length) return null;
+  const sample: TripSample = { from: a.id, to: b.id, purpose, legs, weight: 1 };
+  // A route out along a one-way road (M19) can't simply be driven backwards to get home.
+  const from = accessOf(sim, b);
+  const to = accessOf(sim, a);
+  if (g.hasOneWay && from && to && legs.some((l) => sim.state.net.segments.get(l.seg)?.oneway)) {
+    const home = routeBetween(g, sim.net, from, to, (seg) => segSpeed(sim, seg));
+    if (home?.length) sample.back = home;
+  }
+  return sample;
 }
 
 function distribute<T>(

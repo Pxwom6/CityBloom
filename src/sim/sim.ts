@@ -1,3 +1,4 @@
+import { ROAD_TYPES } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
 import { fail, ok, type Command, type CommandLogEntry, type CommandResult } from './commands';
@@ -38,7 +39,14 @@ import {
   type Scope,
   type Touched,
 } from './history';
-import { buildRoad, bulldoze, upgradeRoad } from './actions/roads';
+import {
+  buildRoad,
+  bulldoze,
+  upgradeRoad,
+  setOneWay,
+  placeRoundabout,
+  removeRoundabout,
+} from './actions/roads';
 import { zone } from './actions/zoning';
 import { v2 } from './geom';
 import { GRID_RES, HEIGHT_RES } from '../data/world';
@@ -810,7 +818,13 @@ export class Sim {
         return ok(0);
       }
       case 'buildRoad':
-        return buildRoad(this, cmd.road, cmd.points, dryRun);
+        return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      case 'setOneWay':
+        return setOneWay(this, cmd.seg, cmd.dir, dryRun);
+      case 'roundabout':
+        return placeRoundabout(this, { node: cmd.node, x: cmd.at?.x, z: cmd.at?.z }, cmd.radius, dryRun);
+      case 'removeRoundabout':
+        return removeRoundabout(this, cmd.node, dryRun);
       case 'bulldoze':
         return bulldoze(this, cmd.target, dryRun);
       case 'upgradeRoad':
@@ -907,6 +921,9 @@ export class Sim {
       case 'zone':
         return ZONING_SCOPE;
       case 'buildRoad':
+      case 'setOneWay':
+      case 'roundabout':
+      case 'removeRoundabout':
       case 'bulldoze':
       case 'placeStop':
       case 'upgradeRoad':
@@ -931,6 +948,11 @@ export class Sim {
         return 'bus stop';
       case 'upgradeRoad':
         return 'road change';
+      case 'setOneWay':
+        return 'one-way change';
+      case 'roundabout':
+      case 'removeRoundabout':
+        return 'roundabout';
       case 'placeBuilding':
         return (CIVIC.get(cmd.def)?.name ?? 'building').toLowerCase();
       case 'addModule':
@@ -1624,7 +1646,7 @@ export class Sim {
         const cov = this.coverage.kinds[q.kind];
         const out: { seg: number; v: number[] }[] = [];
         for (const seg of this.state.net.segments.values()) {
-          if (seg.type === 'highway') continue;
+          if (!ROAD_TYPES[seg.type].access) continue;
           const arr = cov.get(seg.id);
           out.push({ seg: seg.id, v: arr ? [...arr].map((x) => Math.round(x * 100) / 100) : [0, 0] });
         }

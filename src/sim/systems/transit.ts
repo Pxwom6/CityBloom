@@ -49,7 +49,7 @@ export interface BusLine {
 const SNAP = 14;
 
 function snapToRoad(sim: Sim, x: number, z: number): { seg: number; s: number; x: number; z: number } | null {
-  const hit = sim.net.nearestSegment({ x, z }, SNAP, (id) => ROAD_TYPES[sim.net.segment(id).type].buildable);
+  const hit = sim.net.nearestSegment({ x, z }, SNAP, (id) => ROAD_TYPES[sim.net.segment(id).type].access);
   return hit ? { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z } : null;
 }
 

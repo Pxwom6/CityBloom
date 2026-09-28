@@ -2,7 +2,15 @@ import { Group, Mesh, MeshLambertMaterial } from 'three';
 import type { ClientWorld, NetChanges } from '../client/world';
 import { Curve, angleOf, v2, type Vec2 } from '../sim/geom';
 import { GeoBuffer, mergeChunks, type GeoChunk } from './geoBuffer';
-import { buildBridgeStructure, buildJunction, buildSegmentRibbon, type Approach } from './roadMesh';
+import {
+  buildBridgeStructure,
+  buildJunction,
+  buildRoundabout,
+  buildSegmentRibbon,
+  type Approach,
+} from './roadMesh';
+import { JUNCTION } from '../data/balance';
+import { ROAD_TYPES } from '../data/roads';
 import { deckAt } from '../sim/world/bridge';
 import { ROAD_STYLES } from './roadStyle';
 
@@ -60,12 +68,30 @@ export class RoadRenderer {
   }
 
   /** Trim distance at a node for each incident segment, or 0 where the road simply continues. */
-  private nodeLayout(nodeId: number): { trims: Map<number, number>; approaches: Approach[] } | null {
+  private nodeLayout(
+    nodeId: number,
+  ): { trims: Map<number, number>; approaches: Approach[]; ring?: number } | null {
     const net = this.world.net;
     const node = this.world.netState.nodes.get(nodeId);
     if (!node) return null;
     const segs = net.segmentsAt(nodeId);
     const trims = new Map<number, number>();
+    if (node.roundabout) {
+      // Roads stop where their edges meet the ring (M19).
+      const outer = node.roundabout + JUNCTION.ringWidth / 2;
+      const approaches: Approach[] = [];
+      for (const sid of segs) {
+        const style = ROAD_STYLES[net.segment(sid).type];
+        const curve = net.curve(sid);
+        const t = Math.min(curve.length * 0.45, Math.sqrt(Math.max(1, outer ** 2 - style.asphaltHalf ** 2)));
+        trims.set(sid, t);
+        const seg = net.segment(sid);
+        const s = seg.a === nodeId ? t : curve.length - t;
+        const tan = curve.tangentAt(s);
+        approaches.push({ p: curve.pointAt(s), dir: seg.a === nodeId ? tan : v2(-tan.x, -tan.z), style });
+      }
+      return { trims, approaches, ring: node.roundabout };
+    }
     if (nodeId === this.world.highway.outside) {
       // Tuck the connector under the regional highway instead of overlapping it.
       for (const sid of segs) trims.set(sid, ROAD_STYLES.highway.totalHalf);
@@ -143,13 +169,30 @@ export class RoadRenderer {
       const buf = new GeoBuffer(2048);
       const deck = this.world.deck(id);
       const deckFn = deck ? (s: number) => deckAt(deck, s) : undefined;
-      buildSegmentRibbon(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, this.h, deckFn);
+      const oneway = seg.oneway ? { dir: seg.oneway, lanes: ROAD_TYPES[seg.type].lanes } : undefined;
+      buildSegmentRibbon(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, this.h, deckFn, oneway);
       if (deck && deckFn) buildBridgeStructure(buf, curve, ROAD_STYLES[seg.type], this.h, deckFn);
       this.setElement(`s${id}`, curve.pointAt(curve.length / 2), buf);
     }
     for (const id of this.dirtyNodes) {
       const node = st.nodes.get(id);
       const layout = node ? layoutOf(id) : null;
+      if (node && layout?.ring) {
+        const buf = new GeoBuffer(4096);
+        const style =
+          ROAD_STYLES[layout.approaches.some((a) => a.style === ROAD_STYLES.avenue) ? 'avenue' : 'street'];
+        buildRoundabout(
+          buf,
+          v2(node.x, node.z),
+          layout.ring,
+          JUNCTION.ringWidth,
+          layout.approaches,
+          style,
+          this.h,
+        );
+        this.setElement(`n${id}`, v2(node.x, node.z), buf);
+        continue;
+      }
       if (!node || !layout || layout.approaches.length < 2) {
         this.setElement(`n${id}`, v2(0, 0), null);
         continue;

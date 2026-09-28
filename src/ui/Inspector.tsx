@@ -1,3 +1,6 @@
+import { ROAD_TYPES } from '../data/roads';
+import { compass } from '../tools/roadTool';
+import type { Command } from '../sim/commands';
 import { useEffect, useState } from 'preact/hooks';
 import { MODULE, modulesFor } from '../data/modules';
 import { DENSITY_NAMES, INDUSTRY_TIER_NAMES, WEALTH_NAMES, ZONED_DEFS } from '../data/buildings';
@@ -83,7 +86,169 @@ export function Inspector() {
   if (game.selected?.kind === 'civic') return <CivicInspector id={game.selected.id} />;
   if (game.selected?.kind === 'car') return <CarInspector id={game.selected.id} />;
   if (game.selected?.kind === 'walker') return <CarInspector id={game.selected.id} walker />;
+  if (game.selected?.kind === 'road') return <RoadInspector id={game.selected.id} />;
   return <BuildingInspector id={game.selected?.id ?? null} />;
+}
+
+/** How full a road or junction is at the rush hour, in words. */
+function loadText(vc: number): string {
+  const pct = `${Math.round(vc * 100)}% of capacity`;
+  if (vc < 0.6) return `Flowing freely (${pct})`;
+  if (vc < 0.9) return `Busy (${pct})`;
+  if (vc < 1.2) return `Congested (${pct})`;
+  return `Jammed (${pct})`;
+}
+
+/**
+ * A road (M19): its traffic, which way it runs (switchable), and the junctions at its ends, where a
+ * roundabout can go in or come out.
+ */
+function RoadInspector({ id }: { id: number }) {
+  const game = useGameUpdates(400);
+  const w = game.world;
+  const seg = w.netState.segments.get(id);
+  if (!seg)
+    return (
+      <aside class="inspector panel" data-testid="inspector">
+        <header>
+          <div>
+            <h2>Road removed</h2>
+          </div>
+          <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
+            ×
+          </button>
+        </header>
+      </aside>
+    );
+  const rt = ROAD_TYPES[seg.type];
+  const curve = w.net.curve(id);
+  const a = w.net.node(seg.a);
+  const b = w.net.node(seg.b);
+  const heading = (d: number) => compass((b.x - a.x) * d, (b.z - a.z) * d);
+  const act = (cmd: Command, done: string) =>
+    void game.dispatch(cmd).then((r) => {
+      if (r.ok) {
+        game.audio?.play('place');
+        game.toast(done, 'ok', 2000);
+      } else game.toast(r.reason, 'bad');
+    });
+  const ways: [0 | 1 | -1, string][] = rt.oneWay
+    ? [
+        [1, `One-way ${heading(1)}`],
+        [-1, `One-way ${heading(-1)}`],
+      ]
+    : [
+        [0, 'Two-way'],
+        [1, `One-way ${heading(1)}`],
+        [-1, `One-way ${heading(-1)}`],
+      ];
+  const ends = [seg.a, seg.b].map((n) => {
+    const node = w.netState.nodes.get(n)!;
+    const kind = w.junctionKind(n);
+    return { n, node, kind, arms: w.net.segmentsAt(n).length, vc: w.junctionVC(n, 1) };
+  });
+  return (
+    <aside class="inspector panel" data-testid="inspector">
+      <header>
+        <div>
+          <h2>{game.names.street(id)}</h2>
+          <div class="sub">
+            {rt.name}
+            {seg.oneway ? ` · one-way ${heading(seg.oneway)}` : ''}
+          </div>
+        </div>
+        <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
+          ×
+        </button>
+      </header>
+      <dl data-testid="road-traffic">
+        <dt>Traffic</dt>
+        <dd>{Math.round(w.traffic.get(id) ?? 0).toLocaleString('en-US')} cars a day</dd>
+        <dt>Rush hour</dt>
+        <dd class={w.segVC(id, 1) >= 1 ? 'neg' : ''}>{loadText(w.segVC(id, 1))}</dd>
+        <dt>Carries</dt>
+        <dd>{Math.round(w.segCapacity(id)).toLocaleString('en-US')} cars an hour</dd>
+        <dt>Length</dt>
+        <dd>
+          {Math.round(curve.length)} m · {rt.speed} km/h
+        </dd>
+      </dl>
+      {rt.buildable && (
+        <section class="road-way" data-testid="road-oneway">
+          <h3>Direction</h3>
+          <div class="seg-buttons" role="group" aria-label="Direction">
+            {ways.map(([dir, label]) => (
+              <button
+                key={dir}
+                class={`btn small ${(seg.oneway ?? 0) === dir ? 'active' : ''}`}
+                aria-pressed={(seg.oneway ?? 0) === dir}
+                data-testid={`oneway-${dir}`}
+                onClick={() =>
+                  (seg.oneway ?? 0) !== dir &&
+                  act({ type: 'setOneWay', seg: id, dir }, dir ? `Now ${label.toLowerCase()}` : 'Now two-way')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p class="muted">
+            {rt.oneWay
+              ? 'Ramps always run one way.'
+              : 'One-way roads carry a quarter more; trips that need the other way go round. Free to change.'}
+          </p>
+        </section>
+      )}
+      {rt.access && (
+        <section class="road-ends" data-testid="road-junctions">
+          <h3>Junctions</h3>
+          {ends.map((e, i) => (
+            <div key={e.n} class="module-row">
+              <div>
+                <strong>
+                  {i === 0 ? 'Start' : 'End'} (
+                  {compass(e.node.x - (a.x + b.x) / 2, e.node.z - (a.z + b.z) / 2)}):{' '}
+                  {e.kind === 'roundabout'
+                    ? 'roundabout'
+                    : e.kind === 'plain'
+                      ? `junction of ${e.arms} roads`
+                      : e.arms === 1
+                        ? 'dead end'
+                        : 'bend'}
+                </strong>
+                {e.kind !== 'none' && <div class={`muted ${e.vc >= 1 ? 'neg' : ''}`}>{loadText(e.vc)}</div>}
+              </div>
+              {e.kind === 'roundabout' ? (
+                <button
+                  class="btn small"
+                  data-testid="remove-roundabout"
+                  onClick={() => act({ type: 'removeRoundabout', node: e.n }, 'Roundabout removed')}
+                >
+                  Remove
+                </button>
+              ) : e.arms >= 2 ? (
+                <button
+                  class="btn small"
+                  data-testid="add-roundabout"
+                  title="A roundabout passes far more traffic than a plain junction"
+                  onClick={() => act({ type: 'roundabout', node: e.n }, 'Roundabout built')}
+                >
+                  Roundabout
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </section>
+      )}
+      {!rt.access && seg.type !== 'highway' && (
+        <p class="muted">
+          {seg.type === 'motorway'
+            ? 'No zoning or junctions: roads cross over or under it, and ramps join it.'
+            : 'Joins the city highway to the roads beside it.'}
+        </p>
+      )}
+    </aside>
+  );
 }
 
 function Supply({ label, v }: { label: string; v: number }) {

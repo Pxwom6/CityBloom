@@ -1,3 +1,4 @@
+import { ROAD_TYPES } from '../../data/roads';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
@@ -7,7 +8,7 @@ import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { fieldAt } from './pollution';
-import { segVC } from './traffic';
+import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
 import { campaignOpen, councilUntil, monthsToVote, projectedShare } from './elections';
 import { ELECTIONS } from '../../data/elections';
@@ -390,12 +391,38 @@ export function advise(sim: Sim): Advice[] {
   }
   if (jam) {
     const c = sim.net.curve(jam.seg);
+    const seg = s.net.segments.get(jam.seg)!;
+    // Big towns with a jammed main road: a city highway round it takes the through traffic (M19).
+    const bypass =
+      (seg.type === 'avenue' || seg.type === 'boulevard') &&
+      pop >= ROAD_TYPES.motorway.unlockPopulation &&
+      ![...s.net.segments.values()].some((x) => x.type === 'motorway');
     out.push({
       advisor: 'transport',
       severity: jam.vc > 1.6 ? 2 : 1,
       title: 'Rush-hour jam',
-      text: 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it.',
+      text: bypass
+        ? 'This road carries more than it can. A city highway round the town, joined by ramps, would take the through traffic off it; or build a parallel route, or run buses.'
+        : 'This road carries more than it can. Upgrade it, build a parallel route, or run buses past it. One-way pairs of streets carry a quarter more.',
       at: c.pointAt(c.length / 2),
+      map: 'traffic',
+    });
+  }
+  // Junctions (M19): the busiest plain junction over capacity wants a roundabout.
+  let knot: { node: number; vc: number } | null = null;
+  for (const id of [...s.net.nodes.keys()].sort((a, b) => a - b)) {
+    if (junctionKind(sim, id) !== 'plain') continue;
+    const vc = junctionVC(sim, id, 1);
+    if (vc > 1.1 && (!knot || vc > knot.vc)) knot = { node: id, vc };
+  }
+  if (knot) {
+    const n = s.net.nodes.get(knot.node)!;
+    out.push({
+      advisor: 'transport',
+      severity: knot.vc > 1.6 ? 2 : 1,
+      title: 'Jammed junction',
+      text: 'Cars queue to get through this junction at the rush hour. A roundabout passes far more: pick Roundabout in the road tool, or click one of its roads.',
+      at: { x: n.x, z: n.z },
       map: 'traffic',
     });
   }

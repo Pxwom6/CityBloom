@@ -205,6 +205,34 @@ export const SCENARIOS: ScenarioDef[] = [
     ],
   },
   {
+    id: 'crossroads',
+    name: 'Crossroads',
+    blurb: 'The whole town queues at one junction. Keep it moving.',
+    brief:
+      'Four Ways grew up around a single crossroads: homes to the north and west, every job to the ' +
+      'south and east, and the estate’s trucks heading out to the highway through the middle. Each ' +
+      'morning the queue for the crossroads backs up down all four avenues. Get the average commute ' +
+      'under 2.4 minutes for three months running, and keep 8,000 residents.',
+    save: 'crossroads.citybloom',
+    months: 12,
+    stars: [
+      { months: 5, label: 'Within 5 months' },
+      { months: 3, label: 'Within 3 months' },
+    ],
+    goals: [
+      { measure: 'traffic', max: 2.4, hold: 3, label: 'Average commute under 2.4 minutes, 3 months running' },
+      { measure: 'population', min: 8_000, label: '8,000 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    hints: [
+      'The traffic map shades junctions as discs: a red one is where cars queue to get through.',
+      'A roundabout passes far more traffic than a plain junction: pick Roundabout in the road tool and click the crossroads, or click one of its roads.',
+      'A city highway round the town, joined by ramps, takes trucks off the crossroads too.',
+    ],
+  },
+  {
     id: 'smokestack',
     name: 'Smokestack Valley',
     blurb: 'Clear the smoke from a mill town without shutting its mills.',

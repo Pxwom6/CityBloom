@@ -266,3 +266,21 @@ export const IconCity = (p: P) => (
     <path d="M3 21V10l5-3v14M8 21V4l7 3v14M15 21v-9l6 2v7M2 21h20" />
   </svg>
 );
+export const IconOneWay = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 12h14M13 7l5 5-5 5" />
+    <path d="M3 5h8M3 19h8" stroke-width="1.5" />
+  </svg>
+);
+export const IconRoundabout = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="5" />
+    <path d="M12 2v5M12 17v5M2 12h5M17 12h5" />
+  </svg>
+);
+export const IconDrawOneWay = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 19c3-7 8-11 15-13" />
+    <path d="M14 4.5l5 1.5-2 4.8" />
+  </svg>
+);

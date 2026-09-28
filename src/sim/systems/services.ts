@@ -80,7 +80,7 @@ export function stationCoverage(
   for (const node of times.keys()) for (const id of sim.net.segmentsAt(g.ids[node]!)) segs.add(id);
   for (const id of [...segs].sort((a, b) => a - b)) {
     const seg = sim.state.net.segments.get(id);
-    if (!seg || seg.type === 'highway') continue;
+    if (!seg || !ROAD_TYPES[seg.type].access) continue;
     const len = sim.net.curve(id).length;
     const v = ROAD_TYPES[seg.type].speed / 3.6;
     const ta = times.get(g.index.get(seg.a) ?? -1) ?? Infinity;

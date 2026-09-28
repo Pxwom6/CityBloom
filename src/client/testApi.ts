@@ -2,6 +2,7 @@ import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
+import { ROAD_TYPES } from '../data/roads';
 import type { Game } from '../game';
 import type { ClientWorld } from './world';
 import type { Command, CommandResult } from '../sim/commands';
@@ -45,11 +46,16 @@ export interface TestApi {
   /** Vehicles as last drawn. */
   getVehicles(): { id: number; kind: string; phase: string; x: number; z: number }[];
   /** Road segment nearest (x, z) within 20 m. */
-  segmentAt(x: number, z: number): { id: number; type: string } | null;
+  segmentAt(
+    x: number,
+    z: number,
+  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number } | null;
+  /** The junction nearest a point within 20 m (M19): its roads, and its roundabout's radius. */
+  junctionAt(x: number, z: number): { id: number; arms: number; roundabout: number; kind: string } | null;
   /** Volume/capacity on a segment at the rush-hour peak. */
   segVC(id: number): number;
-  /** Visible cars (id and position). */
-  getCars(): { id: number; x: number; z: number }[];
+  /** Visible cars: where they are, which way they face, ticks spent held up, and the ring they're on. */
+  getCars(): { id: number; x: number; z: number; heading: number; waited: number; ring: number | null }[];
   /** Pedestrians on screen (close zoom only), with their trip purpose and route length. */
   getWalkers(): { id: number; x: number; z: number; purpose: string; route: number }[];
   /** Bus stops and lines on the client mirror. */
@@ -213,7 +219,7 @@ export function installTestApi(game: Game): TestApi {
       if (!d) return null;
       const net = game.world.net;
       const segs = [...game.world.netState.segments.values()]
-        .filter((s) => s.type !== 'highway')
+        .filter((s) => ROAD_TYPES[s.type].access)
         .map((s) => ({ s, mid: net.curve(s.id).pointAt(net.curve(s.id).length / 2) }))
         .sort((a, b) =>
           near
@@ -260,10 +266,30 @@ export function installTestApi(game: Game): TestApi {
     },
     segmentAt: (x, z) => {
       const hit = game.world.net.nearestSegment({ x, z }, 20);
-      return hit ? { id: hit.seg, type: game.world.net.segment(hit.seg).type } : null;
+      if (!hit) return null;
+      const s = game.world.net.segment(hit.seg);
+      return { id: hit.seg, type: s.type, oneway: s.oneway ?? 0, deck: !!s.deck, a: s.a, b: s.b };
+    },
+    junctionAt: (x, z) => {
+      const n = game.world.net.nearestNode({ x, z }, 20);
+      if (!n) return null;
+      return {
+        id: n.id,
+        arms: game.world.net.segmentsAt(n.id).length,
+        roundabout: n.roundabout ?? 0,
+        kind: game.world.junctionKind(n.id),
+      };
     },
     segVC: (id) => game.world.segVC(id, 1),
-    getCars: () => game.renderer.traffic.cars.map((c) => ({ id: c.id, x: c.x, z: c.z })),
+    getCars: () =>
+      game.renderer.traffic.cars.map((c) => ({
+        id: c.id,
+        x: c.x,
+        z: c.z,
+        heading: c.heading,
+        waited: c.waited,
+        ring: c.ring ? c.ring.node : null,
+      })),
     getWalkers: () =>
       game.renderer.pedestrians.walkers.map((w) => ({
         id: w.id,

@@ -5,6 +5,7 @@ import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DW, Player, type Vec2 } from './mayor';
 import { twoDistricts } from '../../tests/trafficTown';
+import { crossroadsTown } from '../../tests/junctionTown';
 
 /** Let a mayor run the city for some months (four decisions a month, as the balance tool). */
 export function govern(p: Player, months: number): void {
@@ -69,6 +70,20 @@ export const RECIPES: Record<string, () => Sim> = {
     twoDistricts(sim, 'dirt');
     sim.advance(TICKS_PER_MONTH * 5);
     // The test town unlocks everything and starts with a grant; a scenario city does neither.
+    sim.state.unlockAll = false;
+    for (const m of [...sim.state.economy.history, { lines: sim.state.economy.month }])
+      if (m.lines.cheats) {
+        m.lines.grants = (m.lines.grants ?? 0) + m.lines.cheats;
+        delete m.lines.cheats;
+      }
+    return sim;
+  },
+  // Four Ways (M19): homes north and west of one crossroads, jobs south and east, and no other way
+  // across, so the whole town queues at it (the crossroads test town).
+  crossroads: () => {
+    const sim = Sim.create({ seed: 'cross', preset: 'river', cityName: 'Four Ways' });
+    crossroadsTown(sim);
+    sim.advance(TICKS_PER_MONTH * 5);
     sim.state.unlockAll = false;
     for (const m of [...sim.state.economy.history, { lines: sim.state.economy.month }])
       if (m.lines.cheats) {

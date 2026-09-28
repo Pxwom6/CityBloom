@@ -1,3 +1,4 @@
+import { ROAD_TYPES } from '../data/roads';
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
@@ -141,6 +142,24 @@ export const TIPS: Tip[] = [
       'Commutes are getting long. The traffic map (layers button) shows the busiest roads: add a parallel ' +
       'street, upgrade to an avenue, or start a bus line.',
     when: (g) => g.world.stats.avgCommute > 28 && g.world.stats.population > 500,
+  },
+  {
+    id: 'junctions',
+    text:
+      'A junction is jammed at the rush hour (the traffic map shows junctions as discs). A roundabout ' +
+      'passes far more traffic: pick Roundabout in the road tool, or click one of its roads. One-way ' +
+      'streets (O while drawing) carry a quarter more.',
+    when: (g) => g.world.stats.population > 1_000 && g.world.worstJunctionVC() > 1.1,
+  },
+  {
+    id: 'cityHighway',
+    text:
+      'City highways unlocked: four fast lanes with no junctions or zoning. They pass over the roads they ' +
+      'cross and join them by one-way ramps; start one from the regional highway to take through traffic ' +
+      'round the town.',
+    when: (g) =>
+      (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= ROAD_TYPES.motorway.unlockPopulation &&
+      g.world.stats.population > 0,
   },
   {
     id: 'earthworks',

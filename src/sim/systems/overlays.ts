@@ -1,3 +1,4 @@
+import { ROAD_TYPES } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import type { Sim } from '../sim';
 import { BState, footprint } from '../world/buildings';
@@ -94,7 +95,7 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
       }
       stampRoads(sim, values, (id) => {
         const seg = s.net.segments.get(id)!;
-        if (seg.type === 'highway') return null;
+        if (!ROAD_TYPES[seg.type].access) return null;
         return supplied.has(g.componentOfNode(seg.a)) ? 1 : 0;
       });
       return {
@@ -146,7 +147,7 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
       const cov = sim.coverage;
       // Coverage follows the roads: stamp each road cell with its interpolated coverage.
       for (const seg of s.net.segments.values()) {
-        if (seg.type === 'highway') continue;
+        if (!ROAD_TYPES[seg.type].access) continue;
         const c = sim.net.curve(seg.id);
         for (let d = 0; d <= c.length; d += 6) {
           const p = c.pointAt(d);

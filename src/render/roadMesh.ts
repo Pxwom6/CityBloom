@@ -18,6 +18,8 @@ export function buildSegmentRibbon(
   h: HeightFn,
   /** Bridge deck height at arc length s (roads on the ground omit it). */
   deck?: (s: number) => number,
+  /** One-way roads (M19): arrows in every lane pointing the way traffic runs (1 is a → b). */
+  oneway?: { dir: 1 | -1; lanes: number },
 ): void {
   if (s1 - s0 < 0.2) return;
   const step = 2.5;
@@ -103,6 +105,175 @@ export function buildSegmentRibbon(
       }
       s += period;
     }
+  }
+  if (oneway) buildArrows(out, curve, style, s0, s1, hs, oneway.dir, oneway.lanes);
+}
+
+const ARROW = new Color('#f4f2ea');
+
+/** Painted arrows along a one-way road, one per lane every 36 m (M19). */
+function buildArrows(
+  out: GeoBuffer,
+  curve: Curve,
+  style: RoadStyle,
+  s0: number,
+  s1: number,
+  hs: HeightFn,
+  dir: 1 | -1,
+  lanes: number,
+): void {
+  const hw = style.asphaltHalf;
+  const laneW = (2 * hw) / lanes;
+  const y = style.lift + 0.04;
+  for (let s = s0 + 14; s < s1 - 10; s += 36) {
+    const p = curve.pointAt(s);
+    const t0 = curve.tangentAt(s);
+    const t = { x: t0.x * dir, z: t0.z * dir };
+    const n = { x: -t.z, z: t.x };
+    for (let k = 0; k < lanes; k++) {
+      const off = -hw + laneW * (k + 0.5);
+      const cx = p.x + t0.z * off;
+      const cz = p.z - t0.x * off;
+      const pt = (u: number, v: number) => {
+        const x = cx + t.x * u + n.x * v;
+        const z = cz + t.z * u + n.z * v;
+        return [x, hs(x, z) + y, z];
+      };
+      out.quad(pt(-2.2, -0.18), pt(-2.2, 0.18), pt(0.6, 0.18), pt(0.6, -0.18), ARROW);
+      const a = pt(0.6, -0.7);
+      const b = pt(0.6, 0.7);
+      const c = pt(2.2, 0);
+      const start = out.n;
+      out.tri(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!, ARROW);
+      out.faceUp(start);
+    }
+  }
+}
+
+const ISLAND = new Color('#7da65c');
+const RING_EDGE = new Color('#f4f2ea');
+
+/**
+ * A roundabout (M19): the ring's carriageway round a planted island, a kerb and footway outside it
+ * with gaps where the roads come in, and the lens between each road's square end and the ring.
+ */
+export function buildRoundabout(
+  out: GeoBuffer,
+  centre: Vec2,
+  radius: number,
+  width: number,
+  approaches: Approach[],
+  style: RoadStyle,
+  h: HeightFn,
+): void {
+  const inner = radius - width / 2;
+  const outer = radius + width / 2;
+  const walk = outer + style.totalHalf - style.asphaltHalf;
+  const lift = style.lift + 0.01;
+  const walkLift = style.sidewalkLift + 0.01;
+  const n = Math.max(24, Math.ceil((Math.PI * 2 * outer) / 3));
+  const at = (ang: number, r: number, l: number) => {
+    const x = centre.x + Math.cos(ang) * r;
+    const z = centre.z + Math.sin(ang) * r;
+    return [x, h(x, z) + l, z];
+  };
+  // Where each road meets the ring (no footway across it).
+  const gaps = approaches.map((a) => ({
+    ang: Math.atan2(a.dir.z, a.dir.x),
+    half: Math.asin(Math.min(0.99, a.style.asphaltHalf / outer)),
+  }));
+  const inGap = (ang: number) =>
+    gaps.some((g) => Math.abs(Math.atan2(Math.sin(ang - g.ang), Math.cos(ang - g.ang))) < g.half);
+  const cy = h(centre.x, centre.z) + walkLift + 0.1;
+  for (let i = 0; i < n; i++) {
+    const a0 = (Math.PI * 2 * i) / n;
+    const a1 = (Math.PI * 2 * (i + 1)) / n;
+    // Island, raised a little, with its kerb.
+    const i0 = at(a0, inner, walkLift + 0.1);
+    const i1 = at(a1, inner, walkLift + 0.1);
+    const start = out.n;
+    out.tri(centre.x, cy, centre.z, i0[0]!, i0[1]!, i0[2]!, i1[0]!, i1[1]!, i1[2]!, ISLAND);
+    out.faceUp(start);
+    out.quad(at(a0, inner, lift), at(a1, inner, lift), i1, i0, style.sidewalk, false);
+    // Carriageway, with a white line along the island.
+    out.quad(
+      at(a0, inner, lift),
+      at(a0, outer, lift),
+      at(a1, outer, lift),
+      at(a1, inner, lift),
+      style.asphalt,
+    );
+    if (i % 2 === 0)
+      out.quad(
+        at(a0, inner + 0.4, lift + 0.03),
+        at(a0, inner + 0.6, lift + 0.03),
+        at(a1, inner + 0.6, lift + 0.03),
+        at(a1, inner + 0.4, lift + 0.03),
+        RING_EDGE,
+      );
+    // Footway and kerb outside, except across the roads coming in.
+    const mid = (a0 + a1) / 2;
+    if (inGap(mid)) continue;
+    out.quad(
+      at(a0, outer, walkLift),
+      at(a0, walk, walkLift),
+      at(a1, walk, walkLift),
+      at(a1, outer, walkLift),
+      style.sidewalk,
+    );
+    out.quad(
+      at(a1, outer, lift),
+      at(a0, outer, lift),
+      at(a0, outer, walkLift),
+      at(a1, outer, walkLift),
+      style.sidewalk,
+      false,
+    );
+  }
+  // The lens between each road's square end and the curve of the ring.
+  for (const a of approaches) {
+    const hw = a.style.asphaltHalf;
+    const g = Math.atan2(a.dir.z, a.dir.x);
+    const half = Math.asin(Math.min(0.99, hw / outer));
+    const left = [a.p.x - a.dir.z * hw, a.p.z + a.dir.x * hw];
+    const right = [a.p.x + a.dir.z * hw, a.p.z - a.dir.x * hw];
+    const m = 6;
+    for (let k = 0; k < m; k++) {
+      const u0 = g - half + (2 * half * k) / m;
+      const u1 = g - half + (2 * half * (k + 1)) / m;
+      const e = k < m / 2 ? right : left;
+      const p0 = at(u0, outer - 0.2, lift);
+      const p1 = at(u1, outer - 0.2, lift);
+      const start = out.n;
+      out.tri(
+        e[0]!,
+        h(e[0]!, e[1]!) + lift,
+        e[1]!,
+        p0[0]!,
+        p0[1]!,
+        p0[2]!,
+        p1[0]!,
+        p1[1]!,
+        p1[2]!,
+        a.style.asphalt,
+      );
+      out.faceUp(start);
+    }
+    const start = out.n;
+    const pm = at(g, outer - 0.2, lift);
+    out.tri(
+      right[0]!,
+      h(right[0]!, right[1]!) + lift,
+      right[1]!,
+      pm[0]!,
+      pm[1]!,
+      pm[2]!,
+      left[0]!,
+      h(left[0]!, left[1]!) + lift,
+      left[1]!,
+      a.style.asphalt,
+    );
+    out.faceUp(start);
   }
 }
 

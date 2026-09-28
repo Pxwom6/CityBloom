@@ -1,4 +1,4 @@
-import { ROAD_RULES, ROAD_TYPES, roadHalfWidth, type RoadTypeId } from '../../data/roads';
+import { ROAD_RULES, ROAD_TYPES, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type BulldozeTarget, type CommandResult } from '../commands';
 import { Curve, pointRectDistance, type Vec2 } from '../geom';
@@ -9,6 +9,7 @@ import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
 import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
+import { JUNCTION } from '../../data/balance';
 
 /** Refusal reason if a road type isn't available yet, else null. */
 function roadLocked(sim: Sim, road: RoadTypeId): string | null {
@@ -19,7 +20,13 @@ function roadLocked(sim: Sim, road: RoadTypeId): string | null {
   return null;
 }
 
-export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: boolean): CommandResult {
+export function buildRoad(
+  sim: Sim,
+  road: RoadTypeId,
+  points: Vec2[],
+  dryRun: boolean,
+  oneway = false,
+): CommandResult {
   const s = sim.state;
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
@@ -38,6 +45,7 @@ export function buildRoad(sim: Sim, road: RoadTypeId, points: Vec2[], dryRun: bo
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
   if (dryRun) return ok(plan.cost, { info: preview });
+  plan.oneway = oneway;
   const res = applyRoadPlan(sim.net, plan, () => {
     if (!plan.earth?.idx.length) return null;
     reshapeGround(sim, plan.earth.idx, plan.earth.to);
@@ -104,6 +112,13 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
   if (!seg) return fail('No road here');
   if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
   if (seg.type === road) return fail(`This is already ${articled(ROAD_TYPES[road].name)}`);
+  // The city highway and its ramps are their own roads (M19): no zoning, no junctions.
+  if (roadClass(seg.type) !== roadClass(road))
+    return fail(
+      roadClass(road) === 'local'
+        ? `${ROAD_TYPES[seg.type].name}s can't become local roads: bulldoze and rebuild`
+        : `Local roads can't become ${articled(ROAD_TYPES[road].name)}: build it as a new road`,
+    );
   const locked = roadLocked(sim, road);
   if (locked) return fail(locked);
   const curve = sim.net.curve(segId);
@@ -281,6 +296,32 @@ export function buildingsInTheWay(
 }
 
 /** Thin the tree-density grid under new roads (the renderer also hides individual trees). */
+/** Thin out trees within `r` metres of `c` (a roundabout's ring and island, M19). */
+function clearTreesIn(sim: Sim, c: Vec2, r: number): void {
+  const trees = sim.state.trees;
+  const i0 = Math.max(0, Math.floor((c.x - r) / GRID_CELL));
+  const i1 = Math.min(GRID_RES - 1, Math.floor((c.x + r) / GRID_CELL));
+  const j0 = Math.max(0, Math.floor((c.z - r) / GRID_CELL));
+  const j1 = Math.min(GRID_RES - 1, Math.floor((c.z + r) / GRID_CELL));
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const k = j * GRID_RES + i;
+      if (!trees[k]) continue;
+      let hit = 0;
+      for (let u = 0; u < 4; u++)
+        for (let v = 0; v < 4; v++) {
+          const x = (i + (u + 0.5) / 4) * GRID_CELL;
+          const z = (j + (v + 0.5) / 4) * GRID_CELL;
+          if (Math.hypot(x - c.x, z - c.z) <= r) hit++;
+        }
+      const next = Math.round(trees[k]! * (1 - hit / 16));
+      if (next !== trees[k]) {
+        trees[k] = next;
+        sim.markTreesDirty(k);
+      }
+    }
+}
+
 export function clearTreesAlong(sim: Sim, segments: number[]): void {
   const trees = sim.state.trees;
   for (const id of segments) {
@@ -311,4 +352,148 @@ export function clearTreesAlong(sim: Sim, segments: number[]): void {
       }
     }
   }
+}
+
+/**
+ * Make a road one-way or two-way again (M19): 1 runs from its start node to its end node, -1 the
+ * other way. Signs and paint only, so it's free; the regional highway can't be changed.
+ */
+export function setOneWay(sim: Sim, segId: number, dir: 0 | 1 | -1, dryRun: boolean): CommandResult {
+  const seg = sim.state.net.segments.get(segId);
+  if (!seg) return fail('No road here');
+  if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be changed");
+  if (dir !== 0 && dir !== 1 && dir !== -1) return fail('Invalid direction');
+  if (dir === 0 && ROAD_TYPES[seg.type].oneWay) return fail('A ramp is always one-way');
+  if ((seg.oneway ?? 0) === dir)
+    return fail(dir ? 'This road already runs that way' : 'This road is already two-way');
+  if (dryRun) return ok(0);
+  if (dir) seg.oneway = dir;
+  else delete seg.oneway;
+  sim.net.dirty.segments.add(segId);
+  sim.markNetworkChanged();
+  return ok(0);
+}
+
+/** Where a roundabout goes: a junction, or a point along a road that will be split there. */
+type RoundaboutSite = { node: number } | { seg: number; s: number; x: number; z: number };
+
+/**
+ * Put a roundabout on a junction, or on a road at `at` (M19). `radius` is the ring's centre line,
+ * clamped to what the widest road meeting it needs and JUNCTION.maxRadius. The ring needs room:
+ * every road meeting it long enough to approach, no other road through it and no civic building on
+ * it; zoned buildings in its way are demolished. Returns the node in `created`.
+ */
+export function placeRoundabout(
+  sim: Sim,
+  at: { node?: number; x?: number; z?: number },
+  radius: number | undefined,
+  dryRun: boolean,
+): CommandResult {
+  const net = sim.net;
+  const st = sim.state.net;
+  let site: RoundaboutSite | null = null;
+  if (at.node !== undefined) {
+    if (!st.nodes.has(at.node)) return fail('No junction here');
+    site = { node: at.node };
+  } else if (at.x !== undefined && at.z !== undefined && Number.isFinite(at.x) && Number.isFinite(at.z)) {
+    const p = { x: at.x, z: at.z };
+    const n = net.nearestNode(p, 10);
+    if (n) site = { node: n.id };
+    else {
+      const hit = net.nearestSegment(p, 8);
+      if (hit) site = { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
+    }
+  }
+  if (!site) return fail('Put a roundabout on a junction or a road');
+  const centre = 'node' in site ? net.node(site.node) : { x: site.x, z: site.z };
+  // The roads that will meet the ring, with how far each runs to its next junction.
+  const arms: { seg: number; len: number }[] = [];
+  if ('node' in site) {
+    if (net.node(site.node).roundabout) return fail('There is already a roundabout here');
+    for (const sid of net.segmentsAt(site.node)) arms.push({ seg: sid, len: net.curve(sid).length });
+  } else {
+    const len = net.curve(site.seg).length;
+    arms.push({ seg: site.seg, len: site.s }, { seg: site.seg, len: len - site.s });
+  }
+  if (arms.length < 2) return fail('A roundabout needs at least two roads meeting it');
+  let widest = 0;
+  for (const a of arms) {
+    const t = net.segment(a.seg).type;
+    if (!ROAD_TYPES[t].buildable) return fail("The regional highway can't have a roundabout");
+    if (!ROAD_TYPES[t].access) return fail('Roundabouts are for local roads: the city highway uses ramps');
+    widest = Math.max(widest, roadHalfWidth(t));
+  }
+  const minR = Math.max(JUNCTION.minRadius, Math.ceil(widest + 6));
+  const r = Math.min(JUNCTION.maxRadius, Math.max(minR, radius ?? minR + 2));
+  const outer = r + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
+  for (const a of arms)
+    if (a.len < outer + 14)
+      return fail('Too close to the next junction for a roundabout this size', {
+        at: { x: centre.x, z: centre.z },
+      });
+  // Other roads through the ring.
+  const armSegs = new Set(arms.map((a) => a.seg));
+  for (const sid of net.segHash.queryPoint(centre.x, centre.z, outer + 30)) {
+    if (armSegs.has(sid)) continue;
+    const seg = net.segment(sid);
+    if ('node' in site && (seg.a === site.node || seg.b === site.node)) continue;
+    if (net.curve(sid).project(centre).d < outer + net.halfWidth(sid))
+      return fail('Another road is in the way of the ring', { at: { x: centre.x, z: centre.z } });
+  }
+  for (const n of net.nodesIn({
+    minX: centre.x - outer - JUNCTION.maxRadius,
+    minZ: centre.z - outer - JUNCTION.maxRadius,
+    maxX: centre.x + outer + JUNCTION.maxRadius,
+    maxZ: centre.z + outer + JUNCTION.maxRadius,
+  }))
+    if (n.roundabout && ('node' in site ? n.id !== site.node : true))
+      if (Math.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout + JUNCTION.ringWidth + 8)
+        return fail('Too close to another roundabout', { at: { x: centre.x, z: centre.z } });
+  // Civic buildings on the ring stop it; zoned buildings are demolished.
+  const box: Box = {
+    minX: centre.x - outer,
+    minZ: centre.z - outer,
+    maxX: centre.x + outer,
+    maxZ: centre.z + outer,
+  };
+  for (const c of sim.state.civics.values())
+    if (pointRectDistance(centre, civicRect(c)) < outer)
+      return fail('A building is in the way of the ring', { at: { x: centre.x, z: centre.z } });
+  const doomed: number[] = [];
+  for (const id of sim.bldHash.query(box)) {
+    const b = sim.state.buildings.get(id)!;
+    if (pointRectDistance(centre, footprint(b)) < outer) doomed.push(id);
+  }
+  doomed.sort((a, b) => a - b);
+  const cost = Math.round(2 * Math.PI * r * JUNCTION.costPerMetre);
+  const info = { radius: r, demolish: doomed.length, arms: arms.length };
+  if (cost > sim.state.treasury && !sim.state.options.sandbox)
+    return fail('Not enough money', { at: centre, info });
+  if (dryRun) return ok(cost, { info });
+  let nodeId: number;
+  if ('node' in site) nodeId = site.node;
+  else nodeId = net.splitSegment(site.seg, site.s).node.id;
+  for (const id of doomed) sim.removeBuilding(id);
+  clearTreesIn(sim, centre, outer + 1);
+  net.node(nodeId).roundabout = r;
+  net.dirty.nodes.add(nodeId);
+  net.revalidate({ minX: box.minX - 20, minZ: box.minZ - 20, maxX: box.maxX + 20, maxZ: box.maxZ + 20 });
+  sim.spend(cost, 'roads');
+  sim.markNetworkChanged();
+  return ok(cost, { created: [nodeId], info });
+}
+
+/** Take a roundabout out, leaving an ordinary junction (a share of its price back). */
+export function removeRoundabout(sim: Sim, nodeId: number, dryRun: boolean): CommandResult {
+  const n = sim.state.net.nodes.get(nodeId);
+  if (!n?.roundabout) return fail('No roundabout here');
+  const refund = Math.round(2 * Math.PI * n.roundabout * JUNCTION.costPerMetre * ROAD_RULES.bulldozeRefund);
+  if (dryRun) return ok(-refund);
+  const r = n.roundabout + JUNCTION.ringWidth + 20;
+  delete n.roundabout;
+  sim.net.dirty.nodes.add(nodeId);
+  sim.net.revalidate({ minX: n.x - r, minZ: n.z - r, maxX: n.x + r, maxZ: n.z + r });
+  sim.earn(refund, 'refunds');
+  sim.markNetworkChanged();
+  return ok(-refund);
 }

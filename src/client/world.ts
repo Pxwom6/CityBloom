@@ -16,7 +16,7 @@ import { SpatialHash, type Box } from '../sim/world/spatial';
 import { CIVIC } from '../data/civic';
 import { deckAt, deckProfile, viaductDeck, type DeckProfile } from '../sim/world/bridge';
 import { ROAD_TYPES } from '../data/roads';
-import { TRAFFIC } from '../data/balance';
+import { TRAFFIC, JUNCTION } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
 import { HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
@@ -167,8 +167,52 @@ export class ClientWorld {
   segVC(segId: number, share: number): number {
     const seg = this.netState.segments.get(segId);
     if (!seg) return 0;
-    const cap = ROAD_TYPES[seg.type].capacity * this.capScale;
-    return ((this.traffic.get(segId) ?? 0) * TRAFFIC.peakShare * share) / cap;
+    return ((this.traffic.get(segId) ?? 0) * TRAFFIC.peakShare * share) / this.segCapacity(segId);
+  }
+
+  /** Cars per hour a road passes (mirrors the sim, one-way roads included). */
+  segCapacity(segId: number): number {
+    const seg = this.netState.segments.get(segId);
+    if (!seg) return 1;
+    return ROAD_TYPES[seg.type].capacity * this.capScale * (seg.oneway ? TRAFFIC.oneWayCapacity : 1);
+  }
+
+  /** What kind of junction a node is (mirrors junctionKind in the sim, M19). */
+  junctionKind(nodeId: number): 'none' | 'plain' | 'roundabout' {
+    const node = this.netState.nodes.get(nodeId);
+    if (!node) return 'none';
+    if (node.roundabout) return 'roundabout';
+    const segs = this.net.segmentsAt(nodeId);
+    if (segs.length < 3) return 'none';
+    if (segs.some((id) => this.netState.segments.get(id)?.type === 'motorway')) return 'none';
+    return 'plain';
+  }
+
+  private worstJunction = { version: -1, vc: 0 };
+
+  /** The busiest plain junction's load at the rush hour (for the roundabout tip), cached. */
+  worstJunctionVC(): number {
+    if (this.worstJunction.version !== this.trafficVersion) {
+      let worst = 0;
+      for (const id of this.netState.nodes.keys())
+        if (this.junctionKind(id) === 'plain') worst = Math.max(worst, this.junctionVC(id, 1));
+      this.worstJunction = { version: this.trafficVersion, vc: worst };
+    }
+    return this.worstJunction.vc;
+  }
+
+  /** A junction's volume over capacity at `share` of the rush hour (mirrors the sim, M19). */
+  junctionVC(nodeId: number, share: number): number {
+    const kind = this.junctionKind(nodeId);
+    if (kind === 'none') return 0;
+    let cap = 0;
+    let vol = 0;
+    for (const id of this.net.segmentsAt(nodeId)) {
+      cap += this.segCapacity(id);
+      vol += this.traffic.get(id) ?? 0;
+    }
+    const share2 = kind === 'roundabout' ? JUNCTION.roundaboutShare : JUNCTION.plainShare;
+    return ((vol / 2) * TRAFFIC.peakShare * share) / ((cap / 2) * share2);
   }
 
   /** Capacity factor from road maintenance funding (sent with the traffic). */

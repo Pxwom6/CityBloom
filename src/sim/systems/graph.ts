@@ -19,6 +19,11 @@ export class RoadGraph {
   component = new Int32Array(0);
   /** Per-segment free-flow seconds and length, keyed by segment id. */
   readonly segSeconds = new Map<number, number>();
+  /** Any one-way roads (M19)? Then the way back can differ from the way there. */
+  hasOneWay = false;
+  /** Edges by the node they arrive at (CSR, built only when there are one-way roads). */
+  rstart = new Int32Array(1);
+  redge = new Int32Array(0);
 
   /** `blocked` segments (damaged or flooded roads) are left out: nothing can drive along them. */
   constructor(net: Network, blocked?: ReadonlySet<number>) {
@@ -57,8 +62,23 @@ export class RoadGraph {
         this.to[k] = v;
         this.from[k] = u;
         this.seg[k] = s.id;
-        this.cost[k] = sec;
+        // The wrong way along a one-way road (M19) can't be driven; pipes and cables (which use
+        // `length`) still run both ways, and so does connectivity.
+        const wrongWay = (s.oneway === 1 && u === b) || (s.oneway === -1 && u === a);
+        this.cost[k] = wrongWay ? Infinity : sec;
         this.length[k] = len;
+      }
+      if (s.oneway) this.hasOneWay = true;
+    }
+    if (this.hasOneWay) {
+      this.rstart = new Int32Array(n + 1);
+      for (let k = 0; k < m; k++) this.rstart[this.to[k]! + 1]!++;
+      for (let i = 0; i < n; i++) this.rstart[i + 1] = this.rstart[i + 1]! + this.rstart[i]!;
+      this.redge = new Int32Array(m);
+      const rfill = new Int32Array(n);
+      for (let k = 0; k < m; k++) {
+        const v = this.to[k]!;
+        this.redge[this.rstart[v]! + rfill[v]!++] = k;
       }
     }
     this.component = new Int32Array(n).fill(-1);
@@ -222,6 +242,65 @@ export class Dijkstra {
       for (let k = g.start[u]!; k < g.start[u + 1]!; k++) {
         const v = g.to[k]!;
         const nd = du + (costArr ? costArr[k]! : costFn ? costFn(k) : g.cost[k]!);
+        if (nd === Infinity) continue;
+        if (this.stamp[v] !== ep || nd < this.dist[v]!) {
+          this.stamp[v] = ep;
+          this.dist[v] = nd;
+          if (track) this.pred[v] = k;
+          heap.push(nd, v);
+        }
+      }
+    }
+  }
+  /**
+   * Like `run`, but along the edges into each node (needs `g.hasOneWay`): costs from every node *to*
+   * the sources, for the way home on a network with one-way roads (M19). With `track`, `pred[v]` is
+   * the edge leaving v on its way to a source.
+   */
+  runReverse(
+    g: RoadGraph,
+    sources: { node: number; cost: number }[],
+    maxCost: number,
+    visit: (node: number, cost: number) => boolean,
+    edgeCost: Float64Array,
+    track = false,
+  ): void {
+    const n = g.size;
+    if (this.dist.length < n) {
+      this.dist = new Float64Array(n);
+      this.stamp = new Int32Array(n);
+      this.done = new Int32Array(n);
+      this.pred = new Int32Array(n);
+      this.settled = new Int32Array(n);
+      this.epoch = 0;
+    }
+    this.settledCount = 0;
+    this.epoch++;
+    const ep = this.epoch;
+    const heap = this.heap;
+    heap.clear();
+    for (const s of sources) {
+      if (this.stamp[s.node] !== ep || s.cost < this.dist[s.node]!) {
+        this.stamp[s.node] = ep;
+        this.dist[s.node] = s.cost;
+        if (track) this.pred[s.node] = -1;
+        heap.push(s.cost, s.node);
+      }
+    }
+    while (heap.size) {
+      const u = heap.pop(this.out);
+      const du = this.out[0]!;
+      if (this.done[u] === ep) continue;
+      if (du > this.dist[u]!) continue;
+      this.done[u] = ep;
+      if (du > maxCost) break;
+      if (track) this.settled[this.settledCount++] = u;
+      if (!visit(u, du)) break;
+      for (let r = g.rstart[u]!; r < g.rstart[u + 1]!; r++) {
+        const k = g.redge[r]!;
+        const v = g.from[k]!;
+        const nd = du + edgeCost[k]!;
+        if (nd === Infinity) continue;
         if (this.stamp[v] !== ep || nd < this.dist[v]!) {
           this.stamp[v] = ep;
           this.dist[v] = nd;
@@ -246,7 +325,10 @@ export interface Leg {
  */
 export function routeBetween(
   g: RoadGraph,
-  net: { segment(id: number): { a: number; b: number }; curve(id: number): { length: number } },
+  net: {
+    segment(id: number): { a: number; b: number; oneway?: 1 | -1 };
+    curve(id: number): { length: number };
+  },
   from: { seg: number; s: number },
   to: { seg: number; s: number },
   segSpeed: (seg: number) => number,
@@ -267,13 +349,19 @@ export function routeBetween(
   const heap = new MinHeap();
   const ia = g.index.get(sa.a)!;
   const ib = g.index.get(sa.b)!;
-  dist[ia] = from.s / va;
-  dist[ib] = Math.min(dist[ib]!, (lenA - from.s) / va);
-  heap.push(dist[ia]!, ia);
-  heap.push(dist[ib]!, ib);
+  // Along a one-way road (M19) a vehicle leaves, and arrives, only the way it runs.
+  dist[ia] = sa.oneway === 1 ? Infinity : from.s / va;
+  dist[ib] = Math.min(dist[ib]!, sa.oneway === -1 ? Infinity : (lenA - from.s) / va);
+  if (dist[ia]! < Infinity) heap.push(dist[ia]!, ia);
+  if (dist[ib]! < Infinity) heap.push(dist[ib]!, ib);
   const tA = g.index.get(ta.a)!;
   const tB = g.index.get(ta.b)!;
-  const endCost = (node: number) => (node === tA ? to.s / vb : node === tB ? (lenB - to.s) / vb : Infinity);
+  const endCost = (node: number) =>
+    node === tA && ta.oneway !== -1
+      ? to.s / vb
+      : node === tB && ta.oneway !== 1
+        ? (lenB - to.s) / vb
+        : Infinity;
   let best = Infinity;
   let bestNode = -1;
   const out = [0];
@@ -292,6 +380,7 @@ export function routeBetween(
       if (g.seg[k] === from.seg || g.seg[k] === to.seg) continue;
       const v = g.to[k]!;
       const nd = du + (edgeCost ? edgeCost(k) : g.cost[k]!);
+      if (nd === Infinity) continue;
       if (nd < dist[v]!) {
         dist[v] = nd;
         pred[v] = k;

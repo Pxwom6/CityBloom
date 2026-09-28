@@ -149,7 +149,7 @@ export function findAccess(
   c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
 ): { seg: number; s: number } | null {
   const f = frontPoint(c);
-  const hit = sim.net.nearestSegment(f, 24, (id) => ROAD_TYPES[sim.net.segment(id).type].buildable);
+  const hit = sim.net.nearestSegment(f, 24, (id) => ROAD_TYPES[sim.net.segment(id).type].access);
   if (!hit) return null;
   if (hit.d > sim.net.halfWidth(hit.seg) + 4) return null;
   return { seg: hit.seg, s: hit.s };

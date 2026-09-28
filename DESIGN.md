@@ -700,6 +700,69 @@ with `adopt()`), two with purpose-built layouts (Gridlock, Smokestack Valley). T
 stars and months per scenario) is in localStorage (`src/client/scenarioProgress.ts`); the screens are
 in `src/ui/Scenario.tsx`.
 
+### 3.20 Traffic tools (M19)
+
+**One-way roads.** `RoadSegment.oneway` (1: a → b, −1: b → a; save v17, absent means two-way) is set
+when a road is drawn one-way (`buildRoad.oneway`) or later by `setOneWay` (free; ramps can't be made
+two-way), and kept when a crossing road splits it. The road graph gives the wrong-way edge an
+infinite cost, so Dijkstra, `routeBetween` and every system that routes skip it. A one-way road's
+capacity is `TRAFFIC.oneWayCapacity` (1.25) × its type's. Where one-ways exist the graph also keeps a
+reverse adjacency: commute matching sends half of each trip's load out along the forward tree and
+half back along a reverse search (`Dijkstra.runReverse`), so the way home may differ from the way
+there, and trip samples carry `back` legs for the visible cars; freight exports route the same way.
+Without one-ways nothing changes.
+
+**Junctions.** A node where three or more roads meet is a junction with its own capacity:
+`JUNCTION.plainShare` (0.5) × half the capacity of its approaches (every car uses two of them), or
+`roundaboutShare` (0.85) on a roundabout. Its volume is half its approaches' traffic; the delay to
+get through at `share` of the rush hour is `base × slowdown(v/c)` plus, over capacity, the same
+queue term as a road (`queueSeconds`, 300 s × (1 − c/v)); `base` is 3 s, or 4 s on a roundabout.
+`congestedEdgeCosts` adds the delay of the node each edge arrives at, so commutes, service vehicles
+and routing all see junctions. Nodes where the city highway meets only ramps (merges) and bends are
+free. **Roundabouts** are `RoadNode.roundabout` (the ring's centre-line radius, 12–40 m, by default
+just enough for its widest road): `roundabout` puts one on a junction, or on a road (split there);
+it needs every approach long enough to meet the ring, no other road or civic building across it
+(zoned buildings are cleared) and room from other roundabouts; roads can join it later from far
+enough out but not cross its ring, and zone cells stay off it. `removeRoundabout` refunds a share.
+Costs are 40 $/m of ring.
+
+**The city highway** (`motorway`, "City highway": 6,000/h, 90 km/h, 5 % grade, unlocks at 10,000) and
+**ramps** (`ramp`: one lane, 1,500/h, always one-way as drawn) have `access: false`: no zone blocks,
+no civic entrances or bus stops, no roundabouts, and they can't be upgraded to or from local roads.
+The planner refuses a junction that mixes the highway with a local road (`roadClass`), except at
+the regional highway's end (the interchange); ramps meet the highway at down to 8° and may run beside
+it for 200 m. **Grade separation**: when a new road crosses the city or regional highway, or any road
+on a viaduct at least `GRADE_SEP.clearance` (7.5 m) above the ground, the planner records a
+`Crossing` on the piece instead of splitting both roads. Passing over, the grading gets a floor
+(`GradeLimit.min`: the lower road's surface + 7.5 m, forced onto a deck over the lower road's corridor
+plus a margin) with its slopes at the road's grade limit; passing under, a ceiling. The fit holds
+those heights however far they stray from the ground, earthworks never touch the other road's
+corridor, the deck is saved as the segment's viaduct heights (M13), and the clearance check skips
+the stretch where the two corridors overlap. Nothing here is road-specific: rail (M20) reuses the
+crossings, limits and decks.
+
+**Tools and UI.** The road tool gains One-way (click a road: two-way → one way → the other way) and
+Roundabout (click a junction or road; drag out to size the ring) modes, and a draw-one-way toggle
+(O). Clicking a road selects it (`Selection.kind` 'road'): the road inspector shows its traffic,
+rush-hour load and capacity, a direction switch, and each end's junction with its load and a button
+to add or remove a roundabout. The traffic map shades junctions and roundabouts as discs by their
+own load (`ClientWorld.junctionVC`, mirroring the sim) and puts chevrons on one-way roads and ramps;
+tints follow flyover decks. Advisors flag the worst plain junction over capacity (suggesting a
+roundabout) and, past 10,000 with a main road jammed and no highway, a bypass; tips cover both.
+
+**Visible cars** (`src/render/traffic.ts`) move in short steps: each keeps `SPACING` (7.5 m) behind
+the car ahead in its lane (road, direction, lane), waits at the end of a road while the next one is
+backed up to its start, and at a junction waits while another approach's car holds it (a claim of
+4 ticks); at a roundabout it gives way to cars about to pass its entry, then drives round the ring
+anticlockwise at 25 km/h and leaves where its next road begins. One-way roads and ramps spread cars
+across their lanes. Walkers keep to a roundabout's footway. The renderer reports the cost per frame
+(`renderStats.trafficMs`).
+
+The done-criterion tests are town-scale: `tests/junctions.test.ts` grows the crossroads town
+(`tests/junctionTown.ts`: homes north and west, jobs south and east, one crossroads between) and
+compares the same city with and without a roundabout; `tests/highway.test.ts` does the same for a
+bypass round a main-street town (`tests/bypassTown.ts`). The Crossroads scenario is the first town.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -831,7 +894,9 @@ base64 in JSON; compressed with gzip (fflate) and stored in IndexedDB, one recor
 `auto` (autosave), `quick`, and one per named save (`s<time><rand>`); imports get their own slot.
 Export writes a `.citybloom` file (gzip JSON); import accepts it (or plain JSON) and opens it.
 `migrations[v]` upgrades version v → v+1 on load. Round-trip is tested by state hash, including through
-the main menu's Continue and an exported-then-imported file (e2e `m11-shell`).
+the main menu's Continue and an exported-then-imported file (e2e `m11-shell`). v17 (M19) adds only
+optional fields (one-way roads, roundabouts; city highway and ramp segments are new type values), so
+its migration is the identity and older cities load with two-way roads and plain junctions.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

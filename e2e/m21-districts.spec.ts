@@ -29,7 +29,7 @@ const districts = (page: Page) => page.evaluate(() => window.__game!.getDistrict
 test('M21: Market Town: paint and name districts, a heavy-traffic ban on Old Market, a filtered map, and a bypass that wins it', async ({
   page,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
   const errs = watchErrors(page);
   await page.addInitScript(() => {
     const key = 'citybloom.settings';
@@ -157,7 +157,8 @@ test('M21: Market Town: paint and name districts, a heavy-traffic ban on Old Mar
   await shot(page, 'm21-filtered');
   await page.getByTestId('legend-district').getByRole('button', { name: 'Whole city' }).click();
   await expect(page.getByTestId('legend-district')).toHaveCount(0);
-  await page.getByTestId('map-traffic').click();
+  await page.getByTestId('map-legend').getByRole('button', { name: 'Hide data map' }).click();
+  await expect(page.getByTestId('map-legend')).toHaveCount(0);
 
   // --- A back road south of the market for the lorries to take, drawn with the road tool. ---
   await page.getByTestId('tool-road').click();

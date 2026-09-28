@@ -35,7 +35,7 @@
 - [x] M21 Districts
 - [x] M22 Seasons and weather
 - [x] M23 Region, airport and seaport
-- [ ] M24 Terrain and map editor
+- [x] M24 Terrain and map editor
 
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
@@ -97,18 +97,14 @@ done).
    tried it (and the scenario star thresholds with it).
 
 ## In progress
-M24 Terrain and map editor: everything built, tested and pushed (terrain tool, custom maps in saves
-v22, the map editor, "Your maps" on the new-city screen, Over the Ridge, docs); `e2e/m24-terrain.spec.ts`
-passes both tests (Over the Ridge won through the UI; menu → editor → save, export, import → a city
-that grows), screenshots reviewed. Left: bench and balance (running), the full `npm run e2e`, the
-`M24 complete:` commit, then the finale playthrough (`npm run finale`, not yet run) for the end of
-the brief.
+Every milestone in SPEC.md and SPEC-2.md is complete. The end of the brief: the summary and ideas
+above are updated and SPEC_REVIEW's last section is written; the final phase-2 playthrough
+(`npm run finale`, `e2e/finale.spec.ts`) is next.
 
 ## Next tasks
-1. Log bench and balance, full `npm run e2e`, tick M24, commit `M24 complete:`.
-2. Run `npm run finale` (the phase-2 playthrough through the UI), review `docs/screenshots/final-*.png`,
+1. Run `npm run finale` (the phase-2 playthrough through the UI), review `docs/screenshots/final-*.png`,
    fix what it finds, commit.
-3. Final pass over the summary and SPEC_REVIEW once the finale has run.
+2. After that, the ideas list above; and the "To check on the Mac" list needs real hardware.
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -121,6 +117,7 @@ the brief.
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
 - Visitors drive from where they arrive to the landmarks and hotels (M23); with no sight in town they're counted but stay put. Ships sail a straight line from the berth out to sea, so on a very irregular coast one could cross a headland.
+- The M24 full e2e run: 32 of 33 passed; the button-label audit caught the Advisors button mid-transition (its text turns white at once while its background fades in over a moment) and now waits for transitions before judging; it also covers the map editor now. Rerun: passes.
 - The M23 full e2e run had two old specs fail on view-dependent details (M14 clicked a warehouse that M23's regional commuters grew in front of the police station at a low camera angle; M16 hovered the history chart before its panel settled). Both now click and hover robustly and pass.
 - The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
 - Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.

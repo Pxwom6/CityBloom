@@ -29,7 +29,7 @@
 - [x] M15 Publish it
 - [x] M16 Photo mode and city history
 - [x] M17 Big projects and elections
-- [ ] M18 Scenarios
+- [x] M18 Scenarios
 - [ ] M19 Traffic tools
 - [ ] M20 Rail
 - [ ] M21 Districts
@@ -53,9 +53,11 @@ floods and meteors strike and the city rebuilds. Saves are versioned and compres
 slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
 offers each new version (M15). Cities keep their history for charts and photos (M16), and past
 20,000 residents raise big projects in stages (a stadium, a solar tower, a convention centre, a
-garden expo, a launch complex) and face elections every four years (M17). Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
+garden expo, a launch complex) and face elections every four years (M17). Eight scenarios, each
+a ready-made city with goals, limits and a time limit, are played from the main menu for one to
+three stars (M18). Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 185 unit and scenario tests, 21 UI tests, a 10-minute soak
+calls at the city overview. Checked by 205 unit and scenario tests, 22 UI tests, a 10-minute soak
 and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
 done).
 
@@ -76,20 +78,21 @@ done).
    tried it.
 
 ## In progress
-M18 Scenarios. Done: the scenario system in the sim (save v16; `src/sim/systems/scenario.ts`, data in
-`src/data/scenarios.ts`), starting cities built by `npx tsx scripts/scenarios.ts [ids]` (recipes in
-`scripts/lib/scenarioCities.ts`, the balance mayor in `scripts/lib/mayor.ts`), and all eight
-scenarios with tests in `tests/scenarios/` (a scripted player wins each, a neglectful one loses):
-Clean Slate, Back from the Brink, Vote of Confidence, Big Game, Gridlock, Smokestack Valley, After
-the Flood, Seaside Resort. Next: the scenario screen from the main menu (previews, best stars),
-the brief, the in-game goals panel, the win/lose screen with stars, progress per device, e2e.
+Phase 2 (SPEC-2.md, M13–M24). M18 Scenarios is complete: eight scenarios (Clean Slate, Back from the
+Brink, Vote of Confidence, Big Game, Gridlock, Smokestack Valley, After the Flood, Seaside Resort) on
+three maps, each a shipped save with goals checked at month close, limits and a time limit (save
+v16); a scenario screen off the main menu with previews and best stars kept on this device, the
+brief, the goals panel (G, from the city's name in the top bar) and a win screen with one to three
+stars. In the test suite a scripted player wins each scenario and a neglectful one loses it
+(`tests/scenarios/`). All 22 e2e specs pass, 205 unit tests.
 
 ## Next tasks
-1. M18 Scenarios: six to eight scenarios (fixed map, starting city as a save, goals, limits, time
-   limit), a scenario screen from the main menu with previews, a win screen with 1–3 stars, progress
-   per device; data in `src/data`; a scripted player wins each in the test suite and a neglectful
-   one loses. Include scenarios that show off M17 (an election to win, a project to finish).
-2. Then M19 Traffic tools.
+1. M19 Traffic tools (SPEC-2): roundabouts, traffic lights or junction priority, one-way roads,
+   grade-separated crossings/interchanges, a highway bypass; scenario tests showing a roundabout
+   relieving a jammed junction and a bypass taking through traffic off local streets. Per the
+   phase-2 rules, add or update a scenario (M18) that shows the new tools off (Gridlock is the
+   natural one to extend).
+2. Then M20 Rail.
 3. Performance watch: tick average at the big city's growth burst varies 0.6–1.3 ms by VM day.
    Look for savings before M19 adds car-following.
 
@@ -104,6 +107,8 @@ the brief, the in-game goals panel, the win/lose screen with stars, progress per
 - Towns without services stagnate and slowly lose residents (the neglectful balance run); that's intended, but it could be clearer to a new player why.
 - Commercial demand runs negative once a town has zoned a strip of shops in every district (shoppers vs. shops); the careful balance mayor now zones shops only while they're wanted. Big cities run short of jobs rather than homes: industry demand stays high once the map is full.
 - Visitors (M10) are counted, spend money and shop, but don't drive through the traffic model yet.
+- The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
+- Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.
 - Once a big city has bought every project and landmark it can reach, its treasury still creeps up (≈ $0.3M a year for the careful mayor at 2 % taxes); later milestones add things to buy.
 - Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); the scripted careful mayor fills the river map at about 67k (M17).
 - Tree count is high in forests (~25k in-map); LOD switches to low-poly beyond 750 m.
@@ -113,7 +118,8 @@ the brief, the in-game goals panel, the win/lose screen with stars, progress per
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
-## Performance (latest: M17)
+## Performance (latest: M18)
+- `bench.ts 8 --big` (M18; the sandbox bench plays no scenario, populations identical to M17): at 97–111k tick avg 0.66–0.94 ms, p99 5.6–8.2 ms, worst per month 10–14 ms (54.8 ms once in month 1 at 639 residents, the cold start). `balance.ts 20` (M18: the careful mayor starts a big project once the first stage is in hand and the treasury plus its income over the build will cover the rest, and refused commands skip the undo snapshot): careful 67,137 / 78 % at year 20 (passes 50k in year 11, peak 68.6k in year 14), all five projects open, the sky needle built, five elections won; greedy 234 / 16 %, neglectful 288 / 41 % (both unchanged). The careful 20-year run takes about 3 minutes (M17: about 5).
 - `bench.ts 8 --big` (M17): at 97–111k tick avg 0.61–0.92 ms, p99 5–8 ms, worst per month 7–15 ms (66.8 ms once in month 1 at 639 residents, the known cold start). `balance.ts 25` (the careful mayor now plans the whole map, so its numbers aren't comparable with M16's): careful 64,733 / 78 % at year 20 (passes 50k in year 11, peak 67.5k), all five projects open, six elections won; greedy 234 / 16 %, neglectful 288 / 41 % at year 20 (both lose every election). Chart of the careful mayor's money: `docs/screenshots/m17-money.png`.
 - `bench.ts 8 --big` (M16; history recorded each month): at 97–111k tick avg 0.65–1.02 ms, p99 5–10 ms. Worst per month 8–17 ms in a profiled run (month-start work now timed separately); an unprofiled run the same hour had one-off 92 ms (month 4) and 64 ms (month 6) ticks that the profiled rerun didn't reproduce (GC or the VM; watch for it). `balance.ts 20`: careful 18,906 / 68 % (treasury $9.8M by year 20: the surplus M17 has to find uses for), greedy 102 / 14 %, neglectful 346 / 38 %, identical to M15.
 - M15 changes no sim code; reruns match M14. `bench.ts 8 --big` at 97–111k: tick avg 0.87–1.15 ms, p99 7–10 ms, worst per month 11–20 ms; `balance.ts 20`: careful 18,906 / 68 %, greedy 102 / 14 %, neglectful 346 / 38 % (identical).
@@ -135,6 +141,7 @@ the brief, the in-game goals panel, the win/lose screen with stars, progress per
 - Graded roads (M13): how cuttings, embankments and civic pads look at full resolution (`node scripts/dev/earthshot.mjs` scene, or build a street over a hill on the highlands preset), and whether the road ghost's grade colours and the see-through ghost read well while drawing.
 - Trackpad (M14): two-finger swipe pans, pinch zooms, ⌥/Alt + swipe turns and tilts, and Safari's rotate gesture; check that the automatic mouse/trackpad detection guesses right on a MacBook trackpad and a Magic Mouse, and that ⌘Z / ⇧⌘Z undo and redo.
 - Published app (M15), once Pages is on: open https://pxwom6.github.io/Sim-Cities/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
+- Scenarios (M18): the scenario screen's previews and the brief, goals and win screens at full resolution and 140 % interface size.
 - Photo mode (M16): frame rate with depth of field and tilt-shift on (the lens pass costs two full-screen passes, 48 depth-aware taps a pixel) at Retina resolution; how long a 2× save takes (should be well under a second); whether the six grades and the golden-hour light look right on a calibrated screen; the follow camera's ride along a busy street at 60 fps.
 - Big projects (M17): the five projects at each construction stage close up at full resolution (`node scripts/dev/projectshot.mjs`), and a match day's crowd of cars around the stadium at 60 fps.
 - Frame rate while panning the overview and street presets (expect 60 fps).

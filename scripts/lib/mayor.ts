@@ -693,14 +693,14 @@ export class Player {
       if (d.project && projectBlocked(this.sim, d)) continue;
       // Nowhere to put it last time: try the others, and this one again in six months.
       if (s.tick - (this.goalTried.get(g.def) ?? -1e9) < TICKS_PER_MONTH * 6) continue;
-      // A project can start once the first stage is in hand and the city's income over the build
-      // will pay for the rest; anything else waits for its whole price.
+      // A project can start once the first stage is in hand and the treasury plus the city's income
+      // over the build will pay for the rest; anything else waits for its whole price.
       const reserve = this.reserve();
       if (d.project) {
         const { total, first } = projectCost(d);
         const months = d.project.stages.reduce((a, st) => a + st.months, 0);
         const income = Math.max(0, this.sim.projectedNet()) * months;
-        if (s.treasury < first + reserve || income < total - first) return;
+        if (s.treasury < first + reserve || s.treasury + income < total + reserve) return;
       } else if (s.treasury < d.cost + reserve) return;
       const before = s.treasury;
       if (this.placeGoal(g.def)) {

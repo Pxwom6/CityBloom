@@ -49,6 +49,22 @@ const RECIPES: Record<string, () => Sim> = {
     sim.advance(TICKS_PER_HOUR * 24);
     return sim;
   },
+  // A town squeezed by high taxes and starved services, with the four-year vote coming up.
+  vote: () => {
+    const p = new Player('careful', { seed: 'ballot', cityName: 'Hollin' });
+    govern(p, 34);
+    p.setTaxes(13);
+    p.setFunding(70);
+    p.sim.advance(TICKS_PER_MONTH);
+    return p.sim;
+  },
+  // A city past 20,000 that never built a big project.
+  stadium: () => {
+    const p = new Player('careful', { seed: 'arena', cityName: 'Castlebridge' });
+    p.avoid = ['stadium', 'helioarray', 'convention', 'gardenexpo', 'launchsite'];
+    govern(p, 56);
+    return p.sim;
+  },
 };
 
 const wanted = (process.argv[2] ?? Object.keys(RECIPES).join(',')).split(',');

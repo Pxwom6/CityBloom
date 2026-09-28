@@ -127,6 +127,57 @@ export const SCENARIOS: ScenarioDef[] = [
       'Repay a loan early from the budget’s Loans tab once the treasury can cover it.',
     ],
   },
+  {
+    id: 'vote',
+    name: 'Vote of Confidence',
+    blurb: 'Win back a town that has had enough of you before it votes.',
+    brief:
+      'Taxes in Hollin are the highest in the region and its schools and clinics are short of money. ' +
+      'Approval has fallen to a quarter and the vote is a year away. Win the election.',
+    save: 'vote.citybloom',
+    months: 16,
+    stars: [
+      {
+        goal: { measure: 'approval', min: 65, label: 'Approval of 65 %' },
+        label: 'Approval of 65 % on the day',
+      },
+      {
+        goal: { measure: 'approval', min: 75, label: 'Approval of 75 %' },
+        label: 'Approval of 75 % on the day',
+      },
+    ],
+    goals: [{ measure: 'election', min: 1, label: 'Win the election' }],
+    limits: [],
+    disasters: false,
+    elections: true,
+    mustWinElection: true,
+    hints: [
+      'Voters follow approval above all: taxes, services and jobs move it.',
+      'In the six months before the vote, make up to two promises you can keep (city panel, Election).',
+    ],
+  },
+  {
+    id: 'stadium',
+    name: 'Big Game',
+    blurb: 'Give a city of 20,000 its stadium, without borrowing a cent.',
+    brief:
+      'Castlebridge has passed 20,000 residents and wants a ground of its own. Build the city ' +
+      'stadium and open it within two years, paying for every stage as it comes, with no loans.',
+    save: 'stadium.citybloom',
+    months: 24,
+    stars: [
+      { months: 16, label: 'Open within 16 months' },
+      { months: 12, label: 'Open within a year' },
+    ],
+    goals: [{ measure: 'project', def: 'stadium', min: 1, label: 'The city stadium open' }],
+    limits: [{ kind: 'noLoans', label: 'Loans are not allowed' }],
+    disasters: false,
+    elections: false,
+    hints: [
+      'Big projects pay for each stage as it starts; if the treasury is short, the site waits.',
+      'The stadium takes ten months to build once work starts. Save for the first stage, then keep the money coming.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

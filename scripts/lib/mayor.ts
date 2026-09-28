@@ -105,6 +105,8 @@ export class Player {
     dead?: boolean;
   }[] = [];
   log: string[] = [];
+  /** Leave the tax rate where it's been set (a scenario's scripted player raising a levy). */
+  holdTaxes = false;
   /** Civic buildings this mayor won't build (a scenario's starting city built without coal). */
   avoid: string[] = [];
   /** Goals reached (def → month), elections held, and money spent on goals this month. */
@@ -533,7 +535,9 @@ export class Player {
       this.campaign();
       // Taxes: nudge up while losing money (never against a promise), back down when comfortable.
       const rate = e.taxes.R[0]!;
-      if (s.netMonthly < 0 && s.treasury < -s.netMonthly * 6 && rate < 12 && !this.taxPromise())
+      if (this.holdTaxes) {
+        // Taxes stay where they were set.
+      } else if (s.netMonthly < 0 && s.treasury < -s.netMonthly * 6 && rate < 12 && !this.taxPromise())
         this.setTaxes(rate + 1);
       else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
       // Comfortably off: trade money for happier residents and more demand.
@@ -664,8 +668,15 @@ export class Player {
       if (d.project && projectBlocked(this.sim, d)) continue;
       // Nowhere to put it last time: try the others, and this one again in six months.
       if (s.tick - (this.goalTried.get(g.def) ?? -1e9) < TICKS_PER_MONTH * 6) continue;
-      const price = d.project ? projectCost(d).total : d.cost;
-      if (s.treasury < price + this.reserve()) return;
+      // A project can start once the first stage is in hand and the city's income over the build
+      // will pay for the rest; anything else waits for its whole price.
+      const reserve = this.reserve();
+      if (d.project) {
+        const { total, first } = projectCost(d);
+        const months = d.project.stages.reduce((a, st) => a + st.months, 0);
+        const income = Math.max(0, this.sim.projectedNet()) * months;
+        if (s.treasury < first + reserve || income < total - first) return;
+      } else if (s.treasury < d.cost + reserve) return;
       const before = s.treasury;
       if (this.placeGoal(g.def)) {
         this.goalsMet.set(g.def, this.month());

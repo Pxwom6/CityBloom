@@ -22,7 +22,7 @@ import {
   IconUndo,
   IconWater,
 } from './icons';
-import { ToolButton, ToolHintLabel } from './Toolbar';
+import { MapLegend, ToolButton, ToolHintLabel } from './Toolbar';
 
 /**
  * The map editor's screen (M24): the map's name and climate, whether it's playable, save, export
@@ -296,6 +296,7 @@ export function EditorApp() {
       <EditorBar />
       <EditorTools />
       <CheckPanel />
+      <MapLegend />
       <ToolHintLabel />
     </>
   );

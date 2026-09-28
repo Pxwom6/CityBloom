@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { decodeSave } from '../src/client/saves';
 import { HEIGHT_RES, HEIGHT_STEP, MAP_PRESETS } from '../src/data/world';
 import { SAVE_VERSION, migrations, type SaveFile } from '../src/sim/save';
 import { Sim } from '../src/sim/sim';
@@ -124,5 +126,13 @@ describe('custom maps (M24)', () => {
     expect(back.state.version).toBe(SAVE_VERSION);
     back.advance(TICKS_PER_MONTH);
     expect(back.state.totals.population).toBeGreaterThan(0);
+    // The version-10 playtest city too, through every migration.
+    const old = Sim.fromSave(decodeSave(readFileSync('Saves/Ashton.citybloom')));
+    expect(old.state.map).toBeNull();
+    const pop = old.state.totals.population;
+    old.advance(TICKS_PER_MONTH);
+    expect(old.state.totals.population).toBeGreaterThan(pop * 0.9);
+    const again = Sim.fromSave(JSON.parse(JSON.stringify(old.save())) as SaveFile);
+    expect(again.hash()).toBe(old.hash());
   });
 });

@@ -50,7 +50,7 @@ produced, so any change makes a new version.
 ## Play
 
 The main menu opens over a small town that keeps living in the background. Choose **New city**,
-pick a map (river, coast, lakes or highlands), a seed, a difficulty, and whether you want sandbox
+pick a map (river, coast, lakes or highlands, or one of your own from the map editor), a seed, a difficulty, and whether you want sandbox
 money, random disasters or elections. The tutorial is on for your first city and walks through the basics:
 
 1. **Roads** off the highway: drag to draw a straight road, or click point to point to keep going;
@@ -123,6 +123,16 @@ brings ferry passengers; past 20,000 an **airport** flies visitors and business 
 along its runway (see the noise map). Visitors now arrive by road, train, air and sea and drive
 through town to the sights; the region traffic map shows where they and the commuters go.
 
+**Terrain and maps.** The terrain tool (the hill in the toolbar, Shift+T) raises, lowers, levels
+and smooths the ground with a round brush, paid for by the cubic metre: level a hillside before
+building on it and far more of its lots can be built on, or cut a pass through a ridge for a road.
+Roads and buildings hold the ground they stand on, water is left alone, and a drag undoes in one
+step. The **map editor** (from the main menu) makes maps of your own: start from a generated map or
+flat meadow, sculpt hills and valleys, paint rivers, lakes and sea, plant forests, lay ore and oil,
+say where the highway and railway come in and pick the climate. A playability check says whether a
+first town has room by the highway (and what to fix if not); playable maps appear on the new-city
+screen under your own maps, and any map exports as a `.citymap` file to share and opens from one.
+
 New buildings, services, policies and landmarks unlock as the population passes each milestone.
 Later on, a city can specialise in tourism, trade or technology, and mine ore or pump oil where the
 ground holds them.
@@ -142,13 +152,14 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are thirteen set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are fourteen set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
 from a mill town, rebuild a lake town's waterworks after a flood, turn a coastal town into a
 resort, keep the lorries out of an old market street, see an alpine town through its first
-hard winter, and keep a harbour town lit while opening it to the sea. Each opens with a brief; the city's name in the top bar opens its goals (G),
+hard winter, keep a harbour town lit while opening it to the sea, and cut a hill town a way through
+its ridge. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -172,6 +183,7 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Draw one-way roads, grid snap | road options | | O, G |
 | Zone residential / commercial / industrial / dezone | | | Z / X / C / V |
 | Bulldoze | | | B |
+| Terrain: raise, lower, level, smooth | toolbar hill | | Shift+T, Tab, [ ] brush size |
 | Districts: paint, erase, and their panel | toolbar flag | | I, [ ] brush size |
 | Weather, season and what they're doing to the city | the date in the top bar | click | |
 | Select and inspect | click a building, car, walker, road, railway or stop | click | H |
@@ -191,6 +203,9 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 The game tells a trackpad from a mouse by what it sends; Settings → Pointing device fixes it to
 one or the other. Undo reaches back 30 actions (building, zoning, bulldozing, road changes, moves)
 and gives the money back; if something has grown on top since, it says so instead.
+
+In the map editor the brushes take [ ] for size and , . for strength, and holding the button keeps
+a brush working; its bar has the map's name and climate, the check, save, export and play.
 
 The pause menu (Escape) has save, load, settings (graphics quality, shadows, draw distance,
 interface size, pointing device, volumes, edge scrolling, disasters, elections, autosave) and export/import of `.citybloom`

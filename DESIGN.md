@@ -997,6 +997,47 @@ ellipse along the runway's line), motorway and highway traffic, and heavy indust
 above 0.35 ('Noise' mood factor, the advisors' 'Homes under the noise'). Data maps: Noise, and Region
 traffic (roads used by trips to and from the region, from the sampled trips).
 
+
+### 3.25 Terrain and map editor (M24)
+
+**Terraforming** (`src/data/terraform.ts`, `src/sim/world/terraform.ts`, `src/sim/actions/terraform.ts`;
+the `terraform` command). A round brush (16–128 m) along a drag raises or lowers the ground by up to a
+metre a pass at its centre (falling off as (1 − q²)² to the rim), levels it towards the height where
+the drag began, or pulls it towards the mean of the 5 × 5 samples around. Edits go into M13's
+terrain delta through the same `reshapeGround` as a road's earthworks (trees cleared on disturbed
+ground, lots rechecked), so they save as deltas, undo like earthworks (one step per drag, the
+`stroke` merge zoning uses) and colour as fresh earthworks. Limits: water and the water table
+(0.7 m) are left alone; the ground within 12 m of a building's footprint, or of a road's edge and
+shoulders, is held (heights are interpolated between 8 m samples, so that is the ground they stand
+on), and within 32 m of held ground the new ground keeps to 1 in 1 from it; no higher than 200 m or
+more than 40 m from where the map began; the brush fades out towards the map's edge. It costs
+$0.25 per cubic metre moved (a road's formation costs $0.40): levelling a steep hillside before
+building a street on it turns 229 buildable lots into 392 for about $130k on the `hill` map.
+
+**Custom maps** (`src/sim/terrain/customMap.ts`; `SimState.map`, save v22). A map is absolute heights
+(centimetres, delta-coded along rows in an `Int16Array`, which compresses well), forest density, ore
+and oil (16 m rasters), where the regional highway and railway come in on the west edge (z; no
+railway is allowed), a climate, and a generator seed and preset. The ground inside the map is the
+map's own; the seed and preset give the scenery beyond the edges (the client blends the map's edge
+into it over 400 m), the wind and the region's names. `Terrain` builds from a map instead of the
+generator, with groundwater derived from the heights and the distance to water as generated maps
+have it. A city founded on a map keeps the map in its save, since terrain is rebuilt on load.
+`checkMap` is the playability check: the highway must come in on dry land no steeper than 12 % over
+its first 120 m, with at least 20 ha of buildable ground (dry, cells no steeper than lots allow)
+within 600 m; a railway on water or rough ground, no water and no ore or oil are warnings.
+
+**The editor** (`GameOptions.editor`; `src/sim/actions/mapEdit.ts`, `src/client/editor.ts`,
+`src/tools/mapTool.ts`, `src/ui/Editor.tsx`, `src/ui/Maps.tsx`). The map editor is a paused city on
+the map with no roads, neighbours or time, taking only the editor's commands: `editMap` brushes
+(raise, lower, level, smooth; river and lake beds at −4 m, sea at −14 m, land back to 1.5 m; forest,
+clear trees; ore, oil, clear), with undo (the scope adds the map's ore and oil rasters),
+`setMapEntry` and `setMapInfo`. Height edits go into the terrain delta and are folded into the map by
+the `exportMap` query, which also runs the check. The page keeps each map in the game's IndexedDB
+(a `maps` store beside the saves, database version 2), saving a draft a few seconds after each edit;
+maps that pass the check appear on the new-city screen ("Your maps", `?new=1&map=<id>`), and any
+map exports and imports as a `.citymap` file (gzip JSON). The editor opens from the main menu (new
+from a generated map or flat meadow, or one of the player's maps: `?editor=new|<id>`).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -1156,6 +1197,9 @@ paints a district and round-trips it. v20 (M22) adds `weather` (the preset's cli
 stream; `tests/weather.test.ts` loads the version-10 playtest save, plays on and round-trips it.
 v21 (M23) adds `region` (the seed's neighbours, no deals) and the `region` RNG stream;
 `tests/region.test.ts` loads the version-10 playtest save, signs a deal, plays on and round-trips it.
+v22 (M24) adds `map` (null: every older city stands on a generated map); `tests/customMap.test.ts`
+loads a version-21 save and the version-10 playtest save and plays on, and round-trips a city founded
+on a custom map, which carries the map in its save.
 
 ### 6.1 Publishing, offline play and updates (M15)
 

@@ -77,9 +77,10 @@ screenshots are in `docs/screenshots/`. Anything not done is explained at the en
 - **Trams and trains** (§5 transport, "if time allows") and the §9 extras (neighbouring cities, weather
   and seasons, more specialisations, glTF models) weren't built; the time went on depth and polish in
   the required systems. The asset registry and the transit system (lines, stops, riders) are where
-  they would plug in. Listed as next steps at the top of PROGRESS.md.
+  they would plug in. Listed as next steps at the top of PROGRESS.md. *(Phase 2 has since built
+  trams and trains (M20), weather and seasons (M22) and neighbouring cities (M23).)*
 - **Visitors in traffic** (M10): tourists are counted, spend and shop, but don't drive through the
-  traffic model.
+  traffic model. *(Closed in M23: visitors arrive by road, rail, air and sea and drive to the sights.)*
 - **Render triangle budget**: 2.5M at the whole-city overview of a 100k city (half of it the shadow
   pass) against an early 1.5M target; draw calls are within budget. Flagged for the Mac check.
 
@@ -94,7 +95,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Rule | Where |
 |---|---|
 | Work in order, each milestone playable, UI-tested with screenshots, `M<n> complete:` commits | git history; `e2e/m13-*.spec.ts` onwards; `docs/screenshots/m13-*.png` onwards |
-| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save |
+| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save; each later milestone's section names its version and test, up to M24's v22 (`map`, `tests/customMap.test.ts`) |
 | M12 performance budget kept; bench and balance rerun per milestone | numbers per milestone in PROGRESS.md |
 | Everything original | procedural models, icons and sounds, as in phase 1 |
 | Player kept informed (tooltips, shortcuts, tips, advisor hints, maps and inspector lines) | per milestone below |
@@ -278,3 +279,16 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Save migration with a test | save v22 (`map`, null for generated maps); `tests/customMap.test.ts` loads a version-21 save and the version-10 playtest save and plays on, and round-trips a city on a custom map |
 | An M18 scenario that shows the new system off | Over the Ridge (Ridgeholm, on a map in the editor's format, `scripts/lib/ridgeMap.ts`), `tests/scenarios/terraces.test.ts`: cutting a pass through the ridge with the terrain tool and building in the valley wins it; the shelf alone, however well run, loses; `e2e/m24-terrain.spec.ts` plays it through the UI |
 | Done when: a map made in the editor saves, reloads, and grows a city in a scripted test | `tests/mapEditor.test.ts` ('a map made in the editor saves, reloads and grows a city': a river, a bay, hills, woods, ore and oil and moved entries, exported to a 15 KB `.citymap`, read back, a city founded on it grows to 1,834 in three months, and its save loads and plays on exactly); through the UI in `e2e/m24-terrain.spec.ts` (main menu → editor → save and export → new-city screen → a city that grows) |
+
+## When every milestone is done
+
+| Item | Where |
+|---|---|
+| Update the summary and ideas at the top of PROGRESS.md | PROGRESS.md: the summary covers M13–M24; the ideas list is rewritten for what phase 2 leaves (terrain water in running cities and tunnels, rail and traffic lights, a livelier region, weather fronts, specialisations, models, a balance pass with real players) |
+| Finish this brief's section in SPEC_REVIEW | this section |
+| A final playthrough through the real UI that uses the new features | `e2e/finale.spec.ts` (`npm run finale`): a map made in the map editor from the main menu, a city founded on it from the new-city screen, roads (one of them one-way), zones and utilities placed with the mouse, the terrain tool levelling a slope for a new street, undo, a district with a policy, a power deal with a neighbour, the weather panel, city history, photo mode, then save, quit and continue; screenshots `docs/screenshots/final-*.png`. The phase-1 playthrough (`e2e/playthrough.spec.ts`) still runs with it under `npm run playthrough` |
+
+### Phase 2: not done, and why
+- **Water in running cities** (M24): the terrain tool leaves water alone; lakes, canals and filled bays are made in the map editor before a city exists. Letting a live city dig new water would need the water, flood, groundwater and harbour systems to follow it (DECISIONS M24).
+- **Lots right beside an existing road** can't be levelled with the terrain tool: the road stands on that ground. Shape the land first, then build (DECISIONS M24).
+- **Real hardware** (frame rate, the look of new systems at full resolution) is listed under "To check on the Mac" in PROGRESS.md; everything here was verified on this VM's software renderer, by sim tick times, draw calls and triangle counts.

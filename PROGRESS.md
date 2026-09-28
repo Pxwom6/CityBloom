@@ -53,7 +53,7 @@ floods and meteors strike and the city rebuilds. Saves are versioned and compres
 slots and file export. It deploys to GitHub Pages as an installable app that plays offline and
 offers each new version (M15). Cities keep their history for charts and photos (M16), and past
 20,000 residents raise big projects in stages (a stadium, a solar tower, a convention centre, a
-garden expo, a launch complex) and face elections every four years (M17). Thirteen scenarios, each
+garden expo, a launch complex) and face elections every four years (M17). Scenarios, each
 a ready-made city with goals, limits and a time limit, are played from the main menu for one to
 three stars (M18). Roads can be one-way, junctions take roundabouts, and past 10,000 residents a city
 highway passes over the town's streets, joined by ramps; visible cars queue and give way (M19). Past
@@ -66,7 +66,10 @@ winter power demand, heatwaves raise power and water, dry spells weaken pumps, h
 river, and snow slows traffic until a public works depot's ploughs clear it (M22). Three neighbouring
 towns send commuters and shoppers, take the city's unemployed and trade power, water and garbage
 processing under deals; a seaport ships goods and an airport flies visitors in, loud along its
-runway (M23).
+runway (M23). The terrain tool raises, lowers, levels and smooths the ground, paid by the cubic metre
+and holding the ground under roads and buildings; the map editor (from the main menu) sculpts land,
+paints rivers, lakes and sea, lays forests, ore and oil and places the highway and railway, checks
+that a first town has room, and saves maps to play and share as files (M24). Fourteen scenarios.
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
 calls at the city overview. Checked by 251 unit and scenario tests, the UI specs in `e2e/`, a 10-minute soak
@@ -76,19 +79,22 @@ done).
 ## Ideas for what's next
 1. **Real-hardware pass** (the list under "To check on the Mac"): frame rate at 100k, and
    per-building LOD if 2.5M triangles at the overview is too much for the GPU.
-2. **Rail, further**: branching train lines with services per branch, tram and bus stops shared as
+2. **Terrain, further**: a water tool in running cities (dig a harbour basin or a canal, with the
+   water, flood and groundwater systems following it live), tunnels through ridges for roads and
+   rail, and map sharing through a link rather than a file.
+3. **Rail, further**: branching train lines with services per branch, tram and bus stops shared as
    interchanges, and level-crossing barriers that close when a train passes.
-3. **Traffic lights** as a third junction type between a plain junction and a roundabout, and
-   tourists driving in from the highway (visitors aren't in the traffic model yet).
-4. **Neighbouring cities** that trade power, water and garbage and share the highway's demand.
-5. **Weather, further**: weather fronts that cross the map, frozen lakes, and seasonal tourism
+4. **Traffic lights** as a third junction type between a plain junction and a roundabout.
+5. **The region, further**: neighbours that grow with the trade and commuting the city gives them,
+   regional competition for industry, and deals the neighbours propose.
+6. **Weather, further**: weather fronts that cross the map, frozen lakes, and seasonal tourism
    (ski resorts in winter, beaches in summer).
-6. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
+7. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
    building + economy pattern as M10.
-7. **Custom glTF models** through the existing asset registry (`src/render/assets/registry.ts`).
-8. **Balance**: commercial demand runs a little low in small towns, and a city that has bought every
+8. **Custom glTF models** through the existing asset registry (`src/render/assets/registry.ts`).
+9. **Balance**: commercial demand runs a little low in small towns, and a city that has bought every
    project and landmark still creeps into surplus; a second tuning pass once real players have
-   tried it.
+   tried it (and the scenario star thresholds with it).
 
 ## In progress
 M24 Terrain and map editor. Done and pushed: the terrain tool (Shift+T: raise, lower, level, smooth,
@@ -153,6 +159,7 @@ Terraces scenario (a hill town on an editor-format map, `scripts/lib/ridgeMap.ts
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
 - Rail (M20): trams, trains and freight trains at 60 fps in a big city with several lines; how the tram wires, level crossings, stations and the freight yard look close up; whether cars following round the tram depot and crossings read well.
 - Visible cars (M19): 360 cars following, queueing and going round roundabouts at 60 fps in a big city (`renderStats.trafficMs` in the debug panel should stay well under 1 ms); how the ring, the flyover decks and the ramp merges look close up.
 - The ~100k city (`npx tsx scripts/bench.ts 6 --big --save city.gz`, then Load city → Import from file): frame rate while panning the overview and the city preset at 3× speed (target 60 fps); 2.5M triangles at the overview, if the GPU struggles, per-building LOD is the next step.

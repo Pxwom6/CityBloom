@@ -76,6 +76,14 @@ export function freightHubs(sim: Sim): number {
   return Math.min(2, working(sim, (c) => ships(sim, c)).length);
 }
 
+/** The airport and seaport in service (M23), for demand. */
+export function ports(sim: Sim): { airport: Civic | null; seaport: Civic | null } {
+  return {
+    airport: working(sim, (c) => !!civicDef(c).airport)[0] ?? null,
+    seaport: working(sim, (c) => !!civicDef(c).seaport)[0] ?? null,
+  };
+}
+
 export function hasResearchPark(sim: Sim): boolean {
   return working(sim, (c) => !!civicDef(c).research).length > 0;
 }
@@ -147,6 +155,9 @@ export function specialisationIncome(sim: Sim): Record<string, number> {
     const per = civicDef(hubs[0]!).freight!.perJob;
     out.trade = industrialJobs(sim) * per * (hubs.length > 1 ? 1.5 : 1) * eff;
   }
+  // A seaport (M23) ships goods by sea: trade income from every industrial job.
+  const port = working(sim, (c) => !!civicDef(c).seaport)[0];
+  if (port) out.trade = (out.trade ?? 0) + industrialJobs(sim) * civicDef(port).seaport!.tradePerJob * eff;
   const parks = working(sim, (c) => !!civicDef(c).research);
   // The launch complex (M17) makes research worth half as much again.
   const boost = openProject(sim, 'launchsite')

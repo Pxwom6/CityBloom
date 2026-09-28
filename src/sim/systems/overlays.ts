@@ -26,7 +26,9 @@ export type OverlayMap =
   | 'traffic'
   | 'airPollution'
   | 'eduLevel'
-  | 'transit';
+  | 'transit'
+  | 'noise'
+  | 'region';
 
 export interface OverlayResult {
   map: OverlayMap;
@@ -173,6 +175,14 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
       stampBuildings(sim, values, (b) => (b.state === BState.Active ? b[key[map]] : null));
       return { map, values, ramp: 'diverging', legend: ['Not covered', 'Well covered'] };
     }
+    case 'noise': {
+      const noise = sim.noise();
+      for (let k = 0; k < n; k++) values[k] = noise[k]! > 0.03 ? noise[k]! : -1;
+      return { map, values, ramp: 'sequential', legend: ['Quiet', 'Loud'] };
+    }
+    case 'region':
+      // Drawn on the roads by the client: traffic to and from the neighbours and visitors (M23).
+      return { map, values, ramp: 'sequential', legend: ['Little', 'Busy with the region'] };
     case 'crime':
       for (let k = 0; k < n; k++) values[k] = s.crime[k]! > 0.01 ? Math.min(1, s.crime[k]!) : -1;
       return { map, values, ramp: 'sequential', legend: ['Safe', 'High crime'] };

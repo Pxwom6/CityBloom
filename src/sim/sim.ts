@@ -82,6 +82,7 @@ import {
   type WeatherSummary,
 } from './systems/weather';
 import { emptyRegionFlows, type RegionFlows } from './systems/regionFlows';
+import { computeNoise } from './systems/noise';
 import { garbageDealsHour, initialRegion, regionMonth, regionSummary, setDeal } from './systems/region';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
@@ -2047,6 +2048,17 @@ export class Sim {
 
   /** Regional commuters, shoppers and visitors at the last assignment round (M23; not saved). */
   regionFlows: RegionFlows = emptyRegionFlows();
+
+  private noiseCache: { key: string; field: Float32Array } | null = null;
+
+  /** The noise raster (M23), rebuilt every three game hours or when civic buildings change. */
+  noise(): Float32Array {
+    let ids = 0;
+    for (const id of this.state.civics.keys()) ids += id;
+    const key = `${Math.floor(this.state.tick / 180)}:${ids}`;
+    if (this.noiseCache?.key !== key) this.noiseCache = { key, field: computeNoise(this) };
+    return this.noiseCache.field;
+  }
 
   /** Riders a day getting on or off at each stop or station at the last assignment round (M20; not saved). */
   stopUse = new Map<number, number>();

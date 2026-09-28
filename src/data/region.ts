@@ -110,6 +110,8 @@ export const REGION = {
   outShare: 0.5,
   attractJobs: 8_000,
   attractShops: 2_000,
+  /** Seconds further a truck will drive to put its goods on a ship rather than the highway (M23). */
+  portPull: 600,
   /** Neighbours never shrink below this. */
   minPopulation: 2_000,
 };

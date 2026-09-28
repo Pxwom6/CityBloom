@@ -1,3 +1,4 @@
+import { noiseMood } from './noise';
 import { DEMAND, HAPPINESS, HEALTH } from '../../data/balance';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import { GARBAGE, UTILITIES } from '../../data/civic';
@@ -81,6 +82,11 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
       label: 'Polluted air',
       value: HEALTH.airMood * air * (b.zone === ZONE_R ? HEALTH.airSensitivity[b.wealth]! : 0.5),
     });
+  // Noise (M23): an airport's flight path, a busy motorway or heavy industry next door.
+  if (b.zone === ZONE_R) {
+    const loud = noiseMood(fieldAt(sim.noise(), b.x, b.z));
+    if (loud < 0) f.push({ label: 'Noise', value: loud });
+  }
   if (b.zone === ZONE_R && b.pop > 0 && b.sick > 0.05) {
     const untreated = (b.sick * (1 - b.treated)) / b.pop;
     if (untreated > 0.002)

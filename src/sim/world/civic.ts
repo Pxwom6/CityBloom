@@ -161,6 +161,30 @@ export function railSiding(
   return { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
 }
 
+/** Water deep enough for ships (m below the shore). */
+export const BERTH_DEPTH = -6;
+
+/**
+ * A seaport's berth (M23): the nearest deep water within 60 m of its back edge, sampled across its
+ * width, or null. Ships dock there.
+ */
+export function berth(
+  sim: Sim,
+  c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
+): { x: number; z: number } | null {
+  const d = CIVIC.get(c.def);
+  if (!d) return null;
+  const away = awayDir(c.angle, c.side);
+  const along = { x: Math.cos(c.angle), z: Math.sin(c.angle) };
+  for (let dist = 10; dist <= 60; dist += 10)
+    for (const u of [0, -0.35, 0.35]) {
+      const x = c.x + away.x * (d.d / 2 + dist) + along.x * d.w * u;
+      const z = c.z + away.z * (d.d / 2 + dist) + along.z * d.w * u;
+      if (sim.terrain.heightAt(x, z) <= BERTH_DEPTH) return { x, z };
+    }
+  return null;
+}
+
 /** Nearest road the front edge touches (within its corridor plus a few metres). */
 export function findAccess(
   sim: Sim,
@@ -208,7 +232,7 @@ export function checkPlacement(
   const rect: ORect = { x, z, hw: def.w / 2, hd: def.d / 2, angle };
   const c = Math.cos(angle);
   const s = Math.sin(angle);
-  const pts: Vec2[] = [{ x, z }];
+  const pts: (Vec2 & { v: number })[] = [{ x, z, v: 0 }];
   for (const [u, v] of [
     [-1, -1],
     [1, -1],
@@ -219,19 +243,23 @@ export function checkPlacement(
     [-1, 0],
     [1, 0],
   ] as const) {
-    pts.push({ x: x + u * rect.hw * c - v * rect.hd * s, z: z + u * rect.hw * s + v * rect.hd * c });
+    pts.push({ x: x + u * rect.hw * c - v * rect.hd * s, z: z + u * rect.hw * s + v * rect.hd * c, v });
   }
+  // A seaport's quay (M23) stands out over the water on piles: its back edge may be in the sea, and
+  // it's built up over a sloping shore.
+  const quay = def.seaport ? -side : 0;
   let lo = Infinity;
   let hi = -Infinity;
   for (const p of pts) {
     if (p.x < 4 || p.z < 4 || p.x > MAP_SIZE - 4 || p.z > MAP_SIZE - 4)
       return { ...res, reason: 'Outside the city limits' };
     const h = sim.terrain.heightAt(p.x, p.z);
+    if (quay && p.v === quay) continue;
     if (h < SHORE_HEIGHT) return { ...res, reason: "Can't build on water" };
     lo = Math.min(lo, h);
     hi = Math.max(hi, h);
   }
-  if (hi - lo > GRADING.padMax) return { ...res, reason: 'Ground is too steep' };
+  if (hi - lo > GRADING.padMax * (def.seaport ? 2 : 1)) return { ...res, reason: 'Ground is too steep' };
   res.y = hi;
   if (def.nearWater !== undefined) {
     const i = Math.min(GRID_RES - 1, Math.max(0, Math.floor(x / GRID_CELL)));
@@ -280,6 +308,9 @@ export function checkPlacement(
       ...res,
       reason: `Needs a railway along its back (within ${RAIL.sidingReach} m) to load trains`,
     };
+  // A seaport needs deep water along its back for the ships (M23).
+  if (def.seaport && !berth(sim, { x, z, angle, side, def: defId }))
+    return { ...res, reason: 'Needs deep water along its back for the ships (the sea or a deep lake)' };
   // Zoned buildings in the way are demolished.
   for (const id of sim.bldHash.queryPoint(x, z, rad + 40)) {
     const b = sim.state.buildings.get(id)!;

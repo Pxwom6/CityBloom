@@ -6,6 +6,7 @@ import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, accessOf, type Building } from '../world/buildings';
+import { civicOnline } from '../world/civic';
 import { Dijkstra, routeBetween, type RoadGraph } from './graph';
 import { segSpeed } from './vehicles';
 import {
@@ -20,6 +21,7 @@ import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
 import { railTerminals } from './rail';
 import { regionRound } from './regionFlows';
+import { REGION } from '../../data/region';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -557,7 +559,23 @@ function railFreight(
   loads: ExternalLoad[],
   hwNode: number,
 ): void {
-  const terminals = railTerminals(sim);
+  // Rail freight terminals, and a seaport (M23), whose ships take goods without the wait to load a train.
+  const terminals = [
+    ...railTerminals(sim).map((c) => ({
+      c,
+      trucks: CIVIC.get(c.def)!.railFreight!.trucks,
+      handling: RAIL.freightHandling,
+    })),
+    ...[...sim.state.civics.values()]
+      .filter((c) => CIVIC.get(c.def)?.seaport && c.access && civicOnline(c))
+      .sort((a, b) => a.id - b.id)
+      .map((c) => ({
+        c,
+        trucks: CIVIC.get(c.def)!.seaport!.freight * sim.fundingEff('trade'),
+        // Shipping is cheap: goods will drive that much further to go by sea.
+        handling: -REGION.portPull,
+      })),
+  ];
   if (!terminals.length || !loads.some((l) => l.purpose !== 'event')) return;
   const pcu = TRAFFIC.truckPcu;
   // Drive times to the highway, to weigh against.
@@ -573,18 +591,18 @@ function railFreight(
     costs,
     true,
   );
-  for (const t of terminals) {
+  for (const { c: t, trucks, handling } of terminals) {
     const acc = t.access!;
     const seg = sim.state.net.segments.get(acc.seg);
     if (!seg) continue;
     const len = sim.net.curve(acc.seg).length;
     const node = g.index.get(acc.s <= len / 2 ? seg.a : seg.b);
     if (node === undefined) continue;
-    let left = CIVIC.get(t.def)!.railFreight!.trucks;
+    let left = trucks;
     const at = new Float64Array(g.size).fill(Infinity);
     dijkstra.run(
       g,
-      [{ node, cost: RAIL.freightHandling }],
+      [{ node, cost: handling }],
       Infinity,
       (u, cost) => {
         at[u] = cost;

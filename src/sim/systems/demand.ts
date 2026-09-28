@@ -1,5 +1,6 @@
 import { CIVIC, SPECIALISATION } from '../../data/civic';
-import { freightHubs } from './specialisations';
+import { freightHubs, ports } from './specialisations';
+import { civicDef } from '../world/civic';
 import { openProject } from './projects';
 import { DEMAND } from '../../data/balance';
 import type { Sim } from '../sim';
@@ -55,6 +56,7 @@ export function updateDemand(sim: Sim): void {
     { label: 'Residential taxes', value: DEMAND.taxPerPoint * (taxR - DEMAND.neutralTax) },
   ];
   const cAll = t.cJobs + t.pendingC;
+  const port = ports(sim);
   const C: Factor[] = [
     {
       label: 'Shoppers vs. shops',
@@ -65,6 +67,10 @@ export function updateDemand(sim: Sim): void {
     {
       label: 'Convention centre',
       value: openProject(sim, 'convention') ? (CIVIC.get('convention')?.project?.commerce?.demand ?? 0) : 0,
+    },
+    {
+      label: 'Airport',
+      value: port.airport ? civicDef(port.airport).airport!.commerce : 0,
     },
     {
       label: 'Visitors shopping',
@@ -80,6 +86,10 @@ export function updateDemand(sim: Sim): void {
     {
       label: 'Freight hubs and terminals',
       value: freightHubs(sim) * (CIVIC.get('freighthub')?.freight?.demand ?? 0),
+    },
+    {
+      label: 'Seaport',
+      value: port.seaport ? civicDef(port.seaport).seaport!.demand : 0,
     },
     {
       label: 'Launch complex',

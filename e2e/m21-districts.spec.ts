@@ -201,6 +201,10 @@ test('M21: Market Town: paint and name districts, a heavy-traffic ban on Old Mar
     `[m21] Market Town won in ${sum.monthsTaken.toFixed(1)} months, ${sum.stars} stars; busiest market road ${sum.goals[0]!.value}`,
   );
 
+  await expect(page.getByTestId('scenario-end')).toContainText('Scenario won!');
+  await page.getByTestId('scenario-end').getByRole('button', { name: 'Keep playing' }).click();
+  await expect(page.getByTestId('scenario-end')).toHaveCount(0);
+
   // --- Dissolve the estates district: the panel keeps Old Market, and the brush goes back to New. ---
   await page.keyboard.press('i');
   await page.getByTestId(`district-${estates.id}`).click();

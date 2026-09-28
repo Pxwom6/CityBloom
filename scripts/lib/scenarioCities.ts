@@ -1,6 +1,7 @@
 // Scenario starting cities (M18): each scenario's city, built headlessly with the balance tool's
 // mayor (plus the scenario's twist). scripts/scenarios.ts writes them to public/scenarios/.
 import { Sim } from '../../src/sim/sim';
+import { CIVIC } from '../../src/data/civic';
 import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DW, Player, type Vec2 } from './mayor';
@@ -164,6 +165,46 @@ export const RECIPES: Record<string, () => Sim> = {
         sim.advance(TICKS_PER_HOUR * 6);
       }
     sim.earn(60_000, 'grants');
+    return sim;
+  },
+  // Frostvale (M22): an alpine town going into its first hard winter, with power for the autumn and
+  // no snow ploughs. Grown from March to the end of October.
+  winter: () => {
+    const sim = Sim.create({ seed: 'frost', preset: 'highlands', cityName: 'Frostvale' });
+    const p = new Player('careful', sim);
+    p.avoid = ['works'];
+    sim.earn(150_000, 'grants');
+    const { x, z } = p.c;
+    const at = (dx: number, dz: number): Vec2 => ({ x: x + dx, z: z + dz });
+    const road = (type: 'avenue' | 'street', a: Vec2, b: Vec2) =>
+      sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+    const zone = (letter: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: letter, area: { kind: 'brush', points: [a, b], radius } });
+    road('avenue', at(0, 0), at(900, 0));
+    for (const dx of [120, 240, 360, 480, 600, 720, 840]) road('street', at(dx, -220), at(dx, 220));
+    road('street', at(120, -220), at(840, -220));
+    road('street', at(120, 220), at(840, 220));
+    zone('C', at(100, 0), at(620, 0), 45);
+    zone('R', at(100, -130), at(620, -130), 85);
+    zone('R', at(100, 130), at(620, 130), 85);
+    zone('I', at(700, -130), at(860, -130), 90);
+    zone('R', at(700, 130), at(860, 130), 90);
+    for (let m = 0; m < 8; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        if (sim.state.totals.population >= 250) p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    // Power for the autumn: coal and wind just over October's demand, nothing for winter's heating.
+    const output = (def: string) => CIVIC.get(def)!.output?.power ?? 0;
+    const target = sim.state.utilityStats.power.demand * 1.01;
+    for (const c of [...sim.state.civics.values()].filter((c) => CIVIC.get(c.def)?.category === 'power'))
+      sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    let supply = 0;
+    while (supply + output('coal') <= target && p.place('coal', 'industry')) supply += output('coal');
+    while (supply < target && p.place('wind', 'industry')) supply += output('wind');
+    sim.advance(TICKS_PER_HOUR * 2);
+    sim.earn(40_000, 'grants');
     return sim;
   },
   // Cinderford: a mill town along one avenue. Homes to the north; heavy industry and coal plants to

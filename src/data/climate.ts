@@ -187,7 +187,7 @@ export const WEATHER = {
   /** Heating: extra power per unit of use at 0 % → 100 % cold (mean below `heatBelow` down to `heatBelow − heatSpan`). */
   heatBelow: 14,
   heatSpan: 24,
-  heating: { R: 0.45, C: 0.3, I: 0.12 },
+  heating: { R: 0.6, C: 0.4, I: 0.2 },
   /** Cooling in hot weather: extra power from `coolAbove` to `coolAbove + coolSpan`. */
   coolAbove: 23,
   coolSpan: 10,

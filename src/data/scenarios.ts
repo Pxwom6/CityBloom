@@ -32,7 +32,9 @@ export type GoalMeasure =
   /** Riders a day on train and tram lines (M20). */
   | 'riders'
   /** Vehicles a day on the busiest road in district `district` (M21). */
-  | 'districtTraffic';
+  | 'districtTraffic'
+  /** Share of buildings with all the power they need, % (M22). */
+  | 'powered';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -314,6 +316,42 @@ export const SCENARIOS: ScenarioDef[] = [
     hints: [
       'The district tool (I) and the Districts panel show Old Market; the traffic map, filtered to it, shows where the load is.',
       'A heavy-traffic ban on Old Market keeps lorries out only where they have another way round: build them one first.',
+    ],
+  },
+  {
+    id: 'winter',
+    name: 'Long Winter',
+    blurb: 'Keep an alpine town warm and moving through its first hard winter.',
+    brief:
+      'Frostvale grew up over a mild summer. Its power was built for the autumn, and nobody thought ' +
+      'about snow. Now it is November in the mountains: heating will push power demand up month by ' +
+      'month, and snow will slow every car until it melts or is ploughed. Keep every building powered ' +
+      'and the average commute under 1.88 minutes for three months running before the spring thaw.',
+    save: 'winter.citybloom',
+    months: 5,
+    stars: [
+      { months: 3, label: 'Won by the end of January' },
+      {
+        goal: { measure: 'approval', min: 60, label: '60 % approval' },
+        label: '60 % approval when you win',
+      },
+    ],
+    goals: [
+      { measure: 'powered', min: 99, hold: 3, label: 'Every building powered (99 %), 3 months running' },
+      {
+        measure: 'traffic',
+        max: 1.88,
+        hold: 3,
+        label: 'Average commute under 1.88 minutes, 3 months running',
+      },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    weather: { seasons: true, intensity: 2 },
+    hints: [
+      'The advisors say how much power midwinter will need; the date in the top bar shows the weather.',
+      'A public works depot (Garbage and snow) sends ploughs to clear the busiest roads first.',
     ],
   },
   {

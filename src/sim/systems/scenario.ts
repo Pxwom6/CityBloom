@@ -126,6 +126,11 @@ export function goalValue(sim: Sim, g: ScenarioGoal, figures?: number[]): number
       }
       return Math.round(most);
     }
+    case 'powered': {
+      const u = s.utilityStats.power;
+      const n = u.served + u.unserved;
+      return n ? Math.round((u.served / n) * 1000) / 10 : 100;
+    }
     case 'riders':
       return sim
         .lines()

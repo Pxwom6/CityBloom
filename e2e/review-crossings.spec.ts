@@ -114,7 +114,14 @@ test('Phase 2 review: barriers come down for trains, cars wait for them, and tra
         const along = dx * t.hx + dz * t.hz;
         const lateral = Math.abs(dz * t.hx - dx * t.hz);
         const lined = Math.abs(Math.cos(c.heading) * t.hx + Math.sin(c.heading) * t.hz) > 0.7;
-        if (lined && along > -2 && along < len + 2 && lateral < 1.2) overlaps++;
+        if (lined && along > -2 && along < len + 2 && lateral < 1.2) {
+          overlaps++;
+          // Where and how, to trace it: the car's road, lane and leg, and the tram's ends.
+          const rel = (x: number, z: number) => `${(x - info.c.x).toFixed(1)},${(z - info.c.z).toFixed(1)}`;
+          console.log(
+            `[crossings] frame ${k}: car ${c.id} at ${rel(c.x, c.z)} inside a tram (${along.toFixed(1)} of ${len.toFixed(1)} m along, ${lateral.toFixed(2)} m aside, heading ${(Math.cos(c.heading) * t.hx + Math.sin(c.heading) * t.hz).toFixed(2)}), road ${c.seg} lane ${c.lane} leg ${c.leg}/${c.legs} at ${c.t.toFixed(1)} m, waited ${c.waited.toFixed(1)}; tram ${rel(t.fx, t.fz)} to ${rel(t.rx, t.rz)}`,
+          );
+        }
       }
     }
   }

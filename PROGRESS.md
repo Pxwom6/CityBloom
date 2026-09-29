@@ -1,5 +1,12 @@
 # PROGRESS
 
+## Needs you: merge the level-crossing fix into `main`
+Pull request #8 was merged at `d5eab43`, which has a bug the next commit fixes: visible cars at a
+level crossing can throw "Cannot read properties of undefined (reading 'seg')" in the browser (the
+frame's traffic step stops short; the game carries on). The fix (`f9372ad`), a small speed-up for
+cars near trams and the DECISIONS entry are on `claude/city-building-game-design-yk7dix`, which is
+`main` plus those commits: merge it again (a new pull request) and the Pages site redeploys.
+
 ## What you need to do (to publish the game, M15)
 1. **Merge this branch into `main`**: open a pull request from `claude/city-building-game-design-yk7dix`
    to `main` on GitHub and merge it. The deploy workflow (`.github/workflows/deploy.yml`, already
@@ -100,11 +107,14 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-The Phase 2 review fixes (DECISIONS, "Phase 2 review"): late-game money, the placeable regional rail
-link, the legacy save corpus and tests (with seasons' grace for pre-seasons cities), G in scenarios,
-level crossings and trams, and the docs, are done and tested; left: the full e2e run and the final
-bench and balance numbers. Item 6 (performance) was dropped: on an M5 MacBook Pro the 100k city's
-worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md is complete.
+Nothing: the Phase 2 review (DECISIONS, "Phase 2 review") is done. Late-game money, the placeable
+regional rail link, the legacy save corpus and tests (with seasons' grace for pre-seasons cities),
+G in scenarios, level crossings and trams, the docs, and the repository's new name (`CityBloom`,
+so Pages serves `/CityBloom/`) are fixed and tested; item 6 (performance) was dropped, since on an
+M5 MacBook Pro the 100k city's worst tick is 6 ms (see Real hardware). The full e2e run on the
+review code passed 36 of 38; the two failures (M24's spec ran out of money; rare cars inside trams
+and on closed crossings) are fixed, and those specs pass on repeat. A last full run on the final
+code is logged below. Every milestone in SPEC.md and SPEC-2.md is complete.
 
 ## Next tasks
 1. The ideas list above; the "To check on the Mac" list needs real hardware.
@@ -133,13 +143,18 @@ worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md
 - Roads can't join a viaduct mid-span; the planner says to meet it where it's back on the ground. They can pass under one high enough (M19), and local roads crossing each other always meet at a junction (only the city and regional highways pass over).
 - Undo history costs a snapshot per command (about 25 ms in a 12k town, ~55 ms at 112k, on the worker, so the UI doesn't stall); it isn't saved, so undo starts fresh after loading.
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
-- Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains). Trains run to their timetable (cars give way to them at crossings, not the other way round); trams keep their own place and wait for cars, so a tram line bunches up in heavy traffic. Walkers still cross a closed level crossing. A city with no regional rail link can lay one from the Transit menu (Phase 2 review).
+- Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains). Trains run to their timetable (cars give way to them at crossings, not the other way round); trams keep their own place and wait for cars, so a tram line bunches up in heavy traffic. Walkers still cross a closed level crossing. A tram turns back by crossing straight over the road at its far terminus and at its depot (there's no turning loop), waiting there for a gap in the traffic. A city with no regional rail link can lay one from the Transit menu (Phase 2 review).
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
-## Performance (latest: M24)
+## Performance (latest: Phase 2 review)
+- `bench.ts 8 --big --profile`: at 97–110k tick avg 1.15–1.68 ms, p99 8.9–15.0 ms, worst per month 15.7–24.9 ms, and one 147 ms `economy` tick in month 7. An A/B run of the commit before the review, the same hour: 1.38–1.87 ms, worst 17.1–33.8 ms, 13.6 s of ticks against 12.6 s, with identical populations; `main` (the same sim code as the branch) had no such spike (month 7 worst 19.1 ms), so the 147 ms tick is the VM, not the code. The review costs nothing measurable; the VM runs about 50 % slower today than at M24 (0.78–1.05 ms then), and the Mac numbers above are the real ones. The bench city is a sandbox, so the big-city running costs don't change it.
+- `balance.ts 20`: careful 71,565 / 72 % at year 20 (peak 74.1k in year 19), treasury between $0.38M and $1.7M from year 10 (it had piled up to $25M before the review), every election won, eleven goals met with four projects open (city stadium, solar tower array, convention centre, garden expo); the $2M launch complex isn't bought by year 20 on this seed (treasury $1.5M and rising); greedy 420 / 16 %, neglectful 354 / 36 % (both unchanged).
+- Visible cars in the rail scene (`review-crossings`, 1×, about 100 cars): 0.9–1.1 ms a frame on SwiftShader with trams checked along their track, as before the change.
+
+## Performance (M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).
 
 ## Performance (M23)

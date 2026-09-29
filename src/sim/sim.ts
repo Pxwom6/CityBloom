@@ -241,6 +241,7 @@ export type SimEvent = {
     | 'scenarioWon'
     | 'scenarioLost'
     | 'season'
+    | 'seasonsNew'
     | 'weather';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
@@ -346,7 +347,7 @@ export class Sim {
       craters: [],
       progress: { peak: 0, milestone: 0, achievements: {}, recoverTo: 0 },
       policies: [],
-      tourism: { visitors: 0, overnight: 0 },
+      tourism: { visitors: 0, overnight: 0, by: { road: 0, rail: 0, air: 0, sea: 0 } },
       chronicle: emptyChronicle(0),
       matchDay: null,
       election: newElectionState(0, options.elections && !options.sandbox),
@@ -379,6 +380,9 @@ export class Sim {
       state.railway = null;
       sim.buildRailway();
     }
+    // A city meeting seasons for the first time (Phase 2 review): say what winter will ask of it.
+    const g = state.weather.grace;
+    if (g && g.from === state.tick) sim.events.push({ kind: 'seasonsNew', id: g.until });
     return sim;
   }
 

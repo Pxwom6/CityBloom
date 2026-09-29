@@ -1,16 +1,17 @@
 import { emptyChronicle } from './systems/chronicle';
+import { emptyTotals } from './systems/totals';
 import { newElectionState } from './systems/elections';
 import { MILESTONES } from '../data/progression';
 import { GRID_RES, HEIGHT_RES, type MapPreset } from '../data/world';
 import { Rng } from './rng';
-import { initialWeather } from './systems/weather';
+import { initialWeather, seasonsGrace } from './systems/weather';
 import { initialRegion } from './systems/region';
 import { GAME_TITLE } from '../config';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 22;
+export const SAVE_VERSION = 23;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -183,13 +184,18 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
     districtCells: encodeValue(new Uint8Array(GRID_RES * GRID_RES)),
   }),
   // v19 → v20 (M22): seasons and weather. An older city gets its preset's climate, a fair spell to
-  // start with, and its own weather dice.
+  // start with, and its own weather dice; its first winter spares it heating, which eases in by the
+  // next (Phase 2 review: it was built for mild weather all year, with no headroom for winter).
   19: (s) => {
     const options = s.options as { seed: string; preset: MapPreset };
     const rng = s.rng as Record<string, unknown>;
+    const tick = s.tick as number;
     return {
       ...s,
-      weather: s.weather ?? initialWeather(options.preset, s.tick as number),
+      weather: s.weather ?? {
+        ...initialWeather(options.preset, tick),
+        grace: seasonsGrace(tick),
+      },
       rng: { ...rng, weather: rng.weather ?? Rng.fromSeed(`${options.seed}:weather`).getState() },
     };
   },
@@ -206,6 +212,9 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   },
   // v21 → v22 (M24): custom maps. Every older city was founded on a generated map.
   21: (s) => ({ ...s, map: s.map ?? null }),
+  // v22 → v23 (Phase 2 review): a city new to seasons eases into heating (`weather.grace`, set by
+  // the v19 → v20 step); a v22 city already has its seasons, so nothing changes.
+  22: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {
@@ -232,7 +241,19 @@ export function readSaveFile(save: SaveFile): SimState {
   }
   const state = decodeValue(encoded) as SimState;
   state.version = SAVE_VERSION;
+  repairState(state);
   return state;
+}
+
+/**
+ * Load-time repair (Phase 2 review): running figures that later versions added and the systems only
+ * write as they next run. An older save (or one saved soon after loading an older one) lacked them
+ * for the first ticks after loading: Ashton's totals had no `toRegion` or `fromRegion` for 39 ticks.
+ */
+function repairState(state: SimState): void {
+  const totals = state.totals as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(emptyTotals())) if (totals[k] === undefined) totals[k] = v;
+  state.tourism.by ??= { road: 0, rail: 0, air: 0, sea: 0 };
 }
 
 export function stateToCanonicalJson(state: SimState): string {

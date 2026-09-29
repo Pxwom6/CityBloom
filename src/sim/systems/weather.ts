@@ -46,6 +46,34 @@ export interface WeatherState {
   river: number;
   /** Dryness of the land, 0–1 (lowers groundwater). */
   dryness: number;
+  /**
+   * A city from before seasons (loaded from a pre-M22 save, Phase 2 review), built for mild weather
+   * all year: heating and cooling count for nothing from `from` (its loading) through its first
+   * winter, then ease in from `start` (the spring after it) to full at `until` (the next winter).
+   */
+  grace?: { from: number; start: number; until: number };
+}
+
+/** Share of heating and cooling a city bears now (below 1 only while seasons are new to it). */
+export function seasonEase(w: WeatherState, tick: number): number {
+  const g = w.grace;
+  if (!g) return 1;
+  return Math.max(0, Math.min(1, (tick - g.start) / Math.max(1, g.until - g.start)));
+}
+
+/**
+ * Seasons' grace for a city loaded at `tick` that has never had them: spared through the first
+ * winter from then, easing in from the spring after it to the start of the next winter.
+ */
+export function seasonsGrace(tick: number): { from: number; start: number; until: number } {
+  const month0 = tick - (tick % TICKS_PER_MONTH);
+  const winter = (m: number) => seasonOf(dateOf(month0 + m * TICKS_PER_MONTH).month) === 'winter';
+  let m = 0;
+  while (!winter(m)) m++;
+  while (winter(m)) m++;
+  const start = m;
+  while (!winter(m)) m++;
+  return { from: tick, start: month0 + start * TICKS_PER_MONTH, until: month0 + m * TICKS_PER_MONTH };
 }
 
 export function initialWeather(preset: MapPreset, tick = 0, climate?: ClimateId): WeatherState {
@@ -154,6 +182,8 @@ export function weatherHour(sim: Sim): void {
     w.offset = 0;
   } else if (s.tick >= w.until) nextSpell(sim);
   updateTemperature(w, s.tick);
+  // Seasons have fully arrived in a city that was new to them.
+  if (w.grace && s.tick >= w.grace.until) delete w.grace;
   // A new season (on the calendar's turn from one month to the next).
   const now = seasonAt(w, s.tick);
   if (w.seasons && now !== seasonAt(w, s.tick - TICKS_PER_HOUR))
@@ -207,13 +237,20 @@ function roadSnowHour(sim: Sim, fall: number, melt: number): void {
   }
 }
 
-/** Heating and cooling: extra use per unit, by zone, at the day's mean temperature. */
-export function weatherUse(w: WeatherState): {
+/**
+ * Heating and cooling: extra use per unit, by zone, at the day's mean temperature (eased in for a
+ * city that's new to seasons, when `tick` is given).
+ */
+export function weatherUse(
+  w: WeatherState,
+  tick?: number,
+): {
   power: { R: number; C: number; I: number };
   water: { R: number; C: number; I: number };
 } {
-  const cold = clamp01((WEATHER.heatBelow - w.mean) / WEATHER.heatSpan);
-  const hot = clamp01((w.mean - WEATHER.coolAbove) / WEATHER.coolSpan);
+  const ease = tick === undefined ? 1 : seasonEase(w, tick);
+  const cold = clamp01((WEATHER.heatBelow - w.mean) / WEATHER.heatSpan) * ease;
+  const hot = clamp01((w.mean - WEATHER.coolAbove) / WEATHER.coolSpan) * ease;
   const h = WEATHER.heating;
   const c = WEATHER.cooling;
   const t = WEATHER.thirst;

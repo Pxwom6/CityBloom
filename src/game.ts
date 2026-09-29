@@ -490,6 +490,12 @@ export class Game {
         this.notice('matchDay', 'Match day at the stadium: fans are driving in from all over.', 'info', at);
       else if (e.kind === 'launch')
         this.notice('launch', 'A rocket lifted off from the launch complex.', 'ok', at, false);
+      else if (e.kind === 'seasonsNew')
+        this.notice(
+          'seasonsNew',
+          'Seasons have come to this city. Cold weather now needs power for heating (and hot weather some for cooling): this first winter the city is spared, and from spring it eases in to count in full by next winter. The utilities advisor says how much power that will take.',
+          'info',
+        );
       else if (e.kind === 'campaign')
         this.notice(
           'campaign',

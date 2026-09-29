@@ -284,6 +284,10 @@ export interface TramBody {
   hx: number;
   hz: number;
   pts: number[];
+  /** A circle holding every point, for a quick "nowhere near" (centre and radius). */
+  cx: number;
+  cz: number;
+  r: number;
 }
 export const TRAM_BODY_STEP = 2;
 
@@ -777,11 +781,21 @@ export class RailVehicleRenderer {
             hx: (this.a.x - this.b.x) / hl,
             hz: (this.a.z - this.b.z) / hl,
             pts: [],
+            cx: 0,
+            cz: 0,
+            r: 0,
           };
           for (let s = 0; s < len + TRAM_BODY_STEP; s += TRAM_BODY_STEP) {
             path.at(d - Math.min(s, len), true, this.b);
             body.pts.push(this.b.x, this.b.z);
           }
+          const p = body.pts;
+          for (let i = 0; i < p.length; i += 2) {
+            body.cx += p[i]! / (p.length / 2);
+            body.cz += p[i + 1]! / (p.length / 2);
+          }
+          for (let i = 0; i < p.length; i += 2)
+            body.r = Math.max(body.r, Math.hypot(p[i]! - body.cx, p[i + 1]! - body.cz));
           this.tramBodies.push(body);
         }
         if (run.passes) {

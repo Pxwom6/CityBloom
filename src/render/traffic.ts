@@ -107,6 +107,7 @@ interface Car {
 
 /** Is any point of a tram's body (along its track) within `r` metres of (x, z)? */
 function nearBody(t: TramBody, x: number, z: number, r: number): boolean {
+  if ((t.cx - x) ** 2 + (t.cz - z) ** 2 > (t.r + r) ** 2) return false;
   const p = t.pts;
   for (let i = 0; i < p.length; i += 2) if ((p[i]! - x) ** 2 + (p[i + 1]! - z) ** 2 < r * r) return true;
   return false;

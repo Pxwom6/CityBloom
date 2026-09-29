@@ -132,7 +132,7 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
   await shot(page, 'm24-pass');
 
   // A quarter in the valley (as the scenario test builds it), then play on to the win. It costs
-  // about $130k; holding the brush keeps digging in real time, so what the pass cost varies from
+  // about $135k; holding the brush keeps digging in real time, so what the pass cost varies from
   // run to run ($190–240k), and a mayor left short borrows, as a player would.
   const before = (await state(page)).treasury;
   const { failed, loan } = await page.evaluate(async (hz) => {

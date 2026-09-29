@@ -271,6 +271,22 @@ interface Run {
  * What trams need of the visible cars (render/traffic.ts): where they are, and junctions' claims
  * (a tram claims a junction as it crosses, and waits while a car from another road holds it).
  */
+/**
+ * A tram as cars see it (Phase 2 review): its front, rear and the heading between them, and points
+ * along its track from front to rear every `TRAM_BODY_STEP` metres (x, z pairs), since round a
+ * curve or a turnaround across the road the straight line from front to rear isn't where it is.
+ */
+export interface TramBody {
+  fx: number;
+  fz: number;
+  rx: number;
+  rz: number;
+  hx: number;
+  hz: number;
+  pts: number[];
+}
+export const TRAM_BODY_STEP = 2;
+
 export interface TramTraffic {
   readonly cars: readonly { x: number; z: number; heading: number }[];
   claimedByOther(node: number, from: number): boolean;
@@ -383,8 +399,8 @@ export class RailVehicleRenderer {
   readonly holding = new Set<number>();
   /** Ticks until the next train reaches each crossing (0 while one is on it), for cars deciding to cross. */
   readonly eta = new Map<number, number>();
-  /** Trams on the streets as cars see them: front, rear and heading (Phase 2 review). */
-  readonly tramBodies: { fx: number; fz: number; rx: number; rz: number; hx: number; hz: number }[] = [];
+  /** Trams on the streets as cars see them (Phase 2 review). */
+  readonly tramBodies: TramBody[] = [];
   /** The visible cars trams keep out of the way of (set by the renderer). */
   traffic: TramTraffic | null = null;
   private lastTick = -1;
@@ -632,22 +648,28 @@ export class RailVehicleRenderer {
     }
     if (budget <= 0) return;
     let room = run.v * budget;
-    // Heading and front.
+    // Cars on its track ahead (and any crossing it just in front), looked for along the track itself:
+    // a straight line from its front missed cars round a curve, and at a turnaround, where the track
+    // crosses the road, it looked across the road instead of along the way it was about to go.
+    const reach = room + TRAM_GAP + 3;
     dir.path.at(st.d, true, this.a);
-    dir.path.at(st.d + 2, true, this.b);
-    const hl = Math.hypot(this.b.x - this.a.x, this.b.z - this.a.z) || 1;
-    const hx = (this.b.x - this.a.x) / hl;
-    const hz = (this.b.z - this.a.z) / hl;
-    // Cars in its lane ahead (and any crossing its path just in front).
-    for (const c of this.traffic?.cars ?? []) {
-      const dx = c.x - this.a.x;
-      const dz = c.z - this.a.z;
-      const along = dx * hx + dz * hz;
-      if (along <= 0 || along > room + TRAM_GAP + 3) continue;
-      if (Math.abs(dz * hx - dx * hz) > LANE_HALF) continue;
-      // Head on in its lane: the car gives way (render/traffic.ts), the tram doesn't wait for it.
-      if (Math.cos(c.heading) * hx + Math.sin(c.heading) * hz < -0.5) continue;
-      room = Math.min(room, Math.max(0, along - TRAM_GAP));
+    const near = (this.traffic?.cars ?? []).filter(
+      (c) => (c.x - this.a.x) ** 2 + (c.z - this.a.z) ** 2 < (reach + LANE_HALF) ** 2,
+    );
+    for (let s = TRAM_BODY_STEP, hit = false; near.length && !hit && s <= reach; s += TRAM_BODY_STEP) {
+      dir.path.at(st.d + s, true, this.b);
+      const hl = Math.hypot(this.b.x - this.a.x, this.b.z - this.a.z) || 1;
+      const hx = (this.b.x - this.a.x) / hl;
+      const hz = (this.b.z - this.a.z) / hl;
+      for (const c of near) {
+        if ((c.x - this.b.x) ** 2 + (c.z - this.b.z) ** 2 > LANE_HALF * LANE_HALF) continue;
+        // Head on in its lane: the car gives way (render/traffic.ts), the tram doesn't wait for it.
+        if (Math.cos(c.heading) * hx + Math.sin(c.heading) * hz < -0.5) continue;
+        room = Math.min(room, Math.max(0, s - LANE_HALF - TRAM_GAP));
+        hit = true;
+      }
+      this.a.x = this.b.x;
+      this.a.z = this.b.z;
     }
     // The tram ahead on the loop.
 
@@ -747,14 +769,20 @@ export class RailVehicleRenderer {
           path.at(d, true, this.a);
           path.at(d - len, true, this.b);
           const hl = Math.hypot(this.a.x - this.b.x, this.a.z - this.b.z) || 1;
-          this.tramBodies.push({
+          const body: TramBody = {
             fx: this.a.x,
             fz: this.a.z,
             rx: this.b.x,
             rz: this.b.z,
             hx: (this.a.x - this.b.x) / hl,
             hz: (this.a.z - this.b.z) / hl,
-          });
+            pts: [],
+          };
+          for (let s = 0; s < len + TRAM_BODY_STEP; s += TRAM_BODY_STEP) {
+            path.at(d - Math.min(s, len), true, this.b);
+            body.pts.push(this.b.x, this.b.z);
+          }
+          this.tramBodies.push(body);
         }
         if (run.passes) {
           const over = (consistLength(run.consist) + CLOSE_BEHIND) / run.v;

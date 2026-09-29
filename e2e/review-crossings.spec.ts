@@ -109,23 +109,33 @@ test('Phase 2 review: barriers come down for trains, cars wait for them, and tra
         shotTaken = true;
       }
     }
-    // A car inside a tram's body, lined up with it in its lane.
+    // A car inside a tram's body, lined up with it: within 1.2 m of the tram's line along its track
+    // (points from front to rear), or up to 2 m past either end, heading along it or against it.
     for (const t of r.trams) {
       tramSamples++;
-      const len = Math.hypot(t.fx - t.rx, t.fz - t.rz);
+      const p = t.pts;
       for (const c of r.cars) {
-        const dx = c.x - t.rx;
-        const dz = c.z - t.rz;
-        const along = dx * t.hx + dz * t.hz;
-        const lateral = Math.abs(dz * t.hx - dx * t.hz);
-        const lined = Math.abs(Math.cos(c.heading) * t.hx + Math.sin(c.heading) * t.hz) > 0.7;
-        if (lined && along > -2 && along < len + 2 && lateral < 1.2) {
+        for (let i = 0; i + 3 < p.length; i += 2) {
+          const ax = p[i]!;
+          const az = p[i + 1]!;
+          const sl = Math.hypot(p[i + 2]! - ax, p[i + 3]! - az);
+          if (sl < 1e-6) continue;
+          const ux = (p[i + 2]! - ax) / sl;
+          const uz = (p[i + 3]! - az) / sl;
+          const along = (c.x - ax) * ux + (c.z - az) * uz;
+          const lo = i === 0 ? -2 : 0;
+          const hi = i + 4 >= p.length ? sl + 2 : sl;
+          if (along < lo || along > hi) continue;
+          const lateral = Math.abs((c.z - az) * ux - (c.x - ax) * uz);
+          const heading = Math.cos(c.heading) * ux + Math.sin(c.heading) * uz;
+          if (lateral >= 1.2 || Math.abs(heading) <= 0.7) continue;
           overlaps++;
           // Where and how, to trace it: the car's road, lane and leg, and the tram's ends.
           const rel = (x: number, z: number) => `${(x - info.c.x).toFixed(1)},${(z - info.c.z).toFixed(1)}`;
           console.log(
-            `[crossings] frame ${k}: car ${c.id} at ${rel(c.x, c.z)} inside a tram (${along.toFixed(1)} of ${len.toFixed(1)} m along, ${lateral.toFixed(2)} m aside, heading ${(Math.cos(c.heading) * t.hx + Math.sin(c.heading) * t.hz).toFixed(2)}), road ${c.seg} lane ${c.lane} leg ${c.leg}/${c.legs} at ${c.t.toFixed(1)} m, waited ${c.waited.toFixed(1)}; tram ${rel(t.fx, t.fz)} to ${rel(t.rx, t.rz)}`,
+            `[crossings] frame ${k}: car ${c.id} at ${rel(c.x, c.z)} inside a tram (${(i + along).toFixed(1)} m from its front, ${lateral.toFixed(2)} m aside, heading ${heading.toFixed(2)}), road ${c.seg} lane ${c.lane} leg ${c.leg}/${c.legs} at ${c.t.toFixed(1)} m, waited ${c.waited.toFixed(1)}; tram ${rel(t.fx, t.fz)} to ${rel(t.rx, t.rz)}`,
           );
+          break;
         }
       }
     }

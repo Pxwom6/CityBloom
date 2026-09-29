@@ -16,7 +16,7 @@ import {
 import type { ClientWorld } from '../client/world';
 import { TRAFFIC } from '../data/balance';
 import { ROAD_TYPES, isRail } from '../data/roads';
-import { CLOSE_AHEAD_TICKS } from './railVehicles';
+import { CLOSE_AHEAD_TICKS, type TramBody } from './railVehicles';
 import { VEHICLE_SPEED_SCALE } from '../data/civic';
 import { hourOfDay } from '../sim/time';
 import { congestedSeconds } from '../sim/systems/traffic';
@@ -105,6 +105,13 @@ interface Car {
   waited: number;
 }
 
+/** Is any point of a tram's body (along its track) within `r` metres of (x, z)? */
+function nearBody(t: TramBody, x: number, z: number, r: number): boolean {
+  const p = t.pts;
+  for (let i = 0; i < p.length; i += 2) if ((p[i]! - x) ** 2 + (p[i + 1]! - z) ** 2 < r * r) return true;
+  return false;
+}
+
 /** Car length plus the gap kept to the car ahead when stopped, metres (M19). */
 const SPACING = 7.5;
 /** Ticks a junction stays taken by a car crossing it from one road, and by one on a roundabout. */
@@ -171,7 +178,7 @@ export class TrafficRenderer {
   private frameClock = 0;
   private frameDt = 0;
   /** Trams on the streets (the rail vehicles' list, Phase 2 review): cars keep behind them. */
-  trams: readonly { fx: number; fz: number; rx: number; rz: number; hx: number; hz: number }[] = [];
+  trams: readonly TramBody[] = [];
 
   /** Is a car (or tram) from another road crossing this junction now? (For trams, Phase 2 review.) */
   claimedByOther(node: number, from: number): boolean {
@@ -191,7 +198,7 @@ export class TrafficRenderer {
 
   /**
    * How far a car may drive before it would run into a tram (Phase 2 review): the nearest point of
-   * a tram's body ahead of it in its lane, less a car's length, or Infinity.
+   * a tram's body (along its track) ahead of it in its lane, less a car's length, or Infinity.
    */
   private tramRoom(c: Car): number {
     if (!this.trams.length) return Infinity;
@@ -199,9 +206,7 @@ export class TrafficRenderer {
     const reach = 75 + 3 * this.frameDt;
     let near = false;
     for (const t of this.trams) {
-      const mx = (t.fx + t.rx) / 2 - c.x;
-      const mz = (t.fz + t.rz) / 2 - c.z;
-      if (mx * mx + mz * mz < reach * reach) {
+      if (nearBody(t, c.x, c.z, reach)) {
         near = true;
         break;
       }
@@ -221,18 +226,13 @@ export class TrafficRenderer {
     const cz = pt.z + hx * lane;
     let room = Infinity;
     for (const t of this.trams) {
-      if ((t.fx - cx) ** 2 + (t.fz - cz) ** 2 > 75 * 75) continue;
+      if (!nearBody(t, cx, cz, 75)) continue;
       // A car already inside a tram's body (it came on to the road just there) drives out of it.
-      const len = Math.hypot(t.fx - t.rx, t.fz - t.rz);
-      const bx = cx - t.rx;
-      const bz = cz - t.rz;
-      const inAlong = bx * t.hx + bz * t.hz;
-      if (inAlong > -1 && inAlong < len + 1 && Math.abs(bz * t.hx - bx * t.hz) < 1.8) continue;
-      for (let k = 0; k <= 4; k++) {
-        const x = t.fx + ((t.rx - t.fx) * k) / 4;
-        const z = t.fz + ((t.rz - t.fz) * k) / 4;
-        const dx = x - cx;
-        const dz = z - cz;
+      if (nearBody(t, cx, cz, 1.8)) continue;
+      const p = t.pts;
+      for (let i = 0; i < p.length; i += 2) {
+        const dx = p[i]! - cx;
+        const dz = p[i + 1]! - cz;
         const along = dx * hx + dz * hz;
         if (along <= 0 || along > 40) continue;
         if (Math.abs(dz * hx - dx * hz) > 1.8) continue;
@@ -369,13 +369,7 @@ export class TrafficRenderer {
     const p0 = this.world.net.curve(l0.seg).pointAt(l0.s0);
     for (const info of this.nodeInfo.values())
       if (info.kind === 'crossing' && (info.x - p0.x) ** 2 + (info.z - p0.z) ** 2 < 12 * 12) return;
-    for (const t of this.trams)
-      for (const [x, z] of [
-        [t.fx, t.fz],
-        [(t.fx + t.rx) / 2, (t.fz + t.rz) / 2],
-        [t.rx, t.rz],
-      ] as const)
-        if ((x - p0.x) ** 2 + (z - p0.z) ** 2 < 14 * 14) return;
+    for (const t of this.trams) if (nearBody(t, p0.x, p0.z, 14)) return;
     for (const o of this.cars) {
       const ol = o.legs[o.leg];
       if (
@@ -546,11 +540,17 @@ export class TrafficRenderer {
         const pastCrossingLine = info?.kind === 'crossing' && c.t > stopAt + 0.5;
         if (info && !pastCrossingLine && c.t + Math.min(room, v * budget) >= stopAt - 0.01) {
           // A level crossing is only entered with room to clear it on the far side, and time to
-          // before the barriers start down (Phase 2 review).
+          // before the barriers start down (Phase 2 review). The room is for this car and every car
+          // already over the line ahead of it, which get there first: counting only the road beyond
+          // left the second of two cars crossing close together waiting on the rails.
+          const committed =
+            info.kind === 'crossing'
+              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => o !== c && along(o) > along(c)).length
+              : 0;
           const blocked =
             !this.mayEnter(c, n!, info, rings.get(n!) ?? []) ||
             (info.kind === 'crossing' &&
-              (!this.roomAhead(c, c.leg + 1, lanes, info.stop + SPACING) ||
+              (!this.roomAhead(c, c.leg + 1, lanes, info.stop + SPACING * (1 + committed)) ||
                 (this.trainEta.get(n!) ?? Infinity) - this.frameClock <
                   // Time to clear it at half speed (a car in a queue crawls over).
                   CLOSE_AHEAD_TICKS + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
@@ -618,12 +618,7 @@ export class TrafficRenderer {
     if (this.trams.length) {
       const l = c.legs[i]!;
       const p = this.world.net.curve(l.seg).pointAt(l.s0);
-      for (const t of this.trams)
-        for (let k = 0; k <= 4; k++) {
-          const x = t.fx + ((t.rx - t.fx) * k) / 4;
-          const z = t.fz + ((t.rz - t.fz) * k) / 4;
-          if ((x - p.x) ** 2 + (z - p.z) ** 2 < (span + 3) ** 2) return false;
-        }
+      for (const t of this.trams) if (nearBody(t, p.x, p.z, span + 3)) return false;
     }
     const list = lanes.get(this.laneKey(c, i));
     if (!list?.length) return true;

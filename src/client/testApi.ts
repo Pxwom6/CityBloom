@@ -77,8 +77,8 @@ export interface TestApi {
    * closed, and how far its barrier arms are down (0 up, 1 down).
    */
   getCrossings(): { node: number; x: number; z: number; closed: boolean; down: number }[];
-  /** Trams on the streets as cars see them: front, rear and heading (Phase 2 review). */
-  getTrams(): { fx: number; fz: number; rx: number; rz: number; hx: number; hz: number }[];
+  /** Trams on the streets as cars see them: front, rear, heading and points along the track (Phase 2 review). */
+  getTrams(): { fx: number; fz: number; rx: number; rz: number; hx: number; hz: number; pts: number[] }[];
   /** Pedestrians on screen (close zoom only), with their trip purpose and route length. */
   getWalkers(): { id: number; x: number; z: number; purpose: string; route: number }[];
   /** Bus stops and lines on the client mirror: stops per line, and each line's mode and riders (M20). */
@@ -370,7 +370,7 @@ export function installTestApi(game: Game): TestApi {
           down: game.renderer.crossings.downShare(node),
         };
       }),
-    getTrams: () => game.renderer.railVehicles.tramBodies.map((t) => ({ ...t })),
+    getTrams: () => game.renderer.railVehicles.tramBodies.map((t) => ({ ...t, pts: [...t.pts] })),
     getWalkers: () =>
       game.renderer.pedestrians.walkers.map((w) => ({
         id: w.id,

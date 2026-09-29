@@ -28,6 +28,9 @@ function Shortcuts({ game }: { game: Game }) {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       if (game.screen) return;
+      // The active tool has first claim on a key (its listener runs first and marks what it
+      // handled): with the road tool open, G toggles grid snap, not the scenario's goals.
+      if (e.defaultPrevented) return;
       if (e.code === 'Backquote') game.toggleDebug();
       else if (e.code === 'Space') {
         e.preventDefault();

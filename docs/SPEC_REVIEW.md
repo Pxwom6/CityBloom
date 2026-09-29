@@ -1,5 +1,9 @@
 # Review against SPEC.md (M12)
 
+*The phase-1 section below is the snapshot taken when M12 completed: its figures (test counts,
+file counts, draw calls, performance) are M12's. Phase 2 changed many of them; the current figures
+are in PROGRESS.md and the phase-2 sections further down.*
+
 Every item in the brief, where it lives, and how it's checked. "e2e mN" is `e2e/mN-*.spec.ts`, and
 screenshots are in `docs/screenshots/`. Anything not done is explained at the end and in
 `docs/DECISIONS.md`.
@@ -171,6 +175,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | One or two promises beforehand that voters judge | six promises (`PROMISES` in `src/data/elections.ts`), two at most, made in the six-month campaign from the city panel's Election tab and judged against where the city stood when each was made |
 | Winning brings a perk | the region's grant ($4 a resident) and +3 points of approval for a year |
 | Losing never ends the game but brings a year of limits | the council refuses tax rises and new loans for a year, saying until when (`tests/elections.test.ts`) |
+| Through the real UI | `e2e/m17-projects-elections.spec.ts`: the Big projects category with each project's requirements, cost and perk in its tooltip; the stadium placed from the toolbar and followed in the inspector through every stage to opening (`docs/screenshots/m17-stadium-*.png`); an election campaign from the city panel with two promises made, a third refused, and the vote held (`m17-election-*.png`) |
 | Off in sandbox, with a setting to turn them off | new-city option and Settings → Game → Elections (`setElections`); sandbox cities never vote |
 | New saved state: version bump, migration and a test | save v15 (`matchDay`, `election`, `Civic.build`); migration 14 → 15 schedules elections from the next four-year mark; `tests/elections.test.ts` loads the version-10 playtest save and plays on |
 | Careful mayor plans the whole map and grows past 50k | `scripts/balance.ts`: 20 district slots on both banks with river crossings, zoning that follows demand (industry when jobs are short, shops only while wanted), side streets widened to avenues after high-rises unlock, a quarter kept for landmarks and projects, services scaled with the city |

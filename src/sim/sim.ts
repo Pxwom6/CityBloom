@@ -55,6 +55,7 @@ import {
 } from './actions/roads';
 import { zone } from './actions/zoning';
 import { terraform } from './actions/terraform';
+import { buildRailLink, railLinkOffered } from './actions/railLink';
 import { editMap, exportMap, setMapEntry, setMapInfo } from './actions/mapEdit';
 import { MAP_BRUSHES } from '../data/mapEditor';
 import { ENTRY_SPACING, type MapData } from './terrain/customMap';
@@ -70,7 +71,7 @@ const TERRAFORM_LABEL = {
   smooth: 'smoothing',
 } as const;
 import { v2 } from './geom';
-import { GRID_RES, HEIGHT_RES, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
+import { GRID_RES, HEIGHT_RES, HIGHWAY_CONNECT_X, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
 import {
   BState,
   accessOf,
@@ -193,10 +194,9 @@ import {
   setTax,
   takeLoan,
 } from './systems/economy';
-import { DIFFICULTY, SANDBOX_FUNDS, fundingEffect, type Dept } from '../data/economy';
+import { DIFFICULTY, SANDBOX_FUNDS, bigCityFactor, fundingEffect, type Dept } from '../data/economy';
 
-/** The highway connection node sits this far inside the west edge. */
-export const HIGHWAY_CONNECT_X = 24;
+export { HIGHWAY_CONNECT_X };
 
 export type SimEvent = {
   kind:
@@ -241,6 +241,7 @@ export type SimEvent = {
     | 'scenarioWon'
     | 'scenarioLost'
     | 'season'
+    | 'seasonsNew'
     | 'weather';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
@@ -346,7 +347,7 @@ export class Sim {
       craters: [],
       progress: { peak: 0, milestone: 0, achievements: {}, recoverTo: 0 },
       policies: [],
-      tourism: { visitors: 0, overnight: 0 },
+      tourism: { visitors: 0, overnight: 0, by: { road: 0, rail: 0, air: 0, sea: 0 } },
       chronicle: emptyChronicle(0),
       matchDay: null,
       election: newElectionState(0, options.elections && !options.sandbox),
@@ -379,6 +380,9 @@ export class Sim {
       state.railway = null;
       sim.buildRailway();
     }
+    // A city meeting seasons for the first time (Phase 2 review): say what winter will ask of it.
+    const g = state.weather.grace;
+    if (g && g.from === state.tick) sim.events.push({ kind: 'seasonsNew', id: g.until });
     return sim;
   }
 
@@ -418,16 +422,27 @@ export class Sim {
       this.state.railway = null;
       return;
     }
-    const outside = this.net.createNode(hw.lineX, best.z);
-    const connect = this.net.createNode(HIGHWAY_CONNECT_X, best.z);
+    this.layRailway(best.z);
+  }
+
+  /**
+   * Lay the regional railway's link at `z` on the west edge: track from the regional line outside
+   * the map to a node just inside it, where the city's own railways join. Returns the segment.
+   */
+  layRailway(z: number): number {
+    const hw = this.terrain.gen.params.highway;
+    const outside = this.net.createNode(hw.lineX, z);
+    const connect = this.net.createNode(HIGHWAY_CONNECT_X, z);
     const seg = this.net.createSegment(
       outside.id,
       connect.id,
-      v2((hw.lineX + HIGHWAY_CONNECT_X) / 2, best.z),
+      v2((hw.lineX + HIGHWAY_CONNECT_X) / 2, z),
       'mainline',
       { zoned: false },
     );
     this.state.railway = { outside: outside.id, connect: connect.id, segment: seg.id };
+    this.markNetworkChanged();
+    return seg.id;
   }
 
   private buildHighway(): void {
@@ -467,8 +482,14 @@ export class Sim {
 
   /** Monthly upkeep at 100 % funding of every department's civic buildings. */
   /** Running costs scale with difficulty. */
+  /** Running costs: the difficulty's scale, and more for a big city (Phase 2 review). */
   upkeepScale(): number {
-    return DIFFICULTY[this.state.options.difficulty]?.upkeep ?? 1;
+    return (DIFFICULTY[this.state.options.difficulty]?.upkeep ?? 1) * this.bigCityScale();
+  }
+
+  /** How much a big city's running costs are raised (1 for a town; `BIG_CITY`). */
+  bigCityScale(): number {
+    return bigCityFactor(this.state.totals.population);
   }
 
   departmentUpkeep(): Partial<Record<Dept, number>> {
@@ -572,6 +593,15 @@ export class Sim {
       use: [...this.stopUse].sort((a, b) => a[0] - b[0]),
       freight: this.freightRoutes(),
     };
+  }
+
+  /** What the regional rail link carries (its junction building's inspector, Phase 2 review). */
+  private railLinkDetails(): { joined: boolean; freight: number; riders: number } {
+    const r = this.state.railway;
+    const joined = !!r && this.net.segmentsAt(r.connect).length > 1;
+    let freight = 0;
+    for (const c of railTerminals(this)) freight += this.railFreight.get(c.id) ?? 0;
+    return { joined, freight, riders: this.regionFlows.byRail };
   }
 
   /** Track from the regional railway's link to each shipping terminal's siding (M20, for the client). */
@@ -1023,6 +1053,20 @@ export class Sim {
           if (!dryRun) setSpell(this, cmd.kind, cmd.strength, cmd.hours);
           return ok(0);
         }
+        if (cmd.cheat === 'removeRailLink') {
+          if (!this.testMode) return fail('Test mode only');
+          const r = this.state.railway;
+          if (!r) return fail('No rail link');
+          if (this.net.segmentsAt(r.connect).length > 1) return fail('Track is joined to it');
+          if (!dryRun) {
+            this.net.removeSegment(r.segment);
+            this.net.removeNodeIfOrphan(r.outside);
+            this.net.removeNodeIfOrphan(r.connect);
+            this.state.railway = null;
+            this.markNetworkChanged();
+          }
+          return ok(0);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -1127,6 +1171,8 @@ export class Sim {
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
       case 'terraform':
         return terraform(this, cmd.mode, cmd.points, cmd.radius, cmd.level, dryRun);
+      case 'buildRailLink':
+        return buildRailLink(this, cmd.z, dryRun);
       case 'editMap':
         return editMap(this, cmd.brush, cmd.points, cmd.radius, cmd.strength ?? 1, cmd.level, dryRun);
       case 'setMapEntry':
@@ -1206,6 +1252,7 @@ export class Sim {
       case 'placeBuilding':
       case 'addModule':
       case 'moveBuilding':
+      case 'buildRailLink':
         return FULL_SCOPE;
       default:
         return null;
@@ -1220,6 +1267,8 @@ export class Sim {
         return cmd.zone === 'none' ? 'dezoning' : 'zoning';
       case 'terraform':
         return TERRAFORM_LABEL[cmd.mode];
+      case 'buildRailLink':
+        return 'regional rail link';
       case 'editMap':
         return (MAP_BRUSHES.find((b) => b.id === cmd.brush)?.name ?? 'brush').toLowerCase();
       case 'bulldoze':
@@ -1577,6 +1626,8 @@ export class Sim {
       scenario: this.scenarioStats(),
       weather: this.weatherStats(),
       region: regionSummary(this),
+      railwayLink: this.state.railway ? { ...this.state.railway } : null,
+      railLinkOffered: railLinkOffered(this),
       map: this.state.map
         ? {
             name: this.state.map.name,
@@ -1649,6 +1700,7 @@ export class Sim {
     const rates = monthlyRates(this);
     return {
       treasury: this.state.treasury,
+      bigCity: Math.round(this.bigCityScale() * 100) / 100,
       month: { ...e.month },
       projection: Object.fromEntries(Object.entries(rates).map(([k, v]) => [k, Math.round(v)])),
       history: e.history.map((h) => ({ month: h.month, lines: { ...h.lines }, treasury: h.treasury })),
@@ -2038,6 +2090,7 @@ export class Sim {
       railFreight: d.railFreight
         ? { linked: railTerminals(this).some((t) => t.id === c.id), trucks: this.railFreight.get(c.id) ?? 0 }
         : null,
+      railLink: d.railLink ? this.railLinkDetails() : null,
       port:
         d.airport || d.seaport
           ? {

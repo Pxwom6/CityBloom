@@ -523,6 +523,43 @@ export class Player {
     }
   }
 
+  /**
+   * Schools by the seats the city needs, as a player watching the education figures would build
+   * them: a primary for every 3,000 residents (300 seats for the tenth who are pupils) and a high
+   * school for every 11,000 (700 seats for 6 %), each by the homes with the most pupils left without
+   * a seat. One a round. (The advisor alone left a 66,000-resident city with 8 primaries and 3 high
+   * schools, a third of the seats it needed, and the launch complex's education bar out of reach.)
+   */
+  schools(): boolean {
+    const pop = this.sim.state.totals.population;
+    const kinds = [
+      ['primary', 3_000, 'seat1', 0.1],
+      ['highschool', 11_000, 'seat2', 0.06],
+    ] as const;
+    for (const [def, per, seat, pupils] of kinds) {
+      if (this.count(def) >= Math.floor(pop / per)) continue;
+      if (!this.sim.isUnlocked(CIVIC.get(def)!.unlockPopulation)) continue;
+      if (this.sim.state.treasury < CIVIC.get(def)!.cost + 5_000) continue;
+      // Pupils without a seat, by 240 m square.
+      const need = new Map<number, { n: number; x: number; z: number }>();
+      for (const b of this.sim.state.buildings.values()) {
+        if (b.zone !== ZONE_R || b.state !== BState.Active || b.pop <= 0) continue;
+        const n = b.pop * pupils * (1 - b[seat]);
+        if (n <= 0) continue;
+        const k = Math.floor(b.x / 240) * 64 + Math.floor(b.z / 240);
+        const c = need.get(k) ?? { n: 0, x: 0, z: 0 };
+        c.x = (c.x * c.n + b.x * n) / (c.n + n);
+        c.z = (c.z * c.n + b.z * n) / (c.n + n);
+        c.n += n;
+        need.set(k, c);
+      }
+      const spots = [...need.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]).slice(0, 3);
+      for (const [, c] of spots) if (this.placeNear(def, c, 300)) return true;
+      if (this.place(def)) return true;
+    }
+    return false;
+  }
+
   /** Buy an extra truck for a landfill whose trucks are all out, if it can take one (once a month). */
   buyTruck(): boolean {
     const now = this.sim.state.tick;
@@ -571,16 +608,31 @@ export class Player {
       // Beat and station cover grows with the city (one of each per 5,000 residents).
       if (this.count('police') < Math.floor(s.population / 5_000)) this.place('police');
       if (this.count('firestation') < Math.floor(s.population / 5_000)) this.place('firestation');
+      this.schools();
       this.campaign();
       // Taxes: nudge up while losing money (never against a promise), back down when comfortable.
       const rate = e.taxes.R[0]!;
+      // Saving for a goal the city can have but can't pay for in three years at this rate: a point
+      // more, every six months, up to 9 % (Phase 2 review: a big city runs near even at 6 %, so the
+      // big projects are saved for, as a player would).
+      const goal = this.savingFor();
+      const short = !!goal && s.treasury + Math.max(0, s.netMonthly) * 36 < goal.need;
       if (this.holdTaxes) {
         // Taxes stay where they were set.
       } else if (s.netMonthly < 0 && s.treasury < -s.netMonthly * 6 && rate < 12 && !this.taxPromise())
         this.setTaxes(rate + 1);
-      else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
+      else if (
+        short &&
+        rate < 9 &&
+        !this.taxPromise() &&
+        this.sim.state.tick - this.lastTaxRise > TICKS_PER_MONTH * 6
+      ) {
+        this.setTaxes(rate + 1);
+        this.lastTaxRise = this.sim.state.tick;
+        this.log.push(`m${this.month()}: taxes ${rate + 1}% (saving for the ${goal!.def})`);
+      } else if (s.netMonthly > 0 && s.treasury > 60_000 && rate > 9) this.setTaxes(rate - 1);
       // Comfortably off: trade money for happier residents and more demand.
-      else if (s.netMonthly > 0 && s.treasury > 250_000 && rate > 6) this.setTaxes(rate - 1);
+      else if (s.netMonthly > 0 && s.treasury > 250_000 && rate > 6 && !short) this.setTaxes(rate - 1);
       // Goals met and money piling up: hand it back, a point every six months, down to 2 %.
       else if (
         s.netMonthly > 0 &&
@@ -670,16 +722,45 @@ export class Player {
       }
   }
 
-  /** Every goal the city has reached is met: nothing left to save for until the next milestone. */
+  /**
+   * Every goal the city has reached is met: nothing left to save for until the next milestone. A
+   * goal still out of reach three years after the city grew into it (a project whose requirements
+   * it hasn't met) stops holding the money back; the mayor keeps trying for it.
+   */
   goalsDone(): boolean {
-    return GOALS.every(
-      (g) =>
-        this.goalsMet.has(g.def) ||
-        this.avoid.includes(g.def) ||
-        !this.sim.reached(g.at) ||
-        this.goalTried.has(g.def),
-    );
+    const now = this.sim.state.tick;
+    return GOALS.every((g) => {
+      if (this.goalsMet.has(g.def) || this.avoid.includes(g.def) || !this.sim.reached(g.at)) return true;
+      if (this.goalTried.has(g.def)) return true;
+      // Out of reach (its requirements unmet, not its price) for three years.
+      const d = CIVIC.get(g.def)!;
+      const blocked =
+        !this.sim.isUnlocked(d.unlockPopulation) || (!!d.project && !!projectBlocked(this.sim, d));
+      const since = this.goalSeen.get(g.def);
+      return blocked && since !== undefined && now - since > TICKS_PER_MONTH * 36;
+    });
   }
+
+  private lastTaxRise = -1e9;
+
+  /**
+   * The goal the city is saving for: the first it has grown into, can have (requirements met) and
+   * hasn't built, with what it needs in hand to build it (its whole price and the reserve).
+   */
+  savingFor(): { def: string; need: number } | null {
+    for (const g of GOALS) {
+      if (this.goalsMet.has(g.def) || this.avoid.includes(g.def) || this.goalTried.has(g.def)) continue;
+      const d = CIVIC.get(g.def)!;
+      if (!this.sim.reached(g.at) || !this.sim.isUnlocked(d.unlockPopulation)) return null;
+      if (this.count(g.def) > 0) continue;
+      if (d.project && projectBlocked(this.sim, d)) continue;
+      return { def: g.def, need: (d.project ? projectCost(d).total : d.cost) + this.reserve() };
+    }
+    return null;
+  }
+
+  /** When the city first grew into each goal (for giving up on one it can't reach). */
+  private goalSeen = new Map<string, number>();
 
   private lastTaxCut = -1e9;
 
@@ -696,6 +777,8 @@ export class Player {
    */
   pursueGoals(): void {
     const s = this.sim.state;
+    for (const g of GOALS)
+      if (!this.goalSeen.has(g.def) && this.sim.reached(g.at)) this.goalSeen.set(g.def, s.tick);
     for (const g of GOALS) {
       if (this.goalsMet.has(g.def) || this.avoid.includes(g.def)) continue;
       const d = CIVIC.get(g.def)!;

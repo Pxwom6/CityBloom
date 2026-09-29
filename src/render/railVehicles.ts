@@ -230,7 +230,19 @@ interface Direction {
   path: Path;
   stops: number[];
   dwell: number[];
+  /** Level crossings the path passes, and how far along it (Phase 2 review). */
+  cross?: { node: number; d: number }[];
 }
+
+/** A train closes a crossing this many ticks before its front reaches it: 5 s at 1× speed. */
+export const CLOSE_AHEAD_TICKS = 40;
+/**
+ * Cars stop setting off across a crossing a little sooner, 8 s ahead, so one that has just gone has
+ * cleared it before the barriers come down (at a low frame rate cars hear of a closing a frame late).
+ */
+const HOLD_AHEAD_TICKS = 64;
+/** And keeps it closed until its tail is this far past (m). */
+const CLOSE_BEHIND = 6;
 
 /** A vehicle's round: one or more directions in turn at `v` metres a tick. */
 interface Run {
@@ -242,7 +254,50 @@ interface Run {
   v: number;
   /** Ticks for one round. */
   period: number;
+  /**
+   * Trams (Phase 2 review): each tram's own place round the loop, as it waits behind cars, the tram
+   * ahead, at junctions a car from another road is crossing and at closed level crossings; and the
+   * junctions round the loop (where along it, and the road it comes in on).
+   */
+  trams?: { d: number; next: number; dwell: number }[];
+  junctions?: { node: number; d: number; seg: number }[];
+  /** Trains (Phase 2 review): when in the round its front reaches each level crossing, in ticks. */
+  passes?: { node: number; t: number }[];
+  /** The route, to keep trams where they are when a line's figures change but not its track. */
+  route?: string;
 }
+
+/**
+ * What trams need of the visible cars (render/traffic.ts): where they are, and junctions' claims
+ * (a tram claims a junction as it crosses, and waits while a car from another road holds it).
+ */
+/**
+ * A tram as cars see it (Phase 2 review): its front, rear and the heading between them, and points
+ * along its track from front to rear every `TRAM_BODY_STEP` metres (x, z pairs), since round a
+ * curve or a turnaround across the road the straight line from front to rear isn't where it is.
+ */
+export interface TramBody {
+  fx: number;
+  fz: number;
+  rx: number;
+  rz: number;
+  hx: number;
+  hz: number;
+  pts: number[];
+}
+export const TRAM_BODY_STEP = 2;
+
+export interface TramTraffic {
+  readonly cars: readonly { x: number; z: number; heading: number }[];
+  claimedByOther(node: number, from: number): boolean;
+  claim(node: number, from: number): void;
+}
+
+/** Half the width of the lane a tram and a car share (m); and what a tram keeps to what's ahead. */
+const LANE_HALF = 1.8;
+const TRAM_GAP = 5;
+/** A tram waits this far short of a junction or crossing it can't enter (m). */
+const TRAM_STOP = 9;
 
 function periodOf(dirs: Direction[], v: number): number {
   let t = 0;
@@ -325,6 +380,7 @@ export class RailVehicleRenderer {
   private meshes = new Map<ModelId, InstancedMesh>();
   private runs: Run[] = [];
   private version = -1;
+  private netVersion = -1;
   private key = '';
   private m = new Matrix4();
   private q = new Quaternion();
@@ -337,6 +393,17 @@ export class RailVehicleRenderer {
   counts = { tram: 0, train: 0, freight: 0 };
   /** Front of each drawn vehicle (tests, the follow camera). */
   readonly fronts: { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[] = [];
+  /** Level crossings a train is nearing or passing over (Phase 2 review): barriers down. */
+  readonly closed = new Set<number>();
+  /** Crossings cars mustn't set off across (a train a little further off, or closed). */
+  readonly holding = new Set<number>();
+  /** Ticks until the next train reaches each crossing (0 while one is on it), for cars deciding to cross. */
+  readonly eta = new Map<number, number>();
+  /** Trams on the streets as cars see them (Phase 2 review). */
+  readonly tramBodies: TramBody[] = [];
+  /** The visible cars trams keep out of the way of (set by the renderer). */
+  traffic: TramTraffic | null = null;
+  private lastTick = -1;
 
   constructor(
     private world: ClientWorld,
@@ -391,6 +458,9 @@ export class RailVehicleRenderer {
     ]);
     if (key === this.key) return;
     this.key = key;
+    // Trams stay where they are on a route that hasn't changed (a line's vehicle count or riders
+    // change every hour or so; starting them again from the timetable would jump them onto cars).
+    const kept = new Map(this.runs.filter((r) => r.trams && r.route).map((r) => [r.route!, r.trams!]));
     this.runs = [];
     const type = (seg: number) => w.netState.segments.get(seg)!.type;
     const legLength = (legs: Leg[]) => legs.reduce((a, l) => a + Math.abs(l.s1 - l.s0), 0);
@@ -404,7 +474,18 @@ export class RailVehicleRenderer {
         const dirs = [
           { path, stops, dwell: stops.map((_, i) => (i === 0 || i === stops.length - 1 ? 0 : 1)) },
         ];
-        this.runs.push({
+        // The junctions round the loop, where along it, and the road the tram comes in on.
+        const junctions: Run['junctions'] = [];
+        let at = 0;
+        for (const leg of l.legs) {
+          at += Math.abs(leg.s1 - leg.s0);
+          const sd = w.netState.segments.get(leg.seg)!;
+          const node = leg.s1 >= leg.s0 ? sd.b : sd.a;
+          const kind = w.junctionKind(node);
+          if (kind !== 'none' && kind !== 'crossing') junctions.push({ node, d: at * k, seg: leg.seg });
+        }
+        const route = JSON.stringify([l.legs, l.stopDist]);
+        const run: Run = {
           kind: 'tram',
           loop: true,
           dirs,
@@ -412,7 +493,11 @@ export class RailVehicleRenderer {
           vehicles: l.buses,
           v: TRAM_SPEED,
           period: periodOf(dirs, TRAM_SPEED),
-        });
+          junctions,
+          route,
+          trams: kept.get(route)?.slice(0, l.buses),
+        };
+        this.runs.push(run);
         continue;
       }
       // Trains shuttle: out on the right-hand track and back on the other, standing alongside each
@@ -482,21 +567,235 @@ export class RailVehicleRenderer {
     }
   }
 
-  update(displayTick: number): void {
-    if (this.version !== this.world.transitVersion) {
-      this.version = this.world.transitVersion;
-      this.rebuild();
+  /** Where each run's paths pass the level crossings (a path sample within a few metres of the node). */
+  private findCrossings(): void {
+    const w = this.world;
+    const nodes = [...w.netState.nodes.values()].filter((n) => w.junctionKind(n.id) === 'crossing');
+    for (const run of this.runs)
+      for (const dir of run.dirs) {
+        dir.cross = [];
+        const p = dir.path;
+        for (const n of nodes) {
+          let best = -1;
+          let bd = 6 * 6;
+          for (let i = 0; i < p.x.length; i++) {
+            const d = (p.x[i]! - n.x) ** 2 + (p.z[i]! - n.z) ** 2;
+            if (d < bd) {
+              bd = d;
+              best = i;
+            }
+          }
+          if (best >= 0) dir.cross.push({ node: n.id, d: p.cum[best]! });
+        }
+      }
+    // When in its round each train's front reaches each crossing (its timetable is fixed), so a
+    // train turning back at a terminus a little way off is seen coming too.
+    for (const run of this.runs) {
+      if (run.kind === 'tram') continue;
+      run.passes = [];
+      let t = 0;
+      for (const dir of run.dirs) {
+        const st = dir.stops;
+        const at: number[] = [];
+        let u = t;
+        for (let i = 0; i < st.length; i++) {
+          u += dir.dwell[i]!;
+          at.push(u);
+          if (i + 1 < st.length) u += (st[i + 1]! - st[i]!) / run.v;
+        }
+        for (const c of dir.cross ?? []) {
+          if (c.d < st[0]! || c.d > st[st.length - 1]!) continue;
+          let i = 0;
+          while (i + 1 < st.length && st[i + 1]! < c.d) i++;
+          run.passes.push({ node: c.node, t: at[i]! + (c.d - st[i]!) / run.v });
+        }
+        t = u;
+      }
     }
+  }
+
+  /**
+   * Move a tram along its loop (Phase 2 review): at its timetable's pace, calling at each stop, but
+   * never into a car ahead in its lane, the tram ahead, a junction a car from another road is
+   * crossing, or a closed level crossing.
+   */
+  private stepTram(run: Run, k: number, dt: number): void {
+    const st = run.trams![k]!;
+    const dir = run.dirs[0]!;
+    const L = dir.path.length;
+    if (L <= 0) return;
+    const ahead = (d: number) => (((d - st.d) % L) + L) % L;
+    const len = consistLength(run.consist);
+    // Junctions under the tram are held, so a car from another road doesn't turn in on top of it;
+    // one right at its front (waiting at a stop too) is taken only if no car from another road is
+    // crossing it. Taking it regardless let a tram that had stopped for a car drive on at the next
+    // frame, over the car.
+    const held = new Set<number>();
+    for (const j of run.junctions ?? []) {
+      const a = ahead(j.d);
+      const under = L - a < len + 8;
+      if (!under && a >= TRAM_STOP + 3) continue;
+      if (under || !this.traffic?.claimedByOther(j.node, j.seg)) {
+        this.traffic?.claim(j.node, j.seg);
+        held.add(j.node);
+      }
+    }
+    let budget = dt;
+    if (st.dwell > 0) {
+      const used = Math.min(budget, st.dwell);
+      st.dwell -= used;
+      budget -= used;
+    }
+    if (budget <= 0) return;
+    let room = run.v * budget;
+    // Cars on its track ahead (and any crossing it just in front), looked for along the track itself:
+    // a straight line from its front missed cars round a curve, and at a turnaround, where the track
+    // crosses the road, it looked across the road instead of along the way it was about to go.
+    const reach = room + TRAM_GAP + 3;
+    dir.path.at(st.d, true, this.a);
+    const near = (this.traffic?.cars ?? []).filter(
+      (c) => (c.x - this.a.x) ** 2 + (c.z - this.a.z) ** 2 < (reach + LANE_HALF) ** 2,
+    );
+    for (let s = TRAM_BODY_STEP, hit = false; near.length && !hit && s <= reach; s += TRAM_BODY_STEP) {
+      dir.path.at(st.d + s, true, this.b);
+      const hl = Math.hypot(this.b.x - this.a.x, this.b.z - this.a.z) || 1;
+      const hx = (this.b.x - this.a.x) / hl;
+      const hz = (this.b.z - this.a.z) / hl;
+      for (const c of near) {
+        if ((c.x - this.b.x) ** 2 + (c.z - this.b.z) ** 2 > LANE_HALF * LANE_HALF) continue;
+        // Head on in its lane: the car gives way (render/traffic.ts), the tram doesn't wait for it.
+        if (Math.cos(c.heading) * hx + Math.sin(c.heading) * hz < -0.5) continue;
+        room = Math.min(room, Math.max(0, s - LANE_HALF - TRAM_GAP));
+        hit = true;
+      }
+      this.a.x = this.b.x;
+      this.a.z = this.b.z;
+    }
+    // The tram ahead on the loop.
+
+    for (let j = 0; j < run.trams!.length; j++) {
+      if (j === k) continue;
+      const gap = ahead(run.trams![j]!.d - len);
+      if (gap < L / 2) room = Math.min(room, Math.max(0, gap - TRAM_GAP));
+    }
+    // Closed level crossings, and junctions a car from another road is crossing.
+    for (const c of dir.cross ?? []) {
+      const a = ahead(c.d);
+      if (this.holding.has(c.node) && a > TRAM_STOP - 1 && a < room + TRAM_STOP)
+        room = Math.min(room, a - TRAM_STOP);
+    }
+    for (const j of run.junctions ?? []) {
+      const a = ahead(j.d);
+      if (held.has(j.node) || a > room + TRAM_STOP) continue;
+      if (this.traffic?.claimedByOther(j.node, j.seg)) {
+        if (a > TRAM_STOP - 1) room = Math.min(room, a - TRAM_STOP);
+      } else this.traffic?.claim(j.node, j.seg);
+    }
+    room = Math.max(0, room);
+    // Stops.
+    const stop = dir.stops[st.next]!;
+    const toStop = ahead(stop);
+    if (toStop <= room) {
+      st.d = stop % L;
+      st.dwell = dir.dwell[st.next]!;
+      st.next = st.next + 1 >= dir.stops.length - 1 ? 0 : st.next + 1;
+      return;
+    }
+    st.d = (st.d + room) % L;
+  }
+
+  /** Is there room for a tram of this line with its front at `d`: no car and no other tram there? */
+  private clearForTram(run: Run, d: number): boolean {
+    const path = run.dirs[0]!.path;
+    const L = path.length;
+    const len = consistLength(run.consist);
+    for (const t of run.trams ?? []) {
+      const gap = (((d - t.d) % L) + L) % L;
+      if (gap < len + TRAM_GAP || L - gap < len + TRAM_GAP) return false;
+    }
+    for (let s = -TRAM_GAP; s <= len + TRAM_GAP; s += 2) {
+      path.at(d - s, true, this.a);
+      for (const c of this.traffic?.cars ?? [])
+        if ((c.x - this.a.x) ** 2 + (c.z - this.a.z) ** 2 < LANE_HALF * LANE_HALF) return false;
+    }
+    return true;
+  }
+
+  update(displayTick: number): void {
+    if (this.version !== this.world.transitVersion || this.netVersion !== this.world.netVersion) {
+      const rebuilt = this.version !== this.world.transitVersion;
+      this.version = this.world.transitVersion;
+      this.netVersion = this.world.netVersion;
+      if (rebuilt) this.rebuild();
+      this.findCrossings();
+    }
+    // Trams start from where their timetable has them, then keep their own place (Phase 2 review).
+    for (const run of this.runs) {
+      if (run.kind !== 'tram' || (run.trams && run.trams.length >= run.vehicles)) continue;
+      run.trams ??= [];
+      const stops = run.dirs[0]!.stops;
+      for (let k = run.trams.length; k < run.vehicles; k++) {
+        const phase =
+          (((displayTick + (k * run.period) / run.vehicles) % run.period) + run.period) % run.period;
+        const { d } = locate(run, phase);
+        // It joins where its timetable has it once that place is clear: not on top of a car, nor
+        // too close to a tram already running (a line gaining a tram put it down on cars).
+        if (!this.clearForTram(run, d)) break;
+        let next = stops.findIndex((x) => x > d + 0.01);
+        if (next < 0 || next >= stops.length - 1) next = 0;
+        run.trams.push({ d, next, dwell: 0 });
+      }
+    }
+    const dt = this.lastTick < 0 ? 0 : Math.max(0, Math.min(40, displayTick - this.lastTick));
+    this.lastTick = displayTick;
+    for (const run of this.runs)
+      if (run.trams) for (let k = 0; k < run.trams.length; k++) this.stepTram(run, k, dt);
+    this.tramBodies.length = 0;
+    this.closed.clear();
+    this.holding.clear();
+    this.eta.clear();
     const counts = new Map<ModelId, number>();
     for (const id of this.meshes.keys()) counts.set(id, 0);
     this.counts = { tram: 0, train: 0, freight: 0 };
     this.fronts.length = 0;
     for (const run of this.runs) {
       if (run.period <= 0) continue;
-      for (let k = 0; k < run.vehicles; k++) {
+      for (let k = 0; k < (run.trams ? run.trams.length : run.vehicles); k++) {
         const phase =
           (((displayTick + (k * run.period) / run.vehicles) % run.period) + run.period) % run.period;
-        const { path, d } = locate(run, phase);
+        const { path, d } = run.trams ? { path: run.dirs[0]!.path, d: run.trams[k]!.d } : locate(run, phase);
+        if (run.trams) {
+          const len = consistLength(run.consist);
+          path.at(d, true, this.a);
+          path.at(d - len, true, this.b);
+          const hl = Math.hypot(this.a.x - this.b.x, this.a.z - this.b.z) || 1;
+          const body: TramBody = {
+            fx: this.a.x,
+            fz: this.a.z,
+            rx: this.b.x,
+            rz: this.b.z,
+            hx: (this.a.x - this.b.x) / hl,
+            hz: (this.a.z - this.b.z) / hl,
+            pts: [],
+          };
+          for (let s = 0; s < len + TRAM_BODY_STEP; s += TRAM_BODY_STEP) {
+            path.at(d - Math.min(s, len), true, this.b);
+            body.pts.push(this.b.x, this.b.z);
+          }
+          this.tramBodies.push(body);
+        }
+        if (run.passes) {
+          const over = (consistLength(run.consist) + CLOSE_BEHIND) / run.v;
+          for (const c of run.passes) {
+            // Ticks until its front gets there, or since it did.
+            const until = (((c.t - phase) % run.period) + run.period) % run.period;
+            const since = run.period - until;
+            const t = since < over ? 0 : until;
+            if (t < (this.eta.get(c.node) ?? Infinity)) this.eta.set(c.node, t);
+            if (t < CLOSE_AHEAD_TICKS) this.closed.add(c.node);
+            if (t < HOLD_AHEAD_TICKS) this.holding.add(c.node);
+          }
+        }
         path.at(d, run.loop, this.a);
         this.fronts.push({ kind: run.kind, x: this.a.x, y: this.a.y, z: this.a.z });
         this.counts[run.kind]++;

@@ -4,13 +4,15 @@ import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { EDUCATION, TRAM } from '../../data/balance';
+import { TICKS_PER_MONTH } from '../time';
 import { railTerminals } from './rail';
+import { railLinkOffered } from '../actions/railLink';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { unploughable } from './ploughs';
-import { monthsToWinter, weatherUse } from './weather';
+import { monthsToWinter, seasonEase, weatherUse } from './weather';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
@@ -464,6 +466,18 @@ export function advise(sim: Sim): Advice[] {
       at: { x: link.x, z: link.z },
       map: 'traffic',
     });
+  // No regional rail link (Phase 2 review): an older city whose west edge was built up when rail
+  // arrived. It can lay one now.
+  if (railOpen && railLinkOffered(sim)) {
+    const hz = sim.terrain.gen.params.highway.connectZ;
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: 'No regional rail link',
+      text: 'The city has no link to the regional railway, so no freight trains and no commuters by train from the neighbours. Place a Regional rail link (Transit) anywhere on the west edge at least 160 m from the highway: it clears homes and businesses in its way.',
+      at: { x: 40, z: hz > 1024 ? hz - 400 : hz + 400 },
+    });
+  }
   // Stations and tram depots that run nothing yet (M20).
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
     const d = civicDef(c);
@@ -563,10 +577,26 @@ function weatherAdvice(sim: Sim): Advice[] {
   if (!s.totals.population) return out;
   const power = s.utilityStats.power;
   const toWinter = monthsToWinter(w, s.tick);
+  const coldest = Math.min(...CLIMATES[w.climate].temps);
+  // Seasons new to the city (a save from before them, Phase 2 review): heating is easing in; say
+  // what a full winter will need, while there's time.
+  if (w.grace && w.seasons && power.demand > 0) {
+    const full = power.demand * (weatherUse({ ...w, mean: coldest }).power.R / weatherUse(w, s.tick).power.R);
+    const done = Math.max(1, Math.ceil((w.grace.until - s.tick) / TICKS_PER_MONTH));
+    const share = Math.round(seasonEase(w, s.tick) * 100);
+    out.push({
+      advisor: 'utilities',
+      severity: power.supply < full * 0.95 ? 1 : 0,
+      title: 'Seasons are new here',
+      text: `Winters now need heating. It counts for ${share} % now and in full in ${done} ${done === 1 ? 'month' : 'months'} (this first winter is spared). A full winter will lift power demand to about ${Math.round(full).toLocaleString('en-US')} MW; we make ${Math.round(power.supply).toLocaleString('en-US')} MW.`,
+      map: 'power',
+    });
+  }
   if (toWinter > 0 && toWinter <= 3 && power.demand > 0) {
-    // Demand in the coldest month, from today's with the heating that month would bring.
-    const coldest = Math.min(...CLIMATES[w.climate].temps);
-    const k = weatherUse({ ...w, mean: coldest }).power.R / weatherUse(w).power.R;
+    // Demand in the coldest month, from today's with the heating that month would bring (eased
+    // in for a city new to seasons).
+    const then = s.tick + toWinter * TICKS_PER_MONTH;
+    const k = weatherUse({ ...w, mean: coldest }, then).power.R / weatherUse(w, s.tick).power.R;
     const need = power.demand * k;
     if (power.supply < need * 1.05)
       out.push({

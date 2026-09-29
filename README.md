@@ -19,7 +19,7 @@ code; there are no bought or borrowed assets (see `CREDITS.md` for the open-sour
 ## Play online
 
 Once GitHub Pages is on for this repository (see the top of `PROGRESS.md`), every push to `main`
-publishes the game at **https://pxwom6.github.io/Sim-Cities/**. It's an installable app: after one
+publishes the game at **https://pxwom6.github.io/CityBloom/**. It's an installable app: after one
 visit it plays offline, your browser's install button (or Share → Add to Home Screen on iPhone and
 iPad) puts it in a window of its own, and when a new version is out the game offers to reload into
 it, saving your city first. Saves stay in your browser across updates; export them from the load
@@ -86,7 +86,11 @@ like the ride, so a line beside a jammed road takes cars off it. The **Tram trac
 tool lays track along streets, avenues and boulevards (click a road, or drag along a route); a **tram
 depot** on the track runs trams round the **tram stops** you place. The regional railway comes in at
 the map's west edge: lay track from it to a **rail freight terminal** near your industry, and the
-trucks that drove to the highway take their goods there to go on by train. Click a stop, a station, a
+trucks that drove to the highway take their goods there to go on by train, while stations on track
+joined to it bring the neighbours' commuters in by train. (A city from an older version whose edge was
+built up may have no link: **Regional rail link** in the Transit menu lays one anywhere on the west
+edge.) At level crossings the barriers come down as a train nears and cars wait for it; trams wait
+for cars in their way, and cars for trams. Click a stop, a station, a
 depot or the track to see its line, how often it runs and who rides it; the **Ridership** map shows
 every line by how full it runs.
 
@@ -217,7 +221,7 @@ save files. The city autosaves every few minutes.
 npm run typecheck && npm run lint && npm test && npm run e2e   # everything
 npm test             # unit and scenario tests (Vitest)
 npm run e2e          # end-to-end tests through the real UI (Playwright), with screenshots,
-                     # against a production-mode build served from /Sim-Cities/ as on Pages
+                     # against a production-mode build served from /CityBloom/ as on Pages
 npm run soak         # ten minutes of top-speed play with disasters; fails on any console error
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful

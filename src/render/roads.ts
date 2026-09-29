@@ -6,6 +6,7 @@ import {
   buildBridgeStructure,
   buildJunction,
   buildLevelCrossing,
+  type BarrierArm,
   buildRoundabout,
   buildSegmentRibbon,
   buildTramJunction,
@@ -114,6 +115,20 @@ ${GRADE_GLSL}`,
     for (const id of world.netState.segments.keys()) this.dirtySegs.add(id);
     for (const id of world.netState.nodes.keys()) this.dirtyNodes.add(id);
     world.onNet((c) => this.onChanges(c));
+    // A rail link laid (or undone) after loading (Phase 2 review): its scenery past the edge too.
+    world.onRailway(() => {
+      const old = this.group.getObjectByName('regional-railway') as Mesh | undefined;
+      if (old) {
+        this.group.remove(old);
+        old.geometry.dispose();
+      }
+      this.buildRegionalRailway();
+      if (world.railway) {
+        this.dirtyNodes.add(world.railway.outside);
+        this.dirtySegs.add(world.railway.segment);
+        this.flush();
+      }
+    });
     this.buildRegionalHighway();
     this.flush();
   }
@@ -262,6 +277,7 @@ ${GRADE_GLSL}`,
     for (const id of this.dirtyNodes) {
       const node = st.nodes.get(id);
       const layout = node ? layoutOf(id) : null;
+      if (this.crossings.delete(id)) this.crossingVersion++;
       if (node && layout?.ring) {
         const buf = new GeoBuffer(4096);
         const style =
@@ -285,7 +301,7 @@ ${GRADE_GLSL}`,
       const buf = new GeoBuffer(256);
       const centre = v2(node.x, node.z);
       buildJunction(buf, centre, layout.approaches, this.h);
-      this.decorateJunction(buf, centre, layout.approaches);
+      this.decorateJunction(buf, centre, layout.approaches, id);
       this.setElement(`n${id}`, centre, buf);
     }
     this.dirtySegs.clear();
@@ -309,13 +325,21 @@ ${GRADE_GLSL}`,
     this.dirtyChunks.clear();
   }
 
+  /** Level crossings' barrier arms by node (drawn moving by render/crossings.ts), and a change count. */
+  readonly crossings = new Map<number, BarrierArm[]>();
+  crossingVersion = 0;
+
   /** Level crossings and tram track through a junction (M20). */
-  private decorateJunction(buf: GeoBuffer, centre: Vec2, approaches: Approach[]): void {
+  private decorateJunction(buf: GeoBuffer, centre: Vec2, approaches: Approach[], node: number): void {
     const st = this.world.netState;
     const rail = approaches.filter((a) => a.style.rail);
     const roads = approaches.filter((a) => !a.style.rail);
-    if (rail.length === 2 && roads.length)
-      buildLevelCrossing(buf, [rail[0]!, rail[1]!], roads, RAIL_TRACK_OFFSET, this.h);
+    if (rail.length === 2 && roads.length) {
+      const arms: BarrierArm[] = [];
+      buildLevelCrossing(buf, [rail[0]!, rail[1]!], roads, RAIL_TRACK_OFFSET, this.h, arms);
+      this.crossings.set(node, arms);
+      this.crossingVersion++;
+    }
     const tram = roads.filter((a) => a.seg !== undefined && st.segments.get(a.seg)?.tram);
     if (tram.length < 2) return;
     // Pair the tracked roads straightest first: each carries on into the one most nearly opposite.

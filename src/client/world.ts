@@ -55,8 +55,12 @@ export class ClientWorld {
   /** Geometry-only view of the road network (curves, adjacency, cells, spatial queries). */
   readonly net: Network;
   readonly highway: Snapshot['highway'];
-  /** The regional railway's link at the west edge (M20), if it fitted. */
-  readonly railway: Snapshot['railway'];
+  /**
+   * The regional railway's link at the west edge (M20), if it fitted; a city without one can lay
+   * one later (Phase 2 review), and undo can take it away.
+   */
+  railway: Snapshot['railway'];
+  private railwayListeners: (() => void)[] = [];
   private netListeners: ((c: NetChanges) => void)[] = [];
   readonly buildings = new Map<number, BuildingData>();
   /** Spatial index of building footprints (by bounding circle). */
@@ -415,6 +419,14 @@ export class ClientWorld {
     return edge + (g - edge) * t * t * (3 - 2 * t);
   }
 
+  /** The regional rail link was laid or taken away (Phase 2 review). */
+  onRailway(l: () => void): () => void {
+    this.railwayListeners.push(l);
+    return () => {
+      this.railwayListeners = this.railwayListeners.filter((x) => x !== l);
+    };
+  }
+
   /** Earthworks changed the ground in `box` (M13): terrain, roads, zones and trees follow it. */
   onTerrain(l: (box: Box) => void): () => void {
     this.terrainListeners.push(l);
@@ -456,7 +468,11 @@ export class ClientWorld {
     this.stats = diff.stats;
     // Ground first, so roads and buildings arriving in the same frame are laid on it.
     if (diff.terrain) this.applyTerrain(diff.terrain);
+    const link = diff.stats.railwayLink ?? null;
+    const moved = link?.segment !== this.railway?.segment;
+    if (moved) this.railway = link;
     if (diff.net) this.applyNet(diff.net);
+    if (moved) for (const l of this.railwayListeners) l();
     if (diff.buildings) {
       for (const id of diff.buildings.removed) {
         this.buildings.delete(id);

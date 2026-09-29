@@ -593,9 +593,23 @@ const XRED = new Color('#c8342c');
 const PANEL = new Color('#5f5a55');
 
 /**
+ * A level crossing's barrier arm (Phase 2 review): its pivot on the verge, the direction across the
+ * road it lowers towards, and its length. Arms are drawn apart from the road (render/crossings.ts)
+ * so they can come down as a train nears.
+ */
+export interface BarrierArm {
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  nz: number;
+  len: number;
+}
+
+/**
  * A level crossing (M20): the rails and a rubber panel across the road between the railway's two
  * approaches, and at each road approach a crossbuck on a post with a red-and-white barrier arm
- * raised beside it.
+ * beside it (into `arms` when given, to be drawn moving; otherwise raised, in the mesh).
  */
 export function buildLevelCrossing(
   out: GeoBuffer,
@@ -603,6 +617,7 @@ export function buildLevelCrossing(
   roads: Approach[],
   trackOffset: number,
   h: HeightFn,
+  arms?: BarrierArm[],
 ): void {
   const [p, q] = rail;
   const y = Math.max(...roads.map((r) => r.style.lift), p.style.lift) + 0.04;
@@ -646,6 +661,10 @@ export function buildLevelCrossing(
     // Red lights box and a raised barrier arm (striped).
     postBox(out, px + a.dir.x * 0.25, pz + a.dir.z * 0.25, gy + 1.8, gy + 2.1, 0.18, XRED);
     const len = Math.min(a.style.asphaltHalf * 1.6, 7);
+    if (arms) {
+      arms.push({ x: px, y: gy + 1.2, z: pz, nx: n.x, nz: n.z, len });
+      continue;
+    }
     const segs = 6;
     for (let k = 0; k < segs; k++) {
       const t0 = k / segs;

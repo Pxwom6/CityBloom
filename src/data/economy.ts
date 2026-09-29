@@ -77,6 +77,21 @@ export const DIFFICULTY: Record<Difficulty, { name: string; funds: number; upkee
   };
 export const SANDBOX_FUNDS = 999_999_999;
 
+/**
+ * Big-city running costs (Phase 2 review): past `from` residents, wages, land and overheads rise
+ * with the city, so every department and the roads cost `1 + (population - from) / per` times as
+ * much (×1.5 at 43,500, ×2 at 57,000, ×3 at 84,000). Towns never see it. Without it a built-out
+ * city netted about $2.40 a resident a month at 6 % taxes (break-even near 2 %) with nothing left
+ * to spend on; with it, a built-out city at 6 % runs close to even and the tax rate is the lever
+ * both ways.
+ */
+export const BIG_CITY = { from: 30_000, per: 27_000 };
+
+/** How much more a city of this many residents pays to run than a town (1 below `BIG_CITY.from`). */
+export function bigCityFactor(population: number): number {
+  return 1 + Math.max(0, population - BIG_CITY.from) / BIG_CITY.per;
+}
+
 export const BANKRUPTCY = {
   /** Hours the treasury may stay negative before the city is declared bankrupt (2 months). */
   graceHours: 48,

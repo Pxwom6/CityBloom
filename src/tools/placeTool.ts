@@ -1,6 +1,7 @@
 import { CIVIC, type CivicCategory } from '../data/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
+import type { Vec2 } from '../sim/geom';
 import { roadsidePose } from '../sim/world/civic';
 import type { Game } from '../game';
 import type { Tool, ToolPointer } from './tool';
@@ -34,7 +35,37 @@ export class PlaceTool implements Tool {
     this.covKey = '';
     this.game.renderer.ghost.showFootprint(null, 'ok');
     this.game.renderer.ghost.showCoverage(null);
+    this.clearLinkGhost();
     this.game.setHint(null);
+  }
+
+  /** The regional rail link (Phase 2 review) goes on the west edge, wherever along it the cursor is. */
+  private get railLink(): boolean {
+    return !!CIVIC.get(this.def)?.railLink;
+  }
+
+  private clearLinkGhost(): void {
+    const g = this.game.renderer.ghost;
+    g.showRoad(null, 'mainline', 'ok');
+    g.showClear(null);
+  }
+
+  /** The link's preview: its track in from the regional line, its junction building, what it clears. */
+  private showLink(res: CommandResult | undefined): void {
+    const g = this.game.renderer.ghost;
+    const def = CIVIC.get(this.def)!;
+    const info = (res?.info ?? {}) as {
+      track?: { a: Vec2; b: Vec2 };
+      box?: { x: number; z: number; angle: number };
+      clear?: { x: number; z: number; hw: number; hd: number; angle: number }[];
+    };
+    const state = !res ? 'pending' : res.ok ? 'ok' : 'bad';
+    if (info.track) {
+      const { a, b } = info.track;
+      g.showRoad([{ a, b, c: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 } }], 'mainline', state);
+    }
+    if (info.box) g.showFootprint({ ...info.box, hw: def.w / 2, hd: def.d / 2 }, state, 6);
+    g.showClear(info.clear ?? null);
   }
 
   cancel(): boolean {
@@ -61,6 +92,7 @@ export class PlaceTool implements Tool {
   }
 
   setDef(id: string): void {
+    this.clearLinkGhost();
     this.def = id;
     this.category = CIVIC.get(id)!.category;
     this.last = null;
@@ -72,6 +104,7 @@ export class PlaceTool implements Tool {
 
   private command(): Command | null {
     if (!this.pose) return null;
+    if (this.railLink) return { type: 'buildRailLink', z: Math.round(this.pose.z) };
     if (this.moving !== null) return { type: 'moveBuilding', id: this.moving, ...this.pose };
     return { type: 'placeBuilding', def: this.def, ...this.pose };
   }
@@ -114,6 +147,10 @@ export class PlaceTool implements Tool {
 
   private computePose(p: { x: number; z: number }): void {
     const def = CIVIC.get(this.def)!;
+    if (def.railLink) {
+      this.pose = { x: 14, z: p.z, angle: 0, side: 1 };
+      return;
+    }
     const net = this.game.world.net;
     // Stations face a railway, tram depots a road with tram track, everything else a road (M20).
     const faces = (id: number) => {
@@ -141,6 +178,17 @@ export class PlaceTool implements Tool {
     const def = CIVIC.get(this.def)!;
     const cmd = this.command();
     const g = this.game.renderer.ghost;
+    if (cmd?.type === 'buildRailLink') {
+      this.hintFor(this.last?.res);
+      const seq = ++this.seq;
+      void this.game.client.preview(cmd).then((r) => {
+        if (seq !== this.seq) return;
+        this.last = { seq, res: r };
+        this.showLink(r);
+        this.hintFor(r);
+      });
+      return;
+    }
     if (!cmd || (cmd.type !== 'placeBuilding' && cmd.type !== 'moveBuilding')) {
       g.showFootprint(null, 'ok');
       return;
@@ -206,6 +254,13 @@ export class PlaceTool implements Tool {
     if (!cmd) return;
     const moving = this.moving;
     void this.game.dispatch(cmd).then((r) => {
+      if (r.ok && cmd.type === 'buildRailLink') {
+        // One link a city: done, and the button leaves the toolbar.
+        this.game.audio?.play('place');
+        this.game.toast('Regional rail link laid: lay railway from its end to bring trains in', 'ok', 4000);
+        this.game.tools.use('select');
+        return;
+      }
       if (r.ok) {
         this.game.audio?.play('place');
         this.game.toast(`${CIVIC.get(this.def)!.name} ${moving !== null ? 'moved' : 'built'}`, 'ok', 2000);

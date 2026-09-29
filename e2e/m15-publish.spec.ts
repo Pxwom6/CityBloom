@@ -25,7 +25,7 @@ test('M15: first launch picks graphics; the app installs, plays offline after on
   test.setTimeout(480_000);
   // The same code built again with another build id is the "next deploy" (a real second build:
   // new hashed files, new index.html, new service worker).
-  execSync('npx vite build --mode test --base /Sim-Cities/ --outDir dist-e2e-next', {
+  execSync('npx vite build --mode test --base /CityBloom/ --outDir dist-e2e-next', {
     env: { ...process.env, BUILD_ID: 'e2e-next' },
     stdio: 'ignore',
   });
@@ -80,7 +80,7 @@ test('M15: first launch picks graphics; the app installs, plays offline after on
         desc: og('og:description'),
       };
     });
-    expect(meta.href).toBe('/Sim-Cities/manifest.webmanifest');
+    expect(meta.href).toBe('/CityBloom/manifest.webmanifest');
     expect(meta.manifest).toMatchObject({ name: 'Citybloom', start_url: './', display: 'standalone' });
     expect(meta.icons).toEqual(['200 image/png', '200 image/png', '200 image/png']);
     expect(meta.title).toContain('Citybloom');

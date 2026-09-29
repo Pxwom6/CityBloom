@@ -225,6 +225,8 @@ export function checkPlacement(
   const def = CIVIC.get(defId);
   const res: PlacementCheck = { ok: false, demolish: [], access: null, y: 0, pad: null };
   if (!def) return { ...res, reason: 'Unknown building' };
+  // The regional rail link is laid with its track on the west edge (buildRailLink), and stays put.
+  if (def.railLink) return { ...res, reason: 'The regional rail link goes on the west edge with its track' };
   // A scenario's limits (M18) come first: no spot would do.
   const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id });
   if (forbidden) return { ...res, reason: forbidden };
@@ -450,6 +452,7 @@ export function bulldozeCivic(
 ): CommandResult {
   const c = sim.state.civics.get(id);
   if (!c) return fail('Nothing to bulldoze');
+  if (civicDef(c).railLink) return fail('The regional rail link stays: it belongs to the regional railway');
   const refund = Math.round(c.cost * refundShare);
   if (dryRun) return ok(-refund, { info: { refund, buildings: [] } });
   sim.removeCivic(id);

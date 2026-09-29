@@ -294,6 +294,11 @@ Trade       = export revenue, specialisation revenue (M10)
 - **Difficulty** (`DIFFICULTY` in `data/economy.ts`, M11): Relaxed / Standard / Tough start with
   $100k / $60k / $35k, and the upkeep of roads and buildings is ×0.8 / ×1 / ×1.25 (applied in the
   monthly rates, so the inspector, budget projection and ledger all agree).
+- **Big-city running costs** (`BIG_CITY` in `data/economy.ts`, Phase 2 review): above 30,000
+  residents the upkeep of roads and buildings grows by a further 1/27,000 per resident (×2 at
+  57,000), applied through `sim.upkeepScale()` with the difficulty factor, so a large city's surplus
+  stays a choice between taxes, services and goals rather than piling up. The budget's overview
+  shows the factor (`BudgetReport.bigCity`).
 
 ### 3.6 Utilities (power, water, sewage, garbage)
 
@@ -1038,6 +1043,39 @@ maps that pass the check appear on the new-city screen ("Your maps", `?new=1&map
 map exports and imports as a `.citymap` file (gzip JSON). The editor opens from the main menu (new
 from a generated map or flat meadow, or one of the player's maps: `?editor=new|<id>`).
 
+### 3.26 Phase 2 review
+
+**Placeable regional rail link** (`src/sim/actions/railLink.ts`). A city whose west edge was built
+up when M20 arrived got no railway on loading. While a city has none (and isn't a scenario, the
+editor or a map made without a railway), the toolbar offers the rail link (`raillink`, $40k, unlocks
+with railways): the player picks where on the west edge it comes in, at least `ENTRY_SPACING` from
+the highway. `buildRailLink` lays the same `mainline` segment a new city starts with, plus a small
+junction building beside it (inspector only; it can't be moved or bulldozed, nor can the mainline).
+It refuses roads, civic buildings, water and ground rising more than 4 m under it, and clears homes
+and businesses in its way (the ghost shows them); it is one undo step (the history captures
+`railway`). Regional flows look for a station's road node only among nodes with an access road,
+and match rail entries before road ones.
+
+**Level crossings on screen** (`src/render/crossings.ts`, `railVehicles.ts`, `traffic.ts`). Every
+train's run lists the crossings its path passes and when in its timetable its front reaches each
+(`passes`, both ways at a terminus). Each frame this gives, per crossing, the time to the next
+train (`eta`): under 5 s the crossing is closed and its barrier arms (one instanced mesh) swing down
+over 1.5 s; under 8 s cars stop setting off across it (`holding`); it opens once the train's tail
+is 6 m past. Cars wait at a stop line behind the barrier, only cross once the arms are fully up and
+no train will arrive before they are over at half speed, never spawn on a crossing, and a car
+already past the line carries on.
+
+**Trams in traffic.** Trams keep their own position between line rebuilds (by route) and move at
+the timetable's pace, but stop behind cars in their lane, at junctions a car from another road is
+crossing, and at closed crossings; while over a junction a tram holds it as a car would. Cars read
+the live tram bodies (`TrafficSim.trams`): they stop short of a tram ahead in their lane, don't start
+a leg or spawn where a tram is, and one caught inside a tram's body drives out of it.
+
+**Seasons' grace** (`WeatherState.grace`, `seasonEase`). A city loaded from before M22 was built for
+mild weather all year. Its first winter after loading costs it no heating or cooling; the share
+then ramps from the spring after to full at the next winter, and the grace is dropped. The advisor
+explains it, and a notice on loading says seasons have come.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,
@@ -1199,7 +1237,12 @@ v21 (M23) adds `region` (the seed's neighbours, no deals) and the `region` RNG s
 `tests/region.test.ts` loads the version-10 playtest save, signs a deal, plays on and round-trips it.
 v22 (M24) adds `map` (null: every older city stands on a generated map); `tests/customMap.test.ts`
 loads a version-21 save and the version-10 playtest save and plays on, and round-trips a city founded
-on a custom map, which carries the map in its save.
+on a custom map, which carries the map in its save. v23 (Phase 2 review) changes only the v19 → v20
+step, which now also sets `weather.grace` (§3.26), so a pre-M22 city eases into heating; a v22 city
+already has its seasons and loads unchanged. `repairState` fills totals and tourism fields any older
+save lacks. The legacy corpus (`Saves/legacy/`, 48 saves, v10 to v21 on each of the four presets, made from
+past commits by `scripts/dev/legacy-corpus.mjs`) is loaded and played two years in
+`tests/legacy/`, and three of them through the UI in e2e `review-legacy`.
 
 ### 6.1 Publishing, offline play and updates (M15)
 
@@ -1234,7 +1277,7 @@ on a custom map, which carries the map in its save.
 
 - Vitest unit tests for every system; scenario tests build cities by commands and run for years with
   per-tick invariants in test mode (no NaN/Infinity, no negatives, in bounds, money balances).
-- Playwright e2e against a `--mode test` build served from `/Sim-Cities/` by `e2e/serve.mjs`, as
+- Playwright e2e against a `--mode test` build served from `/CityBloom/` by `e2e/serve.mjs`, as
   on Pages (M15; the server can also switch to another build or drop every request, for the update
   and offline tests): builds a small town through the real UI, runs time, opens panels,
   screenshots presets into `docs/screenshots/`, fails on console errors.

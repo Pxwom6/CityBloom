@@ -4,7 +4,7 @@ import { defineConfig } from '@playwright/test';
  * The suite runs against a production-mode build served from a subpath, as GitHub Pages serves it
  * (`npm run build:e2e`; only `--mode test` differs, which adds the `window.__game` test API).
  */
-const E2E_BASE = '/Sim-Cities/';
+const E2E_BASE = '/CityBloom/';
 const PORT = 4174;
 
 export default defineConfig({

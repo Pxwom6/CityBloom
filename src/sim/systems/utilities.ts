@@ -69,7 +69,7 @@ export function updateUtilities(sim: Sim): void {
   const s = sim.state;
   const g = sim.graph();
   const stats = emptyUtilityStats();
-  const use = weatherUse(s.weather);
+  const use = weatherUse(s.weather, s.tick);
   const consumers: { b: Building; node: number; offset: number }[] = [];
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Active) continue;

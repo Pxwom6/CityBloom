@@ -57,6 +57,21 @@ test('M18: pick a scenario from the menu, read the brief, follow the goals, win 
   await page.getByTestId('scenario-begin').click();
   await expect(page.getByTestId('scenario-brief')).toBeHidden();
 
+  // --- G opens the goals, except while the road tool is open, which takes G for grid snap. ---
+  await page.getByTestId('tool-road').click();
+  const snap = page.getByTestId('grid-snap');
+  const before = await snap.getAttribute('aria-pressed');
+  await page.keyboard.press('g');
+  await expect(snap).not.toHaveAttribute('aria-pressed', before ?? 'false');
+  await expect(page.getByTestId('goals-panel')).toBeHidden();
+  await page.keyboard.press('g');
+  await expect(snap).toHaveAttribute('aria-pressed', before ?? 'false');
+  await page.getByTestId('tool-select').click();
+  await page.keyboard.press('g');
+  await expect(page.getByTestId('goals-panel')).toBeVisible();
+  await page.keyboard.press('g');
+  await expect(page.getByTestId('goals-panel')).toBeHidden();
+
   // --- The goals panel from the top bar. ---
   await page.getByTestId('open-goals').click();
   await expect(page.getByTestId('goals-panel')).toBeVisible();

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "build:test": "vite build --mode test --outDir dist-test",
-    "build:e2e": "vite build --mode test --base /Sim-Cities/ --outDir dist-e2e",
+    "build:e2e": "vite build --mode test --base /CityBloom/ --outDir dist-e2e",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

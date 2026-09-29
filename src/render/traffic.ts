@@ -15,7 +15,8 @@ import {
 } from 'three';
 import type { ClientWorld } from '../client/world';
 import { TRAFFIC } from '../data/balance';
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isRail } from '../data/roads';
+import { CLOSE_AHEAD_TICKS, type TramBody } from './railVehicles';
 import { VEHICLE_SPEED_SCALE } from '../data/civic';
 import { hourOfDay } from '../sim/time';
 import { congestedSeconds } from '../sim/systems/traffic';
@@ -104,6 +105,13 @@ interface Car {
   waited: number;
 }
 
+/** Is any point of a tram's body (along its track) within `r` metres of (x, z)? */
+function nearBody(t: TramBody, x: number, z: number, r: number): boolean {
+  const p = t.pts;
+  for (let i = 0; i < p.length; i += 2) if ((p[i]! - x) ** 2 + (p[i + 1]! - z) ** 2 < r * r) return true;
+  return false;
+}
+
 /** Car length plus the gap kept to the car ahead when stopped, metres (M19). */
 const SPACING = 7.5;
 /** Ticks a junction stays taken by a car crossing it from one road, and by one on a roundabout. */
@@ -114,7 +122,8 @@ const RING_SPEED = (25 / 3.6) * VEHICLE_SPEED_SCALE;
 
 /** What a car needs to know about a node (M19): junction or roundabout, and where to stop. */
 interface NodeInfo {
-  kind: 'none' | 'plain' | 'ring';
+  /** A level crossing (Phase 2 review) holds cars only while a train is near. */
+  kind: 'none' | 'plain' | 'ring' | 'crossing';
   x: number;
   z: number;
   /** Ring centre-line radius. */
@@ -159,6 +168,79 @@ export class TrafficRenderer {
   /** Nodes as cars see them, rebuilt when the network changes (M19). */
   private nodeInfo = new Map<number, NodeInfo>();
   private nodeVersion = -1;
+  /** Level crossings with a train near (the rail vehicles' set, Phase 2 review): cars wait. */
+  closedCrossings: ReadonlySet<number> = new Set();
+  /** How far a crossing's barriers are down (0–1; render/crossings.ts). */
+  barrierDown: (node: number) => number = () => 0;
+  /** Ticks until the next train reaches each crossing, as of this frame (the rail vehicles' map). */
+  trainEta: ReadonlyMap<number, number> = new Map();
+  /** Ticks stepped so far this frame (the train times above are that much nearer), and in all. */
+  private frameClock = 0;
+  private frameDt = 0;
+  /** Trams on the streets (the rail vehicles' list, Phase 2 review): cars keep behind them. */
+  trams: readonly TramBody[] = [];
+
+  /** Is a car (or tram) from another road crossing this junction now? (For trams, Phase 2 review.) */
+  claimedByOther(node: number, from: number): boolean {
+    const cl = this.claims.get(node);
+    return !!cl && cl.until > this.clock && cl.from !== from;
+  }
+
+  /**
+   * A tram crossing a junction from road `from` holds it as a car would, until its next step: a
+   * tram moves once a frame and the cars step through a frame's ticks after it, so the hold lasts a
+   * frame beyond the usual (at a low frame rate it had lapsed half way, letting cars in under it).
+   */
+  claim(node: number, from: number): void {
+    if (this.nodeInfo.get(node)?.kind === 'plain')
+      this.claims.set(node, { from, until: this.clock + HOLD_PLAIN + this.frameDt });
+  }
+
+  /**
+   * How far a car may drive before it would run into a tram (Phase 2 review): the nearest point of
+   * a tram's body (along its track) ahead of it in its lane, less a car's length, or Infinity.
+   */
+  private tramRoom(c: Car): number {
+    if (!this.trams.length) return Infinity;
+    // Far off (by where it was drawn, give or take what it can drive this frame): nothing to check.
+    const reach = 75 + 3 * this.frameDt;
+    let near = false;
+    for (const t of this.trams) {
+      if (nearBody(t, c.x, c.z, reach)) {
+        near = true;
+        break;
+      }
+    }
+    if (!near) return Infinity;
+    // Where it is now, part way through the frame's steps.
+    const l = c.legs[c.leg]!;
+    const curve = this.world.net.curve(l.seg);
+    const dir = l.s1 >= l.s0 ? 1 : -1;
+    const sArc = Math.max(0, Math.min(curve.length, l.s0 + dir * c.t));
+    const pt = curve.pointAt(sArc);
+    const tan = curve.tangentAt(sArc);
+    const hx = tan.x * dir;
+    const hz = tan.z * dir;
+    const lane = this.laneOffset(l.seg, c.lane);
+    const cx = pt.x - hz * lane;
+    const cz = pt.z + hx * lane;
+    let room = Infinity;
+    for (const t of this.trams) {
+      if (!nearBody(t, cx, cz, 75)) continue;
+      // A car already inside a tram's body (it came on to the road just there) drives out of it.
+      if (nearBody(t, cx, cz, 1.8)) continue;
+      const p = t.pts;
+      for (let i = 0; i < p.length; i += 2) {
+        const dx = p[i]! - cx;
+        const dz = p[i + 1]! - cz;
+        const along = dx * hx + dz * hz;
+        if (along <= 0 || along > 40) continue;
+        if (Math.abs(dz * hx - dx * hz) > 1.8) continue;
+        room = Math.min(room, Math.max(0, along - 4.5));
+      }
+    }
+    return room;
+  }
   /** Who is crossing each junction: the road they came from, and until when (display ticks). */
   private claims = new Map<number, { from: number; until: number }>();
   private clock = 0;
@@ -280,8 +362,14 @@ export class TrafficRenderer {
     const paint = freight ? TRUCK_PAINT : PAINT;
     const legs = back ? (trip.back ?? reversed(trip.legs)) : trip.legs;
     if (!this.world.netState.segments.has(legs[0]!.seg)) return;
-    // Not on top of a car already there (M19).
+    // Not on top of a car already there (M19), and not on a level crossing or by a tram (Phase 2
+    // review: a trip can start at a crossing's own node, and a car appeared on the rails).
     const l0 = legs[0]!;
+    this.refreshNodes();
+    const p0 = this.world.net.curve(l0.seg).pointAt(l0.s0);
+    for (const info of this.nodeInfo.values())
+      if (info.kind === 'crossing' && (info.x - p0.x) ** 2 + (info.z - p0.z) ** 2 < 12 * 12) return;
+    for (const t of this.trams) if (nearBody(t, p0.x, p0.z, 14)) return;
     for (const o of this.cars) {
       const ol = o.legs[o.leg];
       if (
@@ -338,9 +426,19 @@ export class TrafficRenderer {
         continue;
       }
       const kind = this.world.junctionKind(n.id);
-      // Cars cross a level crossing both ways at once; trains are what stop them (M20).
-      if (kind === 'none' || kind === 'crossing') continue;
       const widest = Math.max(...segs.map((id) => net.halfWidth(id)));
+      // Cars cross a level crossing both ways at once; a train near is what stops them, short of the
+      // track (Phase 2 review).
+      if (kind === 'crossing') {
+        const rail = Math.max(
+          0,
+          ...segs.filter((id) => isRail(net.segment(id).type)).map((id) => net.halfWidth(id)),
+        );
+        // Behind the barrier (1.5 m back from the track's edge) with a car's half length to spare.
+        this.nodeInfo.set(n.id, { kind: 'crossing', x: n.x, z: n.z, r: 0, stop: rail + 6 });
+        continue;
+      }
+      if (kind === 'none') continue;
       this.nodeInfo.set(n.id, { kind: 'plain', x: n.x, z: n.z, r: 0, stop: widest + 1.5 });
     }
   }
@@ -384,6 +482,7 @@ export class TrafficRenderer {
   private step(dt: number, share: number): void {
     this.refreshNodes();
     this.clock += dt;
+    this.frameClock += dt;
     const net = this.world.net;
     // Cars by lane (road, direction, lane), in order along it; and cars on each ring.
     const lanes = new Map<number, Car[]>();
@@ -432,14 +531,30 @@ export class TrafficRenderer {
         const n = this.endNode(c, c.leg);
         const info = n !== null ? this.nodeInfo.get(n) : undefined;
         // How far it may go: to the car ahead, and to the stop line if it must give way.
-        let room = Infinity;
+        let room = this.tramRoom(c);
         const gap = ahead.get(c);
-        if (gap !== undefined) room = Math.max(0, gap - SPACING);
+        if (gap !== undefined) room = Math.min(room, Math.max(0, gap - SPACING));
         const end = info?.kind === 'ring' ? Math.max(c.t, len - info.r) : len;
         const stopAt = info ? Math.max(0, len - info.stop) : len;
-        if (info && c.t + Math.min(room, v * budget) >= stopAt - 0.01) {
-          if (!this.mayEnter(c, n!, info, rings.get(n!) ?? []))
-            room = Math.min(room, Math.max(0, stopAt - c.t));
+        // (A car already past a level crossing's stop line carries on across: never stop on the rails.)
+        const pastCrossingLine = info?.kind === 'crossing' && c.t > stopAt + 0.5;
+        if (info && !pastCrossingLine && c.t + Math.min(room, v * budget) >= stopAt - 0.01) {
+          // A level crossing is only entered with room to clear it on the far side, and time to
+          // before the barriers start down (Phase 2 review). The room is for this car and every car
+          // already over the line ahead of it, which get there first: counting only the road beyond
+          // left the second of two cars crossing close together waiting on the rails.
+          const committed =
+            info.kind === 'crossing'
+              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => o !== c && along(o) > along(c)).length
+              : 0;
+          const blocked =
+            !this.mayEnter(c, n!, info, rings.get(n!) ?? []) ||
+            (info.kind === 'crossing' &&
+              (!this.roomAhead(c, c.leg + 1, lanes, info.stop + SPACING * (1 + committed)) ||
+                (this.trainEta.get(n!) ?? Infinity) - this.frameClock <
+                  // Time to clear it at half speed (a car in a queue crawls over).
+                  CLOSE_AHEAD_TICKS + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
+          if (blocked) room = Math.min(room, Math.max(0, stopAt - c.t));
         }
         const move = Math.min(v * budget, room, end - c.t);
         if (move <= 1e-4 && c.t < end - 1e-3) {
@@ -473,7 +588,7 @@ export class TrafficRenderer {
               budget = 0;
               break;
             }
-            if (info) this.claims.set(n!, { from: l.seg, until: this.clock + HOLD_PLAIN });
+            if (info?.kind === 'plain') this.claims.set(n!, { from: l.seg, until: this.clock + HOLD_PLAIN });
             c.leg++;
             c.t = c.leg < c.legs.length ? this.startOf(c, c.leg) : 0;
           }
@@ -497,9 +612,14 @@ export class TrafficRenderer {
     return l.seg * 4 + (l.s1 >= l.s0 ? 2 : 0) + this.laneOn(l.seg, c.lane);
   }
 
-  /** Is there room for a car to start leg i (no car stopped within SPACING of where it joins)? */
-  private roomAhead(c: Car, i: number, lanes: Map<number, Car[]>): boolean {
+  /** Is there room for a car to start leg i (no car within `span` of where it joins, nor a tram)? */
+  private roomAhead(c: Car, i: number, lanes: Map<number, Car[]>, span = SPACING): boolean {
     if (i >= c.legs.length) return true;
+    if (this.trams.length) {
+      const l = c.legs[i]!;
+      const p = this.world.net.curve(l.seg).pointAt(l.s0);
+      for (const t of this.trams) if (nearBody(t, p.x, p.z, span + 3)) return false;
+    }
     const list = lanes.get(this.laneKey(c, i));
     if (!list?.length) return true;
     const l = c.legs[i]!;
@@ -512,13 +632,15 @@ export class TrafficRenderer {
       const ol = o.legs[o.leg]!;
       const s = ol.s0 + (ol.s1 >= ol.s0 ? 1 : -1) * o.t;
       const u = fwd ? s : len - s;
-      if (u >= u0 - 1 && u - u0 < SPACING) return false;
+      if (u >= u0 - 1 && u - u0 < span) return false;
     }
     return true;
   }
 
   /** May a car cross (or join the ring at) this node now? Claims it if so. */
   private mayEnter(c: Car, node: number, info: NodeInfo, onRing: Car[]): boolean {
+    // A level crossing: not while a train is near, nor until the barriers are (nearly) back up.
+    if (info.kind === 'crossing') return !this.closedCrossings.has(node) && this.barrierDown(node) < 0.2;
     const from = c.legs[c.leg]!.seg;
     if (info.kind === 'ring') {
       // Give way to cars on the ring about to pass the entry.
@@ -616,6 +738,8 @@ export class TrafficRenderer {
     // Move in short steps, so cars keep their distance and give way even at a low frame rate.
     if (dt > 0) {
       const steps = Math.min(20, Math.ceil(dt / 1.5));
+      this.frameClock = 0;
+      this.frameDt = dt;
       for (let k = 0; k < steps; k++) this.step(dt / steps, share);
     }
     const alive: Car[] = [];

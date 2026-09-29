@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
+import { BIG_CITY, DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
 import { calendarMonth, formatMonth, MONTH_NAMES } from '../sim/time';
 import { BarChart, LineChart } from './charts';
@@ -54,6 +54,18 @@ function Lines({ rows, title }: { rows: [string, number, number | undefined][]; 
         </tr>
       </tbody>
     </table>
+  );
+}
+
+/** A big city's running costs (Phase 2 review): how much more it pays, and why. */
+function BigCityNote({ factor }: { factor: number }) {
+  if (!(factor > 1)) return null;
+  return (
+    <p class="note" data-testid="big-city">
+      Big-city costs: every department and the roads cost {factor.toFixed(2)}× what they would in a town. Past{' '}
+      {BIG_CITY.from.toLocaleString('en-US')} residents, wages, land and overheads rise with the city, so a
+      big city needs higher taxes (or other income) to break even.
+    </p>
   );
 }
 
@@ -116,6 +128,7 @@ export function BudgetPanel() {
         <div class="tab-body">
           <Lines rows={income} title="Income" />
           <Lines rows={expense} title="Expenses" />
+          <BigCityNote factor={b.bigCity} />
           <p class="note">
             Month so far: started at {formatMoney(b.monthStartTreasury)}, booked{' '}
             {formatMoney(Object.values(b.month).reduce((s, v) => s + v, 0))}, now {formatMoney(b.treasury)}.
@@ -178,6 +191,7 @@ export function BudgetPanel() {
             Funding scales each department's cost and effectiveness (0–150 %). Above 100 % has diminishing
             returns.
           </p>
+          <BigCityNote factor={b.bigCity} />
           {DEPTS.map((d) => {
             const v = b.funding[d.id] ?? 100;
             const cost =

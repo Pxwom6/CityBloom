@@ -8,7 +8,7 @@
    "GitHub Actions"**. (Pages on a private repository needs a paid plan; on a free plan, make the
    repository public first.)
 3. That's all. The merge starts the first deploy (or **Actions → Deploy to GitHub Pages → Run
-   workflow**); after about two minutes the game is at **https://pxwom6.github.io/Sim-Cities/**.
+   workflow**); after about two minutes the game is at **https://pxwom6.github.io/CityBloom/**.
    Later pushes to `main` redeploy, and open copies of the game offer "New version, reload".
 
 - [x] M0 Foundation
@@ -72,18 +72,22 @@ paints rivers, lakes and sea, lays forests, ore and oil and places the highway a
 that a first town has room, and saves maps to play and share as files (M24). Fourteen scenarios.
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 251 unit and scenario tests, the UI specs in `e2e/`, a 10-minute soak
-and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
-done).
+calls at the city overview (on an M5 MacBook Pro: 60 fps in Safari, 100–118 in Chrome at 120 Hz,
+worst tick 6 ms). Checked by 338 unit, scenario and legacy-save tests (48 saves from every save
+version since M12 played for two years), the UI specs in `e2e/`, a 10-minute soak and full
+playthroughs through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's done). A
+review after phase 2 retuned the late-game money, added a placeable regional rail link for older
+cities, a grace for cities meeting seasons for the first time, and level-crossing barriers and
+trams that give way (DECISIONS, "Phase 2 review").
 
 ## Ideas for what's next
-1. **Real-hardware pass** (the list under "To check on the Mac"): frame rate at 100k, and
-   per-building LOD if 2.5M triangles at the overview is too much for the GPU.
+1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
+   60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
 2. **Terrain, further**: a water tool in running cities (dig a harbour basin or a canal, with the
    water, flood and groundwater systems following it live), tunnels through ridges for roads and
    rail, and map sharing through a link rather than a file.
-3. **Rail, further**: branching train lines with services per branch, tram and bus stops shared as
-   interchanges, and level-crossing barriers that close when a train passes.
+3. **Rail, further**: branching train lines with services per branch, and tram and bus stops shared as
+   interchanges.
 4. **Traffic lights** as a third junction type between a plain junction and a roundabout.
 5. **The region, further**: neighbours that grow with the trade and commuting the city gives them,
    regional competition for industry, and deals the neighbours propose.
@@ -92,16 +96,15 @@ done).
 7. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
    building + economy pattern as M10.
 8. **Custom glTF models** through the existing asset registry (`src/render/assets/registry.ts`).
-9. **Balance**: commercial demand runs a little low in small towns, and a city that has bought every
-   project and landmark still creeps into surplus; a second tuning pass once real players have
-   tried it (and the scenario star thresholds with it).
+9. **Balance**: commercial demand runs a little low in small towns; the big-city running costs and
+   the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Nothing: every milestone in SPEC.md and SPEC-2.md is complete, and so is the end of the brief (the
-summary and ideas above, SPEC_REVIEW's last section, and the phase-2 playthrough through the UI:
-`npm run finale`, which makes a map in the editor, founds Kestrelford on it and uses the terrain
-tool, undo, a district, a power deal, the weather panel, history and photo mode, then saves and
-continues; `docs/screenshots/final-*.png`).
+The Phase 2 review fixes (DECISIONS, "Phase 2 review"): late-game money, the placeable regional rail
+link, the legacy save corpus and tests (with seasons' grace for pre-seasons cities), G in scenarios,
+level crossings and trams, and the docs, are done and tested; left: the full e2e run and the final
+bench and balance numbers. Item 6 (performance) was dropped: on an M5 MacBook Pro the 100k city's
+worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md is complete.
 
 ## Next tasks
 1. The ideas list above; the "To check on the Mac" list needs real hardware.
@@ -121,17 +124,20 @@ continues; `docs/screenshots/final-*.png`).
 - The finale playthrough's town is a feature tour, not a growth run: it stays around 550 residents at 71 % approval after seven months on relaxed (the M12 playthrough is the one that grows a first city through its first two years). District policies unlock at 800 residents, so its district has none yet and says so.
 - The M24 full e2e run: 32 of 33 passed; the button-label audit caught the Advisors button mid-transition (its text turns white at once while its background fades in over a moment) and now waits for transitions before judging; it also covers the map editor now. Rerun: passes.
 - The M23 full e2e run had two old specs fail on view-dependent details (M14 clicked a warehouse that M23's regional commuters grew in front of the police station at a low camera angle; M16 hovered the history chart before its panel settled). Both now click and hover robustly and pass.
-- The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
+- The scenario tests run the scripted mayor for up to two game years each and the legacy-save tests play 50 saves for two years: `npm test` takes about 13 minutes on this VM (the files run four at a time).
 - Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.
-- Once a big city has bought every project and landmark it can reach, its treasury still creeps up (≈ $0.3M a year for the careful mayor at 2 % taxes); later milestones add things to buy.
+- Late-game money (Phase 2 review): before the review the careful mayor's city piled up about $2M a year (from $1M to $25M between years 10 and 20), holding 6 % taxes because the launch complex's education bar was out of reach. With schools built by the seats needed, goals saved for, and big-city running costs past 30,000 residents, a built-out city at 6 % runs within about $40k a month of even and the treasury stays between $0.1M and $2M through year 20 on seeds `balance`, `s1` and `s2`; the tuning is from the balance mayor and wants a look once people have played big cities.
 - Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); the scripted careful mayor fills the river map at about 67k (M17).
 - Tree count is high in forests (~25k in-map); LOD switches to low-poly beyond 750 m.
 - Cutting faces and embankments read softly: the terrain is 8 m height samples, so a 1:1 cut face shows as a brown bank over one cell rather than a crisp edge.
 - Roads can't join a viaduct mid-span; the planner says to meet it where it's back on the ground. They can pass under one high enough (M19), and local roads crossing each other always meet at a junction (only the city and regional highways pass over).
 - Undo history costs a snapshot per command (about 25 ms in a 12k town, ~55 ms at 112k, on the worker, so the UI doesn't stall); it isn't saved, so undo starts fresh after loading.
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
-- Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains); visible trams and trains follow their line's timetable rather than the traffic (a tram passes through queued cars, and cars don't visibly stop at level crossings, though crossings slow them in the model); level-crossing barriers are drawn raised. An old save whose west edge is built up gets no regional rail link.
+- Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains). Trains run to their timetable (cars give way to them at crossings, not the other way round); trams keep their own place and wait for cars, so a tram line bunches up in heavy traffic. Walkers still cross a closed level crossing. A city with no regional rail link can lay one from the Transit menu (Phase 2 review).
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
+
+## Real hardware (Phase 2 review)
+- The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
 ## Performance (latest: M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).
@@ -157,9 +163,10 @@ continues; `docs/screenshots/final-*.png`).
 
 ## To check on the Mac
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
+- Level crossings and trams (Phase 2 review): the barriers coming down and cars waiting behind them, and trams and cars sharing a busy avenue, at 60 fps; visible cars cost 0.3–1.2 ms a frame in the rail scene on this VM, where a slow frame runs up to 20 traffic steps (`renderStats.trafficMs`).
 - Rail (M20): trams, trains and freight trains at 60 fps in a big city with several lines; how the tram wires, level crossings, stations and the freight yard look close up; whether cars following round the tram depot and crossings read well.
 - Visible cars (M19): 360 cars following, queueing and going round roundabouts at 60 fps in a big city (`renderStats.trafficMs` in the debug panel should stay well under 1 ms); how the ring, the flyover decks and the ramp merges look close up.
-- The ~100k city (`npx tsx scripts/bench.ts 6 --big --save city.gz`, then Load city → Import from file): frame rate while panning the overview and the city preset at 3× speed (target 60 fps); 2.5M triangles at the overview, if the GPU struggles, per-building LOD is the next step.
+- [x] The ~100k city at 3× speed: checked on a MacBook Pro M5 (High graphics), 60 fps in every view in Safari (its cap) and 100–118 fps in Chrome at 120 Hz; no per-building LOD needed (see "Real hardware" under Performance).
 - Game shell: the main menu's slow orbit over the backdrop should be smooth; the three quality levels should look and perform distinctly; interface size 140 % on a laptop screen (the top bar drops the Jobs stat and city name when it would not fit).
 - Landmarks and specialisation buildings (clock tower, wheel, sky needle, arch, hotel, mine, well, freight terminal, research park): how they look close up at full resolution, and the milestone banner's confetti at 60 fps.
 - Disasters: frame rate with a tornado funnel and flood water on screen; whether the earthquake camera shake feels right at 60 fps.
@@ -168,10 +175,10 @@ continues; `docs/screenshots/final-*.png`).
 - Pedestrians at street level: frame time with 240 walkers.
 - Graded roads (M13): how cuttings, embankments and civic pads look at full resolution (`node scripts/dev/earthshot.mjs` scene, or build a street over a hill on the highlands preset), and whether the road ghost's grade colours and the see-through ghost read well while drawing.
 - Trackpad (M14): two-finger swipe pans, pinch zooms, ⌥/Alt + swipe turns and tilts, and Safari's rotate gesture; check that the automatic mouse/trackpad detection guesses right on a MacBook trackpad and a Magic Mouse, and that ⌘Z / ⇧⌘Z undo and redo.
-- Published app (M15), once Pages is on: open https://pxwom6.github.io/Sim-Cities/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
+- Published app (M15), once Pages is on: open https://pxwom6.github.io/CityBloom/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
 - Scenarios (M18): the scenario screen's previews and the brief, goals and win screens at full resolution and 140 % interface size.
 - Photo mode (M16): frame rate with depth of field and tilt-shift on (the lens pass costs two full-screen passes, 48 depth-aware taps a pixel) at Retina resolution; how long a 2× save takes (should be well under a second); whether the six grades and the golden-hour light look right on a calibrated screen; the follow camera's ride along a busy street at 60 fps.
 - Big projects (M17): the five projects at each construction stage close up at full resolution (`node scripts/dev/projectshot.mjs`), and a match day's crowd of cars around the stadium at 60 fps.
 - Frame rate while panning the overview and street presets (expect 60 fps).
 - Fire/smoke particles and siren lights: check they read well and cost little at 60 fps.
-- Visible traffic at 360 cars: frame time while panning; cars overlap at junctions (no car-following model).
+- Visible traffic at 360 cars: frame time while panning (cars follow, queue and give way since M19).

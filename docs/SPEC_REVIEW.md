@@ -1,5 +1,9 @@
 # Review against SPEC.md (M12)
 
+*The phase-1 section below is the snapshot taken when M12 completed: its figures (test counts,
+file counts, draw calls, performance) are M12's. Phase 2 changed many of them; the current figures
+are in PROGRESS.md and the phase-2 sections further down.*
+
 Every item in the brief, where it lives, and how it's checked. "e2e mN" is `e2e/mN-*.spec.ts`, and
 screenshots are in `docs/screenshots/`. Anything not done is explained at the end and in
 `docs/DECISIONS.md`.
@@ -140,7 +144,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | First launch picks a graphics preset from a quick performance check | `src/client/graphicsCheck.ts`, `Game.startGraphicsCheck`; shown and re-runnable in Settings; `tests/graphicsCheck.test.ts` |
 | README no longer claims every resident is simulated | README intro: residents counted per building, trips routed over real roads, visible vehicles are samples |
 | What to click, at the top of PROGRESS.md | PROGRESS.md "What you need to do" |
-| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /Sim-Cities/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
+| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /CityBloom/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
 
 ## M16 Photo mode and city history
 
@@ -171,11 +175,12 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | One or two promises beforehand that voters judge | six promises (`PROMISES` in `src/data/elections.ts`), two at most, made in the six-month campaign from the city panel's Election tab and judged against where the city stood when each was made |
 | Winning brings a perk | the region's grant ($4 a resident) and +3 points of approval for a year |
 | Losing never ends the game but brings a year of limits | the council refuses tax rises and new loans for a year, saying until when (`tests/elections.test.ts`) |
+| Through the real UI | `e2e/m17-projects-elections.spec.ts`: the Big projects category with each project's requirements, cost and perk in its tooltip; the stadium placed from the toolbar and followed in the inspector through every stage to opening (`docs/screenshots/m17-stadium-*.png`); an election campaign from the city panel with two promises made, a third refused, and the vote held (`m17-election-*.png`) |
 | Off in sandbox, with a setting to turn them off | new-city option and Settings → Game → Elections (`setElections`); sandbox cities never vote |
 | New saved state: version bump, migration and a test | save v15 (`matchDay`, `election`, `Civic.build`); migration 14 → 15 schedules elections from the next four-year mark; `tests/elections.test.ts` loads the version-10 playtest save and plays on |
 | Careful mayor plans the whole map and grows past 50k | `scripts/balance.ts`: 20 district slots on both banks with river crossings, zoning that follows demand (industry when jobs are short, shops only while wanted), side streets widened to avenues after high-rises unlock, a quarter kept for landmarks and projects, services scaled with the city |
 | Late-game economy retuned so projects, landmarks and specialisations soak up the surplus | project prices and upkeep, and the 40k+ landmarks (conservatory, sky needle, grand arch), raised; nothing below 20k changed (DECISIONS M17) |
-| Done when: the careful mayor passes 50k, completes a big project and wins an election in the balance run, and its late-game money curve shows spending goals met rather than an ever-growing pile | `npx tsx scripts/balance.ts 25` (seed `balance`): the careful mayor passes 50k in year 11 (peak 67.5k in year 18, when the map is full); opens all five projects (stadium year 7 … launch complex year 13) and every landmark it reaches; wins all six elections (62–81 %) on kept promises. Its treasury holds between $0.2M and $2.4M through the years it spends $8.5M on goals (years 5–13), then rises about $0.3M a year at 2 % taxes once none are left (before the retune: $10.4M by year 20). Chart: `docs/screenshots/m17-money.png` (`scripts/dev/moneychart.mjs`). On seed `s1` it reaches 75k with three projects |
+| Done when: the careful mayor passes 50k, completes a big project and wins an election in the balance run, and its late-game money curve shows spending goals met rather than an ever-growing pile | `npx tsx scripts/balance.ts 25` (seed `balance`): the careful mayor passes 50k in year 11 (peak 67.5k in year 18, when the map is full); opens all five projects (stadium year 7 … launch complex year 13) and every landmark it reaches; wins all six elections (62–81 %) on kept promises. Its treasury holds between $0.2M and $2.4M through the years it spends $8.5M on goals (years 5–13), then rises about $0.3M a year at 2 % taxes once none are left (before the retune: $10.4M by year 20). Chart: `docs/screenshots/m17-money.png` (`scripts/dev/moneychart.mjs`). On seed `s1` it reaches 75k with three projects. *Phase 2 review: this had stopped holding (by M24 the careful mayor ended on $25.2M, holding 6 % for a decade because the launch complex's education bar was out of reach, and a built-out city at 6 % netted about $2.40 a resident a month at every milestone). The mayor now builds schools by the seats needed and saves for goals it can have, and past 30,000 residents running costs rise (×2 at 57,000): on seeds `balance`, `s1` and `s2` a built-out city at 6 % runs within about $40k a month of even, 5 % runs a deficit, the treasury holds between $0.1M and $2M through year 20 while the projects get bought, and every election is won (DECISIONS, Phase 2 review)* |
 
 ## M18 Scenarios
 

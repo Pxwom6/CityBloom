@@ -1,5 +1,5 @@
 // The e2e suite's web server (M15): serves a production-mode build from a subpath, as GitHub Pages
-// does (/Sim-Cities/), with two switches the tests use to act out a deploy and a lost connection:
+// does (/CityBloom/), with two switches the tests use to act out a deploy and a lost connection:
 //   GET /__e2e/deploy?dir=<build dir>   serve another build from now on (a new version)
 //   GET /__e2e/offline?on=1|0           drop every other request, as if the network were gone
 // Usage: node e2e/serve.mjs <build dir> <port> <base path>
@@ -7,7 +7,7 @@ import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 
-const [dirArg = 'dist-e2e', portArg = '4174', base = '/Sim-Cities/'] = process.argv.slice(2);
+const [dirArg = 'dist-e2e', portArg = '4174', base = '/CityBloom/'] = process.argv.slice(2);
 let root = resolve(dirArg);
 let offline = false;
 

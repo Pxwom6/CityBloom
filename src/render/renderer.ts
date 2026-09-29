@@ -29,6 +29,7 @@ import { RoadTint } from './roadTint';
 import { TrafficRenderer } from './traffic';
 import { TransitRenderer } from './transit';
 import { PortRenderer } from './ports';
+import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
 import { PedestrianRenderer } from './pedestrians';
@@ -127,6 +128,7 @@ export class GameRenderer {
   readonly transit: TransitRenderer;
   /** Trams and trains (M20). */
   readonly railVehicles: RailVehicleRenderer;
+  readonly crossings: CrossingRenderer;
   readonly ports: PortRenderer;
   readonly streetLights: StreetLightRenderer;
   readonly pedestrians: PedestrianRenderer;
@@ -225,6 +227,15 @@ export class GameRenderer {
     this.scene.add(this.transit.group);
     this.railVehicles = new RailVehicleRenderer(world, (seg, s, x, z) => world.roadHeight(seg, s, x, z));
     this.scene.add(this.railVehicles.group);
+    // Level-crossing barriers come down while a train is near, and cars wait (Phase 2 review).
+    this.crossings = new CrossingRenderer(this.roads);
+    this.railVehicles.group.add(this.crossings.mesh);
+    this.traffic.closedCrossings = this.railVehicles.holding;
+    this.traffic.barrierDown = (node) => this.crossings.downShare(node);
+    this.traffic.trainEta = this.railVehicles.eta;
+    // Trams and cars keep out of each other's way (Phase 2 review).
+    this.traffic.trams = this.railVehicles.tramBodies;
+    this.railVehicles.traffic = this.traffic;
     this.ports = new PortRenderer(world);
     this.scene.add(this.ports.group);
     this.streetLights = new StreetLightRenderer(world);
@@ -522,6 +533,7 @@ export class GameRenderer {
     this.streetLights.update(l.night);
     this.transit.update(this.world.displayTick);
     this.railVehicles.update(this.world.displayTick);
+    this.crossings.update(this.world.displayTick, this.railVehicles.closed);
     this.ports.update(this.world.displayTick);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();

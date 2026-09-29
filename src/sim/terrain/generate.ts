@@ -27,6 +27,11 @@ export interface TerrainParams {
   wind: { x: number; z: number };
   /** Generator version (see TERRAIN_VERSION). */
   version: number;
+  /**
+   * A custom map (M24): the ground inside the map is the map's own; these settings only shape the
+   * scenery beyond it, which blends from the map's edge into them.
+   */
+  custom?: boolean;
 }
 
 export class TerrainGen {

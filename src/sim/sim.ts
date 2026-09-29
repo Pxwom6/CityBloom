@@ -34,6 +34,8 @@ import {
   FULL_SCOPE,
   HISTORY_LIMIT,
   ZONING_SCOPE,
+  TERRAIN_SCOPE,
+  EDITOR_SCOPE,
   applyEdit,
   capture,
   diff,
@@ -52,6 +54,21 @@ import {
   removeRoundabout,
 } from './actions/roads';
 import { zone } from './actions/zoning';
+import { terraform } from './actions/terraform';
+import { editMap, exportMap, setMapEntry, setMapInfo } from './actions/mapEdit';
+import { MAP_BRUSHES } from '../data/mapEditor';
+import { ENTRY_SPACING, type MapData } from './terrain/customMap';
+
+/** What the map editor's city (M24) takes. */
+const EDITOR_COMMANDS = new Set<Command['type']>(['editMap', 'setMapEntry', 'setMapInfo', 'undo', 'redo']);
+
+/** Undo labels for the terrain tools (M24). */
+const TERRAFORM_LABEL = {
+  raise: 'raising ground',
+  lower: 'lowering ground',
+  level: 'levelling',
+  smooth: 'smoothing',
+} as const;
 import { v2 } from './geom';
 import { GRID_RES, HEIGHT_RES, MAP_SIZE, SHORE_HEIGHT } from '../data/world';
 import {
@@ -81,6 +98,9 @@ import {
   weatherSummary,
   type WeatherSummary,
 } from './systems/weather';
+import { emptyRegionFlows, type RegionFlows } from './systems/regionFlows';
+import { computeNoise } from './systems/noise';
+import { garbageDealsHour, initialRegion, regionMonth, regionSummary, setDeal } from './systems/region';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
@@ -278,9 +298,17 @@ export class Sim {
     for (const c of state.civics.values()) this.indexCivic(c);
   }
 
-  static create(opts: Partial<GameOptions> = {}): Sim {
+  /**
+   * A new city on a generated map, or on a custom map (M24), whose seed and preset then stand in
+   * for the scenery and the region.
+   */
+  static create(opts: Partial<GameOptions> = {}, map: MapData | null = null): Sim {
     const options: GameOptions = { ...DEFAULT_OPTIONS, ...opts };
-    const terrain = new Terrain(options.seed, options.preset, options.terrain);
+    if (map) {
+      options.seed = map.seed;
+      options.preset = map.preset;
+    }
+    const terrain = new Terrain(options.seed, options.preset, options.terrain, map);
     const rng = {} as SimState['rng'];
     for (const s of RNG_STREAMS) rng[s] = Rng.fromSeed(`${options.seed}:${s}`).getState();
     const state: SimState = {
@@ -325,9 +353,16 @@ export class Sim {
       scenario: null,
       districts: new Map(),
       districtCells: emptyDistrictCells(),
-      weather: initialWeather(options.preset),
+      weather: initialWeather(options.preset, 0, map?.climate),
+      region:
+        options.region === false || options.editor
+          ? { neighbours: [], deals: [], nextDeal: 1 }
+          : initialRegion(options.seed),
+      map,
     };
     const sim = new Sim(state, terrain);
+    // The map editor's city has no roads: the highway and railway entries are the map's own.
+    if (options.editor) return sim;
     sim.buildHighway();
     sim.buildRailway();
     updateLandValue(sim, true);
@@ -337,7 +372,7 @@ export class Sim {
 
   static fromSave(save: SaveFile): Sim {
     const state = readSaveFile(save);
-    const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain);
+    const terrain = new Terrain(state.options.seed, state.options.preset, state.options.terrain, state.map);
     const sim = new Sim(state, terrain);
     // Cities from before M20 get their rail link where it fits among what they've built.
     if (state.railway === undefined) {
@@ -354,26 +389,31 @@ export class Sim {
   private buildRailway(): void {
     const hw = this.terrain.gen.params.highway;
     let best: { z: number; score: number } | null = null;
-    for (let d = 260; d <= 700; d += 20)
-      for (const z of [hw.connectZ + d, hw.connectZ - d]) {
-        if (z < 120 || z > MAP_SIZE - 120) continue;
-        let lo = Infinity;
-        let hi = -Infinity;
-        let ok = true;
-        for (let x = 4; x <= 160 && ok; x += 8) {
-          const h = this.terrain.heightAt(x, z);
-          if (h < SHORE_HEIGHT + 0.5) ok = false;
-          lo = Math.min(lo, h);
-          hi = Math.max(hi, h);
-          // Room for track to run in: no roads, buildings or civic buildings near.
-          if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
-          if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length)
-            ok = false;
-        }
-        if (!ok || hi - lo > 8) continue;
-        const score = hi - lo + d / 400;
-        if (!best || score < best.score) best = { z, score };
+    // A custom map (M24) says where its railway comes in, if anywhere.
+    const map = this.state.map;
+    const spots: [number, number][] = [];
+    if (map) {
+      if (map.railZ !== null && Math.abs(map.railZ - hw.connectZ) >= ENTRY_SPACING)
+        spots.push([0, map.railZ]);
+    } else for (let d = 260; d <= 700; d += 20) spots.push([d, hw.connectZ + d], [d, hw.connectZ - d]);
+    for (const [d, z] of spots) {
+      if (z < 120 || z > MAP_SIZE - 120) continue;
+      let lo = Infinity;
+      let hi = -Infinity;
+      let ok = true;
+      for (let x = 4; x <= 160 && ok; x += 8) {
+        const h = this.terrain.heightAt(x, z);
+        if (h < SHORE_HEIGHT + 0.5) ok = false;
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+        // Room for track to run in: no roads, buildings or civic buildings near.
+        if (this.net.segHash.queryPoint(x, z, 30).length) ok = false;
+        if (this.bldHash.queryPoint(x, z, 16).length || this.civHash.queryPoint(x, z, 60).length) ok = false;
       }
+      if (!ok || hi - lo > 8) continue;
+      const score = hi - lo + d / 400;
+      if (!best || score < best.score) best = { z, score };
+    }
     if (!best) {
       this.state.railway = null;
       return;
@@ -961,6 +1001,8 @@ export class Sim {
 
   private apply(cmd: Command, dryRun: boolean): CommandResult {
     if (this.state.economy.bankrupt && cmd.type !== 'cheat') return fail('The city is bankrupt');
+    // The map editor's city (M24) takes only the editor's own commands.
+    if (this.state.options.editor && !EDITOR_COMMANDS.has(cmd.type)) return fail('Not in the map editor');
     switch (cmd.type) {
       case 'cheat': {
         if (cmd.cheat === 'unlockAll') {
@@ -1083,6 +1125,14 @@ export class Sim {
         return createDistrict(this, cmd.name, dryRun);
       case 'paintDistrict':
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
+      case 'terraform':
+        return terraform(this, cmd.mode, cmd.points, cmd.radius, cmd.level, dryRun);
+      case 'editMap':
+        return editMap(this, cmd.brush, cmd.points, cmd.radius, cmd.strength ?? 1, cmd.level, dryRun);
+      case 'setMapEntry':
+        return setMapEntry(this, cmd.entry, cmd.z, dryRun);
+      case 'setMapInfo':
+        return setMapInfo(this, cmd.name, cmd.climate, dryRun);
       case 'renameDistrict':
         return renameDistrict(this, cmd.district, cmd.name, dryRun);
       case 'removeDistrict':
@@ -1094,6 +1144,10 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'setDeal': {
+        const r = setDeal(this, cmd.neighbour, cmd.resource, cmd.direction, cmd.amount, !dryRun);
+        return r.ok ? ok(0) : fail(r.reason);
+      }
       case 'setWeather': {
         const w = this.state.weather;
         if (cmd.intensity !== undefined && ![0, 1, 2, 3].includes(cmd.intensity))
@@ -1131,6 +1185,10 @@ export class Sim {
     switch (cmd.type) {
       case 'zone':
         return ZONING_SCOPE;
+      case 'terraform':
+        return TERRAIN_SCOPE;
+      case 'editMap':
+        return EDITOR_SCOPE;
       case 'createDistrict':
       case 'paintDistrict':
       case 'renameDistrict':
@@ -1160,6 +1218,10 @@ export class Sim {
         return 'road';
       case 'zone':
         return cmd.zone === 'none' ? 'dezoning' : 'zoning';
+      case 'terraform':
+        return TERRAFORM_LABEL[cmd.mode];
+      case 'editMap':
+        return (MAP_BRUSHES.find((b) => b.id === cmd.brush)?.name ?? 'brush').toLowerCase();
       case 'bulldoze':
         return 'bulldozing';
       case 'placeStop':
@@ -1201,7 +1263,13 @@ export class Sim {
     if (!d.changes.length && !d.treasury) return;
     const top = this.history.undo[this.history.undo.length - 1];
     const stroke =
-      cmd.type === 'zone' || cmd.type === 'setTram' || cmd.type === 'paintDistrict' ? cmd.stroke : undefined;
+      cmd.type === 'zone' ||
+      cmd.type === 'setTram' ||
+      cmd.type === 'paintDistrict' ||
+      cmd.type === 'terraform' ||
+      cmd.type === 'editMap'
+        ? cmd.stroke
+        : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
       this.history.undo.push({
@@ -1324,6 +1392,8 @@ export class Sim {
   timer: ((name: string, fn: () => void) => void) | null = null;
 
   step(): void {
+    // The map editor's city (M24) is a map, not a town: time doesn't pass in it.
+    if (this.state.options.editor) return;
     const s = this.state;
     s.tick++;
     const t = s.tick;
@@ -1340,6 +1410,7 @@ export class Sim {
         projectsMonth(this);
         projectEvents(this);
         electionsMonth(this);
+        regionMonth(this);
         scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
@@ -1385,6 +1456,7 @@ export class Sim {
         run('garbage', () => {
           garbageHour(this);
           dispatchGarbage(this);
+          garbageDealsHour(this);
         });
         break;
       case HOURLY_AT.pollution:
@@ -1504,6 +1576,16 @@ export class Sim {
       election: this.electionSummary(),
       scenario: this.scenarioStats(),
       weather: this.weatherStats(),
+      region: regionSummary(this),
+      map: this.state.map
+        ? {
+            name: this.state.map.name,
+            climate: this.state.map.climate,
+            highwayZ: this.state.map.highwayZ,
+            railZ: this.state.map.railZ,
+            editor: !!this.state.options.editor,
+          }
+        : null,
     };
   }
 
@@ -1905,6 +1987,8 @@ export class Sim {
         return this.civicDetails(q.id);
       case 'districts':
         return districtReports(this);
+      case 'exportMap':
+        return exportMap(this);
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':
@@ -1954,6 +2038,14 @@ export class Sim {
       railFreight: d.railFreight
         ? { linked: railTerminals(this).some((t) => t.id === c.id), trucks: this.railFreight.get(c.id) ?? 0 }
         : null,
+      port:
+        d.airport || d.seaport
+          ? {
+              kind: d.airport ? 'airport' : 'seaport',
+              visitors: d.airport ? (this.state.tourism.by?.air ?? 0) : (this.state.tourism.by?.sea ?? 0),
+              loads: this.railFreight.get(c.id) ?? 0,
+            }
+          : null,
       refund: Math.round(c.cost * 0.25),
       special: d.resource
         ? {
@@ -2033,6 +2125,20 @@ export class Sim {
 
   /** Trucks a day each rail freight terminal loaded at the last assignment round (M20; not saved). */
   railFreight = new Map<number, number>();
+
+  /** Regional commuters, shoppers and visitors at the last assignment round (M23; not saved). */
+  regionFlows: RegionFlows = emptyRegionFlows();
+
+  private noiseCache: { key: string; field: Float32Array } | null = null;
+
+  /** The noise raster (M23), rebuilt every three game hours or when civic buildings change. */
+  noise(): Float32Array {
+    let ids = 0;
+    for (const id of this.state.civics.keys()) ids += id;
+    const key = `${Math.floor(this.state.tick / 180)}:${ids}`;
+    if (this.noiseCache?.key !== key) this.noiseCache = { key, field: computeNoise(this) };
+    return this.noiseCache.field;
+  }
 
   /** Riders a day getting on or off at each stop or station at the last assignment round (M20; not saved). */
   stopUse = new Map<number, number>();
@@ -2116,6 +2222,8 @@ export class Sim {
       pop: b.pop,
       cap: b.cap || buildingCapacity(b),
       employed: b.employed,
+      toRegion: b.toRegion ?? 0,
+      fromRegion: b.fromRegion ?? 0,
       commute: b.commute,
       shop: b.shop,
       happiness: b.happiness,

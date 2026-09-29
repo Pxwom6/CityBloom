@@ -47,6 +47,13 @@ test('every visible button has a readable label or accessible name, across the i
   const problems: string[] = [];
   const check = async (where: string) => {
     await page.evaluate(() => window.__game!.waitFrames(1));
+    // Judge the settled interface: a button just made active fades its background in while its
+    // text turns white at once, so wait out any transitions still running.
+    await page
+      .waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'), null, {
+        timeout: 5_000,
+      })
+      .catch(() => undefined);
     problems.push(...(await auditButtons(page, where)));
   };
 
@@ -76,6 +83,21 @@ test('every visible button has a readable label or accessible name, across the i
   await page.getByTestId('shell-back').click();
   await page.getByTestId('main-load').click();
   await check('load city (empty)');
+  await page.getByTestId('shell-back').click();
+
+  // The map editor (M24): its screen, the editor with a brush in hand, and the playability check.
+  await page.getByTestId('main-editor').click();
+  await check('map editor screen');
+  await page.getByTestId('maps-base-flat').click();
+  await page.getByTestId('maps-new').click();
+  await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'editor', null, {
+    timeout: 120_000,
+  });
+  await page.getByTestId('brush-ore').click();
+  await check('map editor');
+  await page.getByTestId('editor-status').click();
+  await expect(page.getByTestId('editor-check')).toBeVisible();
+  await check('map editor: playability');
 
   // A city: first without power, with tips on, so a contextual tip shows.
   await openGame(page);

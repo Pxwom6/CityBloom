@@ -6,11 +6,24 @@ import { BState } from '../world/buildings';
 import { civicDef, civicOnline, civicRect, railSiding, resourceRichness, type Civic } from '../world/civic';
 import { matchDayNow, openProject } from './projects';
 import { linkedToRegion } from './rail';
+import { REGION } from '../../data/region';
 
 /** Visitors a day and how many of them stay the night (saved; recomputed hourly). */
 export interface TourismState {
   visitors: number;
   overnight: number;
+  /** How they arrive (M23): by road, by train, by air, by sea (absent in older saves until the next hour). */
+  by?: { road: number; rail: number; air: number; sea: number };
+}
+
+/** Is there a railway station in service on track linked to the regional railway (M20)? */
+export function regionalRail(sim: Sim): boolean {
+  for (const c of sim.state.civics.values()) {
+    const def = civicDef(c);
+    if (def.rail && def.track === 'rail' && c.access && civicOnline(c) && linkedToRegion(sim, c.access.seg))
+      return true;
+  }
+  return false;
 }
 
 /** Working specialisation buildings, in id order (online, facing a road linked to the highway). */
@@ -63,6 +76,14 @@ export function freightHubs(sim: Sim): number {
   return Math.min(2, working(sim, (c) => ships(sim, c)).length);
 }
 
+/** The airport and seaport in service (M23), for demand. */
+export function ports(sim: Sim): { airport: Civic | null; seaport: Civic | null } {
+  return {
+    airport: working(sim, (c) => !!civicDef(c).airport)[0] ?? null,
+    seaport: working(sim, (c) => !!civicDef(c).seaport)[0] ?? null,
+  };
+}
+
 export function hasResearchPark(sim: Sim): boolean {
   return working(sim, (c) => !!civicDef(c).research).length > 0;
 }
@@ -82,9 +103,30 @@ export function specialisationsHour(sim: Sim): void {
   const campaign = sim.policy('tourismCampaign') ? POLICY_EFFECTS.tourismCampaign : 1;
   // Match days at the stadium (M17) fill the stands on top of the usual visitors.
   const match = matchDayNow(sim)?.visitors ?? 0;
-  const visitors = draw * eff * appeal * campaign + match * eff;
+  const base = draw * eff * appeal * campaign;
+  // An airport or seaport (M23) brings visitors of its own and makes the city easier to reach.
+  let air = 0;
+  let sea = 0;
+  for (const c of working(sim, (c) => !!civicDef(c).airport || !!civicDef(c).seaport)) {
+    const d = civicDef(c);
+    if (d.airport) air += d.airport.visitors * eff * appeal + base * d.airport.boost;
+    if (d.seaport) sea += d.seaport.visitors * eff * appeal;
+  }
+  const visitors = base + air + sea + match * eff;
   const overnight = Math.min(visitors * SPECIALISATION.overnightShare, rooms * eff);
-  s.tourism = { visitors: Math.round(visitors), overnight: Math.round(overnight) };
+  // The rest come by road, or some by train where a station serves the regional line.
+  const byLand = Math.max(0, visitors - air - sea);
+  const railShare = regionalRail(sim) ? REGION.railShare : 0;
+  s.tourism = {
+    visitors: Math.round(visitors),
+    overnight: Math.round(overnight),
+    by: {
+      road: Math.round(byLand * (1 - railShare)),
+      rail: Math.round(byLand * railShare),
+      air: Math.round(air),
+      sea: Math.round(sea),
+    },
+  };
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
     if (!civicDef(c).resource) continue;
     const perHour = extractionPerDay(sim, c) / 24;
@@ -113,6 +155,9 @@ export function specialisationIncome(sim: Sim): Record<string, number> {
     const per = civicDef(hubs[0]!).freight!.perJob;
     out.trade = industrialJobs(sim) * per * (hubs.length > 1 ? 1.5 : 1) * eff;
   }
+  // A seaport (M23) ships goods by sea: trade income from every industrial job.
+  const port = working(sim, (c) => !!civicDef(c).seaport)[0];
+  if (port) out.trade = (out.trade ?? 0) + industrialJobs(sim) * civicDef(port).seaport!.tradePerJob * eff;
   const parks = working(sim, (c) => !!civicDef(c).research);
   // The launch complex (M17) makes research worth half as much again.
   const boost = openProject(sim, 'launchsite')

@@ -10,6 +10,9 @@ import { App } from './ui/App';
 import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
 import { decodeSave, readSlot } from './client/saves';
+import { newMapId, readMap, writeMap } from './client/maps';
+import { MapEditor } from './client/editor';
+import { mapFromGenerator, type MapData } from './sim/terrain/customMap';
 import { AudioEngine } from './audio/engine';
 import { loadSettings } from './client/settings';
 import { justUpdated } from './client/pwa';
@@ -93,8 +96,27 @@ async function boot(): Promise<void> {
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
   // Without a city to open, show the main menu over a backdrop map.
-  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario'].some((k) => params.has(k));
+  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor'].some((k) => params.has(k));
   const client = new SimClient();
+  // The map editor (M24): a new map from the generator (or flat), or one of the player's maps.
+  const editorParam = params.get('editor');
+  let editing: { id: string; map: MapData } | null = null;
+  if (editorParam) {
+    const saved = editorParam === 'new' ? null : await readMap(editorParam).catch(() => null);
+    if (saved) editing = { id: editorParam, map: saved };
+    else {
+      const o = optionsFrom(params);
+      const name = params.get('name')?.trim().slice(0, 40) || 'New map';
+      editing = {
+        id: newMapId(),
+        map: mapFromGenerator(o.seed!, o.preset!, name, params.get('flat') === '1'),
+      };
+      await writeMap(editing.id, editing.map, false).catch(() => undefined);
+    }
+  }
+  // A new city on one of the player's maps.
+  const cityMap =
+    params.has('new') && params.get('map') ? await readMap(params.get('map')!).catch(() => null) : null;
   const loadSlot = params.get('load');
   // A scenario (M18) opens its starting city, shipped as a save beside the game.
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
@@ -108,13 +130,36 @@ async function boot(): Promise<void> {
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
-  const snap = opened || (await client.init(menu ? BACKDROP : optionsFrom(params), IS_TEST_BUILD));
+  const snap = editing
+    ? await client.init(
+        {
+          editor: true,
+          seed: editing.map.seed,
+          preset: editing.map.preset,
+          cityName: editing.map.name,
+          sandbox: true,
+          disasters: false,
+          elections: false,
+          region: false,
+        },
+        IS_TEST_BUILD,
+        editing.map,
+      )
+    : opened || (await client.init(menu ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   const world = new ClientWorld(snap);
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const renderer = new GameRenderer(canvas, world);
   const game = new Game(client, world, renderer);
   game.audio = new AudioEngine(game.settings);
-  if (menu) {
+  if (editing) {
+    game.mode = 'editor';
+    game.editor = new MapEditor(game, editing.id);
+    game.setSpeed(0);
+    game.tools.use('map');
+    game.setCamera('overview', true);
+    // A reload carries on editing this map.
+    history.replaceState(null, '', `${location.pathname}?editor=${encodeURIComponent(editing.id)}`);
+  } else if (menu) {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
@@ -130,6 +175,8 @@ async function boot(): Promise<void> {
     if (save && loadSlot) game.slot = loadSlot === 'import' ? null : loadSlot;
     if (loadSlot && !save)
       game.toast('That save could not be opened; here is a fresh map instead.', 'bad', 6000);
+    if (params.get('map') && !cityMap)
+      game.toast('That map could not be opened; here is a generated one instead.', 'bad', 6000);
     if (scenario && save) {
       const r = await game.dispatch({ type: 'startScenario', id: scenario.id });
       if (r.ok) game.scenarioBrief = true;

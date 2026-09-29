@@ -48,9 +48,9 @@ export interface WeatherState {
   dryness: number;
 }
 
-export function initialWeather(preset: MapPreset, tick = 0): WeatherState {
+export function initialWeather(preset: MapPreset, tick = 0, climate?: ClimateId): WeatherState {
   const w: WeatherState = {
-    climate: PRESET_CLIMATE[preset],
+    climate: climate ?? PRESET_CLIMATE[preset],
     seasons: true,
     intensity: 2,
     kind: 'clear',

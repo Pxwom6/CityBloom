@@ -77,6 +77,11 @@ export interface TestApi {
   };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
+  /** Planes and ships drawn last frame (M23), with their positions. */
+  getPorts(): {
+    counts: { planes: number; ships: number };
+    shown: { kind: 'plane' | 'ship'; x: number; y: number; z: number }[];
+  };
   /** Terrain height (water below 0.6). */
   heightAt(x: number, z: number): number;
   /** Show a data map (or null to hide). */
@@ -146,7 +151,7 @@ export interface TestApi {
   }[];
   /** Game shell state: menu or city, open screens, settings and what the renderer applied. */
   getShell(): {
-    mode: 'menu' | 'play';
+    mode: 'menu' | 'play' | 'editor';
     screens: string[];
     slot: string | null;
     settings: Record<string, unknown>;
@@ -225,7 +230,7 @@ export function installTestApi(game: Game): TestApi {
       return {
         ...stats,
         renderStats: game.renderer.lastStats,
-        highwayZ: w.netState.nodes.get(w.highway.connect)!.z,
+        highwayZ: w.netState.nodes.get(w.highway.connect)?.z ?? w.gen.params.highway.connectZ,
         railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,
@@ -353,6 +358,10 @@ export function installTestApi(game: Game): TestApi {
       })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getPorts: () => ({
+      counts: { ...game.renderer.ports.counts },
+      shown: game.renderer.ports.shown.map((f) => ({ ...f })),
+    }),
     getDistricts: () => {
       const w = game.world;
       const count = new Map<number, number>();

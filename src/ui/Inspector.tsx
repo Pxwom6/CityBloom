@@ -538,6 +538,10 @@ const PURPOSE: Record<string, [string, string]> = {
   export: ['Export truck', 'Taking goods out to the region'],
   import: ['Import truck', 'Bringing goods in from the region'],
   event: ['Match-day fan', 'Driving in from the region for the match at the stadium'],
+  incommute: ['Commuter from out of town', 'Driving in from a neighbouring town to work'],
+  outcommute: ['Commuter', 'Driving out to work in a neighbouring town'],
+  regionshop: ['Shopper from out of town', 'Driving in from a neighbouring town to the shops'],
+  visit: ['Visitor', 'Off to see the sights'],
 };
 
 const WALKING: Record<string, [string, string]> = {
@@ -573,14 +577,19 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
       </aside>
     );
   const byRail = !walker && game.world.civics.get(car.trip.to)?.def === 'railfreight';
-  const [title, what] = byRail
+  const bySea = !walker && game.world.civics.get(car.trip.to)?.def === 'seaport';
+  const [title, what] = bySea
     ? car.trip.purpose === 'export'
-      ? ['Export truck', 'Taking goods to the rail freight terminal, to go on by train']
-      : ['Import truck', 'Bringing goods off the train at the rail freight terminal']
-    : ((walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', '']);
+      ? ['Export truck', 'Taking goods to the seaport, to go on by ship']
+      : ['Import truck', 'Bringing goods off a ship at the seaport']
+    : byRail
+      ? car.trip.purpose === 'export'
+        ? ['Export truck', 'Taking goods to the rail freight terminal, to go on by train']
+        : ['Import truck', 'Bringing goods off the train at the rail freight terminal']
+      : ((walker ? WALKING : PURPOSE)[car.trip.purpose] ?? ['Vehicle', '']);
   const forward = car.legs[0] === car.trip.legs[0];
   const [from, to] = forward ? [car.trip.from, car.trip.to] : [car.trip.to, car.trip.from];
-  const home = car.trip.purpose === 'work' && !forward;
+  const home = (car.trip.purpose === 'work' || car.trip.purpose === 'outcommute') && !forward;
   const leg = car.legs[car.leg];
   const seg = leg ? game.world.netState.segments.get(leg.seg) : undefined;
   const vc = leg ? game.world.segVC(leg.seg, 1) : 0;
@@ -839,6 +848,29 @@ function CivicInspector({ id }: { id: number }) {
             </dd>
           </>
         )}
+        {d.port && (
+          <>
+            <dt>{d.port.kind === 'airport' ? 'Flying in' : 'By sea'}</dt>
+            <dd data-testid="port-visitors">{formatNumber(d.port.visitors)} visitors a day</dd>
+            {d.port.kind === 'seaport' && (
+              <>
+                <dt>Onto ships</dt>
+                <dd data-testid="port-loads">
+                  {formatNumber(d.port.loads)} truckloads/day off the highway
+                  {d.port.loads > 0 ? ` · ${Math.max(1, Math.round(d.port.loads / 120))} ships a day` : ''}
+                </dd>
+              </>
+            )}
+            {d.port.kind === 'airport' && (
+              <>
+                <dt>Flights</dt>
+                <dd>
+                  {Math.max(1, Math.round(d.port.visitors / 90))} a day · loud along the runway (noise map)
+                </dd>
+              </>
+            )}
+          </>
+        )}
         {d.special?.kind === 'resource' && (
           <>
             <dt>Output</dt>
@@ -1051,11 +1083,27 @@ function BuildingInspector({ id }: { id: number | null }) {
         {d.isResidential && (
           <>
             <dt>Employed</dt>
-            <dd>{formatNumber(d.employed)}</dd>
+            <dd>
+              {formatNumber(d.employed)}
+              {d.toRegion > 0 && (
+                <span class="muted" data-testid="inspector-out-of-town">
+                  {' '}
+                  ({formatNumber(d.toRegion)} in a neighbouring town)
+                </span>
+              )}
+            </dd>
             <dt>Commute</dt>
             <dd>{d.employed > 0 ? `${Math.max(1, Math.round(d.commute / 60))} min` : '—'}</dd>
             <dt>Shopping nearby</dt>
             <dd>{Math.round(d.shop * 100)}%</dd>
+          </>
+        )}
+        {!d.isResidential && d.fromRegion > 0 && (
+          <>
+            <dt>From out of town</dt>
+            <dd data-testid="inspector-from-region">
+              {formatNumber(d.fromRegion)} of the workers commute in from the neighbours
+            </dd>
           </>
         )}
         {d.zone === 2 && (

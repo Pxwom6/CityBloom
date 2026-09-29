@@ -1,6 +1,7 @@
 import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import type { MapPreset } from '../../data/world';
 import { TERRAIN_VERSION, TerrainGen, generateTerrain, sampleHeights } from './generate';
+import { mapGroundwater, mapParams, unpackHeights, type MapData } from './customMap';
 
 /**
  * Terrain derived from the seed: heights and static resource grids, regenerated on load. Earthworks
@@ -16,7 +17,22 @@ export class Terrain {
   readonly oil: Uint8Array;
   readonly initialTrees: Uint8Array;
 
-  constructor(seed: string, preset: MapPreset, version = TERRAIN_VERSION) {
+  /**
+   * A custom map (M24) replaces the generated ground: its heights, forests, ore and oil (shared
+   * with the map, so the map editor's resource brushes reach the sim), with groundwater from them.
+   */
+  constructor(seed: string, preset: MapPreset, version = TERRAIN_VERSION, map?: MapData | null) {
+    if (map) {
+      const heights = unpackHeights(map.heights);
+      this.gen = new TerrainGen(mapParams(map, heights));
+      this.heights = heights;
+      this.base = heights.slice();
+      this.groundwater = mapGroundwater(heights, this.gen);
+      this.ore = map.ore;
+      this.oil = map.oil;
+      this.initialTrees = map.trees.slice();
+      return;
+    }
     this.gen = TerrainGen.create(seed, preset, version);
     const data = generateTerrain(this.gen);
     this.heights = data.heights;

@@ -4,12 +4,13 @@ import { MILESTONES } from '../data/progression';
 import { GRID_RES, HEIGHT_RES, type MapPreset } from '../data/world';
 import { Rng } from './rng';
 import { initialWeather } from './systems/weather';
+import { initialRegion } from './systems/region';
 import { GAME_TITLE } from '../config';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 22;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -192,6 +193,19 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
       rng: { ...rng, weather: rng.weather ?? Rng.fromSeed(`${options.seed}:weather`).getState() },
     };
   },
+  // v20 → v21 (M23): the region. An older city gets its seed's neighbours, no deals yet, and its
+  // own dice for the neighbours' fortunes.
+  20: (s) => {
+    const options = s.options as { seed: string };
+    const rng = s.rng as Record<string, unknown>;
+    return {
+      ...s,
+      region: s.region ?? initialRegion(options.seed),
+      rng: { ...rng, region: rng.region ?? Rng.fromSeed(`${options.seed}:region`).getState() },
+    };
+  },
+  // v21 → v22 (M24): custom maps. Every older city was founded on a generated map.
+  21: (s) => ({ ...s, map: s.map ?? null }),
 };
 
 export function encodeState(state: SimState): unknown {

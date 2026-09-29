@@ -1,8 +1,11 @@
 import type { WeatherSummary } from './systems/weather';
+import type { RegionSummary } from './systems/region';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
 import type { TerrainParams } from './terrain/generate';
+import type { MapData } from './terrain/customMap';
+import type { ClimateId } from '../data/climate';
 import type { Command, CommandResult } from './commands';
 import type { GameOptions } from './state';
 import type { SaveFile } from './save';
@@ -63,6 +66,19 @@ export interface CityStats {
   scenario: ScenarioSummary | null;
   /** Season and weather (M22). */
   weather: WeatherSummary;
+  /** The region (M23): neighbours, what they offer now, and the deals. */
+  region: RegionSummary;
+  /**
+   * The custom map the city stands on (M24), or null: its name and climate, where the highway and
+   * railway come in, and whether this is the map editor.
+   */
+  map: {
+    name: string;
+    climate: ClimateId;
+    highwayZ: number;
+    railZ: number | null;
+    editor: boolean;
+  } | null;
 }
 
 export interface ElectionSummary {
@@ -143,6 +159,8 @@ export interface CivicDetails {
   } | null;
   /** Rail freight terminals (M20): linked to the regional railway, and truckloads a day onto trains. */
   railFreight: { linked: boolean; trucks: number } | null;
+  /** Airport or seaport (M23): visitors a day it brings, and (seaport) truckloads a day onto ships. */
+  port: { kind: 'airport' | 'seaport'; visitors: number; loads: number } | null;
   refund: number;
   /** Mines and wells: units a day and the share of the deposit left; landmarks and hotels. */
   special:
@@ -224,6 +242,9 @@ export interface BuildingDetails {
   pop: number;
   cap: number;
   employed: number;
+  /** Regional (M23): residents working in a neighbour (homes), workers from the neighbours (jobs). */
+  toRegion: number;
+  fromRegion: number;
   commute: number;
   shop: number;
   happiness: number;
@@ -440,7 +461,9 @@ export type Query =
   /** Coverage samples along every road for one service (for the coverage data maps). */
   | { type: 'coverageRoads'; kind: ServiceKind }
   /** Districts' figures and budgets (M21). */
-  | { type: 'districts' };
+  | { type: 'districts' }
+  /** The map editor's map as edited, and its playability check (M24). */
+  | { type: 'exportMap' };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {
@@ -465,7 +488,8 @@ export interface DistrictReport {
 }
 
 export type MainToWorker =
-  | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean }
+  /** A new city (or the map editor's), on a custom map if one is given (M24). */
+  | { type: 'init'; options: Partial<GameOptions>; testMode?: boolean; map?: MapData | null }
   | { type: 'load'; save: SaveFile; testMode?: boolean }
   | { type: 'command'; id: number; cmd: Command }
   | { type: 'preview'; id: number; cmd: Command }

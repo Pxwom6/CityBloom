@@ -14,7 +14,8 @@ export type SoundName =
   | 'whoosh'
   | 'boom'
   | 'fanfare'
-  | 'thunder';
+  | 'thunder'
+  | 'earth';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -63,6 +64,21 @@ export const SOUNDS: Record<
       attack: 0.02,
       dur: 0.22,
     });
+  },
+
+  /** Moving earth (M24): a soft scrape of soil and a low, rounded push. */
+  earth: (ctx, out, t, v) => {
+    burst(ctx, out, t, {
+      colour: 'brown',
+      filter: 'lowpass',
+      f0: 500 + v * 120,
+      f1: 180,
+      gain: 0.32,
+      attack: 0.04,
+      dur: 0.32,
+    });
+    tone(ctx, out, t + 0.02, { f0: 58 + v * 6, f1: 44, gain: 0.3, attack: 0.03, dur: 0.24 });
+    return burst(ctx, out, t + 0.08, { f0: 1500 + v * 400, q: 0.9, gain: 0.05, attack: 0.02, dur: 0.14 });
   },
 
   /** Bulldozing: rumble, crunches and a low thud. */

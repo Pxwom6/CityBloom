@@ -17,6 +17,9 @@ import { monthlyRates } from './economy';
 import { campaignOpen, councilUntil, monthsToVote, projectedShare } from './elections';
 import { ELECTIONS } from '../../data/elections';
 import { CIVIC } from '../../data/civic';
+import { capacity } from './region';
+import { noiseMood } from './noise';
+import type { DealResource } from '../../data/region';
 
 export type AdvisorId =
   'finance' | 'utilities' | 'safety' | 'health' | 'education' | 'transport' | 'environment' | 'planning';
@@ -545,6 +548,7 @@ export function advise(sim: Sim): Advice[] {
         text: `Zone more ${z === 'R' ? 'residential' : z === 'C' ? 'commercial' : 'industrial'} land along roads with access to the highway.`,
       });
   out.push(...weatherAdvice(sim));
+  out.push(...regionAdvice(sim));
   return out.sort((a, b) => b.severity - a.severity);
 }
 
@@ -617,6 +621,62 @@ function weatherAdvice(sim: Sim): Advice[] {
       severity: w.river > WEATHER.floodRise ? 2 : 1,
       title: 'The river is high',
       text: `Rain has lifted the river ${w.river.toFixed(1)} m above normal. ${w.river > WEATHER.floodRise ? 'Homes by the water may flood.' : 'Much more and homes by the water may flood.'}`,
+    });
+  return out;
+}
+
+/** The region (M23): neighbours who'd cover a shortage, a filling landfill, homes under a flight path. */
+function regionAdvice(sim: Sim): Advice[] {
+  const s = sim.state;
+  const out: Advice[] = [];
+  if (!s.totals.population || !s.region.neighbours.length) return out;
+  const offerOf = (res: DealResource) => {
+    let best: { name: string; cap: number } | null = null;
+    for (const n of s.region.neighbours) {
+      if (s.region.deals.some((d) => d.neighbour === n.id && d.resource === res && d.direction === 'buy'))
+        continue;
+      const cap = capacity(sim, n, res, 'buy');
+      if (cap > 0 && (!best || cap > best.cap)) best = { name: n.name, cap };
+    }
+    return best;
+  };
+  for (const res of ['power', 'water'] as const) {
+    const u = s.utilityStats[res];
+    if (u.unserved <= 0) continue;
+    const offer = offerOf(res);
+    if (!offer) continue;
+    out.push({
+      advisor: 'utilities',
+      severity: 1,
+      title: `${offer.name} would sell us ${res}`,
+      text: `We're short of ${res} (${Math.round(u.supply).toLocaleString('en-US')} for ${Math.round(u.demand).toLocaleString('en-US')} needed). ${offer.name} will sell up to ${offer.cap.toLocaleString('en-US')}${res === 'power' ? ' MW' : ''} while we build our own: see the Region panel (Shift+N).`,
+      map: res,
+    });
+  }
+  const full = [...s.civics.values()].find((c) => {
+    const g = civicDef(c).garbage;
+    return g?.storage && c.stored > g.storage * 0.85;
+  });
+  const garbage = full && offerOf('garbage');
+  if (full && garbage)
+    out.push({
+      advisor: 'utilities',
+      severity: 1,
+      title: 'A neighbour could take our garbage',
+      text: `The landfill is nearly full. ${garbage.name} will take up to ${garbage.cap.toLocaleString('en-US')} a day off our hands for a fee: see the Region panel.`,
+      at: { x: full.x, z: full.z },
+    });
+  let loud = 0;
+  const noise = sim.noise();
+  for (const b of s.buildings.values())
+    if (b.zone === ZONE_R && b.pop > 0 && noiseMood(fieldAt(noise, b.x, b.z)) < -0.05) loud += b.pop;
+  if (loud > 50)
+    out.push({
+      advisor: 'environment',
+      severity: loud > 1_000 ? 2 : 1,
+      title: 'Homes under the noise',
+      text: `${loud.toLocaleString('en-US')} residents live where the airport's planes or a busy motorway are loud. Keep homes off the runway's line; offices and industry mind less.`,
+      map: 'noise',
     });
   return out;
 }

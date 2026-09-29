@@ -63,9 +63,15 @@ test('M16: city history charts the city and survives save and load exactly; phot
   await expect(page.getByTestId('history-events')).toContainText('Meteor');
   await expect(page.getByTestId('history-events')).toContainText('Became a village');
   // Hovering a chart gives the month, the value and any event near it.
-  const box = (await page.getByTestId('history-population').locator('svg.chart').boundingBox())!;
-  await page.mouse.move(box.x + box.width * 0.93, box.y + box.height * 0.5);
-  await expect(page.getByTestId('history-population').locator('.chart-tip')).toContainText(/Year 1/);
+  // (Measured again on each try: the panel may still be settling when it first opens.)
+  await expect(async () => {
+    const box = (await page.getByTestId('history-population').locator('svg.chart').boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.move(box.x + box.width * 0.93, box.y + box.height * 0.5);
+    await expect(page.getByTestId('history-population').locator('.chart-tip')).toContainText(/Year 1/, {
+      timeout: 3000,
+    });
+  }).toPass({ timeout: 30_000 });
   await expect(page.getByTestId('history-population').locator('.chart-marker')).not.toHaveCount(0);
   await shot(page, 'm16-history');
   await page.getByTestId('open-history').click();

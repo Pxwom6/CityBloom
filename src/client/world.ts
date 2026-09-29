@@ -405,7 +405,14 @@ export class ClientWorld {
   /** Terrain height anywhere: the sim grid inside the map, the generator outside. */
   heightAt(x: number, z: number): number {
     if (x >= 0 && z >= 0 && x <= MAP_SIZE && z <= MAP_SIZE) return sampleHeights(this.heights, x, z);
-    return this.gen.height(x, z);
+    const g = this.gen.height(x, z);
+    if (!this.gen.params.custom) return g;
+    // A custom map (M24): its edge carries on outward, blending into the generated scenery.
+    const ex = Math.max(0, Math.min(MAP_SIZE, x));
+    const ez = Math.max(0, Math.min(MAP_SIZE, z));
+    const t = Math.min(1, Math.hypot(x - ex, z - ez) / 400);
+    const edge = sampleHeights(this.heights, ex, ez);
+    return edge + (g - edge) * t * t * (3 - 2 * t);
   }
 
   /** Earthworks changed the ground in `box` (M13): terrain, roads, zones and trees follow it. */

@@ -291,7 +291,7 @@ export class TreeRenderer {
             const iz = Math.round(z / SCENERY_STEP);
             const px = x + hash2(ix, iz, 3) * SCENERY_STEP;
             const pz = z + hash2(ix, iz, 4) * SCENERY_STEP;
-            const h = gen.height(px, pz);
+            const h = this.world.heightAt(px, pz);
             if (h < 1.8 || h > 160) continue;
             // Keep the highway corridor clear.
             if (Math.abs(px - gen.params.highway.lineX) < 70) continue;

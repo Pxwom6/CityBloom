@@ -50,7 +50,9 @@ export const MAPS: { id: OverlayMap; name: string; group: string }[] = [
   { id: 'landValue', name: 'Land value', group: 'City' },
   { id: 'wealth', name: 'Wealth', group: 'City' },
   { id: 'crime', name: 'Crime', group: 'City' },
+  { id: 'region', name: 'Region traffic', group: 'City' },
   { id: 'airPollution', name: 'Air pollution', group: 'Environment' },
+  { id: 'noise', name: 'Noise', group: 'Environment' },
   { id: 'groundPollution', name: 'Ground pollution', group: 'Environment' },
   { id: 'eduLevel', name: 'Education level', group: 'City' },
   { id: 'groundwater', name: 'Groundwater', group: 'Resources' },
@@ -137,6 +139,7 @@ export class OverlayController {
     if ((SERVICE_KINDS as readonly string[]).includes(map)) await this.refreshRoads(map as ServiceKind);
     if (map === 'traffic') this.refreshTraffic();
     if (map === 'transit') this.refreshRidership();
+    if (map === 'region') this.refreshRegion();
     this.game.notify();
   }
 
@@ -173,6 +176,38 @@ export class OverlayController {
       junctions.push({ x: node.x, z: node.z, r, v: Math.min(1, vc / 1.5) });
     }
     this.game.renderer.coverageMap.show(list, 'traffic', junctions);
+  }
+
+  /**
+   * Region traffic (M23): the roads the neighbours' commuters and shoppers, residents working out of
+   * town, visitors and freight to and from the region take, from the sampled trips, shaded by how
+   * many use each road.
+   */
+  private refreshRegion(): void {
+    const w = this.game.world;
+    const key = `region:${w.trafficVersion}:${w.trips.length}:${this.district}:${w.districtsVersion}`;
+    if (key === this.roadsKey) return;
+    this.roadsKey = key;
+    const outside = new Set(['incommute', 'outcommute', 'regionshop', 'visit', 'export', 'import', 'event']);
+    const bySeg = new Map<number, number>();
+    for (const t of w.trips) {
+      if (!outside.has(t.purpose)) continue;
+      for (const l of t.legs) bySeg.set(l.seg, (bySeg.get(l.seg) ?? 0) + t.weight);
+    }
+    const most = Math.max(1e-9, ...bySeg.values());
+    const list: RoadTintPiece[] = [];
+    for (const [id, n] of [...bySeg].sort((a, b) => a[0] - b[0])) {
+      const seg = w.netState.segments.get(id);
+      if (!seg || isRail(seg.type) || !this.roadInFilter(id)) continue;
+      const v = Math.min(1, 0.2 + 0.8 * Math.sqrt(n / most));
+      list.push({
+        curve: w.net.curve(id),
+        v: [v, v],
+        half: ROAD_TYPES[seg.type].width / 2 + 0.5,
+        ...(seg.deck ? { surface: (s: number, x: number, z: number) => w.roadHeight(id, s, x, z) } : {}),
+      });
+    }
+    this.game.renderer.coverageMap.show(list, 'sequential', []);
   }
 
   /**

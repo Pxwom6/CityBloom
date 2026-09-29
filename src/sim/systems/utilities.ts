@@ -7,6 +7,7 @@ import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline, type Civic } from '../world/civic';
 import { attachmentOf } from './commute';
 import { Dijkstra } from './graph';
+import { regionExport, regionImport } from './region';
 import { pumpShare, solarShare, weatherUse } from './weather';
 
 export interface UtilityStat {
@@ -76,7 +77,7 @@ export function updateUtilities(sim: Sim): void {
     consumers.push({ b, node: att ? att.node : -1, offset: att ? att.offset * 10 : 0 });
   }
   for (const u of UTIL_LIST) {
-    const producers: { c: Civic; node: number; cap: number; polluted: boolean }[] = [];
+    const producers: { node: number; cap: number; polluted: boolean }[] = [];
     for (const c of s.civics.values()) {
       const cap = civicOutput(sim, c, u);
       if (cap <= 0 || !c.access) continue;
@@ -86,8 +87,12 @@ export function updateUtilities(sim: Sim): void {
       const node = g.index.get(c.access.s < len / 2 ? seg.a : seg.b);
       if (node === undefined) continue;
       const polluted = u === 'water' && sim.groundPollutionAt(c.x, c.z) > UTILITIES.pollutedPumpThreshold;
-      producers.push({ c, node, cap, polluted });
+      producers.push({ node, cap, polluted });
     }
+    // Deals with neighbours (M23): what's bought comes in at the highway's end of the network.
+    const hwNode = g.index.get(s.highway.connect);
+    const bought = regionImport(sim, u);
+    if (bought > 0 && hwNode !== undefined) producers.push({ node: hwNode, cap: bought, polluted: false });
     const compCap = new Map<number, number>();
     const compPolluted = new Map<number, number>();
     for (const p of producers) {
@@ -137,6 +142,9 @@ export function updateUtilities(sim: Sim): void {
           cap > 0 && served > 0 ? Math.round(((compPolluted.get(e.comp) ?? 0) / cap) * 1000) / 1000 : 0;
       }
     }
+    // What's sold goes from whatever the highway's end of the network has left over.
+    const sold = regionExport(sim, u, hwNode !== undefined ? (left.get(g.component[hwNode]!) ?? 0) : 0);
+    stats[u].demand += sold;
     stats[u].supply = Math.round(stats[u].supply);
     stats[u].demand = Math.round(stats[u].demand);
   }

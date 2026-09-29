@@ -1,3 +1,4 @@
+import { RegionPanel } from './Region';
 import { useEffect, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
@@ -19,6 +20,7 @@ import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
+import { EditorApp } from './Editor';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -35,6 +37,7 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'Digit3') game.setSpeed(3);
       else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
+      else if (e.code === 'KeyN' && e.shiftKey && !e.ctrlKey && !e.metaKey) game.openPanel('region');
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
@@ -66,6 +69,14 @@ export function App({ game }: { game: Game }) {
         <ToastLayer />
       </GameContext.Provider>
     );
+  // The map editor (M24) has its own bars.
+  if (game.mode === 'editor')
+    return (
+      <GameContext.Provider value={game}>
+        <EditorApp />
+        <ToastLayer />
+      </GameContext.Provider>
+    );
   // Photo mode shows only its own panel (M16).
   if (photo)
     return (
@@ -89,6 +100,7 @@ export function App({ game }: { game: Game }) {
       <HistoryPanel />
       <GoalsPanel />
       <DistrictsPanel />
+      <RegionPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

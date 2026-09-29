@@ -25,6 +25,7 @@ function sections(): [string, Row[]][] {
         ['Zone homes, shops, industry', ['Z', 'X', 'C']],
         ['Dezone', ['V']],
         ['Districts: paint, and their panel', ['I']],
+        ['Terrain: raise, lower, level, smooth', ['Shift+T', 'Tab']],
         ['Brush size', ['[ ]']],
         ['Bulldoze', ['B']],
         ['Select and inspect', ['H', 'Click']],

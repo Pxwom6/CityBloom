@@ -77,9 +77,10 @@ screenshots are in `docs/screenshots/`. Anything not done is explained at the en
 - **Trams and trains** (§5 transport, "if time allows") and the §9 extras (neighbouring cities, weather
   and seasons, more specialisations, glTF models) weren't built; the time went on depth and polish in
   the required systems. The asset registry and the transit system (lines, stops, riders) are where
-  they would plug in. Listed as next steps at the top of PROGRESS.md.
+  they would plug in. Listed as next steps at the top of PROGRESS.md. *(Phase 2 has since built
+  trams and trains (M20), weather and seasons (M22) and neighbouring cities (M23).)*
 - **Visitors in traffic** (M10): tourists are counted, spend and shop, but don't drive through the
-  traffic model.
+  traffic model. *(Closed in M23: visitors arrive by road, rail, air and sea and drive to the sights.)*
 - **Render triangle budget**: 2.5M at the whole-city overview of a 100k city (half of it the shadow
   pass) against an early 1.5M target; draw calls are within budget. Flagged for the Mac check.
 
@@ -94,7 +95,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Rule | Where |
 |---|---|
 | Work in order, each milestone playable, UI-tested with screenshots, `M<n> complete:` commits | git history; `e2e/m13-*.spec.ts` onwards; `docs/screenshots/m13-*.png` onwards |
-| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save |
+| New saved state bumps the save version with a migration and a test that older saves load and play on | M13: SAVE_VERSION 12 (`terrainDelta`), `tests/grading.test.ts` loads the version-10 playtest save; M14: v13 (undo history no longer saved), `tests/history.test.ts` loads a v12 save; each later milestone's section names its version and test, up to M24's v22 (`map`, `tests/customMap.test.ts`) |
 | M12 performance budget kept; bench and balance rerun per milestone | numbers per milestone in PROGRESS.md |
 | Everything original | procedural models, icons and sounds, as in phase 1 |
 | Player kept informed (tooltips, shortcuts, tips, advisor hints, maps and inspector lines) | per milestone below |
@@ -248,3 +249,46 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Save migration with a test | save v20 (`weather`, the `weather` RNG stream); `tests/weather.test.ts` loads the version-10 playtest save, plays on and round-trips it |
 | An M18 scenario that shows the new system off | Long Winter (Frostvale), `tests/scenarios/winter.test.ts`: more power and a depot win it; either alone, or neglect, loses; `e2e/m22-weather.spec.ts` plays it through the UI |
 | Done when: scenario tests show winter power demand and snow slowdowns, and screenshots of every season and weather type have been reviewed | `tests/scenarios/winter.test.ts` (left alone, heating lifts demand well past the autumn's supply and homes go dark; snow covers every road and slows commutes); the season and weather screenshots above, made by `e2e/m22-weather.spec.ts` through photo mode's own season and weather buttons (with real snow in the sim for winter) and reviewed; the same spec plays Long Winter through the toolbar to a three-star win |
+
+## M23 Region, airport and seaport
+
+| Item | Where |
+|---|---|
+| Two or three neighbouring cities beyond the map edges, each with a character, growing or shrinking over time | three neighbours (industrial town, commuter suburb, resort) named and sized from the seed, north and south along the regional highway and west along the railway (`src/data/region.ts`, `initialRegion` and `regionMonth` in `src/sim/systems/region.ts`); their growth rate drifts monthly on their own dice; the Region panel charts each one's last two years; labels at the map edge (`src/client/regionView.ts`); `tests/region.test.ts` |
+| Deals to buy or sell power, water and garbage processing | `setDeal`; bought power and water enter `updateUtilities` at the highway's connection node, sold only from what's left after the city's own buildings; garbage deals empty or fill the landfills and plants hourly; paid for what's delivered ('Bought from / Sold to neighbours'); the Region panel (Shift+N) signs, changes and ends them with a slider; `tests/region.test.ts` (a power deal covers a shortage, a sale never blacks out a home, a garbage deal empties a landfill), `docs/screenshots/m23-panel.png` |
+| Commuters and shoppers travel between cities by highway and rail; the inspector and data maps show where they come from; kept readable | `src/sim/systems/regionFlows.ts`: after local matching, the neighbours' workers fill open jobs near the highway (or a station on the regional line, 30 % by train), half the city's unemployed take jobs out of town, neighbours' shoppers use spare shop capacity; all on the roads and sampled as trips; inspector lines ("from out of town", "in a neighbouring town"), the car inspector's purposes, the Region traffic map (`docs/screenshots/m23-region-map.png`), the Region panel's per-town figures; locals keep first pick and demand still counts those jobs as open (DECISIONS M23); `tests/regionFlows.test.ts` |
+| An airport: big footprint, unlocked by population, boosting tourism and business, with a new noise data map and visible planes | `airport` (20,000 residents, 300 × 130 m, `src/data/civic.ts`): visitors by air and half as many again of the city's others, commercial demand; noise raster (`src/sim/systems/noise.ts`) with the 'Noise' mood factor and the Noise map; planes landing and taking off (`src/render/ports.ts`); `tests/ports.test.ts` (visitors 443 → 1,287, loud along the runway), `docs/screenshots/m23-airport.png`, `m23-noise.png` |
+| A seaport on maps with deep water, boosting freight and trade, with visible ships | `seaport` (10,000, needs water ≤ −6 m behind it, `berth` in `src/sim/world/civic.ts`): ships take up to 360 truckloads a day off the highway, trade income per industrial job, industrial demand, ferry visitors; container ships sail in, lie alongside and sail out; `tests/ports.test.ts` (inland refused; highway trucks 379 → 300), `docs/screenshots/m23-seaport.png` |
+| Visitors arrive by highway, rail, airport and seaport and travel through the traffic model (closing the M10 gap) | `tourism.by` (road, rail, air, sea) in `specialisationsHour`; visitor trips from where they arrive to the landmarks and hotels in `regionRound`; `tests/regionFlows.test.ts` (visitors drive in from the highway to the clock tower) |
+| Keep the player informed | Region panel (top bar, Shift+N) with each town's offers, prices and deliveries; advisors (a neighbour would sell power or water in a shortage, take garbage from a full landfill; homes under the noise); tips (the region, the airport); inspectors for the airport (visitors, flights) and seaport (loads, ships); toolbar 'Trade, research and ports' |
+| Save migration with a test | save v21 (`region`, the `region` RNG stream); `tests/region.test.ts` loads the version-10 playtest save, signs a deal, plays on and round-trips it |
+| An M18 scenario that shows the new system off | Harbour Lights (Harbourside, coast), `tests/scenarios/harbour.test.ts`: a power deal and a seaport win it; either alone, or neglect, loses; `e2e/m23-region.spec.ts` plays it through the UI |
+| Done when: scenario tests show a power deal covering a shortage, regional commuters filling jobs, and the airport raising visitor numbers | `tests/region.test.ts` (a closed coal plant's town back to every building powered on a deal), `tests/regionFlows.test.ts` (an industrial town's jobs filled by neighbours' commuters, 200+ more than alone), `tests/ports.test.ts` (an airport lifts visitors 443 → 1,287), and Harbour Lights |
+
+## M24 Terrain and map editor
+
+| Item | Where |
+|---|---|
+| In-game terraforming tools (raise, lower, level, smooth) built on M13's terrain deltas | the `terraform` command (`src/sim/actions/terraform.ts`, `planTerraform` in `src/sim/world/terraform.ts`) writes M13's saved terrain delta through `reshapeGround`; the Terrain tool in the toolbar (Shift+T, Tab through the four, [ ] brush size, `src/tools/terrainTool.ts`); `tests/terraform.test.ts`, `docs/screenshots/m24-terrain-tool.png` |
+| A cost per volume | $0.25 per cubic metre cut or filled ('Landscaping' in the budget); the hint prices a pass before you drag and shows what a drag has cost; `tests/terraform.test.ts` (charged exactly by volume; refused when the city can't pay) |
+| Limits near buildings | ground within 12 m of a building's footprint or a road's edge is held, and within 32 m of it the new ground keeps to 1 in 1; water and the water table are left alone; at most 40 m from how the map began; `tests/terraform.test.ts` (a town hacked at with big brushes: every building's height, and every civic building's, unchanged; no slope steeper than 1 in 1 beside held ground) |
+| Undo | a drag is one undo step (merged like a zoning stroke); `tests/terraform.test.ts` (undo and redo restore the city's hash and the money exactly), `e2e/m24-terrain.spec.ts` (through the toolbar's undo) |
+| A map editor from the main menu: sculpt terrain, paint water (rivers, lakes, coastline), place resources, forests and the highway and rail entries | Main menu → Map editor (`src/ui/Maps.tsx`): a new map from a generated one or flat meadow, or one of yours; the editor (`src/ui/Editor.tsx`, `src/tools/mapTool.ts`, `src/sim/actions/mapEdit.ts`): raise, lower, level, smooth; river and lake, sea, land; plant forest, clear trees; ore, oil, clear; highway and railway entries (or none); climate; undo; `tests/mapEditor.test.ts`, `docs/screenshots/m24-editor.png` |
+| Before saving, it checks the map is playable (a buildable start area by the highway) | `checkMap` (`src/sim/terrain/customMap.ts`): the highway on dry land a street can climb from, and 20 ha of buildable land within 600 m of it; railway, water and resources as warnings; the top bar's status and the Playability panel (with each problem located on the map); only playable maps reach the new-city screen, drafts are kept; `tests/customMap.test.ts` (every generated map passes; a flooded or cliff-bound start fails) |
+| Maps save and share as files and appear on the new-city screen | the player's maps in IndexedDB (`src/client/maps.ts`); `.citymap` export and import (from the editor screen and the new-city screen); "Your maps" on the new-city screen with a preview; cities keep their map in their save (v22); `docs/screenshots/m24-new-city.png`, `m24-city.png` |
+| Save migration with a test | save v22 (`map`, null for generated maps); `tests/customMap.test.ts` loads a version-21 save and the version-10 playtest save and plays on, and round-trips a city on a custom map |
+| An M18 scenario that shows the new system off | Over the Ridge (Ridgeholm, on a map in the editor's format, `scripts/lib/ridgeMap.ts`), `tests/scenarios/terraces.test.ts`: cutting a pass through the ridge with the terrain tool and building in the valley wins it; the shelf alone, however well run, loses; `e2e/m24-terrain.spec.ts` plays it through the UI |
+| Done when: a map made in the editor saves, reloads, and grows a city in a scripted test | `tests/mapEditor.test.ts` ('a map made in the editor saves, reloads and grows a city': a river, a bay, hills, woods, ore and oil and moved entries, exported to a 15 KB `.citymap`, read back, a city founded on it grows to 1,834 in three months, and its save loads and plays on exactly); through the UI in `e2e/m24-terrain.spec.ts` (main menu → editor → save and export → new-city screen → a city that grows) |
+
+## When every milestone is done
+
+| Item | Where |
+|---|---|
+| Update the summary and ideas at the top of PROGRESS.md | PROGRESS.md: the summary covers M13–M24; the ideas list is rewritten for what phase 2 leaves (terrain water in running cities and tunnels, rail and traffic lights, a livelier region, weather fronts, specialisations, models, a balance pass with real players) |
+| Finish this brief's section in SPEC_REVIEW | this section |
+| A final playthrough through the real UI that uses the new features | `e2e/finale.spec.ts` (`npm run finale`): a map made in the map editor from the main menu, a city founded on it from the new-city screen, roads (one of them one-way), zones and utilities placed with the mouse, the terrain tool levelling a slope for a new street, undo, a district with a policy, a power deal with a neighbour, the weather panel, city history, photo mode, then save, quit and continue; screenshots `docs/screenshots/final-*.png`. The phase-1 playthrough (`e2e/playthrough.spec.ts`) still runs with it under `npm run playthrough` |
+
+### Phase 2: not done, and why
+- **Water in running cities** (M24): the terrain tool leaves water alone; lakes, canals and filled bays are made in the map editor before a city exists. Letting a live city dig new water would need the water, flood, groundwater and harbour systems to follow it (DECISIONS M24).
+- **Lots right beside an existing road** can't be levelled with the terrain tool: the road stands on that ground. Shape the land first, then build (DECISIONS M24).
+- **Real hardware** (frame rate, the look of new systems at full resolution) is listed under "To check on the Mac" in PROGRESS.md; everything here was verified on this VM's software renderer, by sim tick times, draw calls and triangle counts.

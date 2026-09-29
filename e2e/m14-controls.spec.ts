@@ -119,13 +119,15 @@ test('M14: trackpad pan, pinch and rotate; undo and redo a bulldoze and a zoning
   // --- Undo and redo a bulldoze from the inspector, exactly. ---
   const police = await page.evaluate(() => window.__game!.getCivics().find((c) => c.def === 'police')!);
   await page.evaluate(
-    (c) => window.__game!.setCamera({ x: c.x, z: c.z, distance: 110, yaw: 0.3, tilt: 0.3 }),
+    // From above, so no building in front of it takes the click.
+    (c) => window.__game!.setCamera({ x: c.x, z: c.z, distance: 160, yaw: 0.3, tilt: 1.2 }),
     police,
   );
   await page.evaluate(() => window.__game!.waitFrames(2));
   let p = await screen(page, police.x, police.z);
   await page.mouse.click(p.x, p.y);
   await expect(page.getByTestId('inspector')).toBeVisible();
+  await expect(page.getByTestId('inspector')).toContainText('Police');
   await expect(page.getByTestId('bulldoze')).toBeVisible();
   const h2 = await hash(page);
   await page.getByTestId('bulldoze').click();
@@ -143,7 +145,8 @@ test('M14: trackpad pan, pinch and rotate; undo and redo a bulldoze and a zoning
 
   // --- Move a building: the police station, from its inspector to another street. ---
   await page.evaluate(
-    (c) => window.__game!.setCamera({ x: c.x, z: c.z, distance: 110, yaw: 0.3, tilt: 0.3 }),
+    // From above, so no building in front of it takes the click.
+    (c) => window.__game!.setCamera({ x: c.x, z: c.z, distance: 160, yaw: 0.3, tilt: 1.2 }),
     police,
   );
   await page.evaluate(() => window.__game!.waitFrames(2));

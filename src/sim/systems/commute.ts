@@ -6,6 +6,7 @@ import { ROAD_TYPES } from '../../data/roads';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, accessOf, type Building } from '../world/buildings';
+import { civicOnline } from '../world/civic';
 import { Dijkstra, routeBetween, type RoadGraph } from './graph';
 import { segSpeed } from './vehicles';
 import {
@@ -19,6 +20,8 @@ import {
 import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
 import { railTerminals } from './rail';
+import { regionRound } from './regionFlows';
+import { REGION } from '../../data/region';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -43,13 +46,13 @@ export function attachmentOf(sim: Sim, g: RoadGraph, b: Building): Attachment | 
 
 const dijkstra = new Dijkstra();
 
-interface Slot {
+export interface Slot {
   b: Building;
   att: Attachment;
   open: number;
 }
 
-interface Origin {
+export interface Origin {
   list: { b: Building; att: Attachment; workers: number; shoppers: number }[];
   workers: number;
   shoppers: number;
@@ -103,6 +106,7 @@ export class MatchRound {
         b.employed = 0;
         b.commute = 0;
         b.shop = 0;
+        b.toRegion = 0;
         const workers = Math.round(b.pop * DEMAND.workforceShare);
         b.seekers = workers;
         if (!att || b.pop <= 0) continue;
@@ -114,6 +118,7 @@ export class MatchRound {
         o.shoppers += shoppers;
       } else if (b.zone === ZONE_C || b.zone === ZONE_I) {
         b.pop = 0;
+        b.fromRegion = 0;
         if (b.zone === ZONE_C) b.shop = 0;
         if (!att || b.closed) continue;
         const list = this.jobsAt.get(att.node) ?? [];
@@ -297,7 +302,20 @@ export class MatchRound {
     const { sim, flows, lines } = this;
     const s = sim.state;
     this.step(Infinity);
-    if (this.order.length)
+    // The region (M23): neighbours' commuters and shoppers take what's left, the city's unemployed
+    // take jobs out of town, and visitors travel from where they arrive.
+    sim.regionFlows = regionRound(sim, {
+      g: this.g,
+      costs: this.costs,
+      flows,
+      trips: this.trips,
+      jobsAt: this.jobsAt,
+      shopsAt: this.shopsAt,
+      customers: this.customers,
+      origins: this.origins,
+      car: this.car,
+    });
+    if (this.order.length || sim.regionFlows.shoppersIn > 0)
       for (const list of this.shopsAt.values()) {
         for (const sh of list) {
           const capacity = sh.b.cap * COMMUTE.customersPerJob;
@@ -541,7 +559,23 @@ function railFreight(
   loads: ExternalLoad[],
   hwNode: number,
 ): void {
-  const terminals = railTerminals(sim);
+  // Rail freight terminals, and a seaport (M23), whose ships take goods without the wait to load a train.
+  const terminals = [
+    ...railTerminals(sim).map((c) => ({
+      c,
+      trucks: CIVIC.get(c.def)!.railFreight!.trucks,
+      handling: RAIL.freightHandling,
+    })),
+    ...[...sim.state.civics.values()]
+      .filter((c) => CIVIC.get(c.def)?.seaport && c.access && civicOnline(c))
+      .sort((a, b) => a.id - b.id)
+      .map((c) => ({
+        c,
+        trucks: CIVIC.get(c.def)!.seaport!.freight * sim.fundingEff('trade'),
+        // Shipping is cheap: goods will drive that much further to go by sea.
+        handling: -REGION.portPull,
+      })),
+  ];
   if (!terminals.length || !loads.some((l) => l.purpose !== 'event')) return;
   const pcu = TRAFFIC.truckPcu;
   // Drive times to the highway, to weigh against.
@@ -557,18 +591,18 @@ function railFreight(
     costs,
     true,
   );
-  for (const t of terminals) {
+  for (const { c: t, trucks, handling } of terminals) {
     const acc = t.access!;
     const seg = sim.state.net.segments.get(acc.seg);
     if (!seg) continue;
     const len = sim.net.curve(acc.seg).length;
     const node = g.index.get(acc.s <= len / 2 ? seg.a : seg.b);
     if (node === undefined) continue;
-    let left = CIVIC.get(t.def)!.railFreight!.trucks;
+    let left = trucks;
     const at = new Float64Array(g.size).fill(Infinity);
     dijkstra.run(
       g,
-      [{ node, cost: RAIL.freightHandling }],
+      [{ node, cost: handling }],
       Infinity,
       (u, cost) => {
         at[u] = cost;

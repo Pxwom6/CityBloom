@@ -7,6 +7,8 @@ import type { SaveFile } from '../sim/save';
  */
 const DB_NAME = 'citybloom';
 const STORE = 'saves';
+/** Custom maps from the map editor (M24), in the same database. */
+export const MAP_STORE = 'maps';
 
 export interface SlotInfo {
   slot: string;
@@ -25,22 +27,29 @@ interface SlotRecord extends SlotInfo {
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    // Version 2 (M24) adds the maps store; saves are untouched.
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE))
         req.result.createObjectStore(STORE, { keyPath: 'slot' });
+      if (!req.result.objectStoreNames.contains(MAP_STORE))
+        req.result.createObjectStore(MAP_STORE, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('IndexedDB unavailable'));
   });
 }
 
-async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+export async function tx<T>(
+  mode: IDBTransactionMode,
+  fn: (s: IDBObjectStore) => IDBRequest<T>,
+  store = STORE,
+): Promise<T> {
   const db = await openDb();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const t = db.transaction(STORE, mode);
-      const req = fn(t.objectStore(STORE));
+      const t = db.transaction(store, mode);
+      const req = fn(t.objectStore(store));
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
     });

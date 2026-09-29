@@ -12,6 +12,9 @@ export interface CityTotals {
   workers: number;
   employed: number;
   unemployed: number;
+  /** Regional (M23): residents working in the neighbours, and jobs held by the neighbours' commuters. */
+  toRegion: number;
+  fromRegion: number;
   jobs: number;
   jobsFilled: number;
   cJobs: number;
@@ -34,6 +37,8 @@ export function emptyTotals(): CityTotals {
     workers: 0,
     employed: 0,
     unemployed: 0,
+    toRegion: 0,
+    fromRegion: 0,
     jobs: 0,
     jobsFilled: 0,
     cJobs: 0,
@@ -74,6 +79,7 @@ export function computeTotals(sim: Sim): CityTotals {
       t.population += b.pop;
       t.workers += Math.round(b.pop * DEMAND.workforceShare);
       t.employed += b.employed;
+      t.toRegion += b.toRegion ?? 0;
       if (b.pop > 0) {
         resH += b.happiness * b.pop;
         resW += b.pop;
@@ -82,6 +88,7 @@ export function computeTotals(sim: Sim): CityTotals {
       if (b.state === BState.Construction && b.cap === 0) continue;
       t.jobs += b.cap;
       t.jobsFilled += b.pop;
+      t.fromRegion += b.fromRegion ?? 0;
       if (b.zone === ZONE_C) t.cJobs += b.cap;
       else t.iJobs += b.cap;
       bizH += b.happiness * Math.max(1, b.pop);

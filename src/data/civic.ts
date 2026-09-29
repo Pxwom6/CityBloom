@@ -62,6 +62,16 @@ export interface CivicDef {
   /** Bus depot (M6): buses it runs and passengers per bus. */
   transit?: { buses: number; capacity: number };
   /**
+   * Airport (M23): visitors a day it brings by air (at full funding and appeal), extra visitors as a
+   * share of the city's others, the lift to commercial demand, and how far its noise carries (m).
+   */
+  airport?: { visitors: number; boost: number; commerce: number; noise: number };
+  /**
+   * Seaport (M23): visitors a day by sea, truckloads a day it ships off the highway, the lift to
+   * industrial demand, and trade income per industrial job a day.
+   */
+  seaport?: { visitors: number; freight: number; demand: number; tradePerJob: number };
+  /**
    * Rail (M20): a passenger station on a railway, with the trains it adds to its line and their
    * seats. Faces a railway, not a road.
    */
@@ -676,6 +686,40 @@ CIVIC_DEFS.push(
     blurb: "Ships the city's goods out: trade income from every industrial job, and more industrial demand.",
     unlockPopulation: 10_000,
     model: 'freighthub',
+  },
+  {
+    id: 'airport',
+    name: 'Airport',
+    category: 'special',
+    dept: 'trade',
+    w: 300,
+    d: 130,
+    cost: 180_000,
+    upkeep: 1_900,
+    airport: { visitors: 700, boost: 0.5, commerce: 0.12, noise: 700 },
+    landValue: { radius: 420, value: -0.1 },
+    blurb:
+      'Flights bring visitors and business travellers: more tourists, and busier shops. Loud: homes near its runway hear every take-off (see the noise map).',
+    unlockPopulation: 20_000,
+    unique: true,
+    model: 'airport',
+  },
+  {
+    id: 'seaport',
+    name: 'Seaport',
+    category: 'special',
+    dept: 'trade',
+    w: 200,
+    d: 90,
+    cost: 120_000,
+    upkeep: 1_200,
+    seaport: { visitors: 250, freight: 360, demand: 0.15, tradePerJob: 0.5 },
+    landValue: { radius: 220, value: -0.08 },
+    blurb:
+      "Ships take the city's goods off the highway and bring ferry passengers: trade income from every industrial job, and more industrial demand. Needs deep water along its back.",
+    unlockPopulation: 10_000,
+    unique: true,
+    model: 'seaport',
   },
   {
     id: 'oremine',

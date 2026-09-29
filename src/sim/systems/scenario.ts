@@ -1,3 +1,4 @@
+import { CIVIC } from '../../data/civic';
 import { goalMet, SCENARIO, starMet, type ScenarioDef, type ScenarioGoal } from '../../data/scenarios';
 import type { CommandResult } from '../commands';
 import type { Sim } from '../sim';
@@ -70,6 +71,9 @@ export function startScenario(sim: Sim, id: string, dryRun: boolean): CommandRes
   s.options = { ...s.options, sandbox: false, disasters: def.disasters, elections: def.elections };
   s.weather.seasons = def.weather?.seasons ?? true;
   s.weather.intensity = def.weather?.intensity ?? 2;
+  // Neighbours (M23): a scenario that doesn't mention them is played without them, so the puzzle
+  // is the town's own.
+  if (!def.region) s.region = { neighbours: [], deals: [], nextDeal: s.region.nextDeal };
   if (!def.elections) {
     s.election.nextMonth = -1;
     s.election.promises = [];
@@ -125,6 +129,11 @@ export function goalValue(sim: Sim, g: ScenarioGoal, figures?: number[]): number
           most = Math.max(most, s.traffic.get(seg.id) ?? 0);
       }
       return Math.round(most);
+    }
+    case 'shipped': {
+      let n = 0;
+      for (const c of s.civics.values()) if (CIVIC.get(c.def)?.seaport) n += sim.railFreight.get(c.id) ?? 0;
+      return Math.round(n);
     }
     case 'powered': {
       const u = s.utilityStats.power;

@@ -7,6 +7,8 @@ import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DW, Player, type Vec2 } from './mayor';
 import { twoDistricts } from '../../tests/trafficTown';
 import { crossroadsTown } from '../../tests/junctionTown';
+import { RIDGE, ridgeMap } from './ridgeMap';
+import { placeAlong } from '../../tests/helpers';
 
 /** Let a mayor run the city for some months (four decisions a month, as the balance tool). */
 export function govern(p: Player, months: number): void {
@@ -271,6 +273,114 @@ export const RECIPES: Record<string, () => Sim> = {
     return sim;
   },
   // Saltmarsh, on the coast: a busy town with beaches and no reason yet for anyone to visit.
+  // Harbourside (M23): a coastal town of about 11,000 whose newest coal plants have closed, with a road out
+  // to the shore where a seaport could stand, and neighbours up the highway with power to sell.
+  harbour: () => {
+    const p = new Player('careful', { seed: 'port', preset: 'coast', cityName: 'Harbourside' });
+    p.avoid = ['seaport', 'airport'];
+    const sim = p.sim;
+    for (let m = 0; m < 72 && sim.state.totals.population < 11_000; m++) govern(p, 1);
+    // The avenue carries on east to the sea, with a street along the shore.
+    const z = p.c.z;
+    let shore = p.c.x + 2 * DW;
+    while (shore < MAP_SIZE - 40 && sim.terrain.heightAt(shore, z) >= 0.6) shore += 8;
+    const end = { x: shore - 110, z };
+    p.roadAcross('avenue', { x: p.c.x + 2 * DW, z }, end);
+    sim.dispatch({
+      type: 'buildRoad',
+      road: 'street',
+      points: [
+        { x: end.x, z: z - 400 },
+        { x: end.x, z: z + 400 },
+      ],
+    });
+    // The newest coal plants close: what's left gives about four-fifths of what the town needs.
+    const output = (def: string) => CIVIC.get(def)!.output?.power ?? 0;
+    const target = sim.state.utilityStats.power.demand * 0.8;
+    const plants = [...sim.state.civics.values()]
+      .filter((c) => CIVIC.get(c.def)?.category === 'power')
+      .sort((a, b) => a.id - b.id);
+    let supply = plants.reduce((n, c) => n + output(c.def), 0);
+    for (const c of [...plants].reverse()) {
+      if (c.def === 'wind' || supply - output(c.def) < target * 0.97) continue;
+      supply -= output(c.def);
+      sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    }
+    sim.advance(TICKS_PER_HOUR * 2);
+    sim.earn(150_000, 'grants');
+    return sim;
+  },
+  // M24: a hill town on a map shaped for it (scripts/lib/ridgeMap.ts): a planned grid filling the
+  // shelf of flat land by the highway, on wind power, grown until the shelf is full. The ridge and
+  // its saddle stand between it and the open valley to the east.
+  terraces: () => {
+    const map = ridgeMap();
+    const sim = Sim.create({ seed: map.seed, cityName: 'Ridgeholm', difficulty: 'normal' }, map);
+    // The scenario is played without seasons (the land is the puzzle), and grown that way.
+    sim.dispatch({ type: 'setWeather', seasons: false });
+    sim.earn(200_000, 'grants');
+    const hz = RIDGE.highwayZ;
+    const east = RIDGE.shelf.x - 30;
+    const reach = RIDGE.shelf.z - 30;
+    const road = (type: 'street' | 'avenue', a: Vec2, b: Vec2) => {
+      const r = sim.dispatch({ type: 'buildRoad', road: type, points: [a, b] });
+      return r.ok ? r.created! : [];
+    };
+    const hw = sim.state.net.nodes.get(sim.state.highway.connect)!;
+    const avenue = road('avenue', { x: hw.x, z: hz }, { x: east, z: hz });
+    for (let x = 100; x <= east; x += 110) road('street', { x, z: hz - reach }, { x, z: hz + reach });
+    for (const dz of [-reach, -190, 190, reach])
+      road('street', { x: 40, z: hz + dz }, { x: east, z: hz + dz });
+    const zone = (z: 'R' | 'C' | 'I', a: Vec2, b: Vec2, radius: number) =>
+      sim.dispatch({ type: 'zone', zone: z, area: { kind: 'brush', points: [a, b], radius } });
+    zone('C', { x: 40, z: hz }, { x: east, z: hz }, 40);
+    zone('R', { x: 40, z: hz - 110 }, { x: east, z: hz - 110 }, 70);
+    zone('R', { x: 40, z: hz - 270 }, { x: east, z: hz - 270 }, 70);
+    zone('R', { x: 40, z: hz + 110 }, { x: east, z: hz + 110 }, 70);
+    zone('I', { x: 40, z: hz + 270 }, { x: east, z: hz + 270 }, 70);
+    // Utilities and services along the streets: wind on the shelf's southern edge.
+    const segs = () =>
+      [...sim.state.net.segments.values()].filter((g) => g.type === 'street').map((g) => g.id);
+    const south = () => segs().sort((a, b) => sim.net.curve(b).pointAt(0).z - sim.net.curve(a).pointAt(0).z);
+    const put = (def: string, order = segs()) => {
+      for (const id of order)
+        try {
+          return placeAlong(sim, def, id);
+        } catch {
+          /* no room here */
+        }
+      return null;
+    };
+    for (let k = 0; k < 4; k++) put('wind', south());
+    for (const def of [
+      'pump',
+      'pump',
+      'septic',
+      'septic',
+      'landfill',
+      'firestation',
+      'police',
+      'clinic',
+      'park_small',
+    ])
+      put(def);
+    for (let m = 0; m < 8; m++) {
+      sim.advance(TICKS_PER_MONTH);
+      // Keep the lights on and the taps running as the shelf fills.
+      const u = sim.state.utilityStats;
+      for (let k = 0; k < 6 && u.power.demand > u.power.supply * 0.75; k++) {
+        if (!put('wind', south())) break;
+        u.power.supply += CIVIC.get('wind')!.output?.power ?? 0;
+      }
+      if (u.water.demand > u.water.supply * 0.8) put('pump');
+      if (u.sewage.demand > u.sewage.supply * 0.8) put('septic');
+      if (m === 3) put('primary');
+    }
+    void avenue;
+    // The council's development fund, for the land beyond the ridge.
+    sim.earn(200_000, 'grants');
+    return sim;
+  },
   resort: () => {
     const p = new Player('careful', { seed: 'saltmarsh', preset: 'coast', cityName: 'Saltmarsh' });
     p.avoid = [

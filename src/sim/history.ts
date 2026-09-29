@@ -78,9 +78,26 @@ const STRUCTURAL: Record<Container, true | false | readonly string[]> = {
   districts: false,
 };
 
-/** Whole-array state changed element by element: the ground is structural, trees aren't. */
-const ARRAYS = { terrainDelta: true, trees: false, districtCells: false } as const;
+/**
+ * Whole-array state changed element by element: the ground is structural, trees aren't. The map
+ * editor (M24) paints ore and oil into the map it edits.
+ */
+const ARRAYS = {
+  terrainDelta: true,
+  trees: false,
+  districtCells: false,
+  mapOre: false,
+  mapOil: false,
+} as const;
 type ArrayKey = keyof typeof ARRAYS;
+
+function arrayOf(s: SimState, k: ArrayKey): Float32Array | Uint8Array {
+  if (k === 'mapOre' || k === 'mapOil') {
+    if (!s.map) return new Uint8Array(0);
+    return k === 'mapOre' ? s.map.ore : s.map.oil;
+  }
+  return s[k];
+}
 
 /** Other values a command can change (restored where untouched). */
 const VALUES = ['nextId', 'rng', 'burning', 'riders', 'load'] as const;
@@ -123,6 +140,13 @@ export interface Scope {
 }
 export const FULL_SCOPE: Scope = { containers: CONTAINERS, arrays: ['terrainDelta', 'trees'] };
 export const ZONING_SCOPE: Scope = { containers: ['blocks'], arrays: [] };
+/** Terraforming (M24): the ground, the trees on it and the lots it makes (un)buildable. */
+export const TERRAIN_SCOPE: Scope = { containers: ['blocks'], arrays: ['terrainDelta', 'trees'] };
+/** The map editor (M24): the ground, forests, ore and oil. */
+export const EDITOR_SCOPE: Scope = {
+  containers: [],
+  arrays: ['terrainDelta', 'trees', 'mapOre', 'mapOil'],
+};
 /** Districts (M21): their records and the painted cells. */
 export const DISTRICT_SCOPE: Scope = { containers: ['districts'], arrays: ['districtCells'] };
 
@@ -180,7 +204,7 @@ export function capture(s: SimState, scope: Scope): Capture {
     maps[c] = m;
   }
   const arrays: Capture['arrays'] = {};
-  for (const a of scope.arrays) arrays[a] = s[a].slice();
+  for (const a of scope.arrays) arrays[a] = arrayOf(s, a).slice();
   const values = {} as Record<ValueKey, string>;
   for (const k of VALUES) values[k] = enc(valueOf(s, k));
   return { scope, maps, arrays, values, treasury: s.treasury, month: { ...s.economy.month } };
@@ -358,7 +382,7 @@ export function applyEdit(
     if (!structural(ch.c, ch.f)) continue;
     const want = from(ch);
     if (ch.c in ARRAYS) {
-      if (s[ch.c as ArrayKey][ch.i!] !== want) return { ok: false, reason: REASONS[ch.c]! };
+      if (arrayOf(s, ch.c as ArrayKey)[ch.i!] !== want) return { ok: false, reason: REASONS[ch.c]! };
       continue;
     }
     const c = ch.c as Container;
@@ -381,7 +405,7 @@ export function applyEdit(
     const want = from(ch);
     const next = to(ch);
     if (ch.c in ARRAYS) {
-      const arr = s[ch.c as ArrayKey];
+      const arr = arrayOf(s, ch.c as ArrayKey);
       if (arr[ch.i!] !== want) continue; // trees regrown or cleared since: leave them
       arr[ch.i!] = next as number;
       (touched.arrays[ch.c as ArrayKey] ??= []).push(ch.i!);

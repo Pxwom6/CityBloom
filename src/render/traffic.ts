@@ -269,9 +269,12 @@ export class TrafficRenderer {
     if (!trip.legs.every((l) => this.world.netState.segments.has(l.seg))) return;
     // Commuters head to work in the morning and home in the evening.
     let back = false;
-    if (trip.purpose === 'work') back = hour >= 13 || hour < 4 ? Math.random() < 0.85 : Math.random() < 0.15;
-    else if (trip.purpose === 'shop') back = Math.random() < 0.5;
-    const freight = trip.purpose !== 'work' && trip.purpose !== 'shop' && trip.purpose !== 'event';
+    const commuting =
+      trip.purpose === 'work' || trip.purpose === 'incommute' || trip.purpose === 'outcommute';
+    if (commuting) back = hour >= 13 || hour < 4 ? Math.random() < 0.85 : Math.random() < 0.15;
+    else if (trip.purpose === 'shop' || trip.purpose === 'regionshop' || trip.purpose === 'visit')
+      back = Math.random() < 0.5;
+    const freight = trip.purpose === 'freight' || trip.purpose === 'export' || trip.purpose === 'import';
     const r = Math.random();
     const model: ModelName = freight ? 'truck' : r < 0.55 ? 'sedan' : r < 0.85 ? 'hatch' : 'van';
     const paint = freight ? TRUCK_PAINT : PAINT;

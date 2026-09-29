@@ -544,9 +544,15 @@ export class TrafficRenderer {
           // before the barriers start down (Phase 2 review). The room is for this car and every car
           // already over the line ahead of it, which get there first: counting only the road beyond
           // left the second of two cars crossing close together waiting on the rails.
+          // (The lane lists are from the start of the step: a car may have finished its trip or
+          // turned off since.)
           const committed =
             info.kind === 'crossing'
-              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => o !== c && along(o) > along(c)).length
+              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => {
+                  if (o === c || o.ring || o.leg >= o.legs.length) return false;
+                  const ol = o.legs[o.leg]!;
+                  return ol.seg === l.seg && ol.s1 >= ol.s0 === l.s1 >= l.s0 && along(o) > along(c);
+                }).length
               : 0;
           const blocked =
             !this.mayEnter(c, n!, info, rings.get(n!) ?? []) ||

@@ -113,8 +113,8 @@ G in scenarios, level crossings and trams, the docs, and the repository's new na
 so Pages serves `/CityBloom/`) are fixed and tested; item 6 (performance) was dropped, since on an
 M5 MacBook Pro the 100k city's worst tick is 6 ms (see Real hardware). The full e2e run on the
 review code passed 36 of 38; the two failures (M24's spec ran out of money; rare cars inside trams
-and on closed crossings) are fixed, and those specs pass on repeat. A last full run on the final
-code is logged below. Every milestone in SPEC.md and SPEC-2.md is complete.
+and on closed crossings) are fixed, the crossings spec passed 8 of 8 repeats, and a last full run
+on the final code passed 38 of 38 (1.7 h). Every milestone in SPEC.md and SPEC-2.md is complete.
 
 ## Next tasks
 1. The ideas list above; the "To check on the Mac" list needs real hardware.

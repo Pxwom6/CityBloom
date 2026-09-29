@@ -97,7 +97,12 @@ test('Phase 2 review: barriers come down for trains, cars wait for them, and tra
     if (x.closed) closedSeen++;
     if (x.down > 0.99) {
       downSeen++;
-      onWhileDown += r.cars.filter((c) => Math.hypot(c.x - x.x, c.z - x.z) < 5).length;
+      for (const c of r.cars.filter((c) => Math.hypot(c.x - x.x, c.z - x.z) < 5)) {
+        onWhileDown++;
+        console.log(
+          `[crossings] frame ${k}: car ${c.id} on the crossing with the barriers down, ${Math.hypot(c.x - x.x, c.z - x.z).toFixed(1)} m from it, road ${c.seg} leg ${c.leg}/${c.legs} at ${c.t.toFixed(1)} m, waited ${c.waited.toFixed(1)}`,
+        );
+      }
       queued += r.cars.filter((c) => c.waited > 0 && Math.hypot(c.x - x.x, c.z - x.z) < 30).length;
       if (!shotTaken && queued > 0) {
         await shot(page, 'review-crossing-down');

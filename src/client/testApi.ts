@@ -58,7 +58,20 @@ export interface TestApi {
   /** Volume/capacity on a segment at the rush-hour peak. */
   segVC(id: number): number;
   /** Visible cars: where they are, which way they face, ticks spent held up, and the ring they're on. */
-  getCars(): { id: number; x: number; z: number; heading: number; waited: number; ring: number | null }[];
+  getCars(): {
+    id: number;
+    x: number;
+    z: number;
+    heading: number;
+    waited: number;
+    ring: number | null;
+    /** The road it's on, its lane (0 inner, 1 outer), which leg of how many, and metres along it. */
+    seg: number;
+    lane: number;
+    leg: number;
+    legs: number;
+    t: number;
+  }[];
   /**
    * Level crossings (Phase 2 review): each crossing's node and place, whether a train holds it
    * closed, and how far its barrier arms are down (0 up, 1 down).
@@ -340,6 +353,11 @@ export function installTestApi(game: Game): TestApi {
         heading: c.heading,
         waited: c.waited,
         ring: c.ring ? c.ring.node : null,
+        seg: c.legs[c.leg]?.seg ?? -1,
+        lane: c.lane,
+        leg: c.leg,
+        legs: c.legs.length,
+        t: c.t,
       })),
     getCrossings: () =>
       [...game.renderer.roads.crossings.keys()].map((node) => {

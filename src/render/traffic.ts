@@ -179,10 +179,14 @@ export class TrafficRenderer {
     return !!cl && cl.until > this.clock && cl.from !== from;
   }
 
-  /** A tram crossing a junction from road `from` holds it as a car would. */
+  /**
+   * A tram crossing a junction from road `from` holds it as a car would, until its next step: a
+   * tram moves once a frame and the cars step through a frame's ticks after it, so the hold lasts a
+   * frame beyond the usual (at a low frame rate it had lapsed half way, letting cars in under it).
+   */
   claim(node: number, from: number): void {
     if (this.nodeInfo.get(node)?.kind === 'plain')
-      this.claims.set(node, { from, until: this.clock + HOLD_PLAIN });
+      this.claims.set(node, { from, until: this.clock + HOLD_PLAIN + this.frameDt });
   }
 
   /**

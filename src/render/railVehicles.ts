@@ -610,12 +610,16 @@ export class RailVehicleRenderer {
     if (L <= 0) return;
     const ahead = (d: number) => (((d - st.d) % L) + L) % L;
     const len = consistLength(run.consist);
-    // Junctions under the tram, or right at its front (waiting at a stop too): held, so a car from
-    // another road doesn't turn in on top of it.
+    // Junctions under the tram are held, so a car from another road doesn't turn in on top of it;
+    // one right at its front (waiting at a stop too) is taken only if no car from another road is
+    // crossing it. Taking it regardless let a tram that had stopped for a car drive on at the next
+    // frame, over the car.
     const held = new Set<number>();
     for (const j of run.junctions ?? []) {
       const a = ahead(j.d);
-      if (L - a < len + 8 || a < TRAM_STOP + 3) {
+      const under = L - a < len + 8;
+      if (!under && a >= TRAM_STOP + 3) continue;
+      if (under || !this.traffic?.claimedByOther(j.node, j.seg)) {
         this.traffic?.claim(j.node, j.seg);
         held.add(j.node);
       }

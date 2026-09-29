@@ -72,9 +72,13 @@ paints rivers, lakes and sea, lays forests, ore and oil and places the highway a
 that a first town has room, and saves maps to play and share as files (M24). Fourteen scenarios.
 Everything runs from a deterministic sim in a Web Worker: 0.7–1.3 ms
 per tick on average at 100k residents on this VM (it varies by day; see Performance), with 288 draw
-calls at the city overview. Checked by 251 unit and scenario tests, the UI specs in `e2e/`, a 10-minute soak
-and a full playthrough through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's
-done).
+calls at the city overview (on an M5 MacBook Pro: 60 fps in Safari, 100–118 in Chrome at 120 Hz,
+worst tick 6 ms). Checked by 338 unit, scenario and legacy-save tests (48 saves from every save
+version since M12 played for two years), the UI specs in `e2e/`, a 10-minute soak and full
+playthroughs through the UI (`docs/SPEC_REVIEW.md` maps every SPEC item to where it's done). A
+review after phase 2 retuned the late-game money, added a placeable regional rail link for older
+cities, a grace for cities meeting seasons for the first time, and level-crossing barriers and
+trams that give way (DECISIONS, "Phase 2 review").
 
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
@@ -120,7 +124,7 @@ worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md
 - The finale playthrough's town is a feature tour, not a growth run: it stays around 550 residents at 71 % approval after seven months on relaxed (the M12 playthrough is the one that grows a first city through its first two years). District policies unlock at 800 residents, so its district has none yet and says so.
 - The M24 full e2e run: 32 of 33 passed; the button-label audit caught the Advisors button mid-transition (its text turns white at once while its background fades in over a moment) and now waits for transitions before judging; it also covers the map editor now. Rerun: passes.
 - The M23 full e2e run had two old specs fail on view-dependent details (M14 clicked a warehouse that M23's regional commuters grew in front of the police station at a low camera angle; M16 hovered the history chart before its panel settled). Both now click and hover robustly and pass.
-- The scenario tests run the scripted mayor for up to two game years each: `npm test` takes about 2.5 minutes (the eight scenario files run in parallel).
+- The scenario tests run the scripted mayor for up to two game years each and the legacy-save tests play 50 saves for two years: `npm test` takes about 13 minutes on this VM (the files run four at a time).
 - Scenario star thresholds were set against the scripted players (which earn one to three stars); real players may find some easy or hard, worth a look once people have played them.
 - Late-game money (Phase 2 review): before the review the careful mayor's city piled up about $2M a year (from $1M to $25M between years 10 and 20), holding 6 % taxes because the launch complex's education bar was out of reach. With schools built by the seats needed, goals saved for, and big-city running costs past 30,000 residents, a built-out city at 6 % runs within about $40k a month of even and the treasury stays between $0.1M and $2M through year 20 on seeds `balance`, `s1` and `s2`; the tuning is from the balance mayor and wants a look once people have played big cities.
 - Growth to 100k residents is exercised by the large-city benchmark (a sandbox grid); the scripted careful mayor fills the river map at about 67k (M17).
@@ -159,6 +163,7 @@ worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md
 
 ## To check on the Mac
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
+- Level crossings and trams (Phase 2 review): the barriers coming down and cars waiting behind them, and trams and cars sharing a busy avenue, at 60 fps; visible cars cost 0.3–1.2 ms a frame in the rail scene on this VM, where a slow frame runs up to 20 traffic steps (`renderStats.trafficMs`).
 - Rail (M20): trams, trains and freight trains at 60 fps in a big city with several lines; how the tram wires, level crossings, stations and the freight yard look close up; whether cars following round the tram depot and crossings read well.
 - Visible cars (M19): 360 cars following, queueing and going round roundabouts at 60 fps in a big city (`renderStats.trafficMs` in the debug panel should stay well under 1 ms); how the ring, the flyover decks and the ramp merges look close up.
 - [x] The ~100k city at 3× speed: checked on a MacBook Pro M5 (High graphics), 60 fps in every view in Safari (its cap) and 100–118 fps in Chrome at 120 Hz; no per-building LOD needed (see "Real hardware" under Performance).

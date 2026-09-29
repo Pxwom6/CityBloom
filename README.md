@@ -86,7 +86,11 @@ like the ride, so a line beside a jammed road takes cars off it. The **Tram trac
 tool lays track along streets, avenues and boulevards (click a road, or drag along a route); a **tram
 depot** on the track runs trams round the **tram stops** you place. The regional railway comes in at
 the map's west edge: lay track from it to a **rail freight terminal** near your industry, and the
-trucks that drove to the highway take their goods there to go on by train. Click a stop, a station, a
+trucks that drove to the highway take their goods there to go on by train, while stations on track
+joined to it bring the neighbours' commuters in by train. (A city from an older version whose edge was
+built up may have no link: **Regional rail link** in the Transit menu lays one anywhere on the west
+edge.) At level crossings the barriers come down as a train nears and cars wait for it; trams wait
+for cars in their way, and cars for trams. Click a stop, a station, a
 depot or the track to see its line, how often it runs and who rides it; the **Ridership** map shows
 every line by how full it runs.
 

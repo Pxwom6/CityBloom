@@ -131,26 +131,45 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
   );
   await shot(page, 'm24-pass');
 
-  // A quarter in the valley (as the scenario test builds it), then play on to the win.
-  await page.evaluate(async (hz) => {
+  // A quarter in the valley (as the scenario test builds it), then play on to the win. It costs
+  // about $130k; holding the brush keeps digging in real time, so what the pass cost varies from
+  // run to run ($190–240k), and a mayor left short borrows, as a player would.
+  const before = (await state(page)).treasury;
+  const { failed, loan } = await page.evaluate(async (hz) => {
     const g = window.__game!;
-    await g.dispatch({
-      type: 'buildRoad',
-      road: 'street',
-      points: [
-        { x: 1100, z: hz },
-        { x: 1400, z: hz },
-      ],
-    });
-    for (let x = 1000; x <= 1400; x += 100)
+    const failed: string[] = [];
+    let loan = 0;
+    const check = (what: string, r: { ok: boolean; reason?: string }) => {
+      if (!r.ok) failed.push(`${what}: ${r.reason}`);
+    };
+    if ((await g.getState()).treasury < 150_000) {
+      const r = await g.dispatch({ type: 'takeLoan', amount: 100_000 });
+      check('loan', r);
+      if (r.ok) loan = 100_000;
+    }
+    check(
+      'valley road',
       await g.dispatch({
         type: 'buildRoad',
         road: 'street',
         points: [
-          { x, z: hz - 300 },
-          { x, z: hz + 300 },
+          { x: 1100, z: hz },
+          { x: 1400, z: hz },
         ],
-      });
+      }),
+    );
+    for (let x = 1000; x <= 1400; x += 100)
+      check(
+        `street at x=${x}`,
+        await g.dispatch({
+          type: 'buildRoad',
+          road: 'street',
+          points: [
+            { x, z: hz - 300 },
+            { x, z: hz + 300 },
+          ],
+        }),
+      );
     for (const [zone, dz, radius] of [
       ['R', -170, 110],
       ['C', 0, 35],
@@ -169,12 +188,21 @@ test('M24: Over the Ridge through the UI: the terrain tool cuts a pass (a drag u
           radius,
         },
       });
-    await g.placeCivic('pump', { x: 1400, z: hz + 60 });
-    await g.placeCivic('septic', { x: 1000, z: hz + 200 });
+    const place = async (def: string, near: { x: number; z: number }) => {
+      if ((await g.placeCivic(def, near)) === null) failed.push(`no room or money for ${def}`);
+    };
+    await place('pump', { x: 1400, z: hz + 60 });
+    await place('septic', { x: 1000, z: hz + 200 });
     for (const def of ['firestation', 'police', 'clinic', 'primary'])
-      await g.placeCivic(def, { x: 1050, z: hz - 60 });
-    for (let k = 0; k < 4; k++) await g.placeCivic('wind', { x: 1150, z: hz + 290 });
+      await place(def, { x: 1050, z: hz - 60 });
+    for (let k = 0; k < 4; k++) await place('wind', { x: 1150, z: hz + 290 });
+    return { failed, loan };
   }, hz);
+  expect(failed).toEqual([]);
+  const cost = before + loan - (await state(page)).treasury;
+  console.log(
+    `[m24] $${before.toLocaleString('en-US')} left after the pass, ${loan ? `a $${loan.toLocaleString('en-US')} loan, ` : ''}the valley quarter cost $${cost.toLocaleString('en-US')}`,
+  );
   for (let m = 0; m < 6; m++) {
     if ((await page.evaluate(() => window.__game!.getScenario())).summary?.status !== 'playing') break;
     await page.evaluate(() => window.__game!.advance(720));

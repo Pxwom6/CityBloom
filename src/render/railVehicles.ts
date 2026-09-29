@@ -682,6 +682,23 @@ export class RailVehicleRenderer {
     st.d = (st.d + room) % L;
   }
 
+  /** Is there room for a tram of this line with its front at `d`: no car and no other tram there? */
+  private clearForTram(run: Run, d: number): boolean {
+    const path = run.dirs[0]!.path;
+    const L = path.length;
+    const len = consistLength(run.consist);
+    for (const t of run.trams ?? []) {
+      const gap = (((d - t.d) % L) + L) % L;
+      if (gap < len + TRAM_GAP || L - gap < len + TRAM_GAP) return false;
+    }
+    for (let s = -TRAM_GAP; s <= len + TRAM_GAP; s += 2) {
+      path.at(d - s, true, this.a);
+      for (const c of this.traffic?.cars ?? [])
+        if ((c.x - this.a.x) ** 2 + (c.z - this.a.z) ** 2 < LANE_HALF * LANE_HALF) return false;
+    }
+    return true;
+  }
+
   update(displayTick: number): void {
     if (this.version !== this.world.transitVersion || this.netVersion !== this.world.netVersion) {
       const rebuilt = this.version !== this.world.transitVersion;
@@ -699,6 +716,9 @@ export class RailVehicleRenderer {
         const phase =
           (((displayTick + (k * run.period) / run.vehicles) % run.period) + run.period) % run.period;
         const { d } = locate(run, phase);
+        // It joins where its timetable has it once that place is clear: not on top of a car, nor
+        // too close to a tram already running (a line gaining a tram put it down on cars).
+        if (!this.clearForTram(run, d)) break;
         let next = stops.findIndex((x) => x > d + 0.01);
         if (next < 0 || next >= stops.length - 1) next = 0;
         run.trams.push({ d, next, dwell: 0 });
@@ -718,7 +738,7 @@ export class RailVehicleRenderer {
     this.fronts.length = 0;
     for (const run of this.runs) {
       if (run.period <= 0) continue;
-      for (let k = 0; k < run.vehicles; k++) {
+      for (let k = 0; k < (run.trams ? run.trams.length : run.vehicles); k++) {
         const phase =
           (((displayTick + (k * run.period) / run.vehicles) % run.period) + run.period) % run.period;
         const { path, d } = run.trams ? { path: run.dirs[0]!.path, d: run.trams[k]!.d } : locate(run, phase);

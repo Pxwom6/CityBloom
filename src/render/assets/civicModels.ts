@@ -666,6 +666,28 @@ export function buildCivicModel(
       }
       break;
     }
+    case 'raillink': {
+      // The regional rail link's junction (Phase 2 review): a two-storey brick signal box with a
+      // glazed upper floor facing the track, a signal gantry by the line, and a relay cabinet.
+      base(m, W, D, CONCRETE);
+      const zf = -D / 2;
+      m.box(-5, 5, 0, 3.4, zf + 2.5, D / 2 - 1, BRICK);
+      m.box(-5.3, 5.3, 3.4, 6.2, zf + 2.2, D / 2 - 0.7, CREAM);
+      m.box(-5.32, 5.32, 3.9, 5.8, zf + 2.15, zf + 2.3, GLASS);
+      m.gable(-5.6, 5.6, zf + 1.9, D / 2 - 0.4, 6.2, 1.8, ROOF_GREY, CREAM, true);
+      allWindows(m, -5, 5, zf + 2.5, D / 2 - 1, 0.4, 1, 2.2, { col: GLASS, lit: lit(r, 0.8), spacing: 2.4 }, [
+        'front',
+      ]);
+      // Steps up the side and a relay cabinet.
+      m.box(5.3, 6.6, 0, 3.4, zf + 3, zf + 4.4, CONCRETE);
+      m.box(-W / 2 + 1, -W / 2 + 2.6, 0, 1.6, zf + 1, zf + 2.2, C('#56606b'));
+      // Signal post by the line, lamps red and green.
+      m.cylinder(W / 2 - 1.6, zf + 0.8, 0.14, 0, 5.2, STEEL, 6);
+      m.box(W / 2 - 2, W / 2 - 1.2, 4.2, 5.4, zf + 0.5, zf + 1.1, SLATE);
+      m.box(W / 2 - 1.8, W / 2 - 1.4, 4.9, 5.2, zf + 0.45, zf + 0.5, C('#e0423a'));
+      m.box(W / 2 - 1.8, W / 2 - 1.4, 4.4, 4.7, zf + 0.45, zf + 0.5, C('#3fbf6a'));
+      break;
+    }
     case 'railfreight': {
       // A rail freight terminal (M20): a shed facing the road, stacked containers, a loading track
       // along the back (the railway side) under a gantry crane, and trucks waiting at the gate.

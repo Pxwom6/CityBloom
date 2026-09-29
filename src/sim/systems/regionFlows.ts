@@ -1,5 +1,6 @@
 import { COMMUTE, DEMAND, TRAFFIC } from '../../data/balance';
 import { CIVIC } from '../../data/civic';
+import { ROAD_TYPES } from '../../data/roads';
 import { NEIGHBOUR_KIND, REGION } from '../../data/region';
 import type { Sim } from '../sim';
 import { accessOf, type Building } from '../world/buildings';
@@ -65,6 +66,9 @@ function nodeNear(sim: Sim, g: RoadGraph, x: number, z: number, max: number): nu
   for (const n of sim.state.net.nodes.values()) {
     const i = g.index.get(n.id);
     if (i === undefined) continue;
+    // A node on the road network: the nearest to a station is always one of its railway's own
+    // (Phase 2 review: regional riders arrived there and could go nowhere).
+    if (!sim.net.segmentsAt(n.id).some((sg) => ROAD_TYPES[sim.net.segment(sg).type].access)) continue;
     const d = (n.x - x) ** 2 + (n.z - z) ** 2;
     if (d < bd) {
       bd = d;
@@ -176,15 +180,17 @@ export function regionRound(sim: Sim, r: RegionRoundInput): RegionFlows {
   const approach = REGION.approachMinutes * 60;
   const stations = regionalStations(sim, g);
   const rail = stations.length ? REGION.railShare : 0;
-  const entries: Entry[] = [{ node: hwNode, mode: 'road', share: 1 - rail, cost: approach, car }];
-  for (const node of stations)
-    entries.push({
-      node,
-      mode: 'rail',
-      share: rail / stations.length,
-      cost: approach * 0.8 + 120,
-      car: car * 0.3,
-    });
+  // Stations first (Phase 2 review): each entry fills the open jobs nearest it until its share of
+  // the workers is placed, and the highway's larger share, matched first, took every open job
+  // before a train's riders got a look in.
+  const entries: Entry[] = stations.map((node) => ({
+    node,
+    mode: 'rail' as const,
+    share: rail / stations.length,
+    cost: approach * 0.8 + 120,
+    car: car * 0.3,
+  }));
+  entries.push({ node: hwNode, mode: 'road', share: 1 - rail, cost: approach, car });
   const p = pools(sim);
   const live = (b: Building) => sim.state.buildings.get(b.id) === b;
   let hwCars = 0;

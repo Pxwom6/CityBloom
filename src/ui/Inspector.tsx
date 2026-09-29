@@ -839,6 +839,28 @@ function CivicInspector({ id }: { id: number }) {
             )}
           </>
         )}
+        {d.railLink && (
+          <>
+            <dt>Track</dt>
+            <dd data-testid="raillink-joined">
+              {d.railLink.joined
+                ? 'Joined to the city’s railways'
+                : 'Nothing joined yet: lay railway from its end (the road tool’s Railway type)'}
+            </dd>
+            <dt>Freight trains</dt>
+            <dd>
+              {d.railLink.freight > 0
+                ? `${d.railLink.freight.toLocaleString('en-US')} truckloads/day · ${trainsText(d.railLink.freight)}`
+                : 'None yet: a rail freight terminal on joined track loads them'}
+            </dd>
+            <dt>By train</dt>
+            <dd data-testid="raillink-riders">
+              {d.railLink.riders > 0
+                ? `${d.railLink.riders.toLocaleString('en-US')} commuters and shoppers from the neighbours a day`
+                : 'No one yet: stations on joined track bring the neighbours’ commuters'}
+            </dd>
+          </>
+        )}
         {d.railFreight && (
           <>
             <dt>Onto trains</dt>
@@ -903,17 +925,20 @@ function CivicInspector({ id }: { id: number }) {
         </dd>
       </dl>
       <ModuleList civicId={d.id} def={d.def} />
-      <BulldozeButton
-        key={d.id}
-        name={d.name}
-        refund={d.refund}
-        moveFee={moveFee(d.def)}
-        onMove={() => game.tools.startMove(d.id, d.def)}
-        onConfirm={() => {
-          void game.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: d.id } });
-          game.select(null);
-        }}
-      />
+      {/* The regional rail link stays put: it belongs to the regional railway (Phase 2 review). */}
+      {!d.railLink && (
+        <BulldozeButton
+          key={d.id}
+          name={d.name}
+          refund={d.refund}
+          moveFee={moveFee(d.def)}
+          onMove={() => game.tools.startMove(d.id, d.def)}
+          onConfirm={() => {
+            void game.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: d.id } });
+            game.select(null);
+          }}
+        />
+      )}
     </aside>
   );
 }

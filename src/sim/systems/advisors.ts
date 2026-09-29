@@ -5,6 +5,7 @@ import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { EDUCATION, TRAM } from '../../data/balance';
 import { railTerminals } from './rail';
+import { railLinkOffered } from '../actions/railLink';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
@@ -464,6 +465,18 @@ export function advise(sim: Sim): Advice[] {
       at: { x: link.x, z: link.z },
       map: 'traffic',
     });
+  // No regional rail link (Phase 2 review): an older city whose west edge was built up when rail
+  // arrived. It can lay one now.
+  if (railOpen && railLinkOffered(sim)) {
+    const hz = sim.terrain.gen.params.highway.connectZ;
+    out.push({
+      advisor: 'transport',
+      severity: 1,
+      title: 'No regional rail link',
+      text: 'The city has no link to the regional railway, so no freight trains and no commuters by train from the neighbours. Place a Regional rail link (Transit) anywhere on the west edge at least 160 m from the highway: it clears homes and businesses in its way.',
+      at: { x: 40, z: hz > 1024 ? hz - 400 : hz + 400 },
+    });
+  }
   // Stations and tram depots that run nothing yet (M20).
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
     const d = civicDef(c);

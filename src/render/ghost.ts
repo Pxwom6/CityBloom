@@ -344,6 +344,40 @@ export class GhostRenderer {
     this.group.add(this.footprint);
   }
 
+  private clearing: Mesh | null = null;
+
+  /**
+   * Red boxes over the buildings a placement would clear (the regional rail link, Phase 2 review),
+   * so the preview shows what goes as well as saying how many.
+   */
+  showClear(rects: { x: number; z: number; hw: number; hd: number; angle: number }[] | null): void {
+    if (this.clearing) {
+      this.group.remove(this.clearing);
+      this.clearing.geometry.dispose();
+      this.clearing = null;
+    }
+    if (!rects?.length) return;
+    const buf = new GeoBuffer(64 * rects.length);
+    const col = new Color('#ffffff');
+    const height = 7;
+    for (const r of rects) {
+      const c = Math.cos(r.angle);
+      const s = Math.sin(r.angle);
+      const base = this.y(r.x, r.z);
+      const pt = (u: number, v: number, y: number) => [r.x + u * c - v * s, base + y, r.z + u * s + v * c];
+      const hw = r.hw + 0.5;
+      const hd = r.hd + 0.5;
+      buf.quad(pt(-hw, -hd, height), pt(-hw, hd, height), pt(hw, hd, height), pt(hw, -hd, height), col);
+      buf.quad(pt(-hw, -hd, 0), pt(-hw, -hd, height), pt(hw, -hd, height), pt(hw, -hd, 0), col, false);
+      buf.quad(pt(hw, hd, 0), pt(hw, hd, height), pt(-hw, hd, height), pt(-hw, hd, 0), col, false);
+      buf.quad(pt(-hw, hd, 0), pt(-hw, hd, height), pt(-hw, -hd, height), pt(-hw, -hd, 0), col, false);
+      buf.quad(pt(hw, -hd, 0), pt(hw, -hd, height), pt(hw, hd, height), pt(hw, hd, 0), col, false);
+    }
+    this.clearing = new Mesh(mergeChunks([buf.trimmed()]), this.hiMat);
+    this.clearing.renderOrder = 13;
+    this.group.add(this.clearing);
+  }
+
   /** Coverage preview for a service building: road ribbons shaded by coverage (0..1 samples). */
   showCoverage(list: RoadTintPiece[] | null): void {
     this.coverage.show(list);

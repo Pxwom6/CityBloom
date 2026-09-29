@@ -100,7 +100,7 @@ function arrayOf(s: SimState, k: ArrayKey): Float32Array | Uint8Array {
 }
 
 /** Other values a command can change (restored where untouched). */
-const VALUES = ['nextId', 'rng', 'burning', 'riders', 'load'] as const;
+const VALUES = ['nextId', 'rng', 'burning', 'riders', 'load', 'railway'] as const;
 type ValueKey = (typeof VALUES)[number];
 
 function containerOf(s: SimState, c: Container): Map<number, unknown> {

@@ -229,6 +229,17 @@ export const TIPS: Tip[] = [
       (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= 5_000 && g.world.districts.size === 0,
   },
   {
+    id: 'raillink',
+    text:
+      'This city has no link to the regional railway: its west edge was built up before rail arrived. ' +
+      'Place a Regional rail link (Transit) on the west edge, at least 160 m from the highway, and lay ' +
+      'railway from its end: freight trains and the neighbours’ commuters come in along it.',
+    when: (g) =>
+      g.world.stats.railLinkOffered &&
+      (g.world.stats.unlockAll ? Infinity : g.world.stats.peak) >= TRAM.unlockPopulation &&
+      g.world.stats.population > 0,
+  },
+  {
     id: 'railway',
     text:
       'Railways climb no more than 3.5 % and curve no tighter than 100 m, so they need room. Draw one ' +

@@ -68,6 +68,10 @@ export interface CityStats {
   weather: WeatherSummary;
   /** The region (M23): neighbours, what they offer now, and the deals. */
   region: RegionSummary;
+  /** The regional railway's link at the west edge (M20), or null if the city has none. */
+  railwayLink: { outside: number; connect: number; segment: number } | null;
+  /** The city has no link and may lay one (Phase 2 review; it may still be locked). */
+  railLinkOffered: boolean;
   /**
    * The custom map the city stands on (M24), or null: its name and climate, where the highway and
    * railway come in, and whether this is the map editor.
@@ -159,6 +163,11 @@ export interface CivicDetails {
   } | null;
   /** Rail freight terminals (M20): linked to the regional railway, and truckloads a day onto trains. */
   railFreight: { linked: boolean; trucks: number } | null;
+  /**
+   * The regional rail link's junction (Phase 2 review): track joined to it, truckloads a day going
+   * out by freight train, and the neighbours' commuters and shoppers arriving by train.
+   */
+  railLink?: { joined: boolean; freight: number; riders: number } | null;
   /** Airport or seaport (M23): visitors a day it brings, and (seaport) truckloads a day onto ships. */
   port: { kind: 'airport' | 'seaport'; visitors: number; loads: number } | null;
   refund: number;
@@ -183,6 +192,8 @@ export interface CivicDetails {
 
 export interface BudgetReport {
   treasury: number;
+  /** Big-city running costs (Phase 2 review): how many times a town's the city pays (1 below 30k). */
+  bigCity: number;
   /** Ledger for the month so far (signed integer dollars per category). */
   month: Record<string, number>;
   /** Monthly rates at current conditions. */

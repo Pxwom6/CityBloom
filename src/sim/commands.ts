@@ -55,6 +55,8 @@ export type Command =
   | { type: 'cheat'; cheat: 'ignite'; id: number }
   /** Test mode only: bring the next vote to `months` months away (e2e). */
   | { type: 'cheat'; cheat: 'electionIn'; months: number }
+  /** Test mode: take the regional rail link away, as an old city whose edge was full had none. */
+  | { type: 'cheat'; cheat: 'removeRailLink' }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
@@ -84,6 +86,11 @@ export type Command =
   | { type: 'removeDistrict'; district: number }
   /** Put a policy in force in one district, or lift it (M21). */
   | { type: 'setDistrictPolicy'; district: number; policy: PolicyId; on: boolean }
+  /**
+   * A regional rail link for a city without one (Phase 2 review): the mainline link coming in at
+   * `z` on the west edge, with its junction building.
+   */
+  | { type: 'buildRailLink'; z: number }
   /**
    * Terraforming (M24): raise, lower, level (to `level` metres) or smooth the ground with a round
    * brush along `points`; `stroke` groups a drag into one undo step.

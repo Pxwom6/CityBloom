@@ -80,6 +80,11 @@ export interface CivicDef {
   tram?: { trams: number; capacity: number };
   /** The track a building faces (M20): a railway instead of a road. */
   track?: 'rail';
+  /**
+   * The regional rail link's junction building (Phase 2 review): placed with the link on the west
+   * edge by `buildRailLink`, never on its own, moved or bulldozed.
+   */
+  railLink?: true;
   /** Service coverage and capacity (M5). */
   service?: {
     kind: ServiceKind;
@@ -550,6 +555,27 @@ CIVIC_DEFS.push({
     'A platform and booking hall beside a railway. Two or more stations on connected track run a train line; people walk up to 9 minutes to catch it.',
   unlockPopulation: 5_000,
   model: 'station',
+});
+
+// The regional rail link (Phase 2 review): for cities that have none (older saves whose west edge
+// was built up when rail arrived). Placed on the west edge with its track; its junction building
+// is what the player clicks to inspect it.
+CIVIC_DEFS.push({
+  id: 'raillink',
+  name: 'Regional rail link',
+  category: 'transit',
+  dept: 'transit',
+  w: 18,
+  d: 10,
+  cost: 40_000,
+  upkeep: 250,
+  track: 'rail',
+  railLink: true,
+  unique: true,
+  blurb:
+    'Joins the city to the regional railway: freight trains and the western town’s commuters come in along it. Goes anywhere on the west edge at least 160 m from the highway, on dry, gentle ground; it clears homes and businesses in its way.',
+  unlockPopulation: 5_000,
+  model: 'raillink',
 });
 
 // The rail freight terminal (M20): trucks bring goods to it rather than to the highway.

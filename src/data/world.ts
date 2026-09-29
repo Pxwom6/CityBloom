@@ -1,5 +1,7 @@
 /** World dimensions and terrain constants. See DESIGN.md §2.1. */
 export const MAP_SIZE = 2048; // metres, buildable area is [0, MAP_SIZE]²
+/** The highway's (and the regional railway's) connection node sits this far inside the west edge. */
+export const HIGHWAY_CONNECT_X = 24;
 export const HEIGHT_STEP = 8; // metres between height samples
 export const HEIGHT_RES = MAP_SIZE / HEIGHT_STEP + 1; // 257 samples per side
 export const GRID_CELL = 16; // raster cell size in metres

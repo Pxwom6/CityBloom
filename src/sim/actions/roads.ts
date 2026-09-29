@@ -241,7 +241,12 @@ export function bulldoze(sim: Sim, target: BulldozeTarget, dryRun: boolean): Com
   if (target.kind === 'segment') {
     const seg = sim.state.net.segments.get(target.id);
     if (!seg) return fail('Nothing to bulldoze');
-    if (!ROAD_TYPES[seg.type].buildable) return fail("The regional highway can't be bulldozed");
+    if (!ROAD_TYPES[seg.type].buildable)
+      return fail(
+        seg.type === 'mainline'
+          ? "The regional railway can't be bulldozed"
+          : "The regional highway can't be bulldozed",
+      );
     const len = sim.net.curve(seg.id).length;
     const refund = Math.round(len * ROAD_TYPES[seg.type].costPerMetre * ROAD_RULES.bulldozeRefund);
     const buildings = new Set<number>();

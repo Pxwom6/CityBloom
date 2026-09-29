@@ -114,6 +114,20 @@ ${GRADE_GLSL}`,
     for (const id of world.netState.segments.keys()) this.dirtySegs.add(id);
     for (const id of world.netState.nodes.keys()) this.dirtyNodes.add(id);
     world.onNet((c) => this.onChanges(c));
+    // A rail link laid (or undone) after loading (Phase 2 review): its scenery past the edge too.
+    world.onRailway(() => {
+      const old = this.group.getObjectByName('regional-railway') as Mesh | undefined;
+      if (old) {
+        this.group.remove(old);
+        old.geometry.dispose();
+      }
+      this.buildRegionalRailway();
+      if (world.railway) {
+        this.dirtyNodes.add(world.railway.outside);
+        this.dirtySegs.add(world.railway.segment);
+        this.flush();
+      }
+    });
     this.buildRegionalHighway();
     this.flush();
   }

@@ -346,7 +346,10 @@ export function Toolbar() {
       {(active === 'place' || active === 'stop') && (
         <div class="subbar panel" data-testid="place-options">
           {CIVIC_DEFS.filter(
-            (d) => d.category === (active === 'stop' ? 'transit' : tools.place.category),
+            (d) =>
+              d.category === (active === 'stop' ? 'transit' : tools.place.category) &&
+              // The regional rail link only while the city has none (Phase 2 review).
+              (!d.railLink || game.world.stats.railLinkOffered),
           ).map((d) => {
             if (d.project) return <ProjectButton key={d.id} def={d} />;
             const locked = pop < d.unlockPopulation;
@@ -369,6 +372,11 @@ export function Toolbar() {
                     ...(d.garbage ? [`${d.garbage.trucks} trucks`] : []),
                     ...(d.service ? [serviceLine(d.service)] : []),
                     d.blurb,
+                    ...(d.railLink
+                      ? [
+                          'This city has no link to the regional railway yet (its west edge was built up when rail arrived). Click on the west edge to lay one.',
+                        ]
+                      : []),
                     ...(locked ? [`Unlocks at ${d.unlockPopulation.toLocaleString('en-US')} residents`] : []),
                   ],
                 }}

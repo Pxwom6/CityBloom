@@ -19,7 +19,7 @@ code; there are no bought or borrowed assets (see `CREDITS.md` for the open-sour
 ## Play online
 
 Once GitHub Pages is on for this repository (see the top of `PROGRESS.md`), every push to `main`
-publishes the game at **https://pxwom6.github.io/Sim-Cities/**. It's an installable app: after one
+publishes the game at **https://pxwom6.github.io/CityBloom/**. It's an installable app: after one
 visit it plays offline, your browser's install button (or Share → Add to Home Screen on iPhone and
 iPad) puts it in a window of its own, and when a new version is out the game offers to reload into
 it, saving your city first. Saves stay in your browser across updates; export them from the load
@@ -221,7 +221,7 @@ save files. The city autosaves every few minutes.
 npm run typecheck && npm run lint && npm test && npm run e2e   # everything
 npm test             # unit and scenario tests (Vitest)
 npm run e2e          # end-to-end tests through the real UI (Playwright), with screenshots,
-                     # against a production-mode build served from /Sim-Cities/ as on Pages
+                     # against a production-mode build served from /CityBloom/ as on Pages
 npm run soak         # ten minutes of top-speed play with disasters; fails on any console error
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful

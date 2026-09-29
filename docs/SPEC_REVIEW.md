@@ -144,7 +144,7 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | First launch picks a graphics preset from a quick performance check | `src/client/graphicsCheck.ts`, `Game.startGraphicsCheck`; shown and re-runnable in Settings; `tests/graphicsCheck.test.ts` |
 | README no longer claims every resident is simulated | README intro: residents counted per building, trips routed over real roads, visible vehicles are samples |
 | What to click, at the top of PROGRESS.md | PROGRESS.md "What you need to do" |
-| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /Sim-Cities/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
+| Done when: a production build served from a subpath passes the e2e suite, works offline after one visit, detects and applies an update | `npm run e2e` builds with `--base /CityBloom/` and serves it from that path (`e2e/serve.mjs`); `e2e/m15-publish.spec.ts` plays offline after one visit (server dropping every request, browser offline), then deploys a real second build and applies it through the notice |
 
 ## M16 Photo mode and city history
 

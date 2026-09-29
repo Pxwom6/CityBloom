@@ -34,7 +34,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # e.g. "/Sim-Cities" for a project site, "" with a custom domain.
+          # e.g. "/CityBloom" for a project site, "" with a custom domain.
           BASE_PATH: ${{ steps.pages.outputs.base_path }}/
           # Absolute address for the share preview image.
           SITE_URL: ${{ steps.pages.outputs.base_url }}/

@@ -1277,7 +1277,7 @@ past commits by `scripts/dev/legacy-corpus.mjs`) is loaded and played two years 
 
 - Vitest unit tests for every system; scenario tests build cities by commands and run for years with
   per-tick invariants in test mode (no NaN/Infinity, no negatives, in bounds, money balances).
-- Playwright e2e against a `--mode test` build served from `/Sim-Cities/` by `e2e/serve.mjs`, as
+- Playwright e2e against a `--mode test` build served from `/CityBloom/` by `e2e/serve.mjs`, as
   on Pages (M15; the server can also switch to another build or drop every request, for the update
   and offline tests): builds a small town through the real UI, runs time, opens panels,
   screenshots presets into `docs/screenshots/`, fails on console errors.

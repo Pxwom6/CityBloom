@@ -8,7 +8,7 @@
    "GitHub Actions"**. (Pages on a private repository needs a paid plan; on a free plan, make the
    repository public first.)
 3. That's all. The merge starts the first deploy (or **Actions → Deploy to GitHub Pages → Run
-   workflow**); after about two minutes the game is at **https://pxwom6.github.io/Sim-Cities/**.
+   workflow**); after about two minutes the game is at **https://pxwom6.github.io/CityBloom/**.
    Later pushes to `main` redeploy, and open copies of the game offer "New version, reload".
 
 - [x] M0 Foundation
@@ -175,7 +175,7 @@ worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md
 - Pedestrians at street level: frame time with 240 walkers.
 - Graded roads (M13): how cuttings, embankments and civic pads look at full resolution (`node scripts/dev/earthshot.mjs` scene, or build a street over a hill on the highlands preset), and whether the road ghost's grade colours and the see-through ghost read well while drawing.
 - Trackpad (M14): two-finger swipe pans, pinch zooms, ⌥/Alt + swipe turns and tilts, and Safari's rotate gesture; check that the automatic mouse/trackpad detection guesses right on a MacBook trackpad and a Magic Mouse, and that ⌘Z / ⇧⌘Z undo and redo.
-- Published app (M15), once Pages is on: open https://pxwom6.github.io/Sim-Cities/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
+- Published app (M15), once Pages is on: open https://pxwom6.github.io/CityBloom/ in Safari and Chrome; install it (Chrome's install icon in the address bar; Safari → File → Add to Dock); turn Wi-Fi off and open it again (it should start and play); after the next push to `main`, an open copy should show "New version of Citybloom · Reload" within an hour or on returning to the tab, and Reload should come back with your city under Continue. Check that the first launch picked High on the Mac (Settings → Graphics says what it picked) and the icon looks right in the Dock and the share preview (paste the link into a chat app).
 - Scenarios (M18): the scenario screen's previews and the brief, goals and win screens at full resolution and 140 % interface size.
 - Photo mode (M16): frame rate with depth of field and tilt-shift on (the lens pass costs two full-screen passes, 48 depth-aware taps a pixel) at Retina resolution; how long a 2× save takes (should be well under a second); whether the six grades and the golden-hour light look right on a calibrated screen; the follow camera's ride along a busy street at 60 fps.
 - Big projects (M17): the five projects at each construction stage close up at full resolution (`node scripts/dev/projectshot.mjs`), and a match day's crowd of cars around the stadium at 60 fps.

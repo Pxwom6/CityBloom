@@ -13,9 +13,16 @@ export class Arrays {
   emi = new Float32Array(4096);
   clip: Float32Array | null;
   n = 0;
+  /**
+   * Triangles that cast no shadow worth drawing (panes, small fittings, anything flat on the
+   * ground), kept apart and put after the rest, so the shadow pass draws only the first part
+   * (M26). Null: every triangle in one run.
+   */
+  rest: Arrays | null;
 
-  constructor(withClip: boolean) {
+  constructor(withClip: boolean, split = false) {
     this.clip = withClip ? new Float32Array(4096) : null;
+    this.rest = split ? new Arrays(withClip) : null;
   }
 
   reserve(extra: number): void {
@@ -34,16 +41,52 @@ export class Arrays {
     if (this.clip) this.clip = grow(this.clip, 1);
   }
 
+  /** Vertices in all, the shadowless ones included. */
+  get total(): number {
+    return this.n + (this.rest?.n ?? 0);
+  }
+
   geometry(): BufferGeometry {
     const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(this.pos.slice(0, this.n * 3), 3));
-    g.setAttribute('normal', new BufferAttribute(this.nrm.slice(0, this.n * 3), 3));
-    g.setAttribute('color', new BufferAttribute(this.col.slice(0, this.n * 3), 3));
-    g.setAttribute('emissive', new BufferAttribute(this.emi.slice(0, this.n), 1));
-    if (this.clip) g.setAttribute('clipY', new BufferAttribute(this.clip.slice(0, this.n), 1));
+    const r = this.rest;
+    const join = (a: Float32Array, b: Float32Array | undefined, k: number): Float32Array => {
+      const out = new Float32Array((this.n + (r?.n ?? 0)) * k);
+      out.set(a.subarray(0, this.n * k));
+      if (r && b) out.set(b.subarray(0, r.n * k), this.n * k);
+      return out;
+    };
+    g.setAttribute('position', new BufferAttribute(join(this.pos, r?.pos, 3), 3));
+    g.setAttribute('normal', new BufferAttribute(join(this.nrm, r?.nrm, 3), 3));
+    g.setAttribute('color', new BufferAttribute(join(this.col, r?.col, 3), 3));
+    g.setAttribute('emissive', new BufferAttribute(join(this.emi, r?.emi, 1), 1));
+    if (this.clip) g.setAttribute('clipY', new BufferAttribute(join(this.clip, r?.clip ?? undefined, 1), 1));
+    // The vertices that cast shadows come first.
+    g.userData.casters = this.n;
     g.computeBoundingSphere();
     return g;
   }
+}
+
+/** Shadow pass hooks for a mesh built from split `Arrays`: only the triangles that cast. */
+export function drawCastersOnly(mesh: {
+  onBeforeShadow: (...a: never[]) => void;
+  onAfterShadow: (...a: never[]) => void;
+}): void {
+  mesh.onBeforeShadow = CASTERS_BEFORE as never;
+  mesh.onAfterShadow = CASTERS_AFTER as never;
+}
+const CASTERS_BEFORE = (_r: unknown, _o: unknown, _c: unknown, _s: unknown, g: BufferGeometry) =>
+  g.setDrawRange(0, (g.userData.casters as number | undefined) ?? Infinity);
+const CASTERS_AFTER = (_r: unknown, _o: unknown, _c: unknown, _s: unknown, g: BufferGeometry) =>
+  g.setDrawRange(0, Infinity);
+
+/** Does triangle `t` of a model cast a shadow worth drawing? */
+function casts(m: ModelData, t: number): boolean {
+  if (m.shade) return m.shade[t] === 1;
+  const v = t * 3;
+  // A lit pane is set in a wall; anything flat on the ground casts nothing.
+  if ((m.win && m.win[v]) || m.emi[v]! > 0) return false;
+  return m.pos[v * 3 + 1]! > 0.3 || m.pos[v * 3 + 4]! > 0.3 || m.pos[v * 3 + 7]! > 0.3;
 }
 
 /** A number in 0..1 from two integers (which window of which building). */
@@ -91,22 +134,26 @@ export function appendModel(
   const s = Math.sin(yaw);
   const n = m.pos.length / 3;
   out.reserve(n);
+  out.rest?.reserve(n);
   const win = m.win;
   const lit = win && m.winChance ? litWindows(m.winChance, seed) : null;
   const dark = abandoned === true || char > 0.3;
+  let dst = out;
   for (let i = 0; i < n; i++) {
+    // Each triangle into the casters or the rest.
+    if (i % 3 === 0) dst = out.rest && !casts(m, i / 3) ? out.rest : out;
     const lx = m.pos[i * 3]!;
     const ly = m.pos[i * 3 + 1]!;
     const lz = m.pos[i * 3 + 2]!;
     const nx = m.nrm[i * 3]!;
     const nz = m.nrm[i * 3 + 2]!;
-    const o = out.n * 3;
-    out.pos[o] = x + lx * c + lz * s;
-    out.pos[o + 1] = y + ly;
-    out.pos[o + 2] = z - lx * s + lz * c;
-    out.nrm[o] = nx * c + nz * s;
-    out.nrm[o + 1] = m.nrm[i * 3 + 1]!;
-    out.nrm[o + 2] = -nx * s + nz * c;
+    const o = dst.n * 3;
+    dst.pos[o] = x + lx * c + lz * s;
+    dst.pos[o + 1] = y + ly;
+    dst.pos[o + 2] = z - lx * s + lz * c;
+    dst.nrm[o] = nx * c + nz * s;
+    dst.nrm[o + 1] = m.nrm[i * 3 + 1]!;
+    dst.nrm[o + 2] = -nx * s + nz * c;
     let r = m.col[i * 3]!;
     let g = m.col[i * 3 + 1]!;
     let bl = m.col[i * 3 + 2]!;
@@ -121,13 +168,13 @@ export function appendModel(
       g = (g * 0.35 + grey * 0.65) * 0.6;
       bl = (bl * 0.35 + grey * 0.65) * 0.58;
     }
-    out.col[o] = r;
-    out.col[o + 1] = g;
-    out.col[o + 2] = bl;
+    dst.col[o] = r;
+    dst.col[o + 1] = g;
+    dst.col[o + 2] = bl;
     // Season tags (negative) stay; windows go dark in an abandoned or burnt building.
     const e = lit && win![i] ? lit[win![i]! - 1]! : m.emi[i]!;
-    out.emi[out.n] = e > 0 && dark ? 0 : e;
-    if (out.clip) out.clip[out.n] = clipTo ?? 1e6;
-    out.n++;
+    dst.emi[dst.n] = e > 0 && dark ? 0 : e;
+    if (dst.clip) dst.clip[dst.n] = clipTo ?? 1e6;
+    dst.n++;
   }
 }

@@ -1,6 +1,6 @@
 import { Group, Mesh, type Material, type Vector3 } from 'three';
 import type { ModelData } from './assets/builder';
-import { Arrays, appendModel } from './modelMerge';
+import { Arrays, appendModel, drawCastersOnly } from './modelMerge';
 
 /**
  * Buildings merged into chunk meshes, at up to three levels of detail (phase 3). A model with
@@ -161,16 +161,17 @@ export class LodChunks {
   private rebuild(k: number, c: Chunk, level: number): void {
     this.drop(c);
     c.dirty = false;
-    const arr = new Arrays(false);
+    const arr = new Arrays(false, true);
     for (const id of [...c.ids].sort((a, b) => a - b)) {
       const it = this.item(id);
       if (!it) continue;
       const m = versionOf(it.model, level);
       if (m) appendModel(arr, m, it.x, it.y, it.z, it.yaw, it.look, undefined, it.seed);
     }
-    if (!arr.n) return;
+    if (!arr.total) return;
     const mesh = new Mesh(arr.geometry(), this.materials.colour[level]);
     mesh.customDepthMaterial = this.materials.depth[level];
+    drawCastersOnly(mesh);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.name = `${this.name}-${LEVELS[level]}-${k}`;

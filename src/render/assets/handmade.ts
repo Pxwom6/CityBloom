@@ -116,6 +116,9 @@ class Soup {
   nrm: number[] = [];
   /** The highest point drawn. */
   maxY = -Infinity;
+  /** Per triangle: does it cast a shadow worth drawing (M26); `casting` for the next ones. */
+  shade: number[] = [];
+  casting = false;
 
   /** A triangle, its corners counter-clockwise from outside; colour darkened near the ground. */
   tri(
@@ -143,6 +146,7 @@ class Soup {
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     this.nrm.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
     this.maxY = Math.max(this.maxY, ay, by, cy);
+    this.shade.push(this.casting ? 1 : 0);
     for (const y of [ay, by, cy]) {
       // The generator's baked darkening at the foot of walls (panes that light are left clear).
       const ao = emi > 0 || win > 0 ? 1 : 0.78 + 0.22 * Math.min(1, y / 3);
@@ -164,6 +168,15 @@ class Soup {
       this.emi.push(m.emi[i]!);
       this.win.push(0);
     }
+    // A generated piece casts but for its lit panes and what lies on the ground.
+    for (let v = 0; v < m.emi.length; v += 3)
+      this.shade.push(
+        m.shade
+          ? m.shade[v / 3]!
+          : m.emi[v]! <= 0 && Math.max(m.pos[v * 3 + 1]!, m.pos[v * 3 + 4]!, m.pos[v * 3 + 7]!) > 0.3
+            ? 1
+            : 0,
+      );
   }
 
   build(height: number, chances: number[]): ModelData {
@@ -175,6 +188,7 @@ class Soup {
       height,
       win: Uint16Array.from(this.win),
       winChance: Float32Array.from(chances),
+      shade: Uint8Array.from(this.shade),
     };
   }
 }
@@ -305,6 +319,9 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
         win = 0;
         emi = 0;
       }
+      // Its shadow: not a pane's, nothing's on the ground, and close up not the small fittings
+      // (the distant versions leave them out; their shadows are a few pixels).
+      out.casting = u === 0 && !(f & TRI_GROUND) && (level !== TRI_NEAR || (f & TRI_FAR) !== 0);
       if (cut === Infinity) {
         out.tri(v[0]!, v[1]!, v[2]!, v[3]!, v[4]!, v[5]!, v[6]!, v[7]!, v[8]!, col, emi, win);
       } else {
@@ -370,6 +387,7 @@ function clipBelow(v: Float64Array, cut: number, out: Soup, col: Color, emi: num
  * where the model leaves the lot bare (a yard behind a shallow model).
  */
 function base(out: Soup, W: number, D: number, top: Color, sides: boolean): void {
+  out.casting = false;
   const x0 = -W / 2;
   const x1 = W / 2;
   const z0 = -D / 2;

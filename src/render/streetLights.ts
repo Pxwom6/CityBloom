@@ -123,6 +123,11 @@ export class StreetLightRenderer {
     }
   }
 
+  /** Posts cast shadows only close up: from further off they are a pixel wide (M26). */
+  set postShadows(on: boolean) {
+    this.posts.castShadow = on;
+  }
+
   update(night: number): void {
     if (this.version !== this.world.netVersion) {
       this.version = this.world.netVersion;

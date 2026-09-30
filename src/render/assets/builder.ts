@@ -29,6 +29,11 @@ export interface ModelData {
   stacks?: Float32Array;
   /** The hand-made design this was built from (its file name without .glb). */
   hand?: string;
+  /**
+   * Per triangle: 1 if it casts a shadow worth drawing (M26). Without it, every triangle does
+   * but lit panes and what lies flat on the ground.
+   */
+  shade?: Uint8Array;
 }
 
 /** `emi` tags for surfaces that change with the seasons. */
@@ -48,11 +53,15 @@ export class ModelBuilder {
   private n: number[] = [];
   private c: number[] = [];
   private e: number[] = [];
+  /** Per triangle: does it cast a shadow worth drawing (M26); windows and the ground don't. */
+  private s: number[] = [];
+  private casting = true;
   height = 0;
 
   /** Triangle with an explicit normal. */
   tri(a: number[], b: number[], c: number[], nx: number, ny: number, nz: number, col: Color, emi = 0): void {
     if (emi === 0) emi = SEASONAL.get(col) ?? 0;
+    this.s.push(this.casting && emi <= 0 && Math.max(a[1]!, b[1]!, c[1]!) > 0.3 ? 1 : 0);
     for (const v of [a, b, c]) {
       this.p.push(v[0]!, v[1]!, v[2]!);
       this.n.push(nx, ny, nz);
@@ -261,6 +270,9 @@ export class ModelBuilder {
     },
   ): void {
     const out = 0.04;
+    // Panes on the wall's face: its shadow is the wall's.
+    const casting = this.casting;
+    this.casting = false;
     const along = face === 'front' || face === 'back' ? x1 - x0 : z1 - z0;
     const spacing = opts.spacing ?? 3;
     const count = Math.max(1, Math.floor(along / spacing));
@@ -317,6 +329,7 @@ export class ModelBuilder {
         }
       }
     }
+    this.casting = casting;
   }
 
   /** Flat quad on the ground (lot surfaces), slightly raised. */
@@ -331,6 +344,7 @@ export class ModelBuilder {
       col: new Float32Array(this.c),
       emi: new Float32Array(this.e),
       height: this.height,
+      shade: Uint8Array.from(this.s),
     };
   }
 }

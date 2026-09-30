@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  HalfFloatType,
   PCFShadowMap,
   PerspectiveCamera,
   SRGBColorSpace,
@@ -7,6 +8,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import type { ClientWorld } from '../client/world';
 import { CIVIC } from '../data/civic';
@@ -38,6 +40,7 @@ import { StreetLightRenderer } from './streetLights';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
+import { PostPipeline, type PostSettings } from './post';
 import { DisasterRenderer } from './disasters';
 import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
 import type { Season, WeatherKind } from '../data/climate';
@@ -107,6 +110,9 @@ function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
 export const DEFAULT_FOV = 45;
 
 /** Owns the Three.js scene. Reads ClientWorld; never mutates the simulation. */
+/** The tallest roofs above the ground (m): the sky needle's is 130 m. */
+const SHADOW_TOP = 140;
+
 export class GameRenderer {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -497,14 +503,16 @@ export class GameRenderer {
     fogScale: number;
     treeDetail: number;
     crowd: number;
+    post: PostSettings;
   }): void {
+    this.post.settings = { ...g.post };
     const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
     if (this.renderer.getPixelRatio() !== ratio) {
       this.renderer.setPixelRatio(ratio);
       this.resize();
     }
     this.setShadows(g.shadows);
-    const shadow = this.lighting.sun.shadow;
+    const shadow = this.lighting.shadow;
     if (shadow.mapSize.x !== g.shadowMap) {
       shadow.mapSize.set(g.shadowMap, g.shadowMap);
       shadow.map?.dispose();
@@ -577,6 +585,11 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /** The frame after the scene is drawn: ambient occlusion, glow at night, tone mapping (M26). */
+  readonly post = new PostPipeline();
+  /** Photo mode's lens reads the finished frame from here when the post pipeline runs. */
+  private lensInput: WebGLRenderTarget | null = null;
+
   frame(dt: number): void {
     this.time += dt;
     const p = this.photo;
@@ -606,13 +619,21 @@ export class GameRenderer {
       this.camera.position,
     );
     l.update(hour);
+    l.groundBounce(this.weather.look.season, this.weather.look.snow);
     l.applyWeather(this.weather);
-    l.follow(
-      this.camera.position,
-      this.controller.target,
-      this.controller.current.distance * 0.9,
-      this.camera.far,
-    );
+    // Shadows reach a few camera distances into the view, over the ground there (M26).
+    const dist = this.controller.current.distance;
+    const t = this.controller.target;
+    let lo = Infinity;
+    let hi = -Infinity;
+    const span = dist * 1.6 + 100;
+    for (let i = -3; i <= 3; i++)
+      for (let j = -3; j <= 3; j++) {
+        const h = this.world.heightAt(t.x + (i / 3) * span, t.z + (j / 3) * span);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+    l.follow(this.camera.position, this.camera.far, lo - 4, hi + SHADOW_TOP, Math.max(500, dist * 3.2));
     l.fog.near = Math.max(900, this.controller.current.distance * 1.1) * this.fogScale;
     l.fog.far = Math.max(7500, this.controller.current.distance * 3.5) * this.fogScale;
     // Fog, rain and snow close the view in; heat hazes the distance (M22).
@@ -637,6 +658,11 @@ export class GameRenderer {
     this.ports.update(this.world.displayTick);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();
+    // Small things out of both passes from where they'd be specks (M26): piles of bags a metre
+    // high, and the shadows of lamp posts.
+    this.garbage.mesh.visible = dist < 1400;
+    this.garbage.mesh.castShadow = dist < 500;
+    this.streetLights.postShadows = dist < 450;
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     this.traffic.setScale(bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
     const pxPerMetre = bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
@@ -661,7 +687,25 @@ export class GameRenderer {
     this.renderer.info.reset();
     // Photo mode draws through its lens when it has anything to do.
     const lensOn = p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural');
-    if (lensOn) this.lens.render(this.renderer, this.scene, this.camera, p);
+    if (this.post.active) {
+      // Occlusion where things meet, strong close up and gone by the whole-city view; its reach
+      // grows with the view. Glow at night.
+      const d = this.controller.current.distance;
+      const frame = {
+        ao: 1 - Math.min(1, Math.max(0, (d - 380) / 520)),
+        aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
+        glow: l.night,
+      };
+      if (lensOn) {
+        const size = this.renderer.getDrawingBufferSize(this.tmpSize);
+        if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
+          this.lensInput?.dispose();
+          this.lensInput = new WebGLRenderTarget(size.x, size.y, { type: HalfFloatType, depthBuffer: false });
+        }
+        this.post.render(this.renderer, this.scene, this.camera, frame, this.lensInput);
+        this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p);
+      } else this.post.render(this.renderer, this.scene, this.camera, frame);
+    } else if (lensOn) this.lens.render(this.renderer, this.scene, this.camera, p);
     else this.renderer.render(this.scene, this.camera);
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };

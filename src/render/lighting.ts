@@ -2,7 +2,6 @@ import {
   AmbientLight,
   BackSide,
   Color,
-  DirectionalLight,
   Fog,
   HemisphereLight,
   Mesh,
@@ -11,7 +10,10 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three';
+import { SunLight } from 'three/addons/lights/SunLight.js';
 import { smoothstep } from '../sim/terrain/noise';
+import { CitySunShadow } from './sunShadow';
+import './lightChunks';
 
 interface Key {
   h: number;
@@ -24,40 +26,68 @@ interface Key {
   hemiI: number;
 }
 
-/** Day/night keyframes by hour; everything in between is interpolated. */
+/**
+ * Day/night keyframes by hour; everything in between is interpolated. Phase 3 (M26) adds the
+ * blue hour before sunrise and after sunset (deep blue sky, violet horizon, a cool fill) and the
+ * golden hour after sunrise and before sunset (a low warm sun, amber horizon, warm fill), and
+ * gives the night a clearer blue.
+ */
 const KEYS: Key[] = [
   {
     h: 0,
-    zenith: '#060b1f',
-    horizon: '#18233f',
-    sun: '#7f93c9',
-    sunI: 0.22,
-    hemiSky: '#2f3d6e',
-    hemiGround: '#12151d',
-    hemiI: 0.34,
+    zenith: '#07102b',
+    horizon: '#1c2a52',
+    sun: '#9db2ea',
+    sunI: 0.3,
+    hemiSky: '#3a4c8a',
+    hemiGround: '#1a1f33',
+    hemiI: 0.42,
   },
   {
-    h: 4.8,
-    zenith: '#0b1330',
-    horizon: '#2a3050',
-    sun: '#7f93c9',
-    sunI: 0.2,
-    hemiSky: '#324070',
-    hemiGround: '#13161e',
-    hemiI: 0.36,
+    h: 4.6,
+    zenith: '#0b1535',
+    horizon: '#26325e',
+    sun: '#9db2ea',
+    sunI: 0.28,
+    hemiSky: '#3c4e8c',
+    hemiGround: '#1b2034',
+    hemiI: 0.44,
   },
+  // Blue hour.
+  {
+    h: 5.3,
+    zenith: '#223a7a',
+    horizon: '#8a7fb8',
+    sun: '#b8a8d8',
+    sunI: 0.45,
+    hemiSky: '#6272b0',
+    hemiGround: '#2c2a40',
+    hemiI: 0.6,
+  },
+  // Sunrise.
   {
     h: 6.0,
-    zenith: '#3b5a95',
-    horizon: '#f0a070',
-    sun: '#ffb27a',
-    sunI: 1.1,
-    hemiSky: '#8fa6d0',
-    hemiGround: '#5a4a3a',
-    hemiI: 0.8,
+    zenith: '#3d62a8',
+    horizon: '#f5a37e',
+    sun: '#ffb07a',
+    sunI: 1.15,
+    hemiSky: '#9aa6d4',
+    hemiGround: '#5c4a3c',
+    hemiI: 0.82,
+  },
+  // Golden hour.
+  {
+    h: 6.9,
+    zenith: '#4a82cc',
+    horizon: '#f6cf9c',
+    sun: '#ffd49a',
+    sunI: 1.9,
+    hemiSky: '#bcd0ee',
+    hemiGround: '#7e6c50',
+    hemiI: 0.96,
   },
   {
-    h: 8.0,
+    h: 8.2,
     zenith: '#4f94dd',
     horizon: '#cfe4f2',
     sun: '#fff0d6',
@@ -77,7 +107,7 @@ const KEYS: Key[] = [
     hemiI: 1.1,
   },
   {
-    h: 16.5,
+    h: 16.3,
     zenith: '#4a8fd6',
     horizon: '#dbe8ef',
     sun: '#fff1d8',
@@ -86,54 +116,84 @@ const KEYS: Key[] = [
     hemiGround: '#8a7a5a',
     hemiI: 1.05,
   },
+  // Golden hour.
   {
-    h: 18.4,
-    zenith: '#4d6aa6',
-    horizon: '#f5b37a',
-    sun: '#ffb070',
-    sunI: 1.6,
-    hemiSky: '#b0a8c8',
-    hemiGround: '#6a5040',
-    hemiI: 0.85,
+    h: 17.6,
+    zenith: '#4c86cc',
+    horizon: '#f3d8a8',
+    sun: '#ffd08c',
+    sunI: 2.2,
+    hemiSky: '#c6d2ea',
+    hemiGround: '#86704c',
+    hemiI: 1.0,
   },
   {
-    h: 19.6,
-    zenith: '#26335f',
-    horizon: '#c9788a',
-    sun: '#ff9a70',
-    sunI: 0.55,
-    hemiSky: '#5a5a88',
-    hemiGround: '#2a2230',
-    hemiI: 0.6,
+    h: 18.5,
+    zenith: '#5074b4',
+    horizon: '#f6b27a',
+    sun: '#ffac66',
+    sunI: 1.65,
+    hemiSky: '#b8aed0',
+    hemiGround: '#6e5440',
+    hemiI: 0.88,
+  },
+  // Sunset.
+  {
+    h: 19.2,
+    zenith: '#3f5896',
+    horizon: '#ee8f86',
+    sun: '#ff8c62',
+    sunI: 0.85,
+    hemiSky: '#8a84b8',
+    hemiGround: '#46363c',
+    hemiI: 0.72,
+  },
+  // Blue hour.
+  {
+    h: 19.9,
+    zenith: '#23367a',
+    horizon: '#7e74b0',
+    sun: '#aab0e0',
+    sunI: 0.42,
+    hemiSky: '#5a68aa',
+    hemiGround: '#2a2a42',
+    hemiI: 0.58,
   },
   {
     h: 21.0,
-    zenith: '#0a1128',
-    horizon: '#1e2a4a',
-    sun: '#8093c7',
-    sunI: 0.22,
-    hemiSky: '#2f3d6e',
-    hemiGround: '#12151d',
-    hemiI: 0.34,
+    zenith: '#0b1432',
+    horizon: '#233058',
+    sun: '#9db2ea',
+    sunI: 0.3,
+    hemiSky: '#3a4c8a',
+    hemiGround: '#1a1f33',
+    hemiI: 0.42,
   },
   {
     h: 24,
-    zenith: '#060b1f',
-    horizon: '#18233f',
-    sun: '#7f93c9',
-    sunI: 0.22,
-    hemiSky: '#2f3d6e',
-    hemiGround: '#12151d',
-    hemiI: 0.34,
+    zenith: '#07102b',
+    horizon: '#1c2a52',
+    sun: '#9db2ea',
+    sunI: 0.3,
+    hemiSky: '#3a4c8a',
+    hemiGround: '#1a1f33',
+    hemiI: 0.42,
   },
 ];
 
+const MOON = new Vector3(-0.35, 0.85, 0.4).normalize();
+/** What the ground bounces up by season (spring, summer, autumn, winter) and under snow. */
+const GROUNDS = [new Color('#8a9a5a'), new Color('#86955a'), new Color('#a08a58'), new Color('#8c8a72')];
+const SNOW_GROUND = new Color('#c8d0dc');
+const REF_GROUND = new Color('#8c7d5c');
 const SUNRISE = 6.0;
 const SUNSET = 19.2;
 
 /** Sky dome, sun/moon, hemisphere light and fog, all driven by the time of day. */
 export class Lighting {
-  readonly sun = new DirectionalLight('#ffffff', 2.5);
+  /** The sun (or moon): its shadows in two cascades fitted to the ground in view (M26). */
+  readonly sun = new SunLight('#ffffff', 2.5);
+  readonly shadow = new CitySunShadow();
   readonly hemi = new HemisphereLight('#cfe6ff', '#8a7a5a', 1);
   readonly ambient = new AmbientLight('#ffffff', 0.12);
   readonly sky: Mesh;
@@ -151,13 +211,13 @@ export class Lighting {
   private cB = new Color();
 
   constructor(scene: Scene) {
+    this.sun.shadow = this.shadow;
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.6;
-    this.sun.shadow.camera.near = 10;
-    this.sun.shadow.camera.far = 4000;
-    scene.add(this.sun, this.sun.target, this.hemi, this.ambient);
+    this.shadow.mapSize.set(2048, 2048);
+    this.shadow.bias = -0.0003;
+    this.shadow.normalBias = 0.4;
+    this.shadow.camera.near = 10;
+    scene.add(this.sun, this.hemi, this.ambient);
     this.skyMat = new ShaderMaterial({
       side: BackSide,
       depthWrite: false,
@@ -168,6 +228,7 @@ export class Lighting {
         uSunDir: { value: new Vector3() },
         uSunColor: { value: new Color() },
         uNight: { value: 0 },
+        uLow: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
@@ -182,6 +243,7 @@ export class Lighting {
         uniform vec3 uSunDir;
         uniform vec3 uSunColor;
         uniform float uNight;
+        uniform float uLow;
         varying vec3 vDir;
         float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
         void main() {
@@ -191,6 +253,10 @@ export class Lighting {
           col = mix(col, uHorizon * 0.92, smoothstep(0.0, -0.25, d.y));
           float s = max(dot(d, normalize(uSunDir)), 0.0);
           col += uSunColor * (pow(s, 900.0) * 3.0 + pow(s, 12.0) * 0.25) * (1.0 - uNight * 0.7);
+          // A low sun lights the sky round it along the horizon (golden and blue hours).
+          vec3 sd = normalize(vec3(uSunDir.x, 0.0, uSunDir.z));
+          float side = max(dot(normalize(vec3(d.x, 0.0, d.z)), sd), 0.0);
+          col += uSunColor * uLow * pow(side, 3.0) * pow(1.0 - up, 5.0) * 0.35;
           vec3 cell = floor(d * 300.0);
           float star = step(0.9975, hash(cell)) * uNight * smoothstep(0.05, 0.3, d.y);
           col += vec3(star);
@@ -223,16 +289,17 @@ export class Lighting {
     this.sun.intensity = a.sunI + (b.sunI - a.sunI) * t;
     this.sun.color.copy(this.sunColor);
 
-    const day = hour >= SUNRISE - 0.3 && hour <= SUNSET + 0.3;
-    if (day) {
-      const u = Math.min(1, Math.max(0, (hour - SUNRISE + 0.3) / (SUNSET - SUNRISE + 0.6)));
-      const az = Math.PI * u; // east → south → west
-      const elev = Math.max(0.06, Math.sin(Math.PI * u)) * 1.0;
-      this.sunDir.set(Math.cos(az), elev * 1.25, Math.sin(az) * 0.55 + 0.25).normalize();
-    } else {
-      // Moonlight from high in the south-west.
-      this.sunDir.set(-0.35, 0.85, 0.4).normalize();
-    }
+    // The sun from east to south to west; the moon high in the south-west. Through the blue
+    // hours the light turns from one to the other, so shadows swing round rather than jump.
+    const along = Math.min(1, Math.max(0, (hour - SUNRISE + 0.3) / (SUNSET - SUNRISE + 0.6)));
+    const az = Math.PI * along;
+    const elev = Math.max(0.06, Math.sin(Math.PI * along));
+    this.sunDir.set(Math.cos(az), elev * 1.25, Math.sin(az) * 0.55 + 0.25).normalize();
+    const moon =
+      hour < 12
+        ? 1 - smoothstep(SUNRISE - 1.1, SUNRISE - 0.2, hour)
+        : smoothstep(SUNSET + 0.2, SUNSET + 1.1, hour);
+    if (moon > 0) this.sunDir.lerp(MOON, moon).normalize();
     this.night =
       1 - smoothstep(SUNRISE - 0.4, SUNRISE + 1.2, hour) + smoothstep(SUNSET - 1.0, SUNSET + 0.8, hour);
     this.night = Math.min(1, Math.max(0, this.night));
@@ -244,6 +311,9 @@ export class Lighting {
     u.uSunDir!.value.copy(this.sunDir);
     u.uSunColor!.value.copy(this.sunColor);
     u.uNight!.value = this.night;
+    // How low the sun is: the glow round it on the horizon, from the blue hour to the golden.
+    const low = (h: number) => smoothstep(0, 1, 1 - Math.abs(hour - h) / 1.4);
+    u.uLow!.value = Math.max(low(6.2), low(18.9));
   }
 
   /**
@@ -278,29 +348,31 @@ export class Lighting {
     u.uSunColor!.value.copy(this.sunColor).multiplyScalar(1 - 0.92 * oc);
   }
 
-  /** Keep the sky centred on the camera and the shadow camera around the view target. */
-  follow(cameraPos: Vector3, target: Vector3, viewSize: number, far: number): void {
+  /**
+   * The ground's colour in the light bounced up from it (M26): green in spring and summer, gold
+   * in autumn, pale under snow. Tints the hemisphere light's ground side, after `update`.
+   */
+  groundBounce(season: readonly number[], snow: number): void {
+    const c = this.cA.setRGB(0, 0, 0);
+    GROUNDS.forEach((g, i) => c.add(this.cB.copy(g).multiplyScalar(season[i] ?? 0)));
+    c.lerp(SNOW_GROUND, Math.min(1, Math.max(0, snow)));
+    // Relative to the brown the keyframes were drawn with.
+    this.hemi.groundColor.multiply(
+      c.multiply(this.cB.setRGB(1 / REF_GROUND.r, 1 / REF_GROUND.g, 1 / REF_GROUND.b)),
+    );
+  }
+
+  /**
+   * Keep the sky centred on the camera, and fit the sun's shadows to the ground in view: `yLo`
+   * and `yHi` the lowest ground and highest roof there, `reach` the view depth shadows end at.
+   */
+  follow(cameraPos: Vector3, far: number, yLo: number, yHi: number, reach: number): void {
     this.sky.position.copy(cameraPos);
     this.sky.scale.setScalar(far * 0.9);
-    const size = Math.min(1600, Math.max(140, viewSize));
-    const cam = this.sun.shadow.camera;
-    if (cam.right !== size) {
-      cam.left = -size;
-      cam.right = size;
-      cam.top = size;
-      cam.bottom = -size;
-      cam.updateProjectionMatrix();
-    }
-    // Snap the shadow camera to texels to avoid shimmering while panning.
-    const texel = (2 * size) / this.sun.shadow.mapSize.x;
-    const tx = Math.round(target.x / texel) * texel;
-    const tz = Math.round(target.z / texel) * texel;
-    this.sun.target.position.set(tx, target.y, tz);
-    this.sun.position.set(
-      tx + this.sunDir.x * 2000,
-      target.y + this.sunDir.y * 2000,
-      tz + this.sunDir.z * 2000,
-    );
-    this.sun.target.updateMatrixWorld();
+    this.sun.position.copy(this.sunDir);
+    this.sun.updateMatrixWorld();
+    this.shadow.fit.yLo = yLo;
+    this.shadow.fit.yHi = yHi;
+    this.shadow.fit.far = reach;
   }
 }

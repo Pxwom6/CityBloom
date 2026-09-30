@@ -208,6 +208,17 @@ export interface TestApi {
   /** Visible meshes per top-level scene object, and how many of them cast shadows (dev). */
   renderBreakdown(): { name: string; meshes: number; shadow: number }[];
   /**
+   * Triangles and draw calls each top-level scene object costs in the colour pass and in the
+   * shadow pass of one frame drawn now (phase 3; dev and benchmarks).
+   */
+  passBreakdown(): {
+    name: string;
+    colour: number;
+    shadow: number;
+    colourCalls: number;
+    shadowCalls: number;
+  }[];
+  /**
    * How many sampled pixels of the current view a top-level scene object changes when it's shown.
    * Shadows are frozen for both renders, so this counts only the object's own drawing.
    */
@@ -546,6 +557,51 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    passBreakdown: () => {
+      const r = game.renderer;
+      const three = r.renderer;
+      const scene = r.scene;
+      const kids = scene.children;
+      const was = kids.map((k) => k.visible);
+      const auto = three.shadowMap.autoUpdate;
+      const draw = (shadow: boolean) => {
+        three.shadowMap.autoUpdate = false;
+        three.shadowMap.needsUpdate = shadow;
+        three.info.reset();
+        three.render(scene, r.camera);
+        return { tris: three.info.render.triangles, calls: three.info.render.calls };
+      };
+      const out: {
+        name: string;
+        colour: number;
+        shadow: number;
+        colourCalls: number;
+        shadowCalls: number;
+      }[] = [];
+      try {
+        kids.forEach((k, i) => {
+          if (!was[i] || (k as { isLight?: boolean }).isLight || k.name === 'sky') return;
+          // Only this object (and the lights and sky, which every shader needs).
+          kids.forEach((o, j) => {
+            o.visible = j === i || (was[j]! && ((o as { isLight?: boolean }).isLight || o.name === 'sky'));
+          });
+          const colour = draw(false);
+          const both = draw(true);
+          out.push({
+            name: k.name || `${k.type}#${i}`,
+            colour: colour.tris,
+            shadow: both.tris - colour.tris,
+            colourCalls: colour.calls,
+            shadowCalls: both.calls - colour.calls,
+          });
+        });
+      } finally {
+        kids.forEach((k, i) => (k.visible = was[i]!));
+        three.shadowMap.autoUpdate = auto;
+        three.shadowMap.needsUpdate = true;
+      }
+      return out.filter((o) => o.colour || o.shadow);
+    },
     drawnPixels: (name) => {
       const r = game.renderer;
       const group = r.scene.children.find((o) => o.name === name);

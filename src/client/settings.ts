@@ -78,11 +78,18 @@ export const DRAW_DISTANCES: DrawDistance[] = ['near', 'medium', 'far'];
 export const AUTOSAVE_CHOICES = [0, 2, 5, 10];
 export const UI_SCALE = { min: 0.8, max: 1.4 };
 
-/** Renderer knobs for each quality level. */
-export const QUALITY_PARAMS: Record<Quality, { pixelRatio: number; shadowMap: number; crowd: number }> = {
-  low: { pixelRatio: 0.75, shadowMap: 1024, crowd: 0.4 },
-  medium: { pixelRatio: 1, shadowMap: 1536, crowd: 0.7 },
-  high: { pixelRatio: 2, shadowMap: 2048, crowd: 1 },
+/**
+ * Renderer knobs for each quality level. `shadowMap` is each of the sun's two shadow cascades
+ * (M26); `ao` the ambient occlusion's taps a pixel (0: off) and whether it is smoothed; `glow`
+ * the soft glow round lights at night.
+ */
+export const QUALITY_PARAMS: Record<
+  Quality,
+  { pixelRatio: number; shadowMap: number; crowd: number; ao: number; aoBlur: boolean; glow: boolean }
+> = {
+  low: { pixelRatio: 0.75, shadowMap: 1024, crowd: 0.4, ao: 0, aoBlur: false, glow: false },
+  medium: { pixelRatio: 1, shadowMap: 1024, crowd: 0.7, ao: 6, aoBlur: false, glow: true },
+  high: { pixelRatio: 2, shadowMap: 2048, crowd: 1, ao: 12, aoBlur: true, glow: true },
 };
 
 /** Fog distance scale and tree detail distance (metres) for each draw distance. */

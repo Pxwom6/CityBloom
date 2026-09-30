@@ -6,6 +6,7 @@ import {
   PlaneGeometry,
   Scene,
   ShaderMaterial,
+  type Texture,
   Vector2,
   Vector3,
   WebGLRenderTarget,
@@ -195,7 +196,8 @@ export class PhotoLens {
     const w = this.size.x;
     const h = this.size.y;
     if (!this.target || this.target.width !== w || this.target.height !== h) {
-      this.dispose();
+      this.target?.depthTexture?.dispose();
+      this.target?.dispose();
       // Multisampling for smooth edges, less of it on big frames (a 2× capture is smooth anyway).
       const px = w * h;
       this.target = new WebGLRenderTarget(w, h, {
@@ -203,14 +205,30 @@ export class PhotoLens {
         samples: px > 10e6 ? 0 : px > 4.5e6 ? 2 : 4,
         depthTexture: new DepthTexture(w, h),
       });
-      this.mid = new WebGLRenderTarget(w, h, { type: HalfFloatType, depthBuffer: false });
     }
     renderer.setRenderTarget(this.target);
     renderer.render(scene, camera);
+    this.renderFrom(renderer, this.target.texture, this.target.depthTexture!, camera, look);
+  }
 
+  /** The lens over a scene already drawn: its HDR colour and its depth (M26's frame). */
+  renderFrom(
+    renderer: WebGLRenderer,
+    color: Texture,
+    depth: Texture,
+    camera: PerspectiveCamera,
+    look: PhotoLook,
+  ): void {
+    renderer.getDrawingBufferSize(this.size);
+    const w = this.size.x;
+    const h = this.size.y;
+    if (!this.mid || this.mid.width !== w || this.mid.height !== h) {
+      this.mid?.dispose();
+      this.mid = new WebGLRenderTarget(w, h, { type: HalfFloatType, depthBuffer: false });
+    }
     const u = this.gather.uniforms;
-    u.tColor!.value = this.target.texture;
-    u.tDepth!.value = this.target.depthTexture;
+    u.tColor!.value = color;
+    u.tDepth!.value = depth;
     (u.uTexel!.value as Vector2).set(1 / w, 1 / h);
     u.uNear!.value = camera.near;
     u.uFar!.value = camera.far;

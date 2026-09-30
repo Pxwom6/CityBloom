@@ -28,7 +28,7 @@ merges it into `main`, which deploys the live site at https://pxwom6.github.io/C
 - [x] M22 Seasons and weather
 - [x] M23 Region, airport and seaport
 - [x] M24 Terrain and map editor
-- [ ] M25 Baseline and model pipeline
+- [x] M25 Baseline and model pipeline
 - [ ] M26 Light and sky
 - [ ] M27 Ground, lots and streets
 - [ ] M28 Buildings and variety
@@ -96,39 +96,23 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-M25 (baseline and model pipeline): built, and being closed out. All 136 models pass
-`models:check`; unit tests pass (371 before the last converter fixes, the 37 model tests after).
-A review workflow (every model looked at in the game, plus a code review by area) is part-way
-through; its results are in the session's workflow journal (`wf_e6d94600-b44`).
+M26 (light and sky), being built on a local branch `m26-wip` (a worktree, not pushed) and moved
+onto `phase-3` step by step: shadows in two cascades fitted to the ground in view (three.js's
+`SunLight`, `src/render/sunShadow.ts`), shadow passes that draw only what casts (no panes, no
+fittings, nothing flat), ambient occlusion and a glow at night after the scene (`src/render/post.ts`,
+with photo mode's lens reading its output), golden and blue hours, light bounced off the ground,
+gentle haze. Left: tuning against the style reference, tone mapping, presets, tests, before and
+after screenshots, frame times.
 
-Done from the reviews: double-sided sheets, project stages seen from inside, cranes and cabins
-clear of the building, only real boxes hide faces, distant versions keep undersides, glazed rooms,
-frame faces and crown posts, damaged files fail the check, quarter turns caught, party walls back
-on the footprint edge.
-
-Still to do from the code review of `handmade.ts` (found, not yet fixed):
-1. Annexes can land on entrance roads and in front of doors (landfill, fire station, recycling):
-   give the bake a keep-clear mask (entrance roads, aprons, forecourts, a strip in front of each
-   door and garage door) and have `clearPlace` try smaller sizes at the back and sides before
-   any spot along the front.
-2. Garden trees of a hand-made civic building stay after it is demolished or moved
-   (`renderer.ts`: `world.onCivics` ignores `removed`); rebuild every tree region a lot or site
-   touches, for zoned lots too (a lot across a 512 m region line).
-3. A shrunk annex's ground slab is within a millimetre of the site's surface: leave an inset's
-   ground triangles out (the site has its own ground).
-4. Different looks of one design can paint identically (hi-tech industry: three wall colours):
-   pick the wall colour and mirroring by the look's rank among the hand-made looks.
-
-Then: the rest of the review's results (homes, industry, night and seasons, distant versions of
-civic and shop models, code review of levels of detail, renderer changes, build), the full e2e
-run, final frame times (all presets, against `dist-base`), bench and balance numbers
-(`bench-results/balance-m25.log`: careful 71,565 / 72 % at year 20, every election won),
-SPEC_REVIEW, the regenerated `docs/screenshots`, and the `M25 complete:` commit.
+The M25 review workflow (`wf_e6d94600-b44`) is still finishing: the visual review of homes, night
+and seasons, and the distant versions of civic buildings, shops and industry, and the code review
+of levels of detail, the renderer changes and the build. Act on what it finds.
 
 ## Next tasks
-1. M25: fixes from the reviews; full e2e; final numbers; `M25 complete`.
-2. M26 Light and sky: ambient occlusion, split shadow maps with distant versions casting, sky and
-   sun through the day, haze, glow at night.
+1. M26: tune the new light (AO strength and reach, glow threshold, sky colours, bounce) against
+   the style reference at dawn, noon, golden hour and night, whole-city and street zoom, summer
+   and winter; try Neutral tone mapping (brick goes near-black in shade under ACES); frame times.
+2. M27 Ground, lots and streets.
 3. M28 note: most level-2 and -3 buildings stand on lots smaller than their type's own (upgrades
    rarely widen), where the type's model can't fit, so they stay generated: 17 % of the bench city's
    buildings wear hand-made models. Decide there whether a smaller sibling's model may stand in.
@@ -232,6 +216,24 @@ call next needs it, now usually the upload of a rebuilt building chunk (single w
 show up as the p99 and max in the logs; with the cap on the queue can't build up). Fewer triangles
 (distant versions, a cheaper shadow pass) and smaller chunk uploads are what bring it down.
 Sim ticks while saving the city: avg 0.59 ms at 110k, worst 28 ms (month 1, cold start).
+
+**M25 complete** (the hand-made models, levels of detail and the fixes above), run back to back
+with the phase-start build (`--dist dist-base`); new / start:
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 9.2 / 10.6 | 6.6 / 7.1 | 4.3 / 4.6 | 10.7 / 10.4 | 7.1 / 7.0 | 4.6 / 4.5 | **9.7 / 23.0** |
+| Medium | 5.7 / 6.6 | 4.0 / 4.3 | 2.4 / 2.4 | 6.0 / 6.4 | 4.1 / 4.2 | 2.5 / 2.4 | 6.5 / 15.0 |
+| Low | 3.0 / 3.7 | 2.2 / 2.3 | 1.6 / 1.6 | 3.0 / 3.3 | 2.2 / 2.3 | 1.6 / 1.6 | 3.1 / 9.2 |
+
+Average frame times in ms (95th percentiles in `bench-results/frames-m25-final*.log`). The heavy
+view at High is 9.7 ms, inside the 12 ms budget; Medium and Low are faster than at the start in
+the heavy view and within run-to-run noise (±15 %) of it everywhere else. The whole-city view draws
+319 calls and 2.70M triangles (start: 289 and 2.69M): the levels of detail add chunk meshes.
+`bench.ts 6 --big`: tick avg 0.24–0.27 ms at 97–110k, worst 15.8 ms (month 1, the cold start),
+populations identical to before (110,174 at month 6). `balance.ts 20`: careful 71,565 / 72 % at
+year 20, every election won, treasury $1.5M; greedy 420 / 16 %, neglectful 354 / 37 %, both losing
+every election (no sim change in phase 3).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

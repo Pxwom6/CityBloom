@@ -145,7 +145,6 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
   const flags: number[] = [];
   const unit: number[] = [];
   const colors: Record<number, [number, number, number]> = {};
-  let hidden = 0;
 
   // What each part is, and whether the far and the skyline versions keep it.
   const info = src.map((p, pi) => {
@@ -244,7 +243,6 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       }
       // Faces on the ground looking down are never seen either.
       if (covered || (ny < -0.99 && cy < 0.02)) {
-        hidden++;
         continue;
       }
       let f = TRI_NEAR;

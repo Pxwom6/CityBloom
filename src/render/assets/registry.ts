@@ -143,12 +143,16 @@ function civicModel(
   const taken: { x: number; z: number; w: number; d: number }[] = [];
   modules.forEach((id, k) => {
     const annex = handmade.annex(id, variant + k);
+    // The clear spot nearest its back corner, just clear of the ground it is set on.
+    const corner = annexPlace(W, D, k);
+    const p = clearPlace(hand, corner, taken);
     if (!annex) {
-      extra.push(buildAnnexModel(W, D, k));
+      // No model for this add-on: the generator's wing, moved to the same clear spot.
+      taken.push({ x: p.x, z: p.z, w: 9 * p.scale, d: 8 * p.scale });
+      const gen = annexPlace(W, D, k % 2);
+      extra.push(moveModel(buildAnnexModel(W, D, k), gen, p));
       return;
     }
-    // The clear spot nearest its back corner, just clear of the ground it is set on.
-    const p = clearPlace(hand, annexPlace(W, D, k), taken);
     taken.push({ x: p.x, z: p.z, w: annex.w * p.scale, d: annex.d * p.scale });
     insets.push({
       model: annex,
@@ -180,6 +184,30 @@ function civicModel(
   siteWorks(works, W, D, stage, hand.h * reveal, (x, z, w, d) => nearestClear(hand, x, z, w, d));
   extra.push(works.build());
   return buildHandModel(hand, { ...o, reveal, bare: stage < n - 1 }, insets, extra);
+}
+
+/**
+ * A generated piece moved from where it was drawn (`from`, at its scale) to another spot, scaled
+ * and perhaps turned half round (an annex's clear spot on a hand-made site).
+ */
+function moveModel(
+  m: ModelData,
+  from: { x: number; z: number; scale: number },
+  to: { x: number; z: number; scale: number; turn?: boolean },
+): ModelData {
+  const r = to.scale / from.scale;
+  const t = to.turn ? -1 : 1;
+  const pos = new Float32Array(m.pos.length);
+  const nrm = new Float32Array(m.nrm.length);
+  for (let i = 0; i < m.pos.length; i += 3) {
+    pos[i] = to.x + (m.pos[i]! - from.x) * r * t;
+    pos[i + 1] = m.pos[i + 1]! * r;
+    pos[i + 2] = to.z + (m.pos[i + 2]! - from.z) * r * t;
+    nrm[i] = m.nrm[i]! * t;
+    nrm[i + 1] = m.nrm[i + 1]!;
+    nrm[i + 2] = m.nrm[i + 2]! * t;
+  }
+  return { ...m, pos, nrm, height: m.height * r };
 }
 
 export const assets = new AssetRegistry();

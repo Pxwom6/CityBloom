@@ -283,7 +283,7 @@ export class EffectsRenderer {
           });
       } else stacks.push({ x: b.x, y: b.y + (this.heights.get(b.id) ?? 8) + 1, z: b.z, size: 1 });
     }
-    const key = stacks.map((st) => `${st.x.toFixed(0)},${st.z.toFixed(0)}`).join(';');
+    const key = stacks.map((st) => `${st.x.toFixed(0)},${st.y.toFixed(0)},${st.z.toFixed(0)}`).join(';');
     if (key === this.chimneyKey) return;
     this.chimneyKey = key;
     const g = this.chimneys.geometry;

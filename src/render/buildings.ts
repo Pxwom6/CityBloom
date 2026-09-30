@@ -222,6 +222,11 @@ export class BuildingRenderer {
    * of the same type and size already wears it (no two alike side by side).
    */
   private looks = new Map<number, { look: number; key: string }>();
+  /** What each building's chunks were last built with (updates that change nothing are skipped). */
+  private drawn = new Map<
+    number,
+    { model: ModelData; state: number; look: boolean | number; x: number; y: number; z: number; yaw: number }
+  >();
   /** Scale on the hand-over distances (the graphics quality: coarser pixels hand over sooner). */
   lodScale = 1;
 
@@ -281,10 +286,27 @@ export class BuildingRenderer {
     if (!b) {
       this.heights.delete(id);
       this.looks.delete(id);
+      this.drawn.delete(id);
       this.chunks.set(id, null);
       return;
     }
-    this.heights.set(id, this.model(b).height);
+    const m = this.model(b);
+    this.heights.set(id, m.height);
+    // Most updates change only what a building needs (power, water, garbage): nothing drawn.
+    const look = b.fire > 0 ? Math.min(1, b.fire * 1.2) : b.state === STATE_ABANDONED;
+    const drawn = this.drawn.get(id);
+    if (
+      drawn &&
+      drawn.model === m &&
+      drawn.state === b.state &&
+      drawn.look === look &&
+      drawn.x === b.x &&
+      drawn.y === b.y &&
+      drawn.z === b.z &&
+      drawn.yaw === buildingYaw(b)
+    )
+      return;
+    this.drawn.set(id, { model: m, state: b.state, look, x: b.x, y: b.y, z: b.z, yaw: buildingYaw(b) });
     this.chunks.set(id, b.state === STATE_CONSTRUCTION ? null : b);
   }
 

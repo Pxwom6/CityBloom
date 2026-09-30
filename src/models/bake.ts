@@ -11,6 +11,7 @@ import {
   TRI_PARTY_NEG,
   TRI_PARTY_POS,
   TRI_SKY,
+  TRI_TWO_SIDED,
   UNIT_BAND,
   UNIT_GLOW,
   UNIT_SHOP,
@@ -307,6 +308,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       }
       if (!f) continue;
       if (ground) f |= TRI_GROUND;
+      if (p !== original.get(p)) f |= TRI_TWO_SIDED;
       if (party) {
         // What the neighbour in a row hides: whatever lies within 20 cm of the party line, but
         // not a wall set back from it and looking out (the gap between two would show).

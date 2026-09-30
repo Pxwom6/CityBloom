@@ -308,6 +308,9 @@ describe('the asset registry with hand-made models', () => {
     expect(top(0.5)).toBeLessThan(9);
     expect(top(1)).toBeGreaterThan(12.5);
     expect(assets.civic('landfill', 0, 1).hand).toBe('landfill');
+    // Its height (what picking and icons go by) is the heap's, as full as it is.
+    expect(assets.civic('landfill', 0, 0).height).toBeLessThan(8);
+    expect(assets.civic('landfill', 0, 1).height).toBeGreaterThan(12.5);
   });
 
   it('sends smoke from the tops of the smoke stacks', () => {

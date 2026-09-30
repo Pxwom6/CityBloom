@@ -359,6 +359,9 @@ export class GameRenderer {
       for (const id of changed) {
         const b = world.buildings.get(id);
         if (!b) continue;
+        // Moved (an upgrade onto a smaller lot): where it stood, too.
+        const was = lots.get(id);
+        if (was && (was.x !== b.x || was.z !== b.z)) touch(was);
         const now = lotOf(b);
         lots.set(id, now);
         touch(now);

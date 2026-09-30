@@ -7,6 +7,7 @@ import {
   TRI_PARTY_NEG,
   TRI_PARTY_POS,
   TRI_SKY,
+  TRI_TWO_SIDED,
   UNIT_GLOW,
   UNIT_SHOP,
   type BakedModel,
@@ -113,6 +114,8 @@ class Soup {
   emi: number[] = [];
   win: number[] = [];
   nrm: number[] = [];
+  /** The highest point drawn. */
+  maxY = -Infinity;
 
   /** A triangle, its corners counter-clockwise from outside; colour darkened near the ground. */
   tri(
@@ -139,6 +142,7 @@ class Soup {
     nz /= l;
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     this.nrm.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    this.maxY = Math.max(this.maxY, ay, by, cy);
     for (const y of [ay, by, cy]) {
       // The generator's baked darkening at the foot of walls (panes that light are left clear).
       const ao = emi > 0 || win > 0 ? 1 : 0.78 + 0.22 * Math.min(1, y / 3);
@@ -150,6 +154,7 @@ class Soup {
 
   /** Add a generated model (an annex, a building site's cranes) as it is. */
   add(m: ModelData): void {
+    for (let i = 1; i < m.pos.length; i += 3) this.maxY = Math.max(this.maxY, m.pos[i]!);
     for (let i = 0; i < m.pos.length; i++) {
       this.pos.push(m.pos[i]!);
       this.nrm.push(m.nrm[i]!);
@@ -306,7 +311,7 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
         clipBelow(v, cut, out, col, emi, win);
         // A building cut off at the height it has reached is open at the top: its walls are
         // seen from inside too, or the far ones would vanish (ground surfaces aside).
-        if (!(f & TRI_GROUND)) {
+        if (!(f & (TRI_GROUND | TRI_TWO_SIDED))) {
           for (let k = 0; k < 3; k++) {
             const s = v[3 + k]!;
             v[3 + k] = v[6 + k]!;
@@ -590,19 +595,19 @@ export function buildHandModel(
     for (const c of a.copies) c.unit0 = chances.length;
     chance(a.model);
   }
-  let top = model.h * (o.reveal ?? 1);
-  for (const e of extra) top = Math.max(top, e.height);
-  const level = (flag: number, sides: boolean): ModelData => {
+  const level = (flag: number, sides: boolean, height?: number): ModelData => {
     const s = new Soup();
     if (o.base) base(s, o.W, o.D, o.base, sides);
     emit(model, copies, flag, o, s);
     for (const a of inset) emit(a.model, a.copies, flag, { ...o, fill: undefined, reveal: undefined }, s);
     for (const e of extra) s.add(e);
-    return s.build(top, chances);
+    // As tall as what is drawn: a landfill's mound as full as it is, a project as far as it has
+    // risen, with its cranes (picking and icons go by it).
+    return s.build(height ?? Math.max(0, s.maxY), chances);
   };
   const near = level(TRI_NEAR, true);
-  near.far = level(TRI_FAR, true);
-  near.sky = level(TRI_SKY, false);
+  near.far = level(TRI_FAR, true, near.height);
+  near.sky = level(TRI_SKY, false, near.height);
   near.hand = model.id;
   // Markers, carried to where each copy stands.
   const place = (list: number[], bare: boolean): Float32Array => {

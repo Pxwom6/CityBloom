@@ -543,6 +543,9 @@ describe('conversion', () => {
     const tris = models.reduce((s, m) => s + m.triRole.length, 0);
     expect(bytes.length / tris).toBeLessThan(24);
     expect(() => decodeModels(new Uint8Array(16))).toThrow();
+    // A file cut short is refused, not read as empty models.
+    for (const cut of [bytes.length - 1, bytes.length - 5000, Math.floor(bytes.length * 0.6)])
+      expect(() => decodeModels(bytes.subarray(0, cut))).toThrow();
   });
 });
 

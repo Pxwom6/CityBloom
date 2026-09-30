@@ -82,6 +82,7 @@ export class LodChunks {
   rebuilt = 0;
   /** Show one level everywhere (tests: compare a level with the next). Null: by distance. */
   force: number | null = null;
+  private turn = 0;
 
   constructor(
     private name: string,
@@ -185,7 +186,11 @@ export class LodChunks {
   update(eye: Vector3, range: LodRange, all = false): void {
     let budget = all ? Infinity : this.budget;
     const f = this.force;
-    for (let l = 0; l < 4; l++) {
+    // The levels take turns at the rebuild budget, so a stream of changes can't keep the far
+    // and skyline meshes waiting behind the near ones.
+    const first = this.turn++ % 4;
+    for (let step = 0; step < 4; step++) {
+      const l = (first + step) % 4;
       for (const [k, c] of this.chunks[l]!) {
         if (!c.ids.size) {
           this.drop(c);
@@ -218,7 +223,7 @@ export class LodChunks {
             budget--;
             this.rebuild(k, c, l);
           } else if (!need && !soon) this.drop(c);
-        } else if (l === NEAR && c.mesh && dMin > range.nearEnd + EVICT) {
+        } else if (f === null && l === NEAR && c.mesh && dMin > range.nearEnd + EVICT) {
           this.drop(c);
           c.dirty = true;
         }

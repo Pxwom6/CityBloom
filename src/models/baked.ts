@@ -10,6 +10,8 @@ export const TRI_PARTY_POS = 4; // hidden when another copy stands against the +
 export const TRI_PARTY_NEG = 8; // … the −x side
 export const TRI_GROUND = 16; // a flat surface on the ground (lawn, paving, water)
 export const TRI_SKY = 32; // also drawn in the skyline version (the whole-city view)
+/** A face of a sheet drawn from both sides (the other side is another triangle). */
+export const TRI_TWO_SIDED = 64;
 
 /**
  * What the distant versions keep (m). `part`: a part's second-largest dimension, how big it looks

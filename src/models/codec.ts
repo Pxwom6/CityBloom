@@ -111,9 +111,15 @@ export function decodeModels(bytes: Uint8Array): BakedModel[] {
   };
   if (index.version !== 2) throw new Error(`models file version ${index.version}`);
   const base = bytes.byteOffset + 8 + jsonLen;
-  // Copies, so the arrays are aligned whatever the file's offset in its buffer.
-  const copy = (at: [number, number], bytesPer: number) =>
-    bytes.buffer.slice(base + at[0], base + at[0] + at[1] * bytesPer) as ArrayBuffer;
+  const end = bytes.byteOffset + bytes.byteLength;
+  // Copies, so the arrays are aligned whatever the file's offset in its buffer. A file cut short
+  // (or damaged) is refused whole rather than read as empty models.
+  const copy = (at: [number, number], bytesPer: number) => {
+    const from = base + at[0];
+    const to = from + at[1] * bytesPer;
+    if (!(at[0] >= 0 && at[1] >= 0 && to <= end)) throw new Error('models file is cut short');
+    return bytes.buffer.slice(from, to) as ArrayBuffer;
+  };
   return index.models.map((e) => {
     const q = new Int16Array(copy(e.at.positions, 2));
     const positions = new Float32Array(q.length);

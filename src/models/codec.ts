@@ -40,6 +40,7 @@ export function encodeModels(models: BakedModel[]): Uint8Array {
   const entries: Entry[] = models.map((m) => {
     let max = 1e-6;
     for (const v of m.positions) max = Math.max(max, Math.abs(v));
+    if (!Number.isFinite(max)) throw new Error(`${m.id}: a coordinate that isn't a number`);
     const scale = max / 32767;
     const q = new Int16Array(m.positions.length);
     for (let i = 0; i < q.length; i++) q[i] = Math.round(m.positions[i]! / scale);
@@ -100,6 +101,13 @@ export function decodeModels(bytes: Uint8Array): BakedModel[] {
     const q = new Int16Array(copy(e.at.positions, 2));
     const positions = new Float32Array(q.length);
     for (let i = 0; i < q.length; i++) positions[i] = q[i]! * e.scale;
+    // 16 bits put a wall a fraction of a millimetre off the edge of its footprint: back on it,
+    // so copies standing in a row meet exactly.
+    const edge = [e.meta.w / 2, 0, e.meta.d / 2];
+    for (let i = 0; i < q.length; i++) {
+      const at = edge[i % 3]!;
+      if (at && Math.abs(Math.abs(positions[i]!) - at) < 1e-3) positions[i] = Math.sign(positions[i]!) * at;
+    }
     return {
       ...e.meta,
       positions,

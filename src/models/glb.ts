@@ -67,6 +67,9 @@ const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 
 const SIZES: Record<number, number> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 
 /** Reads a GLB file. Throws GlbError when it isn't one or can't be read. */
+/** No part of a model is further than this from its origin (m). */
+const MAX_COORD = 5000;
+
 export function parseGlb(bytes: Uint8Array): GlbFile {
   if (bytes.byteLength < 20) throw new GlbError('not a GLB file (too short)');
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -212,8 +215,14 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
   const matName = (i: number | undefined) => (i === undefined ? '' : ((materials[i]?.name as string) ?? ''));
   const matColor = (i: number | undefined): [number, number, number] => {
     const pbr = (i === undefined ? undefined : materials[i]?.pbrMetallicRoughness) as Json | undefined;
-    const f = (pbr?.baseColorFactor as number[] | undefined) ?? [1, 1, 1, 1];
-    return [f[0] ?? 1, f[1] ?? 1, f[2] ?? 1];
+    const f = (pbr?.baseColorFactor as unknown[] | undefined) ?? [1, 1, 1, 1];
+    const channel = (v: unknown): number => {
+      if (v === undefined) return 1;
+      if (typeof v !== 'number' || !Number.isFinite(v))
+        throw new GlbError(`material ${matName(i) || i}: a colour that isn't a number`);
+      return Math.min(1, Math.max(0, v));
+    };
+    return [channel(f[0]), channel(f[1]), channel(f[2])];
   };
 
   const parts: GlbPart[] = [];
@@ -274,6 +283,13 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
         a.set(P[ia * 3]!, P[ia * 3 + 1]!, P[ia * 3 + 2]!).applyMatrix4(w);
         b.set(P[ib * 3]!, P[ib * 3 + 1]!, P[ib * 3 + 2]!).applyMatrix4(w);
         c.set(P[ic * 3]!, P[ic * 3 + 1]!, P[ic * 3 + 2]!).applyMatrix4(w);
+        // A model is a building: a coordinate that isn't a number, or is kilometres away, is a
+        // damaged file.
+        for (const v of [a, b, c])
+          if (!(Math.abs(v.x) < MAX_COORD && Math.abs(v.y) < MAX_COORD && Math.abs(v.z) < MAX_COORD))
+            throw new GlbError(
+              `${rawName || `node ${i}`}: a coordinate that isn't a number, or is out of range`,
+            );
         e1.subVectors(b, a);
         e2.subVectors(c, a);
         n.crossVectors(e1, e2);

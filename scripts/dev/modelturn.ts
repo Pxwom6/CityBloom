@@ -39,6 +39,18 @@ console.log(
 );
 console.log(`as delivered, failing on facing: ${wrong.join(' ') || 'none'}`);
 console.log(`turned half round: ${caught} of ${n} caught; not caught: ${missed.join(' ') || 'none'}`);
+// Turned a quarter round: a site that isn't square fails on its footprint; the rest on facing.
+let quarters = 0;
+const quarterMissed: string[] = [];
+for (const f of modelFiles(MODELS_DIR)) {
+  if (f.startsWith('annex')) continue;
+  quarters++;
+  if (checkModel(breakModel(readFileSync(join(MODELS_DIR, f)), 'quarter'), f, budgets).ok)
+    quarterMissed.push(f.replace('.glb', ''));
+}
+console.log(
+  `turned a quarter round: ${quarters - quarterMissed.length} of ${quarters} caught; not caught: ${quarterMissed.join(' ') || 'none'}`,
+);
 // With ids: what each counted for.
 for (const id of process.argv.slice(2)) {
   const e = frontEvidence(parseGlb(readFileSync(join(MODELS_DIR, `${id}.glb`))).parts);

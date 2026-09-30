@@ -394,9 +394,9 @@ function facing(parts: GlbPart[], report: ModelReport): void {
     report.errors.push(
       'the front faces +Z: its entrances, shopfronts and canopies look away from the road (turn the model half round)',
     );
-  else if (road === 0 && back === 0 && side > 0)
+  else if ((road === 0 && back === 0 && side > 0) || (side > Math.max(road, back) * 2.5 && side >= 4))
     report.errors.push(
-      'the front faces along X: every door and shopfront is in a side wall (turn the model a quarter round)',
+      'the front faces along X: its doors and shopfronts are in the side walls (turn the model a quarter round)',
     );
 }
 

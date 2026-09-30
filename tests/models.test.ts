@@ -130,6 +130,7 @@ describe('models:check', () => {
       return r.errors.join(' | ');
     };
     expect(fails('police', 'turn')).toMatch(/front faces \+Z/);
+    expect(fails('police', 'quarter')).toMatch(/front faces along X/);
     expect(fails('police', 'shift')).toMatch(/origin isn't at the centre/);
     expect(fails('police', 'scale')).toMatch(/is 26\.4 × 26\.4 m; its site is 24 × 24 m/);
     expect(fails('police', 'float')).toMatch(/floats 1 m above the ground/);
@@ -153,6 +154,32 @@ describe('models:check', () => {
     const junk = checkModel(new Uint8Array([1, 2, 3]), 'police.glb', budgets);
     expect(junk.ok).toBe(false);
     expect(junk.errors[0]).toMatch(/not a GLB/);
+    // A damaged file: a part thrown to infinity, or a kilometre away.
+    for (const y of [1e30, 'NaN', 20000]) {
+      const far = checkModel(
+        editGlb(good('police'), (g) => {
+          const scene = (g.scenes as { nodes: number[] }[])[0]!;
+          const nodes = g.nodes as unknown[];
+          nodes.push({ children: scene.nodes, matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, y, 0, 1] });
+          scene.nodes = [nodes.length - 1];
+        }),
+        'police.glb',
+        budgets,
+      );
+      expect(far.ok, String(y)).toBe(false);
+      expect(far.errors[0], String(y)).toMatch(/coordinate that isn't a number, or is out of range/);
+    }
+    // A colour that isn't one.
+    const paint = checkModel(
+      editGlb(good('police'), (g) => {
+        const m = (g.materials as { pbrMetallicRoughness?: { baseColorFactor?: unknown } }[])[0]!;
+        m.pbrMetallicRoughness = { baseColorFactor: ['red', 0, 0, 1] };
+      }),
+      'police.glb',
+      budgets,
+    );
+    expect(paint.ok).toBe(false);
+    expect(paint.errors[0]).toMatch(/colour that isn't a number/);
   });
 
   it('catches a wall that hangs in the air, but not one that spans', () => {
@@ -361,6 +388,57 @@ describe('conversion', () => {
     // Walls lose only what never shows from above (faces looking down).
     expect(skyWalls).toBeGreaterThan(walls * 0.7);
     expect(skyPanes.size).toBe(panes.size);
+  });
+
+  it('hides only faces that are inside a real box: a saw-tooth roof keeps every glazed face', () => {
+    // Three wedges side by side, each with a skylight in its upright face. A wedge fills only
+    // half its bounding box: the next tooth's upright face and its glass stand in the open.
+    const m = bake('I011');
+    const upright = new Set<number>();
+    for (let t = 0; t < m.triRole.length; t++) {
+      if (!m.triUnit[t] || !(m.triFlags[t]! & TRI_NEAR)) continue;
+      const [a, b, c] = [0, 1, 2].map((k) => m.index[t * 3 + k]! * 3);
+      const y = Math.min(m.positions[a + 1]!, m.positions[b + 1]!, m.positions[c + 1]!);
+      const x = [m.positions[a]!, m.positions[b]!, m.positions[c]!];
+      // A pane above the eaves, in a plane of constant x, looking along +x.
+      if (y > 5 && Math.abs(x[0]! - x[1]!) < 1e-3 && Math.abs(x[0]! - x[2]!) < 1e-3)
+        upright.add(Math.round(x[0]! * 10));
+    }
+    expect(upright.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps a glazed room in the distant versions, and a pane as a flat panel', () => {
+    // The hospital's lobby stands 6 m out of the main block: its glass walls stay.
+    const m = bake('hospital');
+    let lobbyFar = 0;
+    let lobbySky = 0;
+    for (let t = 0; t < m.triRole.length; t++) {
+      if (ROLES[m.triRole[t]!] !== 'shop_glass') continue;
+      if (m.triFlags[t]! & TRI_FAR) lobbyFar++;
+      if (m.triFlags[t]! & TRI_SKY) lobbySky++;
+    }
+    expect(lobbyFar).toBeGreaterThanOrEqual(6);
+    expect(lobbySky).toBeGreaterThanOrEqual(6);
+    // A window pane in a wall is two triangles far away, not a box.
+    const t = bake('R103');
+    const perUnit = new Map<number, number>();
+    for (let k = 0; k < t.triRole.length; k++)
+      if (t.triUnit[k] && t.triFlags[k]! & TRI_SKY)
+        perUnit.set(t.triUnit[k]!, (perUnit.get(t.triUnit[k]!) ?? 0) + 1);
+    expect(Math.max(...perUnit.values())).toBeLessThanOrEqual(4);
+  });
+
+  it('puts walls back on the edge of the footprint after packing, so rows meet', () => {
+    const m = bake('R103');
+    const [back] = decodeModels(encodeModels([m]));
+    let onEdge = 0;
+    for (let i = 0; i < back!.positions.length; i += 3) {
+      const x = Math.abs(back!.positions[i]!);
+      // Exactly on the party line, or clearly off it: never a fraction of a millimetre out.
+      if (x === 4) onEdge++;
+      else expect(Math.abs(x - 4)).toBeGreaterThan(1e-3);
+    }
+    expect(onEdge).toBeGreaterThan(20);
   });
 
   it('packs and unpacks the models file without changing the models', () => {

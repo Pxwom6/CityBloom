@@ -34,7 +34,8 @@ const budgets = parseBudgets(readFileSync('docs/models/PROMPTS.md', 'utf8'));
 const reports = files.map((f) => checkModel(readFileSync(f), basename(f), budgets));
 const shown = quiet ? reports.filter((r) => !r.ok || r.warnings.length) : reports;
 const text = formatReports(shown);
-console.log(quiet ? text.replace(/\n\n[^\n]*$/, '') : text);
+if (!quiet) console.log(text);
+else if (shown.length) console.log(text.replace(/\n\n[^\n]*$/, ''));
 if (quiet) {
   const bad = reports.filter((r) => !r.ok).length;
   console.log(

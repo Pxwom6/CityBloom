@@ -41,6 +41,10 @@ export const BREAKS: Record<string, { what: string; edit: (g: Json) => void }> =
     what: 'turned half round, so the front faces +Z',
     edit: (g) => transform(g, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1]),
   },
+  quarter: {
+    what: 'turned a quarter round, so the front faces along X',
+    edit: (g) => transform(g, [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]),
+  },
   shift: {
     what: 'moved 3 m along x, so the origin is off centre',
     edit: (g) => transform(g, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0, 0, 1]),

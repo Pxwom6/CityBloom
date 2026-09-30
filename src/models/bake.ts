@@ -31,21 +31,37 @@ export * from './baked';
 /** Small fittings left out of the distant versions whatever their size. */
 const FAR_DROP =
   /^(window_frame|sill|door_frame|garage_door_frame|storefront_frame|bumper|bench.*|bin.*|bike_rack|lounger|valve|clock_hand|bay_line|tile|flower_bed_edge)$/;
+/** Hidden-face test: how far a face may stand out of a box and still count as inside it (m). */
+const EPS = 1e-3;
+/** A glass box no deeper than this is a pane set in a wall (m); deeper, a glazed room. */
+const PANE_DEPTH = 0.6;
 /** Glass that stays dark at night: not a window. */
 const UNLIT_GLASS = /heliostat|solar|panel|balcony|grille|slit|opening|mirror/;
 /** Glass lit like a shop window. */
 const SHOP_GLASS = /storefront|shop|lobby|entrance|door/;
 
-/** A part is a plain axis-aligned box when every vertex is at a corner of its bounding box. */
+/**
+ * A part is a plain axis-aligned box when it is twelve triangles, two in each face of its bounding
+ * box. (A wedge or a sloped sheet also has every corner on its bounding box, and hides nothing.)
+ */
 function isBox(tris: Float32Array, b: Box3): boolean {
-  if (tris.length > 12 * 9) return false;
-  for (let i = 0; i < tris.length; i += 3)
-    for (let k = 0; k < 3; k++) {
-      const v = tris[i + k]!;
-      if (Math.abs(v - b.min[k]!) > 1e-4 && Math.abs(v - b.max[k]!) > 1e-4) return false;
+  if (tris.length !== 12 * 9) return false;
+  if (![0, 1, 2].every((k) => b.max[k]! - b.min[k]! > 1e-3)) return false;
+  const faces = [0, 0, 0, 0, 0, 0];
+  for (let t = 0; t < tris.length; t += 9) {
+    let face = -1;
+    for (let k = 0; k < 3 && face < 0; k++)
+      for (const [side, at] of [b.min[k]!, b.max[k]!].entries())
+        if ([0, 3, 6].every((c) => Math.abs(tris[t + c + k]! - at) <= 1e-4)) face = k * 2 + side;
+    if (face < 0) return false;
+    // Every corner at a corner of the box.
+    for (let c = 0; c < 9; c++) {
+      const v = tris[t + c]!;
+      if (Math.abs(v - b.min[c % 3]!) > 1e-4 && Math.abs(v - b.max[c % 3]!) > 1e-4) return false;
     }
-  // … and it has some volume.
-  return [0, 1, 2].every((k) => b.max[k]! - b.min[k]! > 1e-3);
+    faces[face]!++;
+  }
+  return faces.every((n) => n === 2);
 }
 
 /** Is a triangle mesh a closed surface: does every edge belong to exactly two triangles? */
@@ -218,45 +234,53 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       ny /= l;
       nz /= l;
       // Hidden faces: the space just outside the face is inside another part that is a solid
-      // box (a wall's foot on the lawn slab, a window frame's back in the wall).
-      const cx = (ax + tr[i + 3]! + tr[i + 6]!) / 3;
+      // box (a wall's foot on the lawn slab, a window frame's back in the wall). A distant
+      // version that leaves that box out shows the face again.
       const cy = (ay + tr[i + 4]! + tr[i + 7]!) / 3;
-      const cz = (az + tr[i + 5]! + tr[i + 8]!) / 3;
-      let covered = false;
-      for (let o = 0; o < src.length && !covered; o++) {
+      const covered = [false, false, false];
+      for (let o = 0; o < src.length; o++) {
         if (o === pi || !solid[o]) continue;
+        const keep = info[o]!.keep;
+        if (covered[0] && (covered[1] || !keep[0]) && (covered[2] || !keep[1])) continue;
         const ob = boxes[o]!;
         let inside = true;
         for (let k = 0; k < 9 && inside; k += 3) {
-          const qx = tr[i + k]! + (cx - tr[i + k]!) * 0.02 + nx * 0.02;
-          const qy = tr[i + k + 1]! + (cy - tr[i + k + 1]!) * 0.02 + ny * 0.02;
-          const qz = tr[i + k + 2]! + (cz - tr[i + k + 2]!) * 0.02 + nz * 0.02;
+          const qx = tr[i + k]! + nx * 0.02;
+          const qy = tr[i + k + 1]! + ny * 0.02;
+          const qz = tr[i + k + 2]! + nz * 0.02;
           inside =
-            qx >= ob.min[0] &&
-            qx <= ob.max[0] &&
-            qy >= ob.min[1] &&
-            qy <= ob.max[1] &&
-            qz >= ob.min[2] &&
-            qz <= ob.max[2];
+            qx >= ob.min[0] - EPS &&
+            qx <= ob.max[0] + EPS &&
+            qy >= ob.min[1] - EPS &&
+            qy <= ob.max[1] + EPS &&
+            qz >= ob.min[2] - EPS &&
+            qz <= ob.max[2] + EPS;
         }
-        covered = inside;
+        if (!inside) continue;
+        covered[0] = true;
+        if (keep[0]) covered[1] = true;
+        if (keep[1]) covered[2] = true;
       }
       // Faces on the ground looking down are never seen either.
-      if (covered || (ny < -0.99 && cy < 0.02)) {
-        continue;
-      }
-      let f = TRI_NEAR;
-      if (ground) f |= TRI_GROUND;
-      if (ny > -0.7) {
-        // Distant panes are flat panels: only the faces that look out of (or into) the wall.
-        // Distant ground is its top alone.
+      if (ny < -0.99 && cy < 0.02) continue;
+      let f = covered[0] ? 0 : TRI_NEAR;
+      // From far off the camera looks down on the city: a face looking straight down shows only
+      // if it is high up (a deck on a tower), a tilted one (a cone's underside, the back of a
+      // solar panel) from any hill or low camera.
+      if (ny > -0.97 || cy > 30) {
+        // Distant panes are flat panels: only the faces that look out of (or into) the wall; a
+        // glazed room (a lobby standing out of its building) keeps its walls. Distant ground is
+        // its top alone.
         const nThin = thin === 0 ? nx : thin === 1 ? ny : nz;
-        const pane = frame || (u > 0 && solid[pi] && unitKinds[u - 1] !== UNIT_GLOW);
+        const pane =
+          frame || (u > 0 && solid[pi] && unitKinds[u - 1] !== UNIT_GLOW && ext[thin]! <= PANE_DEPTH);
         if ((!pane || Math.abs(nThin) > 0.7) && (!ground || ny > 0.5)) {
-          if (farPart) f |= TRI_FAR;
-          if (skyPart) f |= TRI_SKY;
+          if (farPart && !covered[1]) f |= TRI_FAR;
+          if (skyPart && !covered[2]) f |= TRI_SKY;
         }
       }
+      if (!f) continue;
+      if (ground) f |= TRI_GROUND;
       if (party) {
         const edge = fp.w / 2 - 0.2;
         if (ax >= edge && tr[i + 3]! >= edge && tr[i + 6]! >= edge) f |= TRI_PARTY_POS;
@@ -310,7 +334,6 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       mark(trees[i]! - 1, trees[i + 2]! - 1, trees[i]! + 1, trees[i + 2]! + 1);
   }
 
-  const n = role.length;
   return {
     id: report.id,
     kind: t.kind,
@@ -338,7 +361,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     stacks,
     counts: {
       file: report.triangles,
-      near: n,
+      near: flags.filter((f) => f & TRI_NEAR).length,
       far: flags.filter((f) => f & TRI_FAR).length,
       sky: flags.filter((f) => f & TRI_SKY).length,
     },

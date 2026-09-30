@@ -2,6 +2,7 @@
 // (hand-made and generated mixed, as in a city), one picture a row; civic buildings one at a time.
 // Usage: npm run build:test && node scripts/dev/modelshot.mjs outDir [what …] [--hour 13] [--gpu]
 //        [--variants 6] [--season winter] [--dist dist-test] [--backs] [--sheet cols] [--lod far|sky|all]
+//        [--states]  (zoned rows: built, half built, nearly built, abandoned, burning, burnt out)
 //   what: zoned rows like R103 R103@2x3 R103@2x2, civic ids like firestation coal, or a batch:
 //   R0 R1 R2 C0 C1 C2 I0 I1 I2 (a zone and density), services, utilities, parks, special, big,
 //   projects, stages (each project at each stage), annexes, landfill (empty to full).
@@ -30,6 +31,7 @@ const dist = flag('dist', 'dist-test');
 const sheet = flag('sheet', null);
 const gpu = argv.includes('--gpu');
 const backs = argv.includes('--backs');
+const states = argv.includes('--states');
 // `--lod far|sky` draws that level of detail everywhere; `--lod all` shoots near, far and sky.
 const lod = flag('lod', null);
 
@@ -124,7 +126,7 @@ try {
   await page.waitForFunction(() => window.__game?.ready, null, { timeout: 60000 });
   const at = { x: 300, z: 300 };
   const info = await page.evaluate(
-    async ({ zonedRows, civics, hour, at, variants, season }) => {
+    async ({ zonedRows, civics, hour, at, variants, season, states }) => {
       const g = window.__game;
       const st = await g.getState();
       const now = ((st.tick + 420) % 1440) / 60;
@@ -142,7 +144,18 @@ try {
           wet: 0,
         });
       }
-      if (zonedRows.length) g.showGallery(zonedRows, at, variants);
+      // `--states`: each row as built, half built, nearly built, abandoned, burning and burnt out.
+      const each = states
+        ? [
+            { variant: 0 },
+            { variant: 0, state: 0, progress: 0.45 },
+            { variant: 0, state: 0, progress: 0.85 },
+            { variant: 0, state: 2 },
+            { variant: 0, fire: 0.6 },
+            { variant: 0, state: 3 },
+          ]
+        : undefined;
+      if (zonedRows.length) g.showGallery(zonedRows, at, variants, each);
       const placed = civics.length ? g.showCivics(civics, { x: at.x, z: at.z + 600 }, 420) : [];
       await g.waitFrames(12);
       return {
@@ -150,7 +163,7 @@ try {
         buildings: g.getBuildings().filter((b) => b.id >= 9_000_000),
       };
     },
-    { zonedRows, civics, hour, at, variants, season },
+    { zonedRows, civics, hour, at, variants, season, states },
   );
   // No interface in the pictures.
   await page.addStyleTag({ content: '#ui { display: none !important; }' });

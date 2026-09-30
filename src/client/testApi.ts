@@ -146,7 +146,13 @@ export interface TestApi {
    * Dev gallery: show client-side copies of zoned buildings (no sim state) in rows from `at`, one
    * row per def and `variants` columns. Screenshots only; the sim knows nothing about them.
    */
-  showGallery(defs: string[], at: { x: number; z: number }, variants: number): void;
+  showGallery(
+    defs: string[],
+    at: { x: number; z: number },
+    variants: number,
+    /** Column by column (repeating): under construction, abandoned, on fire, rubble… */
+    states?: { state?: number; progress?: number; fire?: number; variant?: number }[],
+  ): void;
   /** Every big project at every construction stage and finished, in rows from `at` (dev, M17). */
   showProjects(at: { x: number; z: number }): void;
   /**
@@ -650,7 +656,7 @@ export function installTestApi(game: Game): TestApi {
         fog: w.fog,
       };
     },
-    showGallery: (defs, at, variants) => {
+    showGallery: (defs, at, variants, states) => {
       const w = game.world;
       const upserts: BuildingData[] = [];
       let id = 9_000_000;
@@ -684,6 +690,7 @@ export function installTestApi(game: Game): TestApi {
             variant: v,
             flags: 0,
             fire: 0,
+            ...(states?.[v % states.length] ?? {}),
           });
           x += W + 4;
         }

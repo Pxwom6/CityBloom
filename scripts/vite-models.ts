@@ -53,9 +53,14 @@ export function models(): Plugin {
         res.setHeader('Cache-Control', 'no-store');
         res.end(Buffer.from(b.bytes));
       });
-      // A model dropped into the folder (or changed, or removed): convert again and reload.
+      // What the check reads besides the models: the budgets, and the lots and sites in the data.
+      const inputs = [resolve(config.root, 'docs/models/PROMPTS.md'), resolve(config.root, 'src/data')];
+      for (const f of inputs) server.watcher.add(f);
+      // A model dropped into the folder (or changed, or removed), or a budget or a site size
+      // changed: convert again and reload.
       const changed = (file: string) => {
-        if (!file.startsWith(dir + sep) || !file.toLowerCase().endsWith('.glb')) return;
+        const model = file.startsWith(dir + sep) && file.toLowerCase().endsWith('.glb');
+        if (!model && !inputs.some((f) => file === f || file.startsWith(f + sep))) return;
         cache = null;
         const mod = server.moduleGraph.getModuleById(RESOLVED);
         if (mod) server.moduleGraph.invalidateModule(mod);

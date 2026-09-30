@@ -118,9 +118,10 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
 
   // A part in a double-sided material that isn't a closed solid is a sheet seen from both sides
   // (a canopy, an open roof): the game draws one side of a triangle, so it gets both.
-  const src = file.parts
-    .filter((p) => !treeParts.has(p))
-    .map((p) => (p.doubleSided && !closed(p.tris) ? { ...p, tris: bothSides(p.tris) } : p));
+  const kept = file.parts.filter((p) => !treeParts.has(p));
+  const src = kept.map((p) => (p.doubleSided && !closed(p.tris) ? { ...p, tris: bothSides(p.tris) } : p));
+  // The file's part each of those is (a doubled sheet is a copy).
+  const original = new Map<GlbPart, GlbPart>(src.map((p, i) => [p, kept[i]!]));
   const boxes = src.map((p) => growBox(emptyBox(), p.tris));
   const solid = src.map((p, i) => isBox(p.tris, boxes[i]!));
 
@@ -134,7 +135,8 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     unitKinds.push(UNIT_WINDOW);
     for (const p of panes) unitOf.set(p, unitKinds.length);
   }
-  for (const p of src) {
+  for (const copy of src) {
+    const p = original.get(copy)!;
     if (unitOf.has(p) || !isGlass(p)) continue;
     if (p.name === PART.windowBand) {
       unitKinds.push(UNIT_BAND);
@@ -167,22 +169,20 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
   const colors: Record<number, [number, number, number]> = {};
 
   // Each part's surface as seen from one side: a sheet's area, half a closed solid's.
-  const areas = file.parts
-    .filter((p) => !treeParts.has(p))
-    .map((p) => {
-      let a = 0;
-      const tr = p.tris;
-      for (let i = 0; i < tr.length; i += 9) {
-        const ux = tr[i + 3]! - tr[i]!;
-        const uy = tr[i + 4]! - tr[i + 1]!;
-        const uz = tr[i + 5]! - tr[i + 2]!;
-        const vx = tr[i + 6]! - tr[i]!;
-        const vy = tr[i + 7]! - tr[i + 1]!;
-        const vz = tr[i + 8]! - tr[i + 2]!;
-        a += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
-      }
-      return closed(tr) ? a / 2 : a;
-    });
+  const areas = kept.map((p) => {
+    let a = 0;
+    const tr = p.tris;
+    for (let i = 0; i < tr.length; i += 9) {
+      const ux = tr[i + 3]! - tr[i]!;
+      const uy = tr[i + 4]! - tr[i + 1]!;
+      const uz = tr[i + 5]! - tr[i + 2]!;
+      const vx = tr[i + 6]! - tr[i]!;
+      const vy = tr[i + 7]! - tr[i + 1]!;
+      const vz = tr[i + 8]! - tr[i + 2]!;
+      a += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+    }
+    return closed(tr) ? a / 2 : a;
+  });
   // What each part is, and whether the far and the skyline versions keep it.
   const info = src.map((p, pi) => {
     const b = boxes[pi]!;
@@ -192,7 +192,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     const [largest, boxSecond] = [...ext].sort((x, y) => y - x) as [number, number, number];
     const second = Math.min(boxSecond, areas[pi]! / Math.max(largest, 1e-6));
     const ground = GROUND_ROLES.includes(p.material as Role) && b.max[1] < 0.35 && ext[1] < 0.3;
-    const u = unitOf.get(p) ?? 0;
+    const u = unitOf.get(original.get(p)!) ?? 0;
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
     // A window's frame stays in the distant versions as its outward face, or the wall would
     // read darker (a brick tenement's white frames are a quarter of its brightness).
@@ -308,9 +308,14 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       if (!f) continue;
       if (ground) f |= TRI_GROUND;
       if (party) {
-        const edge = fp.w / 2 - 0.2;
-        if (ax >= edge && tr[i + 3]! >= edge && tr[i + 6]! >= edge) f |= TRI_PARTY_POS;
-        if (ax <= -edge && tr[i + 3]! <= -edge && tr[i + 6]! <= -edge) f |= TRI_PARTY_NEG;
+        // What the neighbour in a row hides: whatever lies within 20 cm of the party line, but
+        // not a wall set back from it and looking out (the gap between two would show).
+        const edge = fp.w / 2;
+        const xs = [ax, tr[i + 3]!, tr[i + 6]!];
+        if (xs.every((x) => x >= edge - 0.2) && !(nx > 0.5 && Math.max(...xs) < edge - 0.01))
+          f |= TRI_PARTY_POS;
+        if (xs.every((x) => x <= -edge + 0.2) && !(nx < -0.5 && Math.min(...xs) > -edge + 0.01))
+          f |= TRI_PARTY_NEG;
       }
       for (let k = 0; k < 9; k++) pos.push(tr[i + k]!);
       role.push(r);

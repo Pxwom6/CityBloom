@@ -169,6 +169,48 @@ describe('models:check', () => {
       expect(far.ok, String(y)).toBe(false);
       expect(far.errors[0], String(y)).toMatch(/coordinate that isn't a number, or is out of range/);
     }
+    // Fields of the wrong kind, and geometry with nothing behind it: failed reports, not crashes.
+    const odd = (edit: (g: Record<string, unknown>) => void) =>
+      checkModel(editGlb(good('police'), edit), 'police.glb', budgets);
+    expect(odd((g) => (g.extensionsRequired = 'KHR_draco_mesh_compression')).ok).toBe(true);
+    const empty = odd((g) => {
+      const acc = g.accessors as { bufferView?: number; count: number }[];
+      const prim = (g.meshes as { primitives: { attributes: { POSITION: number } }[] }[])[0]!.primitives[0]!;
+      acc[prim.attributes.POSITION] = { ...acc[prim.attributes.POSITION]!, count: 130_000_000 };
+      delete acc[prim.attributes.POSITION]!.bufferView;
+    });
+    expect(empty.ok).toBe(false);
+    // A building parented under a tree marker would vanish, tree and all.
+    const wrapped = odd((g) => {
+      const scene = (g.scenes as { nodes: number[] }[])[0]!;
+      const nodes = g.nodes as unknown[];
+      nodes.push({ name: 'Tree_Spot', children: scene.nodes });
+      scene.nodes = [nodes.length - 1];
+    });
+    expect(wrapped.ok).toBe(false);
+    expect(wrapped.errors.join(' ')).toMatch(/tree_spot marker holds more than a marker cube/);
+    // A civic building fills its site: an awning out over the road is outside it. A zoned one
+    // with room in its lot is stepped back, so the same awning is allowed.
+    const outFront = (part: string, dz: number) => (g: Record<string, unknown>) => {
+      type Node = { mesh?: number; name?: string; matrix?: number[]; translation?: number[] };
+      const nodes = g.nodes as Node[];
+      // A copy of the part, dz further forward (its parents' transforms are identities).
+      const src = nodes.find((n) => n.name === part)!;
+      const copy: Node = { ...src };
+      if (src.matrix) copy.matrix = src.matrix.map((v, i) => (i === 14 ? v - dz : v));
+      else
+        copy.translation = [
+          src.translation?.[0] ?? 0,
+          src.translation?.[1] ?? 0,
+          (src.translation?.[2] ?? 0) - 1.2,
+        ];
+      nodes.push(copy);
+      (g.scenes as { nodes: number[] }[])[0]!.nodes.push(nodes.length - 1);
+    };
+    const civicAwning = odd(outFront('forecourt', 1.2));
+    expect(civicAwning.ok).toBe(false);
+    expect(civicAwning.errors.join(' ')).toMatch(/its site is 24 × 24 m/);
+    expect(checkModel(editGlb(good('R103'), outFront('stoop', 0.8)), 'R103.glb', budgets).ok).toBe(true);
     // A colour that isn't one.
     const paint = checkModel(
       editGlb(good('police'), (g) => {

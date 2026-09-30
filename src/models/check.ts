@@ -119,7 +119,12 @@ export function inspectModel(
     report.errors.push(e instanceof GlbError ? e.message : `can't be read (${(e as Error).message})`);
     return { report, file: null };
   }
-  checkParsed(file, report);
+  try {
+    checkParsed(file, report);
+  } catch (e) {
+    // Whatever a damaged file does to the checks, it is a failed model, never a crash.
+    report.errors.push(`can't be checked (${(e as Error).message})`);
+  }
   report.ok = report.errors.length === 0;
   return { report, file };
 }
@@ -206,7 +211,18 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
     const b = boxOf(g);
     return [0, 1, 2].some((k) => b.max[k]! - b.min[k]! < 0.4 || b.max[k]! - b.min[k]! > 2.5);
   }).length;
-  if (odd) warnings.push(`${odd} tree_spot marker${odd > 1 ? 's are' : ' is'} not a 1 m cube`);
+  // Anything under a marker is replaced by a tree: a marker that is more than a small box would
+  // take a building's parts with it.
+  const big = spots.filter((g) => {
+    const b = boxOf(g);
+    return g.length > 3 || [0, 1, 2].some((k) => b.max[k]! - b.min[k]! > 4);
+  }).length;
+  if (big)
+    errors.push(
+      `${big} tree_spot marker${big > 1 ? 's hold' : ' holds'} more than a marker cube: everything under it would vanish`,
+    );
+  else if (odd) warnings.push(`${odd} tree_spot marker${odd > 1 ? 's are' : ' is'} not a 1 m cube`);
+  if (!report.triangles) errors.push('has nothing to draw');
 
   if (t?.kind === 'civic' && t.def === 'landfill' && !groupsNamed(file, PART.mound).length)
     warnings.push("has no part named mound: the heap won't rise as the landfill fills");
@@ -256,8 +272,10 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
 
   // A wall-to-wall building (its walls are exactly a footprint) with trim, steps or awnings that
   // overhang it a little.
+  // Only a zoned building can overhang its footprint: the game steps a shallow one back into its
+  // lot; a civic building fills its site, so what sticks out would stand in the road.
   const walls = parts.filter((p) => p.material === 'wall' || p.material === 'wall_alt');
-  if (walls.length) {
+  if (walls.length && t.kind === 'zoned') {
     const wb = boxOf(walls);
     const ww = wb.max[0] - wb.min[0];
     const wd = wb.max[2] - wb.min[2];
@@ -274,6 +292,8 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
         };
         if (over.front > OVERHANG_FRONT || Math.max(over.back, over.left, over.right) > OVERHANG_SIDE)
           continue;
+        // … and only if the lot has room to step it back.
+        if (over.front > EXACT && fd + over.front + 0.3 > t.d + EXACT) continue;
         if (Math.abs(wcx) > EXACT || Math.abs(wcz) > EXACT)
           errors.push(
             `the origin isn't at the centre of the building: its walls' middle is at x ${f1(wcx)}, z ${f1(wcz)}`,

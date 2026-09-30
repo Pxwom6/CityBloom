@@ -37,7 +37,16 @@ export function buildModels(root = '.', dir = MODELS_DIR): ModelBuild {
   const reports: ModelReport[] = [];
   const models: BakedModel[] = [];
   for (const f of modelFiles(join(root, dir))) {
-    const { report, file } = inspectModel(readFileSync(join(root, dir, f)), f, budgets);
+    let bytes: Uint8Array;
+    try {
+      bytes = readFileSync(join(root, dir, f));
+    } catch (e) {
+      const { report } = inspectModel(new Uint8Array(0), f, budgets);
+      report.errors = [`can't be read (${(e as Error).message})`];
+      reports.push(report);
+      continue;
+    }
+    const { report, file } = inspectModel(bytes, f, budgets);
     if (report.ok && file) {
       try {
         models.push(bakeModel(file, report));

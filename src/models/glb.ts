@@ -67,6 +67,14 @@ const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 
 const SIZES: Record<number, number> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 
 /** Reads a GLB file. Throws GlbError when it isn't one or can't be read. */
+/** A list of names from the JSON, whatever it holds. */
+function strings(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+/** More vertices than any building's budget could need: a damaged file. */
+const MAX_COUNT = 2_000_000;
+
 /** No part of a model is further than this from its origin (m). */
 const MAX_COORD = 5000;
 
@@ -117,8 +125,10 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
     const csize = SIZES[a.componentType];
     if (!size || !csize) throw new GlbError(`accessor ${index} has an unsupported type`);
     if (a.sparse) throw new GlbError(`accessor ${index} is sparse (not supported)`);
-    const out = new Float64Array(a.count * size);
-    if (a.bufferView === undefined) return { data: out, size };
+    if (!Number.isInteger(a.count) || a.count < 0 || a.count > MAX_COUNT)
+      throw new GlbError(`accessor ${index} has an impossible count (${String(a.count)})`);
+    // Geometry with no data behind it (legal glTF, all zeros) has nothing to draw.
+    if (a.bufferView === undefined) throw new GlbError(`accessor ${index} has no data`);
     const v = views[a.bufferView];
     if (!v) throw new GlbError(`missing buffer view ${a.bufferView}`);
     if ((v.buffer as number) !== 0 || !bin)
@@ -127,6 +137,7 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
     const stride = (v.byteStride as number) || size * csize;
     const end = base + stride * (a.count - 1) + size * csize;
     if (end > bin.byteLength) throw new GlbError(`accessor ${index} runs past the binary chunk`);
+    const out = new Float64Array(a.count * size);
     const norm = a.normalized === true;
     for (let i = 0; i < a.count; i++) {
       for (let k = 0; k < size; k++) {
@@ -341,8 +352,8 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
     images: arr(g.images).length,
     textures: arr(g.textures).length,
     samplers: arr(g.samplers).length,
-    extensionsUsed: ((g.extensionsUsed as string[] | undefined) ?? []).slice(),
-    extensionsRequired: ((g.extensionsRequired as string[] | undefined) ?? []).slice(),
+    extensionsUsed: strings(g.extensionsUsed),
+    extensionsRequired: strings(g.extensionsRequired),
     generator: (asset.generator as string | undefined) ?? '',
     notes,
   };

@@ -292,6 +292,13 @@ declare global {
 }
 
 export function installTestApi(game: Game): TestApi {
+  /** Where a dev-gallery building sits: on the highest ground under its footprint, as the sim seats lots. */
+  const seat = (x: number, z: number, W: number, D: number): number => {
+    let y = 0;
+    for (let i = 0; i <= 8; i++)
+      for (let j = 0; j <= 8; j++) y = Math.max(y, game.world.heightAt(x + (W * i) / 8, z + (D * j) / 8));
+    return y;
+  };
   const api: TestApi = {
     ready: true,
     dispatch: (cmd) => game.dispatch(cmd),
@@ -680,7 +687,7 @@ export function installTestApi(game: Game): TestApi {
             level: def.level,
             x: x + W / 2,
             z: z + D / 2,
-            y: Math.max(0, w.heightAt(x + W / 2, z + D / 2)),
+            y: seat(x, z, W, D),
             angle: 0,
             side: 1,
             w: lw!,
@@ -718,7 +725,7 @@ export function installTestApi(game: Game): TestApi {
           def: def.id,
           x: x + def.w / 2,
           z: z + def.d / 2,
-          y: Math.max(0, w.heightAt(x + def.w / 2, z + def.d / 2)),
+          y: seat(x, z, def.w, def.d),
           angle: 0,
           side: 1,
           access: true,
@@ -842,7 +849,7 @@ export function installTestApi(game: Game): TestApi {
             def: def.id,
             x: x + def.w / 2,
             z: z + def.d / 2,
-            y: Math.max(0, w.heightAt(x + def.w / 2, z + def.d / 2)),
+            y: seat(x, z, def.w, def.d),
             angle: 0,
             side: 1,
             access: true,

@@ -57,6 +57,12 @@ export interface BakedModel {
   colors: Record<number, [number, number, number]>;
   /** Kind of each window unit. */
   units: Uint8Array;
+  /**
+   * Civic sites: where something stands more than head high (or a tree will), one bit per square metre of the
+   * site, row by row from its −x, −z corner (so add-on annexes can find a clear spot). Empty for
+   * other models.
+   */
+  occupied: Uint8Array;
   /** tree_spot markers: x, y (ground), z each. */
   trees: number[];
   /** Tops of smoke_stack parts: x, y, z each. */

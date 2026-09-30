@@ -6,7 +6,7 @@ import { ModelBuilder, type ModelData } from './builder';
 import { PALETTES, buildZonedModel } from './models';
 import { buildAnnexModel, buildCivicModel, buildRubbleModel } from './civicModels';
 import { siteWorks } from './projectModels';
-import { buildHandModel, handmade, type Inset } from './handmade';
+import { buildHandModel, clearPlace, handmade, type Inset } from './handmade';
 
 /** Number of visual variants per archetype and lot size. */
 export const VARIANTS = 12;
@@ -141,11 +141,15 @@ function civicModel(
   const D = def.d;
   const insets: Inset[] = [];
   const extra: ModelData[] = [];
+  const taken: { x: number; z: number; w: number; d: number }[] = [];
   for (const a of annexes) {
     if (!a.model) extra.push(buildAnnexModel(W, D, a.k));
     else {
-      // A hand-made annex stands just clear of the ground it is set on.
-      const p = annexPlace(W, D, a.k);
+      // In its back corner, or on a hand-made site the clear spot nearest it; just clear of the
+      // ground it is set on.
+      const corner = annexPlace(W, D, a.k);
+      const p = hand ? clearPlace(hand, corner, taken) : corner;
+      taken.push({ x: p.x, z: p.z, w: a.model.w * p.scale, d: a.model.d * p.scale });
       insets.push({ model: a.model, x: p.x, z: p.z, y: 0.03, scale: p.scale, seed: variant * 31 + a.k });
     }
   }
@@ -172,6 +176,8 @@ function civicModel(
     mirror: false,
     base: PALETTES.pave,
     fill: def.garbage?.storage ? fill : undefined,
+    // A civic building's signs and awnings say what it is: they keep their colours.
+    own: ['sign', 'awning'] as const,
   };
   if (stage === undefined || !def.project) return buildHandModel(hand, o, insets, extra);
   // A big project being built: the finished model raised stage by stage, inside the generator's

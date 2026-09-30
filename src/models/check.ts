@@ -171,6 +171,7 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
 
   if (t) footprint(parts, all, t, report);
   facing(parts, report);
+  supported(parts, report);
 
   // Windows: a group named "window" holding "window_glass"; bands on towers.
   const windows = groupsNamed(file, PART.window);
@@ -298,6 +299,78 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
   if (out.length && out.length < parts.length)
     errors.push(
       `outside the ${site}: ${out.slice(0, 5).join(', ')}${out.length > 5 ? `, and ${out.length - 5} more` : ''}`,
+    );
+}
+
+/**
+ * Nothing floats: a wall stands on something. A wall part well above the ground (a gable under a
+ * roof, an upper storey) that is held up at one end and hangs past everything beneath it for
+ * half its length has slipped out of place. Spanning is fine: an arch on two piers, a bridge
+ * between two halls, a bowl on a column.
+ */
+function supported(parts: GlbPart[], report: ModelReport): void {
+  const boxes = parts.map((p) => growBox(emptyBox(), p.tris));
+  const hanging: string[] = [];
+  parts.forEach((p, i) => {
+    if (p.material !== 'wall' && p.material !== 'wall_alt') return;
+    const b = boxes[i]!;
+    const along = b.max[0] - b.min[0] >= b.max[2] - b.min[2] ? 0 : 2;
+    const across = 2 - along;
+    const length = b.max[along]! - b.min[along]!;
+    const width = b.max[across]! - b.min[across]!;
+    if (b.min[1] < 1 || length < 6 || width < 0.5) return;
+    // Along its length, which slices have another part under them (reaching up to its foot)?
+    const N = 16;
+    const held: boolean[] = [];
+    for (let k = 0; k < N; k++) {
+      const u = b.min[along]! + ((k + 0.5) / N) * length;
+      let under = false;
+      for (const f of [0.2, 0.5, 0.8]) {
+        const v = b.min[across]! + f * width;
+        const [x, z] = along === 0 ? [u, v] : [v, u];
+        under ||= boxes.some(
+          (o, j) =>
+            j !== i &&
+            x >= o.min[0] &&
+            x <= o.max[0] &&
+            z >= o.min[2] &&
+            z <= o.max[2] &&
+            o.min[1] < b.min[1] - 0.3 &&
+            o.max[1] > b.min[1] - 0.6,
+        );
+      }
+      held.push(under);
+    }
+    // An end that butts against another part is held by it (a bridge between two halls, a
+    // walkway from a wall to a stair head).
+    const butts = (end: number) =>
+      boxes.some(
+        (o, j) =>
+          j !== i &&
+          Math.abs(
+            (end === 0 ? o.max[along]! : o.min[along]!) - (end === 0 ? b.min[along]! : b.max[along]!),
+          ) < 0.3 &&
+          o.min[across]! < b.max[across]! &&
+          o.max[across]! > b.min[across]! &&
+          o.min[1] < b.max[1] &&
+          o.max[1] > b.min[1],
+      );
+    if (butts(0)) held[0] = true;
+    if (butts(1)) held[N - 1] = true;
+    const first = held.indexOf(true);
+    const last = held.lastIndexOf(true);
+    if (first < 0) return;
+    const low = first / N;
+    const high = (N - 1 - last) / N;
+    const over = Math.max(low, high);
+    if (over >= 0.4 && Math.min(low, high) <= 0.07 && over * length >= 3)
+      hanging.push(
+        `${p.rawName || '(unnamed wall)'} hangs ${f1(over * length)} m past what is under it, ${f1(b.min[1])} m up`,
+      );
+  });
+  if (hanging.length)
+    report.errors.push(
+      `a wall hangs in the air: ${hanging.slice(0, 3).join('; ')}${hanging.length > 3 ? `; and ${hanging.length - 3} more` : ''}`,
     );
 }
 

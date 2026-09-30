@@ -437,6 +437,11 @@ export class GameRenderer {
   flushBuildings(): void {
     this.buildings.flushAll();
     this.civics.update(this.camera.position, this.buildings.range, true);
+    // Garden trees of buildings just built, too (normally planted within half a second).
+    if (this.treePoints.length) {
+      this.trees.rebuildAround(this.treePoints);
+      this.treePoints = [];
+    }
   }
 
   setShadows(on: boolean): void {

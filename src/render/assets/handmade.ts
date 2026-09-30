@@ -87,9 +87,16 @@ export interface HandOptions {
   /** A project being built: the share of the model's height raised so far, and what isn't there yet. */
   reveal?: number;
   bare?: boolean;
+  /**
+   * Roles this model keeps in its own colours though the game would repaint them: a civic
+   * building's signs and awnings say what it is (a hospital's red cross).
+   */
+  own?: readonly Role[];
 }
 
 const STONE = PALETTES.stone;
+/** The lot base's top, above the model's zero (m). */
+export const BASE_TOP = 0.04;
 const EARTH = new Color('#8b7355');
 
 /** Triangles being gathered for one level of detail. */
@@ -192,7 +199,7 @@ function layout(model: BakedModel, o: HandOptions): Copy[] {
     const paint: (Color | undefined)[] = ROLES.map((_, i) => own(i));
     for (const role of Object.keys(FAMILIES) as Role[]) {
       const base = paint[ROLE[role]];
-      if (!base) continue;
+      if (!base || o.own?.includes(role)) continue;
       const family = nearestPalette(role, base);
       if (!family) continue;
       // Neighbours in a row are painted differently.
@@ -325,13 +332,16 @@ function base(out: Soup, W: number, D: number, top: Color, sides: boolean): void
   const z0 = -D / 2;
   const z1 = D / 2;
   const tag = top === PALETTES.grass || top === PALETTES.grassRich ? SURF_GRASS : 0;
-  out.tri(x0, 0, z0, x0, 0, z1, x1, 0, z1, top, tag, 0);
-  out.tri(x0, 0, z0, x1, 0, z1, x1, 0, z0, top, tag, 0);
+  // Just above the ground a level site is graded to (or the two would flicker), and under the
+  // model's own lawns and paving (5 cm up or more).
+  const y1 = BASE_TOP;
+  out.tri(x0, y1, z0, x0, y1, z1, x1, y1, z1, top, tag, 0);
+  out.tri(x0, y1, z0, x1, y1, z1, x1, y1, z0, top, tag, 0);
   if (!sides) return;
   const y0 = -5;
   const wall = (ax: number, az: number, bx: number, bz: number) => {
-    out.tri(ax, y0, az, ax, 0, az, bx, 0, bz, STONE, 0, 0);
-    out.tri(ax, y0, az, bx, 0, bz, bx, y0, bz, STONE, 0, 0);
+    out.tri(ax, y0, az, ax, y1, az, bx, y1, bz, STONE, 0, 0);
+    out.tri(ax, y0, az, bx, y1, bz, bx, y0, bz, STONE, 0, 0);
   };
   wall(x0, z0, x1, z0);
   wall(x1, z1, x0, z1);
@@ -349,6 +359,70 @@ export interface Inset {
   seed: number;
 }
 
+/** A civic annex's site (m): as `ANNEX_SITE` in the model spec. */
+const ANNEX = { w: 9, d: 8 };
+
+/**
+ * Where an add-on annex stands on a hand-made civic site. `from` is where the generator would
+ * put it, a back corner, which a hand-made site may have built on. The annex takes the clear
+ * spot nearest that corner: along the back of the site, down the sides, along the front, then
+ * anywhere; failing that a smaller annex (down to about half size); failing that the spot where
+ * it overlaps least. `taken` are annexes already placed (x, z, width, depth).
+ */
+export function clearPlace(
+  site: BakedModel,
+  from: { x: number; z: number; scale: number },
+  taken: { x: number; z: number; w: number; d: number }[],
+): { x: number; z: number; scale: number } {
+  const W = site.w;
+  const D = site.d;
+  const cols = Math.ceil(W);
+  const rows = Math.ceil(D);
+  const gap = 0.5;
+  /** Square metres of the rectangle that are built on (a placed annex counts for all of it). */
+  const overlap = (x0: number, z0: number, x1: number, z1: number): number => {
+    for (const t of taken)
+      if (x0 < t.x + t.w / 2 && x1 > t.x - t.w / 2 && z0 < t.z + t.d / 2 && z1 > t.z - t.d / 2) return 1e6;
+    let n = 0;
+    const c0 = Math.max(0, Math.floor(x0 + W / 2));
+    const c1 = Math.min(cols - 1, Math.floor(x1 + W / 2 - 1e-6));
+    const r0 = Math.max(0, Math.floor(z0 + D / 2));
+    const r1 = Math.min(rows - 1, Math.floor(z1 + D / 2 - 1e-6));
+    for (let r = r0; r <= r1; r++)
+      for (let c = c0; c <= c1; c++)
+        if (site.occupied[(r * cols + c) >> 3]! & (1 << ((r * cols + c) & 7))) n++;
+    return n;
+  };
+  const side = from.x >= 0 ? 1 : -1;
+  let best = from;
+  let bestOver = Infinity;
+  for (const shrink of [1, 0.85, 0.7, 0.58]) {
+    const scale = Math.max(0.45, from.scale * shrink);
+    const w = ANNEX.w * scale;
+    const d = ANNEX.d * scale;
+    const edgeX = W / 2 - 1 - w / 2;
+    const edgeZ = D / 2 - 1 - d / 2;
+    if (edgeX < 0 || edgeZ < 0) continue;
+    const spots: [number, number][] = [];
+    // Along the back from its corner, down both sides, along the front, then the rest.
+    for (let t = 0; t <= 2 * edgeX; t++) spots.push([side * (edgeX - t), edgeZ]);
+    for (let t = 1; t <= 2 * edgeZ; t++) spots.push([side * edgeX, edgeZ - t], [-side * edgeX, edgeZ - t]);
+    for (let t = 0; t <= 2 * edgeX; t++) spots.push([side * (edgeX - t), -edgeZ]);
+    for (let u = 1; u < 2 * edgeZ; u++)
+      for (let t = 1; t < 2 * edgeX; t++) spots.push([side * (edgeX - t), edgeZ - u]);
+    for (const [x, z] of spots) {
+      const over = overlap(x - w / 2 - gap, z - d / 2 - gap, x + w / 2 + gap, z + d / 2 + gap);
+      if (over === 0) return { x, z, scale };
+      // No room anywhere: the smallest annex where it overlaps least.
+      if (over <= bestOver) {
+        if (over < bestOver || scale < best.scale) best = { x, z, scale };
+        bestOver = over;
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * A drawable model of a design on a lot or site, with its far and skyline versions. `extra`
  * (generated pieces: a generated annex, a building site's cranes) is added to every level.
@@ -361,15 +435,16 @@ export function buildHandModel(
 ): ModelData {
   const copies = layout(model, o);
   const inset = insets.map((a) => ({
+    at: a,
     model: a.model,
-    copies: layout(a.model, { ...o, W: a.model.w, D: a.model.d, seed: a.seed, mirror: false }).map((c) => ({
-      ...c,
-      x: a.x,
-      z: a.z,
-      y: a.y,
-      scale: a.scale,
-      unit0: 0,
-    })),
+    copies: layout(a.model, { ...o, W: a.model.w, D: a.model.d, seed: a.seed, mirror: false }).map((c) => {
+      // An annex is painted as the building it belongs to: its walls and roofs.
+      const paint = [...c.paint];
+      for (const role of ['wall', 'wall_alt', 'roof'] as const)
+        if (paint[ROLE[role]] && copies[0]!.paint[ROLE[role]])
+          paint[ROLE[role]] = copies[0]!.paint[ROLE[role]];
+      return { ...c, paint, x: a.x, z: a.z, y: a.y, scale: a.scale, unit0: 0 };
+    }),
   }));
   // Windows across the copies, then the insets': each with the chance it is lit.
   const chances: number[] = [];
@@ -400,8 +475,17 @@ export function buildHandModel(
     const out: number[] = [];
     if (bare) return new Float32Array(0);
     for (const c of copies)
-      for (let i = 0; i < list.length; i += 3)
-        out.push(list[i]! * (c.mirror ? -1 : 1) + c.x, list[i + 1]!, list[i + 2]! + c.z);
+      for (let i = 0; i < list.length; i += 3) {
+        const x = list[i]! * (c.mirror ? -1 : 1) + c.x;
+        const z = list[i + 2]! + c.z;
+        // No tree where an annex has been built.
+        const built = inset.some(
+          (a) =>
+            Math.abs(x - a.at.x) < (a.model.w * a.at.scale) / 2 + 1.5 &&
+            Math.abs(z - a.at.z) < (a.model.d * a.at.scale) / 2 + 1.5,
+        );
+        if (!built) out.push(x, list[i + 1]!, z);
+      }
     return new Float32Array(out);
   };
   near.trees = place(model.trees, !!o.bare);

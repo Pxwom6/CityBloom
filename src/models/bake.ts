@@ -254,6 +254,28 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     index[i / 3] = v;
   }
 
+  // Civic sites: what is built on, a bit per square metre (a part's whole bounding box counts).
+  const cols = Math.ceil(fp.w);
+  const rows = Math.ceil(fp.d);
+  const occupied = new Uint8Array(t.kind === 'civic' ? Math.ceil((cols * rows) / 8) : 0);
+  if (t.kind === 'civic') {
+    const mark = (x0: number, z0: number, x1: number, z1: number) => {
+      const c0 = Math.max(0, Math.floor(x0 + fp.w / 2));
+      const c1 = Math.min(cols - 1, Math.floor(x1 + fp.w / 2 - 1e-6));
+      const r0 = Math.max(0, Math.floor(z0 + fp.d / 2));
+      const r1 = Math.min(rows - 1, Math.floor(z1 + fp.d / 2 - 1e-6));
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) occupied[(r * cols + c) >> 3]! |= 1 << ((r * cols + c) & 7);
+    };
+    src.forEach((_, pi) => {
+      const b = boxes[pi]!;
+      // Buildings and machinery; an annex may stand on a hedge, a kerb or a low wall.
+      if (b.max[1] > 2.2 && !info[pi]!.ground) mark(b.min[0], b.min[2], b.max[0], b.max[2]);
+    });
+    for (let i = 0; i < trees.length; i += 3)
+      mark(trees[i]! - 1, trees[i + 2]! - 1, trees[i]! + 1, trees[i + 2]! + 1);
+  }
+
   const n = role.length;
   return {
     id: report.id,
@@ -277,6 +299,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     triGroup: Uint8Array.from(group),
     colors,
     units: Uint8Array.from(unitKinds),
+    occupied,
     trees,
     stacks,
     counts: {

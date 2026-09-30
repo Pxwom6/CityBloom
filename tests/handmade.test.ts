@@ -6,7 +6,14 @@ import { inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { parseBudgets } from '../src/models/spec';
 import { SURF_GRASS, type ModelData } from '../src/render/assets/builder';
-import { HandmadeModels, buildHandModel, handmade, nearestPalette } from '../src/render/assets/handmade';
+import {
+  BASE_TOP,
+  HandmadeModels,
+  buildHandModel,
+  clearPlace,
+  handmade,
+  nearestPalette,
+} from '../src/render/assets/handmade';
 import { PALETTES } from '../src/render/assets/models';
 import { VARIANTS, annexPlace, assets } from '../src/render/assets/registry';
 import { Arrays, appendModel } from '../src/render/modelMerge';
@@ -42,7 +49,7 @@ const opts = (W: number, D: number, seed = 0) => ({
 function box(m: ModelData, above = false) {
   const b = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
   for (let i = 0; i < m.pos.length; i += 3) {
-    if (above && m.pos[i + 1]! <= 0.001) continue;
+    if (above && m.pos[i + 1]! <= BASE_TOP + 0.001) continue;
     for (let k = 0; k < 3; k++) {
       b.min[k] = Math.min(b.min[k]!, m.pos[i + k]!);
       b.max[k] = Math.max(b.max[k]!, m.pos[i + k]!);
@@ -347,7 +354,8 @@ describe('the asset registry with hand-made models', () => {
     const wing = assets.civic('police', 0, 0, ['patrolWing']);
     const extra = tris(wing) - tris(bare);
     expect(extra).toBe(M['annex-patrolWing']!.counts.near);
-    // The first annex stands in the back right corner, its 9 × 8 m whole on a 24 m site.
+    // The generator's place for the first annex: the back right corner, its 9 × 8 m shrunk to a
+    // third of a 24 m site.
     const p = annexPlace(24, 24, 0);
     expect(p).toEqual({ x: 12 - 1 - 4, z: 12 - 1 - 4, scale: 8 / 9 });
     // A second goes in the other corner; on a small site they shrink.
@@ -355,6 +363,35 @@ describe('the asset registry with hand-made models', () => {
     expect(annexPlace(14, 14, 0).scale).toBeCloseTo(14 / 3 / 9, 5);
     // The third and fourth stand beside the first two, not on top of them.
     expect(annexPlace(48, 48, 2).x).toBeLessThan(annexPlace(48, 48, 0).x - 9);
+    // On a hand-made site that corner may be built on: the annex takes the clear spot nearest it.
+    const site = M.police!;
+    const cols = Math.ceil(site.w);
+    const taken = (x: number, z: number) =>
+      (site.occupied[(Math.floor(z + site.d / 2) * cols + Math.floor(x + site.w / 2)) >> 3]! >>
+        ((Math.floor(z + site.d / 2) * cols + Math.floor(x + site.w / 2)) & 7)) &
+      1;
+    // The station itself stands on its site…
+    let built = 0;
+    for (let x = -11.5; x < 12; x++) for (let z = -11.5; z < 12; z++) built += taken(x, z);
+    expect(built).toBeGreaterThan(80);
+    expect(built).toBeLessThan(24 * 24 * 0.8);
+    // … and the wing stands clear of it, inside the site, as near the back corner as there is room.
+    const at = clearPlace(site, p, []);
+    const [w, d] = [9 * at.scale, 8 * at.scale];
+    for (let x = at.x - w / 2 + 0.25; x < at.x + w / 2; x += 0.5)
+      for (let z = at.z - d / 2 + 0.25; z < at.z + d / 2; z += 0.5) expect(taken(x, z)).toBe(0);
+    expect(Math.abs(at.x) + w / 2).toBeLessThanOrEqual(12);
+    expect(Math.abs(at.z) + d / 2).toBeLessThanOrEqual(12);
+    // A second annex doesn't stand on the first.
+    const next = clearPlace(site, annexPlace(24, 24, 1), [{ x: at.x, z: at.z, w, d }]);
+    expect(Math.abs(next.x - at.x) >= w * 0.9 || Math.abs(next.z - at.z) >= d * 0.9).toBe(true);
+    // A site with no room at all: a small annex, still in its back corner.
+    const full = { ...site, occupied: new Uint8Array(site.occupied.length).fill(255) };
+    const squeezed = clearPlace(full, p, []);
+    expect(squeezed.scale).toBeLessThan(p.scale);
+    expect(squeezed.x).toBeGreaterThan(5);
+    expect(squeezed.z).toBeGreaterThan(5);
+    // The wing is painted as the station: the same wall and roof colours.
     // Its windows are lit with the building's.
     expect(wing.winChance!.length).toBeGreaterThan(bare.winChance!.length);
     // A module with no model of its own gets the generated wing.

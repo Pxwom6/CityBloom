@@ -52,7 +52,13 @@ uniform vec4 uLod;
 uniform vec3 uLodEye;
 #if LOD_LEVEL != 0
 bool lodHidden(vec3 p, vec2 px) {
-  float t = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+  #ifdef LOD_SHADOW
+    // Shadows hand over at a line (the middle of each band): a dithered shadow caster makes
+    // hatched shadows wherever the two versions differ.
+    float t = 0.5;
+  #else
+    float t = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+  #endif
   float d = distance(p, uLodEye);
   float far = smoothstep(uLod.x, uLod.y, d);
   float sky = smoothstep(uLod.z, uLod.w, d);
@@ -166,7 +172,7 @@ if (uOverlayOn > 0.5) {
 export function makeDepthMaterial(uniforms: BuildingUniforms, lod: number): Material {
   const mat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   mat.customProgramCacheKey = () => `building-depth-${lod}`;
-  mat.defines = { LOD_LEVEL: lod };
+  mat.defines = { LOD_LEVEL: lod, LOD_SHADOW: 1 };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, { uLod: uniforms.uLod, uLodEye: uniforms.uLodEye });
     shader.vertexShader = shader.vertexShader

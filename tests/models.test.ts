@@ -155,6 +155,16 @@ describe('models:check', () => {
     expect(junk.errors[0]).toMatch(/not a GLB/);
   });
 
+  it('catches a wall that hangs in the air, but not one that spans', () => {
+    // As delivered: the school's gable, slid half its length along the roof.
+    const r = checkModel(readFileSync('tests/fixtures/models/broken/primary.glb'), 'primary.glb', budgets);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/a wall hangs in the air: gable hangs 9 m past what is under it/);
+    // The coal plant's conveyor and turbine hall, the tower's storeys on its podium: all held up.
+    for (const id of ['coal', 'R201', 'convention', 'landfill'])
+      expect(checkModel(good(id), `${id}.glb`, budgets).errors.join(' '), id).not.toMatch(/hangs/);
+  });
+
   it('knows a row model from one that is simply the wrong size', () => {
     // Half as wide as its lot: two abreast.
     const half = editGlb(good('R201'), (g) => {

@@ -8,13 +8,16 @@ import type { BakedModel } from './baked';
 const MAGIC = 0x314d4243; // "CBM1"
 
 interface Entry {
-  meta: Omit<BakedModel, 'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units'>;
+  meta: Omit<
+    BakedModel,
+    'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units' | 'occupied'
+  >;
   /** Metres per unit of the 16-bit vertices. */
   scale: number;
   wide: boolean;
   /** Byte offset and element count of each array in the binary section. */
   at: Record<
-    'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units',
+    'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units' | 'occupied',
     [number, number]
   >;
 }
@@ -42,7 +45,7 @@ export function encodeModels(models: BakedModel[]): Uint8Array {
     for (let i = 0; i < q.length; i++) q[i] = Math.round(m.positions[i]! / scale);
     const wide = m.positions.length / 3 > 65535;
     const idx = wide ? m.index : Uint16Array.from(m.index);
-    const { positions, index, triRole, triFlags, triUnit, triGroup, units, ...meta } = m;
+    const { positions, index, triRole, triFlags, triUnit, triGroup, units, occupied, ...meta } = m;
     void positions;
     void index;
     return {
@@ -57,6 +60,7 @@ export function encodeModels(models: BakedModel[]): Uint8Array {
         triUnit: [put(triUnit), triUnit.length],
         triGroup: [put(triGroup), triGroup.length],
         units: [put(units), units.length],
+        occupied: [put(occupied), occupied.length],
       },
     };
   });
@@ -107,6 +111,7 @@ export function decodeModels(bytes: Uint8Array): BakedModel[] {
       triUnit: new Uint16Array(copy(e.at.triUnit, 2)),
       triGroup: new Uint8Array(copy(e.at.triGroup, 1)),
       units: new Uint8Array(copy(e.at.units, 1)),
+      occupied: new Uint8Array(copy(e.at.occupied, 1)),
     };
   });
 }

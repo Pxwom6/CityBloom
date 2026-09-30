@@ -153,6 +153,8 @@ export interface TestApi {
    * Levels of detail (phase 3): draw one level everywhere (null: by distance, as in play), what is
    * on show now, and the model each zoned building wears.
    */
+  /** The view as drawn: the share of pixels that are lit-window warm, near white, and the mean brightness (0–1). */
+  pixelStats(): { warm: number; white: number; lum: number };
   setLod(level: 'near' | 'far' | 'sky' | null): void;
   /**
    * How different the view is drawn at one level of detail and at another (null: by distance, as
@@ -732,6 +734,28 @@ export function installTestApi(game: Game): TestApi {
       game.renderer.buildings.chunks.force = f;
       game.renderer.civics.chunks.force = f;
       game.renderer.flushBuildings();
+    },
+    pixelStats: () => {
+      const r = game.renderer;
+      const gl = r.renderer.getContext();
+      const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+      r.renderer.setRenderTarget(null);
+      r.renderer.render(r.scene, r.camera);
+      const px = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let warm = 0;
+      let white = 0;
+      let lum = 0;
+      let n = 0;
+      for (let i = 0; i < px.length; i += 16) {
+        const [red, green, blue] = [px[i]!, px[i + 1]!, px[i + 2]!];
+        // A lit window: bright, and warmer than white.
+        if (red > 215 && green > 185 && blue < green - 12 && blue > 110) warm++;
+        if (red > 215 && green > 215 && blue > 215) white++;
+        lum += 0.299 * red + 0.587 * green + 0.114 * blue;
+        n++;
+      }
+      return { warm: warm / n, white: white / n, lum: lum / n / 255 };
     },
     compareLod: (a, b) => {
       const r = game.renderer;

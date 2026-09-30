@@ -131,7 +131,17 @@ try {
       let d = (hour - now) * 60;
       if (d < 0) d += 1440;
       if (d > 0) await g.advance(Math.round(d));
-      if (season) g.setWeatherLook({ season });
+      if (season) {
+        // A whole season's colours; winter with snow lying.
+        const i = ['spring', 'summer', 'autumn', 'winter'].indexOf(season);
+        g.setWeatherLook({
+          season: [0, 1, 2, 3].map((k) => (k === i ? 1 : 0)),
+          kind: 'clear',
+          strength: 0,
+          snow: season === 'winter' ? 0.75 : 0,
+          wet: 0,
+        });
+      }
       if (zonedRows.length) g.showGallery(zonedRows, at, variants);
       const placed = civics.length ? g.showCivics(civics, { x: at.x, z: at.z + 600 }, 420) : [];
       await g.waitFrames(12);

@@ -28,9 +28,9 @@ import {
 
 export * from './baked';
 
-/** Small fittings left out of the far version whatever their size. */
+/** Small fittings left out of the distant versions whatever their size. */
 const FAR_DROP =
-  /^(window_frame|sill|mullion|door_frame|garage_door_frame|storefront_frame|.*_post|.*_rail|.*_railing|bumper|spoke|.*_leg|.*_tie|.*_rib|step|stoop|bench.*|bin.*|bike_rack|lounger|valve|crank|pitman|polished_rod|clock_hand|.*_line|.*_marking|bay_line|helipad_h|tile|flower_bed_edge)$/;
+  /^(window_frame|sill|mullion|door_frame|garage_door_frame|storefront_frame|bumper|bench.*|bin.*|bike_rack|lounger|valve|clock_hand|.*_line|.*_marking|helipad_h|tile|flower_bed_edge)$/;
 /** Glass that stays dark at night: not a window. */
 const UNLIT_GLASS = /heliostat|solar|panel|balcony|grille|slit|opening|mirror/;
 /** Glass lit like a shop window. */
@@ -112,29 +112,56 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
   const colors: Record<number, [number, number, number]> = {};
   let hidden = 0;
 
-  src.forEach((p, pi) => {
-    const r = ROLE_INDEX.get(p.material) ?? 0;
-    colors[r] ??= p.color;
+  // What each part is, and whether the far and the skyline versions keep it.
+  const info = src.map((p, pi) => {
     const b = boxes[pi]!;
     const ext = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]] as const;
     // How big the part looks face on: its second-largest dimension.
-    const second = [...ext].sort((x, y) => y - x)[1]!;
+    const [largest, second] = [...ext].sort((x, y) => y - x) as [number, number, number];
     const ground = GROUND_ROLES.includes(p.material as Role) && b.max[1] < 0.35 && ext[1] < 0.3;
     const u = unitOf.get(p) ?? 0;
-    // Which way a pane faces: its thinnest direction.
-    const thin = ext[0] <= ext[1] && ext[0] <= ext[2] ? 0 : ext[2] <= ext[1] ? 2 : 1;
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
-    // A window's frame stays in the distance as its outward face, or the wall would read darker.
-    const frame = p.name === 'window_frame' && solid[pi];
-    const keeps = (k: { part: number; pane: number; ground: number }, frames: boolean) =>
+    // A window's frame stays in the far version as its outward face, or the wall would read
+    // darker; the skyline drops the frames too: there a window is a pixel or two.
+    const frame = p.name === 'window_frame' && solid[pi]!;
+    const keeps = (k: typeof FAR_KEEP, frames: boolean) =>
       u > 0 || (frame && frames)
         ? second >= k.pane
         : ground
           ? second >= k.ground
-          : !fitting && second >= k.part;
-    const farPart = keeps(FAR_KEEP, true);
-    // The skyline drops the frames too: there a window is a pixel or two.
-    const skyPart = keeps(SKY_KEEP, false);
+          : !fitting && (second >= k.part || (largest >= k.long && second >= k.thin));
+    return { ext, ground, u, frame, fitting, keep: [keeps(FAR_KEEP, true), keeps(SKY_KEEP, false)] };
+  });
+  // Whatever holds up a part that stays, stays: legs under a water tank, posts under a canopy.
+  for (const level of [0, 1])
+    for (let pass = 0; pass < 2; pass++)
+      src.forEach((_, pi) => {
+        const me = info[pi]!;
+        if (me.keep[level] || me.u > 0 || me.ground || me.fitting || me.ext[1] < 1) return;
+        const b = boxes[pi]!;
+        const cx = (b.min[0] + b.max[0]) / 2;
+        const cz = (b.min[2] + b.max[2]) / 2;
+        me.keep[level] = src.some((_, o) => {
+          if (o === pi || !info[o]!.keep[level]) return false;
+          const k = boxes[o]!;
+          return (
+            Math.abs(k.min[1] - b.max[1]) < 0.4 &&
+            k.min[1] > b.min[1] + 0.5 &&
+            cx > k.min[0] - 0.2 &&
+            cx < k.max[0] + 0.2 &&
+            cz > k.min[2] - 0.2 &&
+            cz < k.max[2] + 0.2
+          );
+        });
+      });
+
+  src.forEach((p, pi) => {
+    const r = ROLE_INDEX.get(p.material) ?? 0;
+    colors[r] ??= p.color;
+    const { ext, ground, u, frame } = info[pi]!;
+    const [farPart, skyPart] = info[pi]!.keep as [boolean, boolean];
+    // Which way a pane faces: its thinnest direction.
+    const thin = ext[0] <= ext[1] && ext[0] <= ext[2] ? 0 : ext[2] <= ext[1] ? 2 : 1;
     const driven = DRIVEN_GROUPS.findIndex((g) => under(p, g)) + 1;
 
     const tr = p.tris;

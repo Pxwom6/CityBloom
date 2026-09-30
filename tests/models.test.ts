@@ -219,7 +219,7 @@ describe('conversion', () => {
     expect(m.counts.near).toBe(n);
     expect(n).toBeLessThan(1474 * 0.9);
     // Far and skyline versions are picked from the same triangles, each smaller than the last.
-    expect(m.counts.far).toBeLessThan(n * 0.5);
+    expect(m.counts.far).toBeLessThan(n * 0.6);
     expect(m.counts.sky).toBeLessThan(m.counts.far);
     expect(m.counts.sky).toBeGreaterThan(100);
     for (let t = 0; t < n; t++) {
@@ -290,9 +290,50 @@ describe('conversion', () => {
     expect(bake('police').triGroup.every((g) => g === 0)).toBe(true);
   });
 
+  it('distant versions keep what holds a kept part up, and long lines along the roof', () => {
+    // The tenement's water tank stands on four legs 0.35 m square: far too thin to keep for
+    // themselves, but the tank stays, so they do (or it would hang in the air).
+    const { file } = inspectModel(good('R103'), 'R103.glb', budgets);
+    const m = bake('R103');
+    const legs = file!.parts.filter((p) => p.name === 'tank_leg');
+    expect(legs).toHaveLength(4);
+    const inLeg = (t: number) => {
+      const i = m.index[t * 3]! * 3;
+      const [x, y, z] = [m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!];
+      return legs.some((l) => {
+        let hit = false;
+        for (let k = 0; k < l.tris.length; k += 3)
+          if (
+            Math.abs(l.tris[k]! - x) < 0.002 &&
+            Math.abs(l.tris[k + 1]! - y) < 0.002 &&
+            Math.abs(l.tris[k + 2]! - z) < 0.002
+          )
+            hit = true;
+        return hit;
+      });
+    };
+    let farLegs = 0;
+    let skyLegs = 0;
+    for (let t = 0; t < m.triRole.length; t++) {
+      if (m.triRole[t] !== ROLES.indexOf('metal') || !inLeg(t)) continue;
+      if (m.triFlags[t]! & TRI_FAR) farLegs++;
+      if (m.triFlags[t]! & TRI_SKY) skyLegs++;
+    }
+    expect(farLegs).toBeGreaterThanOrEqual(4 * 8);
+    expect(skyLegs).toBeGreaterThanOrEqual(4 * 8);
+    // The parapets round the roof (0.3 m thick, 8 and 16 m long) stay in the far version.
+    const trim = ROLES.indexOf('trim');
+    let farParapet = 0;
+    for (let t = 0; t < m.triRole.length; t++) {
+      const y = m.positions[m.index[t * 3]! * 3 + 1]!;
+      if (m.triRole[t] === trim && y > 18.5 && m.triFlags[t]! & TRI_FAR) farParapet++;
+    }
+    expect(farParapet).toBeGreaterThan(20);
+  });
+
   it('distant versions keep the big shapes and every pane that lights', () => {
     const tower = bake('R201');
-    expect(tower.counts.far).toBeLessThan(tower.counts.near * 0.6);
+    expect(tower.counts.far).toBeLessThan(tower.counts.near * 0.65);
     expect(tower.counts.sky).toBeLessThan(tower.counts.near * 0.3);
     const n = tower.triRole.length;
     const wall = ROLES.indexOf('wall');

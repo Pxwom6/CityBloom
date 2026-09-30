@@ -151,7 +151,7 @@ describe('a hand-made model on a lot', () => {
   it('has a far and a skyline version in the same paint', () => {
     const m = buildHandModel(M.R201!, opts(16, 24, 3));
     expect(m.far && m.sky).toBeTruthy();
-    expect(tris(m.far!)).toBeLessThan(tris(m) * 0.6);
+    expect(tris(m.far!)).toBeLessThan(tris(m) * 0.65);
     expect(tris(m.sky!)).toBeLessThan(tris(m.far!));
     expect(m.far!.height).toBe(m.height);
     const colours = (x: ModelData) => {

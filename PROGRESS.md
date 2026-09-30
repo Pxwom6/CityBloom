@@ -115,14 +115,26 @@ every model and the code review, the full e2e run, final frame times, bench and 
 
 ## Models (phase 3)
 136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
-`npm run models:check` passes 135. Converted: 168k triangles in the files, 138k drawn near, 80k far,
-48k in the skyline; the models file is 2.3 MB (0.8 MB gzipped), fetched at start.
+`npm run models:check` passes all 136. Converted: 169k triangles in the files, 139k drawn near, 82k
+far, 50k in the skyline; the models file is 2.3 MB (0.8 MB gzipped), fetched at start.
 
 | File | Status |
 |---|---|
-| `library.glb` | **fails**: 24 × 20 m on a 20 × 20 m site (its `gable` is 4 m outside the site on +x); the library keeps its generated look |
 | `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot, two on a 16 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
-| the other 134 | pass with no notes |
+| `library.glb`, `primary.glb`, `university.glb` | failed as first delivered (a gable or wall slid 4–9 m off its building: "a wall hangs in the air", and the library was 24 m wide on its 20 m site); the owner's fixed files pass |
+| the other 132 | pass with no notes |
+
+Things seen in the models while reviewing every one in the game (they pass the check and are in; for
+the owner, if a model is ever remade):
+- `firestation`: a thin strip of roof along the ridge sits a little proud of the roof.
+- `skyneedle`: benches stand inside the planters at its foot.
+- `nuclear`: the cooling towers' bases run into the boundary wall.
+- `recycling`: the shed roofs' end caps are in the roof material, so they repaint with the roof.
+- `C223`: the lobby glass lies in the plane of the wall (it can shimmer at a distance).
+- `university`: the back walls of the wings have no windows.
+- Several civic sites leave no clear back corner, so an add-on annex stands at the nearest clear
+  spot, shrunk (the clinic's and the police station's most).
+- `tree_spot`s within a metre or two of a wall put a tree's crown into the wall (a few homes).
 
 **Models that pass but rarely or never appear** (a lot-size matter, not a fault in the models): a
 model stands only on a lot as wide as it (or two or three times as wide, in a row) and at least as

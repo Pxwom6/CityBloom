@@ -67,24 +67,24 @@ const KEYS: Key[] = [
   // Sunrise.
   {
     h: 6.0,
-    zenith: '#3d62a8',
-    horizon: '#f5a37e',
-    sun: '#ffb07a',
-    sunI: 1.15,
-    hemiSky: '#9aa6d4',
-    hemiGround: '#5c4a3c',
-    hemiI: 0.82,
+    zenith: '#4268ae',
+    horizon: '#f7ac82',
+    sun: '#ffb47c',
+    sunI: 1.5,
+    hemiSky: '#a8b2dc',
+    hemiGround: '#665240',
+    hemiI: 0.95,
   },
   // Golden hour.
   {
     h: 6.9,
-    zenith: '#4a82cc',
-    horizon: '#f6cf9c',
+    zenith: '#4a86d0',
+    horizon: '#f8d6a6',
     sun: '#ffd49a',
-    sunI: 1.9,
-    hemiSky: '#bcd0ee',
-    hemiGround: '#7e6c50',
-    hemiI: 0.96,
+    sunI: 2.3,
+    hemiSky: '#d0d6e6',
+    hemiGround: '#86734f',
+    hemiI: 1.08,
   },
   {
     h: 8.2,
@@ -119,34 +119,34 @@ const KEYS: Key[] = [
   // Golden hour.
   {
     h: 17.6,
-    zenith: '#4c86cc',
-    horizon: '#f3d8a8',
+    zenith: '#4c8ad0',
+    horizon: '#f5dcac',
     sun: '#ffd08c',
-    sunI: 2.2,
-    hemiSky: '#c6d2ea',
-    hemiGround: '#86704c',
-    hemiI: 1.0,
+    sunI: 2.5,
+    hemiSky: '#cad6ee',
+    hemiGround: '#8a744e',
+    hemiI: 1.08,
   },
   {
     h: 18.5,
-    zenith: '#5074b4',
-    horizon: '#f6b27a',
-    sun: '#ffac66',
-    sunI: 1.65,
-    hemiSky: '#b8aed0',
-    hemiGround: '#6e5440',
-    hemiI: 0.88,
+    zenith: '#5478b8',
+    horizon: '#f8ba82',
+    sun: '#ffb06a',
+    sunI: 2.2,
+    hemiSky: '#d6c4b8',
+    hemiGround: '#7a5e46',
+    hemiI: 1.02,
   },
   // Sunset.
   {
     h: 19.2,
-    zenith: '#3f5896',
-    horizon: '#ee8f86',
-    sun: '#ff8c62',
-    sunI: 0.85,
-    hemiSky: '#8a84b8',
-    hemiGround: '#46363c',
-    hemiI: 0.72,
+    zenith: '#435c9c',
+    horizon: '#f0978c',
+    sun: '#ff9066',
+    sunI: 1.1,
+    hemiSky: '#9690c2',
+    hemiGround: '#4e3c42',
+    hemiI: 0.84,
   },
   // Blue hour.
   {
@@ -206,6 +206,8 @@ export class Lighting {
   night = 0;
   /** 0..1 overall scene brightness (used by water and effects). */
   light = 1;
+  /** 0..1 how near the sun is to rising or setting (the golden and blue hours). */
+  low = 0;
   private skyMat: ShaderMaterial;
   private cA = new Color();
   private cB = new Color();
@@ -313,7 +315,8 @@ export class Lighting {
     u.uNight!.value = this.night;
     // How low the sun is: the glow round it on the horizon, from the blue hour to the golden.
     const low = (h: number) => smoothstep(0, 1, 1 - Math.abs(hour - h) / 1.4);
-    u.uLow!.value = Math.max(low(6.2), low(18.9));
+    this.low = Math.max(low(6.2), low(18.9));
+    u.uLow!.value = this.low;
   }
 
   /**

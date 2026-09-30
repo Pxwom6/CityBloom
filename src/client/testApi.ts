@@ -218,6 +218,8 @@ export interface TestApi {
     colourCalls: number;
     shadowCalls: number;
   }[];
+  /** Dev (M26): try a tone mapping and exposure on the running game. */
+  setTone(mapping: 'aces' | 'neutral' | 'agx' | 'none', exposure?: number): void;
   /**
    * How many sampled pixels of the current view a top-level scene object changes when it's shown.
    * Shadows are frozen for both renders, so this counts only the object's own drawing.
@@ -557,6 +559,9 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    setTone: (mapping, exposure) => {
+      game.renderer.toneOverride = { mapping, exposure: exposure ?? 1 };
+    },
     passBreakdown: () => {
       const r = game.renderer;
       const three = r.renderer;

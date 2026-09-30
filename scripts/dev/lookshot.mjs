@@ -11,14 +11,15 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
-const VALUE_FLAGS = ['views', 'hours', 'season', 'quality', 'dist', 'label', 'at'];
+const VALUE_FLAGS = ['views', 'hours', 'season', 'quality', 'dist', 'label', 'at', 'tone'];
 const flag = (name, d) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : d;
 };
 const pos = argv.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.includes(argv[i - 1]?.slice(2)));
 const [file, out] = pos;
-if (!file || !out) throw new Error('usage: node scripts/dev/lookshot.mjs city.gz outDir [--views …] [--hours …]');
+if (!file || !out)
+  throw new Error('usage: node scripts/dev/lookshot.mjs city.gz outDir [--views …] [--hours …]');
 mkdirSync(out, { recursive: true });
 const views = flag('views', 'overview,city,street').split(',');
 const hours = flag('hours', '6.3,13,18.6,22').split(',').map(Number);
@@ -27,6 +28,8 @@ const quality = flag('quality', 'high');
 const dist = flag('dist', 'dist-test');
 const label = flag('label', 'look');
 const at = flag('at', null)?.split(',').map(Number) ?? null;
+// `--tone neutral:1.1`: a tone mapping and exposure to try (dev builds with `setTone`).
+const tone = flag('tone', null)?.split(':') ?? null;
 const PRESETS = {
   low: { quality: 'low', shadows: false, drawDistance: 'near' },
   medium: { quality: 'medium', shadows: true, drawDistance: 'medium' },
@@ -49,7 +52,10 @@ try {
   page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
   await page.addInitScript(
     (p) =>
-      localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true, ...p })),
+      localStorage.setItem(
+        'citybloom.settings',
+        JSON.stringify({ tips: false, graphicsChecked: true, ...p }),
+      ),
     PRESETS[quality],
   );
   await page.goto(`http://localhost:${PORT}/`);
@@ -60,21 +66,21 @@ try {
   });
   await page.addStyleTag({ content: '#ui { display: none !important; }' });
   await page.evaluate(
-    ({ season }) => {
+    ({ season, tone }) => {
       const g = window.__game;
       g.setSpeed(0);
-      if (season) {
-        const i = ['spring', 'summer', 'autumn', 'winter'].indexOf(season);
-        g.setWeatherLook({
-          season: [0, 1, 2, 3].map((k) => (k === i ? 1 : 0)),
-          kind: 'clear',
-          strength: 0,
-          snow: season === 'winter' ? 0.75 : 0,
-          wet: 0,
-        });
-      }
+      if (tone) g.setTone(tone[0], Number(tone[1] ?? 1));
+      // Clear weather in the season asked for (summer by default), so the hours compare.
+      const i = ['spring', 'summer', 'autumn', 'winter'].indexOf(season ?? 'summer');
+      g.setWeatherLook({
+        season: [0, 1, 2, 3].map((k) => (k === i ? 1 : 0)),
+        kind: 'clear',
+        strength: 0,
+        snow: season === 'winter' ? 0.75 : 0,
+        wet: 0,
+      });
     },
-    { season },
+    { season, tone },
   );
   for (const view of views)
     for (const hour of hours) {
@@ -83,7 +89,7 @@ try {
           const g = window.__game;
           const s = await g.getState();
           const now = ((s.tick + 7 * 60) % 1440) / 60;
-          const d = Math.round((((hour - now) % 24) + 24) % 24 * 60);
+          const d = Math.round(((((hour - now) % 24) + 24) % 24) * 60);
           if (d > 0) await g.advance(d);
           g.setCamera(view);
           if (at) g.setCamera({ x: at[0], z: at[1] });

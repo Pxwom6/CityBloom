@@ -1,6 +1,9 @@
 import {
   ACESFilmicToneMapping,
+  AgXToneMapping,
   HalfFloatType,
+  NeutralToneMapping,
+  NoToneMapping,
   PCFShadowMap,
   PerspectiveCamera,
   SRGBColorSpace,
@@ -191,7 +194,8 @@ export class GameRenderer {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.toneMapping = ACESFilmicToneMapping;
+    // Neutral keeps a toy's colours true (ACES took brick to near black in shade; M26).
+    this.renderer.toneMapping = NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     // PCF is soft-filtered in this three.js (PCFSoftShadowMap is deprecated and falls back to it).
@@ -585,6 +589,8 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /** Dev: a tone mapping and exposure to try (test API `setTone`). */
+  toneOverride: { mapping: 'aces' | 'neutral' | 'agx' | 'none'; exposure: number } | null = null;
   /** The frame after the scene is drawn: ambient occlusion, glow at night, tone mapping (M26). */
   readonly post = new PostPipeline();
   /** Photo mode's lens reads the finished frame from here when the post pipeline runs. */
@@ -640,7 +646,20 @@ export class GameRenderer {
     const wf = this.weather.fog;
     l.fog.near *= (1 - 0.92 * wf) * (1 - 0.3 * this.weather.haze);
     l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
-    this.renderer.toneMappingExposure = (1.0 + l.night * 0.12) * (1 - 0.12 * this.weather.overcast);
+    // A little more exposure while the sun is low, as the eye does: golden hour glows rather than
+    // going dim (M26).
+    this.renderer.toneMappingExposure =
+      (1.1 + l.night * 0.04 + l.low * 0.2) * (1 - 0.12 * this.weather.overcast);
+    const tone = this.toneOverride;
+    if (tone) {
+      this.renderer.toneMapping = {
+        aces: ACESFilmicToneMapping,
+        neutral: NeutralToneMapping,
+        agx: AgXToneMapping,
+        none: NoToneMapping,
+      }[tone.mapping];
+      this.renderer.toneMappingExposure *= tone.exposure;
+    }
     this.terrain.update(this.time);
     this.buildings.update(l.night, this.camera.position);
     this.civics.update(this.camera.position, this.buildings.range);

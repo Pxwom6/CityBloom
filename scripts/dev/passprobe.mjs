@@ -37,7 +37,10 @@ try {
   page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
   await page.addInitScript(
     (p) =>
-      localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true, ...p })),
+      localStorage.setItem(
+        'citybloom.settings',
+        JSON.stringify({ tips: false, graphicsChecked: true, ...p }),
+      ),
     PRESETS[quality],
   );
   await page.goto(`http://localhost:${PORT}/`);

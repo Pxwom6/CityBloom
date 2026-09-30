@@ -96,28 +96,32 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-M25 (baseline and model pipeline). Done so far: the uncapped Chrome frame-time benchmark and the
-baseline (below), two frame-time fixes, and the build-time side of the model pipeline: the GLB
-reader, `npm run models:check`, the converter (roles, window units, tree and smoke markers, hidden
-faces removed, a far and a skyline version from the named parts) and the packed models file, with
-tests (`tests/models.test.ts`). Next: the Vite plugin and the game side.
+M25 (baseline and model pipeline): built, and being checked. Done: the uncapped Chrome frame-time
+benchmark and the baseline; `npm run models:check`; the build-time conversion and the packed models
+file; models in the game (rows, palettes, mirroring, per-copy night windows, lot base, garden trees
+from `tree_spot`s, smoke from stack tops, seasonal lawns and hedges, the landfill's mound, project
+stages, annexes, no two alike side by side); near / far / skyline versions with a dithered
+hand-over; unit tests (`tests/models.test.ts`, `tests/handmade.test.ts`) and the end-to-end test
+(`e2e/m25-models.spec.ts`: the tenement grown by normal zoning). Left: act on the visual review of
+every model and the code review, the full e2e run, final frame times, bench and balance, SPEC_REVIEW.
 
 ## Next tasks
-1. M25: the Vite plugin (`virtual:citybloom-models`) and loading the models file at start.
-2. M25: models in the asset registry: rows, palettes, mirroring, per-copy night windows, the lot
-   base, trees, smoke, seasonal grass and hedges; no identical neighbours.
-3. M25: near / far / skyline chunk meshes with a dithered cross-fade; then civic models (mound,
-   project stages, annexes); the tenement grown in a real city; frame budget.
+1. M25: fixes from the reviews; full e2e; final numbers; `M25 complete`.
+2. M26 Light and sky: ambient occlusion, split shadow maps with distant versions casting, sky and
+   sun through the day, haze, glow at night.
+3. M28 note: most level-2 and -3 buildings stand on lots smaller than their type's own (upgrades
+   rarely widen), where the type's model can't fit, so they stay generated: 17 % of the bench city's
+   buildings wear hand-made models. Decide there whether a smaller sibling's model may stand in.
 
 ## Models (phase 3)
 136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
-`npm run models:check` passes 135. Converted: 168k triangles in the files, 138k drawn near, 69k far,
-39k in the skyline; the models file is 2.3 MB (0.8 MB gzipped).
+`npm run models:check` passes 135. Converted: 168k triangles in the files, 138k drawn near, 80k far,
+48k in the skyline; the models file is 2.3 MB (0.8 MB gzipped), fetched at start.
 
 | File | Status |
 |---|---|
 | `library.glb` | **fails**: 24 × 20 m on a 20 × 20 m site (its `gable` is 4 m outside the site on +x); the library keeps its generated look |
-| `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
+| `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot, two on a 16 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
 | the other 134 | pass with no notes |
 
 ## Known issues

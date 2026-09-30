@@ -133,41 +133,24 @@ function civicModel(
   stage: number | undefined,
 ): ModelData {
   const hand = handmade.civic(def.id, variant);
-  const annexes = modules.map((id, k) => ({ k, model: handmade.annex(id, variant + k) }));
-  // All generated, as before phase 3.
-  if (!hand && annexes.every((a) => !a.model))
-    return buildCivicModel(def, variant, fill, modules.length, stage);
+  // A generated building keeps its generated annexes, in the corners it leaves free.
+  if (!hand) return buildCivicModel(def, variant, fill, modules.length, stage);
   const W = def.w;
   const D = def.d;
   const insets: Inset[] = [];
   const extra: ModelData[] = [];
   const taken: { x: number; z: number; w: number; d: number }[] = [];
-  for (const a of annexes) {
-    if (!a.model) extra.push(buildAnnexModel(W, D, a.k));
-    else {
-      // In its back corner, or on a hand-made site the clear spot nearest it; just clear of the
-      // ground it is set on.
-      const corner = annexPlace(W, D, a.k);
-      const p = hand ? clearPlace(hand, corner, taken) : corner;
-      taken.push({ x: p.x, z: p.z, w: a.model.w * p.scale, d: a.model.d * p.scale });
-      insets.push({ model: a.model, x: p.x, z: p.z, y: 0.03, scale: p.scale, seed: variant * 31 + a.k });
+  modules.forEach((id, k) => {
+    const annex = handmade.annex(id, variant + k);
+    if (!annex) {
+      extra.push(buildAnnexModel(W, D, k));
+      return;
     }
-  }
-  if (!hand) {
-    // A generated building with hand-made annexes: each annex is built on its own and set in.
-    const wings = insets.map((at) => ({
-      at,
-      m: buildHandModel(at.model, {
-        W: at.model.w,
-        D: at.model.d,
-        seed: at.seed,
-        lit: CIVIC_LIT,
-        mirror: false,
-        base: null,
-      }),
-    }));
-    return merge(buildCivicModel(def, variant, fill, 0, stage), wings, extra);
-  }
+    // The clear spot nearest its back corner, just clear of the ground it is set on.
+    const p = clearPlace(hand, annexPlace(W, D, k), taken);
+    taken.push({ x: p.x, z: p.z, w: annex.w * p.scale, d: annex.d * p.scale });
+    insets.push({ model: annex, x: p.x, z: p.z, y: 0.03, scale: p.scale, seed: variant * 31 + k });
+  });
   const o = {
     W,
     D,
@@ -188,45 +171,6 @@ function civicModel(
   siteWorks(works, W, D, stage, hand.h * reveal);
   extra.push(works.build());
   return buildHandModel(hand, { ...o, reveal, bare: stage < n - 1 }, insets, extra);
-}
-
-/** A generated main building with hand-made annexes set into its back corners. */
-function merge(main: ModelData, wings: { m: ModelData; at: Inset }[], extra: ModelData[]): ModelData {
-  const parts: { m: ModelData; at: Inset | null }[] = [
-    { m: main, at: null },
-    ...wings,
-    ...extra.map((m) => ({ m, at: null })),
-  ];
-  let n = 0;
-  for (const p of parts) n += p.m.emi.length;
-  const out: ModelData = {
-    pos: new Float32Array(n * 3),
-    nrm: new Float32Array(n * 3),
-    col: new Float32Array(n * 3),
-    emi: new Float32Array(n),
-    height: main.height,
-    win: new Uint16Array(n),
-  };
-  const chances: number[] = [];
-  let o = 0;
-  for (const p of parts) {
-    const s = p.at?.scale ?? 1;
-    const count = p.m.emi.length;
-    for (let i = 0; i < count; i++) {
-      out.pos[(o + i) * 3] = p.m.pos[i * 3]! * s + (p.at?.x ?? 0);
-      out.pos[(o + i) * 3 + 1] = p.m.pos[i * 3 + 1]! * s + (p.at?.y ?? 0);
-      out.pos[(o + i) * 3 + 2] = p.m.pos[i * 3 + 2]! * s + (p.at?.z ?? 0);
-      out.emi[o + i] = p.m.emi[i]!;
-      const w = p.m.win?.[i] ?? 0;
-      out.win![o + i] = w ? w + chances.length : 0;
-    }
-    out.nrm.set(p.m.nrm, o * 3);
-    out.col.set(p.m.col, o * 3);
-    if (p.m.winChance) chances.push(...p.m.winChance);
-    o += count;
-  }
-  out.winChance = Float32Array.from(chances);
-  return out;
 }
 
 export const assets = new AssetRegistry();

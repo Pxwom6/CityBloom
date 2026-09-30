@@ -124,6 +124,20 @@ every model and the code review, the full e2e run, final frame times, bench and 
 | `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot, two on a 16 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
 | the other 134 | pass with no notes |
 
+**Models that pass but rarely or never appear** (a lot-size matter, not a fault in the models): a
+model stands only on a lot as wide as it (or two or three times as wide, in a row) and at least as
+deep. Buildings start at level 1 on the level-1 lot and an upgrade widens only if the cells beside
+it are free, which on a built-up street they aren't. So in played cities:
+- **Family houses and villas (`R002`, `R012`, `R022`, `R003`, `R013`, `R023`, 16 m wide) never
+  appear**: low-density homes stay one cell (8 m) wide (in 50 saved cities, 4,398 villas, none on a
+  16 m lot). Only the cottages (`R0x1`, 8 m) fit. Versions 8 m wide (8 × 16 or 8 × 24 m) would.
+- Level-2 and -3 medium- and high-density buildings mostly stay on 16 m lots: the 24 m models
+  (`R1x3` courtyard blocks, `C1x3`, `R2x2`/`R2x3`, `C2x2`/`C2x3`, …) appear only where a lot did widen
+  (the tenement, 8 m wide, fits everywhere its type grows).
+- In the bench city 17 % of buildings wear hand-made models, in the menu's demo town 25 %
+  (`node scripts/dev/modelcensus.mjs <save>` lists them by type and lot). The rest are generated.
+  Whether a smaller sibling's model may stand in on a small lot is a question for M28.
+
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.

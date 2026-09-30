@@ -222,7 +222,8 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
   const P = model.positions;
   const I = model.index;
   const moundScale = o.fill === undefined ? 1 : (1 + 12 * Math.max(0, Math.min(1, o.fill))) / 13;
-  const cut = o.reveal === undefined ? Infinity : model.h * o.reveal;
+  const building = o.reveal !== undefined;
+  const cut = building ? model.h * o.reveal! : Infinity;
   const v = new Float64Array(9);
   for (const c of copies) {
     const sx = c.mirror ? -c.scale : c.scale;
@@ -233,7 +234,8 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
       if (c.joinPos && f & (c.mirror ? TRI_PARTY_NEG : TRI_PARTY_POS)) continue;
       if (c.joinNeg && f & (c.mirror ? TRI_PARTY_POS : TRI_PARTY_NEG)) continue;
       const g = model.triGroup[t]!;
-      if (o.bare && (g === GROUP.rocket || g === GROUP.receiver)) continue;
+      // The rocket and the receiver arrive when the rest is finished.
+      if (building && (g === GROUP.rocket || g === GROUP.receiver)) continue;
       const role = model.triRole[t]!;
       for (let k = 0; k < 3; k++) {
         const i = I[t * 3 + k]! * 3;
@@ -257,16 +259,14 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
         else win = c.unit0 + u;
       } else if (role === ROLE.grass) emi = SURF_GRASS;
       else if (role === ROLE.hedge) emi = SURF_HEDGE;
-      // A building site: bare earth until the last stage, nothing lit.
-      if (o.bare) {
-        if (role === ROLE.grass || role === ROLE.hedge || role === ROLE.water) {
-          col = EARTH;
-          emi = 0;
-        }
-        if (win || emi > 0) {
-          win = 0;
-          emi = 0;
-        }
+      // A building site: bare earth until the last stage, and nothing lit until it opens.
+      if (o.bare && (role === ROLE.grass || role === ROLE.hedge || role === ROLE.water)) {
+        col = EARTH;
+        emi = 0;
+      }
+      if (building && (win || emi > 0)) {
+        win = 0;
+        emi = 0;
       }
       if (cut === Infinity) {
         out.tri(v[0]!, v[1]!, v[2]!, v[3]!, v[4]!, v[5]!, v[6]!, v[7]!, v[8]!, col, emi, win);

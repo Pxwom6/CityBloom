@@ -1,4 +1,4 @@
-import type { BakedModel } from './bake';
+import type { BakedModel } from './baked';
 
 /**
  * The file the game fetches its hand-made models from: a small header, a JSON index, then the

@@ -14,12 +14,13 @@ import { windAngle } from '../sim/systems/pollution';
 import { CameraController } from './camera';
 import { Lighting } from './lighting';
 import { TerrainRenderer } from './terrain';
-import { TreeRenderer } from './trees';
+import { TreeRenderer, lotTree, type Placement } from './trees';
 import { WaterRenderer } from './water';
 import { RoadRenderer } from './roads';
 import { ZoneRenderer } from './zones';
 import { GhostRenderer } from './ghost';
-import { BuildingRenderer } from './buildings';
+import { BuildingRenderer, buildingYaw } from './buildings';
+import type { ModelData } from './assets/builder';
 import { CivicRenderer } from './civics';
 import { VehicleRenderer } from './vehicles';
 import { IconRenderer } from './icons';
@@ -205,7 +206,7 @@ export class GameRenderer {
     this.scene.add(this.zones.group);
     this.buildings = new BuildingRenderer(world, this.terrain.uniforms, this.weather.uniforms);
     this.scene.add(this.buildings.group);
-    this.civics = new CivicRenderer(world, this.buildings.material);
+    this.civics = new CivicRenderer(world, this.buildings.lodMaterials);
     this.scene.add(this.civics.group);
     this.vehicles = new VehicleRenderer(world);
     this.scene.add(this.vehicles.group);
@@ -214,6 +215,10 @@ export class GameRenderer {
     this.garbage = new GarbageProps(world);
     this.scene.add(this.garbage.mesh);
     this.effects = new EffectsRenderer(world, this.vehicles, this.buildings.heights, this.civics.heights);
+    this.effects.models = {
+      civic: (c) => this.civics.model(c),
+      building: (b) => this.buildings.model(b),
+    };
     this.scene.add(this.effects.group);
     this.coverageMap = new RoadTint((x, z) => world.heightAt(x, z), 'diverging', 0.85);
     this.scene.add(this.coverageMap.group);
@@ -248,6 +253,37 @@ export class GameRenderer {
     this.trees.weather = this.weather.uniforms;
     this.trees.blocked = (x, z) =>
       this.roads.onRoad(x, z, 1.5) || this.onBuilding(x, z) || this.world.civicAt(x, z) !== null;
+    // Garden trees: a hand-made model's tree_spots, planted with the game's own seasonal trees.
+    this.trees.lotTrees = (minX, minZ, maxX, maxZ) => {
+      const out: Placement[] = [];
+      const plant = (m: ModelData, o: { x: number; y: number; z: number; angle: number; side: number }) => {
+        const t = m.trees;
+        if (!t?.length) return;
+        const yaw = buildingYaw(o);
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        for (let i = 0; i < t.length; i += 3) {
+          const x = o.x + t[i]! * c + t[i + 2]! * s;
+          const z = o.z - t[i]! * s + t[i + 2]! * c;
+          if (x >= minX && x < maxX && z >= minZ && z < maxZ) out.push(lotTree(x, o.y + t[i + 1]!, z));
+        }
+      };
+      const pad = 40;
+      for (const id of world.bldHash.query({
+        minX: minX - pad,
+        minZ: minZ - pad,
+        maxX: maxX + pad,
+        maxZ: maxZ + pad,
+      })) {
+        const b = world.buildings.get(id);
+        if (b && (b.state === 1 || b.state === 2)) plant(this.buildings.model(b), b);
+      }
+      for (const c of world.civics.values()) {
+        if (c.x < minX - 200 || c.x > maxX + 200 || c.z < minZ - 200 || c.z > maxZ + 200) continue;
+        plant(this.civics.model(c), c);
+      }
+      return out;
+    };
     this.trees.rebuildAll();
     this.scene.add(this.trees.group);
     // Names for debugging (the test API's render breakdown).
@@ -281,10 +317,20 @@ export class GameRenderer {
         if (c) this.treePoints.push({ x: c.x, z: c.z });
       }
     });
-    world.onBuildings((changed) => {
+    const lots = new Map<number, { x: number; z: number }>();
+    for (const b of world.buildings.values()) lots.set(b.id, { x: b.x, z: b.z });
+    world.onBuildings((changed, removed) => {
       for (const id of changed) {
         const b = world.buildings.get(id);
-        if (b) this.treePoints.push({ x: b.x, z: b.z });
+        if (!b) continue;
+        this.treePoints.push({ x: b.x, z: b.z });
+        lots.set(id, { x: b.x, z: b.z });
+      }
+      // A building that goes takes its garden trees with it.
+      for (const id of removed) {
+        const at = lots.get(id);
+        if (at) this.treePoints.push(at);
+        lots.delete(id);
       }
     });
     world.onNet((c) => {
@@ -387,6 +433,12 @@ export class GameRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Build every building mesh the view needs now, rather than a chunk a frame (tests, screenshots). */
+  flushBuildings(): void {
+    this.buildings.flushAll();
+    this.civics.update(this.camera.position, this.buildings.range, true);
+  }
+
   setShadows(on: boolean): void {
     this.renderer.shadowMap.enabled = on;
     this.lighting.sun.castShadow = on;
@@ -414,6 +466,8 @@ export class GameRenderer {
       shadow.map = null;
     }
     this.fogScale = g.fogScale;
+    // Coarser pixels show less: the levels of detail hand over sooner (High at 2× is the full range).
+    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7));
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
     this.weather.drops = Math.round(9000 * g.crowd);
@@ -522,7 +576,8 @@ export class GameRenderer {
     l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
     this.renderer.toneMappingExposure = (1.0 + l.night * 0.12) * (1 - 0.12 * this.weather.overcast);
     this.terrain.update(this.time);
-    this.buildings.update(l.night);
+    this.buildings.update(l.night, this.camera.position);
+    this.civics.update(this.camera.position, this.buildings.range);
     this.vehicles.update(this.world.displayTick);
     this.traffic.night = l.night;
     const t0 = performance.now();

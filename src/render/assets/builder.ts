@@ -9,9 +9,37 @@ export interface ModelData {
   pos: Float32Array;
   nrm: Float32Array;
   col: Float32Array;
+  /**
+   * Per vertex: 0..1 the night glow of a lit window; a negative value tags a surface that follows
+   * the seasons (SURF_GRASS, SURF_HEDGE) and never glows.
+   */
   emi: Float32Array;
   height: number;
+  /**
+   * Hand-made models (phase 3). Windows that each copy lights for itself: per vertex, the window
+   * it belongs to plus one (0 = none, its `emi` stands), and per window the chance it is lit.
+   */
+  win?: Uint16Array;
+  winChance?: Float32Array;
+  /** Distant versions: fewer triangles, the same shape and colours. */
+  far?: ModelData;
+  sky?: ModelData;
+  /** Where the game plants its own trees (x, y, z each) and where smoke rises from (stack tops). */
+  trees?: Float32Array;
+  stacks?: Float32Array;
+  /** The hand-made design this was built from (its file name without .glb). */
+  hand?: string;
 }
+
+/** `emi` tags for surfaces that change with the seasons. */
+export const SURF_GRASS = -1;
+export const SURF_HEDGE = -2;
+
+/**
+ * Colours the generator paints lawns and hedges with: triangles in them are tagged to follow
+ * the seasons, as the terrain does (phase 3). Registered by the model files that own them.
+ */
+export const SEASONAL = new Map<Color, number>();
 
 const tmp = new Color();
 
@@ -24,6 +52,7 @@ export class ModelBuilder {
 
   /** Triangle with an explicit normal. */
   tri(a: number[], b: number[], c: number[], nx: number, ny: number, nz: number, col: Color, emi = 0): void {
+    if (emi === 0) emi = SEASONAL.get(col) ?? 0;
     for (const v of [a, b, c]) {
       this.p.push(v[0]!, v[1]!, v[2]!);
       this.n.push(nx, ny, nz);

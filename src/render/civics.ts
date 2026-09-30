@@ -1,100 +1,87 @@
-import { Group, Mesh, type Material } from 'three';
+import { Group, type Vector3 } from 'three';
 import type { ClientWorld } from '../client/world';
 import type { CivicData } from '../sim/protocol';
+import { CIVIC } from '../data/civic';
 import { assets } from './assets/registry';
-import { Arrays, appendModel, buildingYaw } from './buildings';
+import type { ModelData } from './assets/builder';
+import { buildingYaw } from './buildings';
+import { LodChunks, type ChunkItem, type LodMaterials, type LodRange } from './lodChunks';
 
-/** Civic buildings are merged per chunk of this many metres (one draw call per chunk). */
+/** Civic buildings are merged per chunk of this many metres (one draw call per chunk and level). */
 const CHUNK = 512;
 
 /**
- * Civic buildings (utilities, services, parks, landmarks): merged into one mesh per 512 m chunk, so
+ * Civic buildings (utilities, services, parks, landmarks): merged into meshes per 512 m chunk, so
  * a big city's hundreds of pumps, schools and stations cost a handful of draw calls. A chunk is
- * rebuilt only when something in it changes how it looks.
+ * rebuilt only when something in it changes how it looks. Hand-made models (phase 3) are drawn at
+ * three levels of detail, as zoned buildings are (LodChunks).
  */
 export class CivicRenderer {
   readonly group = new Group();
   readonly heights = new Map<number, number>();
-  private chunks = new Map<number, { ids: Set<number>; mesh: Mesh | null }>();
-  private chunkOf = new Map<number, number>();
+  readonly chunks: LodChunks;
   /** What each civic's model depends on; unchanged means no rebuild. */
   private looks = new Map<number, string>();
 
   constructor(
     private world: ClientWorld,
-    private material: Material,
+    materials: LodMaterials,
   ) {
-    const dirty = new Set<number>();
-    for (const c of world.civics.values()) this.place(c.id, dirty);
-    this.rebuild(dirty);
+    // Civic chunks rebuild as soon as they change (they change rarely, and a placed building
+    // should appear at once).
+    this.chunks = new LodChunks('civics', CHUNK, materials, (id) => this.item(id), Infinity);
+    this.group.add(this.chunks.group);
+    for (const c of world.civics.values()) this.place(c.id);
     world.onCivics((changed, removed) => {
-      const touched = new Set<number>();
-      for (const id of removed) this.place(id, touched);
-      for (const id of changed) this.place(id, touched);
-      this.rebuild(touched);
+      for (const id of removed) this.place(id);
+      for (const id of changed) this.place(id);
     });
   }
 
-  private chunkKey(c: CivicData): number {
-    return Math.floor(c.x / CHUNK) * 1000 + Math.floor(c.z / CHUNK);
-  }
-
   private look(c: CivicData): string {
-    return `${c.def}:${c.variant}:${c.fill ?? 0}:${c.modules?.length ?? 0}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}`;
+    // Fill by the steps the model has (a landfill's mound), so a truckload doesn't rebuild the chunk.
+    return `${c.def}:${c.variant}:${Math.round((c.fill ?? 0) * 4)}:${(c.modules ?? []).join('+')}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}`;
   }
 
-  private place(id: number, dirty: Set<number>): void {
+  /** The model a civic building is drawn with. */
+  model(c: CivicData): ModelData {
+    return assets.civic(c.def, c.variant, c.fill, c.modules ?? [], c.stage);
+  }
+
+  private item(id: number): ChunkItem | null {
     const c = this.world.civics.get(id);
-    const look = c ? this.look(c) : '';
-    if (c && this.looks.get(id) === look) return;
-    const old = this.chunkOf.get(id);
-    if (old !== undefined) {
-      this.chunks.get(old)?.ids.delete(id);
-      dirty.add(old);
-      this.chunkOf.delete(id);
-    }
+    if (!c) return null;
+    const def = CIVIC.get(c.def);
+    return {
+      x: c.x,
+      y: c.y,
+      z: c.z,
+      yaw: buildingYaw(c),
+      model: this.model(c),
+      look: false,
+      seed: c.id,
+      reach: def ? Math.hypot(def.w, def.d) / 2 + 2 : 30,
+    };
+  }
+
+  private place(id: number): void {
+    const c = this.world.civics.get(id);
     if (!c) {
       this.heights.delete(id);
       this.looks.delete(id);
+      this.chunks.set(id, null);
       return;
     }
+    const look = this.look(c);
+    if (this.looks.get(id) === look) return;
     this.looks.set(id, look);
-    const k = this.chunkKey(c);
-    let ch = this.chunks.get(k);
-    if (!ch) this.chunks.set(k, (ch = { ids: new Set(), mesh: null }));
-    ch.ids.add(id);
-    this.chunkOf.set(id, k);
-    dirty.add(k);
+    this.heights.set(id, this.model(c).height);
+    this.chunks.set(id, c);
   }
 
-  private rebuild(keys: Set<number>): void {
-    for (const k of keys) {
-      const ch = this.chunks.get(k);
-      if (!ch) continue;
-      if (ch.mesh) {
-        this.group.remove(ch.mesh);
-        ch.mesh.geometry.dispose();
-        ch.mesh = null;
-      }
-      if (!ch.ids.size) {
-        this.chunks.delete(k);
-        continue;
-      }
-      const arr = new Arrays(false);
-      for (const id of [...ch.ids].sort((a, b) => a - b)) {
-        const c = this.world.civics.get(id);
-        if (!c) continue;
-        const m = assets.civic(c.def, c.variant, c.fill, c.modules?.length ?? 0, c.stage);
-        appendModel(arr, m, c.x, c.y, c.z, buildingYaw(c));
-        this.heights.set(id, m.height);
-      }
-      const mesh = new Mesh(arr.geometry(), this.material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.name = `civics-${k}`;
-      ch.mesh = mesh;
-      this.group.add(mesh);
-    }
+  /** Once a frame: the levels of detail for where the camera is, and any rebuilds. */
+  update(eye: Vector3, range: LodRange, all = false): void {
+    this.chunks.update(eye, range, all);
   }
 
   data(id: number): CivicData | undefined {

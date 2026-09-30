@@ -1,5 +1,5 @@
 import { Color } from 'three';
-import type { ModelBuilder } from './builder';
+import { SEASONAL, SURF_GRASS, type ModelBuilder } from './builder';
 
 /**
  * Big projects (M17): a finished model for each, and a building site for each construction stage
@@ -13,6 +13,7 @@ const EARTH = C('#8b7355');
 const EARTH_DARK = C('#6e5a44');
 const GRAVEL = C('#bdb6a6');
 const GRASS = C('#8cc063');
+SEASONAL.set(GRASS, SURF_GRASS);
 const PITCH = C('#5aa04a');
 const PITCH_LINE = C('#eef2ea');
 const SEATS = C('#2f6fb3');
@@ -496,6 +497,19 @@ function convention(m: ModelBuilder, W: number, D: number, st: Stage): void {
     siteKit(m, W, D);
   }
   m.height = Math.max(m.height, wallTop + 6);
+}
+
+/**
+ * A building site's works for a project whose building is a hand-made model (phase 3): the
+ * hoarding, the site cabins, and cranes that stand over what has risen so far (`top`, m).
+ */
+export function siteWorks(m: ModelBuilder, W: number, D: number, stage: number, top: number): void {
+  hoarding(m, W, D);
+  siteKit(m, W, D);
+  const h = Math.max(30, top + 14);
+  crane(m, W / 2 - 10, stage === 1 ? -D / 4 : 0, h, stage === 1 ? Math.PI * 0.9 : Math.PI);
+  if (stage === 1) crane(m, -W / 2 + 12, D / 4, h - 2, -0.2);
+  m.height = Math.max(m.height, h + 4);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { Color } from 'three';
 import type { ZonedDef } from '../../data/buildings';
 import { CELL, ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
-import { ModelBuilder, modelRng, pick, type ModelData } from './builder';
+import { ModelBuilder, SEASONAL, SURF_GRASS, SURF_HEDGE, modelRng, pick, type ModelData } from './builder';
 
 const C = (hex: string) => new Color(hex);
 const WALLS_R = [
@@ -39,6 +39,8 @@ const YELLOW = C('#e0b030');
 const WHITE = C('#eef2f5');
 const SOLAR = C('#2c3e66');
 const METAL = C('#9aa0a6');
+
+SEASONAL.set(GRASS, SURF_GRASS).set(GRASS_RICH, SURF_GRASS).set(HEDGE, SURF_HEDGE);
 
 function lotBase(m: ModelBuilder, W: number, D: number, top: Color): void {
   // Foundation plinth: hides slopes under the lot; its top is the lot surface.
@@ -727,6 +729,24 @@ function industry(m: ModelBuilder, def: ZonedDef, W: number, D: number, r: () =>
     }
   }
 }
+
+/** The generator's palettes, for repainting hand-made models (phase 3). */
+export const PALETTES = {
+  wallsR: WALLS_R,
+  wallsRich: WALLS_R_RICH,
+  wallsC: WALLS_C,
+  wallsI: WALLS_I,
+  brick: BRICK,
+  modern: MODERN_WALLS.slice(0, 3),
+  roofs: ROOFS,
+  awnings: AWNINGS,
+  signs: SIGNS,
+  stone: STONE,
+  grass: GRASS,
+  grassRich: GRASS_RICH,
+  pave: PAVE,
+  concrete: CONCRETE,
+};
 
 /** Build the procedural model for a zoned building on a w×d-cell lot. */
 export function buildZonedModel(def: ZonedDef, w: number, d: number, variant: number): ModelData {

@@ -1,6 +1,22 @@
 import type { GlbFile, GlbPart } from './glb';
 import { boxOf, emptyBox, growBox, groupsNamed, under, type Box3, type ModelReport } from './check';
 import { GROUND_ROLES, PART, ROLE_INDEX, type Role } from './spec';
+import {
+  DRIVEN_GROUPS,
+  FAR_KEEP,
+  SKY_KEEP,
+  TRI_FAR,
+  TRI_GROUND,
+  TRI_NEAR,
+  TRI_PARTY_NEG,
+  TRI_PARTY_POS,
+  TRI_SKY,
+  UNIT_BAND,
+  UNIT_GLOW,
+  UNIT_SHOP,
+  UNIT_WINDOW,
+  type BakedModel,
+} from './baked';
 
 /**
  * Build-time conversion of a checked model into what the game ships (phase 3): plain triangles
@@ -10,68 +26,7 @@ import { GROUND_ROLES, PART, ROLE_INDEX, type Role } from './spec';
  * per copy in the game (src/render/assets/handmade.ts), not here.
  */
 
-/** Triangle flags. */
-export const TRI_FAR = 1; // also drawn in the far version
-export const TRI_NEAR = 2; // drawn in the near version
-export const TRI_PARTY_POS = 4; // hidden when another copy stands against the +x side (rows)
-export const TRI_PARTY_NEG = 8; // … the −x side
-export const TRI_GROUND = 16; // a flat surface on the ground (lawn, paving, water)
-export const TRI_SKY = 32; // also drawn in the skyline version (the whole-city view)
-
-/**
- * What the distant versions keep, by a part's second-largest dimension (m): how big it looks
- * face on. Far drops fittings and frames; the skyline keeps big shapes and flat window panes.
- */
-export const FAR_KEEP = { part: 0.5, pane: 0.5, ground: 1 };
-export const SKY_KEEP = { part: 2.2, pane: 0.9, ground: 6 };
-
-/** What lights a window unit: windows and bands at random per copy, shopfronts nearly always, and
- *  big glazed volumes (a glass tower, an atrium, a conservatory) with a soft steady glow. */
-export const UNIT_WINDOW = 0;
-export const UNIT_SHOP = 1;
-export const UNIT_BAND = 2;
-export const UNIT_GLOW = 3;
-
-export interface BakedModel {
-  /** File name without `.glb`. */
-  id: string;
-  kind: 'zoned' | 'civic' | 'annex';
-  /** The zoned type, civic building or add-on module it stands for, and which design of it. */
-  def: string;
-  design: number;
-  /** Footprint (m): along the road and away from it; and the height of the tallest part. */
-  w: number;
-  d: number;
-  h: number;
-  /** How far parts reach past the footprint at the front (−z), back, and sides. */
-  over: { front: number; back: number; side: number };
-  /** Walls run the full width: copies in a row share party walls. */
-  party: boolean;
-  /** Unique vertices, and three indices per triangle (counter-clockwise from outside). */
-  positions: Float32Array;
-  index: Uint32Array;
-  /**
-   * Per triangle: role (index into ROLES), flags, window unit (0 = none, else unit + 1), and the
-   * group the game drives that it belongs to (0 = none, else an index + 1 into DRIVEN_GROUPS).
-   */
-  triRole: Uint8Array;
-  triFlags: Uint8Array;
-  triUnit: Uint16Array;
-  triGroup: Uint8Array;
-  /** The file's colour for each role it uses, linear RGB (role index → colour). */
-  colors: Record<number, [number, number, number]>;
-  /** Kind of each window unit. */
-  units: Uint8Array;
-  /** tree_spot markers: x, y (ground), z each. */
-  trees: number[];
-  /** Tops of smoke_stack parts: x, y, z each. */
-  stacks: number[];
-  /** Triangles in the file, drawn near, and drawn far. */
-  counts: { file: number; near: number; far: number; sky: number };
-}
-
-/** Groups whose parts the game moves or scales as one. */
-export const DRIVEN_GROUPS = ['mound', 'rotor', 'wheel_rotor', 'rocket', 'receiver', 'pumpjack_beam'];
+export * from './baked';
 
 /** Small fittings left out of the far version whatever their size. */
 const FAR_DROP =
@@ -169,8 +124,10 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     // Which way a pane faces: its thinnest direction.
     const thin = ext[0] <= ext[1] && ext[0] <= ext[2] ? 0 : ext[2] <= ext[1] ? 2 : 1;
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
+    // A window's frame stays in the distance as its outward face, or the wall would read darker.
+    const frame = p.name === 'window_frame' && solid[pi];
     const keeps = (k: { part: number; pane: number; ground: number }) =>
-      u > 0 ? second >= k.pane : ground ? second >= k.ground : !fitting && second >= k.part;
+      u > 0 || frame ? second >= k.pane : ground ? second >= k.ground : !fitting && second >= k.part;
     const farPart = keeps(FAR_KEEP);
     const skyPart = keeps(SKY_KEEP);
     const driven = DRIVEN_GROUPS.findIndex((g) => under(p, g)) + 1;
@@ -228,7 +185,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         // Distant panes are flat panels: only the faces that look out of (or into) the wall.
         // Distant ground is its top alone.
         const nThin = thin === 0 ? nx : thin === 1 ? ny : nz;
-        const pane = u > 0 && solid[pi] && unitKinds[u - 1] !== UNIT_GLOW;
+        const pane = frame || (u > 0 && solid[pi] && unitKinds[u - 1] !== UNIT_GLOW);
         if ((!pane || Math.abs(nThin) > 0.7) && (!ground || ny > 0.5)) {
           if (farPart) f |= TRI_FAR;
           if (skyPart) f |= TRI_SKY;

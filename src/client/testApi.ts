@@ -18,6 +18,7 @@ import type { CheckResult } from './graphicsCheck';
 import type { Chronicle } from '../sim/systems/chronicle';
 import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
+import type { ModelData } from '../render/assets/builder';
 import type { AmbientMix } from '../audio/mix';
 
 export interface TestApi {
@@ -148,6 +149,38 @@ export interface TestApi {
   showGallery(defs: string[], at: { x: number; z: number }, variants: number): void;
   /** Every big project at every construction stage and finished, in rows from `at` (dev, M17). */
   showProjects(at: { x: number; z: number }): void;
+  /**
+   * Levels of detail (phase 3): draw one level everywhere (null: by distance, as in play), what is
+   * on show now, and the model each zoned building wears.
+   */
+  setLod(level: 'near' | 'far' | 'sky' | null): void;
+  getLod(): {
+    range: { nearStart: number; nearEnd: number; skyStart: number; skyEnd: number };
+    buildings: Record<'plain' | 'near' | 'far' | 'sky', number>;
+    civics: Record<'plain' | 'near' | 'far' | 'sky', number>;
+    rebuilt: number;
+  };
+  getModels(): {
+    id: number;
+    def: string;
+    w: number;
+    d: number;
+    look: number;
+    /** The hand-made design it is drawn with (a file name without .glb), or null if generated. */
+    hand: string | null;
+    triangles: number;
+    far: number;
+    sky: number;
+    trees: number;
+  }[];
+  /** A civic building's site, in metres. */
+  civicSize(def: string): { w: number; d: number };
+  /** Dev (phase 3): civic buildings side by side, wrapping after `width` metres; each with its add-ons, fill and stage. */
+  showCivics(
+    items: { def: string; variant?: number; modules?: string[]; fill?: number; stage?: number }[],
+    at: { x: number; z: number },
+    width: number,
+  ): { id: number; def: string; x: number; z: number }[];
   /** Disasters under way, damaged and flooded roads and craters, as the client sees them. */
   getDisasters(): DisasterData;
   /** What a click at this screen position would select. */
@@ -464,7 +497,7 @@ export function installTestApi(game: Game): TestApi {
       }),
     waitFrames: (n) =>
       new Promise((resolve) => {
-        game.renderer.buildings.flushAll();
+        game.renderer.flushBuildings();
         let k = 0;
         const step = () => (++k >= n ? resolve() : requestAnimationFrame(step));
         requestAnimationFrame(step);
@@ -612,16 +645,19 @@ export function installTestApi(game: Game): TestApi {
       const upserts: BuildingData[] = [];
       let id = 9_000_000;
       let z = at.z;
-      for (const key of defs) {
-        const def = ZONED_DEFS.get(key);
+      for (const row of defs) {
+        // "R103" on the type's own lot, or "R103@2x3" on a lot of that many cells.
+        const [key, size] = row.split('@');
+        const def = ZONED_DEFS.get(key!);
         if (!def) continue;
-        const D = def.d * CELL;
+        const [lw, ld] = size ? size.split('x').map(Number) : [def.w, def.d];
+        const D = ld! * CELL;
         let x = at.x;
         for (let v = 0; v < variants; v++) {
-          const W = def.w * CELL;
+          const W = lw! * CELL;
           upserts.push({
             id: id++,
-            def: key,
+            def: key!,
             zone: def.zone,
             density: def.density,
             wealth: def.wealth,
@@ -631,8 +667,8 @@ export function installTestApi(game: Game): TestApi {
             y: Math.max(0, w.heightAt(x + W / 2, z + D / 2)),
             angle: 0,
             side: 1,
-            w: def.w,
-            d: def.d,
+            w: lw!,
+            d: ld!,
             state: 1,
             progress: 1,
             variant: v,
@@ -645,6 +681,76 @@ export function installTestApi(game: Game): TestApi {
       }
       w.applyFrame({ tick: w.stats.tick, stats: w.stats, buildings: { upserts, removed: [] } });
     },
+    showCivics: (items, at, width) => {
+      const w = game.world;
+      const upserts: CivicData[] = [];
+      let id = 9_700_000;
+      let x = at.x;
+      let z = at.z;
+      let deep = 0;
+      for (const it of items) {
+        const def = CIVIC.get(it.def);
+        if (!def) continue;
+        if (x > at.x && x + def.w > at.x + width) {
+          x = at.x;
+          z += deep + 12;
+          deep = 0;
+        }
+        upserts.push({
+          id: id++,
+          def: def.id,
+          x: x + def.w / 2,
+          z: z + def.d / 2,
+          y: Math.max(0, w.heightAt(x + def.w / 2, z + def.d / 2)),
+          angle: 0,
+          side: 1,
+          access: true,
+          fill: it.fill ?? 0,
+          out: 0,
+          variant: it.variant ?? 0,
+          damage: 0,
+          flooded: false,
+          modules: it.modules ?? [],
+          stage: it.stage,
+        });
+        x += def.w + 12;
+        deep = Math.max(deep, def.d);
+      }
+      w.applyFrame({ tick: w.stats.tick, stats: w.stats, civics: { upserts, removed: [] } });
+      return upserts.map((c) => ({ id: c.id, def: c.def, x: c.x, z: c.z }));
+    },
+    setLod: (level) => {
+      const f = level === null ? null : ['plain', 'near', 'far', 'sky'].indexOf(level);
+      game.renderer.buildings.chunks.force = f;
+      game.renderer.civics.chunks.force = f;
+      game.renderer.flushBuildings();
+    },
+    getLod: () => ({
+      range: game.renderer.buildings.range,
+      buildings: game.renderer.buildings.chunks.stats(),
+      civics: game.renderer.civics.chunks.stats(),
+      rebuilt: game.renderer.buildings.chunks.rebuilt + game.renderer.civics.chunks.rebuilt,
+    }),
+    getModels: () => {
+      const r = game.renderer.buildings;
+      const tris = (m: ModelData | undefined) => (m ? m.pos.length / 9 : 0);
+      return [...game.world.buildings.values()].map((b) => {
+        const m = r.model(b);
+        return {
+          id: b.id,
+          def: b.def,
+          w: b.w,
+          d: b.d,
+          look: r.look(b),
+          hand: m.hand ?? null,
+          triangles: tris(m),
+          far: tris(m.far),
+          sky: tris(m.sky),
+          trees: (m.trees?.length ?? 0) / 3,
+        };
+      });
+    },
+    civicSize: (def) => ({ w: CIVIC.get(def)?.w ?? 0, d: CIVIC.get(def)?.d ?? 0 }),
     showProjects: (at) => {
       const w = game.world;
       const upserts: CivicData[] = [];

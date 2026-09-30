@@ -14,7 +14,7 @@ import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SCENERY_MARGIN 
 import { Noise2D, clamp, smoothstep } from '../sim/terrain/noise';
 import type { ClientWorld } from '../client/world';
 import { PAL } from './palette';
-import { GRADE_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
+import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
 const CHUNKS = 4; // buildable terrain split into CHUNKS² meshes for culling
 const SCENERY_STEP = 32;
@@ -80,6 +80,7 @@ uniform vec4 uSeason;
 uniform vec2 uGrade;
 varying float vUp;
 ${SNOW_NOISE_GLSL}
+${SEASON_GLSL}
 ${GRADE_GLSL}`,
         )
         .replace(
@@ -105,12 +106,7 @@ ${GRADE_GLSL}`,
   {
     vec3 c0 = diffuseColor.rgb;
     float grassy = clamp((c0.g - max(c0.r, c0.b)) * 8.0, 0.0, 1.0);
-    float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
-    vec3 spring = c0 * vec3(1.03, 1.13, 0.84) + vec3(0.015, 0.03, 0.0);
-    vec3 autumn = mix(c0, vec3(l0) * vec3(1.22, 1.12, 0.6), 0.55);
-    vec3 winter = mix(c0, vec3(l0) * vec3(1.1, 1.05, 0.9), 0.6);
-    vec3 seasonal = spring * uSeason.x + c0 * uSeason.y + autumn * uSeason.z + winter * uSeason.w;
-    diffuseColor.rgb = mix(c0, seasonal, grassy);
+    diffuseColor.rgb = mix(c0, seasonGrass(c0), grassy);
     diffuseColor.rgb *= 1.0 - 0.12 * uWet * step(0.6, vWorldPos.y);
     float n = wNoise(p * 0.045) * 0.6 + wNoise(p * 0.19) * 0.4;
     float level = smoothstep(0.5, 0.88, vUp) * step(0.6, vWorldPos.y);

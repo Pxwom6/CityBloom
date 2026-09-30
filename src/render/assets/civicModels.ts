@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import type { CivicDef } from '../../data/civic';
-import { ModelBuilder, modelRng, type ModelData } from './builder';
+import { ModelBuilder, SEASONAL, SURF_GRASS, modelRng, type ModelData } from './builder';
 import { buildSpecialModel, moduleAnnex } from './specialModels';
 import { buildProjectModel } from './projectModels';
 
@@ -9,6 +9,7 @@ const CONCRETE = C('#c9c6bf');
 const CONCRETE_DARK = C('#a9a6a0');
 const GRAVEL = C('#bdb6a6');
 const GRASS = C('#8cc063');
+SEASONAL.set(GRASS, SURF_GRASS);
 const STONE = C('#bdb5a6');
 const WHITE = C('#f2f4f5');
 const RED = C('#c9423a');
@@ -794,6 +795,13 @@ export function buildCivicModel(
   }
   // Add-on modules: a small wing in a back corner of the lot for each.
   for (let k = 0; k < modules; k++) moduleAnnex(m, W, D, k, CREAM);
+  return m.build();
+}
+
+/** A generated add-on annex on its own (for a site whose main building is a hand-made model). */
+export function buildAnnexModel(W: number, D: number, k: number): ModelData {
+  const m = new ModelBuilder();
+  moduleAnnex(m, W, D, k, CREAM);
   return m.build();
 }
 

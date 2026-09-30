@@ -8,6 +8,7 @@ import type { TripSample } from '../sim/systems/traffic';
 import type { Leg } from '../sim/systems/graph';
 import { ModelBuilder } from './assets/builder';
 import { toGeometry } from './traffic';
+import { uploadInstances } from './geom';
 
 /** Walkers only show when the camera is this close (m). */
 export const PEDESTRIAN_DISTANCE = 420;
@@ -275,8 +276,7 @@ export class PedestrianRenderer {
     this.walkers = alive;
     for (const m of [this.mesh, this.shirts]) {
       m.count = n;
-      m.instanceMatrix.needsUpdate = true;
+      uploadInstances(m);
     }
-    if (this.shirts.instanceColor) this.shirts.instanceColor.needsUpdate = true;
   }
 }

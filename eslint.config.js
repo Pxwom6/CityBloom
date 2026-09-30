@@ -10,6 +10,7 @@ export default tseslint.config(
       'dist-test',
       'dist-e2e',
       'dist-e2e-next',
+      'dist-base',
       'node_modules',
       'test-results',
       'playwright-report',

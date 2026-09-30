@@ -171,7 +171,26 @@ export class TreeRenderer {
     for (let r = 0; r < REGIONS * REGIONS; r++) this.regionMeshes.push([null, null]);
     for (let r = 0; r < REGIONS * REGIONS; r++) this.rebuildRegion(r);
     this.buildScenery();
-    world.on('trees', () => this.rebuildAll());
+    // Only the regions whose cells changed are rebuilt, at most once a frame (`update`): a
+    // tornado or a fire changes a few cells many times a second.
+    world.on('trees', () => (this.treesDirty = true));
+  }
+
+  private treesDirty = false;
+
+  /** Rebuild the regions whose tree cells the sim changed since the last frame. */
+  update(): void {
+    if (!this.treesDirty) return;
+    this.treesDirty = false;
+    const cellsPer = REGION / GRID_CELL;
+    const set = new Set<number>();
+    for (const c of this.world.treeChanges) {
+      const i = Math.floor((c % GRID_RES) / cellsPer);
+      const j = Math.floor(Math.floor(c / GRID_RES) / cellsPer);
+      set.add(Math.min(REGIONS - 1, j) * REGIONS + Math.min(REGIONS - 1, i));
+    }
+    this.world.treeChanges.clear();
+    for (const r of set) this.rebuildRegion(r);
   }
 
   rebuildAll(): void {

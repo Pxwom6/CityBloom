@@ -549,6 +549,7 @@ export class GameRenderer {
       this.trees.rebuildAround(this.treePoints);
       this.treePoints = [];
     }
+    this.trees.update();
     this.trees.updateLod(this.camera.position.x, this.camera.position.y, this.camera.position.z);
     this.water.update(this.time);
     const wu = this.water.material.uniforms;

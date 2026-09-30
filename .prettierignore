@@ -8,3 +8,5 @@ package-lock.json
 *.md
 dist-e2e
 dist-e2e-next
+dist-base
+bench-results

@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Color } from 'three';
+import { BufferAttribute, BufferGeometry, Color, type InstancedMesh } from 'three';
 
 /** Convert to non-indexed and paint every vertex one colour. */
 export function painted(geo: BufferGeometry, color: Color | string): BufferGeometry {
@@ -36,4 +36,25 @@ export function mergeGeometries(list: BufferGeometry[]): BufferGeometry {
   out.computeBoundingSphere();
   out.computeBoundingBox();
   return out;
+}
+
+/**
+ * Flag an instanced mesh's matrices (and colours) for upload, but only the instances in use.
+ * three.js re-sends the whole buffer otherwise: for a 512-car mesh that is 32 KB every frame,
+ * per mesh, even with nothing on screen, and the uploads were most of a frame's work in a big
+ * city (phase 3 baseline).
+ */
+export function uploadInstances(mesh: InstancedMesh): void {
+  const n = mesh.count;
+  if (n <= 0) return;
+  const m = mesh.instanceMatrix;
+  m.clearUpdateRanges();
+  m.addUpdateRange(0, n * 16);
+  m.needsUpdate = true;
+  const c = mesh.instanceColor;
+  if (c) {
+    c.clearUpdateRanges();
+    c.addUpdateRange(0, n * 3);
+    c.needsUpdate = true;
+  }
 }

@@ -136,6 +136,43 @@ tenement (`assets/models/R103.glb`) growing in a real city.
 - Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains). Trains run to their timetable (cars give way to them at crossings, not the other way round); trams keep their own place and wait for cars, so a tram line bunches up in heavy traffic. Walkers still cross a closed level crossing. A city with no regional rail link can lay one from the Transit menu (Phase 2 review).
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
 
+## Frame times (phase 3; MacBook Pro M5, Chrome, frame cap off)
+`node scripts/dev/framebench.mjs bench-results/city.gz` on the ~110k bench city (`bench.ts 6 --big --save`), a
+1512×781 window at 2× (High draws 3024×1562), every view at 3× speed; average / 95th-percentile
+frame time in ms. `heavy` is SPEC-3's heaviest view: the whole city at night with a tornado on
+screen. Runs vary by about ±15 %, so compare runs made back to back.
+
+**Baseline, the start of phase 3** (commit 0631561; 289 draw calls / 2.68M triangles at the whole-city
+view, 169 / 1.89M at city zoom, 100 / 1.05M at street level):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 10.1 / 30.0 | 6.9 / 16.0 | 4.5 / 8.5 | 10.3 / 28.0 | 6.9 / 14.1 | 4.5 / 8.5 | **23.1 / 192** |
+| Medium | 6.9 / 19.5 | 4.4 / 8.8 | 2.4 / 4.2 | 6.5 / 12.9 | 4.3 / 8.6 | 2.4 / 4.3 | 16.5 / 99.9 |
+| Low | 3.7 / 6.3 | 2.4 / 3.8 | 1.6 / 2.6 | 3.3 / 5.7 | 2.4 / 3.6 | 1.5 / 2.6 | 9.7 / 15.0 |
+
+The whole-city view at High is 99 fps, as the owner measured (100–118 at 120 Hz). The heavy view was
+well over SPEC-3's 12 ms before phase 3 changed anything: a tornado flattens trees, every change to
+the tree grid rebuilt all sixteen tree regions, and each candidate tree asked `civicAt`, a scan of
+every civic building (4.9 s of a 7 s profile).
+
+**After the first two fixes** (tree regions rebuilt only where cells changed, once a frame, with
+civic footprints in a spatial hash; instanced meshes upload only the instances in use, not their
+whole buffers every frame):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 9.9 / 26.4 | 6.4 / 12.4 | 4.1 / 5.0 | 11.2 / 27.2 | 6.6 / 7.6 | 4.2 / 5.4 | **11.6 / 27.3** |
+| Medium | 6.2 / 11.7 | 4.1 / 5.1 | 2.2 / 3.0 | 6.2 / 10.5 | 4.0 / 5.0 | 2.2 / 3.0 | 6.2 / 11.6 |
+| Low | 2.9 / 4.7 | 2.0 / 3.7 | 1.4 / 2.7 | 2.9 / 4.2 | 2.0 / 3.7 | 1.4 / 2.7 | 2.9 / 4.8 |
+
+The whole-city view at High is GPU-bound (about 2.3 ms per million triangles plus 3–4 ms of pixels at
+2×): with the cap off the main thread runs ahead of the GPU and then waits inside whichever WebGL
+call next needs it, now usually the upload of a rebuilt building chunk (single waits of 0.3–0.7 s
+show up as the p99 and max in the logs; with the cap on the queue can't build up). Fewer triangles
+(distant versions, a cheaper shadow pass) and smaller chunk uploads are what bring it down.
+Sim ticks while saving the city: avg 0.59 ms at 110k, worst 28 ms (month 1, cold start).
+
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 

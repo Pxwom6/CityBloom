@@ -136,6 +136,8 @@ export interface TestApi {
   getCamera(): CameraPose;
   hash(): Promise<string>;
   setSpeed(speed: 0 | 1 | 2 | 3): void;
+  /** Every frame's interval (from one animation frame to the next) and work (the game's own frame), in ms, over `ms`. */
+  recordFrames(ms: number): Promise<{ interval: number[]; work: number[] }>;
   /** Resolves after n rendered frames (lets screenshots settle). */
   waitFrames(n: number): Promise<void>;
   errors: string[];
@@ -451,6 +453,15 @@ export function installTestApi(game: Game): TestApi {
     },
     hash: () => game.client.query<string>({ type: 'hash' }),
     setSpeed: (s) => game.setSpeed(s),
+    recordFrames: (ms) =>
+      new Promise((resolve) => {
+        game.frameSamples = [];
+        setTimeout(() => {
+          const s = game.frameSamples ?? [];
+          game.frameSamples = null;
+          resolve({ interval: s.filter((_, i) => i % 2 === 0), work: s.filter((_, i) => i % 2 === 1) });
+        }, ms);
+      }),
     waitFrames: (n) =>
       new Promise((resolve) => {
         game.renderer.buildings.flushAll();

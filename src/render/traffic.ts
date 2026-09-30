@@ -23,6 +23,7 @@ import { congestedSeconds } from '../sim/systems/traffic';
 import type { TripSample } from '../sim/systems/traffic';
 import type { Leg } from '../sim/systems/graph';
 import { ModelBuilder, type ModelData } from './assets/builder';
+import { uploadInstances } from './geom';
 
 const W = new Color(1, 1, 1);
 const GLASS = new Color(0.22, 0.27, 0.32);
@@ -801,13 +802,19 @@ export class TrafficRenderer {
       }
     }
     const lg = this.lights.geometry;
-    (lg.getAttribute('position') as BufferAttribute).needsUpdate = true;
-    (lg.getAttribute('color') as BufferAttribute).needsUpdate = true;
+    // Only the lights and cars in use are sent to the GPU (see `uploadInstances`).
+    if (nl > 0) {
+      for (const name of ['position', 'color']) {
+        const a = lg.getAttribute(name) as BufferAttribute;
+        a.clearUpdateRanges();
+        a.addUpdateRange(0, nl * 3);
+        a.needsUpdate = true;
+      }
+    }
     lg.setDrawRange(0, nl);
     for (const [name, mesh] of this.meshes) {
       mesh.count = counts.get(name) ?? 0;
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      uploadInstances(mesh);
     }
   }
 }

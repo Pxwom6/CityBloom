@@ -428,6 +428,34 @@ describe('conversion', () => {
     expect(Math.max(...perUnit.values())).toBeLessThanOrEqual(4);
   });
 
+  it('the skyline keeps what would change how a building reads, and no loose ends', () => {
+    const tris = (m: ReturnType<typeof bake>, role: string, flag: number) => {
+      const out: { minY: number; maxY: number }[] = [];
+      for (let t = 0; t < m.triRole.length; t++) {
+        if (ROLES[m.triRole[t]!] !== role || !(m.triFlags[t]! & flag)) continue;
+        const ys = [0, 1, 2].map((k) => m.positions[m.index[t * 3 + k]! * 3 + 1]!);
+        out.push({ minY: Math.min(...ys), maxY: Math.max(...ys) });
+      }
+      return out;
+    };
+    // The tenement: white frames are a quarter of the facade's brightness, so their outward
+    // faces stay (two triangles a window); the fire escape goes whole, not flights without
+    // landings (the only metal left is up on the roof, under the water tank).
+    const t = bake('R103');
+    expect(tris(t, 'frame', TRI_SKY).length).toBe(64 * 2 + 0);
+    expect(tris(t, 'metal', TRI_FAR).some((f) => f.maxY < 20)).toBe(true);
+    expect(tris(t, 'metal', TRI_SKY).every((f) => f.minY > 18)).toBe(true);
+    // The tower's crown: a ring on four posts that run on past it. The posts stay with the ring.
+    const tower = bake('R203');
+    const ring = tris(tower, 'accent', TRI_SKY).filter((f) => f.minY > 70);
+    expect(ring.length).toBeGreaterThan(0);
+    const under = Math.min(...ring.map((f) => f.minY));
+    const posts = tris(tower, 'trim', TRI_SKY).filter((f) => f.minY < under - 2 && f.maxY > under);
+    expect(posts.length).toBeGreaterThanOrEqual(8);
+    // … and the ring's underside, which casts its shadow on the roof below.
+    expect(ring.some((f) => f.maxY - f.minY < 1e-3 && Math.abs(f.minY - under) < 1e-3)).toBe(true);
+  });
+
   it('puts walls back on the edge of the footprint after packing, so rows meet', () => {
     const m = bake('R103');
     const [back] = decodeModels(encodeModels([m]));

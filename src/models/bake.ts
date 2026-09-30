@@ -162,26 +162,45 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
   const unit: number[] = [];
   const colors: Record<number, [number, number, number]> = {};
 
+  // Each part's surface as seen from one side: a sheet's area, half a closed solid's.
+  const areas = file.parts
+    .filter((p) => !treeParts.has(p))
+    .map((p) => {
+      let a = 0;
+      const tr = p.tris;
+      for (let i = 0; i < tr.length; i += 9) {
+        const ux = tr[i + 3]! - tr[i]!;
+        const uy = tr[i + 4]! - tr[i + 1]!;
+        const uz = tr[i + 5]! - tr[i + 2]!;
+        const vx = tr[i + 6]! - tr[i]!;
+        const vy = tr[i + 7]! - tr[i + 1]!;
+        const vz = tr[i + 8]! - tr[i + 2]!;
+        a += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+      }
+      return closed(tr) ? a / 2 : a;
+    });
   // What each part is, and whether the far and the skyline versions keep it.
   const info = src.map((p, pi) => {
     const b = boxes[pi]!;
     const ext = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]] as const;
-    // How big the part looks face on: its second-largest dimension.
-    const [largest, second] = [...ext].sort((x, y) => y - x) as [number, number, number];
+    // How big the part looks face on: its second-largest dimension; for a slanting bar or sheet
+    // (a fire escape's flight), whose box is mostly air, its area over its length.
+    const [largest, boxSecond] = [...ext].sort((x, y) => y - x) as [number, number, number];
+    const second = Math.min(boxSecond, areas[pi]! / Math.max(largest, 1e-6));
     const ground = GROUND_ROLES.includes(p.material as Role) && b.max[1] < 0.35 && ext[1] < 0.3;
     const u = unitOf.get(p) ?? 0;
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
-    // A window's frame stays in the far version as its outward face, or the wall would read
-    // darker; the skyline drops the frames too: there a window is a pixel or two.
+    // A window's frame stays in the distant versions as its outward face, or the wall would
+    // read darker (a brick tenement's white frames are a quarter of its brightness).
     const frame = p.name === 'window_frame' && solid[pi]!;
-    const keeps = (k: typeof FAR_KEEP, frames: boolean) =>
-      u > 0 || (frame && frames)
+    const keeps = (k: typeof FAR_KEEP) =>
+      u > 0 || frame
         ? second >= k.pane
         : ground
           ? // Flat on the ground: big patches, and long lines (a pitch's touchlines, a runway's).
             second >= k.ground || (!fitting && largest >= k.line && second >= k.thin)
           : !fitting && (second >= k.part || (largest >= k.long && second >= k.thin));
-    return { ext, ground, u, frame, fitting, keep: [keeps(FAR_KEEP, true), keeps(SKY_KEEP, false)] };
+    return { ext, ground, u, frame, fitting, keep: [keeps(FAR_KEEP), keeps(SKY_KEEP)] };
   });
   // Whatever holds up a part that stays, stays: legs under a water tank, posts under a canopy.
   for (const level of [0, 1])
@@ -195,8 +214,11 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         me.keep[level] = src.some((_, o) => {
           if (o === pi || !info[o]!.keep[level]) return false;
           const k = boxes[o]!;
+          // It reaches the part's underside from well below (and may run on past it: the posts
+          // at the corners of a tower's crown).
           return (
-            Math.abs(k.min[1] - b.max[1]) < 0.4 &&
+            b.max[1] > k.min[1] - 0.4 &&
+            b.max[1] < k.max[1] + 1.5 &&
             k.min[1] > b.min[1] + 0.5 &&
             cx > k.min[0] - 0.2 &&
             cx < k.max[0] + 0.2 &&
@@ -264,10 +286,10 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       // Faces on the ground looking down are never seen either.
       if (ny < -0.99 && cy < 0.02) continue;
       let f = covered[0] ? 0 : TRI_NEAR;
-      // From far off the camera looks down on the city: a face looking straight down shows only
-      // if it is high up (a deck on a tower), a tilted one (a cone's underside, the back of a
-      // solar panel) from any hill or low camera.
-      if (ny > -0.97 || cy > 30) {
+      // Faces looking down stay in the distant versions: they show from a low camera (a deck
+      // on a tower, the back of a solar panel), and they are what casts a part's shadow (the
+      // shadow pass draws the faces turned away from the sun). Only those at the ground go.
+      if (ny > -0.97 || cy > 0.5) {
         // Distant panes are flat panels: only the faces that look out of (or into) the wall; a
         // glazed room (a lobby standing out of its building) keeps its walls. Distant ground is
         // its top alone.

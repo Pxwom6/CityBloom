@@ -16,12 +16,13 @@ export const TRI_TWO_SIDED = 64;
 /**
  * What the distant versions keep (m). `part`: a part's second-largest dimension, how big it looks
  * face on. A long thin part (a parapet, a cornice, a post) also stays if it is at least `long`
- * by `thin`: such lines read from far off (on the ground, `line` long: a pitch's touchlines).
+ * by `thin`: such lines read from far off (on the ground, `line` long: a pitch's touchlines). A
+ * broad flat part of `sheet` square metres (solar panels on a roof) stays for its colour.
  * Far drops fittings and frames; the skyline keeps big
  * shapes and flat window panes. Whatever holds up a part that stays, stays too.
  */
-export const FAR_KEEP = { part: 0.5, pane: 0.5, ground: 1, long: 2.5, thin: 0.2, line: 8 };
-export const SKY_KEEP = { part: 2.2, pane: 0.9, ground: 6, long: 8, thin: 0.5, line: 30 };
+export const FAR_KEEP = { part: 0.5, pane: 0.5, ground: 1, long: 2.5, thin: 0.2, line: 8, sheet: 2 };
+export const SKY_KEEP = { part: 2.2, pane: 0.9, ground: 6, long: 8, thin: 0.5, line: 30, sheet: 10 };
 
 /** What lights a window unit: windows and bands at random per copy, shopfronts nearly always, and
  *  big glazed volumes (a glass tower, an atrium, a conservatory) with a soft steady glow. */

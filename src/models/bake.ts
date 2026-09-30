@@ -204,7 +204,10 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         : ground
           ? // Flat on the ground: big patches, and long lines (a pitch's touchlines, a runway's).
             second >= k.ground || (!fitting && largest >= k.line && second >= k.thin)
-          : !fitting && (second >= k.part || (largest >= k.long && second >= k.thin));
+          : !fitting &&
+            (second >= k.part ||
+              (largest >= k.long && second >= k.thin) ||
+              (largest * second >= k.sheet && second >= k.thin));
     return { ext, ground, u, frame, fitting, keep: [keeps(FAR_KEEP), keeps(SKY_KEEP)] };
   });
   // Whatever holds up a part that stays, stays: legs under a water tank, posts under a canopy.

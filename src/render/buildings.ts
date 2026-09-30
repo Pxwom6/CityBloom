@@ -20,7 +20,8 @@ import type { ModelData } from './assets/builder';
 import type { TerrainUniforms } from './terrain';
 import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
-const CHUNK = 256;
+/** Chunk sizes (m) for buildings drawn at every distance, and for the near, far and skyline levels. */
+const CHUNKS: [number, number, number, number] = [256, 128, 128, 512];
 const STATE_CONSTRUCTION = 0;
 const STATE_ABANDONED = 2;
 const STATE_RUBBLE = 3;
@@ -49,23 +50,21 @@ export function buildingYaw(b: { angle: number; side: number }): number {
 const LOD_GLSL = `
 uniform vec4 uLod;
 uniform vec3 uLodEye;
+#if LOD_LEVEL != 0
 bool lodHidden(vec3 p, vec2 px) {
-  #if LOD_LEVEL == 0
-    return false;
+  float t = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+  float d = distance(p, uLodEye);
+  float far = smoothstep(uLod.x, uLod.y, d);
+  float sky = smoothstep(uLod.z, uLod.w, d);
+  #if LOD_LEVEL == 1
+    return far > t;
+  #elif LOD_LEVEL == 2
+    return far <= t || sky > t;
   #else
-    float t = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
-    float d = distance(p, uLodEye);
-    float far = smoothstep(uLod.x, uLod.y, d);
-    float sky = smoothstep(uLod.z, uLod.w, d);
-    #if LOD_LEVEL == 1
-      return far > t;
-    #elif LOD_LEVEL == 2
-      return far <= t || sky > t;
-    #else
-      return sky <= t;
-    #endif
+    return sky <= t;
   #endif
-}`;
+}
+#endif`;
 
 /** `lod`: 0 for a mesh drawn at every distance; 1 near, 2 far, 3 skyline (see LodChunks). */
 export function makeMaterial(
@@ -135,7 +134,9 @@ ${clip ? 'varying float vClip;' : ''}`,
         '#include <color_fragment>',
         `#include <color_fragment>
 ${clip ? 'if (vWorldPos.y > vClip) discard;' : ''}
+#if LOD_LEVEL != 0
 if (lodHidden(vWorldPos, gl_FragCoord.xy)) discard;
+#endif
 // Lawns and hedges in their season (a negative emissive tags them: see ModelData).
 if (vEmi < -0.5) diffuseColor.rgb = vEmi < -1.5 ? seasonHedge(diffuseColor.rgb) : seasonGrass(diffuseColor.rgb);
 // Snow on roofs and other flat tops, and rain-darkened ones (M22).
@@ -185,7 +186,7 @@ export function makeDepthMaterial(uniforms: BuildingUniforms, lod: number): Mate
 }
 
 /** How far from the camera the levels of detail hand over, at full detail (High). */
-export const LOD_RANGE: LodRange = { nearStart: 260, nearEnd: 340, skyStart: 900, skyEnd: 1150 };
+export const LOD_RANGE: LodRange = { nearStart: 170, nearEnd: 230, skyStart: 520, skyEnd: 680 };
 
 /**
  * Buildings: completed ones are merged per 256 m chunk (one draw call for each level of detail
@@ -232,7 +233,7 @@ export class BuildingRenderer {
       ],
       depth: [undefined, ...[1, 2, 3].map((l) => makeDepthMaterial(this.uniforms, l))],
     };
-    this.chunks = new LodChunks('buildings', CHUNK, this.lodMaterials, (id) => this.item(id));
+    this.chunks = new LodChunks('buildings', CHUNKS, this.lodMaterials, (id) => this.item(id));
     this.group.add(this.chunks.group);
     // In id order, so which of two alike neighbours moves on is the same every time.
     for (const b of [...world.buildings.values()].sort((a, c) => a.id - c.id)) this.place(b.id);

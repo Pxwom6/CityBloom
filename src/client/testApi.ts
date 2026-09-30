@@ -154,6 +154,14 @@ export interface TestApi {
    * on show now, and the model each zoned building wears.
    */
   setLod(level: 'near' | 'far' | 'sky' | null): void;
+  /**
+   * How different the view is drawn at one level of detail and at another (null: by distance, as
+   * in play): the share of pixels that differ visibly, and the mean difference per channel (0–255).
+   */
+  compareLod(
+    a: 'near' | 'far' | 'sky' | null,
+    b: 'near' | 'far' | 'sky' | null,
+  ): { changed: number; mean: number };
   getLod(): {
     range: { nearStart: number; nearEnd: number; skyStart: number; skyEnd: number };
     buildings: Record<'plain' | 'near' | 'far' | 'sky', number>;
@@ -724,6 +732,44 @@ export function installTestApi(game: Game): TestApi {
       game.renderer.buildings.chunks.force = f;
       game.renderer.civics.chunks.force = f;
       game.renderer.flushBuildings();
+    },
+    compareLod: (a, b) => {
+      const r = game.renderer;
+      const gl = r.renderer.getContext();
+      const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+      const levels = ['plain', 'near', 'far', 'sky'];
+      const read = (level: 'near' | 'far' | 'sky' | null) => {
+        const f = level === null ? null : levels.indexOf(level);
+        r.buildings.chunks.force = f;
+        r.civics.chunks.force = f;
+        r.buildings.update(r.buildings.uniforms.uNight.value);
+        r.flushBuildings();
+        r.renderer.setRenderTarget(null);
+        r.renderer.render(r.scene, r.camera);
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px;
+      };
+      const was = r.buildings.chunks.force;
+      const A = read(a);
+      const B = read(b);
+      r.buildings.chunks.force = was;
+      r.civics.chunks.force = was;
+      r.buildings.update(r.buildings.uniforms.uNight.value);
+      r.flushBuildings();
+      let changed = 0;
+      let sum = 0;
+      let n = 0;
+      for (let y = 0; y < h; y += 2)
+        for (let x = 0; x < w; x += 2) {
+          const i = (y * w + x) * 4;
+          const d =
+            Math.abs(A[i]! - B[i]!) + Math.abs(A[i + 1]! - B[i + 1]!) + Math.abs(A[i + 2]! - B[i + 2]!);
+          if (d > 24) changed++;
+          sum += d / 3;
+          n++;
+        }
+      return { changed: changed / n, mean: sum / n };
     },
     getLod: () => ({
       range: game.renderer.buildings.range,

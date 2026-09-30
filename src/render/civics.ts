@@ -7,8 +7,8 @@ import type { ModelData } from './assets/builder';
 import { buildingYaw } from './buildings';
 import { LodChunks, type ChunkItem, type LodMaterials, type LodRange } from './lodChunks';
 
-/** Civic buildings are merged per chunk of this many metres (one draw call per chunk and level). */
-const CHUNK = 512;
+/** Civic buildings are merged per chunk of this many metres: drawn at every distance, near, far, skyline. */
+const CHUNKS: [number, number, number, number] = [512, 128, 128, 512];
 
 /**
  * Civic buildings (utilities, services, parks, landmarks): merged into meshes per 512 m chunk, so
@@ -29,7 +29,7 @@ export class CivicRenderer {
   ) {
     // Civic chunks rebuild as soon as they change (they change rarely, and a placed building
     // should appear at once).
-    this.chunks = new LodChunks('civics', CHUNK, materials, (id) => this.item(id), Infinity);
+    this.chunks = new LodChunks('civics', CHUNKS, materials, (id) => this.item(id), Infinity);
     this.group.add(this.chunks.group);
     for (const c of world.civics.values()) this.place(c.id);
     world.onCivics((changed, removed) => {

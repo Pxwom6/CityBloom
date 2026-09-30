@@ -126,10 +126,15 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
     // A window's frame stays in the distance as its outward face, or the wall would read darker.
     const frame = p.name === 'window_frame' && solid[pi];
-    const keeps = (k: { part: number; pane: number; ground: number }) =>
-      u > 0 || frame ? second >= k.pane : ground ? second >= k.ground : !fitting && second >= k.part;
-    const farPart = keeps(FAR_KEEP);
-    const skyPart = keeps(SKY_KEEP);
+    const keeps = (k: { part: number; pane: number; ground: number }, frames: boolean) =>
+      u > 0 || (frame && frames)
+        ? second >= k.pane
+        : ground
+          ? second >= k.ground
+          : !fitting && second >= k.part;
+    const farPart = keeps(FAR_KEEP, true);
+    // The skyline drops the frames too: there a window is a pixel or two.
+    const skyPart = keeps(SKY_KEEP, false);
     const driven = DRIVEN_GROUPS.findIndex((g) => under(p, g)) + 1;
 
     const tr = p.tris;

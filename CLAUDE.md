@@ -1,24 +1,24 @@
 # CLAUDE.md
 
-This project is an original 3D city-building game for the browser, built by you across many autonomous sessions. **The brief and the source of truth is SPEC.md (phase 1, M0–M12) together with SPEC-2.md (phase 2, M13–M24).** SPEC.md still applies in full during phase 2; SPEC-2.md adds the new milestones and its own rules for all of phase 2 (save migrations with a test, the performance budget, bench and balance reruns per milestone, a SPEC_REVIEW section). `DESIGN.md` holds the technical design, and `PROGRESS.md` holds the current state.
+This project is an original 3D city-building game for the browser, built by you across many autonomous sessions. **The brief and the source of truth is SPEC.md (phase 1, M0–M12) together with SPEC-2.md (phase 2, M13–M24) and SPEC-3.md (phase 3, graphics, M25–M28).** SPEC.md and SPEC-2.md still apply in full; SPEC-2.md added its own rules for all of phase 2 (save migrations with a test, the performance budget, bench and balance reruns per milestone, a SPEC_REVIEW section), and SPEC-3.md adds its rules for phase 3 (keep the style, graphics only, the frame budget, a cost switch per effect, models arriving over time). The model spec and a prompt for every building are in `docs/models/PROMPTS.md`. `DESIGN.md` holds the technical design, and `PROGRESS.md` holds the current state.
 
 ## Start of every session, and after any context compaction
 1. Read `PROGRESS.md` to see where things stand and what's next.
-2. Re-read the entries for the current milestone: SPEC.md for M0–M12, SPEC-2.md (and its "Rules for all of phase 2") for M13–M24.
+2. Re-read the entries for the current milestone: SPEC.md for M0–M12, SPEC-2.md (and its "Rules for all of phase 2") for M13–M24, SPEC-3.md (and its "Rules for all of phase 3") for M25–M28.
 3. If tests exist, run them so you know the starting state before changing anything.
 
 ## Working rules
 - **Work autonomously.** Assume I'm not around. Don't stop to ask questions or wait for approval: when something's ambiguous, make the call a thoughtful game designer would, note it in `docs/DECISIONS.md` with a one-line reason, and keep going.
 - **Small, verified steps.** Work through the milestones in order, breaking each into small steps, and get each step working and tested before starting the next.
 - **Commit and push often.** Commit after every working step with a clear message, and push straight away. Never commit a broken build. When a milestone meets its done criteria, start that commit's message with `M<n> complete:` (git tags can't be pushed from cloud sessions).
-- **Keep PROGRESS.md current.** Open it with a checklist of all 25 milestones (`- [ ] M0 Foundation` through `- [ ] M24 Terrain and map editor`) and tick one (`- [x]`) only when it meets its done criteria. Below that: what's in progress, the next few tasks, known issues and the latest performance numbers. Update it whenever you finish a step and before any long-running job, so a fresh session could carry on from it alone. Keep it short; history lives in git.
-- **Verify for real** (SPEC.md section 8). A feature is done when its tests pass and you've seen it working in screenshots you actually looked at. In phase 2 every milestone also ends tested through the real UI, with `bench` and `balance` rerun and their numbers logged in PROGRESS.md.
+- **Keep PROGRESS.md current.** Open it with a checklist of all 29 milestones (`- [ ] M0 Foundation` through `- [ ] M28 Buildings and variety`) and tick one (`- [x]`) only when it meets its done criteria. Below that: what's in progress, the next few tasks, known issues and the latest performance numbers. Update it whenever you finish a step and before any long-running job, so a fresh session could carry on from it alone. Keep it short; history lives in git.
+- **Verify for real** (SPEC.md section 8). A feature is done when its tests pass and you've seen it working in screenshots you actually looked at. In phase 2 every milestone also ends tested through the real UI, with `bench` and `balance` rerun and their numbers logged in PROGRESS.md; in phase 3 add the frame times from the uncapped Chrome window.
 - **Be honest.** Never hardcode results to make a test pass, weaken or delete a test to get to green, or describe a stub as finished. If something doesn't work yet, say so in PROGRESS.md, along with what you tried.
 - **Don't get stuck.** If a problem resists repeated attempts, write down what you tried, choose a simpler approach that still meets the spec, move on, and revisit it in M12.
 - **Protect your context.** Use subagents for self-contained side jobs (researching a technique, reviewing a batch of screenshots, writing a set of tests), and don't dump huge files or logs into the conversation.
 - **Leave `.claude/` alone.** Edits in there can trigger permission prompts that would stall an unattended run.
 - **Quality over speed.** A solid, polished milestone is worth more than racing ahead on shaky foundations.
-- **Keep going** until every milestone in SPEC.md and SPEC-2.md is complete, in order. Only stop early if you hit something only I can fix (a missing system dependency, say), and if so, put exactly what you need at the top of PROGRESS.md.
+- **Keep going** until every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is complete, in order. Only stop early if you hit something only I can fix (a missing system dependency, say), and if so, put exactly what you need at the top of PROGRESS.md.
 
 ## Cloud sessions
 When `CLAUDE_CODE_REMOTE` is `true`, you're running in a cloud VM cloned fresh from GitHub:
@@ -28,6 +28,14 @@ When `CLAUDE_CODE_REMOTE` is `true`, you're running in a cloud VM cloned fresh f
 - There's no GPU, so WebGL runs on Chromium's software renderer. Launch Chromium with `--enable-unsafe-swiftshader` (plus `--use-angle=swiftshader` if needed) or WebGL context creation may fail. Software rendering is slow, so keep e2e runs lean.
 - Frame times here say nothing about real performance. Track sim tick time, draw calls and triangle counts instead, and list anything that needs a real-hardware check under **To check on the Mac** in PROGRESS.md.
 - The VM has about 4 CPUs and 16 GB of RAM, so run heavy benchmarks one at a time.
+
+## Local sessions (phase 3)
+When `CLAUDE_CODE_REMOTE` isn't set, you're on the owner's Mac (MacBook Pro, Apple M5, 32 GB, 120 Hz screen) with a real GPU:
+- Work on the `phase-3` branch and push it; the owner merges it into `main` (the live site deploys from `main`). Never push to `main`.
+- The cloud notes about SwiftShader and frame times don't apply: frame times here are real. Judge the look and measure performance in a real Chrome window, Playwright with `channel: 'chrome'` and `headless: false`.
+- For true frame times, open a benchmark window with Chrome's frame cap off (`--disable-gpu-vsync --disable-frame-rate-limit`) so it draws as fast as it can, and record the average and 95th-percentile frame time per view (SPEC-3.md, "Frame budget").
+- The existing e2e suite stays as it is for correctness (Playwright's own Chromium with SwiftShader, `npx playwright install chromium` fetches it); it's much faster here than in the VM.
+- Models arrive over time in `assets/models/`: check for new ones at the start of each session and whenever a milestone step ends.
 
 ## Project notes
 _Maintained by Claude. Keep this brief: how to run, test and build; the folder layout; key conventions; gotchas learned the hard way._

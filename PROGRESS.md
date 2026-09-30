@@ -1,15 +1,7 @@
 # PROGRESS
 
-## What you need to do (to publish the game, M15)
-1. **Merge this branch into `main`**: open a pull request from `claude/city-building-game-design-yk7dix`
-   to `main` on GitHub and merge it. The deploy workflow (`.github/workflows/deploy.yml`, already
-   pushed) runs on every push to `main`.
-2. **Turn on Pages**: the repository's **Settings → Pages → Build and deployment → Source:
-   "GitHub Actions"**. (Pages on a private repository needs a paid plan; on a free plan, make the
-   repository public first.)
-3. That's all. The merge starts the first deploy (or **Actions → Deploy to GitHub Pages → Run
-   workflow**); after about two minutes the game is at **https://pxwom6.github.io/CityBloom/**.
-   Later pushes to `main` redeploy, and open copies of the game offer "New version, reload".
+Phase 3 (graphics, SPEC-3.md) runs locally on the owner's Mac on the `phase-3` branch; the owner
+merges it into `main`, which deploys the live site at https://pxwom6.github.io/CityBloom/.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -36,6 +28,10 @@
 - [x] M22 Seasons and weather
 - [x] M23 Region, airport and seaport
 - [x] M24 Terrain and map editor
+- [ ] M25 Baseline and model pipeline
+- [ ] M26 Light and sky
+- [ ] M27 Ground, lots and streets
+- [ ] M28 Buildings and variety
 
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
@@ -100,15 +96,19 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-The Phase 2 review fixes (DECISIONS, "Phase 2 review"): late-game money, the placeable regional rail
-link, the legacy save corpus and tests (with seasons' grace for pre-seasons cities), G in scenarios,
-level crossings and trams, and the docs, are done and tested; left: the full e2e run and the final
-bench and balance numbers. Item 6 (performance) was dropped: on an M5 MacBook Pro the 100k city's
-worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md is complete.
+Phase 3 has started: M25 (baseline and model pipeline). First the uncapped Chrome frame-time
+benchmark and the baseline numbers, then `models:check`, the GLB → `ModelData` conversion and the
+tenement (`assets/models/R103.glb`) growing in a real city.
 
 ## Next tasks
-1. The ideas list above; the "To check on the Mac" list needs real hardware.
-2. When people have played it: the scenario stars and the late-game money curve (see Known issues).
+1. M25: frame-time benchmark window (Playwright, `channel: 'chrome'`, headed, vsync off) and the baseline.
+2. M25: `npm run models:check` against `docs/models/PROMPTS.md` and `src/data`.
+3. M25: build-time GLB conversion into the asset registry's `override` hook; variety, rows, far versions.
+
+## Models (phase 3)
+| File | Replaces | Status |
+|---|---|---|
+| `R103.glb` | homes, medium density, low wealth, level 3 (tenement, 8 m wide, three abreast) | not checked yet |
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).

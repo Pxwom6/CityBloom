@@ -6,7 +6,7 @@ import { ModelBuilder, type ModelData } from './builder';
 import { PALETTES, buildZonedModel } from './models';
 import { buildAnnexModel, buildCivicModel, buildRubbleModel } from './civicModels';
 import { siteWorks } from './projectModels';
-import { buildHandModel, clearPlace, handmade, type Inset } from './handmade';
+import { buildHandModel, clearPlace, handmade, nearestClear, type Inset } from './handmade';
 
 /** Number of visual variants per archetype and lot size. */
 export const VARIANTS = 12;
@@ -168,7 +168,7 @@ function civicModel(
   const n = def.project.stages.length;
   const reveal = (stage + 0.3) / n;
   const works = new ModelBuilder();
-  siteWorks(works, W, D, stage, hand.h * reveal);
+  siteWorks(works, W, D, stage, hand.h * reveal, (x, z, w, d) => nearestClear(hand, x, z, w, d));
   extra.push(works.build());
   return buildHandModel(hand, { ...o, reveal, bare: stage < n - 1 }, insets, extra);
 }

@@ -30,7 +30,7 @@ export * from './baked';
 
 /** Small fittings left out of the distant versions whatever their size. */
 const FAR_DROP =
-  /^(window_frame|sill|mullion|door_frame|garage_door_frame|storefront_frame|bumper|bench.*|bin.*|bike_rack|lounger|valve|clock_hand|.*_line|.*_marking|helipad_h|tile|flower_bed_edge)$/;
+  /^(window_frame|sill|door_frame|garage_door_frame|storefront_frame|bumper|bench.*|bin.*|bike_rack|lounger|valve|clock_hand|bay_line|tile|flower_bed_edge)$/;
 /** Glass that stays dark at night: not a window. */
 const UNLIT_GLASS = /heliostat|solar|panel|balcony|grille|slit|opening|mirror/;
 /** Glass lit like a shop window. */
@@ -46,6 +46,37 @@ function isBox(tris: Float32Array, b: Box3): boolean {
     }
   // … and it has some volume.
   return [0, 1, 2].every((k) => b.max[k]! - b.min[k]! > 1e-3);
+}
+
+/** Is a triangle mesh a closed surface: does every edge belong to exactly two triangles? */
+function closed(tris: Float32Array): boolean {
+  const edges = new Map<string, number>();
+  const key = (i: number) => `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+  for (let t = 0; t < tris.length; t += 9) {
+    const v = [key(t), key(t + 3), key(t + 6)];
+    for (let k = 0; k < 3; k++) {
+      const [a, b] = [v[k]!, v[(k + 1) % 3]!];
+      const e = a < b ? `${a}|${b}` : `${b}|${a}`;
+      edges.set(e, (edges.get(e) ?? 0) + 1);
+    }
+  }
+  for (const n of edges.values()) if (n !== 2) return false;
+  return edges.size > 0;
+}
+
+/** Each triangle, and the same triangle turned round. */
+function bothSides(tris: Float32Array): Float32Array {
+  const out = new Float32Array(tris.length * 2);
+  out.set(tris);
+  for (let t = 0; t < tris.length; t += 9) {
+    const o = tris.length + t;
+    for (let k = 0; k < 3; k++) {
+      out[o + k] = tris[t + k]!;
+      out[o + 3 + k] = tris[t + 6 + k]!;
+      out[o + 6 + k] = tris[t + 3 + k]!;
+    }
+  }
+  return out;
 }
 
 export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
@@ -65,7 +96,11 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     stacks.push((b.min[0] + b.max[0]) / 2, b.max[1], (b.min[2] + b.max[2]) / 2);
   }
 
-  const src = file.parts.filter((p) => !treeParts.has(p));
+  // A part in a double-sided material that isn't a closed solid is a sheet seen from both sides
+  // (a canopy, an open roof): the game draws one side of a triangle, so it gets both.
+  const src = file.parts
+    .filter((p) => !treeParts.has(p))
+    .map((p) => (p.doubleSided && !closed(p.tris) ? { ...p, tris: bothSides(p.tris) } : p));
   const boxes = src.map((p) => growBox(emptyBox(), p.tris));
   const solid = src.map((p, i) => isBox(p.tris, boxes[i]!));
 
@@ -128,7 +163,8 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       u > 0 || (frame && frames)
         ? second >= k.pane
         : ground
-          ? second >= k.ground
+          ? // Flat on the ground: big patches, and long lines (a pitch's touchlines, a runway's).
+            second >= k.ground || (!fitting && largest >= k.line && second >= k.thin)
           : !fitting && (second >= k.part || (largest >= k.long && second >= k.thin));
     return { ext, ground, u, frame, fitting, keep: [keeps(FAR_KEEP, true), keeps(SKY_KEEP, false)] };
   });
@@ -303,7 +339,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     trees,
     stacks,
     counts: {
-      file: n + hidden,
+      file: report.triangles,
       near: n,
       far: flags.filter((f) => f & TRI_FAR).length,
       sky: flags.filter((f) => f & TRI_SKY).length,

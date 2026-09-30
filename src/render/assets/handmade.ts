@@ -2,6 +2,7 @@ import { Color } from 'three';
 import {
   DRIVEN_GROUPS,
   TRI_FAR,
+  TRI_GROUND,
   TRI_NEAR,
   TRI_PARTY_NEG,
   TRI_PARTY_POS,
@@ -277,12 +278,25 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
       }
       if (cut === Infinity) {
         out.tri(v[0]!, v[1]!, v[2]!, v[3]!, v[4]!, v[5]!, v[6]!, v[7]!, v[8]!, col, emi, win);
-      } else clipBelow(v, cut, out, col, emi, win);
+      } else {
+        clipBelow(v, cut, out, col, emi, win);
+        // A building cut off at the height it has reached is open at the top: its walls are
+        // seen from inside too, or the far ones would vanish (ground surfaces aside).
+        if (!(f & TRI_GROUND)) {
+          for (let k = 0; k < 3; k++) {
+            const s = v[3 + k]!;
+            v[3 + k] = v[6 + k]!;
+            v[6 + k] = s;
+          }
+          clipBelow(v, cut, out, INSIDE.copy(col).multiplyScalar(0.82), emi, win);
+        }
+      }
     }
   }
 }
 
 const WHITE = new Color(1, 1, 1);
+const INSIDE = new Color();
 
 /** The part of a triangle at or below height `cut` (a building rising stage by stage). */
 function clipBelow(v: Float64Array, cut: number, out: Soup, col: Color, emi: number, win: number): void {
@@ -421,6 +435,60 @@ export function clearPlace(
     }
   }
   return best;
+}
+
+/**
+ * The clear spot on a hand-made civic site nearest (x, z) for something w by d metres (a site
+ * crane, the builders' cabins): nothing of the model over head height within half a metre.
+ * The spot asked for, if there is none within 40 m.
+ */
+export function nearestClear(
+  site: BakedModel,
+  x: number,
+  z: number,
+  w: number,
+  d: number,
+): { x: number; z: number } {
+  const W = site.w;
+  const D = site.d;
+  const cols = Math.ceil(W);
+  const rows = Math.ceil(D);
+  const free = (cx: number, cz: number): boolean => {
+    const x0 = cx - w / 2 - 0.5;
+    const x1 = cx + w / 2 + 0.5;
+    const z0 = cz - d / 2 - 0.5;
+    const z1 = cz + d / 2 + 0.5;
+    // Inside the hoarding, a metre and a half from the site's edge.
+    if (x0 < -W / 2 + 1.5 || x1 > W / 2 - 1.5 || z0 < -D / 2 + 1.5 || z1 > D / 2 - 1.5) return false;
+    for (let r = Math.floor(z0 + D / 2); r <= Math.min(rows - 1, Math.floor(z1 + D / 2)); r++)
+      for (let c = Math.floor(x0 + W / 2); c <= Math.min(cols - 1, Math.floor(x1 + W / 2)); c++)
+        if (site.occupied[(r * cols + c) >> 3]! & (1 << ((r * cols + c) & 7))) return false;
+    return true;
+  };
+  // Rings of growing radius round the spot.
+  for (let radius = 0; radius <= 40; radius++) {
+    if (radius === 0) {
+      if (free(x, z)) return { x, z };
+      continue;
+    }
+    let best: { x: number; z: number } | null = null;
+    let bestD = Infinity;
+    for (let i = -radius; i <= radius; i++)
+      for (const [dx, dz] of [
+        [i, -radius],
+        [i, radius],
+        [-radius, i],
+        [radius, i],
+      ] as const) {
+        const dist = Math.hypot(dx, dz);
+        if (dist < bestD && free(x + dx, z + dz)) {
+          best = { x: x + dx, z: z + dz };
+          bestD = dist;
+        }
+      }
+    if (best) return best;
+  }
+  return { x, z };
 }
 
 /**

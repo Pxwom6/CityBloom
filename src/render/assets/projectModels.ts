@@ -128,14 +128,24 @@ function crane(m: ModelBuilder, x: number, z: number, h: number, yaw: number): v
 }
 
 /** Site cabins and a pile of materials near the gate. */
-function siteKit(m: ModelBuilder, W: number, D: number): void {
+function siteKit(m: ModelBuilder, W: number, D: number, clear?: Clear): void {
   const x = -W / 2 + 10;
   const z = -D / 2 + 8;
-  m.box(x, x + 9, 0, 2.8, z, z + 3.2, C('#e4e0d5'), C('#b9b4a8'));
-  m.box(x, x + 9, 2.8, 5.6, z, z + 3.2, C('#e4e0d5'), C('#b9b4a8'));
-  m.box(x + 12, x + 18, 0, 1.2, z, z + 4, GRAVEL);
-  m.box(x + 20, x + 26, 0, 0.8, z, z + 3, STEEL);
+  const cabin = (y: number, at: { x: number; z: number }) =>
+    m.box(at.x - 4.5, at.x + 4.5, y, y + 2.8, at.z - 1.6, at.z + 1.6, C('#e4e0d5'), C('#b9b4a8'));
+  // Cabins, a pile of gravel and one of steel: each where there is room for it.
+  const at = (cx: number, cz: number, w: number, d: number) => clear?.(cx, cz, w, d) ?? { x: cx, z: cz };
+  const cabins = at(x + 4.5, z + 1.6, 9, 3.2);
+  cabin(0, cabins);
+  cabin(2.8, cabins);
+  const gravel = at(x + 15, z + 2, 6, 4);
+  m.box(gravel.x - 3, gravel.x + 3, 0, 1.2, gravel.z - 2, gravel.z + 2, GRAVEL);
+  const steel = at(x + 23, z + 1.5, 6, 3);
+  m.box(steel.x - 3, steel.x + 3, 0, 0.8, steel.z - 1.5, steel.z + 1.5, STEEL);
 }
+
+/** Finds room on a site: the clear spot nearest (x, z) for something w by d metres. */
+export type Clear = (x: number, z: number, w: number, d: number) => { x: number; z: number };
 
 /** An elliptical ring from (rx0, rz0) at y0 out and up to (rx1, rz1) at y1, facing inward. */
 function ellipseRing(
@@ -503,12 +513,26 @@ function convention(m: ModelBuilder, W: number, D: number, st: Stage): void {
  * A building site's works for a project whose building is a hand-made model (phase 3): the
  * hoarding, the site cabins, and cranes that stand over what has risen so far (`top`, m).
  */
-export function siteWorks(m: ModelBuilder, W: number, D: number, stage: number, top: number): void {
+export function siteWorks(
+  m: ModelBuilder,
+  W: number,
+  D: number,
+  stage: number,
+  top: number,
+  /** Where the building itself leaves room (cranes and cabins don't stand in it). */
+  clear?: Clear,
+): void {
   hoarding(m, W, D);
-  siteKit(m, W, D);
+  siteKit(m, W, D, clear);
   const h = Math.max(30, top + 14);
-  crane(m, W / 2 - 10, stage === 1 ? -D / 4 : 0, h, stage === 1 ? Math.PI * 0.9 : Math.PI);
-  if (stage === 1) crane(m, -W / 2 + 12, D / 4, h - 2, -0.2);
+  const mast = (x: number, z: number) => clear?.(x, z, 4, 4) ?? { x, z };
+  const a = mast(W / 2 - 10, stage === 1 ? -D / 4 : 0);
+  // The jib swings over the middle of the site from wherever the mast found room.
+  crane(m, a.x, a.z, h, Math.atan2(-a.z, -a.x) + (stage === 1 ? -0.3 : 0));
+  if (stage === 1) {
+    const b = mast(-W / 2 + 12, D / 4);
+    crane(m, b.x, b.z, h - 2, Math.atan2(-b.z, -b.x) - 0.2);
+  }
   m.height = Math.max(m.height, h + 4);
 }
 

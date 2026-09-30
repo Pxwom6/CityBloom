@@ -331,7 +331,8 @@ describe('the asset registry with hand-made models', () => {
     for (const [stage, m] of raised.entries()) {
       // Cranes stand over the site.
       expect(m.height).toBeGreaterThan(30);
-      expect(tris(m)).toBeLessThan(tris(done) + 400);
+      // A building cut off part-way is open at the top, so its walls are drawn from inside too.
+      expect(tris(m)).toBeLessThan(tris(done) * 2 + 400);
       // Nothing lit, no smoke; trees only once the grounds are laid.
       expect(m.win!.every((w) => w === 0)).toBe(true);
       expect(m.stacks).toHaveLength(0);

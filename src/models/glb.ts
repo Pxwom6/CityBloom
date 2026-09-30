@@ -18,6 +18,8 @@ export interface GlbPart {
   material: string;
   rawMaterial: string;
   color: [number, number, number];
+  /** The material is marked to be seen from both sides (a thin sheet: a canopy, an open roof). */
+  doubleSided: boolean;
   /** Triangles in model space, nine floats each, wound counter-clockwise seen from outside. */
   tris: Float32Array;
 }
@@ -304,6 +306,7 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
         material: normaliseName(matName(mi)),
         rawMaterial: matName(mi),
         color: matColor(mi),
+        doubleSided: mi !== undefined && materials[mi]?.doubleSided === true,
         tris: new Float32Array(out),
       });
     }

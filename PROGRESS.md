@@ -96,14 +96,34 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-M25 (baseline and model pipeline): built, and being checked. Done: the uncapped Chrome frame-time
-benchmark and the baseline; `npm run models:check`; the build-time conversion and the packed models
-file; models in the game (rows, palettes, mirroring, per-copy night windows, lot base, garden trees
-from `tree_spot`s, smoke from stack tops, seasonal lawns and hedges, the landfill's mound, project
-stages, annexes, no two alike side by side); near / far / skyline versions with a dithered
-hand-over; unit tests (`tests/models.test.ts`, `tests/handmade.test.ts`) and the end-to-end test
-(`e2e/m25-models.spec.ts`: the tenement grown by normal zoning). Left: act on the visual review of
-every model and the code review, the full e2e run, final frame times, bench and balance, SPEC_REVIEW.
+M25 (baseline and model pipeline): built, and being closed out. All 136 models pass
+`models:check`; unit tests pass (371 before the last converter fixes, the 37 model tests after).
+A review workflow (every model looked at in the game, plus a code review by area) is part-way
+through; its results are in the session's workflow journal (`wf_e6d94600-b44`).
+
+Done from the reviews: double-sided sheets, project stages seen from inside, cranes and cabins
+clear of the building, only real boxes hide faces, distant versions keep undersides, glazed rooms,
+frame faces and crown posts, damaged files fail the check, quarter turns caught, party walls back
+on the footprint edge.
+
+Still to do from the code review of `handmade.ts` (found, not yet fixed):
+1. Annexes can land on entrance roads and in front of doors (landfill, fire station, recycling):
+   give the bake a keep-clear mask (entrance roads, aprons, forecourts, a strip in front of each
+   door and garage door) and have `clearPlace` try smaller sizes at the back and sides before
+   any spot along the front.
+2. Garden trees of a hand-made civic building stay after it is demolished or moved
+   (`renderer.ts`: `world.onCivics` ignores `removed`); rebuild every tree region a lot or site
+   touches, for zoned lots too (a lot across a 512 m region line).
+3. A shrunk annex's ground slab is within a millimetre of the site's surface: leave an inset's
+   ground triangles out (the site has its own ground).
+4. Different looks of one design can paint identically (hi-tech industry: three wall colours):
+   pick the wall colour and mirroring by the look's rank among the hand-made looks.
+
+Then: the rest of the review's results (homes, industry, night and seasons, distant versions of
+civic and shop models, code review of levels of detail, renderer changes, build), the full e2e
+run, final frame times (all presets, against `dist-base`), bench and balance numbers
+(`bench-results/balance-m25.log`: careful 71,565 / 72 % at year 20, every election won),
+SPEC_REVIEW, the regenerated `docs/screenshots`, and the `M25 complete:` commit.
 
 ## Next tasks
 1. M25: fixes from the reviews; full e2e; final numbers; `M25 complete`.

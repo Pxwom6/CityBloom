@@ -64,6 +64,11 @@ export interface BakedModel {
    * other models.
    */
   occupied: Uint8Array;
+  /**
+   * Civic sites: ground to keep clear, the same way: the roads in, and the approach to every
+   * door and garage door. Empty for other models.
+   */
+  approach: Uint8Array;
   /** tree_spot markers: x, y (ground), z each. */
   trees: number[];
   /** Tops of smoke_stack parts: x, y, z each. */

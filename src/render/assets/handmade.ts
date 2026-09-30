@@ -77,6 +77,12 @@ export interface HandOptions {
   D: number;
   /** What makes this copy itself: its paint, mirroring and (with the building) its lit windows. */
   seed: number;
+  /**
+   * Which of its design's looks this is (0, 1, 2 …): the walls take the palette's colours in
+   * turn and then mirrored, so no two looks of a design come out the same until every
+   * combination is used. The seed if not given.
+   */
+  rank?: number;
   /** The chance a window is lit at night. */
   lit: number;
   /** Copies may be mirrored left to right (zoned buildings; a civic site's layout is fixed). */
@@ -181,6 +187,10 @@ interface Copy {
   joinNeg: boolean;
   scale: number;
   y: number;
+  /** Set into another model's site, which has its own ground: its lawns and paving go. */
+  inset?: boolean;
+  /** Turned half round (an annex built onto the back of its building, facing out). */
+  turn?: boolean;
 }
 
 /** Where a model's copies stand on a lot, and how each is painted. */
@@ -195,25 +205,37 @@ function layout(model: BakedModel, o: HandOptions): Copy[] {
     const c = model.colors[role];
     return c ? new Color(c[0], c[1], c[2]) : undefined;
   };
+  const rank = o.rank ?? o.seed;
   const copies: Copy[] = [];
   for (let k = 0; k < n; k++) {
     const paint: (Color | undefined)[] = ROLES.map((_, i) => own(i));
+    // How many colours the first repainted role (the walls) could take.
+    let turns = 0;
     for (const role of Object.keys(FAMILIES) as Role[]) {
       const base = paint[ROLE[role]];
       if (!base || o.own?.includes(role)) continue;
       const family = nearestPalette(role, base);
       if (!family) continue;
-      // Neighbours in a row are painted differently.
-      const before = copies[k - 1]?.paint[ROLE[role]];
-      let pick = family[Math.floor(r() * family.length)]!;
-      for (let tries = 0; tries < 4 && before && pick.equals(before) && family.length > 1; tries++)
+      let pick: Color;
+      if (!turns) {
+        // The walls in turn: look by look, and copy by copy along a row.
+        turns = family.length;
+        pick = family[(rank + k) % family.length]!;
+      } else {
+        // Neighbours in a row are painted differently.
+        const before = copies[k - 1]?.paint[ROLE[role]];
         pick = family[Math.floor(r() * family.length)]!;
+        for (let tries = 0; tries < 4 && before && pick.equals(before) && family.length > 1; tries++)
+          pick = family[Math.floor(r() * family.length)]!;
+      }
       paint[ROLE[role]] = pick;
     }
+    // Mirrored once the wall colours have all been used (the first copy); along a row, at random.
+    const flip = k === 0 && turns ? Math.floor(rank / turns) % 2 === 1 : r() < 0.5;
     copies.push({
       x: -o.W / 2 + model.w * (k + 0.5),
       z,
-      mirror: o.mirror && r() < 0.5,
+      mirror: o.mirror && flip,
       paint,
       unit0: k * model.units.length,
       joinPos: model.party && k < n - 1,
@@ -234,10 +256,12 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
   const cut = building ? model.h * o.reveal! : Infinity;
   const v = new Float64Array(9);
   for (const c of copies) {
-    const sx = c.mirror ? -c.scale : c.scale;
+    const sx = (c.mirror ? -c.scale : c.scale) * (c.turn ? -1 : 1);
+    const sz = c.turn ? -c.scale : c.scale;
     for (let t = 0; t < model.triRole.length; t++) {
       const f = model.triFlags[t]!;
       if (!(f & level)) continue;
+      if (c.inset && f & TRI_GROUND) continue;
       // A row's party walls: whichever of this copy's sides has a neighbour against it.
       if (c.joinPos && f & (c.mirror ? TRI_PARTY_NEG : TRI_PARTY_POS)) continue;
       if (c.joinNeg && f & (c.mirror ? TRI_PARTY_POS : TRI_PARTY_NEG)) continue;
@@ -249,7 +273,7 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
         const i = I[t * 3 + k]! * 3;
         v[k * 3] = P[i]! * sx + c.x;
         v[k * 3 + 1] = P[i + 1]! * c.scale * (g === GROUP.mound ? moundScale : 1) + c.y;
-        v[k * 3 + 2] = P[i + 2]! * c.scale + c.z;
+        v[k * 3 + 2] = P[i + 2]! * sz + c.z;
       }
       // Mirroring turns the winding round; swap two corners to turn it back.
       if (c.mirror)
@@ -371,66 +395,108 @@ export interface Inset {
   y: number;
   scale: number;
   seed: number;
+  /** Turned half round, its front to the back of the site. */
+  turn?: boolean;
 }
 
 /** A civic annex's site (m): as `ANNEX_SITE` in the model spec. */
 const ANNEX = { w: 9, d: 8 };
 
+/** Is square metre (c, r) of a site set in a bitmap? */
+function cell(bits: Uint8Array, cols: number, c: number, r: number): boolean {
+  const i = r * cols + c;
+  return ((bits[i >> 3] ?? 0) & (1 << (i & 7))) !== 0;
+}
+
 /**
  * Where an add-on annex stands on a hand-made civic site. `from` is where the generator would
  * put it, a back corner, which a hand-made site may have built on. The annex takes the clear
- * spot nearest that corner: along the back of the site, down the sides, along the front, then
- * anywhere; failing that a smaller annex (down to about half size); failing that the spot where
- * it overlaps least. `taken` are annexes already placed (x, z, width, depth).
+ * spot nearest that corner, off the site's roads and out of the way of its doors: along the back
+ * of the site and down its sides, shrinking to about half size if it must; then along the front
+ * or anywhere; failing that built onto the back of the building, turned to face out; failing
+ * that where it is least in the way.
+ * `taken` are annexes already placed (x, z, width, depth).
  */
 export function clearPlace(
   site: BakedModel,
   from: { x: number; z: number; scale: number },
   taken: { x: number; z: number; w: number; d: number }[],
-): { x: number; z: number; scale: number } {
+): { x: number; z: number; scale: number; turn?: boolean } {
   const W = site.w;
   const D = site.d;
   const cols = Math.ceil(W);
   const rows = Math.ceil(D);
-  const gap = 0.5;
-  /** Square metres of the rectangle that are built on (a placed annex counts for all of it). */
-  const overlap = (x0: number, z0: number, x1: number, z1: number): number => {
+  const gap = 0.25;
+  /** How much in the way a rectangle is: built-on square metres count most, then kept-clear ones. */
+  const cost = (x0: number, z0: number, x1: number, z1: number): number => {
     for (const t of taken)
-      if (x0 < t.x + t.w / 2 && x1 > t.x - t.w / 2 && z0 < t.z + t.d / 2 && z1 > t.z - t.d / 2) return 1e6;
+      if (x0 < t.x + t.w / 2 && x1 > t.x - t.w / 2 && z0 < t.z + t.d / 2 && z1 > t.z - t.d / 2) return 1e9;
     let n = 0;
     const c0 = Math.max(0, Math.floor(x0 + W / 2));
     const c1 = Math.min(cols - 1, Math.floor(x1 + W / 2 - 1e-6));
     const r0 = Math.max(0, Math.floor(z0 + D / 2));
     const r1 = Math.min(rows - 1, Math.floor(z1 + D / 2 - 1e-6));
     for (let r = r0; r <= r1; r++)
-      for (let c = c0; c <= c1; c++)
-        if (site.occupied[(r * cols + c) >> 3]! & (1 << ((r * cols + c) & 7))) n++;
+      for (let c = c0; c <= c1; c++) {
+        if (cell(site.occupied, cols, c, r)) n += 100;
+        else if (cell(site.approach, cols, c, r)) n += 1;
+      }
     return n;
   };
   const side = from.x >= 0 ? 1 : -1;
-  let best = from;
-  let bestOver = Infinity;
-  for (const shrink of [1, 0.85, 0.7, 0.58]) {
+  const SHRINK = [1, 0.85, 0.7, 0.58];
+  /** Spots for an annex of this size: the back and sides, or the front and the rest. */
+  const spots = (scale: number, back: boolean): [number, number][] => {
+    const edgeX = W / 2 - 1 - (ANNEX.w * scale) / 2;
+    const edgeZ = D / 2 - 1 - (ANNEX.d * scale) / 2;
+    if (edgeX < 0 || edgeZ < 0) return [];
+    const out: [number, number][] = [];
+    if (back) {
+      for (let t = 0; t <= 2 * edgeX; t++) out.push([side * (edgeX - t), edgeZ]);
+      for (let t = 1; t <= 2 * edgeZ; t++) out.push([side * edgeX, edgeZ - t], [-side * edgeX, edgeZ - t]);
+    } else {
+      for (let t = 0; t <= 2 * edgeX; t++) out.push([side * (edgeX - t), -edgeZ]);
+      for (let u = 1; u < 2 * edgeZ; u++)
+        for (let t = 1; t < 2 * edgeX; t++) out.push([side * (edgeX - t), edgeZ - u]);
+    }
+    return out;
+  };
+  let best: { x: number; z: number; scale: number; turn?: boolean } = from;
+  let bestCost = Infinity;
+  for (const back of [true, false])
+    for (const shrink of SHRINK) {
+      const scale = Math.max(0.45, from.scale * shrink);
+      const w = ANNEX.w * scale;
+      const d = ANNEX.d * scale;
+      for (const [x, z] of spots(scale, back)) {
+        const c = cost(x - w / 2 - gap, z - d / 2 - gap, x + w / 2 + gap, z + d / 2 + gap);
+        if (c === 0) return { x, z, scale };
+        // No room anywhere: where it is least in the way, and smallest.
+        if (c < bestCost || (c === bestCost && scale < best.scale)) {
+          best = { x, z, scale };
+          bestCost = c;
+        }
+      }
+    }
+  // No clear spot: built onto the back of the building instead, turned to face the back of the
+  // site, its back wall in the building's and its front clear.
+  for (const shrink of SHRINK) {
     const scale = Math.max(0.45, from.scale * shrink);
     const w = ANNEX.w * scale;
     const d = ANNEX.d * scale;
+    const z = D / 2 - 0.5 - d / 2;
     const edgeX = W / 2 - 1 - w / 2;
-    const edgeZ = D / 2 - 1 - d / 2;
-    if (edgeX < 0 || edgeZ < 0) continue;
-    const spots: [number, number][] = [];
-    // Along the back from its corner, down both sides, along the front, then the rest.
-    for (let t = 0; t <= 2 * edgeX; t++) spots.push([side * (edgeX - t), edgeZ]);
-    for (let t = 1; t <= 2 * edgeZ; t++) spots.push([side * edgeX, edgeZ - t], [-side * edgeX, edgeZ - t]);
-    for (let t = 0; t <= 2 * edgeX; t++) spots.push([side * (edgeX - t), -edgeZ]);
-    for (let u = 1; u < 2 * edgeZ; u++)
-      for (let t = 1; t < 2 * edgeX; t++) spots.push([side * (edgeX - t), edgeZ - u]);
-    for (const [x, z] of spots) {
-      const over = overlap(x - w / 2 - gap, z - d / 2 - gap, x + w / 2 + gap, z + d / 2 + gap);
-      if (over === 0) return { x, z, scale };
-      // No room anywhere: the smallest annex where it overlaps least.
-      if (over <= bestOver) {
-        if (over < bestOver || scale < best.scale) best = { x, z, scale };
-        bestOver = over;
+    if (edgeX < 0 || z < 0) continue;
+    for (let t = 0; t <= 2 * edgeX; t++) {
+      const x = side * (edgeX - t);
+      // Its front half must be clear; up to half its depth may be in the building.
+      const front = cost(x - w / 2 - gap, z, x + w / 2 + gap, z + d / 2 + 0.25);
+      const into = cost(x - w / 2, z - d / 2, x + w / 2, z);
+      if (front >= 100 || into >= 1e9) continue;
+      const c = front + (into % 100) + 0.5;
+      if (c < bestCost) {
+        best = { x, z, scale, turn: true };
+        bestCost = c;
       }
     }
   }
@@ -462,7 +528,7 @@ export function nearestClear(
     if (x0 < -W / 2 + 1.5 || x1 > W / 2 - 1.5 || z0 < -D / 2 + 1.5 || z1 > D / 2 - 1.5) return false;
     for (let r = Math.floor(z0 + D / 2); r <= Math.min(rows - 1, Math.floor(z1 + D / 2)); r++)
       for (let c = Math.floor(x0 + W / 2); c <= Math.min(cols - 1, Math.floor(x1 + W / 2)); c++)
-        if (site.occupied[(r * cols + c) >> 3]! & (1 << ((r * cols + c) & 7))) return false;
+        if (cell(site.occupied, cols, c, r) || cell(site.approach, cols, c, r)) return false;
     return true;
   };
   // Rings of growing radius round the spot.
@@ -511,7 +577,7 @@ export function buildHandModel(
       for (const role of ['wall', 'wall_alt', 'roof'] as const)
         if (paint[ROLE[role]] && copies[0]!.paint[ROLE[role]])
           paint[ROLE[role]] = copies[0]!.paint[ROLE[role]];
-      return { ...c, paint, x: a.x, z: a.z, y: a.y, scale: a.scale, unit0: 0 };
+      return { ...c, paint, x: a.x, z: a.z, y: a.y, scale: a.scale, unit0: 0, inset: true, turn: a.turn };
     }),
   }));
   // Windows across the copies, then the insets': each with the chance it is lit.
@@ -549,8 +615,8 @@ export function buildHandModel(
         // No tree where an annex has been built.
         const built = inset.some(
           (a) =>
-            Math.abs(x - a.at.x) < (a.model.w * a.at.scale) / 2 + 1.5 &&
-            Math.abs(z - a.at.z) < (a.model.d * a.at.scale) / 2 + 1.5,
+            Math.abs(x - a.at.x) < (a.model.w * a.at.scale) / 2 + 2.5 &&
+            Math.abs(z - a.at.z) < (a.model.d * a.at.scale) / 2 + 2.5,
         );
         if (!built) out.push(x, list[i + 1]!, z);
       }
@@ -607,6 +673,12 @@ export class HandmadeModels {
     if (n >= 3) return fit[look % n]!;
     const slot = look % (n + 1);
     return slot < n ? fit[slot]! : null;
+  }
+
+  /** Which of its design's looks a zoned look is (for `HandOptions.rank`). */
+  rank(def: string, W: number, D: number, look: number): number {
+    const n = this.all('zoned', def).filter((m) => HandmadeModels.fits(m, W, D)).length;
+    return Math.floor(look / (n >= 3 ? n : n + 1));
   }
 
   civic(def: string, variant: number): BakedModel | null {

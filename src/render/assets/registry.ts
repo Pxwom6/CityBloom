@@ -73,6 +73,7 @@ export class AssetRegistry {
               W: w * CELL,
               D: d * CELL,
               seed: look,
+              rank: handmade.rank(def, w * CELL, d * CELL, look),
               lit: LIT[zd.zone] ?? 0.6,
               mirror: true,
               base: lotSurface(zd),
@@ -149,7 +150,15 @@ function civicModel(
     // The clear spot nearest its back corner, just clear of the ground it is set on.
     const p = clearPlace(hand, annexPlace(W, D, k), taken);
     taken.push({ x: p.x, z: p.z, w: annex.w * p.scale, d: annex.d * p.scale });
-    insets.push({ model: annex, x: p.x, z: p.z, y: 0.03, scale: p.scale, seed: variant * 31 + k });
+    insets.push({
+      model: annex,
+      x: p.x,
+      z: p.z,
+      y: 0.03,
+      scale: p.scale,
+      seed: variant * 31 + k,
+      turn: p.turn,
+    });
   });
   const o = {
     W,

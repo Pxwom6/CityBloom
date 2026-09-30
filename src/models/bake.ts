@@ -35,6 +35,10 @@ const FAR_DROP =
 const EPS = 1e-3;
 /** A glass box no deeper than this is a pane set in a wall (m); deeper, a glazed room. */
 const PANE_DEPTH = 0.6;
+/** Ground on a civic site that nothing is put on: the roads in. */
+const KEEP_CLEAR = /^(entrance_road|access_road|service_road|road|drive|driveway|lane)$/;
+/** Doors whose approach is kept clear. */
+const DOORWAY = /^(door|garage_door|entrance)$/;
 /** Glass that stays dark at night: not a window. */
 const UNLIT_GLASS = /heliostat|solar|panel|balcony|grille|slit|opening|mirror/;
 /** Glass lit like a shop window. */
@@ -334,18 +338,20 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     index[i / 3] = v;
   }
 
-  // Civic sites: what is built on, a bit per square metre (a part's whole bounding box counts).
+  // Civic sites: what is built on, a bit per square metre (a part's whole bounding box counts),
+  // and what is kept clear.
   const cols = Math.ceil(fp.w);
   const rows = Math.ceil(fp.d);
   const occupied = new Uint8Array(t.kind === 'civic' ? Math.ceil((cols * rows) / 8) : 0);
+  const approach = new Uint8Array(occupied.length);
   if (t.kind === 'civic') {
-    const mark = (x0: number, z0: number, x1: number, z1: number) => {
+    const mark = (x0: number, z0: number, x1: number, z1: number, into = occupied) => {
       const c0 = Math.max(0, Math.floor(x0 + fp.w / 2));
       const c1 = Math.min(cols - 1, Math.floor(x1 + fp.w / 2 - 1e-6));
       const r0 = Math.max(0, Math.floor(z0 + fp.d / 2));
       const r1 = Math.min(rows - 1, Math.floor(z1 + fp.d / 2 - 1e-6));
       for (let r = r0; r <= r1; r++)
-        for (let c = c0; c <= c1; c++) occupied[(r * cols + c) >> 3]! |= 1 << ((r * cols + c) & 7);
+        for (let c = c0; c <= c1; c++) into[(r * cols + c) >> 3]! |= 1 << ((r * cols + c) & 7);
     };
     src.forEach((_, pi) => {
       const b = boxes[pi]!;
@@ -354,6 +360,43 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     });
     for (let i = 0; i < trees.length; i += 3)
       mark(trees[i]! - 1, trees[i + 2]! - 1, trees[i]! + 1, trees[i + 2]! + 1);
+    // Roads in.
+    src.forEach((p, pi) => {
+      const b = boxes[pi]!;
+      if (info[pi]!.ground && KEEP_CLEAR.test(p.name)) mark(b.min[0], b.min[2], b.max[0], b.max[2], approach);
+    });
+    // The approach to each door: a strip as wide as it, out from the wall it is set in.
+    const inWall = (x: number, y: number, z: number) =>
+      src.some((q, qi) => {
+        const k = boxes[qi]!;
+        return (
+          !DOORWAY.test(q.name) &&
+          (q.material === 'wall' || q.material === 'wall_alt') &&
+          x > k.min[0] &&
+          x < k.max[0] &&
+          y > k.min[1] &&
+          y < k.max[1] &&
+          z > k.min[2] &&
+          z < k.max[2]
+        );
+      });
+    src.forEach((p, pi) => {
+      if (!DOORWAY.test(p.name)) return;
+      const b = boxes[pi]!;
+      const along = b.max[0] - b.min[0] < b.max[2] - b.min[2] ? 0 : 2;
+      const cx = (b.min[0] + b.max[0]) / 2;
+      const cz = (b.min[2] + b.max[2]) / 2;
+      const y = b.min[1] + 1;
+      const reach = p.name === 'garage_door' ? 9 : 6;
+      for (const dir of [-1, 1]) {
+        // Out on the side that isn't wall (both, if the door isn't in a wall).
+        if (along === 0 ? inWall(cx + dir * 0.6, y, cz) : inWall(cx, y, cz + dir * 0.6)) continue;
+        const face = dir > 0 ? b.max[along]! : b.min[along]!;
+        const [lo, hi] = dir > 0 ? [face, face + reach] : [face - reach, face];
+        if (along === 0) mark(lo, b.min[2] - 0.5, hi, b.max[2] + 0.5, approach);
+        else mark(b.min[0] - 0.5, lo, b.max[0] + 0.5, hi, approach);
+      }
+    });
   }
 
   return {
@@ -379,6 +422,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     colors,
     units: Uint8Array.from(unitKinds),
     occupied,
+    approach,
     trees,
     stacks,
     counts: {

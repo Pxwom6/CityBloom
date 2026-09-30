@@ -10,14 +10,30 @@ const MAGIC = 0x314d4243; // "CBM1"
 interface Entry {
   meta: Omit<
     BakedModel,
-    'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units' | 'occupied'
+    | 'positions'
+    | 'index'
+    | 'triRole'
+    | 'triFlags'
+    | 'triUnit'
+    | 'triGroup'
+    | 'units'
+    | 'occupied'
+    | 'approach'
   >;
   /** Metres per unit of the 16-bit vertices. */
   scale: number;
   wide: boolean;
   /** Byte offset and element count of each array in the binary section. */
   at: Record<
-    'positions' | 'index' | 'triRole' | 'triFlags' | 'triUnit' | 'triGroup' | 'units' | 'occupied',
+    | 'positions'
+    | 'index'
+    | 'triRole'
+    | 'triFlags'
+    | 'triUnit'
+    | 'triGroup'
+    | 'units'
+    | 'occupied'
+    | 'approach',
     [number, number]
   >;
 }
@@ -46,7 +62,7 @@ export function encodeModels(models: BakedModel[]): Uint8Array {
     for (let i = 0; i < q.length; i++) q[i] = Math.round(m.positions[i]! / scale);
     const wide = m.positions.length / 3 > 65535;
     const idx = wide ? m.index : Uint16Array.from(m.index);
-    const { positions, index, triRole, triFlags, triUnit, triGroup, units, occupied, ...meta } = m;
+    const { positions, index, triRole, triFlags, triUnit, triGroup, units, occupied, approach, ...meta } = m;
     void positions;
     void index;
     return {
@@ -62,10 +78,11 @@ export function encodeModels(models: BakedModel[]): Uint8Array {
         triGroup: [put(triGroup), triGroup.length],
         units: [put(units), units.length],
         occupied: [put(occupied), occupied.length],
+        approach: [put(approach), approach.length],
       },
     };
   });
-  let json = new TextEncoder().encode(JSON.stringify({ version: 1, models: entries }));
+  let json = new TextEncoder().encode(JSON.stringify({ version: 2, models: entries }));
   if (json.length % 4) {
     const padded = new Uint8Array(json.length + 4 - (json.length % 4)).fill(0x20);
     padded.set(json);
@@ -92,7 +109,7 @@ export function decodeModels(bytes: Uint8Array): BakedModel[] {
     version: number;
     models: Entry[];
   };
-  if (index.version !== 1) throw new Error(`models file version ${index.version}`);
+  if (index.version !== 2) throw new Error(`models file version ${index.version}`);
   const base = bytes.byteOffset + 8 + jsonLen;
   // Copies, so the arrays are aligned whatever the file's offset in its buffer.
   const copy = (at: [number, number], bytesPer: number) =>
@@ -120,6 +137,7 @@ export function decodeModels(bytes: Uint8Array): BakedModel[] {
       triGroup: new Uint8Array(copy(e.at.triGroup, 1)),
       units: new Uint8Array(copy(e.at.units, 1)),
       occupied: new Uint8Array(copy(e.at.occupied, 1)),
+      approach: new Uint8Array(copy(e.at.approach, 1)),
     };
   });
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Color } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { bakeModel, type BakedModel } from '../src/models/bake';
+import { bakeModel, TRI_GROUND, TRI_NEAR, type BakedModel } from '../src/models/bake';
 import { inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { parseBudgets } from '../src/models/spec';
@@ -31,7 +31,9 @@ const bake = (id: string): BakedModel => {
 const M = Object.fromEntries(
   decodeModels(
     encodeModels(
-      ['R103', 'R001', 'R201', 'police', 'coal', 'landfill', 'convention', 'annex-patrolWing'].map(bake),
+      ['R103', 'R001', 'R201', 'I021', 'police', 'coal', 'landfill', 'convention', 'annex-patrolWing'].map(
+        bake,
+      ),
     ),
   ).map((m) => [m.id, m]),
 ) as Record<string, BakedModel>;
@@ -350,11 +352,34 @@ describe('the asset registry with hand-made models', () => {
     expect(built(raised[1]!)).toBeLessThan(built(raised[2]!));
   });
 
+  it('paints every look of a design differently until the combinations run out', () => {
+    // Hi-tech industry repaints only its walls, from a palette of three: with one design the
+    // six hand-made looks are those three colours, then the same three mirrored.
+    handmade.set([M.I021!]);
+    const seen = new Set<string>();
+    let looks = 0;
+    for (let look = 0; look < VARIANTS; look++) {
+      if (!handmade.zoned('I021', 16, 16, look)) continue;
+      looks++;
+      const m = assets.zoned('I021', 2, 2, look);
+      seen.add(`${[...m.col.subarray(0, 3000)].map((v) => v.toFixed(3)).join()}|${m.pos[0]!.toFixed(3)}`);
+    }
+    expect(looks).toBe(6);
+    expect(seen.size).toBe(6);
+    handmade.set(Object.values(M));
+  });
+
   it('sets add-on annexes into the back corners of a site', () => {
     const bare = assets.civic('police', 0);
     const wing = assets.civic('police', 0, 0, ['patrolWing']);
     const extra = tris(wing) - tris(bare);
-    expect(extra).toBe(M['annex-patrolWing']!.counts.near);
+    // The annex without its own ground: the site has its paving already (the two would flicker).
+    const annex = M['annex-patrolWing']!;
+    let standing = 0;
+    for (let t = 0; t < annex.triFlags.length; t++)
+      if (annex.triFlags[t]! & TRI_NEAR && !(annex.triFlags[t]! & TRI_GROUND)) standing++;
+    expect(standing).toBeLessThan(annex.counts.near);
+    expect(extra).toBe(standing);
     // The generator's place for the first annex: the back right corner, its 9 × 8 m shrunk to a
     // third of a 24 m site.
     const p = annexPlace(24, 24, 0);

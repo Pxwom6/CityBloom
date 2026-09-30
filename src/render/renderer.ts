@@ -9,6 +9,8 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { ClientWorld } from '../client/world';
+import { CIVIC } from '../data/civic';
+import { CELL } from '../data/zones';
 import { hourOfDay } from '../sim/time';
 import { windAngle } from '../sim/systems/pollution';
 import { CameraController } from './camera';
@@ -311,25 +313,60 @@ export class GameRenderer {
       [this.trees.group, 'trees'],
     ];
     for (const [o, name] of named) o.name = name;
-    world.onCivics((changed) => {
+    // Trees by buildings (the forest's under them, a hand-made model's garden trees): every
+    // tree region the lot or site touches is rebuilt when it changes, moves or goes.
+    const touch = (at: { x: number; z: number; r: number }) => {
+      for (const [dx, dz] of [
+        [0, 0],
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+      ] as const)
+        this.treePoints.push({ x: at.x + dx * at.r, z: at.z + dz * at.r });
+    };
+    const siteOf = (c: { x: number; z: number; def: string }) => {
+      const d = CIVIC.get(c.def);
+      return { x: c.x, z: c.z, r: d ? Math.hypot(d.w, d.d) / 2 : 0 };
+    };
+    const sites = new Map<number, { x: number; z: number; r: number }>();
+    for (const c of world.civics.values()) sites.set(c.id, siteOf(c));
+    world.onCivics((changed, removed) => {
       for (const id of changed) {
         const c = world.civics.get(id);
-        if (c) this.treePoints.push({ x: c.x, z: c.z });
+        if (!c) continue;
+        // Moved: where it stood, too.
+        const was = sites.get(id);
+        if (was && (was.x !== c.x || was.z !== c.z)) touch(was);
+        const now = siteOf(c);
+        sites.set(id, now);
+        touch(now);
+      }
+      for (const id of removed) {
+        const was = sites.get(id);
+        if (was) touch(was);
+        sites.delete(id);
       }
     });
-    const lots = new Map<number, { x: number; z: number }>();
-    for (const b of world.buildings.values()) lots.set(b.id, { x: b.x, z: b.z });
+    const lotOf = (b: { x: number; z: number; w: number; d: number }) => ({
+      x: b.x,
+      z: b.z,
+      r: (Math.hypot(b.w, b.d) * CELL) / 2,
+    });
+    const lots = new Map<number, { x: number; z: number; r: number }>();
+    for (const b of world.buildings.values()) lots.set(b.id, lotOf(b));
     world.onBuildings((changed, removed) => {
       for (const id of changed) {
         const b = world.buildings.get(id);
         if (!b) continue;
-        this.treePoints.push({ x: b.x, z: b.z });
-        lots.set(id, { x: b.x, z: b.z });
+        const now = lotOf(b);
+        lots.set(id, now);
+        touch(now);
       }
       // A building that goes takes its garden trees with it.
       for (const id of removed) {
         const at = lots.get(id);
-        if (at) this.treePoints.push(at);
+        if (at) touch(at);
         lots.delete(id);
       }
     });

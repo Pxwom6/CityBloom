@@ -1,10 +1,10 @@
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
-  HalfFloatType,
   NeutralToneMapping,
   NoToneMapping,
   PCFShadowMap,
+  type Object3D,
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
@@ -44,6 +44,7 @@ import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
 import { PostPipeline, type PostSettings } from './post';
+import { castNearOnly } from './sunShadow';
 import { DisasterRenderer } from './disasters';
 import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
 import type { Season, WeatherKind } from '../data/climate';
@@ -191,7 +192,9 @@ export class GameRenderer {
     readonly canvas: HTMLCanvasElement,
     readonly world: ClientWorld,
   ) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // No multisampling on the canvas: every frame is drawn into the post pipeline's own
+    // multisampled target and copied here (M26).
+    this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
     // Neutral keeps a toy's colours true (ACES took brick to near black in shade; M26).
@@ -298,6 +301,18 @@ export class GameRenderer {
     };
     this.trees.rebuildAll();
     this.scene.add(this.trees.group);
+    // Small things cast in the near shadow cascade only (M26). Meshes added later (more cars)
+    // are marked as they come, below.
+    this.nearShadowsOnly = [
+      this.vehicles.group,
+      this.traffic.group,
+      this.pedestrians.group,
+      this.transit.group,
+      this.railVehicles.group,
+      this.ports.group,
+      this.streetLights.group,
+      this.garbage.mesh,
+    ];
     // Names for debugging (the test API's render breakdown).
     const named: [{ name: string }, string][] = [
       [this.terrain.group, 'terrain'],
@@ -508,8 +523,10 @@ export class GameRenderer {
     treeDetail: number;
     crowd: number;
     post: PostSettings;
+    cascades: 1 | 2;
   }): void {
-    this.post.settings = { ...g.post };
+    this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
+    this.post.settings = { ...(this.postOverride ?? g.post) };
     const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
     if (this.renderer.getPixelRatio() !== ratio) {
       this.renderer.setPixelRatio(ratio);
@@ -589,6 +606,14 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /** Groups whose meshes cast in the near shadow cascade only (marked once each). */
+  private nearShadowsOnly: Object3D[] = [];
+  private nearMarked = new WeakSet<Object3D>();
+  /** Dev: post settings to keep whatever the graphics settings say (test API `setPost`). */
+  postOverride: PostSettings | null = null;
+  /** How far shadows reach into the view, in camera distances, and at least (m) (M26). */
+  shadowReach = 3.2;
+  shadowFloor = 500;
   /** Dev: a tone mapping and exposure to try (test API `setTone`). */
   toneOverride: { mapping: 'aces' | 'neutral' | 'agx' | 'none'; exposure: number } | null = null;
   /** The frame after the scene is drawn: ambient occlusion, glow at night, tone mapping (M26). */
@@ -639,7 +664,19 @@ export class GameRenderer {
         lo = Math.min(lo, h);
         hi = Math.max(hi, h);
       }
-    l.follow(this.camera.position, this.camera.far, lo - 4, hi + SHADOW_TOP, Math.max(500, dist * 3.2));
+    l.follow(
+      this.camera.position,
+      this.camera.far,
+      lo - 4,
+      hi + SHADOW_TOP,
+      Math.max(this.shadowFloor, dist * this.shadowReach),
+    );
+    for (const g of this.nearShadowsOnly)
+      g.traverse((o) => {
+        if (this.nearMarked.has(o)) return;
+        this.nearMarked.add(o);
+        castNearOnly(o, l.shadow);
+      });
     l.fog.near = Math.max(900, this.controller.current.distance * 1.1) * this.fogScale;
     l.fog.far = Math.max(7500, this.controller.current.distance * 3.5) * this.fogScale;
     // Fog, rain and snow close the view in; heat hazes the distance (M22).
@@ -706,26 +743,23 @@ export class GameRenderer {
     this.renderer.info.reset();
     // Photo mode draws through its lens when it has anything to do.
     const lensOn = p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural');
-    if (this.post.active) {
-      // Occlusion where things meet, strong close up and gone by the whole-city view; its reach
-      // grows with the view. Glow at night.
-      const d = this.controller.current.distance;
-      const frame = {
-        ao: 1 - Math.min(1, Math.max(0, (d - 380) / 520)),
-        aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
-        glow: l.night,
-      };
-      if (lensOn) {
-        const size = this.renderer.getDrawingBufferSize(this.tmpSize);
-        if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
-          this.lensInput?.dispose();
-          this.lensInput = new WebGLRenderTarget(size.x, size.y, { type: HalfFloatType, depthBuffer: false });
-        }
-        this.post.render(this.renderer, this.scene, this.camera, frame, this.lensInput);
-        this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p);
-      } else this.post.render(this.renderer, this.scene, this.camera, frame);
-    } else if (lensOn) this.lens.render(this.renderer, this.scene, this.camera, p);
-    else this.renderer.render(this.scene, this.camera);
+    // Occlusion where things meet, strong close up and gone by the whole-city view; its reach
+    // grows with the view. Glow at night.
+    const d = this.controller.current.distance;
+    const post = {
+      ao: 1 - Math.min(1, Math.max(0, (d - 380) / 520)),
+      aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
+      glow: l.night,
+    };
+    if (lensOn) {
+      const size = this.renderer.getDrawingBufferSize(this.tmpSize);
+      if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
+        this.lensInput?.dispose();
+        this.lensInput = new WebGLRenderTarget(size.x, size.y, { depthBuffer: false });
+      }
+      this.post.render(this.renderer, this.scene, this.camera, post, this.lensInput);
+      this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p, true);
+    } else this.post.render(this.renderer, this.scene, this.camera, post);
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };
     if (this.tiltShiftOn && !p) {

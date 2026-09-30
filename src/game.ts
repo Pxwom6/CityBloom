@@ -613,7 +613,8 @@ export class Game {
       fogScale: d.fog,
       treeDetail: d.treeDetail,
       crowd: q.crowd,
-      post: { aoSamples: q.ao, aoBlur: q.aoBlur, glow: q.glow },
+      post: { aoSamples: q.ao, aoBlur: q.aoBlur, glow: q.glow, samples: q.samples },
+      cascades: q.cascades,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;

@@ -218,6 +218,10 @@ export interface TestApi {
     colourCalls: number;
     shadowCalls: number;
   }[];
+  /** Dev (M26): try the post pipeline's settings (and `samples`, `off`) on the running game. */
+  setPost(p: { aoSamples?: number; aoBlur?: boolean; glow?: boolean; samples?: number; off?: boolean }): void;
+  /** Dev (M26): try how far shadows reach (camera distances) and when they split in two. */
+  setShadowTweak(t: { reach?: number; split?: number; off?: boolean; floor?: number }): void;
   /** Dev (M26): try a tone mapping and exposure on the running game. */
   setTone(mapping: 'aces' | 'neutral' | 'agx' | 'none', exposure?: number): void;
   /**
@@ -559,6 +563,22 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    setPost: (p) => {
+      const post = game.renderer.post;
+      post.settings = {
+        aoSamples: p.off ? 0 : (p.aoSamples ?? post.settings.aoSamples),
+        aoBlur: p.aoBlur ?? post.settings.aoBlur,
+        glow: p.off ? false : (p.glow ?? post.settings.glow),
+        samples: p.samples ?? post.settings.samples,
+      };
+      game.renderer.postOverride = { ...post.settings };
+    },
+    setShadowTweak: (t) => {
+      if (t.reach !== undefined) game.renderer.shadowReach = t.reach;
+      if (t.split !== undefined) game.renderer.lighting.shadow.splitRatio = t.split;
+      if (t.floor !== undefined) game.renderer.shadowFloor = t.floor;
+      if (t.off) game.renderer.setShadows(false);
+    },
     setTone: (mapping, exposure) => {
       game.renderer.toneOverride = { mapping, exposure: exposure ?? 1 };
     },

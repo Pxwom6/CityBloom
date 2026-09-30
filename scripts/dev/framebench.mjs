@@ -4,7 +4,7 @@
 // Usage: npm run build:test && node scripts/dev/framebench.mjs city.gz [--out file.json]
 //          [--quality high,medium,low] [--views overview,city,street,overview@night,…,heavy]
 //          [--seconds 6] [--warm 3] [--settle 8] [--shots dir] [--label name] [--profile]
-//          [--dist dist-test]
+//          [--dist dist-test] [--init "js run in the page before timing"]
 // `--profile` also samples the main thread during each view and prints the costliest functions.
 // Views: overview, city and street (camera presets) by day (13:00) and @night (22:00), all at 3×
 // speed; `heavy` is the whole city at night at 3× with a tornado on screen (SPEC-3's frame budget).
@@ -32,6 +32,7 @@ const settle = Number(flag('settle', '8'));
 const shots = flag('shots', null);
 const profile = argv.includes('--profile');
 const dist = flag('dist', 'dist-test');
+const init = flag('init', null);
 if (shots) mkdirSync(shots, { recursive: true });
 mkdirSync(dirname(out), { recursive: true });
 
@@ -157,6 +158,8 @@ try {
       );
       // Let the loaded city settle (chunk, tree and label rebuilds) before timing anything.
       await page.evaluate(() => window.__game.waitFrames(30));
+      // `--init "js"`: run in the page before timing (dev: try a renderer setting).
+      if (init) await page.evaluate(init);
       await page.waitForTimeout(settle * 1000);
       const run = { quality, info, views: [] };
       results.runs.push(run);

@@ -3,6 +3,7 @@ import {
   DepthTexture,
   HalfFloatType,
   LinearFilter,
+  SRGBColorSpace,
   Mesh,
   NearestFilter,
   OrthographicCamera,
@@ -20,11 +21,14 @@ import {
 /**
  * The frame after the scene is drawn (phase 3, M26): soft shading where things meet (screen-space
  * ambient occlusion from the depth buffer, at half resolution, smoothed across edges it
- * mustn't cross) and a soft glow round lit windows and street lamps at night, then tone mapping.
+ * mustn't cross) and a soft glow round lit windows and street lamps at night.
  *
- * The scene is drawn into a multisampled HDR target with its depth; a composite pass lays the
- * occlusion and the glow over it and writes the screen, or hands the result to photo mode's lens.
- * Each effect costs nothing when it's off or faded out (occlusion from far off, glow by day).
+ * Every frame is drawn into a multisampled target with its depth, then copied to the screen with
+ * the effects laid over it. The target is display-referred: three.js tone-maps and encodes into
+ * it as it would into the screen (it is marked as an XR target, the one kind three treats so), so
+ * it holds 8 bits a channel, the frame looks the same with the effects on or off, and the
+ * canvas itself needs no multisampling. Each effect costs nothing when it's off or faded out
+ * (occlusion from far off, glow by day).
  */
 
 export interface PostSettings {
@@ -33,6 +37,8 @@ export interface PostSettings {
   aoBlur: boolean;
   /** Glow at night. */
   glow: boolean;
+  /** Multisampling of the frame (smooth edges). */
+  samples: number;
 }
 
 export interface PostFrame {
@@ -67,7 +73,7 @@ const VIEW_POS = /* glsl */ `
 const AO_TINT = new Color('#6c5f86');
 
 export class PostPipeline {
-  settings: PostSettings = { aoSamples: 0, aoBlur: false, glow: false };
+  settings: PostSettings = { aoSamples: 0, aoBlur: false, glow: false, samples: 4 };
   private scene = new Scene();
   private camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private quad: Mesh;
@@ -126,7 +132,7 @@ export class PostPipeline {
       depthTest: false,
       depthWrite: false,
       toneMapped: false,
-      uniforms: { tColor: { value: null }, uTexel: { value: new Vector2() }, uThreshold: { value: 0.8 } },
+      uniforms: { tColor: { value: null }, uTexel: { value: new Vector2() }, uThreshold: { value: 0.7 } },
       vertexShader: QUAD_VERTEX,
       fragmentShader: /* glsl */ `
         uniform sampler2D tColor;
@@ -134,11 +140,11 @@ export class PostPipeline {
         uniform float uThreshold;
         varying vec2 vUv;
         vec3 bright(vec2 uv) {
-          vec3 c = min(texture2D(tColor, uv).rgb, vec3(8.0));
+          vec3 c = texture2D(tColor, uv).rgb;
           float l = max(c.r, max(c.g, c.b));
           // A soft knee, so glow grows smoothly with a light's brightness.
           float k = max(0.0, l - uThreshold);
-          return c * (k * k / (k + 0.25)) / max(l, 1e-4);
+          return c * (k * k / (k + 0.12)) / max(l, 1e-4);
         }
         void main() {
           // Four taps between the full-resolution pixels this one covers.
@@ -168,6 +174,8 @@ export class PostPipeline {
     this.compositeMat = new ShaderMaterial({
       depthTest: false,
       depthWrite: false,
+      // The frame is tone-mapped and encoded already.
+      toneMapped: false,
       uniforms: {
         tColor: { value: null },
         tAO: { value: null },
@@ -186,15 +194,12 @@ export class PostPipeline {
         varying vec2 vUv;
         void main() {
           vec3 col = texture2D(tColor, vUv).rgb;
-          if (any(isnan(col))) col = vec3(0.0);
           if (uAO > 0.0) {
             float ao = texture2D(tAO, vUv).r;
             col *= mix(vec3(1.0), mix(uAOTint, vec3(1.0), ao), uAO);
           }
           if (uGlow > 0.0) col += texture2D(tGlow, vUv).rgb * uGlow;
           gl_FragColor = vec4(col, 1.0);
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
         }`,
     });
     this.quad = new Mesh(new PlaneGeometry(2, 2), this.compositeMat);
@@ -263,21 +268,28 @@ export class PostPipeline {
     });
   }
 
-  /** Is the pipeline in use at all (Low draws straight to the screen)? */
-  get active(): boolean {
-    return this.settings.aoSamples > 0 || this.settings.glow;
+  private wanted(px: number): number {
+    return px > 10e6 ? 0 : px > 6e6 ? Math.min(2, this.settings.samples) : this.settings.samples;
   }
 
   private ensure(w: number, h: number): void {
-    if (this.target && this.target.width === w && this.target.height === h) return;
+    if (
+      this.target &&
+      this.target.width === w &&
+      this.target.height === h &&
+      this.target.samples === this.wanted(w * h)
+    )
+      return;
     this.dispose();
     // Multisampled for smooth edges; less on very big frames (a 2× photo is smooth anyway).
     const px = w * h;
     this.target = new WebGLRenderTarget(w, h, {
-      type: HalfFloatType,
-      samples: px > 10e6 ? 0 : px > 6e6 ? 2 : 4,
+      samples: this.wanted(px),
       depthTexture: new DepthTexture(w, h),
     });
+    // Drawn into as the screen is: tone-mapped and sRGB-encoded (see above).
+    this.target.texture.colorSpace = SRGBColorSpace;
+    (this.target as { isXRRenderTarget?: boolean }).isXRRenderTarget = true;
     this.target.depthTexture!.minFilter = NearestFilter;
     this.target.depthTexture!.magFilter = NearestFilter;
     const hw = Math.max(1, Math.ceil(w / 2));
@@ -298,8 +310,8 @@ export class PostPipeline {
   }
 
   /**
-   * Draw `scene` and lay the effects over it: onto the screen, or (with `into`) into an HDR target
-   * for photo mode's lens, whose depth is then `depth`.
+   * Draw `scene` and lay the effects over it: onto the screen, or (with `into`) into a target for
+   * photo mode's lens, whose depth is then `depth`. What it writes is display-referred.
    */
   render(
     renderer: WebGLRenderer,
@@ -313,10 +325,12 @@ export class PostPipeline {
     const h = this.size.y;
     this.ensure(w, h);
     const target = this.target!;
+    const s = this.settings;
+    // The depth is copied out of the multisampled frame only when something reads it.
+    target.resolveDepthBuffer = (s.aoSamples > 0 && frame.ao > 0.01) || !!into;
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
 
-    const s = this.settings;
     const proj = camera.projectionMatrix.elements;
     const projInfo = (v: Vector4) => v.set(2 / proj[0]!, 2 / proj[5]!, -1 / proj[0]!, -1 / proj[5]!);
     const ao = s.aoSamples > 0 && frame.ao > 0.01;

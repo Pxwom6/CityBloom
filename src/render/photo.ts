@@ -62,6 +62,7 @@ export class PhotoLens {
   private quad: Mesh;
   private gather: ShaderMaterial;
   private finish: ShaderMaterial;
+  private finishDisplay: ShaderMaterial;
   private size = new Vector2();
 
   constructor() {
@@ -79,6 +80,7 @@ export class PhotoLens {
         uDof: { value: 0 },
         uTilt: { value: 0 },
         uMaxPx: { value: MAX_BLUR_PX },
+        uDisplay: { value: 0 },
       },
       vertexShader: QUAD_VERTEX,
       fragmentShader: /* glsl */ `
@@ -87,7 +89,7 @@ export class PhotoLens {
         uniform sampler2D tColor;
         uniform sampler2D tDepth;
         uniform vec2 uTexel;
-        uniform float uNear, uFar, uFocus, uDof, uTilt, uMaxPx;
+        uniform float uNear, uFar, uFocus, uDof, uTilt, uMaxPx, uDisplay;
         varying vec2 vUv;
 
         float distAt(vec2 uv) {
@@ -97,6 +99,8 @@ export class PhotoLens {
         // pixel on screen) would otherwise spread into a blob when blurred.
         vec3 colorAt(vec2 uv) {
           vec3 c = texture2D(tColor, uv).rgb;
+          // A finished frame (the post pipeline's) is sRGB: blur it in linear light.
+          if (uDisplay > 0.5) c = pow(c, vec3(2.2));
           if (any(isnan(c))) return vec3(0.0);
           return clamp(c, 0.0, 4.0);
         }
@@ -185,6 +189,9 @@ export class PhotoLens {
           #include <colorspace_fragment>
         }`,
     });
+    // For a finished frame: tone-mapped already, so graded and encoded only.
+    this.finishDisplay = this.finish.clone();
+    this.finishDisplay.toneMapped = false;
     this.quad = new Mesh(new PlaneGeometry(2, 2), this.gather);
     this.quad.frustumCulled = false;
     this.scene.add(this.quad);
@@ -218,6 +225,8 @@ export class PhotoLens {
     depth: Texture,
     camera: PerspectiveCamera,
     look: PhotoLook,
+    /** The colour is a finished, tone-mapped frame (sRGB), not the scene's light. */
+    display = false,
   ): void {
     renderer.getDrawingBufferSize(this.size);
     const w = this.size.x;
@@ -229,6 +238,7 @@ export class PhotoLens {
     const u = this.gather.uniforms;
     u.tColor!.value = color;
     u.tDepth!.value = depth;
+    u.uDisplay!.value = display ? 1 : 0;
     (u.uTexel!.value as Vector2).set(1 / w, 1 / h);
     u.uNear!.value = camera.near;
     u.uFar!.value = camera.far;
@@ -240,7 +250,8 @@ export class PhotoLens {
     renderer.setRenderTarget(this.mid);
     renderer.render(this.scene, this.camera);
 
-    const f = this.finish.uniforms;
+    const finish = display ? this.finishDisplay : this.finish;
+    const f = finish.uniforms;
     const g = GRADES[look.grade];
     f.tMid!.value = this.mid!.texture;
     (f.uTexel!.value as Vector2).set(1 / w, 1 / h);
@@ -249,7 +260,7 @@ export class PhotoLens {
     f.uContrast!.value = g.contrast;
     f.uLift!.value = g.lift;
     f.uVignette!.value = g.vignette;
-    this.quad.material = this.finish;
+    this.quad.material = finish;
     renderer.setRenderTarget(null);
     renderer.render(this.scene, this.camera);
   }

@@ -3,6 +3,7 @@ import {
   type Frustum,
   type Light,
   Matrix4,
+  type Object3D,
   type OrthographicCamera,
   Vector3,
   Vector4,
@@ -57,6 +58,8 @@ const pts: Vector3[] = Array.from({ length: 48 }, () => new Vector3());
 
 export class CitySunShadow extends SunLightShadow {
   fit: ShadowFit = { yLo: -10, yHi: 150, far: 1500 };
+  /** Two cascades only when the far edge of the ground in view is this much further than the near. */
+  splitRatio = SPLIT_RATIO;
   /** How many cascades are in use this frame (tests and the debug panel). */
   inUse = 0;
 
@@ -141,7 +144,7 @@ export class CitySunShadow extends SunLightShadow {
     }
     gMin = Math.max(near, gMin);
     gMax = Math.min(far, Math.max(gMax, gMin + 1));
-    const split = gMax / gMin > SPLIT_RATIO ? gMin * Math.pow(gMax / gMin, 0.4) : gMax;
+    const split = gMax / gMin > this.splitRatio ? gMin * Math.pow(gMax / gMin, 0.4) : gMax;
     const slices = split < gMax ? [gMin, split, gMax] : [gMin, gMax];
     this.inUse = slices.length - 1;
 
@@ -222,4 +225,24 @@ export class CitySunShadow extends SunLightShadow {
       self._updateMatrix(cascadeCam, self._matrices[i]!, self._frustums[i]!, self._viewports[i]!);
     }
   }
+}
+
+/**
+ * Cast shadows in the near cascade only (M26): small things (cars, walkers, lamp posts, bags of
+ * rubbish) whose shadows far off are a pixel or two, and not worth a draw call each there. Meshes
+ * the renderer doesn't cull are culled from the far cascade alone.
+ */
+export function castNearOnly(root: Object3D, shadow: CitySunShadow): void {
+  const far = shadow.getFrustum(1);
+  root.traverse((o) => {
+    const mesh = o as Object3D & { isMesh?: boolean; isPoints?: boolean };
+    if (!mesh.isMesh) return;
+    if (!mesh.frustumCulled) {
+      mesh.frustumCulled = true;
+      mesh.intersectsFrustum = (f: Frustum) => f !== far;
+      return;
+    }
+    const own = mesh.intersectsFrustum.bind(mesh);
+    mesh.intersectsFrustum = (f: Frustum) => f !== far && own(f);
+  });
 }

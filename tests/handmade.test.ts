@@ -285,7 +285,9 @@ describe('the asset registry with hand-made models', () => {
     expect(assets.zoned('R103', 3, 3, 0)).toBe(hand);
     const gen = assets.zoned('R103', 3, 3, 1);
     expect(gen.hand).toBeUndefined();
-    expect(gen.far).toBeUndefined();
+    // A generated look has its distant versions too (M28), its windows lit as drawn (no per-copy lighting).
+    expect(gen.far && gen.sky).toBeTruthy();
+    expect(gen.win).toBeUndefined();
     // A type with no model, or a lot its model doesn't fit: generated.
     expect(assets.zoned('R102', 2, 3, 0).hand).toBeUndefined();
     expect(assets.zoned('R201', 2, 2, 0).hand).toBeUndefined();

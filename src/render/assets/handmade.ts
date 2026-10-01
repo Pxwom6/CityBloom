@@ -752,7 +752,9 @@ export function buildHandModel(
       yard(s, o.W, o.D, yardFrom, o.yard, o.base, flag === TRI_NEAR, o.seed);
     emit(model, copies, flag, o, s);
     for (const a of inset) emit(a.model, a.copies, flag, { ...o, fill: undefined, reveal: undefined }, s);
-    for (const e of extra) s.add(e);
+    // A generated piece's own distant version at each level (M28).
+    for (const e of extra)
+      s.add(flag === TRI_NEAR ? e : flag === TRI_FAR ? (e.far ?? e) : (e.sky ?? e.far ?? e));
     // As tall as what is drawn: a landfill's mound as full as it is, a project as far as it has
     // risen, with its cranes (picking and icons go by it).
     return s.build(height ?? Math.max(0, s.maxY), chances);

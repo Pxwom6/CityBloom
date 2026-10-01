@@ -48,6 +48,21 @@ export const SEASONAL = new Map<Color, number>();
 
 const tmp = new Color();
 
+/**
+ * Levels of detail a generated triangle is drawn at (M28), as a mask: near, far, skyline. Detail is
+ * kept close up (NEAR_ONLY: fittings, cars, garden things) or close up and in the middle distance
+ * (IN_FAR: balconies, signs, rooftop plant); SKY_ONLY marks a simpler stand-in drawn only from far
+ * off (a band of windows for the panes along a floor). A distant version keeps the main volumes,
+ * roofs and windows.
+ */
+const L_NEAR = 1;
+const L_FAR = 2;
+const L_SKY = 4;
+export const IN_SKY = L_NEAR | L_FAR | L_SKY;
+export const IN_FAR = L_NEAR | L_FAR;
+export const NEAR_ONLY = L_NEAR;
+export const SKY_ONLY = L_SKY;
+
 export class ModelBuilder {
   private p: number[] = [];
   private n: number[] = [];
@@ -55,13 +70,32 @@ export class ModelBuilder {
   private e: number[] = [];
   /** Per triangle: does it cast a shadow worth drawing (M26); windows and the ground don't. */
   private s: number[] = [];
+  /** Per triangle: the levels of detail it is drawn at (M28, a mask). */
+  private l: number[] = [];
   private casting = true;
+  /** The levels the next triangles belong to; `detail()` sets them for a block of drawing. */
+  private level = IN_SKY;
   height = 0;
+
+  /**
+   * Draw `fn`'s triangles only at these levels (NEAR_ONLY, IN_FAR, SKY_ONLY), and never at a level
+   * the block they're drawn in leaves out.
+   */
+  detail(level: number, fn: () => void): void {
+    const was = this.level;
+    this.level = was & level;
+    try {
+      fn();
+    } finally {
+      this.level = was;
+    }
+  }
 
   /** Triangle with an explicit normal. */
   tri(a: number[], b: number[], c: number[], nx: number, ny: number, nz: number, col: Color, emi = 0): void {
     if (emi === 0) emi = SEASONAL.get(col) ?? 0;
     this.s.push(this.casting && emi <= 0 && Math.max(a[1]!, b[1]!, c[1]!) > 0.3 ? 1 : 0);
+    this.l.push(this.level);
     for (const v of [a, b, c]) {
       this.p.push(v[0]!, v[1]!, v[2]!);
       this.n.push(nx, ny, nz);
@@ -239,6 +273,34 @@ export class ModelBuilder {
   }
 
   /** Flat roof with a low parapet around the edge. */
+  /** Mansard roof (M28): steep slopes rising `h` to a flat top inset by `inset`. */
+  mansard(
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    y: number,
+    h: number,
+    inset: number,
+    col: Color,
+    top?: Color,
+  ): void {
+    const a = [x0 + inset, y + h, z0 + inset];
+    const b = [x1 - inset, y + h, z0 + inset];
+    const c = [x1 - inset, y + h, z1 - inset];
+    const d = [x0 + inset, y + h, z1 - inset];
+    this.quad([x0, y, z0], a, b, [x1, y, z0], col);
+    this.quad([x1, y, z0], b, c, [x1, y, z1], col);
+    this.quad([x1, y, z1], c, d, [x0, y, z1], col);
+    this.quad([x0, y, z1], d, a, [x0, y, z0], col);
+    this.quad(a, d, c, b, top ?? col);
+  }
+
+  /** A cornice (M28): a band standing proud of the walls all round at height y. */
+  cornice(x0: number, x1: number, z0: number, z1: number, y: number, col: Color, h = 0.45, out = 0.35): void {
+    this.box(x0 - out, x1 + out, y - h, y, z0 - out, z1 + out, col);
+  }
+
   parapet(x0: number, x1: number, z0: number, z1: number, y: number, col: Color, h = 0.6, t = 0.35): void {
     this.box(x0, x1, y, y + h, z0, z0 + t, col);
     this.box(x0, x1, y, y + h, z1 - t, z1, col);
@@ -250,6 +312,64 @@ export class ModelBuilder {
    * Window grid on one face of a box. face: 'front' (−z), 'back' (+z), 'left' (−x), 'right' (+x).
    * `lit(i)` returns the night emissive weight for window i.
    */
+  /** One pane on a wall's face, from a0 to a1 along it (from its middle), yb up `wh`. */
+  private pane(
+    face: 'front' | 'back' | 'left' | 'right',
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    a0: number,
+    a1: number,
+    yb: number,
+    wh: number,
+    out: number,
+    col: Color,
+    e: number,
+  ): void {
+    if (face === 'front') {
+      const xm = (x0 + x1) / 2;
+      this.quad(
+        [xm + a0, yb, z0 - out],
+        [xm + a0, yb + wh, z0 - out],
+        [xm + a1, yb + wh, z0 - out],
+        [xm + a1, yb, z0 - out],
+        col,
+        e,
+      );
+    } else if (face === 'back') {
+      const xm = (x0 + x1) / 2;
+      this.quad(
+        [xm - a0, yb, z1 + out],
+        [xm - a0, yb + wh, z1 + out],
+        [xm - a1, yb + wh, z1 + out],
+        [xm - a1, yb, z1 + out],
+        col,
+        e,
+      );
+    } else if (face === 'left') {
+      const zm = (z0 + z1) / 2;
+      this.quad(
+        [x0 - out, yb, zm - a0],
+        [x0 - out, yb + wh, zm - a0],
+        [x0 - out, yb + wh, zm - a1],
+        [x0 - out, yb, zm - a1],
+        col,
+        e,
+      );
+    } else {
+      const zm = (z0 + z1) / 2;
+      this.quad(
+        [x1 + out, yb, zm + a0],
+        [x1 + out, yb + wh, zm + a0],
+        [x1 + out, yb + wh, zm + a1],
+        [x1 + out, yb, zm + a1],
+        col,
+        e,
+      );
+    }
+  }
+
   windows(
     face: 'front' | 'back' | 'left' | 'right',
     x0: number,
@@ -279,55 +399,38 @@ export class ModelBuilder {
     const ww = opts.band ? along / count - 0.5 : (opts.width ?? 1.2);
     const wh = opts.height ?? floorH * 0.5;
     let k = 0;
+    const level = this.level;
     for (let f = opts.skipGround ? 1 : 0; f < floors; f++) {
       const yb = y0 + f * floorH + (floorH - wh) * 0.55;
+      // Each window's light, drawn once.
+      const lit: number[] = [];
+      for (let i = 0; i < count; i++) lit.push(opts.lit(k++));
+      if (opts.band && count > 1) {
+        // A band of windows is one strip along the floor from far off (M28): its gaps are less
+        // than a pixel there. Lit as its windows are on average.
+        this.level = level & SKY_ONLY;
+        const half = along / 2 - (along / count - ww) / 2;
+        this.pane(
+          face,
+          x0,
+          x1,
+          z0,
+          z1,
+          -half,
+          half,
+          yb,
+          wh,
+          out,
+          opts.col,
+          lit.reduce((a, b) => a + b, 0) / count,
+        );
+        this.level = level & IN_FAR;
+      }
       for (let i = 0; i < count; i++) {
         const cpos = -along / 2 + (i + 0.5) * (along / count);
-        const e = opts.lit(k++);
-        const a0 = cpos - ww / 2;
-        const a1 = cpos + ww / 2;
-        if (face === 'front') {
-          const xm = (x0 + x1) / 2;
-          this.quad(
-            [xm + a0, yb, z0 - out],
-            [xm + a0, yb + wh, z0 - out],
-            [xm + a1, yb + wh, z0 - out],
-            [xm + a1, yb, z0 - out],
-            opts.col,
-            e,
-          );
-        } else if (face === 'back') {
-          const xm = (x0 + x1) / 2;
-          this.quad(
-            [xm - a0, yb, z1 + out],
-            [xm - a0, yb + wh, z1 + out],
-            [xm - a1, yb + wh, z1 + out],
-            [xm - a1, yb, z1 + out],
-            opts.col,
-            e,
-          );
-        } else if (face === 'left') {
-          const zm = (z0 + z1) / 2;
-          this.quad(
-            [x0 - out, yb, zm - a0],
-            [x0 - out, yb + wh, zm - a0],
-            [x0 - out, yb + wh, zm - a1],
-            [x0 - out, yb, zm - a1],
-            opts.col,
-            e,
-          );
-        } else {
-          const zm = (z0 + z1) / 2;
-          this.quad(
-            [x1 + out, yb, zm + a0],
-            [x1 + out, yb + wh, zm + a0],
-            [x1 + out, yb + wh, zm + a1],
-            [x1 + out, yb, zm + a1],
-            opts.col,
-            e,
-          );
-        }
+        this.pane(face, x0, x1, z0, z1, cpos - ww / 2, cpos + ww / 2, yb, wh, out, opts.col, lit[i]!);
       }
+      this.level = level;
     }
     this.casting = casting;
   }
@@ -337,15 +440,38 @@ export class ModelBuilder {
     this.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], col);
   }
 
+  /**
+   * The model, with its far and skyline versions (M28: every generated building has them, so it
+   * fades through the levels as a hand-made one does): the triangles kept down to each.
+   */
   build(): ModelData {
-    return {
-      pos: new Float32Array(this.p),
-      nrm: new Float32Array(this.n),
-      col: new Float32Array(this.c),
-      emi: new Float32Array(this.e),
-      height: this.height,
-      shade: Uint8Array.from(this.s),
-    };
+    const near = this.keep(L_NEAR);
+    near.far = this.keep(L_FAR);
+    near.sky = this.keep(L_SKY);
+    return near;
+  }
+
+  /** The triangles drawn at `level` (one of the mask's bits). */
+  private keep(level: number): ModelData {
+    const tris = this.l.filter((l) => l & level).length;
+    const pos = new Float32Array(tris * 9);
+    const nrm = new Float32Array(tris * 9);
+    const col = new Float32Array(tris * 9);
+    const emi = new Float32Array(tris * 3);
+    const shade = new Uint8Array(tris);
+    let k = 0;
+    for (let t = 0; t < this.l.length; t++) {
+      if (!(this.l[t]! & level)) continue;
+      for (let j = 0; j < 9; j++) {
+        pos[k * 9 + j] = this.p[t * 9 + j]!;
+        nrm[k * 9 + j] = this.n[t * 9 + j]!;
+        col[k * 9 + j] = this.c[t * 9 + j]!;
+      }
+      for (let j = 0; j < 3; j++) emi[k * 3 + j] = this.e[t * 3 + j]!;
+      shade[k] = this.s[t]!;
+      k++;
+    }
+    return { pos, nrm, col, emi, height: this.height, shade };
   }
 }
 

@@ -179,6 +179,11 @@ export interface TestApi {
    * benches, bins and planters along the pavements (and whether they're on show).
    */
   getStreets(): { zebra: number; giveWay: number; props: number; propsShown: boolean };
+  /**
+   * Neighbours (M28): pairs of finished buildings whose lots touch, and how many of them are drawn
+   * with the very same model (the same type, lot size and look: identical side by side).
+   */
+  getNeighbours(): { pairs: number; identical: number; looks: number };
   /** The zone paint (M27): triangles and whether each part is shown (full look only while zoning). */
   getZoneLook(): Record<'zoned' | 'grid' | 'fill' | 'edge', { tris: number; shown: boolean }>;
   getLod(): {
@@ -948,6 +953,31 @@ export function installTestApi(game: Game): TestApi {
           n++;
         }
       return { changed: changed / n, mean: sum / n };
+    },
+    getNeighbours: () => {
+      const r = game.renderer.buildings;
+      const w = game.world;
+      // Finished buildings (not being built, not rubble) and the model each is drawn with.
+      const done = [...w.buildings.values()].filter((b) => b.state === 1 || b.state === 2);
+      const model = new Map(done.map((b) => [b.id, r.model(b)]));
+      let pairs = 0;
+      let identical = 0;
+      for (const b of done) {
+        const reach = Math.max(b.w, b.d) * CELL + 2;
+        for (const id of w.bldHash.query({
+          minX: b.x - reach,
+          minZ: b.z - reach,
+          maxX: b.x + reach,
+          maxZ: b.z + reach,
+        })) {
+          if (id <= b.id || !model.has(id)) continue;
+          const o = w.buildings.get(id)!;
+          if (Math.hypot(o.x - b.x, o.z - b.z) > Math.max(b.w, b.d, o.w, o.d) * CELL + 1.5) continue;
+          pairs++;
+          if (model.get(id) === model.get(b.id)) identical++;
+        }
+      }
+      return { pairs, identical, looks: new Set(model.values()).size };
     },
     getZoneLook: () => game.renderer.zones.stats(),
     getStreets: () => {

@@ -208,7 +208,15 @@ function moveModel(
     nrm[i + 1] = m.nrm[i + 1]!;
     nrm[i + 2] = m.nrm[i + 2]! * t;
   }
-  return { ...m, pos, nrm, height: m.height * r };
+  return {
+    ...m,
+    pos,
+    nrm,
+    height: m.height * r,
+    // Its distant versions moved the same way (M28).
+    far: m.far ? moveModel(m.far, from, to) : undefined,
+    sky: m.sky ? moveModel(m.sky, from, to) : undefined,
+  };
 }
 
 export const assets = new AssetRegistry();

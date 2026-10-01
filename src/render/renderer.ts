@@ -535,7 +535,9 @@ export class GameRenderer {
     post: PostSettings;
     cascades: 1 | 2;
     ground: 0 | 1;
+    closeShadowHz: number;
   }): void {
+    this.closeShadowEvery = g.closeShadowHz > 0 ? 1 / g.closeShadowHz : 0;
     this.groundDetail = g.ground;
     this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
     this.post.settings = { ...(this.postOverride ?? g.post) };
@@ -621,6 +623,8 @@ export class GameRenderer {
 
   /** When the shadow maps were last drawn (s of frame time). */
   private shadowAt = -1;
+  /** Seconds between shadow map redraws close up (0: every frame; the graphics quality's). */
+  closeShadowEvery = 0;
   /** Groups whose meshes cast in the near shadow cascade only (marked once each). */
   private nearShadowsOnly: Object3D[] = [];
   /** The country's fields, hedgerows and paths and the street furniture (M27): 0 off, 1 on. */
@@ -689,8 +693,9 @@ export class GameRenderer {
       Math.max(this.shadowFloor, dist * this.shadowReach),
     );
     // The shadow maps from far off barely change between frames: drawn again 30 times a second
-    // there, 60 at middle distance, every frame close up (M26).
-    const every = dist > 1500 ? 1 / 30 : dist > 600 ? 1 / 60 : 0;
+    // there, 60 at middle distance, close up every frame at High and 60 times a second at Medium
+    // (M26; M28, the cost switch for Medium's street level).
+    const every = dist > 1500 ? 1 / 30 : dist > 600 ? 1 / 60 : this.closeShadowEvery;
     l.shadow.autoUpdate = false;
     if (this.time - this.shadowAt >= every || this.time < this.shadowAt) {
       l.shadow.needsUpdate = true;

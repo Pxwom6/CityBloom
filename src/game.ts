@@ -616,6 +616,7 @@ export class Game {
       post: { aoSamples: q.ao, aoBlur: q.aoBlur, glow: q.glow, samples: q.samples, aoFar: q.aoFar },
       cascades: q.cascades,
       ground: q.ground,
+      closeShadowHz: q.closeShadowHz,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;

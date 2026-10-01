@@ -1,4 +1,4 @@
-import { Color, Group, Mesh, MeshLambertMaterial } from 'three';
+import { BufferAttribute, Color, Group, Mesh, MeshLambertMaterial } from 'three';
 import type { ClientWorld, NetChanges } from '../client/world';
 import { CELL, ROWS, ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 import { GeoBuffer, mergeChunks, type GeoChunk } from './geoBuffer';
@@ -18,6 +18,11 @@ const EDGE = 0.45;
 
 type Part = 'zoned' | 'grid' | 'fill' | 'edge';
 const PARTS: Part[] = ['zoned', 'grid', 'fill', 'edge'];
+/** Meshes a chunk: the full look's two, and the subtle look's tint and outline in one (M27). */
+type Layer = 'zoned' | 'grid' | 'subtle';
+const LAYERS: Record<Layer, Part[]> = { zoned: ['zoned'], grid: ['grid'], subtle: ['fill', 'edge'] };
+/** The subtle look's opacity, a vertex's own: the faint tint, and the outline round it. */
+const ALPHA: Partial<Record<Part, number>> = { fill: 0.14, edge: 0.5 };
 const SIDES = [
   [-1, 0],
   [1, 0],
@@ -32,19 +37,10 @@ const SIDES = [
  */
 export class ZoneRenderer {
   readonly group = new Group();
-  private fillMat = new MeshLambertMaterial({
+  /** Opacity from each vertex's colour (RGBA). */
+  private subtleMat = new MeshLambertMaterial({
     vertexColors: true,
     transparent: true,
-    opacity: 0.14,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -2,
-  });
-  private edgeMat = new MeshLambertMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.5,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -69,7 +65,7 @@ export class ZoneRenderer {
     polygonOffsetUnits: -2,
   });
   private blockGeo = new Map<number, { chunk: number } & Record<Part, GeoChunk | null>>();
-  private chunks = new Map<number, Record<Part, Mesh | null> & { blocks: Set<number> }>();
+  private chunks = new Map<number, Record<Layer, Mesh | null> & { blocks: Set<number> }>();
   private dirtyBlocks = new Set<number>();
   private dirtyChunks = new Set<number>();
   private showGrid = false;
@@ -86,21 +82,25 @@ export class ZoneRenderer {
   setGridVisible(on: boolean): void {
     this.showGrid = on;
     for (const c of this.chunks.values())
-      for (const part of PARTS) if (c[part]) c[part]!.visible = this.shown(part);
+      for (const layer of ['zoned', 'grid', 'subtle'] as const)
+        if (c[layer]) c[layer]!.visible = this.shown(layer);
   }
 
-  /** Each part is shown in one look: cell by cell while zoning, subtle otherwise. */
-  private shown(part: Part): boolean {
-    return part === 'zoned' || part === 'grid' ? this.showGrid : !this.showGrid;
+  /** Each layer is shown in one look: cell by cell while zoning, subtle otherwise. */
+  private shown(layer: Layer): boolean {
+    return layer === 'subtle' ? !this.showGrid : this.showGrid;
   }
 
-  /** Triangles drawn and shown per part (tests: which look is on). */
+  /** Triangles and whether they're shown, per part (tests: which look is on). */
   stats(): Record<Part, { tris: number; shown: boolean }> {
     const out = {} as Record<Part, { tris: number; shown: boolean }>;
     for (const part of PARTS) {
       let tris = 0;
-      for (const c of this.chunks.values()) tris += (c[part]?.geometry.attributes.position?.count ?? 0) / 3;
-      out[part] = { tris: Math.round(tris), shown: this.shown(part) };
+      for (const g of this.blockGeo.values()) tris += (g[part]?.pos.length ?? 0) / 9;
+      out[part] = {
+        tris: Math.round(tris),
+        shown: this.shown(part === 'fill' || part === 'edge' ? 'subtle' : part),
+      };
     }
     return out;
   }
@@ -205,11 +205,7 @@ export class ZoneRenderer {
       if (!geo) continue;
       this.blockGeo.set(id, geo);
       let c = this.chunks.get(geo.chunk);
-      if (!c)
-        this.chunks.set(
-          geo.chunk,
-          (c = { zoned: null, grid: null, fill: null, edge: null, blocks: new Set() }),
-        );
+      if (!c) this.chunks.set(geo.chunk, (c = { zoned: null, grid: null, subtle: null, blocks: new Set() }));
       c.blocks.add(id);
       this.dirtyChunks.add(geo.chunk);
     }
@@ -217,25 +213,42 @@ export class ZoneRenderer {
     for (const ck of this.dirtyChunks) {
       const c = this.chunks.get(ck);
       if (!c) continue;
-      for (const key of PARTS) {
-        const m = c[key];
+      for (const layer of ['zoned', 'grid', 'subtle'] as const) {
+        const m = c[layer];
         if (m) {
           this.group.remove(m);
           m.geometry.dispose();
-          c[key] = null;
+          c[layer] = null;
         }
-        const parts = [...c.blocks]
-          .sort((a, b) => a - b)
-          .map((id) => this.blockGeo.get(id)![key])
-          .filter((g): g is GeoChunk => !!g);
-        if (!parts.length) continue;
-        const mat = { zoned: this.zonedMat, grid: this.gridMat, fill: this.fillMat, edge: this.edgeMat }[key];
-        const mesh = new Mesh(mergeChunks(parts), mat);
-        mesh.renderOrder = key === 'edge' ? 3 : 2;
+        const pieces: { geo: GeoChunk; alpha: number }[] = [];
+        for (const id of [...c.blocks].sort((a, b) => a - b))
+          for (const part of LAYERS[layer]) {
+            const geo = this.blockGeo.get(id)![part];
+            if (geo) pieces.push({ geo, alpha: ALPHA[part] ?? 1 });
+          }
+        if (!pieces.length) continue;
+        const geometry = mergeChunks(pieces.map((p) => p.geo));
+        if (layer === 'subtle') {
+          // RGBA: each piece's own opacity, so the tint and its outline are one draw.
+          const rgb = geometry.attributes.color!.array as Float32Array;
+          const rgba = new Float32Array((rgb.length / 3) * 4);
+          let v = 0;
+          for (const p of pieces)
+            for (let k = 0; k < p.geo.pos.length / 3; k++, v++) {
+              rgba[v * 4] = rgb[v * 3]!;
+              rgba[v * 4 + 1] = rgb[v * 3 + 1]!;
+              rgba[v * 4 + 2] = rgb[v * 3 + 2]!;
+              rgba[v * 4 + 3] = p.alpha;
+            }
+          geometry.setAttribute('color', new BufferAttribute(rgba, 4));
+        }
+        const mat = { zoned: this.zonedMat, grid: this.gridMat, subtle: this.subtleMat }[layer];
+        const mesh = new Mesh(geometry, mat);
+        mesh.renderOrder = 2;
         mesh.receiveShadow = true;
-        mesh.visible = this.shown(key);
-        mesh.name = `zones-${key}-${ck}`;
-        c[key] = mesh;
+        mesh.visible = this.shown(layer);
+        mesh.name = `zones-${layer}-${ck}`;
+        c[layer] = mesh;
         this.group.add(mesh);
       }
     }

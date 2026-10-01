@@ -40,6 +40,7 @@ import { PortRenderer } from './ports';
 import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
+import { StreetProps } from './streetProps';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
@@ -144,6 +145,8 @@ export class GameRenderer {
   readonly crossings: CrossingRenderer;
   readonly ports: PortRenderer;
   readonly streetLights: StreetLightRenderer;
+  /** Benches, bins and planters along the pavements (M27). */
+  readonly streetProps: StreetProps;
   readonly pedestrians: PedestrianRenderer;
   readonly tiltShift = new TiltShift();
   readonly lens = new PhotoLens();
@@ -258,6 +261,8 @@ export class GameRenderer {
     this.scene.add(this.ports.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
+    this.streetProps = new StreetProps(world);
+    this.scene.add(this.streetProps.group);
     this.routeTint = new RoadTint((x, z) => world.heightAt(x, z), 'sequential', 0.7);
     this.scene.add(this.routeTint.group);
     this.ghost = new GhostRenderer((x, z) => world.heightAt(x, z));
@@ -309,6 +314,7 @@ export class GameRenderer {
       this.railVehicles.group,
       this.ports.group,
       this.streetLights.group,
+      this.streetProps.group,
       this.garbage.mesh,
     ];
     // Names for debugging (the test API's render breakdown).
@@ -331,6 +337,7 @@ export class GameRenderer {
       [this.railVehicles.group, 'railVehicles'],
       [this.ports.group, 'ports'],
       [this.streetLights.group, 'streetLights'],
+      [this.streetProps.group, 'streetProps'],
       [this.routeTint.group, 'routeTint'],
       [this.ghost.group, 'ghost'],
       [this.trees.group, 'trees'],
@@ -734,6 +741,7 @@ export class GameRenderer {
     this.garbage.mesh.visible = dist < 1400;
     this.garbage.mesh.castShadow = dist < 500;
     this.streetLights.postShadows = dist < 450;
+    this.streetProps.update(dist, this.terrain.uniforms.uGroundDetail.value > 0);
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     this.traffic.setScale(bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
     const pxPerMetre = bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360));

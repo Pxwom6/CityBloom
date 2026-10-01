@@ -361,7 +361,16 @@ function townhouses(m: ModelBuilder, _def: ZonedDef, W: number, D: number, r: ()
     lit: litFn(r, 0.5),
     spacing: 3,
   });
-  m.ground(-W / 2 + 0.4, W / 2 - 0.4, -D / 2 + 0.3, z0, 0.08, PAVE);
+  // Front gardens (M27): a path to each door between strips of lawn, low hedges between.
+  const zf = -D / 2 + 0.3;
+  for (let u = 0; u < units; u++) {
+    const x0 = -W / 2 + 0.6 + u * uw;
+    const xd = x0 + uw / 2;
+    m.ground(xd - 0.6, xd + 0.6, zf, z0, 0.08, PAVE);
+    m.ground(x0 + 0.15, xd - 0.6, zf + 0.3, z0 - 0.1, 0.07, GRASS);
+    m.ground(xd + 0.6, x0 + uw - 0.15, zf + 0.3, z0 - 0.1, 0.07, GRASS);
+    if (u > 0) m.box(x0 - 0.15, x0 + 0.15, 0, 0.6, zf + 0.3, z0 - 0.1, HEDGE);
+  }
 }
 
 function apartments(m: ModelBuilder, def: ZonedDef, W: number, D: number, r: () => number): void {
@@ -402,6 +411,12 @@ function apartments(m: ModelBuilder, def: ZonedDef, W: number, D: number, r: () 
       m.ground(x0 + 5, x1 - 1.5, z0 + 1.5, z1 - 1.5, top + 0.1, GRASS_RICH);
       yardTree(m, x1 - 3, z1 - 3, r);
     }
+  }
+  // The front (M27): a path to the door, lawns either side of it on a paved lot.
+  m.ground(-1.1, 1.1, -D / 2 + 0.2, z0, 0.08, def.wealth ? PAVE : C('#bdb8ad'));
+  if (!def.wealth) {
+    m.ground(x0 - 1, -1.6, -D / 2 + 0.6, z0 - 0.4, 0.07, GRASS);
+    m.ground(1.6, x1 + 1, -D / 2 + 0.6, z0 - 0.4, 0.07, GRASS);
   }
   // Entrance canopy.
   m.box(-1.8, 1.8, 2.6, 2.9, z0 - 1.6, z0, accent);
@@ -746,6 +761,13 @@ export const PALETTES = {
   grassRich: GRASS_RICH,
   pave: PAVE,
   concrete: CONCRETE,
+  asphalt: ASPHALT_LOT,
+  hedge: HEDGE,
+  wood: WOOD,
+  cars: CAR_COLOURS,
+  carGlass: CAR_GLASS,
+  containers: CONTAINERS,
+  yellow: YELLOW,
 };
 
 /** Build the procedural model for a zoned building on a w×d-cell lot. */

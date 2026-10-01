@@ -90,6 +90,8 @@ export interface HandOptions {
   mirror: boolean;
   /** The lot base under it: the colour of its top (the yard a shallow model leaves), or none. */
   base: Color | null;
+  /** A zoned building's zone: what it makes of a yard behind it (M27). */
+  yard?: 'R' | 'C' | 'I';
   /** How full the landfill is (0..1): the mound rises with it. */
   fill?: number;
   /** A project being built: the share of the model's height raised so far, and what isn't there yet. */
@@ -410,6 +412,134 @@ function base(out: Soup, W: number, D: number, top: Color, sides: boolean): void
   wall(x1, z0, x1, z1);
 }
 
+/** A box's top and four sides (no bottom), each wound to face out. */
+function soupBox(
+  out: Soup,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+  z0: number,
+  z1: number,
+  col: Color,
+): void {
+  const q = (a: number[], b: number[], c: number[], d: number[]) => {
+    out.tri(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!, col, 0, 0);
+    out.tri(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!, col, 0, 0);
+  };
+  q([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]);
+  q([x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]);
+  q([x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1]);
+  q([x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0]);
+  q([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]);
+}
+
+/** A flat rectangle facing up at height y. */
+function patch(
+  out: Soup,
+  x0: number,
+  x1: number,
+  z0: number,
+  z1: number,
+  y: number,
+  col: Color,
+  tag = 0,
+): void {
+  out.tri(x0, y, z0, x0, y, z1, x1, y, z1, col, tag, 0);
+  out.tri(x0, y, z0, x1, y, z1, x1, y, z0, col, tag, 0);
+}
+
+/**
+ * The yard behind a shallow hand-made model, from `z0` to the back of the lot (M27): a car park
+ * with marked bays and a few cars behind shops and offices, a marked loading yard with crates (or
+ * a container) behind industry, a lawn with a path and a shed behind homes. Close up only: the
+ * markings, cars and clutter; from further off the surfaces alone.
+ */
+function yard(
+  out: Soup,
+  W: number,
+  D: number,
+  z0: number,
+  kind: 'R' | 'C' | 'I',
+  top: Color,
+  near: boolean,
+  seed: number,
+): void {
+  const z1 = D / 2 - 0.5;
+  const za = z0 + 0.6;
+  if (z1 - za < 3.5) return;
+  const x0 = -W / 2 + 0.5;
+  const x1 = W / 2 - 0.5;
+  const r = modelRng(seed * 977 + Math.round(W * 10) + Math.round((z1 - za) * 100));
+  out.casting = false;
+  const y = BASE_TOP + 0.02;
+  if (kind === 'C') {
+    patch(out, x0, x1, za, z1, y, PALETTES.asphalt);
+    if (!near) return;
+    // Bays nose to the back of the lot (a second row facing them if there's room for an aisle).
+    const rows = z1 - za >= 13 ? [z1 - 5, za + 5] : [z1 - 5];
+    const bay = 2.6;
+    const n = Math.floor((x1 - x0 - 0.4) / bay);
+    const left = (x0 + x1) / 2 - (n * bay) / 2;
+    rows.forEach((edge, k) => {
+      const back = k === 0 ? z1 : za;
+      const zLo = Math.min(edge, back);
+      const zHi = Math.max(edge, back);
+      for (let b = 0; b <= n; b++)
+        patch(out, left + b * bay - 0.06, left + b * bay + 0.06, zLo, zHi, y + 0.012, PAINT);
+      for (let b = 0; b < n; b++) {
+        if (r() > 0.55) continue;
+        const cx = left + (b + 0.5) * bay;
+        const cz = (zLo + zHi) / 2;
+        const col = PALETTES.cars[Math.floor(r() * PALETTES.cars.length)]!;
+        soupBox(out, cx - 0.85, cx + 0.85, y + 0.3, y + 1.0, cz - 2.05, cz + 2.05, col);
+        soupBox(out, cx - 0.75, cx + 0.75, y + 1.0, y + 1.48, cz - 1.05, cz + 1.05, PALETTES.carGlass);
+      }
+    });
+  } else if (kind === 'I') {
+    // The lot's own concrete, a yellow box marked on it and something stood in it.
+    const lx0 = x0 + 0.6;
+    const lx1 = x1 - 0.6;
+    const lz0 = za + 0.4;
+    const lz1 = z1 - 0.4;
+    if (!near) return;
+    const w = 0.14;
+    patch(out, lx0, lx1, lz0, lz0 + w, y, PALETTES.yellow);
+    patch(out, lx0, lx1, lz1 - w, lz1, y, PALETTES.yellow);
+    patch(out, lx0, lx0 + w, lz0, lz1, y, PALETTES.yellow);
+    patch(out, lx1 - w, lx1, lz0, lz1, y, PALETTES.yellow);
+    if (lz1 - lz0 >= 3.4 && lx1 - lx0 >= 8 && r() < 0.5) {
+      const col = PALETTES.containers[Math.floor(r() * PALETTES.containers.length)]!;
+      const cx = lx0 + 1 + r() * (lx1 - lx0 - 8);
+      const cz = (lz0 + lz1) / 2;
+      soupBox(out, cx, cx + 6, y, y + 2.6, cz - 1.2, cz + 1.2, col);
+    } else {
+      const k = 2 + Math.floor(r() * 3);
+      for (let i = 0; i < k; i++) {
+        const cx = lx0 + 0.8 + i * 1.5;
+        if (cx + 1.2 > lx1) break;
+        const h = 0.6 + Math.floor(r() * 3) * 0.5;
+        soupBox(out, cx, cx + 1.2, y, y + h, lz1 - 1.6, lz1 - 0.4, PALETTES.wood);
+      }
+    }
+  } else {
+    // A lawn (on paved lots too), a path to the back and a garden shed.
+    const grass = top === PALETTES.grassRich ? PALETTES.grassRich : PALETTES.grass;
+    if (top !== PALETTES.grass && top !== PALETTES.grassRich)
+      patch(out, x0, x1, za, z1, y, grass, SURF_GRASS);
+    const px = (r() - 0.5) * Math.max(0, W - 6);
+    patch(out, px - 0.55, px + 0.55, z0, z1 - 1.2, y + 0.01, PALETTES.pave);
+    if (!near) return;
+    if (z1 - za >= 5 && W >= 7) {
+      const sx = px > 0 ? x0 + 0.4 : x1 - 2.6;
+      soupBox(out, sx, sx + 2.2, y, y + 2.1, z1 - 2.2, z1 - 0.2, PALETTES.wood);
+      soupBox(out, sx - 0.1, sx + 2.3, y + 2.1, y + 2.3, z1 - 2.3, z1 - 0.1, PALETTES.roofs[3]!);
+    }
+  }
+}
+
+const PAINT = new Color('#f2f0e8');
+
 /** An add-on annex or other piece set into a model: a design, where it stands, and how big. */
 export interface Inset {
   model: BakedModel;
@@ -613,9 +743,13 @@ export function buildHandModel(
     for (const c of a.copies) c.unit0 = chances.length;
     chance(a.model);
   }
+  // The yard a shallow model leaves at the back of its lot (M27).
+  const yardFrom = copies.length ? copies[0]!.z + model.d / 2 : o.D / 2;
   const level = (flag: number, sides: boolean, height?: number): ModelData => {
     const s = new Soup();
     if (o.base) base(s, o.W, o.D, o.base, sides);
+    if (o.base && o.yard && flag !== TRI_SKY)
+      yard(s, o.W, o.D, yardFrom, o.yard, o.base, flag === TRI_NEAR, o.seed);
     emit(model, copies, flag, o, s);
     for (const a of inset) emit(a.model, a.copies, flag, { ...o, fill: undefined, reveal: undefined }, s);
     for (const e of extra) s.add(e);

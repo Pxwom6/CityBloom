@@ -5,6 +5,7 @@ import { GeoBuffer, mergeChunks, type GeoChunk } from './geoBuffer';
 import {
   buildBridgeStructure,
   buildJunction,
+  buildJunctionPaint,
   buildLevelCrossing,
   type BarrierArm,
   buildRoundabout,
@@ -12,7 +13,9 @@ import {
   buildTramJunction,
   buildTramTrack,
   type Approach,
+  ZEBRA,
 } from './roadMesh';
+import { ZONE_C } from '../data/zones';
 import { JUNCTION } from '../data/balance';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { deckAt } from '../sim/world/bridge';
@@ -152,9 +155,14 @@ ${GRADE_GLSL}`,
   }
 
   /** Trim distance at a node for each incident segment, or 0 where the road simply continues. */
-  private nodeLayout(
-    nodeId: number,
-  ): { trims: Map<number, number>; approaches: Approach[]; ring?: number } | null {
+  private nodeLayout(nodeId: number): {
+    trims: Map<number, number>;
+    approaches: Approach[];
+    ring?: number;
+    /** Approaches painted with a zebra crossing, or a give-way line (M27). */
+    zebra?: Set<number>;
+    giveWay?: Set<number>;
+  } | null {
     const net = this.world.net;
     const node = this.world.netState.nodes.get(nodeId);
     if (!node) return null;
@@ -221,7 +229,39 @@ ${GRADE_GLSL}`,
       const dir = seg.a === nodeId ? tan : v2(-tan.x, -tan.z);
       approaches.push({ p, dir, style: it.style, seg: it.sid });
     });
-    return { trims, approaches };
+    return { trims, approaches, ...this.junctionPaint(approaches, trims) };
+  }
+
+  /**
+   * Which approaches get a zebra crossing (M27): every town road into a busy junction, one of
+   * three or more town roads where an avenue or boulevard meets, or a crossroads by the shops.
+   * Elsewhere a side road narrower than the road it joins gets a give-way line.
+   */
+  private junctionPaint(
+    approaches: Approach[],
+    trims: Map<number, number>,
+  ): { zebra: Set<number>; giveWay: Set<number> } {
+    const zebra = new Set<number>();
+    const giveWay = new Set<number>();
+    const roads = approaches.filter((a) => a.style.town && a.seg !== undefined);
+    if (roads.length < 3 || approaches.some((a) => a.style.rail)) return { zebra, giveWay };
+    const st = this.world.netState;
+    const net = this.world.net;
+    const shops = roads.some((a) => {
+      const s = st.segments.get(a.seg!);
+      return [s?.left, s?.right].some((b) => b !== undefined && !!st.blocks.get(b)?.zone.includes(ZONE_C));
+    });
+    const busy = roads.some((a) => a.style.medianHalf > 0) || (roads.length >= 4 && shops);
+    const widest = Math.max(...roads.map((a) => a.style.asphaltHalf));
+    for (const a of roads) {
+      const id = a.seg!;
+      if (busy) {
+        // Only where the road is long enough to hold a crossing at both ends.
+        if (net.curve(id).length - 2 * (trims.get(id) ?? 0) >= 2 * (ZEBRA.stop + 2) && !this.world.deck(id))
+          zebra.add(id);
+      } else if (a.style.asphaltHalf < widest) giveWay.add(id);
+    }
+    return { zebra, giveWay };
   }
 
   private setElement(key: string, anchor: Vec2, buf: GeoBuffer | null): void {
@@ -264,7 +304,15 @@ ${GRADE_GLSL}`,
       const deck = this.world.deck(id);
       const deckFn = deck ? (s: number) => deckAt(deck, s) : undefined;
       const oneway = seg.oneway ? { dir: seg.oneway, lanes: ROAD_TYPES[seg.type].lanes } : undefined;
-      buildSegmentRibbon(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, this.h, deckFn, oneway);
+      // Lane markings stop short of a junction's crossing or give-way line (M27).
+      const clear = (n: number): number => {
+        const l = layoutOf(n);
+        return l?.zebra?.has(id) ? ZEBRA.stop + 0.9 : l?.giveWay?.has(id) ? 1.4 : 1;
+      };
+      buildSegmentRibbon(buf, curve, ROAD_STYLES[seg.type], ta, curve.length - tb, this.h, deckFn, oneway, [
+        clear(seg.a),
+        clear(seg.b),
+      ]);
       if (deck && deckFn) buildBridgeStructure(buf, curve, ROAD_STYLES[seg.type], this.h, deckFn);
       if (seg.tram && ROAD_TYPES[seg.type].tram) {
         const hs = deckFn
@@ -301,6 +349,8 @@ ${GRADE_GLSL}`,
       const buf = new GeoBuffer(256);
       const centre = v2(node.x, node.z);
       buildJunction(buf, centre, layout.approaches, this.h);
+      if (layout.zebra && layout.giveWay)
+        buildJunctionPaint(buf, layout.approaches, this.h, layout.zebra, layout.giveWay);
       this.decorateJunction(buf, centre, layout.approaches, id);
       this.setElement(`n${id}`, centre, buf);
     }

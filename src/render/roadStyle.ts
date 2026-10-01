@@ -23,17 +23,31 @@ export interface RoadStyle {
   kerbs: { at: number; low: number; high: number }[];
   asphaltHalf: number;
   totalHalf: number;
+  /** Half the median's width (0 without one). */
+  medianHalf: number;
   asphalt: Color;
   sidewalk: Color;
+  /** The kerb's face, darker than the pavement so the step reads (M27). */
+  kerb: Color;
+  /** The pavement's kerb stones along the road, a little brighter (M27). */
+  kerbTop: Color;
   lift: number;
   sidewalkLift: number;
   /** A railway's ballast bed (M20). */
   rail?: boolean;
+  /** A town road with kerbs and pavements, which may get crossings at junctions (M27). */
+  town?: boolean;
 }
 
 const ASPHALT = new Color('#767b82');
 const HIGHWAY_ASPHALT = new Color('#6c7178');
 const SIDEWALK = new Color('#cfc9bd');
+const KERB = new Color('#a39e93');
+const KERB_TOP = new Color('#e2ddd2');
+const EDGING = new Color('#b4aea2');
+/** Kerb stones' width, and the edging along the pavement's back (m). */
+const KERB_W = 0.3;
+const EDGE_W = 0.15;
 const DIRT = new Color('#b59a6d');
 const VERGE = new Color('#9aa36a');
 const MEDIAN = new Color('#7da65c');
@@ -63,8 +77,11 @@ function build(id: RoadTypeId): RoadStyle {
       kerbs,
       asphaltHalf: hw,
       totalHalf: tot,
+      medianHalf: 0,
       asphalt: DIRT,
       sidewalk: VERGE,
+      kerb: VERGE,
+      kerbTop: VERGE,
       lift: L,
       sidewalkLift: L - 0.02,
     };
@@ -83,8 +100,11 @@ function build(id: RoadTypeId): RoadStyle {
       kerbs,
       asphaltHalf: hw,
       totalHalf: tot,
+      medianHalf: 0,
       asphalt: BALLAST,
       sidewalk: BALLAST,
+      kerb: BALLAST,
+      kerbTop: BALLAST,
       lift: L,
       sidewalkLift: L,
       rail: true,
@@ -117,15 +137,24 @@ function build(id: RoadTypeId): RoadStyle {
       kerbs,
       asphaltHalf: hw,
       totalHalf: tot,
+      medianHalf: id === 'motorway' ? 0.8 : 0,
       asphalt: HIGHWAY_ASPHALT,
       sidewalk: VERGE,
+      kerb: KERB,
+      kerbTop: SIDEWALK,
       lift: L,
       sidewalkLift: L - 0.02,
     };
   }
   const asphalt = id === 'highway' ? HIGHWAY_ASPHALT : ASPHALT;
-  strips.push({ from: -tot, to: -hw, lift: S, color: SIDEWALK });
-  strips.push({ from: hw, to: tot, lift: S, color: SIDEWALK });
+  // Pavements: kerb stones along the road, slabs, and an edging along the back.
+  for (const sg of [-1, 1]) {
+    const band = (a: number, b: number, color: Color) =>
+      strips.push({ from: Math.min(sg * a, sg * b), to: Math.max(sg * a, sg * b), lift: S, color });
+    band(hw, hw + KERB_W, KERB_TOP);
+    band(hw + KERB_W, tot - EDGE_W, SIDEWALK);
+    band(tot - EDGE_W, tot, EDGING);
+  }
   kerbs.push({ at: -hw, low: L, high: S }, { at: hw, low: L, high: S });
   if (id === 'street') {
     strips.push({ from: -hw, to: hw, lift: L, color: asphalt });
@@ -134,12 +163,14 @@ function build(id: RoadTypeId): RoadStyle {
     const med = id === 'avenue' ? 1 : id === 'boulevard' ? 1.5 : 0.6;
     strips.push({ from: -hw, to: -med, lift: L, color: asphalt });
     strips.push({ from: med, to: hw, lift: L, color: asphalt });
-    strips.push({
-      from: -med,
-      to: med,
-      lift: id === 'highway' ? L + 0.5 : S,
-      color: id === 'highway' ? SIDEWALK : MEDIAN,
-    });
+    if (id === 'highway') strips.push({ from: -med, to: med, lift: L + 0.5, color: SIDEWALK });
+    else {
+      // A planted median inside kerb stones.
+      const k = Math.min(0.2, med / 3);
+      strips.push({ from: -med, to: -med + k, lift: S, color: KERB_TOP });
+      strips.push({ from: -med + k, to: med - k, lift: S, color: MEDIAN });
+      strips.push({ from: med - k, to: med, lift: S, color: KERB_TOP });
+    }
     kerbs.push(
       { at: -med, low: L, high: id === 'highway' ? L + 0.5 : S },
       { at: med, low: L, high: id === 'highway' ? L + 0.5 : S },
@@ -160,10 +191,14 @@ function build(id: RoadTypeId): RoadStyle {
     kerbs,
     asphaltHalf: hw,
     totalHalf: tot,
+    medianHalf: id === 'street' ? 0 : id === 'avenue' ? 1 : id === 'boulevard' ? 1.5 : 0.6,
     asphalt,
     sidewalk: SIDEWALK,
+    kerb: KERB,
+    kerbTop: KERB_TOP,
     lift: L,
     sidewalkLift: S,
+    town: id !== 'highway',
   };
 }
 

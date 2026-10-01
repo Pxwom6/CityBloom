@@ -7,7 +7,7 @@
 //   R0 R1 R2 C0 C1 C2 I0 I1 I2 (a zone and density), services, utilities, parks, special, big,
 //   projects, stages (each project at each stage), annexes, landfill (empty to full).
 // `--gpu` uses the real GPU in a headed Chrome window (true colours, and fast); the default is
-// Playwright's own Chromium on the software renderer. `--backs` adds each civic building's back.
+// Playwright's own Chromium on the software renderer. `--backs` adds each civic building's back (and each zoned row's).
 // `--sheet 3` also tiles the pictures into one image, three across.
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
@@ -209,6 +209,15 @@ try {
         yaw: 0.22,
         tilt: 0.22,
       });
+      // `--backs`: the row from behind too (the yards behind shallow models, M27).
+      if (backs)
+        await shoot(`row-${zonedRows[i].replace('@', '_')}-back`, {
+          x: (x0 + x1) / 2,
+          z,
+          distance: (x1 - x0) * 0.55 + 40 + tall,
+          yaw: Math.PI + 0.22,
+          tilt: 0.22,
+        });
     }
     const xs = info.buildings.map((p) => p.x);
     const zs = info.buildings.map((p) => p.z);

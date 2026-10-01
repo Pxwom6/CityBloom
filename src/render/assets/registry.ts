@@ -77,6 +77,7 @@ export class AssetRegistry {
               lit: LIT[zd.zone] ?? 0.6,
               mirror: true,
               base: lotSurface(zd),
+              yard: zd.zone === ZONE_R ? 'R' : zd.zone === ZONE_C ? 'C' : 'I',
             })
           : buildZonedModel(zd, w, d, look);
       this.cache.set(k, m);

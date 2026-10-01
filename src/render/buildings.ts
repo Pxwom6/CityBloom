@@ -162,7 +162,8 @@ if (uOverlayOn > 0.5) {
       )
       .replace(
         '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>\ntotalEmissiveRadiance += uWindow * max(vEmi, 0.0) * uNight * 1.6;`,
+        // A lit window from far off is a pixel: brighter there, so the city twinkles (M26).
+        `#include <emissivemap_fragment>\ntotalEmissiveRadiance += uWindow * max(vEmi, 0.0) * uNight * 1.6 * (1.0 + 1.2 * smoothstep(350.0, 2200.0, length(vViewPosition)));`,
       );
   };
   return mat;

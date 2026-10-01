@@ -752,7 +752,8 @@ export class GameRenderer {
     const post = {
       ao: 1 - Math.min(1, Math.max(0, (d / this.post.settings.aoFar - 0.42) / 0.58)),
       aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
-      glow: l.night,
+      // Stronger from far off, where a lit window is a pixel and the glow is what makes it twinkle.
+      glow: l.night * (1 + 0.8 * Math.min(1, Math.max(0, (d - 500) / 1500))),
     };
     // Through the post pipeline only when an effect is on now; otherwise straight to the screen,
     // which looks the same (both tone-map in the materials) and costs less (M26).

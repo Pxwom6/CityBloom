@@ -1218,6 +1218,41 @@ chunk wholly inside one level's range is drawn with the plain material (no `disc
 cost a tile-based GPU its hidden-surface removal). A level's mesh is built only when the camera
 is near enough to need it, and near meshes far behind are dropped.
 
+### 4.4 Light and sky (phase 3, M26)
+
+**The frame** (`src/render/post.ts`). Every frame is drawn into one multisampled 8-bit target with
+its depth, then copied to the canvas (which itself has no multisampling) with the effects laid
+over it. The target is marked as an XR target, the one kind three.js tone-maps and sRGB-encodes
+into as it does the screen, so materials behave exactly as before and 8 bits a channel suffice;
+its storage is named `RGBA8` (otherwise three gives the multisampled buffer and the texture
+different formats and the copy fails). The depth is resolved only when something reads it.
+Effects: *ambient occlusion* at half resolution from the depth alone (normals from neighbouring
+depths, taps on a spiral turned per pixel, reach growing with the view, faded out by about 900 m
+so the whole-city view pays nothing), smoothed by a depth-aware blur at High, laid on as a warm
+violet multiply; a *glow* at night (a soft-knee bright pass at a quarter resolution, blurred twice,
+added). Photo mode's lens reads the finished frame (`PhotoLens.renderFrom`, display-referred).
+Tone mapping is Neutral: a toy's colours stay true (ACES took brick to near black in shade).
+
+**Shadows** (`src/render/sunShadow.ts`). The sun is three.js's `SunLight`: two shadow maps in one
+atlas, picked by view depth. `CitySunShadow` fits them to the ground in view rather than to the
+view frustum: the part of each depth slice inside the slab from the lowest ground to the highest
+roof (`ShadowFit`, set each frame from sampled heights), boxed in the sun's space, in 5 % size
+steps snapped to texels. One map when the ground's far edge is less than 2.2× its near edge (the
+whole-city view); else a near map to the geometric split and a far one beyond. Shadows reach 3.2
+camera distances (at least 500 m). Medium and Low use one map. The shadow pass draws only what
+casts: merged chunks put their casting triangles first (`Arrays` split; `ModelData.shade`: not
+panes, not small fittings close up, nothing flat on the ground) and draw just that range in the
+shadow pass (`drawCastersOnly`); small things (cars, walkers, lamp posts, rubbish) cast in the near
+map only (`castNearOnly`); rubbish and lamp-post shadows go from far off.
+
+**Sky and light** (`src/render/lighting.ts`, `lightChunks.ts`). Keyframes through the day add the
+blue hour (deep blue, violet horizon) and the golden hour (a low warm sun, amber horizon); the sky
+glows round a low sun along the horizon; the light turns from the sun to the moon through the blue
+hours so shadows swing rather than jump; exposure rises a little while the sun is low. A patch to
+three's lighting chunk adds light bounced off the ground opposite the sun, tinted by the
+hemisphere light's ground colour, which follows the season and snow (`groundBounce`); a patch to
+the fog chunk adds a gentle haze from nearer in.
+
 ## 5. UI
 
 Preact components over the canvas. All colours, type scale, spacing, radii and shadows are CSS custom

@@ -508,6 +508,7 @@ export class GameRenderer {
   }
 
   setShadows(on: boolean): void {
+    this.shadowAt = -1;
     this.renderer.shadowMap.enabled = on;
     this.lighting.sun.castShadow = on;
   }
@@ -536,6 +537,7 @@ export class GameRenderer {
       shadow.mapSize.set(g.shadowMap, g.shadowMap);
       shadow.map?.dispose();
       shadow.map = null;
+      this.shadowAt = -1;
     }
     this.fogScale = g.fogScale;
     // Coarser pixels show less: the levels of detail hand over sooner (High at 2× is the full range).
@@ -604,6 +606,8 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /** When the shadow maps were last drawn (s of frame time). */
+  private shadowAt = -1;
   /** Groups whose meshes cast in the near shadow cascade only (marked once each). */
   private nearShadowsOnly: Object3D[] = [];
   private nearMarked = new WeakSet<Object3D>();
@@ -669,6 +673,14 @@ export class GameRenderer {
       hi + SHADOW_TOP,
       Math.max(this.shadowFloor, dist * this.shadowReach),
     );
+    // The shadow maps from far off barely change between frames: drawn again 30 times a second
+    // there, 60 at middle distance, every frame close up (M26).
+    const every = dist > 1500 ? 1 / 30 : dist > 600 ? 1 / 60 : 0;
+    l.shadow.autoUpdate = false;
+    if (this.time - this.shadowAt >= every || this.time < this.shadowAt) {
+      l.shadow.needsUpdate = true;
+      this.shadowAt = this.time;
+    }
     for (const g of this.nearShadowsOnly)
       g.traverse((o) => {
         if (this.nearMarked.has(o)) return;

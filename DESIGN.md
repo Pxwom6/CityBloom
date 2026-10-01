@@ -1305,6 +1305,37 @@ Markings, cars and clutter only in the near level; the surfaces in far; nothing 
 Generated terraces get a path to each door between strips of lawn with low hedges; generated
 flats a path to the entrance between lawns.
 
+### 4.6 Buildings and variety (phase 3, M28)
+
+**Distant versions for generated buildings** (`src/render/assets/builder.ts`). Every triangle the
+generator draws carries a mask of the levels it is drawn at; `detail(level, fn)` narrows it for a
+block of drawing: `NEAR_ONLY` (doors, cars, fences, garden trees, terrace umbrellas, small roof
+units), `IN_FAR` (balconies and balcony bands, signs, awnings, rooftop plant, paths and lawns,
+dormers, chimneys) and `SKY_ONLY` (stand-ins). `build()` returns the near model with `far` and `sky`
+filtered from the same triangles, so every generated building (zoned, civic, rubble, a project's
+site works) fades through the levels exactly as a hand-made one (`lodChunks.ts`; nothing is drawn
+"plain" any more). Windows stay in every level, since they are most of a generated building; along a
+band of windows (offices, industry, luxury flats) the skyline draws each run of neighbouring
+windows that are alike (lit or dark) as one pane across their gaps, lit at their average. Each
+window's light is drawn from the building's random stream once, so the near, far and skyline
+versions light the same windows.
+
+**The generator refreshed** (`src/render/assets/models.ts`). The seed includes the type (zone,
+density, wealth): two types on the same lot used to draw the same building. Towers stand on a
+podium (one or two floors, with a parapet) in one of five silhouettes: a slab with setbacks, a
+wedding cake of three steps under a lit crown band and a mast, twin towers (on 24 m lots), a tall
+block beside a lower one, or a slab whose top floors step in under a spire or a pyramid cap; some
+get coloured corner piers, homes balcony bands (every floor or every other), offices fins close up;
+roofs carry plant, masts or a water tank on legs. Residential towers take their walls by wealth:
+pastels and some brick, white and modern greys for the rich, and glass with banded windows for a
+few luxury ones. Mid-rise flats get mansard roofs with dormers, cornices, stone ground floors under
+brick and corner bay windows; mid-rise offices a cornice, a stepped parapet or a corner turret;
+houses now and then a mansard or a saltbox roof; stores a false front.
+
+**Neighbours.** `BuildingRenderer.look` already moves a building off a look its touching neighbour
+of the same type and size wears; with the type in the seed, buildings of different types no longer
+share models either. Test API `getNeighbours()` counts touching pairs drawn with the same model.
+
 ## 5. UI
 
 Preact components over the canvas. All colours, type scale, spacing, radii and shadows are CSS custom

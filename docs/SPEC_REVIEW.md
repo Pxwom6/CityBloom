@@ -347,3 +347,15 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Done when: a grown city at city zoom reads as a place rather than a grid | `docs/screenshots/m27-city.png` (before on the left, after on the right: the demo town and the bench city at city zoom, and street level) |
 | Done when: the frame budget holds | PROGRESS.md "Frame times": the heavy view at High under 12 ms; Medium and Low within noise of M26 (far below the start of the phase); fewer triangles than M26 in every view |
 
+## M28 Buildings and variety
+
+| Item | Where |
+|---|---|
+| Bring in every model added by then, and keep doing so | all 136 files in `assets/models/` pass `npm run models:check` and are in the game (PROGRESS.md, "Models"); none arrived during M27–M28 |
+| Refresh the generator in the same style for everything still generated (roof shapes, facade details, tower silhouettes) | `src/render/assets/models.ts`: towers in five silhouettes (setbacks, steps under a lit crown, twins, an offset pair, a crown with a spire or pyramid cap), corner piers, balcony bands, fins, water tanks; residential tower walls by wealth; mansards, cornices, stone ground floors and bay windows on flats; cornices, stepped parapets and turrets on offices; mansard and saltbox houses; false fronts on stores; `tests/generated.test.ts` ('towers come in several silhouettes'); `docs/screenshots/m28-towers.png` |
+| Give every building a distant version, generated ones included | `ModelBuilder.detail` and `build()` (`builder.ts`): far and skyline versions from the same triangles for every generated model; `lodChunks.ts` then draws none "plain"; `tests/generated.test.ts` (every zoned building, every civic one and rubble), `tests/handmade.test.ts`; `e2e/m28-buildings.spec.ts` (`getLod().buildings.plain` is 0 in a loaded city) |
+| The whole-city view ends with fewer triangles than 2.75M despite the new detail | `scripts/dev/passprobe.mjs`: the bench city's whole-city colour pass 1.73M triangles (start of the phase 2.68M); `e2e/m28-buildings.spec.ts` (under 2.75M in the demo town, through the load screen) |
+| Done when: the bench city at city zoom looks varied, with no identical neighbours | `docs/screenshots/m28-city-sheet.png` (before and after at city zoom and street level); `getNeighbours()`: no touching pair drawn with the same model (`e2e/m28-buildings.spec.ts`, the demo town's 1,308 pairs); the type now in the generator's seed (`tests/generated.test.ts`) |
+| Done when: the overview draws fewer triangles than at the start of this phase | as above: 1.73M against 2.68M (colour pass), PROGRESS.md "Frame times" |
+| Done when: the frame budget holds | PROGRESS.md "Frame times": the heavy view at High 9.2 ms (12 allowed); Medium and Low faster than at the start in the whole-city and heavy views; close up a little slower (Medium's street level 0.7–0.85 ms, Low 0.1–0.35 ms), a deviation from "no slower" recorded in DECISIONS M28 |
+

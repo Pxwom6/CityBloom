@@ -105,14 +105,15 @@ export const SNOW_COLOUR = 'vec3(0.93, 0.95, 0.98)';
 
 /**
  * GLSL (needs \`uniform vec4 uSeason;\`): grass and hedges in their season. Grass is fresh in
- * spring, gold in autumn and dull in winter (the terrain's own colours, M22); a hedge is
+ * spring, gold in autumn (stronger since the walk-through after M28, when noon autumn still read
+ * green) and dull in winter (the terrain's own colours, M22); a hedge is
  * evergreen, a little fresher in spring and duller in the cold.
  */
 export const SEASON_GLSL = `
 vec3 seasonGrass(vec3 c0) {
   float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
   vec3 spring = c0 * vec3(1.03, 1.13, 0.84) + vec3(0.015, 0.03, 0.0);
-  vec3 autumn = mix(c0, vec3(l0) * vec3(1.22, 1.12, 0.6), 0.55);
+  vec3 autumn = mix(c0, vec3(l0) * vec3(1.26, 1.1, 0.56), 0.72);
   vec3 winter = mix(c0, vec3(l0) * vec3(1.1, 1.05, 0.9), 0.6);
   return spring * uSeason.x + c0 * uSeason.y + autumn * uSeason.z + winter * uSeason.w;
 }

@@ -74,7 +74,7 @@ type ModelName = keyof typeof MODELS;
 const MAX_LIGHTS = 360 * 4;
 const PAINT = [
   '#d9d9d6',
-  '#2b2d31',
+  '#565b63',
   '#8a9099',
   '#b7312c',
   '#2f5d9e',
@@ -305,6 +305,18 @@ export class TrafficRenderer {
 
   get count(): number {
     return this.cars.length;
+  }
+
+  /** Dev: each model's drawn instances and how many have a black colour. */
+  colourStats(): Record<string, { count: number; black: number; hasColour: boolean; sample: number[] }> {
+    const out: Record<string, { count: number; black: number; hasColour: boolean; sample: number[] }> = {};
+    for (const [name, mesh] of this.meshes) {
+      const c = mesh.instanceColor?.array as Float32Array | undefined;
+      let black = 0;
+      for (let i = 0; c && i < mesh.count; i++) if (c[i * 3]! + c[i * 3 + 1]! + c[i * 3 + 2]! < 0.05) black++;
+      out[name] = { count: mesh.count, black, hasColour: !!c, sample: c ? [...c.slice(0, 9)] : [] };
+    }
+    return out;
   }
 
   /** Car nearest a ground point (within `r` metres), for clicking. */

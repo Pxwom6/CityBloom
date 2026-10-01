@@ -308,7 +308,9 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
       let win = 0;
       const u = model.triUnit[t]!;
       if (u > 0) {
-        if (model.units[u - 1] === UNIT_GLOW) emi = 0.3;
+        // A big glazed volume glows softly all night (walk-through after M28: at 0.3, brightened
+        // from far off, a curtain-walled tower read as one cream lightbox).
+        if (model.units[u - 1] === UNIT_GLOW) emi = 0.14;
         else win = c.unit0 + u;
       } else if (role === ROLE.grass) emi = SURF_GRASS;
       else if (role === ROLE.hedge) emi = SURF_HEDGE;

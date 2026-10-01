@@ -12,7 +12,9 @@ import { buildHandModel, clearPlace, handmade, nearestClear, type Inset } from '
 export const VARIANTS = 12;
 
 /** The chance a hand-made building's window is lit at night, as the generator's. */
-const LIT = { [ZONE_R]: 0.58, [ZONE_C]: 0.75, [ZONE_I]: 0.5 } as Record<number, number>;
+// The chance a window is lit at night, by zone: offices and shops fewer than half (walk-through
+// after M28: at three in four, glass towers whose windows run a floor wide glowed as cream slabs).
+const LIT = { [ZONE_R]: 0.58, [ZONE_C]: 0.45, [ZONE_I]: 0.5 } as Record<number, number>;
 const CIVIC_LIT = 0.6;
 
 /** The lot surface under a zoned building: what shows where a hand-made model leaves a yard. */

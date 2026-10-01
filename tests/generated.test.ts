@@ -30,9 +30,10 @@ describe('generated buildings (M28)', () => {
         sky += tris(m.sky!);
       }
     // Far leaves out the fine detail (most of a generated building is its windows, which stay);
-    // the skyline also draws a band of windows along a floor as one strip.
+    // the skyline also merges runs of alike windows along a band (about 15 % fewer triangles than
+    // far since offices light fewer than half their windows at night, so runs are shorter).
     expect(far).toBeLessThan(near);
-    expect(sky).toBeLessThan(far * 0.85);
+    expect(sky).toBeLessThan(far * 0.9);
   });
 
   it("civic buildings and rubble have distant versions too (the generator's ones)", () => {

@@ -128,12 +128,17 @@ export class StreetLightRenderer {
     this.posts.castShadow = on;
   }
 
-  update(night: number): void {
+  /**
+   * `distance`: the camera's. From far off the pools of light are dimmer (walk-through after M28:
+   * from the whole-city view at night they were bigger than the houses, strings of pearls).
+   */
+  update(night: number, distance = 0): void {
     if (this.version !== this.world.netVersion) {
       this.version = this.world.netVersion;
       this.rebuild();
     }
-    this.poolMat.uniforms.uNight!.value = night;
+    const far = Math.min(1, Math.max(0, (distance - 900) / 1500));
+    this.poolMat.uniforms.uNight!.value = night * (1 - 0.7 * far);
     this.pools.visible = night > 0.05;
     this.headMat.color.setRGB(0.6 + 0.4 * night, 0.62 + 0.28 * night, 0.65 - 0.05 * night);
   }

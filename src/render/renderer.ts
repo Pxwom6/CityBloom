@@ -673,6 +673,7 @@ export class GameRenderer {
     l.update(hour);
     l.groundBounce(this.weather.look.season, this.weather.look.snow);
     l.applyWeather(this.weather);
+    l.farLowSun(this.controller.current.distance);
     // Shadows reach a few camera distances into the view, over the ground there (M26).
     const dist = this.controller.current.distance;
     const t = this.controller.target;
@@ -714,9 +715,11 @@ export class GameRenderer {
     l.fog.near *= (1 - 0.92 * wf) * (1 - 0.3 * this.weather.haze);
     l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
     // A little more exposure while the sun is low, as the eye does: golden hour glows rather than
-    // going dim (M26).
+    // going dim (M26); and at night from far off, so the whole-city view reads as a town under the
+    // moon rather than near-black ground (walk-through after M28).
+    const farNight = l.night * smoothstep(800, 2400, dist);
     this.renderer.toneMappingExposure =
-      (1.1 + l.night * 0.04 + l.low * 0.2) * (1 - 0.12 * this.weather.overcast);
+      (1.1 + l.night * 0.04 + l.low * 0.2 + farNight * 0.35) * (1 - 0.12 * this.weather.overcast);
     const tone = this.toneOverride;
     if (tone) {
       this.renderer.toneMapping = {
@@ -737,7 +740,7 @@ export class GameRenderer {
     // Visible cars' own cost (M19: following and giving way), smoothed.
     this.trafficMs = this.trafficMs * 0.9 + (performance.now() - t0) * 0.1;
     this.pedestrians.update(this.world.displayTick, this.controller.current);
-    this.streetLights.update(l.night);
+    this.streetLights.update(l.night, this.controller.current.distance);
     this.transit.update(this.world.displayTick);
     this.railVehicles.update(this.world.displayTick);
     this.crossings.update(this.world.displayTick, this.railVehicles.closed);

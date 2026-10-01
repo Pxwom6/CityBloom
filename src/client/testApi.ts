@@ -184,6 +184,8 @@ export interface TestApi {
    * with the very same model (the same type, lot size and look: identical side by side).
    */
   getNeighbours(): { pairs: number; identical: number; looks: number };
+  /** Dev: the visible cars' instance colours per model (count, how many are black, a sample). */
+  carColours(): Record<string, { count: number; black: number; hasColour: boolean; sample: number[] }>;
   /** The zone paint (M27): triangles and whether each part is shown (full look only while zoning). */
   getZoneLook(): Record<'zoned' | 'grid' | 'fill' | 'edge', { tris: number; shown: boolean }>;
   getLod(): {
@@ -979,6 +981,7 @@ export function installTestApi(game: Game): TestApi {
       }
       return { pairs, identical, looks: new Set(model.values()).size };
     },
+    carColours: () => game.renderer.traffic.colourStats(),
     getZoneLook: () => game.renderer.zones.stats(),
     getStreets: () => {
       let zebra = 0;

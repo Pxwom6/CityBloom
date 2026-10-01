@@ -65,7 +65,7 @@ function litFn(r: () => number, p: number): (i: number) => number {
 
 const LEAVES = ['#6aa84f', '#8dbb4f', '#5a9a45', '#79b04e', '#9aa84a'].map(C);
 const TRUNK = C('#7a5a40');
-const CAR_COLOURS = ['#c94c4c', '#3f6fb5', '#e8e4dc', '#3b3f45', '#d9a441', '#5e8f6a', '#9aa3ad'].map(C);
+const CAR_COLOURS = ['#c94c4c', '#3f6fb5', '#e8e4dc', '#5a5f67', '#d9a441', '#5e8f6a', '#9aa3ad'].map(C);
 const CAR_GLASS = C('#2f3d4a');
 const WOOD = C('#a0724f');
 const BRICK = ['#a85a44', '#b86b4b', '#9c5540', '#c07a5a', '#8f4f3c'].map(C);
@@ -79,7 +79,9 @@ function yardTree(m: ModelBuilder, x: number, z: number, r: () => number): void 
   const h = 1.5 + r() * 1.2;
   const rad = 1.3 + r() * 1;
   const col = pick(r, LEAVES);
-  m.detail(NEAR_ONLY, () => {
+  // Near and far (a tree is too big to vanish at the near-to-far hand-over: it showed as a
+  // stippled half-tree in the dither band, walk-through after M28).
+  m.detail(IN_FAR, () => {
     m.cylinder(x, z, 0.2, 0, h, TRUNK, 5);
     m.frustum(x, z, rad * 0.55, rad, h - 0.3, h + rad * 0.45, col, 7, false);
     m.dome(x, z, rad, h + rad * 0.45, col, 2, 7);
@@ -597,7 +599,9 @@ function tower(
   const accent = residential
     ? pick(r, [...ROOFS, ...BRICK])
     : pick(r, [C('#e9ecef'), C('#c9ced3'), C('#3f4a55')]);
-  const lit = litFn(r, residential ? 0.55 : 0.75);
+  // Offices at night: fewer than half their windows lit (M28: lit at three in four, banded glass
+  // towers glowed as cream slabs from far off); luxury glass flats likewise.
+  const lit = litFn(r, residential && !luxury ? 0.55 : 0.42);
   const x = r();
   const form: TowerForm =
     W >= 22 && x < 0.22
@@ -609,7 +613,10 @@ function tower(
           : x < 0.78 && !residential
             ? 'crown'
             : 'slab';
-  const tw = (px1 - px0) * (0.62 + r() * 0.12);
+  // On a narrow lot the tower takes more of its podium's width (walk-through after M28: 16 m lots
+  // grew pencil-thin towers, 1:8, standing in rows like a picket fence).
+  const wide = W < 20 ? 0.82 : 0.62;
+  const tw = (px1 - px0) * (wide + r() * 0.12);
   const td = (pz1 - pz0) * (0.62 + r() * 0.12);
   const zc = (pz0 + pz1) / 2;
   const up = floors - podiumFloors;
@@ -930,7 +937,7 @@ function industry(m: ModelBuilder, def: ZonedDef, W: number, D: number, r: () =>
     const midZ = z0 + (z1 - z0) * 0.55;
     m.box(x0, x1, 0, floors * fh, z0, midZ, wall);
     for (const face of ['front', 'left', 'right'] as const)
-      m.windows(face, x0, x1, z0, midZ, 0, floors, fh, { col: glass, lit: litFn(r, 0.7), band: true });
+      m.windows(face, x0, x1, z0, midZ, 0, floors, fh, { col: glass, lit: litFn(r, 0.45), band: true });
     m.box(x0 + 2, x1 - 2, 0, (floors - 1) * fh, midZ, z1, C('#e3e8ec'));
     for (let k = 0; k < 3; k++)
       m.quad(

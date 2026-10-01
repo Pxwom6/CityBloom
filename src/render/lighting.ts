@@ -306,7 +306,6 @@ export class Lighting {
       1 - smoothstep(SUNRISE - 0.4, SUNRISE + 1.2, hour) + smoothstep(SUNSET - 1.0, SUNSET + 0.8, hour);
     this.night = Math.min(1, Math.max(0, this.night));
     this.light = 1 - this.night * 0.75;
-    this.fog.color.copy(this.horizon);
     const u = this.skyMat.uniforms;
     u.uZenith!.value.copy(this.zenith);
     u.uHorizon!.value.copy(this.horizon);
@@ -317,6 +316,16 @@ export class Lighting {
     const low = (h: number) => smoothstep(0, 1, 1 - Math.abs(hour - h) / 1.4);
     this.low = Math.max(low(6.2), low(18.9));
     u.uLow!.value = this.low;
+    this.setFog();
+  }
+
+  /**
+   * Fog in the horizon's colour, eased towards a light warm white while the sun is low by day
+   * (walk-through after M28): an amber or salmon fog over the whole-city view turned snow to sand
+   * and green to olive at dawn and golden hour, the sky keeping its colour.
+   */
+  private setFog(): void {
+    this.fog.color.copy(this.horizon).lerp(this.cA.set('#f4ece0'), 0.5 * this.low * (1 - this.night));
   }
 
   /**
@@ -343,7 +352,7 @@ export class Lighting {
       this.zenith.lerp(this.cA.set('#e2e8ff'), 0.6 * w.flash);
       this.horizon.lerp(this.cB.set('#eef1ff'), 0.5 * w.flash);
     }
-    this.fog.color.copy(this.horizon);
+    this.setFog();
     const u = this.skyMat.uniforms;
     u.uZenith!.value.copy(this.zenith);
     u.uHorizon!.value.copy(this.horizon);
@@ -363,6 +372,27 @@ export class Lighting {
     this.hemi.groundColor.multiply(
       c.multiply(this.cB.setRGB(1 / REF_GROUND.r, 1 / REF_GROUND.g, 1 / REF_GROUND.b)),
     );
+    // Over snow at a low sun, a cool sky fill and a little less orange in the sun (walk-through
+    // after M28): with the warm golden-hour fill even the shadows were tan, and a snowy map read as
+    // desert sand from the whole-city view. Now sunlit snow glows warm and its shadows go blue.
+    const k = this.low * Math.min(1, Math.max(0, snow)) * (1 - this.night);
+    if (k > 0) {
+      this.hemi.color.lerp(this.cB.set('#a9bde6'), 0.65 * k);
+      const l = (this.sun.color.r + this.sun.color.g + this.sun.color.b) / 3;
+      this.sun.color.lerp(this.cB.setRGB(l * 1.04, l, l * 0.94), 0.3 * k);
+    }
+  }
+
+  /**
+   * From far off at a low sun, a cooler and a little stronger sky fill (walk-through after M28):
+   * the whole-city view at dawn and golden hour was an olive or mustard wash, the warm light
+   * on green grass with the fill as warm as the sun. Close up the warm look stays as drawn.
+   */
+  farLowSun(distance: number): void {
+    const k = this.low * (1 - this.night) * smoothstep(900, 2400, distance);
+    if (k <= 0) return;
+    this.hemi.color.lerp(this.cB.set('#c9dcf4'), 0.55 * k);
+    this.hemi.intensity *= 1 + 0.3 * k;
   }
 
   /**

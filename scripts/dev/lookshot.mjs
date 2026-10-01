@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
-const VALUE_FLAGS = ['views', 'hours', 'season', 'quality', 'dist', 'label', 'at', 'tone'];
+const VALUE_FLAGS = ['views', 'hours', 'season', 'quality', 'dist', 'label', 'at', 'tone', 'init'];
 const flag = (name, d) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : d;
@@ -30,6 +30,8 @@ const label = flag('label', 'look');
 const at = flag('at', null)?.split(',').map(Number) ?? null;
 // `--tone neutral:1.1`: a tone mapping and exposure to try (dev builds with `setTone`).
 const tone = flag('tone', null)?.split(':') ?? null;
+// `--init "js"`: run in the page before shooting (dev: try a renderer setting).
+const init = flag('init', null);
 const PRESETS = {
   low: { quality: 'low', shadows: false, drawDistance: 'near' },
   medium: { quality: 'medium', shadows: true, drawDistance: 'medium' },
@@ -65,6 +67,7 @@ try {
     timeout: 180_000,
   });
   await page.addStyleTag({ content: '#ui { display: none !important; }' });
+  if (init) await page.evaluate(init);
   await page.evaluate(
     ({ season, tone }) => {
       const g = window.__game;

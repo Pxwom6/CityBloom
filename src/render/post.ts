@@ -287,8 +287,11 @@ export class PostPipeline {
       samples: this.wanted(px),
       depthTexture: new DepthTexture(w, h),
     });
-    // Drawn into as the screen is: tone-mapped and sRGB-encoded (see above).
+    // Drawn into as the screen is: tone-mapped and sRGB-encoded by the shaders (see above), into
+    // plain 8-bit storage (named, or three gives the multisampled buffer and the texture
+    // different formats for an XR target, and the copy between them fails).
     this.target.texture.colorSpace = SRGBColorSpace;
+    this.target.texture.internalFormat = 'RGBA8';
     (this.target as { isXRRenderTarget?: boolean }).isXRRenderTarget = true;
     this.target.depthTexture!.minFilter = NearestFilter;
     this.target.depthTexture!.magFilter = NearestFilter;

@@ -113,7 +113,7 @@ export const SEASON_GLSL = `
 vec3 seasonGrass(vec3 c0) {
   float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
   vec3 spring = c0 * vec3(1.03, 1.13, 0.84) + vec3(0.015, 0.03, 0.0);
-  vec3 autumn = mix(c0, vec3(l0) * vec3(1.26, 1.1, 0.56), 0.72);
+  vec3 autumn = mix(c0, vec3(l0) * vec3(1.24, 1.1, 0.58), 0.62);
   vec3 winter = mix(c0, vec3(l0) * vec3(1.1, 1.05, 0.9), 0.6);
   return spring * uSeason.x + c0 * uSeason.y + autumn * uSeason.z + winter * uSeason.w;
 }

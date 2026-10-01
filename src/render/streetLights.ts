@@ -139,7 +139,10 @@ export class StreetLightRenderer {
     }
     const far = Math.min(1, Math.max(0, (distance - 900) / 1500));
     this.poolMat.uniforms.uNight!.value = night * (1 - 0.7 * far);
+    // The lamp heads light up at night; from far off much less, or the glow blooms each into a
+    // white pearl bigger than the houses.
     this.pools.visible = night > 0.05;
-    this.headMat.color.setRGB(0.6 + 0.4 * night, 0.62 + 0.28 * night, 0.65 - 0.05 * night);
+    const lit = night * (1 - 0.75 * far);
+    this.headMat.color.setRGB(0.6 + 0.4 * lit, 0.62 + 0.28 * lit, 0.65 - 0.05 * lit);
   }
 }

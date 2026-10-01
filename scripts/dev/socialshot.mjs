@@ -1,11 +1,13 @@
 // Dev: the share preview image (public/social.jpg, 1200×630): a saved town imported through the load
 // screen, in late-afternoon light with the interface hidden, and the game's name over it.
-// Usage: npm run build:test && node scripts/dev/socialshot.mjs town.citybloom public/social.jpg [hour] [yaw] [distance] [tilt]
+// Usage: npm run build:test && node scripts/dev/socialshot.mjs town.citybloom public/social.jpg [hour] [yaw] [distance] [tilt] [--gpu]
 // The town: npx tsx scripts/balance.ts 12 careful --seed citybloom --save <dir>
+// `--gpu` draws in a headed Chrome window on the real GPU (phase 3: true colours, in summer, clear).
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 
-const [file, out, hourArg, yawArg, distArg, tiltArg] = process.argv.slice(2);
+const gpu = process.argv.includes('--gpu');
+const [file, out, hourArg, yawArg, distArg, tiltArg] = process.argv.slice(2).filter((a) => a !== '--gpu');
 if (!file || !out)
   throw new Error('usage: node scripts/dev/socialshot.mjs town.citybloom out.png [hour] [yaw]');
 const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4197', '--strictPort'], {
@@ -13,9 +15,11 @@ const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port
   detached: true,
 });
 await new Promise((r) => setTimeout(r, 1500));
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await chromium.launch(
+  gpu
+    ? { channel: 'chrome', headless: false, args: ['--window-size=1200,700'] }
+    : { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] },
+);
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
   page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
@@ -40,6 +44,8 @@ try {
   const hour = Number(hourArg ?? 17.5);
   await page.evaluate(async (h) => {
     const g = window.__game;
+    // Clear summer weather, so the picture doesn't depend on the save's month.
+    g.setWeatherLook({ season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 });
     const s = await g.getState();
     const now = (s.tick + 7 * 60) % 1440;
     await g.advance(Math.round((h * 60 - now + 1440) % 1440) || 1);
@@ -92,7 +98,7 @@ try {
     });
     document.getElementById('app').append(shade, title);
   });
-  await page.evaluate(() => window.__game.waitFrames(4));
+  await page.evaluate((n) => window.__game.waitFrames(n), gpu ? 30 : 4);
   await page.screenshot(out.endsWith('.jpg') ? { path: out, type: 'jpeg', quality: 88 } : { path: out });
   console.log('wrote', out);
 } finally {

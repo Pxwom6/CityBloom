@@ -244,6 +244,8 @@ export interface TestApi {
   setGround(level: 0 | 1): void;
   /** Dev (M26): try how far shadows reach (camera distances) and when they split in two. */
   setShadowTweak(t: { reach?: number; split?: number; off?: boolean; floor?: number }): void;
+  /** Is a top-level scene object (by name) shown? Null if there is none. */
+  groupShown(name: string): boolean | null;
   /** Dev: show or hide a top-level scene object by name (what draws that?). */
   showGroup(name: string, visible: boolean): void;
   /** Dev (M26): try a tone mapping and exposure on the running game. */
@@ -646,6 +648,7 @@ export function installTestApi(game: Game): TestApi {
       if (t.floor !== undefined) game.renderer.shadowFloor = t.floor;
       if (t.off) game.renderer.setShadows(false);
     },
+    groupShown: (name) => game.renderer.scene.children.find((c) => c.name === name)?.visible ?? null,
     showGroup: (name, visible) => {
       const o = game.renderer.scene.children.find((c) => c.name === name);
       if (o) o.visible = visible;

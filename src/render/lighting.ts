@@ -377,7 +377,7 @@ export class Lighting {
     // desert sand from the whole-city view. Now sunlit snow glows warm and its shadows go blue.
     const k = this.low * Math.min(1, Math.max(0, snow)) * (1 - this.night);
     if (k > 0) {
-      this.hemi.color.lerp(this.cB.set('#a9bde6'), 0.65 * k);
+      this.hemi.color.lerp(this.cB.set('#b3c3e6'), 0.45 * k);
       const l = (this.sun.color.r + this.sun.color.g + this.sun.color.b) / 3;
       this.sun.color.lerp(this.cB.setRGB(l * 1.04, l, l * 0.94), 0.3 * k);
     }

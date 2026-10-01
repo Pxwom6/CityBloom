@@ -85,26 +85,39 @@ try {
     },
     { season, tone },
   );
-  for (const view of views)
-    for (const hour of hours) {
-      await page.evaluate(
-        async ({ view, hour, at }) => {
-          const g = window.__game;
-          const s = await g.getState();
-          const now = ((s.tick + 7 * 60) % 1440) / 60;
-          const d = Math.round(((((hour - now) % 24) + 24) % 24) * 60);
-          if (d > 0) await g.advance(d);
-          g.setCamera(view);
-          if (at) g.setCamera({ x: at[0], z: at[1] });
-          await g.waitFrames(12);
-        },
-        { view, hour, at },
-      );
-      await page.waitForTimeout(400);
-      const f = `${out}/${label}-${view}-${String(hour).replace('.', 'h')}${season ? `-${season}` : ''}.png`;
-      await page.screenshot({ path: f });
-      files.push(f);
-    }
+  // Every view at an hour before the next hour, so the run spans one game day: a game month is a
+  // day, and a view a day had the sim three months on (with snow on its roads) by the last view.
+  const shots = [];
+  for (const hour of hours) for (const view of views) shots.push({ view, hour });
+  for (const { view, hour } of shots) {
+    await page.evaluate(
+      async ({ view, hour, at }) => {
+        const g = window.__game;
+        const s = await g.getState();
+        const now = ((s.tick + 7 * 60) % 1440) / 60;
+        const d = Math.round(((((hour - now) % 24) + 24) % 24) * 60);
+        if (d > 0) await g.advance(d);
+        g.setCamera(view);
+        if (at) g.setCamera({ x: at[0], z: at[1] });
+        await g.waitFrames(12);
+      },
+      { view, hour, at },
+    );
+    await page.waitForTimeout(400);
+    const f = `${out}/${label}-${view}-${String(hour).replace('.', 'h')}${season ? `-${season}` : ''}.png`;
+    await page.screenshot({ path: f });
+    files.push(f);
+  }
+  // The sheet keeps a row a view.
+  files.sort((a, b) => {
+    const ka = shots.findIndex((s) => a.includes(`-${s.view}-${String(s.hour).replace('.', 'h')}`));
+    const kb = shots.findIndex((s) => b.includes(`-${s.view}-${String(s.hour).replace('.', 'h')}`));
+    const [va, ha] = [shots[ka], shots[ka]];
+    return (
+      views.indexOf(va.view) - views.indexOf(shots[kb].view) ||
+      hours.indexOf(ha.hour) - hours.indexOf(shots[kb].hour)
+    );
+  });
   console.log(`${files.length} pictures in ${out}`);
 } finally {
   await browser.close();

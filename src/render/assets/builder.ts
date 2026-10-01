@@ -406,24 +406,21 @@ export class ModelBuilder {
       const lit: number[] = [];
       for (let i = 0; i < count; i++) lit.push(opts.lit(k++));
       if (opts.band && count > 1) {
-        // A band of windows is one strip along the floor from far off (M28): its gaps are less
-        // than a pixel there. Lit as its windows are on average.
+        // A band of windows from far off (M28): neighbouring windows alike (all lit, or all dark)
+        // drawn as one pane across the gaps between them, which are less than a pixel there. One
+        // strip at the floor's average light read as a glowing pillar at night.
         this.level = level & SKY_ONLY;
-        const half = along / 2 - (along / count - ww) / 2;
-        this.pane(
-          face,
-          x0,
-          x1,
-          z0,
-          z1,
-          -half,
-          half,
-          yb,
-          wh,
-          out,
-          opts.col,
-          lit.reduce((a, b) => a + b, 0) / count,
-        );
+        const cell = along / count;
+        for (let i0 = 0; i0 < count;) {
+          let i1 = i0 + 1;
+          while (i1 < count && lit[i1]! > 0 === lit[i0]! > 0) i1++;
+          let e = 0;
+          for (let i = i0; i < i1; i++) e += lit[i]!;
+          const a0 = -along / 2 + i0 * cell + (cell - ww) / 2;
+          const a1 = -along / 2 + i1 * cell - (cell - ww) / 2;
+          this.pane(face, x0, x1, z0, z1, a0, a1, yb, wh, out, opts.col, e / (i1 - i0));
+          i0 = i1;
+        }
         this.level = level & IN_FAR;
       }
       for (let i = 0; i < count; i++) {

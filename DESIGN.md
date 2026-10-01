@@ -1220,12 +1220,14 @@ is near enough to need it, and near meshes far behind are dropped.
 
 ### 4.4 Light and sky (phase 3, M26)
 
-**The frame** (`src/render/post.ts`). Every frame is drawn into one multisampled 8-bit target with
-its depth, then copied to the canvas (which itself has no multisampling) with the effects laid
-over it. The target is marked as an XR target, the one kind three.js tone-maps and sRGB-encodes
+**The frame** (`src/render/post.ts`). While ambient occlusion is on (close up), the frame is
+drawn into a multisampled 8-bit target with its depth, then copied to the canvas with the effects
+laid over it; when only the glow is on (at night, from far off) the frame goes straight to the
+canvas and the glow is laid over a copy of it; otherwise straight to the canvas (Low always). The target is marked as an XR target, the one kind three.js tone-maps and sRGB-encodes
 into as it does the screen, so materials behave exactly as before and 8 bits a channel suffice;
 its storage is named `RGBA8` (otherwise three gives the multisampled buffer and the texture
-different formats and the copy fails). The depth is resolved only when something reads it.
+different formats and the copy fails). The depth is resolved only when something reads it. The
+paths look the same: in each, the materials tone-map.
 Effects: *ambient occlusion* at half resolution from the depth alone (normals from neighbouring
 depths, taps on a spiral turned per pixel, reach growing with the view, faded out by about 900 m
 so the whole-city view pays nothing), smoothed by a depth-aware blur at High, laid on as a warm
@@ -1239,7 +1241,9 @@ view frustum: the part of each depth slice inside the slab from the lowest groun
 roof (`ShadowFit`, set each frame from sampled heights), boxed in the sun's space, in 5 % size
 steps snapped to texels. One map when the ground's far edge is less than 2.2× its near edge (the
 whole-city view); else a near map to the geometric split and a far one beyond. Shadows reach 3.2
-camera distances (at least 500 m). Medium and Low use one map. The shadow pass draws only what
+camera distances (at least 500 m). Medium and Low use one map. The maps are drawn every frame
+close up, 60 times a second from middle distance and 30 from far off (`shadow.autoUpdate` off,
+`needsUpdate` when due). The shadow pass draws only what
 casts: merged chunks put their casting triangles first (`Arrays` split; `ModelData.shade`: not
 panes, not small fittings close up, nothing flat on the ground) and draw just that range in the
 shadow pass (`drawCastersOnly`); small things (cars, walkers, lamp posts, rubbish) cast in the near

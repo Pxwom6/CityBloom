@@ -757,8 +757,8 @@ export class GameRenderer {
     };
     // Through the post pipeline only when an effect is on now; otherwise straight to the screen,
     // which looks the same (both tone-map in the materials) and costs less (M26).
-    const effects =
-      (this.post.settings.aoSamples > 0 && post.ao > 0.01) || (this.post.settings.glow && post.glow > 0.01);
+    const occlusion = this.post.settings.aoSamples > 0 && post.ao > 0.01;
+    const glow = this.post.settings.glow && post.glow > 0.01;
     if (lensOn) {
       const size = this.renderer.getDrawingBufferSize(this.tmpSize);
       if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
@@ -767,10 +767,12 @@ export class GameRenderer {
       }
       this.post.render(this.renderer, this.scene, this.camera, post, this.lensInput);
       this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p, true);
-    } else if (effects) this.post.render(this.renderer, this.scene, this.camera, post);
+    } else if (occlusion) this.post.render(this.renderer, this.scene, this.camera, post);
     else {
       this.renderer.setRenderTarget(null);
       this.renderer.render(this.scene, this.camera);
+      // Glow alone (night, from far off): laid over the finished screen.
+      if (glow) this.post.glowOver(this.renderer, post.glow);
     }
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };

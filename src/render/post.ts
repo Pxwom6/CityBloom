@@ -1,6 +1,8 @@
 import {
+  AdditiveBlending,
   Color,
   DepthTexture,
+  FramebufferTexture,
   HalfFloatType,
   LinearFilter,
   SRGBColorSpace,
@@ -92,6 +94,10 @@ export class PostPipeline {
   private brightMat: ShaderMaterial;
   private glowBlurMat: ShaderMaterial;
   private compositeMat: ShaderMaterial;
+  /** The glow alone, added over a frame drawn straight to the screen. */
+  private glowAddMat: ShaderMaterial;
+  /** The screen's frame, copied for the glow's bright pass. */
+  private screen: FramebufferTexture | null = null;
   private samplesBuilt = -1;
 
   constructor() {
@@ -202,6 +208,22 @@ export class PostPipeline {
           }
           if (uGlow > 0.0) col += texture2D(tGlow, vUv).rgb * uGlow;
           gl_FragColor = vec4(col, 1.0);
+        }`,
+    });
+    this.glowAddMat = new ShaderMaterial({
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      transparent: true,
+      blending: AdditiveBlending,
+      uniforms: { tGlow: { value: null }, uGlow: { value: 0 } },
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tGlow;
+        uniform float uGlow;
+        varying vec2 vUv;
+        void main() {
+          gl_FragColor = vec4(texture2D(tGlow, vUv).rgb * uGlow, 1.0);
         }`,
     });
     this.quad = new Mesh(new PlaneGeometry(2, 2), this.compositeMat);
@@ -372,22 +394,7 @@ export class PostPipeline {
       }
     }
     const glow = s.glow && frame.glow > 0.01;
-    if (glow) {
-      const b = this.brightMat.uniforms;
-      b.tColor!.value = target.texture;
-      (b.uTexel!.value as Vector2).set(1 / w, 1 / h);
-      this.pass(renderer, this.brightMat, this.glowA);
-      const g = this.glowBlurMat.uniforms;
-      for (let k = 0; k < 2; k++) {
-        const spread = 1 + k * 1.5;
-        g.tSrc!.value = this.glowA!.texture;
-        (g.uDir!.value as Vector2).set(spread / this.glowA!.width, 0);
-        this.pass(renderer, this.glowBlurMat, this.glowB);
-        g.tSrc!.value = this.glowB!.texture;
-        (g.uDir!.value as Vector2).set(0, spread / this.glowA!.height);
-        this.pass(renderer, this.glowBlurMat, this.glowA);
-      }
-    }
+    if (glow) this.blurGlow(renderer, target.texture, w, h);
     const c = this.compositeMat.uniforms;
     c.tColor!.value = target.texture;
     c.tAO!.value = ao ? this.aoA!.texture : null;
@@ -397,12 +404,56 @@ export class PostPipeline {
     this.pass(renderer, this.compositeMat, into);
   }
 
+  /** The bright parts of a frame, at a quarter resolution and blurred, into `glowA`. */
+  private blurGlow(renderer: WebGLRenderer, from: Texture, w: number, h: number): void {
+    const b = this.brightMat.uniforms;
+    b.tColor!.value = from;
+    (b.uTexel!.value as Vector2).set(1 / w, 1 / h);
+    this.pass(renderer, this.brightMat, this.glowA);
+    const g = this.glowBlurMat.uniforms;
+    for (let k = 0; k < 2; k++) {
+      const spread = 1 + k * 1.5;
+      g.tSrc!.value = this.glowA!.texture;
+      (g.uDir!.value as Vector2).set(spread / this.glowA!.width, 0);
+      this.pass(renderer, this.glowBlurMat, this.glowB);
+      g.tSrc!.value = this.glowB!.texture;
+      (g.uDir!.value as Vector2).set(0, spread / this.glowA!.height);
+      this.pass(renderer, this.glowBlurMat, this.glowA);
+    }
+  }
+
+  /**
+   * The glow alone over a frame already drawn to the screen (when it is the only effect on: from
+   * far off at night). Copying the finished screen is cheaper than drawing the whole frame into
+   * the multisampled target and resolving it.
+   */
+  glowOver(renderer: WebGLRenderer, strength: number): void {
+    renderer.getDrawingBufferSize(this.size);
+    const w = this.size.x;
+    const h = this.size.y;
+    this.ensure(w, h);
+    if (!this.screen || this.screen.image.width !== w || this.screen.image.height !== h) {
+      this.screen?.dispose();
+      this.screen = new FramebufferTexture(w, h);
+    }
+    renderer.copyFramebufferToTexture(this.screen);
+    this.blurGlow(renderer, this.screen, w, h);
+    this.glowAddMat.uniforms.tGlow!.value = this.glowA!.texture;
+    this.glowAddMat.uniforms.uGlow!.value = strength;
+    const clear = renderer.autoClear;
+    renderer.autoClear = false;
+    this.pass(renderer, this.glowAddMat, null);
+    renderer.autoClear = clear;
+  }
+
   /** The scene's depth from the last frame (photo mode's lens reads it). */
   get depth(): Texture | null {
     return this.target?.depthTexture ?? null;
   }
 
   dispose(): void {
+    this.screen?.dispose();
+    this.screen = null;
     this.target?.depthTexture?.dispose();
     for (const t of [this.target, this.aoA, this.aoB, this.glowA, this.glowB]) t?.dispose();
     this.target = this.aoA = this.aoB = this.glowA = this.glowB = null;

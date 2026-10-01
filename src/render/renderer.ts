@@ -397,6 +397,9 @@ export class GameRenderer {
       }
     });
     world.onNet((c) => {
+      if (c.segments.size || c.nodes.size) this.terrain.roadsChanged();
+    });
+    world.onNet((c) => {
       const pts: { x: number; z: number }[] = [];
       for (const id of c.segments) {
         const s = world.netState.segments.get(id);
@@ -523,7 +526,9 @@ export class GameRenderer {
     crowd: number;
     post: PostSettings;
     cascades: 1 | 2;
+    ground: 0 | 1;
   }): void {
+    this.terrain.uniforms.uGroundDetail.value = g.ground;
     this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
     this.post.settings = { ...(this.postOverride ?? g.post) };
     const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);

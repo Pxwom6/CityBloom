@@ -174,6 +174,8 @@ export interface TestApi {
     a: 'near' | 'far' | 'sky' | null,
     b: 'near' | 'far' | 'sky' | null,
   ): { changed: number; mean: number };
+  /** The zone paint (M27): triangles and whether each part is shown (full look only while zoning). */
+  getZoneLook(): Record<'zoned' | 'grid' | 'fill' | 'edge', { tris: number; shown: boolean }>;
   getLod(): {
     range: { nearStart: number; nearEnd: number; skyStart: number; skyEnd: number };
     buildings: Record<'plain' | 'near' | 'far' | 'sky', number>;
@@ -265,6 +267,8 @@ export interface TestApi {
       glow: boolean;
       samples: number;
       cascades: number;
+      /** Fields and paths in the country (M27): 0 off, 1 on. */
+      ground: number;
     };
     randomDisasters: boolean;
     tip: string | null;
@@ -749,6 +753,7 @@ export function installTestApi(game: Game): TestApi {
         glow: game.renderer.post.settings.glow,
         samples: game.renderer.post.settings.samples,
         cascades: game.renderer.lighting.shadow.splitRatio === Infinity ? 1 : 2,
+        ground: game.renderer.terrain.uniforms.uGroundDetail.value,
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,
@@ -934,6 +939,7 @@ export function installTestApi(game: Game): TestApi {
         }
       return { changed: changed / n, mean: sum / n };
     },
+    getZoneLook: () => game.renderer.zones.stats(),
     getLod: () => ({
       range: game.renderer.buildings.range,
       buildings: game.renderer.buildings.chunks.stats(),

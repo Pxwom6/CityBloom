@@ -5,26 +5,42 @@ import {
   DataTexture,
   Group,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshLambertMaterial,
+  RedFormat,
+  RepeatWrapping,
   RGBAFormat,
   UnsignedByteType,
 } from 'three';
 import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SCENERY_MARGIN } from '../data/world';
 import { Noise2D, clamp, smoothstep } from '../sim/terrain/noise';
 import type { ClientWorld } from '../client/world';
+import type { RoadTypeId } from '../data/roads';
 import { PAL } from './palette';
 import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
 const CHUNKS = 4; // buildable terrain split into CHUNKS² meshes for culling
 const SCENERY_STEP = 32;
 
+/** The town mask's cells (m): how near the roads the ground is, for the grass to know (M27). */
+const URBAN_CELL = 8;
+const URBAN_RES = MAP_SIZE / URBAN_CELL;
+/** How far from a road the ground still counts as town (m). */
+const URBAN_REACH = 46;
+const TOWN_ROADS = new Set<RoadTypeId>(['dirt', 'street', 'avenue', 'boulevard']);
+
 export interface TerrainUniforms {
   uOverlay: { value: DataTexture };
+  uUrban: { value: DataTexture };
+  /** Four channels of random values a texel, tiling (M27): value noise for one lookup. */
+  uNoiseTex: { value: DataTexture };
   uOverlayOn: { value: number };
   uTime: { value: number };
   uMapSize: { value: number };
   uGridOn: { value: number };
+  /** Fields, hedgerows and paths in the country (M27's cost switch): 0 off, 1 on. */
+  uGroundDetail: { value: number };
 }
 
 /**
@@ -39,6 +55,10 @@ export class TerrainRenderer {
   /** Season, snow and wet ground (M22); set by the renderer before the first frame. */
   weather: WeatherUniforms | null = null;
   private noise = new Noise2D('terrain-colour');
+  /** How much of a town each 8 m of the map is (0 open country … 255 by a road). */
+  private urbanData: Uint8Array;
+  private urbanDirty = true;
+  private urbanAt = -1;
   private tmp = new Color();
 
   constructor(private world: ClientWorld) {
@@ -47,12 +67,20 @@ export class TerrainRenderer {
     overlay.magFilter = LinearFilter;
     overlay.minFilter = LinearFilter;
     overlay.needsUpdate = true;
+    this.urbanData = new Uint8Array(URBAN_RES * URBAN_RES);
+    const urban = new DataTexture(this.urbanData, URBAN_RES, URBAN_RES, RedFormat, UnsignedByteType);
+    urban.magFilter = LinearFilter;
+    urban.minFilter = LinearFilter;
+    urban.needsUpdate = true;
     this.uniforms = {
       uOverlay: { value: overlay },
+      uUrban: { value: urban },
+      uNoiseTex: { value: noiseTexture() },
       uOverlayOn: { value: 0 },
       uTime: { value: 0 },
       uMapSize: { value: MAP_SIZE },
       uGridOn: { value: 0 },
+      uGroundDetail: { value: 1 },
     };
     this.material = new MeshLambertMaterial({ vertexColors: true });
     this.material.customProgramCacheKey = () => 'terrain-weather';
@@ -70,6 +98,15 @@ export class TerrainRenderer {
           `#include <common>
 varying vec3 vWorldPos;
 uniform sampler2D uOverlay;
+uniform sampler2D uUrban;
+uniform sampler2D uNoiseTex;
+// Smooth value noise in four channels from one lookup (the cell's own smoothstep applied to the
+// coordinate), for the broad layers that are always magnified.
+vec4 wTex(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  return texture2D(uNoiseTex, (i + f * f * (3.0 - 2.0 * f) + 0.5) / 256.0);
+}
 uniform float uOverlayOn;
 uniform float uTime;
 uniform float uMapSize;
@@ -78,8 +115,22 @@ uniform float uSnow;
 uniform float uWet;
 uniform vec4 uSeason;
 uniform vec2 uGrade;
+uniform float uGroundDetail;
 varying float vUp;
 ${SNOW_NOISE_GLSL}
+// Value noise and its slope (per unit of p), from the same four corners as wNoise.
+vec3 wNoiseD(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  vec2 du = 6.0 * f * (1.0 - f);
+  float a = wHash(i);
+  float b = wHash(i + vec2(1.0, 0.0));
+  float c = wHash(i + vec2(0.0, 1.0));
+  float d = wHash(i + vec2(1.0, 1.0));
+  float k = a - b - c + d;
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2(b - a + k * u.y, c - a + k * u.x));
+}
 ${SEASON_GLSL}
 ${GRADE_GLSL}`,
         )
@@ -101,6 +152,66 @@ ${GRADE_GLSL}`,
   float inRange = step(-4.0, p.x) * step(p.x, uMapSize + 4.0) * step(-4.0, p.y) * step(p.y, uMapSize + 4.0);
   float border = (1.0 - smoothstep(0.8, 2.5, dEdge)) * inRange;
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.85), border * 0.6);
+  // Grass with variety (M27): warm and cool patches and a fine mottle everywhere; out in the
+  // country, fields of their own shades with hedgerows between and worn paths across; by the
+  // roads, tidier grass. Before the seasons, so all of it turns with them.
+  {
+    vec3 c0 = diffuseColor.rgb;
+    float grassy0 = clamp((c0.g - max(c0.r, c0.b)) * 8.0, 0.0, 1.0) * step(0.6, vWorldPos.y);
+    if (grassy0 > 0.0) {
+      float town = outside > 0.5 ? 0.0 : texture2D(uUrban, p / uMapSize).r;
+      float country = 1.0 - smoothstep(0.05, 0.45, town);
+      vec4 broad = wTex(p * 0.011 + 17.0);
+      float tone = (broad.r - 0.5) * 0.9 * (0.55 + 0.45 * country);
+      vec3 c = mix(c0 * vec3(0.94, 1.0, 1.03), c0 * vec3(1.06, 1.03, 0.86), clamp(tone + 0.5, 0.0, 1.0));
+      // A fine mottle, mipmapped so it fades to an even shade far off instead of shimmering.
+      c *= 1.0 + 0.07 * (texture2D(uNoiseTex, p * (0.23 / 256.0)).g - 0.5);
+      // Fields and paths out in the country, at Medium and High (the cost switch: Low keeps the
+      // tone patches and mottle only).
+      if (country > 0.0 && uGroundDetail > 0.5) {
+        // Fields: farms of their own lie, a few hundred metres across, each a patchwork of fields
+        // in staggered rows (turning about the farm's own middle; turning about the map's origin
+        // by a slowly varying angle bent the rows into arcs). Some farms are rough grazing.
+        vec2 farm = floor(p / 420.0);
+        vec2 ed = min(p - farm * 420.0, (farm + 1.0) * 420.0 - p);
+        float farmed = step(0.3, wHash(farm + 2.0)) * smoothstep(8.0, 30.0, min(ed.x, ed.y)) * country;
+        if (farmed > 0.0) {
+          float ang = (wHash(farm + 11.0) - 0.5) * 1.6;
+          vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * (p - (farm + 0.5) * 420.0);
+          vec2 fsize = vec2(64.0 + 50.0 * wHash(farm + 5.0), 38.0 + 30.0 * wHash(farm + 9.0));
+          float row = floor(q.y / fsize.y);
+          q.x += wHash(vec2(row, farm.x * 7.0 + farm.y)) * fsize.x;
+          vec2 fid = vec2(floor(q.x / fsize.x), row) + farm * 31.0;
+          vec2 fuv = vec2(fract(q.x / fsize.x), fract(q.y / fsize.y)) * fsize;
+          float shade = wHash(fid + 7.0);
+          c *= 1.0 + (shade - 0.5) * 0.1 * farmed;
+          c = mix(c, c * vec3(1.05, 1.02, 0.8), step(0.84, shade) * 0.35 * farmed);
+          // Hedgerows along some field sides.
+          float hx = min(fuv.x, fsize.x - fuv.x) + 9.0 * step(wHash(fid * 1.3 + 1.0), 0.45);
+          float hy = min(fuv.y, fsize.y - fuv.y) + 9.0 * step(wHash(vec2(row, farm.y) + 4.0), 0.4);
+          float hedge = 1.0 - smoothstep(0.4, 1.3, min(hx, hy));
+          c = mix(c, c * vec3(0.74, 0.86, 0.7), hedge * 0.5 * farmed);
+        }
+        // Worn paths: thin winding lines where a slow noise crosses its middle, in some places.
+        vec4 slow = wTex(p * 0.004);
+        float some = smoothstep(0.55, 0.75, slow.b);
+        if (some > 0.0) {
+          vec2 w = p + slow.rg * 160.0;
+          // The same width everywhere: the noise's distance from its middle over its slope (a
+          // fixed band of noise values widened into broad loops where the noise was flat).
+          vec3 n = wNoiseD(w * 0.0035);
+          float metres = abs(n.x - 0.5) / max(length(n.yz) * 0.0035, 1e-6);
+          float path = (1.0 - smoothstep(0.3, 0.8, metres)) * some;
+          c = mix(c, vec3(0.78, 0.71, 0.55), path * 0.45 * country);
+        }
+      }
+      diffuseColor.rgb = mix(c0, c, grassy0);
+    }
+    // Shores: damp sand just above the water.
+    float damp = (1.0 - smoothstep(0.3, 1.1, vWorldPos.y)) * step(0.12, vWorldPos.y);
+    float sandy = clamp((diffuseColor.r - diffuseColor.b) * 4.0 - 0.6, 0.0, 1.0);
+    diffuseColor.rgb *= 1.0 - 0.18 * damp * sandy;
+  }
   // Seasons (M22): grass takes the season's colour (fresh in spring, gold in autumn, dull in
   // winter); wet ground darkens; snow settles on the flatter ground, patchy as it starts.
   {
@@ -363,5 +474,64 @@ ${GRADE_GLSL}`,
 
   update(time: number): void {
     this.uniforms.uTime.value = time;
+    // The town mask follows the roads, at most once a second while they change.
+    if (this.urbanDirty && time - this.urbanAt > 1) this.buildUrban(time);
   }
+
+  /** The roads changed: the town mask is stale. */
+  roadsChanged(): void {
+    this.urbanDirty = true;
+  }
+
+  /** How near a road each 8 m of the map is: where the grass is tidy town grass, not country. */
+  private buildUrban(time: number): void {
+    this.urbanDirty = false;
+    this.urbanAt = time;
+    const d = this.urbanData;
+    d.fill(0);
+    const net = this.world.net;
+    const r = Math.ceil(URBAN_REACH / URBAN_CELL);
+    for (const [id, seg] of this.world.netState.segments) {
+      // Town roads only: railways and motorways cross open country without taming it.
+      if (!TOWN_ROADS.has(seg.type)) continue;
+      const curve = net.curve(id);
+      const steps = Math.max(1, Math.ceil(curve.length / 6));
+      for (let k = 0; k <= steps; k++) {
+        const pt = curve.pointAt((curve.length * k) / steps);
+        const ci = Math.floor(pt.x / URBAN_CELL);
+        const cj = Math.floor(pt.z / URBAN_CELL);
+        for (let j = Math.max(0, cj - r); j <= Math.min(URBAN_RES - 1, cj + r); j++) {
+          const dz = (j + 0.5) * URBAN_CELL - pt.z;
+          for (let i = Math.max(0, ci - r); i <= Math.min(URBAN_RES - 1, ci + r); i++) {
+            const dx = (i + 0.5) * URBAN_CELL - pt.x;
+            const dd = dx * dx + dz * dz;
+            if (dd >= URBAN_REACH * URBAN_REACH) continue;
+            const v = (255 * (1 - Math.sqrt(dd) / URBAN_REACH)) | 0;
+            const o = j * URBAN_RES + i;
+            if (v > d[o]!) d[o] = v;
+          }
+        }
+      }
+    }
+    this.uniforms.uUrban.value.needsUpdate = true;
+  }
+}
+
+/** A tiling 256² texture of random bytes in four channels (deterministic). */
+function noiseTexture(): DataTexture {
+  const data = new Uint8Array(256 * 256 * 4);
+  let h = 0x9e3779b9;
+  for (let i = 0; i < data.length; i++) {
+    h ^= h << 13;
+    h ^= h >>> 17;
+    h ^= h << 5;
+    data[i] = h & 255;
+  }
+  const t = new DataTexture(data, 256, 256, RGBAFormat, UnsignedByteType);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.magFilter = LinearFilter;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
 }

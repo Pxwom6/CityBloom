@@ -20,7 +20,14 @@ import { JUNCTION } from '../data/balance';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { deckAt } from '../sim/world/bridge';
 import { RAIL_TRACK_OFFSET, ROAD_STYLES, tramOffset } from './roadStyle';
-import { GRADE_GLSL, ROAD_SNOW_GLSL, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
+import {
+  GRADE_GLSL,
+  ROAD_SNOW_GLSL,
+  SEASON_GLSL,
+  SNOW_COLOUR,
+  SNOW_NOISE_GLSL,
+  type WeatherUniforms,
+} from './weather';
 
 /**
  * The regional railway (M20) runs north–south this far east of the regional highway's line, off the
@@ -88,10 +95,13 @@ vUp = normalize(mat3(modelMatrix) * objectNormal).y;`,
           `#include <common>
 uniform float uWet;
 uniform vec2 uGrade;
+uniform vec4 uSeason;
+uniform float uSnow;
 varying float vRoadSnow;
 varying vec3 vWPos;
 varying float vUp;
 ${SNOW_NOISE_GLSL}
+${SEASON_GLSL}
 ${GRADE_GLSL}`,
         )
         .replace(
@@ -99,11 +109,20 @@ ${GRADE_GLSL}`,
           `#include <color_fragment>
 {
   float up = smoothstep(0.5, 0.85, vUp);
+  // Medians and verges are grass: in their season, and under the snow lying on the fields (M27;
+  // nobody ploughs them).
+  float grassy = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * 8.0, 0.0, 1.0);
+  if (grassy > 0.0) {
+    diffuseColor.rgb = mix(diffuseColor.rgb, seasonGrass(diffuseColor.rgb), grassy);
+    float gn = wNoise(vWPos.xz * 0.6);
+    float lying = smoothstep(0.0, 0.45, uSnow * 1.6 - gn * 0.75 + 0.05) * up * grassy;
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${SNOW_COLOUR} * (0.93 + 0.07 * gn), lying);
+  }
   // Wet asphalt: darker and a little blue.
-  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.7, 0.73, 0.79), uWet * up);
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.7, 0.73, 0.79), uWet * up * (1.0 - grassy));
   // Snow: patchy at first, then packed grey slush that still reads as road against white fields.
   float n = wNoise(vWPos.xz * 0.3) * 0.6 + wNoise(vWPos.xz * 1.6) * 0.4;
-  float cover = smoothstep(0.0, 0.5, vRoadSnow * 1.7 - n * 0.65) * up;
+  float cover = smoothstep(0.0, 0.5, vRoadSnow * 1.7 - n * 0.65) * up * (1.0 - grassy);
   vec3 slush = vec3(0.76, 0.78, 0.81) * (0.92 + 0.08 * n);
   diffuseColor.rgb = mix(diffuseColor.rgb, slush, cover * 0.85);
   diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
@@ -344,13 +363,18 @@ ${GRADE_GLSL}`,
       }
       if (!node || !layout || layout.approaches.length < 2) {
         this.setElement(`n${id}`, v2(0, 0), null);
+        this.paint.delete(id);
         continue;
       }
       const buf = new GeoBuffer(256);
       const centre = v2(node.x, node.z);
       buildJunction(buf, centre, layout.approaches, this.h);
-      if (layout.zebra && layout.giveWay)
+      if (layout.zebra && layout.giveWay) {
         buildJunctionPaint(buf, layout.approaches, this.h, layout.zebra, layout.giveWay);
+        if (layout.zebra.size || layout.giveWay.size)
+          this.paint.set(id, { zebra: layout.zebra.size, giveWay: layout.giveWay.size });
+        else this.paint.delete(id);
+      } else this.paint.delete(id);
       this.decorateJunction(buf, centre, layout.approaches, id);
       this.setElement(`n${id}`, centre, buf);
     }
@@ -374,6 +398,9 @@ ${GRADE_GLSL}`,
     }
     this.dirtyChunks.clear();
   }
+
+  /** Painted junctions (M27): approaches with a zebra crossing and with a give-way line, by node. */
+  readonly paint = new Map<number, { zebra: number; giveWay: number }>();
 
   /** Level crossings' barrier arms by node (drawn moving by render/crossings.ts), and a change count. */
   readonly crossings = new Map<number, BarrierArm[]>();

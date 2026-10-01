@@ -174,6 +174,11 @@ export interface TestApi {
     a: 'near' | 'far' | 'sky' | null,
     b: 'near' | 'far' | 'sky' | null,
   ): { changed: number; mean: number };
+  /**
+   * Streets (M27): junction approaches painted with a zebra crossing or a give-way line, and the
+   * benches, bins and planters along the pavements (and whether they're on show).
+   */
+  getStreets(): { zebra: number; giveWay: number; props: number; propsShown: boolean };
   /** The zone paint (M27): triangles and whether each part is shown (full look only while zoning). */
   getZoneLook(): Record<'zoned' | 'grid' | 'fill' | 'edge', { tris: number; shown: boolean }>;
   getLod(): {
@@ -940,6 +945,16 @@ export function installTestApi(game: Game): TestApi {
       return { changed: changed / n, mean: sum / n };
     },
     getZoneLook: () => game.renderer.zones.stats(),
+    getStreets: () => {
+      let zebra = 0;
+      let giveWay = 0;
+      for (const p of game.renderer.roads.paint.values()) {
+        zebra += p.zebra;
+        giveWay += p.giveWay;
+      }
+      const sp = game.renderer.streetProps;
+      return { zebra, giveWay, props: sp.count, propsShown: sp.group.visible };
+    },
     getLod: () => ({
       range: game.renderer.buildings.range,
       buildings: game.renderer.buildings.chunks.stats(),

@@ -29,7 +29,7 @@ merges it into `main`, which deploys the live site at https://pxwom6.github.io/C
 - [x] M23 Region, airport and seaport
 - [x] M24 Terrain and map editor
 - [x] M25 Baseline and model pipeline
-- [ ] M26 Light and sky
+- [x] M26 Light and sky
 - [ ] M27 Ground, lots and streets
 - [ ] M28 Buildings and variety
 
@@ -96,26 +96,19 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-M26 (light and sky), being built on a local branch `m26-wip` (a worktree, not pushed) and moved
-onto `phase-3` step by step: shadows in two cascades fitted to the ground in view (three.js's
-`SunLight`, `src/render/sunShadow.ts`), shadow passes that draw only what casts (no panes, no
-fittings, nothing flat), ambient occlusion and a glow at night after the scene (`src/render/post.ts`,
-with photo mode's lens reading its output), golden and blue hours, light bounced off the ground,
-gentle haze. Left: tuning against the style reference, tone mapping, presets, tests, before and
-after screenshots, frame times.
-
-The M25 review workflow (`wf_e6d94600-b44`) is still finishing: the visual review of homes, night
-and seasons, and the distant versions of civic buildings, shops and industry, and the code review
-of levels of detail, the renderer changes and the build. Act on what it finds.
+M27 (ground, lots and streets) is next: grass with variety, sandy shores, subtle zone colours, lawns,
+paths and car parks on built lots, kerbs, pavements, zebra crossings, cleaner markings and a few
+street props.
 
 ## Next tasks
-1. M26: tune the new light (AO strength and reach, glow threshold, sky colours, bounce) against
-   the style reference at dawn, noon, golden hour and night, whole-city and street zoom, summer
-   and winter; try Neutral tone mapping (brick goes near-black in shade under ACES); frame times.
-2. M27 Ground, lots and streets.
-3. M28 note: most level-2 and -3 buildings stand on lots smaller than their type's own (upgrades
-   rarely widen), where the type's model can't fit, so they stay generated: 17 % of the bench city's
-   buildings wear hand-made models. Decide there whether a smaller sibling's model may stand in.
+1. M27 Ground, lots and streets (SPEC-3).
+2. M28 Buildings and variety: every model in, the generator refreshed, a distant version for every
+   building (generated ones too) and the whole-city view under 2.75M triangles. Most level-2 and -3
+   buildings stand on lots smaller than their type's own (upgrades rarely widen), where the type's
+   model can't fit, so they stay generated (17 % of the bench city wears hand-made models): decide
+   there whether a smaller sibling's model may stand in.
+3. Phase wrap-up: PROGRESS summary, SPEC_REVIEW, README screenshots, social preview, a walk through
+   every zoom, hour and season.
 
 ## Models (phase 3)
 136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
@@ -234,6 +227,25 @@ the heavy view and within run-to-run noise (±15 %) of it everywhere else. The w
 populations identical to before (110,174 at month 6). `balance.ts 20`: careful 71,565 / 72 % at
 year 20, every election won, treasury $1.5M; greedy 420 / 16 %, neglectful 354 / 37 %, both losing
 every election (no sim change in phase 3).
+
+**M26 complete** (light and sky), run back to back with the phase-start build; new / start, average
+ms (95th percentiles in `bench-results/frames-m26-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 7.5 / 9.9 | 9.0 / 6.7 | 6.9 / 4.2 | 9.5 / 9.7 | 9.4 / 6.6 | 7.3 / 4.3 | **10.0 / 21.8** |
+| Medium | 4.5 / 6.3 | 3.1 / 4.0 | 2.8 / 2.3 | 4.8 / 5.8 | 3.5 / 3.9 | 2.9 / 2.3 | 5.0 / 14.3 |
+| Low | 2.8 / 3.5 | 2.2 / 2.2 | 1.3 / 1.5 | 2.8 / 3.2 | 2.2 / 2.1 | 1.4 / 1.5 | 3.0 / 8.2 |
+
+The heavy view at High is 10.0 ms, inside the 12 ms budget. Low is as fast as at the start or
+faster everywhere; Medium is faster in the heavy and whole-city views, and about half a millisecond
+slower close up at street level, where its new occlusion and the night glow are on. High pays for
+its effects close up (occlusion, two shadow cascades reaching three camera distances; 6.9 ms is
+still 145 fps). Shadow maps from far off are redrawn 30 times a second, so the triangles and draw
+calls per frame vary; the whole-city view's shadow pass draws 454k triangles where it drew 872k.
+`bench.ts 6 --big` and `balance.ts 20` are identical to M25's (no sim change): tick avg 0.25–0.28
+ms at 97–110k, worst 16 ms (month 1); careful 71,565 / 72 %, greedy 420 / 16 %, neglectful 354 /
+36 % at year 20.
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

@@ -161,6 +161,10 @@ export interface TestApi {
    */
   /** The view as drawn: the share of pixels that are lit-window warm, near white, and the mean brightness (0–1). */
   pixelStats(): { warm: number; white: number; lum: number };
+  /** As `pixelStats`, of a whole frame as the player sees it (the post pipeline's effects and all; M26). */
+  frameStats(): { warm: number; white: number; lum: number };
+  /** The pixels of a whole frame as the player sees it (RGBA, bottom row first; M26). */
+  framePixels(): Uint8Array;
   setLod(level: 'near' | 'far' | 'sky' | null): void;
   /**
    * How different the view is drawn at one level of detail and at another (null: by distance, as
@@ -218,10 +222,14 @@ export interface TestApi {
     colourCalls: number;
     shadowCalls: number;
   }[];
-  /** Dev (M26): try the post pipeline's settings (and `samples`, `off`) on the running game. */
-  setPost(p: { aoSamples?: number; aoBlur?: boolean; glow?: boolean; samples?: number; off?: boolean }): void;
+  /** Dev (M26): try the post pipeline's settings (and `samples`, `off`) on the running game; null goes back to the graphics settings'. */
+  setPost(
+    p: { aoSamples?: number; aoBlur?: boolean; glow?: boolean; samples?: number; off?: boolean } | null,
+  ): void;
   /** Dev (M26): try how far shadows reach (camera distances) and when they split in two. */
   setShadowTweak(t: { reach?: number; split?: number; off?: boolean; floor?: number }): void;
+  /** Dev: show or hide a top-level scene object by name (what draws that?). */
+  showGroup(name: string, visible: boolean): void;
   /** Dev (M26): try a tone mapping and exposure on the running game. */
   setTone(mapping: 'aces' | 'neutral' | 'agx' | 'none', exposure?: number): void;
   /**
@@ -251,6 +259,12 @@ export interface TestApi {
       edgeScroll: boolean;
       pointer: 'auto' | 'mouse' | 'trackpad';
       detected: 'mouse' | 'trackpad';
+      /** The frame's effects (M26): AO taps, its blur, glow, multisampling, shadow cascades. */
+      ao: number;
+      aoBlur: boolean;
+      glow: boolean;
+      samples: number;
+      cascades: number;
     };
     randomDisasters: boolean;
     tip: string | null;
@@ -315,6 +329,32 @@ export function installTestApi(game: Game): TestApi {
     for (let i = 0; i <= 8; i++)
       for (let j = 0; j <= 8; j++) y = Math.max(y, game.world.heightAt(x + (W * i) / 8, z + (D * j) / 8));
     return y;
+  };
+  /** Colours in the frame: lit windows, white, mean brightness (sampled every fourth pixel). */
+  const stats = (full: boolean) => {
+    const r = game.renderer;
+    const gl = r.renderer.getContext();
+    const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    if (full) r.frame(0);
+    else {
+      r.renderer.setRenderTarget(null);
+      r.renderer.render(r.scene, r.camera);
+    }
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let warm = 0;
+    let white = 0;
+    let lum = 0;
+    let n = 0;
+    for (let i = 0; i < px.length; i += 16) {
+      const [red, green, blue] = [px[i]!, px[i + 1]!, px[i + 2]!];
+      // A lit window: bright, and warmer than white.
+      if (red > 215 && green > 185 && blue < green - 12 && blue > 110) warm++;
+      if (red > 215 && green > 215 && blue > 215) white++;
+      lum += 0.299 * red + 0.587 * green + 0.114 * blue;
+      n++;
+    }
+    return { warm: warm / n, white: white / n, lum: lum / n / 255 };
   };
   const api: TestApi = {
     ready: true,
@@ -565,11 +605,17 @@ export function installTestApi(game: Game): TestApi {
       }),
     setPost: (p) => {
       const post = game.renderer.post;
+      if (!p) {
+        game.renderer.postOverride = null;
+        game.applySettings();
+        return;
+      }
       post.settings = {
         aoSamples: p.off ? 0 : (p.aoSamples ?? post.settings.aoSamples),
         aoBlur: p.aoBlur ?? post.settings.aoBlur,
         glow: p.off ? false : (p.glow ?? post.settings.glow),
         samples: p.samples ?? post.settings.samples,
+        aoFar: post.settings.aoFar,
       };
       game.renderer.postOverride = { ...post.settings };
     },
@@ -578,6 +624,10 @@ export function installTestApi(game: Game): TestApi {
       if (t.split !== undefined) game.renderer.lighting.shadow.splitRatio = t.split;
       if (t.floor !== undefined) game.renderer.shadowFloor = t.floor;
       if (t.off) game.renderer.setShadows(false);
+    },
+    showGroup: (name, visible) => {
+      const o = game.renderer.scene.children.find((c) => c.name === name);
+      if (o) o.visible = visible;
     },
     setTone: (mapping, exposure) => {
       game.renderer.toneOverride = { mapping, exposure: exposure ?? 1 };
@@ -694,6 +744,11 @@ export function installTestApi(game: Game): TestApi {
         edgeScroll: game.renderer.controller.edgeScroll,
         pointer: game.renderer.controller.pointerDevice,
         detected: game.renderer.controller.detected,
+        ao: game.renderer.post.settings.aoSamples,
+        aoBlur: game.renderer.post.settings.aoBlur,
+        glow: game.renderer.post.settings.glow,
+        samples: game.renderer.post.settings.samples,
+        cascades: game.renderer.lighting.shadow.splitRatio === Infinity ? 1 : 2,
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,
@@ -830,28 +885,17 @@ export function installTestApi(game: Game): TestApi {
       game.renderer.civics.chunks.force = f;
       game.renderer.flushBuildings();
     },
-    pixelStats: () => {
+    frameStats: () => stats(true),
+    framePixels: () => {
       const r = game.renderer;
       const gl = r.renderer.getContext();
-      const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
-      r.renderer.setRenderTarget(null);
-      r.renderer.render(r.scene, r.camera);
-      const px = new Uint8Array(w * h * 4);
-      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      let warm = 0;
-      let white = 0;
-      let lum = 0;
-      let n = 0;
-      for (let i = 0; i < px.length; i += 16) {
-        const [red, green, blue] = [px[i]!, px[i + 1]!, px[i + 2]!];
-        // A lit window: bright, and warmer than white.
-        if (red > 215 && green > 185 && blue < green - 12 && blue > 110) warm++;
-        if (red > 215 && green > 215 && blue > 215) white++;
-        lum += 0.299 * red + 0.587 * green + 0.114 * blue;
-        n++;
-      }
-      return { warm: warm / n, white: white / n, lum: lum / n / 255 };
+      r.frame(0);
+      const px = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+      gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return px;
     },
+    pixelStats: () => stats(false),
+
     compareLod: (a, b) => {
       const r = game.renderer;
       const gl = r.renderer.getContext();

@@ -63,6 +63,7 @@ const FLAME_FRAG = /* glsl */ `
 `;
 
 const SMOKE_FRAG = /* glsl */ `
+  uniform float uLight;
   varying float vLife;
   varying float vSeed;
   void main() {
@@ -71,6 +72,8 @@ const SMOKE_FRAG = /* glsl */ `
     if (d > 0.5) discard;
     float a = smoothstep(0.5, 0.0, d) * smoothstep(0.0, 0.12, vLife) * (1.0 - vLife) * 0.55;
     vec3 col = mix(vec3(0.16, 0.15, 0.14), vec3(0.52, 0.5, 0.48), vLife) * (0.9 + 0.2 * vSeed);
+    // Smoke takes the light of the hour: grey by day, dim at night (it isn't a light; M26).
+    col *= uLight;
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -117,6 +120,7 @@ function makePoints(max: number, frag: string, additive: boolean, rise: number, 
       uDrift: { value: drift },
       uPixel: { value: 1 },
       uWind: { value: new Vector2(1, 0) },
+      uLight: { value: 1 },
     },
     transparent: true,
     depthWrite: false,
@@ -323,7 +327,7 @@ export class EffectsRenderer {
   }
 
   /** `pxPerMetre` = drawing-buffer height / (2·tan(fov/2)): a 1 m sprite at 1 m distance, in pixels. */
-  update(time: number, pxPerMetre: number, windAngle: number): void {
+  update(time: number, pxPerMetre: number, windAngle: number, light = 1): void {
     this.rebuildFires();
     this.updateSirens();
     if (++this.frameNo % 30 === 1) this.rebuildChimneys();
@@ -332,6 +336,7 @@ export class EffectsRenderer {
       u.uTime!.value = time;
       u.uPixel!.value = pxPerMetre;
       if (u.uWind) (u.uWind.value as Vector2).set(Math.cos(windAngle), Math.sin(windAngle));
+      if (u.uLight) u.uLight.value = light;
     }
   }
 

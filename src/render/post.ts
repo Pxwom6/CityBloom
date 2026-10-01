@@ -23,12 +23,12 @@ import {
  * ambient occlusion from the depth buffer, at half resolution, smoothed across edges it
  * mustn't cross) and a soft glow round lit windows and street lamps at night.
  *
- * Every frame is drawn into a multisampled target with its depth, then copied to the screen with
- * the effects laid over it. The target is display-referred: three.js tone-maps and encodes into
- * it as it would into the screen (it is marked as an XR target, the one kind three treats so), so
- * it holds 8 bits a channel, the frame looks the same with the effects on or off, and the
- * canvas itself needs no multisampling. Each effect costs nothing when it's off or faded out
- * (occlusion from far off, glow by day).
+ * While an effect is on, the frame is drawn into a multisampled target with its depth, then
+ * copied to the screen with the effects laid over it; otherwise it goes straight to the screen.
+ * The target is display-referred: three.js tone-maps and encodes into it as it would into the
+ * screen (it is marked as an XR target, the one kind three treats so), so it holds 8 bits a
+ * channel and the frame looks the same either way. Each effect costs nothing when it's off or
+ * faded out (occlusion from far off, glow by day).
  */
 
 export interface PostSettings {
@@ -37,8 +37,10 @@ export interface PostSettings {
   aoBlur: boolean;
   /** Glow at night. */
   glow: boolean;
-  /** Multisampling of the frame (smooth edges). */
+  /** Multisampling of the frame while an effect is on (smooth edges). */
   samples: number;
+  /** How far off the occlusion has faded out (m); it starts fading at 0.42 of that. */
+  aoFar: number;
 }
 
 export interface PostFrame {
@@ -73,7 +75,7 @@ const VIEW_POS = /* glsl */ `
 const AO_TINT = new Color('#6c5f86');
 
 export class PostPipeline {
-  settings: PostSettings = { aoSamples: 0, aoBlur: false, glow: false, samples: 4 };
+  settings: PostSettings = { aoSamples: 0, aoBlur: false, glow: false, samples: 4, aoFar: 900 };
   private scene = new Scene();
   private camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private quad: Mesh;
@@ -292,6 +294,9 @@ export class PostPipeline {
     // different formats for an XR target, and the copy between them fails).
     this.target.texture.colorSpace = SRGBColorSpace;
     this.target.texture.internalFormat = 'RGBA8';
+    // The multisampled depth isn't kept once the frame is resolved (a tile-based GPU then never
+    // writes it out).
+    this.target.storeMultisampledDepthBuffer = false;
     (this.target as { isXRRenderTarget?: boolean }).isXRRenderTarget = true;
     this.target.depthTexture!.minFilter = NearestFilter;
     this.target.depthTexture!.magFilter = NearestFilter;

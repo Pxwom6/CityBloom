@@ -192,9 +192,7 @@ export class GameRenderer {
     readonly canvas: HTMLCanvasElement,
     readonly world: ClientWorld,
   ) {
-    // No multisampling on the canvas: every frame is drawn into the post pipeline's own
-    // multisampled target and copied here (M26).
-    this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
     // Neutral keeps a toy's colours true (ACES took brick to near black in shade; M26).
@@ -722,8 +720,13 @@ export class GameRenderer {
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     this.traffic.setScale(bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
     const pxPerMetre = bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
-    this.effects.update(this.time, pxPerMetre, windAngle(this.world.options.seed, this.world.displayTick));
-    this.disasters.update(dt, this.world.displayTick, pxPerMetre);
+    this.effects.update(
+      this.time,
+      pxPerMetre,
+      windAngle(this.world.options.seed, this.world.displayTick),
+      0.35 + 0.65 * l.light,
+    );
+    this.disasters.update(dt, this.world.displayTick, pxPerMetre, 0.35 + 0.65 * l.light);
     this.camera.position.add(this.disasters.shake);
     // Trees under new buildings: rebuilt at most twice a second.
     if (this.treePoints.length && this.time - this.treeRebuildAt > 0.5) {
@@ -747,10 +750,14 @@ export class GameRenderer {
     // grows with the view. Glow at night.
     const d = this.controller.current.distance;
     const post = {
-      ao: 1 - Math.min(1, Math.max(0, (d - 380) / 520)),
+      ao: 1 - Math.min(1, Math.max(0, (d / this.post.settings.aoFar - 0.42) / 0.58)),
       aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
       glow: l.night,
     };
+    // Through the post pipeline only when an effect is on now; otherwise straight to the screen,
+    // which looks the same (both tone-map in the materials) and costs less (M26).
+    const effects =
+      (this.post.settings.aoSamples > 0 && post.ao > 0.01) || (this.post.settings.glow && post.glow > 0.01);
     if (lensOn) {
       const size = this.renderer.getDrawingBufferSize(this.tmpSize);
       if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
@@ -759,7 +766,11 @@ export class GameRenderer {
       }
       this.post.render(this.renderer, this.scene, this.camera, post, this.lensInput);
       this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p, true);
-    } else this.post.render(this.renderer, this.scene, this.camera, post);
+    } else if (effects) this.post.render(this.renderer, this.scene, this.camera, post);
+    else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, this.camera);
+    }
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };
     if (this.tiltShiftOn && !p) {

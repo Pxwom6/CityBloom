@@ -81,7 +81,8 @@ export const UI_SCALE = { min: 0.8, max: 1.4 };
 /**
  * Renderer knobs for each quality level. `shadowMap` is each of the sun's shadow cascades, of
  * which `cascades` are used (M26); `ao` the ambient occlusion's taps a pixel (0: off) and whether it is smoothed; `glow`
- * the soft glow round lights at night; `samples` the frame's multisampling.
+ * the soft glow round lights at night; `samples` the frame's multisampling while one of them is
+ * on; `aoFar` how far off the occlusion has faded (the camera distance).
  */
 export const QUALITY_PARAMS: Record<
   Quality,
@@ -94,6 +95,7 @@ export const QUALITY_PARAMS: Record<
     glow: boolean;
     samples: number;
     cascades: 1 | 2;
+    aoFar: number;
   }
 > = {
   low: {
@@ -105,6 +107,7 @@ export const QUALITY_PARAMS: Record<
     glow: false,
     samples: 4,
     cascades: 1,
+    aoFar: 0,
   },
   medium: {
     pixelRatio: 1,
@@ -113,8 +116,9 @@ export const QUALITY_PARAMS: Record<
     ao: 4,
     aoBlur: false,
     glow: true,
-    samples: 4,
+    samples: 2,
     cascades: 1,
+    aoFar: 600,
   },
   high: {
     pixelRatio: 2,
@@ -125,6 +129,7 @@ export const QUALITY_PARAMS: Record<
     glow: true,
     samples: 4,
     cascades: 2,
+    aoFar: 900,
   },
 };
 

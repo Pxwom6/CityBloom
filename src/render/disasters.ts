@@ -48,13 +48,15 @@ const DUST_VERT = /* glsl */ `
   }
 `;
 const DUST_FRAG = /* glsl */ `
+  uniform float uLight;
   varying float vLife;
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float d = length(c);
     if (d > 0.5 || vLife < 0.0 || vLife > 1.0) discard;
     float a = smoothstep(0.5, 0.05, d) * smoothstep(0.0, 0.06, vLife) * (1.0 - vLife) * 0.7;
-    gl_FragColor = vec4(mix(vec3(0.55, 0.49, 0.41), vec3(0.72, 0.68, 0.62), vLife), a);
+    // Dust takes the light of the hour (M26): pale by day, dim at night.
+    gl_FragColor = vec4(mix(vec3(0.55, 0.49, 0.41), vec3(0.72, 0.68, 0.62), vLife) * uLight, a);
   }
 `;
 
@@ -220,7 +222,7 @@ export class DisasterRenderer {
       new ShaderMaterial({
         vertexShader: DUST_VERT,
         fragmentShader: DUST_FRAG,
-        uniforms: { uTime: { value: 0 }, uPixel: { value: 1 }, uDur: { value: 7 } },
+        uniforms: { uTime: { value: 0 }, uPixel: { value: 1 }, uDur: { value: 7 }, uLight: { value: 1 } },
         transparent: true,
         depthWrite: false,
       }),
@@ -499,8 +501,9 @@ export class DisasterRenderer {
     return this.world.disasters.active.filter((d) => d.kind === kind);
   }
 
-  update(dtSec: number, displayTick: number, pxPerMetre: number): void {
+  update(dtSec: number, displayTick: number, pxPerMetre: number, light = 1): void {
     this.time += dtSec;
+    (this.dust.material as ShaderMaterial).uniforms.uLight!.value = light;
     const w = this.world;
     if (this.version !== w.disastersVersion) {
       this.version = w.disastersVersion;

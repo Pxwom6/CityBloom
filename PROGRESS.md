@@ -87,8 +87,8 @@ zebra crossings, benches, bins and planters, and car parks, lawns and yards behi
 Buildings: every generated building now has distant versions too, and the generator was refreshed
 (five tower silhouettes, crowns, spires, balcony bands, mansards, cornices, more colours) so no two
 neighbours look alike (M28). Every effect has a switch in the graphics quality. On an M5 MacBook
-Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 9.2 ms a frame at High,
-against 22 at the start of the phase; the whole-city view draws 1.7M triangles where it drew 2.7M.
+Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 9–10 ms a frame at High,
+against 22–25 at the start of the phase; the whole-city view draws 1.7M triangles where it drew 2.7M.
 
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
@@ -112,14 +112,16 @@ against 22 at the start of the phase; the whole-city view draws 1.7M triangles w
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done. The phase wrap-up is next: the summary
-above, SPEC-3's section in SPEC_REVIEW, the README's screenshots, the social preview image, and a walk
-through the game at every zoom, by day and night and in each season, fixing whatever looks off.
+Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and phase 3's wrap-up with it: the
+summary above, SPEC_REVIEW, the README's screenshots, the social image, and a walk-through at every
+zoom, hour and season with what it found fixed (SPEC_REVIEW, "When every milestone is done (phase
+3)"). Nothing is left in progress.
 
 ## Next tasks
-1. Phase 3 wrap-up (SPEC-3, "When every milestone is done").
-2. The branch is local only until the owner pushes it (`git push -u origin phase-3`): this
-   machine's git has no GitHub credentials, so pushes from here fail.
+1. The owner: push the branch (`git push -u origin phase-3`; this machine's git has no GitHub
+   credentials) and merge it into `main` when happy, which publishes the site.
+2. Bring in new models as they arrive in `assets/models/` (`npm run models:check`).
+3. Ideas below.
 
 ## Models (phase 3)
 136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
@@ -134,6 +136,8 @@ far, 50k in the skyline; the models file is 2.3 MB (0.8 MB gzipped), fetched at 
 
 Things seen in the models while reviewing every one in the game (they pass the check and are in; for
 the owner, if a model is ever remade):
+- `C213`: its window groups each run a floor wide, so at night a lit floor is one bright band and
+  the tower reads as a striped lightbox from far off; several groups a floor would light as windows.
 - `firestation`: a thin strip of roof along the ridge sits a little proud of the roof.
 - `skyneedle`: benches stand inside the planters at its foot.
 - `nuclear`: the cooling towers' bases run into the boundary wall.
@@ -303,6 +307,20 @@ than it saves (DECISIONS M28). `bench.ts 6 --big` and `balance.ts 20` are identi
 change). Checks: 386 unit tests and all 42 e2e specs; `e2e/m28-buildings.spec.ts` loads the demo town
 through the load screen: 1,308 touching pairs, none drawn with the same model, no building drawn
 "plain", 0.90M triangles from the whole-city view.
+
+**Phase 3 final** (after the walk-through fixes), back to back with the phase-start build; new /
+start, average ms (`bench-results/frames-phase3-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 7.5 / 10.6 | 10.6 / 7.1 | 7.8 / 4.6 | 10.6 / 10.5 | 11.3 / 7.1 | 8.2 / 4.6 | **10.0 / 25.1** |
+| Medium | 4.7 / 6.7 | 3.9 / 4.3 | 3.3 / 2.5 | 4.9 / 6.4 | 4.3 / 4.6 | 3.5 / 2.4 | 4.8 / 15.7 |
+| Low | 3.0 / 3.8 | 2.7 / 2.4 | 1.7 / 1.6 | 2.9 / 3.3 | 2.7 / 2.3 | 1.7 / 1.6 | 2.9 / 10.6 |
+
+The heaviest view at High is 10.0 ms (12 allowed; 25.1 at the start in this run); the whole-city
+view draws 152 calls and 1.75M triangles (289 and 2.69M at the start). Medium and Low are faster than
+at the start in the whole-city and heavy views and at Medium's city zoom, and slower close up as
+recorded for M28 (DECISIONS M28).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

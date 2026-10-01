@@ -359,3 +359,13 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | Done when: the overview draws fewer triangles than at the start of this phase | as above: 1.73M against 2.68M (colour pass), PROGRESS.md "Frame times" |
 | Done when: the frame budget holds | PROGRESS.md "Frame times": the heavy view at High 9.2 ms (12 allowed); Medium and Low faster than at the start in the whole-city and heavy views; close up a little slower (Medium's street level 0.7–0.85 ms, Low 0.1–0.35 ms), a deviation from "no slower" recorded in DECISIONS M28 |
 
+## When every milestone is done (phase 3)
+
+| Item | Where |
+|---|---|
+| Update the summary in PROGRESS.md | PROGRESS.md: a phase 3 paragraph in the summary (the models, light and sky, ground and streets, buildings, the frame budget), the next tasks, and the ideas list (more hand-made models on the lots buildings grow on) |
+| This brief's section in SPEC_REVIEW | the M25–M28 sections above and this one |
+| The README's screenshots | `README.md`: `docs/screenshots/phase3-city.jpg` (the bench city in the afternoon) and `phase3-night.jpg` (the same at night), shot on the real GPU with the problem icons hidden as in photo mode; the text says what phase 3 added and that the hand-made models were made for the game |
+| The social preview image | `public/social.jpg` (1200×630): the bench city at 17:24 on the real GPU (`node scripts/dev/socialshot.mjs bench-results/city.gz public/social.jpg 17.4 2.4 520 0.36 --gpu`) |
+| Walk through the game at every zoom, by day and night and in each season, and fix whatever looks off | 72 shots: the demo town in spring, summer, autumn and winter and the bench city in summer and winter, each at the whole-city view, city zoom and street level at dawn, noon, golden hour and night (`lookshot.mjs`), reviewed by six reviewers and a consolidation pass, then by six checkers comparing before and after. Fixed (DECISIONS, "Phase 3 walk-through"): glass towers glowing as cream slabs at night, golden-hour snow reading as sand, olive dawn and golden-hour overviews, autumn grass green at noon, the night water lit teal, lamp heads blooming into pearls from far off, a very dark whole-city view at night, pencil-thin towers on narrow lots, stippled half-trees at the near-to-far hand-over, black cars, and the problem icons showing in photo mode (a bug since M4). Left, with reasons: the hand-made C213's floor-wide window groups (model side), bare rock on the steepest scenery cliffs, the river ending at the map edge |
+

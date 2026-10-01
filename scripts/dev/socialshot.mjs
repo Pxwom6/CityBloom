@@ -75,6 +75,9 @@ try {
     },
   );
   await page.evaluate(() => {
+    // As photo mode shows the city: no problem icons or zone paint.
+    window.__game.showGroup('icons', false);
+    window.__game.showGroup('zones', false);
     document.getElementById('ui').style.display = 'none';
     const title = document.createElement('div');
     title.innerHTML =

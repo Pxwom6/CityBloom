@@ -43,7 +43,7 @@ const ASPHALT = new Color('#767b82');
 const HIGHWAY_ASPHALT = new Color('#6c7178');
 const SIDEWALK = new Color('#cfc9bd');
 const KERB = new Color('#a39e93');
-const KERB_TOP = new Color('#e2ddd2');
+const KERB_TOP = new Color('#dcdedf');
 const EDGING = new Color('#b4aea2');
 /** Kerb stones' width, and the edging along the pavement's back (m). */
 const KERB_W = 0.3;

@@ -544,17 +544,29 @@ export class TrafficRenderer {
           // before the barriers start down (Phase 2 review). The room is for this car and every car
           // already over the line ahead of it, which get there first: counting only the road beyond
           // left the second of two cars crossing close together waiting on the rails.
+          // (Cars listed at the start of the step that have since moved on to another road, or
+          // finished their trip, aren't on this lane any more.)
+          const key = this.laneKey(c, c.leg);
           const committed =
             info.kind === 'crossing'
-              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => o !== c && along(o) > along(c)).length
+              ? (lanes.get(key) ?? []).filter(
+                  (o) =>
+                    o !== c &&
+                    o.leg < o.legs.length &&
+                    !o.ring &&
+                    this.laneKey(o, o.leg) === key &&
+                    along(o) > along(c),
+                ).length
               : 0;
           const blocked =
             !this.mayEnter(c, n!, info, rings.get(n!) ?? []) ||
             (info.kind === 'crossing' &&
               (!this.roomAhead(c, c.leg + 1, lanes, info.stop + SPACING * (1 + committed)) ||
                 (this.trainEta.get(n!) ?? Infinity) - this.frameClock <
-                  // Time to clear it at half speed (a car in a queue crawls over).
-                  CLOSE_AHEAD_TICKS + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
+                  // Time to clear it at half speed (a car in a queue crawls over), counted from the
+                  // end of this step: a long frame (a slow machine) carries a car well past the line
+                  // after the train's time was read at its start (M27).
+                  CLOSE_AHEAD_TICKS + budget + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
           if (blocked) room = Math.min(room, Math.max(0, stopAt - c.t));
         }
         const move = Math.min(v * budget, room, end - c.t);

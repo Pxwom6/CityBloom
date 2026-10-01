@@ -1257,6 +1257,54 @@ three's lighting chunk adds light bounced off the ground opposite the sun, tinte
 hemisphere light's ground colour, which follows the season and snow (`groundBounce`); a patch to
 the fog chunk adds a gentle haze from nearer in.
 
+### 4.5 Ground, lots and streets (phase 3, M27)
+
+**Grass** (`src/render/terrain.ts`, fragment shader, before the seasons so all of it turns with
+them). Warm and cool tone patches (~90 m) and a fine mottle (~4 m, mipmapped so it fades to an
+even shade far off) everywhere, from a 256² tiling texture of random bytes (`noiseTexture`: one
+lookup gives four smooth value noises, much cheaper than sine hashes). Out in the country, only at
+Medium and High (`uGroundDetail`, the quality's `ground`): farms of 420 m squares, 70 % of them
+farmed, each turned its own way about its middle and laid out in staggered rows of fields with
+their own shades (a few golden) and hedgerows along some sides; and worn paths where a slow,
+domain-warped noise crosses its middle, the band's width divided by the noise's slope (from the
+same four corners, `wNoiseD`) so a path is about a metre wide everywhere. Hedgerows and paths are
+left out where a pixel spans more than about 2 m. The town mask (`uUrban`, a byte per 8 m cell)
+fades country to tidy grass within 46 m of a town road (not motorways or railways); it is rebuilt
+at most once a second, and only when roads change. Sand just above the water is darker (damp).
+
+**Zones** (`src/render/zones.ts`). Empty zoned cells are drawn as a faint tint over the whole cell
+with a 0.45 m outline on each side where the zoned area ends (the same zone neither side), in one
+mesh a chunk with each vertex's own opacity (RGBA colours). While a zoning tool is out
+(`setGridVisible`) the old cell-by-cell look and the unzoned grid show instead. Data maps hide
+both, as before.
+
+**Streets** (`src/render/roadStyle.ts`, `roadMesh.ts`, `roads.ts`). Town roads (street, avenue,
+boulevard) have kerb stones along the pavement's road edge, a darker kerb face, slabs and an
+edging along the back; medians are planted inside kerb stones; junction corners follow the same
+bands. Medians and verges are grass in the road shader: in their season and under lying snow
+(never ploughed). Ribbons step 2.5 m round bends and up to 6 m along straight runs (fine always on
+bridge decks), which more than pays for the extra strips. At a junction of three or more town
+roads, `junctionPaint` decides: where an avenue or boulevard meets, or four roads meet beside a
+commercial block, every approach long enough gets a zebra crossing (1–4 m off the junction) and a
+stop line behind it across the incoming lanes (traffic keeps right); elsewhere a side road
+narrower than the road it joins gets a dashed give-way line. Lane markings stop short of both.
+
+**Street furniture** (`src/render/streetProps.ts`). Between the lamps (every 34 m, offset 17),
+on the pavement's back, by the zone of the frontage cell there: a bench with a bin beside it and a
+planter (avenues) or bin (streets) in turn outside shops, a bin every third place outside homes;
+none near a bus stop or on a bridge. Each road's pieces (boxes, 20–40 triangles each) are merged
+into its 512 m chunk, one mesh a chunk; a road is rebuilt only when its type, length, frontage
+zoning or stops change. Shown within 900 m of the camera at Medium and High, casting shadows
+within 450 m (near cascade only).
+
+**Lots** (`src/render/assets/handmade.ts` `yard`, `models.ts`). A hand-made model shallower than
+its lot leaves a yard at the back: a car park with marked bays (two rows facing across an aisle
+if deep enough) and parked cars behind shops and offices; a marked loading box with crates or a
+container behind industry; a lawn (on paved lots too) with a path and a garden shed behind homes.
+Markings, cars and clutter only in the near level; the surfaces in far; nothing in the skyline.
+Generated terraces get a path to each door between strips of lawn with low hedges; generated
+flats a path to the entrance between lawns.
+
 ## 5. UI
 
 Preact components over the canvas. All colours, type scale, spacing, radii and shadows are CSS custom

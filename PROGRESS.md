@@ -30,7 +30,7 @@ merges it into `main`, which deploys the live site at https://pxwom6.github.io/C
 - [x] M24 Terrain and map editor
 - [x] M25 Baseline and model pipeline
 - [x] M26 Light and sky
-- [ ] M27 Ground, lots and streets
+- [x] M27 Ground, lots and streets
 - [ ] M28 Buildings and variety
 
 ## Summary
@@ -96,19 +96,19 @@ trams that give way (DECISIONS, "Phase 2 review").
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-M27 (ground, lots and streets) is next: grass with variety, sandy shores, subtle zone colours, lawns,
-paths and car parks on built lots, kerbs, pavements, zebra crossings, cleaner markings and a few
-street props.
+M28 (buildings and variety) is next: every model in, the generator refreshed in the same style
+(more roof shapes, facade details and tower silhouettes), a distant version for every building
+including generated ones, and the whole-city view under 2.75M triangles (now 2.06M with shadows).
 
 ## Next tasks
-1. M27 Ground, lots and streets (SPEC-3).
-2. M28 Buildings and variety: every model in, the generator refreshed, a distant version for every
-   building (generated ones too) and the whole-city view under 2.75M triangles. Most level-2 and -3
-   buildings stand on lots smaller than their type's own (upgrades rarely widen), where the type's
-   model can't fit, so they stay generated (17 % of the bench city wears hand-made models): decide
-   there whether a smaller sibling's model may stand in.
-3. Phase wrap-up: PROGRESS summary, SPEC_REVIEW, README screenshots, social preview, a walk through
+1. M28 Buildings and variety. Most level-2 and -3 buildings stand on lots smaller than their type's
+   own (upgrades rarely widen), where the type's model can't fit, so they stay generated (17 % of
+   the bench city wears hand-made models): decide there whether a smaller sibling's model may
+   stand in. Generated buildings need far and skyline versions (they have one level today).
+2. Phase wrap-up: PROGRESS summary, SPEC_REVIEW, README screenshots, social preview, a walk through
    every zoom, hour and season.
+3. The branch is local only until the owner pushes it (`git push -u origin phase-3`): this
+   machine's git has no GitHub credentials, so pushes from here fail.
 
 ## Models (phase 3)
 136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
@@ -246,6 +246,27 @@ calls per frame vary; the whole-city view's shadow pass draws 454k triangles whe
 `bench.ts 6 --big` and `balance.ts 20` are identical to M25's (no sim change): tick avg 0.25–0.28
 ms at 97–110k, worst 16 ms (month 1); careful 71,565 / 72 %, greedy 420 / 16 %, neglectful 354 /
 36 % at year 20.
+
+**M27 complete** (ground, lots and streets), run back to back with the phase-start build; new /
+start, average ms (95th percentiles in `bench-results/frames-m27-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.3 / 10.7 | 10.1 / 7.4 | 7.5 / 4.7 | 10.5 / 10.7 | 10.6 / 7.3 | 7.8 / 4.7 | **10.8 / 24.9** |
+| Medium | 4.6 / 7.0 | 3.5 / 4.4 | 3.0 / 2.5 | 5.0 / 6.5 | 4.0 / 4.3 | 3.2 / 2.5 | 5.1 / 18.2 |
+| Low | 3.0 / 3.7 | 2.2 / 2.3 | 1.5 / 1.6 | 3.0 / 3.2 | 2.2 / 2.2 | 1.5 / 1.5 | 3.0 / 8.3 |
+
+The heavy view at High is 10.8 ms, inside the 12 ms budget. Against M26 (run alongside): Low the
+same, Medium within noise, High about the same from far off and 0.5–1 ms slower at city zoom,
+where the country's fields and paths are drawn (an A/B with `setGround(0)` in one build puts them at
+0.4–0.9 ms; they fade out on the way to the whole-city view, which without that fade measured
+12.6–13 ms in a full run). Every view draws fewer triangles than at M26 (the whole-city view's
+colour pass 1.67M against 1.73M): road ribbons step 6 m on straight runs, which more than pays for
+the kerb stones and edging. `bench.ts 6 --big` and `balance.ts 20` are identical to M26's (no sim
+change): 110,174 at month 6, tick avg 0.24–0.27 ms, worst 15 ms (month 1); careful 71,565 / 72 %,
+greedy 420 / 16 %, neglectful 354 / 36 % at year 20. Checks: 381 unit tests, and all 41 e2e specs
+pass (`e2e/m27-ground.spec.ts` new; the crossings spec, which longer frames had made fail 2 runs in
+5, passes 8 in 8 after two fixes to visible cars at level crossings, DECISIONS M27).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

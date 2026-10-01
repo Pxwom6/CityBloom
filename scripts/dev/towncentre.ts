@@ -1,5 +1,6 @@
 // Dev (M27): where a saved city's buildings are, to aim shots: the centroid of its buildings
-// and the densest 200 m square. Usage: npx tsx scripts/dev/towncentre.ts save.citybloom
+// and the densest 200 m squares (of one zone with a second argument R, C or I).
+// Usage: npx tsx scripts/dev/towncentre.ts save.citybloom [R|C|I]
 import { readFileSync } from 'node:fs';
 import { decodeSave } from '../../src/client/saves';
 import { Sim } from '../../src/sim/sim';
@@ -9,7 +10,9 @@ let sx = 0;
 let sz = 0;
 let n = 0;
 const grid = new Map<string, number>();
+const only = process.argv[3];
 for (const b of sim.state.buildings.values()) {
+  if (only && 'RCI'[b.zone - 1] !== only) continue;
   sx += b.x;
   sz += b.z;
   n++;

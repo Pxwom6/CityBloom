@@ -615,7 +615,7 @@ export function installTestApi(game: Game): TestApi {
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
     setGround: (level) => {
-      game.renderer.terrain.uniforms.uGroundDetail.value = level;
+      game.renderer.groundDetail = level;
     },
     setPost: (p) => {
       const post = game.renderer.post;
@@ -763,7 +763,7 @@ export function installTestApi(game: Game): TestApi {
         glow: game.renderer.post.settings.glow,
         samples: game.renderer.post.settings.samples,
         cascades: game.renderer.lighting.shadow.splitRatio === Infinity ? 1 : 2,
-        ground: game.renderer.terrain.uniforms.uGroundDetail.value,
+        ground: game.renderer.groundDetail,
       },
       randomDisasters: game.randomDisasters,
       tip: game.tip?.id ?? null,

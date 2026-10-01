@@ -39,7 +39,7 @@ export interface TerrainUniforms {
   uTime: { value: number };
   uMapSize: { value: number };
   uGridOn: { value: number };
-  /** Fields, hedgerows and paths in the country (M27's cost switch): 0 off, 1 on. */
+  /** Fields, hedgerows and paths in the country (M27): their strength, 0 (off: the quality's cost switch, or the whole-city view) to 1. */
   uGroundDetail: { value: number };
 }
 
@@ -171,13 +171,13 @@ ${GRADE_GLSL}`,
       c *= 1.0 + 0.07 * (texture2D(uNoiseTex, p * (0.23 / 256.0)).g - 0.5);
       // Fields and paths out in the country, at Medium and High (the cost switch: Low keeps the
       // tone patches and mottle only).
-      if (country > 0.0 && uGroundDetail > 0.5) {
+      if (country > 0.0 && uGroundDetail > 0.0) {
         // Fields: farms of their own lie, a few hundred metres across, each a patchwork of fields
         // in staggered rows (turning about the farm's own middle; turning about the map's origin
         // by a slowly varying angle bent the rows into arcs). Some farms are rough grazing.
         vec2 farm = floor(p / 420.0);
         vec2 ed = min(p - farm * 420.0, (farm + 1.0) * 420.0 - p);
-        float farmed = step(0.3, wHash(farm + 2.0)) * smoothstep(8.0, 30.0, min(ed.x, ed.y)) * country;
+        float farmed = step(0.3, wHash(farm + 2.0)) * smoothstep(8.0, 30.0, min(ed.x, ed.y)) * country * uGroundDetail;
         if (farmed > 0.0) {
           float ang = (wHash(farm + 11.0) - 0.5) * 1.6;
           vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * (p - (farm + 0.5) * 420.0);
@@ -205,7 +205,7 @@ ${GRADE_GLSL}`,
           vec3 n = wNoiseD(w * 0.0035);
           float metres = abs(n.x - 0.5) / max(length(n.yz) * 0.0035, 1e-6);
           float path = (1.0 - smoothstep(0.3, 0.8, metres)) * some;
-          c = mix(c, vec3(0.78, 0.71, 0.55), path * 0.45 * country);
+          c = mix(c, vec3(0.78, 0.71, 0.55), path * 0.45 * country * uGroundDetail);
         }
       }
       diffuseColor.rgb = mix(c0, c, grassy0);
@@ -481,15 +481,31 @@ ${GRADE_GLSL}`,
     if (this.urbanDirty && time - this.urbanAt > 1) this.buildUrban(time);
   }
 
-  /** The roads changed: the town mask is stale. */
-  roadsChanged(): void {
-    this.urbanDirty = true;
+  /** Town roads the mask was last built from, by id: their type. */
+  private urbanRoads = new Map<number, RoadTypeId>();
+
+  /**
+   * Roads changed: the town mask is stale if a town road came, went or changed type (a road's
+   * state, closed for repairs or snowed on, doesn't move the town: a tornado changes dozens).
+   */
+  roadsChanged(ids: Iterable<number>): void {
+    if (this.urbanDirty) return;
+    const st = this.world.netState.segments;
+    for (const id of ids) {
+      const t = st.get(id)?.type;
+      const town = t !== undefined && TOWN_ROADS.has(t) ? t : undefined;
+      if (town !== this.urbanRoads.get(id)) {
+        this.urbanDirty = true;
+        return;
+      }
+    }
   }
 
   /** How near a road each 8 m of the map is: where the grass is tidy town grass, not country. */
   private buildUrban(time: number): void {
     this.urbanDirty = false;
     this.urbanAt = time;
+    this.urbanRoads.clear();
     const d = this.urbanData;
     d.fill(0);
     const net = this.world.net;
@@ -497,6 +513,7 @@ ${GRADE_GLSL}`,
     for (const [id, seg] of this.world.netState.segments) {
       // Town roads only: railways and motorways cross open country without taming it.
       if (!TOWN_ROADS.has(seg.type)) continue;
+      this.urbanRoads.set(id, seg.type);
       const curve = net.curve(id);
       const steps = Math.max(1, Math.ceil(curve.length / 6));
       for (let k = 0; k <= steps; k++) {

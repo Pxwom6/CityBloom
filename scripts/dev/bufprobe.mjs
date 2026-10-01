@@ -8,7 +8,7 @@ const tornado = process.argv[5] === 'tornado';
 const PORT = 4197;
 const server = spawn(
   'npx',
-  ['vite', 'preview', '--outDir', 'dist-test', '--port', String(PORT), '--strictPort'],
+  ['vite', 'preview', '--outDir', process.env.DIST || 'dist-test', '--port', String(PORT), '--strictPort'],
   { stdio: 'ignore', detached: true },
 );
 await new Promise((r) => setTimeout(r, 1500));

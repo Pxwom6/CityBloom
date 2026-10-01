@@ -41,6 +41,7 @@ import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
 import { StreetProps } from './streetProps';
+import { smoothstep } from '../sim/terrain/noise';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
@@ -404,7 +405,7 @@ export class GameRenderer {
       }
     });
     world.onNet((c) => {
-      if (c.segments.size || c.nodes.size) this.terrain.roadsChanged();
+      if (c.segments.size) this.terrain.roadsChanged(c.segments);
     });
     world.onNet((c) => {
       const pts: { x: number; z: number }[] = [];
@@ -535,7 +536,7 @@ export class GameRenderer {
     cascades: 1 | 2;
     ground: 0 | 1;
   }): void {
-    this.terrain.uniforms.uGroundDetail.value = g.ground;
+    this.groundDetail = g.ground;
     this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
     this.post.settings = { ...(this.postOverride ?? g.post) };
     const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
@@ -622,6 +623,8 @@ export class GameRenderer {
   private shadowAt = -1;
   /** Groups whose meshes cast in the near shadow cascade only (marked once each). */
   private nearShadowsOnly: Object3D[] = [];
+  /** The country's fields, hedgerows and paths and the street furniture (M27): 0 off, 1 on. */
+  groundDetail: 0 | 1 = 1;
   private nearMarked = new WeakSet<Object3D>();
   /** Dev: post settings to keep whatever the graphics settings say (test API `setPost`). */
   postOverride: PostSettings | null = null;
@@ -741,7 +744,10 @@ export class GameRenderer {
     this.garbage.mesh.visible = dist < 1400;
     this.garbage.mesh.castShadow = dist < 500;
     this.streetLights.postShadows = dist < 450;
-    this.streetProps.update(dist, this.terrain.uniforms.uGroundDetail.value > 0);
+    this.streetProps.update(dist, this.groundDetail > 0);
+    // The country's fields and paths fade out on the way to the whole-city view, where they'd be
+    // a few per cent of shading for a millisecond of the GPU's time (M27).
+    this.terrain.uniforms.uGroundDetail.value = this.groundDetail * (1 - smoothstep(1600, 2400, dist));
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     this.traffic.setScale(bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
     const pxPerMetre = bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360));

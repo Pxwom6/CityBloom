@@ -158,6 +158,9 @@ ${GRADE_GLSL}`,
   {
     vec3 c0 = diffuseColor.rgb;
     float grassy0 = clamp((c0.g - max(c0.r, c0.b)) * 8.0, 0.0, 1.0) * step(0.6, vWorldPos.y);
+    // Metres a pixel spans: hedgerows and paths narrower than a pixel are left out (cheaper from
+    // far off, and they'd only shimmer).
+    float fp = length(fwidth(p));
     if (grassy0 > 0.0) {
       float town = outside > 0.5 ? 0.0 : texture2D(uUrban, p / uMapSize).r;
       float country = 1.0 - smoothstep(0.05, 0.45, town);
@@ -189,12 +192,12 @@ ${GRADE_GLSL}`,
           // Hedgerows along some field sides.
           float hx = min(fuv.x, fsize.x - fuv.x) + 9.0 * step(wHash(fid * 1.3 + 1.0), 0.45);
           float hy = min(fuv.y, fsize.y - fuv.y) + 9.0 * step(wHash(vec2(row, farm.y) + 4.0), 0.4);
-          float hedge = 1.0 - smoothstep(0.4, 1.3, min(hx, hy));
+          float hedge = (1.0 - smoothstep(0.4, 1.3, min(hx, hy))) * (1.0 - smoothstep(0.9, 2.2, fp));
           c = mix(c, c * vec3(0.74, 0.86, 0.7), hedge * 0.5 * farmed);
         }
         // Worn paths: thin winding lines where a slow noise crosses its middle, in some places.
         vec4 slow = wTex(p * 0.004);
-        float some = smoothstep(0.55, 0.75, slow.b);
+        float some = smoothstep(0.55, 0.75, slow.b) * (1.0 - smoothstep(1.1, 2.2, fp));
         if (some > 0.0) {
           vec2 w = p + slow.rg * 160.0;
           // The same width everywhere: the noise's distance from its middle over its slope (a

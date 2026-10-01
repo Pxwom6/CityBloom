@@ -233,6 +233,8 @@ export interface TestApi {
   setPost(
     p: { aoSamples?: number; aoBlur?: boolean; glow?: boolean; samples?: number; off?: boolean } | null,
   ): void;
+  /** Dev (M27): the country's fields and paths on (1) or off (0) on the running game, whatever the quality. */
+  setGround(level: 0 | 1): void;
   /** Dev (M26): try how far shadows reach (camera distances) and when they split in two. */
   setShadowTweak(t: { reach?: number; split?: number; off?: boolean; floor?: number }): void;
   /** Dev: show or hide a top-level scene object by name (what draws that?). */
@@ -612,6 +614,9 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    setGround: (level) => {
+      game.renderer.terrain.uniforms.uGroundDetail.value = level;
+    },
     setPost: (p) => {
       const post = game.renderer.post;
       if (!p) {

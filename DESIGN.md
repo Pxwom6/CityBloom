@@ -1091,11 +1091,11 @@ explains it, and a notice on loading says seasons have come.
   grid; trees under roads/buildings are filtered out on change.
 - **Roads**: per-segment ribbon meshes (asphalt + sidewalk + markings via vertex colour and a tiny
   procedural texture) draped on terrain with polygon offset; intersections as fans; merged per chunk.
-- **Buildings**: `AssetRegistry.get(key)` returns a procedural geometry built from parts (walls with
-  window grids, pitched/flat roofs, parapets, awnings, signs, chimneys) seeded by variant; vertex
-  attributes: colour, emissive-window mask, baked AO. Completed buildings are merged per 128 m chunk
-  (rebuilt incrementally, ≤ 2 chunks per frame); buildings under construction and burning ones are
-  individual meshes with scaffolding/flames. The registry can later return glTF-loaded geometry.
+- **Buildings**: the asset registry returns a model for a type, lot and look: generated from parts
+  (walls with window grids, pitched/flat roofs, parapets, awnings, signs, chimneys) seeded by variant,
+  or built from a hand-made design (§4.3); vertex attributes: colour, emissive-window mask, baked AO.
+  Completed buildings are merged per chunk (rebuilt incrementally, a chunk a frame); buildings under
+  construction share one mesh with scaffolding, cut off at the height they have reached.
 - **Vehicles**: instanced meshes per vehicle class; matrices updated in place (no per-frame allocation).
   Visible traffic follows the sim's sampled trips (§3.8); cars carry head and tail lights (one additive
   point system) after dark.
@@ -1159,6 +1159,182 @@ mapping, the grade (tint, saturation, contrast, lift, vignette) and sRGB.
 `GameRenderer.capture(scale)` redraws the frame at `scale` × the screen's physical pixels (capped by
 GPU limits and ~36 MP) and copies the canvas to a PNG with `toBlob`, so only the 3D view can be in
 the picture.
+
+### 4.3 Hand-made models (phase 3, M25)
+
+Buildings are generated (`src/render/assets/models.ts` and friends) or hand-made: GLB files in
+`assets/models/`, named after what they replace (`R103.glb`, `firestation.glb`, `annex-ward.glb`;
+`-2`, `-3` for further designs), made to the spec in `docs/models/PROMPTS.md`.
+
+**Check** (`src/models/check.ts`, `npm run models:check`). A small GLB reader (`src/models/glb.ts`:
+meshes only, every node's transform baked in, winding made to agree with the file's normals)
+feeds checks against the spec and `src/data`: the footprint is the lot or site exactly and centred
+on the origin (a zoned model may be a half or a third of the lot's width, a row; it may stop whole
+cells short of the back of the lot; a wall-to-wall building's footprint is its walls, with trim and
+steps overhanging a little); it stands on the ground; its front faces −Z (by the weight of
+entrances, shopfronts and canopies on each side); materials are the spec's roles; window groups
+hold `window_glass`; polluters have a `smoke_stack`; no textures; the triangle budget from its
+prompt. A failed model is reported and left out; the building keeps its generated look.
+
+**Convert** (`src/models/bake.ts`, at build time by `scripts/vite-models.ts`). Each good model
+becomes triangles tagged per triangle with its material role, flags, the window it belongs to, and
+the group the game drives (`mound`, `rocket`…); `tree_spot` cubes and `smoke_stack` tops become
+markers. Faces that can't be seen are dropped (a face whose outside is inside another part that
+is a plain box). Flags mark the triangles of two distant versions picked from the named parts:
+*far* (frames, sills and fittings under half a metre gone, panes and frames as flat faces) and
+*skyline* (shapes over about 2 m, and every pane); long thin parts (parapets, posts) and whatever
+holds up a part that stays are kept. For wall-to-wall models, flags mark what a neighbour in a
+row hides. All models are packed into one file (`src/models/codec.ts`: 16-bit welded vertices,
+about 15 bytes a triangle), emitted as `assets/models-<hash>.bin`; `virtual:citybloom-models` is
+its URL, and the game fetches it at start (`src/client/models.ts`) while the city loads. Without
+it every building is generated.
+
+**Draw** (`src/render/assets/handmade.ts`, `registry.ts`). `assets.zoned(def, w, d, look)` asks
+for a design that fits the lot: as wide as the lot or a half or a third of it, and no deeper.
+With three designs or more every look is hand-made; with fewer they share the twelve looks with
+the generator's variants. A design becomes a `ModelData` for that lot: copies side by side across
+its width, each repainted (for `wall`, `wall_alt`, `roof`, `awning` and `sign`, a colour from the
+game palette nearest the model's own, so brick stays brick; a colour near none is kept), perhaps
+mirrored, less the faces a neighbour in the row hides, standing at the front of the lot on the
+game's lot base (which hides a slope and is the yard behind a shallow model), with the
+generator's darkening near the ground. Window vertices carry a window number; when a building is
+merged into its chunk (`modelMerge.ts`) each copy lights its own mix, seeded by the building's id.
+Lawns and hedges are tagged (a negative emissive) and follow the seasons in the building shader,
+as the generator's now do too. Markers ride along: the renderer plants the game's own trees at
+`tree_spot`s (`trees.lotTrees`), and smoke rises from stack tops (`effects.models`). Civic models
+take the same path without mirroring: the landfill's `mound` group is scaled by how full it is, a
+big project under construction is the finished model cut off at a height that rises by stage
+inside the generator's hoarding and under its cranes, and add-on annexes (their own models, or the
+generated wing) stand in the back corners. `BuildingRenderer.look` moves a building on to the next
+look when a neighbour of its type and size already wears its own: no two alike side by side.
+
+**Levels of detail** (`src/render/lodChunks.ts`). A model with distant versions is merged into
+near, far and skyline chunk meshes (chunks of 128, 128 and 512 m); one without goes into a plain
+mesh (256 m) drawn at every distance, as before. The shader gives each pixel a fixed threshold
+and draws near where its fade (170–230 m at High; nearer on coarser pixels) is under it, far
+where near isn't, and the skyline past 520–680 m: exactly one level per pixel, so the hand-over is
+a dither across a band, never a pop; the shadow pass uses the same rule from the view camera. A
+chunk wholly inside one level's range is drawn with the plain material (no `discard`, which would
+cost a tile-based GPU its hidden-surface removal). A level's mesh is built only when the camera
+is near enough to need it, and near meshes far behind are dropped.
+
+### 4.4 Light and sky (phase 3, M26)
+
+**The frame** (`src/render/post.ts`). While ambient occlusion is on (close up), the frame is
+drawn into a multisampled 8-bit target with its depth, then copied to the canvas with the effects
+laid over it; when only the glow is on (at night, from far off) the frame goes straight to the
+canvas and the glow is laid over a copy of it; otherwise straight to the canvas (Low always). The target is marked as an XR target, the one kind three.js tone-maps and sRGB-encodes
+into as it does the screen, so materials behave exactly as before and 8 bits a channel suffice;
+its storage is named `RGBA8` (otherwise three gives the multisampled buffer and the texture
+different formats and the copy fails). The depth is resolved only when something reads it. The
+paths look the same: in each, the materials tone-map.
+Effects: *ambient occlusion* at half resolution from the depth alone (normals from neighbouring
+depths, taps on a spiral turned per pixel, reach growing with the view, faded out by about 900 m
+so the whole-city view pays nothing), smoothed by a depth-aware blur at High, laid on as a warm
+violet multiply; a *glow* at night (a soft-knee bright pass at a quarter resolution, blurred twice,
+added). Photo mode's lens reads the finished frame (`PhotoLens.renderFrom`, display-referred).
+Tone mapping is Neutral: a toy's colours stay true (ACES took brick to near black in shade).
+
+**Shadows** (`src/render/sunShadow.ts`). The sun is three.js's `SunLight`: two shadow maps in one
+atlas, picked by view depth. `CitySunShadow` fits them to the ground in view rather than to the
+view frustum: the part of each depth slice inside the slab from the lowest ground to the highest
+roof (`ShadowFit`, set each frame from sampled heights), boxed in the sun's space, in 5 % size
+steps snapped to texels. One map when the ground's far edge is less than 2.2× its near edge (the
+whole-city view); else a near map to the geometric split and a far one beyond. Shadows reach 3.2
+camera distances (at least 500 m). Medium and Low use one map. The maps are drawn every frame
+close up, 60 times a second from middle distance and 30 from far off (`shadow.autoUpdate` off,
+`needsUpdate` when due). The shadow pass draws only what
+casts: merged chunks put their casting triangles first (`Arrays` split; `ModelData.shade`: not
+panes, not small fittings close up, nothing flat on the ground) and draw just that range in the
+shadow pass (`drawCastersOnly`); small things (cars, walkers, lamp posts, rubbish) cast in the near
+map only (`castNearOnly`); rubbish and lamp-post shadows go from far off.
+
+**Sky and light** (`src/render/lighting.ts`, `lightChunks.ts`). Keyframes through the day add the
+blue hour (deep blue, violet horizon) and the golden hour (a low warm sun, amber horizon); the sky
+glows round a low sun along the horizon; the light turns from the sun to the moon through the blue
+hours so shadows swing rather than jump; exposure rises a little while the sun is low. A patch to
+three's lighting chunk adds light bounced off the ground opposite the sun, tinted by the
+hemisphere light's ground colour, which follows the season and snow (`groundBounce`); a patch to
+the fog chunk adds a gentle haze from nearer in.
+
+### 4.5 Ground, lots and streets (phase 3, M27)
+
+**Grass** (`src/render/terrain.ts`, fragment shader, before the seasons so all of it turns with
+them). Warm and cool tone patches (~90 m) and a fine mottle (~4 m, mipmapped so it fades to an
+even shade far off) everywhere, from a 256² tiling texture of random bytes (`noiseTexture`: one
+lookup gives four smooth value noises, much cheaper than sine hashes). Out in the country, only at
+Medium and High (`uGroundDetail`, the quality's `ground`): farms of 420 m squares, 70 % of them
+farmed, each turned its own way about its middle and laid out in staggered rows of fields with
+their own shades (a few golden) and hedgerows along some sides; and worn paths where a slow,
+domain-warped noise crosses its middle, the band's width divided by the noise's slope (from the
+same four corners, `wNoiseD`) so a path is about a metre wide everywhere. Hedgerows and paths are
+left out where a pixel spans more than about 2 m. The town mask (`uUrban`, a byte per 8 m cell)
+fades country to tidy grass within 46 m of a town road (not motorways or railways); it is rebuilt
+at most once a second, and only when roads change. Sand just above the water is darker (damp).
+
+**Zones** (`src/render/zones.ts`). Empty zoned cells are drawn as a faint tint over the whole cell
+with a 0.45 m outline on each side where the zoned area ends (the same zone neither side), in one
+mesh a chunk with each vertex's own opacity (RGBA colours). While a zoning tool is out
+(`setGridVisible`) the old cell-by-cell look and the unzoned grid show instead. Data maps hide
+both, as before.
+
+**Streets** (`src/render/roadStyle.ts`, `roadMesh.ts`, `roads.ts`). Town roads (street, avenue,
+boulevard) have kerb stones along the pavement's road edge, a darker kerb face, slabs and an
+edging along the back; medians are planted inside kerb stones; junction corners follow the same
+bands. Medians and verges are grass in the road shader: in their season and under lying snow
+(never ploughed). Ribbons step 2.5 m round bends and up to 6 m along straight runs (fine always on
+bridge decks), which more than pays for the extra strips. At a junction of three or more town
+roads, `junctionPaint` decides: where an avenue or boulevard meets, or four roads meet beside a
+commercial block, every approach long enough gets a zebra crossing (1–4 m off the junction) and a
+stop line behind it across the incoming lanes (traffic keeps right); elsewhere a side road
+narrower than the road it joins gets a dashed give-way line. Lane markings stop short of both.
+
+**Street furniture** (`src/render/streetProps.ts`). Between the lamps (every 34 m, offset 17),
+on the pavement's back, by the zone of the frontage cell there: a bench with a bin beside it and a
+planter (avenues) or bin (streets) in turn outside shops, a bin every third place outside homes;
+none near a bus stop or on a bridge. Each road's pieces (boxes, 20–40 triangles each) are merged
+into its 512 m chunk, one mesh a chunk; a road is rebuilt only when its type, length, frontage
+zoning or stops change. Shown within 900 m of the camera at Medium and High, casting shadows
+within 450 m (near cascade only).
+
+**Lots** (`src/render/assets/handmade.ts` `yard`, `models.ts`). A hand-made model shallower than
+its lot leaves a yard at the back: a car park with marked bays (two rows facing across an aisle
+if deep enough) and parked cars behind shops and offices; a marked loading box with crates or a
+container behind industry; a lawn (on paved lots too) with a path and a garden shed behind homes.
+Markings, cars and clutter only in the near level; the surfaces in far; nothing in the skyline.
+Generated terraces get a path to each door between strips of lawn with low hedges; generated
+flats a path to the entrance between lawns.
+
+### 4.6 Buildings and variety (phase 3, M28)
+
+**Distant versions for generated buildings** (`src/render/assets/builder.ts`). Every triangle the
+generator draws carries a mask of the levels it is drawn at; `detail(level, fn)` narrows it for a
+block of drawing: `NEAR_ONLY` (doors, cars, fences, garden trees, terrace umbrellas, small roof
+units), `IN_FAR` (balconies and balcony bands, signs, awnings, rooftop plant, paths and lawns,
+dormers, chimneys) and `SKY_ONLY` (stand-ins). `build()` returns the near model with `far` and `sky`
+filtered from the same triangles, so every generated building (zoned, civic, rubble, a project's
+site works) fades through the levels exactly as a hand-made one (`lodChunks.ts`; nothing is drawn
+"plain" any more). Windows stay in every level, since they are most of a generated building; along a
+band of windows (offices, industry, luxury flats) the skyline draws each run of neighbouring
+windows that are alike (lit or dark) as one pane across their gaps, lit at their average. Each
+window's light is drawn from the building's random stream once, so the near, far and skyline
+versions light the same windows.
+
+**The generator refreshed** (`src/render/assets/models.ts`). The seed includes the type (zone,
+density, wealth): two types on the same lot used to draw the same building. Towers stand on a
+podium (one or two floors, with a parapet) in one of five silhouettes: a slab with setbacks, a
+wedding cake of three steps under a lit crown band and a mast, twin towers (on 24 m lots), a tall
+block beside a lower one, or a slab whose top floors step in under a spire or a pyramid cap; some
+get coloured corner piers, homes balcony bands (every floor or every other), offices fins close up;
+roofs carry plant, masts or a water tank on legs. Residential towers take their walls by wealth:
+pastels and some brick, white and modern greys for the rich, and glass with banded windows for a
+few luxury ones. Mid-rise flats get mansard roofs with dormers, cornices, stone ground floors under
+brick and corner bay windows; mid-rise offices a cornice, a stepped parapet or a corner turret;
+houses now and then a mansard or a saltbox roof; stores a false front.
+
+**Neighbours.** `BuildingRenderer.look` already moves a building off a look its touching neighbour
+of the same type and size wears; with the type in the seed, buildings of different types no longer
+share models either. Test API `getNeighbours()` counts touching pairs drawn with the same model.
 
 ## 5. UI
 

@@ -1,5 +1,5 @@
 import { Color } from 'three';
-import type { ModelBuilder } from './builder';
+import { SEASONAL, SURF_GRASS, type ModelBuilder } from './builder';
 
 /**
  * Specialisation buildings (M10): hotels, landmarks, freight, mining, oil and research. All designs
@@ -9,6 +9,7 @@ const C = (hex: string) => new Color(hex);
 const PAVING = C('#d8d2c4');
 const PLAZA = C('#cfc6b4');
 const GRASS = C('#8cc063');
+SEASONAL.set(GRASS, SURF_GRASS);
 const ASPHALT = C('#8a8d91');
 const GRAVEL = C('#bdb6a6');
 const STONE = C('#c9bfae');

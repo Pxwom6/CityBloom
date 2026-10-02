@@ -20,10 +20,21 @@ export function buildSegmentRibbon(
   deck?: (s: number) => number,
   /** One-way roads (M19): arrows in every lane pointing the way traffic runs (1 is a → b). */
   oneway?: { dir: 1 | -1; lanes: number },
+  /** Lengths kept clear of lane markings at each end, for a junction's crossing (M27). */
+  clear: [number, number] = [1, 1],
 ): void {
   if (s1 - s0 < 0.2) return;
-  const step = 2.5;
-  const n = Math.max(1, Math.ceil((s1 - s0) / step));
+  // Steps of 2.5 m round bends, up to 6 m along straight runs (M27: the kerb stones and edging
+  // added strips, which the longer straight steps pay for).
+  const t0 = curve.tangentAt(s0);
+  const t1 = curve.tangentAt(s1);
+  const turn = Math.acos(Math.max(-1, Math.min(1, t0.x * t1.x + t0.z * t1.z)));
+  const fine = Math.ceil((s1 - s0) / 2.5);
+  // Bridge decks rise and fall: always the fine steps there.
+  const n = Math.max(
+    1,
+    deck ? fine : Math.min(fine, Math.max(Math.ceil((s1 - s0) / 6), Math.ceil(turn / 0.05))),
+  );
   const px: number[] = [];
   const pz: number[] = [];
   const nx: number[] = [];
@@ -62,16 +73,18 @@ export function buildSegmentRibbon(
         at(i + 1, k.at, k.low),
         at(i + 1, k.at, k.high),
         at(i, k.at, k.high),
-        style.sidewalk,
+        style.kerb,
         false,
       );
     }
   }
   for (const m of style.markings) {
     const period = m.dash + m.gap;
-    let s = s0 + 1;
-    while (s < s1 - 1) {
-      const e = Math.min(s + m.dash, s1 - 1);
+    // A railway's sleepers and rails run right up to the end.
+    const [c0, c1] = style.rail ? [1, 1] : clear;
+    let s = s0 + c0;
+    while (s < s1 - c1) {
+      const e = Math.min(s + m.dash, s1 - c1);
       const a = curve.pointAt(s);
       const b = curve.pointAt(e);
       const ta = curve.tangentAt(s);
@@ -319,12 +332,79 @@ export function buildJunction(out: GeoBuffer, centre: Vec2, approaches: Approach
     const ao = edge(a, 1, a.style.totalHalf);
     const bi = edge(b, -1, b.style.asphaltHalf);
     const bo = edge(b, -1, b.style.totalHalf);
-    out.quad(v(ai, walkLift), v(ao, walkLift), v(bo, walkLift), v(bi, walkLift), a.style.sidewalk);
+    if (a.style.town) {
+      // Kerb stones round the corner and edging along its back, as along the roads (M27).
+      const wa = a.style.totalHalf - a.style.asphaltHalf;
+      const wb = b.style.totalHalf - b.style.asphaltHalf;
+      const lerp = (p: Vec2, q: Vec2, t: number): Vec2 => ({
+        x: p.x + (q.x - p.x) * t,
+        z: p.z + (q.z - p.z) * t,
+      });
+      const ak = lerp(ai, ao, 0.3 / wa);
+      const bk = lerp(bi, bo, 0.3 / wb);
+      const ae = lerp(ao, ai, 0.15 / wa);
+      const be = lerp(bo, bi, 0.15 / wb);
+      out.quad(v(ai, walkLift), v(ak, walkLift), v(bk, walkLift), v(bi, walkLift), a.style.kerbTop);
+      out.quad(v(ak, walkLift), v(ae, walkLift), v(be, walkLift), v(bk, walkLift), a.style.sidewalk);
+      out.quad(v(ae, walkLift), v(ao, walkLift), v(bo, walkLift), v(be, walkLift), EDGING);
+    } else out.quad(v(ai, walkLift), v(ao, walkLift), v(bo, walkLift), v(bi, walkLift), a.style.sidewalk);
     // Kerb face along the corner.
-    out.quad(v(ai, lift), v(bi, lift), v(bi, walkLift), v(ai, walkLift), a.style.sidewalk, false);
+    out.quad(v(ai, lift), v(bi, lift), v(bi, walkLift), v(ai, walkLift), a.style.kerb, false);
   }
 }
 
+const EDGING = new Color('#b4aea2');
+const PAINT = new Color('#f4f2ea');
+
+/** A zebra crossing's depth along the road, and how far off the junction it starts (m). */
+export const ZEBRA = { from: 1, depth: 3, stop: 4.8 };
+
+/**
+ * Paint where town roads meet a junction (M27): on the approaches in `zebra`, a zebra crossing
+ * just off the junction and a stop line behind it across the lanes coming in (traffic keeps
+ * right); on those in `giveWay`, a dashed give-way line.
+ */
+export function buildJunctionPaint(
+  out: GeoBuffer,
+  approaches: Approach[],
+  h: HeightFn,
+  zebra: Set<number>,
+  giveWay: Set<number>,
+): void {
+  for (const a of approaches) {
+    if (!a.style.town || a.seg === undefined) continue;
+    const z = zebra.has(a.seg);
+    if (!z && !giveWay.has(a.seg)) continue;
+    const hw = a.style.asphaltHalf;
+    const med = a.style.medianHalf;
+    const lift = a.style.lift + 0.03;
+    // Offsets o across the road, d along it. Cars keep right, so the lanes coming in are on the
+    // positive side (right of a car heading for the junction).
+    const nx = a.dir.z;
+    const nz = -a.dir.x;
+    const pt = (d: number, o: number) => {
+      const x = a.p.x + a.dir.x * d + nx * o;
+      const zz = a.p.z + a.dir.z * d + nz * o;
+      return [x, h(x, zz) + lift, zz];
+    };
+    const put = (d0: number, d1: number, o0: number, o1: number) =>
+      out.quad(pt(d0, o0), pt(d0, o1), pt(d1, o1), pt(d1, o0), PAINT);
+    if (z) {
+      const d0 = ZEBRA.from;
+      const d1 = ZEBRA.from + ZEBRA.depth;
+      const n = Math.floor((2 * hw - 1) / 1.1);
+      const first = -((n - 1) * 1.1) / 2;
+      for (let k = 0; k < n; k++) {
+        const o = first + k * 1.1;
+        if (Math.abs(o) < med + 0.45) continue;
+        put(d0, d1, o - 0.28, o + 0.28);
+      }
+      put(ZEBRA.stop, ZEBRA.stop + 0.4, med + 0.15, hw - 0.35);
+    } else {
+      for (let o = med + 0.25; o + 0.6 < hw - 0.2; o += 1.0) put(0.5, 0.8, o, o + 0.6);
+    }
+  }
+}
 const PIER = new Color('#b9b4aa');
 const GIRDER = new Color('#8d8a84');
 const RAIL = new Color('#d9d6cf');

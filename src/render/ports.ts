@@ -15,6 +15,7 @@ import { CIVIC } from '../data/civic';
 import { ModelBuilder, type ModelData } from './assets/builder';
 import { plane } from './assets/specialModels';
 import { buildingYaw } from './buildings';
+import { uploadInstances } from './geom';
 
 /**
  * Planes and ships (M23). Each airport has planes landing along its runway and taking off from it,
@@ -210,8 +211,8 @@ export class PortRenderer {
     }
     this.planes.count = np;
     this.ships.count = ns;
-    this.planes.instanceMatrix.needsUpdate = true;
-    this.ships.instanceMatrix.needsUpdate = true;
+    uploadInstances(this.planes);
+    uploadInstances(this.ships);
     this.counts = { planes: np, ships: ns };
   }
 }

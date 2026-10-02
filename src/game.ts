@@ -107,6 +107,8 @@ export class Game {
   perf: WorkerPerf = { tickMsAvg: 0, tickMsMax: 0, ticksPerSecond: 0, droppedTicks: 0 };
   fps = 0;
   frameMs = 0;
+  /** Frame interval and work in ms, in pairs, while a benchmark records them (test API `recordFrames`). */
+  frameSamples: number[] | null = null;
   debugOpen = false;
   hint: ToolHint | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
@@ -611,6 +613,10 @@ export class Game {
       fogScale: d.fog,
       treeDetail: d.treeDetail,
       crowd: q.crowd,
+      post: { aoSamples: q.ao, aoBlur: q.aoBlur, glow: q.glow, samples: q.samples, aoFar: q.aoFar },
+      cascades: q.cascades,
+      ground: q.ground,
+      closeShadowHz: q.closeShadowHz,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;
@@ -1047,7 +1053,8 @@ export class Game {
 
   /** Called every animation frame. */
   frame(now: number): void {
-    const dt = this.lastFrameAt ? Math.min(0.1, (now - this.lastFrameAt) / 1000) : 1 / 60;
+    const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
+    const dt = this.lastFrameAt ? Math.min(0.1, interval / 1000) : 1 / 60;
     this.lastFrameAt = now;
     this.fps = this.fps * 0.9 + (1 / Math.max(dt, 1e-4)) * 0.1;
     const t0 = performance.now();
@@ -1071,6 +1078,8 @@ export class Game {
       this.ambientAt = now;
       this.audio.update(ambientScene(w, this.renderer, this.speed === 0));
     }
-    this.frameMs = this.frameMs * 0.9 + (performance.now() - t0) * 0.1;
+    const work = performance.now() - t0;
+    this.frameMs = this.frameMs * 0.9 + work * 0.1;
+    if (this.frameSamples && interval > 0) this.frameSamples.push(interval, work);
   }
 }

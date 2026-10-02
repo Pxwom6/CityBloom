@@ -10,6 +10,7 @@ import {
   Vector3,
 } from 'three';
 import type { BarrierArm } from './roadMesh';
+import { uploadInstances } from './geom';
 
 /** Display ticks for an arm to swing all the way down (or up): 1.5 s at 1× speed. */
 const SWING_TICKS = 12;
@@ -129,6 +130,6 @@ export class CrossingRenderer {
       this.mesh.setMatrixAt(n++, this.m);
     }
     this.mesh.count = n;
-    this.mesh.instanceMatrix.needsUpdate = true;
+    uploadInstances(this.mesh);
   }
 }

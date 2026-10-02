@@ -102,6 +102,11 @@ test('M16: city history charts the city and survives save and load exactly; phot
   let ph = await photo(page);
   expect(ph.on).toBe(true);
   expect(ph.hidden).toEqual(expect.arrayContaining(['icons', 'ghost', 'routeTint', 'coverageMap', 'zones']));
+  // … and they stay hidden frame after frame (the problem icons came back on the next frame until
+  // the phase 3 walk-through).
+  await page.evaluate(() => window.__game!.waitFrames(3));
+  for (const name of ['icons', 'ghost', 'routeTint', 'coverageMap', 'zones'])
+    expect(await page.evaluate((n) => window.__game!.groupShown(n), name), name).toBe(false);
   // The camera comes down to eye level, closer than the usual 14 m.
   await page.evaluate(
     (cz) => window.__game!.setCamera({ x: 150, z: cz - 40, distance: 5, yaw: 0.6, tilt: -0.3 }),

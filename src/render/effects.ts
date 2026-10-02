@@ -11,6 +11,8 @@ import {
 import type { ClientWorld } from '../client/world';
 import { CELL } from '../data/zones';
 import { CIVIC } from '../data/civic';
+import type { BuildingData, CivicData } from '../sim/protocol';
+import type { ModelData } from './assets/builder';
 import type { VehicleRenderer } from './vehicles';
 
 const FLAMES_PER = 28;
@@ -61,6 +63,7 @@ const FLAME_FRAG = /* glsl */ `
 `;
 
 const SMOKE_FRAG = /* glsl */ `
+  uniform float uLight;
   varying float vLife;
   varying float vSeed;
   void main() {
@@ -69,6 +72,8 @@ const SMOKE_FRAG = /* glsl */ `
     if (d > 0.5) discard;
     float a = smoothstep(0.5, 0.0, d) * smoothstep(0.0, 0.12, vLife) * (1.0 - vLife) * 0.55;
     vec3 col = mix(vec3(0.16, 0.15, 0.14), vec3(0.52, 0.5, 0.48), vLife) * (0.9 + 0.2 * vSeed);
+    // Smoke takes the light of the hour: grey by day, dim at night (it isn't a light; M26).
+    col *= uLight;
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -115,6 +120,7 @@ function makePoints(max: number, frag: string, additive: boolean, rise: number, 
       uDrift: { value: drift },
       uPixel: { value: 1 },
       uWind: { value: new Vector2(1, 0) },
+      uLight: { value: 1 },
     },
     transparent: true,
     depthWrite: false,
@@ -125,7 +131,10 @@ function makePoints(max: number, frag: string, additive: boolean, rise: number, 
   return pts;
 }
 
-/** Smoke stack tops in a civic model's local frame, [x, z, height], for the reference 40×48 lot. */
+/**
+ * Smoke stack tops in a generated civic model's local frame, [x, z, height], for the reference
+ * 40×48 lot. A hand-made model says where its own are (its `smoke_stack` parts).
+ */
 const STACKS: Record<string, [number, number, number][]> = {
   coal: [
     [14, -14, 58],
@@ -225,6 +234,9 @@ export class EffectsRenderer {
     }
   }
 
+  /** The models as drawn, for where their smoke stacks are (set by the renderer). */
+  models: { civic(c: CivicData): ModelData; building(b: BuildingData): ModelData } | null = null;
+
   /** Emitters: stacks of plants and incinerators, and the roofs of busy heavy industry. */
   private rebuildChimneys(): void {
     const w = this.world;
@@ -232,10 +244,21 @@ export class EffectsRenderer {
     for (const c of [...w.civics.values()].sort((a, b) => a.id - b.id)) {
       const def = CIVIC.get(c.def);
       if (!def?.airPollution || !c.access) continue;
-      const local = STACKS[def.model] ?? [[0, 0, (this.civicHeights.get(c.id) ?? 12) * 0.9]];
       const yaw = -c.angle + (c.side === 1 ? Math.PI : 0);
       const cs = Math.cos(yaw);
       const sn = Math.sin(yaw);
+      const own = this.models?.civic(c).stacks;
+      if (own?.length) {
+        for (let i = 0; i < own.length; i += 3)
+          stacks.push({
+            x: c.x + own[i]! * cs + own[i + 2]! * sn,
+            y: c.y + own[i + 1]!,
+            z: c.z - own[i]! * sn + own[i + 2]! * cs,
+            size: 2.2 * def.airPollution + 1,
+          });
+        continue;
+      }
+      const local = STACKS[def.model] ?? [[0, 0, (this.civicHeights.get(c.id) ?? 12) * 0.9]];
       for (const [lx0, lz0, h] of local) {
         const lx = lx0 * (def.w / 40);
         const lz = lz0 * (def.d / 48);
@@ -250,9 +273,21 @@ export class EffectsRenderer {
     for (const b of [...w.buildings.values()].sort((a, c) => a.id - c.id)) {
       if (stacks.length >= MAX_CHIMNEYS) break;
       if (b.zone !== 3 || b.wealth !== 0 || b.state !== 1 || b.id % 2) continue;
-      stacks.push({ x: b.x, y: b.y + (this.heights.get(b.id) ?? 8) + 1, z: b.z, size: 1 });
+      const own = this.models?.building(b).stacks;
+      if (own?.length) {
+        const yaw = -b.angle + (b.side === 1 ? Math.PI : 0);
+        const cs = Math.cos(yaw);
+        const sn = Math.sin(yaw);
+        for (let i = 0; i < own.length; i += 3)
+          stacks.push({
+            x: b.x + own[i]! * cs + own[i + 2]! * sn,
+            y: b.y + own[i + 1]!,
+            z: b.z - own[i]! * sn + own[i + 2]! * cs,
+            size: 1,
+          });
+      } else stacks.push({ x: b.x, y: b.y + (this.heights.get(b.id) ?? 8) + 1, z: b.z, size: 1 });
     }
-    const key = stacks.map((st) => `${st.x.toFixed(0)},${st.z.toFixed(0)}`).join(';');
+    const key = stacks.map((st) => `${st.x.toFixed(0)},${st.y.toFixed(0)},${st.z.toFixed(0)}`).join(';');
     if (key === this.chimneyKey) return;
     this.chimneyKey = key;
     const g = this.chimneys.geometry;
@@ -292,7 +327,7 @@ export class EffectsRenderer {
   }
 
   /** `pxPerMetre` = drawing-buffer height / (2·tan(fov/2)): a 1 m sprite at 1 m distance, in pixels. */
-  update(time: number, pxPerMetre: number, windAngle: number): void {
+  update(time: number, pxPerMetre: number, windAngle: number, light = 1): void {
     this.rebuildFires();
     this.updateSirens();
     if (++this.frameNo % 30 === 1) this.rebuildChimneys();
@@ -301,6 +336,7 @@ export class EffectsRenderer {
       u.uTime!.value = time;
       u.uPixel!.value = pxPerMetre;
       if (u.uWind) (u.uWind.value as Vector2).set(Math.cos(windAngle), Math.sin(windAngle));
+      if (u.uLight) u.uLight.value = light;
     }
   }
 

@@ -136,13 +136,31 @@ ${
   return mat;
 }
 
-interface Placement {
+export interface Placement {
   x: number;
   z: number;
+  /** Where it stands, if not on the terrain (a garden tree on a lot). */
+  y?: number;
   s: number;
   rot: number;
   species: 0 | 1;
   shade: number;
+}
+
+/** A garden tree on a building's lot (a hand-made model's tree_spot), in the world. */
+export function lotTree(x: number, y: number, z: number): Placement {
+  const i = Math.round(x * 4);
+  const j = Math.round(z * 4);
+  return {
+    x,
+    y,
+    z,
+    // Garden trees are smaller than the forest's, and mostly broadleaf.
+    s: 0.6 + hash2(i, j, 31) * 0.3,
+    rot: hash2(i, j, 41) * Math.PI * 2,
+    species: hash2(i, j, 51) < 0.22 ? 0 : 1,
+    shade: 0.9 + hash2(i, j, 61) * 0.2,
+  };
 }
 
 /** Instanced low-poly trees placed deterministically from the tree-density grid. */
@@ -157,6 +175,8 @@ export class TreeRenderer {
   private regionMeshes: (InstancedMesh | null)[][] = [];
   /** Optional filter: return true where a tree must not stand (roads, buildings). */
   blocked: ((x: number, z: number) => boolean) | null = null;
+  /** Garden trees on building lots inside a box (hand-made models' tree_spots, phase 3). */
+  lotTrees: ((minX: number, minZ: number, maxX: number, maxZ: number) => Placement[]) | null = null;
   private m = new Matrix4();
   private q = new Quaternion();
   private v = new Vector3();
@@ -171,7 +191,26 @@ export class TreeRenderer {
     for (let r = 0; r < REGIONS * REGIONS; r++) this.regionMeshes.push([null, null]);
     for (let r = 0; r < REGIONS * REGIONS; r++) this.rebuildRegion(r);
     this.buildScenery();
-    world.on('trees', () => this.rebuildAll());
+    // Only the regions whose cells changed are rebuilt, at most once a frame (`update`): a
+    // tornado or a fire changes a few cells many times a second.
+    world.on('trees', () => (this.treesDirty = true));
+  }
+
+  private treesDirty = false;
+
+  /** Rebuild the regions whose tree cells the sim changed since the last frame. */
+  update(): void {
+    if (!this.treesDirty) return;
+    this.treesDirty = false;
+    const cellsPer = REGION / GRID_CELL;
+    const set = new Set<number>();
+    for (const c of this.world.treeChanges) {
+      const i = Math.floor((c % GRID_RES) / cellsPer);
+      const j = Math.floor(Math.floor(c / GRID_RES) / cellsPer);
+      set.add(Math.min(REGIONS - 1, j) * REGIONS + Math.min(REGIONS - 1, i));
+    }
+    this.world.treeChanges.clear();
+    for (const r of set) this.rebuildRegion(r);
   }
 
   rebuildAll(): void {
@@ -222,13 +261,15 @@ export class TreeRenderer {
         }
       }
     }
+    if (this.lotTrees)
+      out.push(...this.lotTrees(ri * REGION, rj * REGION, (ri + 1) * REGION, (rj + 1) * REGION));
     return out;
   }
 
   private fill(mesh: InstancedMesh, list: Placement[]): void {
     for (let k = 0; k < list.length; k++) {
       const p = list[k]!;
-      this.v.set(p.x, this.world.heightAt(p.x, p.z) - 0.15, p.z);
+      this.v.set(p.x, p.y ?? this.world.heightAt(p.x, p.z) - 0.15, p.z);
       this.q.setFromAxisAngle(this.up, p.rot);
       this.sc.setScalar(p.s);
       this.m.compose(this.v, this.q, this.sc);

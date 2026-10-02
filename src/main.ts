@@ -15,6 +15,7 @@ import { MapEditor } from './client/editor';
 import { mapFromGenerator, type MapData } from './sim/terrain/customMap';
 import { AudioEngine } from './audio/engine';
 import { loadSettings } from './client/settings';
+import { loadModels } from './client/models';
 import { justUpdated } from './client/pwa';
 import type { Difficulty, GameOptions } from './sim/state';
 import type { SaveFile } from './sim/save';
@@ -98,6 +99,8 @@ async function boot(): Promise<void> {
   // Without a city to open, show the main menu over a backdrop map.
   const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor'].some((k) => params.has(k));
   const client = new SimClient();
+  // The hand-made building models download while the city is made or opened.
+  const models = loadModels();
   // The map editor (M24): a new map from the generator (or flat), or one of the player's maps.
   const editorParam = params.get('editor');
   let editing: { id: string; map: MapData } | null = null;
@@ -147,6 +150,7 @@ async function boot(): Promise<void> {
       )
     : opened || (await client.init(menu ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   const world = new ClientWorld(snap);
+  await models;
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const renderer = new GameRenderer(canvas, world);
   const game = new Game(client, world, renderer);

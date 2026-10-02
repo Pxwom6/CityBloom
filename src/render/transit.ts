@@ -17,6 +17,7 @@ import { VEHICLE_SPEED_SCALE } from '../data/civic';
 import type { Leg } from '../sim/systems/graph';
 import { ModelBuilder, type ModelData } from './assets/builder';
 import { VEHICLE_MODELS } from './vehicles';
+import { uploadInstances } from './geom';
 
 const SHELTER = new Color('#e9e6de');
 const ROOF = new Color('#2f5d9e');
@@ -186,7 +187,7 @@ export class TransitRenderer {
       }
     }
     this.buses.count = n;
-    this.buses.instanceMatrix.needsUpdate = true;
+    uploadInstances(this.buses);
     this.busCount = n;
     this.busPoses.length = n;
   }

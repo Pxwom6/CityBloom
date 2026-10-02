@@ -229,7 +229,6 @@ export class IconRenderer {
   private geo = new BufferGeometry();
   private mat: ShaderMaterial;
   private dirty = true;
-  visible = true;
 
   constructor(private world: ClientWorld) {
     const tex = new CanvasTexture(drawAtlas());
@@ -300,7 +299,6 @@ export class IconRenderer {
 
   update(time: number, heights: Map<number, number>, civicHeights: Map<number, number>): void {
     this.mat.uniforms.uTime!.value = time;
-    this.points.visible = this.visible;
     if (this.dirty) {
       this.dirty = false;
       this.rebuild(heights, civicHeights);

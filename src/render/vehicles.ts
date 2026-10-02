@@ -13,6 +13,7 @@ import {
 import type { ClientWorld } from '../client/world';
 import type { VehicleData } from '../sim/protocol';
 import { ModelBuilder, type ModelData } from './assets/builder';
+import { uploadInstances } from './geom';
 
 const C = (h: string) => new Color(h);
 const MAX = 512;
@@ -174,7 +175,7 @@ export class VehicleRenderer {
     }
     for (const [kind, mesh] of this.meshes) {
       mesh.count = counts.get(kind) ?? 0;
-      mesh.instanceMatrix.needsUpdate = true;
+      uploadInstances(mesh);
     }
   }
 }

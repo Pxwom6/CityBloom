@@ -1,25 +1,33 @@
 import {
   ACESFilmicToneMapping,
+  AgXToneMapping,
+  NeutralToneMapping,
+  NoToneMapping,
   PCFShadowMap,
+  type Object3D,
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
   Vector2,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import type { ClientWorld } from '../client/world';
+import { CIVIC } from '../data/civic';
+import { CELL } from '../data/zones';
 import { hourOfDay } from '../sim/time';
 import { windAngle } from '../sim/systems/pollution';
 import { CameraController } from './camera';
 import { Lighting } from './lighting';
 import { TerrainRenderer } from './terrain';
-import { TreeRenderer } from './trees';
+import { TreeRenderer, lotTree, type Placement } from './trees';
 import { WaterRenderer } from './water';
 import { RoadRenderer } from './roads';
 import { ZoneRenderer } from './zones';
 import { GhostRenderer } from './ghost';
-import { BuildingRenderer } from './buildings';
+import { BuildingRenderer, buildingYaw } from './buildings';
+import type { ModelData } from './assets/builder';
 import { CivicRenderer } from './civics';
 import { VehicleRenderer } from './vehicles';
 import { IconRenderer } from './icons';
@@ -32,9 +40,13 @@ import { PortRenderer } from './ports';
 import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
+import { StreetProps } from './streetProps';
+import { smoothstep } from '../sim/terrain/noise';
 import { PedestrianRenderer } from './pedestrians';
 import { TiltShift } from './tiltShift';
 import { PhotoLens, type PhotoLook } from './photo';
+import { PostPipeline, type PostSettings } from './post';
+import { castNearOnly } from './sunShadow';
 import { DisasterRenderer } from './disasters';
 import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
 import type { Season, WeatherKind } from '../data/climate';
@@ -104,6 +116,9 @@ function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
 export const DEFAULT_FOV = 45;
 
 /** Owns the Three.js scene. Reads ClientWorld; never mutates the simulation. */
+/** The tallest roofs above the ground (m): the sky needle's is 130 m. */
+const SHADOW_TOP = 140;
+
 export class GameRenderer {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -131,6 +146,8 @@ export class GameRenderer {
   readonly crossings: CrossingRenderer;
   readonly ports: PortRenderer;
   readonly streetLights: StreetLightRenderer;
+  /** Benches, bins and planters along the pavements (M27). */
+  readonly streetProps: StreetProps;
   readonly pedestrians: PedestrianRenderer;
   readonly tiltShift = new TiltShift();
   readonly lens = new PhotoLens();
@@ -182,7 +199,8 @@ export class GameRenderer {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.toneMapping = ACESFilmicToneMapping;
+    // Neutral keeps a toy's colours true (ACES took brick to near black in shade; M26).
+    this.renderer.toneMapping = NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     // PCF is soft-filtered in this three.js (PCFSoftShadowMap is deprecated and falls back to it).
@@ -205,7 +223,7 @@ export class GameRenderer {
     this.scene.add(this.zones.group);
     this.buildings = new BuildingRenderer(world, this.terrain.uniforms, this.weather.uniforms);
     this.scene.add(this.buildings.group);
-    this.civics = new CivicRenderer(world, this.buildings.material);
+    this.civics = new CivicRenderer(world, this.buildings.lodMaterials);
     this.scene.add(this.civics.group);
     this.vehicles = new VehicleRenderer(world);
     this.scene.add(this.vehicles.group);
@@ -214,6 +232,10 @@ export class GameRenderer {
     this.garbage = new GarbageProps(world);
     this.scene.add(this.garbage.mesh);
     this.effects = new EffectsRenderer(world, this.vehicles, this.buildings.heights, this.civics.heights);
+    this.effects.models = {
+      civic: (c) => this.civics.model(c),
+      building: (b) => this.buildings.model(b),
+    };
     this.scene.add(this.effects.group);
     this.coverageMap = new RoadTint((x, z) => world.heightAt(x, z), 'diverging', 0.85);
     this.scene.add(this.coverageMap.group);
@@ -240,6 +262,8 @@ export class GameRenderer {
     this.scene.add(this.ports.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
+    this.streetProps = new StreetProps(world);
+    this.scene.add(this.streetProps.group);
     this.routeTint = new RoadTint((x, z) => world.heightAt(x, z), 'sequential', 0.7);
     this.scene.add(this.routeTint.group);
     this.ghost = new GhostRenderer((x, z) => world.heightAt(x, z));
@@ -248,8 +272,52 @@ export class GameRenderer {
     this.trees.weather = this.weather.uniforms;
     this.trees.blocked = (x, z) =>
       this.roads.onRoad(x, z, 1.5) || this.onBuilding(x, z) || this.world.civicAt(x, z) !== null;
+    // Garden trees: a hand-made model's tree_spots, planted with the game's own seasonal trees.
+    this.trees.lotTrees = (minX, minZ, maxX, maxZ) => {
+      const out: Placement[] = [];
+      const plant = (m: ModelData, o: { x: number; y: number; z: number; angle: number; side: number }) => {
+        const t = m.trees;
+        if (!t?.length) return;
+        const yaw = buildingYaw(o);
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        for (let i = 0; i < t.length; i += 3) {
+          const x = o.x + t[i]! * c + t[i + 2]! * s;
+          const z = o.z - t[i]! * s + t[i + 2]! * c;
+          if (x >= minX && x < maxX && z >= minZ && z < maxZ) out.push(lotTree(x, o.y + t[i + 1]!, z));
+        }
+      };
+      const pad = 40;
+      for (const id of world.bldHash.query({
+        minX: minX - pad,
+        minZ: minZ - pad,
+        maxX: maxX + pad,
+        maxZ: maxZ + pad,
+      })) {
+        const b = world.buildings.get(id);
+        if (b && (b.state === 1 || b.state === 2)) plant(this.buildings.model(b), b);
+      }
+      for (const c of world.civics.values()) {
+        if (c.x < minX - 200 || c.x > maxX + 200 || c.z < minZ - 200 || c.z > maxZ + 200) continue;
+        plant(this.civics.model(c), c);
+      }
+      return out;
+    };
     this.trees.rebuildAll();
     this.scene.add(this.trees.group);
+    // Small things cast in the near shadow cascade only (M26). Meshes added later (more cars)
+    // are marked as they come, below.
+    this.nearShadowsOnly = [
+      this.vehicles.group,
+      this.traffic.group,
+      this.pedestrians.group,
+      this.transit.group,
+      this.railVehicles.group,
+      this.ports.group,
+      this.streetLights.group,
+      this.streetProps.group,
+      this.garbage.mesh,
+    ];
     // Names for debugging (the test API's render breakdown).
     const named: [{ name: string }, string][] = [
       [this.terrain.group, 'terrain'],
@@ -270,22 +338,74 @@ export class GameRenderer {
       [this.railVehicles.group, 'railVehicles'],
       [this.ports.group, 'ports'],
       [this.streetLights.group, 'streetLights'],
+      [this.streetProps.group, 'streetProps'],
       [this.routeTint.group, 'routeTint'],
       [this.ghost.group, 'ghost'],
       [this.trees.group, 'trees'],
     ];
     for (const [o, name] of named) o.name = name;
-    world.onCivics((changed) => {
+    // Trees by buildings (the forest's under them, a hand-made model's garden trees): every
+    // tree region the lot or site touches is rebuilt when it changes, moves or goes.
+    const touch = (at: { x: number; z: number; r: number }) => {
+      for (const [dx, dz] of [
+        [0, 0],
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+      ] as const)
+        this.treePoints.push({ x: at.x + dx * at.r, z: at.z + dz * at.r });
+    };
+    const siteOf = (c: { x: number; z: number; def: string }) => {
+      const d = CIVIC.get(c.def);
+      return { x: c.x, z: c.z, r: d ? Math.hypot(d.w, d.d) / 2 : 0 };
+    };
+    const sites = new Map<number, { x: number; z: number; r: number }>();
+    for (const c of world.civics.values()) sites.set(c.id, siteOf(c));
+    world.onCivics((changed, removed) => {
       for (const id of changed) {
         const c = world.civics.get(id);
-        if (c) this.treePoints.push({ x: c.x, z: c.z });
+        if (!c) continue;
+        // Moved: where it stood, too.
+        const was = sites.get(id);
+        if (was && (was.x !== c.x || was.z !== c.z)) touch(was);
+        const now = siteOf(c);
+        sites.set(id, now);
+        touch(now);
+      }
+      for (const id of removed) {
+        const was = sites.get(id);
+        if (was) touch(was);
+        sites.delete(id);
       }
     });
-    world.onBuildings((changed) => {
+    const lotOf = (b: { x: number; z: number; w: number; d: number }) => ({
+      x: b.x,
+      z: b.z,
+      r: (Math.hypot(b.w, b.d) * CELL) / 2,
+    });
+    const lots = new Map<number, { x: number; z: number; r: number }>();
+    for (const b of world.buildings.values()) lots.set(b.id, lotOf(b));
+    world.onBuildings((changed, removed) => {
       for (const id of changed) {
         const b = world.buildings.get(id);
-        if (b) this.treePoints.push({ x: b.x, z: b.z });
+        if (!b) continue;
+        // Moved (an upgrade onto a smaller lot): where it stood, too.
+        const was = lots.get(id);
+        if (was && (was.x !== b.x || was.z !== b.z)) touch(was);
+        const now = lotOf(b);
+        lots.set(id, now);
+        touch(now);
       }
+      // A building that goes takes its garden trees with it.
+      for (const id of removed) {
+        const at = lots.get(id);
+        if (at) touch(at);
+        lots.delete(id);
+      }
+    });
+    world.onNet((c) => {
+      if (c.segments.size) this.terrain.roadsChanged(c.segments);
     });
     world.onNet((c) => {
       const pts: { x: number; z: number }[] = [];
@@ -387,7 +507,19 @@ export class GameRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Build every building mesh the view needs now, rather than a chunk a frame (tests, screenshots). */
+  flushBuildings(): void {
+    this.buildings.flushAll();
+    this.civics.update(this.camera.position, this.buildings.range, true);
+    // Garden trees of buildings just built, too (normally planted within half a second).
+    if (this.treePoints.length) {
+      this.trees.rebuildAround(this.treePoints);
+      this.treePoints = [];
+    }
+  }
+
   setShadows(on: boolean): void {
+    this.shadowAt = -1;
     this.renderer.shadowMap.enabled = on;
     this.lighting.sun.castShadow = on;
   }
@@ -400,20 +532,31 @@ export class GameRenderer {
     fogScale: number;
     treeDetail: number;
     crowd: number;
+    post: PostSettings;
+    cascades: 1 | 2;
+    ground: 0 | 1;
+    closeShadowHz: number;
   }): void {
+    this.closeShadowEvery = g.closeShadowHz > 0 ? 1 / g.closeShadowHz : 0;
+    this.groundDetail = g.ground;
+    this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
+    this.post.settings = { ...(this.postOverride ?? g.post) };
     const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
     if (this.renderer.getPixelRatio() !== ratio) {
       this.renderer.setPixelRatio(ratio);
       this.resize();
     }
     this.setShadows(g.shadows);
-    const shadow = this.lighting.sun.shadow;
+    const shadow = this.lighting.shadow;
     if (shadow.mapSize.x !== g.shadowMap) {
       shadow.mapSize.set(g.shadowMap, g.shadowMap);
       shadow.map?.dispose();
       shadow.map = null;
+      this.shadowAt = -1;
     }
     this.fogScale = g.fogScale;
+    // Coarser pixels show less: the levels of detail hand over sooner (High at 2× is the full range).
+    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7));
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
     this.weather.drops = Math.round(9000 * g.crowd);
@@ -478,6 +621,27 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /** When the shadow maps were last drawn (s of frame time). */
+  private shadowAt = -1;
+  /** Seconds between shadow map redraws close up (0: every frame; the graphics quality's). */
+  closeShadowEvery = 0;
+  /** Groups whose meshes cast in the near shadow cascade only (marked once each). */
+  private nearShadowsOnly: Object3D[] = [];
+  /** The country's fields, hedgerows and paths and the street furniture (M27): 0 off, 1 on. */
+  groundDetail: 0 | 1 = 1;
+  private nearMarked = new WeakSet<Object3D>();
+  /** Dev: post settings to keep whatever the graphics settings say (test API `setPost`). */
+  postOverride: PostSettings | null = null;
+  /** How far shadows reach into the view, in camera distances, and at least (m) (M26). */
+  shadowReach = 3.2;
+  shadowFloor = 500;
+  /** Dev: a tone mapping and exposure to try (test API `setTone`). */
+  toneOverride: { mapping: 'aces' | 'neutral' | 'agx' | 'none'; exposure: number } | null = null;
+  /** The frame after the scene is drawn: ambient occlusion, glow at night, tone mapping (M26). */
+  readonly post = new PostPipeline();
+  /** Photo mode's lens reads the finished frame from here when the post pipeline runs. */
+  private lensInput: WebGLRenderTarget | null = null;
+
   frame(dt: number): void {
     this.time += dt;
     const p = this.photo;
@@ -507,22 +671,68 @@ export class GameRenderer {
       this.camera.position,
     );
     l.update(hour);
+    l.groundBounce(this.weather.look.season, this.weather.look.snow);
     l.applyWeather(this.weather);
+    l.farLowSun(this.controller.current.distance);
+    // Shadows reach a few camera distances into the view, over the ground there (M26).
+    const dist = this.controller.current.distance;
+    const t = this.controller.target;
+    let lo = Infinity;
+    let hi = -Infinity;
+    const span = dist * 1.6 + 100;
+    for (let i = -3; i <= 3; i++)
+      for (let j = -3; j <= 3; j++) {
+        const h = this.world.heightAt(t.x + (i / 3) * span, t.z + (j / 3) * span);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
     l.follow(
       this.camera.position,
-      this.controller.target,
-      this.controller.current.distance * 0.9,
       this.camera.far,
+      lo - 4,
+      hi + SHADOW_TOP,
+      Math.max(this.shadowFloor, dist * this.shadowReach),
     );
+    // The shadow maps from far off barely change between frames: drawn again 30 times a second
+    // there, 60 at middle distance, close up every frame at High and 60 times a second at Medium
+    // (M26; M28, the cost switch for Medium's street level).
+    const every = dist > 1500 ? 1 / 30 : dist > 600 ? 1 / 60 : this.closeShadowEvery;
+    l.shadow.autoUpdate = false;
+    if (this.time - this.shadowAt >= every || this.time < this.shadowAt) {
+      l.shadow.needsUpdate = true;
+      this.shadowAt = this.time;
+    }
+    for (const g of this.nearShadowsOnly)
+      g.traverse((o) => {
+        if (this.nearMarked.has(o)) return;
+        this.nearMarked.add(o);
+        castNearOnly(o, l.shadow);
+      });
     l.fog.near = Math.max(900, this.controller.current.distance * 1.1) * this.fogScale;
     l.fog.far = Math.max(7500, this.controller.current.distance * 3.5) * this.fogScale;
     // Fog, rain and snow close the view in; heat hazes the distance (M22).
     const wf = this.weather.fog;
     l.fog.near *= (1 - 0.92 * wf) * (1 - 0.3 * this.weather.haze);
     l.fog.far *= (1 - 0.8 * wf) * (1 - 0.35 * this.weather.haze);
-    this.renderer.toneMappingExposure = (1.0 + l.night * 0.12) * (1 - 0.12 * this.weather.overcast);
+    // A little more exposure while the sun is low, as the eye does: golden hour glows rather than
+    // going dim (M26); and at night from far off, so the whole-city view reads as a town under the
+    // moon rather than near-black ground (walk-through after M28).
+    const farNight = l.night * smoothstep(800, 2400, dist);
+    this.renderer.toneMappingExposure =
+      (1.1 + l.night * 0.04 + l.low * 0.2 + farNight * 0.35) * (1 - 0.12 * this.weather.overcast);
+    const tone = this.toneOverride;
+    if (tone) {
+      this.renderer.toneMapping = {
+        aces: ACESFilmicToneMapping,
+        neutral: NeutralToneMapping,
+        agx: AgXToneMapping,
+        none: NoToneMapping,
+      }[tone.mapping];
+      this.renderer.toneMappingExposure *= tone.exposure;
+    }
     this.terrain.update(this.time);
-    this.buildings.update(l.night);
+    this.buildings.update(l.night, this.camera.position);
+    this.civics.update(this.camera.position, this.buildings.range);
     this.vehicles.update(this.world.displayTick);
     this.traffic.night = l.night;
     const t0 = performance.now();
@@ -530,18 +740,32 @@ export class GameRenderer {
     // Visible cars' own cost (M19: following and giving way), smoothed.
     this.trafficMs = this.trafficMs * 0.9 + (performance.now() - t0) * 0.1;
     this.pedestrians.update(this.world.displayTick, this.controller.current);
-    this.streetLights.update(l.night);
+    this.streetLights.update(l.night, this.controller.current.distance);
     this.transit.update(this.world.displayTick);
     this.railVehicles.update(this.world.displayTick);
     this.crossings.update(this.world.displayTick, this.railVehicles.closed);
     this.ports.update(this.world.displayTick);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();
+    // Small things out of both passes from where they'd be specks (M26): piles of bags a metre
+    // high, and the shadows of lamp posts.
+    this.garbage.mesh.visible = dist < 1400;
+    this.garbage.mesh.castShadow = dist < 500;
+    this.streetLights.postShadows = dist < 450;
+    this.streetProps.update(dist, this.groundDetail > 0);
+    // The country's fields and paths fade out on the way to the whole-city view, where they'd be
+    // a few per cent of shading for a millisecond of the GPU's time (M27).
+    this.terrain.uniforms.uGroundDetail.value = this.groundDetail * (1 - smoothstep(1600, 2400, dist));
     const bufH = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     this.traffic.setScale(bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
     const pxPerMetre = bufH / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
-    this.effects.update(this.time, pxPerMetre, windAngle(this.world.options.seed, this.world.displayTick));
-    this.disasters.update(dt, this.world.displayTick, pxPerMetre);
+    this.effects.update(
+      this.time,
+      pxPerMetre,
+      windAngle(this.world.options.seed, this.world.displayTick),
+      0.35 + 0.65 * l.light,
+    );
+    this.disasters.update(dt, this.world.displayTick, pxPerMetre, 0.35 + 0.65 * l.light);
     this.camera.position.add(this.disasters.shake);
     // Trees under new buildings: rebuilt at most twice a second.
     if (this.treePoints.length && this.time - this.treeRebuildAt > 0.5) {
@@ -549,6 +773,7 @@ export class GameRenderer {
       this.trees.rebuildAround(this.treePoints);
       this.treePoints = [];
     }
+    this.trees.update();
     this.trees.updateLod(this.camera.position.x, this.camera.position.y, this.camera.position.z);
     this.water.update(this.time);
     const wu = this.water.material.uniforms;
@@ -560,8 +785,34 @@ export class GameRenderer {
     this.renderer.info.reset();
     // Photo mode draws through its lens when it has anything to do.
     const lensOn = p && (p.dof > 0 || p.tiltShift > 0 || p.grade !== 'natural');
-    if (lensOn) this.lens.render(this.renderer, this.scene, this.camera, p);
-    else this.renderer.render(this.scene, this.camera);
+    // Occlusion where things meet, strong close up and gone by the whole-city view; its reach
+    // grows with the view. Glow at night.
+    const d = this.controller.current.distance;
+    const post = {
+      ao: 1 - Math.min(1, Math.max(0, (d / this.post.settings.aoFar - 0.42) / 0.58)),
+      aoRadius: Math.min(7, Math.max(1.4, d * 0.012)),
+      // Stronger from far off, where a lit window is a pixel and the glow is what makes it twinkle.
+      glow: l.night * (1 + 0.8 * Math.min(1, Math.max(0, (d - 500) / 1500))),
+    };
+    // Through the post pipeline only when an effect is on now; otherwise straight to the screen,
+    // which looks the same (both tone-map in the materials) and costs less (M26).
+    const occlusion = this.post.settings.aoSamples > 0 && post.ao > 0.01;
+    const glow = this.post.settings.glow && post.glow > 0.01;
+    if (lensOn) {
+      const size = this.renderer.getDrawingBufferSize(this.tmpSize);
+      if (!this.lensInput || this.lensInput.width !== size.x || this.lensInput.height !== size.y) {
+        this.lensInput?.dispose();
+        this.lensInput = new WebGLRenderTarget(size.x, size.y, { depthBuffer: false });
+      }
+      this.post.render(this.renderer, this.scene, this.camera, post, this.lensInput);
+      this.lens.renderFrom(this.renderer, this.lensInput.texture, this.post.depth!, this.camera, p, true);
+    } else if (occlusion) this.post.render(this.renderer, this.scene, this.camera, post);
+    else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, this.camera);
+      // Glow alone (night, from far off): laid over the finished screen.
+      if (glow) this.post.glowOver(this.renderer, post.glow);
+    }
     const info = this.renderer.info;
     const stats = { calls: info.render.calls, triangles: info.render.triangles };
     if (this.tiltShiftOn && !p) {

@@ -64,7 +64,10 @@ export class WaterRenderer {
           vec3 v = normalize(cameraPosition - vWorld);
           float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
           vec3 base = mix(uShallow, uDeep, 0.35 + 0.25 * sin(p.x * 0.004 + p.y * 0.003));
-          vec3 col = mix(base, uSky, fres * 0.55) * (0.35 + 0.65 * uLight);
+          vec3 col = mix(base, uSky, fres * 0.55) * uLight;
+          // At night the water takes the night sky's colour (it lit itself teal, the brightest
+          // thing in a dark whole-city view: walk-through after M28).
+          col = mix(col, uSky * 0.5, (1.0 - uLight) * 0.75);
           float spec = pow(max(dot(reflect(-uSunDir, n), v), 0.0), 90.0);
           col += uSunColor * spec * 0.9 * uLight;
           float alpha = 0.72 + fres * 0.25;

@@ -23,6 +23,7 @@ import { congestedSeconds } from '../sim/systems/traffic';
 import type { TripSample } from '../sim/systems/traffic';
 import type { Leg } from '../sim/systems/graph';
 import { ModelBuilder, type ModelData } from './assets/builder';
+import { uploadInstances } from './geom';
 
 const W = new Color(1, 1, 1);
 const GLASS = new Color(0.22, 0.27, 0.32);
@@ -73,7 +74,7 @@ type ModelName = keyof typeof MODELS;
 const MAX_LIGHTS = 360 * 4;
 const PAINT = [
   '#d9d9d6',
-  '#2b2d31',
+  '#565b63',
   '#8a9099',
   '#b7312c',
   '#2f5d9e',
@@ -304,6 +305,18 @@ export class TrafficRenderer {
 
   get count(): number {
     return this.cars.length;
+  }
+
+  /** Dev: each model's drawn instances and how many have a black colour. */
+  colourStats(): Record<string, { count: number; black: number; hasColour: boolean; sample: number[] }> {
+    const out: Record<string, { count: number; black: number; hasColour: boolean; sample: number[] }> = {};
+    for (const [name, mesh] of this.meshes) {
+      const c = mesh.instanceColor?.array as Float32Array | undefined;
+      let black = 0;
+      for (let i = 0; c && i < mesh.count; i++) if (c[i * 3]! + c[i * 3 + 1]! + c[i * 3 + 2]! < 0.05) black++;
+      out[name] = { count: mesh.count, black, hasColour: !!c, sample: c ? [...c.slice(0, 9)] : [] };
+    }
+    return out;
   }
 
   /** Car nearest a ground point (within `r` metres), for clicking. */
@@ -543,17 +556,29 @@ export class TrafficRenderer {
           // before the barriers start down (Phase 2 review). The room is for this car and every car
           // already over the line ahead of it, which get there first: counting only the road beyond
           // left the second of two cars crossing close together waiting on the rails.
+          // (Cars listed at the start of the step that have since moved on to another road, or
+          // finished their trip, aren't on this lane any more.)
+          const key = this.laneKey(c, c.leg);
           const committed =
             info.kind === 'crossing'
-              ? (lanes.get(this.laneKey(c, c.leg)) ?? []).filter((o) => o !== c && along(o) > along(c)).length
+              ? (lanes.get(key) ?? []).filter(
+                  (o) =>
+                    o !== c &&
+                    o.leg < o.legs.length &&
+                    !o.ring &&
+                    this.laneKey(o, o.leg) === key &&
+                    along(o) > along(c),
+                ).length
               : 0;
           const blocked =
             !this.mayEnter(c, n!, info, rings.get(n!) ?? []) ||
             (info.kind === 'crossing' &&
               (!this.roomAhead(c, c.leg + 1, lanes, info.stop + SPACING * (1 + committed)) ||
                 (this.trainEta.get(n!) ?? Infinity) - this.frameClock <
-                  // Time to clear it at half speed (a car in a queue crawls over).
-                  CLOSE_AHEAD_TICKS + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
+                  // Time to clear it at half speed (a car in a queue crawls over), counted from the
+                  // end of this step: a long frame (a slow machine) carries a car well past the line
+                  // after the train's time was read at its start (M27).
+                  CLOSE_AHEAD_TICKS + budget + (2 * (2 * info.stop + 6)) / Math.max(0.1, v)));
           if (blocked) room = Math.min(room, Math.max(0, stopAt - c.t));
         }
         const move = Math.min(v * budget, room, end - c.t);
@@ -801,13 +826,19 @@ export class TrafficRenderer {
       }
     }
     const lg = this.lights.geometry;
-    (lg.getAttribute('position') as BufferAttribute).needsUpdate = true;
-    (lg.getAttribute('color') as BufferAttribute).needsUpdate = true;
+    // Only the lights and cars in use are sent to the GPU (see `uploadInstances`).
+    if (nl > 0) {
+      for (const name of ['position', 'color']) {
+        const a = lg.getAttribute(name) as BufferAttribute;
+        a.clearUpdateRanges();
+        a.addUpdateRange(0, nl * 3);
+        a.needsUpdate = true;
+      }
+    }
     lg.setDrawRange(0, nl);
     for (const [name, mesh] of this.meshes) {
       mesh.count = counts.get(name) ?? 0;
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      uploadInstances(mesh);
     }
   }
 }

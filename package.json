@@ -19,7 +19,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "bench": "tsx scripts/bench.ts",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "models:check": "tsx scripts/models-check.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",

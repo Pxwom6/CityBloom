@@ -9,3 +9,7 @@ bench-results
 balance-results
 dist-e2e
 dist-e2e-next
+.DS_Store
+dist-base
+dist-before
+dist-batch1

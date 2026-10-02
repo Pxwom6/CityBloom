@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
+import { models } from './scripts/vite-models';
 import { pwa } from './scripts/vite-pwa';
 
 /** Which build this is, shown in Settings: the commit (CI passes BUILD_ID), else the local HEAD. */
@@ -24,5 +25,5 @@ export default defineConfig({
   build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 2000 },
   server: { port: 5173 },
   preview: { port: 4173 },
-  plugins: [pwa({ siteUrl: process.env.SITE_URL })],
+  plugins: [models(), pwa({ siteUrl: process.env.SITE_URL })],
 });

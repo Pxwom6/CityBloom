@@ -11,10 +11,21 @@ take the trucks off the roads. Fire engines, police cars, ambulances and garbage
 each call. Pollution drifts on the wind; fires, earthquakes, tornadoes, floods and meteors test the
 city from time to time.
 
-![A grown city at street level](docs/screenshots/m12-100k-street.png)
+![A grown city of 110,000 in the afternoon](docs/screenshots/phase3-city.jpg)
 
-Built with TypeScript, Vite, Three.js and Preact. All models, icons and sounds are generated in
-code; there are no bought or borrowed assets (see `CREDITS.md` for the open-source libraries).
+The city is drawn bright, warm and toy-like: most buildings wear hand-made models (three in four
+in a grown city), beside generated ones in the same style, each with lighter versions for the
+distance; the sun crosses the sky through golden and blue hours, lit windows glow at night, grass
+and trees turn with the seasons, and fields, kerbs, zebra crossings and benches make a grown city
+read as a place. Graphics quality (High, Medium, Low)
+switches each effect.
+
+![The same city at night](docs/screenshots/phase3-night.jpg)
+
+Built with TypeScript, Vite, Three.js and Preact. The hand-made building models were made for the
+game (`assets/models/`, checked and converted at build time); the rest of the buildings, the icons
+and the sounds are generated in code. There are no bought or borrowed assets (see `CREDITS.md` for
+the open-source libraries).
 
 ## Play online
 
@@ -225,13 +236,18 @@ npm run e2e          # end-to-end tests through the real UI (Playwright), with s
 npm run soak         # ten minutes of top-speed play with disasters; fails on any console error
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful
+npm run models:check # check every hand-made model in assets/models against its spec
 ```
+
+Frame times on real hardware come from `scripts/dev/framebench.mjs` (a headed Chrome window with the
+frame cap off; see `CLAUDE.md`).
 
 The simulation is pure, deterministic TypeScript running in a Web Worker (`src/sim`); the page
 renders a mirror of it (`src/client`, `src/render`) and every player action is a command, so the
 same seed and commands always give the same city. Balancing numbers live in `src/data`.
 
-- `SPEC.md`: the brief.
+- `SPEC.md`, `SPEC-2.md`, `SPEC-3.md`: the briefs (the game, phase 2's features, phase 3's graphics).
+- `docs/models/PROMPTS.md`: the model spec and a prompt for every building.
 - `DESIGN.md`: the technical design (architecture, simulation model, rendering, saves).
 - `PROGRESS.md`: where things stand, known issues, performance numbers and ideas for what's next.
 - `docs/DECISIONS.md`: the design calls made along the way, one line each.

@@ -1,23 +1,27 @@
 import {
-  BufferAttribute,
-  BufferGeometry,
   Color,
   Group,
   Mesh,
+  MeshDepthMaterial,
   MeshLambertMaterial,
+  RGBADepthPacking,
   type Material,
   Vector2,
+  Vector3,
+  Vector4,
 } from 'three';
 import type { ClientWorld } from '../client/world';
 import type { BuildingData } from '../sim/protocol';
 import { CELL } from '../data/zones';
-import { assets } from './assets/registry';
+import { VARIANTS, assets } from './assets/registry';
+import { LodChunks, type ChunkItem, type LodMaterials, type LodRange } from './lodChunks';
+import { Arrays, appendModel } from './modelMerge';
 import type { ModelData } from './assets/builder';
 import type { TerrainUniforms } from './terrain';
-import { GRADE_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
+import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
 
-const CHUNK = 256;
-const MAX_CHUNK_REBUILDS_PER_FRAME = 1;
+/** Chunk sizes (m) for buildings drawn at every distance, and for the near, far and skyline levels. */
+const CHUNKS: [number, number, number, number] = [256, 128, 128, 512];
 const STATE_CONSTRUCTION = 0;
 const STATE_ABANDONED = 2;
 const STATE_RUBBLE = 3;
@@ -27,6 +31,10 @@ const WINDOW_LIGHT = new Color('#ffd49a');
 export interface BuildingUniforms {
   uNight: { value: number };
   uWindow: { value: Color };
+  /** Where the levels of detail hand over (m): near→far from x to y, far→skyline from z to w. */
+  uLod: { value: Vector4 };
+  /** The camera the levels are measured from (the view's, also while shadows are drawn). */
+  uLodEye: { value: Vector3 };
 }
 
 /** Rotation that maps model space (front at −z) onto the lot: see DESIGN §4 and buildings.ts. */
@@ -34,22 +42,56 @@ export function buildingYaw(b: { angle: number; side: number }): number {
   return -b.angle + (b.side === 1 ? Math.PI : 0);
 }
 
+/**
+ * GLSL: which fragments a level of detail draws. Each pixel has a fixed threshold; near is drawn
+ * where its fade is under it, far where near isn't, and so on, so exactly one level draws each
+ * pixel and the hand-over is a dither across a band, not a pop.
+ */
+const LOD_GLSL = `
+uniform vec4 uLod;
+uniform vec3 uLodEye;
+#if LOD_LEVEL != 0
+bool lodHidden(vec3 p, vec2 px) {
+  #ifdef LOD_SHADOW
+    // Shadows hand over at a line (the middle of each band): a dithered shadow caster makes
+    // hatched shadows wherever the two versions differ.
+    float t = 0.5;
+  #else
+    float t = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+  #endif
+  float d = distance(p, uLodEye);
+  float far = smoothstep(uLod.x, uLod.y, d);
+  float sky = smoothstep(uLod.z, uLod.w, d);
+  #if LOD_LEVEL == 1
+    return far > t;
+  #elif LOD_LEVEL == 2
+    return far <= t || sky > t;
+  #else
+    return sky <= t;
+  #endif
+}
+#endif`;
+
+/** `lod`: 0 for a mesh drawn at every distance; 1 near, 2 far, 3 skyline (see LodChunks). */
 export function makeMaterial(
   uniforms: BuildingUniforms,
   terrain: TerrainUniforms,
   clip: boolean,
   weather: WeatherUniforms | null = null,
+  lod = 0,
 ): Material {
   const mat = new MeshLambertMaterial({ vertexColors: true });
-  // three.js caches programs by the onBeforeCompile source, which is the same text for both
-  // variants: without distinct keys, whichever compiled first (in a new city, the clipped
+  // three.js caches programs by the onBeforeCompile source, which is the same text for every
+  // variant: without distinct keys, whichever compiled first (in a new city, the clipped
   // construction one) was reused for the other, and finished buildings drew nothing.
-  mat.customProgramCacheKey = () => (clip ? 'building-clip' : 'building');
+  mat.customProgramCacheKey = () => `${clip ? 'building-clip' : 'building'}-${lod}`;
+  mat.defines = { LOD_LEVEL: lod };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms, {
       uOverlay: terrain.uOverlay,
       uOverlayOn: terrain.uOverlayOn,
       uMapSize: terrain.uMapSize,
+      uSeason: weather?.uSeason ?? { value: new Vector4(0, 1, 0, 0) },
       uSnow: weather?.uSnow ?? { value: 0 },
       uWet: weather?.uWet ?? { value: 0 },
       uGrade: weather?.uGrade ?? { value: new Vector2() },
@@ -84,17 +126,25 @@ uniform float uMapSize;
 uniform float uSnow;
 uniform float uWet;
 uniform vec2 uGrade;
+uniform vec4 uSeason;
 varying float vEmi;
 varying vec3 vWorldPos;
 varying float vUp;
 ${SNOW_NOISE_GLSL}
+${SEASON_GLSL}
 ${GRADE_GLSL}
+${LOD_GLSL}
 ${clip ? 'varying float vClip;' : ''}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
 ${clip ? 'if (vWorldPos.y > vClip) discard;' : ''}
+#if LOD_LEVEL != 0
+if (lodHidden(vWorldPos, gl_FragCoord.xy)) discard;
+#endif
+// Lawns and hedges in their season (a negative emissive tags them: see ModelData).
+if (vEmi < -0.5) diffuseColor.rgb = vEmi < -1.5 ? seasonHedge(diffuseColor.rgb) : seasonGrass(diffuseColor.rgb);
 // Snow on roofs and other flat tops, and rain-darkened ones (M22).
 {
   float up = smoothstep(0.62, 0.9, vUp);
@@ -112,34 +162,74 @@ if (uOverlayOn > 0.5) {
       )
       .replace(
         '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>\ntotalEmissiveRadiance += uWindow * vEmi * uNight * 1.6;`,
+        // A lit window from far off is a pixel: brighter there, so the city twinkles (M26).
+        `#include <emissivemap_fragment>\ntotalEmissiveRadiance += uWindow * max(vEmi, 0.0) * uNight * 1.6 * (1.0 + 1.2 * smoothstep(350.0, 2200.0, length(vViewPosition)));`,
       );
   };
   return mat;
 }
 
-interface Chunk {
-  ids: Set<number>;
-  mesh: Mesh | null;
+/** The shadow pass's material for a level of detail: it casts what that level draws. */
+export function makeDepthMaterial(uniforms: BuildingUniforms, lod: number): Material {
+  const mat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  mat.customProgramCacheKey = () => `building-depth-${lod}`;
+  mat.defines = { LOD_LEVEL: lod, LOD_SHADOW: 1 };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uLod: uniforms.uLod, uLodEye: uniforms.uLodEye });
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLodPos;')
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvLodPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vLodPos;\n${LOD_GLSL}`)
+      .replace(
+        '#include <clipping_planes_fragment>',
+        '#include <clipping_planes_fragment>\nif (lodHidden(vLodPos, gl_FragCoord.xy)) discard;',
+      );
+  };
+  return mat;
 }
 
+/** How far from the camera the levels of detail hand over, at full detail (High). */
+export const LOD_RANGE: LodRange = { nearStart: 170, nearEnd: 230, skyStart: 520, skyEnd: 680 };
+
 /**
- * Buildings: completed ones are merged per 256 m chunk (one draw call each); buildings under
- * construction live in a separate layer that shows scaffolding and the model rising.
+ * Buildings: completed ones are merged per 256 m chunk (one draw call for each level of detail
+ * on show); buildings under construction live in a separate layer that shows scaffolding and the
+ * model rising.
  */
 export class BuildingRenderer {
   readonly group = new Group();
-  readonly uniforms: BuildingUniforms = { uNight: { value: 0 }, uWindow: { value: WINDOW_LIGHT.clone() } };
+  readonly uniforms: BuildingUniforms = {
+    uNight: { value: 0 },
+    uWindow: { value: WINDOW_LIGHT.clone() },
+    uLod: { value: new Vector4(1e9, 2e9, 3e9, 4e9) },
+    uLodEye: { value: new Vector3() },
+  };
   readonly material: Material;
+  /** Materials for chunk meshes by level of detail, shared with civic buildings. */
+  readonly lodMaterials: LodMaterials;
   private clipMaterial: Material;
-  private chunks = new Map<number, Chunk>();
-  private chunkOf = new Map<number, number>();
-  private dirty = new Set<number>();
+  readonly chunks: LodChunks;
   private construction: Mesh | null = null;
   private constructionDirty = true;
   private constructionKeys = '';
   /** Model heights by building, for picking. */
   readonly heights = new Map<number, number>();
+  /**
+   * Which of its type's looks each building wears: its own variant, moved on where a neighbour
+   * already looks like that (no two alike side by side), and how that look appears.
+   */
+  private looks = new Map<number, { look: number; key: string; seen: string }>();
+  /** What each building's chunks were last built with (updates that change nothing are skipped). */
+  private drawn = new Map<
+    number,
+    { model: ModelData; state: number; look: boolean | number; x: number; y: number; z: number; yaw: number }
+  >();
+  /** Scale on the hand-over distances (the graphics quality: coarser pixels hand over sooner). */
+  lodScale = 1;
 
   constructor(
     private world: ClientWorld,
@@ -148,74 +238,133 @@ export class BuildingRenderer {
   ) {
     this.material = makeMaterial(this.uniforms, terrain, false, weather);
     this.clipMaterial = makeMaterial(this.uniforms, terrain, true, weather);
-    for (const b of world.buildings.values()) this.place(b.id);
+    this.lodMaterials = {
+      colour: [
+        this.material,
+        ...[1, 2, 3].map((l) => makeMaterial(this.uniforms, terrain, false, weather, l)),
+      ],
+      depth: [undefined, ...[1, 2, 3].map((l) => makeDepthMaterial(this.uniforms, l))],
+    };
+    this.chunks = new LodChunks('buildings', CHUNKS, this.lodMaterials, (id) => this.item(id));
+    this.group.add(this.chunks.group);
+    // In id order, so which of two alike neighbours moves on is the same every time.
+    for (const b of [...world.buildings.values()].sort((a, c) => a.id - c.id)) this.place(b.id);
     world.onBuildings((changed, removed) => {
       for (const id of removed) this.place(id);
       for (const id of changed) this.place(id);
     });
   }
 
-  private chunkKey(b: BuildingData): number {
-    return Math.floor(b.x / CHUNK) * 1000 + Math.floor(b.z / CHUNK);
+  /** The hand-over distances in force. */
+  get range(): LodRange {
+    const s = this.lodScale;
+    return {
+      nearStart: LOD_RANGE.nearStart * s,
+      nearEnd: LOD_RANGE.nearEnd * s,
+      skyStart: LOD_RANGE.skyStart * s,
+      skyEnd: LOD_RANGE.skyEnd * s,
+    };
+  }
+
+  private item(id: number): ChunkItem | null {
+    const b = this.world.buildings.get(id);
+    if (!b || b.state === STATE_CONSTRUCTION) return null;
+    return {
+      x: b.x,
+      y: b.y,
+      z: b.z,
+      yaw: buildingYaw(b),
+      model: this.model(b),
+      look: b.fire > 0 ? Math.min(1, b.fire * 1.2) : b.state === STATE_ABANDONED,
+      seed: b.id,
+      reach: Math.hypot(b.w, b.d) * (CELL / 2) + 2,
+    };
   }
 
   private place(id: number): void {
-    const old = this.chunkOf.get(id);
-    if (old !== undefined) {
-      this.chunks.get(old)?.ids.delete(id);
-      this.dirty.add(old);
-      this.chunkOf.delete(id);
-    }
     this.constructionDirty = true;
     const b = this.world.buildings.get(id);
     if (!b) {
       this.heights.delete(id);
+      this.looks.delete(id);
+      this.drawn.delete(id);
+      this.chunks.set(id, null);
       return;
     }
-    this.heights.set(id, this.model(b).height);
-    if (b.state === STATE_CONSTRUCTION) return;
-    const k = this.chunkKey(b);
-    let c = this.chunks.get(k);
-    if (!c) this.chunks.set(k, (c = { ids: new Set(), mesh: null }));
-    c.ids.add(id);
-    this.chunkOf.set(id, k);
-    this.dirty.add(k);
+    const m = this.model(b);
+    this.heights.set(id, m.height);
+    // Most updates change only what a building needs (power, water, garbage): nothing drawn.
+    const look = b.fire > 0 ? Math.min(1, b.fire * 1.2) : b.state === STATE_ABANDONED;
+    const drawn = this.drawn.get(id);
+    if (
+      drawn &&
+      drawn.model === m &&
+      drawn.state === b.state &&
+      drawn.look === look &&
+      drawn.x === b.x &&
+      drawn.y === b.y &&
+      drawn.z === b.z &&
+      drawn.yaw === buildingYaw(b)
+    )
+      return;
+    this.drawn.set(id, { model: m, state: b.state, look, x: b.x, y: b.y, z: b.z, yaw: buildingYaw(b) });
+    this.chunks.set(id, b.state === STATE_CONSTRUCTION ? null : b);
+  }
+
+  /**
+   * The look a building wears: its variant, unless a neighbour already looks like that (the same
+   * type and size in that look, or the same hand-made design painted and turned the same way on
+   * a lot of another depth).
+   */
+  look(b: BuildingData): number {
+    const key = `${b.def}|${b.w}x${b.d}`;
+    const had = this.looks.get(b.id);
+    if (had && had.key === key) return had.look;
+    const taken = new Set<string>();
+    // Lots are at most four cells a side.
+    const reach = 4 * CELL + 2;
+    const near = this.world.bldHash.query({
+      minX: b.x - reach,
+      minZ: b.z - reach,
+      maxX: b.x + reach,
+      maxZ: b.z + reach,
+    });
+    for (const id of near) {
+      if (id === b.id) continue;
+      const o = this.world.buildings.get(id);
+      const l = this.looks.get(id);
+      if (!o || !l) continue;
+      // Side by side or back to back: their lots touch.
+      if (touching(b, o)) taken.add(l.seen);
+    }
+    let look = b.variant % VARIANTS;
+    let seen = assets.zonedAppearance(b.def, b.w, b.d, look);
+    for (let k = 1; k < VARIANTS && taken.has(seen); k++) {
+      const next = (b.variant + k) % VARIANTS;
+      const s = assets.zonedAppearance(b.def, b.w, b.d, next);
+      if (taken.has(s)) continue;
+      look = next;
+      seen = s;
+    }
+    this.looks.set(b.id, { look, key, seen });
+    return look;
+  }
+
+  /** How a building appears (for telling alike neighbours): equal strings look the same. */
+  appearance(b: BuildingData): string {
+    const look = this.look(b);
+    return this.looks.get(b.id)?.seen ?? assets.zonedAppearance(b.def, b.w, b.d, look);
   }
 
   model(b: BuildingData): ModelData {
     if (b.state === STATE_RUBBLE) return assets.rubble(b.w, b.d, b.variant);
-    return assets.zoned(b.def, b.w, b.d, b.variant);
+    return assets.zoned(b.def, b.w, b.d, this.look(b));
   }
 
   /** Append a building's model, transformed into world space, to the arrays. */
   private append(b: BuildingData, m: ModelData, out: Arrays, clipTo?: number): void {
     const look = b.fire > 0 ? Math.min(1, b.fire * 1.2) : b.state === STATE_ABANDONED;
-    appendModel(out, m, b.x, b.y, b.z, buildingYaw(b), look, clipTo);
-  }
-
-  private rebuildChunk(k: number): void {
-    const c = this.chunks.get(k);
-    if (!c) return;
-    if (c.mesh) {
-      this.group.remove(c.mesh);
-      c.mesh.geometry.dispose();
-      c.mesh = null;
-    }
-    if (!c.ids.size) {
-      this.chunks.delete(k);
-      return;
-    }
-    const arr = new Arrays(false);
-    for (const id of [...c.ids].sort((a, b) => a - b)) {
-      const b = this.world.buildings.get(id);
-      if (b) this.append(b, this.model(b), arr);
-    }
-    const mesh = new Mesh(arr.geometry(), this.material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.name = `buildings-${k}`;
-    c.mesh = mesh;
-    this.group.add(mesh);
+    appendModel(out, m, b.x, b.y, b.z, buildingYaw(b), look, clipTo, b.id);
   }
 
   private rebuildConstruction(): void {
@@ -281,24 +430,32 @@ export class BuildingRenderer {
     this.append(b, mdl, out, 1e6);
   }
 
-  update(night: number): void {
+  /** Once a frame: the night glow, the levels of detail for where the camera is, and rebuilds. */
+  update(night: number, eye?: Vector3): void {
     this.uniforms.uNight.value = night;
-    let budget = MAX_CHUNK_REBUILDS_PER_FRAME;
-    for (const k of [...this.dirty]) {
-      if (budget-- <= 0) break;
-      this.dirty.delete(k);
-      this.rebuildChunk(k);
+    if (eye) {
+      this.uniforms.uLodEye.value.copy(eye);
+      this.eye.copy(eye);
     }
+    const r = this.range;
+    const f = this.chunks.force;
+    // One level everywhere (tests): hand over at no distance, or never.
+    if (f === 1) this.uniforms.uLod.value.set(1e9, 2e9, 3e9, 4e9);
+    else if (f === 2) this.uniforms.uLod.value.set(-2, -1, 3e9, 4e9);
+    else if (f === 3) this.uniforms.uLod.value.set(-4, -3, -2, -1);
+    else this.uniforms.uLod.value.set(r.nearStart, r.nearEnd, r.skyStart, r.skyEnd);
+    this.chunks.update(this.eye, this.range);
     if (this.constructionDirty) {
       this.constructionDirty = false;
       this.rebuildConstruction();
     }
   }
 
+  private eye = new Vector3(0, 1e6, 0);
+
   /** Finish all pending chunk rebuilds now (tests and screenshots). */
   flushAll(): void {
-    for (const k of [...this.dirty]) this.rebuildChunk(k);
-    this.dirty.clear();
+    this.chunks.update(this.eye, this.range, true);
     this.rebuildConstruction();
   }
 }
@@ -330,95 +487,9 @@ function boxesModel(bars: number[][], col: Color): ModelData {
   };
 }
 
-export class Arrays {
-  pos = new Float32Array(3 * 4096);
-  nrm = new Float32Array(3 * 4096);
-  col = new Float32Array(3 * 4096);
-  emi = new Float32Array(4096);
-  clip: Float32Array | null;
-  n = 0;
+export { Arrays, appendModel } from './modelMerge';
 
-  constructor(withClip: boolean) {
-    this.clip = withClip ? new Float32Array(4096) : null;
-  }
-
-  reserve(extra: number): void {
-    const need = this.n + extra;
-    if (need <= this.emi.length) return;
-    const cap = Math.max(need, this.emi.length * 2);
-    const grow = (a: Float32Array, k: number) => {
-      const b = new Float32Array(cap * k);
-      b.set(a);
-      return b;
-    };
-    this.pos = grow(this.pos, 3);
-    this.nrm = grow(this.nrm, 3);
-    this.col = grow(this.col, 3);
-    this.emi = grow(this.emi, 1);
-    if (this.clip) this.clip = grow(this.clip, 1);
-  }
-
-  geometry(): BufferGeometry {
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(this.pos.slice(0, this.n * 3), 3));
-    g.setAttribute('normal', new BufferAttribute(this.nrm.slice(0, this.n * 3), 3));
-    g.setAttribute('color', new BufferAttribute(this.col.slice(0, this.n * 3), 3));
-    g.setAttribute('emissive', new BufferAttribute(this.emi.slice(0, this.n), 1));
-    if (this.clip) g.setAttribute('clipY', new BufferAttribute(this.clip.slice(0, this.n), 1));
-    g.computeBoundingSphere();
-    return g;
-  }
-}
-
-/** Transform a model into world space (position, yaw) and append it; optionally darken as abandoned. */
-export function appendModel(
-  out: Arrays,
-  m: ModelData,
-  x: number,
-  y: number,
-  z: number,
-  yaw: number,
-  abandoned: boolean | number = false,
-  clipTo?: number,
-): void {
-  // true = abandoned (greyed, dark windows); a number = charred by fire to that degree (0..1).
-  const char = typeof abandoned === 'number' ? abandoned : 0;
-  const c = Math.cos(yaw);
-  const s = Math.sin(yaw);
-  const n = m.pos.length / 3;
-  out.reserve(n);
-  for (let i = 0; i < n; i++) {
-    const lx = m.pos[i * 3]!;
-    const ly = m.pos[i * 3 + 1]!;
-    const lz = m.pos[i * 3 + 2]!;
-    const nx = m.nrm[i * 3]!;
-    const nz = m.nrm[i * 3 + 2]!;
-    const o = out.n * 3;
-    out.pos[o] = x + lx * c + lz * s;
-    out.pos[o + 1] = y + ly;
-    out.pos[o + 2] = z - lx * s + lz * c;
-    out.nrm[o] = nx * c + nz * s;
-    out.nrm[o + 1] = m.nrm[i * 3 + 1]!;
-    out.nrm[o + 2] = -nx * s + nz * c;
-    let r = m.col[i * 3]!;
-    let g = m.col[i * 3 + 1]!;
-    let bl = m.col[i * 3 + 2]!;
-    if (char > 0) {
-      const k = 1 - 0.75 * char;
-      r *= k;
-      g *= k * 0.92;
-      bl *= k * 0.85;
-    } else if (abandoned) {
-      const grey = (r + g + bl) / 3;
-      r = (r * 0.35 + grey * 0.65) * 0.62;
-      g = (g * 0.35 + grey * 0.65) * 0.6;
-      bl = (bl * 0.35 + grey * 0.65) * 0.58;
-    }
-    out.col[o] = r;
-    out.col[o + 1] = g;
-    out.col[o + 2] = bl;
-    out.emi[out.n] = abandoned === true || char > 0.3 ? 0 : m.emi[i]!;
-    if (out.clip) out.clip[out.n] = clipTo ?? 1e6;
-    out.n++;
-  }
+/** Do two buildings' lots touch (side by side or back to back; generously, a lot's length apart)? */
+export function touching(a: BuildingData, b: BuildingData): boolean {
+  return Math.hypot(a.x - b.x, a.z - b.z) <= Math.max(a.w, a.d, b.w, b.d) * CELL + 1.5;
 }

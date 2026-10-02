@@ -67,6 +67,10 @@ export class ClientWorld {
   readonly bldHash = new SpatialHash(32);
   private buildingListeners: ((changed: number[], removed: number[]) => void)[] = [];
   readonly civics = new Map<number, CivicData>();
+  /** Tree grid cells changed since the tree renderer last looked (it takes and clears them). */
+  readonly treeChanges = new Set<number>();
+  /** Civic footprints by place, for `civicAt` (tree placement asks it for every tree). */
+  private readonly civHash = new SpatialHash(64);
   private civicListeners: ((changed: number[], removed: number[]) => void)[] = [];
   /** Active service vehicles and the tick they were reported at (the renderer extrapolates). */
   vehicles: VehicleData[] = [];
@@ -114,7 +118,7 @@ export class ClientWorld {
     for (const b of snap.net.blocks) this.netState.blocks.set(b.id, { ...b });
     this.net = new Network(this.netState, null, null);
     for (const b of snap.buildings) this.setBuilding(b);
-    for (const c of snap.civics) this.civics.set(c.id, c);
+    for (const c of snap.civics) this.setCivic(c);
     this.vehicles = snap.vehicles;
     this.vehiclesTick = snap.stats.tick;
     this.setTraffic(snap.traffic);
@@ -275,7 +279,8 @@ export class ClientWorld {
 
   /** Civic building whose footprint contains (x, z). */
   civicAt(x: number, z: number): CivicData | null {
-    for (const c of this.civics.values()) {
+    for (const id of this.civHash.queryPoint(x, z, 0)) {
+      const c = this.civics.get(id)!;
       const d = CIVIC.get(c.def);
       if (!d) continue;
       const ca = Math.cos(c.angle);
@@ -287,6 +292,13 @@ export class ClientWorld {
       if (Math.abs(lx) <= d.w / 2 && Math.abs(lz) <= d.d / 2) return c;
     }
     return null;
+  }
+
+  private setCivic(c: CivicData): void {
+    this.civics.set(c.id, c);
+    const d = CIVIC.get(c.def);
+    const r = d ? Math.hypot(d.w, d.d) / 2 : 0;
+    this.civHash.insert(c.id, { minX: c.x - r, minZ: c.z - r, maxX: c.x + r, maxZ: c.z + r });
   }
 
   private setBuilding(b: BuildingData): void {
@@ -484,8 +496,11 @@ export class ClientWorld {
       this.emit('buildings');
     }
     if (diff.civics) {
-      for (const id of diff.civics.removed) this.civics.delete(id);
-      for (const c of diff.civics.upserts) this.civics.set(c.id, c);
+      for (const id of diff.civics.removed) {
+        this.civics.delete(id);
+        this.civHash.remove(id);
+      }
+      for (const c of diff.civics.upserts) this.setCivic(c);
       const changed = diff.civics.upserts.map((c) => c.id);
       for (const l of this.civicListeners) l(changed, diff.civics.removed);
       this.emit('civics');
@@ -522,6 +537,7 @@ export class ClientWorld {
     }
     if (diff.trees) {
       for (let k = 0; k < diff.trees.idx.length; k++) this.trees[diff.trees.idx[k]!] = diff.trees.val[k]!;
+      for (const i of diff.trees.idx) this.treeChanges.add(i);
       this.emit('trees');
     }
     this.emit('stats');

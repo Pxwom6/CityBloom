@@ -16,6 +16,7 @@ import type { Leg } from '../sim/systems/graph';
 import { ModelBuilder, type ModelData } from './assets/builder';
 import { REGIONAL_RAIL_CURVE, REGIONAL_RAIL_DX } from './roads';
 import { RAIL_TRACK_OFFSET, tramOffset } from './roadStyle';
+import { uploadInstances } from './geom';
 
 const C = (h: string) => new Color(h);
 
@@ -820,7 +821,7 @@ export class RailVehicleRenderer {
     }
     for (const [id, mesh] of this.meshes) {
       mesh.count = counts.get(id)!;
-      mesh.instanceMatrix.needsUpdate = true;
+      uploadInstances(mesh);
     }
   }
 }

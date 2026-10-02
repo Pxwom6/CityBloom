@@ -11,14 +11,26 @@ const FILES = __FILES__;
 const CACHE = `citybloom-${VERSION}`;
 const INDEX = new URL('index.html', self.location).href;
 
+/** A file named by its content (assets/index-1a2b3c4d.js, assets/models-0123456789.bin) never changes. */
+const HASHED = /\/assets\/[^/]+-[\w-]{8,}\.\w+$/;
+
 self.addEventListener('install', (event) => {
-  // Fetch past the HTTP cache: GitHub Pages lets browsers keep index.html for ten minutes.
   event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) =>
-        cache.addAll(FILES.map((f) => new Request(new URL(f, self.location), { cache: 'reload' }))),
+    caches.open(CACHE).then((cache) =>
+      Promise.all(
+        FILES.map(async (f) => {
+          const url = new URL(f, self.location).href;
+          if (HASHED.test(url)) {
+            // Kept from the last version, or from the page's own download: fetched only once.
+            const old = await caches.match(url);
+            if (old) return cache.put(url, old);
+            return cache.add(new Request(url));
+          }
+          // The rest past the HTTP cache: GitHub Pages lets browsers keep index.html for ten minutes.
+          return cache.add(new Request(url, { cache: 'reload' }));
+        }),
       ),
+    ),
   );
   // No skipWaiting here: a new version waits until the player chooses to reload.
 });

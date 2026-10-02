@@ -1,15 +1,7 @@
 # PROGRESS
 
-## What you need to do (to publish the game, M15)
-1. **Merge this branch into `main`**: open a pull request from `claude/city-building-game-design-yk7dix`
-   to `main` on GitHub and merge it. The deploy workflow (`.github/workflows/deploy.yml`, already
-   pushed) runs on every push to `main`.
-2. **Turn on Pages**: the repository's **Settings → Pages → Build and deployment → Source:
-   "GitHub Actions"**. (Pages on a private repository needs a paid plan; on a free plan, make the
-   repository public first.)
-3. That's all. The merge starts the first deploy (or **Actions → Deploy to GitHub Pages → Run
-   workflow**); after about two minutes the game is at **https://pxwom6.github.io/CityBloom/**.
-   Later pushes to `main` redeploy, and open copies of the game offer "New version, reload".
+Phase 3 (graphics, SPEC-3.md) runs locally on the owner's Mac on the `phase-3` branch; the owner
+merges it into `main`, which deploys the live site at https://pxwom6.github.io/CityBloom/.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -36,6 +28,10 @@
 - [x] M22 Seasons and weather
 - [x] M23 Region, airport and seaport
 - [x] M24 Terrain and map editor
+- [x] M25 Baseline and model pipeline
+- [x] M26 Light and sky
+- [x] M27 Ground, lots and streets
+- [x] M28 Buildings and variety
 
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
@@ -80,6 +76,21 @@ review after phase 2 retuned the late-game money, added a placeable regional rai
 cities, a grace for cities meeting seasons for the first time, and level-crossing barriers and
 trams that give way (DECISIONS, "Phase 2 review").
 
+**Phase 3 (graphics, M25–M28)** made it look the part without touching the simulation. The owner's
+hand-made building models (176 so far: every zoned type, second designs sized for the lots buildings
+actually stand on, 46 civic buildings, annexes) are checked against their spec, converted at build
+time and stand in wherever they fit, painted from the game's palettes, with far and skyline versions
+that fade in by a dither (M25); three buildings in four in a grown city wear one. Light and sky: cascaded
+shadows fitted to the ground in view, soft occlusion in corners, a glow round lit windows at night,
+golden and blue hours, bounce light and haze, Neutral tone mapping (M26). Ground, lots and streets:
+grass with fields, hedgerows and worn paths, empty zoned land as a faint tint and outline, kerbs,
+zebra crossings, benches, bins and planters, and car parks, lawns and yards behind buildings (M27).
+Buildings: every generated building now has distant versions too, and the generator was refreshed
+(five tower silhouettes, crowns, spires, balcony bands, mansards, cornices, more colours) so no two
+neighbours look alike (M28). Every effect has a switch in the graphics quality. On an M5 MacBook
+Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 9–10 ms a frame at High,
+against 22–25 at the start of the phase; the whole-city view draws 1.7M triangles where it drew 2.7M.
+
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
@@ -95,20 +106,108 @@ trams that give way (DECISIONS, "Phase 2 review").
    (ski resorts in winter, beaches in summer).
 7. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
    building + economy pattern as M10.
-8. **Custom glTF models** through the existing asset registry (`src/render/assets/registry.ts`).
+8. **More hand-made models** (PROGRESS, "Models"): second designs for the lots one design fits
+   (they alternate with generated looks there), a 24 × 24 m skyline tower and headquarters (105 of the
+   bench city's R213s stand on 24 × 24 m lots no design fits), and high-wealth and high-tech types once
+   cities grow them; a procedural window shader would let distant homes' windows merge too.
 9. **Balance**: commercial demand runs a little low in small towns; the big-city running costs and
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-The Phase 2 review fixes (DECISIONS, "Phase 2 review"): late-game money, the placeable regional rail
-link, the legacy save corpus and tests (with seasons' grace for pre-seasons cities), G in scenarios,
-level crossings and trams, and the docs, are done and tested; left: the full e2e run and the final
-bench and balance numbers. Item 6 (performance) was dropped: on an M5 MacBook Pro the 100k city's
-worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md is complete.
+Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 2 (below,
+"Models"): the owner's second batch is in, sized for the lots buildings stand on. Nothing is left in
+progress.
 
 ## Next tasks
-1. The ideas list above; the "To check on the Mac" list needs real hardware.
-2. When people have played it: the scenario stars and the late-game money curve (see Known issues).
+1. The owner: merge `phase-3` (pushed to GitHub) into `main` when happy, which publishes the site.
+2. Bring in new models as they arrive in `assets/models/` (`npm run models:check`), and pass the
+   notes under "Models" to the owner for any remakes.
+3. Ideas above.
+
+## Models (phase 3)
+176 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
+buildings) and the second (`docs/models/PROMPTS-2.md`: 40 designs sized for the lots buildings stand
+on, and a remade `C213`). `npm run models:check` passes all 176. Converted: 194k triangles in the
+files, 165k drawn near, 111k far, 69k in the skyline; the models file is 2.9 MB (0.9 MB gzipped),
+fetched at start.
+
+| File | Status |
+|---|---|
+| `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot, two on a 16 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
+| `library.glb`, `primary.glb`, `university.glb` | failed as first delivered (a gable or wall slid 4–9 m off its building: "a wall hangs in the air", and the library was 24 m wide on its 20 m site); the owner's fixed files pass |
+| 13 of batch 2: `C103-2`, `C113-2`, `C213-2`, `I003-2`, `I013-2`, `I013-3`, `I103-2`, `I113-2`, `I213-2`, `R202-2`, `R203-2`, `R212-2`, `R213-2` | skipped under the first rules (a zoned model had to be its type's lot, or a half or a third of its width: "is 16 × 24 m; its lot is 24 × 32 m"); pass since a zoned model may be any whole number of cells up to its type's lot (DECISIONS, "Model batch 2"), and the check names the lots each is for |
+| `I101-2`, `I111-2` | failed as "the front faces along X": the canopy over the loading docks down their side counted as an entrance; pass since a canopy over garage doors counts as a dock |
+| all 41 batch-2 files | pass with a note: their lawns lie at 1 cm and paths at 4 cm, under and level with the game's 4 cm lot base, so drives and paths flickered; the game now lifts a model's ground to 5 cm (in future files, 5 cm and up) |
+| `C213.glb` (remade) | lights window by window: 285 runs of 5.6–6.3 m (the first had 52 floor-wide bands), in its near, far and skyline versions alike; the README's screenshots and the share image are retaken with it |
+| the other first-batch files | pass with no notes |
+
+Which way they face (`npx tsx scripts/dev/modelturn.ts`): none fails as delivered; turned half round
+155 of 168 are caught (154 before batch 2's change to docks and garage doors), a quarter round 160
+(159), and every model caught before still is. The rest were never caught: they are symmetrical or
+have entrances on more than one side (half round: `C213`, `C213-2`, `I103`, `I113`, `R003`, `R013`,
+`R023`, `R103-2`, `R113`, `R123`, `grandarch`, the two parks; a quarter round: `C103`, `C113`, `C123`,
+`C213-2`, `R003-2`, `R013-2`, the parks).
+
+**Who wears them** (`node scripts/dev/modelcensus.mjs <saves …>`; logs in `bench-results/batch2/`):
+
+| City | Buildings | First batch only | Batch 2 under the first rules | Now |
+|---|---|---|---|---|
+| Bench city (110k) | 2,158 | 359 (17 %) | 956 (44 %) | 1,618 (75 %) |
+| Menu demo town | 1,001 | 252 (25 %) | 580 (58 %) | 914 (91 %) |
+| `Saves/Ashton.citybloom` | 192 | 3 (2 %) | 111 (58 %) | 184 (96 %) |
+
+Where two designs or more fit a lot every building wears one; where one fits, it alternates with
+generated looks (DECISIONS, "Model batch 2"). The bench city's 540 generated buildings stand on lots
+one design fits (393: R213 on 24 × 32 and 16 × 24–32 m, C113 on 16 × 16, I211 and I201 on 24 × 24, …)
+or none does (147: 105 R213 skyline towers and 10 headquarters on 24 × 24 m lots, 7 I012 on 16 × 16).
+
+**Models that rarely or never appear, and why** (across the three cities):
+- First-batch designs sized for their type's own lot, where the type's buildings stand on smaller
+  lots (batch 2 covers those now): the 16 m villas and family houses `R013`, `R003`, `R012`, `R002`,
+  `R023` (789 such homes, every one 8 m wide), the courtyard blocks `R113` and `R103-2` (24 × 24; 474
+  of their types' 475 buildings stand on 16 m lots), apartment blocks `R112`, `R102`, market halls `C013`, `C003` (16 m; 142 stand on
+  8 m lots), department stores and offices `C113`, `C103`, `C112`, `C102`, plants `I013`, `I003`,
+  `I012`, `I112`, `I102`, complexes `I103`, `I113` (24 × 32; most stand on 16 m lots) and the towers
+  `R203`, `R202`, `C203`, `C202`, `I203`.
+- Types that hardly grow in these cities: no high-wealth homes, shops or offices (`R02x`, `R12x`,
+  `R22x`, `C02x`, `C12x`, `C22x`) and no high-tech industry (`I02x`, `I12x`, `I22x`) in any of them, and
+  next to no `C101`, `I002`, `I102`.
+- Batch-2 designs worn by few: `C102-2` (2: two low-wealth office blocks in all three cities),
+  `C103-2` (3 of 10 low-wealth department stores), `R002-2` (4 of 10), `R102-2` (4 of 6), `C001-2` (5
+  of 9), `C002-2` (7 of 11): few of their type grow, and a lone design leaves every other look to the
+  generator. The rest are well used (`R013-2` and `-3` 445 between them, `R113-2` and `-3` 397, `R003-2`
+  and `-3` 300, `R213-2` 77 …).
+
+**Notes on the models for the owner**, from reviewing every batch-2 design in the game (they pass
+and are in):
+- Lawns and paths: lay them 5 cm up or more (the game lifts lower ones, see above).
+- `R201-2`, `R213-2` (and `C213-2` a little): window bands about 8 m long, two a floor; where both
+  are lit at night a floor reads as one stripe. Runs of 3–4 m would read as windows (the remade
+  `C213`'s 6 m runs read well).
+- Sawtooth roofs (`I013-2`, `I013-3`, `I011-2`, `I003-2`, `I101-2`, `I111-2`, `I103-2`, `I113-2`):
+  hairline gaps between the glazing and the roof planes show the grass through.
+- Wealth levels alike: `R102-2` is nearly `R112-2`, and the low-wealth villas and family houses
+  (`R003-2`, `R003-3`, `R002-2`) nearly the medium-wealth ones; `R213-2` and `R203-2` are both navy
+  glass towers. A silhouette of their own would tell the streets apart.
+- `R113-2`: a dark strip with slit windows at each side of its front shows between copies standing
+  side by side (a party wall would be plain).
+- `C213-2`: the "two-storey glass lobby" is a solid wall with a door; its sign panel reads as one
+  more window. `C013-2`, `C013-3`: the sign is a blank cream plaque close to the wall's colour.
+- `I003-2`, `I001-2`: brown roller doors on brick barely show. `I213-2` looks slight beside its
+  neighbours, much of its lot bare paving.
+- `R101-2` reads as two and a half storeys (three asked); `R013-2`, `R003-2`: from behind the dormer
+  roof pokes above the ridge; `R001-2`: its side hedges run the whole lot as thin tall walls.
+- `C113-2`, `C103-2`: their grey roofs and navy signs are too far from the game's palettes to be
+  repainted, so every copy keeps them.
+
+From the first batch (still open): `firestation`: a thin strip of roof along the ridge sits a little
+proud of the roof. `skyneedle`: benches stand inside the planters at its foot. `nuclear`: the cooling
+towers' bases run into the boundary wall. `recycling`: the shed roofs' end caps are in the roof
+material, so they repaint with the roof. `C223`: the lobby glass lies in the plane of the wall (it can
+shimmer at a distance). `university`: the back walls of the wings have no windows. Several civic
+sites leave no clear back corner, so an add-on annex stands at the nearest clear spot, shrunk (the
+clinic's and the police station's most). `tree_spot`s within a metre or two of a wall put a tree's
+crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -135,6 +234,162 @@ worst tick is 6 ms (see Real hardware). Every milestone in SPEC.md and SPEC-2.md
 - Undo refuses (with a toast saying why) when the city has changed underneath: buildings grown on an unzoned strip, a road now carrying traffic incidents, and so on; the change stays and the history moves past it.
 - Rail (M20): each connected stretch of track runs one train line in order of running time from its far end, so a branching network gets one line that may double back; trips use one line (no changing between buses, trams and trains). Trains run to their timetable (cars give way to them at crossings, not the other way round); trams keep their own place and wait for cars, so a tram line bunches up in heavy traffic. Walkers still cross a closed level crossing. A city with no regional rail link can lay one from the Transit menu (Phase 2 review).
 - The benchmark grid still fails 5 avenue links whose junctions differ in height by more than 12 % of their length, and 26 bridges without land for ramps (81 failures before M13).
+
+## Frame times (phase 3; MacBook Pro M5, Chrome, frame cap off)
+`node scripts/dev/framebench.mjs bench-results/city.gz` on the ~110k bench city (`bench.ts 6 --big --save`), a
+1512×781 window at 2× (High draws 3024×1562), every view at 3× speed; average / 95th-percentile
+frame time in ms. `heavy` is SPEC-3's heaviest view: the whole city at night with a tornado on
+screen. Runs vary by about ±15 %, so compare runs made back to back.
+
+**Baseline, the start of phase 3** (commit 0631561; 289 draw calls / 2.68M triangles at the whole-city
+view, 169 / 1.89M at city zoom, 100 / 1.05M at street level):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 10.1 / 30.0 | 6.9 / 16.0 | 4.5 / 8.5 | 10.3 / 28.0 | 6.9 / 14.1 | 4.5 / 8.5 | **23.1 / 192** |
+| Medium | 6.9 / 19.5 | 4.4 / 8.8 | 2.4 / 4.2 | 6.5 / 12.9 | 4.3 / 8.6 | 2.4 / 4.3 | 16.5 / 99.9 |
+| Low | 3.7 / 6.3 | 2.4 / 3.8 | 1.6 / 2.6 | 3.3 / 5.7 | 2.4 / 3.6 | 1.5 / 2.6 | 9.7 / 15.0 |
+
+The whole-city view at High is 99 fps, as the owner measured (100–118 at 120 Hz). The heavy view was
+well over SPEC-3's 12 ms before phase 3 changed anything: a tornado flattens trees, every change to
+the tree grid rebuilt all sixteen tree regions, and each candidate tree asked `civicAt`, a scan of
+every civic building (4.9 s of a 7 s profile).
+
+**After the first two fixes** (tree regions rebuilt only where cells changed, once a frame, with
+civic footprints in a spatial hash; instanced meshes upload only the instances in use, not their
+whole buffers every frame):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 9.9 / 26.4 | 6.4 / 12.4 | 4.1 / 5.0 | 11.2 / 27.2 | 6.6 / 7.6 | 4.2 / 5.4 | **11.6 / 27.3** |
+| Medium | 6.2 / 11.7 | 4.1 / 5.1 | 2.2 / 3.0 | 6.2 / 10.5 | 4.0 / 5.0 | 2.2 / 3.0 | 6.2 / 11.6 |
+| Low | 2.9 / 4.7 | 2.0 / 3.7 | 1.4 / 2.7 | 2.9 / 4.2 | 2.0 / 3.7 | 1.4 / 2.7 | 2.9 / 4.8 |
+
+The whole-city view at High is GPU-bound (about 2.3 ms per million triangles plus 3–4 ms of pixels at
+2×): with the cap off the main thread runs ahead of the GPU and then waits inside whichever WebGL
+call next needs it, now usually the upload of a rebuilt building chunk (single waits of 0.3–0.7 s
+show up as the p99 and max in the logs; with the cap on the queue can't build up). Fewer triangles
+(distant versions, a cheaper shadow pass) and smaller chunk uploads are what bring it down.
+Sim ticks while saving the city: avg 0.59 ms at 110k, worst 28 ms (month 1, cold start).
+
+**M25 complete** (the hand-made models, levels of detail and the fixes above), run back to back
+with the phase-start build (`--dist dist-base`); new / start:
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 9.2 / 10.6 | 6.6 / 7.1 | 4.3 / 4.6 | 10.7 / 10.4 | 7.1 / 7.0 | 4.6 / 4.5 | **9.7 / 23.0** |
+| Medium | 5.7 / 6.6 | 4.0 / 4.3 | 2.4 / 2.4 | 6.0 / 6.4 | 4.1 / 4.2 | 2.5 / 2.4 | 6.5 / 15.0 |
+| Low | 3.0 / 3.7 | 2.2 / 2.3 | 1.6 / 1.6 | 3.0 / 3.3 | 2.2 / 2.3 | 1.6 / 1.6 | 3.1 / 9.2 |
+
+Average frame times in ms (95th percentiles in `bench-results/frames-m25-final*.log`). The heavy
+view at High is 9.7 ms, inside the 12 ms budget; Medium and Low are faster than at the start in
+the heavy view and within run-to-run noise (±15 %) of it everywhere else. The whole-city view draws
+319 calls and 2.70M triangles (start: 289 and 2.69M): the levels of detail add chunk meshes.
+`bench.ts 6 --big`: tick avg 0.24–0.27 ms at 97–110k, worst 15.8 ms (month 1, the cold start),
+populations identical to before (110,174 at month 6). `balance.ts 20`: careful 71,565 / 72 % at
+year 20, every election won, treasury $1.5M; greedy 420 / 16 %, neglectful 354 / 37 %, both losing
+every election (no sim change in phase 3).
+
+**M26 complete** (light and sky), run back to back with the phase-start build; new / start, average
+ms (95th percentiles in `bench-results/frames-m26-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 7.5 / 9.9 | 9.0 / 6.7 | 6.9 / 4.2 | 9.5 / 9.7 | 9.4 / 6.6 | 7.3 / 4.3 | **10.0 / 21.8** |
+| Medium | 4.5 / 6.3 | 3.1 / 4.0 | 2.8 / 2.3 | 4.8 / 5.8 | 3.5 / 3.9 | 2.9 / 2.3 | 5.0 / 14.3 |
+| Low | 2.8 / 3.5 | 2.2 / 2.2 | 1.3 / 1.5 | 2.8 / 3.2 | 2.2 / 2.1 | 1.4 / 1.5 | 3.0 / 8.2 |
+
+The heavy view at High is 10.0 ms, inside the 12 ms budget. Low is as fast as at the start or
+faster everywhere; Medium is faster in the heavy and whole-city views, and about half a millisecond
+slower close up at street level, where its new occlusion and the night glow are on. High pays for
+its effects close up (occlusion, two shadow cascades reaching three camera distances; 6.9 ms is
+still 145 fps). Shadow maps from far off are redrawn 30 times a second, so the triangles and draw
+calls per frame vary; the whole-city view's shadow pass draws 454k triangles where it drew 872k.
+`bench.ts 6 --big` and `balance.ts 20` are identical to M25's (no sim change): tick avg 0.25–0.28
+ms at 97–110k, worst 16 ms (month 1); careful 71,565 / 72 %, greedy 420 / 16 %, neglectful 354 /
+36 % at year 20.
+
+**M27 complete** (ground, lots and streets), run back to back with the phase-start build; new /
+start, average ms (95th percentiles in `bench-results/frames-m27-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.3 / 10.7 | 10.1 / 7.4 | 7.5 / 4.7 | 10.5 / 10.7 | 10.6 / 7.3 | 7.8 / 4.7 | **10.8 / 24.9** |
+| Medium | 4.6 / 7.0 | 3.5 / 4.4 | 3.0 / 2.5 | 5.0 / 6.5 | 4.0 / 4.3 | 3.2 / 2.5 | 5.1 / 18.2 |
+| Low | 3.0 / 3.7 | 2.2 / 2.3 | 1.5 / 1.6 | 3.0 / 3.2 | 2.2 / 2.2 | 1.5 / 1.5 | 3.0 / 8.3 |
+
+The heavy view at High is 10.8 ms, inside the 12 ms budget. Against M26 (run alongside): Low the
+same, Medium within noise, High about the same from far off and 0.5–1 ms slower at city zoom,
+where the country's fields and paths are drawn (an A/B with `setGround(0)` in one build puts them at
+0.4–0.9 ms; they fade out on the way to the whole-city view, which without that fade measured
+12.6–13 ms in a full run). Every view draws fewer triangles than at M26 (the whole-city view's
+colour pass 1.67M against 1.73M): road ribbons step 6 m on straight runs, which more than pays for
+the kerb stones and edging. `bench.ts 6 --big` and `balance.ts 20` are identical to M26's (no sim
+change): 110,174 at month 6, tick avg 0.24–0.27 ms, worst 15 ms (month 1); careful 71,565 / 72 %,
+greedy 420 / 16 %, neglectful 354 / 36 % at year 20. Checks: 381 unit tests, and all 41 e2e specs
+pass (`e2e/m27-ground.spec.ts` new; the crossings spec, which longer frames had made fail 2 runs in
+5, passes 8 in 8 after two fixes to visible cars at level crossings, DECISIONS M27).
+
+**M28 complete** (buildings and variety), run back to back with the phase-start build; new / start,
+average ms (95th percentiles in `bench-results/frames-m28-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.0 / 10.3 | 11.0 / 7.1 | 8.0 / 4.5 | 10.2 / 10.3 | 11.8 / 7.0 | 8.5 / 4.5 | **9.2 / 22.3** |
+| Medium | 4.6 / 6.4 | 3.9 / 4.1 | 3.1 / 2.4 | 5.0 / 6.1 | 4.4 / 4.1 | 3.3 / 2.3 | 4.8 / 12.7 |
+| Low | 3.0 / 3.6 | 2.7 / 2.2 | 1.7 / 1.6 | 2.9 / 3.2 | 2.7 / 2.2 | 1.7 / 1.5 | 2.8 / 7.8 |
+
+The heavy view at High is 9.2 ms (inside 12; M27 10.8): with every building in the levels of detail
+the whole-city view draws 152 calls (289 at the start) and 1.73M triangles in its colour pass (2.68M).
+Medium and Low are faster than at the start in the whole-city and heavy views and at Medium's city
+zoom. Close up they are slower, which SPEC-3 asks them not to be: in runs alternating with the
+start's build, Medium's street level by 0.7 ms by day and 0.85 at night (its shadow maps,
+occlusion and glow from M26, now drawn 60 times a second close up, plus the refreshed buildings'
+detail), Low's street level by 0.1–0.2 ms and its city zoom at night by 0.35 (its city zoom by day
+is even). Every Medium view stays under 5 ms and every Low view under 3 ms (200–600 fps on this
+GPU); taking Medium's shadows to 30 times a second or dropping its occlusion would cost more in looks
+than it saves (DECISIONS M28). `bench.ts 6 --big` and `balance.ts 20` are identical to M27's (no sim
+change). Checks: 386 unit tests and all 42 e2e specs; `e2e/m28-buildings.spec.ts` loads the demo town
+through the load screen: 1,308 touching pairs, none drawn with the same model, no building drawn
+"plain", 0.90M triangles from the whole-city view.
+
+**Phase 3 final** (after the walk-through fixes), back to back with the phase-start build; new /
+start, average ms (`bench-results/frames-phase3-final*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 7.5 / 10.6 | 10.6 / 7.1 | 7.8 / 4.6 | 10.6 / 10.5 | 11.3 / 7.1 | 8.2 / 4.6 | **10.0 / 25.1** |
+| Medium | 4.7 / 6.7 | 3.9 / 4.3 | 3.3 / 2.5 | 4.9 / 6.4 | 4.3 / 4.6 | 3.5 / 2.4 | 4.8 / 15.7 |
+| Low | 3.0 / 3.8 | 2.7 / 2.4 | 1.7 / 1.6 | 2.9 / 3.3 | 2.7 / 2.3 | 1.7 / 1.6 | 2.9 / 10.6 |
+
+The heaviest view at High is 10.0 ms (12 allowed; 25.1 at the start in this run); the whole-city
+view draws 152 calls and 1.75M triangles (289 and 2.69M at the start). Medium and Low are faster than
+at the start in the whole-city and heavy views and at Medium's city zoom, and slower close up as
+recorded for M28 (DECISIONS M28).
+
+**Model batch 2** (three buildings in four hand-made), in runs alternating with the build before the
+batch (the first 136 models, commit 9e7a42e): after / before, average ms of two runs each
+(`bench-results/batch2/frames-*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.7 / 8.6 | 13.1 / 11.6 | 9.1 / 8.3 | 11.1 / 10.3 | 12.9 / 11.7 | 9.2 / 8.4 | **10.9 / 9.7** |
+| Medium | 4.9 / 4.5 | 4.3 / 3.9 | 3.4 / 3.1 | 5.3 / 4.9 | 4.8 / 4.3 | 3.5 / 3.2 | 5.0 / 4.7 |
+| Low | 3.2 / 2.9 | 2.6 / 2.7 | 1.8 / 1.7 | 2.9 / 2.9 | 2.6 / 2.7 | 1.8 / 1.8 | 3.0 / 2.9 |
+
+The heaviest view at High is 10.9 ms (10.5 and 11.2 in the two runs; 12 allowed), and 10.1 ms on the
+finished build (with the ground lift and the mirroring) in a third pair, beside 10.4 for the build
+before the batch (`frames-final.log`, `frames-before3.log`): the hand-made
+buildings cost about 1 ms a frame at High at city and street zoom and in the heavy view, 0.3–0.5 ms at
+Medium, nothing measurable at Low (DECISIONS, "Model batch 2"). Colour-pass triangles (`passprobe`):
+the whole-city view 1.76M against 1.74M, city zoom 1.65M against 1.49M (buildings 728k against 604k,
+trees from the models' tree spots 244k against 206k), street level 1.04M against 0.93M. Every Medium
+view stays under 5.5 ms and every Low view under 3.5 ms. A view at High varies by up to 2 ms from one
+run to the next, so two alternating pairs are averaged. Checks: 392 unit tests and all 42 e2e specs;
+the M28 spec loads the demo town through the load screen: 1,308 touching pairs, none looking alike
+(now compared by design, paint and mirroring), every building on a lot two designs fit hand-made (805
+of 805), 0.95M triangles from the whole-city view; the M25 spec's town is 53 of 57 hand-made, with
+generated looks only where fewer than two designs fit.
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

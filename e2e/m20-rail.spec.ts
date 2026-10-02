@@ -233,6 +233,14 @@ test('M20: a railway with a level crossing and stations, trams on the avenue, ra
   // --- Inspectors: a tram stop (clicked on its shelter), a station and the freight terminal. ---
   const shelter = (await page.evaluate(() => window.__game!.getTransit())).shelters.find((s) => s.tram)!;
   await camera(page, { x: shelter.x, z: shelter.z, distance: 60, yaw: 0.4, tilt: 0 });
+  // Click once the view has settled on it: what's under the pointer is the stop (one frame after
+  // moving the camera was sometimes too soon, and the click missed the shelter).
+  await expect
+    .poll(async () => {
+      const p = await screen(page, shelter.x, shelter.z);
+      return (await page.evaluate(([x, y]) => window.__game!.pickAt(x!, y!), [p.x, p.y]))?.kind;
+    })
+    .toBe('stop');
   await clickAt(page, shelter.x, shelter.z);
   await expect(page.getByTestId('stop-line')).toContainText('Trams');
   await expect(page.getByTestId('stop-use')).toContainText('a day');

@@ -9,7 +9,10 @@ import {
   TRI_PARTY_NEG,
   TRI_PARTY_POS,
   TRI_SKY,
+  UNIT_BAND,
+  UNIT_DARK,
   UNIT_WINDOW,
+  type BakedModel,
 } from '../src/models/bake';
 import { checkModel, formatReports, frontEvidence, inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
@@ -566,6 +569,83 @@ describe('conversion', () => {
       else expect(Math.abs(x - 4)).toBeGreaterThan(1e-3);
     }
     expect(onEdge).toBeGreaterThan(20);
+  });
+
+  it('lights a long window in runs of about 3-4 m, with an unlit strip between two', () => {
+    // Area of the triangles drawn at a level whose window unit passes `keep`.
+    const area = (m: BakedModel, level: number, keep: (u: number) => boolean) => {
+      let a = 0;
+      const P = m.positions;
+      for (let t = 0; t < m.triUnit.length; t++) {
+        if (!(m.triFlags[t]! & level) || !keep(m.triUnit[t]!)) continue;
+        const [i, j, k] = [0, 1, 2].map((c) => m.index[t * 3 + c]! * 3) as [number, number, number];
+        const u = [P[j]! - P[i]!, P[j + 1]! - P[i + 1]!, P[j + 2]! - P[i + 2]!];
+        const v = [P[k]! - P[i]!, P[k + 1]! - P[i + 1]!, P[k + 2]! - P[i + 2]!];
+        a +=
+          Math.hypot(
+            u[1]! * v[2]! - u[2]! * v[1]!,
+            u[2]! * v[0]! - u[0]! * v[2]!,
+            u[0]! * v[1]! - u[1]! * v[0]!,
+          ) / 2;
+      }
+      return a;
+    };
+    // How far each window that lights at random runs across the ground, at a level.
+    const runs = (m: BakedModel, level: number) => {
+      const box = new Map<number, number[]>();
+      for (let t = 0; t < m.triUnit.length; t++) {
+        const u = m.triUnit[t]!;
+        if (!u || !(m.triFlags[t]! & level) || ![UNIT_WINDOW, UNIT_BAND].includes(m.units[u - 1]!)) continue;
+        const b = box.get(u) ?? [Infinity, Infinity, -Infinity, -Infinity];
+        for (let c = 0; c < 3; c++) {
+          const i = m.index[t * 3 + c]! * 3;
+          b[0] = Math.min(b[0]!, m.positions[i]!);
+          b[1] = Math.min(b[1]!, m.positions[i + 2]!);
+          b[2] = Math.max(b[2]!, m.positions[i]!);
+          b[3] = Math.max(b[3]!, m.positions[i + 2]!);
+        }
+        box.set(u, b);
+      }
+      return [...box.values()].map((b) => Math.max(b[2]! - b[0]!, b[3]! - b[1]!));
+    };
+    // Window bands on a tower, a hospital's long bands, the convention centre's 86 m of glass and a
+    // saw-tooth roof's skylights.
+    for (const id of ['R203', 'hospital', 'convention', 'I011']) {
+      const { report, file } = inspectModel(good(id), `${id}.glb`, budgets);
+      const whole = bakeModel(file!, report, { runs: false });
+      const m = bakeModel(file!, report);
+      const lights = (b: BakedModel) => (u: number) =>
+        u > 0 && (b.units[u - 1] === UNIT_WINDOW || b.units[u - 1] === UNIT_BAND);
+      const dark = m.units.indexOf(UNIT_DARK) + 1;
+      expect(dark, id).toBeGreaterThan(0);
+      for (const level of [TRI_NEAR, TRI_FAR, TRI_SKY]) {
+        const at = `${id} at ${level}`;
+        expect(Math.max(...runs(whole, level)), at).toBeGreaterThan(7.5);
+        // Every window lights in runs of 4.5 m at most, near and far alike.
+        expect(Math.max(...runs(m, level)), at).toBeLessThanOrEqual(4.5);
+        // All the glass is still there.
+        const glass = area(whole, level, (u) => u > 0);
+        expect(Math.abs(area(m, level, (u) => u > 0) - glass), at).toBeLessThan(glass * 1e-4);
+      }
+      // Near and far the strips between runs (and close up a band's edges past a run) never
+      // light: the rest of its glass does as before.
+      for (const level of [TRI_NEAR, TRI_FAR]) {
+        const strip = area(m, level, (u) => u === dark);
+        const lit = area(whole, level, lights(whole));
+        expect(strip, id).toBeGreaterThan(0);
+        expect(strip, id).toBeLessThan(lit * 0.3);
+        expect(Math.abs(area(m, level, lights(m)) + strip - lit), id).toBeLessThan(lit * 1e-4);
+      }
+      // In the skyline the runs meet, and as much glass lights as before.
+      expect(
+        area(m, TRI_SKY, (u) => u === dark),
+        id,
+      ).toBe(0);
+      const sky = area(whole, TRI_SKY, lights(whole));
+      expect(Math.abs(area(m, TRI_SKY, lights(m)) - sky), id).toBeLessThan(sky * 1e-4);
+    }
+    // A window short enough is left whole: the tenement's 64 are still 64.
+    expect(bake('R103').units).toHaveLength(65);
   });
 
   it('packs and unpacks the models file without changing the models', () => {

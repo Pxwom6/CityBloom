@@ -25,11 +25,13 @@ export const FAR_KEEP = { part: 0.5, pane: 0.5, ground: 1, long: 2.5, thin: 0.2,
 export const SKY_KEEP = { part: 2.2, pane: 0.9, ground: 6, long: 8, thin: 0.5, line: 30, sheet: 10 };
 
 /** What lights a window unit: windows and bands at random per copy, shopfronts nearly always, and
- *  big glazed volumes (a glass tower, an atrium, a conservatory) with a soft steady glow. */
+ *  big glazed volumes (a glass tower, an atrium, a conservatory) with a soft steady glow. A long
+ *  window is lit in runs, with glass that never lights between them (`UNIT_DARK`, model batch 3). */
 export const UNIT_WINDOW = 0;
 export const UNIT_SHOP = 1;
 export const UNIT_BAND = 2;
 export const UNIT_GLOW = 3;
+export const UNIT_DARK = 4;
 
 export interface BakedModel {
   /** File name without `.glb`. */

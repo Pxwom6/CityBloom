@@ -23,6 +23,7 @@ import {
   TRI_SKY,
   TRI_TWO_SIDED,
   UNIT_BAND,
+  UNIT_DARK,
   UNIT_GLOW,
   UNIT_SHOP,
   UNIT_WINDOW,
@@ -54,6 +55,175 @@ const DOORWAY = /^(door|garage_door|entrance)$/;
 const UNLIT_GLASS = /heliostat|solar|panel|balcony|grille|slit|opening|mirror/;
 /** Glass lit like a shop window. */
 const SHOP_GLASS = /storefront|shop|lobby|entrance|door/;
+/**
+ * Long windows light in runs (model batch 3): a window or band longer than `RUN_SPLIT` along its
+ * wall is cut across into runs of about `RUN_LENGTH`, each lit on its own, with an unlit strip
+ * `MULLION` wide between two runs, so a floor-long band doesn't light up as one stripe at night
+ * and two lit neighbours still read as two windows (m; 0.2 m read as a crack from a few hundred
+ * metres). By day nothing changes: it is the same glass.
+ */
+const RUN_SPLIT = 4.5;
+const RUN_LENGTH = 3.5;
+const MULLION = 0.4;
+
+/** A stretch of a long window along its run direction, and the window unit it lights as. */
+interface Span {
+  from: number;
+  to: number;
+  unit: number;
+}
+
+/** Where a long window is cut. */
+interface Runs {
+  /** The way it runs, across the ground. */
+  tx: number;
+  tz: number;
+  /** The way it faces: its faces looking (nearly) this way or the other are cut into runs. */
+  facing: [number, number, number];
+  /** Near and far: each run, and the unlit strip between two. */
+  near: Span[];
+  /** In the skyline version, where the strip is a pixel or less: the runs alone, meeting halfway across it. */
+  sky: Span[];
+}
+
+/**
+ * The way a window faces, as a unit vector: the normal its faces share most area along (either
+ * way), so the front of a band of glass, a skylight's top or a saw-tooth roof's slope; and the
+ * way it runs across the ground, square to that (for glass facing straight up, its longer side).
+ */
+function runDirection(parts: GlbPart[]): { facing: [number, number, number]; tx: number; tz: number } {
+  const area = new Map<string, { n: [number, number, number]; a: number }>();
+  const b = emptyBox();
+  for (const p of parts) {
+    growBox(b, p.tris);
+    const tr = p.tris;
+    for (let i = 0; i < tr.length; i += 9) {
+      const ux = tr[i + 3]! - tr[i]!;
+      const uy = tr[i + 4]! - tr[i + 1]!;
+      const uz = tr[i + 5]! - tr[i + 2]!;
+      const vx = tr[i + 6]! - tr[i]!;
+      const vy = tr[i + 7]! - tr[i + 1]!;
+      const vz = tr[i + 8]! - tr[i + 2]!;
+      let n: [number, number, number] = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      const l = Math.hypot(...n);
+      if (l < 1e-9) continue;
+      n = n.map((c) => c / l) as [number, number, number];
+      // A face and the one behind it count as one way.
+      const lead = n.find((c) => Math.abs(c) > 1e-3) ?? 1;
+      if (lead < 0) n = n.map((c) => -c) as [number, number, number];
+      const key = n.map((c) => Math.round(c * 50)).join(',');
+      const e = area.get(key);
+      if (e) e.a += l / 2;
+      else area.set(key, { n, a: l / 2 });
+    }
+  }
+  let facing: [number, number, number] = [0, 0, 1];
+  let most = -1;
+  for (const e of area.values()) if (e.a > most) [most, facing] = [e.a, e.n];
+  let tx: number;
+  let tz: number;
+  const h = Math.hypot(facing[0], facing[2]);
+  if (h < 0.05) [tx, tz] = b.max[0] - b.min[0] >= b.max[2] - b.min[2] ? [1, 0] : [0, 1];
+  else [tx, tz] = [-facing[2] / h, facing[0] / h];
+  // Exactly along x or z when it nearly is, so the cuts fall where the model's own lines do.
+  if (Math.abs(tz) < 1e-4) [tx, tz] = [1, 0];
+  else if (Math.abs(tx) < 1e-4) [tx, tz] = [0, 1];
+  else if (tx < 0) [tx, tz] = [-tx, -tz];
+  return { facing, tx, tz };
+}
+
+/** The part of a convex polygon (x, y, z each) whose place along (tx, tz) lies between from and to. */
+function clipSpan(poly: number[], tx: number, tz: number, from: number, to: number): number[] {
+  let out = poly;
+  for (const [limit, above] of [
+    [from, true],
+    [to, false],
+  ] as const) {
+    if (!Number.isFinite(limit)) continue;
+    const inp = out;
+    out = [];
+    const m = inp.length / 3;
+    for (let k = 0; k < m; k++) {
+      const a = k * 3;
+      const b = ((k + 1) % m) * 3;
+      const sa = inp[a]! * tx + inp[a + 2]! * tz - limit;
+      const sb = inp[b]! * tx + inp[b + 2]! * tz - limit;
+      const ina = above ? sa >= 0 : sa <= 0;
+      const inb = above ? sb >= 0 : sb <= 0;
+      if (ina) out.push(inp[a]!, inp[a + 1]!, inp[a + 2]!);
+      if (ina !== inb) {
+        const t = sa / (sa - sb);
+        for (let c = 0; c < 3; c++) out.push(inp[a + c]! + (inp[b + c]! - inp[a + c]!) * t);
+      }
+    }
+    if (out.length < 9) return [];
+  }
+  return out;
+}
+
+/**
+ * Coplanar convex pieces (x, y, z each, wound about the normal n) that together make one convex
+ * polygon, as that polygon: a rectangle cut into runs comes back as rectangles, two triangles each,
+ * not the slivers either half of it makes. Pieces that don't (they leave a gap or overlap) as they are.
+ */
+function mergePieces(pieces: number[][], nx: number, ny: number, nz: number): number[][] {
+  if (pieces.length < 2) return pieces;
+  // A frame in the plane, e1 × e2 = n: anticlockwise in it is anticlockwise about n.
+  const p0 = pieces[0]!;
+  let e1x = p0[3]! - p0[0]!;
+  let e1y = p0[4]! - p0[1]!;
+  let e1z = p0[5]! - p0[2]!;
+  const l = Math.hypot(e1x, e1y, e1z);
+  if (l < 1e-9) return pieces;
+  e1x /= l;
+  e1y /= l;
+  e1z /= l;
+  const e2x = ny * e1z - nz * e1y;
+  const e2y = nz * e1x - nx * e1z;
+  const e2z = nx * e1y - ny * e1x;
+  const pts: { u: number; v: number; x: number; y: number; z: number }[] = [];
+  let area = 0;
+  for (const p of pieces) {
+    const m = p.length / 3;
+    const at = pts.length;
+    for (let k = 0; k < m; k++) {
+      const [x, y, z] = [p[k * 3]!, p[k * 3 + 1]!, p[k * 3 + 2]!];
+      // On a micrometre grid, so the corners along one side sort by where they are along it, not
+      // by rounding noise (which could drop a corner as if it lay along a side).
+      const u = Math.round((x * e1x + y * e1y + z * e1z) * 1e6) / 1e6;
+      const v = Math.round((x * e2x + y * e2y + z * e2z) * 1e6) / 1e6;
+      pts.push({ u, v, x, y, z });
+    }
+    for (let k = 0; k < m; k++) {
+      const a = pts[at + k]!;
+      const b = pts[at + ((k + 1) % m)]!;
+      area += (a.u * b.v - b.u * a.v) / 2;
+    }
+  }
+  // Convex hull, anticlockwise, without points along its sides (Andrew's monotone chain).
+  pts.sort((a, b) => a.u - b.u || a.v - b.v);
+  const cross = (o: (typeof pts)[0], a: (typeof pts)[0], b: (typeof pts)[0]) =>
+    (a.u - o.u) * (b.v - o.v) - (a.v - o.v) * (b.u - o.u);
+  const hull: typeof pts = [];
+  for (const pass of [pts, [...pts].reverse()]) {
+    const start = hull.length;
+    for (const p of pass) {
+      while (hull.length >= start + 2 && cross(hull[hull.length - 2]!, hull[hull.length - 1]!, p) <= 1e-7)
+        hull.pop();
+      hull.push(p);
+    }
+    hull.pop();
+  }
+  if (hull.length < 3) return pieces;
+  let hullArea = 0;
+  for (let k = 0; k < hull.length; k++) {
+    const a = hull[k]!;
+    const b = hull[(k + 1) % hull.length]!;
+    hullArea += (a.u * b.v - b.u * a.v) / 2;
+  }
+  if (Math.abs(hullArea - area) > 1e-5 + 1e-5 * Math.abs(area)) return pieces;
+  return [hull.flatMap((p) => [p.x, p.y, p.z])];
+}
 
 /**
  * A part is a plain axis-aligned box when it is twelve triangles, two in each face of its bounding
@@ -110,7 +280,8 @@ function bothSides(tris: Float32Array): Float32Array {
   return out;
 }
 
-export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
+/** `runs: false` leaves long windows whole (to compare with in tests and dev tools). */
+export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: boolean } = {}): BakedModel {
   const t = report.target;
   const fp = report.footprint;
   if (!t || !fp) throw new Error(`${report.id}: can't bake a model that failed its check`);
@@ -161,6 +332,59 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
       );
       unitOf.set(p, unitKinds.length);
     }
+  }
+
+  // Long windows are lit in runs: each run after the first a unit of its own kind, and the strips
+  // between them one unit that never lights.
+  const runs = new Map<number, Runs>();
+  let mullion = 0;
+  const partsOf = new Map<number, GlbPart[]>();
+  for (const copy of src) {
+    const u = unitOf.get(original.get(copy)!);
+    if (u) partsOf.set(u, [...(partsOf.get(u) ?? []), copy]);
+  }
+  for (const [u, parts] of partsOf) {
+    const kind = unitKinds[u - 1]!;
+    if (options.runs === false || (kind !== UNIT_WINDOW && kind !== UNIT_BAND)) continue;
+    const { facing, tx, tz } = runDirection(parts);
+    let s0 = Infinity;
+    let s1 = -Infinity;
+    for (const p of parts)
+      for (let i = 0; i < p.tris.length; i += 3) {
+        const s = p.tris[i]! * tx + p.tris[i + 2]! * tz;
+        s0 = Math.min(s0, s);
+        s1 = Math.max(s1, s);
+      }
+    const len = s1 - s0;
+    if (len <= RUN_SPLIT) continue;
+    const n = Math.max(2, Math.round(len / RUN_LENGTH));
+    const w = (len - (n - 1) * MULLION) / n;
+    const near: Span[] = [];
+    const sky: Span[] = [];
+    for (let k = 0; k < n; k++) {
+      const from = s0 + k * (w + MULLION);
+      let unitK = u;
+      if (k > 0) {
+        unitKinds.push(kind);
+        unitK = unitKinds.length;
+      }
+      const first = k === 0;
+      const last = k === n - 1;
+      near.push({ from: first ? -Infinity : from, to: last ? Infinity : from + w, unit: unitK });
+      sky.push({
+        from: first ? -Infinity : from - MULLION / 2,
+        to: last ? Infinity : from + w + MULLION / 2,
+        unit: unitK,
+      });
+      if (!last) {
+        if (!mullion) {
+          unitKinds.push(UNIT_DARK);
+          mullion = unitKinds.length;
+        }
+        near.push({ from: from + w, to: from + w + MULLION, unit: mullion });
+      }
+    }
+    runs.set(u, { tx, tz, facing, near, sky });
   }
 
   const walls = src.filter((p) => p.material === 'wall' || p.material === 'wall_alt');
@@ -256,6 +480,16 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     // Which way a pane faces: its thinnest direction.
     const thin = ext[0] <= ext[1] && ext[0] <= ext[2] ? 0 : ext[2] <= ext[1] ? 2 : 1;
     const driven = DRIVEN_GROUPS.findIndex((g) => under(p, g)) + 1;
+    const put = (v: ArrayLike<number>, at: number, f: number, un: number) => {
+      for (let k = 0; k < 9; k++) pos.push(v[at + k]! + (k % 3 === 1 && ground ? lift : 0));
+      role.push(r);
+      group.push(driven);
+      flags.push(f);
+      unit.push(un);
+    };
+    // A long window's faces, kept to cut into its runs once the part is done.
+    const cut = runs.get(u);
+    const pending: { v: number[]; f: number; n: [number, number, number] }[] = [];
 
     const tr = p.tris;
     for (let i = 0; i < tr.length; i += 9) {
@@ -334,12 +568,59 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         if (xs.every((x) => x <= -edge + 0.2) && !(nx < -0.5 && Math.min(...xs) > -edge + 0.01))
           f |= TRI_PARTY_NEG;
       }
-      for (let k = 0; k < 9; k++) pos.push(tr[i + k]! + (k % 3 === 1 && ground ? lift : 0));
-      role.push(r);
-      group.push(driven);
-      flags.push(f);
-      unit.push(u);
+      if (cut) pending.push({ v: Array.from(tr.subarray(i, i + 9)), f, n: [nx, ny, nz] });
+      else put(tr, i, f, u);
     }
+    if (!cut) return;
+    // The faces it looks out of are cut into its spans (near and far with the unlit strips between
+    // runs, in the skyline the runs alone), and the pieces of one plane in one span joined again.
+    // Its edges (a band's top and bottom) light with the run they lie in, or stay unlit where they
+    // run past one.
+    const pieces = new Map<
+      string,
+      { unit: number; f: number; n: [number, number, number]; polys: number[][] }
+    >();
+    const [fx, fy, fz] = cut.facing;
+    for (const { v, f, n } of pending) {
+      if (Math.abs(n[0] * fx + n[1] * fy + n[2] * fz) < 0.7) {
+        const s = [0, 3, 6].map((k) => v[k]! * cut.tx + v[k + 2]! * cut.tz);
+        const [lo, hi] = [Math.min(...s), Math.max(...s)];
+        const in1 = cut.near.find((sp) => lo >= sp.from - 1e-4 && hi <= sp.to + 1e-4);
+        put(v, 0, f, in1 ? in1.unit : mullion);
+        continue;
+      }
+      const plane = `${n.map((c) => Math.round(c * 1e4)).join(',')}|${Math.round((n[0] * v[0]! + n[1] * v[1]! + n[2] * v[2]!) * 1e3)}`;
+      for (const [spans, lf] of [
+        [cut.near, f & (TRI_NEAR | TRI_FAR) ? f & ~TRI_SKY : 0],
+        [cut.sky, f & TRI_SKY ? f & ~(TRI_NEAR | TRI_FAR) : 0],
+      ] as const) {
+        if (!lf) continue;
+        spans.forEach((sp, k) => {
+          const poly = clipSpan(v, cut.tx, cut.tz, sp.from, sp.to);
+          if (!poly.length) return;
+          const key = `${lf}|${k}|${plane}`;
+          let e = pieces.get(key);
+          if (!e) pieces.set(key, (e = { unit: sp.unit, f: lf, n, polys: [] }));
+          e.polys.push(poly);
+        });
+      }
+    }
+    const t = new Float64Array(9);
+    for (const e of pieces.values())
+      for (const poly of mergePieces(e.polys, ...e.n))
+        for (let k = 1; k + 1 < poly.length / 3; k++) {
+          t.set(poly.slice(0, 3), 0);
+          t.set(poly.slice(k * 3, k * 3 + 6), 3);
+          // Leave out the slivers a cut along an edge leaves.
+          const ux = t[3]! - t[0]!;
+          const uy = t[4]! - t[1]!;
+          const uz = t[5]! - t[2]!;
+          const vx = t[6]! - t[0]!;
+          const vy = t[7]! - t[1]!;
+          const vz = t[8]! - t[2]!;
+          if (Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) < 2e-6) continue;
+          put(t, 0, e.f, e.unit);
+        }
   });
 
   // Weld equal corners so the shipped data is small; normals are rebuilt from the winding.

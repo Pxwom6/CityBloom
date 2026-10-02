@@ -36,6 +36,12 @@ export const ROLE_INDEX = new Map<string, number>(ROLES.map((r, i) => [r, i]));
 export const REPAINTED: readonly Role[] = ['wall', 'wall_alt', 'roof', 'awning', 'sign'];
 /** Roles that lie flat on the ground of a site. */
 export const GROUND_ROLES: readonly Role[] = ['grass', 'paving', 'asphalt', 'water'];
+/**
+ * The lowest a model's own ground (lawns, paving) may lie, in metres: just above the lot base the
+ * game draws under every building (4 cm up). Ground laid lower would flicker against the base or
+ * hide under it, so the conversion lifts it (all of it alike, so a path stays on its lawn).
+ */
+export const GROUND_FLOOR = 0.05;
 
 /** An add-on annex's site, in metres (PROMPTS.md, batch 6). */
 export const ANNEX_SITE = { w: 9, d: 8 };

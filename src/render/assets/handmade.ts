@@ -80,7 +80,7 @@ export interface HandOptions {
   seed: number;
   /**
    * Which of its design's looks this is (0, 1, 2 …): the walls take the palette's colours in
-   * turn and then mirrored, so no two looks of a design come out the same until every
+   * turn, mirrored every other look, so no two looks of a design come out the same until every
    * combination is used. The seed if not given.
    */
   rank?: number;
@@ -105,7 +105,7 @@ export interface HandOptions {
 }
 
 const STONE = PALETTES.stone;
-/** The lot base's top, above the model's zero (m). */
+/** The lot base's top, above the model's zero (m); a model's own ground lies above it (`GROUND_FLOOR`). */
 export const BASE_TOP = 0.04;
 const EARTH = new Color('#8b7355');
 
@@ -214,6 +214,13 @@ interface Copy {
   turn?: boolean;
 }
 
+/** Where in its palette a design's role starts (a small hash of the two). */
+function offset(id: string, role: Role): number {
+  let h = 7;
+  for (const ch of `${id}:${role}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % 97;
+}
+
 /** Where a model's copies stand on a lot, and how each is painted. */
 function layout(model: BakedModel, o: HandOptions): Copy[] {
   const n = Math.max(1, Math.round(o.W / model.w));
@@ -242,6 +249,13 @@ function layout(model: BakedModel, o: HandOptions): Copy[] {
         // The walls in turn: look by look, and copy by copy along a row.
         turns = family.length;
         pick = family[(rank + k) % family.length]!;
+      } else if (k === 0) {
+        // The roof and the rest in turn too, from a place of the design's own, so one design two
+        // lots along doesn't come back under the same roof (the walls' creams differ little); a
+        // second wall colour not the first's.
+        const at = (rank + offset(model.id, role)) % family.length;
+        pick = family[at]!;
+        if (family.length > 1 && paint[ROLE.wall]?.equals(pick)) pick = family[(at + 1) % family.length]!;
       } else {
         // Neighbours in a row are painted differently.
         const before = copies[k - 1]?.paint[ROLE[role]];
@@ -251,8 +265,12 @@ function layout(model: BakedModel, o: HandOptions): Copy[] {
       }
       paint[ROLE[role]] = pick;
     }
-    // Mirrored once the wall colours have all been used (the first copy); along a row, at random.
-    const flip = k === 0 && turns ? Math.floor(rank / turns) % 2 === 1 : r() < 0.5;
+    // The first copy is mirrored every other look, so a street of one design doesn't keep its
+    // garage on one side; with an even number of wall colours the order turns over each time
+    // they come round, so no two looks agree until every colour has been both ways. Along a row,
+    // at random.
+    const turn = turns % 2 === 0 && turns ? rank + Math.floor(rank / turns) : rank;
+    const flip = k === 0 ? turn % 2 === 1 : r() < 0.5;
     copies.push({
       x: -o.W / 2 + model.w * (k + 0.5),
       z,

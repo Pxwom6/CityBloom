@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { Color } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { bakeModel, TRI_GROUND, TRI_NEAR, type BakedModel } from '../src/models/bake';
-import { inspectModel } from '../src/models/check';
+import { groundLift, inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { readBudgets } from '../scripts/lib/modelPipeline';
+import { GROUND_FLOOR } from '../src/models/spec';
 import { SURF_GRASS, type ModelData } from '../src/render/assets/builder';
 import {
   BASE_TOP,
@@ -373,6 +374,62 @@ describe('the asset registry with hand-made models', () => {
       expect(assets.zoned('R001', 1, 2, look).hand).toMatch(/^R001/);
     // A generated look is its own.
     expect(assets.zonedAppearance('R002', 2, 2, 0)).not.toBe(assets.zonedAppearance('R002', 2, 2, 1));
+    handmade.set(Object.values(M));
+  });
+
+  it("lifts a model's own ground clear of the lot base, all of it alike", () => {
+    // The narrow villa (batch 2) lays its lawn at 1 cm and its paths at 4 cm: under and level
+    // with the game's lot base (4 cm), where they hid or flickered.
+    const { report, file } = inspectModel(
+      readFileSync('tests/fixtures/models/good/R013-2.glb'),
+      'R013-2.glb',
+      budgets,
+    );
+    expect(report.warnings.join(' ')).toMatch(/lawns and paving lie 0\.01 m up.*lifts them 0\.04 m/);
+    const v = bakeModel(file!, report);
+    const heights = new Set<number>();
+    for (let t = 0; t < v.triFlags.length; t++) {
+      if (!(v.triFlags[t]! & TRI_GROUND)) continue;
+      for (let k = 0; k < 3; k++) {
+        const y = v.positions[v.index[t * 3 + k]! * 3 + 1]!;
+        expect(y).toBeGreaterThanOrEqual(GROUND_FLOOR - 0.001);
+        heights.add(Math.round(y * 100));
+      }
+    }
+    // The lawn at 5 cm and the paths still 3 cm above it.
+    expect(Math.min(...heights)).toBe(5);
+    expect(heights.has(8)).toBe(true);
+    // A model whose ground already lies clear is left alone.
+    const { report: r001, file: f001 } = inspectModel(
+      readFileSync('tests/fixtures/models/good/R001.glb'),
+      'R001.glb',
+      budgets,
+    );
+    expect(r001.warnings.join(' ')).not.toMatch(/lawns and paving/);
+    expect(groundLift(f001!.parts)).toBe(0);
+  });
+
+  it('mirrors every other look and turns the roof with the walls', () => {
+    handmade.set([M.R001!, { ...M.R001!, design: 2, id: 'R001-2' }]);
+    const looks = Array.from({ length: VARIANTS }, (_, l) => assets.zonedAppearance('R001', 1, 2, l));
+    // Looks 0, 2, 4 … are the first design's ranks 0, 1, 2 …: mirrored every other one.
+    expect(looks.map((a) => a.includes('~'))).toEqual([
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+    ]);
+    // The same design two lots along under another roof.
+    const roof = (a: string) => a.split(':')[1]!.split(',')[3];
+    for (let l = 0; l + 2 < VARIANTS; l++) expect(roof(looks[l]!), `look ${l}`).not.toBe(roof(looks[l + 2]!));
     handmade.set(Object.values(M));
   });
 

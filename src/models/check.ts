@@ -1,6 +1,15 @@
 import { CELL } from '../data/zones';
 import { GlbError, parseGlb, type GlbFile, type GlbPart } from './glb';
-import { PART, ROLE_INDEX, budgetFor, targetOf, type ModelTarget } from './spec';
+import {
+  GROUND_FLOOR,
+  GROUND_ROLES,
+  PART,
+  ROLE_INDEX,
+  budgetFor,
+  targetOf,
+  type ModelTarget,
+  type Role,
+} from './spec';
 
 /**
  * `models:check`: is a hand-made model fit for the game? It is measured against the model spec
@@ -31,6 +40,24 @@ export function boxOf(parts: GlbPart[]): Box3 {
   const b = emptyBox();
   for (const p of parts) growBox(b, p.tris);
   return b;
+}
+
+/** Does a part lie flat on the ground (a lawn, a path, a car park, a pond)? */
+export function onGround(p: GlbPart, b: Box3 = growBox(emptyBox(), p.tris)): boolean {
+  return GROUND_ROLES.includes(p.material as Role) && b.max[1] < 0.35 && b.max[1] - b.min[1] < 0.3;
+}
+
+/**
+ * How far a model's own ground must be lifted to lie clear of the game's lot base: the top of its
+ * lowest ground part up to `GROUND_FLOOR` (0 when it is there already).
+ */
+export function groundLift(parts: GlbPart[]): number {
+  let lowest = Infinity;
+  for (const p of parts) {
+    const b = growBox(emptyBox(), p.tris);
+    if (onGround(p, b)) lowest = Math.min(lowest, b.max[1]);
+  }
+  return lowest < GROUND_FLOOR - 0.001 ? GROUND_FLOOR - lowest : 0;
 }
 
 /** Is this part (or a group above it) called `name`? */
@@ -178,6 +205,11 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
     errors.push(`floats ${f1(all.min[1])} m above the ground: the origin should be at ground level`);
 
   if (t) footprint(parts, all, t, report);
+  const lift = groundLift(parts.filter((p) => !under(p, PART.treeSpot)));
+  if (lift > 0)
+    warnings.push(
+      `its lawns and paving lie ${f1(GROUND_FLOOR - lift)} m up, at or under the game's lot base (4 cm): the game lifts them ${f1(lift)} m`,
+    );
   facing(parts, report);
   supported(parts, report);
 

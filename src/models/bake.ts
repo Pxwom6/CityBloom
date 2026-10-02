@@ -1,6 +1,16 @@
 import type { GlbFile, GlbPart } from './glb';
-import { boxOf, emptyBox, growBox, groupsNamed, under, type Box3, type ModelReport } from './check';
-import { GROUND_ROLES, PART, ROLE_INDEX, type Role } from './spec';
+import {
+  boxOf,
+  emptyBox,
+  groundLift,
+  growBox,
+  groupsNamed,
+  onGround,
+  under,
+  type Box3,
+  type ModelReport,
+} from './check';
+import { PART, ROLE_INDEX } from './spec';
 import {
   DRIVEN_GROUPS,
   FAR_KEEP,
@@ -192,7 +202,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
     // (a fire escape's flight), whose box is mostly air, its area over its length.
     const [largest, boxSecond] = [...ext].sort((x, y) => y - x) as [number, number, number];
     const second = Math.min(boxSecond, areas[pi]! / Math.max(largest, 1e-6));
-    const ground = GROUND_ROLES.includes(p.material as Role) && b.max[1] < 0.35 && ext[1] < 0.3;
+    const ground = onGround(p, b);
     const u = unitOf.get(original.get(p)!) ?? 0;
     const fitting = FAR_DROP.test(p.name) || p.path.some((n) => FAR_DROP.test(n));
     // A window's frame stays in the distant versions as its outward face, or the wall would
@@ -236,6 +246,8 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         });
       });
 
+  // The model's own ground, clear of the lot base the game draws under it (GROUND_FLOOR).
+  const lift = groundLift(kept);
   src.forEach((p, pi) => {
     const r = ROLE_INDEX.get(p.material) ?? 0;
     colors[r] ??= p.color;
@@ -322,7 +334,7 @@ export function bakeModel(file: GlbFile, report: ModelReport): BakedModel {
         if (xs.every((x) => x <= -edge + 0.2) && !(nx < -0.5 && Math.min(...xs) > -edge + 0.01))
           f |= TRI_PARTY_NEG;
       }
-      for (let k = 0; k < 9; k++) pos.push(tr[i + k]!);
+      for (let k = 0; k < 9; k++) pos.push(tr[i + k]! + (k % 3 === 1 && ground ? lift : 0));
       role.push(r);
       group.push(driven);
       flags.push(f);

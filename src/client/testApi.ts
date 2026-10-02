@@ -20,6 +20,7 @@ import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { ModelData } from '../render/assets/builder';
 import { handmade } from '../render/assets/handmade';
+import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 
 export interface TestApi {
@@ -181,8 +182,9 @@ export interface TestApi {
    */
   getStreets(): { zebra: number; giveWay: number; props: number; propsShown: boolean };
   /**
-   * Neighbours (M28): pairs of finished buildings whose lots touch, and how many of them are drawn
-   * with the very same model (the same type, lot size and look: identical side by side).
+   * Neighbours (M28): pairs of finished buildings whose lots touch, and how many of them look the
+   * same: drawn with the very same model (the same type, lot size and look), or with the same
+   * hand-made design painted and mirrored the same way (on lots of different depths).
    */
   getNeighbours(): { pairs: number; identical: number; looks: number };
   /** Dev: the visible cars' instance colours per model (count, how many are black, a sample). */
@@ -971,7 +973,7 @@ export function installTestApi(game: Game): TestApi {
       let pairs = 0;
       let identical = 0;
       for (const b of done) {
-        const reach = Math.max(b.w, b.d) * CELL + 2;
+        const reach = 4 * CELL + 2;
         for (const id of w.bldHash.query({
           minX: b.x - reach,
           minZ: b.z - reach,
@@ -980,9 +982,9 @@ export function installTestApi(game: Game): TestApi {
         })) {
           if (id <= b.id || !model.has(id)) continue;
           const o = w.buildings.get(id)!;
-          if (Math.hypot(o.x - b.x, o.z - b.z) > Math.max(b.w, b.d, o.w, o.d) * CELL + 1.5) continue;
+          if (!touching(b, o)) continue;
           pairs++;
-          if (model.get(id) === model.get(b.id)) identical++;
+          if (model.get(id) === model.get(b.id) || r.appearance(o) === r.appearance(b)) identical++;
         }
       }
       return { pairs, identical, looks: new Set(model.values()).size };

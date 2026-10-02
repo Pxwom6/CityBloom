@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { bakeModel, TRI_GROUND, TRI_NEAR, type BakedModel } from '../src/models/bake';
 import { inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
-import { parseBudgets } from '../src/models/spec';
+import { readBudgets } from '../scripts/lib/modelPipeline';
 import { SURF_GRASS, type ModelData } from '../src/render/assets/builder';
 import {
   BASE_TOP,
@@ -18,7 +18,7 @@ import { PALETTES } from '../src/render/assets/models';
 import { VARIANTS, annexPlace, assets } from '../src/render/assets/registry';
 import { Arrays, appendModel } from '../src/render/modelMerge';
 
-const budgets = parseBudgets(readFileSync('docs/models/PROMPTS.md', 'utf8'));
+const budgets = readBudgets();
 const bake = (id: string): BakedModel => {
   const { report, file } = inspectModel(
     readFileSync(`tests/fixtures/models/good/${id}.glb`),
@@ -259,14 +259,18 @@ describe('which buildings wear a hand-made model', () => {
     expect(HandmadeModels.fits(M.R201!, 24, 24)).toBe(false);
   });
 
-  it('mixes designs with the generator while a type has fewer than three', () => {
+  it('uses only hand-made looks where two designs fit, and mixes one with the generator', () => {
     const h = new HandmadeModels();
     const looks = (n: number) => {
       h.set(Array.from({ length: n }, (_, i) => ({ ...M.R103!, design: i + 1, id: `R103-${i + 1}` })));
       return Array.from({ length: VARIANTS }, (_, look) => h.zoned('R103', 24, 24, look)?.design ?? 0);
     };
     expect(looks(1)).toEqual([1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
-    expect(looks(2)).toEqual([1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0]);
+    expect(looks(2)).toEqual([1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]);
+    // Each design's looks in turn: its paint, then mirrored.
+    expect(Array.from({ length: VARIANTS }, (_, look) => h.rank('R103', 24, 24, look))).toEqual([
+      0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5,
+    ]);
     expect(looks(3)).toEqual([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
     expect(looks(4).every((d) => d > 0)).toBe(true);
     // A lot no design fits is generated.
@@ -355,6 +359,21 @@ describe('the asset registry with hand-made models', () => {
     };
     expect(built(raised[0]!)).toBeLessThan(built(raised[1]!));
     expect(built(raised[1]!)).toBeLessThan(built(raised[2]!));
+  });
+
+  it('tells apart how looks appear: the same design and paint on a deeper lot looks the same', () => {
+    handmade.set([M.R001!, { ...M.R001!, design: 2, id: 'R001-2' }]);
+    // The cottage (8 × 16 m) on its own lot and on a deeper one: the same look appears the same.
+    for (let look = 0; look < VARIANTS; look++)
+      expect(assets.zonedAppearance('R001', 1, 3, look)).toBe(assets.zonedAppearance('R001', 1, 2, look));
+    // Every look of the type on a lot differs, and none is generated.
+    const seen = new Set(Array.from({ length: VARIANTS }, (_, l) => assets.zonedAppearance('R001', 1, 2, l)));
+    expect(seen.size).toBe(VARIANTS);
+    for (let look = 0; look < VARIANTS; look++)
+      expect(assets.zoned('R001', 1, 2, look).hand).toMatch(/^R001/);
+    // A generated look is its own.
+    expect(assets.zonedAppearance('R002', 2, 2, 0)).not.toBe(assets.zonedAppearance('R002', 2, 2, 1));
+    handmade.set(Object.values(M));
   });
 
   it('paints every look of a design differently until the combinations run out', () => {

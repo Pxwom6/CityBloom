@@ -220,9 +220,9 @@ export class BuildingRenderer {
   readonly heights = new Map<number, number>();
   /**
    * Which of its type's looks each building wears: its own variant, moved on where a neighbour
-   * of the same type and size already wears it (no two alike side by side).
+   * already looks like that (no two alike side by side), and how that look appears.
    */
-  private looks = new Map<number, { look: number; key: string }>();
+  private looks = new Map<number, { look: number; key: string; seen: string }>();
   /** What each building's chunks were last built with (updates that change nothing are skipped). */
   private drawn = new Map<
     number,
@@ -311,13 +311,18 @@ export class BuildingRenderer {
     this.chunks.set(id, b.state === STATE_CONSTRUCTION ? null : b);
   }
 
-  /** The look a building wears: its variant, unless a neighbour of its type and size wears that. */
+  /**
+   * The look a building wears: its variant, unless a neighbour already looks like that (the same
+   * type and size in that look, or the same hand-made design painted and turned the same way on
+   * a lot of another depth).
+   */
   look(b: BuildingData): number {
     const key = `${b.def}|${b.w}x${b.d}`;
     const had = this.looks.get(b.id);
     if (had && had.key === key) return had.look;
-    const taken = new Set<number>();
-    const reach = Math.max(b.w, b.d) * CELL + 2;
+    const taken = new Set<string>();
+    // Lots are at most four cells a side.
+    const reach = 4 * CELL + 2;
     const near = this.world.bldHash.query({
       minX: b.x - reach,
       minZ: b.z - reach,
@@ -328,14 +333,27 @@ export class BuildingRenderer {
       if (id === b.id) continue;
       const o = this.world.buildings.get(id);
       const l = this.looks.get(id);
-      if (!o || !l || l.key !== key) continue;
+      if (!o || !l) continue;
       // Side by side or back to back: their lots touch.
-      if (Math.hypot(o.x - b.x, o.z - b.z) <= Math.max(b.w, b.d) * CELL + 1.5) taken.add(l.look);
+      if (touching(b, o)) taken.add(l.seen);
     }
     let look = b.variant % VARIANTS;
-    for (let k = 0; k < VARIANTS && taken.has(look); k++) look = (look + 1) % VARIANTS;
-    this.looks.set(b.id, { look, key });
+    let seen = assets.zonedAppearance(b.def, b.w, b.d, look);
+    for (let k = 1; k < VARIANTS && taken.has(seen); k++) {
+      const next = (b.variant + k) % VARIANTS;
+      const s = assets.zonedAppearance(b.def, b.w, b.d, next);
+      if (taken.has(s)) continue;
+      look = next;
+      seen = s;
+    }
+    this.looks.set(b.id, { look, key, seen });
     return look;
+  }
+
+  /** How a building appears (for telling alike neighbours): equal strings look the same. */
+  appearance(b: BuildingData): string {
+    const look = this.look(b);
+    return this.looks.get(b.id)?.seen ?? assets.zonedAppearance(b.def, b.w, b.d, look);
   }
 
   model(b: BuildingData): ModelData {
@@ -470,3 +488,8 @@ function boxesModel(bars: number[][], col: Color): ModelData {
 }
 
 export { Arrays, appendModel } from './modelMerge';
+
+/** Do two buildings' lots touch (side by side or back to back; generously, a lot's length apart)? */
+export function touching(a: BuildingData, b: BuildingData): boolean {
+  return Math.hypot(a.x - b.x, a.z - b.z) <= Math.max(a.w, a.d, b.w, b.d) * CELL + 1.5;
+}

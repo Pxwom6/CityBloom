@@ -4,7 +4,7 @@ import { PART, ROLE_INDEX, budgetFor, targetOf, type ModelTarget } from './spec'
 
 /**
  * `models:check`: is a hand-made model fit for the game? It is measured against the model spec
- * (docs/models/PROMPTS.md) and the game's own data (src/data). A model that fails is left out of
+ * (docs/models/PROMPTS*.md) and the game's own data (src/data). A model that fails is left out of
  * the game with a warning; the building keeps its generated look.
  */
 
@@ -61,12 +61,15 @@ export interface ModelReport {
   target: ModelTarget | null;
   errors: string[];
   warnings: string[];
-  /** Triangles the game would draw (tree_spot markers aside), and the budget from PROMPTS.md. */
+  /** Triangles the game would draw (tree_spot markers aside), and the budget from its prompt. */
   triangles: number;
   budget: number | undefined;
   /** The whole model's extent: along the road, up, and away from it (m). */
   size: [number, number, number];
-  /** The footprint it was accepted at, and how many stand side by side on the type's own lot. */
+  /**
+   * The footprint it was accepted at, and how many stand side by side on the type's own lot (0:
+   * it doesn't fill the type's own lot's width, and stands only on narrower lots).
+   */
   footprint: { w: number; d: number; abreast: number } | null;
   windows: number;
   bands: number;
@@ -228,11 +231,34 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
     warnings.push("has no part named mound: the heap won't rise as the landfill fills");
 
   // The triangle budget.
-  if (report.budget === undefined) warnings.push('has no triangle budget in PROMPTS.md');
+  if (report.budget === undefined) warnings.push('has no triangle budget in docs/models/PROMPTS*.md');
   else if (report.triangles > report.budget)
     errors.push(
       `${report.triangles.toLocaleString('en-US')} triangles, over its budget of ${report.budget.toLocaleString('en-US')}`,
     );
+}
+
+/**
+ * The footprints a model may have. A civic building fills its site. A zoned building may be any
+ * whole number of cells up to its type's own lot, in width and depth (buildings stand on smaller
+ * lots than their type's when the cells beside them were taken), or a half or a third of the lot's
+ * width (copies stand side by side in a row). A model shallower than its lot stands at the front,
+ * and the game leaves a yard behind it.
+ */
+export function footprints(t: ModelTarget): { widths: number[]; depths: number[] } {
+  if (t.kind !== 'zoned') return { widths: [t.w], depths: [t.d] };
+  const widths: number[] = [];
+  for (let x = t.w; x >= CELL - EXACT; x -= CELL) widths.push(x);
+  for (const x of [t.w / 2, t.w / 3]) if (!widths.some((v) => Math.abs(v - x) <= EXACT)) widths.push(x);
+  const depths: number[] = [];
+  for (let x = t.d; x >= CELL - EXACT; x -= CELL) depths.push(x);
+  return { widths, depths };
+}
+
+/** How many copies of a model `w` wide stand side by side on a lot `W` wide (as the game lays a row: up to three), or 0. */
+export function abreastOn(w: number, W: number): number {
+  const n = Math.round(W / w);
+  return n >= 1 && n <= 3 && Math.abs(n * w - W) <= EXACT ? n : 0;
 }
 
 /** The footprint against the lot or site in src/data: exact, centred on the origin, nothing outside. */
@@ -243,15 +269,10 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
   const cx = (all.max[0] + all.min[0]) / 2;
   const cz = (all.max[2] + all.min[2]) / 2;
   const site = t.kind === 'zoned' ? 'lot' : 'site';
-  // Zoned models may be a half or a third of the lot's width (rows), and may stop short of the
-  // back of the lot by whole cells (the game leaves a yard behind them).
-  const widths = t.kind === 'zoned' ? [t.w, t.w / 2, t.w / 3] : [t.w];
-  const depths = [t.d];
-  if (t.kind === 'zoned') for (let x = t.d - CELL; x >= CELL - EXACT; x -= CELL) depths.push(x);
+  const { widths, depths } = footprints(t);
   const near = (a: number, b: number) => Math.abs(a - b) <= EXACT;
   const accept = (fw: number, fd: number) => {
-    const abreast = Math.round(t.w / fw);
-    report.footprint = { w: fw, d: fd, abreast };
+    report.footprint = { w: fw, d: fd, abreast: abreastOn(fw, t.w) };
     if (fd < t.d - EXACT)
       warnings.push(
         `${f1(fd)} m deep on a ${f1(t.d)} m ${site}: it stands at the front and the game leaves a yard behind`,
@@ -307,7 +328,10 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
   }
 
   // No match: say what it is, what it should be, and what sticks out.
-  const rows = t.kind === 'zoned' ? ` (or ${f1(t.w / 2)} or ${f1(t.w / 3)} m wide, to stand in a row)` : '';
+  const rows =
+    t.kind === 'zoned'
+      ? ` (or narrower or shallower by whole ${CELL} m cells, for the smaller lots its buildings stand on, or ${f1(t.w / 2)} or ${f1(t.w / 3)} m wide, to stand in a row)`
+      : '';
   errors.push(`is ${f1(w)} × ${f1(d)} m; its ${site} is ${f1(t.w)} × ${f1(t.d)} m${rows}`);
   const out: string[] = [];
   for (const p of parts) {
@@ -398,8 +422,11 @@ function supported(parts: GlbPart[], report: ModelReport): void {
 const FRONT_EVIDENCE: [RegExp, number][] = [
   [/^(door|entrance|entrance_arch|storefront|storefront_glass|market_bay|lobby_glass)$/, 3],
   [/^(canopy|door_canopy|awning|porch|porch_roof|sign|stoop|step|steps)$/, 2],
-  [/^garage_door$/, 0.5],
+  [/^garage_door$/, 0.25],
 ];
+const GARAGE = /^garage_door$/;
+/** A roof over a doorway: over garage doors it is a loading dock's, not an entrance's. */
+const SHELTER = /^(canopy|door_canopy|awning)$/;
 
 /**
  * The front faces −Z. Entrances, shopfronts, canopies, signs and garage doors say which way a
@@ -432,7 +459,14 @@ export function frontEvidence(parts: GlbPart[]): {
     for (const [re, w] of FRONT_EVIDENCE) if (re.test(p.name) || p.path.some((n) => re.test(n))) return w;
     return p.material === 'door' ? 3 : 0;
   };
-  const fronts = parts.filter((p) => weightOf(p) > 0);
+  const named = (p: GlbPart, re: RegExp) => re.test(p.name) || p.path.some((n) => re.test(n));
+  const garages = parts.filter((p) => named(p, GARAGE)).map((p) => growBox(emptyBox(), p.tris));
+  const doors = parts
+    .filter((p) => weightOf(p) === 3 && !named(p, GARAGE))
+    .map((p) => growBox(emptyBox(), p.tris));
+  // A canopy over garage doors shelters a loading dock: what the dock says about the front its
+  // doors already say (a factory's docks may run down its side).
+  const fronts = parts.filter((p) => weightOf(p) > 0 && !(named(p, SHELTER) && overDock(p, garages, doors)));
   const solids = parts
     .filter((p) => !fronts.includes(p) && p.material !== 'glass' && p.material !== 'frame')
     .map((p) => growBox(emptyBox(), p.tris))
@@ -479,6 +513,35 @@ export function frontEvidence(parts: GlbPart[]): {
   return { road, back, side, seen };
 }
 
+/** The lots narrower than its type's own that a zoned model stands on, e.g. "16 × 24–32 m". */
+function lotsFor(fp: { w: number; d: number }, t: ModelTarget): string {
+  const widths: number[] = [];
+  for (let n = 1; n <= 3 && n * fp.w <= t.w + EXACT; n++) widths.push(n * fp.w);
+  const deep = fp.d < t.d - EXACT ? `${f1(fp.d)}–${f1(t.d)}` : f1(fp.d);
+  return `${widths.map(f1).join(' or ')} m wide${widths.length > 1 ? ' (side by side on the wider ones)' : ''} and ${deep} m deep`;
+}
+
+/**
+ * Does a canopy shelter garage doors more than an entrance? Each door counts for the length of
+ * the canopy it stands under (no more than 3.5 m below it, within a metre of its edge).
+ */
+function overDock(p: GlbPart, garages: Box3[], doors: Box3[]): boolean {
+  const c = growBox(emptyBox(), p.tris);
+  const along = c.max[0] - c.min[0] >= c.max[2] - c.min[2] ? 0 : 2;
+  const across = 2 - along;
+  const under = (list: Box3[]) => {
+    let n = 0;
+    for (const b of list) {
+      if (b.max[1] > c.min[1] + 0.3 || c.min[1] - b.max[1] > 3.5) continue;
+      if (b.max[across]! < c.min[across]! - 1 || b.min[across]! > c.max[across]! + 1) continue;
+      n += Math.max(0, Math.min(b.max[along]!, c.max[along]!) - Math.max(b.min[along]!, c.min[along]!));
+    }
+    return n;
+  };
+  const docks = under(garages);
+  return docks > 0 && docks > under(doors);
+}
+
 /** The plain report `models:check` prints. */
 export function formatReports(reports: ModelReport[]): string {
   const lines: string[] = [];
@@ -487,7 +550,14 @@ export function formatReports(reports: ModelReport[]): string {
     const what = r.target ? r.target.label : 'unknown building';
     if (r.ok) {
       const fp = r.footprint!;
-      const row = fp.abreast > 1 ? `, ${fp.abreast} abreast` : '';
+      const row =
+        r.target?.kind !== 'zoned'
+          ? ''
+          : fp.abreast > 1
+            ? `, ${fp.abreast} abreast`
+            : fp.abreast === 0
+              ? `, for lots ${lotsFor(fp, r.target)}`
+              : '';
       const tri = r.budget ? `${n(r.triangles)} of ${n(r.budget)} triangles` : `${n(r.triangles)} triangles`;
       const bits = [
         r.windows + r.bands ? `${r.windows + r.bands} windows` : '',

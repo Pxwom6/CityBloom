@@ -1,12 +1,12 @@
 // `npm run models:check [dir|file.glb …] [--strict] [--quiet]`: check every hand-made model in
-// assets/models (or the files or folders given) against the model spec in docs/models/PROMPTS.md
+// assets/models (or the files or folders given) against the model spec in docs/models/PROMPTS*.md
 // and the game's own data, and print a plain report. A model that fails is skipped by the build
 // (the building keeps its generated look); `--strict` makes a failure the exit code, `--quiet`
 // lists only failures and notes.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { checkModel, formatReports } from '../src/models/check';
-import { parseBudgets } from '../src/models/spec';
+import { readBudgets } from './lib/modelPipeline';
 
 const args = process.argv.slice(2);
 const strict = args.includes('--strict');
@@ -30,7 +30,7 @@ for (const t of targets) {
   else files.push(t);
 }
 
-const budgets = parseBudgets(readFileSync('docs/models/PROMPTS.md', 'utf8'));
+const budgets = readBudgets();
 const reports = files.map((f) => checkModel(readFileSync(f), basename(f), budgets));
 const shown = quiet ? reports.filter((r) => !r.ok || r.warnings.length) : reports;
 const text = formatReports(shown);

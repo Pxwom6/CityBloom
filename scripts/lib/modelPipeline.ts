@@ -9,11 +9,27 @@ import { encodeModels } from '../../src/models/codec';
 import { parseBudgets } from '../../src/models/spec';
 
 export const MODELS_DIR = 'assets/models';
-export const PROMPTS_FILE = 'docs/models/PROMPTS.md';
+export const PROMPTS_DIR = 'docs/models';
+/** A batch of prompts: `PROMPTS.md` (the first), `PROMPTS-2.md`, `PROMPTS-3.md` … */
+export const PROMPTS_NAME = /^PROMPTS(?:-(\d+))?\.md$/;
 
+/** The prompt files, batch by batch. */
+export function promptFiles(root = '.'): string[] {
+  const dir = join(root, PROMPTS_DIR);
+  if (!existsSync(dir)) return [];
+  const batch = (f: string) => Number(PROMPTS_NAME.exec(f)![1] ?? 1);
+  return readdirSync(dir)
+    .filter((f) => PROMPTS_NAME.test(f))
+    .sort((a, b) => batch(a) - batch(b))
+    .map((f) => join(dir, f));
+}
+
+/** Triangle budgets from every batch of prompts; a later batch's prompt for a file (a remake) wins. */
 export function readBudgets(root = '.'): Map<string, number> {
-  const p = join(root, PROMPTS_FILE);
-  return existsSync(p) ? parseBudgets(readFileSync(p, 'utf8')) : new Map();
+  const out = new Map<string, number>();
+  for (const p of promptFiles(root))
+    for (const [id, n] of parseBudgets(readFileSync(p, 'utf8'))) out.set(id, n);
+  return out;
 }
 
 export function modelFiles(dir: string): string[] {

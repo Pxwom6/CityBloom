@@ -3,9 +3,9 @@
 // loader. The file is an asset named by its content; `virtual:citybloom-models` is its URL.
 // In dev the file is built on request and the page reloads when a model is added or changed.
 import { createHash } from 'node:crypto';
-import { resolve, sep } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
-import { MODELS_DIR, buildModels } from './lib/modelPipeline';
+import { MODELS_DIR, PROMPTS_DIR, PROMPTS_NAME, buildModels } from './lib/modelPipeline';
 
 const ID = 'virtual:citybloom-models';
 const RESOLVED = '\0' + ID;
@@ -53,14 +53,17 @@ export function models(): Plugin {
         res.setHeader('Cache-Control', 'no-store');
         res.end(Buffer.from(b.bytes));
       });
-      // What the check reads besides the models: the budgets, and the lots and sites in the data.
-      const inputs = [resolve(config.root, 'docs/models/PROMPTS.md'), resolve(config.root, 'src/data')];
-      for (const f of inputs) server.watcher.add(f);
+      // What the check reads besides the models: the budgets (every batch of prompts), and the
+      // lots and sites in the data.
+      const prompts = resolve(config.root, PROMPTS_DIR);
+      const data = resolve(config.root, 'src/data');
+      for (const f of [prompts, data]) server.watcher.add(f);
       // A model dropped into the folder (or changed, or removed), or a budget or a site size
       // changed: convert again and reload.
       const changed = (file: string) => {
         const model = file.startsWith(dir + sep) && file.toLowerCase().endsWith('.glb');
-        if (!model && !inputs.some((f) => file === f || file.startsWith(f + sep))) return;
+        const prompt = dirname(file) === prompts && PROMPTS_NAME.test(basename(file));
+        if (!model && !prompt && !file.startsWith(data + sep)) return;
         cache = null;
         const mod = server.moduleGraph.getModuleById(RESOLVED);
         if (mod) server.moduleGraph.invalidateModule(mod);

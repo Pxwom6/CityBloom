@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   bakeModel,
@@ -9,17 +11,17 @@ import {
   TRI_SKY,
   UNIT_WINDOW,
 } from '../src/models/bake';
-import { checkModel, formatReports, inspectModel } from '../src/models/check';
+import { checkModel, formatReports, frontEvidence, inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { GlbError, normaliseName, parseGlb } from '../src/models/glb';
-import { ROLES, budgetFor, parseBudgets, targetOf } from '../src/models/spec';
+import { ROLES, budgetFor, targetOf } from '../src/models/spec';
 import { BREAKS, breakModel, editGlb } from '../scripts/lib/breakModel';
-import { buildModels, modelFiles } from '../scripts/lib/modelPipeline';
+import { buildModels, modelFiles, readBudgets } from '../scripts/lib/modelPipeline';
 
 /** Stable copies of delivered models (assets/models changes as models arrive). */
 const GOOD = 'tests/fixtures/models/good';
 const good = (id: string) => readFileSync(`${GOOD}/${id}.glb`);
-const budgets = parseBudgets(readFileSync('docs/models/PROMPTS.md', 'utf8'));
+const budgets = readBudgets();
 
 describe('model spec', () => {
   it('reads what a file name stands for from the game data', () => {
@@ -46,6 +48,24 @@ describe('model spec', () => {
     expect(budgets.get('annex-ward')).toBe(400);
     // Every building the prompts cover has one.
     expect(budgets.size).toBeGreaterThanOrEqual(135);
+  });
+
+  it('reads triangle budgets from every batch of prompts, a later batch winning', () => {
+    // Batch 2 (PROMPTS-2.md): designs sized for the lots buildings stand on.
+    expect(budgets.get('R013-2')).toBe(900);
+    expect(budgets.get('C002-2')).toBe(500);
+    expect(budgets.get('R213-2')).toBe(2500);
+    expect(budgets.get('R013')).toBe(1100);
+    expect(budgets.size).toBeGreaterThanOrEqual(175);
+    // Batches in number order (not as their names sort): a remake's budget is its latest prompt's.
+    const root = mkdtempSync(join(tmpdir(), 'prompts-'));
+    mkdirSync(join(root, 'docs/models'), { recursive: true });
+    const prompt = (n: number) => `### Cottage (\`R001.glb\`)\n\nSave as R001.glb. Budget ${n} triangles.\n`;
+    writeFileSync(join(root, 'docs/models/PROMPTS.md'), prompt(100));
+    writeFileSync(join(root, 'docs/models/PROMPTS-2.md'), prompt(200));
+    writeFileSync(join(root, 'docs/models/PROMPTS-10.md'), prompt(300));
+    writeFileSync(join(root, 'docs/models/notes.md'), prompt(999));
+    expect(readBudgets(root).get('R001')).toBe(300);
   });
 
   it('normalises exporter suffixes on names', () => {
@@ -121,6 +141,43 @@ describe('models:check', () => {
     // It says what it let through: a shallow model with overhanging trim.
     expect(r.warnings.join(' ')).toMatch(/16 m deep on a 24 m lot/);
     expect(r.warnings.join(' ')).toMatch(/overhang/);
+  });
+
+  it('accepts a zoned model narrower or shallower than its lot by whole cells', () => {
+    // The industrial complex's lot is 24 × 32 m; most of them stand on 16 m lots, 24 or 32 deep.
+    const r = checkModel(good('I113-2'), 'I113-2.glb', budgets);
+    expect(r.errors).toEqual([]);
+    expect(r.footprint).toEqual({ w: 16, d: 24, abreast: 0 });
+    expect(r.budget).toBe(2000);
+    expect(r.warnings.join(' ')).toMatch(/24 m deep on a 32 m lot/);
+    expect(formatReports([r])).toMatch(/16 × 24 m, for lots 16 m wide and 24–32 m deep/);
+    // But not a size between cells (and not a half or a third of the lot's width, 12 or 8 m).
+    const odd = editGlb(good('I113-2'), (g) => {
+      const scene = (g.scenes as { nodes: number[] }[])[0]!;
+      (g.nodes as unknown[]).push({
+        children: scene.nodes,
+        matrix: [0.6, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      });
+      scene.nodes = [(g.nodes as unknown[]).length - 1];
+    });
+    expect(checkModel(odd, 'I113-2.glb', budgets).errors.join(' ')).toMatch(
+      /is 9\.6 × 24 m; its lot is 24 × 32 m \(or narrower or shallower by whole 8 m cells/,
+    );
+  });
+
+  it('counts a canopy over garage doors as a loading dock, not an entrance', () => {
+    // The second factory: a door at the front, loading docks down one side under a canopy.
+    const r = checkModel(good('I111-2'), 'I111-2.glb', budgets);
+    expect(r.errors).toEqual([]);
+    const e = frontEvidence(parseGlb(good('I111-2')).parts);
+    expect(e.seen.join(' ')).not.toMatch(/canopy/);
+    expect(e.road).toBeGreaterThan(e.back * 1.5);
+    // An entrance canopy still counts (the complex's, over its office door).
+    expect(frontEvidence(parseGlb(good('I113-2')).parts).seen.join(' ')).toMatch(/canopy road/);
+    // Turned round, it is still caught.
+    const turned = (how: string) => checkModel(breakModel(good('I111-2'), how), 'I111-2.glb', budgets);
+    expect(turned('turn').errors.join(' ')).toMatch(/front faces \+Z/);
+    expect(turned('quarter').ok).toBe(false);
   });
 
   it('catches deliberately broken models, each for its own reason', () => {

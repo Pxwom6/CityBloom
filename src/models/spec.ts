@@ -106,7 +106,8 @@ export function targetOf(base: string): ModelTarget | null {
 }
 
 /**
- * Triangle budgets from PROMPTS.md: each prompt says "Save as <name>.glb" and "Budget N triangles".
+ * Triangle budgets from a batch of prompts (docs/models/PROMPTS*.md): each prompt says "Save as
+ * <name>.glb" and "Budget N triangles".
  * A heading may name a file whose prompt saves another design (R103.glb's prompt makes R103-2.glb):
  * both names get that budget.
  */

@@ -268,6 +268,19 @@ function layout(model: BakedModel, o: HandOptions): Copy[] {
   return copies;
 }
 
+/**
+ * How a design looks on a lot, as a string: each copy's design, mirroring and paint. Two lots with
+ * the same string look the same (whatever their depth: a yard behind is all that differs).
+ */
+export function appearance(
+  model: BakedModel,
+  o: Pick<HandOptions, 'W' | 'D' | 'seed' | 'rank' | 'mirror' | 'own'>,
+): string {
+  return layout(model, { ...o, lit: 0, base: null })
+    .map((c) => `${model.id}${c.mirror ? '~' : ''}:${c.paint.map((p) => p?.getHexString() ?? '').join(',')}`)
+    .join('|');
+}
+
 /** Emit one level of detail of a model's copies into a soup. */
 function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, out: Soup): void {
   const P = model.positions;
@@ -829,22 +842,22 @@ export class HandmadeModels {
 
   /**
    * The design a zoned building of this look takes on its lot, or null for a generated one.
-   * With three designs or more every look is hand-made; with fewer they share the looks with
-   * the generator's variants (one design: every other look; two: two looks in three).
+   * With two designs or more every look is hand-made, the designs in turn (repainted and
+   * mirrored look by look); a single design shares the looks with the generator's variants
+   * (every other look), so a street of them isn't one house over and over.
    */
   zoned(def: string, W: number, D: number, look: number): BakedModel | null {
     const fit = this.all('zoned', def).filter((m) => HandmadeModels.fits(m, W, D));
     const n = fit.length;
     if (!n) return null;
-    if (n >= 3) return fit[look % n]!;
-    const slot = look % (n + 1);
-    return slot < n ? fit[slot]! : null;
+    if (n >= 2) return fit[look % n]!;
+    return look % 2 === 0 ? fit[0]! : null;
   }
 
   /** Which of its design's looks a zoned look is (for `HandOptions.rank`). */
   rank(def: string, W: number, D: number, look: number): number {
     const n = this.all('zoned', def).filter((m) => HandmadeModels.fits(m, W, D)).length;
-    return Math.floor(look / (n >= 3 ? n : n + 1));
+    return Math.floor(look / Math.max(2, n));
   }
 
   civic(def: string, variant: number): BakedModel | null {

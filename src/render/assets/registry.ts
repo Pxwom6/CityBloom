@@ -6,7 +6,7 @@ import { ModelBuilder, type ModelData } from './builder';
 import { PALETTES, buildZonedModel } from './models';
 import { buildAnnexModel, buildCivicModel, buildRubbleModel } from './civicModels';
 import { siteWorks } from './projectModels';
-import { buildHandModel, clearPlace, handmade, nearestClear, type Inset } from './handmade';
+import { appearance, buildHandModel, clearPlace, handmade, nearestClear, type Inset } from './handmade';
 
 /** Number of visual variants per archetype and lot size. */
 export const VARIANTS = 12;
@@ -72,12 +72,8 @@ export class AssetRegistry {
         ? o()
         : hand
           ? buildHandModel(hand, {
-              W: w * CELL,
-              D: d * CELL,
-              seed: look,
-              rank: handmade.rank(def, w * CELL, d * CELL, look),
+              ...handLook(def, w, d, look),
               lit: LIT[zd.zone] ?? 0.6,
-              mirror: true,
               base: lotSurface(zd),
               yard: zd.zone === ZONE_R ? 'R' : zd.zone === ZONE_C ? 'C' : 'I',
             })
@@ -85,6 +81,17 @@ export class AssetRegistry {
       this.cache.set(k, m);
     }
     return m;
+  }
+
+  /**
+   * How a zoned building of this look appears, as a string, without building it: equal strings
+   * look the same. A hand-made design's copies, paint and mirroring (the same on a deeper lot); a
+   * generated look is its own.
+   */
+  zonedAppearance(def: string, w: number, d: number, variant: number): string {
+    const look = variant % VARIANTS;
+    const hand = this.overrides.has(def) ? null : handmade.zoned(def, w * CELL, d * CELL, look);
+    return hand ? appearance(hand, handLook(def, w, d, look)) : `${this.key(def, w, d, variant)}`;
   }
 
   /**
@@ -118,6 +125,17 @@ export class AssetRegistry {
   get size(): number {
     return this.cache.size;
   }
+}
+
+/** What makes a hand-made zoned look itself: its lot, its seed and rank, and mirroring allowed. */
+function handLook(def: string, w: number, d: number, look: number) {
+  return {
+    W: w * CELL,
+    D: d * CELL,
+    seed: look,
+    rank: handmade.rank(def, w * CELL, d * CELL, look),
+    mirror: true,
+  };
 }
 
 /** Where add-on annex `k` stands on a W×D site (a back corner), and how much of its 9×8 m it gets. */

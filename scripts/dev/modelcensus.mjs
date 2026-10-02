@@ -105,6 +105,17 @@ function report(name, { models, designs }) {
     console.log(
       `  ${k.padEnd(10)} ${String(e.n).padStart(4)}  hand ${String(e.hand).padStart(4)}  designs ${e.fit}  near ${e.hand ? Math.round(e.tris / e.hand) : '-'} far ${e.hand ? Math.round(e.far / e.hand) : '-'} sky ${e.hand ? Math.round(e.sky / e.hand) : '-'} | gen ${e.gen ? Math.round(e.genTris / e.gen) : '-'}`,
     );
+  // Every type and lot where generated looks still stand, and why: no design fits the lot, or one
+  // does and takes turns with the generator.
+  const gen = rows.filter(([, e]) => e.gen);
+  console.log(
+    `generated looks stand on: ${gen
+      .map(
+        ([k, e]) =>
+          `${k} ${e.gen} of ${e.n} (${e.fit ? `${e.fit} design${e.fit > 1 ? 's' : ''}` : 'no design'})`,
+      )
+      .join(', ')}`,
+  );
   // Each design: how many wear it, how many of its type there are, and on lots it fits.
   const worn = new Map();
   for (const m of models) if (m.hand) worn.set(m.hand, (worn.get(m.hand) ?? 0) + 1);

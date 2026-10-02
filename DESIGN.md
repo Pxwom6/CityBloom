@@ -1183,7 +1183,11 @@ markers. Faces that can't be seen are dropped (a face whose outside is inside an
 is a plain box). Flags mark the triangles of two distant versions picked from the named parts:
 *far* (frames, sills and fittings under half a metre gone, panes and frames as flat faces) and
 *skyline* (shapes over about 2 m, and every pane); long thin parts (parapets, posts) and whatever
-holds up a part that stays are kept. For wall-to-wall models, flags mark what a neighbour in a
+holds up a part that stays are kept. A window or band longer than 4.5 m along its wall is cut
+across into runs of about 3.5 m, each a window of its own, with a 0.4 m strip of glass that never
+lights between two (in the near and far versions; in the skyline the runs meet), so a floor-long
+band lights at night as windows, not one stripe (model batch 3); shopfronts and glazed volumes stay
+whole. For wall-to-wall models, flags mark what a neighbour in a
 row hides. All models are packed into one file (`src/models/codec.ts`: 16-bit welded vertices,
 about 15 bytes a triangle), emitted as `assets/models-<hash>.bin`; `virtual:citybloom-models` is
 its URL, and the game fetches it at start (`src/client/models.ts`) while the city loads. Without
@@ -1191,8 +1195,8 @@ it every building is generated.
 
 **Draw** (`src/render/assets/handmade.ts`, `registry.ts`). `assets.zoned(def, w, d, look)` asks
 for a design that fits the lot: as wide as the lot or a half or a third of it, and no deeper.
-With three designs or more every look is hand-made; with fewer they share the twelve looks with
-the generator's variants. A design becomes a `ModelData` for that lot: copies side by side across
+With two designs or more every look is hand-made; a lone design shares the twelve looks with the
+generator's variants. A design becomes a `ModelData` for that lot: copies side by side across
 its width, each repainted (for `wall`, `wall_alt`, `roof`, `awning` and `sign`, a colour from the
 game palette nearest the model's own, so brick stays brick; a colour near none is kept), perhaps
 mirrored, less the faces a neighbour in the row hides, standing at the front of the lot on the

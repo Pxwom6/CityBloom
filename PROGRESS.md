@@ -377,7 +377,9 @@ batch (the first 136 models, commit 9e7a42e): after / before, average ms of two 
 | Medium | 4.9 / 4.5 | 4.3 / 3.9 | 3.4 / 3.1 | 5.3 / 4.9 | 4.8 / 4.3 | 3.5 / 3.2 | 5.0 / 4.7 |
 | Low | 3.2 / 2.9 | 2.6 / 2.7 | 1.8 / 1.7 | 2.9 / 2.9 | 2.6 / 2.7 | 1.8 / 1.8 | 3.0 / 2.9 |
 
-The heaviest view at High is 10.9 ms (10.5 and 11.2 in the two runs; 12 allowed): the hand-made
+The heaviest view at High is 10.9 ms (10.5 and 11.2 in the two runs; 12 allowed), and 10.1 ms on the
+finished build (with the ground lift and the mirroring) in a third pair, beside 10.4 for the build
+before the batch (`frames-final.log`, `frames-before3.log`): the hand-made
 buildings cost about 1 ms a frame at High at city and street zoom and in the heavy view, 0.3–0.5 ms at
 Medium, nothing measurable at Low (DECISIONS, "Model batch 2"). Colour-pass triangles (`passprobe`):
 the whole-city view 1.76M against 1.74M, city zoom 1.65M against 1.49M (buildings 728k against 604k,

@@ -13,8 +13,8 @@ city from time to time.
 
 ![A grown city of 110,000 in the afternoon](docs/screenshots/phase3-city.jpg)
 
-The city is drawn bright, warm and toy-like: most buildings wear hand-made models (three in four
-in a grown city), beside generated ones in the same style, each with lighter versions for the
+The city is drawn bright, warm and toy-like: most buildings wear hand-made models (more than nine
+in ten in a grown city), beside generated ones in the same style, each with lighter versions for the
 distance; the sun crosses the sky through golden and blue hours, lit windows glow at night, grass
 and trees turn with the seasons, and fields, kerbs, zebra crossings and benches make a grown city
 read as a place. Graphics quality (High, Medium, Low)
@@ -247,7 +247,8 @@ renders a mirror of it (`src/client`, `src/render`) and every player action is a
 same seed and commands always give the same city. Balancing numbers live in `src/data`.
 
 - `SPEC.md`, `SPEC-2.md`, `SPEC-3.md`: the briefs (the game, phase 2's features, phase 3's graphics).
-- `docs/models/PROMPTS.md`: the model spec and a prompt for every building.
+- `docs/models/PROMPTS.md`: the model spec and a prompt for every building; `PROMPTS-2.md`, `PROMPTS-3.md`, …
+  the later batches (further designs, each with the spec as it then stood).
 - `DESIGN.md`: the technical design (architecture, simulation model, rendering, saves).
 - `PROGRESS.md`: where things stand, known issues, performance numbers and ideas for what's next.
 - `docs/DECISIONS.md`: the design calls made along the way, one line each.

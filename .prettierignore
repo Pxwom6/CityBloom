@@ -9,4 +9,5 @@ package-lock.json
 dist-e2e
 dist-e2e-next
 dist-base
+dist-*
 bench-results

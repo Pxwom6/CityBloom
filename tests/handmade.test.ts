@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Color } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { bakeModel, TRI_GROUND, TRI_NEAR, type BakedModel } from '../src/models/bake';
+import { bakeModel, TRI_GROUND, TRI_NEAR, UNIT_BAND, UNIT_DARK, type BakedModel } from '../src/models/bake';
 import { groundLift, inspectModel } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { readBudgets } from '../scripts/lib/modelPipeline';
@@ -177,8 +177,32 @@ describe('a hand-made model on a lot', () => {
     // The skyline version needs no plinth sides: far away nothing is seen under a lot.
     expect(box(m.far!).min[1]).toBe(-5);
     expect(box(m.sky!).min[1]).toBeGreaterThanOrEqual(0);
-    // Every window is in every version, under the same number.
-    expect(new Set(m.sky!.win).size).toBe(new Set(m.win).size);
+    // Every window that lights is in every version, under the same number (the unlit strips
+    // between a long band's runs are left out of the skyline).
+    const lights = (x: ModelData) => new Set([...x.win!].filter((w) => w && m.winChance![w - 1]! > 0));
+    expect([...lights(m.sky!)].sort()).toEqual([...lights(m)].sort());
+    expect([...lights(m.far!)].sort()).toEqual([...lights(m)].sort());
+  });
+
+  it('never lights the strips between the runs of a long band', () => {
+    // The convention centre's long glass is lit in runs; between two runs, glass that stays dark
+    // whatever the hour.
+    const m = buildHandModel(M.convention!, { ...opts(M.convention!.w, M.convention!.d), lit: 1 });
+    const strips = M.convention!.units.indexOf(UNIT_DARK) + 1;
+    expect(strips).toBeGreaterThan(0);
+    expect(m.winChance![strips - 1]).toBe(0);
+    const out = new Arrays(false);
+    appendModel(out, m, 0, 0, 0, 0, false, undefined, 7);
+    let strip = 0;
+    for (let i = 0; i < out.n; i++)
+      if (m.win![i] === strips) {
+        strip++;
+        expect(out.emi[i]).toBe(0);
+      }
+    expect(strip).toBeGreaterThan(0);
+    // Every run lights at a chance of 1.
+    const runs = [...M.convention!.units].filter((k) => k === UNIT_BAND).length;
+    expect([...m.winChance!].filter((c) => c === 1).length).toBeGreaterThanOrEqual(runs);
   });
 
   it('each copy of a building lights its own windows, the same ones every time', () => {

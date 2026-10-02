@@ -8,6 +8,7 @@ import {
   TRI_PARTY_POS,
   TRI_SKY,
   TRI_TWO_SIDED,
+  UNIT_DARK,
   UNIT_GLOW,
   UNIT_SHOP,
   type BakedModel,
@@ -769,7 +770,8 @@ export function buildHandModel(
   // Windows across the copies, then the insets': each with the chance it is lit.
   const chances: number[] = [];
   const chance = (m: BakedModel) => {
-    for (const kind of m.units) chances.push(kind === UNIT_SHOP ? 0.9 : kind === UNIT_GLOW ? 0 : o.lit);
+    for (const kind of m.units)
+      chances.push(kind === UNIT_SHOP ? 0.9 : kind === UNIT_GLOW || kind === UNIT_DARK ? 0 : o.lit);
   };
   for (let k = 0; k < copies.length; k++) chance(model);
   for (const a of inset) {

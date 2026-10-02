@@ -11,6 +11,8 @@ export default tseslint.config(
       'dist-e2e',
       'dist-e2e-next',
       'dist-base',
+      // Other builds kept for comparisons (dist-before, …).
+      'dist-*',
       'node_modules',
       'test-results',
       'playwright-report',

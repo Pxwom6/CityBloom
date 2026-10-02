@@ -84,7 +84,19 @@ test('M25: the tenement grows through normal zoning: three abreast, lit at night
       .join(' ')}`,
   );
   expect(hand.length).toBeGreaterThan(20);
-  expect(models.length - hand.length).toBeGreaterThan(20);
+  // Generated looks only where fewer than two designs fit the lot (model batch 2: two designs or
+  // more, every look hand-made).
+  const designs = await page.evaluate(() =>
+    window.__game!.getHandDesigns().filter((d) => d.kind === 'zoned'),
+  );
+  const fitting = (m: { def: string; w: number; d: number }) =>
+    designs.filter((d) => {
+      const k = Math.round((m.w * 8) / d.w);
+      return (
+        d.def === m.def && k >= 1 && k <= 3 && Math.abs(k * d.w - m.w * 8) < 0.05 && d.d <= m.d * 8 + 0.05
+      );
+    }).length;
+  for (const m of models.filter((m) => !m.hand)) expect(fitting(m), `${m.def}@${m.w}x${m.d}`).toBeLessThan(2);
   // Tenements on the type's own lot: 24 m wide, three 8 m copies.
   const rows = models.filter((m) => m.def === 'R103' && m.hand === 'R103');
   expect(rows.length).toBeGreaterThan(0);

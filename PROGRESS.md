@@ -77,9 +77,10 @@ cities, a grace for cities meeting seasons for the first time, and level-crossin
 trams that give way (DECISIONS, "Phase 2 review").
 
 **Phase 3 (graphics, M25–M28)** made it look the part without touching the simulation. The owner's
-hand-made building models (136 so far: every zoned type, 46 civic buildings, annexes) are checked
-against their spec, converted at build time and stand in wherever they fit, painted from the game's
-palettes, with far and skyline versions that fade in by a dither (M25). Light and sky: cascaded
+hand-made building models (176 so far: every zoned type, second designs sized for the lots buildings
+actually stand on, 46 civic buildings, annexes) are checked against their spec, converted at build
+time and stand in wherever they fit, painted from the game's palettes, with far and skyline versions
+that fade in by a dither (M25); three buildings in four in a grown city wear one. Light and sky: cascaded
 shadows fitted to the ground in view, soft occlusion in corners, a glow round lit windows at night,
 golden and blue hours, bounce light and haze, Neutral tone mapping (M26). Ground, lots and streets:
 grass with fields, hedgerows and worn paths, empty zoned land as a faint tint and outline, kerbs,
@@ -105,64 +106,108 @@ against 22–25 at the start of the phase; the whole-city view draws 1.7M triang
    (ski resorts in winter, beaches in summer).
 7. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
    building + economy pattern as M10.
-8. **More hand-made models**: 8 m wide family houses and villas and 16 m versions of the 24 m
-   level-2 and -3 buildings would let models stand on the lots buildings actually grow on (PROGRESS,
-   "Models"); a procedural window shader would let distant homes' windows merge too.
+8. **More hand-made models** (PROGRESS, "Models"): second designs for the lots one design fits
+   (they alternate with generated looks there), a 24 × 24 m skyline tower and headquarters (105 of the
+   bench city's R213s stand on 24 × 24 m lots no design fits), and high-wealth and high-tech types once
+   cities grow them; a procedural window shader would let distant homes' windows merge too.
 9. **Balance**: commercial demand runs a little low in small towns; the big-city running costs and
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and phase 3's wrap-up with it: the
-summary above, SPEC_REVIEW, the README's screenshots, the social image, and a walk-through at every
-zoom, hour and season with what it found fixed (SPEC_REVIEW, "When every milestone is done (phase
-3)"). Nothing is left in progress.
+Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 2 (below,
+"Models"): the owner's second batch is in, sized for the lots buildings stand on. Nothing is left in
+progress.
 
 ## Next tasks
-1. The owner: push the branch (`git push -u origin phase-3`; this machine's git has no GitHub
-   credentials) and merge it into `main` when happy, which publishes the site.
-2. Bring in new models as they arrive in `assets/models/` (`npm run models:check`).
-3. Ideas below.
+1. The owner: merge `phase-3` (pushed to GitHub) into `main` when happy, which publishes the site.
+2. Bring in new models as they arrive in `assets/models/` (`npm run models:check`), and pass the
+   notes under "Models" to the owner for any remakes.
+3. Ideas above.
 
 ## Models (phase 3)
-136 files in `assets/models/` (every zoned type, `R103-2`, 8 annexes, 46 civic buildings);
-`npm run models:check` passes all 136. Converted: 169k triangles in the files, 139k drawn near, 82k
-far, 50k in the skyline; the models file is 2.3 MB (0.8 MB gzipped), fetched at start.
+176 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
+buildings) and the second (`docs/models/PROMPTS-2.md`: 40 designs sized for the lots buildings stand
+on, and a remade `C213`). `npm run models:check` passes all 176. Converted: 194k triangles in the
+files, 165k drawn near, 111k far, 69k in the skyline; the models file is 2.9 MB (0.9 MB gzipped),
+fetched at start.
 
 | File | Status |
 |---|---|
 | `R103.glb` (the tenement) | passes as a row model (8 × 16 m, three abreast on its 24 m lot, two on a 16 m lot), with notes: 16 m deep on a 24 m lot, and trim, steps and the awning overhang its footprint by up to 1.5 m |
 | `library.glb`, `primary.glb`, `university.glb` | failed as first delivered (a gable or wall slid 4–9 m off its building: "a wall hangs in the air", and the library was 24 m wide on its 20 m site); the owner's fixed files pass |
-| the other 132 | pass with no notes |
+| 13 of batch 2: `C103-2`, `C113-2`, `C213-2`, `I003-2`, `I013-2`, `I013-3`, `I103-2`, `I113-2`, `I213-2`, `R202-2`, `R203-2`, `R212-2`, `R213-2` | skipped under the first rules (a zoned model had to be its type's lot, or a half or a third of its width: "is 16 × 24 m; its lot is 24 × 32 m"); pass since a zoned model may be any whole number of cells up to its type's lot (DECISIONS, "Model batch 2"), and the check names the lots each is for |
+| `I101-2`, `I111-2` | failed as "the front faces along X": the canopy over the loading docks down their side counted as an entrance; pass since a canopy over garage doors counts as a dock |
+| all 41 batch-2 files | pass with a note: their lawns lie at 1 cm and paths at 4 cm, under and level with the game's 4 cm lot base, so drives and paths flickered; the game now lifts a model's ground to 5 cm (in future files, 5 cm and up) |
+| `C213.glb` (remade) | lights window by window: 285 runs of 5.6–6.3 m (the first had 52 floor-wide bands), in its near, far and skyline versions alike; the README's screenshots and the share image are retaken with it |
+| the other first-batch files | pass with no notes |
 
-Things seen in the models while reviewing every one in the game (they pass the check and are in; for
-the owner, if a model is ever remade):
-- `C213`: its window groups each run a floor wide, so at night a lit floor is one bright band and
-  the tower reads as a striped lightbox from far off; several groups a floor would light as windows.
-- `firestation`: a thin strip of roof along the ridge sits a little proud of the roof.
-- `skyneedle`: benches stand inside the planters at its foot.
-- `nuclear`: the cooling towers' bases run into the boundary wall.
-- `recycling`: the shed roofs' end caps are in the roof material, so they repaint with the roof.
-- `C223`: the lobby glass lies in the plane of the wall (it can shimmer at a distance).
-- `university`: the back walls of the wings have no windows.
-- Several civic sites leave no clear back corner, so an add-on annex stands at the nearest clear
-  spot, shrunk (the clinic's and the police station's most).
-- `tree_spot`s within a metre or two of a wall put a tree's crown into the wall (a few homes).
+Which way they face (`npx tsx scripts/dev/modelturn.ts`): none fails as delivered; turned half round
+155 of 168 are caught (154 before batch 2's change to docks and garage doors), a quarter round 160
+(159), and every model caught before still is. The rest were never caught: they are symmetrical or
+have entrances on more than one side (half round: `C213`, `C213-2`, `I103`, `I113`, `R003`, `R013`,
+`R023`, `R103-2`, `R113`, `R123`, `grandarch`, the two parks; a quarter round: `C103`, `C113`, `C123`,
+`C213-2`, `R003-2`, `R013-2`, the parks).
 
-**Models that pass but rarely or never appear** (a lot-size matter, not a fault in the models): a
-model stands only on a lot as wide as it (or two or three times as wide, in a row) and at least as
-deep. Buildings start at level 1 on the level-1 lot and an upgrade widens only if the cells beside
-it are free, which on a built-up street they aren't. So in played cities:
-- **Family houses and villas (`R002`, `R012`, `R022`, `R003`, `R013`, `R023`, 16 m wide) never
-  appear**: low-density homes stay one cell (8 m) wide (in 50 saved cities, 4,398 villas, none on a
-  16 m lot). Only the cottages (`R0x1`, 8 m) fit. Versions 8 m wide (8 × 16 or 8 × 24 m) would.
-- Level-2 and -3 medium- and high-density buildings mostly stay on 16 m lots: the 24 m models
-  (`R1x3` courtyard blocks, `C1x3`, `R2x2`/`R2x3`, `C2x2`/`C2x3`, …) appear only where a lot did widen
-  (the tenement, 8 m wide, fits everywhere its type grows).
-- In the bench city 17 % of buildings wear hand-made models, in the menu's demo town 25 %
-  (`node scripts/dev/modelcensus.mjs <save>` lists them by type and lot). The rest are generated,
-  refreshed in M28 to sit with them. A smaller sibling's model doesn't stand in on a lot its own
-  type's model can't fit (DECISIONS M28): 8 m wide versions of the family houses and villas, and
-  16 m versions of the 24 m level-2 and -3 buildings, are what would bring more of them into cities.
+**Who wears them** (`node scripts/dev/modelcensus.mjs <saves …>`; logs in `bench-results/batch2/`):
+
+| City | Buildings | First batch only | Batch 2 under the first rules | Now |
+|---|---|---|---|---|
+| Bench city (110k) | 2,158 | 359 (17 %) | 956 (44 %) | 1,618 (75 %) |
+| Menu demo town | 1,001 | 252 (25 %) | 580 (58 %) | 914 (91 %) |
+| `Saves/Ashton.citybloom` | 192 | 3 (2 %) | 111 (58 %) | 184 (96 %) |
+
+Where two designs or more fit a lot every building wears one; where one fits, it alternates with
+generated looks (DECISIONS, "Model batch 2"). The bench city's 540 generated buildings stand on lots
+one design fits (393: R213 on 24 × 32 and 16 × 24–32 m, C113 on 16 × 16, I211 and I201 on 24 × 24, …)
+or none does (147: 105 R213 skyline towers and 10 headquarters on 24 × 24 m lots, 7 I012 on 16 × 16).
+
+**Models that rarely or never appear, and why** (across the three cities):
+- First-batch designs sized for their type's own lot, where the type's buildings stand on smaller
+  lots (batch 2 covers those now): the 16 m villas and family houses `R013`, `R003`, `R012`, `R002`,
+  `R023` (789 such homes, every one 8 m wide), the courtyard blocks `R113` and `R103-2` (24 × 24; 474
+  of their types' 475 buildings stand on 16 m lots), apartment blocks `R112`, `R102`, market halls `C013`, `C003` (16 m; 142 stand on
+  8 m lots), department stores and offices `C113`, `C103`, `C112`, `C102`, plants `I013`, `I003`,
+  `I012`, `I112`, `I102`, complexes `I103`, `I113` (24 × 32; most stand on 16 m lots) and the towers
+  `R203`, `R202`, `C203`, `C202`, `I203`.
+- Types that hardly grow in these cities: no high-wealth homes, shops or offices (`R02x`, `R12x`,
+  `R22x`, `C02x`, `C12x`, `C22x`) and no high-tech industry (`I02x`, `I12x`, `I22x`) in any of them, and
+  next to no `C101`, `I002`, `I102`.
+- Batch-2 designs worn by few: `C102-2` (2: two low-wealth office blocks in all three cities),
+  `C103-2` (3 of 10 low-wealth department stores), `R002-2` (4 of 10), `R102-2` (4 of 6), `C001-2` (5
+  of 9), `C002-2` (7 of 11): few of their type grow, and a lone design leaves every other look to the
+  generator. The rest are well used (`R013-2` and `-3` 445 between them, `R113-2` and `-3` 397, `R003-2`
+  and `-3` 300, `R213-2` 77 …).
+
+**Notes on the models for the owner**, from reviewing every batch-2 design in the game (they pass
+and are in):
+- Lawns and paths: lay them 5 cm up or more (the game lifts lower ones, see above).
+- `R201-2`, `R213-2` (and `C213-2` a little): window bands about 8 m long, two a floor; where both
+  are lit at night a floor reads as one stripe. Runs of 3–4 m would read as windows (the remade
+  `C213`'s 6 m runs read well).
+- Sawtooth roofs (`I013-2`, `I013-3`, `I011-2`, `I003-2`, `I101-2`, `I111-2`, `I103-2`, `I113-2`):
+  hairline gaps between the glazing and the roof planes show the grass through.
+- Wealth levels alike: `R102-2` is nearly `R112-2`, and the low-wealth villas and family houses
+  (`R003-2`, `R003-3`, `R002-2`) nearly the medium-wealth ones; `R213-2` and `R203-2` are both navy
+  glass towers. A silhouette of their own would tell the streets apart.
+- `R113-2`: a dark strip with slit windows at each side of its front shows between copies standing
+  side by side (a party wall would be plain).
+- `C213-2`: the "two-storey glass lobby" is a solid wall with a door; its sign panel reads as one
+  more window. `C013-2`, `C013-3`: the sign is a blank cream plaque close to the wall's colour.
+- `I003-2`, `I001-2`: brown roller doors on brick barely show. `I213-2` looks slight beside its
+  neighbours, much of its lot bare paving.
+- `R101-2` reads as two and a half storeys (three asked); `R013-2`, `R003-2`: from behind the dormer
+  roof pokes above the ridge; `R001-2`: its side hedges run the whole lot as thin tall walls.
+- `C113-2`, `C103-2`: their grey roofs and navy signs are too far from the game's palettes to be
+  repainted, so every copy keeps them.
+
+From the first batch (still open): `firestation`: a thin strip of roof along the ridge sits a little
+proud of the roof. `skyneedle`: benches stand inside the planters at its foot. `nuclear`: the cooling
+towers' bases run into the boundary wall. `recycling`: the shed roofs' end caps are in the roof
+material, so they repaint with the roof. `C223`: the lobby glass lies in the plane of the wall (it can
+shimmer at a distance). `university`: the back walls of the wings have no windows. Several civic
+sites leave no clear back corner, so an add-on annex stands at the nearest clear spot, shrunk (the
+clinic's and the police station's most). `tree_spot`s within a metre or two of a wall put a tree's
+crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
@@ -321,6 +366,28 @@ The heaviest view at High is 10.0 ms (12 allowed; 25.1 at the start in this run)
 view draws 152 calls and 1.75M triangles (289 and 2.69M at the start). Medium and Low are faster than
 at the start in the whole-city and heavy views and at Medium's city zoom, and slower close up as
 recorded for M28 (DECISIONS M28).
+
+**Model batch 2** (three buildings in four hand-made), in runs alternating with the build before the
+batch (the first 136 models, commit 9e7a42e): after / before, average ms of two runs each
+(`bench-results/batch2/frames-*.log`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.7 / 8.6 | 13.1 / 11.6 | 9.1 / 8.3 | 11.1 / 10.3 | 12.9 / 11.7 | 9.2 / 8.4 | **10.9 / 9.7** |
+| Medium | 4.9 / 4.5 | 4.3 / 3.9 | 3.4 / 3.1 | 5.3 / 4.9 | 4.8 / 4.3 | 3.5 / 3.2 | 5.0 / 4.7 |
+| Low | 3.2 / 2.9 | 2.6 / 2.7 | 1.8 / 1.7 | 2.9 / 2.9 | 2.6 / 2.7 | 1.8 / 1.8 | 3.0 / 2.9 |
+
+The heaviest view at High is 10.9 ms (10.5 and 11.2 in the two runs; 12 allowed): the hand-made
+buildings cost about 1 ms a frame at High at city and street zoom and in the heavy view, 0.3–0.5 ms at
+Medium, nothing measurable at Low (DECISIONS, "Model batch 2"). Colour-pass triangles (`passprobe`):
+the whole-city view 1.76M against 1.74M, city zoom 1.65M against 1.49M (buildings 728k against 604k,
+trees from the models' tree spots 244k against 206k), street level 1.04M against 0.93M. Every Medium
+view stays under 5.5 ms and every Low view under 3.5 ms. A view at High varies by up to 2 ms from one
+run to the next, so two alternating pairs are averaged. Checks: 392 unit tests and all 42 e2e specs;
+the M28 spec loads the demo town through the load screen: 1,308 touching pairs, none looking alike
+(now compared by design, paint and mirroring), every building on a lot two designs fit hand-made (805
+of 805), 0.95M triangles from the whole-city view; the M25 spec's town is 53 of 57 hand-made, with
+generated looks only where fewer than two designs fit.
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

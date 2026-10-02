@@ -812,6 +812,11 @@ export class HandmadeModels {
     return n;
   }
 
+  /** Every design, by kind and what it stands for. */
+  list(): BakedModel[] {
+    return [...this.designs.values()].flat();
+  }
+
   all(kind: BakedModel['kind'], def: string): BakedModel[] {
     return this.designs.get(`${kind}:${def}`) ?? [];
   }

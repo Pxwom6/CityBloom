@@ -19,6 +19,7 @@ import type { Chronicle } from '../sim/systems/chronicle';
 import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { ModelData } from '../render/assets/builder';
+import { handmade } from '../render/assets/handmade';
 import type { AmbientMix } from '../audio/mix';
 
 export interface TestApi {
@@ -207,6 +208,8 @@ export interface TestApi {
     sky: number;
     trees: number;
   }[];
+  /** Dev (phase 3): every hand-made design loaded, with the footprint it was accepted at (m). */
+  getHandDesigns(): { id: string; kind: 'zoned' | 'civic' | 'annex'; def: string; w: number; d: number }[];
   /** A civic building's site, in metres. */
   civicSize(def: string): { w: number; d: number };
   /** Dev (phase 3): civic buildings side by side, wrapping after `width` metres; each with its add-ons, fill and stage. */
@@ -1021,6 +1024,8 @@ export function installTestApi(game: Game): TestApi {
         };
       });
     },
+    getHandDesigns: () =>
+      handmade.list().map((m) => ({ id: m.id, kind: m.kind, def: m.def, w: m.w, d: m.d })),
     civicSize: (def) => ({ w: CIVIC.get(def)?.w ?? 0, d: CIVIC.get(def)?.d ?? 0 }),
     showProjects: (at) => {
       const w = game.world;

@@ -60,6 +60,84 @@ export function groundLift(parts: GlbPart[]): number {
   return lowest < GROUND_FLOOR - 0.001 ? GROUND_FLOOR - lowest : 0;
 }
 
+/**
+ * A closed part's faces turned to agree with their neighbours and look out. A modelling tool can
+ * wind the inside of a ring the wrong way (a parapet round an L-shaped roof, made as one outline
+ * with a hole), and the game draws one side of a triangle, so those faces vanish and the far side
+ * of the ring shows as a thin rim with the roof behind it. Each piece is walked from one face,
+ * every neighbour turned to run their shared edge the other way, then the piece turned whole if
+ * it encloses less than nothing. Returns the triangles (a copy when any turned) and how many
+ * turned; a part whose faces agree already, or that isn't a closed surface, is left as it is.
+ */
+export function orientFaces(tris: Float32Array): { tris: Float32Array; turned: number } {
+  const n = tris.length / 9;
+  const key = (i: number) => `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+  // Each face's edges, and whether it runs each one in the edge key's order.
+  const faceEdges: [string, boolean][][] = [];
+  const edges = new Map<string, number[]>();
+  for (let t = 0; t < n; t++) {
+    const v = [key(t * 9), key(t * 9 + 3), key(t * 9 + 6)];
+    const mine: [string, boolean][] = [];
+    for (let k = 0; k < 3; k++) {
+      const [a, b] = [v[k]!, v[(k + 1) % 3]!];
+      const e = a < b ? `${a}|${b}` : `${b}|${a}`;
+      mine.push([e, a < b]);
+      let list = edges.get(e);
+      if (!list) edges.set(e, (list = []));
+      list.push(t);
+    }
+    faceEdges.push(mine);
+  }
+  let disagree = false;
+  for (const [e, list] of edges) {
+    // Only a closed surface (every edge in two faces) has an inside and an outside.
+    if (list.length !== 2) return { tris, turned: 0 };
+    const way = (t: number) => faceEdges[t]!.find(([k]) => k === e)![1];
+    if (way(list[0]!) === way(list[1]!)) disagree = true;
+  }
+  if (!disagree) return { tris, turned: 0 };
+  const flip = new Int8Array(n).fill(-1);
+  for (let s = 0; s < n; s++) {
+    if (flip[s]! >= 0) continue;
+    const piece: number[] = [];
+    flip[s] = 0;
+    const queue = [s];
+    while (queue.length) {
+      const t = queue.pop()!;
+      piece.push(t);
+      for (const [e, fwd] of faceEdges[t]!) {
+        const o = edges.get(e)!.find((x) => x !== t);
+        if (o === undefined || flip[o]! >= 0) continue;
+        const ofwd = faceEdges[o]!.find(([k]) => k === e)![1];
+        // Turned or not, the neighbour runs the edge the other way from this face.
+        flip[o] = ofwd === (fwd !== (flip[t] === 1)) ? 1 : 0;
+        queue.push(o);
+      }
+    }
+    // Six times the volume it encloses, as wound: negative when it is inside out.
+    let vol = 0;
+    for (const t of piece) {
+      const i = t * 9;
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = Array.from(tris.subarray(i, i + 9));
+      const det =
+        ax! * (by! * cz! - bz! * cy!) - ay! * (bx! * cz! - bz! * cx!) + az! * (bx! * cy! - by! * cx!);
+      vol += flip[t] === 1 ? -det : det;
+    }
+    if (vol < 0) for (const t of piece) flip[t] = flip[t] === 1 ? 0 : 1;
+  }
+  const out = new Float32Array(tris);
+  let turned = 0;
+  for (let t = 0; t < n; t++) {
+    if (flip[t] !== 1) continue;
+    turned++;
+    for (let k = 0; k < 3; k++) {
+      out[t * 9 + 3 + k] = tris[t * 9 + 6 + k]!;
+      out[t * 9 + 6 + k] = tris[t * 9 + 3 + k]!;
+    }
+  }
+  return turned ? { tris: out, turned } : { tris, turned: 0 };
+}
+
 /** Is this part (or a group above it) called `name`? */
 export function under(p: GlbPart, name: string): boolean {
   return p.name === name || p.path.includes(name);
@@ -209,6 +287,17 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
   if (lift > 0)
     warnings.push(
       `its lawns and paving lie ${f1(GROUND_FLOOR - lift)} m up, at or under the game's lot base (4 cm): the game lifts them ${f1(lift)} m`,
+    );
+  const insideOut = new Map<string, number>();
+  for (const p of parts) {
+    const n = orientFaces(p.tris).turned;
+    if (n) insideOut.set(p.rawName || '(unnamed)', (insideOut.get(p.rawName || '(unnamed)') ?? 0) + n);
+  }
+  if (insideOut.size)
+    warnings.push(
+      `faces wound inside out, which vanish from where they should show: ${[...insideOut]
+        .map(([name, n]) => `${n} in ${name}`)
+        .join(', ')}; the game turns them round`,
     );
   facing(parts, report);
   supported(parts, report);

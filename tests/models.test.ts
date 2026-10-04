@@ -15,7 +15,7 @@ import {
   UNIT_WINDOW,
   type BakedModel,
 } from '../src/models/bake';
-import { checkModel, formatReports, frontEvidence, inspectModel } from '../src/models/check';
+import { checkModel, formatReports, frontEvidence, inspectModel, orientFaces } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { GlbError, normaliseName, parseGlb } from '../src/models/glb';
 import { ROLES, budgetFor, targetOf } from '../src/models/spec';
@@ -322,6 +322,49 @@ describe('models:check', () => {
       budgets,
     );
     expect(open.errors.join(' ')).toMatch(/a wall hangs in the air: gable hangs/);
+  });
+
+  it('turns faces wound inside out the right way round, and leaves every other part as it is', () => {
+    // Batch 4's R122-3: the parapet round its plus-shaped roof is one outline with a hole, and the
+    // inside of the ring is wound the wrong way, so the far side of it vanished.
+    const r = checkModel(good('R122-3'), 'R122-3.glb', budgets);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(
+      /faces wound inside out.*: 24 in parapet; the game turns them round/,
+    );
+    const parapet = parseGlb(good('R122-3')).parts.find((p) => p.name === 'parapet')!;
+    // Edges run the same way twice where two faces disagree.
+    const sameWay = (tris: Float32Array) => {
+      const seen = new Map<string, number>();
+      const key = (i: number) =>
+        `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+      for (let t = 0; t < tris.length; t += 9)
+        for (let k = 0; k < 3; k++) {
+          const e = `${key(t + k * 3)}>${key(t + ((k + 1) % 3) * 3)}`;
+          seen.set(e, (seen.get(e) ?? 0) + 1);
+        }
+      return [...seen.values()].filter((n) => n > 1).length;
+    };
+    expect(sameWay(parapet.tris)).toBeGreaterThan(0);
+    const o = orientFaces(parapet.tris);
+    expect(o.turned).toBe(24);
+    expect(sameWay(o.tris)).toBe(0);
+    expect(orientFaces(o.tris).turned).toBe(0);
+    // It encloses its volume (its faces look out), and every face is still there.
+    let vol = 0;
+    for (let i = 0; i < o.tris.length; i += 9) {
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = Array.from(o.tris.subarray(i, i + 9)) as number[];
+      vol += ax! * (by! * cz! - bz! * cy!) - ay! * (bx! * cz! - bz! * cx!) + az! * (bx! * cy! - by! * cx!);
+    }
+    expect(vol).toBeGreaterThan(0);
+    expect(o.tris.length).toBe(parapet.tris.length);
+    // Every part of the other fixtures is wound as it should be, and left alone.
+    for (const id of ['police', 'coal', 'R103', 'R201', 'R203', 'I111-2', 'I113-5', 'convention', 'hospital'])
+      for (const p of parseGlb(good(id)).parts) {
+        const kept = orientFaces(p.tris);
+        expect(kept.turned, `${id} ${p.name}`).toBe(0);
+        expect(kept.tris).toBe(p.tris);
+      }
   });
 
   it('lets doors that face each other cancel out, not make a side the front', () => {

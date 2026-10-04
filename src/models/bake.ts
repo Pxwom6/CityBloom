@@ -6,6 +6,7 @@ import {
   growBox,
   groupsNamed,
   onGround,
+  orientFaces,
   under,
   type Box3,
   type ModelReport,
@@ -300,9 +301,19 @@ export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: 
 
   // A part in a double-sided material that isn't a closed solid is a sheet seen from both sides
   // (a canopy, an open roof): the game draws one side of a triangle, so it gets both.
+  // A closed part with faces wound inside out has them turned round (`orientFaces`).
   const kept = file.parts.filter((p) => !treeParts.has(p));
-  const src = kept.map((p) => (p.doubleSided && !closed(p.tris) ? { ...p, tris: bothSides(p.tris) } : p));
-  // The file's part each of those is (a doubled sheet is a copy).
+  const doubled = new Set<GlbPart>();
+  const src = kept.map((p) => {
+    if (p.doubleSided && !closed(p.tris)) {
+      const sheet = { ...p, tris: bothSides(p.tris) };
+      doubled.add(sheet);
+      return sheet;
+    }
+    const o = orientFaces(p.tris);
+    return o.turned ? { ...p, tris: o.tris } : p;
+  });
+  // The file's part each of those is (a doubled sheet or a part turned round is a copy).
   const original = new Map<GlbPart, GlbPart>(src.map((p, i) => [p, kept[i]!]));
   const boxes = src.map((p) => growBox(emptyBox(), p.tris));
   const solid = src.map((p, i) => isBox(p.tris, boxes[i]!));
@@ -557,7 +568,7 @@ export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: 
       }
       if (!f) continue;
       if (ground) f |= TRI_GROUND;
-      if (p !== original.get(p)) f |= TRI_TWO_SIDED;
+      if (doubled.has(p)) f |= TRI_TWO_SIDED;
       if (party) {
         // What the neighbour in a row hides: whatever lies within 20 cm of the party line, but
         // not a wall set back from it and looking out (the gap between two would show).

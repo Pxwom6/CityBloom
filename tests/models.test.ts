@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   bakeModel,
@@ -724,13 +725,29 @@ describe('conversion', () => {
       for (let k = 0; k < a.positions.length; k++)
         expect(Math.abs(b.positions[k]! - a.positions[k]!)).toBeLessThan(0.003);
     }
-    // About 15 bytes a triangle.
+    // About 17 bytes a triangle, and about 2.3 as the server gzips it: vertices and indices are
+    // stored as differences (as plain numbers these five gzip to 7.3 bytes a triangle).
     const tris = models.reduce((s, m) => s + m.triRole.length, 0);
     expect(bytes.length / tris).toBeLessThan(24);
+    expect(gzipSync(bytes, { level: 9 }).length / tris).toBeLessThan(3);
     expect(() => decodeModels(new Uint8Array(16))).toThrow();
     // A file cut short is refused, not read as empty models.
     for (const cut of [bytes.length - 1, bytes.length - 5000, Math.floor(bytes.length * 0.6)])
       expect(() => decodeModels(bytes.subarray(0, cut))).toThrow();
+  });
+
+  it('packs a model past 65,535 vertices with 32-bit indices, jumps either way and all', () => {
+    const m = bake('R001');
+    const n = 70_000;
+    const positions = new Float32Array(n * 3);
+    for (let i = 0; i < positions.length; i++) positions[i] = ((i * 7919) % 2000) / 100 - 10;
+    // Faces reaching from the first vertices to the last and back.
+    const index = new Uint32Array(m.index.length);
+    for (let i = 0; i < index.length; i++) index[i] = i % 2 ? n - 1 - ((i * 31) % n) : (i * 17) % n;
+    const [back] = decodeModels(encodeModels([{ ...m, positions, index }]));
+    expect([...back!.index]).toEqual([...index]);
+    for (let k = 0; k < positions.length; k++)
+      expect(Math.abs(back!.positions[k]! - positions[k]!)).toBeLessThan(0.001);
   });
 });
 

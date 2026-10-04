@@ -13,9 +13,9 @@ city from time to time.
 
 ![A grown city of 110,000 in the afternoon](docs/screenshots/phase3-city.jpg)
 
-The city is drawn bright, warm and toy-like: most buildings wear hand-made models (more than nine
-in ten in a grown city), beside generated ones in the same style, each with lighter versions for the
-distance; the sun crosses the sky through golden and blue hours, lit windows glow at night, grass
+The city is drawn bright, warm and toy-like: the buildings wear hand-made models (every one in the
+grown test cities; generated ones in the same style stand in only where fewer than two designs fit
+a lot, mostly rich shops and high-tech industry), each with lighter versions for the distance; the sun crosses the sky through golden and blue hours, lit windows glow at night, grass
 and trees turn with the seasons, and fields, kerbs, zebra crossings and benches make a grown city
 read as a place. Graphics quality (High, Medium, Low)
 switches each effect.

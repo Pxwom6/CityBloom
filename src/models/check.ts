@@ -60,6 +60,84 @@ export function groundLift(parts: GlbPart[]): number {
   return lowest < GROUND_FLOOR - 0.001 ? GROUND_FLOOR - lowest : 0;
 }
 
+/**
+ * A closed part's faces turned to agree with their neighbours and look out. A modelling tool can
+ * wind the inside of a ring the wrong way (a parapet round an L-shaped roof, made as one outline
+ * with a hole), and the game draws one side of a triangle, so those faces vanish and the far side
+ * of the ring shows as a thin rim with the roof behind it. Each piece is walked from one face,
+ * every neighbour turned to run their shared edge the other way, then the piece turned whole if
+ * it encloses less than nothing. Returns the triangles (a copy when any turned) and how many
+ * turned; a part whose faces agree already, or that isn't a closed surface, is left as it is.
+ */
+export function orientFaces(tris: Float32Array): { tris: Float32Array; turned: number } {
+  const n = tris.length / 9;
+  const key = (i: number) => `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+  // Each face's edges, and whether it runs each one in the edge key's order.
+  const faceEdges: [string, boolean][][] = [];
+  const edges = new Map<string, number[]>();
+  for (let t = 0; t < n; t++) {
+    const v = [key(t * 9), key(t * 9 + 3), key(t * 9 + 6)];
+    const mine: [string, boolean][] = [];
+    for (let k = 0; k < 3; k++) {
+      const [a, b] = [v[k]!, v[(k + 1) % 3]!];
+      const e = a < b ? `${a}|${b}` : `${b}|${a}`;
+      mine.push([e, a < b]);
+      let list = edges.get(e);
+      if (!list) edges.set(e, (list = []));
+      list.push(t);
+    }
+    faceEdges.push(mine);
+  }
+  let disagree = false;
+  for (const [e, list] of edges) {
+    // Only a closed surface (every edge in two faces) has an inside and an outside.
+    if (list.length !== 2) return { tris, turned: 0 };
+    const way = (t: number) => faceEdges[t]!.find(([k]) => k === e)![1];
+    if (way(list[0]!) === way(list[1]!)) disagree = true;
+  }
+  if (!disagree) return { tris, turned: 0 };
+  const flip = new Int8Array(n).fill(-1);
+  for (let s = 0; s < n; s++) {
+    if (flip[s]! >= 0) continue;
+    const piece: number[] = [];
+    flip[s] = 0;
+    const queue = [s];
+    while (queue.length) {
+      const t = queue.pop()!;
+      piece.push(t);
+      for (const [e, fwd] of faceEdges[t]!) {
+        const o = edges.get(e)!.find((x) => x !== t);
+        if (o === undefined || flip[o]! >= 0) continue;
+        const ofwd = faceEdges[o]!.find(([k]) => k === e)![1];
+        // Turned or not, the neighbour runs the edge the other way from this face.
+        flip[o] = ofwd === (fwd !== (flip[t] === 1)) ? 1 : 0;
+        queue.push(o);
+      }
+    }
+    // Six times the volume it encloses, as wound: negative when it is inside out.
+    let vol = 0;
+    for (const t of piece) {
+      const i = t * 9;
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = Array.from(tris.subarray(i, i + 9));
+      const det =
+        ax! * (by! * cz! - bz! * cy!) - ay! * (bx! * cz! - bz! * cx!) + az! * (bx! * cy! - by! * cx!);
+      vol += flip[t] === 1 ? -det : det;
+    }
+    if (vol < 0) for (const t of piece) flip[t] = flip[t] === 1 ? 0 : 1;
+  }
+  const out = new Float32Array(tris);
+  let turned = 0;
+  for (let t = 0; t < n; t++) {
+    if (flip[t] !== 1) continue;
+    turned++;
+    for (let k = 0; k < 3; k++) {
+      out[t * 9 + 3 + k] = tris[t * 9 + 6 + k]!;
+      out[t * 9 + 6 + k] = tris[t * 9 + 3 + k]!;
+    }
+  }
+  return turned ? { tris: out, turned } : { tris, turned: 0 };
+}
+
 /** Is this part (or a group above it) called `name`? */
 export function under(p: GlbPart, name: string): boolean {
   return p.name === name || p.path.includes(name);
@@ -209,6 +287,17 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
   if (lift > 0)
     warnings.push(
       `its lawns and paving lie ${f1(GROUND_FLOOR - lift)} m up, at or under the game's lot base (4 cm): the game lifts them ${f1(lift)} m`,
+    );
+  const insideOut = new Map<string, number>();
+  for (const p of parts) {
+    const n = orientFaces(p.tris).turned;
+    if (n) insideOut.set(p.rawName || '(unnamed)', (insideOut.get(p.rawName || '(unnamed)') ?? 0) + n);
+  }
+  if (insideOut.size)
+    warnings.push(
+      `faces wound inside out, which vanish from where they should show: ${[...insideOut]
+        .map(([name, n]) => `${n} in ${name}`)
+        .join(', ')}; the game turns them round`,
     );
   facing(parts, report);
   supported(parts, report);
@@ -378,6 +467,9 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
     );
 }
 
+/** How far a part must reach under a slice of a wall to hold it up (a touching edge doesn't). */
+const HOLD = 0.02;
+
 /**
  * Nothing floats: a wall stands on something. A wall part well above the ground (a gable under a
  * roof, an upper storey) that is held up at one end and hangs past everything beneath it for
@@ -395,27 +487,22 @@ function supported(parts: GlbPart[], report: ModelReport): void {
     const length = b.max[along]! - b.min[along]!;
     const width = b.max[across]! - b.min[across]!;
     if (b.min[1] < 1 || length < 6 || width < 0.5) return;
-    // Along its length, which slices have another part under them (reaching up to its foot)?
+    // What stands under it, reaching up to its foot, anywhere across it: a leg or a corner column
+    // as thin as it likes holds the slices of the wall it is under.
+    const props = boxes.filter(
+      (o, j) =>
+        j !== i &&
+        o.min[1] < b.min[1] - 0.3 &&
+        o.max[1] > b.min[1] - 0.6 &&
+        Math.min(o.max[across]!, b.max[across]!) - Math.max(o.min[across]!, b.min[across]!) > HOLD,
+    );
+    // Along its length, which slices have one of them under them?
     const N = 16;
     const held: boolean[] = [];
     for (let k = 0; k < N; k++) {
-      const u = b.min[along]! + ((k + 0.5) / N) * length;
-      let under = false;
-      for (const f of [0.2, 0.5, 0.8]) {
-        const v = b.min[across]! + f * width;
-        const [x, z] = along === 0 ? [u, v] : [v, u];
-        under ||= boxes.some(
-          (o, j) =>
-            j !== i &&
-            x >= o.min[0] &&
-            x <= o.max[0] &&
-            z >= o.min[2] &&
-            z <= o.max[2] &&
-            o.min[1] < b.min[1] - 0.3 &&
-            o.max[1] > b.min[1] - 0.6,
-        );
-      }
-      held.push(under);
+      const u0 = b.min[along]! + (k / N) * length;
+      const u1 = b.min[along]! + ((k + 1) / N) * length;
+      held.push(props.some((o) => Math.min(o.max[along]!, u1) - Math.max(o.min[along]!, u0) > HOLD));
     }
     // An end that butts against another part is held by it (a bridge between two halls, a
     // walkway from a wall to a stair head).
@@ -479,7 +566,10 @@ function facing(parts: GlbPart[], report: ModelReport): void {
     );
 }
 
-/** The weight of entrances and the like looking at the road (−Z), away from it, and sideways. */
+/**
+ * The weight of entrances and the like looking at the road (−Z), away from it, and sideways (out
+ * from the side walls, and what looks in from one side more than the other).
+ */
 export function frontEvidence(parts: GlbPart[]): {
   road: number;
   back: number;
@@ -509,10 +599,16 @@ export function frontEvidence(parts: GlbPart[]): {
     );
   const walls = parts.filter((p) => p.material === 'wall' || p.material === 'wall_alt');
   const body = boxOf(walls.length ? walls : parts);
+  const midX = (body.min[0] + body.max[0]) / 2;
   const midZ = (body.min[2] + body.max[2]) / 2;
   let road = 0;
   let back = 0;
-  let side = 0;
+  // Sideways: what looks out from a side wall counts, but doors that face each other across a
+  // yard or a lane down the middle (looking in, −X from the right and +X from the left) cancel
+  // out, and only what looks in one way more than the other makes a side the front.
+  let out = 0;
+  let inLeft = 0;
+  let inRight = 0;
   for (const p of fronts) {
     const b = growBox(emptyBox(), p.tris);
     const cx = (b.min[0] + b.max[0]) / 2;
@@ -531,18 +627,22 @@ export function frontEvidence(parts: GlbPart[]): {
     const solidX = inSolid(b.max[0] + 0.4, cy, cz) ? 1 : 0;
     const solidx = inSolid(b.min[0] - 0.4, cy, cz) ? 1 : 0;
     // Upright and thin across x: it is in a side wall.
-    let where: 'road' | 'back' | 'side';
-    if (!flat && ex < ez) where = 'side';
-    else if (flat && solidX + solidx > 0 && solidZ + solidz === 0) where = 'side';
-    else if (solidZ && !solidz) where = 'road';
+    let where: 'road' | 'back' | 'side' | 'in -x' | 'in +x';
+    if ((!flat && ex < ez) || (flat && solidX + solidx > 0 && solidZ + solidz === 0)) {
+      // Which way it looks: away from the wall it is set in (or out from the middle).
+      const looksLeft = solidX && !solidx ? true : solidx && !solidX ? false : cx < midX;
+      where = looksLeft === cx < midX ? 'side' : looksLeft ? 'in -x' : 'in +x';
+    } else if (solidZ && !solidz) where = 'road';
     else if (solidz && !solidZ) where = 'back';
     else where = cz < midZ ? 'road' : 'back';
     if (where === 'road') road += w;
     else if (where === 'back') back += w;
-    else side += w;
+    else if (where === 'side') out += w;
+    else if (where === 'in -x') inLeft += w;
+    else inRight += w;
     seen.push(`${p.name} ${where} ${w.toFixed(1)}`);
   }
-  return { road, back, side, seen };
+  return { road, back, side: out + Math.abs(inLeft - inRight), seen };
 }
 
 /** The lots narrower than its type's own that a zoned model stands on, e.g. "16 × 24–32 m". */

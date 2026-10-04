@@ -167,13 +167,20 @@ test('M25: the tenement grows through normal zoning: three abreast, lit at night
   await page.keyboard.press('Escape');
 
   // --- At night its windows are lit: each copy its own mix. ---
+  // Measured where the tenement is on screen (its lot up to its roof), so what happens to stand
+  // round it (a building going up in pale timber, a cream wall in the sun) doesn't count.
+  const box = { x: t.x, z: t.z, w: three!.w * 8, d: three!.d * 8, h: 26 };
   const day = await page.evaluate(() => window.__game!.pixelStats());
+  const dayHere = await page.evaluate((b) => window.__game!.pixelStats(b), box);
   await untilHour(page, 22);
   await frames(page, 4);
-  const night = await page.evaluate(() => window.__game!.pixelStats());
-  expect(night.lum).toBeLessThan(day.lum * 0.6);
+  const night = await page.evaluate((b) => window.__game!.pixelStats(b), box);
+  console.log(
+    `[m25] the tenement's pixels, day / night: warm ${dayHere.warm.toFixed(4)} / ${night.warm.toFixed(4)}, brightness ${dayHere.lum.toFixed(2)} / ${night.lum.toFixed(2)}`,
+  );
+  expect(night.lum).toBeLessThan(dayHere.lum * 0.6);
   expect(night.warm).toBeGreaterThan(0.004);
-  expect(night.warm).toBeGreaterThan(day.warm * 3);
+  expect(night.warm).toBeGreaterThan(dayHere.warm * 3);
   await clear();
   await shot(page, 'm25-tenement-night');
 
@@ -196,12 +203,18 @@ test('M25: the tenement grows through normal zoning: three abreast, lit at night
   const step = async (distance: number) => {
     await page.evaluate((v) => window.__game!.setCamera(v), view(distance));
     await frames(page, 3);
-    return page.evaluate(() => ({
-      nearFar: window.__game!.compareLod('near', 'far'),
-      farSky: window.__game!.compareLod('far', 'sky'),
-      play: window.__game!.compareLod(null, 'near'),
-      lod: window.__game!.getLod(),
-    }));
+    return page.evaluate(
+      (b) => ({
+        nearFar: window.__game!.compareLod('near', 'far'),
+        farSky: window.__game!.compareLod('far', 'sky'),
+        play: window.__game!.compareLod(null, 'near'),
+        playHere: window.__game!.compareLod(null, 'near', b),
+        lod: window.__game!.getLod(),
+      }),
+      // The tenement's lot and lower storeys (close up its roof runs off the top of the picture,
+      // where the town beyond the near range shows, rightly drawn in its far versions).
+      { ...box, h: 12 },
+    );
   };
   const close = await step(r.nearStart * 0.5);
   const handover = await step((r.nearStart + r.nearEnd) / 2);
@@ -209,7 +222,7 @@ test('M25: the tenement grows through normal zoning: three abreast, lit at night
   const skyline = await step((r.skyStart + r.skyEnd) / 2);
   const farOff = await step(r.skyEnd * 1.6);
   console.log(
-    `[m25] what is seen against full detail, close / hand-over / beyond / skyline / far off: ${[close, handover, beyond, skyline, farOff].map((s) => `${(s.play.changed * 100).toFixed(2)} % (${s.play.mean.toFixed(2)})`).join(' / ')}`,
+    `[m25] what is seen against full detail, close / hand-over / beyond / skyline / far off: ${[close, handover, beyond, skyline, farOff].map((s) => `${(s.play.changed * 100).toFixed(2)} % (${s.play.mean.toFixed(2)})`).join(' / ')}; the tenement close up ${(close.playHere.changed * 100).toFixed(2)} %`,
   );
   console.log(
     `[m25] hand-over ${r.nearStart.toFixed(0)}–${r.nearEnd.toFixed(0)} m and ${r.skyStart.toFixed(0)}–${r.skyEnd.toFixed(0)} m; pixels that differ, near|far: ${[close, handover, beyond].map((s) => (s.nearFar.changed * 100).toFixed(2)).join(' / ')} %; far|skyline at the skyline band ${(skyline.farSky.changed * 100).toFixed(2)} %, beyond ${(farOff.farSky.changed * 100).toFixed(2)} %`,
@@ -235,7 +248,8 @@ test('M25: the tenement grows through normal zoning: three abreast, lit at night
     expect(s.play.changed).toBeLessThan(0.035);
     expect(s.play.mean).toBeLessThan(1.2);
   }
-  expect(close.play.changed).toBe(0);
+  // Close up the tenement is drawn in full: none of its pixels differ from full detail.
+  expect(close.playHere.changed).toBe(0);
   // Each level is on show where it should be (the far level less and less as the town recedes).
   expect(close.lod.buildings.near).toBeGreaterThan(0);
   expect(farOff.lod.buildings.near).toBe(0);

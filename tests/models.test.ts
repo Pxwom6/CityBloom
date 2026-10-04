@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   bakeModel,
@@ -14,7 +15,7 @@ import {
   UNIT_WINDOW,
   type BakedModel,
 } from '../src/models/bake';
-import { checkModel, formatReports, frontEvidence, inspectModel } from '../src/models/check';
+import { checkModel, formatReports, frontEvidence, inspectModel, orientFaces } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { GlbError, normaliseName, parseGlb } from '../src/models/glb';
 import { ROLES, budgetFor, targetOf } from '../src/models/spec';
@@ -292,6 +293,97 @@ describe('models:check', () => {
     // The coal plant's conveyor and turbine hall, the tower's storeys on its podium: all held up.
     for (const id of ['coal', 'R201', 'convention', 'landfill'])
       expect(checkModel(good(id), `${id}.glb`, budgets).errors.join(' '), id).not.toMatch(/hangs/);
+  });
+
+  it('holds a wall up on a leg or a column anywhere under it, however thin', () => {
+    // Batch 4: the complex's conveyor on two legs (the far one between two slices' middles), and
+    // the open shed's gable on columns at its corners (outside the middle of its depth).
+    for (const id of ['I113-5', 'I203-3'])
+      expect(checkModel(good(id), `${id}.glb`, budgets).errors, id).toEqual([]);
+    const without = (id: string, name: string, which: (i: number) => boolean) =>
+      editGlb(good(id), (g) => {
+        (g.nodes as Record<string, unknown>[])
+          .filter((n) => n.name === name)
+          .forEach((n, i) => {
+            if (which(i)) delete n.mesh;
+          });
+      });
+    // Without its far leg the conveyor hangs off the hall; without its columns the gable hangs
+    // off the shed's end wall.
+    const legless = checkModel(
+      without('I113-5', 'leg', (i) => i === 1),
+      'I113-5.glb',
+      budgets,
+    );
+    expect(legless.errors.join(' ')).toMatch(/a wall hangs in the air: conveyor hangs 6\.97 m/);
+    const open = checkModel(
+      without('I203-3', 'column', () => true),
+      'I203-3.glb',
+      budgets,
+    );
+    expect(open.errors.join(' ')).toMatch(/a wall hangs in the air: gable hangs/);
+  });
+
+  it('turns faces wound inside out the right way round, and leaves every other part as it is', () => {
+    // Batch 4's R122-3: the parapet round its plus-shaped roof is one outline with a hole, and the
+    // inside of the ring is wound the wrong way, so the far side of it vanished.
+    const r = checkModel(good('R122-3'), 'R122-3.glb', budgets);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(
+      /faces wound inside out.*: 24 in parapet; the game turns them round/,
+    );
+    const parapet = parseGlb(good('R122-3')).parts.find((p) => p.name === 'parapet')!;
+    // Edges run the same way twice where two faces disagree.
+    const sameWay = (tris: Float32Array) => {
+      const seen = new Map<string, number>();
+      const key = (i: number) =>
+        `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+      for (let t = 0; t < tris.length; t += 9)
+        for (let k = 0; k < 3; k++) {
+          const e = `${key(t + k * 3)}>${key(t + ((k + 1) % 3) * 3)}`;
+          seen.set(e, (seen.get(e) ?? 0) + 1);
+        }
+      return [...seen.values()].filter((n) => n > 1).length;
+    };
+    expect(sameWay(parapet.tris)).toBeGreaterThan(0);
+    const o = orientFaces(parapet.tris);
+    expect(o.turned).toBe(24);
+    expect(sameWay(o.tris)).toBe(0);
+    expect(orientFaces(o.tris).turned).toBe(0);
+    // It encloses its volume (its faces look out), and every face is still there.
+    let vol = 0;
+    for (let i = 0; i < o.tris.length; i += 9) {
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = Array.from(o.tris.subarray(i, i + 9)) as number[];
+      vol += ax! * (by! * cz! - bz! * cy!) - ay! * (bx! * cz! - bz! * cx!) + az! * (bx! * cy! - by! * cx!);
+    }
+    expect(vol).toBeGreaterThan(0);
+    expect(o.tris.length).toBe(parapet.tris.length);
+    // Every part of the other fixtures is wound as it should be, and left alone.
+    for (const id of ['police', 'coal', 'R103', 'R201', 'R203', 'I111-2', 'I113-5', 'convention', 'hospital'])
+      for (const p of parseGlb(good(id)).parts) {
+        const kept = orientFaces(p.tris);
+        expect(kept.turned, `${id} ${p.name}`).toBe(0);
+        expect(kept.tris).toBe(p.tris);
+      }
+  });
+
+  it('lets doors that face each other cancel out, not make a side the front', () => {
+    // Batch 4's industrial park: two rows of units facing each other across a lane down the
+    // middle of the lot, the offices' door and canopy on the road.
+    expect(checkModel(good('I213-4'), 'I213-4.glb', budgets).errors).toEqual([]);
+    const e = frontEvidence(parseGlb(good('I213-4')).parts);
+    expect(e.seen.filter((s) => / in [-+]x /.test(s))).toHaveLength(16);
+    expect(e.side).toBe(0);
+    expect(e.road).toBeGreaterThan(e.back * 1.5);
+    // With one row's doors gone, the other row's look one way and count.
+    const oneRow = editGlb(good('I213-4'), (g) => {
+      for (const n of g.nodes as { name?: string; mesh?: number; matrix?: number[] }[])
+        if (/door/.test(n.name ?? '') && (n.matrix?.[12] ?? 0) > 2.5) delete n.mesh;
+    });
+    expect(frontEvidence(parseGlb(oneRow).parts).side).toBeGreaterThan(30);
+    // Turned half round, it is still caught.
+    const turned = checkModel(breakModel(good('I213-4'), 'turn'), 'I213-4.glb', budgets);
+    expect(turned.errors.join(' ')).toMatch(/front faces \+Z/);
   });
 
   it('knows a row model from one that is simply the wrong size', () => {
@@ -676,13 +768,29 @@ describe('conversion', () => {
       for (let k = 0; k < a.positions.length; k++)
         expect(Math.abs(b.positions[k]! - a.positions[k]!)).toBeLessThan(0.003);
     }
-    // About 15 bytes a triangle.
+    // About 17 bytes a triangle, and about 2.3 as the server gzips it: vertices and indices are
+    // stored as differences (as plain numbers these five gzip to 7.3 bytes a triangle).
     const tris = models.reduce((s, m) => s + m.triRole.length, 0);
     expect(bytes.length / tris).toBeLessThan(24);
+    expect(gzipSync(bytes, { level: 9 }).length / tris).toBeLessThan(3);
     expect(() => decodeModels(new Uint8Array(16))).toThrow();
     // A file cut short is refused, not read as empty models.
     for (const cut of [bytes.length - 1, bytes.length - 5000, Math.floor(bytes.length * 0.6)])
       expect(() => decodeModels(bytes.subarray(0, cut))).toThrow();
+  });
+
+  it('packs a model past 65,535 vertices with 32-bit indices, jumps either way and all', () => {
+    const m = bake('R001');
+    const n = 70_000;
+    const positions = new Float32Array(n * 3);
+    for (let i = 0; i < positions.length; i++) positions[i] = ((i * 7919) % 2000) / 100 - 10;
+    // Faces reaching from the first vertices to the last and back.
+    const index = new Uint32Array(m.index.length);
+    for (let i = 0; i < index.length; i++) index[i] = i % 2 ? n - 1 - ((i * 31) % n) : (i * 17) % n;
+    const [back] = decodeModels(encodeModels([{ ...m, positions, index }]));
+    expect([...back!.index]).toEqual([...index]);
+    for (let k = 0; k < positions.length; k++)
+      expect(Math.abs(back!.positions[k]! - positions[k]!)).toBeLessThan(0.001);
   });
 });
 

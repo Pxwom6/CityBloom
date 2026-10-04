@@ -3,6 +3,7 @@
 // Usage: npm run build:test && node scripts/dev/modelshot.mjs outDir [what …] [--hour 13] [--gpu]
 //        [--variants 6] [--season winter] [--dist dist-test] [--backs] [--sheet cols] [--lod far|sky|all]
 //        [--states]  (zoned rows: built, half built, nearly built, abandoned, burning, burnt out)
+//        [--apart]   (zoned rows each on its own, so no other row stands in front of it)
 //   what: zoned rows like R103 R103@2x3 R103@2x2, civic ids like firestation coal, or a batch:
 //   R0 R1 R2 C0 C1 C2 I0 I1 I2 (a zone and density), services, utilities, parks, special, big,
 //   projects, stages (each project at each stage), annexes, landfill (empty to full).
@@ -32,6 +33,7 @@ const sheet = flag('sheet', null);
 const gpu = argv.includes('--gpu');
 const backs = argv.includes('--backs');
 const states = argv.includes('--states');
+const apart = argv.includes('--apart');
 // `--lod far|sky` draws that level of detail everywhere; `--lod all` shoots near, far and sky.
 const lod = flag('lod', null);
 
@@ -163,7 +165,8 @@ try {
         buildings: g.getBuildings().filter((b) => b.id >= 9_000_000),
       };
     },
-    { zonedRows, civics, hour, at, variants, season, states },
+    // `--apart` starts with the first row; the rest are shown in turn below.
+    { zonedRows: apart ? zonedRows.slice(0, 1) : zonedRows, civics, hour, at, variants, season, states },
   );
   // No interface in the pictures.
   await page.addStyleTag({ content: '#ui { display: none !important; }' });
@@ -194,31 +197,48 @@ try {
       });
   }
   // Zoned rows: each row from the front, close enough to read the models; then all of them.
-  if (info.buildings.length) {
-    const rows = [...new Set(info.buildings.map((b) => b.z))].sort((a, b) => a - b);
-    for (const [i, z] of rows.entries()) {
-      const row = info.buildings.filter((b) => b.z === z);
-      const x0 = Math.min(...row.map((b) => b.x));
-      const x1 = Math.max(...row.map((b) => b.x));
+  // `--apart`: each row on its own, the gallery made again for it (the rows behind and in front
+  // of a row hide it in the shots otherwise).
+  const shootRow = async (name, row, tall) => {
+    // Which design each building wears, left to right as the pictures show them.
+    const hands = new Map(
+      (await page.evaluate(() => window.__game.getModels())).map((m) => [m.id, m.hand ?? 'generated']),
+    );
+    console.log(
+      `${name}: ${row
+        .sort((a, b) => a.x - b.x)
+        .map((b) => hands.get(b.id))
+        .join(' ')}`,
+    );
+    const x0 = Math.min(...row.map((b) => b.x));
+    const x1 = Math.max(...row.map((b) => b.x));
+    const pose = { x: (x0 + x1) / 2, z: row[0].z, distance: (x1 - x0) * 0.55 + 40 + tall, tilt: 0.22 };
+    await shoot(`row-${name.replace('@', '_')}`, { ...pose, yaw: 0.22 });
+    // `--backs`: the row from behind too (the yards behind shallow models, M27).
+    if (backs) await shoot(`row-${name.replace('@', '_')}-back`, { ...pose, yaw: Math.PI + 0.22 });
+  };
+  if (info.buildings.length && apart)
+    for (const name of zonedRows) {
+      const row = await page.evaluate(
+        async ({ name, at, variants }) => {
+          const g = window.__game;
+          g.showGallery([name], at, variants);
+          await g.waitFrames(12);
+          return g.getBuildings().filter((b) => b.id >= 9_000_000 && b.id < 9_700_000);
+        },
+        { name, at, variants },
+      );
       // Towers need standing further back.
-      const tall = zonedRows[i][1] === '2' ? 70 : 0;
-      await shoot(`row-${zonedRows[i].replace('@', '_')}`, {
-        x: (x0 + x1) / 2,
-        z,
-        distance: (x1 - x0) * 0.55 + 40 + tall,
-        yaw: 0.22,
-        tilt: 0.22,
-      });
-      // `--backs`: the row from behind too (the yards behind shallow models, M27).
-      if (backs)
-        await shoot(`row-${zonedRows[i].replace('@', '_')}-back`, {
-          x: (x0 + x1) / 2,
-          z,
-          distance: (x1 - x0) * 0.55 + 40 + tall,
-          yaw: Math.PI + 0.22,
-          tilt: 0.22,
-        });
+      await shootRow(name, row, /^[RC]2/.test(name) ? 70 : 0);
     }
+  else if (info.buildings.length) {
+    const rows = [...new Set(info.buildings.map((b) => b.z))].sort((a, b) => a - b);
+    for (const [i, z] of rows.entries())
+      await shootRow(
+        zonedRows[i],
+        info.buildings.filter((b) => b.z === z),
+        /^[RC]2/.test(zonedRows[i]) ? 70 : 0,
+      );
     const xs = info.buildings.map((p) => p.x);
     const zs = info.buildings.map((p) => p.z);
     const cx = (Math.min(...xs) + Math.max(...xs)) / 2;

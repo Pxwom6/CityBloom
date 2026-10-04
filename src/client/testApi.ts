@@ -23,6 +23,15 @@ import { handmade } from '../render/assets/handmade';
 import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 
+/** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
+export interface Box {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  h: number;
+}
+
 export interface TestApi {
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
@@ -161,8 +170,12 @@ export interface TestApi {
    * Levels of detail (phase 3): draw one level everywhere (null: by distance, as in play), what is
    * on show now, and the model each zoned building wears.
    */
-  /** The view as drawn: the share of pixels that are lit-window warm, near white, and the mean brightness (0–1). */
-  pixelStats(): { warm: number; white: number; lum: number };
+  /**
+   * The view as drawn: the share of pixels that are lit-window warm, near white, and the mean
+   * brightness (0–1). With a box (a building's lot up to its roof), only the part of the view it
+   * covers on screen.
+   */
+  pixelStats(box?: Box): { warm: number; white: number; lum: number };
   /** As `pixelStats`, of a whole frame as the player sees it (the post pipeline's effects and all; M26). */
   frameStats(): { warm: number; white: number; lum: number };
   /** The pixels of a whole frame as the player sees it (RGBA, bottom row first; M26). */
@@ -171,10 +184,12 @@ export interface TestApi {
   /**
    * How different the view is drawn at one level of detail and at another (null: by distance, as
    * in play): the share of pixels that differ visibly, and the mean difference per channel (0–255).
+   * With a box, only the part of the view it covers on screen.
    */
   compareLod(
     a: 'near' | 'far' | 'sky' | null,
     b: 'near' | 'far' | 'sky' | null,
+    box?: Box,
   ): { changed: number; mean: number };
   /**
    * Streets (M27): junction approaches painted with a zebra crossing or a give-way line, and the
@@ -356,17 +371,35 @@ export function installTestApi(game: Game): TestApi {
     return y;
   };
   /** Colours in the frame: lit windows, white, mean brightness (sampled every fourth pixel). */
-  const stats = (full: boolean) => {
+  /** The part of the drawing buffer (x, y from the bottom left, w, h) a box in the world covers, or all of it. */
+  const screenRect = (box?: Box): [number, number, number, number] => {
     const r = game.renderer;
     const gl = r.renderer.getContext();
-    const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    const [W, H] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    if (!box) return [0, 0, W, H];
+    const ground = Math.max(0, game.world.heightAt(box.x, box.z));
+    let [a, b, c, e] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const sx of [-0.5, 0.5])
+      for (const sz of [-0.5, 0.5])
+        for (const y of [0, box.h]) {
+          const v = new Vector3(box.x + sx * box.w, ground + y, box.z + sz * box.d).project(r.camera);
+          [a, b] = [Math.min(a, ((v.x + 1) / 2) * W), Math.min(b, ((v.y + 1) / 2) * H)];
+          [c, e] = [Math.max(c, ((v.x + 1) / 2) * W), Math.max(e, ((v.y + 1) / 2) * H)];
+        }
+    const [x0, y0] = [Math.max(0, Math.floor(a)), Math.max(0, Math.floor(b))];
+    return [x0, y0, Math.max(1, Math.min(W, Math.ceil(c)) - x0), Math.max(1, Math.min(H, Math.ceil(e)) - y0)];
+  };
+  const stats = (full: boolean, box?: Box) => {
+    const r = game.renderer;
+    const gl = r.renderer.getContext();
+    const [x0, y0, w, h] = screenRect(box);
     if (full) r.frame(0);
     else {
       r.renderer.setRenderTarget(null);
       r.renderer.render(r.scene, r.camera);
     }
     const px = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
     let warm = 0;
     let white = 0;
     let lum = 0;
@@ -924,12 +957,12 @@ export function installTestApi(game: Game): TestApi {
       gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, px);
       return px;
     },
-    pixelStats: () => stats(false),
+    pixelStats: (box) => stats(false, box),
 
-    compareLod: (a, b) => {
+    compareLod: (a, b, box) => {
       const r = game.renderer;
       const gl = r.renderer.getContext();
-      const [w, h] = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+      const [x0, y0, w, h] = screenRect(box);
       const levels = ['plain', 'near', 'far', 'sky'];
       const read = (level: 'near' | 'far' | 'sky' | null) => {
         const f = level === null ? null : levels.indexOf(level);
@@ -940,7 +973,7 @@ export function installTestApi(game: Game): TestApi {
         r.renderer.setRenderTarget(null);
         r.renderer.render(r.scene, r.camera);
         const px = new Uint8Array(w * h * 4);
-        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
         return px;
       };
       const was = r.buildings.chunks.force;

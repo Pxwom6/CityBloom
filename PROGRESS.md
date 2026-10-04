@@ -198,32 +198,73 @@ worn by three buildings or fewer, 57 of them batch 4's):
   stand on 16 m lots), `I113-4`, `I113-5` (2 and none of 60 complexes: four stand on a lot they fit),
   `I213-4` (3 of the 7 parks on 32 × 32 m lots), `C203-2` … `-5` (1–4 each of 9 headquarters), `C211-2`, `C212-3`, `R202-4`, `R102-3`.
 
-**Notes on the models for the owner.** From reviewing every batch-3 design in the game, by day and
-night (`docs/screenshots/batch3-models.jpg`; four reviewers, each note checked by a second look):
-none needs remaking; they read as their prompts ask and differ from the designs they share lots
-with. Worth a remake if there's time:
-- `C101-2`: the shops barely read. The ground floor sits in deep shadow behind the columns, the shop
-  windows are dark panels and the doors thin slivers, with no awnings; the sign panels are on the roof
-  parapet two floors above the shops, so from above it reads as flats on stilts. Its orange balconies
-  are the same on every copy (not a repainted role).
-- `C103-3`: the chequer's blue panels are too far from the game's palettes to be repainted, so every
-  copy has the same strong blue and only the signs, roof and canopy change.
-- `I113-3`: from the street it reads as an office block (a grid of identical windows and one door; the
-  roller doors are on the side). The game repaints its walls and roof, so the greys, white and blue
-  the prompt asked for become beige and terracotta like any other building.
-- `I103-3`: the yard's ingot stacks are a few small grey blocks by the tank and the rest is bare
-  paving; the furnace stack is as tall as the hall's ridge rather than squat; the ore heap reads as a
-  small orange roof.
-Smaller notes: `R213-3`'s setback terraces take the roof colour, so they read as sloping roofs, and
-its hedge planters are thin; `R213-4`'s sky bridge is a small box set back from the front;
-`R213-5`'s front and back are wide walls with two windows a floor; `R203-3`'s two slabs read as one
-block from the street (the offset and the four storeys' difference show only at the top); `C213-3`'s
-fins are the wall's own colour, so they read as faint ribs, and its sign panel covers part of a
-window; `R212-3`'s terracotta is only on the loggias and its top terrace is a thin rim; `R112-3`'s bay
-windows read as flat piers and its porch as a flat canopy; `C113-3`: a thin brick-coloured line
-between the cornice and the roof on every copy; `I201-2` is low beside `I201` on the same lot, its
-clay heaps read as tents and its brick stacks as tiny cubes; `C003-3`, `C101-2`, `C103-3` have bare
-backs at street level.
+**Notes on the models for the owner.** From reviewing every batch-4 design in the game by day, from
+behind and at night (`docs/screenshots/batch4-homes-shops.jpg`, `batch4-industry.jpg`; seven
+reviewers, each note checked by a second look that tried to refute it; `bench-results/batch4/review-merged.txt`):
+88 of the 104 read as their prompts ask and differ from the designs they share lots with; three are
+not the building their prompt asks for, and 12 are worth a remake.
+
+Needs remaking:
+- `I022-2` (high-tech warehouse, automated store): a squat windowless grey box with cooling units,
+  generators, a dish and a tank, which is what the data-centre prompt (`I023-4`) asks for; none of the
+  tall white store, its band of windows, the solar panels, the two canopied bays or the trees. With
+  no glass it is dark at night.
+- `I023-3` (high-tech plant, round reception): a plain flat-roofed block with a low glazed annex, a
+  tank and roof vents; no sawtooth solar roof, round reception, pond or tree. It and `I023-4` look
+  like two takes on the clean-room plant (`I023-2`, not made yet). A pipe by its stack floats 1.6 m
+  above the roof.
+- `I222-2` (high-tech processing works): a beige factory with small punched windows, one squat tank
+  and white tubes that read as chimneys; no tall tanks with pipe bridges, solar panels or lawns.
+  Beside the generator's white glass blocks it reads as manufacturing.
+
+Worth a remake:
+- High-tech industry that reads as ordinary industry or offices: `I023-4` (not a data centre: windows
+  on every face, two small roof units, no generator building), `I021-2` (no grass roof or test dome;
+  solar panels and a dish like `I021`; 4.3 m tall, not 7), `I121-3` (the extra design: nearly `I112-3`'s
+  glass-fronted hall), `I122-2`, `I123-4` (an office or school campus), `I223-4` (no grass roofs or
+  covered walkways; its street-side pavilions are windowless sheds). Their walls are mid-grey in the
+  files (#b2bbbf), which the game repaints from its industrial beiges and greys; walls near white
+  (#eef0f0) would take its whites. Most also have no solar panels or tree_spots.
+- `I203-3` (scrapyard): low and sparse beside `I203-2` on the same lot (12 m where the prompt says 23;
+  464 of its 3,000 triangles); its scrap heaps read as earth mounds and its bales as small cubes; no
+  lit window faces the street.
+- `I213-3` (U of halls): from the street a symmetrical office or civic building; all six roller doors
+  face the yard; its four 17 m roof lights glow at night as long bars.
+- Rich shops missing what defines them: `C021-2` (no arches: a white bungalow), `C023-2` (no stone
+  arch, sign panel or produce baskets; 6.6 m wide on its 8 m lot with windows in its side walls, so a
+  pair shows a gap), `C123-2` (no arched windows or rooftop cafe pavilion), `C123-4` (no cupola, arched
+  windows or columned entrance).
+
+Smaller notes:
+- Departures from the prompt that look good, so keep: `C223-4` is a round tower under a glass dome
+  (not a rectangular one with stacked boxes), `C222-4` two slabs of 58 and 48 m (not a slot of
+  terraces), `C221-2` and `C222-2` have flat tops (no stepped crown or roof garden), `C121-2` a flat
+  roof (no mansard), `C223-2` no sign panel, `I223-3` a U (not a ring).
+- `R122-3` and nine others had the inside of a parapet ring wound inside out; the game turns those
+  faces round now (DECISIONS, "Model batch 4"; `docs/screenshots/batch4-parapet.jpg`).
+- Glass that isn't a window glows whole at night: roof lights and glass roof slabs light as one
+  bright bar (`I213-3`, `I222-2`, `C121-2`, `C123-2`, `C123-4`, `C023-2`); strips named `window_band`
+  in 3–4 m runs (as spec v5 asks) light window by window.
+- Smoke stacks on high-tech industry, which gives no smoke, read as chimneys: `I023-3`, `I023-4`,
+  `I123-4`, `I222-2`, `I223-3`, `I223-4`.
+- tree_spots 0–1.5 m from the back wall (the spec says 3 m), so the trees stand in the wall: `C021-2`
+  (touching it), `C122-2`, `C123-2`, `C121-2`; `C203-5`'s stands in front of its door.
+- Roof gardens in the roof material take the roof's colour and read as plain roofs: `R221-2`,
+  `R222-2`, `R223-4`, `C202-4` (a garden in `grass` stays green).
+- The same on every copy (not a repainted role): `C103-4`'s strong blue bands, `C202-4`'s second sign.
+- Bare backs at street level: `I002-3`, `I011-3`, `I102-2`, `I102-3`, `I111-3`, `I203-2`, `C113-4`,
+  `C202-2`, `C212-2`, `C212-3`, and `I213-4`'s end wall facing the road.
+- Sparse or tall against the prompt: `I103-5` (the sawmill covers about 30 % of its lot), `I102-4`,
+  `I113-5`; `I003-4` is 24 m tall (11 asked), `I012-3` 10.8 m (7).
+- `C213-4`: window frames 3 cm off the brick wall shimmer as white speckles at a distance.
+- `C021-3` (the extra design): its shop glass is small and 1.6 m back behind the arcade, so it reads
+  as a loggia more than a shop.
+
+From batch 3 (still open): worth a remake `C101-2` (the shops barely read: dark panels behind columns,
+signs two floors up), `C103-3` and `I113-3` (colours the game can't repaint, or repaints away from the
+prompt's), `I103-3` (sparse yard, tall stack); smaller notes on `R213-3`, `R213-4`, `R213-5`, `R203-3`,
+`C213-3`, `R212-3`, `R112-3`, `C113-3`, `I201-2`, and bare backs on `C003-3`, `C101-2`, `C103-3` (in git,
+`PROGRESS.md` at 3fdc560).
 
 From batch 2 (still open; the window bands of `R201-2`, `R213-2` and `C213-2` are now lit in runs by
 the game):
@@ -471,7 +512,11 @@ build before; 12 allowed). Every view is within run-to-run noise of the build be
 designs are lighter on average than what they replace or share lots with, so the colour pass draws
 fewer triangles (`passprobe`, by day: buildings 872k against 886k from the whole-city view, 871k
 against 909k at city zoom, 459k against 478k at street level; draw calls the same). No sim change,
-so `bench` and `balance` aren't rerun.
+so `bench` and `balance` aren't rerun. Checks: typecheck, lint, 398 unit tests (new: the check's
+three changes, faces turned round, the packed file) and all 42 e2e specs (28.8 min); the M28 spec
+loads the demo town through the load screen: 1,308 touching pairs, none alike, 1,001 of 1,001
+buildings hand-made, 0.98M triangles from the whole-city view; the M25 spec's town is 57 of 57
+hand-made.
 
 ## Start-up (model batch 4; MacBook Pro M5, Chrome)
 `node scripts/dev/startup.mjs --dist dist-test,dist-before` serves each build gzipped as GitHub Pages

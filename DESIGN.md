@@ -1189,9 +1189,13 @@ lights between two (in the near and far versions; in the skyline the runs meet),
 band lights at night as windows, not one stripe (model batch 3); shopfronts and glazed volumes stay
 whole. For wall-to-wall models, flags mark what a neighbour in a
 row hides. All models are packed into one file (`src/models/codec.ts`: 16-bit welded vertices,
-about 15 bytes a triangle), emitted as `assets/models-<hash>.bin`; `virtual:citybloom-models` is
-its URL, and the game fetches it at start (`src/client/models.ts`) while the city loads. Without
-it every building is generated.
+about 17 bytes a triangle), emitted as `assets/models-<hash>.bin`; `virtual:citybloom-models` is
+its URL, and the game fetches it at start (`src/client/models.ts`) while the city loads, waiting
+for it up to 6 s before opening with generated looks. Vertices and indices are stored as the
+difference from the one before (a model's x's, y's and z's each in a run of their own), and each
+kind of array of every model together, so the server's gzip packs the file to about 1.5 bytes a
+triangle (model batch 4: 457 KB for 299 models, against 2.0 MB as plain numbers); decoding is a
+running sum, a few milliseconds. Without it every building is generated.
 
 **Draw** (`src/render/assets/handmade.ts`, `registry.ts`). `assets.zoned(def, w, d, look)` asks
 for a design that fits the lot: as wide as the lot or a half or a third of it, and no deeper.

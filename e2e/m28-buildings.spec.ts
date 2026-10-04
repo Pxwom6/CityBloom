@@ -60,8 +60,12 @@ test('M28: no identical neighbours, a distant version for every building, a ligh
   console.log(`[m28] hand-made: ${JSON.stringify(worn)}`);
   expect(worn.manyHand).toBe(worn.many);
   expect(worn.many).toBeGreaterThan(500);
-  expect(worn.oneHand).toBeGreaterThan(worn.one * 0.3);
-  expect(worn.oneHand).toBeLessThan(worn.one);
+  // Since model batch 4 every building in the demo town stands on a lot two designs fit; a lone
+  // design taking turns with the generator is tested in tests/handmade.test.ts.
+  if (worn.one) {
+    expect(worn.oneHand).toBeGreaterThan(worn.one * 0.3);
+    expect(worn.oneHand).toBeLessThan(worn.one);
+  }
   expect(worn.hand).toBeGreaterThan(worn.buildings * 0.8);
 
   // City zoom: buildings near, far and on the skyline, none drawn the old way at every distance.

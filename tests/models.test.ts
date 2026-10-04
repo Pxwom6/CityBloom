@@ -294,6 +294,54 @@ describe('models:check', () => {
       expect(checkModel(good(id), `${id}.glb`, budgets).errors.join(' '), id).not.toMatch(/hangs/);
   });
 
+  it('holds a wall up on a leg or a column anywhere under it, however thin', () => {
+    // Batch 4: the complex's conveyor on two legs (the far one between two slices' middles), and
+    // the open shed's gable on columns at its corners (outside the middle of its depth).
+    for (const id of ['I113-5', 'I203-3'])
+      expect(checkModel(good(id), `${id}.glb`, budgets).errors, id).toEqual([]);
+    const without = (id: string, name: string, which: (i: number) => boolean) =>
+      editGlb(good(id), (g) => {
+        (g.nodes as Record<string, unknown>[])
+          .filter((n) => n.name === name)
+          .forEach((n, i) => {
+            if (which(i)) delete n.mesh;
+          });
+      });
+    // Without its far leg the conveyor hangs off the hall; without its columns the gable hangs
+    // off the shed's end wall.
+    const legless = checkModel(
+      without('I113-5', 'leg', (i) => i === 1),
+      'I113-5.glb',
+      budgets,
+    );
+    expect(legless.errors.join(' ')).toMatch(/a wall hangs in the air: conveyor hangs 6\.97 m/);
+    const open = checkModel(
+      without('I203-3', 'column', () => true),
+      'I203-3.glb',
+      budgets,
+    );
+    expect(open.errors.join(' ')).toMatch(/a wall hangs in the air: gable hangs/);
+  });
+
+  it('lets doors that face each other cancel out, not make a side the front', () => {
+    // Batch 4's industrial park: two rows of units facing each other across a lane down the
+    // middle of the lot, the offices' door and canopy on the road.
+    expect(checkModel(good('I213-4'), 'I213-4.glb', budgets).errors).toEqual([]);
+    const e = frontEvidence(parseGlb(good('I213-4')).parts);
+    expect(e.seen.filter((s) => / in [-+]x /.test(s))).toHaveLength(16);
+    expect(e.side).toBe(0);
+    expect(e.road).toBeGreaterThan(e.back * 1.5);
+    // With one row's doors gone, the other row's look one way and count.
+    const oneRow = editGlb(good('I213-4'), (g) => {
+      for (const n of g.nodes as { name?: string; mesh?: number; matrix?: number[] }[])
+        if (/door/.test(n.name ?? '') && (n.matrix?.[12] ?? 0) > 2.5) delete n.mesh;
+    });
+    expect(frontEvidence(parseGlb(oneRow).parts).side).toBeGreaterThan(30);
+    // Turned half round, it is still caught.
+    const turned = checkModel(breakModel(good('I213-4'), 'turn'), 'I213-4.glb', budgets);
+    expect(turned.errors.join(' ')).toMatch(/front faces \+Z/);
+  });
+
   it('knows a row model from one that is simply the wrong size', () => {
     // Half as wide as its lot: two abreast.
     const half = editGlb(good('R201'), (g) => {

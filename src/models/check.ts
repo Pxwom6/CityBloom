@@ -378,6 +378,9 @@ function footprint(parts: GlbPart[], all: Box3, t: ModelTarget, report: ModelRep
     );
 }
 
+/** How far a part must reach under a slice of a wall to hold it up (a touching edge doesn't). */
+const HOLD = 0.02;
+
 /**
  * Nothing floats: a wall stands on something. A wall part well above the ground (a gable under a
  * roof, an upper storey) that is held up at one end and hangs past everything beneath it for
@@ -395,27 +398,22 @@ function supported(parts: GlbPart[], report: ModelReport): void {
     const length = b.max[along]! - b.min[along]!;
     const width = b.max[across]! - b.min[across]!;
     if (b.min[1] < 1 || length < 6 || width < 0.5) return;
-    // Along its length, which slices have another part under them (reaching up to its foot)?
+    // What stands under it, reaching up to its foot, anywhere across it: a leg or a corner column
+    // as thin as it likes holds the slices of the wall it is under.
+    const props = boxes.filter(
+      (o, j) =>
+        j !== i &&
+        o.min[1] < b.min[1] - 0.3 &&
+        o.max[1] > b.min[1] - 0.6 &&
+        Math.min(o.max[across]!, b.max[across]!) - Math.max(o.min[across]!, b.min[across]!) > HOLD,
+    );
+    // Along its length, which slices have one of them under them?
     const N = 16;
     const held: boolean[] = [];
     for (let k = 0; k < N; k++) {
-      const u = b.min[along]! + ((k + 0.5) / N) * length;
-      let under = false;
-      for (const f of [0.2, 0.5, 0.8]) {
-        const v = b.min[across]! + f * width;
-        const [x, z] = along === 0 ? [u, v] : [v, u];
-        under ||= boxes.some(
-          (o, j) =>
-            j !== i &&
-            x >= o.min[0] &&
-            x <= o.max[0] &&
-            z >= o.min[2] &&
-            z <= o.max[2] &&
-            o.min[1] < b.min[1] - 0.3 &&
-            o.max[1] > b.min[1] - 0.6,
-        );
-      }
-      held.push(under);
+      const u0 = b.min[along]! + (k / N) * length;
+      const u1 = b.min[along]! + ((k + 1) / N) * length;
+      held.push(props.some((o) => Math.min(o.max[along]!, u1) - Math.max(o.min[along]!, u0) > HOLD));
     }
     // An end that butts against another part is held by it (a bridge between two halls, a
     // walkway from a wall to a stair head).
@@ -479,7 +477,10 @@ function facing(parts: GlbPart[], report: ModelReport): void {
     );
 }
 
-/** The weight of entrances and the like looking at the road (−Z), away from it, and sideways. */
+/**
+ * The weight of entrances and the like looking at the road (−Z), away from it, and sideways (out
+ * from the side walls, and what looks in from one side more than the other).
+ */
 export function frontEvidence(parts: GlbPart[]): {
   road: number;
   back: number;
@@ -509,10 +510,16 @@ export function frontEvidence(parts: GlbPart[]): {
     );
   const walls = parts.filter((p) => p.material === 'wall' || p.material === 'wall_alt');
   const body = boxOf(walls.length ? walls : parts);
+  const midX = (body.min[0] + body.max[0]) / 2;
   const midZ = (body.min[2] + body.max[2]) / 2;
   let road = 0;
   let back = 0;
-  let side = 0;
+  // Sideways: what looks out from a side wall counts, but doors that face each other across a
+  // yard or a lane down the middle (looking in, −X from the right and +X from the left) cancel
+  // out, and only what looks in one way more than the other makes a side the front.
+  let out = 0;
+  let inLeft = 0;
+  let inRight = 0;
   for (const p of fronts) {
     const b = growBox(emptyBox(), p.tris);
     const cx = (b.min[0] + b.max[0]) / 2;
@@ -531,18 +538,22 @@ export function frontEvidence(parts: GlbPart[]): {
     const solidX = inSolid(b.max[0] + 0.4, cy, cz) ? 1 : 0;
     const solidx = inSolid(b.min[0] - 0.4, cy, cz) ? 1 : 0;
     // Upright and thin across x: it is in a side wall.
-    let where: 'road' | 'back' | 'side';
-    if (!flat && ex < ez) where = 'side';
-    else if (flat && solidX + solidx > 0 && solidZ + solidz === 0) where = 'side';
-    else if (solidZ && !solidz) where = 'road';
+    let where: 'road' | 'back' | 'side' | 'in -x' | 'in +x';
+    if ((!flat && ex < ez) || (flat && solidX + solidx > 0 && solidZ + solidz === 0)) {
+      // Which way it looks: away from the wall it is set in (or out from the middle).
+      const looksLeft = solidX && !solidx ? true : solidx && !solidX ? false : cx < midX;
+      where = looksLeft === cx < midX ? 'side' : looksLeft ? 'in -x' : 'in +x';
+    } else if (solidZ && !solidz) where = 'road';
     else if (solidz && !solidZ) where = 'back';
     else where = cz < midZ ? 'road' : 'back';
     if (where === 'road') road += w;
     else if (where === 'back') back += w;
-    else side += w;
+    else if (where === 'side') out += w;
+    else if (where === 'in -x') inLeft += w;
+    else inRight += w;
     seen.push(`${p.name} ${where} ${w.toFixed(1)}`);
   }
-  return { road, back, side, seen };
+  return { road, back, side: out + Math.abs(inLeft - inRight), seen };
 }
 
 /** The lots narrower than its type's own that a zoned model stands on, e.g. "16 × 24–32 m". */

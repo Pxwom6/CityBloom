@@ -4,6 +4,7 @@
 //        [--variants 6] [--season winter] [--dist dist-test] [--backs] [--sheet cols] [--lod far|sky|all]
 //        [--states]  (zoned rows: built, half built, nearly built, abandoned, burning, burnt out)
 //        [--apart]   (zoned rows each on its own, so no other row stands in front of it)
+//        [--further 150]  (zoned rows from this many metres further back: a tall tower's crown)
 //   what: zoned rows like R103 R103@2x3 R103@2x2, civic ids like firestation coal, or a batch:
 //   R0 R1 R2 C0 C1 C2 I0 I1 I2 (a zone and density), services, utilities, parks, special, big,
 //   projects, stages (each project at each stage), annexes, landfill (empty to full).
@@ -15,7 +16,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
-const VALUE_FLAGS = ['hour', 'variants', 'season', 'dist', 'sheet', 'lod'];
+const VALUE_FLAGS = ['hour', 'variants', 'season', 'dist', 'sheet', 'lod', 'further'];
 const flag = (name, d) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : d;
@@ -34,6 +35,7 @@ const gpu = argv.includes('--gpu');
 const backs = argv.includes('--backs');
 const states = argv.includes('--states');
 const apart = argv.includes('--apart');
+const further = Number(flag('further', '0'));
 // `--lod far|sky` draws that level of detail everywhere; `--lod all` shoots near, far and sky.
 const lod = flag('lod', null);
 
@@ -212,7 +214,12 @@ try {
     );
     const x0 = Math.min(...row.map((b) => b.x));
     const x1 = Math.max(...row.map((b) => b.x));
-    const pose = { x: (x0 + x1) / 2, z: row[0].z, distance: (x1 - x0) * 0.55 + 40 + tall, tilt: 0.22 };
+    const pose = {
+      x: (x0 + x1) / 2,
+      z: row[0].z,
+      distance: (x1 - x0) * 0.55 + 40 + tall + further,
+      tilt: 0.22,
+    };
     await shoot(`row-${name.replace('@', '_')}`, { ...pose, yaw: 0.22 });
     // `--backs`: the row from behind too (the yards behind shallow models, M27).
     if (backs) await shoot(`row-${name.replace('@', '_')}-back`, { ...pose, yaw: Math.PI + 0.22 });

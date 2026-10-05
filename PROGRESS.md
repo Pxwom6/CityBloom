@@ -1,8 +1,8 @@
 # PROGRESS
 
-Phase 3 (graphics, SPEC-3.md) and model batch 3 are merged into `main`, which deploys the live site
-at https://pxwom6.github.io/CityBloom/. Model batch 4 is on the `models-4` branch, in a pull
-request into `main` for the owner to merge.
+Phase 3 (graphics, SPEC-3.md) and model batches 3 and 4 are merged into `main`, which deploys the
+live site at https://pxwom6.github.io/CityBloom/. Model batch 5, the last, is on the `models-5`
+branch, in a pull request into `main` for the owner to merge.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -78,10 +78,10 @@ cities, a grace for cities meeting seasons for the first time, and level-crossin
 trams that give way (DECISIONS, "Phase 2 review").
 
 **Phase 3 (graphics, M25–M28)** made it look the part without touching the simulation. The owner's
-hand-made building models (299 so far: every zoned type with two designs or more on nearly every lot
-its buildings stand on, skyline towers for 24 m lots, 46 civic buildings, annexes) are checked against their spec, converted at build
+hand-made building models (318 in five batches: every zoned type with two designs or more on every
+lot its buildings can stand on, skyline towers for 24 m lots, 46 civic buildings, annexes) are checked against their spec, converted at build
 time and stand in wherever they fit, painted from the game's palettes, with far and skyline versions
-that fade in by a dither (M25); every building in the grown test cities wears one, and long
+that fade in by a dither (M25); every zoned building in any city wears one, and long
 window bands light at night in runs of 3–4 m, not as one stripe a floor. Light and sky: cascaded
 shadows fitted to the ground in view, soft occlusion in corners, a glow round lit windows at night,
 golden and blue hours, bounce light and haze, Neutral tone mapping (M26). Ground, lots and streets:
@@ -90,8 +90,8 @@ zebra crossings, benches, bins and planters, and car parks, lawns and yards behi
 Buildings: every generated building now has distant versions too, and the generator was refreshed
 (five tower silhouettes, crowns, spires, balcony bands, mansards, cornices, more colours) so no two
 neighbours look alike (M28). Every effect has a switch in the graphics quality. On an M5 MacBook
-Pro the heaviest view (the 110k city at night at 3× with a tornado) takes about 10 ms a frame at High
-with batch 4's models, against 22–25 at the start of the phase; the whole-city view draws 1.9M triangles where it drew 2.7M.
+Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 10–11 ms a frame at High
+with batch 5's models, against 22–25 at the start of the phase; the whole-city view draws 1.9M triangles where it drew 2.7M.
 
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
@@ -108,35 +108,37 @@ with batch 4's models, against 22–25 at the start of the phase; the whole-city
    (ski resorts in winter, beaches in summer).
 7. **More specialisations** (education hub, gambling/entertainment, electronics) using the same
    building + economy pattern as M10.
-8. **More hand-made models** (PROGRESS, "Models"): the 19 of batch 4's prompts not made yet (rich
-   shops and offices, high-tech industry: `docs/models/PROMPTS-4.md`), and remakes from the notes
-   below; a procedural window shader would let distant homes' windows merge too.
+8. **More hand-made models** (PROGRESS, "Models"): every zoned type has two designs or more on
+   every lot it can stand on since batch 5, so further designs would be for variety (the commonest
+   lots most), plus fixes from the smaller notes below; a procedural window shader would let distant
+   homes' windows merge too.
 9. **Balance**: commercial demand runs a little low in small towns; the big-city running costs and
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 4 (below,
-"Models"): 104 of the owner's designs are in, on the `models-4` branch (pull request into `main`),
-and the models file is packed five times tighter, so the game opens faster than before the batch.
-Nothing is left in progress.
+Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 5 (below,
+"Models"): the owner's last 39 designs are in, on the `models-5` branch (pull request into `main`),
+and every zoned type now has at least two hand-made designs on every lot its buildings can stand
+on, so no building in any city is generated. Nothing is left in progress.
 
 ## Next tasks
-1. The owner: merge the `models-4` pull request into `main` when happy, which publishes the site.
-2. The 19 designs of `docs/models/PROMPTS-4.md` not made yet, as they arrive (`npm run models:check`,
-   then the census before and after), and any remakes from the notes under "Models".
+1. The owner: merge the `models-5` pull request into `main` when happy, which publishes the site.
+2. Any fixes the owner wants from the smaller notes under "Models" (no design needs a remake).
 3. Ideas above.
 
 ## Models (phase 3)
-299 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
+318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
 buildings), the second (`docs/models/PROMPTS-2.md`: 40 designs sized for the lots buildings stand
 on, and a remade `C213`), the third (`PROMPTS-3.md`: 19, skyline towers and a headquarters for
-24 × 24 m lots) and the fourth (`PROMPTS-4.md`, model spec v5: 102 of its 121 prompts, seven fixed by
-the owner's Claude to pass the check, and two extra designs, `C021-3` and `I121-3`). Not made yet:
-`C022-2`, `C022-3`, `C023-3`, `C122-3`, `C123-3`, `C222-3`, `C223-3`, `C223-5`, `I022-3`, `I023-2`,
-`I121-2`, `I122-3`, `I122-4`, `I123-2`, `I123-3`, `I123-5`, `I221-2`, `I222-3`, `I223-2` (rich shops and
-offices, high-tech industry). `npm run models:check` passes all 299. Converted: 320k triangles in
-the files, 293k drawn near, 212k far, 136k in the skyline; the models file is 5.5 MB raw and 457 KB
-gzipped as Pages serves it (2.0 MB stored as plain numbers, as before batch 4), fetched at start.
+24 × 24 m lots), the fourth (`PROMPTS-4.md`, model spec v5: 102 of its 121 prompts, seven fixed by
+the owner's Claude to pass the check, and two extra designs, `C021-3` and `I121-3`) and the fifth
+(`PROMPTS-5.md`, model spec v6: its 38 prompts, the 19 of batch 4 not made then and 19 remakes that
+replace their first versions, plus `I223-3` with its smoke stack taken off and its walls made white).
+Batches 1–4 were made in Claude Design; batch 5 was built by Claude in a cloud session with three.js
+and GLTFExporter and checked with the game's own check. `npm run models:check` passes all 318.
+Converted: 359k triangles in the files, 326k drawn near, 240k far, 154k in the skyline (320k, 293k,
+212k and 136k before batch 5); the models file is 6.0 MB raw and 514 KB gzipped as Pages serves it
+(443 KB before batch 5), fetched at start.
 
 | File | Status |
 |---|---|
@@ -148,7 +150,8 @@ gzipped as Pages serves it (2.0 MB stored as plain numbers, as before batch 4), 
 | `C213.glb` (remade) | lights window by window (285 runs of 5.6–6.3 m; each is now lit as two, below) |
 | all 19 batch-3 files | pass as delivered: no check needed changing, every lawn lies 5 cm up or more, and none fails on facing |
 | `I113-5`, `I203-3`, `I213-4` (batch 4) | failed because of the check, not the models: the conveyor's second leg and the open shed's corner columns stood between the points the check sampled under a wall ("a wall hangs in the air"), and the business units facing each other across a lane counted as a front along X; pass since anything under a wall holds it however thin, and doors that face each other cancel out (DECISIONS, "Model batch 4") |
-| the other 101 batch-4 files | pass as delivered, with notes: `C202-4`, `C203-4`, `C212-3`, `C212-4`, `I112-4`, `R122-3`, `R202-4`, `R212-4`, `R222-2`, `R223-4` have the inside of their parapet ring wound inside out (12–24 faces; the game turns them round, DECISIONS "Model batch 4"); `I022-2` has no glass (nothing on it lights at night); `I023-3`, `I023-4`, `I123-4`, `I222-2`, `I223-3`, `I223-4` have smoke stacks, but high-tech industry doesn't smoke in the game |
+| the other 101 batch-4 files | pass as delivered, with notes: `C202-4`, `C203-4`, `C212-3`, `C212-4`, `I112-4`, `R122-3`, `R202-4`, `R212-4`, `R222-2`, `R223-4` have the inside of their parapet ring wound inside out (12–24 faces; the game turns them round, DECISIONS "Model batch 4"); `I022-2` had no glass and `I023-3`, `I023-4`, `I123-4`, `I222-2`, `I223-3`, `I223-4` smoke stacks (batch 5 replaced or fixed all seven) |
+| all 39 batch-5 files | pass as delivered; the only notes are lots deeper than the model (the game leaves a yard behind): no faces inside out, no lawn under the lot base, no smoke stack on high-tech, and no glass outside a window or band |
 | the other first-batch files | pass with no notes |
 
 **Long windows light in runs** (DECISIONS, "Model batch 3"): the conversion cuts every window or band
@@ -157,98 +160,169 @@ between two (near and far; in the skyline, where the strip is a pixel or less, t
 `npx tsx scripts/dev/windowruns.ts` lists what is still long.
 
 Which way they face (`npx tsx scripts/dev/modelturn.ts`): none fails as delivered; turned half round
-272 of 291 are caught, a quarter round 265, as many as before batch 4's change to the check. The rest
-are symmetrical or have entrances on more than one side (half round: `C212-4`, `C213`, `C213-2`,
-`I003-3`, `I102-3`, `I103`, `I103-5`, `I113`, `I203-3`, `R001-3`, `R003`, `R013`, `R023`, `R103-2`, `R113`,
-`R123`, `grandarch`, the parks; a quarter round 26, listed in `bench-results/batch4/modelturn.log`).
+292 of 310 are caught, a quarter round 285 (272 and 265 of 291 before batch 5). The rest are
+symmetrical or have entrances on more than one side (half round: `C212-4`, `C213`, `C213-2`, `I003-3`,
+`I102-3`, `I103`, `I103-5`, `I113`, `R001-3`, `R003`, `R013`, `R023`, `R103-2`, `R113`, `R123`,
+`grandarch`, the parks; a quarter round 25, listed in `bench-results/batch5/modelturn.log`, of them
+batch 5's `I023-2` and `I023-4`).
 
-**Who wears them** (`node scripts/dev/modelcensus.mjs <saves …>`; logs in `bench-results/batch4/`):
+**Who wears them** (`node scripts/dev/modelcensus.mjs <saves …>`; logs in `bench-results/batch5/`).
+The three test cities grow no rich shops or offices and next to no high-tech industry, so batch 5 adds
+a fourth: the careful balance mayor's city after 20 years (`balance.ts 20 careful --save dir`, 71,565
+residents, with a university and a research park; the run is deterministic, so the save isn't kept):
 
-| City | Buildings | First batch only | After batch 2 | After batch 3 | After batch 4 |
-|---|---|---|---|---|---|
-| Bench city (110k) | 2,158 | 359 (17 %) | 1,618 (75 %) | 2,035 (94 %) | 2,158 (100 %) |
-| Menu demo town | 1,001 | 252 (25 %) | 914 (91 %) | 980 (98 %) | 1,001 (100 %) |
-| `Saves/Ashton.citybloom` | 192 | 3 (2 %) | 184 (96 %) | 188 (98 %) | 192 (100 %) |
+| City | Buildings | First batch only | After batch 2 | After batch 3 | After batch 4 | After batch 5 |
+|---|---|---|---|---|---|---|
+| Bench city (110k) | 2,158 | 359 (17 %) | 1,618 (75 %) | 2,035 (94 %) | 2,158 (100 %) | 2,158 (100 %) |
+| Menu demo town | 1,001 | 252 (25 %) | 914 (91 %) | 980 (98 %) | 1,001 (100 %) | 1,001 (100 %) |
+| `Saves/Ashton.citybloom` | 192 | 3 (2 %) | 184 (96 %) | 188 (98 %) | 192 (100 %) | 192 (100 %) |
+| Careful mayor, year 20 | 1,817 | | | | 1,811 (99.7 %) | 1,817 (100 %) |
 
-770 buildings across the three cities wear a batch-4 design, most of them third and fourth designs
-for the commonest homes and industry: `R013-4` 155, `R113-4` 133, `R001-3` 68, `R003-4` 66, `I011-3`
-60, `R101-3` 42, `I111-3` 41, `R103-4` 24, `R212-4` 17, `I213-3` 16, `I001-3` 15, then `I101-3`,
-`C112-3`, `C012-3` 10 each, `C213-5` 8, `I003-3`, `C213-4`, `C111-2` 7, and 29 more worn by one to
-five. They share their lots with the designs before them, so the commonest earlier designs are worn
-by about a third fewer (`R013-2` 232 → 148, `R113-2` 205 → 126, `R013-3` 213 → 142).
+133 buildings across the four cities wear a batch-5 design. In the three test cities they are the
+remakes for ordinary cities, on the same buildings as before (a remake keeps its name): `I113-3` 32,
+`I213-3` 16, `I103-3` 9, `C103-3` 7, `I203-3` 1. The year-20 city adds `I113-3` 45, `I213-3` 7, `C103-3` 6,
+`C101-2` 1 and its high-tech industry: `I023-3` 4, `I223-2` 2, `I123-2`, `I123-3`, `I223-4` 1 each; before
+the batch its two `I123` complexes on 16 × 24 m lots had no design and its four `I023` plants took
+turns with the generator. Triangles drawn near: bench city 2.32M → 2.34M, demo town 0.69M → 0.72M,
+year-20 city 1.55M → 1.60M.
 
-**What is still generated, and why**: nothing in these three cities (123, 21 and 4 buildings before
-the batch). In other cities a generated look still stands where fewer than two designs fit a lot:
-the lots the 19 designs not made yet are for (rich shopfronts, market halls, offices and department
-stores on 8 × 8 and 16 × 16 m, rich commercial towers and headquarters on 16 × 24 and 24 × 24 m, and
-high-tech warehouses, plants, factories, assembly works, complexes, big factories, processing works
-and parks), where one design takes turns with the generator: `C023@8×8`, `C122` and `C123@16×16`,
-`C222` and `C223@16×24`, `C223@24×24`, `I022` and `I023@16×16`, `I122@16×24`, `I123`, `I222` and
-`I223@24×24`; and lots with no design at all, such as `C022@8×8`.
+**Every lot has two designs** (`npx tsx scripts/dev/modelcoverage.ts`, new): following growth's
+rules (founded on the level-1 shape; each upgrade takes the next shape, deepens the lot or rebuilds
+on it), the 81 zoned types can stand on 174 type-and-lot pairs. Before batch 5, 3 had no design
+(`C022@8×8`, `I123@16×24`, `I123@16×32`) and 20 had one, which took turns with the generator (rich
+shopfronts, market halls, offices, department stores, towers and headquarters, and high-tech
+warehouses, plants, assembly works, complexes, big factories, processing works and parks); now all
+174 have two or more, as PROMPTS-5 meant. Every lot the four cities' 5,168 buildings stand on (99
+type-and-lot pairs) is on the list.
 
-**Models that rarely or never appear, and why** (across the three cities: 142 of 245 zoned designs
-worn by three buildings or fewer, 57 of them batch 4's):
-- Types that don't grow in these cities: no rich homes, shops or offices and no high-tech industry
-  (38 of batch 4's designs: `R021-2`, `R022-2`, `-3`, `R121-2`, `R122-2`, `-3`, `R123-2`, `-3`,
-  `R221-2`, `R222-2` … `C021-2`, `-3`, `C121-2` … `I021-2` … `I223-4`), and next to no `I002`, `I022`, `I202`.
+Batch 4 had put 770 buildings in the three test cities into its designs, most of them third and fourth
+designs for the commonest homes and industry (`R013-4` 155, `R113-4` 133, `R001-3` 68, `R003-4` 66).
+
+**What is still generated, and why**: nothing, in any city. Every type and lot a building can stand
+on has two designs or more, so every look is hand-made; a generated look would stand only where a
+model failed the check (the build leaves it out) or the models file missed `loadModels`' deadline on
+a very slow line (below, "Start-up").
+
+**Models that rarely or never appear, and why** (across the three test cities: 161 of 264 zoned
+designs worn by three buildings or fewer, 61 of them batch 4's and 35 batch 5's; with the year-20
+city, 145):
+- Types that don't grow in these cities: no rich homes, shops or offices, and high-tech industry only
+  in the year-20 city (9 buildings). 28 of batch 5's designs appear in none of the four (every rich
+  shop, office, department store and tower, and `I021-2`, `I022-2`, `-3`, `I023-2`, `-4`, `I121-2`, `-3`,
+  `I122-2`, `-3`, `-4`, `I123-4`, `-5`, `I221-2`, `I222-2`, `-3`), as do 23 of batch 4's (`R021-2` …
+  `R222-4`, `C121-2` … `C223-4`, `I002-2`, `-3`, `I202-2`, `-3`) and its extra `C021-3`: none of the four
+  grows `I002`, `I022` or `I202`. `I023-2` and `I223-3`
+  fit lots that buildings in the year-20 city stand on, but its four `I023` plants and two `I223`
+  parks there happen to wear the other design.
 - Designs for lots these cities' buildings don't stand on: `C113-4` and `C103-4` (24 × 24 m
-  department stores; the 100 here stand on 16 × 16 m), `I013-4` and `I003-4` (24 × 24 m plants; the 90
-  stand on 16 × 16), `I103-4`, `I103-5` (complexes, 24 × 24), `I112-4`, `I203-4`, `I102-4`, `C202-4`, `R223-4`, `R223-5`.
+  department stores; the 100 in the test cities stand on 16 × 16 m), `I013-4` and `I003-4` (24 × 24 m
+  plants; the 90 stand on 16 × 16), `I103-4`, `I103-5` (complexes, 24 × 24), `I112-4`, `I203-4`, `I102-4`,
+  `C202-4`, `R223-4`, `R223-5`; and batch 5's `I023-4`, `I123-4`, `I123-5` (24 × 24 m; the year-20
+  city's high-tech plants and complexes stand on 16 m lots).
 - Designs that take turns on lots few buildings stand on: `R203-5` (3 of 62 skyline residences: most
   stand on 16 m lots), `I113-4`, `I113-5` (2 and none of 60 complexes: four stand on a lot they fit),
-  `I213-4` (3 of the 7 parks on 32 × 32 m lots), `C203-2` … `-5` (1–4 each of 9 headquarters), `C211-2`, `C212-3`, `R202-4`, `R102-3`.
+  `I213-4` (3 of the 7 parks on 32 × 32 m lots), `C203-2` … `-5` (1–4 each of 9 headquarters), `C211-2`,
+  `C212-3`, `R202-4`, `R102-3`; and batch 5's `I203-3` (1 of 4 heavy-industry parks), `C101-2` (1 of 2
+  shopping rows in the year-20 city).
 
-**Notes on the models for the owner.** From reviewing every batch-4 design in the game by day, from
-behind and at night (`docs/screenshots/batch4-homes-shops.jpg`, `batch4-industry.jpg`; seven
-reviewers, each note checked by a second look that tried to refute it; `bench-results/batch4/review-merged.txt`):
-88 of the 104 read as their prompts ask and differ from the designs they share lots with; three are
-not the building their prompt asks for, and 12 are worth a remake.
+**Notes on the models for the owner.** From reviewing every batch-5 design in the game by day, from
+behind and at night (`docs/screenshots/batch5-industry.jpg`, `batch5-shops.jpg`, `batch5-night.jpg`,
+`batch5-remakes.jpg` with every remake's row before and after, and `batch5-incity.jpg`, the year-20
+city's high-tech parks by day and at night; seven reviewers, each note checked
+by a second look that tried to refute it, then a look across all of them for what is systematic;
+`bench-results/batch5/review/`): all 39 read as their prompts ask and differ from the designs they
+share lots with; none is the wrong building and none is worth a remake. The 19 remakes fix what
+their prompts said went wrong (`C103-3` partly, below), so the remake lists of the batch-3 and batch-4
+reviews are done: `I022-2`, `I023-3`, `I222-2`, `I023-4`, `I021-2`, `I121-3`, `I122-2`, `I123-4`, `I223-4`,
+`I203-3`, `I213-3`, `C021-2`, `C023-2`, `C123-2`, `C123-4` (batch 4) and `C101-2`, `C103-3`, `I113-3`,
+`I103-3` (batch 3); and `I223-3` has lost its smoke stack.
 
-Needs remaking:
-- `I022-2` (high-tech warehouse, automated store): a squat windowless grey box with cooling units,
-  generators, a dish and a tank, which is what the data-centre prompt (`I023-4`) asks for; none of the
-  tall white store, its band of windows, the solar panels, the two canopied bays or the trees. With
-  no glass it is dark at night.
-- `I023-3` (high-tech plant, round reception): a plain flat-roofed block with a low glazed annex, a
-  tank and roof vents; no sawtooth solar roof, round reception, pond or tree. It and `I023-4` look
-  like two takes on the clean-room plant (`I023-2`, not made yet). A pipe by its stack floats 1.6 m
-  above the roof.
-- `I222-2` (high-tech processing works): a beige factory with small punched windows, one squat tank
-  and white tubes that read as chimneys; no tall tanks with pipe bridges, solar panels or lawns.
-  Beside the generator's white glass blocks it reads as manufacturing.
-
-Worth a remake:
-- High-tech industry that reads as ordinary industry or offices: `I023-4` (not a data centre: windows
-  on every face, two small roof units, no generator building), `I021-2` (no grass roof or test dome;
-  solar panels and a dish like `I021`; 4.3 m tall, not 7), `I121-3` (the extra design: nearly `I112-3`'s
-  glass-fronted hall), `I122-2`, `I123-4` (an office or school campus), `I223-4` (no grass roofs or
-  covered walkways; its street-side pavilions are windowless sheds). Their walls are mid-grey in the
-  files (#b2bbbf), which the game repaints from its industrial beiges and greys; walls near white
-  (#eef0f0) would take its whites. Most also have no solar panels or tree_spots.
-- `I203-3` (scrapyard): low and sparse beside `I203-2` on the same lot (12 m where the prompt says 23;
-  464 of its 3,000 triangles); its scrap heaps read as earth mounds and its bales as small cubes; no
-  lit window faces the street.
-- `I213-3` (U of halls): from the street a symmetrical office or civic building; all six roller doors
-  face the yard; its four 17 m roof lights glow at night as long bars.
-- Rich shops missing what defines them: `C021-2` (no arches: a white bungalow), `C023-2` (no stone
-  arch, sign panel or produce baskets; 6.6 m wide on its 8 m lot with windows in its side walls, so a
-  pair shows a gap), `C123-2` (no arched windows or rooftop cafe pavilion), `C123-4` (no cupola, arched
-  windows or columned entrance).
+Worth a small fix in the file:
+- `C101-2` and `C103-3`: brick that stays brick under a light-grey roof (#c5c9cc) the game keeps, so
+  every copy looks the same apart from its signs, where their first versions and the designs beside
+  them vary walls and roofs. A slate or terracotta roof and a pastel `wall_alt` would let the game vary
+  them. (`C103-3`'s chequer now repaints, which was the remake's point, but as brick on every copy.)
+- `I213-3`: its halls are 9–12 m where the prompt asks for 23; the 21 m top is two slim 20 m tanks,
+  which from the street read as two white chimneys on a building that gives no smoke.
+- `I223-3` (batch 4's design, touched up in batch 5): its two courtyard tree_spots stand 1 m from the
+  walls, so the trees stand under the skybridge.
 
 Smaller notes:
+- High-tech fronts that lean towards offices or labs, with the industry behind: `I122-2`, `I122-3` (a
+  flush 4 × 3 grid of dark glass), `I123-2`, `I123-4`, `I222-3`, `I223-3`, `I223-4` (a campus, as its
+  prompt asks), and the manufacturing `I113-3` (two rows of three identical window runs, and amber
+  doors under a canopy that look like shopfronts). Tanks, dishes, roof units, solar panels or a hall
+  keep each of them industrial; `I121-3`, `I122-4`, `I123-3`, `I123-5`, `I221-2`, `I222-2` and `I223-2`
+  read as industry from the street.
+- Named features the street barely sees: `I022-3`'s loading bays (on a side wall; some copies show
+  them), `I223-4`'s covered walkways (hidden between the pavilions), `I103-3`'s ore heap and conveyor
+  (behind the hall; from the street the foundry reads by its furnace), `I221-2`'s glazed vault ends
+  (they face the neighbours).
+- Trees in front of entrances: the tree_spots of `I021-2`, `I022-2`, `I022-3` and `I023-2` stand in front
+  of the glazed front or a door, so the season's tree hides part of it (a rougher count adds `I122-2`,
+  `I122-3`, `I122-4`, `I123-5`, `C222-3`).
+- Over the prompt's height by rooftop features the prompts ask for: `C123-4` 31 m (a 22 m store and
+  its cupola), `C123-2` 25 m (the cafe pavilion), `C123-3` 24.5 m, `C103-3` 24.4 m (a lift housing),
+  `C022-3` 6.7 m (its mansard).
+- The rich towers `C222-3` and `C223-3` have their canopies in the awning material, so the game paints
+  them purple, orange or red: they read as shop awnings rather than stone porches (`C223-5`'s is trim).
+- Copies alike: `C122-3` and `C123-3` have next to nothing the game repaints (white walls, no roof or a
+  kept one), so a street of either changes only its canopy and sign; high-tech accents and doors
+  never repaint, so copies of one high-tech design differ only by mirroring and a shade of white.
+- Thin, busy parts: `I222-3`'s purple louvres (0.26 m slats) break up into dotted stripes at row
+  distance; roller-door slats of 0.1 m (`I021-2`, `I121-2`) and `I113-3`'s 0.12 m mullions.
+- `I203-3`'s five-storey brick tower at the front corner echoes `I203-2`'s; its gantry, open shed and
+  shredders tell them apart.
+
+**Batch 5 against the Claude Design batches** (the look across all the reviews, checked against the
+pictures and against `npx tsx scripts/dev/batchstats.ts`, new; `bench-results/batch5/batchstats.log`):
+- It reads as its prompts: 39 of 39, against 88 of 104 in batch 4, with every named feature there and
+  nearly always seen from the street. Part of that is the brief (spec v6 and the remake prompts carry
+  batch 4's lessons), part that its builder ran the game's check as it went; the reviewers are the
+  same family of model as the builder.
+- Night: no glass outside a window or band, so nothing lights as one bar (six of batch 4's designs
+  still do: `C113-4`, `C121-2`, `C223-4`, `I013-4`, `I112-3`, `I112-4`; and 15 of the first batch's); roof
+  glass in 2–4 m runs; solar panels named, so they stay dark. Its high-tech lights more of its front
+  (13 % of the facade, against 5 % for the first batch's high-tech); its towers less than their
+  Claude Design siblings (13–17 % against 21–31 %), as spec v6 asks for solid walls with windows;
+  both read well.
+- Backs: a door or window on every side of every design; by a part check, 19 of batch 4's 58
+  industrial and commercial designs have a bare back wall.
+- Spec v6's rules hold: heights near the prompts (6 of 38 more than 2 m over, all from rooftop
+  features, against 53 of 88 in batch 4), trees 3 m from walls except the few in front of entrances,
+  no chimneys on high-tech, green roofs in grass, and white high-tech walls that take the rich whites
+  instead of industry's beiges (the before pictures show batch 4's high-tech repainted beige under
+  terracotta roofs).
+- More varied high-tech (vaults, sawtooth, domes, drums, courtyards, a different accent per design,
+  where the first batch's nine share a dish, solar panels and one cyan), and designed rooftops on the
+  rich shops and offices (pavilions, a cupola, terraces, roof gardens), where the Claude Design ones
+  show slabs with air units: it matters from the game's high camera.
+- Repainting is weaker: 24 of 38 keep a colour on every copy, every one a light-grey flat roof (0 of
+  102 in batches 3 and 4). On high-tech that is what spec v6 asks for and it reads well (the first
+  batch's nine high-tech designs keep the same grey); on the six commercial designs it costs variety,
+  and badly only on `C101-2` and `C103-3` (above).
+- Finer detail than the spec's 0.3 m: 16 of 38 have bars under 0.2 m (mullions, seams, bay lines,
+  slats; none in batches 1, 3 and 4), so they look a little busier and less toy-like than their
+  Claude Design neighbours up close. Their far
+  versions keep 81 % of the near triangles (77 % in batch 4), the fine bars included; the skyline
+  versions drop the bars, so nothing that thin is drawn at whole-city distance. The skyline drops roof
+  solar panels too (as for every batch), so from the whole-city view high-tech roofs read as plain
+  light grey (`bench-results/batch5/sheets/lod.jpg`: near, far and skyline side by side).
+- Costlier: 73 % of the triangle budget on average against 53 % in batch 4, about a third more
+  triangles near and half again far per building (the ordinary-industry remakes are 3–3.7 times their
+  Claude Design lot-mates), and 3.5 KB a design in the models file against 2.6. In a city it is small
+  (1–3 % more triangles drawn, no change in frame times); the models file grew 16 % ("Start-up").
+- The same: the palette and the chunky board-game style (no visible break beside Claude Design
+  neighbours), and high-tech that leans office-like from the street (batch 4's did too).
+
+From batch 4 (still open; its remake list is done):
 - Departures from the prompt that look good, so keep: `C223-4` is a round tower under a glass dome
   (not a rectangular one with stacked boxes), `C222-4` two slabs of 58 and 48 m (not a slot of
   terraces), `C221-2` and `C222-2` have flat tops (no stepped crown or roof garden), `C121-2` a flat
   roof (no mansard), `C223-2` no sign panel, `I223-3` a U (not a ring).
-- `R122-3` and nine others had the inside of a parapet ring wound inside out; the game turns those
-  faces round now (DECISIONS, "Model batch 4"; `docs/screenshots/batch4-parapet.jpg`).
-- Glass that isn't a window glows whole at night: roof lights and glass roof slabs light as one
-  bright bar (`I213-3`, `I222-2`, `C121-2`, `C123-2`, `C123-4`, `C023-2`); strips named `window_band`
-  in 3–4 m runs (as spec v5 asks) light window by window.
-- Smoke stacks on high-tech industry, which gives no smoke, read as chimneys: `I023-3`, `I023-4`,
-  `I123-4`, `I222-2`, `I223-3`, `I223-4`.
-- tree_spots 0–1.5 m from the back wall (the spec says 3 m), so the trees stand in the wall: `C021-2`
-  (touching it), `C122-2`, `C123-2`, `C121-2`; `C203-5`'s stands in front of its door.
+- `C121-2`'s roof light glows at night as one bar (the other designs noted for it were remade).
+- tree_spots 0–1.5 m from the back wall, so the trees stand in the wall: `C122-2`, `C121-2`; `C203-5`'s
+  stands in front of its door.
 - Roof gardens in the roof material take the roof's colour and read as plain roofs: `R221-2`,
   `R222-2`, `R223-4`, `C202-4` (a garden in `grass` stays green).
 - The same on every copy (not a repainted role): `C103-4`'s strong blue bands, `C202-4`'s second sign.
@@ -259,11 +333,11 @@ Smaller notes:
 - `C213-4`: window frames 3 cm off the brick wall shimmer as white speckles at a distance.
 - `C021-3` (the extra design): its shop glass is small and 1.6 m back behind the arcade, so it reads
   as a loggia more than a shop.
+- `R122-3` and nine others had the inside of a parapet ring wound inside out; the game turns those
+  faces round (DECISIONS, "Model batch 4"; `docs/screenshots/batch4-parapet.jpg`).
 
-From batch 3 (still open): worth a remake `C101-2` (the shops barely read: dark panels behind columns,
-signs two floors up), `C103-3` and `I113-3` (colours the game can't repaint, or repaints away from the
-prompt's), `I103-3` (sparse yard, tall stack); smaller notes on `R213-3`, `R213-4`, `R213-5`, `R203-3`,
-`C213-3`, `R212-3`, `R112-3`, `C113-3`, `I201-2`, and bare backs on `C003-3`, `C101-2`, `C103-3` (in git,
+From batch 3 (still open; its remake list is done): smaller notes on `R213-3`, `R213-4`, `R213-5`,
+`R203-3`, `C213-3`, `R212-3`, `R112-3`, `C113-3`, `I201-2`, and a bare back on `C003-3` (in git,
 `PROGRESS.md` at 3fdc560).
 
 From batch 2 (still open; the window bands of `R201-2`, `R213-2` and `C213-2` are now lit in runs by
@@ -518,25 +592,55 @@ loads the demo town through the load screen: 1,308 touching pairs, none alike, 1
 buildings hand-made, 0.98M triangles from the whole-city view; the M25 spec's town is 57 of 57
 hand-made.
 
-## Start-up (model batch 4; MacBook Pro M5, Chrome)
+**Model batch 5** (every lot two designs), in runs alternating with the build before the batch
+(`main` at eed0eea): after / before, average ms of two runs each (`bench-results/batch5/frames-*.log`,
+`frames-summary.txt`):
+
+| | whole city | city | street | whole city, night | city, night | street, night | heavy |
+|---|---|---|---|---|---|---|---|
+| High | 8.3 / 9.2 | 12.1 / 12.8 | 8.9 / 9.3 | 10.6 / 10.6 | 13.0 / 13.6 | 9.3 / 9.6 | **10.7 / 11.0** |
+| Medium | 5.1 / 5.0 | 4.4 / 4.5 | 3.5 / 3.6 | 5.4 / 5.4 | 5.0 / 5.0 | 3.6 / 3.7 | 5.2 / 5.1 |
+| Low | 3.3 / 3.2 | 2.8 / 2.7 | 1.9 / 1.9 | 3.0 / 3.0 | 2.8 / 2.8 | 1.9 / 1.9 | 3.1 / 3.0 |
+
+The heaviest view at High is 10.7 ms (10.35 and 11.06 in the two runs, against 10.99 and 10.92 for
+the build before; 12 allowed). Every view is within run-to-run noise: the bench city's only batch-5
+designs are 31 buildings wearing remakes (`I213-3`, `I113-3`, `C103-3`), with 0.9 % more triangles
+drawn near, and the same draw calls. (The draw calls Medium reports at night swing between about 105
+and 210 from run to run in either build, by whether the frame sampled redraws the close shadows.) The
+batch's designs carry about a third more triangles than batch 4's, but its new types (rich commerce
+and high-tech) grow only in rich or educated cities: in the year-20 city the batch adds 2.6 % to the
+triangles drawn near. No sim change, so `bench` and `balance` aren't rerun. Checks: typecheck, lint,
+398 unit tests and all 42 e2e specs: 41 in the full run (29.2 min), and M16, which failed there
+once because the car its photo mode followed stood in a queue for the four game minutes the spec
+waits (a timing flake under load: it passes alone, twice; `bench-results/batch5/e2e*.log`). The M28
+spec loads the demo town through the load screen: 1,308 touching pairs, none alike, 1,001 of 1,001
+hand-made, 1.00M triangles from the whole-city view (0.98M before); the M25 spec's town is 57 of 57
+hand-made, its tenement measured as before.
+
+## Start-up (model batches 4 and 5; MacBook Pro M5, Chrome)
 `node scripts/dev/startup.mjs --dist dist-test,dist-before` serves each build gzipped as GitHub Pages
 does and opens it in a fresh Chrome profile on a throttled connection; time from navigation until
 the main menu is up over the demo town (a new city in brackets), average of three runs, in seconds
-(`bench-results/batch4/startup*.log`). The models file over the wire: 1,287 KB before batch 4; 1,991
-KB with it, stored as plain numbers; 443 KB stored as differences (DECISIONS, "Model batch 4").
+(`bench-results/batch4/startup*.log`, `bench-results/batch5/startup*.log`). The models file over the
+wire: 1,287 KB before batch 4; 1,991 KB with it, stored as plain numbers; 443 KB stored as differences
+(DECISIONS, "Model batch 4"); 514 KB with batch 5.
 
-| Connection | Before batch 4 | Batch 4, plain numbers | Batch 4, as shipped |
-|---|---|---|---|
-| unthrottled | 0.70 (0.50) | 0.72 (0.50) | 0.76 (0.51) |
-| 20 Mbit/s | 1.48 (1.22) | 1.77 (1.50) | **1.11 (0.85)** |
-| 10 Mbit/s | 2.39 (2.02) | 2.96 (2.60) | **1.68 (1.31)** |
-| 5 Mbit/s | 4.15 (3.57) | 5.31 (4.72) | **2.75 (2.19)** |
-| 3 Mbit/s | 6.37 (5.49) | 7.65, no models (7.42) | **4.07 (3.19)** |
+| Connection | Before batch 4 | Batch 4, plain numbers | Batch 4, as shipped | Batch 5 (batch 4 alongside) |
+|---|---|---|---|---|
+| unthrottled | 0.70 (0.50) | 0.72 (0.50) | 0.76 (0.51) | 0.79 (0.50) / 0.76 (0.50) |
+| 20 Mbit/s | 1.48 (1.22) | 1.77 (1.50) | **1.11 (0.85)** | 1.16 (0.89) / 1.11 (0.86) |
+| 10 Mbit/s | 2.39 (2.02) | 2.96 (2.60) | **1.68 (1.31)** | 1.74 (1.40) / 1.69 (1.33) |
+| 5 Mbit/s | 4.15 (3.57) | 5.31 (4.72) | **2.75 (2.19)** | 2.90 (2.32) / 2.75 (2.21) |
+| 3 Mbit/s | 6.37 (5.49) | 7.65, no models (7.42) | **4.07 (3.19)** | 4.26 (3.41) / 4.09 (3.20) |
 
 At 3 Mbit/s the batch as plain numbers missed `loadModels`' 6 s deadline on the menu, and every
 building was generated. As shipped, the menu gets its models down to 1.5 Mbit/s (7.4 s), and a new
 city down to 1 Mbit/s (8.3 s). Unthrottled, the 0.06 s on the menu is the probe's server gzipping
 the file on its first request (a new city, with it gzipped already, is even); decoding takes 4–8 ms.
+Batch 5 opens 0.05 s later at 20 Mbit/s and 0.18 s at 3 (the batch-4 build measured alongside, in
+turn, run by run); the menu still gets its models down to 1.5 Mbit/s (they arrive 4.9 s into the 6 s,
+against 4.5 s before) and a new city down to 1 Mbit/s (5.1 s, against 4.6); at 1 Mbit/s the menu
+misses with either build (`startup-slow.log`).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.

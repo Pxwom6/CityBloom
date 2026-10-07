@@ -237,15 +237,18 @@ reviews are done: `I022-2`, `I023-3`, `I222-2`, `I023-4`, `I021-2`, `I121-3`, `I
 `I203-3`, `I213-3`, `C021-2`, `C023-2`, `C123-2`, `C123-4` (batch 4) and `C101-2`, `C103-3`, `I113-3`,
 `I103-3` (batch 3); and `I223-3` has lost its smoke stack.
 
-Worth a small fix in the file:
-- `C101-2` and `C103-3`: brick that stays brick under a light-grey roof (#c5c9cc) the game keeps, so
-  every copy looks the same apart from its signs, where their first versions and the designs beside
-  them vary walls and roofs. A slate or terracotta roof and a pastel `wall_alt` would let the game vary
-  them. (`C103-3`'s chequer now repaints, which was the remake's point, but as brick on every copy.)
-- `I213-3`: its halls are 9–12 m where the prompt asks for 23; the 21 m top is two slim 20 m tanks,
-  which from the street read as two white chimneys on a building that gives no smoke.
-- `I223-3` (batch 4's design, touched up in batch 5): its two courtyard tree_spots stand 1 m from the
-  walls, so the trees stand under the skybridge.
+Fixed in the files after the review (branch `models-5-fixes`; 16 files, all still pass the check):
+- `C101-2` and `C103-3` were brick under a light-grey roof the game keeps, so every copy looked the
+  same apart from its signs. Both roofs are slate now, which the game repaints per copy; `C101-2`'s
+  balcony parapets and `C103-3`'s chequer (brick and a pastel, the pastel from the home walls) vary
+  per copy too.
+- The other four commercial designs that kept a grey roof (`C022-2`, `C023-2`, `C122-3`, `C223-3`)
+  have slate roofs as well, so no commercial design keeps one roof colour on every copy.
+- `I213-3`'s halls were 9–12 m where the prompt asks for 23, and its 21 m top was two slim 20 m tanks
+  that read as chimneys. Its main hall is a 21 m high bay now (the U's other halls 10.5 and 13.3 m),
+  and the tanks are fat and domed (4 m across, 14.6 m).
+- `I223-3` (batch 4's design, touched up in batch 5): its two courtyard tree_spots stood 1 m from the
+  walls, under the skybridge; they stand at the courtyard's street side now.
 
 Smaller notes:
 - High-tech fronts that lean towards offices or labs, with the industry behind: `I122-2`, `I122-3` (a
@@ -258,19 +261,21 @@ Smaller notes:
   them), `I223-4`'s covered walkways (hidden between the pavilions), `I103-3`'s ore heap and conveyor
   (behind the hall; from the street the foundry reads by its furnace), `I221-2`'s glazed vault ends
   (they face the neighbours).
-- Trees in front of entrances: the tree_spots of `I021-2`, `I022-2`, `I022-3` and `I023-2` stand in front
-  of the glazed front or a door, so the season's tree hides part of it (a rougher count adds `I122-2`,
-  `I122-3`, `I122-4`, `I123-5`, `C222-3`).
+- Trees in front of entrances: the tree_spots of `I021-2`, `I022-2`, `I022-3` and `I023-2` stood in front
+  of the glazed front or a door, so the season's tree hid part of it (fixed: moved to the lot's
+  corners or out towards the street, and `I021-2`'s front one taken out; a rougher count adds `I122-2`,
+  `I122-3`, `I122-4`, `I123-5`, `C222-3`, still as they were).
 - Over the prompt's height by rooftop features the prompts ask for: `C123-4` 31 m (a 22 m store and
   its cupola), `C123-2` 25 m (the cafe pavilion), `C123-3` 24.5 m, `C103-3` 24.4 m (a lift housing),
   `C022-3` 6.7 m (its mansard).
-- The rich towers `C222-3` and `C223-3` have their canopies in the awning material, so the game paints
-  them purple, orange or red: they read as shop awnings rather than stone porches (`C223-5`'s is trim).
-- Copies alike: `C122-3` and `C123-3` have next to nothing the game repaints (white walls, no roof or a
-  kept one), so a street of either changes only its canopy and sign; high-tech accents and doors
+- The rich towers `C222-3` and `C223-3` had their canopies in the awning material, so the game painted
+  them purple, orange or red and they read as shop awnings (fixed: trim, like `C223-5`'s).
+- Copies alike: `C123-3` has next to nothing the game repaints (white walls, no roof), so a street of
+  it changes only its canopy and sign (`C122-3` was the same; its roof repaints now); high-tech accents and doors
   never repaint, so copies of one high-tech design differ only by mirroring and a shade of white.
-- Thin, busy parts: `I222-3`'s purple louvres (0.26 m slats) break up into dotted stripes at row
-  distance; roller-door slats of 0.1 m (`I021-2`, `I121-2`) and `I113-3`'s 0.12 m mullions.
+- Thin, busy parts (fixed): `I222-3`'s purple louvres (0.26 m slats) broke up into dotted stripes at
+  row distance, and are fewer and 0.44 m now; the roller-door slats of 0.1 m (`I021-2`, `I121-2`) are
+  gone; `I113-3`'s 0.12 m mullions are one 0.26 m mullion and a 0.24 m transom per run.
 - `I203-3`'s five-storey brick tower at the front corner echoes `I203-2`'s; its gantry, open shed and
   shredders tell them apart.
 
@@ -297,10 +302,10 @@ pictures and against `npx tsx scripts/dev/batchstats.ts`, new; `bench-results/ba
   where the first batch's nine share a dish, solar panels and one cyan), and designed rooftops on the
   rich shops and offices (pavilions, a cupola, terraces, roof gardens), where the Claude Design ones
   show slabs with air units: it matters from the game's high camera.
-- Repainting is weaker: 24 of 38 keep a colour on every copy, every one a light-grey flat roof (0 of
+- Repainting was weaker: 24 of 38 kept a colour on every copy, every one a light-grey flat roof (0 of
   102 in batches 3 and 4). On high-tech that is what spec v6 asks for and it reads well (the first
-  batch's nine high-tech designs keep the same grey); on the six commercial designs it costs variety,
-  and badly only on `C101-2` and `C103-3` (above).
+  batch's nine high-tech designs keep the same grey); on the six commercial designs it cost variety,
+  so their roofs are slate now (above): 18 of 38 keep one, all high-tech apart from `I213-3`'s office.
 - Finer detail than the spec's 0.3 m: 16 of 38 have bars under 0.2 m (mullions, seams, bay lines,
   slats; none in batches 1, 3 and 4), so they look a little busier and less toy-like than their
   Claude Design neighbours up close. Their far

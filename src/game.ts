@@ -673,10 +673,11 @@ export class Game {
     this.notify();
     try {
       const s = await this.client.save();
-      await writeSlot(slot, s, label);
+      const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (slot !== 'auto') this.slot = slot;
-      if (!quiet) this.toast(`Saved “${s.meta.cityName}”`, 'ok');
+      // The slot's name, as the load list shows it, not the city's (P22).
+      if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;
     } catch (e) {
       this.toast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'bad');

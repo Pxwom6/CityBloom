@@ -160,6 +160,12 @@ test.describe('P6: narrow windows keep the toolbar and the top bar', () => {
       );
       expect(badge, 'the scenario starts with advice, so the Advisors badge widens the bar').not.toBe('none');
       await expectBarsReachable(page, true);
+      // At the common laptop width the scenario bar needs no More menu: every button is in the bar
+      // (other specs click Region and City there), because the bar closes its gaps up instead.
+      if (w >= 1280) {
+        await expect(page.getByTestId('open-more')).toBeHidden();
+        for (const id of TOP_BUTTONS) await expect(page.getByTestId(id)).toBeVisible();
+      }
       // The goals button names the city and shows the goals: legible whole down to 1024, and at 768
       // cut short with an ellipsis, never squeezed to nothing.
       const goals = await page.evaluate(() => {

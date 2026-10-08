@@ -1394,9 +1394,15 @@ body {
 }
 
 /*
- * The top bar folds its lesser buttons into a More menu while the bars are compact, and in a scenario
- * (its Goals button is wide) while they are tight too (data-bars, see src/ui/layout.ts).
+ * A scenario's Goals button (the name over its progress) is the widest item in the bar: up to 90 rem
+ * (data-bars='tight') a scenario's bar uses the tight gaps of the narrower sizes.
  */
+#ui[data-bars='tight'] .topbar.scenario {
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+/* The top bar folds its lesser buttons into a More menu while the bars are compact (data-bars). */
 .topbar-more,
 .topbar-panels {
   display: contents;
@@ -1404,18 +1410,18 @@ body {
 .topbar .btn.more-toggle {
   display: none;
 }
-:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-more {
+#ui[data-bars='compact'] .topbar-more {
   display: flex;
   position: relative;
   flex-shrink: 0;
 }
-:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .more-toggle {
+#ui[data-bars='compact'] .more-toggle {
   display: inline-grid;
   position: relative;
   font-size: var(--font-size-lg);
   line-height: 1;
 }
-:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-panels {
+#ui[data-bars='compact'] .topbar-panels {
   display: none;
   position: absolute;
   top: calc(100% + var(--space-3));
@@ -1425,12 +1431,11 @@ body {
   padding: var(--space-2);
   z-index: 5;
 }
-:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-panels.open {
+#ui[data-bars='compact'] .topbar-panels.open {
   display: flex;
 }
 /* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
-:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario)
-  .more-toggle:has(~ .topbar-panels .badge)::after {
+#ui[data-bars='compact'] .more-toggle:has(~ .topbar-panels .badge)::after {
   content: '';
   position: absolute;
   top: 3px;
@@ -1441,7 +1446,7 @@ body {
   background: var(--color-negative);
 }
 /* Over the panels the top bar's own pop-ups sit under (z-hud against z-panel). */
-#ui:is([data-bars='compact'], [data-bars='tight']) .topbar:has(.topbar-panels.open) {
+#ui[data-bars='compact'] .topbar:has(.topbar-panels.open) {
   z-index: var(--z-modal);
 }
 

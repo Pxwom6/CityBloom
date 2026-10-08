@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Thought } from '../sim/systems/thoughts';
 import { useGameUpdates } from './hooks';
 import { IconChat } from './icons';
@@ -21,6 +21,29 @@ export function ThoughtsFeed() {
       clearInterval(r);
     };
   }, [game]);
+  // A press on the feed that turns into a drag pans the map, as it would anywhere else on it.
+  const stopWatching = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopWatching.current?.(), []);
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    stopWatching.current?.();
+    const { clientX: sx, clientY: sy, pointerId } = e;
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+      stopWatching.current = null;
+    };
+    const move = (m: PointerEvent) => {
+      if (Math.hypot(m.clientX - sx, m.clientY - sy) < 6) return;
+      stop();
+      game.renderer.controller.beginDrag('pan', sx, sy, pointerId);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    stopWatching.current = stop;
+  };
   // Side panels and the data-map legend sit where the feed does, and while building the map needs
   // every pixel: the feed steps aside for all of them.
   if (!list.length || game.world.stats.population === 0 || game.panel) return null;
@@ -29,7 +52,7 @@ export function ThoughtsFeed() {
     (x, i, a) => a.findIndex((y) => y.id === x.id) === i,
   );
   return (
-    <div class="thoughts panel" data-testid="thoughts">
+    <div class="thoughts panel" data-testid="thoughts" onPointerDown={onPointerDown}>
       {items.map((t) => (
         <button
           key={`${t.id}:${t.text}`}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openGame, shot, watchErrors } from './helpers';
+import { buildTownViaApi, openGame, shot, watchErrors } from './helpers';
 import { frames, openScenario, settings } from './ui';
 
 /**
@@ -380,4 +380,89 @@ test('P13: a tooltip over an end button slides in, one over a middle button stay
   const dirt = await tipAt('road-dirt');
   expect(dirt.left, 'dirt road: inside the window').toBeGreaterThanOrEqual(7.5);
   await shot(page, 'fix-layout-p13-road-dirt');
+});
+
+test.describe('P14: the thought feed leaves the data-map menu and the map alone', () => {
+  /** A grown town, so residents have something to say. */
+  async function townWithThoughts(page: Page): Promise<void> {
+    await openGame(page);
+    await buildTownViaApi(page);
+    await page.evaluate(() => window.__game!.advance(1440 * 2));
+    await expect(page.getByTestId('thoughts')).toBeVisible();
+  }
+
+  for (const { w, h } of [
+    { w: 1024, h: 768 },
+    { w: 1280, h: 800 },
+  ]) {
+    test(`every data-map menu item can be clicked with the feed showing at ${w}x${h}`, async ({ page }) => {
+      test.setTimeout(300_000);
+      const errs = watchErrors(page);
+      await page.setViewportSize({ width: w, height: h });
+      await townWithThoughts(page);
+      const thoughts = page.getByTestId('thoughts');
+
+      // Every item of the menu, as the player sees them.
+      await page.getByTestId('tool-maps').click();
+      const ids = await page
+        .getByTestId('maps-menu')
+        .locator('.map-item[data-testid]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')!));
+      expect(ids.length, 'the menu lists the data maps').toBeGreaterThan(15);
+      await shot(page, `fix-layout-p14-menu-${w}x${h}`);
+      await page.getByTestId('tool-maps').click();
+
+      for (const id of ids) {
+        await expect(thoughts, `the feed is showing before ${id}`).toBeVisible();
+        await page.getByTestId('tool-maps').click();
+        // The click is the test: Playwright refuses it while something else (the feed) is over the item.
+        await page.getByTestId(id).click({ timeout: 5000 });
+        if (id === ids[0]) await expect(thoughts, 'the feed steps aside for the menu').toBeHidden();
+        await expect(page.getByTestId('map-legend')).toBeVisible();
+        await page.getByTestId('map-legend').getByRole('button').click();
+        await expect(page.getByTestId('map-legend')).toBeHidden();
+      }
+      errs.check();
+    });
+  }
+
+  test('the feed steps aside for the disasters menu too (820x1180)', async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await townWithThoughts(page);
+    await page.getByTestId('tool-disasters').click();
+    await expect(page.getByTestId('thoughts')).toBeHidden();
+    await shot(page, 'fix-layout-p14-disasters-820x1180');
+    await page.getByTestId('disaster-earthquake').click({ timeout: 5000 });
+    await page.getByTestId('tool-select').click();
+    await expect(page.getByTestId('thoughts')).toBeVisible();
+  });
+
+  test('a drag that starts on a thought pans the map; a click on one still opens the building', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const errs = watchErrors(page);
+    await townWithThoughts(page);
+    const card = page.getByTestId('thoughts').locator('.thought').first();
+    const box = (await card.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+
+    const before = await page.evaluate(() => window.__game!.getCamera());
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 200, cy - 80, { steps: 10 });
+    await page.mouse.up();
+    await frames(page, 4);
+    const after = await page.evaluate(() => window.__game!.getCamera());
+    expect(Math.hypot(after.x - before.x, after.z - before.z), 'the camera moved').toBeGreaterThan(20);
+    await expect(page.getByTestId('inspector'), 'no building was picked').toBeHidden();
+    await expect(page.getByTestId('thoughts')).toBeVisible();
+    await shot(page, 'fix-layout-p14-drag');
+
+    // A plain click is not a drag: it flies to the resident's building and opens it (M8).
+    await page.getByTestId('thoughts').locator('.thought').first().click();
+    await expect(page.getByTestId('inspector')).toBeVisible();
+    errs.check();
+  });
 });

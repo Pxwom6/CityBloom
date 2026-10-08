@@ -2078,6 +2078,10 @@ body {
   gap: 2px;
   z-index: var(--z-panel);
 }
+/* The data-map and disaster menus open over the same corner: the feed steps aside while one is open. */
+.toolbar-wrap:has(.maps-menu) ~ .thoughts {
+  display: none;
+}
 .thought {
   display: grid;
   grid-template-columns: 16px 1fr;

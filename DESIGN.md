@@ -733,7 +733,9 @@ Since the playthrough fixes (P5, `src/sim/world/roundabout.ts`) each approach is
 bends to the next junction, dead end or ring (14 m past the ring's outer edge to a junction or ring,
 6 m to a bend or a dead end); without a size the site gets the usual ring or the largest smaller one
 that fits, down to a mini roundabout; a bend inside the ring is taken in by rebuilding the road
-into it straight; and a refusal names the short road (`info.short`).
+into it straight (refused when two would touch the same road, a road that loops back into the
+junction: `straighteningsOverlap`); and a refusal names the short road (`info.short`). A ring that
+takes buildings asks first, as roads do.
 Costs are 40 $/m of ring.
 
 **The city highway** (`motorway`, "City highway": 6,000/h, 90 km/h, 5 % grade, unlocks at 10,000) and
@@ -951,8 +953,9 @@ per-segment changes (`FrameDiff.roadSnow`).
 what the weather is doing (`src/ui/weather.ts`); Settings set seasons and intensity for this city
 (`setWeather`, refused while a scenario plays; scenarios set theirs at start) and new ones; road
 inspectors show snow, depot inspectors their ploughs; advisors warn of winter power headroom
-(demand at the climate's coldest month), snow no plough clears, a dry spell on tight water and a
-high river.
+(demand on the coldest day a winter brings, the coldest month's mean in its deepest cold spell,
+against the city's own plants with solar at its snowy midwinter share and wind without a storm:
+`coldestDay`, `WINTER_SKY`), snow no plough clears, a dry spell on tight water and a high river.
 
 The done-criterion tests: `tests/winter.test.ts` (the alpine test town uses 26 % more power per
 resident in January than July, snow lifts its commute 98 → 115 s and a depot brings it back to
@@ -1095,11 +1098,16 @@ A fix round after a full playthrough; `docs/DECISIONS.md` ("Playthrough fixes") 
   of the upgrade itself (`revalidate(box, dryRun)`), put back exactly. A road that would demolish asks
   first (`Game.ask`, `ToolQuestionCard`). Cut-off roads come from `roadIslands`
   (`src/sim/world/islands.ts`), shared by the sim's advisor and the client's icons, traffic map and
-  inspector. A near miss snaps in the client (`SNAP.near`, ends only); the sim still joins only exact
+  inspector; the client works them out once per change to roads or junctions
+  (`ClientWorld.roadsVersion`, not on zone-block updates). A near miss snaps in the client
+  (`SNAP.near`, growing zoomed out to `SNAP.nearMax`, ends only; a free-form end snaps while it's
+  drawn, so the ghost shows it); Alt places an end with no snapping; the sim still joins only exact
   ends.
 - **Street names** are saved on segments (P10, §5).
 - **Tools** (P3, P4, P11, P12): place, stop, bulldoze and disaster tools are `clickOnly` (the manager
-  fires them on a release within `CLICK_SLOP`, so a left-drag pans); the road tool fires anything but
+  fires them on a release within `clickSlop`, 5 px for a mouse and 10 for a finger or pen, so a
+  left-drag pans; a second finger makes a pinch, in which nothing is a click and the tool's
+  `pointerCancel` drops what the press began; the canvas is `touch-action: none`); the road tool fires anything but
   a first press on release; `PlaceTool.armed` and `browse()` open a category without arming a
   building; `RoadTool.abandon()` bumps an epoch that every sim reply checks; the stop tool picks the
   road under the cursor as drawn (`roadUnderCursor`), decks included.

@@ -182,7 +182,20 @@ test('Playthrough fixes: Kestrel Bend through the UI, touching every fixed area 
   await moveTo(page, 216, cz);
   await expect.poll(async () => (await page.evaluate(() => window.__game!.getRing())).ok).toBe(true);
   await shot(page, 'fixes-tour-06-roundabout');
+  // A ring that takes a corner lot asks first, as roads do (PR #14 review, R4).
+  const ringTakes = await page.evaluate(async (cz) => {
+    const g = window.__game!;
+    const r = await g.preview({ type: 'roundabout', node: g.junctionAt(216, cz)!.id });
+    return r.ok ? ((r.info as { demolished?: number[] }).demolished ?? []).length : 0;
+  }, cz);
   await clickAt(page, 216, cz);
+  if (ringTakes) {
+    await expect(page.getByTestId('tool-question')).toContainText(
+      `This roundabout demolishes ${ringTakes} building`,
+    );
+    await shot(page, 'fixes-tour-06-roundabout-asks');
+    await page.getByTestId('tool-question-yes').click();
+  }
   await expect
     .poll(() => page.evaluate((cz) => window.__game!.junctionAt(216, cz)?.roundabout ?? 0, cz))
     .toBeGreaterThan(0);

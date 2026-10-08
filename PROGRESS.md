@@ -164,13 +164,19 @@ clean, 552 unit, scenario and legacy tests, 84 of 84 e2e (M21 needed to say yes 
 DECISIONS), and the three playthrough specs. Reasons for every call are in `docs/DECISIONS.md`,
 "Playthrough fixes".
 
+The PR #14 review's six follow-ups (R1–R6 above) are done on the same branch, each reproduced in a
+test that failed first ("PR #14 review follow-ups" in DECISIONS; balance and frame times under
+"Performance (playthrough fixes)"). Full check after them: typecheck and lint clean, 557 unit,
+scenario and legacy tests, 89 of 89 e2e, and the three playthrough specs (the fixes tour now says
+yes to R4's question: its roundabout takes two corner lots).
+
 ## Next tasks
 1. The owner: merge the `playthrough-fixes` pull request into `main` when happy, which publishes it.
 2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
    buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
-   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it leaned
-   on the old winter false alarms; "Performance (playthrough fixes)"). Easy can stay as it is;
-   Normal and Hard should scale the pressure up.
+   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it
+   builds to the winter warning, which now plans for a cold spell; "Performance (playthrough
+   fixes)"). Easy can stay as it is; Normal and Hard should scale the pressure up.
 3. Ideas above.
 
 ## Models (phase 3)
@@ -712,11 +718,19 @@ misses with either build (`startup-slow.log`).
   change: the new work (road previews, islands, the supply query) runs on a command or a query,
   never in the tick.
 - Frame times on the saved 110k city (`framebench.mjs`, High, 1512×783 at 2×, frame cap off), base
-  and branch alternating, two runs each, average ms: whole city 13.6 / 14.1 against 14.3 / 13.7,
-  city 17.3 / 17.2 against 17.6 / 16.6, street 14.4 / 14.1 against 14.4 / 14.1, heavy 16.9 / 16.8
-  against 14.1 / 13.7 (`bench-results/fixes/`). Within run-to-run noise. Both builds ran slower
-  than the frame-time table above (heavy 10–11 ms then): the machine today, after hours of
-  SwiftShader e2e, not the round.
+  and branch alternating, two runs each, average ms, **base first, then branch**: whole city 13.6 /
+  14.1 against 14.3 / 13.7, city 17.3 / 17.2 against 17.6 / 16.6, street 14.4 / 14.1 against 14.4 /
+  14.1, heavy 16.9 / 16.8 (base) against 14.1 / 13.7 (branch) (`bench-results/fixes/`). Within
+  run-to-run noise. Both builds ran slower than the frame-time table above (heavy 10–11 ms then):
+  the machine that day, after hours of SwiftShader e2e, not the round.
+- **After the PR #14 review follow-ups** (R1–R6): `WINTER=1 balance.ts 20` (each winter's power
+  shortfalls): careful ends year 20 at **65,767 / 73 % / $765k with no winter shortfall** (the PR
+  before R1: 50,377 / 78 % / $1.71M, its third December 181 MW short for 14 hours; `main`: 71,565 /
+  72 % / $1.50M, none); its treasury is lower for the last five years' projects ($2.0M against
+  $1.4M), not power. Greedy and neglectful byte-identical in all three. Frame times after R2 (main
+  first, then branch, alternating, average ms; `bench-results/review/`): heavy 9.6 / 11.2 against
+  9.3 / 9.6, whole city 8.0 / 9.6 against 8.8 / 8.9, city 10.9 / 11.9 against 11.7 / 12.0, street
+  8.5 / 9.1 against 8.9 / 9.2: noise, the heavy view at or under main.
 
 ## Performance (latest: M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).

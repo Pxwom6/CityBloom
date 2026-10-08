@@ -724,11 +724,16 @@ get through at `share` of the rush hour is `base × slowdown(v/c)` plus, over ca
 queue term as a road (`queueSeconds`, 300 s × (1 − c/v)); `base` is 3 s, or 4 s on a roundabout.
 `congestedEdgeCosts` adds the delay of the node each edge arrives at, so commutes, service vehicles
 and routing all see junctions. Nodes where the city highway meets only ramps (merges) and bends are
-free. **Roundabouts** are `RoadNode.roundabout` (the ring's centre-line radius, 12–40 m, by default
+free. **Roundabouts** are `RoadNode.roundabout` (the ring's centre-line radius, 6–40 m, by default
 just enough for its widest road): `roundabout` puts one on a junction, or on a road (split there);
 it needs every approach long enough to meet the ring, no other road or civic building across it
 (zoned buildings are cleared) and room from other roundabouts; roads can join it later from far
 enough out but not cross its ring, and zone cells stay off it. `removeRoundabout` refunds a share.
+Since the playthrough fixes (P5, `src/sim/world/roundabout.ts`) each approach is measured through
+bends to the next junction, dead end or ring (14 m past the ring's outer edge to a junction or ring,
+6 m to a bend or a dead end); without a size the site gets the usual ring or the largest smaller one
+that fits, down to a mini roundabout; a bend inside the ring is taken in by rebuilding the road
+into it straight; and a refusal names the short road (`info.short`).
 Costs are 40 $/m of ring.
 
 **The city highway** (`motorway`, "City highway": 6,000/h, 90 km/h, 5 % grade, unlocks at 10,000) and
@@ -967,7 +972,9 @@ shoppers follow the season.
 **Deals.** `setDeal` signs, changes or ends one contract per neighbour, resource and direction, up to
 what the neighbour offers now. Bought power and water come into `updateUtilities` as a producer at
 the highway's connection node; sold power and water take what the highway's component has left after
-the city's own buildings are served, so a sale never blacks out a home. Garbage deals move garbage
+the city's own buildings are served, less what was bought (P8: bought power and water are never
+resold), so a sale never blacks out a home. The Region panel's supply section comes from the
+on-demand `supply` query (`supplyBalance`; P20), and the winter forecast from `winterOutlook`. Garbage deals move garbage
 hourly: a neighbour that takes it empties the fullest landfills; one that sends it has it burnt or
 recycled where there's room, else buried. Everything is paid monthly (hourly accrual) for what was
 actually delivered, on the 'Bought from / Sold to neighbours' ledger lines.
@@ -1077,6 +1084,27 @@ a leg or spawn where a tram is, and one caught inside a tram's body drives out o
 mild weather all year. Its first winter after loading costs it no heating or cooling; the share
 then ramps from the spring after to full at the next winter, and the grace is dropped. The advisor
 explains it, and a notice on loading says seasons have come.
+
+### 3.27 Playthrough fixes (PLAYTHROUGH-FIXES.md)
+
+A fix round after a full playthrough; `docs/DECISIONS.md` ("Playthrough fixes") has the reasons.
+- **Grading** works in double precision (P7): the last sample can't land past a road's end, so a road
+  joining two others is never planned at height 0.
+- **Road previews** say what a road joins (`info.link`, P1) and what it demolishes (`info.demolished`,
+  P2): a new road's count is `Network.buildingsUnder` plus `splitLosses`; an upgrade's is a trial run
+  of the upgrade itself (`revalidate(box, dryRun)`), put back exactly. A road that would demolish asks
+  first (`Game.ask`, `ToolQuestionCard`). Cut-off roads come from `roadIslands`
+  (`src/sim/world/islands.ts`), shared by the sim's advisor and the client's icons, traffic map and
+  inspector. A near miss snaps in the client (`SNAP.near`, ends only); the sim still joins only exact
+  ends.
+- **Street names** are saved on segments (P10, §5).
+- **Tools** (P3, P4, P11, P12): place, stop, bulldoze and disaster tools are `clickOnly` (the manager
+  fires them on a release within `CLICK_SLOP`, so a left-drag pans); the road tool fires anything but
+  a first press on release; `PlaceTool.armed` and `browse()` open a category without arming a
+  building; `RoadTool.abandon()` bumps an epoch that every sim reply checks; the stop tool picks the
+  road under the cursor as drawn (`roadUnderCursor`), decks included.
+- **Calendar years** (P16, §3.23), the tax tab's `payers` per band (P17), loan terms from `annuity`
+  in `src/data/economy.ts` (P24), tips checked again before they show (`pickTip`, P15).
 
 ## 4. Rendering
 

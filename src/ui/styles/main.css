@@ -1924,6 +1924,8 @@ body {
 }
 .toast.clickable {
   cursor: pointer;
+  /* #ui lets clicks through to the map; a toast with a place takes its own (P23). */
+  pointer-events: auto;
 }
 
 /* Resident thoughts */

@@ -4,6 +4,7 @@ import { POLICY, policyCost, type PolicyId } from '../../data/policies';
 import { ROAD_TYPES } from '../../data/roads';
 import { TRAM } from '../../data/balance';
 import {
+  annuity,
   BANKRUPTCY,
   DEPTS,
   LEDGER_HISTORY_MONTHS,
@@ -306,10 +307,7 @@ export function setFunding(sim: Sim, dept: Dept, pct: number, dryRun: boolean): 
   return ok(0, { info: { funding: v } });
 }
 
-export function annuity(principal: number, annualRate: number, months: number): number {
-  const r = annualRate / 12;
-  return r === 0 ? principal / months : (principal * r) / (1 - Math.pow(1 + r, -months));
-}
+export { annuity };
 
 export function takeLoan(sim: Sim, amount: number, dryRun: boolean): CommandResult {
   const s = sim.state;

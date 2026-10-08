@@ -1474,6 +1474,16 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+.loan-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.loan-terms {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
 
 /* Charts */
 .chart-wrap {

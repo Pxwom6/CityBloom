@@ -48,6 +48,12 @@ export function fundingEffect(f: number): number {
   return f <= 1 ? f : 1 + 0.5 * (f - 1);
 }
 
+/** Monthly payment of a loan repaid in equal instalments (shown on the loan buttons, P24). */
+export function annuity(principal: number, annualRate: number, months: number): number {
+  const r = annualRate / 12;
+  return r === 0 ? principal / months : (principal * r) / (1 - Math.pow(1 + r, -months));
+}
+
 export const LOAN_OPTIONS: {
   amount: number;
   annualRate: number;

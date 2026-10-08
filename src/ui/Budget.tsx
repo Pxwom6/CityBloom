@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'preact/hooks';
-import { BIG_CITY, DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
+import {
+  BIG_CITY,
+  DEPTS,
+  LOAN_OPTIONS,
+  MAX_LOANS,
+  TAX_MAX,
+  annuity,
+  ledgerLabel,
+  type Dept,
+} from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
 import { formatMonth, shortMonthLabel } from '../sim/time';
 import { BarChart, LineChart } from './charts';
@@ -258,16 +267,18 @@ export function BudgetPanel() {
           <div class="loan-options">
             {LOAN_OPTIONS.map((o) => {
               const locked = !game.world.stats.unlockAll && game.world.stats.peak < o.unlockPopulation;
+              // The terms before borrowing (P24): what it costs a month, and in all.
+              const payment = Math.round(annuity(o.amount, o.annualRate, o.months));
               return (
                 <button
                   key={o.amount}
-                  class="btn"
+                  class="btn loan-option"
                   data-testid={`loan-${o.amount}`}
                   disabled={locked || b.loans.length >= MAX_LOANS}
                   title={
                     locked
                       ? `Needs ${o.unlockPopulation.toLocaleString('en-US')} residents`
-                      : `${(o.annualRate * 100).toFixed(1)}% a year over ${o.months} months`
+                      : `${(o.annualRate * 100).toFixed(1)}% a year over ${o.months} months: ${formatMoney(payment)} a month, ${formatMoney(payment * o.months)} in all`
                   }
                   onClick={() =>
                     void game
@@ -279,7 +290,12 @@ export function BudgetPanel() {
                       )
                   }
                 >
-                  {formatMoney(o.amount)} · {(o.annualRate * 100).toFixed(1)}%
+                  <span>
+                    {formatMoney(o.amount)} · {(o.annualRate * 100).toFixed(1)}%
+                  </span>
+                  <span class="loan-terms" data-testid={`loan-terms-${o.amount}`}>
+                    {formatMoney(payment)}/mo × {o.months} · {formatMoney(payment * o.months)} in all
+                  </span>
                 </button>
               );
             })}

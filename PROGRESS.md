@@ -45,7 +45,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [ ] P6 Narrow windows lose the toolbar and top bar
 - [x] P7 Some roads are planned at height 0
 - [x] P8 Bought power is resold at a loss
-- [ ] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
+- [x] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
 - [x] P10 Street names change and repeat
 - [ ] P11 Escape doesn't always leave the road tool
 - [ ] P12 Bus stops are refused on the road (check first)
@@ -54,11 +54,11 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [ ] P15 Tips and thoughts contradict the numbers
 - [ ] P16 Dates read backwards around New Year
 - [ ] P17 Tax bands nobody pays
-- [ ] P18 Purchases made while paused (check first)
+- [x] P18 Purchases made while paused (check first: reproduced as a display lag)
 - [ ] P19 Two road-maintenance lines in the budget
 - [x] P20 The Region panel doesn't show supply and demand
 - [ ] P21 City limits are invisible
-- [ ] P22 The save toast names the city, not the slot
+- [x] P22 The save toast names the city, not the slot
 - [ ] P23 Clickable toasts can't be clicked
 - [ ] P24 Loan terms appear only after borrowing
 - [ ] P25 "No school nearby" beside a primary school

@@ -972,28 +972,37 @@ function garbageVerdict(g: NonNullable<CivicDetails['garbage']>): string {
 function GarbageTrucks({ civicId, g }: { civicId: number; g: NonNullable<CivicDetails['garbage']> }) {
   const game = useGameUpdates(300);
   const m = MODULE.get('garbageTruck')!;
-  const full = g.extraTrucks >= g.maxExtraTrucks;
+  // A purchase shows at once (P18): the count comes from the client's mirror, which a command's own
+  // frame updates before its reply, not from the details polled every 700 ms (and held back far
+  // longer when timers are throttled); the button waits while one is on its way.
+  const [busy, setBusy] = useState(false);
+  const bought = game.world.civics.get(civicId)?.modules.filter((x) => x === m.id).length ?? g.extraTrucks;
+  const full = bought >= g.maxExtraTrucks;
   return (
     <section class="trucks" data-testid="garbage-verdict">
-      <p class="muted">{garbageVerdict(g)}</p>
+      <p class="muted">{garbageVerdict({ ...g, extraTrucks: bought })}</p>
       <div class="module-row">
         <div>
           <strong>Extra trucks</strong>
-          <div class="muted">
-            {g.extraTrucks} of {g.maxExtraTrucks} bought. Each carries {g.truckCapacity} and costs +$
+          <div class="muted" data-testid="garbage-extra">
+            {bought} of {g.maxExtraTrucks} bought. Each carries {g.truckCapacity} and costs +$
             {m.upkeep}/month.
           </div>
         </div>
         <button
           class="btn small"
           data-testid="buy-truck"
-          disabled={full}
-          onClick={() =>
-            void game.dispatch({ type: 'addModule', civic: civicId, module: m.id }).then((r) => {
-              if (r.ok) game.audio?.play('place');
-              else game.toast(r.reason, 'bad');
-            })
-          }
+          disabled={full || busy}
+          onClick={() => {
+            setBusy(true);
+            void game
+              .dispatch({ type: 'addModule', civic: civicId, module: m.id })
+              .then((r) => {
+                if (r.ok) game.audio?.play('place');
+                else game.toast(r.reason, 'bad');
+              })
+              .finally(() => setBusy(false));
+          }}
         >
           {full ? 'All bought' : `Buy a truck $${m.cost.toLocaleString('en-US')}`}
         </button>

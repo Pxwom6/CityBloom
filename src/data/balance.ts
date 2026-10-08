@@ -61,6 +61,9 @@ export const GROWTH = {
   maxLotRise: 3.5,
 };
 
+/** An average commute longer than this (seconds) is long: the transport advisor and the tip agree (P15). */
+export const LONG_COMMUTE = 20 * 60;
+
 export const COMMUTE = {
   /** Longest commute anyone accepts, seconds of travel. */
   maxCommute: 1800,

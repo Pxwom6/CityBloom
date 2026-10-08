@@ -3,7 +3,7 @@ import { CLIMATES, WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
-import { EDUCATION, TRAM } from '../../data/balance';
+import { EDUCATION, LONG_COMMUTE, TRAM } from '../../data/balance';
 import { TICKS_PER_MONTH } from '../time';
 import { railTerminals } from './rail';
 import { railLinkOffered } from '../actions/railLink';
@@ -498,7 +498,7 @@ export function advise(sim: Sim): Advice[] {
     break;
   }
   const commute = sim.avgCommute();
-  if (commute > 20 * 60)
+  if (commute > LONG_COMMUTE)
     out.push({
       advisor: 'transport',
       severity: 1,

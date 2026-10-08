@@ -24,7 +24,7 @@ import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
-import { TIPS, TUTORIAL, type Tip } from './client/tutorial';
+import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -956,13 +956,13 @@ export class Game {
       this.audio?.play('good');
     }
     // Tips wait for the tutorial, and come one at a time.
-    if (this.tip || !this.settings.tips || this.settings.tutorialStep >= 0) return;
-    const seen = new Set(this.settings.seenTips);
-    const tip = TIPS.find((t) => !seen.has(t.id) && t.when(this));
-    if (tip) {
-      this.tip = tip;
+    if (!this.settings.tips || this.settings.tutorialStep >= 0) return;
+    const tip = pickTip(this, this.tip, !!this.screen || !!this.panel, new Set(this.settings.seenTips));
+    if (tip === this.tip) return;
+    this.tip = tip;
+    if (tip && !this.settings.seenTips.includes(tip.id))
       this.updateSettings({ seenTips: [...this.settings.seenTips, tip.id] });
-    }
+    else this.notify();
   }
 
   dismissTip(turnOff = false): void {

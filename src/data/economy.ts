@@ -117,6 +117,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   roads: 'Road construction',
   construction: 'Building construction',
   roadUpkeep: 'Road maintenance',
+  // The roads department's own upkeep is its depots' (P19): "Road maintenance upkeep" read as the line above.
+  'upkeep:roads': 'Public works depots',
   loanInterest: 'Loan interest',
   loanPrincipal: 'Loan repayments',
   policies: 'Policies',

@@ -152,6 +152,8 @@ export interface TestApi {
   }[];
   /** Client (CSS pixel) coordinates of a world point on the ground. */
   worldToScreen(x: number, z: number): { x: number; y: number };
+  /** Client coordinates of the road surface at a point on a road (its deck on a bridge, P12). */
+  roadToScreen(x: number, z: number): { x: number; y: number };
   /**
    * Earthworks as the client sees them (M13): samples changed from the generated terrain, the box
    * around them, the biggest cut and fill, and the terrain version.
@@ -652,6 +654,14 @@ export function installTestApi(game: Game): TestApi {
       })),
     worldToScreen: (x, z) => {
       const v = new Vector3(x, Math.max(0, game.world.heightAt(x, z)), z).project(game.renderer.camera);
+      const rect = game.renderer.canvas.getBoundingClientRect();
+      return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+    },
+    roadToScreen: (x, z) => {
+      const w = game.world;
+      const hit = w.net.nearestSegment({ x, z }, 12);
+      const y = hit ? w.roadHeight(hit.seg, hit.s, x, z) : Math.max(0, w.heightAt(x, z));
+      const v = new Vector3(x, y, z).project(game.renderer.camera);
       const rect = game.renderer.canvas.getBoundingClientRect();
       return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
     },

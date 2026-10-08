@@ -48,7 +48,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [x] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
 - [x] P10 Street names change and repeat
 - [x] P11 Escape doesn't always leave the road tool
-- [ ] P12 Bus stops are refused on the road (check first)
+- [x] P12 Bus stops are refused on the road (check first: reproduced on bridges)
 - [ ] P13 Tooltips run off the screen
 - [ ] P14 The citizen-thought feed covers the data-map menu
 - [ ] P15 Tips and thoughts contradict the numbers

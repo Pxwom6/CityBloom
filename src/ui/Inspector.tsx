@@ -517,7 +517,9 @@ const NEEDS: [RegExp, string][] = [
   [/no fire station/i, 'A fire station within reach'],
   [/no police/i, 'A police station within reach'],
   [/no health care/i, 'A clinic or hospital within reach'],
-  [/no school/i, 'School seats nearby'],
+  [/primary school/i, 'A primary school with free places within reach'],
+  [/high school/i, 'A high school with free places within reach'],
+  [/university/i, 'A university with free places within reach'],
   [/crime/i, 'Police patrols to bring crime down'],
   [/without jobs/i, 'Jobs: zone commercial or industry'],
   [/long commute/i, 'Jobs closer to home, or faster roads'],
@@ -1163,7 +1165,7 @@ function BuildingInspector({ id }: { id: number | null }) {
             <dd class={d.sick > 0 && d.treated < 0.5 ? 'neg' : ''} data-testid="inspector-health">
               {d.sick === 0 ? 'Everyone is well' : `${d.sick} sick · ${Math.round(d.treated * 100)}% in care`}
             </dd>
-            <dt>Schooling</dt>
+            <dt>Education level</dt>
             <dd>{EDU_NAMES[Math.min(3, Math.floor(d.edu + 0.25))]}</dd>
           </>
         )}

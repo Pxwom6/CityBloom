@@ -148,3 +148,13 @@ export async function pauseMenu(page: Page): Promise<void> {
   }
   await expect(page.getByTestId('pause-settings')).toBeVisible();
 }
+
+/**
+ * A road or upgrade that would demolish buildings asks first (P2). A spec that means to build it
+ * says yes: after a click, wait for the question or for `done` (the road built), and answer yes.
+ */
+export async function yesIfAsked(page: Page, done: () => Promise<boolean>): Promise<void> {
+  const q = page.getByTestId('tool-question');
+  await expect.poll(async () => (await q.isVisible()) || (await done()), { timeout: 20_000 }).toBe(true);
+  if (await q.isVisible()) await page.getByTestId('tool-question-yes').click();
+}

@@ -167,7 +167,24 @@ export function advise(sim: Sim): Advice[] {
   let utilOk = true;
   for (const [u, fix, lacking] of util) {
     const without = list.filter(lacking);
-    if (!without.length) continue;
+    if (!without.length) {
+      // P15 (c): residents grumble from the first sliver of a shortfall (the mood factor appears below
+      // full supply, happiness.ts), so a building that gets only part of its share is named too.
+      const part = list.filter((b) => b[u] < 0.999);
+      if (part.length) {
+        utilOk = false;
+        const one = part.length === 1;
+        out.push({
+          advisor: 'utilities',
+          severity: 1,
+          title: `${plural(part.length, 'building')} short of ${u}`,
+          text: `${one ? 'It gets' : 'They get'} only part of the ${u} needed. Build ${fix} or connect ${one ? 'it' : 'them'} to one by road.`,
+          at: centre(part.slice(0, 20)),
+          map: u,
+        });
+      }
+      continue;
+    }
     utilOk = false;
     const share = without.length / Math.max(1, list.length);
     out.push({

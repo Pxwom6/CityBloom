@@ -11,7 +11,8 @@ export const TICKS_PER_YEAR = TICKS_PER_MONTH * MONTHS_PER_YEAR;
 export const START_HOUR = 7;
 /**
  * Calendar month a city is founded in (M22): March, so a new city's first season is spring and
- * winter comes once it can afford ploughs. Year 1 runs from March to February.
+ * winter comes once it can afford ploughs. Years are calendar years (P16): Year 1 runs from March
+ * to December and Year 2 starts in January. Only labels show the year; the sim counts months.
  */
 export const START_MONTH = 2;
 export const START_TICK_OFFSET = START_HOUR * TICKS_PER_HOUR;
@@ -51,7 +52,7 @@ export function dateOf(tick: number): GameDate {
   const totalMonths = Math.floor(t / TICKS_PER_MONTH);
   const inDay = t - totalMonths * TICKS_PER_MONTH;
   return {
-    year: Math.floor(totalMonths / MONTHS_PER_YEAR) + 1,
+    year: calendarYear(totalMonths),
     month: calendarMonth(totalMonths),
     hour: Math.floor(inDay / TICKS_PER_HOUR),
     minute: inDay % TICKS_PER_HOUR,
@@ -65,9 +66,21 @@ export function calendarMonth(k: number): number {
   return (((k + START_MONTH) % MONTHS_PER_YEAR) + MONTHS_PER_YEAR) % MONTHS_PER_YEAR;
 }
 
-/** "Mar, Year 1" for the `k`th month since the city was founded. */
+/** Calendar year (1 = the founding year) of the `k`th month since the city was founded (P16). */
+export function calendarYear(k: number): number {
+  return Math.floor((k + START_MONTH) / MONTHS_PER_YEAR) + 1;
+}
+
+/** "Mar, Year 1" for the `k`th month since the city was founded (fractional months round down). */
 export function monthLabel(k: number): string {
-  return `${MONTH_NAMES[calendarMonth(k)]}, Year ${Math.floor(k / MONTHS_PER_YEAR) + 1}`;
+  const m = Math.max(0, Math.floor(k));
+  return `${MONTH_NAMES[calendarMonth(m)]}, Year ${calendarYear(m)}`;
+}
+
+/** "Mar Y1": the short form, for chart axes. */
+export function shortMonthLabel(k: number): string {
+  const m = Math.max(0, Math.floor(k));
+  return `${MONTH_NAMES[calendarMonth(m)]} Y${calendarYear(m)}`;
 }
 
 /** Time of day in hours [0, 24) for a possibly fractional tick. */

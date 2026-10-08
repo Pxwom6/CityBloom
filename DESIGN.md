@@ -900,9 +900,11 @@ land value there, with the rest unchanged. The Market Town scenario puts the ban
 ### 3.23 Seasons and weather (M22)
 
 **Calendar.** One day/night cycle is a month, so a season is three months: Dec–Feb winter, Mar–May
-spring and so on. `START_MONTH` (2) makes a new city start in March; Year 1 runs March to February
-(`calendarMonth(k)` for labels). Only display code reads the calendar month; elections and the
-chronicle count months since founding.
+spring and so on. `START_MONTH` (2) makes a new city start in March. Years are calendar years
+(playthrough fix P16): Year 1 runs from March to December and Year 2 starts in January
+(`calendarMonth(k)` and `calendarYear(k)`; every label goes through `monthLabel`, `shortMonthLabel`,
+`formatMonth` or `formatDate`, so lists and charts read in time order across New Year). Only display
+code reads the calendar month or year; elections and the chronicle count months since founding.
 
 **Climates** (`src/data/climate.ts`). Each map preset has one (`PRESET_CLIMATE`: river temperate,
 coast maritime, lakes continental, highlands alpine): monthly mean temperatures, a day–night swing,

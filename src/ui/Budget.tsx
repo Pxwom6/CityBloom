@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { BIG_CITY, DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
-import { calendarMonth, formatMonth, MONTH_NAMES } from '../sim/time';
+import { formatMonth, shortMonthLabel } from '../sim/time';
 import { BarChart, LineChart } from './charts';
 import { formatMoney, useGameUpdates } from './hooks';
 
@@ -15,10 +15,6 @@ const TABS: { id: Tab; name: string }[] = [
 ];
 const WEALTH = ['Low', 'Medium', 'High'];
 const TIERS = ['Heavy', 'Manufacturing', 'High-tech'];
-
-function monthLabel(m: number): string {
-  return `${MONTH_NAMES[calendarMonth(m)]} Y${Math.floor(m / 12) + 1}`;
-}
 
 function Lines({ rows, title }: { rows: [string, number, number | undefined][]; title: string }) {
   const total = rows.reduce((s, r) => s + r[1], 0);
@@ -286,13 +282,13 @@ export function BudgetPanel() {
           <h3>Treasury at month end</h3>
           <LineChart
             title="Treasury at the end of each month"
-            points={b.history.map((h) => ({ label: monthLabel(h.month), value: h.treasury }))}
+            points={b.history.map((h) => ({ label: shortMonthLabel(h.month), value: h.treasury }))}
           />
           <h3>Net income per month</h3>
           <BarChart
             title="Net income per month"
             points={b.history.map((h) => ({
-              label: monthLabel(h.month),
+              label: shortMonthLabel(h.month),
               value: Object.values(h.lines).reduce((s, v) => s + v, 0),
             }))}
           />

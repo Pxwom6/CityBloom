@@ -1,8 +1,9 @@
 # PROGRESS
 
-Phase 3 (graphics, SPEC-3.md) and model batches 3 and 4 are merged into `main`, which deploys the
-live site at https://pxwom6.github.io/CityBloom/. Model batch 5, the last, is on the `models-5`
-branch, in a pull request into `main` for the owner to merge.
+Phase 3 (graphics, SPEC-3.md) and all five model batches are merged into `main`, which deploys the
+live site at https://pxwom6.github.io/CityBloom/. The playthrough fix round (`PLAYTHROUGH-FIXES.md`,
+P1–P26 below) is on the `playthrough-fixes` branch, in a pull request into `main` for the owner to
+merge.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning

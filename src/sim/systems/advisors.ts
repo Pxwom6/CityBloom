@@ -1,7 +1,7 @@
-import { ROAD_TYPES, isRail } from '../../data/roads';
+import { ROAD_TYPES, isPlayerRoad, isRail } from '../../data/roads';
 import { CLIMATES, WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
-import { ZONE_I, ZONE_R } from '../../data/zones';
+import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { EDUCATION, LONG_COMMUTE, TRAM } from '../../data/balance';
 import { TICKS_PER_MONTH } from '../time';
@@ -37,6 +37,8 @@ export interface Advice {
   at?: { x: number; z: number };
   /** Data map that shows the problem, if any. */
   map?: string;
+  /** Roads it's about, most telling first (P1: a cut-off stretch); the panel names them. */
+  segs?: number[];
 }
 
 const money = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
@@ -381,8 +383,8 @@ export function advise(sim: Sim): Advice[] {
       text: `Workforce: ${Math.round(e1 * 100)} % schooled.`,
     });
 
-  // Transport.
-  if (!s.totals.highwayConnected && s.net.segments.size > 1)
+  // Transport. (A new city has the regional highway and railway, which nobody built: P1, P9.)
+  if (!s.totals.highwayConnected && [...s.net.segments.values()].some((x) => isPlayerRoad(x.type)))
     out.push({
       advisor: 'transport',
       severity: 3,
@@ -393,6 +395,41 @@ export function advise(sim: Sim): Advice[] {
         return n ? { x: n.x, z: n.z } : undefined;
       })(),
     });
+  // Roads cut off from the highway while the rest of the town is linked (P1): nothing grows there,
+  // and services on them reach nobody. The worst stretch, by what's on it.
+  const islands = s.totals.highwayConnected ? sim.roadIslands() : [];
+  if (islands.length) {
+    const rank = islands.map((isl) => {
+      const on = new Set(isl.segs);
+      let built = false;
+      let zoned = false;
+      for (const id of isl.segs) {
+        const seg = s.net.segments.get(id)!;
+        for (const bid of [seg.left, seg.right]) {
+          const block = bid ? s.net.blocks.get(bid) : undefined;
+          if (!block) continue;
+          if (block.bld.some((x) => x > 0)) built = true;
+          for (let i = 0; i < block.zone.length && !zoned; i++)
+            if (block.zone[i] !== ZONE_NONE && block.valid[i]) zoned = true;
+        }
+      }
+      for (const c of s.civics.values()) if (c.access && on.has(c.access.seg)) built = true;
+      return { isl, severity: (built ? 3 : zoned ? 2 : 1) as 1 | 2 | 3 };
+    });
+    const worst = rank.reduce((a, b) => (b.severity > a.severity ? b : a));
+    const more = islands.length - 1;
+    out.push({
+      advisor: 'transport',
+      severity: worst.severity,
+      title: `${plural(worst.isl.segs.length, 'road')} can't reach the highway`,
+      text:
+        'Nothing grows along them, and services there reach nobody. Draw a road from one of their ends to a street that reaches the highway.' +
+        (more ? ` (${plural(more, 'more stretch', 'more stretches')} cut off elsewhere.)` : ''),
+      at: worst.isl.at,
+      map: 'traffic',
+      segs: worst.isl.segs.slice(0, 40),
+    });
+  }
   let jam: { seg: number; vc: number } | null = null;
   for (const id of [...s.traffic.keys()].sort((a, b) => a - b)) {
     if (!s.net.segments.has(id) || id === s.highway.segment) continue;

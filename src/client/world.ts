@@ -14,6 +14,8 @@ import type {
 } from '../sim/protocol';
 import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '../sim/world/network';
 import { SpatialHash, type Box } from '../sim/world/spatial';
+import { roadIslands, type RoadIsland } from '../sim/world/islands';
+import { RoadGraph } from '../sim/systems/graph';
 import { CIVIC } from '../data/civic';
 import { deckAt, deckProfile, viaductDeck, type DeckProfile } from '../sim/world/bridge';
 import { ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
@@ -219,6 +221,22 @@ export class ClientWorld {
     const seg = this.netState.segments.get(segId);
     if (!seg) return 1;
     return ROAD_TYPES[seg.type].capacity * this.capScale * (seg.oneway ? TRAFFIC.oneWayCapacity : 1);
+  }
+
+  private islandMemo: { version: number; list: RoadIsland[]; of: Map<number, number> } | null = null;
+
+  /**
+   * Roads that can't reach the highway (P1), as the sim works them out (the same graph, without
+   * closures), with each cut-off road's island; worked out once per network change.
+   */
+  roadIslands(): { list: RoadIsland[]; of: Map<number, number> } {
+    if (this.islandMemo?.version !== this.netVersion) {
+      const list = roadIslands(this.net, new RoadGraph(this.net), this.highway.connect);
+      const of = new Map<number, number>();
+      list.forEach((isl, i) => isl.segs.forEach((id) => of.set(id, i)));
+      this.islandMemo = { version: this.netVersion, list, of };
+    }
+    return this.islandMemo;
   }
 
   /** What kind of junction a node is (mirrors junctionKind in the sim, M19). */

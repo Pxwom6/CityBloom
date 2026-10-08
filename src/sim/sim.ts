@@ -1,3 +1,4 @@
+import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
@@ -832,6 +833,13 @@ export class Sim {
     return this.fullGraphCache;
   }
 
+  private islandCache: RoadIsland[] | null = null;
+
+  /** Roads that can't reach the highway (P1), largest first; derived, so neither saved nor hashed. */
+  roadIslands(): RoadIsland[] {
+    return (this.islandCache ??= roadIslands(this.net, this.fullGraph(), this.state.highway.connect));
+  }
+
   isSegmentConnected(segId: number): boolean {
     const seg = this.state.net.segments.get(segId);
     // Railways aren't roads: nothing drives onto them from the highway (M20).
@@ -864,6 +872,7 @@ export class Sim {
   markNetworkChanged(): void {
     this.graphCache = null;
     this.fullGraphCache = null;
+    this.islandCache = null;
     this.railGraphCache = null;
     this.tramGraphCache = null;
     this.blockedCache = null;

@@ -862,6 +862,7 @@ export function MapLegend() {
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
+          {game.world.roadIslands().list.length > 0 && ' · Red with no cars: no road link to the highway'}
         </div>
       )}
     </div>

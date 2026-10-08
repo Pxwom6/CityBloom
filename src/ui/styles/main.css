@@ -423,6 +423,11 @@ body {
 .tool-hint.bad {
   background: var(--color-negative);
 }
+/* Builds, but joins nothing or only cut-off roads (P1). */
+.tool-hint.warn {
+  background: var(--color-warning);
+  color: var(--color-text);
+}
 
 /* RCI demand */
 .rci {

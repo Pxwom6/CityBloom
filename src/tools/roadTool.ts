@@ -31,6 +31,16 @@ function doomedOf(info: unknown): number[] {
 const articled = (name: string) =>
   /^[aeiou]/i.test(name) ? `an ${name.toLowerCase()}` : `a ${name.toLowerCase()}`;
 
+/** P1: a road that joins nothing, or only roads that can't reach the highway, says so. */
+export function linkNotes(info: unknown): string[] {
+  const link = (info as { link?: string } | undefined)?.link;
+  return link === 'none'
+    ? ["Doesn't join any road"]
+    : link === 'island'
+      ? ['Not connected to the highway']
+      : [];
+}
+
 const demolishes = (n: number) => `demolishes ${n} building${n === 1 ? '' : 's'}`;
 
 /** Upgrade hint notes (M13): regrading a road for a gentler type costs earthworks; P2: what goes. */
@@ -172,8 +182,18 @@ export class RoadTool implements Tool {
     return Math.max(1, this.game.renderer.controller.current.distance / 500);
   }
 
-  private snap(p: Vec2, from: SnapResult | null): SnapResult {
-    return snapPoint(this.game.world.net, p, { from, grid: this.grid, scale: this.snapScale() });
+  /**
+   * Snap a point of the road being drawn; `arriving` is where the road comes to it from (its start
+   * or bend), so an end that nearly reaches a road joins it (P1).
+   */
+  private snap(p: Vec2, from: SnapResult | null, arriving: Vec2 | null = null): SnapResult {
+    return snapPoint(this.game.world.net, p, {
+      from,
+      grid: this.grid,
+      scale: this.snapScale(),
+      near: ROAD_TYPES[this.type].access,
+      arriving,
+    });
   }
 
   /** Command for the current geometry, or null if there is nothing to build yet. */
@@ -425,19 +445,17 @@ export class RoadTool implements Tool {
     for (let i = 0; i + 2 < pts.length; i += 2) pieces.push({ a: pts[i]!, c: pts[i + 1]!, b: pts[i + 2]! });
     const res = this.lastResult?.res;
     const fresh = this.lastResult && this.lastResult.seq === this.previewSeq;
-    const state = !res ? 'pending' : res.ok ? 'ok' : 'bad';
+    // P1: a road that joins nothing, or only cut-off roads, says so (from the last answer, so the
+    // hint doesn't flicker while a fresh one comes back).
+    const links = res?.ok ? linkNotes(res.info) : [];
+    const state = !res ? 'pending' : res.ok ? (links.length ? 'unlinked' : 'ok') : 'bad';
     // A fresh preview carries the planned pieces (split at junctions) and their graded profiles.
     const info = fresh ? (res?.info as PreviewInfo | undefined) : undefined;
     const earth = info?.grade?.earth?.cost ?? 0;
     if ((res?.ok && earth > 0.25 * res.cost) || (res && !res.ok && /steep/i.test(res.reason)))
       this.sawEarthworks = true;
     const planned = info?.grade && info.pieces?.length === info.grade.pieces.length ? info : undefined;
-    g.showRoad(
-      planned?.pieces ?? pieces,
-      this.type,
-      fresh || !res ? state : state === 'ok' ? 'ok' : 'bad',
-      planned ? planned.grade : null,
-    );
+    g.showRoad(planned?.pieces ?? pieces, this.type, state, planned ? planned.grade : null);
     g.showMarker(res && !res.ok && res.at ? res.at : null);
     if (fresh) this.showDoomed(res?.ok ? doomedOf(info) : []);
     if (this.game.question) return;
@@ -454,8 +472,9 @@ export class RoadTool implements Tool {
           ...this.wayNotes(pieces),
           ...gradeNotes(info),
           ...(doomed ? [demolishes(doomed)] : []),
+          ...links,
         ].join(' · '),
-        tone: 'ok',
+        tone: links.length ? 'warn' : 'ok',
       });
     else this.game.setHint({ x: this.pointer.x, y: this.pointer.y, text: res.reason, tone: 'bad' });
   }
@@ -496,6 +515,7 @@ export class RoadTool implements Tool {
     this.requestPreview(this.currentCommand());
     this.game.renderer.ghost.showSnap(
       this.cursor && (this.cursor.kind === 'node' || this.cursor.kind === 'segment') ? this.cursor : null,
+      Math.max(1, this.game.renderer.controller.current.distance / 250),
     );
   }
 
@@ -671,7 +691,7 @@ export class RoadTool implements Tool {
       if (!this.start) this.start = this.snap(p.ground, null);
       else if (!this.control) this.control = { x: p.ground.x, z: p.ground.z };
       else void this.commit();
-      this.cursor = this.snap(p.ground, this.control ? null : this.start);
+      this.cursor = this.snap(p.ground, this.control ? null : this.start, this.control ?? this.start);
       this.refresh();
       return;
     }
@@ -748,7 +768,11 @@ export class RoadTool implements Tool {
       return;
     }
     const from = this.mode === 'curve' && this.control ? null : this.start;
-    this.cursor = this.snap(p.ground, from);
+    this.cursor = this.snap(
+      p.ground,
+      from,
+      this.mode === 'curve' && this.control ? this.control : this.start,
+    );
     this.refresh();
   }
 
@@ -768,7 +792,7 @@ export class RoadTool implements Tool {
     if (this.mode === 'free' && this.dragging) {
       this.dragging = false;
       if (p.ground) {
-        const end = this.snap(p.ground, null);
+        const end = this.snap(p.ground, null, this.freePath[this.freePath.length - 1] ?? null);
         this.freePath.push(end);
       }
       void this.commit();

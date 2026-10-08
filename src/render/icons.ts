@@ -274,6 +274,19 @@ export class IconRenderer {
     this.points.name = 'problem-icons';
     world.onBuildings(() => (this.dirty = true));
     world.onCivics(() => (this.dirty = true));
+    world.onNet(() => (this.dirty = true));
+  }
+
+  private islands = true;
+
+  /**
+   * Icons over roads that can't reach the highway (P1); off behind the main menu, whose demo town
+   * (grown by the balance mayor) has a few.
+   */
+  set showIslands(on: boolean) {
+    if (on === this.islands) return;
+    this.islands = on;
+    this.dirty = true;
   }
 
   private rebuild(heights: Map<number, number>, civicHeights: Map<number, number>): void {
@@ -284,6 +297,19 @@ export class IconRenderer {
       if (k < 0) continue;
       pos.push(b.x, b.y + (heights.get(b.id) ?? 8) + 6, b.z);
       icon.push(k);
+    }
+    // Roads cut off from the highway (P1): the "no road link" icon over each, longest first.
+    if (this.islands) {
+      let n = 0;
+      for (const isl of this.world.roadIslands().list)
+        for (const id of isl.segs) {
+          const curve = this.world.net.curve(id);
+          if (curve.length < 24 || n >= 60) continue;
+          const p = curve.pointAt(curve.length / 2);
+          pos.push(p.x, this.world.roadHeight(id, curve.length / 2, p.x, p.z) + 7, p.z);
+          icon.push(0);
+          n++;
+        }
     }
     // Civic buildings knocked out by a disaster: under water, or waiting for repairs.
     for (const c of this.world.civics.values()) {

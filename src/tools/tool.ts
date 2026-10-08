@@ -29,7 +29,7 @@ export interface ToolHint {
   x: number;
   y: number;
   text: string;
-  tone: 'ok' | 'bad' | 'info';
+  tone: 'ok' | 'bad' | 'info' | 'warn';
 }
 
 /**

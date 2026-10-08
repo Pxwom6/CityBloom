@@ -36,6 +36,8 @@ export interface Box {
 export interface TestApi {
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
+  /** Roads cut off from the highway (P1), and those the traffic map paints red for it. */
+  getRoadIslands(): { islands: { segs: number[]; length: number }[]; painted: number[] };
   /** The sim's dry run of a command: what it would cost and do, changing nothing. */
   preview(cmd: Command): Promise<CommandResult>;
   getState(): Promise<
@@ -423,6 +425,10 @@ export function installTestApi(game: Game): TestApi {
     ready: true,
     dispatch: (cmd) => game.dispatch(cmd),
     preview: (cmd) => game.client.preview(cmd),
+    getRoadIslands: () => ({
+      islands: game.world.roadIslands().list.map((i) => ({ segs: [...i.segs], length: Math.round(i.length) })),
+      painted: game.overlay.active === 'traffic' ? [...game.overlay.islandPainted] : [],
+    }),
     getState: async () => {
       const stats = await game.client.query<CityStats>({ type: 'summary' });
       const w = game.world;

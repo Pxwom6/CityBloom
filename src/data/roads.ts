@@ -273,6 +273,8 @@ export const GRADE_SEP = {
 export const SNAP = {
   node: 10,
   segment: 8,
+  /** An end this close to a road it could join snaps onto it (P1): past the 14–22 m a road must keep from one it doesn't join. */
+  near: 22,
   angleDeg: 5,
   grid: 8,
 };

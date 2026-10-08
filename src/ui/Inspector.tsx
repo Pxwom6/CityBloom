@@ -310,6 +310,10 @@ function RoadInspector({ id }: { id: number }) {
   if (isRail(seg.type)) return <RailInspector id={id} />;
   // Trams along it (M20).
   const tramLine = w.lines.find((l) => l.mode === 'tram' && l.legs.some((x) => x.seg === id));
+  // Cut off from the highway (P1), with however many other roads share its fate.
+  const islands = w.roadIslands();
+  const island = rt.access ? islands.of.get(id) : undefined;
+  const others = island !== undefined ? islands.list[island]!.segs.length - 1 : 0;
   return (
     <aside class="inspector panel" data-testid="inspector">
       <header>
@@ -324,6 +328,13 @@ function RoadInspector({ id }: { id: number }) {
           ×
         </button>
       </header>
+      {island !== undefined && (
+        <div class="warn" data-testid="road-island">
+          Not connected to the highway
+          {others ? ` (nor ${others === 1 ? 'the road' : `the ${others} roads`} joined to it)` : ''}: nothing
+          grows here, and nobody can drive to or from town. Join one of its ends to a road that is.
+        </div>
+      )}
       <dl data-testid="road-traffic">
         <dt>Traffic</dt>
         <dd>{Math.round(w.traffic.get(id) ?? 0).toLocaleString('en-US')} cars a day</dd>

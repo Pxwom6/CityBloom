@@ -1,3 +1,4 @@
+import type { Game } from '../game';
 import type { Advice, AdvisorId } from '../sim/systems/advisors';
 import { useGameUpdates } from './hooks';
 import { IconBolt, IconBook, IconHealth, IconMoney, IconRoad, IconShield, IconTree, IconZone } from './icons';
@@ -54,13 +55,22 @@ export function AdvisorsPanel() {
   );
 }
 
+/** "Ivy Row and 2 more streets can't reach the highway" (P1): the roads by name. */
+function islandTitle(game: Game, segs: number[]): string {
+  const names = [...new Set(segs.map((id) => game.names.street(id)))];
+  const more = names.length - 1;
+  return `${names[0]}${more ? ` and ${more} more street${more === 1 ? '' : 's'}` : ''} can’t reach the highway`;
+}
+
 function AdviceItem({ a }: { a: Advice }) {
   const game = useGameUpdates(1000);
   return (
-    <div class="advice">
-      <div class="advice-title">{a.title}</div>
+    <div class="advice" data-testid={a.segs?.length ? 'advice-island' : undefined}>
+      <div class="advice-title">{a.segs?.length ? islandTitle(game, a.segs) : a.title}</div>
       <div class="advice-text">
-        {a.at && (a.advisor === 'transport' || a.advisor === 'safety' || a.advisor === 'environment')
+        {a.at &&
+        !a.segs?.length &&
+        (a.advisor === 'transport' || a.advisor === 'safety' || a.advisor === 'environment')
           ? `Near ${game.names.address(a.at.x, a.at.z)}. `
           : ''}
         {a.text}

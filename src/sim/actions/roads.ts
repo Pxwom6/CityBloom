@@ -44,6 +44,8 @@ export function buildRoad(
     splits: plan.splits.length,
     demolish: demolished.length,
     demolished,
+    // P1: whether it joins a road that reaches the highway, only roads that don't, or nothing.
+    link: linkInfo(sim, plan),
     grade: gradeInfo(plan),
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
@@ -345,6 +347,27 @@ export function buildingsInTheWay(
     }
   }
   return [...out].sort((a, b) => a - b);
+}
+
+/**
+ * What a planned road joins (P1): 'highway' if one of its ends or crossings meets a road that
+ * reaches the highway, 'island' if it meets only roads that don't, 'none' if it meets no road at
+ * all. Undefined for roads nothing stands along (railways, ramps, city highways).
+ */
+function linkInfo(sim: Sim, plan: RoadPlan): 'highway' | 'island' | 'none' | undefined {
+  if (!plan.pieces.length || !ROAD_TYPES[plan.type].access) return undefined;
+  let joined = false;
+  for (const p of plan.pieces)
+    for (const e of [p.ea, p.eb]) {
+      const segs = e.kind === 'node' ? sim.net.segmentsAt(e.id) : e.kind === 'split' ? [e.seg] : [];
+      for (const sid of segs) {
+        // A level crossing isn't a join.
+        if (isRail(sim.net.segment(sid).type)) continue;
+        joined = true;
+        if (sim.isSegmentConnected(sid)) return 'highway';
+      }
+    }
+  return joined ? 'island' : 'none';
 }
 
 /**

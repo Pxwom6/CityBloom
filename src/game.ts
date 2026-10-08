@@ -1088,6 +1088,7 @@ export class Game {
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);
+    this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();
     this.editor?.update();

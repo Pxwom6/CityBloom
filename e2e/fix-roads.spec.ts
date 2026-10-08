@@ -147,3 +147,127 @@ test('P2: an upgrade or a new road that demolishes buildings says how many and a
   await expect.poll(() => buildings(page)).toBe(n0 - doomed);
   errs.check();
 });
+
+test('P1: a road that joins nothing says so; a cut-off stretch is shown everywhere until it is joined', async ({
+  page,
+}) => {
+  test.setTimeout(360_000);
+  const errs = watchErrors(page);
+  await openGame(page);
+  const cz = (await state(page)).highwayZ;
+  const cx = 24;
+  await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 }));
+  // A street that reaches the highway, east from where it ends.
+  await page.evaluate(
+    async ([cx, cz]) => {
+      const r = await window.__game!.dispatch({
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: cx!, z: cz! },
+          { x: cx! + 300, z: cz! },
+        ],
+      });
+      if (!r.ok) throw new Error(r.reason);
+    },
+    [cx, cz],
+  );
+  await page.evaluate(
+    (cz) => window.__game!.setCamera({ x: 200, z: cz + 140, distance: 450, yaw: 0, tilt: 0.6 }),
+    cz,
+  );
+  await frames(page, 2);
+  const hintNow = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-testid="tool-hint"]');
+      return { text: el?.textContent ?? '', tone: el?.className ?? '' };
+    });
+  const moveTo = async (x: number, z: number) => {
+    const p = await screen(page, x, z);
+    await page.mouse.move(p.x, p.y, { steps: 4 });
+    await page.waitForTimeout(300);
+    return p;
+  };
+
+  // Drawing a street out in the fields: the hint says it joins nothing.
+  await page.getByTestId('tool-road').click();
+  await page.getByTestId('road-street').click();
+  const s0 = (await state(page)).segments;
+  const a = await moveTo(cx + 150, cz + 90);
+  await page.mouse.click(a.x, a.y);
+  const b = await moveTo(cx + 150, cz + 250);
+  await expect.poll(async () => (await hintNow()).text).toContain("Doesn't join any road");
+  expect((await hintNow()).tone).toContain('warn');
+  await shot(page, 'fixes-p1-joins-nothing');
+  await page.mouse.click(b.x, b.y);
+  await expect.poll(async () => (await state(page)).segments).toBe(s0 + 1);
+  // Carrying on from it: it joins a road, but not one that reaches the highway.
+  const d = await moveTo(cx + 300, cz + 250);
+  await expect.poll(async () => (await hintNow()).text).toContain('Not connected to the highway');
+  expect((await hintNow()).tone).toContain('warn');
+  await page.mouse.click(d.x, d.y);
+  await expect.poll(async () => (await state(page)).segments).toBe(s0 + 2);
+  await page.keyboard.press('Escape');
+
+  // Built: one cut-off stretch, an icon over it, a line in the street inspector, red on the
+  // traffic map, and the advisor names it.
+  const islands = () => page.evaluate(() => window.__game!.getRoadIslands());
+  await expect.poll(async () => (await islands()).islands.length).toBe(1);
+  const cut = (await islands()).islands[0]!.segs;
+  expect(cut.length).toBe(2);
+  await expect
+    .poll(async () => (await state(page)).renderStats.icons, { message: 'island icons' })
+    .toBeGreaterThanOrEqual(2);
+  await page.getByTestId('tool-select').click();
+  const mid = await screen(page, cx + 150, cz + 170);
+  await page.mouse.click(mid.x, mid.y);
+  await expect(page.getByTestId('road-island')).toContainText('Not connected to the highway');
+  await shot(page, 'fixes-p1-island-inspector');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__game!.setOverlay('traffic'));
+  await expect.poll(async () => [...(await islands()).painted].sort()).toEqual([...cut].sort());
+  await expect(page.getByTestId('traffic-legend-note')).toContainText('no road link to the highway');
+  await shot(page, 'fixes-p1-island-traffic-map');
+  await page.evaluate(() => window.__game!.setOverlay(null));
+  await page.evaluate(() => window.__game!.advance(120));
+  await page.getByTestId('open-advisors').click();
+  await expect(page.getByTestId('advice-island')).toContainText(/and 1 more street can.t reach the highway/, {
+    timeout: 15_000,
+  });
+  await shot(page, 'fixes-p1-island-advisor');
+  await page.getByTestId('advice-island').getByTestId('advice-show').click();
+  await page.getByTestId('open-advisors').click();
+
+  // Joining it up: an end 12 m from the street's dead end used to be refused as too close; now it
+  // snaps onto it, and everything clears.
+  await page.evaluate(
+    (cz) => window.__game!.setCamera({ x: 260, z: cz + 130, distance: 450, yaw: 0, tilt: 0.6 }),
+    cz,
+  );
+  await frames(page, 2);
+  await page.getByTestId('tool-road').click();
+  const e = await moveTo(cx + 300, cz + 250);
+  await page.mouse.click(e.x, e.y);
+  const f = await moveTo(cx + 300, cz + 12);
+  await expect.poll(async () => (await hintNow()).text).toMatch(/^\$/);
+  const joined = await hintNow();
+  expect(joined.text).not.toContain('highway');
+  expect(joined.text).not.toContain('join');
+  expect(joined.tone).toContain('ok');
+  await shot(page, 'fixes-p1-join-snaps');
+  await page.mouse.click(f.x, f.y);
+  await expect.poll(async () => (await state(page)).segments).toBe(s0 + 3);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await islands()).islands.length).toBe(0);
+  await expect.poll(async () => (await state(page)).renderStats.icons).toBe(0);
+  await page.getByTestId('tool-select').click();
+  const mid2 = await screen(page, cx + 150, cz + 170);
+  await page.mouse.click(mid2.x, mid2.y);
+  await expect(page.getByTestId('inspector')).toBeVisible();
+  await expect(page.getByTestId('road-island')).toHaveCount(0);
+  await page.evaluate(() => window.__game!.advance(120));
+  await page.getByTestId('open-advisors').click();
+  await expect(page.getByTestId('advice-island')).toHaveCount(0, { timeout: 15_000 });
+  await shot(page, 'fixes-p1-joined');
+  errs.check();
+});

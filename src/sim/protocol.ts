@@ -200,6 +200,8 @@ export interface BudgetReport {
   projection: Record<string, number>;
   history: { month: number; lines: Record<string, number>; treasury: number }[];
   taxes: Record<'R' | 'C' | 'I', [number, number, number]>;
+  /** Buildings paying each band (P17): a band nobody pays raises nothing, whatever its rate. */
+  payers: Record<'R' | 'C' | 'I', [number, number, number]>;
   funding: Record<string, number>;
   loans: {
     id: number;

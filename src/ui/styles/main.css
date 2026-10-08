@@ -1453,6 +1453,14 @@ body {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
+/* A tax band no building is in yet (P17). */
+.slider-row.idle > span:first-child,
+.slider-row.idle .val {
+  color: var(--color-text-muted);
+}
+.slider-row.idle .rev {
+  font-style: italic;
+}
 .loan {
   display: flex;
   justify-content: space-between;

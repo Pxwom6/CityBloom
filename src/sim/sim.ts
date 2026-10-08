@@ -189,6 +189,7 @@ import {
   districtReports,
   economyHour,
   monthlyRates,
+  taxPayers,
   repayLoan,
   setFunding,
   setTax,
@@ -1709,6 +1710,7 @@ export class Sim {
         C: [...e.taxes.C] as [number, number, number],
         I: [...e.taxes.I] as [number, number, number],
       },
+      payers: taxPayers(this),
       funding: { ...e.funding },
       loans: e.loans.map((l) => ({
         id: l.id,

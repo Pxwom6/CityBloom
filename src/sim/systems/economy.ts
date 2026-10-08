@@ -168,6 +168,17 @@ export function districtReports(sim: Sim): DistrictReport[] {
 }
 
 /** Monthly amounts by category at current conditions (the hourly accrual is this / 24). */
+/** Buildings paying each tax band (P17): the ones `monthlyRates` taxes. */
+export function taxPayers(sim: Sim): Record<ZoneKey, [number, number, number]> {
+  const out: Record<ZoneKey, [number, number, number]> = { R: [0, 0, 0], C: [0, 0, 0], I: [0, 0, 0] };
+  for (const b of sim.state.buildings.values()) {
+    if (b.state !== BState.Active && !(b.state === BState.Construction && b.pop > 0)) continue;
+    const z = ZONE_KEY[b.zone];
+    if (z && b.pop > 0) out[z][b.wealth]!++;
+  }
+  return out;
+}
+
 export function monthlyRates(sim: Sim): Record<string, number> {
   const s = sim.state;
   const e = s.economy;

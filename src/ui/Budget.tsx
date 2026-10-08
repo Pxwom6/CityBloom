@@ -148,8 +148,17 @@ export function BudgetPanel() {
               {[0, 1, 2].map((w) => {
                 const v = b.taxes[z][w]!;
                 const rev = b.projection[`tax${z}${w}`] ?? 0;
+                // A band nobody is in raises nothing, whatever its rate (P17).
+                const idle = b.payers[z][w] === 0;
                 return (
-                  <label key={w} class="slider-row">
+                  <label
+                    key={w}
+                    class={`slider-row ${idle ? 'idle' : ''}`}
+                    data-testid={`tax-row-${z}${w}`}
+                    title={
+                      idle ? 'No one pays this yet: none of the city’s buildings is in this band' : undefined
+                    }
+                  >
                     <span>{z === 'I' ? TIERS[w] : WEALTH[w]}</span>
                     <input
                       type="range"
@@ -173,7 +182,7 @@ export function BudgetPanel() {
                       }}
                     />
                     <span class="val">{v}%</span>
-                    <span class="rev">{formatMoney(rev)}/mo</span>
+                    <span class="rev">{idle ? 'no one pays' : `${formatMoney(rev)}/mo`}</span>
                   </label>
                 );
               })}

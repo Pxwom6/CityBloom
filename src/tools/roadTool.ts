@@ -506,6 +506,9 @@ export class RoadTool implements Tool {
         : [];
     g.highlightSegment(short.length ? short.map((id) => net.curve(id)) : null, 6);
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    // Red boxes over the buildings it would take, as for roads (P2).
+    if (this.lastResult?.seq === this.previewSeq) this.showDoomed(res?.ok ? doomedOf(res.info) : []);
+    if (this.game.question) return;
     const what = res?.ok && info.radius === info.minRadius ? 'Mini roundabout' : 'Roundabout';
     if (!res) this.game.setHint({ ...this.pointer, text: 'Roundabout', tone: 'info' });
     else if (res.ok)
@@ -659,7 +662,9 @@ export class RoadTool implements Tool {
     const what =
       cmd.type === 'upgradeRoad'
         ? `Making this road ${articled(ROAD_TYPES[cmd.road].name)} demolishes`
-        : 'This road demolishes';
+        : cmd.type === 'roundabout'
+          ? 'This roundabout demolishes'
+          : 'This road demolishes';
     this.showDoomed(ids);
     this.game.setHint(null);
     this.game.ask({
@@ -692,11 +697,22 @@ export class RoadTool implements Tool {
     this.refresh();
   }
 
-  /** One-way switch or roundabout (M19). */
-  private async commitEdit(): Promise<void> {
-    const cmd = this.currentCommand();
+  /**
+   * One-way switch or roundabout (M19). A roundabout that takes buildings asks first, as roads do
+   * (PR #14 review); `confirmed` is the one the player said yes to.
+   */
+  private async commitEdit(confirmed?: Command): Promise<void> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || (cmd.type !== 'setOneWay' && cmd.type !== 'roundabout')) return;
-    const { res, live } = await this.send(cmd);
+    // Replies count from the click, not from after the question (P11).
+    const epoch = this.epoch;
+    if (
+      !confirmed &&
+      cmd.type === 'roundabout' &&
+      (await this.askFirst(cmd, () => void this.commitEdit(cmd)))
+    )
+      return;
+    const { res, live } = await this.send(cmd, epoch);
     if (res.ok) {
       this.game.audio?.play('build');
       if (cmd.type === 'roundabout') this.game.toast('Roundabout built', 'ok', 2000);

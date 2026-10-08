@@ -380,3 +380,57 @@ test('PR #14 review R3: a free-form end shows where it joins before the button c
   expect(await islands()).toBe(0);
   errs.check();
 });
+
+test('PR #14 review R4: a roundabout that replaces buildings asks first, as roads do', async ({ page }) => {
+  test.setTimeout(300_000);
+  const errs = watchErrors(page);
+  const cz = await grownTown(page);
+  // A junction on the avenue whose ring takes a corner lot or two.
+  const pick = await page.evaluate(async (cz) => {
+    const g = window.__game!;
+    for (const x of [120, 216, 312, 408]) {
+      const j = g.junctionAt(x, cz);
+      if (!j || j.roundabout) continue;
+      const r = await g.preview({ type: 'roundabout', node: j.id });
+      const gone = r.ok ? ((r.info as { demolished?: number[] }).demolished ?? []) : [];
+      if (gone.length) return { x, z: cz, gone: gone.length };
+    }
+    return null;
+  }, cz);
+  expect(pick, 'a junction whose roundabout takes buildings').not.toBeNull();
+  await page.evaluate(
+    (p) => window.__game!.setCamera({ x: p.x, z: p.z, distance: 260, yaw: 0, tilt: 0.75 }),
+    pick!,
+  );
+  await frames(page, 2);
+  const ringAt = () => page.evaluate((p) => window.__game!.junctionAt(p.x, p.z)?.roundabout ?? 0, pick!);
+  await page.getByTestId('tool-road').click();
+  await page.getByTestId('mode-roundabout').click();
+  const p = await screen(page, pick!.x, pick!.z);
+  await page.mouse.move(p.x, p.y, { steps: 3 });
+  await expect.poll(async () => (await settledHint(page)).text).toContain(`replaces ${pick!.gone} building`);
+
+  // A click asks; no keeps them and builds nothing.
+  const before = { n: await buildings(page), treasury: (await state(page)).treasury };
+  await page.mouse.click(p.x, p.y);
+  const q = page.getByTestId('tool-question');
+  await expect(q).toBeVisible();
+  await expect(q).toContainText(`This roundabout demolishes ${pick!.gone} building`);
+  await shot(page, 'review-r4-roundabout-asks');
+  await page.getByTestId('tool-question-no').click();
+  await expect(q).toHaveCount(0);
+  await frames(page, 2);
+  expect(await ringAt()).toBe(0);
+  expect(await buildings(page)).toBe(before.n);
+  expect((await state(page)).treasury).toBe(before.treasury);
+
+  // Yes builds it, and exactly the buildings counted go.
+  await page.mouse.move(p.x + 2, p.y, { steps: 2 });
+  await settledHint(page);
+  await page.mouse.click(p.x, p.y);
+  await expect(q).toBeVisible();
+  await page.getByTestId('tool-question-yes').click();
+  await expect.poll(ringAt).toBeGreaterThan(0);
+  await expect.poll(() => buildings(page)).toBe(before.n - pick!.gone);
+  errs.check();
+});

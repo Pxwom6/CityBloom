@@ -298,6 +298,8 @@ export interface SegmentData {
   cx: number;
   cz: number;
   type: RoadTypeId;
+  /** The street's name (P10), see RoadSegment.name. */
+  name?: string;
   left: number;
   right: number;
   /** Viaduct deck heights (M13), see RoadSegment.deck. */

@@ -23,6 +23,9 @@ export function checkInvariants(sim: Sim): void {
   for (const d of s.disasters)
     for (const k of ['x', 'z', 'size', 'start', 'end', 'heading'] as const)
       if (!Number.isFinite(d[k])) throw new InvariantError(`disaster ${d.id} ${k} = ${d[k]}`);
+  // Every road has a name (P10): any way of making one has to go through `Sim.nameSegments`.
+  for (const seg of s.net.segments.values())
+    if (!seg.name) throw new InvariantError(`segment ${seg.id} has no name`);
   for (const [seg, h] of s.roadDamage)
     if (!(h > 0) || !s.net.segments.has(seg)) throw new InvariantError(`road damage ${seg}: ${h}`);
   for (const c of s.civics.values())

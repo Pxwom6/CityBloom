@@ -6,6 +6,7 @@ import { Curve, rectsOverlap, splitBezier, v2, type ORect, type Vec2 } from '../
 import { SpatialHash, type Box } from './spatial';
 import type { Terrain } from '../terrain/terrain';
 import { profileAt } from './grading';
+import { restyleName } from './streetNames';
 
 export interface RoadNode {
   id: number;
@@ -22,6 +23,11 @@ export interface RoadSegment {
   cx: number;
   cz: number;
   type: RoadTypeId;
+  /**
+   * The street's name (P10): segments sharing a name are one street. Given when the segment is
+   * made (`nameSegments`), copied by a split and re-suffixed when the type changes.
+   */
+  name?: string;
   /** Zone block ids on the left (+1) and right (−1) side, 0 if none. */
   left: number;
   right: number;
@@ -330,6 +336,7 @@ export class Network {
     type: RoadTypeId,
     opts: {
       id?: number;
+      name?: string;
       zoned?: boolean;
       layouts?: { left?: [number, number]; right?: [number, number] };
     } = {},
@@ -344,6 +351,7 @@ export class Network {
       left: 0,
       right: 0,
     };
+    if (opts.name) seg.name = opts.name;
     this.st.segments.set(seg.id, seg);
     this.indexSegment(seg);
     this.dirty.segments.add(seg.id);
@@ -489,11 +497,13 @@ export class Network {
 
     const first = this.createSegment(seg.a, node.id, halves.left[1], seg.type, {
       id: ids?.first,
+      name: seg.name,
       layouts: layouts.first,
       zoned: seg.left !== 0 || seg.right !== 0,
     });
     const second = this.createSegment(node.id, seg.b, halves.right[1], seg.type, {
       id: ids?.second,
+      name: seg.name,
       layouts: layouts.second,
       zoned: seg.left !== 0 || seg.right !== 0,
     });
@@ -560,6 +570,7 @@ export class Network {
       cx: number;
       cz: number;
       type: RoadTypeId;
+      name?: string;
       layouts: { left?: [number, number]; right?: [number, number] };
       deck?: number[];
       oneway?: 1 | -1;
@@ -592,6 +603,7 @@ export class Network {
     const o = rec.original;
     const merged = this.createSegment(o.a, o.b, v2(o.cx, o.cz), o.type, {
       id: o.id,
+      name: o.name,
       layouts: o.layouts,
       zoned: !!(o.layouts.left || o.layouts.right),
     });
@@ -645,7 +657,10 @@ export class Network {
     const seg = this.segment(id);
     for (const bid of [seg.left, seg.right]) if (bid) this.unindexBlock(this.st.blocks.get(bid)!);
     this.unindexSegment(seg);
+    const from = seg.type;
     seg.type = type;
+    // The street keeps its stem; the suffix follows the new type (P10).
+    if (seg.name) seg.name = restyleName(seg.name, from, type);
     this.indexSegment(seg);
     for (const bid of [seg.left, seg.right]) if (bid) this.indexBlock(this.st.blocks.get(bid)!);
     this.dirty.segments.add(id);

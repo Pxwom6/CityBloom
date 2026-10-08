@@ -8,10 +8,11 @@ import { initialWeather, seasonsGrace } from './systems/weather';
 import { initialRegion } from './systems/region';
 import { GAME_TITLE } from '../config';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
+import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 23;
+export const SAVE_VERSION = 24;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -215,6 +216,19 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // v22 → v23 (Phase 2 review): a city new to seasons eases into heating (`weather.grace`, set by
   // the v19 → v20 step); a v22 city already has its seasons, so nothing changes.
   22: (s) => s,
+  // v23 → v24 (P10): streets keep their names. Every road gets the name the client used to work out
+  // for it, so a loaded city keeps the names its player has seen (duplicates and all). A road that
+  // somehow has a name already (tests make a "v12 save" by relabelling a current one) keeps it.
+  23: (s) => {
+    const net = s.net as { nodes: unknown; segments: { $m: [number, { name?: string }][] } };
+    const names = legacyStreetNames(
+      decodeValue(net.nodes) as never,
+      decodeValue(net.segments) as never,
+      (s.options as { seed: string }).seed,
+    );
+    const $m = net.segments.$m.map(([id, seg]) => [id, { ...seg, name: seg.name ?? names.get(id)! }]);
+    return { ...s, net: { ...net, segments: { $m } } };
+  },
 };
 
 export function encodeState(state: SimState): unknown {

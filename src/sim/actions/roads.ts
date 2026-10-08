@@ -57,6 +57,8 @@ export function buildRoad(
     reshapeGround(sim, plan.earth.idx, plan.earth.to);
     return plan.earth.box;
   });
+  // Name the new roads inside the command, so undo takes the names with them (P10).
+  sim.nameSegments(res.segments);
   sim.spend(plan.cost, 'roads');
   clearTreesAlong(sim, res.segments);
   sim.markNetworkChanged();

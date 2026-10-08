@@ -675,6 +675,7 @@ export interface SplitRecord {
     cx: number;
     cz: number;
     type: RoadTypeId;
+    name?: string;
     left: number;
     right: number;
     layouts: { left?: [number, number]; right?: [number, number] };
@@ -725,6 +726,7 @@ export function applyRoadPlan(
         cx: seg.cx,
         cz: seg.cz,
         type: seg.type,
+        ...(seg.name ? { name: seg.name } : {}),
         left: seg.left,
         right: seg.right,
         layouts: { left: blockLayout(seg.left), right: blockLayout(seg.right) },

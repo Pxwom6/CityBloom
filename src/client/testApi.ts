@@ -69,7 +69,16 @@ export interface TestApi {
   segmentAt(
     x: number,
     z: number,
-  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number; tram: boolean } | null;
+  ): {
+    id: number;
+    type: string;
+    name: string;
+    oneway: number;
+    deck: boolean;
+    a: number;
+    b: number;
+    tram: boolean;
+  } | null;
   /** The junction nearest a point within 20 m (M19): its roads, and its roundabout's radius. */
   junctionAt(x: number, z: number): { id: number; arms: number; roundabout: number; kind: string } | null;
   /** Volume/capacity on a segment at the rush-hour peak. */
@@ -514,6 +523,7 @@ export function installTestApi(game: Game): TestApi {
       return {
         id: hit.seg,
         type: s.type,
+        name: s.name ?? '',
         oneway: s.oneway ?? 0,
         deck: !!s.deck,
         a: s.a,

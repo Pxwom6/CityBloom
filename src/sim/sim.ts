@@ -195,6 +195,7 @@ import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
 import { rectsOverlap, type ORect } from './geom';
+import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
 import {
   book,
   closeMonth,
@@ -271,6 +272,8 @@ export class Sim {
   readonly terrain: Terrain;
   readonly rng: Record<RngStream, Rng>;
   readonly net: Network;
+  /** What street names are drawn from (P10). */
+  private readonly namesSeed: number;
   /** Every applied command with the tick it was applied at (for replays). Not part of the hash. */
   readonly log: CommandLogEntry[] = [];
   /** When true, invariants are checked after every tick and violations throw. */
@@ -300,6 +303,7 @@ export class Sim {
   private constructor(state: SimState, terrain: Terrain) {
     this.state = state;
     this.terrain = terrain;
+    this.namesSeed = namesSeed(state.options.seed);
     terrain.applyDelta(state.terrainDelta);
     this.rng = {} as Record<RngStream, Rng>;
     for (const s of RNG_STREAMS) this.rng[s] = new Rng(state.rng[s]);
@@ -454,9 +458,15 @@ export class Sim {
       'mainline',
       { zoned: false },
     );
+    this.nameSegments([seg.id]);
     this.state.railway = { outside: outside.id, connect: connect.id, segment: seg.id };
     this.markNetworkChanged();
     return seg.id;
+  }
+
+  /** Give roads just built their street names (P10): a continuation takes its street's name. */
+  nameSegments(ids: readonly number[]): void {
+    nameSegmentsIn(this.net, this.namesSeed, ids);
   }
 
   private buildHighway(): void {
@@ -470,6 +480,7 @@ export class Sim {
       'highway',
       { zoned: false },
     );
+    this.nameSegments([seg.id]);
     this.state.highway = { outside: outside.id, connect: connect.id, segment: seg.id };
   }
 

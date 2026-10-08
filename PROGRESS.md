@@ -34,6 +34,36 @@ branch, in a pull request into `main` for the owner to merge.
 - [x] M27 Ground, lots and streets
 - [x] M28 Buildings and variety
 
+## Playthrough fixes (PLAYTHROUGH-FIXES.md)
+Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
+
+- [ ] P1 Road ends that miss are silent
+- [ ] P2 Building and upgrading roads remove buildings without saying so
+- [ ] P3 A drag with a tool out builds
+- [ ] P4 A category click arms its first tool
+- [ ] P5 Roundabouts are refused near bends
+- [ ] P6 Narrow windows lose the toolbar and top bar
+- [ ] P7 Some roads are planned at height 0
+- [ ] P8 Bought power is resold at a loss
+- [ ] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
+- [ ] P10 Street names change and repeat
+- [ ] P11 Escape doesn't always leave the road tool
+- [ ] P12 Bus stops are refused on the road (check first)
+- [ ] P13 Tooltips run off the screen
+- [ ] P14 The citizen-thought feed covers the data-map menu
+- [ ] P15 Tips and thoughts contradict the numbers
+- [ ] P16 Dates read backwards around New Year
+- [ ] P17 Tax bands nobody pays
+- [ ] P18 Purchases made while paused (check first)
+- [ ] P19 Two road-maintenance lines in the budget
+- [ ] P20 The Region panel doesn't show supply and demand
+- [ ] P21 City limits are invisible
+- [ ] P22 The save toast names the city, not the slot
+- [ ] P23 Clickable toasts can't be clicked
+- [ ] P24 Loan terms appear only after borrowing
+- [ ] P25 "No school nearby" beside a primary school
+- [ ] P26 Notification groups have no headings
+
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
 demo town) a player founds a city on one of four seeded maps with a difficulty, sandbox and
@@ -116,15 +146,15 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 5 (below,
-"Models"): the owner's last 39 designs are in, on the `models-5` branch (pull request into `main`),
-and every zoned type now has at least two hand-made designs on every lot its buildings can stand
-on, so no building in any city is generated. Nothing is left in progress.
+The playthrough fix round (`PLAYTHROUGH-FIXES.md`, checklist above), on the `playthrough-fixes`
+branch, to finish with a pull request into `main`. Every milestone in SPEC.md, SPEC-2.md and
+SPEC-3.md is done, and so are the five model batches (all merged into `main`).
 
 ## Next tasks
-1. The owner: merge the `models-5` pull request into `main` when happy, which publishes the site.
-2. Any fixes the owner wants from the smaller notes under "Models" (no design needs a remake).
-3. Ideas above.
+1. Work through P1–P26 in the brief's order (roads, then input and layout, then economy, advice and
+   labels), each reproduced in a failing test first, one commit per item.
+2. After the last sim change, rerun `bench` and `balance` (careful, greedy, neglectful, 20 years).
+3. The brief's "When everything's done" list, then the pull request into `main`.
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic

@@ -1364,10 +1364,18 @@ menus.
 - **Resident thoughts**: a feed of short lines picked per game hour by hashing building ids (no RNG,
   so determinism is untouched), each voicing that building's strongest mood factor (sometimes the
   runner-up). Clicking one opens the building.
-- **Street names**: client-side and not saved. Segments that carry straight on through a junction
-  (same type, > 150°) are joined into one street; each street is named from its lowest segment id, so
-  names stay put as the city grows. Neighbourhoods are named per 384 m cell. Labels follow the roads
-  at close zoom (≤ 10, DOM); inspectors and advisors use addresses ("Maple Street, Northgate"). The UI reads `ClientWorld` via a small subscribe/selector hook and sends commands through
+- **Street names (playthrough fix P10)**: a name is part of each road segment (`RoadSegment.name`,
+  saved from v24); a street is the segments sharing one. `nameSegments` (`src/sim/world/streetNames.ts`)
+  names a new segment inside the command that makes it: it takes the name of the same-type road it
+  carries straight on from (more than 150° apart at the junction; its `a` end first, then `b`), else a
+  fresh name: a stem from `STREET_STEMS` (60 legacy plus 40 more) picked by hashing (seed, segment id),
+  skipping stems in use until all are, then the least used, with a suffix of its type that makes the
+  whole name new. A split copies the name to both halves; a type change keeps the stem and moves the
+  suffix (Maple Terrace becomes Maple Parade) in `Network.setSegmentType`; undo and redo restore names
+  with the segments. The client's `StreetNames.street` only reads it. The v23 to v24 migration names
+  old roads as the client used to (`legacyStreetNames`, checked against goldens from the old code).
+  Neighbourhoods are still client-only, per 384 m cell. Labels follow the roads at close zoom (≤ 10,
+  DOM); inspectors and advisors use addresses ("Maple Street, Northgate"). The UI reads `ClientWorld` via a small subscribe/selector hook and sends commands through
 `SimClient`.
 
 - **Game shell (M11)** (`src/ui/Shell.tsx`, state in `Game.mode`/`Game.screens`). A page opened

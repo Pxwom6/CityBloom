@@ -46,7 +46,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [x] P7 Some roads are planned at height 0
 - [x] P8 Bought power is resold at a loss
 - [ ] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
-- [ ] P10 Street names change and repeat
+- [x] P10 Street names change and repeat
 - [ ] P11 Escape doesn't always leave the road tool
 - [ ] P12 Bus stops are refused on the road (check first)
 - [ ] P13 Tooltips run off the screen

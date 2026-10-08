@@ -76,3 +76,46 @@ test('P25: a home beside a primary school is told which school places it lacks',
   expect(text).toMatch(/No high school places nearby/);
   errs.check();
 });
+
+test('P15: with a building on partial power the advisor says so instead of "All supplied"', async ({
+  page,
+}) => {
+  test.setTimeout(420_000);
+  const errs = watchErrors(page);
+  await openGame(page);
+  await buildTownViaApi(page);
+  // Two wind turbines are about what a small town needs, so growth keeps crossing the limit.
+  await page.evaluate(async () => {
+    const g = window.__game!;
+    await g.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 80_000 });
+    const s = await g.getState();
+    const near = { x: 300, z: s.highwayZ + 170 };
+    for (const def of ['wind', 'wind', 'pump', 'pump', 'treatment', 'landfill'])
+      if ((await g.placeCivic(def, near)) === null) throw new Error(`could not place ${def}`);
+  });
+  await page.evaluate(() => window.__game!.advance(1440 * 2));
+  await page.getByTestId('open-advisors').click();
+  const panel = page.getByTestId('advisor-utilities');
+  await expect(panel).toBeVisible();
+
+  // Step the clock until exactly one building is short and the shortfall is under a building's use.
+  let found = false;
+  for (let k = 0; k < 1500 && !found; k++) {
+    await page.evaluate(() => window.__game!.advance(10));
+    const p = (await state(page)).utilities.power;
+    if (p.unserved !== 1 || p.demand - p.supply > 1) continue;
+    // The panel refreshes every two seconds of real time.
+    await page.waitForTimeout(2600);
+    const text = await panel.innerText();
+    expect(text).not.toMatch(/All supplied/);
+    expect(text).toMatch(/1 building (short of|without) power/);
+    if (/short of power/.test(text)) {
+      found = true;
+      expect(text).toMatch(/only part of the power needed/);
+      await shot(page, 'fix-advice-p15-partial-power');
+    }
+  }
+  expect(found, 'the town never sat exactly at its power limit').toBe(true);
+  errs.check();
+});

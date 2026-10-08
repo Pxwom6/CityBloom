@@ -146,15 +146,17 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-The playthrough fix round (`PLAYTHROUGH-FIXES.md`, checklist above), on the `playthrough-fixes`
-branch, to finish with a pull request into `main`. Every milestone in SPEC.md, SPEC-2.md and
-SPEC-3.md is done, and so are the five model batches (all merged into `main`).
+The playthrough fix round (`PLAYTHROUGH-FIXES.md`), on the `playthrough-fixes` branch: 23 of 26
+items are done and ticked; P6, P13 and P14 (layout) are in progress. Every sim change is in, and
+`balance` has been rerun (below); `bench` and the frame times wait for a quiet machine.
 
 ## Next tasks
-1. Work through P1–P26 in the brief's order (roads, then input and layout, then economy, advice and
-   labels), each reproduced in a failing test first, one commit per item.
-2. After the last sim change, rerun `bench` and `balance` (careful, greedy, neglectful, 20 years).
-3. The brief's "When everything's done" list, then the pull request into `main`.
+1. Merge P6, P13 and P14, then add narrow windows, tooltips and the thought feed to
+   `e2e/fixes-tour.spec.ts`.
+2. `bench` (base `main` at 5b261bd against the branch, back to back) and the frame times
+   (`framebench.mjs`, the same two builds); log them under "Performance (playthrough fixes)".
+3. The brief's "When everything's done": the full check (`npm run typecheck && npm run lint &&
+   npm test && npm run e2e`) and `npm run playthrough`, then the pull request into `main`.
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
@@ -679,6 +681,16 @@ misses with either build (`startup-slow.log`).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
+
+## Performance (playthrough fixes)
+- `balance.ts 20` on the Mac, base `main` at 5b261bd against this branch: greedy (420 / 16 % at year
+  20, $566k) and neglectful (354 / 36 %, $480k) are byte-identical. The careful mayor's city ends
+  year 20 at **50,377 residents, 78 % approval, $1.71M** against 71,565, 72 % and $1.50M (every
+  election won either way). Bisected to P20's corrected winter forecast alone: the careful mayor
+  builds a power plant whenever "Winter will need more power" shows, and the old forecast raised it
+  far more often, so the mayor had been building power well ahead and grew a bigger city on it
+  (DECISIONS, "The balance runs after this round"). No rule of the game changed; P7, P1, P5, P8,
+  P10, P15 and P25 leave the runs byte-identical.
 
 ## Performance (latest: M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).

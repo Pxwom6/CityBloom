@@ -56,24 +56,26 @@ test('Playthrough fixes: budget, loans, notifications, toasts and dates through 
   await shot(page, 'fixes-p19-budget');
   await page.getByTestId('open-budget').click();
 
-  // P23: a toast with a place takes a click, and the camera flies there.
+  // P23: a toast with a place takes a click, and the camera flies there. (A meteor's warning, as
+  // it's never held back by an earlier one; a toast lasts five seconds, so it's clicked at once.)
+  await page.evaluate(() => window.__game!.setCamera({ x: 2000, z: 2000, distance: 600, yaw: 0, tilt: 0.6 }));
   const target = await page.evaluate(async () => {
     const g = window.__game!;
-    const b = g.getBuildings().find((x) => x.state === 1 && x.fire === 0)!;
-    await g.dispatch({ type: 'cheat', cheat: 'ignite', id: b.id });
-    await g.advance(2);
-    return { x: b.x, z: b.z };
+    const s = await g.getState();
+    const r = await g.dispatch({ type: 'disaster', kind: 'meteor', at: { x: 260, z: s.highwayZ - 120 } });
+    if (!r.ok) throw new Error(r.reason);
+    const d = g.getDisasters().active.at(-1)!;
+    return { x: d.x, z: d.z };
   });
-  await page.evaluate(() => window.__game!.setCamera({ x: 2000, z: 2000, distance: 600, yaw: 0, tilt: 0.6 }));
-  const toast = page.getByTestId('toast').filter({ hasText: 'Fire!' });
-  await expect(toast).toHaveClass(/clickable/);
+  const toast = page.getByTestId('toast').filter({ hasText: 'Meteor incoming' });
+  await expect(toast).toHaveClass(/clickable/, { timeout: 4_000 });
   const box = (await toast.boundingBox())!;
   // What a player's click would land on is the toast itself, not the map under it.
   const hit = await page.evaluate(
     ([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid="toast"]')?.textContent ?? null,
     [box.x + box.width / 2, box.y + box.height / 2],
   );
-  expect(hit).toContain('Fire!');
+  expect(hit).toContain('Meteor incoming');
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect
     .poll(async () => {

@@ -426,7 +426,9 @@ export function installTestApi(game: Game): TestApi {
     dispatch: (cmd) => game.dispatch(cmd),
     preview: (cmd) => game.client.preview(cmd),
     getRoadIslands: () => ({
-      islands: game.world.roadIslands().list.map((i) => ({ segs: [...i.segs], length: Math.round(i.length) })),
+      islands: game.world
+        .roadIslands()
+        .list.map((i) => ({ segs: [...i.segs], length: Math.round(i.length) })),
       painted: game.overlay.active === 'traffic' ? [...game.overlay.islandPainted] : [],
     }),
     getState: async () => {

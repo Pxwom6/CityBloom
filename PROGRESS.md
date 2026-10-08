@@ -44,7 +44,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [ ] P5 Roundabouts are refused near bends
 - [ ] P6 Narrow windows lose the toolbar and top bar
 - [x] P7 Some roads are planned at height 0
-- [ ] P8 Bought power is resold at a loss
+- [x] P8 Bought power is resold at a loss
 - [ ] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
 - [ ] P10 Street names change and repeat
 - [ ] P11 Escape doesn't always leave the road tool
@@ -56,7 +56,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [ ] P17 Tax bands nobody pays
 - [ ] P18 Purchases made while paused (check first)
 - [ ] P19 Two road-maintenance lines in the budget
-- [ ] P20 The Region panel doesn't show supply and demand
+- [x] P20 The Region panel doesn't show supply and demand
 - [ ] P21 City limits are invisible
 - [ ] P22 The save toast names the city, not the slot
 - [ ] P23 Clickable toasts can't be clicked

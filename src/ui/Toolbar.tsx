@@ -6,6 +6,7 @@ import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
+import { tipShift } from './layout';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
 import { TRAM, TRANSIT } from '../data/balance';
 import { POLICY, type PolicyId } from '../data/policies';
@@ -71,11 +72,21 @@ interface TipContent {
 
 function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }) {
   const [open, setOpen] = useState(false);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  // A tooltip is centred on its button: over a button at the edge of the window it would run off the
+  // screen, so measure it where it opens (before it is drawn) and slide it back inside.
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    if (!el) return;
+    el.style.removeProperty('--tip-shift');
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--tip-shift', `${tipShift(r.left, r.right, window.innerWidth)}px`);
+  }, [open]);
   return (
     <span class="tip-anchor" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       {children}
       {open && (
-        <span class="tip" role="tooltip">
+        <span class="tip" role="tooltip" ref={tipRef}>
           <strong>{tip.title}</strong>
           {tip.key && <kbd>{tip.key}</kbd>}
           {tip.lines?.map((l) => (

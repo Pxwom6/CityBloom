@@ -277,3 +277,107 @@ test.describe('P6: narrow windows keep the toolbar and the top bar', () => {
     });
   }
 });
+
+test.describe('P13: tooltips stay inside the window', () => {
+  const TOOLS: [string, string][] = [
+    ['tool-road', 'road-options'],
+    ['tool-zone', 'zone-options'],
+    ['tool-district', 'district-options'],
+    ['tool-terrain', 'terrain-options'],
+    ...[
+      'power',
+      'water',
+      'garbage',
+      'fire',
+      'police',
+      'health',
+      'education',
+      'parks',
+      'transit',
+      'landmark',
+      'special',
+      'project',
+    ].map((c): [string, string] => [`tool-${c}`, 'place-options']),
+  ];
+
+  for (const { w, h } of SIZES) {
+    test(`every toolbar and tool-panel tooltip fits at ${w}x${h}`, async ({ page }) => {
+      const errs = watchErrors(page);
+      await page.setViewportSize({ width: w, height: h });
+      await openGame(page);
+      // Nothing locked: a locked tool's tooltip is as long as an unlocked one's, plus the unlock line.
+      await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'unlockAll' }));
+      await frames(page);
+
+      const off: string[] = [];
+      let hovered = 0;
+      // Hover each button under a test id, as a player does, and look where its tooltip landed.
+      // (`.tip`, not role=tooltip: the RCI pop-up is a tooltip too.)
+      const hoverAll = async (scope: string) => {
+        const buttons = page.getByTestId(scope).locator('.tip-anchor > button');
+        const n = await buttons.count();
+        expect(n, `${scope} has buttons`).toBeGreaterThan(0);
+        for (let i = 0; i < n; i++) {
+          const button = buttons.nth(i);
+          await button.hover();
+          const tip = page.locator('.tip');
+          await expect(tip).toHaveCount(1);
+          const box = await tip.boundingBox();
+          const id = await button.getAttribute('data-testid');
+          hovered++;
+          if (!box || box.x < 0 || box.y < 0 || box.x + box.width > w || box.y + box.height > h)
+            off.push(
+              `${id}: ${box ? `${Math.round(box.x)}..${Math.round(box.x + box.width)} x ${Math.round(box.y)}..${Math.round(box.y + box.height)}` : 'no box'}`,
+            );
+        }
+      };
+
+      await hoverAll('toolbar');
+      for (const [tool, options] of TOOLS) {
+        await page.getByTestId(tool).click();
+        await expect(page.getByTestId(options)).toBeVisible();
+        await hoverAll(options);
+        await page.getByTestId('tool-select').click();
+      }
+      expect(hovered, 'hovered enough buttons for the check to mean something').toBeGreaterThan(60);
+      expect(off, `tooltips outside the ${w}x${h} window`).toEqual([]);
+      errs.check();
+    });
+  }
+});
+
+test('P13: a tooltip over an end button slides in, one over a middle button stays centred', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openGame(page);
+  const tipAt = async (id: string) => {
+    await page.getByTestId(id).hover();
+    await expect(page.locator('.tip')).toHaveCount(1);
+    const tip = (await page.locator('.tip').boundingBox())!;
+    const btn = (await page.getByTestId(id).boundingBox())!;
+    return {
+      left: tip.x,
+      right: tip.x + tip.width,
+      tipMid: tip.x + tip.width / 2,
+      btnMid: btn.x + btn.width / 2,
+    };
+  };
+  const select = await tipAt('tool-select');
+  expect(select.left, 'Select: inside the window, with a margin').toBeGreaterThanOrEqual(7.5);
+  expect(select.tipMid, 'Select: slid right of the button').toBeGreaterThan(select.btnMid + 10);
+  await shot(page, 'fix-layout-p13-select');
+  const photo = await tipAt('tool-photo');
+  expect(photo.right, 'Photo: inside the window, with a margin').toBeLessThanOrEqual(1280 - 7.5);
+  expect(photo.tipMid, 'Photo: slid left of the button').toBeLessThan(photo.btnMid - 10);
+  await shot(page, 'fix-layout-p13-photo');
+  const mid = await tipAt('tool-power');
+  expect(Math.abs(mid.tipMid - mid.btnMid), 'Power: centred on its button').toBeLessThan(1);
+
+  // A sub-bar button at the left edge of a narrower window.
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.getByTestId('tool-road').click();
+  const dirt = await tipAt('road-dirt');
+  expect(dirt.left, 'dirt road: inside the window').toBeGreaterThanOrEqual(7.5);
+  await shot(page, 'fix-layout-p13-road-dirt');
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { barsClass, widthClass } from '../src/ui/layout';
+import { barsClass, tipShift, widthClass } from '../src/ui/layout';
 
 describe('interface size classes', () => {
   it('sorts a window by its width in scaled rem', () => {
@@ -11,5 +11,19 @@ describe('interface size classes', () => {
     expect([59.9, 67.9, 72.4].map(barsClass)).toEqual(['compact', 'compact', 'compact']);
     expect([72.5, 77.9, 89.9].map(barsClass)).toEqual(['tight', 'tight', 'tight']);
     expect([90, 120].map(barsClass)).toEqual(['full', 'full']);
+  });
+});
+
+describe('tooltip placement', () => {
+  it('leaves a tooltip that fits where it is', () => {
+    expect(tipShift(100, 300, 1280)).toBe(0);
+    expect(tipShift(8, 300, 1280)).toBe(0);
+    expect(tipShift(100, 1272, 1280)).toBe(0);
+  });
+
+  it('slides one that runs off the left edge right, and off the right edge left', () => {
+    expect(tipShift(-17, 228, 1280)).toBe(25);
+    expect(tipShift(1039, 1311, 1280)).toBe(-39);
+    expect(tipShift(-145, 100, 1024)).toBe(153);
   });
 });

@@ -26,3 +26,13 @@ export function widthClass(rem: number): WidthClass {
 export function barsClass(rem: number): BarsClass {
   return rem < COMPACT_BELOW_REM ? 'compact' : rem < SCENARIO_FOLD_BELOW_REM ? 'tight' : 'full';
 }
+
+/**
+ * How far (px) to slide a tooltip sideways so it stays inside the window: `left` and `right` are its
+ * edges where it was centred on its button, `viewport` the window's width.
+ */
+export function tipShift(left: number, right: number, viewport: number, margin = 8): number {
+  if (left < margin) return margin - left;
+  if (right > viewport - margin) return viewport - margin - right;
+  return 0;
+}

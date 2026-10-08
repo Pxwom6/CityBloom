@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { frames, holdSim, screen, state } from './ui';
-import { buildTownViaApi, openGame, watchErrors } from './helpers';
+import { findSpot, frames, holdSim, screen, state } from './ui';
+import { buildTownViaApi, openGame, shot, watchErrors } from './helpers';
 
 /**
  * Playthrough fixes, input (P3, P4, P11): what a player does with the mouse and keyboard, driven the
@@ -151,6 +151,179 @@ test.describe('P11: Escape follows its order', () => {
       await page.mouse.move(at.x + 40, at.y + 40);
     }
     expect((await shell(page)).screens).toEqual([]);
+    errs.check();
+  });
+});
+
+test.describe('P3: a drag with a tool out pans, a click acts', () => {
+  test('a left-drag pans with a place, stop, bulldoze or disaster tool out and builds nothing; a click still acts', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    await openGame(page);
+    await buildTownViaApi(page);
+    await page.evaluate(async () => {
+      await window.__game!.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+      await window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 });
+    });
+    const cz = await camera(page);
+    const home = async () => {
+      await camera(page);
+    };
+    const pose = () => page.evaluate(() => window.__game!.getCamera());
+    const hash = () => page.evaluate(() => window.__game!.hash());
+
+    /** Press at a spot, drag away and let go: the map moves under the pointer and nothing else happens. */
+    const dragCheck = async (spot: [number, number], tool: string) => {
+      const h0 = await hash();
+      const s0 = await state(page);
+      const c0 = await pose();
+      const p = await screen(page, spot[0], spot[1]);
+      await page.mouse.move(p.x, p.y);
+      await page.mouse.down();
+      await page.mouse.move(p.x - 220, p.y - 70, { steps: 6 });
+      await page.mouse.up();
+      const c1 = await pose();
+      expect(Math.hypot(c1.x - c0.x, c1.z - c0.z), `${tool}: the map moved with the drag`).toBeGreaterThan(
+        20,
+      );
+      expect(await hash(), `${tool}: a drag changed the city`).toBe(h0);
+      const s1 = await state(page);
+      expect(s1.treasury, `${tool}: a drag cost money`).toBe(s0.treasury);
+      expect(s1.segments).toBe(s0.segments);
+      expect(s1.civics).toBe(s0.civics);
+      await expect(page.getByTestId(tool), `${tool}: still the tool in hand`).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    };
+
+    // Place: a wind turbine beside the avenue.
+    await page.getByTestId('tool-power').click();
+    await page.getByTestId('place-wind').click();
+    const wind = await findSpot(
+      page,
+      [
+        [300, cz + 45],
+        [300, cz - 45],
+        [420, cz + 45],
+      ],
+      'the wind turbine',
+    );
+    await dragCheck(wind, 'tool-power');
+    await home();
+    await findSpot(page, [wind], 'the wind turbine again');
+    const h1 = await hash();
+    const civics0 = (await state(page)).civics;
+    let p = await screen(page, wind[0], wind[1]);
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(async () => (await state(page)).civics).toBe(civics0 + 1);
+    expect(await hash()).not.toBe(h1);
+
+    // Stop: a bus stop beside the avenue.
+    await page.getByTestId('tool-transit').click();
+    await page.getByTestId('place-busstop').click();
+    const stop = await findSpot(
+      page,
+      [
+        [300, cz + 12],
+        [300, cz + 45],
+        [420, cz + 12],
+      ],
+      'the bus stop',
+    );
+    await dragCheck(stop, 'tool-transit');
+    await home();
+    await findSpot(page, [stop], 'the bus stop again');
+    const h2 = await hash();
+    p = await screen(page, stop[0], stop[1]);
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(hash).not.toBe(h2);
+
+    // Bulldoze: the avenue itself, which a press would take a piece out of.
+    await page.getByTestId('tool-bulldoze').click();
+    await home();
+    await dragCheck([260, cz], 'tool-bulldoze');
+    await home();
+    p = await screen(page, 260, cz);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await page.waitForTimeout(300);
+    const roads0 = (await state(page)).segments;
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(async () => (await state(page)).segments).toBeLessThan(roads0);
+
+    // Disaster: last, because a click sets it off and leaves the tool.
+    await page.getByTestId('tool-disasters').click();
+    await page.getByTestId('disaster-earthquake').click();
+    await home();
+    await dragCheck([300, cz - 100], 'tool-disasters');
+    await home();
+    const h3 = await hash();
+    p = await screen(page, 300, cz - 100);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await page.waitForTimeout(300);
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(hash).not.toBe(h3);
+    await expect(page.getByTestId('tool-select')).toHaveAttribute('aria-pressed', 'true');
+    errs.check();
+  });
+
+  test('the road tool says how to pan, and a drag in the middle of a chain builds nothing', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    await openGame(page);
+    const cz = await camera(page);
+    await page.getByTestId('tool-road').click();
+    await page.getByTestId('road-street').click();
+    const pose = () => page.evaluate(() => window.__game!.getCamera());
+    const s0 = (await state(page)).segments;
+
+    // Idle, the hint says how to move the map without drawing.
+    const a = await screen(page, 24, cz);
+    await page.mouse.move(a.x, a.y, { steps: 2 });
+    await expect(hint(page)).toContainText('middle-drag');
+    await shot(page, 'fix-input-road-hint');
+
+    // And a middle-drag does pan, building nothing.
+    const c0 = await pose();
+    await page.mouse.down({ button: 'middle' });
+    await page.mouse.move(a.x + 120, a.y + 40, { steps: 5 });
+    await page.mouse.up({ button: 'middle' });
+    const c1 = await pose();
+    expect(Math.hypot(c1.x - c0.x, c1.z - c0.z)).toBeGreaterThan(20);
+    expect((await state(page)).segments).toBe(s0);
+    await expect(page.getByTestId('tool-road')).toHaveAttribute('aria-pressed', 'true');
+    await camera(page);
+
+    // The shortcut card lists it.
+    await page.keyboard.press('Shift+Slash');
+    await expect(page.getByTestId('shortcuts')).toContainText('Middle-drag');
+    await shot(page, 'fix-input-shortcuts');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('shortcuts')).toBeHidden();
+    await expect(page.getByTestId('tool-road')).toHaveAttribute('aria-pressed', 'true');
+
+    // A chain: two clicks build the first street.
+    const b = await screen(page, 160, cz);
+    await page.mouse.move(a.x, a.y, { steps: 2 });
+    await page.mouse.click(a.x, a.y);
+    await page.mouse.move(b.x, b.y, { steps: 3 });
+    await page.mouse.click(b.x, b.y);
+    await expect.poll(async () => (await state(page)).segments).toBe(s0 + 1);
+
+    // Mid-chain, a press that is dragged away is the start of a pan, not a road.
+    const f = await screen(page, 300, cz - 100);
+    await page.mouse.move(f.x, f.y, { steps: 3 });
+    await page.mouse.down();
+    await page.mouse.move(f.x - 150, f.y + 20, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+    expect((await state(page)).segments).toBe(s0 + 1);
+    // A click still extends the chain.
+    await page.mouse.move(f.x, f.y, { steps: 3 });
+    await page.mouse.click(f.x, f.y);
+    await expect.poll(async () => (await state(page)).segments).toBe(s0 + 2);
     errs.check();
   });
 });

@@ -6,7 +6,8 @@ import { CIVIC } from '../data/civic';
 /** Click a building, civic building or road to demolish it. Hovering shows what would go. */
 export class BulldozeTool implements Tool {
   readonly id = 'bulldoze';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   private hover: string | null = null;
   private hoverInfo: string | null = null;
   private seq = 0;

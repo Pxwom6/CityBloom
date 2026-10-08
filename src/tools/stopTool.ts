@@ -8,7 +8,8 @@ import type { Tool, ToolPointer } from './tool';
  */
 export class StopTool implements Tool {
   readonly id = 'stop';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   tram = false;
   private pointer = { x: 0, y: 0 };
   private seq = 0;

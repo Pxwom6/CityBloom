@@ -12,7 +12,8 @@ import type { Tool, ToolPointer } from './tool';
  */
 export class PlaceTool implements Tool {
   readonly id = 'place';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   category: CivicCategory = 'power';
   def = 'wind';
   private pose: { x: number; z: number; angle: number; side: 1 | -1 } | null = null;

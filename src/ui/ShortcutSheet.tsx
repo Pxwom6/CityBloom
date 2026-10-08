@@ -11,7 +11,7 @@ function sections(): [string, Row[]][] {
     [
       'Camera',
       [
-        ['Pan', ['Drag', 'W A S D', 'Arrows', 'Two-finger swipe']],
+        ['Pan', ['Drag', 'Middle-drag', 'W A S D', 'Arrows', 'Two-finger swipe']],
         ['Zoom', ['Wheel', 'Pinch', '+ / −']],
         ['Turn and tilt', ['Right-drag', 'Q / E', 'R / F', `${alt} + swipe`]],
       ],
@@ -110,6 +110,11 @@ export function ShortcutSheet() {
       <p class="muted">
         {isMac ? 'Trackpad' : 'Trackpad or touchpad'}: swipe to pan, pinch to zoom. Settings can fix the
         pointing device if it's detected wrongly.
+      </p>
+      <p class="muted">
+        With the road, zoning, district or terrain tool out, a left-drag draws or paints: pan with
+        middle-drag, W A S D, the arrow keys or a swipe. With a building, bus stop, bulldozer or disaster out,
+        a drag pans and a click acts.
       </p>
     </div>
   );

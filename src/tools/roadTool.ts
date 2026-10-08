@@ -5,7 +5,7 @@ import { compass, mid, type Vec2 } from '../sim/geom';
 import type { Game } from '../game';
 import { modKey } from '../client/platform';
 import { fitFreeform, snapPoint, type SnapResult } from './snap';
-import type { Tool, ToolPointer } from './tool';
+import { CLICK_SLOP, type Tool, type ToolPointer } from './tool';
 import type { GhostProfile } from '../render/ghost';
 
 /** What a road build preview reports (see buildRoad in src/sim/actions/roads.ts). */
@@ -111,6 +111,8 @@ export class RoadTool implements Tool {
   private cursor: SnapResult | null = null;
   private dragging = false;
   private downAt: { x: number; y: number } | null = null;
+  /** A press waiting to become a click (P3): done when the button comes up near where it went down. */
+  private click: { x: number; y: number; run: () => void } | null = null;
   private freePath: Vec2[] = [];
   private previewSeq = 0;
   private inFlight = false;
@@ -154,6 +156,9 @@ export class RoadTool implements Tool {
   private abandon(): void {
     this.epoch++;
     this.queued = null;
+    // A press that was about to become a click (P3) must not fire after Escape. Not in `reset()`: a
+    // road built while the next press is down must not eat that click.
+    this.click = null;
     this.reset();
   }
 
@@ -524,10 +529,12 @@ export class RoadTool implements Tool {
             ? 'Click or release to place'
             : 'Click or drag to draw';
     const way = this.oneWay && !rt.oneWay ? ' · one-way (O)' : rt.oneWay ? ' · one-way, as drawn' : '';
+    // A left-drag draws with this tool out, so say how to move the map instead (P3).
+    const pan = !this.start && this.freePath.length === 0 ? ' · pan with middle-drag, WASD or a swipe' : '';
     this.game.setHint({
       x: this.pointer.x,
       y: this.pointer.y,
-      text: `${rt.name}${way} · $${rt.costPerMetre}/m — ${what}`,
+      text: `${rt.name}${way} · $${rt.costPerMetre}/m — ${what}${pan}`,
       tone: 'info',
     });
   }
@@ -682,12 +689,13 @@ export class RoadTool implements Tool {
     }
     this.pointer = { x: p.clientX, y: p.clientY };
     this.downAt = { x: p.clientX, y: p.clientY };
+    this.click = null;
     if (this.mode === 'upgrade') {
-      void this.commitUpgrade();
+      this.onClick(p, () => void this.commitUpgrade());
       return;
     }
     if (this.mode === 'oneway') {
-      void this.commitEdit();
+      this.onClick(p, () => void this.commitEdit());
       return;
     }
     if (this.mode === 'tram') {
@@ -713,19 +721,44 @@ export class RoadTool implements Tool {
       return;
     }
     if (this.mode === 'curve') {
-      if (!this.start) this.start = this.snap(p.ground, null);
-      else if (!this.control) this.control = { x: p.ground.x, z: p.ground.z };
-      else void this.commit();
-      this.cursor = this.snap(p.ground, this.control ? null : this.start, this.control ?? this.start);
-      this.refresh();
+      if (!this.start) {
+        this.start = this.snap(p.ground, null);
+        this.cursor = this.snap(p.ground, this.start, this.start);
+        this.refresh();
+      } else {
+        // The bend and the end are clicks: dragged away from, a press is a pan.
+        const ground = { x: p.ground.x, z: p.ground.z };
+        this.onClick(p, () => {
+          const bend = !this.control;
+          if (bend) this.control = ground;
+          // The end joins a road it nearly reaches, arriving from the bend (P1).
+          this.cursor = this.snap(ground, null, this.control ?? this.start);
+          if (!bend) void this.commit();
+          this.refresh();
+        });
+      }
       return;
     }
     if (!this.start) {
       this.start = this.snap(p.ground, null);
       this.dragging = true;
     } else {
-      void this.commit();
+      // Mid-chain a press is a click, not the start of a drag: pulled away from it is a pan (P3).
+      const ground = { x: p.ground.x, z: p.ground.z };
+      this.onClick(p, () => {
+        this.cursor = this.snap(ground, this.start, this.start);
+        void this.commit();
+      });
     }
+  }
+
+  /**
+   * Do something when the button comes up within a click's reach of where it went down. A road tool
+   * keeps drag-to-draw for a first press, but anything else a press would do (finish a road, change one
+   * already built) waits for the release, so a left-drag meant to pan the map builds nothing (P3).
+   */
+  private onClick(p: ToolPointer, run: () => void): void {
+    this.click = { x: p.clientX, y: p.clientY, run };
   }
 
   pointerMove(p: ToolPointer): void {
@@ -804,6 +837,12 @@ export class RoadTool implements Tool {
   pointerUp(p: ToolPointer): void {
     if (p.button !== 0) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    const c = this.click;
+    this.click = null;
+    if (c) {
+      if (Math.hypot(p.clientX - c.x, p.clientY - c.y) <= CLICK_SLOP) c.run();
+      return;
+    }
     if (this.tramPaint) {
       this.tramPaint = null;
       this.refresh();

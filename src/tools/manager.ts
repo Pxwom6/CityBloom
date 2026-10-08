@@ -3,7 +3,7 @@ import type { Game } from '../game';
 import { BulldozeTool } from './bulldozeTool';
 import { RoadTool } from './roadTool';
 import { SelectTool } from './selectTool';
-import type { Tool, ToolPointer } from './tool';
+import { CLICK_SLOP, type Tool, type ToolPointer } from './tool';
 import { ZoneTool } from './zoneTool';
 import { PlaceTool } from './placeTool';
 import { StopTool } from './stopTool';
@@ -32,6 +32,8 @@ export class ToolManager {
   readonly map: MapTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
+  /** Where a left press began for a click-only tool (P3), until the button comes up. */
+  private clickDown: { tool: Tool; x: number; y: number } | null = null;
 
   constructor(private game: Game) {
     this.select = new SelectTool(game);
@@ -104,6 +106,12 @@ export class ToolManager {
       this.rightDown = { x: e.clientX, y: e.clientY };
       return;
     }
+    // A tool that acts on a click waits for the button to come up near where it went down: a longer
+    // drag is the camera panning (P3).
+    if (this.active.clickOnly) {
+      if (e.button === 0) this.clickDown = { tool: this.active, x: e.clientX, y: e.clientY };
+      return;
+    }
     this.active.pointerDown(this.pointer(e));
   }
 
@@ -126,6 +134,18 @@ export class ToolManager {
       this.rightDown = null;
       // A right click without a drag cancels the current action.
       if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) this.cancelOrExit();
+      return;
+    }
+    const c = this.clickDown;
+    if (c && e.button === 0) {
+      this.clickDown = null;
+      // The tool was left, or changed, between the press and the release: nothing to do.
+      if (c.tool !== this.active) return;
+      const p = this.pointer(e);
+      if (Math.hypot(e.clientX - c.x, e.clientY - c.y) <= CLICK_SLOP) c.tool.pointerDown(p);
+      // A pan: moves were not delivered while the camera held the pointer, so put the ghost and hint
+      // back under it now.
+      else c.tool.pointerMove(p);
       return;
     }
     this.active.pointerUp(this.pointer(e));

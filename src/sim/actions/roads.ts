@@ -204,6 +204,8 @@ function upgradeBox(sim: Sim, segId: number, earth: EarthPlan | null): Box {
 function upgradeLosses(sim: Sim, segId: number, road: RoadTypeId, earth: EarthPlan | null): number[] {
   const net = sim.net;
   const from = net.segment(segId).type;
+  // A change of type re-suffixes the street's name (P10), and not always reversibly: keep it.
+  const name = net.segment(segId).name;
   const blocks = [net.segment(segId).left, net.segment(segId).right].filter((b): b is number => !!b);
   const wasDirty = {
     seg: net.dirty.segments.has(segId),
@@ -218,6 +220,8 @@ function upgradeLosses(sim: Sim, segId: number, road: RoadTypeId, earth: EarthPl
   } finally {
     earth?.idx.forEach((i, n) => (t.heights[i] = heights[n]!));
     net.setSegmentType(segId, from);
+    if (name === undefined) delete net.segment(segId).name;
+    else net.segment(segId).name = name;
     if (!wasDirty.seg) net.dirty.segments.delete(segId);
     for (const b of blocks) if (!wasDirty.blocks.includes(b)) net.dirty.blocks.delete(b);
   }

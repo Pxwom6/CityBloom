@@ -99,6 +99,9 @@ export const JUNCTION = {
   /** Roundabouts: the ring's centre-line radius, its carriageway width, and the price per metre. */
   minRadius: 12,
   maxRadius: 40,
+  /** The smallest ring a site can take (P5: a mini roundabout, below the usual sizes), and the step between sizes. */
+  miniRadius: 6,
+  sizeStep: 2,
   ringWidth: 8,
   costPerMetre: 40,
 };

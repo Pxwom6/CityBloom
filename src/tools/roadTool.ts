@@ -1,7 +1,7 @@
 import { JUNCTION, TRAM } from '../data/balance';
 import { ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
-import { mid, type Vec2 } from '../sim/geom';
+import { compass, mid, type Vec2 } from '../sim/geom';
 import type { Game } from '../game';
 import { modKey } from '../client/platform';
 import { fitFreeform, snapPoint, type SnapResult } from './snap';
@@ -69,12 +69,7 @@ export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade' | 'oneway' | 'r
 
 const MODES: RoadMode[] = ['straight', 'curve', 'free', 'upgrade', 'oneway', 'roundabout', 'tram'];
 
-/** Compass direction of a heading in the ground plane (−z is north). */
-export function compass(dx: number, dz: number): string {
-  const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-  const k = Math.round(Math.atan2(dz, dx) / (Math.PI / 4));
-  return names[(k + 8) % 8]!;
-}
+export { compass };
 
 /** Four quadratic pieces round a circle (the ghost of a roundabout's ring). */
 function ringPieces(c: Vec2, r: number): { a: Vec2; c: Vec2; b: Vec2 }[] {

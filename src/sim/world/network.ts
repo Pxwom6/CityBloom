@@ -412,38 +412,46 @@ export class Network {
   }
 
   /**
-   * Split a segment at arc length s into two, keeping the zone grid phase so cells, zones and
-   * buildings carry over exactly. Returns the new node and the two halves (a→N, N→b).
+   * Where a split of segment `id` at arc length `s` leaves each building beside it, as
+   * `splitSegment` lays out the halves and hands the columns over: a mask of 1 (on the first half,
+   * a→N), 2 (on the second, N→b) and 4 (in the column the new junction takes, or past the far
+   * half's last column).
    */
-  /**
-   * Buildings a split of segment `id` at arc length `s` would demolish (P2), as `splitSegment` lays
-   * out the halves and hands the columns over: one standing in the column the new junction takes,
-   * past the far half's last column, or across the split.
-   */
-  splitLosses(id: number, s: number): number[] {
+  splitHalves(id: number, s: number): Map<number, number> {
     const seg = this.segment(id);
     const len2 = this.curve(id).length - s;
-    const out = new Set<number>();
+    const out = new Map<number, number>();
     for (const bid of [seg.left, seg.right]) {
       const block = bid ? this.st.blocks.get(bid) : undefined;
       if (!block) continue;
       const cols1 = Math.max(0, Math.floor((s - block.s0) / CELL + 1e-6));
       const cFirst = Math.ceil((s - block.s0) / CELL - 1e-6);
       const cols2 = Math.max(0, Math.floor((len2 - (block.s0 + cFirst * CELL - s)) / CELL + 1e-6));
-      const half = new Map<number, number>();
       for (let c = 0; c < block.cols; c++) {
-        const h = c < cols1 ? 1 : c - cFirst >= 0 && c - cFirst < cols2 ? 2 : 0;
+        const h = c < cols1 ? 1 : c - cFirst >= 0 && c - cFirst < cols2 ? 2 : 4;
         for (let r = 0; r < ROWS; r++) {
           const bld = block.bld[c * ROWS + r]!;
-          if (!bld) continue;
-          if (!h || (half.has(bld) && half.get(bld) !== h)) out.add(bld);
-          half.set(bld, h);
+          if (bld) out.set(bld, (out.get(bld) ?? 0) | h);
         }
       }
     }
-    return [...out].sort((a, b) => a - b);
+    return out;
   }
 
+  /**
+   * Buildings a split of segment `id` at arc length `s` would demolish (P2): one standing where
+   * the new junction goes or past the far half's end (`splitHalves`), or across the split.
+   */
+  splitLosses(id: number, s: number): number[] {
+    const out: number[] = [];
+    for (const [bld, m] of this.splitHalves(id, s)) if (m & 4 || m === 3) out.push(bld);
+    return out.sort((a, b) => a - b);
+  }
+
+  /**
+   * Split a segment at arc length s into two, keeping the zone grid phase so cells, zones and
+   * buildings carry over exactly. Returns the new node and the two halves (a→N, N→b).
+   */
   splitSegment(
     id: number,
     s: number,

@@ -190,4 +190,13 @@ describe('road ends that miss (P1)', () => {
     sim.advance(60);
     expect(advise(sim).some((a) => a.title === 'No road to the highway')).toBe(true);
   });
+
+  it('a first street from the highway is never called cut off, even before the hour turns', () => {
+    // Paused, as a new city starts: the totals the advisor used to read update hourly.
+    const sim = newSim();
+    const c = connectPoint(sim);
+    road(sim, [c, at(c, 120, -200)]);
+    expect(advise(sim).some((a) => a.title === 'No road to the highway')).toBe(false);
+    expect(advise(sim).some((a) => a.segs?.length)).toBe(false);
+  });
 });

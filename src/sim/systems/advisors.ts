@@ -400,8 +400,12 @@ export function advise(sim: Sim): Advice[] {
       text: `Workforce: ${Math.round(e1 * 100)} % schooled.`,
     });
 
-  // Transport. (A new city has the regional highway and railway, which nobody built: P1, P9.)
-  if (!s.totals.highwayConnected && [...s.net.segments.values()].some((x) => isPlayerRoad(x.type)))
+  // Transport. (A new city has the regional highway and railway, which nobody built: P1, P9.) Linked
+  // or not is read from the network itself, so a road just built counts at once, paused or not: the
+  // totals are only worked out hourly.
+  const playerRoads = [...s.net.segments.values()].filter((x) => isPlayerRoad(x.type));
+  const linked = playerRoads.some((x) => sim.isSegmentConnected(x.id));
+  if (playerRoads.length && !linked)
     out.push({
       advisor: 'transport',
       severity: 3,
@@ -414,7 +418,7 @@ export function advise(sim: Sim): Advice[] {
     });
   // Roads cut off from the highway while the rest of the town is linked (P1): nothing grows there,
   // and services on them reach nobody. The worst stretch, by what's on it.
-  const islands = s.totals.highwayConnected ? sim.roadIslands() : [];
+  const islands = linked ? sim.roadIslands() : [];
   if (islands.length) {
     const rank = islands.map((isl) => {
       const on = new Set(isl.segs);

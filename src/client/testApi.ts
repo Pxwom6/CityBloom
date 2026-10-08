@@ -36,6 +36,14 @@ export interface Box {
 export interface TestApi {
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
+  /** Roundabout mode (P5): the size chosen, the last preview's ring and whether it fits, and the short road. */
+  getRing(): {
+    size: number | null;
+    radius: number | null;
+    ok: boolean | null;
+    short: number[];
+    at: { x: number; z: number } | null;
+  };
   /** Roads cut off from the highway (P1), and those the traffic map paints red for it. */
   getRoadIslands(): { islands: { segs: number[]; length: number }[]; painted: number[] };
   /** The sim's dry run of a command: what it would cost and do, changing nothing. */
@@ -434,6 +442,7 @@ export function installTestApi(game: Game): TestApi {
     ready: true,
     dispatch: (cmd) => game.dispatch(cmd),
     preview: (cmd) => game.client.preview(cmd),
+    getRing: () => game.tools.road.ringPreview(),
     getRoadIslands: () => ({
       islands: game.world
         .roadIslands()

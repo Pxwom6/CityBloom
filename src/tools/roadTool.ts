@@ -143,6 +143,7 @@ export class RoadTool implements Tool {
   }
 
   deactivate(): void {
+    this.ringSize = undefined;
     this.abandon();
     this.game.renderer.ghost.clear();
     this.game.setHint(null);
@@ -238,7 +239,11 @@ export class RoadTool implements Tool {
       return {
         type: 'roundabout',
         ...(r.node !== undefined ? { node: r.node } : { at: r.at! }),
-        ...(r.radius !== undefined ? { radius: r.radius } : {}),
+        ...(r.radius !== undefined
+          ? { radius: r.radius }
+          : this.ringSize !== undefined
+            ? { radius: this.ringSize }
+            : {}),
       };
     }
     const way = this.oneWay && !ROAD_TYPES[this.type].oneWay ? { oneway: true } : {};
@@ -265,7 +270,62 @@ export class RoadTool implements Tool {
     const n = net.nearestNode(p, 14);
     if (n) return { node: n.id, centre: { x: n.x, z: n.z } };
     const hit = net.nearestSegment(p, 10, (id) => ROAD_TYPES[net.segment(id).type].access);
-    return hit ? { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } } : null;
+    if (!hit) return null;
+    // Near a junction the road ends at, the ring goes on the junction, not a few metres along (P5).
+    const seg = net.segment(hit.seg);
+    for (const id of [seg.a, seg.b]) {
+      const j = net.node(id);
+      if (net.segmentsAt(id).length >= 3 && Math.hypot(j.x - p.x, j.z - p.z) < 24)
+        return { node: id, centre: { x: j.x, z: j.z } };
+    }
+    return { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } };
+  }
+
+  /**
+   * Roundabout mode (P5): the ring size asked for with [ and ] or the bar's buttons, as a
+   * centre-line radius; undefined for the largest that fits.
+   */
+  ringSize: number | undefined = undefined;
+
+  /** What roundabout mode shows now (test API `getRing`). */
+  ringPreview(): {
+    size: number | null;
+    radius: number | null;
+    ok: boolean | null;
+    short: number[];
+    at: { x: number; z: number } | null;
+  } {
+    const res = this.lastResult?.res;
+    const info = (res?.info ?? {}) as { radius?: number; short?: { segs: number[] } };
+    return {
+      size: this.ringSize ?? null,
+      radius: info.radius ?? null,
+      ok: res ? res.ok : null,
+      short: res && !res.ok ? (info.short?.segs ?? []) : [],
+      at: this.ring ? { ...this.ring.centre } : null,
+    };
+  }
+
+  /** Step the ring a size larger (1) or smaller (−1), or back to the size that fits (0). */
+  stepRing(dir: 1 | -1 | 0): void {
+    if (dir === 0) this.ringSize = undefined;
+    else {
+      const res = this.lastResult?.res;
+      const info = (res?.info ?? {}) as { radius?: number; minRadius?: number; fits?: number };
+      let next =
+        (this.ring?.radius ?? this.ringSize ?? info.radius ?? JUNCTION.minRadius + 2) +
+        dir * JUNCTION.sizeStep;
+      // Refused at this size: smaller goes straight to the largest that fits.
+      if (dir < 0 && res && !res.ok && info.fits) next = info.fits;
+      this.ringSize = Math.min(JUNCTION.maxRadius, Math.max(info.minRadius ?? JUNCTION.miniRadius, next));
+    }
+    if (this.ring?.radius !== undefined) {
+      this.ring = { ...this.ring };
+      delete this.ring.radius;
+    }
+    this.lastResult = null;
+    this.refresh();
+    this.game.notify();
   }
 
   /** Send a command; `live` is false if Escape, a mode change or leaving the tool came before the reply. */
@@ -414,22 +474,35 @@ export class RoadTool implements Tool {
       g.showMarker(null);
       this.game.setHint({
         ...this.pointer,
-        text: 'Click a junction or a road for a roundabout; drag out to size the ring',
+        text: 'Click a junction or a road for a roundabout; drag out, or press [ and ], to size the ring',
         tone: 'info',
       });
       return;
     }
     const res = this.lastResult?.res;
-    const info = (res?.info ?? {}) as { radius?: number; demolish?: number };
-    const radius = info.radius ?? r.radius ?? JUNCTION.minRadius + 2;
+    const info = (res?.info ?? {}) as {
+      radius?: number;
+      minRadius?: number;
+      demolish?: number;
+      short?: { segs: number[] };
+    };
+    const radius = info.radius ?? r.radius ?? this.ringSize ?? JUNCTION.minRadius + 2;
     g.showRoad(ringPieces(r.centre, radius), 'street', !res ? 'pending' : res.ok ? 'ok' : 'bad');
+    // Refused for room: the road that's too short, out to what's in the way (the marker) (P5).
+    const net = this.game.world.net;
+    const short =
+      res && !res.ok
+        ? (info.short?.segs ?? []).filter((id) => this.game.world.netState.segments.has(id))
+        : [];
+    g.highlightSegment(short.length ? short.map((id) => net.curve(id)) : null, 6);
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    const what = res?.ok && info.radius === info.minRadius ? 'Mini roundabout' : 'Roundabout';
     if (!res) this.game.setHint({ ...this.pointer, text: 'Roundabout', tone: 'info' });
     else if (res.ok)
       this.game.setHint({
         ...this.pointer,
         text: [
-          `Roundabout · $${res.cost.toLocaleString('en-US')}`,
+          `${what} · $${res.cost.toLocaleString('en-US')}`,
           `${Math.round(radius * 2)} m across`,
           ...(info.demolish ? [`replaces ${info.demolish} building${info.demolish === 1 ? '' : 's'}`] : []),
         ].join(' · '),
@@ -620,9 +693,11 @@ export class RoadTool implements Tool {
       this.game.audio?.play('error');
       if (cmd.type === 'roundabout')
         this.game.toast(
-          `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
+          /roundabout/i.test(res.reason)
+            ? res.reason
+            : `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
           'bad',
-          3000,
+          4000,
         );
     }
     if (!live) return;
@@ -772,10 +847,14 @@ export class RoadTool implements Tool {
     if (!p.ground) return;
     if (this.mode === 'roundabout') {
       if (this.ringDrag && this.ring) {
-        // Dragging out from the middle draws the ring at that size.
+        // Dragging out from the middle draws the ring at that size; a click's few pixels of jitter
+        // never set one (P5).
+        const moved = this.downAt ? Math.hypot(p.clientX - this.downAt.x, p.clientY - this.downAt.y) : 0;
         const d = Math.hypot(p.ground.x - this.ring.centre.x, p.ground.z - this.ring.centre.z);
         const radius =
-          d > 8 ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.minRadius, d))) : undefined;
+          moved >= 6 && d > 8
+            ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.miniRadius, d)))
+            : undefined;
         if (radius !== this.ring.radius) {
           this.ring = { ...this.ring, ...(radius !== undefined ? { radius } : {}) };
           if (radius === undefined) delete this.ring.radius;
@@ -874,6 +953,10 @@ export class RoadTool implements Tool {
   }
 
   key(e: KeyboardEvent): boolean {
+    if (this.mode === 'roundabout' && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+      this.stepRing(e.code === 'BracketRight' ? 1 : -1);
+      return true;
+    }
     if (e.code === 'KeyG') {
       this.grid = !this.grid;
       this.game.notify();

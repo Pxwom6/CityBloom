@@ -258,14 +258,18 @@ export class GhostRenderer {
     return buf.n ? mergeChunks([buf.trimmed()]) : null;
   }
 
-  highlightSegment(curve: Curve | null, half: number, color: 'bad' | 'ok' = 'bad'): void {
+  highlightSegment(curve: Curve | Curve[] | null, half: number, color: 'bad' | 'ok' = 'bad'): void {
     if (this.highlight) {
       this.group.remove(this.highlight);
       this.highlight.geometry.dispose();
       this.highlight = null;
     }
     if (!curve) return;
-    const geo = this.ribbon([{ a: curve.a, c: curve.c, b: curve.b }], half + 0.6);
+    const list = Array.isArray(curve) ? curve : [curve];
+    const geo = this.ribbon(
+      list.map((c) => ({ a: c.a, c: c.c, b: c.b })),
+      half + 0.6,
+    );
     if (!geo) return;
     this.hiMat.color.copy(color === 'bad' ? BAD : OK);
     this.highlight = new Mesh(geo, this.hiMat);

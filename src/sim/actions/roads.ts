@@ -678,8 +678,8 @@ export function placeRoundabout(
     const size =
       radius === undefined
         ? 'No room for even a mini roundabout'
-        : `No room for a roundabout ${Math.round(2 * ringOuter(tried))} m across`;
-    const smaller = fits ? ` One up to ${Math.round(2 * ringOuter(fits))} m across would fit.` : '';
+        : `No room for a roundabout ${2 * tried} m across`;
+    const smaller = fits ? ` One up to ${2 * fits} m across would fit.` : '';
     return fail(
       `${size}: the road ${compass(sf.arm.dir.x, sf.arm.dir.z)} runs ${have} m to ${WHAT[sf.what]}, and a ring needs ${need} m.${smaller}`,
       { at: f.at, info },

@@ -41,7 +41,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [x] P2 Building and upgrading roads remove buildings without saying so
 - [x] P3 A drag with a tool out builds
 - [x] P4 A category click arms its first tool
-- [ ] P5 Roundabouts are refused near bends
+- [x] P5 Roundabouts are refused near bends
 - [ ] P6 Narrow windows lose the toolbar and top bar
 - [x] P7 Some roads are planned at height 0
 - [x] P8 Bought power is resold at a loss

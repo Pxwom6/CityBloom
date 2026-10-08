@@ -255,7 +255,7 @@ export function Toolbar() {
                 'roundabout',
                 IconRoundabout,
                 'Roundabout',
-                'Click a junction (or a road) for a roundabout; drag out to size the ring. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
+                'Click a junction (or a road) for a roundabout: it gets the largest ring that fits, down to a mini roundabout. Drag out, or press [ and ], to choose the size. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
               ],
               [
                 'tram',
@@ -302,6 +302,43 @@ export function Toolbar() {
           >
             <IconGrid />
           </ToolButton>
+          {tools.road.mode === 'roundabout' && (
+            // The ring's size (P5): the largest that fits, or one chosen with [ ] or these.
+            <>
+              <span class="subbar-note" data-testid="ring-size">
+                {tools.road.ringSize === undefined
+                  ? 'Ring: the largest that fits'
+                  : `Ring: ${tools.road.ringSize * 2} m across`}
+              </span>
+              <button
+                class="btn small"
+                data-testid="ring-smaller"
+                aria-label="Smaller ring"
+                title="Smaller ring ([)"
+                onClick={() => tools.road.stepRing(-1)}
+              >
+                −
+              </button>
+              <button
+                class="btn small"
+                data-testid="ring-larger"
+                aria-label="Larger ring"
+                title="Larger ring (])"
+                onClick={() => tools.road.stepRing(1)}
+              >
+                +
+              </button>
+              <button
+                class="btn small"
+                data-testid="ring-auto"
+                disabled={tools.road.ringSize === undefined}
+                title="The largest ring that fits"
+                onClick={() => tools.road.stepRing(0)}
+              >
+                Fit
+              </button>
+            </>
+          )}
         </div>
       )}
       {active === 'district' && <DistrictOptions />}

@@ -1103,6 +1103,10 @@ A fix round after a full playthrough; `docs/DECISIONS.md` ("Playthrough fixes") 
   a first press on release; `PlaceTool.armed` and `browse()` open a category without arming a
   building; `RoadTool.abandon()` bumps an epoch that every sim reply checks; the stop tool picks the
   road under the cursor as drawn (`roadUnderCursor`), decks included.
+- **Layout** (P6, P13, P14): below 72.5 rem the toolbar wraps to two rows and the top bar folds City,
+  History, Region, Advisors and Notifications into a More menu (`#ui[data-bars]`, `src/ui/layout.ts`);
+  tooltips slide to stay on screen; the thought feed hides under the data-map menu and passes a drag
+  to the camera (`CameraController.beginDrag`).
 - **Calendar years** (P16, §3.23), the tax tab's `payers` per band (P17), loan terms from `annuity`
   in `src/data/economy.ts` (P24), tips checked again before they show (`pickTip`, P15).
 

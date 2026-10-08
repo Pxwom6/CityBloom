@@ -114,10 +114,25 @@ body {
   border-radius: var(--radius-pill);
   z-index: var(--z-hud);
   white-space: nowrap;
+  /* As wide as its content, up to the window (like .toolbar-wrap): the city name gives way first. */
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-3));
+}
+.topbar > *,
+.topbar .btn {
+  flex-shrink: 0;
+}
+.topbar > .city,
+.topbar > .goals-btn {
+  flex-shrink: 1;
+  min-width: 3rem;
 }
 .topbar .city {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-md);
+  /* A long name is cut short with an ellipsis (white-space: nowrap is inherited). */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .topbar .stat {
   display: flex;
@@ -253,6 +268,19 @@ body {
   align-self: stretch;
   margin: 0 var(--space-1);
   background: var(--color-border);
+}
+/*
+ * A window narrower than the toolbar's buttons (data-bars, set from the width in scaled rem): the
+ * main toolbar wraps onto two rows, 12 buttons and 11, and everything that sits above it moves up.
+ * Without the max-width the wrapped box would fill the whole window around the icons.
+ */
+#ui[data-bars='compact'] {
+  --toolbar-height: 7.5rem;
+}
+#ui[data-bars='compact'] .toolbar-main {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(38rem, calc(100vw - 2 * var(--space-3)));
 }
 .tool-btn {
   appearance: none;
@@ -1360,8 +1388,60 @@ body {
   :is(.topbar .stat-jobs, .topbar .divider, .topbar .stat-date .label) {
   display: none;
 }
-#ui[data-width='xs'] .topbar .city {
+#ui[data-width='xs'] .topbar .stat-approval {
   display: none;
+}
+
+/*
+ * The top bar folds its lesser buttons into a More menu while the bars are compact, and in a scenario
+ * (its Goals button is wide) while they are tight too (data-bars, see src/ui/layout.ts).
+ */
+.topbar-more,
+.topbar-panels {
+  display: contents;
+}
+.topbar .btn.more-toggle {
+  display: none;
+}
+:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-more {
+  display: flex;
+  position: relative;
+  flex-shrink: 0;
+}
+:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .more-toggle {
+  display: inline-grid;
+  position: relative;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-panels {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  z-index: 5;
+}
+:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario) .topbar-panels.open {
+  display: flex;
+}
+/* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
+:is(#ui[data-bars='compact'] .topbar, #ui[data-bars='tight'] .topbar.scenario)
+  .more-toggle:has(~ .topbar-panels .badge)::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-negative);
+}
+/* Over the panels the top bar's own pop-ups sit under (z-hud against z-panel). */
+#ui:is([data-bars='compact'], [data-bars='tight']) .topbar:has(.topbar-panels.open) {
+  z-index: var(--z-modal);
 }
 
 /* Budget panel */
@@ -2654,17 +2734,25 @@ body {
 }
 .goals-btn {
   align-items: flex-start;
+  overflow: hidden;
 }
 .goals-btn .city {
   font-weight: var(--font-weight-bold);
+  max-width: 100%;
 }
 .goals-btn .sub {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+.goals-btn .goals-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .goals-btn .stars {
   font-size: var(--font-size-xs);

@@ -474,7 +474,7 @@ export function Toolbar() {
       )}
       {mapsOpen && <MapsMenu onClose={() => setMapsOpen(false)} />}
       {disastersOpen && <DisastersMenu onClose={() => setDisastersOpen(false)} />}
-      <div class="toolbar panel" data-testid="toolbar">
+      <div class="toolbar toolbar-main panel" data-testid="toolbar">
         <ToolButton
           id="tool-select"
           active={active === 'select'}

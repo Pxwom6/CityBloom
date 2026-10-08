@@ -25,6 +25,7 @@ import { AppUpdates } from './client/pwa';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
+import { barsClass, widthClass } from './ui/layout';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -67,7 +68,8 @@ function layoutUi(): void {
   const ui = document.getElementById('ui');
   if (!ui) return;
   const rem = window.innerWidth / (16 * uiScale);
-  ui.dataset.width = rem < 60 ? 'xs' : rem < 68 ? 's' : rem < 78 ? 'm' : 'l';
+  ui.dataset.width = widthClass(rem);
+  ui.dataset.bars = barsClass(rem);
 }
 if (typeof window !== 'undefined') window.addEventListener('resize', layoutUi);
 

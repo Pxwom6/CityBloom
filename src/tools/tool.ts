@@ -9,10 +9,20 @@ export interface ToolPointer {
   shift: boolean;
   ctrl: boolean;
   alt: boolean;
+  /** The pointer's id and kind ('mouse', 'touch' or 'pen'). */
+  id: number;
+  type: string;
 }
 
-/** How far (px) the pointer may travel between pressing and releasing and still count as a click. */
+/** How far (px) a mouse may travel between pressing and releasing and still count as a click. */
 export const CLICK_SLOP = 5;
+/** A finger or a pen wobbles more: a tap may travel this far (PR #14 review). */
+export const TAP_SLOP = 10;
+
+/** How far a pointer of this kind may travel and still click. */
+export function clickSlop(type: string): number {
+  return type === 'touch' || type === 'pen' ? TAP_SLOP : CLICK_SLOP;
+}
 
 export interface Tool {
   readonly id: string;
@@ -20,8 +30,8 @@ export interface Tool {
   readonly usesLeftDrag: boolean;
   /**
    * The tool acts on a click, not a drag (P3): the manager calls `pointerDown` when the left button
-   * comes up within CLICK_SLOP of where it went down, and a longer drag pans the camera. Needs
-   * `usesLeftDrag = false`.
+   * comes up within a click's slop (`clickSlop`) of where it went down, and a longer drag pans the
+   * camera. Needs `usesLeftDrag = false`.
    */
   readonly clickOnly?: boolean;
   activate(): void;
@@ -31,6 +41,11 @@ export interface Tool {
   pointerDown(p: ToolPointer): void;
   pointerMove(p: ToolPointer): void;
   pointerUp(p: ToolPointer): void;
+  /**
+   * A second finger came down (PR #14 review): the press is a pinch, so a click it was waiting to
+   * make is dropped, and anything it began. The first finger's release still arrives.
+   */
+  pointerCancel?(): void;
   key?(e: KeyboardEvent): boolean;
 }
 

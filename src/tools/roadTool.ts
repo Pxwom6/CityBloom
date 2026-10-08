@@ -5,7 +5,7 @@ import { compass, mid, type Vec2 } from '../sim/geom';
 import type { Game } from '../game';
 import { modKey } from '../client/platform';
 import { fitFreeform, snapPoint, type SnapResult } from './snap';
-import { CLICK_SLOP, type Tool, type ToolPointer } from './tool';
+import { clickSlop, type Tool, type ToolPointer } from './tool';
 import type { GhostProfile } from '../render/ghost';
 
 /** What a road build preview reports (see buildRoad in src/sim/actions/roads.ts). */
@@ -882,7 +882,7 @@ export class RoadTool implements Tool {
         const moved = this.downAt ? Math.hypot(p.clientX - this.downAt.x, p.clientY - this.downAt.y) : 0;
         const d = Math.hypot(p.ground.x - this.ring.centre.x, p.ground.z - this.ring.centre.z);
         const radius =
-          moved >= 6 && d > 8
+          moved > clickSlop(p.type) && d > 8
             ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.miniRadius, d)))
             : undefined;
         if (radius !== this.ring.radius) {
@@ -962,13 +962,30 @@ export class RoadTool implements Tool {
     return this.freePath[0] ?? null;
   }
 
+  /**
+   * A second finger came down (PR #14 review): the press began a pinch, so a click it was waiting
+   * to make goes, and so does anything it started (a dragged road, ring or stroke of track). A
+   * chain's start from an earlier click stays.
+   */
+  pointerCancel(): void {
+    this.click = null;
+    this.tramPaint = null;
+    if (this.ringDrag) {
+      this.ringDrag = false;
+      this.ring = null;
+      this.lastResult = null;
+    }
+    if (this.dragging) this.reset();
+    this.refresh();
+  }
+
   pointerUp(p: ToolPointer): void {
     if (p.button !== 0) return;
     this.pointer = { x: p.clientX, y: p.clientY };
     const c = this.click;
     this.click = null;
     if (c) {
-      if (Math.hypot(p.clientX - c.x, p.clientY - c.y) <= CLICK_SLOP) c.run();
+      if (Math.hypot(p.clientX - c.x, p.clientY - c.y) <= clickSlop(p.type)) c.run();
       return;
     }
     if (this.tramPaint) {
@@ -994,7 +1011,7 @@ export class RoadTool implements Tool {
     if (this.mode === 'straight' && this.dragging) {
       this.dragging = false;
       const moved = this.downAt ? Math.hypot(p.clientX - this.downAt.x, p.clientY - this.downAt.y) : 0;
-      if (moved > 8) void this.commit(false);
+      if (moved > Math.max(8, clickSlop(p.type))) void this.commit(false);
     }
   }
 

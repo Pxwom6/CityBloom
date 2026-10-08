@@ -15,6 +15,9 @@ import { MapTool } from './mapTool';
 export type ToolId =
   'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain' | 'map';
 
+/** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
+const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
+
 /** Routes canvas pointer and keyboard input to the active tool. */
 export class ToolManager {
   readonly select: SelectTool;
@@ -80,6 +83,7 @@ export class ToolManager {
     this.active.activate();
     this.game.renderer.controller.leftDragPans = !next.usesLeftDrag;
     this.game.renderer.terrain.uniforms.uGridOn.value = id === 'road' ? 1 : 0;
+    this.game.renderer.terrain.limitStrong = LIMIT_TOOLS.has(id);
     this.game.notify();
   }
 

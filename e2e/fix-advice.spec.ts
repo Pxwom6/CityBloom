@@ -1,7 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildTownViaApi, openGame, serveTownViaApi, shot, watchErrors } from './helpers';
+import { MAP_SIZE } from '../src/data/world';
+import { untilHour } from './ui';
 
-/** Playthrough fixes round: advice and labels that said something the numbers did not (P15, P25). */
+/**
+ * Playthrough fixes round: advice and labels that said something the numbers did not (P15, P25), and
+ * the city limit, which was a line a metre wide and so invisible from any distance (P21).
+ */
 
 const state = (page: Page) => page.evaluate(() => window.__game!.getState());
 
@@ -105,11 +110,10 @@ test('P15: with a building on partial power the advisor says so instead of "All 
     await page.evaluate(() => window.__game!.advance(10));
     const p = (await state(page)).utilities.power;
     if (p.unserved !== 1 || p.demand - p.supply > 1) continue;
-    // The panel refreshes every two seconds of real time.
-    await page.waitForTimeout(2600);
+    // The panel refreshes every two seconds of real time: wait for it to catch up with this state.
+    await expect(panel).toContainText(/1 building (short of|without) power/, { timeout: 20_000 });
     const text = await panel.innerText();
     expect(text).not.toMatch(/All supplied/);
-    expect(text).toMatch(/1 building (short of|without) power/);
     if (/short of power/.test(text)) {
       found = true;
       expect(text).toMatch(/only part of the power needed/);
@@ -117,5 +121,140 @@ test('P15: with a building on partial power the advisor says so instead of "All 
     }
   }
   expect(found, 'the town never sat exactly at its power limit').toBe(true);
+  errs.check();
+});
+
+/**
+ * The city limit as drawn along the east edge near world point (MAP_SIZE, z), read from the frame as the
+ * player sees it: the rows of pixels round it are lined up on the line (it slants on screen) and
+ * averaged, so a tree standing on it cannot break it; then how wide it is (the area under it over its
+ * height, in device pixels) and how far it stands above the ground beside it (0-255 luminance).
+ */
+async function limitLine(
+  page: Page,
+  z: number,
+): Promise<{ width: number; contrast: number; profile: string }> {
+  return page.evaluate(
+    ([z, MAP]) => {
+      const g = window.__game!;
+      const px = g.framePixels();
+      const canvas = document.querySelector('canvas')!;
+      const rect = canvas.getBoundingClientRect();
+      const scale = canvas.width / rect.width;
+      const W = canvas.width;
+      const H = canvas.height;
+      const proj = (zz: number) => {
+        const p = g.worldToScreen(MAP, zz);
+        return { x: (p.x - rect.left) * scale, y: H - 1 - (p.y - rect.top) * scale };
+      };
+      const a = proj(z! - 20);
+      const b = proj(z! + 20);
+      const slope = (b.x - a.x) / (b.y - a.y);
+      const c = proj(z!);
+      const lum = (x: number, y: number) => {
+        const i = (y * W + x) * 4;
+        return 0.299 * px[i]! + 0.587 * px[i + 1]! + 0.114 * px[i + 2]!;
+      };
+      const K = 40;
+      const prof = new Array<number>(2 * K + 1).fill(0);
+      const ROWS = 12;
+      for (let dy = -ROWS; dy <= ROWS; dy++) {
+        const y = Math.round(c.y) + dy;
+        const xc = Math.round(c.x + slope * (y - c.y));
+        for (let k = -K; k <= K; k++) prof[k + K]! += lum(xc + k, y) / (2 * ROWS + 1);
+      }
+      const median = (lo: number, hi: number) =>
+        prof.slice(K + lo, K + hi + 1).sort((p, q) => p - q)[(hi - lo) >> 1]!;
+      // (Ground on either side, near enough that the road beside the edge does not count.)
+      const base = Math.max(median(-20, -9), median(9, 20));
+      let peak = base;
+      let at = 0;
+      for (let k = -8; k <= 8; k++) {
+        if (prof[k + K]! <= peak) continue;
+        peak = prof[k + K]!;
+        at = k;
+      }
+      let area = 0;
+      for (let k = at - 8; k <= at + 8; k++) area += Math.max(0, prof[k + K]! - base);
+      return {
+        width: peak > base ? area / (peak - base) : 0,
+        contrast: peak - base,
+        profile: prof
+          .slice(K - 10, K + 11)
+          .map((v) => Math.round(v))
+          .join(','),
+      };
+    },
+    [z, MAP_SIZE],
+  );
+}
+
+test('P21: the city limit is a line a few pixels wide from the whole-city view to close up, and stronger with a build tool out', async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const errs = watchErrors(page);
+  await openGame(page, '&seed=ground&preset=river&sandbox=1&disasters=0');
+  await page.evaluate(() => {
+    window.__game!.setWeatherLook({ season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 });
+  });
+  await untilHour(page, 13);
+  // A stretch of the east edge on open ground, clear of the water (the highway runs along the west).
+  const zc = await page.evaluate(async (edge) => {
+    const g = window.__game!;
+    const hw = (await g.getState()).highwayZ;
+    for (let z = 700; z < 1500; z += 25) {
+      if (Math.abs(z - hw) < 120) continue;
+      let ok = true;
+      for (let x = edge - 80; x <= edge + 80; x += 10)
+        for (let dz = -60; dz <= 60; dz += 20) ok &&= g.heightAt(x, z + dz) > 1.2;
+      if (ok) return z;
+    }
+    return -1;
+  }, MAP_SIZE);
+  expect(zc).toBeGreaterThan(0);
+  const look = async (distance: number, x: number) => {
+    await page.evaluate(
+      ([x, z, distance]) => window.__game!.setCamera({ x: x!, z: z!, distance: distance!, yaw: 0, tilt: 0 }),
+      [x, zc, distance],
+    );
+    await page.evaluate(() => window.__game!.waitFrames(4));
+    return limitLine(page, zc);
+  };
+
+  // Whole city, city zoom and close up: a line of a few pixels, plainly brighter than the ground.
+  const poses: [string, number, number][] = [
+    ['overview', 2750, 1024],
+    ['city', 620, MAP_SIZE - 200],
+    ['street', 150, MAP_SIZE - 30],
+  ];
+  for (const [name, distance, x] of poses) {
+    const m = await look(distance, x);
+    console.log(
+      `[p21] ${name} ${distance} m: width ${m.width.toFixed(1)} px, contrast ${m.contrast.toFixed(1)} [${m.profile}]`,
+    );
+    await shot(page, `fix-limits-${name}`);
+    expect(m.width, `${name} width`).toBeGreaterThanOrEqual(3);
+    expect(m.width, `${name} width`).toBeLessThanOrEqual(12);
+    expect(m.contrast, `${name} contrast`).toBeGreaterThanOrEqual(12);
+  }
+
+  // A road or building tool in hand: stronger still. Back to select: back to normal.
+  const calm = await look(2750, 1024);
+  await page.getByTestId('tool-road').click();
+  const road = await look(2750, 1024);
+  console.log(`[p21] road tool: width ${road.width.toFixed(1)} px, contrast ${road.contrast.toFixed(1)}`);
+  await shot(page, 'fix-limits-road-tool');
+  expect(road.width).toBeGreaterThan(calm.width);
+  expect(road.contrast).toBeGreaterThan(calm.contrast);
+  await page.getByTestId('tool-select').click();
+  const back = await look(2750, 1024);
+  expect(back.width).toBeLessThanOrEqual(calm.width);
+  await page.getByTestId('tool-education').click();
+  await page.getByTestId('place-highschool').click();
+  const place = await look(2750, 1024);
+  console.log(`[p21] place tool: width ${place.width.toFixed(1)} px, contrast ${place.contrast.toFixed(1)}`);
+  expect(place.width).toBeGreaterThan(calm.width);
+  await page.keyboard.press('Escape');
   errs.check();
 });

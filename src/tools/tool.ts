@@ -31,3 +31,17 @@ export interface ToolHint {
   text: string;
   tone: 'ok' | 'bad' | 'info';
 }
+
+/**
+ * A question a tool asks at the pointer before it acts (P2: a road or an upgrade that would
+ * demolish buildings), answered with its two buttons or Escape.
+ */
+export interface ToolQuestion {
+  x: number;
+  y: number;
+  text: string;
+  yes: string;
+  no: string;
+  onYes: () => void;
+  onNo: () => void;
+}

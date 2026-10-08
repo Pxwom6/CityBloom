@@ -162,6 +162,14 @@ function inOtherRoad(net: Network, x: number, z: number, ignore?: ReadonlySet<nu
  * Write planned heights (or, with `asDelta`, deltas) into the terrain and its saved delta. Returns
  * the deltas they replaced (for undo); `mark` hears about every changed sample.
  */
+/**
+ * The height a sample settles at when earthworks set it to `to` (P2's upgrade preview lays them
+ * for a moment): as `applyHeights` stores it, a whole-centimetre delta in a single-precision array.
+ */
+export function settledHeight(base: number, to: number): number {
+  return base + Math.fround(Math.round((to - base) * 100) / 100);
+}
+
 export function applyHeights(
   terrain: Terrain,
   delta: Float32Array,

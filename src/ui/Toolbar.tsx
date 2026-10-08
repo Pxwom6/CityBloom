@@ -700,6 +700,47 @@ export function ToolHintLabel() {
   );
 }
 
+/**
+ * A tool's question at the pointer (P2: a road that would demolish buildings), in the style of the
+ * inspector's bulldoze confirmation: the safe answer first and focused, so Enter keeps them.
+ */
+export function ToolQuestionCard() {
+  const game = useGameUpdates(100);
+  const q = game.question;
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !q) return;
+    let x = q.x + 18;
+    let y = q.y + 18;
+    if (x + el.offsetWidth > window.innerWidth - 8) x = Math.max(8, q.x - 18 - el.offsetWidth);
+    if (y + el.offsetHeight > window.innerHeight - 8) y = Math.max(8, q.y - 18 - el.offsetHeight);
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  });
+  if (!q) return null;
+  return (
+    <div
+      ref={ref}
+      class="tool-question panel"
+      style={{ left: `${q.x + 18}px`, top: `${q.y + 18}px` }}
+      role="alertdialog"
+      aria-label="Confirm"
+      data-testid="tool-question"
+    >
+      <p>{q.text}</p>
+      <div class="actions">
+        <button class="btn" data-testid="tool-question-no" onClick={() => game.answer(false)} autoFocus>
+          {q.no}
+        </button>
+        <button class="btn danger" data-testid="tool-question-yes" onClick={() => game.answer(true)}>
+          {q.yes}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const DISASTER_ICONS = { earthquake: IconQuake, tornado: IconTornado, flood: IconWaves, meteor: IconMeteor };
 
 /** Pick a disaster to aim, and switch random disasters on or off. */

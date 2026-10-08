@@ -399,6 +399,27 @@ body {
 .tool-hint.ok {
   background: var(--color-accent-strong);
 }
+/* A tool's question at the pointer (P2), like the inspector's bulldoze confirmation. */
+.tool-question {
+  position: fixed;
+  z-index: var(--z-toast);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(22rem, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(210, 73, 59, 0.35);
+}
+.tool-question p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.tool-question .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 .tool-hint.bad {
   background: var(--color-negative);
 }

@@ -35,6 +35,8 @@ export interface Box {
 export interface TestApi {
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
+  /** The sim's dry run of a command: what it would cost and do, changing nothing. */
+  preview(cmd: Command): Promise<CommandResult>;
   getState(): Promise<
     CityStats & {
       renderStats: RenderStats;
@@ -417,6 +419,7 @@ export function installTestApi(game: Game): TestApi {
   const api: TestApi = {
     ready: true,
     dispatch: (cmd) => game.dispatch(cmd),
+    preview: (cmd) => game.client.preview(cmd),
     getState: async () => {
       const stats = await game.client.query<CityStats>({ type: 'summary' });
       const w = game.world;

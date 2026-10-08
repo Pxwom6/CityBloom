@@ -16,7 +16,7 @@ import { DistrictView } from './client/districtView';
 import { OverlayController } from './client/overlay';
 import { StreetNames } from './client/names';
 import { StreetLabels } from './client/labels';
-import type { ToolHint } from './tools/tool';
+import type { ToolHint, ToolQuestion } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
@@ -111,6 +111,8 @@ export class Game {
   frameSamples: number[] | null = null;
   debugOpen = false;
   hint: ToolHint | null = null;
+  /** A tool's question before it acts (P2), shown at the pointer with its two buttons. */
+  question: ToolQuestion | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
   panel:
     | 'budget'
@@ -970,6 +972,22 @@ export class Game {
     this.tip = null;
     if (turnOff) this.updateSettings({ tips: false });
     else this.notify();
+  }
+
+  /** Ask before acting (P2); a question already open is answered no. */
+  ask(q: ToolQuestion): void {
+    this.answer(false);
+    this.question = q;
+    this.notify();
+  }
+
+  /** Answer the open question, if there is one. */
+  answer(yes: boolean): void {
+    const q = this.question;
+    if (!q) return;
+    this.question = null;
+    this.notify();
+    (yes ? q.onYes : q.onNo)();
   }
 
   setHint(h: ToolHint | null): void {

@@ -6,7 +6,7 @@ import { footprint } from '../world/buildings';
 import { bulldozeCivic, civicRect } from '../world/civic';
 import type { Sim } from '../sim';
 import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
-import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
+import { planEarthworks, reshapeGround, settledHeight, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
 import { JUNCTION, TRAM } from '../../data/balance';
@@ -36,11 +36,14 @@ export function buildRoad(
     doomed = new Set(buildingsInTheWay(sim, pieces, road));
     return keepUnder(sim, doomed);
   });
+  // What it takes away (P2): lots under its surface, and lots where it splits a street.
+  const demolished = plan.ok ? roadLosses(sim, plan) : [];
   const preview = {
     pieces: plan.pieces.map((p) => ({ a: p.a, c: p.c, b: p.b })),
     length: plan.length,
     splits: plan.splits.length,
-    demolish: doomed.size,
+    demolish: demolished.length,
+    demolished,
     grade: gradeInfo(plan),
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
@@ -162,17 +165,58 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
     from: seg.type,
     to: road,
     earth: earth ? { volume: earth.volume, cost: earth.cost } : null,
+    // The buildings it takes away (P2), worked out by the same steps as the upgrade itself.
+    demolish: 0,
+    demolished: [] as number[],
   };
-  if (dryRun) return ok(total, { info });
+  if (dryRun) {
+    info.demolished = upgradeLosses(sim, segId, road, earth);
+    info.demolish = info.demolished.length;
+    return ok(total, { info });
+  }
   sim.net.setSegmentType(segId, road);
   if (earth?.idx.length) reshapeGround(sim, earth.idx, earth.to);
   sim.relocateBuildingsOn(segId);
-  const around = sim.net.segmentInfluenceBox(segId);
-  sim.net.revalidate(earth?.box ? union(around, earth.box) : around);
+  info.demolished = sim.net.revalidate(upgradeBox(sim, segId, earth));
+  info.demolish = info.demolished.length;
   sim.spend(total, 'roads');
   clearTreesAlong(sim, [segId]);
   sim.markNetworkChanged();
   return ok(total, { info });
+}
+
+/** Where an upgrade can change which lots stand: along the road, and wherever the ground moves. */
+function upgradeBox(sim: Sim, segId: number, earth: EarthPlan | null): Box {
+  const around = sim.net.segmentInfluenceBox(segId);
+  return earth?.box ? union(around, earth.box) : around;
+}
+
+/**
+ * The buildings an upgrade would remove (P2): the road takes its new width and the ground its new
+ * shape for a moment, the lots are judged as the upgrade judges them, and everything is put back
+ * exactly before anyone sees it (the ground under buildings isn't moved, and buildings sliding on
+ * their lots don't change which lots stand).
+ */
+function upgradeLosses(sim: Sim, segId: number, road: RoadTypeId, earth: EarthPlan | null): number[] {
+  const net = sim.net;
+  const from = net.segment(segId).type;
+  const blocks = [net.segment(segId).left, net.segment(segId).right].filter((b): b is number => !!b);
+  const wasDirty = {
+    seg: net.dirty.segments.has(segId),
+    blocks: blocks.filter((b) => net.dirty.blocks.has(b)),
+  };
+  const t = sim.terrain;
+  const heights = earth?.idx.map((i) => t.heights[i]!) ?? [];
+  try {
+    net.setSegmentType(segId, road);
+    earth?.idx.forEach((i, n) => (t.heights[i] = settledHeight(t.base[i]!, earth.to[n]!)));
+    return net.revalidate(upgradeBox(sim, segId, earth), true);
+  } finally {
+    earth?.idx.forEach((i, n) => (t.heights[i] = heights[n]!));
+    net.setSegmentType(segId, from);
+    if (!wasDirty.seg) net.dirty.segments.delete(segId);
+    for (const b of blocks) if (!wasDirty.blocks.includes(b)) net.dirty.blocks.delete(b);
+  }
 }
 
 type Box = { minX: number; minZ: number; maxX: number; maxZ: number };
@@ -300,6 +344,19 @@ export function buildingsInTheWay(
       }
     }
   }
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
+ * The buildings a planned road will demolish (P2), as building it judges them: lots its surface
+ * covers (a curve as the network makes a segment's), and lots lost where it splits a street.
+ */
+function roadLosses(sim: Sim, plan: RoadPlan): number[] {
+  const out = new Set<number>();
+  const hw = roadHalfWidth(plan.type);
+  for (const p of plan.pieces)
+    for (const id of sim.net.buildingsUnder(new Curve(p.a, p.c, p.b), hw)) out.add(id);
+  for (const sp of plan.splits) for (const id of sim.net.splitLosses(sp.seg, sp.s)) out.add(id);
   return [...out].sort((a, b) => a - b);
 }
 

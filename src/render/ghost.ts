@@ -55,6 +55,8 @@ export class GhostRenderer {
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -8,
   });
+  /** Always red: buildings that go stay red over a road highlighted as fine (P2). */
+  private clearMat = this.hiMat.clone();
   private coverage: RoadTint;
   private brush: Mesh;
   private snap: Mesh;
@@ -373,7 +375,7 @@ export class GhostRenderer {
       buf.quad(pt(-hw, hd, 0), pt(-hw, hd, height), pt(-hw, -hd, height), pt(-hw, -hd, 0), col, false);
       buf.quad(pt(hw, -hd, 0), pt(hw, -hd, height), pt(hw, hd, height), pt(hw, hd, 0), col, false);
     }
-    this.clearing = new Mesh(mergeChunks([buf.trimmed()]), this.hiMat);
+    this.clearing = new Mesh(mergeChunks([buf.trimmed()]), this.clearMat);
     this.clearing.renderOrder = 13;
     this.group.add(this.clearing);
   }

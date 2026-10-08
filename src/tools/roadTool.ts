@@ -3,6 +3,7 @@ import { ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
 import { mid, type Vec2 } from '../sim/geom';
 import type { Game } from '../game';
+import { modKey } from '../client/platform';
 import { fitFreeform, snapPoint, type SnapResult } from './snap';
 import type { Tool, ToolPointer } from './tool';
 import type { GhostProfile } from '../render/ghost';
@@ -10,6 +11,8 @@ import type { GhostProfile } from '../render/ghost';
 /** What a road build preview reports (see buildRoad in src/sim/actions/roads.ts). */
 interface PreviewInfo {
   pieces?: { a: Vec2; c: Vec2; b: Vec2 }[];
+  /** Buildings the road would demolish (P2). */
+  demolished?: number[];
   grade?: {
     limit: number;
     max: number;
@@ -20,10 +23,24 @@ interface PreviewInfo {
   };
 }
 
-/** Upgrade hint notes (M13): regrading a road for a gentler type costs earthworks. */
+/** Buildings a road or an upgrade would demolish (P2), as a preview names them. */
+function doomedOf(info: unknown): number[] {
+  return (info as { demolished?: number[] } | undefined)?.demolished ?? [];
+}
+
+const articled = (name: string) =>
+  /^[aeiou]/i.test(name) ? `an ${name.toLowerCase()}` : `a ${name.toLowerCase()}`;
+
+const demolishes = (n: number) => `demolishes ${n} building${n === 1 ? '' : 's'}`;
+
+/** Upgrade hint notes (M13): regrading a road for a gentler type costs earthworks; P2: what goes. */
 function upgradeNotes(info: unknown): string[] {
   const earth = (info as { earth?: { cost: number } | null } | undefined)?.earth;
-  return earth && earth.cost > 0 ? [`earthworks $${earth.cost.toLocaleString('en-US')}`] : [];
+  const n = doomedOf(info).length;
+  return [
+    ...(earth && earth.cost > 0 ? [`earthworks $${earth.cost.toLocaleString('en-US')}`] : []),
+    ...(n ? [demolishes(n)] : []),
+  ];
 }
 
 /** Hint notes on grading (M13): how steep it climbs against the limit, earthworks and viaducts. */
@@ -120,6 +137,11 @@ export class RoadTool implements Tool {
   }
 
   private reset(): void {
+    // A question about the road being reset goes with it (P2).
+    if (this.game.question) {
+      this.game.question = null;
+      this.game.notify();
+    }
     this.hoverSeg = null;
     this.ring = null;
     this.ringDrag = false;
@@ -131,9 +153,15 @@ export class RoadTool implements Tool {
     this.lastResult = null;
     this.game.renderer.ghost.showRoad(null, this.type, 'ok');
     this.game.renderer.ghost.showMarker(null);
+    this.game.renderer.ghost.showClear(null);
   }
 
   cancel(): boolean {
+    // A question about demolishing first (P2): Escape keeps the buildings, and the road stays drawn.
+    if (this.game.question) {
+      this.game.answer(false);
+      return true;
+    }
     const had = !!this.start || this.freePath.length > 0;
     this.reset();
     this.refresh();
@@ -245,6 +273,8 @@ export class RoadTool implements Tool {
     const half = ROAD_TYPES[this.type].width / 2 + ROAD_TYPES[this.type].sidewalk;
     g.highlightSegment(net.curve(id), half, res && !res.ok ? 'bad' : 'ok');
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    this.showDoomed(res?.ok ? doomedOf(res.info) : []);
+    if (this.game.question) return;
     if (!res)
       this.game.setHint({ ...this.pointer, text: `${from} → ${ROAD_TYPES[this.type].name}`, tone: 'info' });
     else if (res.ok)
@@ -409,6 +439,9 @@ export class RoadTool implements Tool {
       planned ? planned.grade : null,
     );
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    if (fresh) this.showDoomed(res?.ok ? doomedOf(info) : []);
+    if (this.game.question) return;
+    const doomed = res?.ok ? doomedOf(info).length : 0;
     const len = pieces.reduce((s, p) => s + Math.hypot(p.b.x - p.a.x, p.b.z - p.a.z), 0);
     if (!res)
       this.game.setHint({ x: this.pointer.x, y: this.pointer.y, text: `${Math.round(len)} m`, tone: 'info' });
@@ -420,6 +453,7 @@ export class RoadTool implements Tool {
           `$${res.cost.toLocaleString('en-US')} · ${Math.round(len)} m`,
           ...this.wayNotes(pieces),
           ...gradeNotes(info),
+          ...(doomed ? [demolishes(doomed)] : []),
         ].join(' · '),
         tone: 'ok',
       });
@@ -465,6 +499,48 @@ export class RoadTool implements Tool {
     );
   }
 
+  /** Red boxes over the buildings the road would demolish (P2). */
+  private showDoomed(ids: readonly number[]): void {
+    const w = this.game.world;
+    const rects = [];
+    for (const id of ids) {
+      const b = w.buildings.get(id);
+      if (b) rects.push({ x: b.x, z: b.z, hw: b.w * 4, hd: b.d * 4, angle: b.angle });
+    }
+    this.game.renderer.ghost.showClear(rects.length ? rects : null);
+  }
+
+  /**
+   * A road or upgrade that would demolish buildings asks first (P2), as bulldozing does: true while
+   * the question is open, and `go` runs if the player says yes. The road stays drawn meanwhile; a
+   * no keeps a click–click road's start (pick another end) and drops a dragged one (`drop`).
+   */
+  private async askFirst(cmd: Command, go: () => void, drop = false): Promise<boolean> {
+    const pre = await this.game.client.preview(cmd);
+    const ids = pre.ok ? doomedOf(pre.info) : [];
+    if (!ids.length || this.game.tools.activeId !== 'road') return false;
+    const n = ids.length;
+    const what =
+      cmd.type === 'upgradeRoad'
+        ? `Making this road ${articled(ROAD_TYPES[cmd.road].name)} demolishes`
+        : 'This road demolishes';
+    this.showDoomed(ids);
+    this.game.setHint(null);
+    this.game.ask({
+      ...this.pointer,
+      text: `${what} ${n} building${n === 1 ? '' : 's'} beside it. Undo (${modKey('Z')}) brings ${n === 1 ? 'it' : 'them'} back.`,
+      yes: cmd.type === 'upgradeRoad' ? 'Change it' : 'Build it',
+      no: n === 1 ? 'Keep it' : 'Keep them',
+      onYes: go,
+      onNo: () => {
+        if (drop) this.reset();
+        this.lastResult = null;
+        this.refresh();
+      },
+    });
+    return true;
+  }
+
   /** Lay or take up tram track on the road under the pointer (M20); part of a drag's stroke. */
   private async commitTram(): Promise<void> {
     const cmd = this.currentCommand();
@@ -507,9 +583,11 @@ export class RoadTool implements Tool {
     this.refresh();
   }
 
-  private async commitUpgrade(): Promise<void> {
-    const cmd = this.currentCommand();
+  /** `confirmed`: the command the player said yes to (P2), run as it was counted. */
+  private async commitUpgrade(confirmed?: Command): Promise<void> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'upgradeRoad') return;
+    if (!confirmed && (await this.askFirst(cmd, () => void this.commitUpgrade(cmd)))) return;
     const res = await this.game.dispatch(cmd);
     if (res.ok) {
       this.game.audio?.play('build');
@@ -527,9 +605,10 @@ export class RoadTool implements Tool {
    * a drag draws one road, so the next drag starts wherever the player presses. A drag that can't be
    * built starts over too, with the reason in a toast (the ghost showed it red while dragging).
    */
-  private async commit(chain = true): Promise<boolean> {
-    const cmd = this.currentCommand();
+  private async commit(chain = true, confirmed?: Command): Promise<boolean> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'buildRoad') return false;
+    if (!confirmed && (await this.askFirst(cmd, () => void this.commit(chain, cmd), !chain))) return false;
     const res = await this.game.dispatch(cmd);
     if (res.ok) {
       this.game.audio?.play('build');
@@ -551,6 +630,11 @@ export class RoadTool implements Tool {
 
   pointerDown(p: ToolPointer): void {
     if (p.button !== 0 || !p.ground) return;
+    // A click elsewhere on the map while asking keeps the buildings (P2).
+    if (this.game.question) {
+      this.game.answer(false);
+      return;
+    }
     this.pointer = { x: p.clientX, y: p.clientY };
     this.downAt = { x: p.clientX, y: p.clientY };
     if (this.mode === 'upgrade') {
@@ -600,6 +684,8 @@ export class RoadTool implements Tool {
   }
 
   pointerMove(p: ToolPointer): void {
+    // While asking about demolishing, the road stays where it was drawn (P2).
+    if (this.game.question) return;
     this.pointer = { x: p.clientX, y: p.clientY };
     if (!p.ground) return;
     if (this.mode === 'roundabout') {
@@ -717,6 +803,8 @@ export class RoadTool implements Tool {
   }
 
   setType(t: RoadTypeId): void {
+    // The question was about the road as it was (P2).
+    if (this.game.question) this.game.answer(false);
     this.type = t;
     this.refresh();
     this.game.notify();

@@ -52,6 +52,8 @@ export class DisasterTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw the ring or a hint on the next tool (P11).
+    this.seq++;
     this.game.renderer.ghost.showBrush(null, 1);
     this.game.setHint(null);
   }

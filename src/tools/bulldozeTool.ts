@@ -16,6 +16,8 @@ export class BulldozeTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw a hint on the next tool (P11).
+    this.seq++;
     this.hover = null;
     this.game.renderer.ghost.highlightSegment(null, 0);
     this.game.renderer.ghost.showSelection(null);

@@ -18,6 +18,8 @@ export class StopTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw a marker or a hint on the next tool (P11).
+    this.seq++;
     this.game.renderer.ghost.showMarker(null);
     this.game.renderer.ghost.showSnap(null);
     this.game.setHint(null);

@@ -58,6 +58,38 @@ export async function settledHint(page: Page): Promise<{ tone: string; text: str
 }
 
 /**
+ * Hover the spots in turn, as a player would, and read the placement hint: the first spot the sim
+ * accepts on open ground, or, failing that, the first it accepts at all. The tool that is out stays
+ * out, with the pointer left on the spot chosen.
+ */
+export async function findSpot(
+  page: Page,
+  spots: [number, number][],
+  what = 'it',
+): Promise<[number, number]> {
+  let pick: [number, number] | null = null;
+  const seen: string[] = [];
+  for (const [x, z] of spots) {
+    const p = await screen(page, x, z);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await page.waitForTimeout(400);
+    const h = await settledHint(page);
+    seen.push(`${Math.round(x)},${Math.round(z)}: ${h.text}`);
+    if (!/\bok\b/.test(h.tone)) continue;
+    pick ??= [x, z];
+    if (!h.text.includes('replaces')) {
+      pick = [x, z];
+      break;
+    }
+  }
+  expect(pick, `nowhere for ${what}:\n${seen.join('\n')}`).not.toBeNull();
+  const p = await screen(page, pick![0], pick![1]);
+  await page.mouse.move(p.x, p.y, { steps: 3 });
+  await page.waitForTimeout(300);
+  return pick!;
+}
+
+/**
  * Pick a building from a toolbar category and place it at the first spot the sim accepts on open
  * ground (or, failing that, the first it accepts at all), as a player would by hovering and reading
  * the hint.
@@ -74,28 +106,36 @@ export async function placeFromToolbar(
   const count = () =>
     page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def).length, def);
   const before = await count();
-  let pick: [number, number] | null = null;
-  const seen: string[] = [];
-  for (const [x, z] of spots) {
-    const p = await screen(page, x, z);
-    await page.mouse.move(p.x, p.y, { steps: 3 });
-    await page.waitForTimeout(400);
-    const h = await settledHint(page);
-    seen.push(`${Math.round(x)},${Math.round(z)}: ${h.text}`);
-    if (!/\bok\b/.test(h.tone)) continue;
-    pick ??= [x, z];
-    if (!h.text.includes('replaces')) {
-      pick = [x, z];
-      break;
-    }
-  }
-  expect(pick, `nowhere for the ${def}:\n${seen.join('\n')}`).not.toBeNull();
-  const p = await screen(page, pick![0], pick![1]);
-  await page.mouse.move(p.x, p.y, { steps: 3 });
-  await page.waitForTimeout(300);
+  const pick = await findSpot(page, spots, `the ${def}`);
+  const p = await screen(page, pick[0], pick[1]);
   await page.mouse.click(p.x, p.y);
   await expect.poll(count, { timeout: 20_000 }).toBe(before + 1);
   await page.getByTestId('tool-select').click();
+}
+
+/**
+ * Keep the sim waiting: while held, the commands and previews the page sends stay queued (in order)
+ * until `holdSim(page, false)` lets them through, so a test can act in the gap a busy sim leaves
+ * between a click and its answer without racing a timer. Queries and the camera API stay immediate,
+ * so a `getState()` sent while held shows the city as it was: release first, then poll.
+ */
+export async function holdSim(page: Page, hold: boolean): Promise<void> {
+  await page.evaluate((hold) => {
+    type Held = { worker: Worker; args: unknown[] };
+    const w = window as unknown as { __hold?: boolean; __held?: Held[]; __post?: (...a: unknown[]) => void };
+    const proto = Worker.prototype as unknown as { postMessage: (...a: unknown[]) => void };
+    if (!w.__post) {
+      w.__post = proto.postMessage;
+      w.__held = [];
+      proto.postMessage = function (this: Worker, ...args: unknown[]) {
+        const type = (args[0] as { type?: string } | undefined)?.type;
+        if (w.__hold && (type === 'command' || type === 'preview')) w.__held!.push({ worker: this, args });
+        else w.__post!.apply(this, args);
+      };
+    }
+    w.__hold = hold;
+    if (!hold) for (const m of w.__held!.splice(0)) w.__post!.apply(m.worker, m.args);
+  }, hold);
 }
 
 /** Escape until the pause menu is up (a first press may only deselect something). */

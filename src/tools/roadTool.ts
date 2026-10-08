@@ -115,6 +115,11 @@ export class RoadTool implements Tool {
   private previewSeq = 0;
   private inFlight = false;
   private queued: Command | null = null;
+  /**
+   * Bumped whenever the tool is entered, cancelled, left or changes mode (P11): the sim's answer to
+   * anything sent before that is stale, and must not bring a chain or a hint back.
+   */
+  private epoch = 0;
   private lastResult: { seq: number; res: CommandResult } | null = null;
   private lastSentSeq = 0;
   private pointer = { x: 0, y: 0 };
@@ -132,13 +137,24 @@ export class RoadTool implements Tool {
   constructor(private game: Game) {}
 
   activate(): void {
-    this.reset();
+    this.abandon();
   }
 
   deactivate(): void {
-    this.reset();
+    this.abandon();
     this.game.renderer.ghost.clear();
     this.game.setHint(null);
+  }
+
+  /**
+   * Drop everything in progress and make the sim's answers to anything already sent stale. Not part
+   * of `reset()`: a built road resets the tool too, and two quick clicks can have two builds in
+   * flight whose chain must still move on.
+   */
+  private abandon(): void {
+    this.epoch++;
+    this.queued = null;
+    this.reset();
   }
 
   private reset(): void {
@@ -168,7 +184,7 @@ export class RoadTool implements Tool {
       return true;
     }
     const had = !!this.start || this.freePath.length > 0;
-    this.reset();
+    this.abandon();
     this.refresh();
     return had;
   }
@@ -247,6 +263,13 @@ export class RoadTool implements Tool {
     return hit ? { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } } : null;
   }
 
+  /** Send a command; `live` is false if Escape, a mode change or leaving the tool came before the reply. */
+  private async send(cmd: Command): Promise<{ res: CommandResult; live: boolean }> {
+    const epoch = this.epoch;
+    const res = await this.game.dispatch(cmd);
+    return { res, live: epoch === this.epoch };
+  }
+
   private requestPreview(cmd: Command | null): void {
     const seq = ++this.previewSeq;
     if (!cmd) return;
@@ -256,10 +279,14 @@ export class RoadTool implements Tool {
     }
     this.inFlight = true;
     this.lastSentSeq = seq;
+    const epoch = this.epoch;
     void this.game.client.preview(cmd).then((res) => {
       this.inFlight = false;
-      this.lastResult = { seq: this.lastSentSeq, res };
-      this.drawGhost();
+      // A stale reply draws nothing, but it still frees the line for what the current session queued.
+      if (epoch === this.epoch) {
+        this.lastResult = { seq: this.lastSentSeq, res };
+        this.drawGhost();
+      }
       if (this.queued) {
         const q = this.queued;
         this.queued = null;
@@ -531,7 +558,10 @@ export class RoadTool implements Tool {
    * no keeps a click–click road's start (pick another end) and drops a dragged one (`drop`).
    */
   private async askFirst(cmd: Command, go: () => void, drop = false): Promise<boolean> {
+    const epoch = this.epoch;
     const pre = await this.game.client.preview(cmd);
+    // Escape, a mode change or leaving the tool while it was counted: nothing to ask, nothing to build.
+    if (epoch !== this.epoch) return true;
     const ids = pre.ok ? doomedOf(pre.info) : [];
     if (!ids.length || this.game.tools.activeId !== 'road') return false;
     const n = ids.length;
@@ -561,15 +591,13 @@ export class RoadTool implements Tool {
     const cmd = this.currentCommand();
     if (!cmd || cmd.type !== 'setTram') return;
     this.tramPaint?.done.add(cmd.seg);
-    const res = await this.game.dispatch(cmd);
-    if (res.ok) {
-      this.game.audio?.play('build');
-      this.lastResult = null;
-    } else if (!this.tramPaint || this.tramPaint.done.size <= 1) {
-      // Painting along a line skips roads that already have (or can't take) track quietly.
-      this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
-    }
+    const { res, live } = await this.send(cmd);
+    // Painting along a line skips roads that already have (or can't take) track quietly.
+    const quiet = !res.ok && !!this.tramPaint && this.tramPaint.done.size > 1;
+    if (!quiet) this.game.audio?.play(res.ok ? 'build' : 'error');
+    if (!live) return;
+    if (res.ok) this.lastResult = null;
+    else if (!quiet) this.lastResult = { seq: this.previewSeq, res };
     this.refresh();
   }
 
@@ -577,17 +605,12 @@ export class RoadTool implements Tool {
   private async commitEdit(): Promise<void> {
     const cmd = this.currentCommand();
     if (!cmd || (cmd.type !== 'setOneWay' && cmd.type !== 'roundabout')) return;
-    const res = await this.game.dispatch(cmd);
+    const { res, live } = await this.send(cmd);
     if (res.ok) {
       this.game.audio?.play('build');
-      if (cmd.type === 'roundabout') {
-        this.game.toast('Roundabout built', 'ok', 2000);
-        this.ring = null;
-      }
-      this.lastResult = null;
+      if (cmd.type === 'roundabout') this.game.toast('Roundabout built', 'ok', 2000);
     } else {
       this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
       if (cmd.type === 'roundabout')
         this.game.toast(
           `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
@@ -595,6 +618,11 @@ export class RoadTool implements Tool {
           3000,
         );
     }
+    if (!live) return;
+    if (res.ok) {
+      if (cmd.type === 'roundabout') this.ring = null;
+      this.lastResult = null;
+    } else this.lastResult = { seq: this.previewSeq, res };
     this.refresh();
   }
 
@@ -603,15 +631,13 @@ export class RoadTool implements Tool {
     const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'upgradeRoad') return;
     if (!confirmed && (await this.askFirst(cmd, () => void this.commitUpgrade(cmd)))) return;
-    const res = await this.game.dispatch(cmd);
+    const { res, live } = await this.send(cmd);
     if (res.ok) {
       this.game.audio?.play('build');
       this.game.toast(`Road changed to ${ROAD_TYPES[cmd.road].name.toLowerCase()}`, 'ok', 2000);
-      this.lastResult = null;
-    } else {
-      this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
-    }
+    } else this.game.audio?.play('error');
+    if (!live) return;
+    this.lastResult = res.ok ? null : { seq: this.previewSeq, res };
     this.refresh();
   }
 
@@ -624,21 +650,25 @@ export class RoadTool implements Tool {
     const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'buildRoad') return false;
     if (!confirmed && (await this.askFirst(cmd, () => void this.commit(chain, cmd), !chain))) return false;
-    const res = await this.game.dispatch(cmd);
-    if (res.ok) {
-      this.game.audio?.play('build');
-      const end = cmd.points[cmd.points.length - 1]!;
-      this.reset();
-      if (this.mode !== 'free' && chain) this.start = this.snap(end, null);
-    } else {
+    const { res, live } = await this.send(cmd);
+    if (res.ok) this.game.audio?.play('build');
+    else {
       this.game.audio?.play('error');
-      if (chain) this.lastResult = { seq: this.previewSeq, res };
-      else {
-        this.reset();
+      // The ghost showed a chained road red; a dragged one, or one given up on, needs saying.
+      if (!chain || !live) {
         const why = res.reason.charAt(0).toLowerCase() + res.reason.slice(1);
         this.game.toast(`Can't build that road: ${why}.`, 'bad', 3000);
       }
     }
+    // Escape, a mode change or leaving the tool came first: the road is built (or refused) as sent,
+    // but the chain does not come back and nothing is redrawn (P11).
+    if (!live) return res.ok;
+    if (res.ok) {
+      const end = cmd.points[cmd.points.length - 1]!;
+      this.reset();
+      if (this.mode !== 'free' && chain) this.start = this.snap(end, null);
+    } else if (chain) this.lastResult = { seq: this.previewSeq, res };
+    else this.reset();
     this.refresh();
     return res.ok;
   }
@@ -808,7 +838,7 @@ export class RoadTool implements Tool {
     }
     if (e.code === 'Tab') {
       this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]!;
-      this.reset();
+      this.abandon();
       this.game.notify();
       return true;
     }
@@ -831,7 +861,7 @@ export class RoadTool implements Tool {
 
   setMode(m: RoadMode): void {
     this.mode = m;
-    this.reset();
+    this.abandon();
     this.refresh();
     this.game.notify();
   }

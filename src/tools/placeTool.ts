@@ -30,6 +30,8 @@ export class PlaceTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw a footprint or a hint on the next tool (P11).
+    this.seq++;
     this.moving = null;
     this.pose = null;
     this.covKey = '';

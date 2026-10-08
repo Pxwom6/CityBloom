@@ -146,17 +146,23 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-The playthrough fix round (`PLAYTHROUGH-FIXES.md`), on the `playthrough-fixes` branch: 23 of 26
-items are done and ticked; P6, P13 and P14 (layout) are in progress. Every sim change is in, and
-`balance` has been rerun (below); `bench` and the frame times wait for a quiet machine.
+Nothing. The playthrough fix round (`PLAYTHROUGH-FIXES.md`) is done: all 26 items ticked above, on
+the `playthrough-fixes` branch, in a pull request into `main` for the owner to merge. Each was
+reproduced in a test that failed first and checked through the UI with screenshots looked at
+(`docs/screenshots/fix*-*.png`; one short city touching every fixed area in
+`docs/screenshots/fixes-tour-*.png`, `e2e/fixes-tour.spec.ts`). The full check: typecheck and lint
+clean, 552 unit, scenario and legacy tests, 84 of 84 e2e (M21 needed to say yes to P2's question;
+DECISIONS), and the three playthrough specs. Reasons for every call are in `docs/DECISIONS.md`,
+"Playthrough fixes".
 
 ## Next tasks
-1. Merge P6, P13 and P14, then add narrow windows, tooltips and the thought feed to
-   `e2e/fixes-tour.spec.ts`.
-2. `bench` (base `main` at 5b261bd against the branch, back to back) and the frame times
-   (`framebench.mjs`, the same two builds); log them under "Performance (playthrough fixes)".
-3. The brief's "When everything's done": the full check (`npm run typecheck && npm run lint &&
-   npm test && npm run e2e`) and `npm run playthrough`, then the pull request into `main`.
+1. The owner: merge the `playthrough-fixes` pull request into `main` when happy, which publishes it.
+2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
+   buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
+   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it leaned
+   on the old winter false alarms; "Performance (playthrough fixes)"). Easy can stay as it is;
+   Normal and Hard should scale the pressure up.
+3. Ideas above.
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic

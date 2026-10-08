@@ -142,8 +142,10 @@ export function updateUtilities(sim: Sim): void {
           cap > 0 && served > 0 ? Math.round(((compPolluted.get(e.comp) ?? 0) / cap) * 1000) / 1000 : 0;
       }
     }
-    // What's sold goes from whatever the highway's end of the network has left over.
-    const sold = regionExport(sim, u, hwNode !== undefined ? (left.get(g.component[hwNode]!) ?? 0) : 0);
+    // What's sold is the city's own surplus at the highway's end of the network: what's left once its
+    // buildings are served, less what was bought in (bought power and water are never resold).
+    const spare = hwNode !== undefined ? Math.max(0, (left.get(g.component[hwNode]!) ?? 0) - bought) : 0;
+    const sold = regionExport(sim, u, spare);
     stats[u].demand += sold;
     stats[u].supply = Math.round(stats[u].supply);
     stats[u].demand = Math.round(stats[u].demand);

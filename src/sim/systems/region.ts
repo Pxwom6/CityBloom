@@ -19,8 +19,8 @@ import { seasonAt, type WeatherState } from './weather';
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
  * and the deals the city makes with them. Power and water bought come in at the highway's
  * connection node as if a plant stood there (`updateUtilities`); power and water sold are taken
- * from what's left there after the city's own buildings are served, so a deal never blacks out a
- * home. Garbage deals move garbage in or out of the city's landfills and plants each hour.
+ * from the city's own surplus there (what's left after its buildings are served, less what was
+ * bought), so a deal never blacks out a home and bought power is never resold. Garbage deals move garbage in or out of the city's landfills and plants each hour.
  * Everything is paid for what was actually delivered, on the 'Imports' and 'Exports' lines.
  */
 
@@ -125,9 +125,9 @@ export function regionImport(sim: Sim, u: 'power' | 'water' | 'sewage'): number 
 }
 
 /**
- * Power or water sold: `spare` is what's left at the highway's end of the network once the city's
- * own buildings are served. Each sale gets its share of it, up to its contract and what the
- * neighbour will take. Returns what went out.
+ * Power or water sold: `spare` is the city's own surplus at the highway's end of the network, what's
+ * left once its buildings are served less what was bought in (bought power is never resold). Each
+ * sale gets its share of it, up to its contract and what the neighbour will take. Returns what went out.
  */
 export function regionExport(sim: Sim, u: 'power' | 'water' | 'sewage', spare: number): number {
   if (u === 'sewage') return 0;

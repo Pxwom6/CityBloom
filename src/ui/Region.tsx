@@ -190,8 +190,8 @@ export function RegionPanel() {
             </p>
             <p class="muted">
               Deals are paid for what actually comes through, each month. Power and water bought come in along
-              the highway; what's sold only ever comes from what's left over once your own homes and
-              businesses are served.
+              the highway; what's sold only ever comes from what you make yourself, once your own homes and
+              businesses are served, never from what you buy.
               {t.utilities.power.unserved > 0 ? ' Short of power? A neighbour may sell you some.' : ''}
             </p>
             {r.neighbours.map((n) => (

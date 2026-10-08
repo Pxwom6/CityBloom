@@ -107,6 +107,84 @@ describe('region (M23)', () => {
     expect(line(sim, 'exports')).toBeGreaterThan(0);
   });
 
+  describe('bought power and water are never resold (P8)', () => {
+    type Res = 'power' | 'water';
+    const clone = (s: Sim): Sim => {
+      const c = Sim.fromSave(JSON.parse(JSON.stringify(s.save())));
+      c.testMode = true;
+      return c;
+    };
+    const deals = (sim: Sim, res: Res, dir: 'buy' | 'sell') =>
+      sim.state.region.deals.filter((d) => d.resource === res && d.direction === dir);
+    const total = (sim: Sim, res: Res, dir: 'buy' | 'sell') =>
+      deals(sim, res, dir).reduce((a, d) => a + d.delivered, 0);
+    /** Sell as much as every neighbour will take. */
+    const sellToAll = (sim: Sim, res: Res): number => {
+      let contracted = 0;
+      for (const n of sim.state.region.neighbours) {
+        const amount = capacity(sim, n, res, 'sell');
+        if (amount <= 0) continue;
+        sim.dispatch({ type: 'setDeal', neighbour: n.id, resource: res, direction: 'sell', amount });
+        contracted += amount;
+      }
+      return contracted;
+    };
+
+    it.each([
+      ['power', 'industrial'],
+      ['water', 'suburb'],
+    ] as const)('buying %s does not raise what the city sells', (res, seller) => {
+      const { sim } = town();
+      const contracted = sellToAll(sim, res);
+      sim.advance(TICKS_PER_HOUR * 2);
+      const soldBefore = total(sim, res, 'sell');
+      // The city's own spare is what limits the sale, so the bug would show.
+      expect(soldBefore).toBeGreaterThan(0);
+      expect(soldBefore).toBeLessThan(contracted);
+      const ctrl = clone(sim);
+      const from = byKind(sim, seller);
+      const amount = capacity(sim, from, res, 'buy');
+      expect(amount).toBeGreaterThan(0);
+      expect(
+        sim.dispatch({ type: 'setDeal', neighbour: from.id, resource: res, direction: 'buy', amount }),
+      ).toMatchObject({ ok: true });
+      sim.advance(TICKS_PER_HOUR * 2);
+      ctrl.advance(TICKS_PER_HOUR * 2);
+      // Same days, same city: what it sells is what it itself has to spare, bought or not.
+      expect(Math.abs(total(sim, res, 'sell') - total(ctrl, res, 'sell'))).toBeLessThanOrEqual(1);
+      expect(total(sim, res, 'buy')).toBeGreaterThan(0);
+      expect(sim.state.utilityStats[res].unserved).toBe(0);
+      // And never more than the city makes less what it uses.
+      const bought = total(sim, res, 'buy');
+      const sold = total(sim, res, 'sell');
+      const stat = sim.state.utilityStats[res];
+      expect(sold).toBeLessThanOrEqual(stat.supply - bought - (stat.demand - sold) + 1);
+    });
+
+    it('a shortage covered by a power deal leaves nothing to resell', () => {
+      const { sim, civics } = town();
+      sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: civics[0]! } });
+      sim.advance(TICKS_PER_HOUR * 2);
+      const resort = byKind(sim, 'resort');
+      sim.dispatch({
+        type: 'setDeal',
+        neighbour: resort.id,
+        resource: 'power',
+        direction: 'sell',
+        amount: capacity(sim, resort, 'power', 'sell'),
+      });
+      const ind = byKind(sim, 'industrial');
+      const need = Math.ceil(sim.state.utilityStats.power.demand * 1.2);
+      sim.dispatch({ type: 'setDeal', neighbour: ind.id, resource: 'power', direction: 'buy', amount: need });
+      sim.advance(TICKS_PER_HOUR * 2);
+      const p = sim.state.utilityStats.power;
+      // The 20 % margin is bought power, not the city's own: it is not sold on.
+      expect(total(sim, 'power', 'sell')).toBe(0);
+      expect(p.unserved).toBe(0);
+      expect(p.supply).toBe(need);
+    });
+  });
+
   it('a garbage deal empties the landfill a little each hour', () => {
     const { sim, civics } = town();
     const landfill = [...sim.state.civics.values()].find((c) => c.def === 'landfill')!;

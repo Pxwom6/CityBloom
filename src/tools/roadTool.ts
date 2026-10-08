@@ -114,6 +114,13 @@ export class RoadTool implements Tool {
   /** A press waiting to become a click (P3): done when the button comes up near where it went down. */
   private click: { x: number; y: number; run: () => void } | null = null;
   private freePath: Vec2[] = [];
+  /**
+   * Where a free-form road would end if let go now, snapped as it will be (PR #14 review): the ghost
+   * shows it while the button is down, and the road is built to it.
+   */
+  private freeEnd: SnapResult | null = null;
+  /** Alt is held: ends go exactly where they're put, with no snapping (PR #14 review). */
+  private loose = false;
   private previewSeq = 0;
   private inFlight = false;
   private queued: Command | null = null;
@@ -177,6 +184,7 @@ export class RoadTool implements Tool {
     this.control = null;
     this.dragging = false;
     this.freePath = [];
+    this.freeEnd = null;
     this.lastResult = null;
     this.game.renderer.ghost.showRoad(null, this.type, 'ok');
     this.game.renderer.ghost.showMarker(null);
@@ -201,9 +209,10 @@ export class RoadTool implements Tool {
 
   /**
    * Snap a point of the road being drawn; `arriving` is where the road comes to it from (its start
-   * or bend), so an end that nearly reaches a road joins it (P1).
+   * or bend), so an end that nearly reaches a road joins it (P1). With Alt held, nothing snaps.
    */
   private snap(p: Vec2, from: SnapResult | null, arriving: Vec2 | null = null): SnapResult {
+    if (this.loose) return { x: p.x, z: p.z, kind: 'free' };
     return snapPoint(this.game.world.net, p, {
       from,
       grid: this.grid,
@@ -248,8 +257,9 @@ export class RoadTool implements Tool {
     }
     const way = this.oneWay && !ROAD_TYPES[this.type].oneWay ? { oneway: true } : {};
     if (this.mode === 'free') {
-      if (this.freePath.length < 2) return null;
-      return { type: 'buildRoad', road: this.type, points: fitFreeform(this.freePath), ...way };
+      const path = this.freeEnd ? [...this.freePath, this.freeEnd] : this.freePath;
+      if (path.length < 2) return null;
+      return { type: 'buildRoad', road: this.type, points: fitFreeform(path), ...way };
     }
     if (!this.start || !c) return null;
     if (Math.hypot(c.x - this.start.x, c.z - this.start.z) < 1) return null;
@@ -572,6 +582,7 @@ export class RoadTool implements Tool {
           ...gradeNotes(info),
           ...(doomed ? [demolishes(doomed)] : []),
           ...links,
+          ...(this.loose ? ['no snapping'] : []),
         ].join(' · '),
         tone: links.length ? 'warn' : 'ok',
       });
@@ -761,6 +772,7 @@ export class RoadTool implements Tool {
 
   pointerDown(p: ToolPointer): void {
     if (p.button !== 0 || !p.ground) return;
+    this.loose = p.alt;
     // A click elsewhere on the map while asking keeps the buildings (P2).
     if (this.game.question) {
       this.game.answer(false);
@@ -795,6 +807,7 @@ export class RoadTool implements Tool {
     if (this.mode === 'free') {
       const s = this.snap(p.ground, null);
       this.freePath = [s];
+      this.freeEnd = null;
       this.dragging = true;
       this.refresh();
       return;
@@ -844,6 +857,7 @@ export class RoadTool implements Tool {
     // While asking about demolishing, the road stays where it was drawn (P2).
     if (this.game.question) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    this.loose = p.alt;
     if (!p.ground) return;
     if (this.mode === 'roundabout') {
       if (this.ringDrag && this.ring) {
@@ -904,7 +918,9 @@ export class RoadTool implements Tool {
       const last = this.freePath[this.freePath.length - 1]!;
       if (Math.hypot(p.ground.x - last.x, p.ground.z - last.z) >= 6)
         this.freePath.push({ x: p.ground.x, z: p.ground.z });
-      this.cursor = { x: p.ground.x, z: p.ground.z, kind: 'free' };
+      // The end snaps while drawing, so a join shows before the button comes up (PR #14 review).
+      this.freeEnd = this.snap(p.ground, null, this.freeArriving(p.ground));
+      this.cursor = this.freeEnd;
       this.refresh();
       return;
     }
@@ -915,6 +931,19 @@ export class RoadTool implements Tool {
       this.mode === 'curve' && this.control ? this.control : this.start,
     );
     this.refresh();
+  }
+
+  /**
+   * Which way a free-form road arrives at `end`: from a point at least 15 m back along it (the last
+   * point drawn can be the end itself, and a road drawn alongside another would seem to meet it
+   * square on).
+   */
+  private freeArriving(end: Vec2): Vec2 | null {
+    for (let i = this.freePath.length - 1; i >= 0; i--) {
+      const q = this.freePath[i]!;
+      if (Math.hypot(q.x - end.x, q.z - end.z) >= 15) return q;
+    }
+    return this.freePath[0] ?? null;
   }
 
   pointerUp(p: ToolPointer): void {
@@ -938,10 +967,11 @@ export class RoadTool implements Tool {
     }
     if (this.mode === 'free' && this.dragging) {
       this.dragging = false;
-      if (p.ground) {
-        const end = this.snap(p.ground, null, this.freePath[this.freePath.length - 1] ?? null);
-        this.freePath.push(end);
-      }
+      // Built to the end the ghost showed (PR #14 review); snapped here if the pointer never moved.
+      this.loose = p.alt;
+      const end = this.freeEnd ?? (p.ground ? this.snap(p.ground, null, this.freeArriving(p.ground)) : null);
+      this.freeEnd = null;
+      if (end) this.freePath.push(end);
       void this.commit();
       return;
     }

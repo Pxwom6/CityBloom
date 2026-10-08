@@ -275,6 +275,8 @@ export const SNAP = {
   segment: 8,
   /** An end this close to a road it could join snaps onto it (P1): past the 14–22 m a road must keep from one it doesn't join. */
   near: 22,
+  /** However far out the camera is, a near miss reaches no further (PR #14 review). */
+  nearMax: 30,
   angleDeg: 5,
   grid: 8,
 };

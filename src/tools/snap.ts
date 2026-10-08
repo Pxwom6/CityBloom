@@ -14,8 +14,9 @@ const DEG = Math.PI / 180;
 /**
  * Input snapping for road drawing: existing nodes, then existing roads, then (with `near`) a road
  * an end has nearly reached, then angles relative to the start (world axes and the roads at the
- * start node), then the 8 m grid. `scale` widens the radii when zoomed out. The sim still
- * validates the final geometry, and joins only ends that land exactly on a road.
+ * start node), then the 8 m grid. `scale` widens the radii when zoomed out (the near miss's only
+ * to `SNAP.nearMax`). The sim still validates the final geometry, and joins only ends that land
+ * exactly on a road.
  */
 export function snapPoint(
   net: Network,
@@ -93,7 +94,8 @@ export function snapPoint(
 }
 
 /**
- * A near miss (P1): an end within `SNAP.near` of a road it could join is put exactly on it (on its
+ * A near miss (P1): an end within `SNAP.near` (more zoomed out, up to `SNAP.nearMax`) of a road it
+ * could join is put exactly on it (on its
  * end node if it's that close to one, so dead ends and corners join there). Only when it's
  * plainly meant: the nearest road, with no other road that doesn't meet it as close; arriving at
  * no less than the angle roads may meet at (so a road running alongside is never grabbed); and a
@@ -106,7 +108,7 @@ function nearJoin(
   arriving: Vec2 | null,
   k: number,
 ): SnapResult | null {
-  const r = SNAP.near * k;
+  const r = Math.min(SNAP.near * k, SNAP.nearMax);
   const hits: { seg: number; d: number; s: number; x: number; z: number }[] = [];
   for (const id of net.segHash.queryPoint(p.x, p.z, r + 1)) {
     const seg = net.segment(id);

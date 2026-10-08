@@ -22,6 +22,7 @@ function sections(): [string, Row[]][] {
         ['Roads', ['T']],
         ['Road modes: curve, free, upgrade, one-way, roundabout, tram track', ['Tab']],
         ['Draw one-way, grid snap', ['O', 'G']],
+        ['Place a road end exactly, with no snapping', [`Hold ${alt}`]],
         ['Zone homes, shops, industry', ['Z', 'X', 'C']],
         ['Dezone', ['V']],
         ['Districts: paint, and their panel', ['I']],

@@ -271,3 +271,112 @@ test('P1: a road that joins nothing says so; a cut-off stretch is shown everywhe
   await shot(page, 'fixes-p1-joined');
   errs.check();
 });
+
+/** A street east from the highway, the road tool out with streets, and a reader for its hint. */
+async function streetAndRoadTool(page: Page, distance: number) {
+  await openGame(page);
+  const cz = (await state(page)).highwayZ;
+  const cx = 24;
+  await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 }));
+  await page.evaluate(
+    async ([cx, cz]) => {
+      const r = await window.__game!.dispatch({
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: cx!, z: cz! },
+          { x: cx! + 300, z: cz! },
+        ],
+      });
+      if (!r.ok) throw new Error(r.reason);
+    },
+    [cx, cz],
+  );
+  await page.evaluate(
+    ([cz, distance]) =>
+      window.__game!.setCamera({ x: 150, z: cz! + 100, distance: distance!, yaw: 0, tilt: 0.6 }),
+    [cz, distance],
+  );
+  await frames(page, 2);
+  await page.getByTestId('tool-road').click();
+  await page.getByTestId('road-street').click();
+  const hint = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-testid="tool-hint"]');
+      return { text: el?.textContent ?? '', tone: el?.className ?? '' };
+    });
+  const islands = async () => (await page.evaluate(() => window.__game!.getRoadIslands())).islands.length;
+  return { cx, cz, hint, islands };
+}
+
+test('PR #14 review R3: with Alt held a road end goes exactly where it is put', async ({ page }) => {
+  test.setTimeout(240_000);
+  const errs = watchErrors(page);
+  // From 1.2 km out a near miss reaches 30 m (no further, however far out).
+  const { cx, cz, hint, islands } = await streetAndRoadTool(page, 1200);
+  const s0 = (await state(page)).segments;
+  const a = await screen(page, cx + 100, cz + 200);
+  await page.mouse.move(a.x, a.y, { steps: 2 });
+  await page.mouse.click(a.x, a.y);
+  // An end 26 m short of the street joins it…
+  const b = await screen(page, cx + 100, cz + 26);
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await expect.poll(async () => (await hint()).text).toMatch(/^\$/);
+  expect((await hint()).text).not.toContain('join');
+  // …but with Alt held it stays where it's put, and says it joins nothing.
+  await page.keyboard.down('Alt');
+  await page.mouse.move(b.x, b.y + 0.5, { steps: 2 });
+  await expect.poll(async () => (await hint()).text).toContain("Doesn't join any road");
+  expect((await hint()).text).toContain('no snapping');
+  await shot(page, 'review-r3-alt');
+  await page.mouse.click(b.x, b.y + 0.5);
+  await page.keyboard.up('Alt');
+  await expect.poll(async () => (await state(page)).segments).toBe(s0 + 1);
+  await page.keyboard.press('Escape');
+  // Built as placed: cut off, its end short of the street.
+  await expect.poll(islands).toBe(1);
+  const road = await page.evaluate(([x, z]) => window.__game!.segmentAt(x!, z!), [cx + 100, cz + 60]);
+  expect(road, 'the Alt road').not.toBeNull();
+  expect(await page.evaluate(([x, z]) => window.__game!.segmentAt(x!, z!)?.id, [cx + 100, cz + 6])).not.toBe(
+    road!.id,
+  );
+  errs.check();
+});
+
+test('PR #14 review R3: a free-form end shows where it joins before the button comes up', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const errs = watchErrors(page);
+  const { cx, cz, hint, islands } = await streetAndRoadTool(page, 450);
+  await page.getByTestId('mode-free').click();
+  const s0 = (await state(page)).segments;
+  // Drawn down to 14 m short of the street.
+  const path: [number, number][] = [
+    [cx + 200, cz + 200],
+    [cx + 205, cz + 140],
+    [cx + 200, cz + 80],
+    [cx + 200, cz + 14],
+  ];
+  let p = await screen(page, path[0]![0], path[0]![1]);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  for (const [x, z] of path.slice(1)) {
+    p = await screen(page, x, z);
+    await page.mouse.move(p.x, p.y, { steps: 4 });
+  }
+  // The ghost joins the street while the button is still down…
+  await expect.poll(async () => (await hint()).text).toMatch(/^\$/);
+  await page.waitForTimeout(400);
+  const drawn = await hint();
+  expect(drawn.text).not.toContain('join');
+  expect(drawn.tone).toContain('ok');
+  await shot(page, 'review-r3-free-end');
+  // …and it's built as shown.
+  await page.mouse.up();
+  await expect.poll(async () => (await state(page)).segments).toBeGreaterThan(s0);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__game!.waitFrames(2));
+  expect(await islands()).toBe(0);
+  errs.check();
+});

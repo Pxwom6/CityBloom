@@ -200,3 +200,25 @@ describe('road ends that miss (P1)', () => {
     expect(advise(sim).some((a) => a.segs?.length)).toBe(false);
   });
 });
+
+describe('near misses at a distance (PR #14 review)', () => {
+  // A road's middle, approached square on from the south: no node or road snap reaches it at these
+  // distances (8 m a scale step), only the near miss.
+  const end = (sim: Sim, c: Vec2, d: number, scale: number) => {
+    const s = snapPoint(sim.net, at(c, 150, 220), { from: null, scale, near: true });
+    return snapPoint(sim.net, at(c, 150, d), { from: s, scale, near: true, arriving: s });
+  };
+
+  it('reach no further than 30 m however far out the camera is', () => {
+    const { sim, c } = ell();
+    // Close up the reach is 22 m.
+    expect(end(sim, c, 20, 1).kind).toBe('segment');
+    expect(end(sim, c, 28, 1).kind).not.toBe('segment');
+    // From further out it grows, but no further than 30 m.
+    expect(end(sim, c, 28, 3).kind).toBe('segment');
+    expect(end(sim, c, 34, 3).kind).not.toBe('segment');
+    expect(end(sim, c, 40, 3).kind).not.toBe('segment');
+    // From 4 km out the road snap itself reaches 64 m; the near miss would have reached 176.
+    expect(end(sim, c, 70, 8).kind).not.toBe('segment');
+  });
+});

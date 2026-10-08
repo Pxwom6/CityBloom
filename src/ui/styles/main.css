@@ -2893,6 +2893,30 @@ body {
 .region-summary {
   margin: 0 0 var(--space-2);
 }
+.region-supply {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+.region-supply h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-md);
+}
+.region-supply p {
+  margin: var(--space-1) 0;
+}
+.region-supply-row {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  column-gap: var(--space-2);
+}
+.region-supply-row strong {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-top: 0.15em;
+}
 .region-town {
   border-top: 1px solid var(--color-border);
   padding: var(--space-2) 0;

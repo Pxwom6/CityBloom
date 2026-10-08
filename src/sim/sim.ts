@@ -132,8 +132,20 @@ import {
   railSiding,
   type Civic,
 } from './world/civic';
-import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
-import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
+import {
+  civicOutput,
+  emptyUtilityStats,
+  supplyBalance,
+  updateUtilities,
+  utilityConsequences,
+} from './systems/utilities';
+import {
+  dispatchGarbage,
+  garbageHour,
+  garbageMadePerDay,
+  rollCollectionDay,
+  trucksFor,
+} from './systems/garbage';
 import { dispatchPloughs, ploughsFor } from './systems/ploughs';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
@@ -2037,6 +2049,8 @@ export class Sim {
         return structuredClone(this.state.chronicle);
       case 'budget':
         return this.budget();
+      case 'supply':
+        return supplyBalance(this);
       case 'civic':
         return this.civicDetails(q.id);
       case 'districts':
@@ -2201,11 +2215,10 @@ export class Sim {
   /** What a garbage facility's inspector shows: its trucks, rounds and collection against production. */
   private garbageDetails(c: Civic): NonNullable<CivicDetails['garbage']> {
     const g = civicDef(c).garbage!;
-    let produced = 0;
+    const produced = garbageMadePerDay(this);
     let backlog = 0;
     let piles = 0;
     for (const b of this.state.buildings.values()) {
-      produced += garbageRate(this, b) * 24;
       backlog += b.garbage;
       if (b.garbage >= GARBAGE.visible) piles++;
     }

@@ -1,4 +1,5 @@
-import { useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
 import {
   DEAL_RESOURCES,
   NEIGHBOUR_KIND,
@@ -7,6 +8,7 @@ import {
   type DealResource,
 } from '../data/region';
 import type { RegionSummary } from '../sim/systems/region';
+import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconRegion } from './icons';
 
@@ -38,6 +40,122 @@ function Trend({ values }: { values: number[] }) {
     <svg class="region-trend" width="62" height="18" viewBox="-1 0 62 18" aria-hidden="true">
       <polyline points={pts} fill="none" stroke="currentColor" stroke-width="1.5" />
     </svg>
+  );
+}
+
+/** Power or water: what you make and use yourself, then what you buy and sell. */
+function UtilityLine(props: { res: 'power' | 'water'; b: UtilityBalance }) {
+  const { res, b } = props;
+  const unit = UNIT[res];
+  const short = b.use - b.make;
+  const uncovered = short - b.bought;
+  const verdict =
+    short <= 0 ? (
+      <span class="pos">
+        {formatNumber(-short)} {unit} to spare.
+      </span>
+    ) : uncovered <= 0 ? (
+      <span class="pos">
+        {formatNumber(short)} {unit} short, covered by what you buy.
+      </span>
+    ) : (
+      <span class="neg">
+        {formatNumber(short)} {unit} short
+        {b.bought > 0 ? `, ${formatNumber(uncovered)} ${unit} of it still uncovered` : ''}.
+      </span>
+    );
+  return (
+    <SupplyRow id={res} label={res === 'power' ? 'Power' : 'Water'}>
+      You make {formatNumber(b.make)} {unit} and use {formatNumber(b.use)} {unit}: {verdict}
+      {(b.bought > 0 || b.sold > 0) && (
+        <>
+          {' '}
+          Bought {formatNumber(b.bought)} {unit}, sold {formatNumber(b.sold)} {unit}.
+        </>
+      )}
+    </SupplyRow>
+  );
+}
+
+/** One line of the supply section: a label, then what it says. */
+function SupplyRow(props: { id: string; label: string; children: ComponentChildren }) {
+  return (
+    <p class="region-supply-row" data-testid={`region-supply-${props.id}`}>
+      <strong>{props.label}</strong>
+      <span>{props.children}</span>
+    </p>
+  );
+}
+
+/**
+ * What the city makes and uses (P20): power, water and garbage, the winter forecast for power, and
+ * last month's money for imports and exports. Asked of the sim on demand (it walks every building).
+ */
+function Supply() {
+  const game = useGameUpdates(500);
+  const [s, setS] = useState<SupplyBalance | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => void game.client.query<SupplyBalance>({ type: 'supply' }).then((r) => live && setS(r));
+    load();
+    const t = setInterval(load, 700);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [game]);
+  if (!s) return null;
+  const g = s.garbage;
+  const net = g.made + g.taken - g.sent - g.process;
+  const days = net > 0 ? Math.floor(g.room / net) : Infinity;
+  const w = s.winter;
+  const enough = w ? w.have >= w.need : true;
+  return (
+    <section class="region-supply" data-testid="region-supply">
+      <h3>Supply and demand</h3>
+      <UtilityLine res="power" b={s.power} />
+      <UtilityLine res="water" b={s.water} />
+      <SupplyRow id="garbage" label="Garbage">
+        You make {formatNumber(g.made)} a day; your plants process {formatNumber(g.process)} a day.
+        {(g.sent > 0 || g.taken > 0) && (
+          <>
+            {' '}
+            Neighbours take {formatNumber(g.sent)} a day of it, and you take {formatNumber(g.taken)} of
+            theirs.
+          </>
+        )}{' '}
+        {net <= 0 ? (
+          <span class="pos">Handled.</span>
+        ) : (
+          <span class={days < 30 ? 'neg' : undefined}>
+            The other {formatNumber(net)} a day goes to landfill,{' '}
+            {g.room <= 0
+              ? 'which is full.'
+              : `which has room for about ${formatNumber(days)} ${days === 1 ? 'day' : 'days'}.`}
+          </span>
+        )}
+      </SupplyRow>
+      {w && (
+        <SupplyRow id="winter" label="Winter">
+          {w.months > 0
+            ? `When winter comes (in ${w.months} ${w.months === 1 ? 'month' : 'months'}) heating`
+            : 'Winter heating'}{' '}
+          will lift your use to about {formatNumber(w.need)} MW; you'd have {formatNumber(w.have)} MW:{' '}
+          {enough ? (
+            <span class="pos">enough.</span>
+          ) : (
+            <span class="neg">{formatNumber(w.need - w.have)} MW short.</span>
+          )}
+          {w.cut > 0 && <> The industrial neighbour sends {formatNumber(w.cut)} MW less in the cold.</>}
+        </SupplyRow>
+      )}
+      {s.ledger && (s.ledger.imports > 0 || s.ledger.exports > 0) && (
+        <p class="muted" data-testid="region-supply-ledger">
+          Last month you paid {formatMoney(s.ledger.imports)} for imports and earned{' '}
+          {formatMoney(s.ledger.exports)} from exports.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -84,8 +202,8 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
         <div class="region-deal-now" data-testid={`${id}-now`}>
           {dir === 'buy' ? 'Buying' : 'Selling'} {amount(res, deal.amount)} ·{' '}
           {deal.delivered < deal.amount ? 'only ' : ''}
-          {amount(res, deal.delivered)} went through lately · {formatMoney(deal.delivered * price)}/month{' '}
-          {dir === 'buy' ? 'paid' : 'earned'}
+          {amount(res, deal.delivered)} went through in the last hour · {formatMoney(deal.delivered * price)}
+          /month {dir === 'buy' ? 'paid' : 'earned'} at that rate
         </div>
       )}
       <div class="region-deal-set">
@@ -188,6 +306,7 @@ export function RegionPanel() {
               {r.flows.shoppersIn > 0 && <>{formatNumber(r.flows.shoppersIn)} come in to shop. </>}
               {arrivals.length > 0 && <>Visitors today: {arrivals.join(', ')}.</>}
             </p>
+            <Supply />
             <p class="muted">
               Deals are paid for what actually comes through, each month. Power and water bought come in along
               the highway; what's sold only ever comes from what you make yourself, once your own homes and

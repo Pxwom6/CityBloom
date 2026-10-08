@@ -464,6 +464,8 @@ export type Query =
   | { type: 'summary' }
   | { type: 'building'; id: number }
   | { type: 'budget' }
+  /** Power, water and garbage as the city makes, uses, buys and sells them, and the winter forecast (P20). */
+  | { type: 'supply' }
   /** City history (M16): the recorded figures, their spacing and the timeline events. */
   | { type: 'chronicle' }
   | { type: 'civic'; id: number }

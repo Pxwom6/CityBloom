@@ -1,14 +1,16 @@
 import { CIVIC, UTILITIES, UTILITY_USE, type Utility } from '../../data/civic';
-import { WEATHER } from '../../data/climate';
+import { CLIMATES, WEATHER } from '../../data/climate';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { ZONE_C, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
+import { TICKS_PER_MONTH } from '../time';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline, type Civic } from '../world/civic';
 import { attachmentOf } from './commute';
+import { garbageMadePerDay } from './garbage';
 import { Dijkstra } from './graph';
-import { regionExport, regionImport } from './region';
-import { pumpShare, solarShare, weatherUse } from './weather';
+import { capacity, neighbour, regionExport, regionImport } from './region';
+import { monthsToWinter, pumpShare, solarShare, weatherUse } from './weather';
 
 export interface UtilityStat {
   supply: number;
@@ -168,6 +170,116 @@ export function utilityConsequences(sim: Sim): void {
       if (shouldClose) sim.events.push({ kind: 'closed', id: b.id });
     }
   }
+}
+
+/** What the city's own buildings use of `u` (no exports), at the weather use factors `k` if given. */
+export function cityUse(sim: Sim, u: Utility, k?: ReturnType<typeof weatherUse>): number {
+  let n = 0;
+  for (const b of sim.state.buildings.values()) if (b.state === BState.Active) n += buildingUse(b, u, k);
+  return n;
+}
+
+/**
+ * The city's own power need and what it would have if the day's mean temperature were `mean`:
+ * full heating, unless `tick` is given and eases it in for a city new to seasons. Each zone heats
+ * by its own factor (`WEATHER.heating`), power sold is not counted as need, and power bought
+ * counts only as much as the neighbours can still send in that cold (an industrial town's spare
+ * power shrinks in winter); `cut` is how much less comes in.
+ */
+export function powerOutlook(
+  sim: Sim,
+  mean: number,
+  tick?: number,
+): { need: number; have: number; cut: number } {
+  const w = { ...sim.state.weather, mean };
+  const need = cityUse(sim, 'power', weatherUse(w, tick));
+  let bought = 0;
+  let then = 0;
+  for (const d of sim.state.region.deals) {
+    if (d.resource !== 'power' || d.direction !== 'buy') continue;
+    bought += d.delivered;
+    const n = neighbour(sim, d.neighbour);
+    then += n ? Math.min(d.amount, capacity(sim, n, 'power', 'buy', w)) : 0;
+  }
+  return { need, have: sim.state.utilityStats.power.supply - bought + then, cut: Math.max(0, bought - then) };
+}
+
+/** The power outlook for the coldest month ahead; `months` away (0 in winter). Null with seasons off. */
+export function winterOutlook(sim: Sim): ({ months: number } & ReturnType<typeof powerOutlook>) | null {
+  const w = sim.state.weather;
+  if (!w.seasons) return null;
+  const months = monthsToWinter(w, sim.state.tick);
+  if (!Number.isFinite(months)) return null;
+  const coldest = Math.min(...CLIMATES[w.climate].temps);
+  return { months, ...powerOutlook(sim, coldest, sim.state.tick + months * TICKS_PER_MONTH) };
+}
+
+/** One utility for the Region panel: what the city makes and uses itself, and what crosses the border. */
+export interface UtilityBalance {
+  make: number;
+  use: number;
+  bought: number;
+  sold: number;
+}
+
+/** The city-wide supply picture the Region panel shows (an on-demand query: it walks every building). */
+export interface SupplyBalance {
+  power: UtilityBalance;
+  water: UtilityBalance;
+  garbage: {
+    /** Made a day by the whole city; processed a day by plants; room left in landfills. */
+    made: number;
+    process: number;
+    room: number;
+    /** A day sent to neighbours (deals the city buys), and taken from them (deals it sells). */
+    sent: number;
+    taken: number;
+  };
+  winter: ReturnType<typeof winterOutlook>;
+  /** Last closed month's import costs and export earnings, from the ledger; null before the first month closes. */
+  ledger: { imports: number; exports: number } | null;
+}
+
+/**
+ * Power, water and garbage as the city makes, uses, buys and sells them. `stats.utilities` counts
+ * what's bought as supply and what's sold as demand, so what the city makes is the supply less
+ * the bought and what it uses is the demand less the sold (both hourly figures, like the deals').
+ */
+export function supplyBalance(sim: Sim): SupplyBalance {
+  const s = sim.state;
+  const dealt = (res: string, dir: string) =>
+    s.region.deals
+      .filter((d) => d.resource === res && d.direction === dir)
+      .reduce((a, d) => a + d.delivered, 0);
+  const balance = (u: 'power' | 'water'): UtilityBalance => {
+    const bought = dealt(u, 'buy');
+    const sold = dealt(u, 'sell');
+    return { make: s.utilityStats[u].supply - bought, use: s.utilityStats[u].demand - sold, bought, sold };
+  };
+  let process = 0;
+  let room = 0;
+  for (const c of s.civics.values()) {
+    const g = civicDef(c).garbage;
+    if (!g || !civicOnline(c)) continue;
+    process += g.process ?? 0;
+    if (g.storage) room += Math.max(0, g.storage - c.stored);
+  }
+  const last = s.economy.history.at(-1)?.lines;
+  return {
+    power: balance('power'),
+    water: balance('water'),
+    garbage: {
+      made: Math.round(garbageMadePerDay(sim)),
+      process: Math.round(process),
+      room: Math.round(room),
+      sent: dealt('garbage', 'buy'),
+      taken: dealt('garbage', 'sell'),
+    },
+    winter: winterOutlook(sim),
+    ledger: last
+      ? { imports: Math.round(-(last.imports ?? 0)), exports: Math.round(last.exports ?? 0) }
+      : null,
+  };
 }
 
 export { CIVIC };

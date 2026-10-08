@@ -16,6 +16,7 @@ import { renderSounds, type SoundCheck } from '../audio/check';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
 import type { Chronicle } from '../sim/systems/chronicle';
+import type { SupplyBalance } from '../sim/systems/utilities';
 import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { ModelData } from '../render/assets/builder';
@@ -320,6 +321,8 @@ export interface TestApi {
   checkForUpdate(): Promise<void>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
+  /** What the city makes, uses, buys and sells of power, water and garbage, and the winter forecast (P20). */
+  getSupply(): Promise<SupplyBalance>;
   /** The scenario being played (M18): its goals summary, and whether the brief or end screen is up. */
   getScenario(): {
     summary: CityStats['scenario'];
@@ -828,6 +831,7 @@ export function installTestApi(game: Game): TestApi {
     }),
     checkForUpdate: () => game.updates.check(),
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getSupply: () => game.client.query<SupplyBalance>({ type: 'supply' }),
     getScenario: () => ({
       summary: game.world.stats.scenario,
       brief: game.scenarioBrief,

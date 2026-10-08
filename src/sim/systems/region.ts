@@ -95,14 +95,21 @@ function coldness(w: WeatherState): number {
 
 /**
  * The most a neighbour will trade right now: what it sells the city (`buy` from the city's side)
- * or what it buys from it. Winter heating eats into an industrial town's spare power.
+ * or what it buys from it. Winter heating eats into an industrial town's spare power, by the
+ * weather `w` (today's, unless a forecast asks about a colder day).
  */
-export function capacity(sim: Sim, n: Neighbour, resource: DealResource, direction: DealDirection): number {
+export function capacity(
+  sim: Sim,
+  n: Neighbour,
+  resource: DealResource,
+  direction: DealDirection,
+  w: WeatherState = sim.state.weather,
+): number {
   const per = NEIGHBOUR_KIND[n.kind].per;
   const rate = direction === 'buy' ? per.sell[resource] : per.buy[resource];
   let cap = (rate * n.population) / 1000;
   if (n.kind === 'industrial' && resource === 'power' && direction === 'buy')
-    cap *= 1 - REGION.winterPowerCut * coldness(sim.state.weather);
+    cap *= 1 - REGION.winterPowerCut * coldness(w);
   return Math.floor(cap);
 }
 

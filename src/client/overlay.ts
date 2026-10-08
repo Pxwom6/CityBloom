@@ -151,7 +151,7 @@ export class OverlayController {
   private refreshTraffic(): void {
     const w = this.game.world;
     const share = TRAFFIC.profile[Math.floor(hourOfDay(w.displayTick))] ?? 0.5;
-    const key = `traffic:${w.trafficVersion}:${w.netVersion}:${share}:${this.district}:${w.districtsVersion}`;
+    const key = `traffic:${w.trafficVersion}:${w.roadsVersion}:${share}:${this.district}:${w.districtsVersion}`;
     if (key === this.roadsKey) return;
     this.roadsKey = key;
     const list: RoadTintPiece[] = [];

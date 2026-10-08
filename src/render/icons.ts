@@ -274,7 +274,10 @@ export class IconRenderer {
     this.points.name = 'problem-icons';
     world.onBuildings(() => (this.dirty = true));
     world.onCivics(() => (this.dirty = true));
-    world.onNet(() => (this.dirty = true));
+    // Cut-off roads change only with the roads, not with zone blocks (PR #14 review).
+    world.onNet((c) => {
+      if (c.segments.size || c.nodes.size) this.dirty = true;
+    });
   }
 
   private islands = true;

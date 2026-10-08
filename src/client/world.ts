@@ -77,8 +77,13 @@ export class ClientWorld {
   /** Active service vehicles and the tick they were reported at (the renderer extrapolates). */
   vehicles: VehicleData[] = [];
   vehiclesTick = 0;
-  /** Bumped whenever the road network changes. */
+  /** Bumped whenever the road network changes, zone blocks included. */
   netVersion = 0;
+  /**
+   * Bumped only when roads or junctions change (PR #14 review): most network updates touch only
+   * zone blocks, as lots fill and empty.
+   */
+  roadsVersion = 0;
   /** Daily traffic per segment and sampled trips (updated every assignment round). */
   traffic = new Map<number, number>();
   trips: TripSample[] = [];
@@ -227,14 +232,14 @@ export class ClientWorld {
 
   /**
    * Roads that can't reach the highway (P1), as the sim works them out (the same graph, without
-   * closures), with each cut-off road's island; worked out once per network change.
+   * closures), with each cut-off road's island; worked out once per change to the roads.
    */
   roadIslands(): { list: RoadIsland[]; of: Map<number, number> } {
-    if (this.islandMemo?.version !== this.netVersion) {
+    if (this.islandMemo?.version !== this.roadsVersion) {
       const list = roadIslands(this.net, new RoadGraph(this.net), this.highway.connect);
       const of = new Map<number, number>();
       list.forEach((isl, i) => isl.segs.forEach((id) => of.set(id, i)));
-      this.islandMemo = { version: this.netVersion, list, of };
+      this.islandMemo = { version: this.roadsVersion, list, of };
     }
     return this.islandMemo;
   }
@@ -432,6 +437,7 @@ export class ClientWorld {
       net.adj.delete(id);
       ch.nodes.add(id);
     }
+    if (ch.segments.size || ch.nodes.size) this.roadsVersion++;
     for (const l of this.netListeners) l(ch);
     this.emit('net');
   }

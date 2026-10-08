@@ -19,6 +19,7 @@ import {
   shortfalls,
   straighten,
   straightenLosses,
+  straighteningsOverlap,
   type ArmEnd,
   type ArmShortfall,
   type RingSite,
@@ -607,6 +608,9 @@ export function placeRoundabout(
       if (!st) return { ok: false, reason: '', at: net.node(sf.node), short: sf };
       straighten.push(st);
     }
+    // Two bends on the one road (it loops back into the junction): refused, not half done.
+    if (straighteningsOverlap(straighten))
+      return { ok: false, reason: 'The roads into the ring loop round into each other', at: centre };
     // Other roads through the ring (an arm's own road beyond its first junction may come near).
     const own = new Set(arms.map((a) => a.seg));
     const later = new Set(arms.flatMap((a) => a.chain.slice(1)));

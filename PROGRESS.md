@@ -71,7 +71,7 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [x] R3 Snapping: a capped near-miss radius, Alt for no snapping, no unpreviewed snap on free-form ends
 - [x] R4 Roundabouts that replace buildings ask first
 - [ ] R5 Touch and pen taps; a second finger in a pinch never clicks
-- [ ] R6 Overlapping bend straightenings in one roundabout are refused
+- [x] R6 Overlapping bend straightenings in one roundabout are refused
 
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living

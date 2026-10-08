@@ -315,3 +315,53 @@ describe('roundabouts near bends and tight junctions (P5)', () => {
     expect(info(pre)).toMatchObject({ radius: 8, straightened: 0 });
   });
 });
+
+describe('roundabouts whose bends loop round to each other (PR #14 review)', () => {
+  it('refuse rather than take in two bends on the same road', () => {
+    // A road leaves the junction north-east and comes back into it from the south-east: 50 m out
+    // to a bend, round a curve that bulges out to 56 m, and 50 m in from another bend. A ring 80 m
+    // across needs 52 m of clear road, so both bends are inside it, and both would be cut on the
+    // one curve (the first cut takes the curve away from under the second).
+    const sim = newSim({ seed: 'p5' });
+    sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+    const c = connectPoint(sim);
+    const j = { x: c.x + 300, z: c.z };
+    road(sim, [c, j]);
+    road(sim, [j, at(j, 38, -32)]);
+    road(sim, [at(j, 38, -32), at(j, 74), at(j, 38, 32)]);
+    road(sim, [at(j, 38, 32), j]);
+    const node = sim.net.nearestNode(j, 2)!.id;
+    expect(sim.net.segmentsAt(node).length).toBe(3);
+    const hash = sim.hash();
+    const treasury = sim.state.treasury;
+    const cmd = { type: 'roundabout', node, radius: 40 } as const;
+    let res: ReturnType<Sim['dispatch']> | undefined;
+    expect(() => (res = sim.dispatch(cmd))).not.toThrow();
+    expect(res!.ok).toBe(false);
+    // Nothing changed: no road cut, no money spent.
+    expect(sim.hash()).toBe(hash);
+    expect(sim.state.treasury).toBe(treasury);
+    // The preview says the same as the command.
+    expect(sim.preview(cmd).ok).toBe(false);
+  });
+
+  it('still take in two bends on different roads', () => {
+    // East and north each bend 13 m out, onto roads of their own.
+    const sim = newSim({ seed: 'p5' });
+    sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+    const c = connectPoint(sim);
+    const j = { x: c.x + 300, z: c.z };
+    road(sim, [c, j]);
+    road(sim, [j, at(j, 13)]);
+    road(sim, [at(j, 13), at(j, 130, 90)]);
+    road(sim, [j, at(j, 0, -13)]);
+    road(sim, [at(j, 0, -13), at(j, 90, -130)]);
+    const node = sim.net.nearestNode(j, 2)!.id;
+    const res = sim.dispatch({ type: 'roundabout', node });
+    expect(res.ok, res.ok ? '' : res.reason).toBe(true);
+    expect(info(res).straightened).toBe(2);
+    expect(sim.roadIslands()).toEqual([]);
+  });
+});

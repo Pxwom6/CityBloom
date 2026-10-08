@@ -214,6 +214,21 @@ export function planStraighten(
   return null;
 }
 
+/**
+ * Whether two straightenings would touch the same road (PR #14 review). It happens when a road
+ * leaves the junction and loops back into it through bends, so two arms walk it from either end:
+ * the first would take the road away from under the second.
+ */
+export function straighteningsOverlap(sts: readonly Straightening[]): boolean {
+  const seen = new Set<number>();
+  for (const st of sts)
+    for (const id of st.arm.chain.slice(0, st.k + 1)) {
+      if (seen.has(id)) return true;
+      seen.add(id);
+    }
+  return false;
+}
+
 /** The buildings taking the bend in removes (beside the roads it drops, and where it cuts one). */
 export function straightenLosses(net: Network, st: Straightening): number[] {
   const out = new Set<number>();

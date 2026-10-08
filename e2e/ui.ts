@@ -102,6 +102,8 @@ export async function placeFromToolbar(
 ): Promise<void> {
   await page.getByTestId(`tool-${category}`).click();
   await expect(page.getByTestId('place-options')).toBeVisible();
+  // Opening a category only shows its buildings: nothing is picked until one is pressed (P4).
+  await expect(page.locator('[data-testid^="place-"][aria-pressed="true"]')).toHaveCount(0);
   await page.getByTestId(`place-${def}`).click();
   const count = () =>
     page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def).length, def);

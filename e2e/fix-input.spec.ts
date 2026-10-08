@@ -327,3 +327,87 @@ test.describe('P3: a drag with a tool out pans, a click acts', () => {
     errs.check();
   });
 });
+
+test.describe('P4: opening a category arms nothing', () => {
+  test('opening a category arms nothing; a click on the map right away builds nothing', async ({ page }) => {
+    const errs = watchErrors(page);
+    await openGame(page);
+    await buildTownViaApi(page);
+    await page.evaluate(async () => {
+      await window.__game!.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+      await window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 });
+    });
+    const cz = await camera(page);
+    const hash = () => page.evaluate(() => window.__game!.hash());
+    const armed = page.locator('[data-testid^="place-"][aria-pressed="true"]');
+
+    // A spot where a building really would go: find it with the first category's first building.
+    await page.getByTestId('tool-power').click();
+    await page.getByTestId('place-wind').click();
+    const spot = await findSpot(
+      page,
+      [
+        [300, cz + 45],
+        [300, cz - 45],
+        [420, cz + 45],
+      ],
+      'a wind turbine',
+    );
+    await page.getByTestId('tool-select').click();
+    const p = await screen(page, spot[0], spot[1]);
+
+    const categories = [
+      'power',
+      'water',
+      'garbage',
+      'fire',
+      'police',
+      'health',
+      'education',
+      'parks',
+      'transit',
+      'landmark',
+      'special',
+      'project',
+    ];
+    for (const [k, cat] of categories.entries()) {
+      const before = await state(page);
+      const h0 = await hash();
+      // Open the category and click the map at once, as a player who knows what they want to build would.
+      await page.getByTestId(`tool-${cat}`).click();
+      await page.mouse.click(p.x, p.y);
+      await expect(page.getByTestId('place-options'), cat).toBeVisible();
+      await expect(page.getByTestId(`tool-${cat}`), cat).toHaveAttribute('aria-pressed', 'true');
+      const after = await state(page);
+      expect(after.civics, `${cat}: something was built`).toBe(before.civics);
+      expect(after.treasury, `${cat}: something was paid for`).toBe(before.treasury);
+      expect(await hash(), `${cat}: the city changed`).toBe(h0);
+      await expect(armed, `${cat}: a building was picked by opening the category`).toHaveCount(0);
+      if (cat === 'water') {
+        // Moving over the map says what to do, and shows no footprint to build.
+        await page.mouse.move(p.x + 12, p.y + 8, { steps: 2 });
+        await expect(hint(page)).toContainText('Pick a building');
+        await shot(page, 'fix-input-category-open');
+      }
+      // Most iterations close the category; one goes straight to the next (switching must arm nothing too).
+      if (k % 3 !== 2) await page.getByTestId('tool-select').click();
+    }
+    await page.getByTestId('tool-select').click();
+
+    // Escape leaves a category that is only open, as it leaves a tool.
+    await page.getByTestId('tool-fire').click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('tool-select')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('place-options')).toBeHidden();
+
+    // Picking a building still arms it, and a click places it.
+    await page.getByTestId('tool-power').click();
+    await page.getByTestId('place-wind').click();
+    await expect(page.getByTestId('place-wind')).toHaveAttribute('aria-pressed', 'true');
+    await findSpot(page, [spot], 'the wind turbine');
+    const civics0 = (await state(page)).civics;
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(async () => (await state(page)).civics).toBe(civics0 + 1);
+    errs.check();
+  });
+});

@@ -358,7 +358,7 @@ export function Toolbar() {
               <ToolButton
                 key={d.id}
                 id={`place-${d.id}`}
-                active={active === 'place' && tools.place.def === d.id}
+                active={active === 'place' && tools.place.armed && tools.place.def === d.id}
                 disabled={locked}
                 onClick={() => {
                   tools.place.setDef(d.id);
@@ -562,11 +562,9 @@ export function Toolbar() {
                 (cat === 'transit' && active === 'stop')
               )
                 tools.use('select');
-              else {
-                const first = CIVIC_DEFS.find((d) => d.category === cat)!;
-                tools.place.setDef(first.id);
-                tools.use('place');
-              }
+              // Open the category to choose from; nothing is picked, so a stray click on the map builds
+              // nothing (P4).
+              else tools.place.browse(cat);
             }}
             tip={{ title: name, lines: [blurb] }}
           >
@@ -1013,7 +1011,7 @@ function ProjectButton({ def }: { def: CivicDef }) {
   return (
     <ToolButton
       id={`place-${def.id}`}
-      active={game.tools.activeId === 'place' && tools.place.def === def.id}
+      active={game.tools.activeId === 'place' && tools.place.armed && tools.place.def === def.id}
       disabled={blocked || !!built}
       onClick={() => {
         tools.place.setDef(def.id);

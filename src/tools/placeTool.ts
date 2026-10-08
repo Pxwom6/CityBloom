@@ -16,6 +16,11 @@ export class PlaceTool implements Tool {
   readonly clickOnly = true;
   category: CivicCategory = 'power';
   def = 'wind';
+  /**
+   * A building is picked and follows the cursor (P4). False while a category is only open to choose
+   * from: the map does nothing until a building button is pressed.
+   */
+  armed = false;
   private pose: { x: number; z: number; angle: number; side: 1 | -1 } | null = null;
   private seq = 0;
   private last: { seq: number; res: CommandResult } | null = null;
@@ -33,6 +38,7 @@ export class PlaceTool implements Tool {
   deactivate(): void {
     // A preview still on its way back must not draw a footprint or a hint on the next tool (P11).
     this.seq++;
+    this.armed = false;
     this.moving = null;
     this.pose = null;
     this.covKey = '';
@@ -94,9 +100,22 @@ export class PlaceTool implements Tool {
     this.game.tools.use('select');
   }
 
+  /**
+   * Open a category's buildings in the toolbar without picking one (P4), so a click on the map right
+   * after opening it builds nothing. Whatever tool, or building being moved, was out is dropped.
+   */
+  browse(category: CivicCategory): void {
+    const tools = this.game.tools;
+    tools.use('select');
+    this.category = category;
+    this.armed = false;
+    tools.use('place');
+  }
+
   setDef(id: string): void {
     this.clearLinkGhost();
     this.def = id;
+    this.armed = true;
     this.category = CIVIC.get(id)!.category;
     this.last = null;
     // Mines and wells go on deposits: show where they are.
@@ -106,7 +125,7 @@ export class PlaceTool implements Tool {
   }
 
   private command(): Command | null {
-    if (!this.pose) return null;
+    if (!this.armed || !this.pose) return null;
     if (this.railLink) return { type: 'buildRailLink', z: Math.round(this.pose.z) };
     if (this.moving !== null) return { type: 'moveBuilding', id: this.moving, ...this.pose };
     return { type: 'placeBuilding', def: this.def, ...this.pose };
@@ -245,13 +264,17 @@ export class PlaceTool implements Tool {
 
   pointerMove(p: ToolPointer): void {
     this.pointer = { x: p.clientX, y: p.clientY };
+    if (!this.armed) {
+      this.game.setHint({ ...this.pointer, text: 'Pick a building from the bar below', tone: 'info' });
+      return;
+    }
     if (!p.ground) return;
     this.computePose(p.ground);
     this.refresh();
   }
 
   pointerDown(p: ToolPointer): void {
-    if (p.button !== 0 || !p.ground) return;
+    if (!this.armed || p.button !== 0 || !p.ground) return;
     this.computePose(p.ground);
     const cmd = this.command();
     if (!cmd) return;

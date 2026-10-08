@@ -1922,6 +1922,16 @@ body {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+.notice-group {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.notice-group:first-child {
+  margin-top: 0;
+}
 .toast.clickable {
   cursor: pointer;
   /* #ui lets clicks through to the map; a toast with a place takes its own (P23). */

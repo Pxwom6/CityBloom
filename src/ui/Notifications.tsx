@@ -3,6 +3,8 @@ import { useGameUpdates } from './hooks';
 import { IconBell } from './icons';
 
 const RANK = { bad: 0, info: 1, ok: 2 } as const;
+/** A heading over each group (P26): problems, news, good news. */
+const GROUP = { bad: 'Problems', info: 'News', ok: 'Good news' } as const;
 
 /** Notification log: problems first, then news; click one to fly there. */
 export function NotificationsPanel() {
@@ -25,7 +27,12 @@ export function NotificationsPanel() {
       </header>
       <div class="advisors-list">
         {list.length === 0 && <div class="muted">Nothing to report yet.</div>}
-        {list.map((n) => (
+        {list.map((n, i) => [
+          i === 0 || list[i - 1]!.tone !== n.tone ? (
+            <h3 key={`h-${n.tone}`} class="notice-group" data-testid={`notice-group-${n.tone}`}>
+              {GROUP[n.tone]}
+            </h3>
+          ) : null,
           <button
             key={n.id}
             class={`notice ${n.tone}`}
@@ -38,8 +45,8 @@ export function NotificationsPanel() {
               {n.count > 1 ? ` (×${n.count})` : ''}
             </span>
             <span class="notice-time">{formatDate(dateOf(n.tick))}</span>
-          </button>
-        ))}
+          </button>,
+        ])}
       </div>
     </aside>
   );

@@ -269,8 +269,7 @@ export class RoadTool implements Tool {
   }
 
   /** Send a command; `live` is false if Escape, a mode change or leaving the tool came before the reply. */
-  private async send(cmd: Command): Promise<{ res: CommandResult; live: boolean }> {
-    const epoch = this.epoch;
+  private async send(cmd: Command, epoch = this.epoch): Promise<{ res: CommandResult; live: boolean }> {
     const res = await this.game.dispatch(cmd);
     return { res, live: epoch === this.epoch };
   }
@@ -567,10 +566,11 @@ export class RoadTool implements Tool {
   private async askFirst(cmd: Command, go: () => void, drop = false): Promise<boolean> {
     const epoch = this.epoch;
     const pre = await this.game.client.preview(cmd);
-    // Escape, a mode change or leaving the tool while it was counted: nothing to ask, nothing to build.
-    if (epoch !== this.epoch) return true;
     const ids = pre.ok ? doomedOf(pre.info) : [];
-    if (!ids.length || this.game.tools.activeId !== 'road') return false;
+    // Nothing to demolish: built as clicked, even if Escape came meanwhile (P11).
+    if (!ids.length) return false;
+    // Demolishing needs a yes, and Escape, a mode change or leaving the tool came first: nothing.
+    if (epoch !== this.epoch || this.game.tools.activeId !== 'road') return true;
     const n = ids.length;
     const what =
       cmd.type === 'upgradeRoad'
@@ -637,8 +637,10 @@ export class RoadTool implements Tool {
   private async commitUpgrade(confirmed?: Command): Promise<void> {
     const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'upgradeRoad') return;
+    // Replies count from the click, not from after the question (P11).
+    const epoch = this.epoch;
     if (!confirmed && (await this.askFirst(cmd, () => void this.commitUpgrade(cmd)))) return;
-    const { res, live } = await this.send(cmd);
+    const { res, live } = await this.send(cmd, epoch);
     if (res.ok) {
       this.game.audio?.play('build');
       this.game.toast(`Road changed to ${ROAD_TYPES[cmd.road].name.toLowerCase()}`, 'ok', 2000);
@@ -656,8 +658,10 @@ export class RoadTool implements Tool {
   private async commit(chain = true, confirmed?: Command): Promise<boolean> {
     const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'buildRoad') return false;
+    // Replies count from the click (P11): an Escape while it was counted still ends the chain.
+    const epoch = this.epoch;
     if (!confirmed && (await this.askFirst(cmd, () => void this.commit(chain, cmd), !chain))) return false;
-    const { res, live } = await this.send(cmd);
+    const { res, live } = await this.send(cmd, epoch);
     if (res.ok) this.game.audio?.play('build');
     else {
       this.game.audio?.play('error');

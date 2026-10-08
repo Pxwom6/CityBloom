@@ -39,15 +39,15 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 
 - [ ] P1 Road ends that miss are silent
 - [x] P2 Building and upgrading roads remove buildings without saying so
-- [ ] P3 A drag with a tool out builds
-- [ ] P4 A category click arms its first tool
+- [x] P3 A drag with a tool out builds
+- [x] P4 A category click arms its first tool
 - [ ] P5 Roundabouts are refused near bends
 - [ ] P6 Narrow windows lose the toolbar and top bar
 - [x] P7 Some roads are planned at height 0
 - [x] P8 Bought power is resold at a loss
 - [x] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
 - [x] P10 Street names change and repeat
-- [ ] P11 Escape doesn't always leave the road tool
+- [x] P11 Escape doesn't always leave the road tool
 - [ ] P12 Bus stops are refused on the road (check first)
 - [ ] P13 Tooltips run off the screen
 - [ ] P14 The citizen-thought feed covers the data-map menu

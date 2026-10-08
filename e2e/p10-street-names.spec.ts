@@ -114,7 +114,7 @@ test('P10: a street keeps its name when another street cuts it, through undo, re
   // Saved, the names come back with the city.
   await page.getByTestId('menu-button').click();
   await page.getByTestId('menu-save').click();
-  await expect(page.getByTestId('toast')).toContainText('Saved');
+  await expect(page.getByTestId('toast').filter({ hasText: 'Saved' })).toBeVisible();
   await page.goto('./?load=quick&paused=1');
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
   await page.evaluate(

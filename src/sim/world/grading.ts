@@ -11,8 +11,11 @@ import type { Curve } from '../geom';
 export interface GradeProfile {
   /** Sample spacing along the road, metres (the last sample sits at the road's end). */
   step: number;
-  /** Arc length of each sample. */
-  s: Float32Array;
+  /**
+   * Arc length of each sample, in double precision: in single precision the last could land a hair
+   * past the road's end, leaving no height that met a pin there (P7).
+   */
+  s: Float64Array;
   /** Road surface height at each sample. */
   h: Float32Array;
   /** The ground there before any earthworks. */
@@ -71,7 +74,7 @@ export function gradeProfile(
   const step = GRADING.step;
   const L = curve.length;
   const n = Math.max(2, Math.ceil(L / step) + 1);
-  const s = new Float32Array(n);
+  const s = new Float64Array(n);
   const ground = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     s[i] = Math.min(L, i * step);
@@ -112,7 +115,7 @@ export function gradeProfile(
   // 1. Smooth the ground so short bumps are shaved off rather than followed. The window narrows
   // symmetrically towards the ends, so a road on an even slope isn't lifted or dropped there.
   const half = GRADING.smooth / 2;
-  const sm = new Float32Array(n);
+  const sm = new Float64Array(n);
   const prefix = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i]! + ground[i]!;
   for (let i = 0; i < n; i++) {
@@ -126,8 +129,8 @@ export function gradeProfile(
     sm[i] = (prefix[i + k + 1]! - prefix[i - k]!) / (2 * k + 1);
   }
   // 2. The band the profile must stay in to reach each pinned end at no more than the limit.
-  const bandLo = new Float32Array(n).fill(-Infinity);
-  const bandHi = new Float32Array(n).fill(Infinity);
+  const bandLo = new Float64Array(n).fill(-Infinity);
+  const bandHi = new Float64Array(n).fill(Infinity);
   for (let i = 0; i < n; i++) {
     if (pinA !== null) {
       bandLo[i] = Math.max(bandLo[i]!, pinA - G * s[i]!);
@@ -172,19 +175,27 @@ export function gradeProfile(
   const lim = limits.length ? { floor, ceil } : null;
   // 3. The profile: within the grade limit, as close to the smoothed ground as it can be.
   const h = out.h;
-  fit(s, sm, bandLo, bandHi, G, FILL_SHARE, pinA, pinB, h, lim);
+  if (!fit(s, sm, bandLo, bandHi, G, FILL_SHARE, pinA, pinB, h, lim)) {
+    // Shouldn't happen once the band above is open everywhere; refuse rather than plan the road at
+    // height 0, as a profile that was never written would.
+    out.fail = {
+      reason: "Can't find an even grade for this road here: try a slightly different line",
+      at: 0,
+    };
+    return out;
+  }
   // Cutting too deep? Try again letting fill run tall: a viaduct beats an impossible cutting.
   let deepest = 0;
   for (let i = 0; i < n; i++) if (ground[i]! >= SHORE_HEIGHT) deepest = Math.max(deepest, ground[i]! - h[i]!);
   if (deepest > GRADING.maxCut) {
     const alt = new Float32Array(n);
-    fit(s, sm, bandLo, bandHi, G, 4, pinA, pinB, alt, lim);
+    const fitted = fit(s, sm, bandLo, bandHi, G, 4, pinA, pinB, alt, lim);
     let altDeepest = 0;
     for (let i = 0; i < n; i++)
       if (ground[i]! >= SHORE_HEIGHT) altDeepest = Math.max(altDeepest, ground[i]! - alt[i]!);
     const endsDown =
       alt[0]! - ground[0]! <= GRADING.maxFill && alt[n - 1]! - ground[n - 1]! <= GRADING.maxFill;
-    if (altDeepest < deepest && endsDown) h.set(alt);
+    if (fitted && altDeepest < deepest && endsDown) h.set(alt);
   }
 
   // 4. Cut and fill (the earthworks themselves are planned in earthworks.ts), and viaducts where
@@ -217,20 +228,20 @@ const FILL_SHARE = GRADING.maxFill / GRADING.maxCut;
 /**
  * Fit a profile within the grade limit that strays as little as possible from the smoothed ground
  * `sm` (least worst cut, with fill held to `fillShare` of it), and within that hugs the ground
- * wherever it can. Bisects on the worst cut.
+ * wherever it can. Bisects on the worst cut. False (with `out` untouched) when no profile fits.
  */
 function fit(
-  s: Float32Array,
-  sm: Float32Array,
-  bandLo: Float32Array,
-  bandHi: Float32Array,
+  s: Float64Array,
+  sm: Float64Array,
+  bandLo: Float64Array,
+  bandHi: Float64Array,
   G: number,
   fillShare: number,
   pinA: number | null,
   pinB: number | null,
   out: Float32Array,
   lim: Limits | null,
-): void {
+): boolean {
   const top = Math.max(...sm, pinA ?? -Infinity, pinB ?? -Infinity);
   const bottom = Math.min(...sm, pinA ?? Infinity, pinB ?? Infinity);
   let lo = 0;
@@ -240,7 +251,7 @@ function fit(
     if (fitProfile(s, sm, bandLo, bandHi, G, mid, fillShare, out, lim)) hi = mid;
     else lo = mid;
   }
-  fitProfile(s, sm, bandLo, bandHi, G, hi, fillShare, out, lim);
+  return fitProfile(s, sm, bandLo, bandHi, G, hi, fillShare, out, lim);
 }
 
 /** Heights forced by passing over or under other roads, with their slopes (M19). */
@@ -252,10 +263,10 @@ type Limits = { floor: Float64Array; ceil: Float64Array };
  * reachable at each sample; backward pass: pick within them.
  */
 function fitProfile(
-  s: Float32Array,
-  sm: Float32Array,
-  bandLo: Float32Array,
-  bandHi: Float32Array,
+  s: Float64Array,
+  sm: Float64Array,
+  bandLo: Float64Array,
+  bandHi: Float64Array,
   G: number,
   eps: number,
   fillShare: number,
@@ -280,7 +291,7 @@ function fitProfile(
       lo = Math.max(lo, rLo[i - 1]! - d);
       hi = Math.min(hi, rHi[i - 1]! + d);
     }
-    // (Sample positions are single precision, so the slopes to forced heights get some slack.)
+    // (Forced heights and their slopes get some slack.)
     if (lo > hi + (lim ? 1e-3 : 1e-9)) return false;
     rLo[i] = lo;
     rHi[i] = Math.max(lo, hi);

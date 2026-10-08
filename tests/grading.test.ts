@@ -13,10 +13,11 @@ import { Terrain } from '../src/sim/terrain/terrain';
 import { Rng } from '../src/sim/rng';
 import { TICKS_PER_MONTH as TICKS_PER_DAY } from '../src/sim/time';
 import { connectPoint, placeAlong, road } from './helpers';
+import { mapFromGenerator, packHeights } from '../src/sim/terrain/customMap';
 
 /** A straight 4 m-sampled curve along x from 0 to `len`. */
 const line = (len: number) => new Curve(v2(0, 0), v2(len / 2, 0), v2(len, 0), 4);
-const steepest = (p: { s: Float32Array; h: Float32Array }) => {
+const steepest = (p: { s: ArrayLike<number>; h: ArrayLike<number> }) => {
   let g = 0;
   for (let i = 1; i < p.h.length; i++)
     g = Math.max(g, Math.abs(p.h[i]! - p.h[i - 1]!) / (p.s[i]! - p.s[i - 1]!));
@@ -77,6 +78,106 @@ describe('graded road profiles (M13)', () => {
     const p = gradeProfile(line(200), (x) => hill(x), 'street', 5, 5);
     expect(p.fail?.reason).toMatch(/Too steep: .* it would need a \d+ m cutting \(14 m at most\)/);
     expect(p.fail?.reason).toMatch(/Go round the hill, or wind up it/);
+  });
+});
+
+describe('road profiles pinned at both ends (P7)', () => {
+  // The playthrough's bug: sample positions in single precision put the last one a hair past the
+  // road's end, the far pin's band came out empty there, no profile fitted, and the road was
+  // planned at height 0 with metres of earthworks on flat ground.
+  it('meet their pins on flat ground at every length and height, either way round', () => {
+    const misses: string[] = [];
+    for (const height of [0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 40])
+      for (let len = 40; len <= 120; len += 0.37)
+        for (const ang of [0, 0.61, 1.9, 3.7]) {
+          const a = v2(700.3, 650.7);
+          const b = v2(a.x + len * Math.cos(ang), a.z + len * Math.sin(ang));
+          const mid = v2((a.x + b.x) / 2, (a.z + b.z) / 2);
+          const there = gradeProfile(new Curve(a, mid, b, 4), () => height, 'street', height, height);
+          const back = gradeProfile(new Curve(b, mid, a, 4), () => height, 'street', height, height);
+          for (const [way, p] of [
+            ['there', there],
+            ['back', back],
+          ] as const) {
+            const n = p.h.length;
+            let worst = 0;
+            for (let i = 0; i < n; i++) worst = Math.max(worst, Math.abs(p.h[i]! - p.ground[i]!));
+            const ok =
+              !p.fail &&
+              Math.abs(p.h[0]! - height) < 1e-3 &&
+              Math.abs(p.h[n - 1]! - height) < 1e-3 &&
+              worst < 0.01 &&
+              p.maxCut < 0.01 &&
+              p.maxFill < 0.01;
+            if (!ok)
+              misses.push(
+                `${way} ${len.toFixed(2)} m at ${height} m, angle ${ang}: ends ${p.h[0]!.toFixed(2)}/${p.h[n - 1]!.toFixed(2)}, cut ${p.maxCut.toFixed(2)}, fill ${p.maxFill.toFixed(2)}${p.fail ? `, refused: ${p.fail.reason}` : ''}`,
+              );
+          }
+          // Either way round, the same heights at the same places.
+          const L = there.s[there.s.length - 1]!;
+          for (let s = 0; s <= L; s += 3)
+            if (Math.abs(profileAt(there, s) - profileAt(back, L - s)) > 1e-3)
+              misses.push(`${len.toFixed(2)} m at ${height} m, angle ${ang}: the two ways differ at ${s} m`);
+        }
+    expect(misses.slice(0, 5), `${misses.length} profiles miss`).toEqual([]);
+  });
+
+  it('meet pins at different heights either way round, within the grade', () => {
+    const misses: string[] = [];
+    for (const height of [0, 3, 10, 25])
+      for (let len = 40; len <= 120; len += 0.53) {
+        const a = v2(300.1, 900.9);
+        const b = v2(a.x + len * 0.8, a.z - len * 0.6);
+        const mid = v2((a.x + b.x) / 2, (a.z + b.z) / 2);
+        const rise = Math.min(4, len * ROAD_TYPES.street.maxGrade * 0.9);
+        const there = gradeProfile(new Curve(a, mid, b, 4), () => height, 'street', height, height + rise);
+        const back = gradeProfile(new Curve(b, mid, a, 4), () => height, 'street', height + rise, height);
+        for (const [p, h0, h1] of [
+          [there, height, height + rise],
+          [back, height + rise, height],
+        ] as const) {
+          const n = p.h.length;
+          if (p.fail || Math.abs(p.h[0]! - h0) > 1e-3 || Math.abs(p.h[n - 1]! - h1) > 1e-3)
+            misses.push(
+              `${len.toFixed(2)} m at ${height} m: ends ${p.h[0]}/${p.h[n - 1]} ${p.fail?.reason ?? ''}`,
+            );
+          else if (steepest(p) > ROAD_TYPES.street.maxGrade + 1e-4)
+            misses.push(`${len.toFixed(2)} m: too steep`);
+        }
+      }
+    expect(misses.slice(0, 5), `${misses.length} profiles miss`).toEqual([]);
+  });
+
+  it('cost the same either way when joining two dead ends on flat ground by the river', () => {
+    // Flat ground at 3 m, as by the playthrough's river: dead ends joined by a street 40–100 m long
+    // cost no earthworks, drawn either way.
+    const base = mapFromGenerator('flat3', 'river', 'Flat', true);
+    const map = { ...base, heights: packHeights(new Float32Array(HEIGHT_RES * HEIGHT_RES).fill(3)) };
+    const quotes: string[] = [];
+    for (const gap of [41.3, 54.1, 62.7, 77.9, 96.2]) {
+      const sim = Sim.create({ cityName: 'Flat' }, map);
+      sim.testMode = true;
+      sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
+      const c = connectPoint(sim);
+      road(sim, [c, { x: c.x + 200, z: c.z }]);
+      const a = { x: c.x + 100, z: c.z - 60 };
+      const b = { x: c.x + 100 + gap, z: c.z - 60 };
+      road(sim, [{ x: c.x + 100, z: c.z }, a]);
+      road(sim, [{ x: c.x + 100 + gap, z: c.z }, b]);
+      const there = sim.preview({ type: 'buildRoad', road: 'street', points: [a, b] });
+      const back = sim.preview({ type: 'buildRoad', road: 'street', points: [b, a] });
+      const earth = (r: typeof there) =>
+        r.ok ? (r.info as { grade: { earth: { cost: number } } }).grade.earth.cost : `refused: ${r.reason}`;
+      quotes.push(
+        `${gap} m: $${there.ok ? there.cost : '-'} / $${back.ok ? back.cost : '-'}, earthworks ${earth(there)} / ${earth(back)}`,
+      );
+      expect(there.ok && back.ok, quotes.at(-1)).toBe(true);
+      if (!there.ok || !back.ok) continue;
+      expect(there.cost, quotes.at(-1)).toBe(back.cost);
+      expect(earth(there), quotes.at(-1)).toBeLessThan(50);
+    }
+    console.log(`[P7] ${quotes.join('; ')}`);
   });
 });
 

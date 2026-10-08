@@ -130,10 +130,27 @@ test.describe('P6: narrow windows keep the toolbar and the top bar', () => {
   test('the advisor badge stays visible when Advisors is folded away', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await openGame(page);
-    const badge = await page.evaluate(
-      () => document.querySelector('[data-testid="open-advisors"] .badge')?.textContent ?? null,
-    );
-    expect(badge, 'a fresh city has advice to show').not.toBeNull();
+    // Advice to show: a street out in the fields that doesn't reach the highway (P1 stopped a fresh
+    // city's railway raising "No road to the highway" before anything was built).
+    await page.evaluate(async () => {
+      const g = window.__game!;
+      const z = (await g.getState()).highwayZ - 300;
+      await g.dispatch({
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: 600, z },
+          { x: 800, z },
+        ],
+      });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.querySelector('[data-testid="open-advisors"] .badge')?.textContent ?? null,
+        ),
+      )
+      .not.toBeNull();
     const more = page.getByTestId('open-more');
     await expect(more).toBeVisible();
     const dot = await more.evaluate((el) => getComputedStyle(el, '::after').content);

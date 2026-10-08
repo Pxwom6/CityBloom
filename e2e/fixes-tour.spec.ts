@@ -230,5 +230,52 @@ test('Playthrough fixes: Kestrel Bend through the UI, touching every fixed area 
   await page.evaluate(() => window.__game!.setCamera('overview'));
   await frames(page, 3);
   await shot(page, 'fixes-tour-10-limits');
+
+  // P14: with residents' thoughts showing, the data-map menu has every item to itself.
+  await page.evaluate(() => window.__game!.setCamera('city'));
+  await page.evaluate(() => window.__game!.advance(240));
+  await page.getByTestId('tool-maps').click();
+  await expect(page.getByTestId('maps-menu')).toBeVisible();
+  for (const b of await page.getByTestId('maps-menu').getByRole('button').all())
+    expect(
+      await b.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && (hit === el || el.contains(hit));
+      }),
+    ).toBe(true);
+  await shot(page, 'fixes-tour-11-maps-menu');
+  await page.getByTestId('tool-maps').click();
+
+  // P6, P13: an iPad held upright, then a small laptop: every button in reach, tooltips on screen.
+  const reach = (scope: string) =>
+    page.evaluate((scope) => {
+      const bad: string[] = [];
+      for (const b of document.querySelectorAll<HTMLElement>(`[data-testid="${scope}"] button`)) {
+        const r = b.getBoundingClientRect();
+        if (!r.width && !r.height) continue;
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (r.left < 0 || r.right > innerWidth || !hit || !(hit === b || b.contains(hit)))
+          bad.push(b.dataset.testid ?? b.getAttribute('aria-label') ?? '');
+      }
+      return bad;
+    }, scope);
+  for (const [w, h] of [
+    [820, 1180],
+    [1024, 768],
+  ]) {
+    await page.setViewportSize({ width: w!, height: h! });
+    await frames(page, 3);
+    expect(await reach('toolbar'), `${w}x${h} toolbar`).toEqual([]);
+    expect(await reach('topbar'), `${w}x${h} top bar`).toEqual([]);
+    const roads = page.getByTestId('tool-road');
+    await roads.hover();
+    const tip = page.locator('.tip').first();
+    await expect(tip).toBeVisible();
+    const box = (await tip.boundingBox())!;
+    expect(box.x, `${w}x${h} tooltip`).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, `${w}x${h} tooltip`).toBeLessThanOrEqual(w!);
+    await shot(page, `fixes-tour-12-${w}x${h}`);
+  }
   errs.check();
 });

@@ -1394,10 +1394,10 @@ body {
 }
 
 /*
- * A scenario's Goals button (the name over its progress) is the widest item in the bar: up to 90 rem
- * (data-bars='tight') a scenario's bar uses the tight gaps of the narrower sizes.
+ * Up to 90 rem (data-bars='tight') the bar uses the tight gaps of the narrower sizes, so a city's name
+ * (or a scenario's Goals button, the widest item) keeps room at 1280 px with every stat showing.
  */
-#ui[data-bars='tight'] .topbar.scenario {
+#ui[data-bars='tight'] .topbar {
   gap: var(--space-2);
   padding: 0 var(--space-3);
 }

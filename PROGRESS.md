@@ -51,17 +51,17 @@ Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13,
 - [x] P12 Bus stops are refused on the road (check first: reproduced on bridges)
 - [ ] P13 Tooltips run off the screen
 - [ ] P14 The citizen-thought feed covers the data-map menu
-- [ ] P15 Tips and thoughts contradict the numbers
+- [x] P15 Tips and thoughts contradict the numbers
 - [x] P16 Dates read backwards around New Year
 - [x] P17 Tax bands nobody pays
 - [x] P18 Purchases made while paused (check first: reproduced as a display lag)
 - [x] P19 Two road-maintenance lines in the budget
 - [x] P20 The Region panel doesn't show supply and demand
-- [ ] P21 City limits are invisible
+- [x] P21 City limits are invisible
 - [x] P22 The save toast names the city, not the slot
 - [x] P23 Clickable toasts can't be clicked
 - [x] P24 Loan terms appear only after borrowing
-- [ ] P25 "No school nearby" beside a primary school
+- [x] P25 "No school nearby" beside a primary school
 - [x] P26 Notification groups have no headings
 
 ## Summary

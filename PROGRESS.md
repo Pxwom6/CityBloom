@@ -691,6 +691,17 @@ misses with either build (`startup-slow.log`).
   far more often, so the mayor had been building power well ahead and grew a bigger city on it
   (DECISIONS, "The balance runs after this round"). No rule of the game changed; P7, P1, P5, P8,
   P10, P15 and P25 leave the runs byte-identical.
+- `bench.ts 6 --big` on the Mac, base and branch back to back, twice each: identical populations
+  (110,174 at month 6); tick avg 0.28–0.32 ms at 97–110k against 0.28–0.32 on the base, p99
+  2.3–3.1 ms against 2.3–3.1, worst 16.8–17.1 ms (the month-1 cold start) against 16.9–18.9. No
+  change: the new work (road previews, islands, the supply query) runs on a command or a query,
+  never in the tick.
+- Frame times on the saved 110k city (`framebench.mjs`, High, 1512×783 at 2×, frame cap off), base
+  and branch alternating, two runs each, average ms: whole city 13.6 / 14.1 against 14.3 / 13.7,
+  city 17.3 / 17.2 against 17.6 / 16.6, street 14.4 / 14.1 against 14.4 / 14.1, heavy 16.9 / 16.8
+  against 14.1 / 13.7 (`bench-results/fixes/`). Within run-to-run noise. Both builds ran slower
+  than the frame-time table above (heavy 10–11 ms then): the machine today, after hours of
+  SwiftShader e2e, not the round.
 
 ## Performance (latest: M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).

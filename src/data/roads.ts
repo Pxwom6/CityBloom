@@ -217,6 +217,8 @@ export const BUILDABLE_ROADS: RoadTypeId[] = [
 
 /** Track (M20): railways live in the network beside roads but have a graph of their own. */
 export const isRail = (t: RoadTypeId): boolean => t === 'rail' || t === 'mainline';
+/** A road the player built: not the regional highway, and not railway track (P9). */
+export const isPlayerRoad = (t: RoadTypeId): boolean => t !== 'highway' && !isRail(t);
 
 /** Roads a railway crosses at a level crossing (M20); it passes over anything bigger. */
 export const levelCrossing = (t: RoadTypeId): boolean => t === 'dirt' || t === 'street' || t === 'avenue';

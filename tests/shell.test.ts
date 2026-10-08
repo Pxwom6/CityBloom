@@ -9,7 +9,9 @@ import { ZONE_NONE } from '../src/data/zones';
 import { DIFFICULTY } from '../src/data/economy';
 import { monthlyRates } from '../src/sim/systems/economy';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../src/sim/time';
-import { buildTown, newSim, serveTown } from './helpers';
+import { buildTown, connectPoint, newSim, road, serveTown } from './helpers';
+import { TUTORIAL } from '../src/client/tutorial';
+import type { Game } from '../src/game';
 
 describe('settings', () => {
   it('fall back to defaults field by field for missing, damaged or out-of-range values', () => {
@@ -98,5 +100,23 @@ describe('main menu demo town', () => {
     expect(sim.state.totals.population).toBeGreaterThan(pop * 0.95);
     const abandoned = [...sim.state.buildings.values()].filter((x) => x.state === BState.Abandoned);
     expect(abandoned.length).toBeLessThan(5);
+  });
+});
+
+describe('the first road (P9)', () => {
+  // A new city already has the regional highway and the regional railway's mainline: neither is a
+  // road the player built, so "Lay a road" and "Breaking ground" wait for one.
+  it('is neither ticked off in the tutorial nor awarded until a street is drawn', () => {
+    const sim = newSim();
+    expect([...sim.state.net.segments.values()].map((s) => s.type).sort()).toEqual(['highway', 'mainline']);
+    const step = TUTORIAL.find((t) => t.title === 'Lay a road')!;
+    const asGame = () => ({ world: { netState: sim.state.net } }) as unknown as Game;
+    sim.advance(TICKS_PER_HOUR * 3);
+    expect(step.done!(asGame())).toBe(false);
+    expect(sim.state.progress.achievements.firstStreet).toBeUndefined();
+    road(sim, [connectPoint(sim), { x: connectPoint(sim).x + 120, z: connectPoint(sim).z }]);
+    expect(step.done!(asGame())).toBe(true);
+    sim.advance(TICKS_PER_HOUR);
+    expect(sim.state.progress.achievements.firstStreet).toBeDefined();
   });
 });

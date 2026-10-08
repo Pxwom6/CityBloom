@@ -1,4 +1,4 @@
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isPlayerRoad } from '../data/roads';
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
@@ -42,7 +42,7 @@ export const TUTORIAL: TutorialStep[] = [
       'Pick the road tool and drag out from the end of the highway. Click to add bends; every road ' +
       'needs to connect back to the highway so people can reach it.',
     target: 'tool-road',
-    done: (g) => [...g.world.netState.segments.values()].some((s) => s.type !== 'highway'),
+    done: (g) => [...g.world.netState.segments.values()].some((s) => isPlayerRoad(s.type)),
   },
   {
     title: 'Zone homes',

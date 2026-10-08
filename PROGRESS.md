@@ -1,8 +1,9 @@
 # PROGRESS
 
-Phase 3 (graphics, SPEC-3.md) and model batches 3 and 4 are merged into `main`, which deploys the
-live site at https://pxwom6.github.io/CityBloom/. Model batch 5, the last, is on the `models-5`
-branch, in a pull request into `main` for the owner to merge.
+Phase 3 (graphics, SPEC-3.md) and all five model batches are merged into `main`, which deploys the
+live site at https://pxwom6.github.io/CityBloom/. The playthrough fix round (`PLAYTHROUGH-FIXES.md`,
+P1–P26 below) is on the `playthrough-fixes` branch, in a pull request into `main` for the owner to
+merge.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -33,6 +34,44 @@ branch, in a pull request into `main` for the owner to merge.
 - [x] M26 Light and sky
 - [x] M27 Ground, lots and streets
 - [x] M28 Buildings and variety
+
+## Playthrough fixes (PLAYTHROUGH-FIXES.md)
+Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
+
+- [x] P1 Road ends that miss are silent
+- [x] P2 Building and upgrading roads remove buildings without saying so
+- [x] P3 A drag with a tool out builds
+- [x] P4 A category click arms its first tool
+- [x] P5 Roundabouts are refused near bends
+- [x] P6 Narrow windows lose the toolbar and top bar
+- [x] P7 Some roads are planned at height 0
+- [x] P8 Bought power is resold at a loss
+- [x] P9 The tutorial's "Lay a road" and "Breaking ground" tick before any road exists
+- [x] P10 Street names change and repeat
+- [x] P11 Escape doesn't always leave the road tool
+- [x] P12 Bus stops are refused on the road (check first: reproduced on bridges)
+- [x] P13 Tooltips run off the screen
+- [x] P14 The citizen-thought feed covers the data-map menu
+- [x] P15 Tips and thoughts contradict the numbers
+- [x] P16 Dates read backwards around New Year
+- [x] P17 Tax bands nobody pays
+- [x] P18 Purchases made while paused (check first: reproduced as a display lag)
+- [x] P19 Two road-maintenance lines in the budget
+- [x] P20 The Region panel doesn't show supply and demand
+- [x] P21 City limits are invisible
+- [x] P22 The save toast names the city, not the slot
+- [x] P23 Clickable toasts can't be clicked
+- [x] P24 Loan terms appear only after borrowing
+- [x] P25 "No school nearby" beside a primary school
+- [x] P26 Notification groups have no headings
+
+### Review follow-ups (PR #14)
+- [x] R1 The winter forecast under-warns (cold spells, solar in snow)
+- [x] R2 Cut-off roads and the traffic map's tint recomputed on every network update
+- [x] R3 Snapping: a capped near-miss radius, Alt for no snapping, no unpreviewed snap on free-form ends
+- [x] R4 Roundabouts that replace buildings ask first
+- [x] R5 Touch and pen taps; a second finger in a pinch never clicks
+- [x] R6 Overlapping bend straightenings in one roundabout are refused
 
 ## Summary
 Citybloom is a complete, playable city builder in the browser. From the main menu (over a living
@@ -116,14 +155,28 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Every milestone in SPEC.md, SPEC-2.md and SPEC-3.md is done, and so is model batch 5 (below,
-"Models"): the owner's last 39 designs are in, on the `models-5` branch (pull request into `main`),
-and every zoned type now has at least two hand-made designs on every lot its buildings can stand
-on, so no building in any city is generated. Nothing is left in progress.
+Nothing. The playthrough fix round (`PLAYTHROUGH-FIXES.md`) is done: all 26 items ticked above, on
+the `playthrough-fixes` branch, in a pull request into `main` for the owner to merge. Each was
+reproduced in a test that failed first and checked through the UI with screenshots looked at
+(`docs/screenshots/fix*-*.png`; one short city touching every fixed area in
+`docs/screenshots/fixes-tour-*.png`, `e2e/fixes-tour.spec.ts`). The full check: typecheck and lint
+clean, 552 unit, scenario and legacy tests, 84 of 84 e2e (M21 needed to say yes to P2's question;
+DECISIONS), and the three playthrough specs. Reasons for every call are in `docs/DECISIONS.md`,
+"Playthrough fixes".
+
+The PR #14 review's six follow-ups (R1–R6 above) are done on the same branch, each reproduced in a
+test that failed first ("PR #14 review follow-ups" in DECISIONS; balance and frame times under
+"Performance (playthrough fixes)"). Full check after them: typecheck and lint clean, 557 unit,
+scenario and legacy tests, 89 of 89 e2e, and the three playthrough specs (the fixes tour now says
+yes to R4's question: its roundabout takes two corner lots).
 
 ## Next tasks
-1. The owner: merge the `models-5` pull request into `main` when happy, which publishes the site.
-2. Any fixes the owner wants from the smaller notes under "Models" (no design needs a remake).
+1. The owner: merge the `playthrough-fixes` pull request into `main` when happy, which publishes it.
+2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
+   buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
+   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it
+   builds to the winter warning, which now plans for a cold spell; "Performance (playthrough
+   fixes)"). Easy can stay as it is; Normal and Hard should scale the pressure up.
 3. Ideas above.
 
 ## Models (phase 3)
@@ -649,6 +702,35 @@ misses with either build (`startup-slow.log`).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
+
+## Performance (playthrough fixes)
+- `balance.ts 20` on the Mac, base `main` at 5b261bd against this branch: greedy (420 / 16 % at year
+  20, $566k) and neglectful (354 / 36 %, $480k) are byte-identical. The careful mayor's city ends
+  year 20 at **50,377 residents, 78 % approval, $1.71M** against 71,565, 72 % and $1.50M (every
+  election won either way). Bisected to P20's corrected winter forecast alone: the careful mayor
+  builds a power plant whenever "Winter will need more power" shows, and the old forecast raised it
+  far more often, so the mayor had been building power well ahead and grew a bigger city on it
+  (DECISIONS, "The balance runs after this round"). No rule of the game changed; P7, P1, P5, P8,
+  P10, P15 and P25 leave the runs byte-identical.
+- `bench.ts 6 --big` on the Mac, base and branch back to back, twice each: identical populations
+  (110,174 at month 6); tick avg 0.28–0.32 ms at 97–110k against 0.28–0.32 on the base, p99
+  2.3–3.1 ms against 2.3–3.1, worst 16.8–17.1 ms (the month-1 cold start) against 16.9–18.9. No
+  change: the new work (road previews, islands, the supply query) runs on a command or a query,
+  never in the tick.
+- Frame times on the saved 110k city (`framebench.mjs`, High, 1512×783 at 2×, frame cap off), base
+  and branch alternating, two runs each, average ms, **base first, then branch**: whole city 13.6 /
+  14.1 against 14.3 / 13.7, city 17.3 / 17.2 against 17.6 / 16.6, street 14.4 / 14.1 against 14.4 /
+  14.1, heavy 16.9 / 16.8 (base) against 14.1 / 13.7 (branch) (`bench-results/fixes/`). Within
+  run-to-run noise. Both builds ran slower than the frame-time table above (heavy 10–11 ms then):
+  the machine that day, after hours of SwiftShader e2e, not the round.
+- **After the PR #14 review follow-ups** (R1–R6): `WINTER=1 balance.ts 20` (each winter's power
+  shortfalls): careful ends year 20 at **65,767 / 73 % / $765k with no winter shortfall** (the PR
+  before R1: 50,377 / 78 % / $1.71M, its third December 181 MW short for 14 hours; `main`: 71,565 /
+  72 % / $1.50M, none); its treasury is lower for the last five years' projects ($2.0M against
+  $1.4M), not power. Greedy and neglectful byte-identical in all three. Frame times after R2 (main
+  first, then branch, alternating, average ms; `bench-results/review/`): heavy 9.6 / 11.2 against
+  9.3 / 9.6, whole city 8.0 / 9.6 against 8.8 / 8.9, city 10.9 / 11.9 against 11.7 / 12.0, street
+  8.5 / 9.1 against 8.9 / 9.2: noise, the heavy view at or under main.
 
 ## Performance (latest: M24)
 - `bench.ts 8 --big --profile` (M24 adds no work to the tick: terraforming and the editor run only on a command): two runs at 97–110k gave tick avg 0.78–1.05 ms, p99 6.2–9.7 ms, and worst per month 10.4–25.1 ms and 14.4–28.3 ms; an A/B run of the M23 commit the same hour gave 0.77–1.03 ms and 7.9–16.0 ms with identical populations. The worst ticks are single-system outliers (landValue or utilities at the month-4 growth burst, one 27.8 ms matcher round in month 8) that land in different months each run. The average sits at or just over the 1 ms budget in months 4–5 in all three runs, and single ticks over 15 ms have shown up since M20 (M23 17.3, M22 16.4, M20 17.2). A profile-guided pass on the matcher and happiness is the next performance step if real hardware shows it. `balance.ts 20`: identical to M23 (careful 66,127 / 71 % at year 20, every election won, treasury $25M; greedy 420 / 16 %; neglectful 354 / 36 %), as expected with no tick changes. Draw calls: M24 adds nothing drawn in normal play (the brush ring is the existing ghost; entry markers are DOM labels in the editor only).

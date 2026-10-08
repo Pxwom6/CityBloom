@@ -18,6 +18,8 @@ import { RoadTint, type RoadTintPiece } from './roadTint';
 const OK = new Color('#3fa7ff');
 const BAD = new Color('#ff4d4d');
 const WARN = new Color('#ffb020');
+/** A road that joins nothing, or only roads cut off from the highway (P1): washed out, not blue. */
+const UNLINKED = new Color('#9aa8b8');
 const VIADUCT = new Color('#a98bff');
 const CUT = new Color('#c8894f');
 const FILL = new Color('#f4f1e6');
@@ -55,6 +57,8 @@ export class GhostRenderer {
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -8,
   });
+  /** Always red: buildings that go stay red over a road highlighted as fine (P2). */
+  private clearMat = this.hiMat.clone();
   private coverage: RoadTint;
   private brush: Mesh;
   private snap: Mesh;
@@ -77,7 +81,7 @@ export class GhostRenderer {
       ringMat(new Color('#ffffff'), 0.8),
     );
     this.snap = new Mesh(
-      new RingGeometry(1.8, 2.6, 24).rotateX(-Math.PI / 2),
+      new RingGeometry(1.4, 2.8, 32).rotateX(-Math.PI / 2),
       ringMat(new Color('#ffe066'), 0.95),
     );
     this.marker = new Mesh(new RingGeometry(2.5, 4, 24).rotateX(-Math.PI / 2), ringMat(BAD, 0.9));
@@ -119,7 +123,7 @@ export class GhostRenderer {
   showRoad(
     pieces: { a: Vec2; c: Vec2; b: Vec2 }[] | null,
     type: RoadTypeId,
-    state: 'ok' | 'bad' | 'pending',
+    state: 'ok' | 'bad' | 'pending' | 'unlinked',
     grade?: { limit: number; pieces: (GhostProfile | null)[] } | null,
   ): void {
     if (this.roadMesh) {
@@ -131,7 +135,12 @@ export class GhostRenderer {
     const graded =
       grade && grade.pieces.some((p) => p) && (state !== 'bad' || grade.pieces.some((p) => p && p.fail >= 0));
     if (graded) {
-      const geo = this.gradedRibbon(pieces, ROAD_STYLES[type].totalHalf, grade);
+      const geo = this.gradedRibbon(
+        pieces,
+        ROAD_STYLES[type].totalHalf,
+        grade,
+        state === 'unlinked' ? UNLINKED : OK,
+      );
       if (!geo) return;
       this.roadMesh = new Mesh(geo, this.gradedMat);
       this.roadMesh.renderOrder = 10;
@@ -140,7 +149,9 @@ export class GhostRenderer {
     }
     const geo = this.ribbon(pieces, ROAD_STYLES[type].totalHalf);
     if (!geo) return;
-    this.roadMat.color.copy(state === 'ok' ? OK : state === 'bad' ? BAD : WARN);
+    this.roadMat.color.copy(
+      state === 'ok' ? OK : state === 'bad' ? BAD : state === 'unlinked' ? UNLINKED : WARN,
+    );
     this.roadMesh = new Mesh(geo, this.roadMat);
     this.roadMesh.renderOrder = 10;
     this.group.add(this.roadMesh);
@@ -167,6 +178,7 @@ export class GhostRenderer {
     pieces: { a: Vec2; c: Vec2; b: Vec2 }[],
     half: number,
     grade: { limit: number; pieces: (GhostProfile | null)[] },
+    base: Color = OK,
   ): BufferGeometry | null {
     const buf = new GeoBuffer(1024);
     const stats = { ok: 0, warn: 0, bad: 0, viaduct: 0, posts: 0 };
@@ -217,7 +229,7 @@ export class GhostRenderer {
               (Math.min(L, m + 4) - Math.max(0, m - 4) || 1)
             : 0;
           const t = Math.min(1, Math.max(0, (g / grade.limit - 0.55) / 0.45));
-          col.copy(OK).lerp(WARN, t);
+          col.copy(base).lerp(WARN, t);
           if (t > 0.5) stats.warn++;
           else stats.ok++;
         }
@@ -246,14 +258,18 @@ export class GhostRenderer {
     return buf.n ? mergeChunks([buf.trimmed()]) : null;
   }
 
-  highlightSegment(curve: Curve | null, half: number, color: 'bad' | 'ok' = 'bad'): void {
+  highlightSegment(curve: Curve | Curve[] | null, half: number, color: 'bad' | 'ok' = 'bad'): void {
     if (this.highlight) {
       this.group.remove(this.highlight);
       this.highlight.geometry.dispose();
       this.highlight = null;
     }
     if (!curve) return;
-    const geo = this.ribbon([{ a: curve.a, c: curve.c, b: curve.b }], half + 0.6);
+    const list = Array.isArray(curve) ? curve : [curve];
+    const geo = this.ribbon(
+      list.map((c) => ({ a: c.a, c: c.c, b: c.b })),
+      half + 0.6,
+    );
     if (!geo) return;
     this.hiMat.color.copy(color === 'bad' ? BAD : OK);
     this.highlight = new Mesh(geo, this.hiMat);
@@ -373,7 +389,7 @@ export class GhostRenderer {
       buf.quad(pt(-hw, hd, 0), pt(-hw, hd, height), pt(-hw, -hd, height), pt(-hw, -hd, 0), col, false);
       buf.quad(pt(hw, -hd, 0), pt(hw, -hd, height), pt(hw, hd, height), pt(hw, hd, 0), col, false);
     }
-    this.clearing = new Mesh(mergeChunks([buf.trimmed()]), this.hiMat);
+    this.clearing = new Mesh(mergeChunks([buf.trimmed()]), this.clearMat);
     this.clearing.renderOrder = 13;
     this.group.add(this.clearing);
   }
@@ -395,9 +411,13 @@ export class GhostRenderer {
     (this.brush.material as MeshBasicMaterial).color.set(color);
   }
 
-  showSnap(p: Vec2 | null): void {
+  /** The ring where a road end joins one (`scale` keeps it a few pixels across when zoomed out, P1). */
+  showSnap(p: Vec2 | null, scale = 1): void {
     this.snap.visible = !!p;
-    if (p) this.snap.position.set(p.x, this.y(p.x, p.z) + 0.8, p.z);
+    if (p) {
+      this.snap.position.set(p.x, this.y(p.x, p.z) + 0.8, p.z);
+      this.snap.scale.setScalar(scale);
+    }
   }
 
   showMarker(p: Vec2 | null): void {

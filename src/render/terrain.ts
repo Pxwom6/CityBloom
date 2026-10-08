@@ -19,6 +19,7 @@ import type { ClientWorld } from '../client/world';
 import type { RoadTypeId } from '../data/roads';
 import { PAL } from './palette';
 import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
+import { LIMIT_COLOUR, LIMIT_GLSL, limitLook } from './cityLimit';
 
 const CHUNKS = 4; // buildable terrain split into CHUNKS² meshes for culling
 const SCENERY_STEP = 32;
@@ -39,6 +40,9 @@ export interface TerrainUniforms {
   uTime: { value: number };
   uMapSize: { value: number };
   uGridOn: { value: number };
+  /** The city limit's line (P21): its half width in device pixels, and how much of the ground it covers. */
+  uLimitPx: { value: number };
+  uLimitAlpha: { value: number };
   /** Fields, hedgerows and paths in the country (M27): their strength, 0 (off: the quality's cost switch, or the whole-city view) to 1. */
   uGroundDetail: { value: number };
 }
@@ -60,6 +64,8 @@ export class TerrainRenderer {
   private urbanDirty = true;
   private urbanAt = -1;
   private tmp = new Color();
+  /** A road, zoning or building tool is out: the city limit is drawn stronger (P21). */
+  limitStrong = false;
 
   constructor(private world: ClientWorld) {
     const overlayData = new Uint8Array(GRID_RES * GRID_RES * 4);
@@ -80,6 +86,8 @@ export class TerrainRenderer {
       uTime: { value: 0 },
       uMapSize: { value: MAP_SIZE },
       uGridOn: { value: 0 },
+      uLimitPx: { value: limitLook(false, false, 1).px },
+      uLimitAlpha: { value: limitLook(false, false, 1).alpha },
       uGroundDetail: { value: 1 },
     };
     this.material = new MeshLambertMaterial({ vertexColors: true });
@@ -111,6 +119,8 @@ uniform float uOverlayOn;
 uniform float uTime;
 uniform float uMapSize;
 uniform float uGridOn;
+uniform float uLimitPx;
+uniform float uLimitAlpha;
 uniform float uSnow;
 uniform float uWet;
 uniform vec4 uSeason;
@@ -132,7 +142,8 @@ vec3 wNoiseD(vec2 p) {
   return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2(b - a + k * u.y, c - a + k * u.x));
 }
 ${SEASON_GLSL}
-${GRADE_GLSL}`,
+${GRADE_GLSL}
+${LIMIT_GLSL}`,
         )
         .replace(
           '#include <color_fragment>',
@@ -147,11 +158,8 @@ ${GRADE_GLSL}`,
   outside = clamp(outside, 0.0, 1.0);
   float grey = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, vec3(grey), 0.22) * 0.96, outside);
-  // Border line.
-  float dEdge = min(min(abs(p.x), abs(p.x - uMapSize)), min(abs(p.y), abs(p.y - uMapSize)));
-  float inRange = step(-4.0, p.x) * step(p.x, uMapSize + 4.0) * step(-4.0, p.y) * step(p.y, uMapSize + 4.0);
-  float border = (1.0 - smoothstep(0.8, 2.5, dEdge)) * inRange;
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.85), border * 0.6);
+  // The city limit (P21), drawn last of all (after the seasons, snow and data maps) a few pixels wide.
+  float limit = cityLimit(p, uMapSize, uLimitPx);
   // Grass with variety (M27): warm and cool patches and a fine mottle everywhere; out in the
   // country, fields of their own shades with hedgerows between and worn paths across; by the
   // roads, tidier grass. Before the seasons, so all of it turns with them.
@@ -244,6 +252,8 @@ ${GRADE_GLSL}`,
     float line = 1.0 - smoothstep(0.0, 0.25, min(g.x, g.y));
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), line * 0.12);
   }
+  // (A deeper gold on snow, where cream would vanish.)
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(${LIMIT_COLOUR}, vec3(0.86, 0.68, 0.28), smoothstep(0.1, 0.6, uSnow)), limit * uLimitAlpha);
 }`,
         );
     };
@@ -366,6 +376,7 @@ ${GRADE_GLSL}`,
     }
     // Skirts hide cracks against the coarser scenery mesh.
     let s = vx * vx;
+    const skirtOf: number[] = [];
     const edges: number[][] = [
       Array.from({ length: vx }, (_, i) => i), // top row
       Array.from({ length: vx }, (_, i) => per * vx + i), // bottom row
@@ -382,6 +393,7 @@ ${GRADE_GLSL}`,
         col[s * 3] = col[v * 3]!;
         col[s * 3 + 1] = col[v * 3 + 1]!;
         col[s * 3 + 2] = col[v * 3 + 2]!;
+        skirtOf[s] = v;
         s++;
       }
       if (!onMapEdge[e]) return;
@@ -398,6 +410,13 @@ ${GRADE_GLSL}`,
     geo.setAttribute('color', new BufferAttribute(col, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    // The skirt is lit like the ground above it. (Its own normals come out as nothing, and where it
+    // won a depth tie with the edge of the ground it drew black dots along the city limit.)
+    const normals = geo.getAttribute('normal') as BufferAttribute;
+    for (let v = vx * vx; v < s; v++) {
+      const top = skirtOf[v]!;
+      normals.setXYZ(v, normals.getX(top), normals.getY(top), normals.getZ(top));
+    }
     geo.computeBoundingSphere();
     geo.computeBoundingBox();
     return geo;
@@ -420,8 +439,10 @@ ${GRADE_GLSL}`,
     const end = MAP_SIZE - start;
     const n = (end - start) / SCENERY_STEP; // quads per side
     const vx = n + 1;
-    const pos = new Float32Array(vx * vx * 3);
-    const col = new Float32Array(vx * vx * 3);
+    // Room after the grid's own vertices for the skirt along the buildable square's edge (below).
+    const along = MAP_SIZE / SCENERY_STEP + 1;
+    const pos = new Float32Array((vx * vx + 4 * along) * 3);
+    const col = new Float32Array((vx * vx + 4 * along) * 3);
     const heights = new Float32Array(vx * vx);
     for (let j = 0; j < vx; j++) {
       for (let i = 0; i < vx; i++) {
@@ -463,11 +484,49 @@ ${GRADE_GLSL}`,
         idx.push(a, d, b, b, d, e);
       }
     }
+    // A skirt hanging from the scenery's edge along the buildable square, lit and coloured like the
+    // ground above it. Where the coarse scenery edge lies above the full-resolution ground's edge there
+    // is a gap between them, and it showed the sky through as a dark crack right along the city limit,
+    // which a line a few pixels wide (P21) made plain. (The chunks' own skirts cover the other way.)
+    const ring = (at: (k: number) => [number, number]) =>
+      Array.from({ length: along }, (_, k) => {
+        const [x, z] = at(k);
+        return ((z - start) / SCENERY_STEP) * vx + (x - start) / SCENERY_STEP;
+      });
+    const sides = [
+      ring((k) => [k * SCENERY_STEP, 0]),
+      ring((k) => [k * SCENERY_STEP, MAP_SIZE]),
+      ring((k) => [0, k * SCENERY_STEP]),
+      ring((k) => [MAP_SIZE, k * SCENERY_STEP]),
+    ];
+    const skirtOf: number[] = [];
+    let s = vx * vx;
+    for (const side of sides) {
+      const first = s;
+      for (const v of side) {
+        pos.set([pos[v * 3]!, pos[v * 3 + 1]! - 6, pos[v * 3 + 2]!], s * 3);
+        col.set([col[v * 3]!, col[v * 3 + 1]!, col[v * 3 + 2]!], s * 3);
+        skirtOf[s] = v;
+        s++;
+      }
+      for (let k = 0; k < along - 1; k++) {
+        const a = side[k]!;
+        const b = side[k + 1]!;
+        const a2 = first + k;
+        const b2 = first + k + 1;
+        idx.push(a, a2, b, b, a2, b2, a, b, a2, b, b2, a2); // both windings
+      }
+    }
     const geo = new BufferGeometry();
     geo.setAttribute('position', new BufferAttribute(pos, 3));
     geo.setAttribute('color', new BufferAttribute(col, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    const normals = geo.getAttribute('normal') as BufferAttribute;
+    for (let v = vx * vx; v < s; v++) {
+      const top = skirtOf[v]!;
+      normals.setXYZ(v, normals.getX(top), normals.getY(top), normals.getZ(top));
+    }
     geo.computeBoundingSphere();
     const mesh = new Mesh(geo, this.material);
     mesh.receiveShadow = true;
@@ -475,8 +534,11 @@ ${GRADE_GLSL}`,
     this.group.add(mesh);
   }
 
-  update(time: number): void {
+  update(time: number, photo = false, pixelRatio = 1): void {
     this.uniforms.uTime.value = time;
+    const limit = limitLook(this.limitStrong, photo, pixelRatio);
+    this.uniforms.uLimitPx.value = limit.px;
+    this.uniforms.uLimitAlpha.value = limit.alpha;
     // The town mask follows the roads, at most once a second while they change.
     if (this.urbanDirty && time - this.urbanAt > 1) this.buildUrban(time);
   }

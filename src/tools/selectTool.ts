@@ -1,5 +1,5 @@
 import type { Game } from '../game';
-import type { Tool, ToolPointer } from './tool';
+import { clickSlop, type Tool, type ToolPointer } from './tool';
 
 /** Default tool: left-drag pans the camera; a click selects a building for the inspector. */
 export class SelectTool implements Tool {
@@ -20,10 +20,13 @@ export class SelectTool implements Tool {
   pointerMove(_p: ToolPointer): void {
     this.game.setHint(null);
   }
+  pointerCancel(): void {
+    this.down = null;
+  }
   pointerUp(p: ToolPointer): void {
     const d = this.down;
     this.down = null;
-    if (!d || p.button !== 0 || Math.hypot(p.clientX - d.x, p.clientY - d.y) > 5) return;
+    if (!d || p.button !== 0 || Math.hypot(p.clientX - d.x, p.clientY - d.y) > clickSlop(p.type)) return;
     this.game.select(this.game.renderer.pick(p.clientX, p.clientY));
   }
 }

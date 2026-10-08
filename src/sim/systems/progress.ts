@@ -2,13 +2,15 @@ import { chronicleEvent } from './chronicle';
 import { ACHIEVEMENTS } from '../../data/achievements';
 import { MILESTONES } from '../../data/progression';
 import { ZONE_R } from '../../data/zones';
+import { isPlayerRoad } from '../../data/roads';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { civicDef } from '../world/civic';
 
 /** Is each achievement's goal met right now? (Sim state only; checked hourly.) */
 const CHECKS: Record<string, (sim: Sim) => boolean> = {
-  firstStreet: (sim) => sim.state.net.segments.size > 1,
+  // A new city starts with the regional highway and railway, which nobody built (P9).
+  firstStreet: (sim) => [...sim.state.net.segments.values()].some((s) => isPlayerRoad(s.type)),
   village: (sim) => sim.state.progress.peak >= 800,
   lightsOn: (sim) => {
     const u = sim.state.utilityStats;

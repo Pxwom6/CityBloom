@@ -13,7 +13,7 @@ import { ROAD_TYPES } from '../src/data/roads';
 import { advise } from '../src/sim/systems/advisors';
 import { TAX_BASE } from '../src/data/economy';
 import { ZONE_NONE } from '../src/data/zones';
-import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf } from '../src/sim/time';
 import { roadsidePose } from '../src/sim/world/civic';
 import { happinessFactors } from '../src/sim/systems/happiness';
 import { BState } from '../src/sim/world/buildings';
@@ -30,6 +30,9 @@ const saveDir = flag('--save');
 const demo = args.includes('--demo');
 if (demo) args.splice(args.indexOf('--demo'), 1);
 const verbose = Number(flag('--verbose') ?? 0);
+// WINTER=1: step hour by hour and list each winter's power shortfalls (hours, buildings without
+// power, MW short) and whether the winter warning showed in the three months before.
+const winterLog = process.env.WINTER === '1';
 // --invariants: check the sim's invariants every game hour (a long headless soak).
 const invariants = args.includes('--invariants');
 if (invariants) args.splice(args.indexOf('--invariants'), 1);
@@ -101,14 +104,37 @@ for (const id of strategies) {
     });
   const samples: Sample[] = [];
   const months = years * MONTHS_PER_YEAR;
+  // Winter power (WINTER=1): per winter (keyed by its December's year), shortfall hours, the most
+  // buildings without power, the most MW short, and whether the warning came first.
+  const winters = new Map<string, { hours: number; bld: number; mw: number; warned: boolean }>();
+  let warnedAt = -1e9;
+  const winterHour = () => {
+    const s = p.sim.state;
+    const d = dateOf(s.tick);
+    if (d.hour === 12 && advise(p.sim).some((a) => a.title === 'Winter will need more power'))
+      warnedAt = s.tick;
+    if (d.month !== 11 && d.month > 1) return;
+    const u = s.utilityStats.power;
+    const key = `y${d.month === 11 ? d.year : d.year - 1} winter`;
+    const w = winters.get(key) ?? { hours: 0, bld: 0, mw: 0, warned: false };
+    if (u.unserved > 0) {
+      w.hours++;
+      w.bld = Math.max(w.bld, u.unserved);
+      w.mw = Math.max(w.mw, Math.round(u.demand - u.supply));
+      // A warning in the three months before this winter began counts.
+      w.warned ||= s.tick - warnedAt < TICKS_PER_MONTH * 4;
+    }
+    winters.set(key, w);
+  };
   for (let m = 0; m < months; m++) {
     for (let h = 0; h < 4; h++) {
       p.play();
-      if (!invariants) p.sim.advance(TICKS_PER_HOUR * 6);
+      if (!invariants && !winterLog) p.sim.advance(TICKS_PER_HOUR * 6);
       else
         for (let k = 0; k < 6; k++) {
           p.sim.advance(TICKS_PER_HOUR);
-          checkInvariants(p.sim);
+          if (invariants) checkInvariants(p.sim);
+          if (winterLog) winterHour();
         }
     }
     samples.push(p.sample());
@@ -190,6 +216,12 @@ for (const id of strategies) {
   console.log(`approval   ${spark(col('approval'), 0, 1)}`);
   console.log(`demand R   ${spark(col('R'), -1, 1)}`);
   console.log(`first moves: ${p.log.slice(0, 14).join(', ')}`);
+  if (winterLog) {
+    const short = [...winters].filter(([, w]) => w.hours > 0);
+    console.log(
+      `winter power: ${short.length ? short.map(([k, w]) => `${k} ${w.hours} h short, up to ${w.bld} buildings and ${w.mw} MW, ${w.warned ? 'warned' : 'NOT warned'}`).join('; ') : 'no shortfalls'}`,
+    );
+  }
   if (p.goalsMet.size) {
     const when = (m: number) => `y${Math.floor(m / 12) + 1}m${(m % 12) + 1}`;
     const opened = new Map<string, number>();

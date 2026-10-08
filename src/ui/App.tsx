@@ -4,7 +4,7 @@ import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
 import { GameContext } from './hooks';
 import { TopBar } from './TopBar';
-import { MapLegend, ToolHintLabel, Toolbar } from './Toolbar';
+import { MapLegend, ToolHintLabel, ToolQuestionCard, Toolbar } from './Toolbar';
 import { Inspector } from './Inspector';
 import { Toasts } from './SystemMenu';
 import { formatMoney, useGameUpdates } from './hooks';
@@ -94,6 +94,7 @@ export function App({ game }: { game: Game }) {
       <DebugPanel />
       <Toolbar />
       <ToolHintLabel />
+      <ToolQuestionCard />
       <Inspector />
       <MapLegend />
       <BudgetPanel />

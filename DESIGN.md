@@ -724,11 +724,18 @@ get through at `share` of the rush hour is `base × slowdown(v/c)` plus, over ca
 queue term as a road (`queueSeconds`, 300 s × (1 − c/v)); `base` is 3 s, or 4 s on a roundabout.
 `congestedEdgeCosts` adds the delay of the node each edge arrives at, so commutes, service vehicles
 and routing all see junctions. Nodes where the city highway meets only ramps (merges) and bends are
-free. **Roundabouts** are `RoadNode.roundabout` (the ring's centre-line radius, 12–40 m, by default
+free. **Roundabouts** are `RoadNode.roundabout` (the ring's centre-line radius, 6–40 m, by default
 just enough for its widest road): `roundabout` puts one on a junction, or on a road (split there);
 it needs every approach long enough to meet the ring, no other road or civic building across it
 (zoned buildings are cleared) and room from other roundabouts; roads can join it later from far
 enough out but not cross its ring, and zone cells stay off it. `removeRoundabout` refunds a share.
+Since the playthrough fixes (P5, `src/sim/world/roundabout.ts`) each approach is measured through
+bends to the next junction, dead end or ring (14 m past the ring's outer edge to a junction or ring,
+6 m to a bend or a dead end); without a size the site gets the usual ring or the largest smaller one
+that fits, down to a mini roundabout; a bend inside the ring is taken in by rebuilding the road
+into it straight (refused when two would touch the same road, a road that loops back into the
+junction: `straighteningsOverlap`); and a refusal names the short road (`info.short`). A ring that
+takes buildings asks first, as roads do.
 Costs are 40 $/m of ring.
 
 **The city highway** (`motorway`, "City highway": 6,000/h, 90 km/h, 5 % grade, unlocks at 10,000) and
@@ -900,9 +907,11 @@ land value there, with the rest unchanged. The Market Town scenario puts the ban
 ### 3.23 Seasons and weather (M22)
 
 **Calendar.** One day/night cycle is a month, so a season is three months: Dec–Feb winter, Mar–May
-spring and so on. `START_MONTH` (2) makes a new city start in March; Year 1 runs March to February
-(`calendarMonth(k)` for labels). Only display code reads the calendar month; elections and the
-chronicle count months since founding.
+spring and so on. `START_MONTH` (2) makes a new city start in March. Years are calendar years
+(playthrough fix P16): Year 1 runs from March to December and Year 2 starts in January
+(`calendarMonth(k)` and `calendarYear(k)`; every label goes through `monthLabel`, `shortMonthLabel`,
+`formatMonth` or `formatDate`, so lists and charts read in time order across New Year). Only display
+code reads the calendar month or year; elections and the chronicle count months since founding.
 
 **Climates** (`src/data/climate.ts`). Each map preset has one (`PRESET_CLIMATE`: river temperate,
 coast maritime, lakes continental, highlands alpine): monthly mean temperatures, a day–night swing,
@@ -944,8 +953,9 @@ per-segment changes (`FrameDiff.roadSnow`).
 what the weather is doing (`src/ui/weather.ts`); Settings set seasons and intensity for this city
 (`setWeather`, refused while a scenario plays; scenarios set theirs at start) and new ones; road
 inspectors show snow, depot inspectors their ploughs; advisors warn of winter power headroom
-(demand at the climate's coldest month), snow no plough clears, a dry spell on tight water and a
-high river.
+(demand on the coldest day a winter brings, the coldest month's mean in its deepest cold spell,
+against the city's own plants with solar at its snowy midwinter share and wind without a storm:
+`coldestDay`, `WINTER_SKY`), snow no plough clears, a dry spell on tight water and a high river.
 
 The done-criterion tests: `tests/winter.test.ts` (the alpine test town uses 26 % more power per
 resident in January than July, snow lifts its commute 98 → 115 s and a depot brings it back to
@@ -965,7 +975,9 @@ shoppers follow the season.
 **Deals.** `setDeal` signs, changes or ends one contract per neighbour, resource and direction, up to
 what the neighbour offers now. Bought power and water come into `updateUtilities` as a producer at
 the highway's connection node; sold power and water take what the highway's component has left after
-the city's own buildings are served, so a sale never blacks out a home. Garbage deals move garbage
+the city's own buildings are served, less what was bought (P8: bought power and water are never
+resold), so a sale never blacks out a home. The Region panel's supply section comes from the
+on-demand `supply` query (`supplyBalance`; P20), and the winter forecast from `winterOutlook`. Garbage deals move garbage
 hourly: a neighbour that takes it empties the fullest landfills; one that sends it has it burnt or
 recycled where there's room, else buried. Everything is paid monthly (hourly accrual) for what was
 actually delivered, on the 'Bought from / Sold to neighbours' ledger lines.
@@ -1075,6 +1087,36 @@ a leg or spawn where a tram is, and one caught inside a tram's body drives out o
 mild weather all year. Its first winter after loading costs it no heating or cooling; the share
 then ramps from the spring after to full at the next winter, and the grace is dropped. The advisor
 explains it, and a notice on loading says seasons have come.
+
+### 3.27 Playthrough fixes (PLAYTHROUGH-FIXES.md)
+
+A fix round after a full playthrough; `docs/DECISIONS.md` ("Playthrough fixes") has the reasons.
+- **Grading** works in double precision (P7): the last sample can't land past a road's end, so a road
+  joining two others is never planned at height 0.
+- **Road previews** say what a road joins (`info.link`, P1) and what it demolishes (`info.demolished`,
+  P2): a new road's count is `Network.buildingsUnder` plus `splitLosses`; an upgrade's is a trial run
+  of the upgrade itself (`revalidate(box, dryRun)`), put back exactly. A road that would demolish asks
+  first (`Game.ask`, `ToolQuestionCard`). Cut-off roads come from `roadIslands`
+  (`src/sim/world/islands.ts`), shared by the sim's advisor and the client's icons, traffic map and
+  inspector; the client works them out once per change to roads or junctions
+  (`ClientWorld.roadsVersion`, not on zone-block updates). A near miss snaps in the client
+  (`SNAP.near`, growing zoomed out to `SNAP.nearMax`, ends only; a free-form end snaps while it's
+  drawn, so the ghost shows it); Alt places an end with no snapping; the sim still joins only exact
+  ends.
+- **Street names** are saved on segments (P10, §5).
+- **Tools** (P3, P4, P11, P12): place, stop, bulldoze and disaster tools are `clickOnly` (the manager
+  fires them on a release within `clickSlop`, 5 px for a mouse and 10 for a finger or pen, so a
+  left-drag pans; a second finger makes a pinch, in which nothing is a click and the tool's
+  `pointerCancel` drops what the press began; the canvas is `touch-action: none`); the road tool fires anything but
+  a first press on release; `PlaceTool.armed` and `browse()` open a category without arming a
+  building; `RoadTool.abandon()` bumps an epoch that every sim reply checks; the stop tool picks the
+  road under the cursor as drawn (`roadUnderCursor`), decks included.
+- **Layout** (P6, P13, P14): below 72.5 rem the toolbar wraps to two rows and the top bar folds City,
+  History, Region, Advisors and Notifications into a More menu (`#ui[data-bars]`, `src/ui/layout.ts`);
+  tooltips slide to stay on screen; the thought feed hides under the data-map menu and passes a drag
+  to the camera (`CameraController.beginDrag`).
+- **Calendar years** (P16, §3.23), the tax tab's `payers` per band (P17), loan terms from `annuity`
+  in `src/data/economy.ts` (P24), tips checked again before they show (`pickTip`, P15).
 
 ## 4. Rendering
 
@@ -1362,10 +1404,18 @@ menus.
 - **Resident thoughts**: a feed of short lines picked per game hour by hashing building ids (no RNG,
   so determinism is untouched), each voicing that building's strongest mood factor (sometimes the
   runner-up). Clicking one opens the building.
-- **Street names**: client-side and not saved. Segments that carry straight on through a junction
-  (same type, > 150°) are joined into one street; each street is named from its lowest segment id, so
-  names stay put as the city grows. Neighbourhoods are named per 384 m cell. Labels follow the roads
-  at close zoom (≤ 10, DOM); inspectors and advisors use addresses ("Maple Street, Northgate"). The UI reads `ClientWorld` via a small subscribe/selector hook and sends commands through
+- **Street names (playthrough fix P10)**: a name is part of each road segment (`RoadSegment.name`,
+  saved from v24); a street is the segments sharing one. `nameSegments` (`src/sim/world/streetNames.ts`)
+  names a new segment inside the command that makes it: it takes the name of the same-type road it
+  carries straight on from (more than 150° apart at the junction; its `a` end first, then `b`), else a
+  fresh name: a stem from `STREET_STEMS` (60 legacy plus 40 more) picked by hashing (seed, segment id),
+  skipping stems in use until all are, then the least used, with a suffix of its type that makes the
+  whole name new. A split copies the name to both halves; a type change keeps the stem and moves the
+  suffix (Maple Terrace becomes Maple Parade) in `Network.setSegmentType`; undo and redo restore names
+  with the segments. The client's `StreetNames.street` only reads it. The v23 to v24 migration names
+  old roads as the client used to (`legacyStreetNames`, checked against goldens from the old code).
+  Neighbourhoods are still client-only, per 384 m cell. Labels follow the roads at close zoom (≤ 10,
+  DOM); inspectors and advisors use addresses ("Maple Street, Northgate"). The UI reads `ClientWorld` via a small subscribe/selector hook and sends commands through
 `SimClient`.
 
 - **Game shell (M11)** (`src/ui/Shell.tsx`, state in `Game.mode`/`Game.screens`). A page opened

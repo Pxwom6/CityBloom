@@ -200,6 +200,8 @@ export interface BudgetReport {
   projection: Record<string, number>;
   history: { month: number; lines: Record<string, number>; treasury: number }[];
   taxes: Record<'R' | 'C' | 'I', [number, number, number]>;
+  /** Buildings paying each band (P17): a band nobody pays raises nothing, whatever its rate. */
+  payers: Record<'R' | 'C' | 'I', [number, number, number]>;
   funding: Record<string, number>;
   loans: {
     id: number;
@@ -296,6 +298,8 @@ export interface SegmentData {
   cx: number;
   cz: number;
   type: RoadTypeId;
+  /** The street's name (P10), see RoadSegment.name. */
+  name?: string;
   left: number;
   right: number;
   /** Viaduct deck heights (M13), see RoadSegment.deck. */
@@ -462,6 +466,8 @@ export type Query =
   | { type: 'summary' }
   | { type: 'building'; id: number }
   | { type: 'budget' }
+  /** Power, water and garbage as the city makes, uses, buys and sells them, and the winter forecast (P20). */
+  | { type: 'supply' }
   /** City history (M16): the recorded figures, their spacing and the timeline events. */
   | { type: 'chronicle' }
   | { type: 'civic'; id: number }

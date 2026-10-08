@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'preact/hooks';
-import { BIG_CITY, DEPTS, LOAN_OPTIONS, MAX_LOANS, TAX_MAX, ledgerLabel, type Dept } from '../data/economy';
+import {
+  BIG_CITY,
+  DEPTS,
+  LOAN_OPTIONS,
+  MAX_LOANS,
+  TAX_MAX,
+  annuity,
+  ledgerLabel,
+  type Dept,
+} from '../data/economy';
 import type { BudgetReport } from '../sim/protocol';
-import { calendarMonth, formatMonth, MONTH_NAMES } from '../sim/time';
+import { formatMonth, shortMonthLabel } from '../sim/time';
 import { BarChart, LineChart } from './charts';
 import { formatMoney, useGameUpdates } from './hooks';
 
@@ -15,10 +24,6 @@ const TABS: { id: Tab; name: string }[] = [
 ];
 const WEALTH = ['Low', 'Medium', 'High'];
 const TIERS = ['Heavy', 'Manufacturing', 'High-tech'];
-
-function monthLabel(m: number): string {
-  return `${MONTH_NAMES[calendarMonth(m)]} Y${Math.floor(m / 12) + 1}`;
-}
 
 function Lines({ rows, title }: { rows: [string, number, number | undefined][]; title: string }) {
   const total = rows.reduce((s, r) => s + r[1], 0);
@@ -152,8 +157,17 @@ export function BudgetPanel() {
               {[0, 1, 2].map((w) => {
                 const v = b.taxes[z][w]!;
                 const rev = b.projection[`tax${z}${w}`] ?? 0;
+                // A band nobody is in raises nothing, whatever its rate (P17).
+                const idle = b.payers[z][w] === 0;
                 return (
-                  <label key={w} class="slider-row">
+                  <label
+                    key={w}
+                    class={`slider-row ${idle ? 'idle' : ''}`}
+                    data-testid={`tax-row-${z}${w}`}
+                    title={
+                      idle ? 'No one pays this yet: none of the city’s buildings is in this band' : undefined
+                    }
+                  >
                     <span>{z === 'I' ? TIERS[w] : WEALTH[w]}</span>
                     <input
                       type="range"
@@ -177,7 +191,7 @@ export function BudgetPanel() {
                       }}
                     />
                     <span class="val">{v}%</span>
-                    <span class="rev">{formatMoney(rev)}/mo</span>
+                    <span class="rev">{idle ? 'no one pays' : `${formatMoney(rev)}/mo`}</span>
                   </label>
                 );
               })}
@@ -253,16 +267,18 @@ export function BudgetPanel() {
           <div class="loan-options">
             {LOAN_OPTIONS.map((o) => {
               const locked = !game.world.stats.unlockAll && game.world.stats.peak < o.unlockPopulation;
+              // The terms before borrowing (P24): what it costs a month, and in all.
+              const payment = Math.round(annuity(o.amount, o.annualRate, o.months));
               return (
                 <button
                   key={o.amount}
-                  class="btn"
+                  class="btn loan-option"
                   data-testid={`loan-${o.amount}`}
                   disabled={locked || b.loans.length >= MAX_LOANS}
                   title={
                     locked
                       ? `Needs ${o.unlockPopulation.toLocaleString('en-US')} residents`
-                      : `${(o.annualRate * 100).toFixed(1)}% a year over ${o.months} months`
+                      : `${(o.annualRate * 100).toFixed(1)}% a year over ${o.months} months: ${formatMoney(payment)} a month, ${formatMoney(payment * o.months)} in all`
                   }
                   onClick={() =>
                     void game
@@ -274,7 +290,12 @@ export function BudgetPanel() {
                       )
                   }
                 >
-                  {formatMoney(o.amount)} · {(o.annualRate * 100).toFixed(1)}%
+                  <span>
+                    {formatMoney(o.amount)} · {(o.annualRate * 100).toFixed(1)}%
+                  </span>
+                  <span class="loan-terms" data-testid={`loan-terms-${o.amount}`}>
+                    {formatMoney(payment)}/mo × {o.months} · {formatMoney(payment * o.months)} in all
+                  </span>
                 </button>
               );
             })}
@@ -286,13 +307,13 @@ export function BudgetPanel() {
           <h3>Treasury at month end</h3>
           <LineChart
             title="Treasury at the end of each month"
-            points={b.history.map((h) => ({ label: monthLabel(h.month), value: h.treasury }))}
+            points={b.history.map((h) => ({ label: shortMonthLabel(h.month), value: h.treasury }))}
           />
           <h3>Net income per month</h3>
           <BarChart
             title="Net income per month"
             points={b.history.map((h) => ({
-              label: monthLabel(h.month),
+              label: shortMonthLabel(h.month),
               value: Object.values(h.lines).reduce((s, v) => s + v, 0),
             }))}
           />

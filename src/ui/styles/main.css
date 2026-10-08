@@ -27,6 +27,9 @@ body {
   height: 100%;
   display: block;
   outline: none;
+  /* Fingers belong to the game: the browser doesn't take a move as a scroll or a page zoom and
+     cancel the press (PR #14 review). */
+  touch-action: none;
 }
 #ui {
   position: absolute;
@@ -114,10 +117,25 @@ body {
   border-radius: var(--radius-pill);
   z-index: var(--z-hud);
   white-space: nowrap;
+  /* As wide as its content, up to the window (like .toolbar-wrap): the city name gives way first. */
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-3));
+}
+.topbar > *,
+.topbar .btn {
+  flex-shrink: 0;
+}
+.topbar > .city,
+.topbar > .goals-btn {
+  flex-shrink: 1;
+  min-width: 3rem;
 }
 .topbar .city {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-md);
+  /* A long name is cut short with an ellipsis (white-space: nowrap is inherited). */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .topbar .stat {
   display: flex;
@@ -254,6 +272,19 @@ body {
   margin: 0 var(--space-1);
   background: var(--color-border);
 }
+/*
+ * A window narrower than the toolbar's buttons (data-bars, set from the width in scaled rem): the
+ * main toolbar wraps onto two rows, 12 buttons and 11, and everything that sits above it moves up.
+ * Without the max-width the wrapped box would fill the whole window around the icons.
+ */
+#ui[data-bars='compact'] {
+  --toolbar-height: 7.5rem;
+}
+#ui[data-bars='compact'] .toolbar-main {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(38rem, calc(100vw - 2 * var(--space-3)));
+}
 .tool-btn {
   appearance: none;
   display: inline-flex;
@@ -345,7 +376,8 @@ body {
   position: absolute;
   bottom: calc(100% + var(--space-2));
   left: 50%;
-  transform: translateX(-50%);
+  /* --tip-shift: set by Tip when the tooltip would run past the edge of the window. */
+  transform: translateX(calc(-50% + var(--tip-shift, 0px)));
   width: max-content;
   max-width: 17rem;
   display: flex;
@@ -399,8 +431,34 @@ body {
 .tool-hint.ok {
   background: var(--color-accent-strong);
 }
+/* A tool's question at the pointer (P2), like the inspector's bulldoze confirmation. */
+.tool-question {
+  position: fixed;
+  z-index: var(--z-toast);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(22rem, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(210, 73, 59, 0.35);
+}
+.tool-question p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.tool-question .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 .tool-hint.bad {
   background: var(--color-negative);
+}
+/* Builds, but joins nothing or only cut-off roads (P1). */
+.tool-hint.warn {
+  background: var(--color-warning);
+  color: var(--color-text);
 }
 
 /* RCI demand */
@@ -1048,13 +1106,16 @@ body {
   margin-top: var(--space-3);
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
 }
-.inspector footer .btn.danger {
+/* Every footer button with an icon, not only Bulldoze: Move's icon had no size and filled the panel. */
+.inspector footer .btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
 }
-.inspector footer .btn.danger svg {
+.inspector footer .btn svg {
   width: 16px;
   height: 16px;
   flex: none;
@@ -1331,8 +1392,65 @@ body {
   :is(.topbar .stat-jobs, .topbar .divider, .topbar .stat-date .label) {
   display: none;
 }
-#ui[data-width='xs'] .topbar .city {
+#ui[data-width='xs'] .topbar .stat-approval {
   display: none;
+}
+
+/*
+ * Up to 90 rem (data-bars='tight') the bar uses the tight gaps of the narrower sizes, so a city's name
+ * (or a scenario's Goals button, the widest item) keeps room at 1280 px with every stat showing.
+ */
+#ui[data-bars='tight'] .topbar {
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+/* The top bar folds its lesser buttons into a More menu while the bars are compact (data-bars). */
+.topbar-more,
+.topbar-panels {
+  display: contents;
+}
+.topbar .btn.more-toggle {
+  display: none;
+}
+#ui[data-bars='compact'] .topbar-more {
+  display: flex;
+  position: relative;
+  flex-shrink: 0;
+}
+#ui[data-bars='compact'] .more-toggle {
+  display: inline-grid;
+  position: relative;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+#ui[data-bars='compact'] .topbar-panels {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  z-index: 5;
+}
+#ui[data-bars='compact'] .topbar-panels.open {
+  display: flex;
+}
+/* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
+#ui[data-bars='compact'] .more-toggle:has(~ .topbar-panels .badge)::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-negative);
+}
+/* Over the panels the top bar's own pop-ups sit under (z-hud against z-panel). */
+#ui[data-bars='compact'] .topbar:has(.topbar-panels.open) {
+  z-index: var(--z-modal);
 }
 
 /* Budget panel */
@@ -1453,6 +1571,14 @@ body {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
+/* A tax band no building is in yet (P17). */
+.slider-row.idle > span:first-child,
+.slider-row.idle .val {
+  color: var(--color-text-muted);
+}
+.slider-row.idle .rev {
+  font-style: italic;
+}
 .loan {
   display: flex;
   justify-content: space-between;
@@ -1465,6 +1591,16 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+.loan-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.loan-terms {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
 /* Charts */
@@ -1922,8 +2058,20 @@ body {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+.notice-group {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.notice-group:first-child {
+  margin-top: 0;
+}
 .toast.clickable {
   cursor: pointer;
+  /* #ui lets clicks through to the map; a toast with a place takes its own (P23). */
+  pointer-events: auto;
 }
 
 /* Resident thoughts */
@@ -1937,6 +2085,10 @@ body {
   flex-direction: column;
   gap: 2px;
   z-index: var(--z-panel);
+}
+/* The data-map and disaster menus open over the same corner: the feed steps aside while one is open. */
+.toolbar-wrap:has(.maps-menu) ~ .thoughts {
+  display: none;
 }
 .thought {
   display: grid;
@@ -2595,17 +2747,25 @@ body {
 }
 .goals-btn {
   align-items: flex-start;
+  overflow: hidden;
 }
 .goals-btn .city {
   font-weight: var(--font-weight-bold);
+  max-width: 100%;
 }
 .goals-btn .sub {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+.goals-btn .goals-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .goals-btn .stars {
   font-size: var(--font-size-xs);
@@ -2841,6 +3001,30 @@ body {
 /* Region (M23) */
 .region-summary {
   margin: 0 0 var(--space-2);
+}
+.region-supply {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+.region-supply h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-md);
+}
+.region-supply p {
+  margin: var(--space-1) 0;
+}
+.region-supply-row {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  column-gap: var(--space-2);
+}
+.region-supply-row strong {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-top: 0.15em;
 }
 .region-town {
   border-top: 1px solid var(--color-border);

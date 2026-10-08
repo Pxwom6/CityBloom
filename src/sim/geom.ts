@@ -285,3 +285,10 @@ export function pointRectDistance(p: Vec2, r: ORect): number {
 export function pointInRect(p: Vec2, r: ORect): boolean {
   return pointRectDistance(p, r) === 0;
 }
+
+/** Compass direction of a heading in the ground plane (−z is north). */
+export function compass(dx: number, dz: number): string {
+  const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+  const k = Math.round(Math.atan2(dz, dx) / (Math.PI / 4));
+  return names[(k + 8) % 8]!;
+}

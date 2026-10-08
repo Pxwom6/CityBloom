@@ -1,5 +1,5 @@
 import { noiseMood } from './noise';
-import { DEMAND, HAPPINESS, HEALTH } from '../../data/balance';
+import { DEMAND, EDUCATION, HAPPINESS, HEALTH } from '../../data/balance';
 import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import type { Sim } from '../sim';
@@ -10,6 +10,29 @@ import { fieldAt } from './pollution';
 import { parkShare } from './weather';
 
 const ZONE_LETTER = ['R', 'R', 'C', 'I'] as const;
+
+const SCHOOL_LEVELS = ['primary school', 'high school', 'university'] as const;
+
+/**
+ * What a home's school places lack (P25): the level with the most pupils still unseated. 'full' when
+ * it has some seats at that level, else none. Labels only: the mood value comes from the combined
+ * education coverage as before. Undefined when nothing is unseated (no road link, say).
+ */
+function schoolLack(b: Building): string | undefined {
+  const seats = [b.seat1, b.seat2, b.seat3];
+  let lvl = -1;
+  let most = 0;
+  for (let l = 0; l < 3; l++) {
+    const unmet = EDUCATION.pupils[l]! * (1 - seats[l]!);
+    if (unmet > most) {
+      most = unmet;
+      lvl = l;
+    }
+  }
+  if (lvl < 0) return undefined;
+  const name = SCHOOL_LEVELS[lvl]!;
+  return seats[lvl]! > 0 ? `${name[0]!.toUpperCase()}${name.slice(1)} is full` : `No ${name} places nearby`;
+}
 
 /**
  * Named happiness contributions for one building (DESIGN §3.9). Later milestones add utilities,
@@ -41,16 +64,19 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
   else if (b.closed) f.push({ label: 'Closed: no power or water', value: -0.2 });
   // Services (DESIGN §3.9): coverage lifts moods; missing coverage hurts more for the wealthy.
   const expect = HAPPINESS.serviceExpect[b.wealth]!;
-  const svc = (label: string, cov: number, gain: number, loss: number) => {
+  const svc = (label: string, cov: number, gain: number, loss: number, lacking?: string) => {
     const v = gain * cov - loss * (1 - cov) * expect;
     if (Math.abs(v) >= 0.005)
-      f.push({ label: cov >= 0.5 ? `${label} nearby` : `No ${label.toLowerCase()} nearby`, value: v });
+      f.push({
+        label: cov >= 0.5 ? `${label} nearby` : (lacking ?? `No ${label.toLowerCase()} nearby`),
+        value: v,
+      });
   };
   if (b.zone === ZONE_R) {
     svc('Fire station', b.covFire, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
     svc('Police', b.covPolice, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
     svc('Health care', b.covHealth, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
-    svc('School', b.covEdu, HAPPINESS.serviceGain, HAPPINESS.serviceLoss);
+    svc('School', b.covEdu, HAPPINESS.serviceGain, HAPPINESS.serviceLoss, schoolLack(b));
     if (b.covPark > 0.05) {
       // Nobody uses the park much in the rain or snow (M22).
       const k = parkShare(sim.state.weather);

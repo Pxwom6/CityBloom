@@ -145,3 +145,223 @@ describe('junctions and roundabouts (M19)', () => {
     expect(through(sim)).toBeGreaterThan(through(control) * 0.9);
   });
 });
+
+/**
+ * P5: a crossroads east of the highway, its west and north–south roads long and plain; its east
+ * arm built by `east` from the junction `j`.
+ */
+function cross(type: 'street' | 'avenue', east: (sim: Sim, j: { x: number; z: number }) => void) {
+  const sim = newSim({ seed: 'p5' });
+  sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+  sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+  const c = connectPoint(sim);
+  const j = { x: c.x + 300, z: c.z };
+  road(sim, [c, j], type);
+  road(
+    sim,
+    [
+      { x: j.x, z: j.z - 200 },
+      { x: j.x, z: j.z + 200 },
+    ],
+    type,
+  );
+  east(sim, j);
+  const node = sim.net.nearestNode(j, 2)!.id;
+  expect(sim.net.segmentsAt(node)).toHaveLength(4);
+  return { sim, j, node };
+}
+
+const at = (j: { x: number; z: number }, dx: number, dz = 0) => ({ x: j.x + dx, z: j.z + dz });
+const info = (r: { ok: boolean; info?: unknown }) => (r.info ?? {}) as Record<string, unknown>;
+
+describe('roundabouts near bends and tight junctions (P5)', () => {
+  it('take a bend inside the old margin as a bend, not the next junction', () => {
+    // The east road bends 30 m out: the old rule wanted 34 m to "the next junction".
+    const { sim, node } = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 30)]);
+      road(sim, [at(j, 30), at(j, 150, 120)]);
+    });
+    const pre = sim.preview({ type: 'roundabout', node });
+    expect(pre.ok, pre.ok ? '' : pre.reason).toBe(true);
+    expect(info(pre).radius).toBe(14);
+    expect(sim.dispatch({ type: 'roundabout', node }).ok).toBe(true);
+    expect(sim.state.net.nodes.get(node)!.roundabout).toBe(14);
+  });
+
+  it('fit a bigger ring past a bend than past a junction as far', () => {
+    const bend = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 46)]);
+      road(sim, [at(j, 46), at(j, 180, 120)]);
+    });
+    expect(bend.sim.dispatch({ type: 'roundabout', node: bend.node, radius: 30 }).ok).toBe(true);
+    expect(bend.sim.state.net.nodes.get(bend.node)!.roundabout).toBe(30);
+    const junction = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 200)]);
+      road(sim, [at(j, 46, -100), at(j, 46, 100)]);
+    });
+    expect(junction.sim.dispatch({ type: 'roundabout', node: junction.node, radius: 30 }).ok).toBe(false);
+  });
+
+  it('give a cramped crossroads a smaller ring, and never shrink a size the player asked for', () => {
+    // A cross street 30 m east: the usual 14 m ring needs 34 m.
+    const { sim, node } = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 200)]);
+      road(sim, [at(j, 30, -100), at(j, 30, 100)]);
+    });
+    const auto = sim.preview({ type: 'roundabout', node });
+    expect(auto.ok, auto.ok ? '' : auto.reason).toBe(true);
+    expect(info(auto).radius).toBe(10);
+    const asked = sim.preview({ type: 'roundabout', node, radius: 14 });
+    expect(asked.ok).toBe(false);
+    expect(info(asked).fits).toBe(10);
+    expect(sim.preview({ type: 'roundabout', node, radius: 10 }).ok).toBe(true);
+    // An avenue crossroads with a dead-end stub 30 m long on its east side.
+    const av = cross('avenue', (sim, j) => road(sim, [j, at(j, 30)], 'avenue'));
+    const r = av.sim.preview({ type: 'roundabout', node: av.node });
+    expect(r.ok, r.ok ? '' : r.reason).toBe(true);
+    expect(info(r).radius as number).toBeLessThan(18);
+  });
+
+  it('refuse with the road that is too short, what is in the way and how much room is missing', () => {
+    const { sim, node, j } = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 200)]);
+      road(sim, [at(j, 20, -100), at(j, 20, 100)]);
+    });
+    const r = sim.preview({ type: 'roundabout', node });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toMatch(/east/);
+    expect(r.reason).toMatch(/junction/);
+    expect(r.reason).toMatch(/20 m/);
+    expect(r.reason).toMatch(/26 m/);
+    const short = info(r).short as {
+      seg: number;
+      have: number;
+      need: number;
+      missing: number;
+      at: { x: number };
+    };
+    expect(short.have).toBeCloseTo(20, 0);
+    expect(short.need).toBe(26);
+    expect(short.missing).toBe(6);
+    expect(sim.net.segmentsAt(node)).toContain(short.seg);
+    expect(r.at!.x).toBeCloseTo(j.x + 20, 0);
+  });
+
+  it('build mini roundabouts, and keep them through save and load', () => {
+    const { sim, node } = cross('street', (sim, j) => road(sim, [j, at(j, 200)]));
+    expect(sim.preview({ type: 'roundabout', node, radius: 3 }).info).toMatchObject({ radius: 6 });
+    const before = sim.state.treasury;
+    expect(sim.dispatch({ type: 'roundabout', node, radius: 6 }).ok).toBe(true);
+    expect(sim.state.net.nodes.get(node)!.roundabout).toBe(6);
+    expect(before - sim.state.treasury).toBe(Math.round(2 * Math.PI * 6 * JUNCTION.costPerMetre));
+    const back = Sim.fromSave(JSON.parse(JSON.stringify(sim.save())));
+    expect(back.hash()).toBe(sim.hash());
+    expect(back.state.net.nodes.get(node)!.roundabout).toBe(6);
+    const av = cross('avenue', (sim, j) => road(sim, [j, at(j, 200)], 'avenue'));
+    expect(av.sim.preview({ type: 'roundabout', node: av.node, radius: 6 }).info).toMatchObject({
+      radius: 10,
+    });
+    expect(sim.preview({ type: 'roundabout', node: sim.state.highway.connect, radius: Number.NaN }).ok).toBe(
+      false,
+    );
+  });
+
+  it('take in a bend inside the ring, rebuilding the road into it straight', () => {
+    // The east road bends 12 m out: no ring fits without taking the bend in.
+    const { sim, node, j } = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 12)]);
+      road(sim, [at(j, 12), at(j, 130, 90)]);
+    });
+    const hash = sim.hash();
+    const twin = Sim.fromSave(JSON.parse(JSON.stringify(sim.save())));
+    twin.testMode = true;
+    const pre = sim.preview({ type: 'roundabout', node });
+    expect(pre.ok, pre.ok ? '' : pre.reason).toBe(true);
+    expect(info(pre).straightened).toBe(1);
+    const before = sim.state.treasury;
+    const res = sim.dispatch({ type: 'roundabout', node });
+    expect(res.ok).toBe(true);
+    const r = sim.state.net.nodes.get(node)!.roundabout!;
+    expect(before - sim.state.treasury).toBe(Math.round(2 * Math.PI * r * JUNCTION.costPerMetre));
+    // Every road into the ring now runs at least its outer edge plus 6 m before anything else.
+    for (const id of sim.net.segmentsAt(node))
+      expect(sim.net.curve(id).length).toBeGreaterThanOrEqual(r + 12 - 0.01);
+    const near = sim.net
+      .nodesIn({ minX: j.x - r - 11, minZ: j.z - r - 11, maxX: j.x + r + 11, maxZ: j.z + r + 11 })
+      .filter((n) => Math.hypot(n.x - j.x, n.z - j.z) < r + 11);
+    expect(near.map((n) => n.id)).toEqual([node]);
+    // The far end of the old road is still reached from the ring.
+    const far = sim.net.nearestNode(at(j, 130, 90), 1)!.id;
+    expect(sim.roadIslands()).toEqual([]);
+    expect(sim.net.segmentsAt(far).length).toBe(1);
+    // Undone and redone exactly; the same command does the same on a copy.
+    const after = sim.hash();
+    expect(sim.dispatch({ type: 'undo' }).ok).toBe(true);
+    expect(sim.hash()).toBe(hash);
+    expect(sim.dispatch({ type: 'redo' }).ok).toBe(true);
+    expect(sim.hash()).toBe(after);
+    expect(twin.dispatch({ type: 'roundabout', node }).ok).toBe(true);
+    expect(twin.hash()).toBe(after);
+  });
+
+  it('prefer a smaller ring that leaves the road alone to taking a bend in', () => {
+    const { sim, node } = cross('street', (sim, j) => {
+      road(sim, [j, at(j, 20)]);
+      road(sim, [at(j, 20), at(j, 140, 90)]);
+    });
+    const pre = sim.preview({ type: 'roundabout', node });
+    expect(pre.ok, pre.ok ? '' : pre.reason).toBe(true);
+    expect(info(pre)).toMatchObject({ radius: 8, straightened: 0 });
+  });
+});
+
+describe('roundabouts whose bends loop round to each other (PR #14 review)', () => {
+  it('refuse rather than take in two bends on the same road', () => {
+    // A road leaves the junction north-east and comes back into it from the south-east: 50 m out
+    // to a bend, round a curve that bulges out to 56 m, and 50 m in from another bend. A ring 80 m
+    // across needs 52 m of clear road, so both bends are inside it, and both would be cut on the
+    // one curve (the first cut takes the curve away from under the second).
+    const sim = newSim({ seed: 'p5' });
+    sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+    const c = connectPoint(sim);
+    const j = { x: c.x + 300, z: c.z };
+    road(sim, [c, j]);
+    road(sim, [j, at(j, 38, -32)]);
+    road(sim, [at(j, 38, -32), at(j, 74), at(j, 38, 32)]);
+    road(sim, [at(j, 38, 32), j]);
+    const node = sim.net.nearestNode(j, 2)!.id;
+    expect(sim.net.segmentsAt(node).length).toBe(3);
+    const hash = sim.hash();
+    const treasury = sim.state.treasury;
+    const cmd = { type: 'roundabout', node, radius: 40 } as const;
+    let res: ReturnType<Sim['dispatch']> | undefined;
+    expect(() => (res = sim.dispatch(cmd))).not.toThrow();
+    expect(res!.ok).toBe(false);
+    // Nothing changed: no road cut, no money spent.
+    expect(sim.hash()).toBe(hash);
+    expect(sim.state.treasury).toBe(treasury);
+    // The preview says the same as the command.
+    expect(sim.preview(cmd).ok).toBe(false);
+  });
+
+  it('still take in two bends on different roads', () => {
+    // East and north each bend 13 m out, onto roads of their own.
+    const sim = newSim({ seed: 'p5' });
+    sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+    const c = connectPoint(sim);
+    const j = { x: c.x + 300, z: c.z };
+    road(sim, [c, j]);
+    road(sim, [j, at(j, 13)]);
+    road(sim, [at(j, 13), at(j, 130, 90)]);
+    road(sim, [j, at(j, 0, -13)]);
+    road(sim, [at(j, 0, -13), at(j, 90, -130)]);
+    const node = sim.net.nearestNode(j, 2)!.id;
+    const res = sim.dispatch({ type: 'roundabout', node });
+    expect(res.ok, res.ok ? '' : res.reason).toBe(true);
+    expect(info(res).straightened).toBe(2);
+    expect(sim.roadIslands()).toEqual([]);
+  });
+});

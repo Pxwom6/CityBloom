@@ -6,6 +6,7 @@ import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
+import { tipShift } from './layout';
 import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
 import { TRAM, TRANSIT } from '../data/balance';
 import { POLICY, type PolicyId } from '../data/policies';
@@ -71,11 +72,21 @@ interface TipContent {
 
 function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }) {
   const [open, setOpen] = useState(false);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  // A tooltip is centred on its button: over a button at the edge of the window it would run off the
+  // screen, so measure it where it opens (before it is drawn) and slide it back inside.
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    if (!el) return;
+    el.style.removeProperty('--tip-shift');
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--tip-shift', `${tipShift(r.left, r.right, window.innerWidth)}px`);
+  }, [open]);
   return (
     <span class="tip-anchor" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       {children}
       {open && (
-        <span class="tip" role="tooltip">
+        <span class="tip" role="tooltip" ref={tipRef}>
           <strong>{tip.title}</strong>
           {tip.key && <kbd>{tip.key}</kbd>}
           {tip.lines?.map((l) => (
@@ -255,7 +266,7 @@ export function Toolbar() {
                 'roundabout',
                 IconRoundabout,
                 'Roundabout',
-                'Click a junction (or a road) for a roundabout; drag out to size the ring. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
+                'Click a junction (or a road) for a roundabout: it gets the largest ring that fits, down to a mini roundabout. Drag out, or press [ and ], to choose the size. A roundabout passes far more traffic than a plain junction, at a few seconds more for each car when quiet.',
               ],
               [
                 'tram',
@@ -302,6 +313,43 @@ export function Toolbar() {
           >
             <IconGrid />
           </ToolButton>
+          {tools.road.mode === 'roundabout' && (
+            // The ring's size (P5): the largest that fits, or one chosen with [ ] or these.
+            <>
+              <span class="subbar-note" data-testid="ring-size">
+                {tools.road.ringSize === undefined
+                  ? 'Ring: the largest that fits'
+                  : `Ring: ${tools.road.ringSize * 2} m across`}
+              </span>
+              <button
+                class="btn small"
+                data-testid="ring-smaller"
+                aria-label="Smaller ring"
+                title="Smaller ring ([)"
+                onClick={() => tools.road.stepRing(-1)}
+              >
+                −
+              </button>
+              <button
+                class="btn small"
+                data-testid="ring-larger"
+                aria-label="Larger ring"
+                title="Larger ring (])"
+                onClick={() => tools.road.stepRing(1)}
+              >
+                +
+              </button>
+              <button
+                class="btn small"
+                data-testid="ring-auto"
+                disabled={tools.road.ringSize === undefined}
+                title="The largest ring that fits"
+                onClick={() => tools.road.stepRing(0)}
+              >
+                Fit
+              </button>
+            </>
+          )}
         </div>
       )}
       {active === 'district' && <DistrictOptions />}
@@ -358,7 +406,7 @@ export function Toolbar() {
               <ToolButton
                 key={d.id}
                 id={`place-${d.id}`}
-                active={active === 'place' && tools.place.def === d.id}
+                active={active === 'place' && tools.place.armed && tools.place.def === d.id}
                 disabled={locked}
                 onClick={() => {
                   tools.place.setDef(d.id);
@@ -437,7 +485,7 @@ export function Toolbar() {
       )}
       {mapsOpen && <MapsMenu onClose={() => setMapsOpen(false)} />}
       {disastersOpen && <DisastersMenu onClose={() => setDisastersOpen(false)} />}
-      <div class="toolbar panel" data-testid="toolbar">
+      <div class="toolbar toolbar-main panel" data-testid="toolbar">
         <ToolButton
           id="tool-select"
           active={active === 'select'}
@@ -562,11 +610,9 @@ export function Toolbar() {
                 (cat === 'transit' && active === 'stop')
               )
                 tools.use('select');
-              else {
-                const first = CIVIC_DEFS.find((d) => d.category === cat)!;
-                tools.place.setDef(first.id);
-                tools.use('place');
-              }
+              // Open the category to choose from; nothing is picked, so a stray click on the map builds
+              // nothing (P4).
+              else tools.place.browse(cat);
             }}
             tip={{ title: name, lines: [blurb] }}
           >
@@ -700,6 +746,47 @@ export function ToolHintLabel() {
   );
 }
 
+/**
+ * A tool's question at the pointer (P2: a road that would demolish buildings), in the style of the
+ * inspector's bulldoze confirmation: the safe answer first and focused, so Enter keeps them.
+ */
+export function ToolQuestionCard() {
+  const game = useGameUpdates(100);
+  const q = game.question;
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !q) return;
+    let x = q.x + 18;
+    let y = q.y + 18;
+    if (x + el.offsetWidth > window.innerWidth - 8) x = Math.max(8, q.x - 18 - el.offsetWidth);
+    if (y + el.offsetHeight > window.innerHeight - 8) y = Math.max(8, q.y - 18 - el.offsetHeight);
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  });
+  if (!q) return null;
+  return (
+    <div
+      ref={ref}
+      class="tool-question panel"
+      style={{ left: `${q.x + 18}px`, top: `${q.y + 18}px` }}
+      role="alertdialog"
+      aria-label="Confirm"
+      data-testid="tool-question"
+    >
+      <p>{q.text}</p>
+      <div class="actions">
+        <button class="btn" data-testid="tool-question-no" onClick={() => game.answer(false)} autoFocus>
+          {q.no}
+        </button>
+        <button class="btn danger" data-testid="tool-question-yes" onClick={() => game.answer(true)}>
+          {q.yes}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const DISASTER_ICONS = { earthquake: IconQuake, tornado: IconTornado, flood: IconWaves, meteor: IconMeteor };
 
 /** Pick a disaster to aim, and switch random disasters on or off. */
@@ -821,6 +908,7 @@ export function MapLegend() {
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
+          {game.world.roadIslands().list.length > 0 && ' · Red with no cars: no road link to the highway'}
         </div>
       )}
     </div>
@@ -971,7 +1059,7 @@ function ProjectButton({ def }: { def: CivicDef }) {
   return (
     <ToolButton
       id={`place-${def.id}`}
-      active={game.tools.activeId === 'place' && tools.place.def === def.id}
+      active={game.tools.activeId === 'place' && tools.place.armed && tools.place.def === def.id}
       disabled={blocked || !!built}
       onClick={() => {
         tools.place.setDef(def.id);

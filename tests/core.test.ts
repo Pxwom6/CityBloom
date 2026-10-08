@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Rng, hash2, seedFromString } from '../src/sim/rng';
 import { fnv1a } from '../src/sim/hash';
 import {
+  calendarYear,
   dateOf,
   formatDate,
+  formatMonth,
   hourOfDay,
+  monthLabel,
+  MONTH_NAMES,
+  shortMonthLabel,
   ticksUntilHour,
   TICKS_PER_MONTH,
   isMonthStart,
@@ -78,9 +83,32 @@ describe('time', () => {
     expect(midnight).toBe(17 * 60);
     expect(isMonthStart(midnight)).toBe(true);
     expect(dateOf(midnight)).toMatchObject({ month: 3, hour: 0, totalMonths: 1 });
-    // Year 1 runs March to February.
-    expect(dateOf(midnight + 9 * TICKS_PER_MONTH)).toMatchObject({ year: 1, month: 0 });
+    // Calendar years (P16): Year 1 runs from the founding month to December, Year 2 from January.
+    expect(dateOf(midnight + 8 * TICKS_PER_MONTH)).toMatchObject({ year: 1, month: 11 });
+    expect(dateOf(midnight + 9 * TICKS_PER_MONTH)).toMatchObject({ year: 2, month: 0 });
     expect(dateOf(midnight + 11 * TICKS_PER_MONTH)).toMatchObject({ year: 2, month: 2 });
+  });
+
+  it('labels months in time order across New Year, the same everywhere (P16)', () => {
+    // A save list or a chart's months read in order: Dec, Year 1 is before Jan, Year 2.
+    const parse = (label: string) => {
+      const m = /^(\w{3}),? (?:Year |Y)(\d+)/.exec(label)!;
+      return Number(m[2]) * 12 + MONTH_NAMES.indexOf(m[1]!);
+    };
+    const formatters: [string, (k: number) => string][] = [
+      ['monthLabel', monthLabel],
+      ['formatMonth', (k) => formatMonth(k * TICKS_PER_MONTH + 600)],
+      ['formatDate', (k) => formatDate(dateOf(k * TICKS_PER_MONTH + 30))],
+      ['budget', shortMonthLabel],
+    ];
+    for (const [name, f] of formatters) {
+      for (let k = 1; k < 60; k++)
+        expect(parse(f(k)), `${name}: ${f(k - 1)} then ${f(k)}`).toBe(parse(f(k - 1)) + 1);
+      expect(f(0), name).toMatch(/^Mar,? (Year |Y)1\b/);
+      expect(f(9), name).toMatch(/^Dec,? (Year |Y)1\b/);
+      expect(f(10), name).toMatch(/^Jan,? (Year |Y)2\b/);
+    }
+    expect(calendarYear(10)).toBe(2);
   });
 
   it('computes hour of day for fractional ticks', () => {

@@ -1,9 +1,9 @@
-import { ROAD_TYPES, isRail } from '../../data/roads';
-import { CLIMATES, WEATHER } from '../../data/climate';
+import { ROAD_TYPES, isPlayerRoad, isRail } from '../../data/roads';
+import { WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
-import { ZONE_I, ZONE_R } from '../../data/zones';
+import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
-import { EDUCATION, TRAM } from '../../data/balance';
+import { EDUCATION, LONG_COMMUTE, TRAM } from '../../data/balance';
 import { TICKS_PER_MONTH } from '../time';
 import { railTerminals } from './rail';
 import { railLinkOffered } from '../actions/railLink';
@@ -12,7 +12,8 @@ import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { unploughable } from './ploughs';
-import { monthsToWinter, seasonEase, weatherUse } from './weather';
+import { seasonEase } from './weather';
+import { coldestDay, powerOutlook, winterOutlook } from './utilities';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
@@ -36,6 +37,8 @@ export interface Advice {
   at?: { x: number; z: number };
   /** Data map that shows the problem, if any. */
   map?: string;
+  /** Roads it's about, most telling first (P1: a cut-off stretch); the panel names them. */
+  segs?: number[];
 }
 
 const money = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
@@ -164,7 +167,24 @@ export function advise(sim: Sim): Advice[] {
   let utilOk = true;
   for (const [u, fix, lacking] of util) {
     const without = list.filter(lacking);
-    if (!without.length) continue;
+    if (!without.length) {
+      // P15 (c): residents grumble from the first sliver of a shortfall (the mood factor appears below
+      // full supply, happiness.ts), so a building that gets only part of its share is named too.
+      const part = list.filter((b) => b[u] < 0.999);
+      if (part.length) {
+        utilOk = false;
+        const one = part.length === 1;
+        out.push({
+          advisor: 'utilities',
+          severity: 1,
+          title: `${plural(part.length, 'building')} short of ${u}`,
+          text: `${one ? 'It gets' : 'They get'} only part of the ${u} needed. Build ${fix} or connect ${one ? 'it' : 'them'} to one by road.`,
+          at: centre(part.slice(0, 20)),
+          map: u,
+        });
+      }
+      continue;
+    }
     utilOk = false;
     const share = without.length / Math.max(1, list.length);
     out.push({
@@ -380,8 +400,12 @@ export function advise(sim: Sim): Advice[] {
       text: `Workforce: ${Math.round(e1 * 100)} % schooled.`,
     });
 
-  // Transport.
-  if (!s.totals.highwayConnected && s.net.segments.size > 1)
+  // Transport. (A new city has the regional highway and railway, which nobody built: P1, P9.) Linked
+  // or not is read from the network itself, so a road just built counts at once, paused or not: the
+  // totals are only worked out hourly.
+  const playerRoads = [...s.net.segments.values()].filter((x) => isPlayerRoad(x.type));
+  const linked = playerRoads.some((x) => sim.isSegmentConnected(x.id));
+  if (playerRoads.length && !linked)
     out.push({
       advisor: 'transport',
       severity: 3,
@@ -392,6 +416,41 @@ export function advise(sim: Sim): Advice[] {
         return n ? { x: n.x, z: n.z } : undefined;
       })(),
     });
+  // Roads cut off from the highway while the rest of the town is linked (P1): nothing grows there,
+  // and services on them reach nobody. The worst stretch, by what's on it.
+  const islands = linked ? sim.roadIslands() : [];
+  if (islands.length) {
+    const rank = islands.map((isl) => {
+      const on = new Set(isl.segs);
+      let built = false;
+      let zoned = false;
+      for (const id of isl.segs) {
+        const seg = s.net.segments.get(id)!;
+        for (const bid of [seg.left, seg.right]) {
+          const block = bid ? s.net.blocks.get(bid) : undefined;
+          if (!block) continue;
+          if (block.bld.some((x) => x > 0)) built = true;
+          for (let i = 0; i < block.zone.length && !zoned; i++)
+            if (block.zone[i] !== ZONE_NONE && block.valid[i]) zoned = true;
+        }
+      }
+      for (const c of s.civics.values()) if (c.access && on.has(c.access.seg)) built = true;
+      return { isl, severity: (built ? 3 : zoned ? 2 : 1) as 1 | 2 | 3 };
+    });
+    const worst = rank.reduce((a, b) => (b.severity > a.severity ? b : a));
+    const more = islands.length - 1;
+    out.push({
+      advisor: 'transport',
+      severity: worst.severity,
+      title: `${plural(worst.isl.segs.length, 'road')} can't reach the highway`,
+      text:
+        'Nothing grows along them, and services there reach nobody. Draw a road from one of their ends to a street that reaches the highway.' +
+        (more ? ` (${plural(more, 'more stretch', 'more stretches')} cut off elsewhere.)` : ''),
+      at: worst.isl.at,
+      map: 'traffic',
+      segs: worst.isl.segs.slice(0, 40),
+    });
+  }
   let jam: { seg: number; vc: number } | null = null;
   for (const id of [...s.traffic.keys()].sort((a, b) => a - b)) {
     if (!s.net.segments.has(id) || id === s.highway.segment) continue;
@@ -498,7 +557,7 @@ export function advise(sim: Sim): Advice[] {
     break;
   }
   const commute = sim.avgCommute();
-  if (commute > 20 * 60)
+  if (commute > LONG_COMMUTE)
     out.push({
       advisor: 'transport',
       severity: 1,
@@ -576,37 +635,35 @@ function weatherAdvice(sim: Sim): Advice[] {
   const out: Advice[] = [];
   if (!s.totals.population) return out;
   const power = s.utilityStats.power;
-  const toWinter = monthsToWinter(w, s.tick);
-  const coldest = Math.min(...CLIMATES[w.climate].temps);
+  const MW = (v: number) => `${Math.round(v).toLocaleString('en-US')} MW`;
   // Seasons new to the city (a save from before them, Phase 2 review): heating is easing in; say
   // what a full winter will need, while there's time.
   if (w.grace && w.seasons && power.demand > 0) {
-    const full = power.demand * (weatherUse({ ...w, mean: coldest }).power.R / weatherUse(w, s.tick).power.R);
+    // The city's own need on the coldest day's heating, against what it would have then.
+    const full = powerOutlook(sim, coldestDay(w));
     const done = Math.max(1, Math.ceil((w.grace.until - s.tick) / TICKS_PER_MONTH));
     const share = Math.round(seasonEase(w, s.tick) * 100);
     out.push({
       advisor: 'utilities',
-      severity: power.supply < full * 0.95 ? 1 : 0,
+      severity: full.have < full.need * 0.95 ? 1 : 0,
       title: 'Seasons are new here',
-      text: `Winters now need heating. It counts for ${share} % now and in full in ${done} ${done === 1 ? 'month' : 'months'} (this first winter is spared). A full winter will lift power demand to about ${Math.round(full).toLocaleString('en-US')} MW; we make ${Math.round(power.supply).toLocaleString('en-US')} MW.`,
+      text: `Winters now need heating. It counts for ${share} % now and in full in ${done} ${done === 1 ? 'month' : 'months'} (this first winter is spared). A full winter will lift power demand to about ${MW(full.need)}; we make ${MW(full.have)}.`,
       map: 'power',
     });
   }
-  if (toWinter > 0 && toWinter <= 3 && power.demand > 0) {
-    // Demand in the coldest month, from today's with the heating that month would bring (eased
-    // in for a city new to seasons).
-    const then = s.tick + toWinter * TICKS_PER_MONTH;
-    const k = weatherUse({ ...w, mean: coldest }, then).power.R / weatherUse(w, s.tick).power.R;
-    const need = power.demand * k;
-    if (power.supply < need * 1.05)
-      out.push({
-        advisor: 'utilities',
-        severity: power.supply < need * 0.95 ? 2 : 1,
-        title: 'Winter will need more power',
-        text: `Heating will lift demand to about ${Math.round(need).toLocaleString('en-US')} MW by midwinter; we make ${Math.round(power.supply).toLocaleString('en-US')} MW. Build more power before ${toWinter === 1 ? 'next month' : `${toWinter} months are out`}.`,
-        map: 'power',
-      });
-  }
+  // Winter ahead: the city's own need on the coldest day (the coldest month in its deepest cold
+  // spell, each zone heating by its own factor, eased in for a city new to seasons), against its
+  // own power under a snowy winter sky and what the neighbours could still send in that cold. Power
+  // sold on isn't need, and power bought counts only as much as is sent.
+  const o = winterOutlook(sim);
+  if (o && o.months > 0 && o.months <= 3 && power.demand > 0 && o.have < o.need * 1.05)
+    out.push({
+      advisor: 'utilities',
+      severity: o.have < o.need * 0.95 ? 2 : 1,
+      title: 'Winter will need more power',
+      text: `Heating will lift demand to about ${MW(o.need)} by midwinter; we make ${MW(o.have)}. Build more power before ${o.months === 1 ? 'next month' : `${o.months} months are out`}.${o.cut > 0 ? ` The industrial neighbour sends ${MW(o.cut)} less in the cold.` : ''}`,
+      map: 'power',
+    });
   let snowy = 0;
   let total = 0;
   for (const seg of s.net.segments.values()) {

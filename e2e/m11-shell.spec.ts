@@ -97,7 +97,10 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   await page.getByTestId('pause-save').click();
   await page.getByTestId('save-name').fill('Before the bridge');
   await page.getByTestId('save-new').click();
-  await expect(page.getByTestId('toast').first()).toContainText('Saved');
+  // The toast names the slot, not the city (P22).
+  await expect(page.getByTestId('toast').first()).toContainText('Saved “Before the bridge”');
+  await page.getByTestId('menu-save').click();
+  await expect(page.getByTestId('toast').last()).toContainText('Saved “Quick save”');
   await expect(page.getByTestId('pause-menu')).toBeVisible();
   const hash = await page.evaluate(() => window.__game!.hash());
   const pop = (await page.evaluate(() => window.__game!.getState())).population;

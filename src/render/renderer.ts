@@ -214,7 +214,7 @@ export class GameRenderer {
     this.terrain = new TerrainRenderer(world);
     this.terrain.weather = this.weather.uniforms;
     this.scene.add(this.terrain.group);
-    this.water = new WaterRenderer();
+    this.water = new WaterRenderer(this.terrain.uniforms);
     this.scene.add(this.water.mesh);
     this.roads = new RoadRenderer(world);
     this.roads.useWeather(this.weather.uniforms);
@@ -730,7 +730,7 @@ export class GameRenderer {
       }[tone.mapping];
       this.renderer.toneMappingExposure *= tone.exposure;
     }
-    this.terrain.update(this.time);
+    this.terrain.update(this.time, !!this.photo, this.renderer.getPixelRatio());
     this.buildings.update(l.night, this.camera.position);
     this.civics.update(this.camera.position, this.buildings.range);
     this.vehicles.update(this.world.displayTick);

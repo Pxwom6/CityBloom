@@ -29,7 +29,8 @@ export const DISASTER_INFO: Record<DisasterKind, { name: string; blurb: string; 
 /** Aim a disaster: a ring shows how far it reaches; click to set it off. */
 export class DisasterTool implements Tool {
   readonly id = 'disaster';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   kind: DisasterKind = 'earthquake';
   private pointer = { x: 0, y: 0 };
   private seq = 0;
@@ -52,6 +53,8 @@ export class DisasterTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw the ring or a hint on the next tool (P11).
+    this.seq++;
     this.game.renderer.ghost.showBrush(null, 1);
     this.game.setHint(null);
   }

@@ -48,6 +48,12 @@ export function fundingEffect(f: number): number {
   return f <= 1 ? f : 1 + 0.5 * (f - 1);
 }
 
+/** Monthly payment of a loan repaid in equal instalments (shown on the loan buttons, P24). */
+export function annuity(principal: number, annualRate: number, months: number): number {
+  const r = annualRate / 12;
+  return r === 0 ? principal / months : (principal * r) / (1 - Math.pow(1 + r, -months));
+}
+
 export const LOAN_OPTIONS: {
   amount: number;
   annualRate: number;
@@ -117,6 +123,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   roads: 'Road construction',
   construction: 'Building construction',
   roadUpkeep: 'Road maintenance',
+  // The roads department's own upkeep is its depots' (P19): "Road maintenance upkeep" read as the line above.
+  'upkeep:roads': 'Public works depots',
   loanInterest: 'Loan interest',
   loanPrincipal: 'Loan repayments',
   policies: 'Policies',

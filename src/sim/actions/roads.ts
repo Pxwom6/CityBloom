@@ -1,15 +1,30 @@
 import { ROAD_RULES, ROAD_TYPES, isRail, roadClass, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { fail, ok, type BulldozeTarget, type CommandResult } from '../commands';
-import { Curve, pointRectDistance, type Vec2 } from '../geom';
+import { Curve, compass, pointRectDistance, type Vec2 } from '../geom';
 import { footprint } from '../world/buildings';
 import { bulldozeCivic, civicRect } from '../world/civic';
 import type { Sim } from '../sim';
 import { applyRoadPlan, planRoad, type RoadPlan } from '../world/roadPlanner';
-import { planEarthworks, reshapeGround, type EarthPlan } from '../world/earthworks';
+import { planEarthworks, reshapeGround, settledHeight, type EarthPlan } from '../world/earthworks';
 import { gradeProfile } from '../world/grading';
 import { removeStop } from '../systems/transit';
 import { JUNCTION, TRAM } from '../../data/balance';
+import {
+  planStraighten,
+  ringArms,
+  ringLadder,
+  ringOuter,
+  ringSizes,
+  shortfalls,
+  straighten,
+  straightenLosses,
+  straighteningsOverlap,
+  type ArmEnd,
+  type ArmShortfall,
+  type RingSite,
+  type Straightening,
+} from '../world/roundabout';
 
 /** Refusal reason if a road type isn't available yet, else null. */
 function roadLocked(sim: Sim, road: RoadTypeId): string | null {
@@ -36,11 +51,16 @@ export function buildRoad(
     doomed = new Set(buildingsInTheWay(sim, pieces, road));
     return keepUnder(sim, doomed);
   });
+  // What it takes away (P2): lots under its surface, and lots where it splits a street.
+  const demolished = plan.ok ? roadLosses(sim, plan) : [];
   const preview = {
     pieces: plan.pieces.map((p) => ({ a: p.a, c: p.c, b: p.b })),
     length: plan.length,
     splits: plan.splits.length,
-    demolish: doomed.size,
+    demolish: demolished.length,
+    demolished,
+    // P1: whether it joins a road that reaches the highway, only roads that don't, or nothing.
+    link: linkInfo(sim, plan),
     grade: gradeInfo(plan),
   };
   if (!plan.ok) return fail(plan.reason ?? 'Invalid road', { at: plan.at, info: preview });
@@ -52,6 +72,8 @@ export function buildRoad(
     reshapeGround(sim, plan.earth.idx, plan.earth.to);
     return plan.earth.box;
   });
+  // Name the new roads inside the command, so undo takes the names with them (P10).
+  sim.nameSegments(res.segments);
   sim.spend(plan.cost, 'roads');
   clearTreesAlong(sim, res.segments);
   sim.markNetworkChanged();
@@ -162,17 +184,62 @@ export function upgradeRoad(sim: Sim, segId: number, road: RoadTypeId, dryRun: b
     from: seg.type,
     to: road,
     earth: earth ? { volume: earth.volume, cost: earth.cost } : null,
+    // The buildings it takes away (P2), worked out by the same steps as the upgrade itself.
+    demolish: 0,
+    demolished: [] as number[],
   };
-  if (dryRun) return ok(total, { info });
+  if (dryRun) {
+    info.demolished = upgradeLosses(sim, segId, road, earth);
+    info.demolish = info.demolished.length;
+    return ok(total, { info });
+  }
   sim.net.setSegmentType(segId, road);
   if (earth?.idx.length) reshapeGround(sim, earth.idx, earth.to);
   sim.relocateBuildingsOn(segId);
-  const around = sim.net.segmentInfluenceBox(segId);
-  sim.net.revalidate(earth?.box ? union(around, earth.box) : around);
+  info.demolished = sim.net.revalidate(upgradeBox(sim, segId, earth));
+  info.demolish = info.demolished.length;
   sim.spend(total, 'roads');
   clearTreesAlong(sim, [segId]);
   sim.markNetworkChanged();
   return ok(total, { info });
+}
+
+/** Where an upgrade can change which lots stand: along the road, and wherever the ground moves. */
+function upgradeBox(sim: Sim, segId: number, earth: EarthPlan | null): Box {
+  const around = sim.net.segmentInfluenceBox(segId);
+  return earth?.box ? union(around, earth.box) : around;
+}
+
+/**
+ * The buildings an upgrade would remove (P2): the road takes its new width and the ground its new
+ * shape for a moment, the lots are judged as the upgrade judges them, and everything is put back
+ * exactly before anyone sees it (the ground under buildings isn't moved, and buildings sliding on
+ * their lots don't change which lots stand).
+ */
+function upgradeLosses(sim: Sim, segId: number, road: RoadTypeId, earth: EarthPlan | null): number[] {
+  const net = sim.net;
+  const from = net.segment(segId).type;
+  // A change of type re-suffixes the street's name (P10), and not always reversibly: keep it.
+  const name = net.segment(segId).name;
+  const blocks = [net.segment(segId).left, net.segment(segId).right].filter((b): b is number => !!b);
+  const wasDirty = {
+    seg: net.dirty.segments.has(segId),
+    blocks: blocks.filter((b) => net.dirty.blocks.has(b)),
+  };
+  const t = sim.terrain;
+  const heights = earth?.idx.map((i) => t.heights[i]!) ?? [];
+  try {
+    net.setSegmentType(segId, road);
+    earth?.idx.forEach((i, n) => (t.heights[i] = settledHeight(t.base[i]!, earth.to[n]!)));
+    return net.revalidate(upgradeBox(sim, segId, earth), true);
+  } finally {
+    earth?.idx.forEach((i, n) => (t.heights[i] = heights[n]!));
+    net.setSegmentType(segId, from);
+    if (name === undefined) delete net.segment(segId).name;
+    else net.segment(segId).name = name;
+    if (!wasDirty.seg) net.dirty.segments.delete(segId);
+    for (const b of blocks) if (!wasDirty.blocks.includes(b)) net.dirty.blocks.delete(b);
+  }
 }
 
 type Box = { minX: number; minZ: number; maxX: number; maxZ: number };
@@ -303,6 +370,40 @@ export function buildingsInTheWay(
   return [...out].sort((a, b) => a - b);
 }
 
+/**
+ * What a planned road joins (P1): 'highway' if one of its ends or crossings meets a road that
+ * reaches the highway, 'island' if it meets only roads that don't, 'none' if it meets no road at
+ * all. Undefined for roads nothing stands along (railways, ramps, city highways).
+ */
+function linkInfo(sim: Sim, plan: RoadPlan): 'highway' | 'island' | 'none' | undefined {
+  if (!plan.pieces.length || !ROAD_TYPES[plan.type].access) return undefined;
+  let joined = false;
+  for (const p of plan.pieces)
+    for (const e of [p.ea, p.eb]) {
+      const segs = e.kind === 'node' ? sim.net.segmentsAt(e.id) : e.kind === 'split' ? [e.seg] : [];
+      for (const sid of segs) {
+        // A level crossing isn't a join.
+        if (isRail(sim.net.segment(sid).type)) continue;
+        joined = true;
+        if (sim.isSegmentConnected(sid)) return 'highway';
+      }
+    }
+  return joined ? 'island' : 'none';
+}
+
+/**
+ * The buildings a planned road will demolish (P2), as building it judges them: lots its surface
+ * covers (a curve as the network makes a segment's), and lots lost where it splits a street.
+ */
+function roadLosses(sim: Sim, plan: RoadPlan): number[] {
+  const out = new Set<number>();
+  const hw = roadHalfWidth(plan.type);
+  for (const p of plan.pieces)
+    for (const id of sim.net.buildingsUnder(new Curve(p.a, p.c, p.b), hw)) out.add(id);
+  for (const sp of plan.splits) for (const id of sim.net.splitLosses(sp.seg, sp.s)) out.add(id);
+  return [...out].sort((a, b) => a - b);
+}
+
 /** Thin the tree-density grid under new roads (the renderer also hides individual trees). */
 /** Thin out trees within `r` metres of `c` (a roundabout's ring and island, M19). */
 function clearTreesIn(sim: Sim, c: Vec2, r: number): void {
@@ -414,13 +515,24 @@ export function setTram(sim: Sim, segId: number, on: boolean, dryRun: boolean): 
 }
 
 /** Where a roundabout goes: a junction, or a point along a road that will be split there. */
-type RoundaboutSite = { node: number } | { seg: number; s: number; x: number; z: number };
+type RoundaboutSite = RingSite;
+
+const WHAT: Record<ArmEnd, string> = {
+  junction: 'the next junction',
+  ring: 'another roundabout',
+  bend: 'a bend',
+  end: 'the end of the road',
+};
 
 /**
- * Put a roundabout on a junction, or on a road at `at` (M19). `radius` is the ring's centre line,
- * clamped to what the widest road meeting it needs and JUNCTION.maxRadius. The ring needs room:
- * every road meeting it long enough to approach, no other road through it and no civic building on
- * it; zoned buildings in its way are demolished. Returns the node in `created`.
+ * Put a roundabout on a junction, or on a road at `at` (M19). `radius` is the ring's centre line;
+ * without one the site gets the usual size for the widest road meeting it, or the largest smaller
+ * one that fits, down to a mini roundabout (P5). Each road meeting the ring is measured through
+ * bends to the next junction, and needs room past the ring's outer edge: 14 m to a junction or
+ * another ring, 6 m to a bend or a dead end. A bend inside the ring is taken in, the road into it
+ * rebuilt straight, when no ring fits otherwise. A refusal says which road is short, what's in the
+ * way and how much room is missing; buildings on the ring are demolished; civic buildings and other
+ * roads stop it.
  */
 export function placeRoundabout(
   sim: Sim,
@@ -430,6 +542,7 @@ export function placeRoundabout(
 ): CommandResult {
   const net = sim.net;
   const st = sim.state.net;
+  if (radius !== undefined && !Number.isFinite(radius)) return fail('No such size of roundabout');
   let site: RoundaboutSite | null = null;
   if (at.node !== undefined) {
     if (!st.nodes.has(at.node)) return fail('No junction here');
@@ -450,78 +563,156 @@ export function placeRoundabout(
       : isRail(net.segment(site.seg).type);
   if (onRail) return fail("A roundabout can't go on a railway or a level crossing");
   const centre = 'node' in site ? net.node(site.node) : { x: site.x, z: site.z };
-  // The roads that will meet the ring, with how far each runs to its next junction.
-  const arms: { seg: number; len: number }[] = [];
-  if ('node' in site) {
-    if (net.node(site.node).roundabout) return fail('There is already a roundabout here');
-    for (const sid of net.segmentsAt(site.node)) arms.push({ seg: sid, len: net.curve(sid).length });
-  } else {
-    const len = net.curve(site.seg).length;
-    arms.push({ seg: site.seg, len: site.s }, { seg: site.seg, len: len - site.s });
-  }
+  if ('node' in site && net.node(site.node).roundabout) return fail('There is already a roundabout here');
+  // The roads that will meet the ring, each measured out to what stops it.
+  const arms = ringArms(net, site);
   if (arms.length < 2) return fail('A roundabout needs at least two roads meeting it');
-  let widest = 0;
+  let widest: RoadTypeId = 'street';
   for (const a of arms) {
     const t = net.segment(a.seg).type;
     if (!ROAD_TYPES[t].buildable) return fail("The regional highway can't have a roundabout");
     if (!ROAD_TYPES[t].access) return fail('Roundabouts are for local roads: the city highway uses ramps');
-    widest = Math.max(widest, roadHalfWidth(t));
+    if (roadHalfWidth(t) > roadHalfWidth(widest)) widest = t;
   }
-  const minR = Math.max(JUNCTION.minRadius, Math.ceil(widest + 6));
-  const r = Math.min(JUNCTION.maxRadius, Math.max(minR, radius ?? minR + 2));
-  const outer = r + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
-  for (const a of arms)
-    if (a.len < outer + 14)
-      return fail('Too close to the next junction for a roundabout this size', {
-        at: { x: centre.x, z: centre.z },
-      });
-  // Other roads through the ring.
-  const armSegs = new Set(arms.map((a) => a.seg));
-  for (const sid of net.segHash.queryPoint(centre.x, centre.z, outer + 30)) {
-    if (armSegs.has(sid)) continue;
-    const seg = net.segment(sid);
-    if ('node' in site && (seg.a === site.node || seg.b === site.node)) continue;
-    if (net.curve(sid).project(centre).d < outer + net.halfWidth(sid))
-      return fail('Another road is in the way of the ring', { at: { x: centre.x, z: centre.z } });
-  }
-  for (const n of net.nodesIn({
-    minX: centre.x - outer - JUNCTION.maxRadius,
-    minZ: centre.z - outer - JUNCTION.maxRadius,
-    maxX: centre.x + outer + JUNCTION.maxRadius,
-    maxZ: centre.z + outer + JUNCTION.maxRadius,
-  }))
-    if (n.roundabout && ('node' in site ? n.id !== site.node : true))
-      if (Math.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout + JUNCTION.ringWidth + 8)
-        return fail('Too close to another roundabout', { at: { x: centre.x, z: centre.z } });
-  // Civic buildings on the ring stop it; zoned buildings are demolished.
-  const box: Box = {
+  const { mini } = ringSizes(widest);
+  const ladder = ringLadder(widest);
+  const sizes =
+    radius === undefined ? ladder : [Math.min(JUNCTION.maxRadius, Math.max(mini, Math.round(radius)))];
+  // What's near, gathered once for the largest ring tried (the tool previews on every move).
+  const reach = ringOuter(Math.max(...sizes));
+  const nearRoads = net.segHash.queryPoint(centre.x, centre.z, reach + 30);
+  const nearRings = net
+    .nodesIn({
+      minX: centre.x - reach - JUNCTION.maxRadius,
+      minZ: centre.z - reach - JUNCTION.maxRadius,
+      maxX: centre.x + reach + JUNCTION.maxRadius,
+      maxZ: centre.z + reach + JUNCTION.maxRadius,
+    })
+    .filter((n) => n.roundabout && ('node' in site ? n.id !== site.node : true));
+  const box = (outer: number): Box => ({
     minX: centre.x - outer,
     minZ: centre.z - outer,
     maxX: centre.x + outer,
     maxZ: centre.z + outer,
+  });
+  type Fit =
+    | { ok: true; r: number; doomed: number[]; straighten: Straightening[] }
+    | { ok: false; reason: string; at: Vec2; short?: ArmShortfall };
+  const fit = (r: number, takeIn: boolean): Fit => {
+    const outer = ringOuter(r);
+    const straighten: Straightening[] = [];
+    const short = shortfalls(arms, r);
+    for (const sf of short) {
+      const st =
+        takeIn && sf.bendInside && 'node' in site ? planStraighten(net, site.node, sf.arm, outer) : null;
+      if (!st) return { ok: false, reason: '', at: net.node(sf.node), short: sf };
+      straighten.push(st);
+    }
+    // Two bends on the one road (it loops back into the junction): refused, not half done.
+    if (straighteningsOverlap(straighten))
+      return { ok: false, reason: 'The roads into the ring loop round into each other', at: centre };
+    // Other roads through the ring (an arm's own road beyond its first junction may come near).
+    const own = new Set(arms.map((a) => a.seg));
+    const later = new Set(arms.flatMap((a) => a.chain.slice(1)));
+    const gone = new Set(straighten.flatMap((t) => t.arm.chain.slice(0, t.k + 1)));
+    for (const sid of nearRoads) {
+      if (own.has(sid) || gone.has(sid)) continue;
+      const seg = net.segment(sid);
+      if ('node' in site && (seg.a === site.node || seg.b === site.node)) continue;
+      const d = net.curve(sid).project(centre).d;
+      if (later.has(sid) ? d < outer : d < outer + net.halfWidth(sid))
+        return { ok: false, reason: 'Another road is in the way of the ring', at: centre };
+    }
+    for (const n of nearRings)
+      if (Math.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout! + JUNCTION.ringWidth + 8)
+        return { ok: false, reason: 'Too close to another roundabout', at: centre };
+    // Civic buildings on the ring stop it; zoned buildings are demolished.
+    for (const c of sim.state.civics.values())
+      if (pointRectDistance(centre, civicRect(c)) < outer)
+        return { ok: false, reason: 'A building is in the way of the ring', at: centre };
+    const doomed = new Set<number>();
+    for (const id of sim.bldHash.query(box(outer))) {
+      const b = sim.state.buildings.get(id)!;
+      if (pointRectDistance(centre, footprint(b)) < outer) doomed.add(id);
+    }
+    for (const t of straighten) for (const id of straightenLosses(net, t)) doomed.add(id);
+    return { ok: true, r, doomed: [...doomed].sort((a, b) => a - b), straighten };
   };
-  for (const c of sim.state.civics.values())
-    if (pointRectDistance(centre, civicRect(c)) < outer)
-      return fail('A building is in the way of the ring', { at: { x: centre.x, z: centre.z } });
-  const doomed: number[] = [];
-  for (const id of sim.bldHash.query(box)) {
-    const b = sim.state.buildings.get(id)!;
-    if (pointRectDistance(centre, footprint(b)) < outer) doomed.push(id);
+  // A smaller ring that leaves the roads alone beats a bigger one that rebuilds a road.
+  let chosen: Extract<Fit, { ok: true }> | null = null;
+  let refusal: Extract<Fit, { ok: false }> | null = null;
+  for (const takeIn of [false, true]) {
+    for (const r of sizes) {
+      const f = fit(r, takeIn);
+      if (f.ok) {
+        chosen = f;
+        break;
+      }
+      // The smallest size tried explains a refusal best, short of room before anything else.
+      if (!takeIn && (!refusal || f.short || !refusal.short)) refusal = f;
+    }
+    if (chosen) break;
   }
-  doomed.sort((a, b) => a - b);
+  if (!chosen) {
+    const tried = sizes[sizes.length - 1]!;
+    const f = refusal!;
+    // The largest smaller size that would fit, for the tool's [ ].
+    let fits = 0;
+    if (radius !== undefined)
+      for (const r of ladder.filter((x) => x < tried))
+        if (fit(r, false).ok || fit(r, true).ok) {
+          fits = r;
+          break;
+        }
+    const info: Record<string, unknown> = { radius: tried, minRadius: mini, fits };
+    if (!f.short) return fail(f.reason, { at: f.at, info });
+    const sf = f.short;
+    const have = Math.round(sf.have);
+    const need = Math.ceil(sf.need);
+    info.short = {
+      seg: sf.arm.seg,
+      segs: sf.arm.chain,
+      at: { x: f.at.x, z: f.at.z },
+      have,
+      need,
+      missing: need - have,
+      what: sf.what,
+      dir: compass(sf.arm.dir.x, sf.arm.dir.z),
+    };
+    const size =
+      radius === undefined
+        ? 'No room for even a mini roundabout'
+        : `No room for a roundabout ${2 * tried} m across`;
+    const smaller = fits ? ` One up to ${2 * fits} m across would fit.` : '';
+    return fail(
+      `${size}: the road ${compass(sf.arm.dir.x, sf.arm.dir.z)} runs ${have} m to ${WHAT[sf.what]}, and a ring needs ${need} m.${smaller}`,
+      { at: f.at, info },
+    );
+  }
+  const r = chosen.r;
+  const outer = ringOuter(r);
   const cost = Math.round(2 * Math.PI * r * JUNCTION.costPerMetre);
-  const info = { radius: r, demolish: doomed.length, arms: arms.length };
+  const info = {
+    radius: r,
+    minRadius: mini,
+    demolish: chosen.doomed.length,
+    demolished: chosen.doomed,
+    arms: arms.length,
+    straightened: chosen.straighten.length,
+  };
   if (cost > sim.state.treasury && !sim.state.options.sandbox)
     return fail('Not enough money', { at: centre, info });
   if (dryRun) return ok(cost, { info });
   let nodeId: number;
   if ('node' in site) nodeId = site.node;
   else nodeId = net.splitSegment(site.seg, site.s).node.id;
-  for (const id of doomed) sim.removeBuilding(id);
+  for (const t of chosen.straighten) straighten(net, nodeId, t);
+  for (const id of chosen.doomed) if (sim.state.buildings.has(id)) sim.removeBuilding(id);
   clearTreesIn(sim, centre, outer + 1);
   net.node(nodeId).roundabout = r;
   net.dirty.nodes.add(nodeId);
-  net.revalidate({ minX: box.minX - 20, minZ: box.minZ - 20, maxX: box.maxX + 20, maxZ: box.maxZ + 20 });
+  const b = box(outer + 20);
+  net.revalidate(b);
   sim.spend(cost, 'roads');
   sim.markNetworkChanged();
   return ok(cost, { created: [nodeId], info });

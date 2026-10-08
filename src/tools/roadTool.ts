@@ -1,15 +1,18 @@
 import { JUNCTION, TRAM } from '../data/balance';
 import { ROAD_TYPES, type RoadTypeId } from '../data/roads';
 import type { Command, CommandResult } from '../sim/commands';
-import { mid, type Vec2 } from '../sim/geom';
+import { compass, mid, type Vec2 } from '../sim/geom';
 import type { Game } from '../game';
+import { modKey } from '../client/platform';
 import { fitFreeform, snapPoint, type SnapResult } from './snap';
-import type { Tool, ToolPointer } from './tool';
+import { clickSlop, type Tool, type ToolPointer } from './tool';
 import type { GhostProfile } from '../render/ghost';
 
 /** What a road build preview reports (see buildRoad in src/sim/actions/roads.ts). */
 interface PreviewInfo {
   pieces?: { a: Vec2; c: Vec2; b: Vec2 }[];
+  /** Buildings the road would demolish (P2). */
+  demolished?: number[];
   grade?: {
     limit: number;
     max: number;
@@ -20,10 +23,34 @@ interface PreviewInfo {
   };
 }
 
-/** Upgrade hint notes (M13): regrading a road for a gentler type costs earthworks. */
+/** Buildings a road or an upgrade would demolish (P2), as a preview names them. */
+function doomedOf(info: unknown): number[] {
+  return (info as { demolished?: number[] } | undefined)?.demolished ?? [];
+}
+
+const articled = (name: string) =>
+  /^[aeiou]/i.test(name) ? `an ${name.toLowerCase()}` : `a ${name.toLowerCase()}`;
+
+/** P1: a road that joins nothing, or only roads that can't reach the highway, says so. */
+export function linkNotes(info: unknown): string[] {
+  const link = (info as { link?: string } | undefined)?.link;
+  return link === 'none'
+    ? ["Doesn't join any road"]
+    : link === 'island'
+      ? ['Not connected to the highway']
+      : [];
+}
+
+const demolishes = (n: number) => `demolishes ${n} building${n === 1 ? '' : 's'}`;
+
+/** Upgrade hint notes (M13): regrading a road for a gentler type costs earthworks; P2: what goes. */
 function upgradeNotes(info: unknown): string[] {
   const earth = (info as { earth?: { cost: number } | null } | undefined)?.earth;
-  return earth && earth.cost > 0 ? [`earthworks $${earth.cost.toLocaleString('en-US')}`] : [];
+  const n = doomedOf(info).length;
+  return [
+    ...(earth && earth.cost > 0 ? [`earthworks $${earth.cost.toLocaleString('en-US')}`] : []),
+    ...(n ? [demolishes(n)] : []),
+  ];
 }
 
 /** Hint notes on grading (M13): how steep it climbs against the limit, earthworks and viaducts. */
@@ -42,12 +69,7 @@ export type RoadMode = 'straight' | 'curve' | 'free' | 'upgrade' | 'oneway' | 'r
 
 const MODES: RoadMode[] = ['straight', 'curve', 'free', 'upgrade', 'oneway', 'roundabout', 'tram'];
 
-/** Compass direction of a heading in the ground plane (−z is north). */
-export function compass(dx: number, dz: number): string {
-  const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-  const k = Math.round(Math.atan2(dz, dx) / (Math.PI / 4));
-  return names[(k + 8) % 8]!;
-}
+export { compass };
 
 /** Four quadratic pieces round a circle (the ghost of a roundabout's ring). */
 function ringPieces(c: Vec2, r: number): { a: Vec2; c: Vec2; b: Vec2 }[] {
@@ -89,10 +111,24 @@ export class RoadTool implements Tool {
   private cursor: SnapResult | null = null;
   private dragging = false;
   private downAt: { x: number; y: number } | null = null;
+  /** A press waiting to become a click (P3): done when the button comes up near where it went down. */
+  private click: { x: number; y: number; run: () => void } | null = null;
   private freePath: Vec2[] = [];
+  /**
+   * Where a free-form road would end if let go now, snapped as it will be (PR #14 review): the ghost
+   * shows it while the button is down, and the road is built to it.
+   */
+  private freeEnd: SnapResult | null = null;
+  /** Alt is held: ends go exactly where they're put, with no snapping (PR #14 review). */
+  private loose = false;
   private previewSeq = 0;
   private inFlight = false;
   private queued: Command | null = null;
+  /**
+   * Bumped whenever the tool is entered, cancelled, left or changes mode (P11): the sim's answer to
+   * anything sent before that is stale, and must not bring a chain or a hint back.
+   */
+  private epoch = 0;
   private lastResult: { seq: number; res: CommandResult } | null = null;
   private lastSentSeq = 0;
   private pointer = { x: 0, y: 0 };
@@ -110,16 +146,36 @@ export class RoadTool implements Tool {
   constructor(private game: Game) {}
 
   activate(): void {
-    this.reset();
+    this.abandon();
   }
 
   deactivate(): void {
-    this.reset();
+    this.ringSize = undefined;
+    this.abandon();
     this.game.renderer.ghost.clear();
     this.game.setHint(null);
   }
 
+  /**
+   * Drop everything in progress and make the sim's answers to anything already sent stale. Not part
+   * of `reset()`: a built road resets the tool too, and two quick clicks can have two builds in
+   * flight whose chain must still move on.
+   */
+  private abandon(): void {
+    this.epoch++;
+    this.queued = null;
+    // A press that was about to become a click (P3) must not fire after Escape. Not in `reset()`: a
+    // road built while the next press is down must not eat that click.
+    this.click = null;
+    this.reset();
+  }
+
   private reset(): void {
+    // A question about the road being reset goes with it (P2).
+    if (this.game.question) {
+      this.game.question = null;
+      this.game.notify();
+    }
     this.hoverSeg = null;
     this.ring = null;
     this.ringDrag = false;
@@ -128,14 +184,21 @@ export class RoadTool implements Tool {
     this.control = null;
     this.dragging = false;
     this.freePath = [];
+    this.freeEnd = null;
     this.lastResult = null;
     this.game.renderer.ghost.showRoad(null, this.type, 'ok');
     this.game.renderer.ghost.showMarker(null);
+    this.game.renderer.ghost.showClear(null);
   }
 
   cancel(): boolean {
+    // A question about demolishing first (P2): Escape keeps the buildings, and the road stays drawn.
+    if (this.game.question) {
+      this.game.answer(false);
+      return true;
+    }
     const had = !!this.start || this.freePath.length > 0;
-    this.reset();
+    this.abandon();
     this.refresh();
     return had;
   }
@@ -144,8 +207,19 @@ export class RoadTool implements Tool {
     return Math.max(1, this.game.renderer.controller.current.distance / 500);
   }
 
-  private snap(p: Vec2, from: SnapResult | null): SnapResult {
-    return snapPoint(this.game.world.net, p, { from, grid: this.grid, scale: this.snapScale() });
+  /**
+   * Snap a point of the road being drawn; `arriving` is where the road comes to it from (its start
+   * or bend), so an end that nearly reaches a road joins it (P1). With Alt held, nothing snaps.
+   */
+  private snap(p: Vec2, from: SnapResult | null, arriving: Vec2 | null = null): SnapResult {
+    if (this.loose) return { x: p.x, z: p.z, kind: 'free' };
+    return snapPoint(this.game.world.net, p, {
+      from,
+      grid: this.grid,
+      scale: this.snapScale(),
+      near: ROAD_TYPES[this.type].access,
+      arriving,
+    });
   }
 
   /** Command for the current geometry, or null if there is nothing to build yet. */
@@ -174,13 +248,18 @@ export class RoadTool implements Tool {
       return {
         type: 'roundabout',
         ...(r.node !== undefined ? { node: r.node } : { at: r.at! }),
-        ...(r.radius !== undefined ? { radius: r.radius } : {}),
+        ...(r.radius !== undefined
+          ? { radius: r.radius }
+          : this.ringSize !== undefined
+            ? { radius: this.ringSize }
+            : {}),
       };
     }
     const way = this.oneWay && !ROAD_TYPES[this.type].oneWay ? { oneway: true } : {};
     if (this.mode === 'free') {
-      if (this.freePath.length < 2) return null;
-      return { type: 'buildRoad', road: this.type, points: fitFreeform(this.freePath), ...way };
+      const path = this.freeEnd ? [...this.freePath, this.freeEnd] : this.freePath;
+      if (path.length < 2) return null;
+      return { type: 'buildRoad', road: this.type, points: fitFreeform(path), ...way };
     }
     if (!this.start || !c) return null;
     if (Math.hypot(c.x - this.start.x, c.z - this.start.z) < 1) return null;
@@ -201,7 +280,68 @@ export class RoadTool implements Tool {
     const n = net.nearestNode(p, 14);
     if (n) return { node: n.id, centre: { x: n.x, z: n.z } };
     const hit = net.nearestSegment(p, 10, (id) => ROAD_TYPES[net.segment(id).type].access);
-    return hit ? { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } } : null;
+    if (!hit) return null;
+    // Near a junction the road ends at, the ring goes on the junction, not a few metres along (P5).
+    const seg = net.segment(hit.seg);
+    for (const id of [seg.a, seg.b]) {
+      const j = net.node(id);
+      if (net.segmentsAt(id).length >= 3 && Math.hypot(j.x - p.x, j.z - p.z) < 24)
+        return { node: id, centre: { x: j.x, z: j.z } };
+    }
+    return { at: { x: hit.x, z: hit.z }, centre: { x: hit.x, z: hit.z } };
+  }
+
+  /**
+   * Roundabout mode (P5): the ring size asked for with [ and ] or the bar's buttons, as a
+   * centre-line radius; undefined for the largest that fits.
+   */
+  ringSize: number | undefined = undefined;
+
+  /** What roundabout mode shows now (test API `getRing`). */
+  ringPreview(): {
+    size: number | null;
+    radius: number | null;
+    ok: boolean | null;
+    short: number[];
+    at: { x: number; z: number } | null;
+  } {
+    const res = this.lastResult?.res;
+    const info = (res?.info ?? {}) as { radius?: number; short?: { segs: number[] } };
+    return {
+      size: this.ringSize ?? null,
+      radius: info.radius ?? null,
+      ok: res ? res.ok : null,
+      short: res && !res.ok ? (info.short?.segs ?? []) : [],
+      at: this.ring ? { ...this.ring.centre } : null,
+    };
+  }
+
+  /** Step the ring a size larger (1) or smaller (−1), or back to the size that fits (0). */
+  stepRing(dir: 1 | -1 | 0): void {
+    if (dir === 0) this.ringSize = undefined;
+    else {
+      const res = this.lastResult?.res;
+      const info = (res?.info ?? {}) as { radius?: number; minRadius?: number; fits?: number };
+      let next =
+        (this.ring?.radius ?? this.ringSize ?? info.radius ?? JUNCTION.minRadius + 2) +
+        dir * JUNCTION.sizeStep;
+      // Refused at this size: smaller goes straight to the largest that fits.
+      if (dir < 0 && res && !res.ok && info.fits) next = info.fits;
+      this.ringSize = Math.min(JUNCTION.maxRadius, Math.max(info.minRadius ?? JUNCTION.miniRadius, next));
+    }
+    if (this.ring?.radius !== undefined) {
+      this.ring = { ...this.ring };
+      delete this.ring.radius;
+    }
+    this.lastResult = null;
+    this.refresh();
+    this.game.notify();
+  }
+
+  /** Send a command; `live` is false if Escape, a mode change or leaving the tool came before the reply. */
+  private async send(cmd: Command, epoch = this.epoch): Promise<{ res: CommandResult; live: boolean }> {
+    const res = await this.game.dispatch(cmd);
+    return { res, live: epoch === this.epoch };
   }
 
   private requestPreview(cmd: Command | null): void {
@@ -213,10 +353,14 @@ export class RoadTool implements Tool {
     }
     this.inFlight = true;
     this.lastSentSeq = seq;
+    const epoch = this.epoch;
     void this.game.client.preview(cmd).then((res) => {
       this.inFlight = false;
-      this.lastResult = { seq: this.lastSentSeq, res };
-      this.drawGhost();
+      // A stale reply draws nothing, but it still frees the line for what the current session queued.
+      if (epoch === this.epoch) {
+        this.lastResult = { seq: this.lastSentSeq, res };
+        this.drawGhost();
+      }
       if (this.queued) {
         const q = this.queued;
         this.queued = null;
@@ -245,6 +389,8 @@ export class RoadTool implements Tool {
     const half = ROAD_TYPES[this.type].width / 2 + ROAD_TYPES[this.type].sidewalk;
     g.highlightSegment(net.curve(id), half, res && !res.ok ? 'bad' : 'ok');
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    this.showDoomed(res?.ok ? doomedOf(res.info) : []);
+    if (this.game.question) return;
     if (!res)
       this.game.setHint({ ...this.pointer, text: `${from} → ${ROAD_TYPES[this.type].name}`, tone: 'info' });
     else if (res.ok)
@@ -338,22 +484,38 @@ export class RoadTool implements Tool {
       g.showMarker(null);
       this.game.setHint({
         ...this.pointer,
-        text: 'Click a junction or a road for a roundabout; drag out to size the ring',
+        text: 'Click a junction or a road for a roundabout; drag out, or press [ and ], to size the ring',
         tone: 'info',
       });
       return;
     }
     const res = this.lastResult?.res;
-    const info = (res?.info ?? {}) as { radius?: number; demolish?: number };
-    const radius = info.radius ?? r.radius ?? JUNCTION.minRadius + 2;
+    const info = (res?.info ?? {}) as {
+      radius?: number;
+      minRadius?: number;
+      demolish?: number;
+      short?: { segs: number[] };
+    };
+    const radius = info.radius ?? r.radius ?? this.ringSize ?? JUNCTION.minRadius + 2;
     g.showRoad(ringPieces(r.centre, radius), 'street', !res ? 'pending' : res.ok ? 'ok' : 'bad');
+    // Refused for room: the road that's too short, out to what's in the way (the marker) (P5).
+    const net = this.game.world.net;
+    const short =
+      res && !res.ok
+        ? (info.short?.segs ?? []).filter((id) => this.game.world.netState.segments.has(id))
+        : [];
+    g.highlightSegment(short.length ? short.map((id) => net.curve(id)) : null, 6);
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    // Red boxes over the buildings it would take, as for roads (P2).
+    if (this.lastResult?.seq === this.previewSeq) this.showDoomed(res?.ok ? doomedOf(res.info) : []);
+    if (this.game.question) return;
+    const what = res?.ok && info.radius === info.minRadius ? 'Mini roundabout' : 'Roundabout';
     if (!res) this.game.setHint({ ...this.pointer, text: 'Roundabout', tone: 'info' });
     else if (res.ok)
       this.game.setHint({
         ...this.pointer,
         text: [
-          `Roundabout · $${res.cost.toLocaleString('en-US')}`,
+          `${what} · $${res.cost.toLocaleString('en-US')}`,
           `${Math.round(radius * 2)} m across`,
           ...(info.demolish ? [`replaces ${info.demolish} building${info.demolish === 1 ? '' : 's'}`] : []),
         ].join(' · '),
@@ -395,20 +557,21 @@ export class RoadTool implements Tool {
     for (let i = 0; i + 2 < pts.length; i += 2) pieces.push({ a: pts[i]!, c: pts[i + 1]!, b: pts[i + 2]! });
     const res = this.lastResult?.res;
     const fresh = this.lastResult && this.lastResult.seq === this.previewSeq;
-    const state = !res ? 'pending' : res.ok ? 'ok' : 'bad';
+    // P1: a road that joins nothing, or only cut-off roads, says so (from the last answer, so the
+    // hint doesn't flicker while a fresh one comes back).
+    const links = res?.ok ? linkNotes(res.info) : [];
+    const state = !res ? 'pending' : res.ok ? (links.length ? 'unlinked' : 'ok') : 'bad';
     // A fresh preview carries the planned pieces (split at junctions) and their graded profiles.
     const info = fresh ? (res?.info as PreviewInfo | undefined) : undefined;
     const earth = info?.grade?.earth?.cost ?? 0;
     if ((res?.ok && earth > 0.25 * res.cost) || (res && !res.ok && /steep/i.test(res.reason)))
       this.sawEarthworks = true;
     const planned = info?.grade && info.pieces?.length === info.grade.pieces.length ? info : undefined;
-    g.showRoad(
-      planned?.pieces ?? pieces,
-      this.type,
-      fresh || !res ? state : state === 'ok' ? 'ok' : 'bad',
-      planned ? planned.grade : null,
-    );
+    g.showRoad(planned?.pieces ?? pieces, this.type, state, planned ? planned.grade : null);
     g.showMarker(res && !res.ok && res.at ? res.at : null);
+    if (fresh) this.showDoomed(res?.ok ? doomedOf(info) : []);
+    if (this.game.question) return;
+    const doomed = res?.ok ? doomedOf(info).length : 0;
     const len = pieces.reduce((s, p) => s + Math.hypot(p.b.x - p.a.x, p.b.z - p.a.z), 0);
     if (!res)
       this.game.setHint({ x: this.pointer.x, y: this.pointer.y, text: `${Math.round(len)} m`, tone: 'info' });
@@ -420,8 +583,11 @@ export class RoadTool implements Tool {
           `$${res.cost.toLocaleString('en-US')} · ${Math.round(len)} m`,
           ...this.wayNotes(pieces),
           ...gradeNotes(info),
+          ...(doomed ? [demolishes(doomed)] : []),
+          ...links,
+          ...(this.loose ? ['no snapping'] : []),
         ].join(' · '),
-        tone: 'ok',
+        tone: links.length ? 'warn' : 'ok',
       });
     else this.game.setHint({ x: this.pointer.x, y: this.pointer.y, text: res.reason, tone: 'bad' });
   }
@@ -449,10 +615,12 @@ export class RoadTool implements Tool {
             ? 'Click or release to place'
             : 'Click or drag to draw';
     const way = this.oneWay && !rt.oneWay ? ' · one-way (O)' : rt.oneWay ? ' · one-way, as drawn' : '';
+    // A left-drag draws with this tool out, so say how to move the map instead (P3).
+    const pan = !this.start && this.freePath.length === 0 ? ' · pan with middle-drag, WASD or a swipe' : '';
     this.game.setHint({
       x: this.pointer.x,
       y: this.pointer.y,
-      text: `${rt.name}${way} · $${rt.costPerMetre}/m — ${what}`,
+      text: `${rt.name}${way} · $${rt.costPerMetre}/m — ${what}${pan}`,
       tone: 'info',
     });
   }
@@ -462,7 +630,56 @@ export class RoadTool implements Tool {
     this.requestPreview(this.currentCommand());
     this.game.renderer.ghost.showSnap(
       this.cursor && (this.cursor.kind === 'node' || this.cursor.kind === 'segment') ? this.cursor : null,
+      Math.max(1, this.game.renderer.controller.current.distance / 250),
     );
+  }
+
+  /** Red boxes over the buildings the road would demolish (P2). */
+  private showDoomed(ids: readonly number[]): void {
+    const w = this.game.world;
+    const rects = [];
+    for (const id of ids) {
+      const b = w.buildings.get(id);
+      if (b) rects.push({ x: b.x, z: b.z, hw: b.w * 4, hd: b.d * 4, angle: b.angle });
+    }
+    this.game.renderer.ghost.showClear(rects.length ? rects : null);
+  }
+
+  /**
+   * A road or upgrade that would demolish buildings asks first (P2), as bulldozing does: true while
+   * the question is open, and `go` runs if the player says yes. The road stays drawn meanwhile; a
+   * no keeps a click–click road's start (pick another end) and drops a dragged one (`drop`).
+   */
+  private async askFirst(cmd: Command, go: () => void, drop = false): Promise<boolean> {
+    const epoch = this.epoch;
+    const pre = await this.game.client.preview(cmd);
+    const ids = pre.ok ? doomedOf(pre.info) : [];
+    // Nothing to demolish: built as clicked, even if Escape came meanwhile (P11).
+    if (!ids.length) return false;
+    // Demolishing needs a yes, and Escape, a mode change or leaving the tool came first: nothing.
+    if (epoch !== this.epoch || this.game.tools.activeId !== 'road') return true;
+    const n = ids.length;
+    const what =
+      cmd.type === 'upgradeRoad'
+        ? `Making this road ${articled(ROAD_TYPES[cmd.road].name)} demolishes`
+        : cmd.type === 'roundabout'
+          ? 'This roundabout demolishes'
+          : 'This road demolishes';
+    this.showDoomed(ids);
+    this.game.setHint(null);
+    this.game.ask({
+      ...this.pointer,
+      text: `${what} ${n} building${n === 1 ? '' : 's'} beside it. Undo (${modKey('Z')}) brings ${n === 1 ? 'it' : 'them'} back.`,
+      yes: cmd.type === 'upgradeRoad' ? 'Change it' : 'Build it',
+      no: n === 1 ? 'Keep it' : 'Keep them',
+      onYes: go,
+      onNo: () => {
+        if (drop) this.reset();
+        this.lastResult = null;
+        this.refresh();
+      },
+    });
+    return true;
   }
 
   /** Lay or take up tram track on the road under the pointer (M20); part of a drag's stroke. */
@@ -470,55 +687,68 @@ export class RoadTool implements Tool {
     const cmd = this.currentCommand();
     if (!cmd || cmd.type !== 'setTram') return;
     this.tramPaint?.done.add(cmd.seg);
-    const res = await this.game.dispatch(cmd);
-    if (res.ok) {
-      this.game.audio?.play('build');
-      this.lastResult = null;
-    } else if (!this.tramPaint || this.tramPaint.done.size <= 1) {
-      // Painting along a line skips roads that already have (or can't take) track quietly.
-      this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
-    }
+    const { res, live } = await this.send(cmd);
+    // Painting along a line skips roads that already have (or can't take) track quietly.
+    const quiet = !res.ok && !!this.tramPaint && this.tramPaint.done.size > 1;
+    if (!quiet) this.game.audio?.play(res.ok ? 'build' : 'error');
+    if (!live) return;
+    if (res.ok) this.lastResult = null;
+    else if (!quiet) this.lastResult = { seq: this.previewSeq, res };
     this.refresh();
   }
 
-  /** One-way switch or roundabout (M19). */
-  private async commitEdit(): Promise<void> {
-    const cmd = this.currentCommand();
+  /**
+   * One-way switch or roundabout (M19). A roundabout that takes buildings asks first, as roads do
+   * (PR #14 review); `confirmed` is the one the player said yes to.
+   */
+  private async commitEdit(confirmed?: Command): Promise<void> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || (cmd.type !== 'setOneWay' && cmd.type !== 'roundabout')) return;
-    const res = await this.game.dispatch(cmd);
+    // Replies count from the click, not from after the question (P11).
+    const epoch = this.epoch;
+    if (
+      !confirmed &&
+      cmd.type === 'roundabout' &&
+      (await this.askFirst(cmd, () => void this.commitEdit(cmd)))
+    )
+      return;
+    const { res, live } = await this.send(cmd, epoch);
     if (res.ok) {
       this.game.audio?.play('build');
-      if (cmd.type === 'roundabout') {
-        this.game.toast('Roundabout built', 'ok', 2000);
-        this.ring = null;
-      }
-      this.lastResult = null;
+      if (cmd.type === 'roundabout') this.game.toast('Roundabout built', 'ok', 2000);
     } else {
       this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
       if (cmd.type === 'roundabout')
         this.game.toast(
-          `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
+          /roundabout/i.test(res.reason)
+            ? res.reason
+            : `Can't build a roundabout here: ${res.reason.charAt(0).toLowerCase()}${res.reason.slice(1)}.`,
           'bad',
-          3000,
+          4000,
         );
     }
+    if (!live) return;
+    if (res.ok) {
+      if (cmd.type === 'roundabout') this.ring = null;
+      this.lastResult = null;
+    } else this.lastResult = { seq: this.previewSeq, res };
     this.refresh();
   }
 
-  private async commitUpgrade(): Promise<void> {
-    const cmd = this.currentCommand();
+  /** `confirmed`: the command the player said yes to (P2), run as it was counted. */
+  private async commitUpgrade(confirmed?: Command): Promise<void> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'upgradeRoad') return;
-    const res = await this.game.dispatch(cmd);
+    // Replies count from the click, not from after the question (P11).
+    const epoch = this.epoch;
+    if (!confirmed && (await this.askFirst(cmd, () => void this.commitUpgrade(cmd)))) return;
+    const { res, live } = await this.send(cmd, epoch);
     if (res.ok) {
       this.game.audio?.play('build');
       this.game.toast(`Road changed to ${ROAD_TYPES[cmd.road].name.toLowerCase()}`, 'ok', 2000);
-      this.lastResult = null;
-    } else {
-      this.game.audio?.play('error');
-      this.lastResult = { seq: this.previewSeq, res };
-    }
+    } else this.game.audio?.play('error');
+    if (!live) return;
+    this.lastResult = res.ok ? null : { seq: this.previewSeq, res };
     this.refresh();
   }
 
@@ -527,38 +757,52 @@ export class RoadTool implements Tool {
    * a drag draws one road, so the next drag starts wherever the player presses. A drag that can't be
    * built starts over too, with the reason in a toast (the ghost showed it red while dragging).
    */
-  private async commit(chain = true): Promise<boolean> {
-    const cmd = this.currentCommand();
+  private async commit(chain = true, confirmed?: Command): Promise<boolean> {
+    const cmd = confirmed ?? this.currentCommand();
     if (!cmd || cmd.type !== 'buildRoad') return false;
-    const res = await this.game.dispatch(cmd);
-    if (res.ok) {
-      this.game.audio?.play('build');
-      const end = cmd.points[cmd.points.length - 1]!;
-      this.reset();
-      if (this.mode !== 'free' && chain) this.start = this.snap(end, null);
-    } else {
+    // Replies count from the click (P11): an Escape while it was counted still ends the chain.
+    const epoch = this.epoch;
+    if (!confirmed && (await this.askFirst(cmd, () => void this.commit(chain, cmd), !chain))) return false;
+    const { res, live } = await this.send(cmd, epoch);
+    if (res.ok) this.game.audio?.play('build');
+    else {
       this.game.audio?.play('error');
-      if (chain) this.lastResult = { seq: this.previewSeq, res };
-      else {
-        this.reset();
+      // The ghost showed a chained road red; a dragged one, or one given up on, needs saying.
+      if (!chain || !live) {
         const why = res.reason.charAt(0).toLowerCase() + res.reason.slice(1);
         this.game.toast(`Can't build that road: ${why}.`, 'bad', 3000);
       }
     }
+    // Escape, a mode change or leaving the tool came first: the road is built (or refused) as sent,
+    // but the chain does not come back and nothing is redrawn (P11).
+    if (!live) return res.ok;
+    if (res.ok) {
+      const end = cmd.points[cmd.points.length - 1]!;
+      this.reset();
+      if (this.mode !== 'free' && chain) this.start = this.snap(end, null);
+    } else if (chain) this.lastResult = { seq: this.previewSeq, res };
+    else this.reset();
     this.refresh();
     return res.ok;
   }
 
   pointerDown(p: ToolPointer): void {
     if (p.button !== 0 || !p.ground) return;
+    this.loose = p.alt;
+    // A click elsewhere on the map while asking keeps the buildings (P2).
+    if (this.game.question) {
+      this.game.answer(false);
+      return;
+    }
     this.pointer = { x: p.clientX, y: p.clientY };
     this.downAt = { x: p.clientX, y: p.clientY };
+    this.click = null;
     if (this.mode === 'upgrade') {
-      void this.commitUpgrade();
+      this.onClick(p, () => void this.commitUpgrade());
       return;
     }
     if (this.mode === 'oneway') {
-      void this.commitEdit();
+      this.onClick(p, () => void this.commitEdit());
       return;
     }
     if (this.mode === 'tram') {
@@ -579,35 +823,68 @@ export class RoadTool implements Tool {
     if (this.mode === 'free') {
       const s = this.snap(p.ground, null);
       this.freePath = [s];
+      this.freeEnd = null;
       this.dragging = true;
       this.refresh();
       return;
     }
     if (this.mode === 'curve') {
-      if (!this.start) this.start = this.snap(p.ground, null);
-      else if (!this.control) this.control = { x: p.ground.x, z: p.ground.z };
-      else void this.commit();
-      this.cursor = this.snap(p.ground, this.control ? null : this.start);
-      this.refresh();
+      if (!this.start) {
+        this.start = this.snap(p.ground, null);
+        this.cursor = this.snap(p.ground, this.start, this.start);
+        this.refresh();
+      } else {
+        // The bend and the end are clicks: dragged away from, a press is a pan.
+        const ground = { x: p.ground.x, z: p.ground.z };
+        this.onClick(p, () => {
+          const bend = !this.control;
+          if (bend) this.control = ground;
+          // The end joins a road it nearly reaches, arriving from the bend (P1).
+          this.cursor = this.snap(ground, null, this.control ?? this.start);
+          if (!bend) void this.commit();
+          this.refresh();
+        });
+      }
       return;
     }
     if (!this.start) {
       this.start = this.snap(p.ground, null);
       this.dragging = true;
     } else {
-      void this.commit();
+      // Mid-chain a press is a click, not the start of a drag: pulled away from it is a pan (P3).
+      const ground = { x: p.ground.x, z: p.ground.z };
+      this.onClick(p, () => {
+        this.cursor = this.snap(ground, this.start, this.start);
+        void this.commit();
+      });
     }
   }
 
+  /**
+   * Do something when the button comes up within a click's reach of where it went down. A road tool
+   * keeps drag-to-draw for a first press, but anything else a press would do (finish a road, change one
+   * already built) waits for the release, so a left-drag meant to pan the map builds nothing (P3).
+   */
+  private onClick(p: ToolPointer, run: () => void): void {
+    this.click = { x: p.clientX, y: p.clientY, run };
+  }
+
   pointerMove(p: ToolPointer): void {
+    // While asking about demolishing, the road stays where it was drawn (P2).
+    if (this.game.question) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    this.loose = p.alt;
     if (!p.ground) return;
     if (this.mode === 'roundabout') {
       if (this.ringDrag && this.ring) {
-        // Dragging out from the middle draws the ring at that size.
+        // Dragging out from the middle draws the ring at that size; a click's few pixels of jitter
+        // never set one (P5).
+        const moved = this.downAt ? Math.hypot(p.clientX - this.downAt.x, p.clientY - this.downAt.y) : 0;
         const d = Math.hypot(p.ground.x - this.ring.centre.x, p.ground.z - this.ring.centre.z);
         const radius =
-          d > 8 ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.minRadius, d))) : undefined;
+          moved > clickSlop(p.type) && d > 8
+            ? Math.round(Math.min(JUNCTION.maxRadius, Math.max(JUNCTION.miniRadius, d)))
+            : undefined;
         if (radius !== this.ring.radius) {
           this.ring = { ...this.ring, ...(radius !== undefined ? { radius } : {}) };
           if (radius === undefined) delete this.ring.radius;
@@ -657,18 +934,60 @@ export class RoadTool implements Tool {
       const last = this.freePath[this.freePath.length - 1]!;
       if (Math.hypot(p.ground.x - last.x, p.ground.z - last.z) >= 6)
         this.freePath.push({ x: p.ground.x, z: p.ground.z });
-      this.cursor = { x: p.ground.x, z: p.ground.z, kind: 'free' };
+      // The end snaps while drawing, so a join shows before the button comes up (PR #14 review).
+      this.freeEnd = this.snap(p.ground, null, this.freeArriving(p.ground));
+      this.cursor = this.freeEnd;
       this.refresh();
       return;
     }
     const from = this.mode === 'curve' && this.control ? null : this.start;
-    this.cursor = this.snap(p.ground, from);
+    this.cursor = this.snap(
+      p.ground,
+      from,
+      this.mode === 'curve' && this.control ? this.control : this.start,
+    );
+    this.refresh();
+  }
+
+  /**
+   * Which way a free-form road arrives at `end`: from a point at least 15 m back along it (the last
+   * point drawn can be the end itself, and a road drawn alongside another would seem to meet it
+   * square on).
+   */
+  private freeArriving(end: Vec2): Vec2 | null {
+    for (let i = this.freePath.length - 1; i >= 0; i--) {
+      const q = this.freePath[i]!;
+      if (Math.hypot(q.x - end.x, q.z - end.z) >= 15) return q;
+    }
+    return this.freePath[0] ?? null;
+  }
+
+  /**
+   * A second finger came down (PR #14 review): the press began a pinch, so a click it was waiting
+   * to make goes, and so does anything it started (a dragged road, ring or stroke of track). A
+   * chain's start from an earlier click stays.
+   */
+  pointerCancel(): void {
+    this.click = null;
+    this.tramPaint = null;
+    if (this.ringDrag) {
+      this.ringDrag = false;
+      this.ring = null;
+      this.lastResult = null;
+    }
+    if (this.dragging) this.reset();
     this.refresh();
   }
 
   pointerUp(p: ToolPointer): void {
     if (p.button !== 0) return;
     this.pointer = { x: p.clientX, y: p.clientY };
+    const c = this.click;
+    this.click = null;
+    if (c) {
+      if (Math.hypot(p.clientX - c.x, p.clientY - c.y) <= clickSlop(p.type)) c.run();
+      return;
+    }
     if (this.tramPaint) {
       this.tramPaint = null;
       this.refresh();
@@ -681,21 +1000,26 @@ export class RoadTool implements Tool {
     }
     if (this.mode === 'free' && this.dragging) {
       this.dragging = false;
-      if (p.ground) {
-        const end = this.snap(p.ground, null);
-        this.freePath.push(end);
-      }
+      // Built to the end the ghost showed (PR #14 review); snapped here if the pointer never moved.
+      this.loose = p.alt;
+      const end = this.freeEnd ?? (p.ground ? this.snap(p.ground, null, this.freeArriving(p.ground)) : null);
+      this.freeEnd = null;
+      if (end) this.freePath.push(end);
       void this.commit();
       return;
     }
     if (this.mode === 'straight' && this.dragging) {
       this.dragging = false;
       const moved = this.downAt ? Math.hypot(p.clientX - this.downAt.x, p.clientY - this.downAt.y) : 0;
-      if (moved > 8) void this.commit(false);
+      if (moved > Math.max(8, clickSlop(p.type))) void this.commit(false);
     }
   }
 
   key(e: KeyboardEvent): boolean {
+    if (this.mode === 'roundabout' && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+      this.stepRing(e.code === 'BracketRight' ? 1 : -1);
+      return true;
+    }
     if (e.code === 'KeyG') {
       this.grid = !this.grid;
       this.game.notify();
@@ -703,7 +1027,7 @@ export class RoadTool implements Tool {
     }
     if (e.code === 'Tab') {
       this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]!;
-      this.reset();
+      this.abandon();
       this.game.notify();
       return true;
     }
@@ -717,6 +1041,8 @@ export class RoadTool implements Tool {
   }
 
   setType(t: RoadTypeId): void {
+    // The question was about the road as it was (P2).
+    if (this.game.question) this.game.answer(false);
     this.type = t;
     this.refresh();
     this.game.notify();
@@ -724,7 +1050,7 @@ export class RoadTool implements Tool {
 
   setMode(m: RoadMode): void {
     this.mode = m;
-    this.reset();
+    this.abandon();
     this.refresh();
     this.game.notify();
   }

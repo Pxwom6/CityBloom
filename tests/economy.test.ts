@@ -4,6 +4,7 @@ import { TICKS_PER_MONTH } from '../src/sim/time';
 import { annuity } from '../src/sim/systems/economy';
 import { SAVE_VERSION } from '../src/sim/save';
 import { buildTown, connectPoint, newSim, road, serveTown } from './helpers';
+import { DEPTS, LEDGER_LABELS, ledgerLabel } from '../src/data/economy';
 
 const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
 
@@ -43,6 +44,39 @@ describe('ledger', () => {
     expect(Math.abs(sim.stats().netMonthly - sum(b.projection))).toBeLessThanOrEqual(
       Object.keys(b.projection).length,
     );
+  });
+});
+
+describe('budget line names (P19)', () => {
+  it('call the roads and the public works depots different things', () => {
+    // "Road maintenance" (the roads' upkeep) and "Road maintenance upkeep" (the public works
+    // depots') read as one thing twice.
+    expect(ledgerLabel('roadUpkeep')).toBe('Road maintenance');
+    expect(ledgerLabel('upkeep:roads')).toBe('Public works depots');
+    expect(ledgerLabel('upkeep:roads')).not.toMatch(/road maintenance/i);
+    const keys = new Set([...Object.keys(LEDGER_LABELS), ...DEPTS.map((d) => `upkeep:${d.id}`)]);
+    const labels = [...keys].map(ledgerLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe('tax bands nobody pays (P17)', () => {
+  it('are counted, so the tax tab can say so', () => {
+    const fresh = newSim().budget();
+    expect(fresh.payers).toEqual({ R: [0, 0, 0], C: [0, 0, 0], I: [0, 0, 0] });
+    const sim = newSim();
+    buildTown(sim);
+    serveTown(sim);
+    sim.advance(TICKS_PER_MONTH * 2);
+    const b = sim.budget();
+    expect(b.payers.R[0]).toBeGreaterThan(0);
+    for (const z of ['R', 'C', 'I'] as const)
+      for (const w of [0, 1, 2]) {
+        const rev = b.projection[`tax${z}${w}`] ?? 0;
+        // A band with a rate raises money exactly when someone is in it.
+        if (b.taxes[z][w]! > 0)
+          expect(rev > 0, `${z}${w}: ${b.payers[z][w]} paying, $${rev}`).toBe(b.payers[z][w]! > 0);
+      }
   });
 });
 

@@ -1,33 +1,43 @@
 import { Color, Mesh, PlaneGeometry, ShaderMaterial, UniformsLib, UniformsUtils, Vector3 } from 'three';
 import { MAP_SIZE, SCENERY_MARGIN, WATER_LEVEL } from '../data/world';
 import { PAL } from './palette';
+import type { TerrainUniforms } from './terrain';
+import { LIMIT_COLOUR, LIMIT_GLSL } from './cityLimit';
 
 /** One large animated water plane at the water level; the riverbed shows through at the shallows. */
 export class WaterRenderer {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
 
-  constructor() {
+  /** `limit`: the terrain's own uniforms for the city limit, shared so the line is drawn over water too. */
+  constructor(limit: Pick<TerrainUniforms, 'uMapSize' | 'uLimitPx' | 'uLimitAlpha'>) {
     const size = MAP_SIZE + SCENERY_MARGIN * 2 + 2000;
     const geo = new PlaneGeometry(size, size, 1, 1);
     geo.rotateX(-Math.PI / 2);
     geo.translate(MAP_SIZE / 2, WATER_LEVEL, MAP_SIZE / 2);
+    const uniforms = UniformsUtils.merge([
+      UniformsLib.fog,
+      {
+        uTime: { value: 0 },
+        uShallow: { value: PAL.water.clone() },
+        uDeep: { value: PAL.waterDeep.clone() },
+        uSky: { value: new Color('#bfe0f5') },
+        uSunDir: { value: new Vector3(0.3, 0.8, 0.2).normalize() },
+        uSunColor: { value: new Color('#fff4dc') },
+        uLight: { value: 1 },
+      },
+    ]);
+    // (After the merge, which clones: these stay the terrain's own objects.)
+    Object.assign(uniforms, {
+      uMapSize: limit.uMapSize,
+      uLimitPx: limit.uLimitPx,
+      uLimitAlpha: limit.uLimitAlpha,
+    });
     this.material = new ShaderMaterial({
       transparent: true,
       depthWrite: false,
       fog: true,
-      uniforms: UniformsUtils.merge([
-        UniformsLib.fog,
-        {
-          uTime: { value: 0 },
-          uShallow: { value: PAL.water.clone() },
-          uDeep: { value: PAL.waterDeep.clone() },
-          uSky: { value: new Color('#bfe0f5') },
-          uSunDir: { value: new Vector3(0.3, 0.8, 0.2).normalize() },
-          uSunColor: { value: new Color('#fff4dc') },
-          uLight: { value: 1 },
-        },
-      ]),
+      uniforms,
       vertexShader: /* glsl */ `
         #include <fog_pars_vertex>
         varying vec3 vWorld;
@@ -48,7 +58,11 @@ export class WaterRenderer {
         uniform vec3 uSunDir;
         uniform vec3 uSunColor;
         uniform float uLight;
+        uniform float uMapSize;
+        uniform float uLimitPx;
+        uniform float uLimitAlpha;
         varying vec3 vWorld;
+        ${LIMIT_GLSL}
         void main() {
           vec2 p = vWorld.xz;
           float t = uTime;
@@ -71,6 +85,10 @@ export class WaterRenderer {
           float spec = pow(max(dot(reflect(-uSunDir, n), v), 0.0), 90.0);
           col += uSunColor * spec * 0.9 * uLight;
           float alpha = 0.72 + fres * 0.25;
+          // The city limit where it crosses water (P21): the plane would hide the ground's own line.
+          float limit = cityLimit(p, uMapSize, uLimitPx) * uLimitAlpha;
+          col = mix(col, ${LIMIT_COLOUR} * (0.2 + 0.8 * uLight), limit);
+          alpha = max(alpha, limit);
           gl_FragColor = vec4(col, alpha);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>

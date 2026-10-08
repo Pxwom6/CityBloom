@@ -1,3 +1,4 @@
+import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
@@ -132,8 +133,20 @@ import {
   railSiding,
   type Civic,
 } from './world/civic';
-import { civicOutput, emptyUtilityStats, updateUtilities, utilityConsequences } from './systems/utilities';
-import { dispatchGarbage, garbageHour, garbageRate, rollCollectionDay, trucksFor } from './systems/garbage';
+import {
+  civicOutput,
+  emptyUtilityStats,
+  supplyBalance,
+  updateUtilities,
+  utilityConsequences,
+} from './systems/utilities';
+import {
+  dispatchGarbage,
+  garbageHour,
+  garbageMadePerDay,
+  rollCollectionDay,
+  trucksFor,
+} from './systems/garbage';
 import { dispatchPloughs, ploughsFor } from './systems/ploughs';
 import { emptyChronicle, monthFigures, recordMonth } from './systems/chronicle';
 import { monthsLeft, projectEvents, projectsMonth } from './systems/projects';
@@ -182,6 +195,7 @@ import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
 import { rectsOverlap, type ORect } from './geom';
+import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
 import {
   book,
   closeMonth,
@@ -189,6 +203,7 @@ import {
   districtReports,
   economyHour,
   monthlyRates,
+  taxPayers,
   repayLoan,
   setFunding,
   setTax,
@@ -257,6 +272,8 @@ export class Sim {
   readonly terrain: Terrain;
   readonly rng: Record<RngStream, Rng>;
   readonly net: Network;
+  /** What street names are drawn from (P10). */
+  private readonly namesSeed: number;
   /** Every applied command with the tick it was applied at (for replays). Not part of the hash. */
   readonly log: CommandLogEntry[] = [];
   /** When true, invariants are checked after every tick and violations throw. */
@@ -286,6 +303,7 @@ export class Sim {
   private constructor(state: SimState, terrain: Terrain) {
     this.state = state;
     this.terrain = terrain;
+    this.namesSeed = namesSeed(state.options.seed);
     terrain.applyDelta(state.terrainDelta);
     this.rng = {} as Record<RngStream, Rng>;
     for (const s of RNG_STREAMS) this.rng[s] = new Rng(state.rng[s]);
@@ -440,9 +458,15 @@ export class Sim {
       'mainline',
       { zoned: false },
     );
+    this.nameSegments([seg.id]);
     this.state.railway = { outside: outside.id, connect: connect.id, segment: seg.id };
     this.markNetworkChanged();
     return seg.id;
+  }
+
+  /** Give roads just built their street names (P10): a continuation takes its street's name. */
+  nameSegments(ids: readonly number[]): void {
+    nameSegmentsIn(this.net, this.namesSeed, ids);
   }
 
   private buildHighway(): void {
@@ -456,6 +480,7 @@ export class Sim {
       'highway',
       { zoned: false },
     );
+    this.nameSegments([seg.id]);
     this.state.highway = { outside: outside.id, connect: connect.id, segment: seg.id };
   }
 
@@ -819,6 +844,13 @@ export class Sim {
     return this.fullGraphCache;
   }
 
+  private islandCache: RoadIsland[] | null = null;
+
+  /** Roads that can't reach the highway (P1), largest first; derived, so neither saved nor hashed. */
+  roadIslands(): RoadIsland[] {
+    return (this.islandCache ??= roadIslands(this.net, this.fullGraph(), this.state.highway.connect));
+  }
+
   isSegmentConnected(segId: number): boolean {
     const seg = this.state.net.segments.get(segId);
     // Railways aren't roads: nothing drives onto them from the highway (M20).
@@ -851,6 +883,7 @@ export class Sim {
   markNetworkChanged(): void {
     this.graphCache = null;
     this.fullGraphCache = null;
+    this.islandCache = null;
     this.railGraphCache = null;
     this.tramGraphCache = null;
     this.blockedCache = null;
@@ -1709,6 +1742,7 @@ export class Sim {
         C: [...e.taxes.C] as [number, number, number],
         I: [...e.taxes.I] as [number, number, number],
       },
+      payers: taxPayers(this),
       funding: { ...e.funding },
       loans: e.loans.map((l) => ({
         id: l.id,
@@ -2035,6 +2069,8 @@ export class Sim {
         return structuredClone(this.state.chronicle);
       case 'budget':
         return this.budget();
+      case 'supply':
+        return supplyBalance(this);
       case 'civic':
         return this.civicDetails(q.id);
       case 'districts':
@@ -2199,11 +2235,10 @@ export class Sim {
   /** What a garbage facility's inspector shows: its trucks, rounds and collection against production. */
   private garbageDetails(c: Civic): NonNullable<CivicDetails['garbage']> {
     const g = civicDef(c).garbage!;
-    let produced = 0;
+    const produced = garbageMadePerDay(this);
     let backlog = 0;
     let piles = 0;
     for (const b of this.state.buildings.values()) {
-      produced += garbageRate(this, b) * 24;
       backlog += b.garbage;
       if (b.garbage >= GARBAGE.visible) piles++;
     }

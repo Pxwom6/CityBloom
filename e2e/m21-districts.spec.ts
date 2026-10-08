@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { shot, watchErrors } from './helpers';
+import { yesIfAsked } from './ui';
 
 const screen = (page: Page, x: number, z: number) =>
   page.evaluate(([x, z]) => window.__game!.worldToScreen(x!, z!), [x, z]);
@@ -184,7 +185,10 @@ test('M21: Market Town: paint and name districts, a heavy-traffic ban on Old Mar
       await page.mouse.move(q.x, q.y, { steps: 4 });
       await expect(page.getByTestId('tool-hint')).toContainText('$', { timeout: 20_000 });
     }
+    const before = await roads();
     await clickAt(page, X(x), Z(z));
+    // The back road clears two buildings on its way, and the road tool now asks first (P2).
+    if (x !== 40 || z !== 0) await yesIfAsked(page, async () => (await roads()) > before);
   }
   await expect.poll(roads, { timeout: 30_000 }).toBeGreaterThanOrEqual(n0 + 3);
   await page.getByTestId('tool-select').click();

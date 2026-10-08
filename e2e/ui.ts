@@ -58,22 +58,15 @@ export async function settledHint(page: Page): Promise<{ tone: string; text: str
 }
 
 /**
- * Pick a building from a toolbar category and place it at the first spot the sim accepts on open
- * ground (or, failing that, the first it accepts at all), as a player would by hovering and reading
- * the hint.
+ * Hover the spots in turn, as a player would, and read the placement hint: the first spot the sim
+ * accepts on open ground, or, failing that, the first it accepts at all. The tool that is out stays
+ * out, with the pointer left on the spot chosen.
  */
-export async function placeFromToolbar(
+export async function findSpot(
   page: Page,
-  category: string,
-  def: string,
   spots: [number, number][],
-): Promise<void> {
-  await page.getByTestId(`tool-${category}`).click();
-  await expect(page.getByTestId('place-options')).toBeVisible();
-  await page.getByTestId(`place-${def}`).click();
-  const count = () =>
-    page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def).length, def);
-  const before = await count();
+  what = 'it',
+): Promise<[number, number]> {
   let pick: [number, number] | null = null;
   const seen: string[] = [];
   for (const [x, z] of spots) {
@@ -89,13 +82,62 @@ export async function placeFromToolbar(
       break;
     }
   }
-  expect(pick, `nowhere for the ${def}:\n${seen.join('\n')}`).not.toBeNull();
+  expect(pick, `nowhere for ${what}:\n${seen.join('\n')}`).not.toBeNull();
   const p = await screen(page, pick![0], pick![1]);
   await page.mouse.move(p.x, p.y, { steps: 3 });
   await page.waitForTimeout(300);
+  return pick!;
+}
+
+/**
+ * Pick a building from a toolbar category and place it at the first spot the sim accepts on open
+ * ground (or, failing that, the first it accepts at all), as a player would by hovering and reading
+ * the hint.
+ */
+export async function placeFromToolbar(
+  page: Page,
+  category: string,
+  def: string,
+  spots: [number, number][],
+): Promise<void> {
+  await page.getByTestId(`tool-${category}`).click();
+  await expect(page.getByTestId('place-options')).toBeVisible();
+  // Opening a category only shows its buildings: nothing is picked until one is pressed (P4).
+  await expect(page.locator('[data-testid^="place-"][aria-pressed="true"]')).toHaveCount(0);
+  await page.getByTestId(`place-${def}`).click();
+  const count = () =>
+    page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def).length, def);
+  const before = await count();
+  const pick = await findSpot(page, spots, `the ${def}`);
+  const p = await screen(page, pick[0], pick[1]);
   await page.mouse.click(p.x, p.y);
   await expect.poll(count, { timeout: 20_000 }).toBe(before + 1);
   await page.getByTestId('tool-select').click();
+}
+
+/**
+ * Keep the sim waiting: while held, the commands and previews the page sends stay queued (in order)
+ * until `holdSim(page, false)` lets them through, so a test can act in the gap a busy sim leaves
+ * between a click and its answer without racing a timer. Queries and the camera API stay immediate,
+ * so a `getState()` sent while held shows the city as it was: release first, then poll.
+ */
+export async function holdSim(page: Page, hold: boolean): Promise<void> {
+  await page.evaluate((hold) => {
+    type Held = { worker: Worker; args: unknown[] };
+    const w = window as unknown as { __hold?: boolean; __held?: Held[]; __post?: (...a: unknown[]) => void };
+    const proto = Worker.prototype as unknown as { postMessage: (...a: unknown[]) => void };
+    if (!w.__post) {
+      w.__post = proto.postMessage;
+      w.__held = [];
+      proto.postMessage = function (this: Worker, ...args: unknown[]) {
+        const type = (args[0] as { type?: string } | undefined)?.type;
+        if (w.__hold && (type === 'command' || type === 'preview')) w.__held!.push({ worker: this, args });
+        else w.__post!.apply(this, args);
+      };
+    }
+    w.__hold = hold;
+    if (!hold) for (const m of w.__held!.splice(0)) w.__post!.apply(m.worker, m.args);
+  }, hold);
 }
 
 /** Escape until the pause menu is up (a first press may only deselect something). */
@@ -105,4 +147,14 @@ export async function pauseMenu(page: Page): Promise<void> {
     await page.waitForTimeout(250);
   }
   await expect(page.getByTestId('pause-settings')).toBeVisible();
+}
+
+/**
+ * A road or upgrade that would demolish buildings asks first (P2). A spec that means to build it
+ * says yes: after a click, wait for the question or for `done` (the road built), and answer yes.
+ */
+export async function yesIfAsked(page: Page, done: () => Promise<boolean>): Promise<void> {
+  const q = page.getByTestId('tool-question');
+  await expect.poll(async () => (await q.isVisible()) || (await done()), { timeout: 20_000 }).toBe(true);
+  if (await q.isVisible()) await page.getByTestId('tool-question-yes').click();
 }

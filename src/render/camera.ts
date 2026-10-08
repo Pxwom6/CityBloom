@@ -182,16 +182,24 @@ export class CameraController {
     const pan = e.button === 1 || (e.button === 0 && this.leftDragPans);
     const rotate = e.button === 2;
     if (!pan && !rotate) return;
-    const grab = this.screenToGround(e.clientX, e.clientY) ?? this.target.clone();
+    this.beginDrag(pan ? 'pan' : 'rotate', e.clientX, e.clientY, e.pointerId);
+  };
+
+  /**
+   * Start dragging the map from a screen point: a press on the canvas does this itself, and so does
+   * one that began on a panel floating over the map and then turned into a drag.
+   */
+  beginDrag(mode: 'pan' | 'rotate', clientX: number, clientY: number, pointerId: number): void {
+    const grab = this.screenToGround(clientX, clientY) ?? this.target.clone();
     this.drag = {
-      mode: pan ? 'pan' : 'rotate',
+      mode,
       plane: new Plane(new Vector3(0, 1, 0), -grab.y),
       grab,
-      lastX: e.clientX,
-      lastY: e.clientY,
+      lastX: clientX,
+      lastY: clientY,
     };
-    this.dom.setPointerCapture?.(e.pointerId);
-  };
+    this.dom.setPointerCapture?.(pointerId);
+  }
 
   private onPointerMove = (e: PointerEvent): void => {
     const rect = this.dom.getBoundingClientRect();

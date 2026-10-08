@@ -220,7 +220,10 @@ export function GoalsButton() {
     >
       <span class="city">{st.cityName}</span>
       <span class="sub">
-        Goals {met}/{sc.goals.length} · {when} {sc.status === 'won' && <Stars n={sc.stars} />}
+        <span class="goals-text">
+          Goals {met}/{sc.goals.length} · {when}
+        </span>
+        {sc.status === 'won' && <Stars n={sc.stars} />}
       </span>
     </button>
   );

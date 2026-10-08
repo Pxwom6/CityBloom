@@ -1,9 +1,9 @@
-import { ROAD_TYPES } from '../data/roads';
+import { ROAD_TYPES, isPlayerRoad } from '../data/roads';
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
-import { TRAM } from '../data/balance';
+import { LONG_COMMUTE, TRAM } from '../data/balance';
 
 /**
  * The first-city tutorial and contextual tips (DESIGN.md §5). Steps finish by themselves when the
@@ -42,7 +42,7 @@ export const TUTORIAL: TutorialStep[] = [
       'Pick the road tool and drag out from the end of the highway. Click to add bends; every road ' +
       'needs to connect back to the highway so people can reach it.',
     target: 'tool-road',
-    done: (g) => [...g.world.netState.segments.values()].some((s) => s.type !== 'highway'),
+    done: (g) => [...g.world.netState.segments.values()].some((s) => isPlayerRoad(s.type)),
   },
   {
     title: 'Zone homes',
@@ -142,7 +142,8 @@ export const TIPS: Tip[] = [
     text:
       'Commutes are getting long. The traffic map (layers button) shows the busiest roads: add a parallel ' +
       'street, upgrade to an avenue, or start a bus line.',
-    when: (g) => g.world.stats.avgCommute > 28 && g.world.stats.population > 500,
+    // avgCommute is in seconds (P15).
+    when: (g) => g.world.stats.avgCommute > LONG_COMMUTE && g.world.stats.population > 500,
   },
   {
     id: 'junctions',
@@ -289,3 +290,19 @@ export const TIPS: Tip[] = [
     when: (g) => g.world.stats.peak >= 20_000 && !g.world.options.sandbox,
   },
 ];
+
+/**
+ * The tip to show (P15): one at a time, chosen only when nothing hides it, and dropped if it is
+ * still waiting behind a panel when its moment passes, so it never contradicts the numbers. A tip
+ * on screen stays until the player dismisses it.
+ */
+export function pickTip(
+  g: Game,
+  current: Tip | null,
+  hidden: boolean,
+  seen: ReadonlySet<string>,
+): Tip | null {
+  if (current) return hidden && !current.when(g) ? null : current;
+  if (hidden) return null;
+  return TIPS.find((t) => !seen.has(t.id) && t.when(g)) ?? null;
+}

@@ -16,7 +16,7 @@ import { DistrictView } from './client/districtView';
 import { OverlayController } from './client/overlay';
 import { StreetNames } from './client/names';
 import { StreetLabels } from './client/labels';
-import type { ToolHint } from './tools/tool';
+import type { ToolHint, ToolQuestion } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
@@ -24,7 +24,8 @@ import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
-import { TIPS, TUTORIAL, type Tip } from './client/tutorial';
+import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
+import { barsClass, widthClass } from './ui/layout';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -67,7 +68,8 @@ function layoutUi(): void {
   const ui = document.getElementById('ui');
   if (!ui) return;
   const rem = window.innerWidth / (16 * uiScale);
-  ui.dataset.width = rem < 60 ? 'xs' : rem < 68 ? 's' : rem < 78 ? 'm' : 'l';
+  ui.dataset.width = widthClass(rem);
+  ui.dataset.bars = barsClass(rem);
 }
 if (typeof window !== 'undefined') window.addEventListener('resize', layoutUi);
 
@@ -111,6 +113,8 @@ export class Game {
   frameSamples: number[] | null = null;
   debugOpen = false;
   hint: ToolHint | null = null;
+  /** A tool's question before it acts (P2), shown at the pointer with its two buttons. */
+  question: ToolQuestion | null = null;
   /** Open side panel (budget, and later data maps, advisors...). */
   panel:
     | 'budget'
@@ -673,10 +677,11 @@ export class Game {
     this.notify();
     try {
       const s = await this.client.save();
-      await writeSlot(slot, s, label);
+      const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (slot !== 'auto') this.slot = slot;
-      if (!quiet) this.toast(`Saved “${s.meta.cityName}”`, 'ok');
+      // The slot's name, as the load list shows it, not the city's (P22).
+      if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;
     } catch (e) {
       this.toast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'bad');
@@ -956,19 +961,35 @@ export class Game {
       this.audio?.play('good');
     }
     // Tips wait for the tutorial, and come one at a time.
-    if (this.tip || !this.settings.tips || this.settings.tutorialStep >= 0) return;
-    const seen = new Set(this.settings.seenTips);
-    const tip = TIPS.find((t) => !seen.has(t.id) && t.when(this));
-    if (tip) {
-      this.tip = tip;
+    if (!this.settings.tips || this.settings.tutorialStep >= 0) return;
+    const tip = pickTip(this, this.tip, !!this.screen || !!this.panel, new Set(this.settings.seenTips));
+    if (tip === this.tip) return;
+    this.tip = tip;
+    if (tip && !this.settings.seenTips.includes(tip.id))
       this.updateSettings({ seenTips: [...this.settings.seenTips, tip.id] });
-    }
+    else this.notify();
   }
 
   dismissTip(turnOff = false): void {
     this.tip = null;
     if (turnOff) this.updateSettings({ tips: false });
     else this.notify();
+  }
+
+  /** Ask before acting (P2); a question already open is answered no. */
+  ask(q: ToolQuestion): void {
+    this.answer(false);
+    this.question = q;
+    this.notify();
+  }
+
+  /** Answer the open question, if there is one. */
+  answer(yes: boolean): void {
+    const q = this.question;
+    if (!q) return;
+    this.question = null;
+    this.notify();
+    (yes ? q.onYes : q.onNo)();
   }
 
   setHint(h: ToolHint | null): void {
@@ -1069,6 +1090,7 @@ export class Game {
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
     else this.autosave(now);
+    this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();
     this.editor?.update();

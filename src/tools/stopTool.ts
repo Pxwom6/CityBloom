@@ -1,5 +1,8 @@
 import { TRANSIT } from '../data/balance';
+import { ROAD_TYPES } from '../data/roads';
 import type { Game } from '../game';
+import type { Vec2 } from '../sim/geom';
+import { roadUnderCursor } from './roadPick';
 import type { Tool, ToolPointer } from './tool';
 
 /**
@@ -8,7 +11,8 @@ import type { Tool, ToolPointer } from './tool';
  */
 export class StopTool implements Tool {
   readonly id = 'stop';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   tram = false;
   private pointer = { x: 0, y: 0 };
   private seq = 0;
@@ -18,6 +22,8 @@ export class StopTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw a marker or a hint on the next tool (P11).
+    this.seq++;
     this.game.renderer.ghost.showMarker(null);
     this.game.renderer.ghost.showSnap(null);
     this.game.setHint(null);
@@ -27,11 +33,38 @@ export class StopTool implements Tool {
     return false;
   }
 
+  /**
+   * Where a stop click is (P12): on the road under the cursor as it's drawn, so a click on a bridge
+   * deck is on the bridge (the ground under the cursor lies well behind a raised deck), else the
+   * ground point as before, which the sim takes to the road within 14 m.
+   */
+  private spot(p: ToolPointer): Vec2 | null {
+    if (!p.ground) return null;
+    const g = this.game;
+    const w = g.world;
+    const tram = this.tram;
+    return (
+      roadUnderCursor({
+        net: w.net,
+        roadHeight: (s, t, x, z) => w.roadHeight(s, t, x, z),
+        camera: g.renderer.camera,
+        rect: g.renderer.canvas.getBoundingClientRect(),
+        clientX: p.clientX,
+        clientY: p.clientY,
+        near: p.ground,
+        accept: (id) => {
+          const seg = w.netState.segments.get(id);
+          return !!seg && (tram ? !!seg.tram : ROAD_TYPES[seg.type].access);
+        },
+      }) ?? p.ground
+    );
+  }
+
   pointerMove(p: ToolPointer): void {
     this.pointer = { x: p.clientX, y: p.clientY };
-    if (!p.ground) return;
+    const g = this.spot(p);
+    if (!g) return;
     const seq = ++this.seq;
-    const g = p.ground;
     const tram = this.tram;
     void this.game.client.preview({ type: 'placeStop', x: g.x, z: g.z, tram }).then((r) => {
       if (seq !== this.seq) return;
@@ -56,9 +89,10 @@ export class StopTool implements Tool {
   }
 
   pointerDown(p: ToolPointer): void {
-    if (p.button !== 0 || !p.ground) return;
+    const at = p.button === 0 ? this.spot(p) : null;
+    if (!at) return;
     const tram = this.tram;
-    void this.game.dispatch({ type: 'placeStop', x: p.ground.x, z: p.ground.z, tram }).then((r) => {
+    void this.game.dispatch({ type: 'placeStop', x: at.x, z: at.z, tram }).then((r) => {
       if (r.ok) {
         this.game.audio?.play('build');
         this.game.toast(tram ? 'Tram stop placed' : 'Bus stop placed', 'ok', 1500);

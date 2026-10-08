@@ -24,6 +24,15 @@ test('M23: Harbour Lights through the UI: a power deal from the Region panel and
   expect(towns).toHaveLength(3);
   for (const n of towns) await expect(panel).toContainText(n.name);
   const seller = towns.find((n) => n.offers.buy.power > 0)!;
+  // Supply and demand (P20): the city is short of power, and the panel says so before any deal.
+  const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+  const supplyPower = page.getByTestId('region-supply-power');
+  await expect(supplyPower).toContainText('short');
+  const before = await page.evaluate(() => window.__game!.getSupply());
+  await expect(supplyPower).toContainText(
+    `You make ${fmt(before.power.make)} MW and use ${fmt(before.power.use)} MW`,
+  );
+  await expect(page.getByTestId('region-supply-garbage')).toContainText('a day');
   const row = page.getByTestId(`deal-${seller.id}-buy-power`);
   await row.scrollIntoViewIfNeeded();
   await expect(row).toContainText('Buy power');
@@ -36,7 +45,21 @@ test('M23: Harbour Lights through the UI: a power deal from the Region panel and
   await expect.poll(async () => (await state(page)).region.deals.length).toBe(1);
   await page.evaluate(() => window.__game!.advance(120));
   await expect(page.getByTestId(`deal-${seller.id}-buy-power-now`)).toContainText('went through');
+  await expect(page.getByTestId(`deal-${seller.id}-buy-power-now`)).toContainText('in the last hour');
   await shot(page, 'm23-panel');
+  // The supply lines now show what was bought, and still add up: make + bought = supply, use + sold = demand.
+  await expect(supplyPower).toContainText('Bought');
+  const after = await page.evaluate(() => window.__game!.getSupply());
+  expect(after.power.bought).toBeGreaterThan(0);
+  const stats = (await state(page)).utilities.power;
+  expect(after.power.make + after.power.bought).toBe(stats.supply);
+  expect(after.power.use + after.power.sold).toBe(stats.demand);
+  await expect(supplyPower).toContainText(
+    `You make ${fmt(after.power.make)} MW and use ${fmt(after.power.use)} MW`,
+  );
+  if (after.winter) await expect(page.getByTestId('region-supply-winter')).toContainText('heating');
+  await panel.evaluate((el) => el.querySelector('.advisors-list')?.scrollTo(0, 0));
+  await shot(page, 'p20-region-supply');
   await expect.poll(async () => (await state(page)).utilities.power.unserved, { timeout: 30_000 }).toBe(0);
   await page.getByTestId('open-region').click();
   await expect(panel).toHaveCount(0);

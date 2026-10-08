@@ -6,6 +6,7 @@ import { Curve, rectsOverlap, splitBezier, v2, type ORect, type Vec2 } from '../
 import { SpatialHash, type Box } from './spatial';
 import type { Terrain } from '../terrain/terrain';
 import { profileAt } from './grading';
+import { restyleName } from './streetNames';
 
 export interface RoadNode {
   id: number;
@@ -22,6 +23,11 @@ export interface RoadSegment {
   cx: number;
   cz: number;
   type: RoadTypeId;
+  /**
+   * The street's name (P10): segments sharing a name are one street. Given when the segment is
+   * made (`nameSegments`), copied by a split and re-suffixed when the type changes.
+   */
+  name?: string;
   /** Zone block ids on the left (+1) and right (−1) side, 0 if none. */
   left: number;
   right: number;
@@ -330,6 +336,7 @@ export class Network {
     type: RoadTypeId,
     opts: {
       id?: number;
+      name?: string;
       zoned?: boolean;
       layouts?: { left?: [number, number]; right?: [number, number] };
     } = {},
@@ -344,6 +351,7 @@ export class Network {
       left: 0,
       right: 0,
     };
+    if (opts.name) seg.name = opts.name;
     this.st.segments.set(seg.id, seg);
     this.indexSegment(seg);
     this.dirty.segments.add(seg.id);
@@ -404,6 +412,43 @@ export class Network {
   }
 
   /**
+   * Where a split of segment `id` at arc length `s` leaves each building beside it, as
+   * `splitSegment` lays out the halves and hands the columns over: a mask of 1 (on the first half,
+   * a→N), 2 (on the second, N→b) and 4 (in the column the new junction takes, or past the far
+   * half's last column).
+   */
+  splitHalves(id: number, s: number): Map<number, number> {
+    const seg = this.segment(id);
+    const len2 = this.curve(id).length - s;
+    const out = new Map<number, number>();
+    for (const bid of [seg.left, seg.right]) {
+      const block = bid ? this.st.blocks.get(bid) : undefined;
+      if (!block) continue;
+      const cols1 = Math.max(0, Math.floor((s - block.s0) / CELL + 1e-6));
+      const cFirst = Math.ceil((s - block.s0) / CELL - 1e-6);
+      const cols2 = Math.max(0, Math.floor((len2 - (block.s0 + cFirst * CELL - s)) / CELL + 1e-6));
+      for (let c = 0; c < block.cols; c++) {
+        const h = c < cols1 ? 1 : c - cFirst >= 0 && c - cFirst < cols2 ? 2 : 4;
+        for (let r = 0; r < ROWS; r++) {
+          const bld = block.bld[c * ROWS + r]!;
+          if (bld) out.set(bld, (out.get(bld) ?? 0) | h);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Buildings a split of segment `id` at arc length `s` would demolish (P2): one standing where
+   * the new junction goes or past the far half's end (`splitHalves`), or across the split.
+   */
+  splitLosses(id: number, s: number): number[] {
+    const out: number[] = [];
+    for (const [bld, m] of this.splitHalves(id, s)) if (m & 4 || m === 3) out.push(bld);
+    return out.sort((a, b) => a - b);
+  }
+
+  /**
    * Split a segment at arc length s into two, keeping the zone grid phase so cells, zones and
    * buildings carry over exactly. Returns the new node and the two halves (a→N, N→b).
    */
@@ -460,11 +505,13 @@ export class Network {
 
     const first = this.createSegment(seg.a, node.id, halves.left[1], seg.type, {
       id: ids?.first,
+      name: seg.name,
       layouts: layouts.first,
       zoned: seg.left !== 0 || seg.right !== 0,
     });
     const second = this.createSegment(node.id, seg.b, halves.right[1], seg.type, {
       id: ids?.second,
+      name: seg.name,
       layouts: layouts.second,
       zoned: seg.left !== 0 || seg.right !== 0,
     });
@@ -531,6 +578,7 @@ export class Network {
       cx: number;
       cz: number;
       type: RoadTypeId;
+      name?: string;
       layouts: { left?: [number, number]; right?: [number, number] };
       deck?: number[];
       oneway?: 1 | -1;
@@ -563,6 +611,7 @@ export class Network {
     const o = rec.original;
     const merged = this.createSegment(o.a, o.b, v2(o.cx, o.cz), o.type, {
       id: o.id,
+      name: o.name,
       layouts: o.layouts,
       zoned: !!(o.layouts.left || o.layouts.right),
     });
@@ -616,7 +665,10 @@ export class Network {
     const seg = this.segment(id);
     for (const bid of [seg.left, seg.right]) if (bid) this.unindexBlock(this.st.blocks.get(bid)!);
     this.unindexSegment(seg);
+    const from = seg.type;
     seg.type = type;
+    // The street keeps its stem; the suffix follows the new type (P10).
+    if (seg.name) seg.name = restyleName(seg.name, from, type);
     this.indexSegment(seg);
     for (const bid of [seg.left, seg.right]) if (bid) this.indexBlock(this.st.blocks.get(bid)!);
     this.dirty.segments.add(id);
@@ -638,8 +690,8 @@ export class Network {
 
   // ------------------------------------------------------------------ cell validity
 
-  /** Validity that doesn't depend on other cells: bounds, water, slope, roads, placed buildings. */
-  cellStaticValid(blockId: number, idx: number): boolean {
+  /** Where a cell's ground and clearance are checked: its centre and four corners, 0.5 m in. */
+  private cellPoints(blockId: number, idx: number): Vec2[] {
     const r = this.cellRect(blockId, idx, 0);
     const h = CELL / 2;
     const c = Math.cos(r.angle);
@@ -653,6 +705,33 @@ export class Network {
     ] as const) {
       pts.push({ x: r.x + (u * c - v * s) * (h - 0.5), z: r.z + (u * s + v * c) * (h - 0.5) });
     }
+    return pts;
+  }
+
+  /** A road's surface covers one of a cell's points (the cell can't stand beside it). */
+  private onRoad(pts: readonly Vec2[], curve: Curve, hw: number): boolean {
+    for (const p of pts) if (curve.project(p).d < hw - 0.05) return true;
+    return false;
+  }
+
+  /**
+   * Buildings standing on a lot that a road along `curve`, `hw` wide each side, would cover (P2):
+   * the lots `cellStaticValid` would then refuse, so building the road removes exactly these.
+   */
+  buildingsUnder(curve: Curve, hw: number): number[] {
+    const out = new Set<number>();
+    for (const k of this.cellHash.query(curve.bbox(hw + CELL))) {
+      const bld = this.st.blocks.get(keyBlock(k))!.bld[keyIdx(k)];
+      if (bld && !out.has(bld) && this.onRoad(this.cellPoints(keyBlock(k), keyIdx(k)), curve, hw))
+        out.add(bld);
+    }
+    return [...out].sort((a, b) => a - b);
+  }
+
+  /** Validity that doesn't depend on other cells: bounds, water, slope, roads, placed buildings. */
+  cellStaticValid(blockId: number, idx: number): boolean {
+    const r = this.cellRect(blockId, idx, 0);
+    const pts = this.cellPoints(blockId, idx);
     let lo = Infinity;
     let hi = -Infinity;
     for (const p of pts) {
@@ -663,11 +742,8 @@ export class Network {
       hi = Math.max(hi, y);
     }
     if ((hi - lo) / (CELL * Math.SQRT2) > MAX_CELL_SLOPE) return false;
-    for (const sid of this.segHash.queryPoint(r.x, r.z, CELL)) {
-      const hw = this.halfWidth(sid);
-      const curve = this.curve(sid);
-      for (const p of pts) if (curve.project(p).d < hw - 0.05) return false;
-    }
+    for (const sid of this.segHash.queryPoint(r.x, r.z, CELL))
+      if (this.onRoad(pts, this.curve(sid), this.halfWidth(sid))) return false;
     // A roundabout's ring and island (M19).
     const reach = JUNCTION.maxRadius + JUNCTION.ringWidth + CELL;
     for (const n of this.nodesIn({
@@ -689,9 +765,10 @@ export class Network {
    * Recompute validity for every cell centred in `box`, in priority order (occupied cells first,
    * then lower rows, older blocks, lower columns). Cells outside the box are fixed obstacles.
    * Cells that become invalid lose their zoning; occupied cells that fail static checks report
-   * their buildings as lost.
+   * their buildings as lost. Returns the lost buildings; `dryRun` only works them out (P2: a road
+   * preview counts what it would take away), changing nothing.
    */
-  revalidate(box: Box): void {
+  revalidate(box: Box, dryRun = false): number[] {
     const keys = this.cellHash.query(box);
     const inBox = new Set(keys);
     const rank = (k: number) => {
@@ -726,17 +803,22 @@ export class Network {
           }
         }
       }
-      const was = b.valid[i];
       if (ok) accepted.add(k);
+      if (!ok && b.bld[i]) lost.add(b.bld[i]!);
+      // (Cells in the box are judged against `accepted`, never against what's written here.)
+      if (dryRun) continue;
+      const was = b.valid[i];
       b.valid[i] = ok ? 1 : 0;
       if (!ok && b.zone[i] !== ZONE_NONE) b.zone[i] = ZONE_NONE;
-      if (!ok && b.bld[i]) lost.add(b.bld[i]!);
       if (was !== b.valid[i]) this.dirty.blocks.add(bid);
     }
-    for (const bld of [...lost].sort((x, y) => x - y)) {
+    const out = [...lost].sort((x, y) => x - y);
+    if (dryRun) return out;
+    for (const bld of out) {
       this.clearBuildingCells(bld);
       this.hooks.buildingLost(bld);
     }
+    return out;
   }
 
   /** Cell keys (block·1024 + index) whose centres lie within `r` of any point on the path. */

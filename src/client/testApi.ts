@@ -16,6 +16,7 @@ import { renderSounds, type SoundCheck } from '../audio/check';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
 import type { Chronicle } from '../sim/systems/chronicle';
+import type { SupplyBalance } from '../sim/systems/utilities';
 import type { PhotoState } from '../game';
 import { HEIGHT_RES, HEIGHT_STEP } from '../data/world';
 import type { ModelData } from '../render/assets/builder';
@@ -35,6 +36,18 @@ export interface Box {
 export interface TestApi {
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
+  /** Roundabout mode (P5): the size chosen, the last preview's ring and whether it fits, and the short road. */
+  getRing(): {
+    size: number | null;
+    radius: number | null;
+    ok: boolean | null;
+    short: number[];
+    at: { x: number; z: number } | null;
+  };
+  /** Roads cut off from the highway (P1), and those the traffic map paints red for it. */
+  getRoadIslands(): { islands: { segs: number[]; length: number }[]; painted: number[] };
+  /** The sim's dry run of a command: what it would cost and do, changing nothing. */
+  preview(cmd: Command): Promise<CommandResult>;
   getState(): Promise<
     CityStats & {
       renderStats: RenderStats;
@@ -64,7 +77,16 @@ export interface TestApi {
   segmentAt(
     x: number,
     z: number,
-  ): { id: number; type: string; oneway: number; deck: boolean; a: number; b: number; tram: boolean } | null;
+  ): {
+    id: number;
+    type: string;
+    name: string;
+    oneway: number;
+    deck: boolean;
+    a: number;
+    b: number;
+    tram: boolean;
+  } | null;
   /** The junction nearest a point within 20 m (M19): its roads, and its roundabout's radius. */
   junctionAt(x: number, z: number): { id: number; arms: number; roundabout: number; kind: string } | null;
   /** Volume/capacity on a segment at the rush-hour peak. */
@@ -130,6 +152,8 @@ export interface TestApi {
   }[];
   /** Client (CSS pixel) coordinates of a world point on the ground. */
   worldToScreen(x: number, z: number): { x: number; y: number };
+  /** Client coordinates of the road surface at a point on a road (its deck on a bridge, P12). */
+  roadToScreen(x: number, z: number): { x: number; y: number };
   /**
    * Earthworks as the client sees them (M13): samples changed from the generated terrain, the box
    * around them, the biggest cut and fill, and the terrain version.
@@ -318,6 +342,8 @@ export interface TestApi {
   checkForUpdate(): Promise<void>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
+  /** What the city makes, uses, buys and sells of power, water and garbage, and the winter forecast (P20). */
+  getSupply(): Promise<SupplyBalance>;
   /** The scenario being played (M18): its goals summary, and whether the brief or end screen is up. */
   getScenario(): {
     summary: CityStats['scenario'];
@@ -417,6 +443,14 @@ export function installTestApi(game: Game): TestApi {
   const api: TestApi = {
     ready: true,
     dispatch: (cmd) => game.dispatch(cmd),
+    preview: (cmd) => game.client.preview(cmd),
+    getRing: () => game.tools.road.ringPreview(),
+    getRoadIslands: () => ({
+      islands: game.world
+        .roadIslands()
+        .list.map((i) => ({ segs: [...i.segs], length: Math.round(i.length) })),
+      painted: game.overlay.active === 'traffic' ? [...game.overlay.islandPainted] : [],
+    }),
     getState: async () => {
       const stats = await game.client.query<CityStats>({ type: 'summary' });
       const w = game.world;
@@ -500,6 +534,7 @@ export function installTestApi(game: Game): TestApi {
       return {
         id: hit.seg,
         type: s.type,
+        name: s.name ?? '',
         oneway: s.oneway ?? 0,
         deck: !!s.deck,
         a: s.a,
@@ -619,6 +654,14 @@ export function installTestApi(game: Game): TestApi {
       })),
     worldToScreen: (x, z) => {
       const v = new Vector3(x, Math.max(0, game.world.heightAt(x, z)), z).project(game.renderer.camera);
+      const rect = game.renderer.canvas.getBoundingClientRect();
+      return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+    },
+    roadToScreen: (x, z) => {
+      const w = game.world;
+      const hit = w.net.nearestSegment({ x, z }, 12);
+      const y = hit ? w.roadHeight(hit.seg, hit.s, x, z) : Math.max(0, w.heightAt(x, z));
+      const v = new Vector3(x, y, z).project(game.renderer.camera);
       const rect = game.renderer.canvas.getBoundingClientRect();
       return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
     },
@@ -825,6 +868,7 @@ export function installTestApi(game: Game): TestApi {
     }),
     checkForUpdate: () => game.updates.check(),
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
+    getSupply: () => game.client.query<SupplyBalance>({ type: 'supply' }),
     getScenario: () => ({
       summary: game.world.stats.scenario,
       brief: game.scenarioBrief,

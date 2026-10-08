@@ -6,7 +6,8 @@ import { CIVIC } from '../data/civic';
 /** Click a building, civic building or road to demolish it. Hovering shows what would go. */
 export class BulldozeTool implements Tool {
   readonly id = 'bulldoze';
-  readonly usesLeftDrag = true;
+  readonly usesLeftDrag = false;
+  readonly clickOnly = true;
   private hover: string | null = null;
   private hoverInfo: string | null = null;
   private seq = 0;
@@ -16,6 +17,8 @@ export class BulldozeTool implements Tool {
   activate(): void {}
 
   deactivate(): void {
+    // A preview still on its way back must not draw a hint on the next tool (P11).
+    this.seq++;
     this.hover = null;
     this.game.renderer.ghost.highlightSegment(null, 0);
     this.game.renderer.ghost.showSelection(null);

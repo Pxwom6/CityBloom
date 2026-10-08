@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
@@ -25,8 +25,19 @@ export function TopBar() {
   const date = dateOf(Math.floor(game.world.displayTick));
   const WeatherIcon = WEATHER_ICON[st.weather.kind];
   const [weatherOpen, setWeatherOpen] = useState(false);
+  // On a narrow window the bar folds its lesser buttons into this menu (`#ui[data-bars='compact']`).
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const away = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    window.addEventListener('pointerdown', away);
+    return () => window.removeEventListener('pointerdown', away);
+  }, [moreOpen]);
   return (
-    <div class="topbar panel" data-testid="topbar">
+    <div class={`topbar panel ${st.scenario ? 'scenario' : ''}`} data-testid="topbar">
       {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
       <span class="divider" />
       <button
@@ -56,18 +67,37 @@ export function TopBar() {
           {formatNumber(st.jobsFilled)} / {formatNumber(st.jobs)}
         </span>
       </div>
-      <div class="stat" title="City approval: how happy residents are overall">
+      <div class="stat stat-approval" title="City approval: how happy residents are overall">
         <span class="label">Approval</span>
         <span class="value" data-testid="approval">
           {st.population > 0 ? `${Math.round(st.approval * 100)}%` : '—'}
         </span>
       </div>
       <Rci />
-      <CityButton />
-      <HistoryButton />
-      <RegionButton />
-      <AdvisorsButton />
-      <NotificationsButton />
+      <div class="topbar-more" ref={moreRef}>
+        <button
+          class="btn icon more-toggle"
+          data-testid="open-more"
+          aria-label="More"
+          aria-haspopup="true"
+          aria-expanded={moreOpen}
+          title="More: city, history, region, advisors, notifications"
+          onClick={() => setMoreOpen(!moreOpen)}
+        >
+          ⋯
+        </button>
+        <div
+          class={`topbar-panels panel ${moreOpen ? 'open' : ''}`}
+          data-testid="topbar-panels"
+          onClick={() => setMoreOpen(false)}
+        >
+          <CityButton />
+          <HistoryButton />
+          <RegionButton />
+          <AdvisorsButton />
+          <NotificationsButton />
+        </div>
+      </div>
       <span class="divider" />
       <button
         class="stat stat-btn stat-date"

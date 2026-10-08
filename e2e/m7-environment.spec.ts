@@ -85,7 +85,7 @@ test('M7: smoke drifts downwind, the air and education maps show it, and homes r
   const hp = await page.evaluate((h) => window.__game!.worldToScreen(h.x, h.z), home);
   await page.mouse.click(hp.x, hp.y);
   await expect(page.getByTestId('inspector-health')).toBeVisible();
-  await expect(page.getByTestId('inspector')).toContainText('Schooling');
+  await expect(page.getByTestId('inspector')).toContainText('Education level');
   await expect(page.getByTestId('inspector')).toContainText('Air');
   await shot(page, 'm7-inspector');
   errs.check();

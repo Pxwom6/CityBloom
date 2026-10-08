@@ -144,21 +144,28 @@ export class OverlayController {
   }
 
   private roadsKey = '';
+  /** Roads the traffic map shows red because they can't reach the highway (P1; for tests). */
+  islandPainted: number[] = [];
 
   /** Roads coloured by congestion at the current hour. */
   private refreshTraffic(): void {
     const w = this.game.world;
     const share = TRAFFIC.profile[Math.floor(hourOfDay(w.displayTick))] ?? 0.5;
-    const key = `traffic:${w.trafficVersion}:${share}:${this.district}:${w.districtsVersion}`;
+    const key = `traffic:${w.trafficVersion}:${w.roadsVersion}:${share}:${this.district}:${w.districtsVersion}`;
     if (key === this.roadsKey) return;
     this.roadsKey = key;
     const list: RoadTintPiece[] = [];
+    // Roads no car can reach from the highway show red (P1): empty, but cut off, not free-flowing.
+    const islands = w.roadIslands().of;
+    this.islandPainted = [];
     for (const seg of w.netState.segments.values()) {
       if (seg.type === 'highway' || isRail(seg.type) || !this.roadInFilter(seg.id)) continue;
-      const vc = w.segVC(seg.id, share);
+      const cut = islands.has(seg.id);
+      if (cut) this.islandPainted.push(seg.id);
+      const v = cut ? 1 : Math.min(1, w.segVC(seg.id, share) / 1.5);
       list.push({
         curve: w.net.curve(seg.id),
-        v: [Math.min(1, vc / 1.5), Math.min(1, vc / 1.5)],
+        v: [v, v],
         half: ROAD_TYPES[seg.type].width / 2 + 0.5,
         // Flyovers are tinted on their decks; one-way roads and ramps show which way they run (M19).
         ...(seg.deck ? { surface: (s: number, x: number, z: number) => w.roadHeight(seg.id, s, x, z) } : {}),

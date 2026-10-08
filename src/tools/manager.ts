@@ -3,7 +3,7 @@ import type { Game } from '../game';
 import { BulldozeTool } from './bulldozeTool';
 import { RoadTool } from './roadTool';
 import { SelectTool } from './selectTool';
-import type { Tool, ToolPointer } from './tool';
+import { clickSlop, type Tool, type ToolPointer } from './tool';
 import { ZoneTool } from './zoneTool';
 import { PlaceTool } from './placeTool';
 import { StopTool } from './stopTool';
@@ -14,6 +14,9 @@ import { MapTool } from './mapTool';
 
 export type ToolId =
   'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain' | 'map';
+
+/** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
+const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
 
 /** Routes canvas pointer and keyboard input to the active tool. */
 export class ToolManager {
@@ -32,6 +35,8 @@ export class ToolManager {
   readonly map: MapTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
+  /** Where a left press began for a click-only tool (P3), until the button comes up. */
+  private clickDown: { tool: Tool; x: number; y: number; id: number; type: string } | null = null;
 
   constructor(private game: Game) {
     this.select = new SelectTool(game);
@@ -49,6 +54,13 @@ export class ToolManager {
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
     canvas.addEventListener('pointermove', (e) => this.onMove(e));
     window.addEventListener('pointerup', (e) => this.onUp(e));
+    // A touch the browser takes over (a scroll, a system gesture) is no press, and no click.
+    window.addEventListener('pointercancel', (e) => {
+      this.pressed.delete(e.pointerId);
+      if (this.clickDown?.id === e.pointerId) this.clickDown = null;
+      if (this.photoDown?.id === e.pointerId) this.photoDown = null;
+      if (!this.pressed.size) this.pinch = false;
+    });
     canvas.addEventListener('pointerleave', () => {
       this.game.setHint(null);
       this.game.renderer.ghost.showBrush(null, 1);
@@ -57,7 +69,14 @@ export class ToolManager {
   }
 
   /** Where a left click began in photo mode (a click, not a drag, picks what to follow). */
-  private photoDown: { x: number; y: number } | null = null;
+  private photoDown: { x: number; y: number; id: number; type: string } | null = null;
+  /**
+   * Pointers down on the map, and whether a second came down while the first was (a pinch, PR #14
+   * review): nothing in a pinch is a click. A primary press starts afresh, so a lost release can't
+   * leave it stuck.
+   */
+  private pressed = new Set<number>();
+  private pinch = false;
 
   get activeId(): ToolId {
     return this.active.id as ToolId;
@@ -78,6 +97,7 @@ export class ToolManager {
     this.active.activate();
     this.game.renderer.controller.leftDragPans = !next.usesLeftDrag;
     this.game.renderer.terrain.uniforms.uGridOn.value = id === 'road' ? 1 : 0;
+    this.game.renderer.terrain.limitStrong = LIMIT_TOOLS.has(id);
     this.game.notify();
   }
 
@@ -91,33 +111,78 @@ export class ToolManager {
       shift: e.shiftKey,
       ctrl: e.ctrlKey || e.metaKey,
       alt: e.altKey,
+      id: e.pointerId,
+      type: e.pointerType,
     };
   }
 
   private onDown(e: PointerEvent): void {
+    if (e.isPrimary) {
+      this.pressed.clear();
+      this.pinch = false;
+    }
+    this.pressed.add(e.pointerId);
+    if (!e.isPrimary) {
+      // A second finger: the first one's press is a pinch, not a click.
+      if (!this.pinch) {
+        this.pinch = true;
+        this.clickDown = null;
+        this.photoDown = null;
+        if (!this.game.photo) this.active.pointerCancel?.();
+      }
+      return;
+    }
     // Photo mode (M16) has no tools: a click only picks something to follow.
     if (this.game.photo) {
-      if (e.button === 0) this.photoDown = { x: e.clientX, y: e.clientY };
+      if (e.button === 0)
+        this.photoDown = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType };
       return;
     }
     if (e.button === 2) {
       this.rightDown = { x: e.clientX, y: e.clientY };
       return;
     }
+    // A tool that acts on a click waits for the button to come up near where it went down: a longer
+    // drag is the camera panning (P3).
+    if (this.active.clickOnly) {
+      if (e.button === 0)
+        this.clickDown = {
+          tool: this.active,
+          x: e.clientX,
+          y: e.clientY,
+          id: e.pointerId,
+          type: e.pointerType,
+        };
+      return;
+    }
     this.active.pointerDown(this.pointer(e));
   }
 
   private onMove(e: PointerEvent): void {
-    if (this.game.photo) return;
+    if (this.game.photo || !e.isPrimary || this.pinch) return;
     if (this.game.renderer.controller.isDragging && !this.active.usesLeftDrag) return;
     this.active.pointerMove(this.pointer(e));
   }
 
   private onUp(e: PointerEvent): void {
+    this.pressed.delete(e.pointerId);
+    // The other fingers of a pinch come up to nothing; the last one up ends it.
+    if (!e.isPrimary) {
+      if (!this.pressed.size) this.pinch = false;
+      return;
+    }
+    const pinched = this.pinch;
+    if (!this.pressed.size) this.pinch = false;
     if (this.game.photo) {
       const d = this.photoDown;
       this.photoDown = null;
-      if (d && e.button === 0 && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5)
+      if (
+        d &&
+        !pinched &&
+        e.button === 0 &&
+        e.pointerId === d.id &&
+        Math.hypot(e.clientX - d.x, e.clientY - d.y) <= clickSlop(d.type)
+      )
         this.game.photoClick(e.clientX, e.clientY);
       return;
     }
@@ -126,6 +191,18 @@ export class ToolManager {
       this.rightDown = null;
       // A right click without a drag cancels the current action.
       if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) this.cancelOrExit();
+      return;
+    }
+    const c = this.clickDown;
+    if (c && e.button === 0 && e.pointerId === c.id) {
+      this.clickDown = null;
+      // The tool was left, or changed, between the press and the release: nothing to do.
+      if (c.tool !== this.active) return;
+      const p = this.pointer(e);
+      if (Math.hypot(e.clientX - c.x, e.clientY - c.y) <= clickSlop(c.type)) c.tool.pointerDown(p);
+      // A pan: moves were not delivered while the camera held the pointer, so put the ghost and hint
+      // back under it now.
+      else c.tool.pointerMove(p);
       return;
     }
     this.active.pointerUp(this.pointer(e));

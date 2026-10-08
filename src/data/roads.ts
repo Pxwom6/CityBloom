@@ -217,6 +217,8 @@ export const BUILDABLE_ROADS: RoadTypeId[] = [
 
 /** Track (M20): railways live in the network beside roads but have a graph of their own. */
 export const isRail = (t: RoadTypeId): boolean => t === 'rail' || t === 'mainline';
+/** A road the player built: not the regional highway, and not railway track (P9). */
+export const isPlayerRoad = (t: RoadTypeId): boolean => t !== 'highway' && !isRail(t);
 
 /** Roads a railway crosses at a level crossing (M20); it passes over anything bigger. */
 export const levelCrossing = (t: RoadTypeId): boolean => t === 'dirt' || t === 'street' || t === 'avenue';
@@ -271,6 +273,10 @@ export const GRADE_SEP = {
 export const SNAP = {
   node: 10,
   segment: 8,
+  /** An end this close to a road it could join snaps onto it (P1): past the 14–22 m a road must keep from one it doesn't join. */
+  near: 22,
+  /** However far out the camera is, a near miss reaches no further (PR #14 review). */
+  nearMax: 30,
   angleDeg: 5,
   grid: 8,
 };

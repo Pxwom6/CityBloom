@@ -310,6 +310,10 @@ function RoadInspector({ id }: { id: number }) {
   if (isRail(seg.type)) return <RailInspector id={id} />;
   // Trams along it (M20).
   const tramLine = w.lines.find((l) => l.mode === 'tram' && l.legs.some((x) => x.seg === id));
+  // Cut off from the highway (P1), with however many other roads share its fate.
+  const islands = w.roadIslands();
+  const island = rt.access ? islands.of.get(id) : undefined;
+  const others = island !== undefined ? islands.list[island]!.segs.length - 1 : 0;
   return (
     <aside class="inspector panel" data-testid="inspector">
       <header>
@@ -324,6 +328,13 @@ function RoadInspector({ id }: { id: number }) {
           ×
         </button>
       </header>
+      {island !== undefined && (
+        <div class="warn" data-testid="road-island">
+          Not connected to the highway
+          {others ? ` (nor ${others === 1 ? 'the road' : `the ${others} roads`} joined to it)` : ''}: nothing
+          grows here, and nobody can drive to or from town. Join one of its ends to a road that is.
+        </div>
+      )}
       <dl data-testid="road-traffic">
         <dt>Traffic</dt>
         <dd>{Math.round(w.traffic.get(id) ?? 0).toLocaleString('en-US')} cars a day</dd>
@@ -506,7 +517,9 @@ const NEEDS: [RegExp, string][] = [
   [/no fire station/i, 'A fire station within reach'],
   [/no police/i, 'A police station within reach'],
   [/no health care/i, 'A clinic or hospital within reach'],
-  [/no school/i, 'School seats nearby'],
+  [/primary school/i, 'A primary school with free places within reach'],
+  [/high school/i, 'A high school with free places within reach'],
+  [/university/i, 'A university with free places within reach'],
   [/crime/i, 'Police patrols to bring crime down'],
   [/without jobs/i, 'Jobs: zone commercial or industry'],
   [/long commute/i, 'Jobs closer to home, or faster roads'],
@@ -961,28 +974,37 @@ function garbageVerdict(g: NonNullable<CivicDetails['garbage']>): string {
 function GarbageTrucks({ civicId, g }: { civicId: number; g: NonNullable<CivicDetails['garbage']> }) {
   const game = useGameUpdates(300);
   const m = MODULE.get('garbageTruck')!;
-  const full = g.extraTrucks >= g.maxExtraTrucks;
+  // A purchase shows at once (P18): the count comes from the client's mirror, which a command's own
+  // frame updates before its reply, not from the details polled every 700 ms (and held back far
+  // longer when timers are throttled); the button waits while one is on its way.
+  const [busy, setBusy] = useState(false);
+  const bought = game.world.civics.get(civicId)?.modules.filter((x) => x === m.id).length ?? g.extraTrucks;
+  const full = bought >= g.maxExtraTrucks;
   return (
     <section class="trucks" data-testid="garbage-verdict">
-      <p class="muted">{garbageVerdict(g)}</p>
+      <p class="muted">{garbageVerdict({ ...g, extraTrucks: bought })}</p>
       <div class="module-row">
         <div>
           <strong>Extra trucks</strong>
-          <div class="muted">
-            {g.extraTrucks} of {g.maxExtraTrucks} bought. Each carries {g.truckCapacity} and costs +$
+          <div class="muted" data-testid="garbage-extra">
+            {bought} of {g.maxExtraTrucks} bought. Each carries {g.truckCapacity} and costs +$
             {m.upkeep}/month.
           </div>
         </div>
         <button
           class="btn small"
           data-testid="buy-truck"
-          disabled={full}
-          onClick={() =>
-            void game.dispatch({ type: 'addModule', civic: civicId, module: m.id }).then((r) => {
-              if (r.ok) game.audio?.play('place');
-              else game.toast(r.reason, 'bad');
-            })
-          }
+          disabled={full || busy}
+          onClick={() => {
+            setBusy(true);
+            void game
+              .dispatch({ type: 'addModule', civic: civicId, module: m.id })
+              .then((r) => {
+                if (r.ok) game.audio?.play('place');
+                else game.toast(r.reason, 'bad');
+              })
+              .finally(() => setBusy(false));
+          }}
         >
           {full ? 'All bought' : `Buy a truck $${m.cost.toLocaleString('en-US')}`}
         </button>
@@ -1143,7 +1165,7 @@ function BuildingInspector({ id }: { id: number | null }) {
             <dd class={d.sick > 0 && d.treated < 0.5 ? 'neg' : ''} data-testid="inspector-health">
               {d.sick === 0 ? 'Everyone is well' : `${d.sick} sick · ${Math.round(d.treated * 100)}% in care`}
             </dd>
-            <dt>Schooling</dt>
+            <dt>Education level</dt>
             <dd>{EDU_NAMES[Math.min(3, Math.floor(d.edu + 0.25))]}</dd>
           </>
         )}

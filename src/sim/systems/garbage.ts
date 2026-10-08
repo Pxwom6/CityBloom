@@ -26,6 +26,13 @@ export function garbageRate(sim: Sim, b: Building): number {
   return (k * (b.zone === ZONE_R ? b.pop * GARBAGE.perResident : b.pop * GARBAGE.perJob[b.zone]!)) / 24;
 }
 
+/** Garbage the whole city makes a day (what the facility inspector and the Region panel both report). */
+export function garbageMadePerDay(sim: Sim): number {
+  let made = 0;
+  for (const b of sim.state.buildings.values()) made += garbageRate(sim, b) * 24;
+  return made;
+}
+
 export function garbageHour(sim: Sim): void {
   for (const b of sim.state.buildings.values()) {
     const r = garbageRate(sim, b);

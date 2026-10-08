@@ -68,7 +68,19 @@ const LINES: [RegExp, Line[]][] = [
     [() => 'Someone broke into the shop next door.', () => "I don't walk home alone after dark any more."],
   ],
   [/no health care/i, [() => 'The nearest doctor is a long drive away.']],
-  [/no school/i, [() => 'No school place for our youngest.', () => 'The kids have nowhere to learn.']],
+  // What a home's school places lack (P25): the label names the level.
+  [/primary school/i, [() => 'No school place for our youngest.', () => 'The kids have nowhere to learn.']],
+  [
+    /high school/i,
+    [
+      () => 'The teenagers have no high school to go to.',
+      () => 'Our eldest has to leave town for high school.',
+    ],
+  ],
+  [
+    /university/i,
+    [() => 'Nobody here can study past high school.', () => 'No university for our school-leavers.'],
+  ],
   [/without jobs/i, [() => 'Still looking for work.', () => 'Another rejection letter today.']],
   [
     /long commute/i,

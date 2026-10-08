@@ -10,7 +10,7 @@ import { attachmentOf } from './commute';
 import { garbageMadePerDay } from './garbage';
 import { Dijkstra } from './graph';
 import { capacity, neighbour, regionExport, regionImport } from './region';
-import { monthsToWinter, pumpShare, solarShare, weatherUse } from './weather';
+import { monthsToWinter, pumpShare, solarShare, weatherUse, type WeatherState } from './weather';
 
 export interface UtilityStat {
   supply: number;
@@ -32,8 +32,23 @@ export function emptyUtilityStats(): UtilityStats {
 const dijkstra = new Dijkstra();
 const UTIL_LIST: Utility[] = ['power', 'water', 'sewage'];
 
-/** Output of a producer for a utility at current funding and site conditions. */
-export function civicOutput(sim: Sim, c: Civic, u: Utility): number {
+/** Sun and wind for an output figure: the share of solar output, and whether wind has a storm. */
+export interface PowerSky {
+  solar: number;
+  storm: boolean;
+}
+
+/**
+ * The sky a winter forecast counts on (PR #14 review): solar at its snowy midwinter share, wind
+ * without a storm's boost.
+ */
+export const WINTER_SKY: PowerSky = { solar: WEATHER.solar.snow * WEATHER.solarSeason.winter, storm: false };
+
+/**
+ * Output of a producer for a utility at current funding and site conditions, under today's sky or
+ * the one `sky` gives.
+ */
+export function civicOutput(sim: Sim, c: Civic, u: Utility, sky?: PowerSky): number {
   if (!civicOnline(c)) return 0;
   const def = civicDef(c);
   let out = def.output?.[u] ?? 0;
@@ -47,8 +62,10 @@ export function civicOutput(sim: Sim, c: Civic, u: Utility): number {
     out *= pumpShare(sim.state.weather);
   }
   // Sun and wind follow the weather (M22).
-  if (u === 'power' && def.id === 'solar') out *= solarShare(sim.state.weather, sim.state.tick);
-  if (u === 'power' && def.id === 'wind' && sim.state.weather.kind === 'storm') out *= WEATHER.windStorm;
+  if (u === 'power' && def.id === 'solar')
+    out *= sky ? sky.solar : solarShare(sim.state.weather, sim.state.tick);
+  if (u === 'power' && def.id === 'wind' && (sky ? sky.storm : sim.state.weather.kind === 'storm'))
+    out *= WEATHER.windStorm;
   return out * sim.fundingEff(def.dept);
 }
 
@@ -180,11 +197,21 @@ export function cityUse(sim: Sim, u: Utility, k?: ReturnType<typeof weatherUse>)
 }
 
 /**
- * The city's own power need and what it would have if the day's mean temperature were `mean`:
- * full heating, unless `tick` is given and eases it in for a city new to seasons. Each zone heats
- * by its own factor (`WEATHER.heating`), power sold is not counted as need, and power bought
- * counts only as much as the neighbours can still send in that cold (an industrial town's spare
- * power shrinks in winter); `cut` is how much less comes in.
+ * The coldest day a winter brings: the coldest month's mean with the deepest cold spell under it
+ * (`WEATHER.offset`). Forecasts plan for it (PR #14 review: planning for the month's mean left a
+ * city that just cleared the warning 181 MW short in a cold spell).
+ */
+export function coldestDay(w: WeatherState): number {
+  return Math.min(...CLIMATES[w.climate].temps) + WEATHER.offset[0];
+}
+
+/**
+ * The city's own power need and what it would have on a winter's day whose mean temperature is
+ * `mean`: full heating, unless `tick` is given and eases it in for a city new to seasons. Each
+ * zone heats by its own factor (`WEATHER.heating`), power sold is not counted as need, its own
+ * plants count at a snowy winter's sun and with no storm to drive the wind (`WINTER_SKY`), and
+ * power bought counts only as much as the neighbours can still send in that cold (an industrial
+ * town's spare power shrinks in winter); `cut` is how much less comes in.
  */
 export function powerOutlook(
   sim: Sim,
@@ -193,6 +220,10 @@ export function powerOutlook(
 ): { need: number; have: number; cut: number } {
   const w = { ...sim.state.weather, mean };
   const need = cityUse(sim, 'power', weatherUse(w, tick));
+  // The plants counted as `updateUtilities` counts them: on a road.
+  let own = 0;
+  for (const c of sim.state.civics.values())
+    if (c.access && sim.state.net.segments.has(c.access.seg)) own += civicOutput(sim, c, 'power', WINTER_SKY);
   let bought = 0;
   let then = 0;
   for (const d of sim.state.region.deals) {
@@ -201,17 +232,16 @@ export function powerOutlook(
     const n = neighbour(sim, d.neighbour);
     then += n ? Math.min(d.amount, capacity(sim, n, 'power', 'buy', w)) : 0;
   }
-  return { need, have: sim.state.utilityStats.power.supply - bought + then, cut: Math.max(0, bought - then) };
+  return { need, have: own + then, cut: Math.max(0, bought - then) };
 }
 
-/** The power outlook for the coldest month ahead; `months` away (0 in winter). Null with seasons off. */
+/** The power outlook for the coldest day ahead; `months` away (0 in winter). Null with seasons off. */
 export function winterOutlook(sim: Sim): ({ months: number } & ReturnType<typeof powerOutlook>) | null {
   const w = sim.state.weather;
   if (!w.seasons) return null;
   const months = monthsToWinter(w, sim.state.tick);
   if (!Number.isFinite(months)) return null;
-  const coldest = Math.min(...CLIMATES[w.climate].temps);
-  return { months, ...powerOutlook(sim, coldest, sim.state.tick + months * TICKS_PER_MONTH) };
+  return { months, ...powerOutlook(sim, coldestDay(w), sim.state.tick + months * TICKS_PER_MONTH) };
 }
 
 /** One utility for the Region panel: what the city makes and uses itself, and what crosses the border. */

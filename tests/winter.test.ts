@@ -3,6 +3,10 @@ import { Sim } from '../src/sim/sim';
 import { weatherSummary } from '../src/sim/systems/weather';
 import { dateOf, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../src/sim/time';
 import { buildTown, placeAlong, serveTown } from './helpers';
+import { advise } from '../src/sim/systems/advisors';
+import { winterOutlook } from '../src/sim/systems/utilities';
+import { WEATHER } from '../src/data/climate';
+import { FUNDING_MAX, FUNDING_MIN } from '../src/data/economy';
 
 const clone = (sim: Sim) => Sim.fromSave(JSON.parse(JSON.stringify(sim.save())));
 
@@ -80,5 +84,63 @@ describe('winter (M22)', () => {
     expect(b[1]!.commute).toBeLessThan(a[1]!.commute * 0.95);
     const cleared = [...withDepot.state.civics.values()].find((c) => c.def === 'works')!;
     expect(cleared.lastDay + cleared.processedToday).toBeGreaterThan(0);
+  });
+});
+
+describe('the winter forecast (PR #14 review)', () => {
+  // The review's balance run went 181 MW short for 14 hours in its third December: the careful mayor
+  // had built just enough to clear the warning, and a cold spell (up to 4 °C under the month's
+  // mean) with solar at its snowy winter output took the rest.
+  it('a city built to just clear the warning stays powered through a winter of cold spells', () => {
+    const sim = alpineTown();
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 });
+    // Some of its power from the sun.
+    const sunny = [...sim.state.net.segments.values()].find((s) => {
+      try {
+        placeAlong(sim, 'solar', s.id);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    expect(sunny).toBeDefined();
+    // Grown through the summer, to October: winter is two months off.
+    while (dateOf(sim.state.tick).month !== 9) sim.advance(TICKS_PER_HOUR * 6);
+    expect(winterOutlook(sim)!.months).toBe(2);
+    // Power funded as little as clears the warning, as a mayor tuning to the advisor would.
+    const warns = () => advise(sim).some((a) => a.title === 'Winter will need more power');
+    let lo = FUNDING_MIN;
+    let hi = FUNDING_MAX;
+    sim.dispatch({ type: 'setFunding', dept: 'power', pct: hi });
+    sim.advance(TICKS_PER_HOUR);
+    expect(warns()).toBe(false);
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      sim.dispatch({ type: 'setFunding', dept: 'power', pct: mid });
+      sim.advance(TICKS_PER_HOUR);
+      if (warns()) lo = mid;
+      else hi = mid;
+    }
+    sim.dispatch({ type: 'setFunding', dept: 'power', pct: hi });
+    console.log(
+      `[forecast] October: funding ${hi} % clears the warning; ${JSON.stringify(winterOutlook(sim))}`,
+    );
+    // December to February, every spell as cold as spells come, and snowing (solar at its lowest).
+    let worst = 0;
+    let short = 0;
+    while (dateOf(sim.state.tick).month !== 11) sim.advance(TICKS_PER_HOUR);
+    while (dateOf(sim.state.tick).month !== 2) {
+      const w = sim.state.weather;
+      w.offset = WEATHER.offset[0];
+      w.kind = 'snow';
+      w.strength = 0.5;
+      w.until = sim.state.tick + TICKS_PER_HOUR * 24;
+      sim.advance(TICKS_PER_HOUR);
+      const u = sim.state.utilityStats.power;
+      worst = Math.max(worst, u.unserved);
+      if (u.unserved > 0) short++;
+    }
+    console.log(`[forecast] winter: ${short} h short, up to ${worst} buildings without power`);
+    expect(worst).toBe(0);
   });
 });

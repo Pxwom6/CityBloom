@@ -1,5 +1,5 @@
 import { ROAD_TYPES, isPlayerRoad, isRail } from '../../data/roads';
-import { CLIMATES, WEATHER } from '../../data/climate';
+import { WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
@@ -13,7 +13,7 @@ import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { unploughable } from './ploughs';
 import { seasonEase } from './weather';
-import { powerOutlook, winterOutlook } from './utilities';
+import { coldestDay, powerOutlook, winterOutlook } from './utilities';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
 import { monthlyRates } from './economy';
@@ -639,8 +639,8 @@ function weatherAdvice(sim: Sim): Advice[] {
   // Seasons new to the city (a save from before them, Phase 2 review): heating is easing in; say
   // what a full winter will need, while there's time.
   if (w.grace && w.seasons && power.demand > 0) {
-    // The city's own need at the coldest month's heating, against what it would have then.
-    const full = powerOutlook(sim, Math.min(...CLIMATES[w.climate].temps));
+    // The city's own need on the coldest day's heating, against what it would have then.
+    const full = powerOutlook(sim, coldestDay(w));
     const done = Math.max(1, Math.ceil((w.grace.until - s.tick) / TICKS_PER_MONTH));
     const share = Math.round(seasonEase(w, s.tick) * 100);
     out.push({
@@ -651,9 +651,10 @@ function weatherAdvice(sim: Sim): Advice[] {
       map: 'power',
     });
   }
-  // Winter ahead: the city's own need in the coldest month (each zone heating by its own factor,
-  // eased in for a city new to seasons), against its own power and what the neighbours could still
-  // send in that cold. Power sold on isn't need, and power bought counts only as much as is sent.
+  // Winter ahead: the city's own need on the coldest day (the coldest month in its deepest cold
+  // spell, each zone heating by its own factor, eased in for a city new to seasons), against its
+  // own power under a snowy winter sky and what the neighbours could still send in that cold. Power
+  // sold on isn't need, and power bought counts only as much as is sent.
   const o = winterOutlook(sim);
   if (o && o.months > 0 && o.months <= 3 && power.demand > 0 && o.have < o.need * 1.05)
     out.push({

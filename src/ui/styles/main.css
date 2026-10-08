@@ -1074,13 +1074,16 @@ body {
   margin-top: var(--space-3);
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
 }
-.inspector footer .btn.danger {
+/* Every footer button with an icon, not only Bulldoze: Move's icon had no size and filled the panel. */
+.inspector footer .btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
 }
-.inspector footer .btn.danger svg {
+.inspector footer .btn svg {
   width: 16px;
   height: 16px;
   flex: none;

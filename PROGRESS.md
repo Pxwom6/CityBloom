@@ -1,9 +1,10 @@
 # PROGRESS
 
 Phase 3 (graphics, SPEC-3.md) and all five model batches are merged into `main`, which deploys the
-live site at https://pxwom6.github.io/CityBloom/. The playthrough fix round (`PLAYTHROUGH-FIXES.md`,
-P1–P26 below) is on the `playthrough-fixes` branch, in a pull request into `main` for the owner to
-merge.
+live site at https://pxwom6.github.io/CityBloom/, and so is the playthrough fix round
+(`PLAYTHROUGH-FIXES.md`, P1–P26 below; PR #14). Getting the game to players (an Install button on the
+main menu, and asking the browser to keep the saves) is on the `install-and-keep-saves` branch, in a
+pull request into `main` for the owner to merge.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -155,23 +156,26 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Nothing. The playthrough fix round (`PLAYTHROUGH-FIXES.md`) is done: all 26 items ticked above, on
-the `playthrough-fixes` branch, in a pull request into `main` for the owner to merge. Each was
-reproduced in a test that failed first and checked through the UI with screenshots looked at
-(`docs/screenshots/fix*-*.png`; one short city touching every fixed area in
-`docs/screenshots/fixes-tour-*.png`, `e2e/fixes-tour.spec.ts`). The full check: typecheck and lint
-clean, 552 unit, scenario and legacy tests, 84 of 84 e2e (M21 needed to say yes to P2's question;
-DECISIONS), and the three playthrough specs. Reasons for every call are in `docs/DECISIONS.md`,
-"Playthrough fixes".
+Getting the game to players, on the `install-and-keep-saves` branch (no executable: the site is
+already an installable app; DECISIONS, "Sharing the game"):
+- **Install Citybloom** on the main menu: the browser's own install dialog in Chrome and Edge, the
+  steps in Safari on a Mac (File → Add to Dock) and on iPhone and iPad; hidden in the installed app
+  and where the browser can't install (`src/client/install.ts`).
+- **Keeping the saves**: the game asks the browser for persistent storage when a city or the map
+  editor opens (not on the main menu, where Firefox would ask a first-time visitor), at once in the
+  installed app, and again right after installing (`src/client/keepSaves.ts`). The load screen says
+  cities live in this browser and move by Export and Import.
+- The main menu scrolls in a window too short for it (a phone held sideways).
 
-The PR #14 review's six follow-ups (R1–R6 above) are done on the same branch, each reproduced in a
-test that failed first ("PR #14 review follow-ups" in DECISIONS; balance and frame times under
-"Performance (playthrough fixes)"). Full check after them: typecheck and lint clean, 557 unit,
-scenario and legacy tests, 89 of 89 e2e, and the three playthrough specs (the fixes tour now says
-yes to R4's question: its roundabout takes two corner lots).
+Checked with `tests/install.test.ts` and `e2e/app-install.spec.ts` (a stand-in for the browser's offer:
+Playwright's contexts are incognito, where Chrome never offers installing), screenshots
+`docs/screenshots/install-*.png`, and once with a persistent Chromium profile, where the browser's
+real offer brought the button up and the click opened its dialog. The playthrough fix round is
+merged (PR #14); its record is in DECISIONS, "Playthrough fixes".
 
 ## Next tasks
-1. The owner: merge the `playthrough-fixes` pull request into `main` when happy, which publishes it.
+1. The owner: merge the `install-and-keep-saves` pull request, then try installing on the Mac ("To
+   check on the Mac").
 2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
    buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
    demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it
@@ -755,6 +759,7 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
 - Level crossings and trams (Phase 2 review): the barriers coming down and cars waiting behind them, and trams and cars sharing a busy avenue, at 60 fps; visible cars cost 0.3–1.2 ms a frame in the rail scene on this VM, where a slow frame runs up to 20 traffic steps (`renderStats.trafficMs`).
 - Rail (M20): trams, trains and freight trains at 60 fps in a big city with several lines; how the tram wires, level crossings, stations and the freight yard look close up; whether cars following round the tram depot and crossings read well.

@@ -146,12 +146,46 @@ function MainMenu() {
         <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        <InstallButton />
       </nav>
       <footer class="shell-foot" data-testid="shell-foot">
         Version {GAME_VERSION} · build {BUILD_ID}
         {game.updates.offlineReady && ' · works offline'}
       </footer>
     </div>
+  );
+}
+
+/** Safari's steps to install, which it can't offer from a page. */
+const INSTALL_STEPS = {
+  'mac-safari': 'In Safari’s menu bar, choose File → Add to Dock.',
+  ios: 'Tap Share, then Add to Home Screen.',
+} as const;
+
+/**
+ * Install the game as an app: the browser's own dialog in Chrome and Edge (whose installed app
+ * shares the tab's saves), or the steps in Safari (whose app keeps its own, so cities move across
+ * by file).
+ */
+function InstallButton() {
+  const game = useGame();
+  const [steps, setSteps] = useState(false);
+  const way = game.install.way;
+  if (!way) return null;
+  const note =
+    way === 'prompt' || !steps
+      ? 'Its own icon and window, like any other app'
+      : `${INSTALL_STEPS[way]} Saved cities stay here: Export one, then Import it in the app.`;
+  return (
+    <button
+      class="shell-btn ghost"
+      data-testid="main-install"
+      aria-expanded={way === 'prompt' ? undefined : steps}
+      onClick={() => (way === 'prompt' ? void game.install.prompt() : setSteps(!steps))}
+    >
+      <span>Install Citybloom</span>
+      <small data-testid="install-note">{note}</small>
+    </button>
   );
 }
 
@@ -614,6 +648,10 @@ function LoadScreen() {
           )
         }
       />
+      <p class="settings-note" data-testid="saves-note">
+        Cities are saved in this browser. To keep a copy elsewhere or play one on another device, Export it,
+        then Import it there.
+      </p>
       <footer class="shell-actions">
         <button class="btn" data-testid="shell-back" onClick={() => game.closeScreen()}>
           Back

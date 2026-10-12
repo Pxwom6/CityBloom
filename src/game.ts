@@ -22,6 +22,8 @@ import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
+import type { AppInstall } from './client/install';
+import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
@@ -174,6 +176,10 @@ export class Game {
   readonly regionView: RegionView;
   /** New versions of the app (the service worker, M15). */
   readonly updates = new AppUpdates(() => this.notify());
+  /** Asking the browser to keep the saves (persistent storage). */
+  readonly keeper = new SaveKeeper((navigator as { storage?: PersistentStorage }).storage, () =>
+    this.notify(),
+  );
   /** Saving the city before switching to a new version. */
   updating = false;
   /** Photo mode, while it's on (M16). */
@@ -190,7 +196,10 @@ export class Game {
     readonly client: SimClient,
     readonly world: ClientWorld,
     readonly renderer: GameRenderer,
+    /** Installing the game as an app from the main menu (made before the game, see main.ts). */
+    readonly install: AppInstall,
   ) {
+    install.onChange = () => this.notify();
     client.onFrame((diff, perf, speed) => {
       this.world.applyFrame(diff);
       // The main menu's demo town runs quietly.

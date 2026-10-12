@@ -17,11 +17,18 @@ import { AudioEngine } from './audio/engine';
 import { loadSettings } from './client/settings';
 import { loadModels } from './client/models';
 import { justUpdated } from './client/pwa';
+import { AppInstall } from './client/install';
 import type { Difficulty, GameOptions } from './sim/state';
 import type { SaveFile } from './sim/save';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
+
+/**
+ * Listening from the start: Chrome and Edge offer to install the game (beforeinstallprompt) once the
+ * page has loaded, which can be before the game has finished booting.
+ */
+const install = new AppInstall(window);
 
 /**
  * A save shipped with the game as a static file: the small town growing behind the main menu (made
@@ -153,7 +160,7 @@ async function boot(): Promise<void> {
   await models;
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const renderer = new GameRenderer(canvas, world);
-  const game = new Game(client, world, renderer);
+  const game = new Game(client, world, renderer, install);
   game.audio = new AudioEngine(game.settings);
   if (editing) {
     game.mode = 'editor';
@@ -207,6 +214,14 @@ async function boot(): Promise<void> {
       'ok',
       6000,
     );
+  // Ask the browser to keep the saves once there's a city or a map to keep (not on the main menu,
+  // where Firefox would put a question to a first-time visitor). The installed app asks at once, and
+  // so does this page right after installing: browsers agree to installed apps more readily.
+  if (game.mode !== 'menu' || install.installed) void game.keeper.ask();
+  install.onInstalled = () => {
+    game.toast('Citybloom is installed: open it from its icon. Your saved cities are there too.', 'ok', 8000);
+    void game.keeper.ask(true);
+  };
 
   const loop = (now: number) => {
     game.frame(now);

@@ -587,7 +587,9 @@ body {
 }
 .shell.menu {
   place-items: center start;
-  padding: 0 0 0 clamp(var(--space-5), 7vw, 7rem);
+  /* A window too short for the menu (a phone held sideways) scrolls to its last buttons. */
+  overflow-y: auto;
+  padding: var(--space-4) 0 var(--space-4) clamp(var(--space-5), 7vw, 7rem);
   background: linear-gradient(90deg, rgba(18, 26, 36, 0.62) 0%, rgba(18, 26, 36, 0.28) 45%, transparent 75%);
 }
 @keyframes shell-in {
@@ -666,6 +668,16 @@ body {
 .shell-btn.quiet {
   background: transparent;
   box-shadow: none;
+}
+/* A secondary entry on the main menu's dark backdrop (Install): smoked glass, light text. */
+.shell-btn.ghost {
+  background: rgba(18, 26, 36, 0.5);
+  border-color: rgba(246, 243, 234, 0.35);
+  color: var(--color-text-inverse);
+  box-shadow: none;
+}
+.shell-btn.ghost:hover:not(:disabled) {
+  background: rgba(18, 26, 36, 0.66);
 }
 .shell-btn .slot-meta {
   color: inherit;

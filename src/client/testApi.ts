@@ -15,6 +15,8 @@ import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
+import type { InstallWay } from './install';
+import type { SavesKept } from './keepSaves';
 import type { Chronicle } from '../sim/systems/chronicle';
 import type { SupplyBalance } from '../sim/systems/utilities';
 import type { PhotoState } from '../game';
@@ -332,9 +334,20 @@ export interface TestApi {
     };
     randomDisasters: boolean;
     tip: string | null;
-    /** The build shown in the menu, and the service worker's state (M15). */
+    /**
+     * The build shown in the menu, and the service worker's state (M15); how the menu offers to
+     * install the game, and what the browser said about keeping the saves (and how often it was asked).
+     */
     build: string;
-    app: { waiting: boolean; offlineReady: boolean; controlled: boolean };
+    app: {
+      waiting: boolean;
+      offlineReady: boolean;
+      controlled: boolean;
+      install: InstallWay;
+      installed: boolean;
+      saves: SavesKept;
+      savesAsked: number;
+    };
     /** First-launch graphics check: running, and its last answer. */
     graphics: { checking: boolean; result: CheckResult | null };
   };
@@ -863,6 +876,10 @@ export function installTestApi(game: Game): TestApi {
         waiting: game.updates.waiting,
         offlineReady: game.updates.offlineReady,
         controlled: !!navigator.serviceWorker?.controller,
+        install: game.install.way,
+        installed: game.install.installed,
+        saves: game.keeper.state,
+        savesAsked: game.keeper.asks,
       },
       graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
     }),

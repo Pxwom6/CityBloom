@@ -31,11 +31,13 @@ the open-source libraries).
 
 Once GitHub Pages is on for this repository (see the top of `PROGRESS.md`), every push to `main`
 publishes the game at **https://pxwom6.github.io/CityBloom/**. It's an installable app: after one
-visit it plays offline, your browser's install button (or Share → Add to Home Screen on iPhone and
-iPad) puts it in a window of its own, and when a new version is out the game offers to reload into
-it, saving your city first. Saves stay in your browser across updates; export them from the load
-screen to keep a copy. On the first launch a quick check picks graphics that suit the device (a
-lighter preset on older laptops); Settings shows the pick and can check again.
+visit it plays offline, **Install Citybloom** on the main menu (Chrome and Edge; in Safari, File →
+Add to Dock, or Share → Add to Home Screen on iPhone and iPad) puts it in a window of its own, and
+when a new version is out the game offers to reload into it, saving your city first. Saves stay in
+your browser across updates, and the game asks the browser to keep them; export them from the load
+screen to keep a copy or move one to another browser or device. On the first launch a quick check
+picks graphics that suit the device (a lighter preset on older laptops); Settings shows the pick and
+can check again.
 
 ## Run it
 

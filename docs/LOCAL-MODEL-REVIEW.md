@@ -1,7 +1,7 @@
 # Local model review (Qwen 3.5 35B-A3B via `local-delegate`)
 
 A trial on 2026-10-18, branch `local-model-test`: three Vitest files delegated one per call, each
-reviewed, run, linted and typechecked by Claude. Nothing is committed yet.
+reviewed, run, linted and typechecked by Claude, then committed in PR #16.
 
 ## Results
 

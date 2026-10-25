@@ -66,7 +66,8 @@ export async function until(
 ): Promise<void> {
   const t0 = performance.now();
   while (!cond()) {
-    if (performance.now() - t0 > timeoutMs) throw new Error(`timed out waiting for ${typeof what === 'string' ? what : what()}`);
+    if (performance.now() - t0 > timeoutMs)
+      throw new Error(`timed out waiting for ${typeof what === 'string' ? what : what()}`);
     await new Promise((r) => setTimeout(r, 10));
   }
 }

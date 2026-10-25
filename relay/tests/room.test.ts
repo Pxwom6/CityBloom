@@ -78,8 +78,19 @@ describe('a room (M30), with headless players', () => {
       expect.arrayContaining(['Reconnecting…', 'Back in the room']),
     );
 
-    await until(() => host.driver.tick > 6 * TICKS_PER_MONTH, 90_000, () =>
-      JSON.stringify([host, sam, kit].map((p) => [p.session.state, p.driver.tick, p.session.allowed, p.session.waitingFor])) + JSON.stringify(host.session.players));
+    await until(
+      () => host.driver.tick > 6 * TICKS_PER_MONTH,
+      90_000,
+      () =>
+        JSON.stringify(
+          [host, sam, kit].map((p) => [
+            p.session.state,
+            p.driver.tick,
+            p.session.allowed,
+            p.session.waitingFor,
+          ]),
+        ) + JSON.stringify(host.session.players),
+    );
     let t = await settle(host, [host, sam, kit]);
     expect(simDesync(host.driver.sim, sam.driver.sim).text).toBe('The cities agree');
     expect(simDesync(host.driver.sim, kit.driver.sim).text).toBe('The cities agree');

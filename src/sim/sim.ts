@@ -385,7 +385,7 @@ export class Sim {
       weather: initialWeather(options.preset, 0, map?.climate),
       region:
         options.region === false || options.editor
-          ? { neighbours: [], deals: [], nextDeal: 1 }
+          ? { neighbours: [], deals: [], nextDeal: 1, project: null }
           : initialRegion(options.seed),
       map,
       builtBy: new Map(),

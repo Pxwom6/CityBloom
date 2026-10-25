@@ -125,7 +125,7 @@ export function initialRegion(seed: string): RegionState {
       history: [population],
     };
   });
-  return { neighbours, deals: [], nextDeal: 1 };
+  return { neighbours, deals: [], nextDeal: 1, project: null };
 }
 
 const NEIGHBOUR_KIND_ORDER: NeighbourKind[] = ['industrial', 'suburb', 'resort'];

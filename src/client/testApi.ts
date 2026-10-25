@@ -42,6 +42,26 @@ export interface TestApi {
    * stamped events by the test; `lockstepState` reports its tick, how far behind it is, its hourly
    * checksums and how many events it applied or found late.
    */
+  /** The shared city's room (M30), as this page sees it; null when not shared. */
+  getNet(): {
+    code: string;
+    kind: 'online' | 'p2p';
+    state: string;
+    you: number;
+    host: boolean;
+    pacer: number;
+    speed: number;
+    tick: number;
+    allowed: number;
+    waitingFor: string | null;
+    players: { id: number; name: string; online: boolean; joining: boolean; host: boolean }[];
+    sent: { messages: number; bytes: number };
+    received: { messages: number; bytes: number };
+  } | null;
+  /** Drop this page's connection to the room as a network would (it reconnects by itself). */
+  netDrop(): void;
+  /** Knock this page's city out of step (the room should catch it and resync). */
+  netPerturb(): void;
   lockstepShare(player: number): void;
   lockstepFeed(events: Stamped[], allow: number): void;
   lockstepState(): {
@@ -471,6 +491,34 @@ export function installTestApi(game: Game): TestApi {
   const shared = { checksums: [] as [number, string][], applied: 0, late: 0, listening: false };
   const api: TestApi = {
     ready: true,
+    getNet: () => {
+      const mp = game.net;
+      if (!mp) return null;
+      const s = mp.session;
+      return {
+        code: mp.code,
+        kind: mp.kind,
+        state: s.state,
+        you: s.you,
+        host: s.isHost,
+        pacer: s.room?.pacer ?? 0,
+        speed: s.room?.speed ?? 0,
+        tick: game.client.tick,
+        allowed: s.allowed,
+        waitingFor: s.waitingFor,
+        players: s.players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          online: p.online,
+          joining: p.joining,
+          host: p.host,
+        })),
+        sent: { ...s.sent },
+        received: { ...s.received },
+      };
+    },
+    netDrop: () => game.net?.session.dropForTest(),
+    netPerturb: () => game.client.perturb(),
     lockstepShare: (player) => {
       if (!shared.listening) {
         shared.listening = true;

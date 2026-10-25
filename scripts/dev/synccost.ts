@@ -20,3 +20,6 @@ console.log('hash ms', (performance.now() - t).toFixed(1));
 t = performance.now();
 const s = JSON.stringify(sim.save());
 console.log('save ms', (performance.now() - t).toFixed(1), 'bytes', s.length);
+t = performance.now();
+const again = Sim.fromSave(sim.save());
+console.log('save + load ms', (performance.now() - t).toFixed(1), again.state.totals.population);

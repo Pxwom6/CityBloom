@@ -35,6 +35,8 @@ export class SimClient implements SimDriver {
   /** The sim's tick and, in a shared city, how far behind the room it is (from the latest frame). */
   tick = 0;
   behind = 0;
+  /** Test builds pass test mode on to every city the worker opens. */
+  testMode = false;
   onError: (message: string) => void = (m) => console.error(`[sim] ${m}`);
 
   constructor() {
@@ -141,6 +143,11 @@ export class SimClient implements SimDriver {
     this.post({ type: 'share', player, lastSeq });
   }
 
+  /** Test builds: knock this machine's city out of step. */
+  perturb(): void {
+    this.post({ type: 'perturb' });
+  }
+
   unshare(): void {
     this.post({ type: 'unshare' });
   }
@@ -151,11 +158,11 @@ export class SimClient implements SimDriver {
   }
 
   /** Join or resync from a room snapshot. */
-  loadShared(snapshot: SharedSnapshot, player: number, testMode = false): Promise<Snapshot> {
+  loadShared(snapshot: SharedSnapshot, player: number, resync = false): Promise<Snapshot> {
     return new Promise((resolve, reject) => {
       this.readyResolve = resolve;
       this.readyReject = reject;
-      this.post({ type: 'loadShared', snapshot, player, testMode });
+      this.post({ type: 'loadShared', snapshot, player, testMode: this.testMode, resync });
     });
   }
 

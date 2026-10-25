@@ -30,6 +30,8 @@ export interface SessionOptions {
   color: number;
   /** Make the room from the city the driver holds. */
   create?: CreateRoom;
+  /** Come back as this player (a reloaded page), asking for the city afresh. */
+  rejoin?: { id: number; secret: string };
   /** How often to report progress, and how often the pacer moves time (ms). */
   statusEvery?: number;
   clockEvery?: number;
@@ -96,6 +98,15 @@ export class RoomSession {
   ) {
     this.now = opts.now ?? (() => performance.now());
     this.tps = opts.ticksPerSecond ?? SPEED_TICKS_PER_SECOND;
+    if (opts.rejoin) {
+      this.you = opts.rejoin.id;
+      this.secret = opts.rejoin.secret;
+    }
+  }
+
+  /** Who this player is in the room (to rejoin after a reload). */
+  get credentials(): { id: number; secret: string } | null {
+    return this.you ? { id: this.you, secret: this.secret } : null;
   }
 
   private readonly tps: readonly number[];
@@ -104,7 +115,7 @@ export class RoomSession {
   start(): Promise<void> {
     this.unsub = this.driver.onShared((m) => this.fromSim(m));
     const p = new Promise<void>((resolve, reject) => (this.started = { resolve, reject }));
-    void this.open(false);
+    void this.open(!!this.opts.rejoin);
     this.timers.push(setInterval(() => this.statusTick(), this.opts.statusEvery ?? 500));
     this.timers.push(setInterval(() => this.clockTick(), this.opts.clockEvery ?? 250));
     return p;
@@ -157,10 +168,12 @@ export class RoomSession {
         name: this.opts.name,
         color: this.opts.color,
         ...(this.opts.create && !rejoin ? { create: this.opts.create } : {}),
-        ...(rejoin ? { rejoin: { id: this.you, secret: this.secret, seq: this.lastSeq } } : {}),
+        ...(rejoin
+          ? { rejoin: { id: this.you, secret: this.secret, seq: this.loadedOnce ? this.lastSeq : -2 } }
+          : {}),
       });
     } catch (err) {
-      if (rejoin) return this.dropped(err instanceof Error ? err.message : String(err));
+      if (rejoin && this.loadedOnce) return this.dropped(err instanceof Error ? err.message : String(err));
       this.fail(`Couldn't reach the room (${err instanceof Error ? err.message : String(err)})`);
     }
   }
@@ -223,7 +236,7 @@ export class RoomSession {
         this.secret = m.secret;
         this.room = m.room;
         this.players = m.players;
-        if (m.join === 'upload') await this.upload();
+        if (m.join === 'upload') this.upload();
         else if (m.join === 'snapshot') {
           this.state = 'joining';
           this.changed();
@@ -240,7 +253,7 @@ export class RoomSession {
         const parts = this.assembler.add(m.meta, m.part, m.data);
         if (!parts) return;
         const snap = decodeSnapshot(parts);
-        await this.driver.loadShared(snap, this.you);
+        await this.driver.loadShared(snap, this.you, m.reason === 'resync' || this.loadedOnce);
         this.lastSeq = snap.seq;
         this.loadedOnce = true;
         return;
@@ -296,17 +309,11 @@ export class RoomSession {
 
   private loadedOnce = false;
 
-  /** Making the room: the city as it stands, then this game shares it. */
-  private async upload(): Promise<void> {
-    const save = await this.driver.save();
-    const { meta, parts } = encodeSnapshot(
-      { save, history: [], seq: -1, eventHash: 0x811c9dc5 },
-      `${this.you}-up`,
-    );
-    this.driver.share(this.you, -1);
+  /** Making the room: this game shares its city, which sends it up as the room's first snapshot. */
+  private upload(): void {
     this.loadedOnce = true;
     this.state = 'joining';
-    parts.forEach((data, part) => this.send({ t: 'snap', meta, part, data }));
+    this.driver.share(this.you, -1);
   }
 
   // ---------------------------------------------------------------- from the sim
@@ -329,7 +336,8 @@ export class RoomSession {
         }
         return;
       case 'snapshot': {
-        const { meta, parts } = encodeSnapshot(m.snapshot, `${this.you}-${m.tick}`);
+        const id = m.reason === 'upload' ? `${this.you}-up` : `${this.you}-${m.tick}`;
+        const { meta, parts } = encodeSnapshot(m.snapshot, id);
         parts.forEach((data, part) => this.send({ t: 'snap', meta, part, data }));
         return;
       }

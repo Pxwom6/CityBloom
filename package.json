@@ -21,12 +21,14 @@
     "bench": "tsx scripts/bench.ts",
     "balance": "tsx scripts/balance.ts",
     "models:check": "tsx scripts/models-check.ts",
-    "xbrowser": "playwright test -c playwright.xb.config.ts"
+    "xbrowser": "playwright test -c playwright.xb.config.ts",
+    "relay": "tsx relay/local.ts 8787"
   },
   "dependencies": {
     "fflate": "^0.8.3",
     "preact": "^10.29.8",
-    "three": "^0.186.0"
+    "three": "^0.186.0",
+    "trystero": "^0.26.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

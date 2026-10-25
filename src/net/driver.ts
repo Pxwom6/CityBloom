@@ -14,7 +14,8 @@ import type { SharedMessage } from '../client/simClient';
 export interface SimDriver {
   share(player: number, lastSeq: number): void;
   stamped(events: Stamped[], allow: number): void;
-  loadShared(snapshot: SharedSnapshot, player: number): Promise<unknown>;
+  /** Join (`resync` false) or catch up a city already on screen (true). */
+  loadShared(snapshot: SharedSnapshot, player: number, resync?: boolean): Promise<unknown>;
   unshare(): void;
   /** A save of the city as it stands (solo: settled). */
   save(): Promise<SaveFile>;
@@ -76,19 +77,17 @@ export class HeadlessDriver implements SimDriver {
     if (eventHash !== undefined) ls.eventHash = eventHash;
     this.sim.viewer = this.player;
     this.lastSum = this.sim.tick;
+    ls.onRebirth = () => {
+      this.sim = ls.sim;
+    };
     ls.onApplied = (a) => {
       if (a.ev.kind === 'cmd') this.emit({ type: 'applied', list: [a] });
-      else if (a.ev.taker === this.player)
+      else if (a.ev.taker === this.player && a.save)
         this.emit({
           type: 'snapshot',
           tick: a.tick,
           reason: a.ev.reason,
-          snapshot: {
-            save: this.sim.save('headless'),
-            history: this.sim.historyState(),
-            seq: a.seq,
-            eventHash: ls.eventHash,
-          },
+          snapshot: { save: a.save, history: ls.sim.historyState(), seq: a.seq, eventHash: ls.eventHash },
         });
     };
     this.lockstep = ls;
@@ -98,6 +97,14 @@ export class HeadlessDriver implements SimDriver {
     this.player = player;
     this.sim.setHistoryState([]);
     this.attach(lastSeq);
+    const ls = this.lockstep!;
+    const save = ls.rebirth();
+    this.emit({
+      type: 'snapshot',
+      tick: this.sim.tick,
+      reason: 'upload',
+      snapshot: { save, history: [], seq: lastSeq, eventHash: ls.eventHash },
+    });
   }
 
   stamped(events: Stamped[], allow: number): void {

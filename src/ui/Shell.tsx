@@ -1,3 +1,5 @@
+import { FriendsScreen } from './Friends';
+import { relayUrl } from '../net/multiplayer';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
 import { ScenarioScreen } from './Scenario';
 import { SCENARIOS } from '../data/scenarios';
@@ -131,6 +133,15 @@ function MainMenu() {
         >
           <span>New city</span>
         </button>
+        <button
+          class="shell-btn"
+          data-testid="main-friends"
+          title="Build one city together: host a room or join one with a code"
+          onClick={() => game.openScreen('friends')}
+        >
+          <span>Play with friends</span>
+          <small>build one city together</small>
+        </button>
         <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
           <span>Scenarios</span>
           <small>{SCENARIOS.length} challenges</small>
@@ -254,6 +265,7 @@ function NewGame() {
       elections: elections && !sandbox ? '1' : '0',
     });
     if (mine) q.set('map', mine.id);
+    if (game.hostKind) q.set('host', game.hostKind);
     if (tut && !sandbox) q.set('tutorial', '1');
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
@@ -446,6 +458,7 @@ function PauseMenu() {
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        {!game.net && <InviteButtons />}
         <div class="shell-row">
           <button
             class="shell-btn"
@@ -469,6 +482,38 @@ function PauseMenu() {
 }
 
 /** Hidden file input: imports a save into its own slot and opens it. */
+/** Share the city being played (M30): online, or straight from this browser. */
+function InviteButtons() {
+  const game = useGame();
+  const online = !!relayUrl();
+  const host = async (kind: 'online' | 'p2p') => {
+    game.closeScreen();
+    if (await game.hostRoom(kind)) game.openPanel('room');
+  };
+  return (
+    <div class="shell-row">
+      <button
+        class="shell-btn"
+        data-testid="pause-invite"
+        title={
+          online
+            ? 'Share this city in an online room: friends join with its code or invite link'
+            : 'Share this city from this browser: friends connect straight to you while you play'
+        }
+        onClick={() => void host(online ? 'online' : 'p2p')}
+      >
+        <span>Invite friends</span>
+        <small>{online ? 'an online room' : 'from this computer'}</small>
+      </button>
+      {online && (
+        <button class="shell-btn" data-testid="pause-invite-p2p" onClick={() => void host('p2p')}>
+          <span>Host on this computer</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | null } }) {
   const game = useGame();
   return (
@@ -941,6 +986,12 @@ function SettingsScreen() {
   );
 }
 
+function FriendsScreenWithLatest() {
+  const [slots] = useSlots();
+  const latest = slots?.[0];
+  return <FriendsScreen latestSlot={latest?.slot ?? null} latestName={latest?.cityName ?? null} />;
+}
+
 /** Main menu, new-game screen, pause menu, save/load screens and settings. */
 export function Shell() {
   const game = useGameUpdates(100);
@@ -965,6 +1016,7 @@ export function Shell() {
       {screen === 'load' && <LoadScreen />}
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'maps' && <MapsScreen />}
+      {screen === 'friends' && <FriendsScreenWithLatest />}
     </div>
   );
 }

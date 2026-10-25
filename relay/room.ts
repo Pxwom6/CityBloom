@@ -80,6 +80,8 @@ interface ConnState {
 
 /** How far the pacer may move time in one message (30 game minutes). */
 export const MAX_CLOCK_STEP = 30 * 60;
+/** A joining player is in step once within this many ticks of the frontier (the city keeps moving). */
+const CAUGHT_UP = 120;
 /** Checksums kept for comparing (game hours). */
 const KEEP_SUMS = 48;
 /** Messages per second a player may send, and a burst. */
@@ -340,7 +342,7 @@ export class Room {
         const moved = p.tick !== m.tick;
         p.tick = m.tick;
         if (moved) this.broadcast({ t: 'ticks', ticks: [[p.id, p.tick]] }, p.id);
-        if (p.joining && !this.waiting.has(p.id) && m.tick >= this.allowed - 1) {
+        if (p.joining && !this.waiting.has(p.id) && m.tick >= this.allowed - CAUGHT_UP) {
           p.joining = false;
           this.broadcastPlayers();
         }

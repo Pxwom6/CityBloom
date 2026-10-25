@@ -88,7 +88,10 @@ export type ClientMsg =
       color: number;
       /** Making the room (the first player, who then uploads the city). */
       create?: CreateRoom;
-      /** Coming back after a dropped connection: who, the proof, and the last event received. */
+      /**
+       * Coming back after a dropped connection: who, the proof, and the last event received (-2: this
+       * page has no city yet, send a snapshot).
+       */
       rejoin?: { id: number; secret: string; seq: number };
     }
   /** A command for the room to order; `ref` comes back with its result. */
@@ -138,11 +141,23 @@ export type ErrorCode =
 
 // ---------------------------------------------------------------- checks
 
-/** A fresh room code from a source of random numbers in [0, 1). */
-export function makeCode(random: () => number): string {
-  let s = '';
-  for (let i = 0; i < CODE_LENGTH; i++) s += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length)];
+const DIGITS = CODE_ALPHABET.replace(/[A-Z]/g, '');
+const LETTERS = CODE_ALPHABET.replace(/[0-9]/g, '');
+
+/**
+ * A fresh room code from a source of random numbers in [0, 1). Online rooms' codes start with a
+ * digit and peer-to-peer rooms' with a letter, so a code says where to find its room.
+ */
+export function makeCode(random: () => number, kind: 'online' | 'p2p' = 'online'): string {
+  const first = kind === 'online' ? DIGITS : LETTERS;
+  let s = first[Math.floor(random() * first.length)]!;
+  for (let i = 1; i < CODE_LENGTH; i++) s += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length)];
   return s;
+}
+
+/** Where a code's room lives. */
+export function codeKind(code: string): 'online' | 'p2p' {
+  return /^[0-9]/.test(code) ? 'online' : 'p2p';
 }
 
 /** A code as typed by a player: upper case, look-alikes mapped (O→0 isn't in it, so O→Q…), or null. */
@@ -227,7 +242,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
           !isInt(r.id, 1, 1e6) ||
           typeof r.secret !== 'string' ||
           r.secret.length > 64 ||
-          !isInt(r.seq, -1, 1e12)
+          !isInt(r.seq, -2, 1e12)
         )
           return null;
         out.rejoin = { id: r.id, secret: r.secret, seq: r.seq };

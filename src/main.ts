@@ -20,6 +20,11 @@ import { justUpdated } from './client/pwa';
 import { AppInstall } from './client/install';
 import type { Difficulty, GameOptions } from './sim/state';
 import type { SaveFile } from './sim/save';
+import type { Snapshot } from './sim/protocol';
+import { Multiplayer } from './net/multiplayer';
+import type { SimDriver } from './net/driver';
+import { loadProfile } from './client/profile';
+import { normaliseCode } from '../relay/protocol';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -100,12 +105,52 @@ function townPose(world: ClientWorld) {
   };
 }
 
+/** Join a room and wait for its city; rejects with a message the player can read. */
+async function joinRoom(code: string, client: SimClient): Promise<{ mp: Multiplayer; snap: Snapshot }> {
+  let first: ((s: Snapshot) => void) | null = null;
+  const loaded = new Promise<Snapshot>((r) => (first = r));
+  // The first snapshot is the city this page opens with.
+  const driver: SimDriver = {
+    share: (p, s) => client.share(p, s),
+    stamped: (e, a) => client.stamped(e, a),
+    unshare: () => client.unshare(),
+    save: () => client.save(),
+    onShared: (l) => client.onShared(l),
+    get tick() {
+      return client.tick;
+    },
+    loadShared: async (snapshot, player, resync) => {
+      const s = await client.loadShared(snapshot, player, resync);
+      first?.(s);
+      first = null;
+      return s;
+    },
+  };
+  const mp = Multiplayer.join(code, driver, loadProfile());
+  await mp.session.start();
+  return { mp, snap: await loaded };
+}
+
 async function boot(): Promise<void> {
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
   // Without a city to open, show the main menu over a backdrop map.
-  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor'].some((k) => params.has(k));
+  const joinCode = params.get('join') ? normaliseCode(params.get('join')!) : null;
+  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join'].some((k) =>
+    params.has(k),
+  );
   const client = new SimClient();
+  client.testMode = IS_TEST_BUILD;
+  // An invite link (M30): into the room, whose city comes as a snapshot.
+  let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
+  let joinError: string | null = params.has('join') && !joinCode ? 'That room code isn’t one of ours.' : null;
+  if (joinCode) {
+    const result = await joinRoom(joinCode, client).catch((err: unknown) => {
+      joinError = err instanceof Error ? err.message : String(err);
+      return null;
+    });
+    joined = result;
+  }
   // The hand-made building models download while the city is made or opened.
   const models = loadModels();
   // The map editor (M24): a new map from the generator (or flat), or one of the player's maps.
@@ -140,22 +185,25 @@ async function boot(): Promise<void> {
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
-  const snap = editing
-    ? await client.init(
-        {
-          editor: true,
-          seed: editing.map.seed,
-          preset: editing.map.preset,
-          cityName: editing.map.name,
-          sandbox: true,
-          disasters: false,
-          elections: false,
-          region: false,
-        },
-        IS_TEST_BUILD,
-        editing.map,
-      )
-    : opened || (await client.init(menu ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
+  const snap = joined
+    ? joined.snap
+    : editing
+      ? await client.init(
+          {
+            editor: true,
+            seed: editing.map.seed,
+            preset: editing.map.preset,
+            cityName: editing.map.name,
+            sandbox: true,
+            disasters: false,
+            elections: false,
+            region: false,
+          },
+          IS_TEST_BUILD,
+          editing.map,
+        )
+      : opened ||
+        (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   const world = new ClientWorld(snap);
   await models;
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -170,12 +218,21 @@ async function boot(): Promise<void> {
     game.setCamera('overview', true);
     // A reload carries on editing this map.
     history.replaceState(null, '', `${location.pathname}?editor=${encodeURIComponent(editing.id)}`);
-  } else if (menu) {
+  } else if (joined) {
+    game.attachNet(joined.mp);
+    game.setCamera('overview', true);
+    game.toast(`You joined ${world.stats.cityName}.`, 'ok', 5000);
+    history.replaceState(null, '', location.pathname);
+  } else if (menu || joinError) {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
     // A first launch picks graphics to suit the device from the menu's first few seconds.
     if (!game.settings.graphicsChecked) game.startGraphicsCheck();
+    if (joinError) {
+      game.toast(joinError, 'bad', 9000);
+      history.replaceState(null, '', location.pathname);
+    }
     // The demo town carries on growing behind the menu (quietly: no notices in menu mode).
     game.setSpeed(opened ? 1 : 0);
     game.setCamera(menuPose(world), true);
@@ -203,6 +260,9 @@ async function boot(): Promise<void> {
     // re-creating this city from scratch.
     if (params.has('new') || params.has('load') || scenario)
       history.replaceState(null, '', location.pathname);
+    // Founded or opened to share with friends (the lobby's Host buttons, M30).
+    const host = params.get('host');
+    if (host === 'online' || host === 'p2p') void game.hostRoom(host);
   }
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);

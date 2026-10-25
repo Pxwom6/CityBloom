@@ -531,10 +531,12 @@ export type MainToWorker =
   | { type: 'share'; player: number; lastSeq: number }
   /** Back to single player's own clock. */
   | { type: 'unshare' }
+  /** Test mode only: knock this machine's city out of step (a desync for the tests to catch). */
+  | { type: 'perturb' }
   /** The room's events, in order, and how far the sim may now run. */
   | { type: 'stamped'; events: Stamped[]; allow: number }
   /** Join or resync a shared city from a room snapshot (answers with `ready`). */
-  | { type: 'loadShared'; snapshot: SharedSnapshot; player: number; testMode?: boolean };
+  | { type: 'loadShared'; snapshot: SharedSnapshot; player: number; testMode?: boolean; resync?: boolean };
 
 export type WorkerToMain =
   | { type: 'ready'; snapshot: Snapshot }
@@ -548,7 +550,7 @@ export type WorkerToMain =
   /** At each month's end: a hash per part of the state (names the part when players disagree). */
   | { type: 'monthHashes'; tick: number; parts: Record<string, string> }
   /** A snapshot this machine was asked to take (at a settle event). */
-  | { type: 'snapshot'; tick: number; reason: 'snapshot' | 'autosave'; snapshot: SharedSnapshot }
+  | { type: 'snapshot'; tick: number; reason: 'snapshot' | 'autosave' | 'upload'; snapshot: SharedSnapshot }
   /** An event arrived for a tick already passed: this machine can't agree any more. */
   | { type: 'late'; tick: number; seq: number }
   | { type: 'error'; message: string };

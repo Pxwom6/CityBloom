@@ -10,7 +10,7 @@ import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg, RegionView } from '../../relay/region';
 import type { Link } from './link';
-import { encodeSnapshot } from './snapshot';
+import { decodeSnapshot, encodeSnapshot } from './snapshot';
 
 /** What a region link needs from the city: its own commands and queries, and a save. */
 export interface CityPort {
@@ -246,4 +246,56 @@ export class RegionLink {
     l?.close();
     this.dropped();
   }
+}
+
+/** A neighbour's latest city from the region, to look round read-only (M32). */
+export function fetchCitySave(
+  connect: () => Promise<Link>,
+  slot: number,
+  mayor: string,
+  timeoutMs = 30_000,
+): Promise<SaveFile> {
+  return new Promise((resolve, reject) => {
+    let link: Link | null = null;
+    const parts: (string | null)[] = [];
+    const timer = setTimeout(() => {
+      link?.close();
+      reject(new Error('The region didn’t send that city in time'));
+    }, timeoutMs);
+    const done = (err: Error | null, save?: SaveFile) => {
+      clearTimeout(timer);
+      link?.close();
+      if (err) reject(err);
+      else resolve(save!);
+    };
+    connect().then(
+      (l) => {
+        link = l;
+        l.onmessage = (t) => {
+          if (t === 'pong') return;
+          const m = JSON.parse(t) as RegionRoomMsg;
+          if (m.t === 'rwelcome') l.send(JSON.stringify({ t: 'visit', slot } satisfies RegionClientMsg));
+          else if (m.t === 'error') done(new Error(m.text));
+          else if (m.t === 'citysave' && m.slot === slot) {
+            if (parts.length !== m.parts)
+              parts.splice(0, parts.length, ...new Array<string | null>(m.parts).fill(null));
+            parts[m.part] = m.data;
+            if (parts.every((x) => x !== null)) done(null, decodeSnapshot(parts as string[]).save);
+          }
+        };
+        l.onclose = () => done(new Error('The region closed the connection'));
+        l.send(
+          JSON.stringify({
+            t: 'rhello',
+            v: PROTOCOL_VERSION,
+            mayor,
+            color: 0,
+            city: '',
+            visitor: true,
+          } satisfies RegionClientMsg),
+        );
+      },
+      (err: unknown) => done(err instanceof Error ? err : new Error(String(err))),
+    );
+  });
 }

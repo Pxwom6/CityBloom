@@ -266,6 +266,8 @@ function NewGame() {
     });
     if (mine) q.set('map', mine.id);
     if (game.hostKind) q.set('host', game.hostKind);
+    // Founded to bring into a shared region (M32).
+    if (game.regionParam) for (const [k, v] of new URLSearchParams(game.regionParam)) q.set(k, v);
     if (tut && !sandbox) q.set('tutorial', '1');
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;

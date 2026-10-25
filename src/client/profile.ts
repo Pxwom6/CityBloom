@@ -72,3 +72,46 @@ export function keepRoomCredentials(code: string, id: number, secret: string): v
     /* no session storage: a reload joins as a new player */
   }
 }
+
+/** A city's place in a shared region (M32), kept so the city rejoins it when opened again. */
+export function regionCredentials(code: string): { slot: number; secret: string } | null {
+  try {
+    return JSON.parse(localStorage.getItem(`citybloom.region.${code}`) ?? 'null') as {
+      slot: number;
+      secret: string;
+    } | null;
+  } catch {
+    return null;
+  }
+}
+
+export function keepRegionCredentials(
+  code: string,
+  slot: number,
+  secret: string,
+  saveSlot: string | null,
+): void {
+  try {
+    localStorage.setItem(`citybloom.region.${code}`, JSON.stringify({ slot, secret }));
+    if (saveSlot) localStorage.setItem(`citybloom.regionOf.${saveSlot}`, code);
+  } catch {
+    /* private window: the city joins as new next time */
+  }
+}
+
+/** The region a saved city stands in, if any. */
+export function regionOf(saveSlot: string): string | null {
+  try {
+    return localStorage.getItem(`citybloom.regionOf.${saveSlot}`);
+  } catch {
+    return null;
+  }
+}
+
+export function forgetRegionOf(saveSlot: string): void {
+  try {
+    localStorage.removeItem(`citybloom.regionOf.${saveSlot}`);
+  } catch {
+    /* nothing kept */
+  }
+}

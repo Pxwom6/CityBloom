@@ -93,7 +93,7 @@ export function App({ game }: { game: Game }) {
       <Shortcuts game={game} />
       <TopBar />
       <DebugPanel />
-      <Toolbar />
+      {game.readOnly ? <VisitBanner /> : <Toolbar />}
       <ToolHintLabel />
       <ToolQuestionCard />
       <Inspector />
@@ -173,4 +173,20 @@ function MoneyBanner() {
     );
   }
   return null;
+}
+
+/** Looking round a neighbour's city (M32): read-only, with the way back. */
+function VisitBanner() {
+  const game = useGameUpdates(1000);
+  return (
+    <div class="visit-banner panel" data-testid="visit-banner">
+      <span>
+        Visiting <strong>{game.world.stats.cityName}</strong> as it was last saved: look round, nothing can be
+        changed.
+      </span>
+      <button class="btn" onClick={() => (history.length > 1 ? history.back() : window.close())}>
+        Back to my city
+      </button>
+    </div>
+  );
 }

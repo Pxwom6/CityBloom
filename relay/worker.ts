@@ -12,16 +12,18 @@
 import { DurableObject } from 'cloudflare:workers';
 import { Room, type Conn, type RoomMeta, type RoomStore, type StoredSnapshot } from './room';
 import { CODE_ALPHABET, CODE_LENGTH, type RoomMsg } from './protocol';
+import { RegionRoom, type RegionConn, type RegionMeta, type RegionStore } from './region';
 import type { Stamped } from '../src/sim/lockstep';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
   SIGNALS: DurableObjectNamespace;
+  REGIONS: DurableObjectNamespace;
   /** Comma-separated origins allowed to connect (the site); empty allows any (development). */
   ALLOWED_ORIGINS?: string;
 }
 
-const PATH = new RegExp(`^/(room|signal)/([${CODE_ALPHABET}]{${CODE_LENGTH}})$`);
+const PATH = new RegExp(`^/(room|signal|region)/([${CODE_ALPHABET}]{${CODE_LENGTH}})$`);
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -38,7 +40,7 @@ export default {
       .filter(Boolean);
     const origin = req.headers.get('Origin') ?? '';
     if (allowed.length && !allowed.includes(origin)) return new Response('forbidden', { status: 403 });
-    const ns = m[1] === 'room' ? env.ROOMS : env.SIGNALS;
+    const ns = m[1] === 'room' ? env.ROOMS : m[1] === 'region' ? env.REGIONS : env.SIGNALS;
     return ns.get(ns.idFromName(m[2]!)).fetch(req);
   },
 };
@@ -233,5 +235,100 @@ export class SignalObject extends DurableObject<Env> {
     const me = ws.deserializeAttachment() as { id: number } | null;
     if (!me) return;
     for (const p of this.peers()) if (p.id !== me.id) p.ws.send(JSON.stringify({ t: 'gone', id: me.id }));
+  }
+}
+
+/** A shared region's store (M32): its metadata and each city's latest save for visitors. */
+class RegionSqlStore implements RegionStore {
+  constructor(private readonly sql: SqlStorage) {
+    sql.exec('CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)');
+    sql.exec(
+      'CREATE TABLE IF NOT EXISTS saves (slot INTEGER, part INTEGER, data TEXT, PRIMARY KEY (slot, part))',
+    );
+  }
+  loadMeta(): RegionMeta | null {
+    const v = this.sql.exec<{ v: string }>("SELECT v FROM kv WHERE k = 'meta'").toArray()[0]?.v;
+    return v ? (JSON.parse(v) as RegionMeta) : null;
+  }
+  saveMeta(m: RegionMeta): void {
+    this.sql.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('meta', ?)", JSON.stringify(m));
+  }
+  saveCity(slot: number, parts: string[]): void {
+    this.sql.exec('DELETE FROM saves WHERE slot = ?', slot);
+    parts.forEach((data, part) =>
+      this.sql.exec('INSERT INTO saves (slot, part, data) VALUES (?, ?, ?)', slot, part, data),
+    );
+  }
+  loadCity(slot: number): string[] | null {
+    const rows = this.sql
+      .exec<{ data: string }>('SELECT data FROM saves WHERE slot = ? ORDER BY part', slot)
+      .toArray();
+    return rows.length ? rows.map((r) => r.data) : null;
+  }
+}
+
+export class RegionObject extends DurableObject<Env> {
+  private region: RegionRoom | null = null;
+  private conns = new Map<CfWebSocket, RegionConn>();
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+  }
+
+  private conn(ws: CfWebSocket): RegionConn {
+    let c = this.conns.get(ws);
+    if (!c)
+      this.conns.set(
+        ws,
+        (c = {
+          send: (m) => {
+            try {
+              ws.send(JSON.stringify(m));
+            } catch {
+              /* closing */
+            }
+          },
+          close: (code, reason) => ws.close(code, reason),
+          bind: (slot) => ws.serializeAttachment({ slot }),
+        }),
+      );
+    return c;
+  }
+
+  private ensure(code?: string): RegionRoom | null {
+    if (this.region) return this.region;
+    const store = new RegionSqlStore(this.ctx.storage.sql);
+    const c = code ?? store.loadMeta()?.code;
+    if (!c) return null;
+    this.region = new RegionRoom(c, 'online', store, { now: () => Date.now(), random: Math.random });
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() as { slot?: number } | null;
+      if (a?.slot) this.region.reattach(this.conn(ws), a.slot);
+      else this.region.open(this.conn(ws));
+    }
+    return this.region;
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const code = new URL(req.url).pathname.split('/').pop()!;
+    const region = this.ensure(code)!;
+    const pair = new WebSocketPair();
+    this.ctx.acceptWebSocket(pair[1]);
+    region.open(this.conn(pair[1]));
+    return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit);
+  }
+
+  async webSocketMessage(ws: CfWebSocket, msg: string | ArrayBuffer): Promise<void> {
+    this.ensure()?.message(this.conn(ws), typeof msg === 'string' ? msg : '');
+  }
+
+  async webSocketClose(ws: CfWebSocket): Promise<void> {
+    this.ensure()?.closed(this.conn(ws));
+    this.conns.delete(ws);
+  }
+
+  async webSocketError(ws: CfWebSocket): Promise<void> {
+    await this.webSocketClose(ws);
   }
 }

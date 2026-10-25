@@ -4,6 +4,7 @@
  *
  *   ws://localhost:8787/room/<CODE>    a room (the same Room class a Durable Object runs)
  *   ws://localhost:8787/signal/<CODE>  signalling for peer-to-peer (offers, answers, candidates)
+ *   ws://localhost:8787/region/<CODE>  a shared region (M32)
  *
  * `npx tsx relay/local.ts [port] [--data dir]`: with --data, rooms are kept in files and survive a
  * restart, as online rooms survive everyone leaving.
@@ -15,6 +16,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { Room, MemoryStore, type Conn, type RoomMeta, type StoredSnapshot } from './room';
 import { CODE_ALPHABET, CODE_LENGTH } from './protocol';
 import { Signal } from './signal';
+import { RegionRoom, MemoryRegionStore, type RegionConn } from './region';
 import type { Stamped } from '../src/sim/lockstep';
 
 /** A store kept in one JSON file per room (`--data`). */
@@ -52,7 +54,7 @@ class FileStore extends MemoryStore {
   }
 }
 
-const CODE = new RegExp(`^/(room|signal)/([${CODE_ALPHABET}]{${CODE_LENGTH}})$`);
+const CODE = new RegExp(`^/(room|signal|region)/([${CODE_ALPHABET}]{${CODE_LENGTH}})$`);
 
 export interface LocalRelay {
   server: Server;
@@ -64,6 +66,7 @@ export interface LocalRelay {
 export function startRelay(port = 8787, dataDir: string | null = null): Promise<LocalRelay> {
   const rooms = new Map<string, Room>();
   const signals = new Map<string, Signal>();
+  const regions = new Map<string, RegionRoom>();
   const server = createServer((req, res) => {
     // A health check for scripts, and nothing else over plain HTTP.
     res.writeHead(req.url === '/health' ? 200 : 404, {
@@ -87,6 +90,27 @@ export function startRelay(port = 8787, dataDir: string | null = null): Promise<
     const m = CODE.exec(new URL(req.url ?? '/', 'http://x').pathname);
     if (!m) return ws.close(4004, 'not found');
     const [, kind, code] = m;
+    if (kind === 'region') {
+      let reg = regions.get(code!);
+      if (!reg)
+        regions.set(
+          code!,
+          (reg = new RegionRoom(code!, 'local', new MemoryRegionStore(), {
+            now: () => Date.now(),
+            random: Math.random,
+          })),
+        );
+      const conn: RegionConn = {
+        send: (msg) => {
+          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+        },
+        close: (c, reason) => ws.close(c, reason),
+      };
+      reg.open(conn);
+      ws.on('message', (data) => reg.message(conn, String(data)));
+      ws.on('close', () => reg.closed(conn));
+      return;
+    }
     if (kind === 'signal') {
       let sig = signals.get(code!);
       if (!sig) signals.set(code!, (sig = new Signal()));

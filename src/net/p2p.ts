@@ -10,7 +10,7 @@
  * guest is told so plainly and offered an online room.
  */
 import { Room, MemoryStore, type Conn, type StoredSnapshot } from '../../relay/room';
-import type { RoomMsg } from '../../relay/protocol';
+import type { RegionConn, RegionRoom } from '../../relay/region';
 import { dataChannelLink, loopbackPair, webSocketLink, type Link } from './link';
 
 export const ICE_SERVERS: RTCIceServer[] = [
@@ -27,15 +27,22 @@ export const TRYSTERO_APP = 'citybloom-rooms-v1';
 /** How a peer-to-peer room's players find each other: our relay's signalling, or Trystero. */
 export type Signalling = { kind: 'relay'; url: string } | { kind: 'trystero' };
 
-/** Attach a link to a room as one more connection. */
-export function attach(room: Room, link: Link): Conn {
-  const conn: Conn = {
-    send: (m: RoomMsg) => link.send(JSON.stringify(m)),
-    close: () => link.close(),
-  };
-  room.open(conn);
-  link.onmessage = (t) => room.message(conn, t);
-  link.onclose = () => room.closed(conn);
+/** What a host's browser runs for its guests: a room (co-op, M30) or a region (M32). */
+export interface Hub<C> {
+  open(conn: C): void;
+  message(conn: C, raw: string): void;
+  closed(conn: C): void;
+}
+
+/** Attach a link to a room or region as one more connection. */
+export function attach<M>(
+  hub: Hub<{ send(m: M): void; close(code: number, reason: string): void }>,
+  link: Link,
+) {
+  const conn = { send: (m: M) => link.send(JSON.stringify(m)), close: () => link.close() };
+  hub.open(conn);
+  link.onmessage = (t) => hub.message(conn, t);
+  link.onclose = () => hub.closed(conn);
   return conn;
 }
 
@@ -55,7 +62,7 @@ function gathered(pc: RTCPeerConnection, ms = 4000): Promise<void> {
 
 /** The host's side: a room in this page, its own game on a loopback, guests over data channels. */
 export class P2PHost {
-  readonly room: Room;
+  readonly room: Hub<Conn> | Hub<RegionConn>;
   private stops: (() => void)[] = [];
   /** Guests connected now (for the lobby). */
   guests = 0;
@@ -65,7 +72,13 @@ export class P2PHost {
     private readonly signalling: Signalling,
     /** Every snapshot the room keeps (the host's browser saves the city then, M31). */
     onSnapshot: ((s: StoredSnapshot) => void) | null = null,
+    /** A shared region's hub instead of a co-op room (M32). */
+    region: RegionRoom | null = null,
   ) {
+    if (region) {
+      this.room = region;
+      return;
+    }
     const store = new MemoryStore();
     if (onSnapshot) {
       const save = store.saveSnapshot.bind(store);
@@ -80,7 +93,7 @@ export class P2PHost {
   /** The host's own game reaches the room through this. */
   connectSelf(): Promise<Link> {
     const [mine, theirs] = loopbackPair();
-    attach(this.room, theirs);
+    attach(this.room as Hub<Conn>, theirs);
     return Promise.resolve(mine);
   }
 
@@ -110,8 +123,8 @@ export class P2PHost {
       peers.set(from, pc);
       pc.ondatachannel = (e) => {
         const link = dataChannelLink(e.channel);
-        if (e.channel.readyState === 'open') attach(this.room, link);
-        else e.channel.addEventListener('open', () => attach(this.room, link), { once: true });
+        if (e.channel.readyState === 'open') attach(this.room as Hub<Conn>, link);
+        else e.channel.addEventListener('open', () => attach(this.room as Hub<Conn>, link), { once: true });
         this.guests++;
         e.channel.addEventListener('close', () => {
           this.guests--;
@@ -150,7 +163,7 @@ export class P2PHost {
         onclose: null,
       };
       links.set(peer, link);
-      attach(this.room, link);
+      attach(this.room as Hub<Conn>, link);
       this.guests++;
     };
     t.onPeerLeave = (peer) => {

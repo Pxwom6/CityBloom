@@ -22,6 +22,7 @@ import {
   type Speed,
 } from './protocol';
 import { may, roomRefusal, type SharedRules } from '../src/sim/rules';
+import { checkCommand } from '../src/sim/commandCheck';
 
 export interface Conn {
   send(msg: RoomMsg): void;
@@ -350,16 +351,19 @@ export class Room {
   private handle(p: Player, st: ConnState, m: ClientMsg): void {
     switch (m.t) {
       case 'cmd': {
-        if (m.cmd.type === 'cheat') {
-          p.conn?.send({ t: 'refused', ref: m.ref, reason: 'Cheats are off in a shared city' });
+        // Every field checked, and only a clean copy ordered (F7): a malformed command would throw
+        // or hang in every player's game. Cheats and page-only commands never come from players.
+        const checked = checkCommand(m.cmd);
+        if ('problem' in checked) {
+          p.conn?.send({ t: 'refused', ref: m.ref, reason: checked.problem });
           return;
         }
-        const why = roomRefusal(this.info.rules, p.id, m.cmd as never);
+        const why = roomRefusal(this.info.rules, p.id, checked.cmd);
         if (why) {
           p.conn?.send({ t: 'refused', ref: m.ref, reason: why });
           return;
         }
-        this.order({ kind: 'cmd', cmd: m.cmd as never, by: p.id, ref: m.ref });
+        this.order({ kind: 'cmd', cmd: checked.cmd, by: p.id, ref: m.ref });
         return;
       }
       case 'clock': {

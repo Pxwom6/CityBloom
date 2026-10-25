@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Sim } from '../../src/sim/sim';
 import { buildTown, serveTown } from '../../tests/helpers';
 import { makeRoom, loopTo, player, stopAll, until, type TestPlayer } from './harness';
+import { MemoryStore } from '../room';
 import { startRelay } from '../local';
 import { webSocketLink, type Link } from '../../src/net/link';
 import { P2PHost } from '../../src/net/p2p';
@@ -140,5 +141,97 @@ describe('F3: codes and secrets come from the cryptographic source, not Math.ran
     } finally {
       await relay.close();
     }
+  });
+});
+
+describe('F7: a bad command never reaches the city', () => {
+  it('turns away malformed and page-only commands and orders only a clean copy', async () => {
+    const store = new MemoryStore();
+    const room = makeRoom('BADCMD', store);
+    const l = await listen(await loopTo(room)());
+    l.link.send(hello('Ada', true));
+    await until(() => l.got.some((m) => m.t === 'welcome'), 5000, 'the welcome');
+    const before = store.events.length;
+    const bad: unknown[] = [
+      { type: 'buildRoad', road: 'street', points: 5 },
+      {
+        type: 'buildRoad',
+        road: 'bogus',
+        points: [
+          { x: 0, z: 0 },
+          { x: 10, z: 0 },
+        ],
+      },
+      {
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: 0, z: 0 },
+          { x: 1e300, z: 0 },
+        ],
+      },
+      { type: 'bulldoze', target: null },
+      { type: 'zone', zone: 'R', area: null },
+      { type: 'zone', zone: '__proto__', area: { kind: 'segment', id: 3 } },
+      {
+        type: 'zone',
+        zone: 'R',
+        area: {
+          kind: 'brush',
+          points: [
+            { x: -1e6, z: 0 },
+            { x: 1e6, z: 0 },
+          ],
+          radius: 30,
+        },
+      },
+      { type: 'setTax', zone: 'R', wealth: 'length', rate: 0 },
+      { type: 'setTax', zone: 'R', wealth: 999999999, rate: 5 },
+      { type: 'setTax', zone: 'X', wealth: 0, rate: 5 },
+      { type: 'renameCity', name: 5 },
+      { type: 'createDistrict', name: 5 },
+      { type: 'terraform', mode: 'raise', points: null, radius: 48 },
+      { type: 'disaster', kind: 'meteor', at: null },
+      { type: 'placeBuilding', def: 'firestation', x: 900, z: 900, angle: 0, side: 7 },
+      { type: 'setDeal', neighbour: 1, resource: 'power', direction: 'steal', amount: 5 },
+      { type: 'toString' },
+      { type: '__proto__' },
+      // Page-only: the region's news, a region payment, a scenario, the editor, cheats.
+      {
+        type: 'regionUpdate',
+        update: {
+          cities: [],
+          contracts: [],
+          project: { total: 1, goal: 1, funded: true, host: true, built: false },
+        },
+      },
+      { type: 'contributeProject', amount: 1000 },
+      { type: 'startScenario', id: 'stadium' },
+      { type: 'editMap', brush: 'raise', points: [{ x: 10, z: 10 }], radius: 32 },
+      { type: 'cheat', cheat: 'addMoney', amount: 1e6 },
+    ];
+    for (const [i, cmd] of bad.entries()) l.link.send(JSON.stringify({ t: 'cmd', ref: 100 + i, cmd }));
+    await until(
+      () => l.got.filter((m) => m.t === 'refused').length === bad.length,
+      5000,
+      () => JSON.stringify(l.got.filter((m) => m.t === 'refused').map((m) => m.ref)),
+    );
+    expect(store.events.length).toBe(before);
+    // A good command, with a field it doesn't have and the tests' disaster size: ordered without them.
+    l.link.send(
+      JSON.stringify({
+        t: 'cmd',
+        ref: 7,
+        cmd: { type: 'disaster', kind: 'meteor', at: { x: 900, z: 900, y: 3 }, size: 1e9, extra: 'x' },
+      }),
+    );
+    await until(() => store.events.length === before + 1, 5000, 'the good command');
+    expect(store.events.at(-1)!.ev).toEqual({
+      kind: 'cmd',
+      cmd: { type: 'disaster', kind: 'meteor', at: { x: 900, z: 900 } },
+      by: 1,
+      ref: 7,
+    });
+    l.link.close();
   });
 });

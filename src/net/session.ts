@@ -350,7 +350,11 @@ export class RoomSession {
             this.pending.delete(a.ev.ref);
             r?.(a.result!);
           }
-          this.onApplied?.(a);
+          try {
+            this.onApplied?.(a);
+          } catch {
+            /* what the page shows of it; the next commands' results still go back */
+          }
         }
         return;
       case 'snapshot': {

@@ -220,6 +220,7 @@ import {
 } from './systems/economy';
 import { DIFFICULTY, SANDBOX_FUNDS, bigCityFactor, fundingEffect, type Dept } from '../data/economy';
 import { DMath, formatInt } from './dmath';
+import { checkCommand } from './commandCheck';
 
 export { HIGHWAY_CONNECT_X };
 
@@ -1052,6 +1053,13 @@ export class Sim {
 
   dispatch(cmd: Command, by = 0): CommandResult {
     this.actor = by;
+    // Another player's command in a shared city (F7): checked here as the room checks it, so an old
+    // or altered room can't hand every game something that throws, hangs or damages the city.
+    if (this.shared && by) {
+      const checked = checkCommand(cmd);
+      if ('problem' in checked) return fail(checked.problem);
+      cmd = checked.cmd;
+    }
     // A shared city's rules (M31): what this player may do, whose work it is, what it costs.
     if (this.shared && by && this.rules) {
       const dry = this.apply(cmd, true);

@@ -132,6 +132,55 @@ export type Command =
 
 export type CommandType = Command['type'];
 
+/**
+ * Every command type, written out so the compiler checks the list against `Command`: a new type
+ * fails to compile until it's added here (and to the room's checks in `commandCheck.ts`).
+ */
+const COMMAND_KINDS = {
+  cheat: true,
+  renameCity: true,
+  buildRoad: true,
+  bulldoze: true,
+  placeStop: true,
+  upgradeRoad: true,
+  setOneWay: true,
+  setTram: true,
+  roundabout: true,
+  removeRoundabout: true,
+  zone: true,
+  undo: true,
+  redo: true,
+  setTax: true,
+  setFunding: true,
+  takeLoan: true,
+  promise: true,
+  repayLoan: true,
+  placeBuilding: true,
+  disaster: true,
+  setDisasters: true,
+  setWeather: true,
+  setDeal: true,
+  setElections: true,
+  startScenario: true,
+  setPolicy: true,
+  moveBuilding: true,
+  createDistrict: true,
+  paintDistrict: true,
+  renameDistrict: true,
+  removeDistrict: true,
+  setDistrictPolicy: true,
+  buildRailLink: true,
+  terraform: true,
+  editMap: true,
+  setMapEntry: true,
+  setMapInfo: true,
+  regionUpdate: true,
+  contributeProject: true,
+  addModule: true,
+} as const satisfies Record<CommandType, true>;
+
+export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];
+
 export interface CommandOk {
   ok: true;
   cost: number;

@@ -589,7 +589,12 @@ export class Game {
     }
     mp.session.onApplied = (a) => {
       if (a.ev.kind !== 'cmd' || a.ev.by === mp.session.you || !a.result?.ok) return;
-      const shape = commandShape(a.ev.cmd);
+      let shape: Shape | null = null;
+      try {
+        shape = commandShape(a.ev.cmd);
+      } catch {
+        return;
+      }
       if (shape)
         this.recentOthers = [...this.recentOthers, { by: a.ev.by, shape, at: performance.now() }].slice(-12);
     };

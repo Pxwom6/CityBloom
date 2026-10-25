@@ -105,7 +105,24 @@ function flush(): void {
   post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
 }
 
+/** The last error the loop reported, so a sim that fails every tick says so once, not 20 times a second. */
+let lastLoopError = '';
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+}
+
 function loop(): void {
+  try {
+    step();
+  } catch (err) {
+    const message = errorText(err);
+    if (message !== lastLoopError) post({ type: 'error', message });
+    lastLoopError = message;
+  }
+}
+
+function step(): void {
   const now = performance.now();
   const elapsed = Math.min(250, now - last);
   last = now;
@@ -138,6 +155,12 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
     sim = lockstep!.sim;
     sim.takeOverFrom(old);
   };
+  // A command that threw counts as refused on every machine (F7); the page hears why.
+  lockstep.onError = (what, err) =>
+    post({
+      type: 'error',
+      message: `A ${what.type} command from player ${what.by} failed at tick ${what.tick}: ${errorText(err)}`,
+    });
   lockstep.onApplied = (a) => {
     if (a.ev.kind === 'cmd') applied.push(a);
     else if (a.ev.kind === 'settle' && a.ev.taker === player && a.save) {
@@ -275,9 +298,14 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   try {
     handle(e.data);
   } catch (err) {
-    post({
-      type: 'error',
-      message: err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err),
-    });
+    post({ type: 'error', message: errorText(err) });
+    // A command or preview that threw still answers, or the page would wait for it for ever.
+    const msg = e.data;
+    if (msg.type === 'command' || msg.type === 'preview')
+      post({
+        type: 'reply',
+        id: msg.id,
+        result: { ok: false, reason: 'The game could not carry out that command' },
+      });
   }
 };

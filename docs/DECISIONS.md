@@ -638,3 +638,20 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   with rejection sampling so no character is likelier than another; secrets are 128 bits in hex. Rooms
   and regions no longer take a `random` from their surroundings, so no transport can hand them
   `Math.random` again.
+- **F7 Another player's command is checked field by field** (`src/sim/commandCheck.ts`). The room
+  orders only a clean copy of a command whose every field has the right type and bounds (ground
+  coordinates within the map and a margin round it, ids whole numbers, names short, enums from their
+  data lists, brushes of at most 64 points): a malformed one threw in a handler, hung every player's
+  worker (a zoning brush a million metres long) or quietly damaged the city (`setTax` with
+  `wealth: 'length'`). Every sim checks again when the city is shared, so an old peer-to-peer host or
+  an altered room can't get round it; single player's own commands aren't checked (the page makes
+  them). The table of checks is keyed by command type, so a new command doesn't compile until it has
+  one (`COMMAND_TYPES` in `commands.ts` likewise). The tests' disaster `size` and `heading` are
+  dropped from players' commands (no tool sends them). **Page-only commands are refused from
+  players**: cheats, the region's news and payments (`regionUpdate`, `contributeProject`: a city in a
+  region isn't shared, so these only ever come from its own page), the map editor's, and
+  `startScenario` (which would reset a shared city's options, neighbours and deals). **A command that
+  throws anyway** counts as refused on every machine with the same fixed reason (never the engine's
+  own wording, which differs between browsers), the city carries on, the issuer is told, and the
+  worker posts the error to the page; the worker's loop and the headless driver catch and report what
+  escapes, and a command or preview that throws still gets an answer.

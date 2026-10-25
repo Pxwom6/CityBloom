@@ -17,9 +17,12 @@ async function overflow(page: Page, scope: string): Promise<string[]> {
     for (const el of root.querySelectorAll<HTMLElement>('button, input, a, summary')) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
-      const name = el.dataset.testid ?? el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 30);
-      if (r.left < -1 || r.right > vw + 1) bad.push(`${name} runs off the ${vw} px window (${Math.round(r.left)}..${Math.round(r.right)})`);
-      if (r.height > 0 && r.height < 24 && el.tagName === 'BUTTON') bad.push(`${name} is only ${Math.round(r.height)} px tall to tap`);
+      const name =
+        el.dataset.testid ?? el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 30);
+      if (r.left < -1 || r.right > vw + 1)
+        bad.push(`${name} runs off the ${vw} px window (${Math.round(r.left)}..${Math.round(r.right)})`);
+      if (r.height > 0 && r.height < 24 && el.tagName === 'BUTTON')
+        bad.push(`${name} is only ${Math.round(r.height)} px tall to tap`);
     }
     return bad;
   }, scope);
@@ -56,9 +59,9 @@ for (const [label, size] of [
     await page.keyboard.press('Escape');
     await page.getByTestId('pause-invite').scrollIntoViewIfNeeded();
     await page.getByTestId('pause-invite').tap();
-    await expect.poll(async () => (await page.evaluate(() => window.__game!.getNet()))?.state, { timeout: 30_000 }).toBe(
-      'playing',
-    );
+    await expect
+      .poll(async () => (await page.evaluate(() => window.__game!.getNet()))?.state, { timeout: 30_000 })
+      .toBe('playing');
     await expect(page.getByTestId('room-panel')).toBeVisible();
     expect(await overflow(page, 'room-panel')).toEqual([]);
     await page.screenshot({ path: `docs/screenshots/m33-room-${label}.png` });

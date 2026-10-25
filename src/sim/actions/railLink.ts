@@ -7,6 +7,7 @@ import type { Sim } from '../sim';
 import { ENTRY_SPACING } from '../terrain/customMap';
 import { clearTreesUnder, footprint as zonedFootprint } from '../world/buildings';
 import { civicRect, type Civic } from '../world/civic';
+import { DMath, formatInt } from '../dmath';
 
 /**
  * A regional rail link placed by the player (Phase 2 review). A city founded before M20 got its
@@ -44,8 +45,7 @@ export function railLinkUnavailable(sim: Sim): string | null {
   if (s.scenario) return 'Scenarios keep the railway they were set with';
   if (s.map && s.map.railZ === null) return 'This map was made without a railway';
   const def = CIVIC.get('raillink')!;
-  if (!sim.isUnlocked(def.unlockPopulation))
-    return `Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`;
+  if (!sim.isUnlocked(def.unlockPopulation)) return `Unlocks at ${formatInt(def.unlockPopulation)} residents`;
   return null;
 }
 
@@ -92,7 +92,7 @@ export function planRailLink(sim: Sim, zIn: number): RailLinkPlan {
   if (hi - lo > MAX_RISE) return no('Too steep here for the railway');
   // Roads and civic buildings stay; zoned buildings in the way are cleared.
   for (const r of rects) {
-    const reach = Math.hypot(r.hw, r.hd);
+    const reach = DMath.hypot(r.hw, r.hd);
     for (const sid of sim.net.segHash.queryPoint(r.x, r.z, reach + 20)) {
       const curve = sim.net.curve(sid);
       const w = sim.net.halfWidth(sid);

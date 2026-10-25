@@ -23,6 +23,7 @@ import { CIVIC } from '../../data/civic';
 import { capacity } from './region';
 import { noiseMood } from './noise';
 import type { DealResource } from '../../data/region';
+import { formatInt } from '../dmath';
 
 export type AdvisorId =
   'finance' | 'utilities' | 'safety' | 'health' | 'education' | 'transport' | 'environment' | 'planning';
@@ -41,9 +42,8 @@ export interface Advice {
   segs?: number[];
 }
 
-const money = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+const money = (n: number) => `$${formatInt(Math.abs(n))}`;
+const plural = (n: number, one: string, many = `${one}s`) => `${formatInt(n)} ${n === 1 ? one : many}`;
 
 function active(sim: Sim): Building[] {
   return [...sim.state.buildings.values()]
@@ -95,7 +95,7 @@ export function advise(sim: Sim): Advice[] {
     const runway = s.treasury / -net;
     const costs = Object.entries(rates)
       .filter(([, v]) => v < 0)
-      .sort((a, b) => a[1] - b[1]);
+      .sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     const biggest = costs[0]?.[0].replace('upkeep:', '').replace('roadUpkeep', 'road upkeep') ?? 'spending';
     out.push({
       advisor: 'finance',
@@ -196,7 +196,9 @@ export function advise(sim: Sim): Advice[] {
       map: u,
     });
   }
-  const dirty = list.filter((b) => b.garbage >= GARBAGE.visible).sort((a, b) => b.garbage - a.garbage);
+  const dirty = list
+    .filter((b) => b.garbage >= GARBAGE.visible)
+    .sort((a, b) => b.garbage - a.garbage || a.id - b.id);
   if (dirty.length > 3) {
     utilOk = false;
     out.push({
@@ -335,7 +337,8 @@ export function advise(sim: Sim): Advice[] {
   const untreated = homes.reduce((a, b) => a + b.sick * (1 - b.treated), 0);
   if (pop > 0 && untreated / pop > 0.01) {
     const worstHomes = [...homes].sort(
-      (a, b) => (b.sick * (1 - b.treated)) / b.pop - (a.sick * (1 - a.treated)) / a.pop,
+      (a, b) =>
+        (b.sick * (1 - b.treated)) / (b.pop || 1) - (a.sick * (1 - a.treated)) / (a.pop || 1) || a.id - b.id,
     );
     out.push({
       advisor: 'health',
@@ -635,7 +638,7 @@ function weatherAdvice(sim: Sim): Advice[] {
   const out: Advice[] = [];
   if (!s.totals.population) return out;
   const power = s.utilityStats.power;
-  const MW = (v: number) => `${Math.round(v).toLocaleString('en-US')} MW`;
+  const MW = (v: number) => `${formatInt(Math.round(v))} MW`;
   // Seasons new to the city (a save from before them, Phase 2 review): heating is easing in; say
   // what a full winter will need, while there's time.
   if (w.grace && w.seasons && power.demand > 0) {
@@ -736,7 +739,7 @@ function regionAdvice(sim: Sim): Advice[] {
       advisor: 'utilities',
       severity: 1,
       title: `${offer.name} would sell us ${res}`,
-      text: `We're short of ${res} (${Math.round(u.supply).toLocaleString('en-US')} for ${Math.round(u.demand).toLocaleString('en-US')} needed). ${offer.name} will sell up to ${offer.cap.toLocaleString('en-US')}${res === 'power' ? ' MW' : ''} while we build our own: see the Region panel (Shift+N).`,
+      text: `We're short of ${res} (${formatInt(Math.round(u.supply))} for ${formatInt(Math.round(u.demand))} needed). ${offer.name} will sell up to ${formatInt(offer.cap)}${res === 'power' ? ' MW' : ''} while we build our own: see the Region panel (Shift+N).`,
       map: res,
     });
   }
@@ -750,7 +753,7 @@ function regionAdvice(sim: Sim): Advice[] {
       advisor: 'utilities',
       severity: 1,
       title: 'A neighbour could take our garbage',
-      text: `The landfill is nearly full. ${garbage.name} will take up to ${garbage.cap.toLocaleString('en-US')} a day off our hands for a fee: see the Region panel.`,
+      text: `The landfill is nearly full. ${garbage.name} will take up to ${formatInt(garbage.cap)} a day off our hands for a fee: see the Region panel.`,
       at: { x: full.x, z: full.z },
     });
   let loud = 0;
@@ -762,7 +765,7 @@ function regionAdvice(sim: Sim): Advice[] {
       advisor: 'environment',
       severity: loud > 1_000 ? 2 : 1,
       title: 'Homes under the noise',
-      text: `${loud.toLocaleString('en-US')} residents live where the airport's planes or a busy motorway are loud. Keep homes off the runway's line; offices and industry mind less.`,
+      text: `${formatInt(loud)} residents live where the airport's planes or a busy motorway are loud. Keep homes off the runway's line; offices and industry mind less.`,
       map: 'noise',
     });
   return out;

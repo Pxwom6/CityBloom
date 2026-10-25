@@ -210,6 +210,7 @@ import {
   takeLoan,
 } from './systems/economy';
 import { DIFFICULTY, SANDBOX_FUNDS, bigCityFactor, fundingEffect, type Dept } from '../data/economy';
+import { DMath, formatInt } from './dmath';
 
 export { HIGHWAY_CONNECT_X };
 
@@ -909,7 +910,7 @@ export class Sim {
 
   private indexCivic(c: Civic): void {
     const r = civicRect(c);
-    const rad = Math.hypot(r.hw, r.hd);
+    const rad = DMath.hypot(r.hw, r.hd);
     this.civHash.insert(c.id, { minX: c.x - rad, minZ: c.z - rad, maxX: c.x + rad, maxZ: c.z + rad });
   }
 
@@ -928,7 +929,7 @@ export class Sim {
     this.indexCivic(c);
     this.dirtyCivics.add(c.id);
     const r = civicRect(c);
-    const pad = Math.hypot(r.hw, r.hd) + 40;
+    const pad = DMath.hypot(r.hw, r.hd) + 40;
     this.net.revalidate({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad });
     this.events.push({ kind: 'civicBuilt', id: c.id });
   }
@@ -940,7 +941,7 @@ export class Sim {
   ): void {
     const box = (k: Civic) => {
       const r = civicRect(k);
-      const pad = Math.hypot(r.hw, r.hd) + 40;
+      const pad = DMath.hypot(r.hw, r.hd) + 40;
       return { minX: k.x - pad, minZ: k.z - pad, maxX: k.x + pad, maxZ: k.z + pad };
     };
     const from = box(c);
@@ -966,7 +967,7 @@ export class Sim {
     this.removedCivics.add(id);
     this.vehiclesDirty = true;
     const r = civicRect(c);
-    const pad = Math.hypot(r.hw, r.hd) + 40;
+    const pad = DMath.hypot(r.hw, r.hd) + 40;
     this.net.revalidate({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad });
     this.events.push({ kind: 'civicRemoved', id });
   }
@@ -991,7 +992,7 @@ export class Sim {
 
   private indexBuilding(b: Building): void {
     const r = footprint(b);
-    const rad = Math.hypot(r.hw, r.hd);
+    const rad = DMath.hypot(r.hw, r.hd);
     this.bldHash.insert(b.id, { minX: b.x - rad, minZ: b.z - rad, maxX: b.x + rad, maxZ: b.z + rad });
   }
 
@@ -1186,7 +1187,7 @@ export class Sim {
         if (def.scope === 'district')
           return fail(`${def.name} is for districts: set it in a district's panel`);
         if (cmd.on && !this.isUnlocked(def.unlockPopulation))
-          return fail(`Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`);
+          return fail(`Unlocks at ${formatInt(def.unlockPopulation)} residents`);
         if (!dryRun) {
           const set = new Set(this.state.policies);
           if (cmd.on) set.add(cmd.id);

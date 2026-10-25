@@ -4,6 +4,7 @@ import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { civicOnline } from '../world/civic';
+import { DMath } from '../dmath';
 
 /**
  * Noise (M23), DESIGN.md §3.24: a raster (GRID_RES², 0..1) of the loudest thing heard at each cell.
@@ -47,8 +48,8 @@ export function computeNoise(sim: Sim): Float32Array {
   for (const c of s.civics.values()) {
     const a = CIVIC.get(c.def)?.airport;
     if (!a || !civicOnline(c)) continue;
-    const ux = Math.cos(c.angle);
-    const uz = Math.sin(c.angle);
+    const ux = DMath.cos(c.angle);
+    const uz = DMath.sin(c.angle);
     const half = CIVIC.get(c.def)!.w / 2;
     stamp(c.x, c.z, a.noise + half, (x, z) => {
       const dx = x - c.x;
@@ -56,8 +57,8 @@ export function computeNoise(sim: Sim): Float32Array {
       // Along the runway, measured from its nearer end; across it, from its centre line.
       const along = Math.max(0, Math.abs(dx * ux + dz * uz) - half);
       const across = Math.abs(-dx * uz + dz * ux);
-      const r = Math.hypot(along / a.noise, across / (a.noise * NOISE.across));
-      return r >= 1 ? 0 : NOISE.airport * (1 - r) ** 1.5;
+      const r = DMath.hypot(along / a.noise, across / (a.noise * NOISE.across));
+      return r >= 1 ? 0 : NOISE.airport * DMath.pow(1 - r, 1.5);
     });
   }
   for (const seg of s.net.segments.values()) {
@@ -70,7 +71,7 @@ export function computeNoise(sim: Sim): Float32Array {
       const px = c.xs[k]!;
       const pz = c.zs[k]!;
       stamp(px, pz, NOISE.roadReach, (x, z) => {
-        const d = Math.hypot(x - px, z - pz);
+        const d = DMath.hypot(x - px, z - pz);
         return d >= NOISE.roadReach ? 0 : level * (1 - d / NOISE.roadReach);
       });
     }
@@ -78,7 +79,7 @@ export function computeNoise(sim: Sim): Float32Array {
   for (const b of s.buildings.values()) {
     if (b.zone !== ZONE_I || b.state !== BState.Active || b.wealth !== 0) continue;
     stamp(b.x, b.z, NOISE.industryReach, (x, z) => {
-      const d = Math.hypot(x - b.x, z - b.z);
+      const d = DMath.hypot(x - b.x, z - b.z);
       return d >= NOISE.industryReach ? 0 : NOISE.industry * (1 - d / NOISE.industryReach);
     });
   }

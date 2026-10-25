@@ -1,3 +1,4 @@
+import { DMath } from './dmath';
 /**
  * 2D geometry shared by the sim and the main thread (pure functions, x/z plane).
  * Road segments are quadratic Béziers A → B with control point C; straight = C at the midpoint.
@@ -8,7 +9,7 @@ export interface Vec2 {
 }
 
 export const v2 = (x: number, z: number): Vec2 => ({ x, z });
-export const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.z - b.z);
+export const dist = (a: Vec2, b: Vec2): number => DMath.hypot(a.x - b.x, a.z - b.z);
 export const lerp2 = (a: Vec2, b: Vec2, t: number): Vec2 => ({
   x: a.x + (b.x - a.x) * t,
   z: a.z + (b.z - a.z) * t,
@@ -42,7 +43,7 @@ export function splitBezier(
 }
 
 /** Angle of a direction vector in radians (atan2(z, x)). */
-export const angleOf = (d: Vec2): number => Math.atan2(d.z, d.x);
+export const angleOf = (d: Vec2): number => DMath.atan2(d.z, d.x);
 
 /** Smallest absolute difference between two angles, in [0, π]. */
 export function angleDiff(a: number, b: number): number {
@@ -81,7 +82,7 @@ export class Curve {
       this.ts[i] = t;
       this.xs[i] = p.x;
       this.zs[i] = p.z;
-      if (i > 0) len += Math.hypot(p.x - this.xs[i - 1]!, p.z - this.zs[i - 1]!);
+      if (i > 0) len += DMath.hypot(p.x - this.xs[i - 1]!, p.z - this.zs[i - 1]!);
       this.cum[i] = len;
     }
     this.length = len;
@@ -119,7 +120,7 @@ export class Curve {
   /** Unit tangent at arc length s. */
   tangentAt(s: number): Vec2 {
     const d = bezierDeriv(this.a, this.c, this.b, this.tAt(s));
-    const l = Math.hypot(d.x, d.z) || 1;
+    const l = DMath.hypot(d.x, d.z) || 1;
     return { x: d.x / l, z: d.z / l };
   }
 
@@ -169,7 +170,7 @@ export class Curve {
     let k = 0;
     for (let i = 0; i <= 16; i++) {
       const d = bezierDeriv(a, c, b, i / 16);
-      const sp = Math.hypot(d.x, d.z);
+      const sp = DMath.hypot(d.x, d.z);
       if (sp < 1e-6) continue;
       k = Math.max(k, Math.abs(d.x * ddz - d.z * ddx) / (sp * sp * sp));
     }
@@ -254,8 +255,8 @@ export function rectsOverlap(a: ORect, b: ORect): boolean {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   for (const ang of axes) {
-    const ax = Math.cos(ang);
-    const az = Math.sin(ang);
+    const ax = DMath.cos(ang);
+    const az = DMath.sin(ang);
     const ra = projRadius(a, ax, az);
     const rb = projRadius(b, ax, az);
     if (Math.abs(dx * ax + dz * az) > ra + rb) return false;
@@ -264,22 +265,22 @@ export function rectsOverlap(a: ORect, b: ORect): boolean {
 }
 
 function projRadius(r: ORect, ax: number, az: number): number {
-  const c = Math.cos(r.angle);
-  const s = Math.sin(r.angle);
+  const c = DMath.cos(r.angle);
+  const s = DMath.sin(r.angle);
   return r.hw * Math.abs(c * ax + s * az) + r.hd * Math.abs(-s * ax + c * az);
 }
 
 /** Distance from a point to a rectangle's boundary region (0 if inside). */
 export function pointRectDistance(p: Vec2, r: ORect): number {
-  const c = Math.cos(r.angle);
-  const s = Math.sin(r.angle);
+  const c = DMath.cos(r.angle);
+  const s = DMath.sin(r.angle);
   const dx = p.x - r.x;
   const dz = p.z - r.z;
   const lx = dx * c + dz * s;
   const lz = -dx * s + dz * c;
   const ex = Math.max(0, Math.abs(lx) - r.hw);
   const ez = Math.max(0, Math.abs(lz) - r.hd);
-  return Math.hypot(ex, ez);
+  return DMath.hypot(ex, ez);
 }
 
 export function pointInRect(p: Vec2, r: ORect): boolean {
@@ -289,6 +290,6 @@ export function pointInRect(p: Vec2, r: ORect): boolean {
 /** Compass direction of a heading in the ground plane (−z is north). */
 export function compass(dx: number, dz: number): string {
   const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-  const k = Math.round(Math.atan2(dz, dx) / (Math.PI / 4));
+  const k = Math.round(DMath.atan2(dz, dx) / (Math.PI / 4));
   return names[(k + 8) % 8]!;
 }

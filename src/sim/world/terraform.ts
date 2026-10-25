@@ -6,6 +6,7 @@ import type { Sim } from '../sim';
 import { footprint } from './buildings';
 import { civicRect } from './civic';
 import type { EarthPlan } from './earthworks';
+import { DMath } from '../dmath';
 
 /**
  * Terraforming (M24): the player's own earthworks, on the same saved terrain deltas as a road's
@@ -24,7 +25,7 @@ const AREA = HEIGHT_STEP * HEIGHT_STEP;
 /** Distance from a point to a polyline (a single point is a dab). */
 function distToPath(x: number, z: number, pts: readonly Vec2[]): number {
   let best = Infinity;
-  if (pts.length === 1) return Math.hypot(x - pts[0]!.x, z - pts[0]!.z);
+  if (pts.length === 1) return DMath.hypot(x - pts[0]!.x, z - pts[0]!.z);
   for (let n = 0; n < pts.length - 1; n++) {
     const a = pts[n]!;
     const b = pts[n + 1]!;
@@ -32,7 +33,7 @@ function distToPath(x: number, z: number, pts: readonly Vec2[]): number {
     const dz = b.z - a.z;
     const len2 = dx * dx + dz * dz;
     const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2)) : 0;
-    best = Math.min(best, Math.hypot(a.x + dx * t - x, a.z + dz * t - z));
+    best = Math.min(best, DMath.hypot(a.x + dx * t - x, a.z + dz * t - z));
   }
   return best;
 }
@@ -126,7 +127,7 @@ export function planTerraform(
       // Strongest at the centre, fading to nothing at the rim and towards the map's edge.
       const q = d / radius;
       const edge = Math.min(x, z, MAP_SIZE - x, MAP_SIZE - z);
-      const w = (1 - q * q) ** 2 * Math.max(0, Math.min(1, (edge - HEIGHT_STEP) / TERRAFORM.edgeFade));
+      const w = DMath.pow(1 - q * q, 2) * Math.max(0, Math.min(1, (edge - HEIGHT_STEP) / TERRAFORM.edgeFade));
       if (w <= 0) continue;
       let t: number;
       if (mode === 'raise') t = cur + TERRAFORM.step * w;
@@ -160,7 +161,7 @@ export function planTerraform(
         for (let u = -reachN; u <= reachN; u++) {
           const a = i + u - hi0;
           if (a < 0 || a >= hw || !held[b * hw + a]) continue;
-          const dist = Math.hypot(u, v) * HEIGHT_STEP;
+          const dist = DMath.hypot(u, v) * HEIGHT_STEP;
           if (dist > TERRAFORM.reach) continue;
           const hh2 = H[(j + v) * HEIGHT_RES + (i + u)]!;
           const lim = dist * TERRAFORM.nearSlope;

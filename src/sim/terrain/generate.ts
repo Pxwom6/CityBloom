@@ -1,6 +1,7 @@
 import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, type MapPreset } from '../../data/world';
 import { Rng } from '../rng';
 import { Noise2D, clamp, lerp, smoothstep } from './noise';
+import { DMath } from '../dmath';
 
 /**
  * Terrain generator version for new cities. Saved cities keep the version they were founded with
@@ -67,7 +68,7 @@ export class TerrainGen {
       version,
     };
     const windAngle = rng.range(-0.6, 0.6); // mostly westerly: pollution drifts east, away from the start
-    params.wind = { x: Math.cos(windAngle), z: Math.sin(windAngle) };
+    params.wind = { x: DMath.cos(windAngle), z: DMath.sin(windAngle) };
 
     if (preset === 'river' || preset === 'highlands') {
       const x0 = rng.range(1150, 1450);
@@ -80,7 +81,7 @@ export class TerrainGen {
         const t = i / n;
         const z = lerp(-900, MAP_SIZE + 900, t);
         const x =
-          lerp(x0, x1, t) + amp * Math.sin(t * Math.PI * 2.4 + phase) + 40 * Math.sin(t * 17 + phase * 3);
+          lerp(x0, x1, t) + amp * DMath.sin(t * Math.PI * 2.4 + phase) + 40 * DMath.sin(t * 17 + phase * 3);
         pts.push([x, z]);
       }
       params.river = { points: pts, halfWidth: preset === 'river' ? rng.range(34, 44) : rng.range(16, 22) };
@@ -151,7 +152,7 @@ export class TerrainGen {
   coastDistance(x: number, z: number): number {
     const c = this.params.coast;
     if (!c) return -Infinity;
-    const cx = c.baseX + c.amp * Math.sin(z / 420 + c.phase) + 70 * this.nDetail.fbm(z / 600, 3.7, 3);
+    const cx = c.baseX + c.amp * DMath.sin(z / 420 + c.phase) + 70 * this.nDetail.fbm(z / 600, 3.7, 3);
     return x - cx;
   }
 
@@ -160,7 +161,7 @@ export class TerrainGen {
     let best = Infinity;
     for (const l of this.params.lakes) {
       const wobble = 25 * this.nDetail.noise(x / 90 + l.x, z / 90 + l.z);
-      const d = Math.hypot(x - l.x, z - l.z) - l.r - wobble;
+      const d = DMath.hypot(x - l.x, z - l.z) - l.r - wobble;
       if (d < best) best = d;
     }
     return best;
@@ -176,7 +177,7 @@ export class TerrainGen {
     let startEase = 0.3 + 0.7 * smoothstep(200, 900, x);
     // Version 2: hills fade out round the highway entrance (to about 4 m), whatever the seed.
     if (p.version >= 2) {
-      const d = Math.hypot(x, (z - p.highway.connectZ) * 0.8);
+      const d = DMath.hypot(x, (z - p.highway.connectZ) * 0.8);
       const floor = 4 / p.hillAmp;
       startEase = Math.min(startEase, floor + (1 - floor) * smoothstep(450, 1050, d));
     }
@@ -186,7 +187,7 @@ export class TerrainGen {
     // Mountains ring beyond the buildable area.
     const ox = Math.max(0, -x, x - MAP_SIZE);
     const oz = Math.max(0, -z, z - MAP_SIZE);
-    const out = Math.hypot(ox, oz);
+    const out = DMath.hypot(ox, oz);
     if (out > 0) {
       const ring = smoothstep(250, 2400, out);
       h += ring * (60 + 170 * this.nBase.ridged(x / 1100, z / 1100, 4));
@@ -278,7 +279,7 @@ export function generateTerrain(gen: TerrainGen): TerrainData {
       const h = sampleHeights(heights, x, z);
       const hx = sampleHeights(heights, x + 8, z) - sampleHeights(heights, x - 8, z);
       const hz = sampleHeights(heights, x, z + 8) - sampleHeights(heights, x, z - 8);
-      const slope = Math.hypot(hx, hz) / 16;
+      const slope = DMath.hypot(hx, hz) / 16;
       const k = j * GRID_RES + i;
       const nearWater = Math.min(
         gen.riverDistance(x, z),
@@ -288,7 +289,7 @@ export function generateTerrain(gen: TerrainGen): TerrainData {
       // Trees: forests on dry, not-too-steep land, thinned near the highway so the start is open.
       let forest = gen.forestNoise(x, z);
       if (h < 1.6 || slope > 0.7) forest = 0;
-      forest *= 0.3 + 0.7 * smoothstep(60, 320, Math.hypot(x - 0, z - hw.connectZ));
+      forest *= 0.3 + 0.7 * smoothstep(60, 320, DMath.hypot(x - 0, z - hw.connectZ));
       trees[k] = Math.round(clamp(forest, 0, 1) * 255);
       // Groundwater: higher in lowlands and near water.
       const gw =

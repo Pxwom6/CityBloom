@@ -15,6 +15,7 @@ import type { MapPreset } from '../../data/world';
 import type { Sim } from '../sim';
 import { dateOf, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { hourShare, segVC } from './traffic';
+import { DMath } from '../dmath';
 
 /**
  * Seasons and weather (M22), DESIGN.md §3.23. One spell of weather at a time, drawn from the city's
@@ -122,7 +123,7 @@ function updateTemperature(w: WeatherState, tick: number): void {
   const mean = monthMean(w, tick) + w.offset;
   w.mean = Math.round(mean * 10) / 10;
   // Warmest at 15:00, coldest at 03:00.
-  w.temp = Math.round((mean + c.swing * Math.cos(((hour - 15) / 24) * Math.PI * 2)) * 10) / 10;
+  w.temp = Math.round((mean + c.swing * DMath.cos(((hour - 15) / 24) * Math.PI * 2)) * 10) / 10;
 }
 
 /** Draw the next spell from the climate for this season. */

@@ -25,13 +25,14 @@ import {
   type RingSite,
   type Straightening,
 } from '../world/roundabout';
+import { DMath, formatInt } from '../dmath';
 
 /** Refusal reason if a road type isn't available yet, else null. */
 function roadLocked(sim: Sim, road: RoadTypeId): string | null {
   const t = ROAD_TYPES[road];
   if (!t.buildable) return "That road type can't be built";
   if (!sim.isUnlocked(t.unlockPopulation))
-    return `${t.name}s unlock at ${t.unlockPopulation.toLocaleString('en-US')} residents`;
+    return `${t.name}s unlock at ${formatInt(t.unlockPopulation)} residents`;
   return null;
 }
 
@@ -421,7 +422,7 @@ function clearTreesIn(sim: Sim, c: Vec2, r: number): void {
         for (let v = 0; v < 4; v++) {
           const x = (i + (u + 0.5) / 4) * GRID_CELL;
           const z = (j + (v + 0.5) / 4) * GRID_CELL;
-          if (Math.hypot(x - c.x, z - c.z) <= r) hit++;
+          if (DMath.hypot(x - c.x, z - c.z) <= r) hit++;
         }
       const next = Math.round(trees[k]! * (1 - hit / 16));
       if (next !== trees[k]) {
@@ -502,7 +503,7 @@ export function setTram(sim: Sim, segId: number, on: boolean, dryRun: boolean): 
     if (seg.tram) return fail('This road already has tram track', { at });
     if (!ROAD_TYPES[seg.type].tram) return fail('Tram track goes on streets, avenues and boulevards', { at });
     if (!sim.isUnlocked(TRAM.unlockPopulation))
-      return fail(`Trams unlock at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`, { at });
+      return fail(`Trams unlock at ${formatInt(TRAM.unlockPopulation)} residents`, { at });
     const cost = Math.round(curve.length * TRAM.trackCost);
     if (cost > s.treasury && !s.options.sandbox) return fail('Not enough money', { at });
     if (dryRun) return ok(cost, { info: { length: Math.round(curve.length) } });
@@ -624,7 +625,7 @@ export function placeRoundabout(
         return { ok: false, reason: 'Another road is in the way of the ring', at: centre };
     }
     for (const n of nearRings)
-      if (Math.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout! + JUNCTION.ringWidth + 8)
+      if (DMath.hypot(n.x - centre.x, n.z - centre.z) < outer + n.roundabout! + JUNCTION.ringWidth + 8)
         return { ok: false, reason: 'Too close to another roundabout', at: centre };
     // Civic buildings on the ring stop it; zoned buildings are demolished.
     for (const c of sim.state.civics.values())

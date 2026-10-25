@@ -119,7 +119,7 @@ export function thoughts(sim: Sim, count = 6): Thought[] {
         b.pop > 0 &&
         (b.zone === ZONE_R || b.zone === ZONE_C || b.zone === ZONE_I),
     )
-    .sort((a, b) => hash2(a.id, hour, 7) - hash2(b.id, hour, 7));
+    .sort((a, b) => hash2(a.id, hour, 7) - hash2(b.id, hour, 7) || a.id - b.id);
   const out: Thought[] = [];
   for (const b of list) {
     if (out.length >= count) break;

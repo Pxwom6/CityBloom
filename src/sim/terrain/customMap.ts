@@ -11,6 +11,7 @@ import {
 } from '../../data/world';
 import { TERRAIN_VERSION, TerrainGen, generateTerrain, sampleHeights, type TerrainParams } from './generate';
 import { clamp, smoothstep } from './noise';
+import { DMath } from '../dmath';
 
 /**
  * Custom maps (M24): a map made in the editor. The ground inside the map is its own (absolute
@@ -282,7 +283,7 @@ export function checkMap(map: MapData, heights = unpackHeights(map.heights)): Ma
       if (map.trees[k]! > 40) forest++;
       if (map.ore[k]! > 60) ore++;
       if (map.oil[k]! > 60) oil++;
-      if (Math.hypot(x, z - hz) > START_REACH) continue;
+      if (DMath.hypot(x, z - hz) > START_REACH) continue;
       land++;
       if (dry && (hi - lo) / (GRID_CELL * Math.SQRT2) <= MAX_CELL_SLOPE) good++;
     }

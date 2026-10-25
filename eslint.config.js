@@ -3,6 +3,60 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
+/**
+ * Engine-dependent maths and locale formatting may differ between browsers in the last bit, which
+ * would split a shared city apart (SPEC-4.md, M29): src/sim and src/data use src/sim/dmath.ts.
+ */
+const DMATH_ONLY = [
+  'hypot',
+  'sin',
+  'cos',
+  'tan',
+  'asin',
+  'acos',
+  'atan',
+  'atan2',
+  'sinh',
+  'cosh',
+  'tanh',
+  'asinh',
+  'acosh',
+  'atanh',
+  'exp',
+  'expm1',
+  'log',
+  'log1p',
+  'log2',
+  'log10',
+  'pow',
+  'cbrt',
+];
+const DETERMINISM = {
+  properties: [
+    ...DMATH_ONLY.map((property) => ({
+      object: 'Math',
+      property,
+      message: `Math.${property} may differ between browsers: use DMath from src/sim/dmath.ts`,
+    })),
+    {
+      property: 'toLocaleString',
+      message: 'Locale formatting may differ between browsers: use formatInt (src/sim/dmath.ts)',
+    },
+    {
+      property: 'localeCompare',
+      message: 'Locale order may differ between browsers: compare strings with < and >',
+    },
+  ],
+  syntax: [
+    { selector: "BinaryExpression[operator='**']", message: '** may differ between browsers: use DMath.pow' },
+    {
+      selector: "AssignmentExpression[operator='**=']",
+      message: '**= may differ between browsers: use DMath.pow',
+    },
+    { selector: "MemberExpression[object.name='Intl']", message: 'Keep Intl out of the sim' },
+  ],
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -68,11 +122,21 @@ export default tseslint.config(
         'error',
         { object: 'Math', property: 'random', message: 'Use the seeded Rng in src/sim/rng.ts' },
         { object: 'Date', property: 'now', message: 'The sim must not read the wall clock' },
+        ...DETERMINISM.properties,
       ],
       'no-restricted-syntax': [
         'error',
         { selector: "NewExpression[callee.name='Date']", message: 'The sim must not read the wall clock' },
+        ...DETERMINISM.syntax,
       ],
+    },
+  },
+  {
+    // Balancing data feeds the sim too: the same deterministic maths (phase 4).
+    files: ['src/data/**/*.ts'],
+    rules: {
+      'no-restricted-properties': ['error', ...DETERMINISM.properties],
+      'no-restricted-syntax': ['error', ...DETERMINISM.syntax],
     },
   },
 );

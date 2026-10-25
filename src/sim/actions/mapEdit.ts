@@ -15,6 +15,7 @@ import {
   type MapData,
 } from '../terrain/customMap';
 import { applyHeights } from '../world/earthworks';
+import { DMath } from '../dmath';
 
 /**
  * The map editor's brushes (M24): sculpt the ground, paint water, plant forests and lay ore and
@@ -24,7 +25,7 @@ import { applyHeights } from '../world/earthworks';
 
 /** Distance from a point to a polyline (a single point is a dab). */
 function distToPath(x: number, z: number, pts: readonly Vec2[]): number {
-  if (pts.length === 1) return Math.hypot(x - pts[0]!.x, z - pts[0]!.z);
+  if (pts.length === 1) return DMath.hypot(x - pts[0]!.x, z - pts[0]!.z);
   let best = Infinity;
   for (let n = 0; n < pts.length - 1; n++) {
     const a = pts[n]!;
@@ -33,14 +34,14 @@ function distToPath(x: number, z: number, pts: readonly Vec2[]): number {
     const dz = b.z - a.z;
     const len2 = dx * dx + dz * dz;
     const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2)) : 0;
-    best = Math.min(best, Math.hypot(a.x + dx * t - x, a.z + dz * t - z));
+    best = Math.min(best, DMath.hypot(a.x + dx * t - x, a.z + dz * t - z));
   }
   return best;
 }
 
 const falloff = (d: number, r: number) => {
   const q = d / r;
-  return q >= 1 ? 0 : (1 - q * q) ** 2;
+  return q >= 1 ? 0 : DMath.pow(1 - q * q, 2);
 };
 
 const clampH = (h: number) => Math.max(MAP_MIN_HEIGHT, Math.min(MAP_MAX_HEIGHT, h));

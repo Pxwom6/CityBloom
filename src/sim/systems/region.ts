@@ -171,7 +171,7 @@ export function garbageDealsHour(sim: Sim): void {
       // They collect from the landfills at the edge of town: fullest first.
       for (const c of civics
         .filter((c) => civicDef(c).garbage?.storage)
-        .sort((a, b) => b.stored - a.stored)) {
+        .sort((a, b) => b.stored - a.stored || a.id - b.id)) {
         if (moved >= hourly) break;
         const take = Math.min(c.stored, hourly - moved);
         c.stored -= take;

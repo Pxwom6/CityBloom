@@ -4,6 +4,7 @@ import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { civicDef } from '../world/civic';
+import { DMath } from '../dmath';
 
 /** Distance (m) from each raster cell to the nearest water cell, capped. Derived from terrain. */
 export function waterDistance(sim: Sim): Float32Array {
@@ -176,7 +177,7 @@ function kernel(r: number): Float64Array {
   const out: number[] = [];
   for (let dj = -Math.ceil(r); dj <= Math.ceil(r); dj++) {
     for (let di = -Math.ceil(r); di <= Math.ceil(r); di++) {
-      const d = Math.hypot(di, dj) / r;
+      const d = DMath.hypot(di, dj) / r;
       if (d <= 1) out.push(di, dj, 1 - d);
     }
   }

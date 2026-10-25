@@ -4,6 +4,7 @@ import { fail, ok, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
 import { civicBuses, civicDef, civicOnline } from '../world/civic';
 import { routeBetween, type Leg } from './graph';
+import { DMath, formatInt } from '../dmath';
 
 /**
  * Buses (DESIGN §3.8): the player places a depot and stops; each stop is served by the depot it
@@ -84,10 +85,10 @@ export function placeStop(sim: Sim, x: number, z: number, dryRun: boolean, tram 
       at: { x, z },
     });
   if (tram && !sim.isUnlocked(TRAM.unlockPopulation))
-    return fail(`Trams unlock at ${TRAM.unlockPopulation.toLocaleString('en-US')} residents`, { at });
+    return fail(`Trams unlock at ${formatInt(TRAM.unlockPopulation)} residents`, { at });
   // A tram stop can stand beside a bus stop (people change there), not beside another tram stop.
   for (const st of s.transit.stops.values())
-    if (!!st.tram === tram && Math.hypot(st.x - at.x, st.z - at.z) < 40)
+    if (!!st.tram === tram && DMath.hypot(st.x - at.x, st.z - at.z) < 40)
       return fail('Too close to another stop', { at });
   if (TRANSIT.stopCost > s.treasury && !s.options.sandbox) return fail('Not enough money', { at });
   if (dryRun) return ok(TRANSIT.stopCost, { info: { x: at.x, z: at.z, seg: at.seg } });
@@ -208,7 +209,7 @@ function loopLines(sim: Sim, mode: 'bus' | 'tram'): BusLine[] {
       let bi = 0;
       let bd = Infinity;
       left.forEach((st, i) => {
-        const dd = Math.hypot(st.x - cur.x, st.z - cur.z);
+        const dd = DMath.hypot(st.x - cur.x, st.z - cur.z);
         if (dd < bd - 1e-9) {
           bd = dd;
           bi = i;
@@ -305,7 +306,7 @@ export function trainLines(sim: Sim): BusLine[] {
     const tEnd = from(end);
     const order = group
       .filter((x) => Number.isFinite(tEnd.get(x.id)!))
-      .sort((a, b) => tEnd.get(a.id)! - tEnd.get(b.id)!);
+      .sort((a, b) => tEnd.get(a.id)! - tEnd.get(b.id)! || a.id - b.id);
     if (order.length < 2) continue;
     const legs: Leg[] = [];
     const stopTime: number[] = [0];
@@ -365,7 +366,7 @@ export function stopsNearNodes(
     line.stopPos.forEach((st, si) => {
       for (let n = 0; n < g.size; n++) {
         const node = sim.state.net.nodes.get(g.ids[n]!)!;
-        const d = Math.hypot(node.x - st.x, node.z - st.z);
+        const d = DMath.hypot(node.x - st.x, node.z - st.z);
         if (d > reach) continue;
         const list = out.get(n) ?? [];
         list.push({ line: li, stop: si, walk: (d * 1.3) / TRANSIT.walkSpeed });
@@ -406,7 +407,7 @@ export function busTime(
 export function busShare(carSeconds: number, busSeconds: number, load: number): number {
   if (!Number.isFinite(busSeconds)) return 0;
   const x = (carSeconds + TRANSIT.carPenalty - busSeconds) / TRANSIT.shareScale;
-  return (TRANSIT.maxShare * load) / (1 + Math.exp(-x));
+  return (TRANSIT.maxShare * load) / (1 + DMath.exp(-x));
 }
 
 /**

@@ -6,6 +6,7 @@ import type { Vec2 } from '../geom';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { ZONE_R } from '../../data/zones';
+import { DMath, formatInt } from '../dmath';
 
 /**
  * Districts (M21): named areas the player paints over the city, one 16 m raster cell at a time.
@@ -53,7 +54,7 @@ export function cellsNearPath(points: Vec2[], radius: number): number[] {
         const cx = (i + 0.5) * GRID_CELL;
         const cz = (j + 0.5) * GRID_CELL;
         const t = len2 > 0 ? Math.max(0, Math.min(1, ((cx - a.x) * dx + (cz - a.z) * dz) / len2)) : 0;
-        if (Math.hypot(cx - (a.x + t * dx), cz - (a.z + t * dz)) <= radius) out.add(j * GRID_RES + i);
+        if (DMath.hypot(cx - (a.x + t * dx), cz - (a.z + t * dz)) <= radius) out.add(j * GRID_RES + i);
       }
   }
   return [...out].sort((x, y) => x - y);
@@ -135,7 +136,7 @@ export function setDistrictPolicy(
   if (!def) return fail('No such policy');
   if (def.scope === 'city') return fail(`${def.name} applies to the whole city`);
   if (on && !sim.isUnlocked(def.unlockPopulation))
-    return fail(`Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`);
+    return fail(`Unlocks at ${formatInt(def.unlockPopulation)} residents`);
   if (on && sim.policy(policy)) return fail(`${def.name} is already in force across the city`);
   if (on === d.policies.includes(policy)) return fail(on ? 'Already in force here' : 'Not in force here');
   if (dryRun) return ok(0);

@@ -11,6 +11,7 @@ import { civicDef, civicRect, type Civic } from '../world/civic';
 import { book } from './economy';
 import { dispatch, ignite, toRubble, type Incident } from './incidents';
 import { SERVICES } from '../../data/civic';
+import { DMath } from '../dmath';
 
 export type DisasterKind = 'earthquake' | 'tornado' | 'flood' | 'meteor';
 export const DISASTER_KINDS: readonly DisasterKind[] = ['earthquake', 'tornado', 'flood', 'meteor'];
@@ -59,9 +60,9 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 export function tornadoAt(d: Disaster, tick: number): { x: number; z: number } {
   const t = clamp(tick - d.start, 0, d.end - d.start);
   const along = DISASTERS.tornado.speed * t;
-  const side = 45 * Math.sin(t * 0.06 + d.seed) + 20 * Math.sin(t * 0.17 + d.seed * 2.3);
-  const cx = Math.cos(d.heading);
-  const cz = Math.sin(d.heading);
+  const side = 45 * DMath.sin(t * 0.06 + d.seed) + 20 * DMath.sin(t * 0.17 + d.seed * 2.3);
+  const cx = DMath.cos(d.heading);
+  const cz = DMath.sin(d.heading);
   return { x: d.x + cx * along - cz * side, z: d.z + cz * along + cx * side };
 }
 
@@ -176,13 +177,13 @@ export function startDisaster(
   if (kind === 'earthquake') {
     // Most quakes are moderate; the big ones are rare.
     const [lo, hi] = DISASTERS.earthquake.magnitude;
-    d.size = opts.size ?? lo + (hi - lo) * rng.next() ** 2;
+    d.size = opts.size ?? lo + (hi - lo) * DMath.pow(rng.next(), 2);
     d.end = start + DISASTERS.earthquake.shakeTicks;
   } else if (kind === 'tornado') {
     d.size = opts.size ?? between(DISASTERS.tornado.halfWidth);
     const c = cityCentre(sim);
     const toward =
-      Math.hypot(c.x - at.x, c.z - at.z) > 60 ? Math.atan2(c.z - at.z, c.x - at.x) : rng.next() * 6.28;
+      DMath.hypot(c.x - at.x, c.z - at.z) > 60 ? DMath.atan2(c.z - at.z, c.x - at.x) : rng.next() * 6.28;
     d.heading = opts.heading ?? toward + (rng.next() - 0.5) * 0.8;
     d.end = start + Math.round(between(DISASTERS.tornado.ticks));
   } else if (kind === 'flood') {
@@ -253,7 +254,7 @@ function buildingsNear(sim: Sim, x: number, z: number, r: number): Building[] {
   return [...sim.bldHash.queryPoint(x, z, r)]
     .sort((a, b) => a - b)
     .map((id) => sim.state.buildings.get(id)!)
-    .filter((b) => b && Math.hypot(b.x - x, b.z - z) <= r);
+    .filter((b) => b && DMath.hypot(b.x - x, b.z - z) <= r);
 }
 
 function civicsNear(sim: Sim, x: number, z: number, r: number): Civic[] {
@@ -263,7 +264,7 @@ function civicsNear(sim: Sim, x: number, z: number, r: number): Civic[] {
     .filter((c) => {
       if (!c) return false;
       const rect = civicRect(c);
-      return Math.hypot(c.x - x, c.z - z) <= r + Math.min(rect.hw, rect.hd);
+      return DMath.hypot(c.x - x, c.z - z) <= r + Math.min(rect.hw, rect.hd);
     });
 }
 
@@ -272,7 +273,7 @@ function clearTrees(sim: Sim, x: number, z: number, r: number): void {
   for (let j = Math.floor((z - r) / GRID_CELL); j <= Math.floor((z + r) / GRID_CELL); j++)
     for (let i = Math.floor((x - r) / GRID_CELL); i <= Math.floor((x + r) / GRID_CELL); i++) {
       if (i < 0 || j < 0 || i >= GRID_RES || j >= GRID_RES) continue;
-      if (Math.hypot((i + 0.5) * GRID_CELL - x, (j + 0.5) * GRID_CELL - z) > r) continue;
+      if (DMath.hypot((i + 0.5) * GRID_CELL - x, (j + 0.5) * GRID_CELL - z) > r) continue;
       const idx = j * GRID_RES + i;
       if (!s.trees[idx]) continue;
       s.trees[idx] = 0;
@@ -285,10 +286,10 @@ function earthquake(sim: Sim, d: Disaster): void {
   const R = earthquakeRadius(d.size);
   const strength = clamp((d.size - 4.5) / 2.5, 0, 1.3);
   const rng = sim.rng.disasters;
-  const intensity = (dist: number) => Math.pow(clamp(1 - dist / R, 0, 1), 1.3) * strength;
+  const intensity = (dist: number) => DMath.pow(clamp(1 - dist / R, 0, 1), 1.3) * strength;
   for (const b of buildingsNear(sim, d.x, d.z, R)) {
     if (b.state === BState.Rubble) continue;
-    const I = intensity(Math.hypot(b.x - d.x, b.z - d.z));
+    const I = intensity(DMath.hypot(b.x - d.x, b.z - d.z));
     const tall = b.density === 2 ? 1.2 : 1;
     const weak = b.state === BState.Abandoned || b.state === BState.Construction ? 1.5 : 1;
     if (rng.chance(clamp(e.collapse * I * I * tall * weak, 0, 0.95))) collapse(sim, b, d);
@@ -303,7 +304,7 @@ function earthquake(sim: Sim, d: Disaster): void {
       damageRoad(sim, seg, DISASTERS.roadRepairHours + DISASTERS.roadRepairPerIntensity * I, d);
   }
   for (const c of civicsNear(sim, d.x, d.z, R)) {
-    const I = intensity(Math.hypot(c.x - d.x, c.z - d.z));
+    const I = intensity(DMath.hypot(c.x - d.x, c.z - d.z));
     if (rng.chance(e.civicChance * I))
       damageCivic(sim, c, DISASTERS.civicRepairHours + DISASTERS.civicRepairPerIntensity * I, d);
   }
@@ -316,7 +317,7 @@ function tornadoTick(sim: Sim, d: Disaster): void {
   const w = d.size;
   for (const b of buildingsNear(sim, p.x, p.z, w)) {
     if (b.state === BState.Rubble) continue;
-    const core = Math.hypot(b.x - p.x, b.z - p.z) < w * 0.6;
+    const core = DMath.hypot(b.x - p.x, b.z - p.z) < w * 0.6;
     if (rng.chance(core ? t.destroyCore : t.destroyEdge)) collapse(sim, b, d);
   }
   for (const c of civicsNear(sim, p.x, p.z, w)) if (!c.damage) damageCivic(sim, c, t.civicHours, d);
@@ -331,7 +332,7 @@ function meteorImpact(sim: Sim, d: Disaster): void {
   const rng = sim.rng.disasters;
   for (const b of buildingsNear(sim, d.x, d.z, r * m.fireReach)) {
     if (b.state === BState.Rubble) continue;
-    const dist = Math.hypot(b.x - d.x, b.z - d.z);
+    const dist = DMath.hypot(b.x - d.x, b.z - d.z);
     if (dist <= r) collapse(sim, b, d);
     else if (rng.chance(0.55 * (1 - dist / (r * m.fireReach)))) {
       ignite(sim, b);
@@ -340,7 +341,7 @@ function meteorImpact(sim: Sim, d: Disaster): void {
   }
   for (const c of civicsNear(sim, d.x, d.z, r * m.fireReach)) {
     const rect = civicRect(c);
-    const dist = Math.hypot(c.x - d.x, c.z - d.z);
+    const dist = DMath.hypot(c.x - d.x, c.z - d.z);
     if (dist <= r + Math.min(rect.hw, rect.hd) * 0.5) {
       // A direct hit flattens it: the player has to build it again.
       d.destroyed++;
@@ -368,7 +369,7 @@ export function floodedSegments(sim: Sim): Set<number> {
       for (let k = 0; k <= 6; k++) {
         const at = (c.length * k) / 6;
         const p = c.pointAt(at);
-        if (Math.hypot(p.x - d.x, p.z - d.z) > R) continue;
+        if (DMath.hypot(p.x - d.x, p.z - d.z) > R) continue;
         if (sim.roadHeightAt(seg, at, p.x, p.z) < level) {
           out.add(seg);
           break;
@@ -382,7 +383,7 @@ export function floodedSegments(sim: Sim): Set<number> {
 /** Is a point under any flood right now? */
 function underFlood(sim: Sim, x: number, z: number, levels: { d: Disaster; level: number }[]): boolean {
   for (const { d, level } of levels) {
-    if (Math.hypot(x - d.x, z - d.z) > DISASTERS.flood.radius) continue;
+    if (DMath.hypot(x - d.x, z - d.z) > DISASTERS.flood.radius) continue;
     if (sim.terrain.heightAt(x, z) < level) return true;
   }
   return false;
@@ -400,7 +401,7 @@ function floodHour(sim: Sim): void {
   for (const b of [...s.buildings.values()].sort((a, c) => a.id - c.id)) {
     const wet = levels.length > 0 && b.state !== BState.Rubble && underFlood(sim, b.x, b.z, levels);
     if (wet) {
-      const src = levels.find((l) => Math.hypot(b.x - l.d.x, b.z - l.d.z) <= f.radius)!.d;
+      const src = levels.find((l) => DMath.hypot(b.x - l.d.x, b.z - l.d.z) <= f.radius)!.d;
       if (!b.flooded) {
         src.damaged++;
         sim.markBuildingDirty(b.id);
@@ -419,7 +420,7 @@ function floodHour(sim: Sim): void {
       c.flooded = wet;
       sim.civicStatusChanged(c.id);
       if (wet) {
-        const src = levels.find((l) => Math.hypot(c.x - l.d.x, c.z - l.d.z) <= f.radius);
+        const src = levels.find((l) => DMath.hypot(c.x - l.d.x, c.z - l.d.z) <= f.radius);
         if (src) src.d.damaged++;
       }
     }
@@ -559,8 +560,8 @@ function randomDisaster(sim: Sim): void {
     // Touch down outside town and head in.
     const a = rng.next() * Math.PI * 2;
     at = {
-      x: clamp(target.x + Math.cos(a) * 450, 20, MAP_SIZE - 20),
-      z: clamp(target.z + Math.sin(a) * 450, 20, MAP_SIZE - 20),
+      x: clamp(target.x + DMath.cos(a) * 450, 20, MAP_SIZE - 20),
+      z: clamp(target.z + DMath.sin(a) * 450, 20, MAP_SIZE - 20),
     };
   }
   startDisaster(sim, kind, at);

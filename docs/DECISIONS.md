@@ -655,3 +655,9 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   own wording, which differs between browsers), the city carries on, the issuer is told, and the
   worker posts the error to the page; the worker's loop and the headless driver catch and report what
   escapes, and a command or preview that throws still gets an answer.
+- **F9 Leaving a room leaves a city of one's own.** The worker and the headless driver forget which
+  player they were, the room's rules and the other players' undo histories; the player's own recent
+  edits stay undoable as single player's (an undo still refuses anything someone else has changed
+  since). A session that ends because the player was removed or the room went away does the same
+  (before, the copy kept waiting for a room that would never move it on), and a new room hosted from
+  the same page starts without the old one's rules.

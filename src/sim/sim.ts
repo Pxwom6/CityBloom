@@ -1352,6 +1352,18 @@ export class Sim {
     for (const [p, h] of list) this.histories.set(p, JSON.parse(JSON.stringify(h)) as PlayerHistory);
   }
 
+  /**
+   * The city stops being shared (F9): this copy is single player again. The player's own recent
+   * edits stay undoable as single player's; the other players' histories and the room's rules go.
+   */
+  leaveShared(): void {
+    const mine = this.historyOf(this.viewer);
+    this.setHistoryState(mine.undo.length || mine.redo.length ? [[0, mine]] : []);
+    this.viewer = 0;
+    this.rules = null;
+    this.shared = false;
+  }
+
   /** What an undoable command may change; null for commands that aren't undone. */
   private undoScope(cmd: Command): Scope | null {
     switch (cmd.type) {

@@ -106,6 +106,7 @@ export class HeadlessDriver implements SimDriver {
   share(player: number, lastSeq: number): void {
     this.player = player;
     this.sim.setHistoryState([]);
+    this.sim.rules = null;
     this.attach(lastSeq);
     const ls = this.lockstep!;
     const save = ls.rebirth();
@@ -133,8 +134,9 @@ export class HeadlessDriver implements SimDriver {
   }
 
   unshare(): void {
-    this.sim.shared = false;
+    this.sim.leaveShared();
     this.lockstep = null;
+    this.player = 0;
   }
 
   async save(): Promise<SaveFile> {

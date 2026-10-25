@@ -207,6 +207,11 @@ export class RoomSession {
     this.started?.reject(new Error(text));
     this.started = null;
     this.stopTimers();
+    // Removed, or the room closed: the city on screen is this player's own now (F9), not one still
+    // waiting for a room that will never move it on.
+    this.unsub?.();
+    this.unsub = null;
+    this.driver.unshare();
     for (const r of this.pending.values()) r({ ok: false, reason: 'Not connected to the room' });
     this.pending.clear();
     this.changed();
@@ -501,9 +506,12 @@ export class RoomSession {
     this.state = 'closed';
     this.stopTimers();
     this.unsub?.();
+    this.unsub = null;
     this.link?.close();
     this.link = null;
     this.driver.unshare();
+    for (const r of this.pending.values()) r({ ok: false, reason: 'You left the room' });
+    this.pending.clear();
     this.changed();
   }
 

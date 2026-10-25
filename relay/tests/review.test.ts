@@ -235,3 +235,23 @@ describe('F7: a bad command never reaches the city', () => {
     l.link.close();
   });
 });
+
+describe('F9: the copy a removed player keeps is theirs to play', () => {
+  it('stops waiting for the room once the session ends', async () => {
+    const room = makeRoom('KEEPIT');
+    const connect = loopTo(room);
+    const host = player('Ada', connect, hostTown(), { create: { cityName: 'Roomford' } });
+    players.push(host);
+    await host.session.start();
+    const sam = player('Sam', connect, null);
+    players.push(sam);
+    await sam.session.start();
+    expect(sam.driver.lockstep).not.toBeNull();
+    host.session.admin('kick', sam.session.credentials!.id);
+    await until(() => sam.session.state === 'closed', 5000, 'Sam to be removed');
+    // No longer in lockstep: Sam's own commands apply, as single player's.
+    expect(sam.driver.lockstep).toBeNull();
+    expect(sam.driver.sim.shared).toBe(false);
+    expect(sam.driver.sim.dispatch({ type: 'renameCity', name: 'Samford' }).ok).toBe(true);
+  }, 60_000);
+});

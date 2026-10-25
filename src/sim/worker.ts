@@ -180,12 +180,14 @@ function handle(msg: MainToWorker): void {
   switch (msg.type) {
     case 'init':
       lockstep = null;
+      player = 0;
       sim = Sim.create(msg.options, msg.map ?? null);
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
     case 'load':
       lockstep = null;
+      player = 0;
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
@@ -221,8 +223,10 @@ function handle(msg: MainToWorker): void {
     case 'share':
       if (!sim) return;
       player = msg.player;
-      // Single player's undo history belongs to the city before it was shared.
+      // Single player's undo history belongs to the city before it was shared, and a new room has
+      // no rules until its host sets some.
       sim.setHistoryState([]);
+      sim.rules = null;
       share(sim, msg.lastSeq);
       {
         // The city the room is made from: this machine carries on from it as the others will.
@@ -240,8 +244,11 @@ function handle(msg: MainToWorker): void {
       if (sim?.testMode) sim.rng.growth.next();
       break;
     case 'unshare':
-      if (sim) sim.shared = false;
+      // This copy is the player's own now (F9): their undo, no room rules, no other players.
+      sim?.leaveShared();
       lockstep = null;
+      player = 0;
+      applied = [];
       delete perf.behind;
       break;
     case 'stamped': {

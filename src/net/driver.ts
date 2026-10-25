@@ -135,6 +135,7 @@ export class HeadlessDriver implements SimDriver {
     const ls = this.lockstep;
     if (!ls || this.frozen) return;
     const t0 = performance.now();
+    if (ls.behind === 0 && ls.pending) ls.run(0);
     while (ls.behind > 0 && performance.now() - t0 < this.budgetMs) {
       ls.run(1);
       if (this.slowMs) {

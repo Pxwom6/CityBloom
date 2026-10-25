@@ -128,7 +128,7 @@ export function startRelay(port = 8787, dataDir: string | null = null): Promise<
 if (process.argv[1]?.endsWith('local.ts')) {
   const args = process.argv.slice(2);
   const dataAt = args.indexOf('--data');
-  const port = Number(args.find((a, i) => /^\d+$/.test(a) && i !== dataAt + 1) ?? 8787);
+  const port = Number(args.find((a, i) => /^\d+$/.test(a) && (dataAt < 0 || i !== dataAt + 1)) ?? 8787);
   void startRelay(port, dataAt >= 0 ? args[dataAt + 1]! : null).then((r) =>
     console.log(
       `Citybloom relay on ws://localhost:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,

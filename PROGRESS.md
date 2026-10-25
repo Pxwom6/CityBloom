@@ -75,7 +75,7 @@ Should fix:
 - [x] F10 Peer-to-peer dead ends
 - [ ] F11 Phones
 - [ ] F12 Invite links
-- [ ] F13 Tests
+- [x] F13 Tests
 - [ ] F14 Balance
 - [ ] Minor items
 
@@ -751,6 +751,16 @@ misses with either build (`startup-slow.log`).
   commands applied over 113,018 ticks (6.5 game years). **No unexplained resyncs**, and at the end
   every game agreed with the host's part for part. Log: `bench-results/soak.log`.
 
+## Tests (multiplayer review, F13)
+- Cross-browser determinism, Node side, 24 months, now covering all 40 command kinds: 26.8 s,
+  population 2,360, last month hash `1382620c`, none refused. Chromium, WebKit and real Firefox run in
+  `.github/workflows/xbrowser.yml` on every push to `m33-ready` and `multiplayer` (the cloud VM can't
+  download WebKit or Firefox).
+- Legacy corpus: `Saves/legacy/v24-river.citybloom` (grown by the live site's code, v24): 2,178 →
+  2,249 residents over two years, approval 60 → 63 %, $13,015 → $300,138.
+- Vitest: `npm test` runs projects `unit` and `live` (`relay/tests/{room,local,review}.test.ts`, one
+  retry); the deploy runs `--project unit`. The frozen-pacer test went from 12.8 s to 3.5 s.
+
 ## Network (multiplayer review, F8)
 - `npx tsx scripts/dev/netbudget.ts 3 3 4`, before and after back to back on the cloud VM: an hour of
   four-player play now writes **180 rows** (0.2 % of 100,000), down from 1,180 (which the old store
@@ -848,6 +858,9 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
+  `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
+  WebKit results.
 - Multiplayer review (F8): how many snapshot parts the ~110k bench city needs against the 40-part
   (8 MB) cap (`encodeSnapshot` on `bench-results/city.gz`'s save); a city past it is told it's too big
   to share.

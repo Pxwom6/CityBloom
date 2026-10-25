@@ -728,3 +728,20 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   its object awake (duration, not rows; on the free plan the failure is "unavailable until midnight
   UTC", not a bill), signalling guests have no maximum lifetime, and player records aren't pruned
   (each join costs rows, so the budget bounds them).
+- **F13 Tests that test what they say.** The M29 spec compared the first game day of its three with
+  itself (Node's runner keeps only 48 hourly checksums, and a missing one fell back to the page's
+  own); its reference now steps an hour at a time into a map of every checksum, and every page hour
+  must equal it. The cross-browser script's command kinds come from `COMMAND_TYPES`, the
+  compiler-checked list beside `Command`, and its month 7 passes on a region's news and pays into its
+  project, so all 40 kinds run in every browser (in a room both are refused as page-only, alike on
+  every machine); `tests/lockstep/determinism.test.ts` checks the same in Node. A real v24 save, grown
+  by the live site's own code (main at 6f049d3, `legacy-corpus.mjs 24 --presets river`), joins the
+  corpus with `tests/legacy/v24.test.ts`: its street names stay as saved, nothing is anyone else's,
+  and a shared copy keeps step with one played alone. The real Trystero join path (code and key,
+  over a Nostr relay on this computer) is `e2e/f2-trystero.spec.ts` and a Node test in
+  `relay/tests/review.test.ts`. The relay's wall-clock tests are a Vitest project of their own
+  (`live`, one retry): `npm test` runs everything, the deploy only `--project unit`, so a slow runner
+  can't hold back the site or switch its online rooms off. A separate workflow (`xbrowser.yml`, which
+  never gates a deploy) runs the live tests and the cross-browser test in Chromium, WebKit and real
+  Firefox, which the cloud VM can't download and which won't start on the Mac. The frozen-pacer test
+  pushes the room's clock past its 8 s wait instead of waiting it out.

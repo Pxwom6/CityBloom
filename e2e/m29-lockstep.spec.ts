@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { openGame, shot } from './helpers';
 import { Lockstep, type Stamped } from '../src/sim/lockstep';
 import type { Command } from '../src/sim/commands';
-import { TICKS_PER_MONTH } from '../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../src/sim/time';
 import { growTown, newTown } from '../tests/lockstep/scriptedTown';
 
 /**
@@ -12,7 +12,12 @@ import { growTown, newTown } from '../tests/lockstep/scriptedTown';
  */
 const MONTHS = 3;
 
-function record(): { events: Stamped[]; ref: Lockstep } {
+/**
+ * The town's stamped commands, Node's reference run of them and its checksum at the end of every
+ * game hour. The runner keeps only the latest 48 hours' checksums, so the reference is stepped an
+ * hour at a time and each one copied out as it comes.
+ */
+function record(): { events: Stamped[]; ref: Lockstep; sums: Map<number, string> } {
   const events: Stamped[] = [];
   let seq = 0;
   growTown(
@@ -32,9 +37,13 @@ function record(): { events: Stamped[]; ref: Lockstep } {
   );
   const ref = new Lockstep(newTown(true));
   for (const e of events) ref.push(structuredClone(e));
-  ref.allow(MONTHS * TICKS_PER_MONTH);
-  ref.run();
-  return { events, ref };
+  const sums = new Map<number, string>();
+  for (let t = TICKS_PER_HOUR; t <= MONTHS * TICKS_PER_MONTH; t += TICKS_PER_HOUR) {
+    ref.allow(t);
+    ref.run();
+    sums.set(t, ref.checksums.get(t)!);
+  }
+  return { events, ref, sums };
 }
 
 const QUERY = '&seed=lockstep&preset=river&sandbox=1&disasters=1&elections=1&name=Stepford';
@@ -46,7 +55,8 @@ async function state(page: Page) {
 test('two players fed the same stamped commands stay in step with each other and Node', async ({
   browser,
 }) => {
-  const { events, ref } = record();
+  const { events, ref, sums } = record();
+  expect(sums.size).toBe(MONTHS * 24);
   const pages: Page[] = [];
   for (let p = 1; p <= 2; p++) {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 600 } });
@@ -80,11 +90,9 @@ test('two players fed the same stamped commands stay in step with each other and
   expect(a!.applied).toBe(events.length);
   expect(a!.checksums.length).toBe(MONTHS * 24);
   expect(b!.checksums).toEqual(a!.checksums);
-  for (const [tick, sum] of a!.checksums)
-    expect(sum, `hour ending ${tick}`).toBe(ref.checksums.get(tick) ?? sum);
-  // The last day's checksums are still in Node's runner: they must match exactly.
-  const last = a!.checksums.at(-1)!;
-  expect(last[1]).toBe(ref.checksums.get(last[0]));
+  // Every hour, from the first: the pages' checksums are Node's.
+  expect(a!.checksums.map(([tick]) => tick)).toEqual([...sums.keys()]);
+  for (const [tick, sum] of a!.checksums) expect(sum, `hour ending ${tick}`).toBe(sums.get(tick));
   const hw = ref.sim.state.net.nodes.get(ref.sim.state.highway.connect)!;
   const pose = { x: hw.x + 260, z: hw.z + 60, distance: 560, yaw: 0.4 };
   for (const [i, page] of pages.entries()) {

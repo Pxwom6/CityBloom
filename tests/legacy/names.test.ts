@@ -14,7 +14,9 @@ import { CORPUS } from './harness';
  *
  * The goldens below are an FNV-1a hash of the lines `id:name` (ids ascending, joined by newlines)
  * made by running the client's old naming code, as it stood at save v23, over each file's network:
- * `[segments, hash]`. The migration is checked against them, not against itself.
+ * `[segments, hash]`. The migration is checked against them, not against itself. A save from v24 on
+ * carries its names: its golden is the hash of the names in the file as the game that saved it wrote
+ * them, so loading must leave them as they are.
  */
 const GOLDEN: Record<string, [number, string]> = {
   'Saves/Ashton.citybloom': [28, '5d0b637a'],
@@ -67,6 +69,7 @@ const GOLDEN: Record<string, [number, string]> = {
   'Saves/legacy/v21-highlands.citybloom': [30, '84ae142c'],
   'Saves/legacy/v21-lakes.citybloom': [35, '9af1c565'],
   'Saves/legacy/v21-river.citybloom': [30, '555304c9'],
+  'Saves/legacy/v24-river.citybloom': [30, 'c47f6d89'],
   'public/demo.citybloom': [156, '794fba85'],
   'public/scenarios/brink.citybloom': [71, 'd8b3cfd4'],
   'public/scenarios/cleanslate.citybloom': [29, '4517cb00'],

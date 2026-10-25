@@ -4,14 +4,16 @@ import { frames, screen, settings, untilHour } from './ui';
 
 /**
  * Phase 2 review: saves from past versions loaded through the real load screen (the playtest city
- * from M12, towns from M21 and M23 on a cold map and a lake map), every panel, tab and data map opened, and
- * each kind of inspector, failing on any console error. The corpus is `Saves/legacy/`
- * (`scripts/dev/legacy-corpus.mjs`); `tests/legacy/` plays every save for two years headless.
+ * from M12, towns from M21 and M23 on a cold map and a lake map, and a river town the live site saved
+ * before multiplayer, v24), every panel, tab and data map opened, and each kind of inspector, failing
+ * on any console error. The corpus is `Saves/legacy/` (`scripts/dev/legacy-corpus.mjs`);
+ * `tests/legacy/` plays every save for two years headless.
  */
 const SAVES = [
   'Saves/Ashton.citybloom',
   'Saves/legacy/v19-highlands.citybloom',
   'Saves/legacy/v21-lakes.citybloom',
+  'Saves/legacy/v24-river.citybloom',
 ];
 
 /** Close whatever panel or popover is open (a second click on its button, or Escape once). */

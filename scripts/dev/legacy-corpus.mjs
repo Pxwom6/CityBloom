@@ -2,7 +2,7 @@
 // commit that last wrote it in a worktree, grow a small town on each map preset with that commit's
 // own balance mayor, and keep the save in Saves/legacy/v<version>-<preset>.citybloom.
 //
-// Usage: node scripts/dev/legacy-corpus.mjs [versions, e.g. 10,15] [--jobs 3]
+// Usage: node scripts/dev/legacy-corpus.mjs [versions, e.g. 10,15] [--presets river,coast] [--jobs 3]
 // The only change made to the old code is the map preset the mayor founds its city on (it was
 // hard-wired to the river map); towns grow for a different length on each preset so their saves
 // land in different months of the year.
@@ -33,6 +33,7 @@ const COMMITS = {
   19: '1fb178b', // M21 complete
   20: '211d441', // M22 complete
   21: '859dc11', // M23 (v21, the last commit before v22)
+  24: '6f049d3', // main: the live site before multiplayer (PR #15 merge); the corpus keeps its river town
 };
 /** Years each preset's town grows (ending in different seasons). */
 const PRESETS = { river: 2, coast: 1.5, lakes: 1.75, highlands: 1.25 };
@@ -40,6 +41,8 @@ const PRESETS = { river: 2, coast: 1.5, lakes: 1.75, highlands: 1.25 };
 const args = process.argv.slice(2);
 const jobsAt = args.indexOf('--jobs');
 const jobs = jobsAt >= 0 ? Number(args.splice(jobsAt, 2)[1]) : 3;
+const presetsAt = args.indexOf('--presets');
+const only = presetsAt >= 0 ? args.splice(presetsAt, 2)[1].split(',') : Object.keys(PRESETS);
 const versions = args[0] ? args[0].split(',').map(Number) : Object.keys(COMMITS).map(Number);
 const out = join(ROOT, 'Saves/legacy');
 mkdirSync(out, { recursive: true });
@@ -66,7 +69,7 @@ for (const v of versions) {
       writeFileSync(p, s);
     }
   }
-  for (const [preset, years] of Object.entries(PRESETS)) tasks.push({ v, dir, preset, years });
+  for (const preset of only) tasks.push({ v, dir, preset, years: PRESETS[preset] });
 }
 
 const run = ({ v, dir, preset, years }) =>

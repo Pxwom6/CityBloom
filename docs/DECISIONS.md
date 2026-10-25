@@ -703,3 +703,28 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   once its host has closed it; the host's own city, reopened, says its region closed with the page
   rather than looking for it. What to do when two browsers can't connect depends on the site: "Host
   online" is offered only once online rooms are set up, otherwise another network or another host.
+- **F8 Within the free plan under abuse.** Every object is rate limited and writes in batches, and a
+  daily row budget caps each one, so one person with a script can no longer use up the account's
+  100,000 rows a day. Rooms write ordered events a batch to a row: at most 30 s while the city runs,
+  2 s when it stands still, at once at 100 events or 256 KB. A pending timer keeps the Durable Object
+  awake until then, and the room's record holds sequence numbers reserved 256 at a time, so events
+  lost with an evicted object never have their numbers reused and anyone who saw them catches up
+  from a snapshot. Commands have their own limit (8 a second, burst 40; over it they're refused with
+  "Slow down a little", never dropped), as do speed, rules and admin (2 a second), and those write
+  only when something changed. Regions take bursts of reports but write at a measured pace: offers,
+  deals, contributions and new cities promptly through a per-city allowance (put together, never
+  lost), the numbers and pictures every five minutes, a city's save for visitors at most every ten.
+  Snapshots and saves are capped at 40 parts (8 MB) with one in flight per room or city; a city past
+  that is told so in words when it tries to share ("This city is too big to share…"), and a region
+  keeps its numbers and picture without a save for visitors. Past 5,000 rows a day (3,000 for a
+  region) commands are refused until midnight UTC while chat and presence pass. Rooms and regions are
+  forgotten 60 days after the last player leaves (an alarm online, a sweep in the local relay). A
+  code nobody hosts stores nothing: tables are made on the first write, the object learns its code
+  from its socket, room and region codes must start with a digit and signalling codes with a letter,
+  and only a socket opened with `?create=1` may make a room or region (the local relay run from the
+  command line keeps the same rules, so e2e tests catch a client that forgets). Signalling keeps
+  nothing in storage (random peer ids). Left as accepted risks: creations aren't limited per IP (each
+  probe still costs a request and a moment of an object), a running room left open overnight keeps
+  its object awake (duration, not rows; on the free plan the failure is "unavailable until midnight
+  UTC", not a bill), signalling guests have no maximum lifetime, and player records aren't pruned
+  (each join costs rows, so the budget bounds them).

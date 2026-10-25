@@ -2,7 +2,9 @@
  * The network budget and the free-plan cost of shared cities (M30): four headless players in one
  * room, in real time at a chosen speed, each building something every so often, through the local
  * relay's real sockets. Prints messages and bytes per player per minute, and what an hour of such
- * play costs against Cloudflare's free-plan limits (requests, duration, rows read and written).
+ * play costs against Cloudflare's free-plan limits (requests, duration, rows read and written). Rows
+ * are counted as the room's store counts them: a row per batch of events (F8), each record and
+ * snapshot part, and the batches a snapshot deletes.
  *
  *   npx tsx scripts/dev/netbudget.ts [minutes] [speed] [players]
  */
@@ -73,6 +75,8 @@ const busy = setInterval(() => {
 }, 15_000 / count);
 await new Promise((r) => setTimeout(r, minutes * 60_000));
 clearInterval(busy);
+// Events still waiting for their batch count too.
+room.flush();
 const mins = (Date.now() - t0) / 60_000;
 const perMin = (v: number) => Math.round(v / mins);
 console.log(`${count} players, ${mins.toFixed(1)} min at speed ${speed}, city at tick ${players[0]!.d.tick}`);

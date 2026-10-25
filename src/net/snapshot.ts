@@ -5,10 +5,15 @@
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
 import type { SharedSnapshot } from '../sim/protocol';
 import { base64ToBytes, bytesToBase64 } from '../sim/serialize';
-import { SNAPSHOT_PART, type SnapshotMeta } from '../../relay/protocol';
+import { MAX_SNAPSHOT_PARTS, SNAPSHOT_PART, type SnapshotMeta } from '../../relay/protocol';
 
+/** Why a city can't be shared: rooms and regions take snapshots of at most `MAX_SNAPSHOT_PARTS` (F8). */
+export const SNAPSHOT_TOO_BIG = 'This city is too big to share: its snapshot would pass 8 MB';
+
+/** Throws `SNAPSHOT_TOO_BIG` for a city whose snapshot every room and region would refuse. */
 export function encodeSnapshot(s: SharedSnapshot, id: string): { meta: SnapshotMeta; parts: string[] } {
   const b64 = bytesToBase64(gzipSync(strToU8(JSON.stringify(s)), { level: 6 }));
+  if (b64.length > MAX_SNAPSHOT_PARTS * SNAPSHOT_PART) throw new Error(SNAPSHOT_TOO_BIG);
   const parts: string[] = [];
   for (let i = 0; i < b64.length; i += SNAPSHOT_PART) parts.push(b64.slice(i, i + SNAPSHOT_PART));
   if (!parts.length) parts.push('');

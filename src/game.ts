@@ -471,7 +471,7 @@ export class Game {
       if (kind === 'online') {
         const url = relayUrl();
         if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
-        connect = () => webSocketLink(`${url}/region/${code}`);
+        connect = () => webSocketLink(`${url}/region/${code}?create=1`);
       } else {
         const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
         this.regionHost = new P2PHost(code, key!, signalling(), null, hub);

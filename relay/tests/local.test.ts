@@ -9,38 +9,45 @@ import { player, settle, stopAll, until, type TestPlayer } from './harness';
 
 /**
  * Through the local relay's real sockets (M30): two headless players build one city in step for a
- * game year, with the network budget counted on the way.
+ * game year, with the network budget counted on the way. The relay runs as players run it (F8):
+ * rooms are made only on a socket opened with `?create=1`, and room codes start with a digit.
  */
 /** RELAY_URL runs the same test against another relay (`wrangler dev` of the online Worker). */
 const external = process.env.RELAY_URL ?? null;
 let relay: LocalRelay | null = null;
 beforeAll(async () => {
-  if (!external) relay = await startRelay(0);
+  if (!external) relay = await startRelay(0, null, { strict: true });
 });
+
+/** Progress and the clock at a pace within an online room's message limit (`ROOM_LIMITS`). */
+const PACE = { statusEvery: 200, clockEvery: 100 };
+
+/** A fresh room code for the external relay, whose rooms outlive the test. */
+const freshCode = (first: string) =>
+  `${first}${Date.now()
+    .toString(36)
+    .toUpperCase()
+    .replace(/[^A-HJ-NP-Z2-9]/g, 'A')
+    .slice(-5)}`;
 afterAll(async () => {
   await relay?.close();
 });
 
 describe('the local relay (M30)', () => {
   it('two players stay in step for a game year, building as they go', async () => {
-    const code = external
-      ? `Y${Date.now()
-          .toString(36)
-          .toUpperCase()
-          .replace(/[^A-HJ-NP-Z2-9]/g, 'A')
-          .slice(-5)}`
-      : 'YEARAB';
+    const code = external ? freshCode('2') : '2YEARB';
     const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
     const connect = () => webSocketLink(url);
+    const hosting = () => webSocketLink(`${url}?create=1`);
     const sim = Sim.create({ seed: 'year', preset: 'river', cityName: 'Yearling' });
     buildTown(sim, { zone: false });
     serveTown(sim);
     const players: TestPlayer[] = [];
     try {
-      const ada = player('Ada', connect, sim, { create: { cityName: 'Yearling' } });
+      const ada = player('Ada', hosting, sim, { create: { cityName: 'Yearling' }, ...PACE });
       players.push(ada);
       await ada.session.start();
-      const sam = player('Sam', connect, null);
+      const sam = player('Sam', connect, null, PACE);
       players.push(sam);
       await sam.session.start();
       const start = sim.tick;
@@ -78,27 +85,22 @@ describe('the local relay (M30)', () => {
   }, 300_000);
 
   it('keeps the city after everyone has left, for whoever comes back', async () => {
-    const code = external
-      ? `K${Date.now()
-          .toString(36)
-          .toUpperCase()
-          .replace(/[^A-HJ-NP-Z2-9]/g, 'B')
-          .slice(-5)}`
-      : 'KEEPAB';
+    const code = external ? freshCode('3') : '3KEEPB';
     const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
     const connect = () => webSocketLink(url);
+    const hosting = () => webSocketLink(`${url}?create=1`);
     const sim = Sim.create({ seed: 'keep', preset: 'river', cityName: 'Keepsake' });
     buildTown(sim, { zone: true });
     serveTown(sim);
     const players: TestPlayer[] = [];
     try {
-      const ada = player('Ada', connect, sim, { create: { cityName: 'Keepsake' } });
+      const ada = player('Ada', hosting, sim, { create: { cityName: 'Keepsake' }, ...PACE });
       players.push(ada);
       await ada.session.start();
       ada.session.setSpeed(3);
       await until(() => ada.driver.tick >= sim.tick + TICKS_PER_MONTH, 60_000, 'a month');
       // A snapshot is stored when a player joins; then everyone leaves.
-      const sam = player('Sam', connect, null);
+      const sam = player('Sam', connect, null, PACE);
       players.push(sam);
       await sam.session.start();
       await settle(ada, players);
@@ -107,7 +109,7 @@ describe('the local relay (M30)', () => {
       sam.session.leave();
       await new Promise((r) => setTimeout(r, 500));
       // Kit comes along later with the code: the city is there, exactly as it was left.
-      const kit = player('Kit', connect, null);
+      const kit = player('Kit', connect, null, PACE);
       players.push(kit);
       await kit.session.start();
       await until(

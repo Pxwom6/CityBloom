@@ -5,8 +5,9 @@
  *
  * A room orders the players' commands: it stamps each with the tick it applies at and a sequence
  * number, and says how far every sim may run (`allow`). Time moves when the pacer (the host, or
- * whoever stands in for them) sends `clock`; the room never runs a timer of its own, so an online
- * room sleeps between messages. Snapshots of the city travel as opaque compressed parts.
+ * whoever stands in for them) sends `clock`; the room's only timer writes events it's holding, so an
+ * online room sleeps whenever it has nothing unsaved. Snapshots of the city travel as opaque
+ * compressed parts.
  */
 import type { Stamped } from '../src/sim/lockstep';
 import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules';
@@ -20,6 +21,11 @@ export const CODE_LENGTH = 6;
 export const MAX_MESSAGE = 300_000;
 /** Snapshot parts, in characters of base64. */
 export const SNAPSHOT_PART = 200_000;
+/**
+ * The most parts a snapshot (or a region's city save) may have (F8): 8 MB of base64, about 6 MB of
+ * gzipped city. Rooms and regions refuse more, so a script can't fill an object's 128 MB.
+ */
+export const MAX_SNAPSHOT_PARTS = 40;
 export const MAX_NAME = 20;
 export const MAX_CHAT = 280;
 /** Player colours (an index into this list travels). */
@@ -182,7 +188,9 @@ export type ErrorCode =
   | 'exists'
   | 'gone'
   /** The room shut for good: a peer-to-peer host's browser left (F10). */
-  | 'closed';
+  | 'closed'
+  /** The room has written all it may today (F8). */
+  | 'limit';
 
 // ---------------------------------------------------------------- checks
 
@@ -427,7 +435,12 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const meta = m.meta as Record<string, unknown>;
       if (!meta || typeof meta !== 'object') return null;
       if (typeof meta.id !== 'string' || meta.id.length > 40) return null;
-      if (!isInt(meta.tick, 0, 1e12) || !isInt(meta.seq, -1, 1e12) || !isInt(meta.parts, 1, 400)) return null;
+      if (
+        !isInt(meta.tick, 0, 1e12) ||
+        !isInt(meta.seq, -1, 1e12) ||
+        !isInt(meta.parts, 1, MAX_SNAPSHOT_PARTS)
+      )
+        return null;
       if (typeof meta.eventHash !== 'number' || !Number.isFinite(meta.eventHash)) return null;
       if (typeof meta.cityName !== 'string' || !isInt(meta.population, 0, 1e9)) return null;
       if (!isInt(m.part, 0, meta.parts - 1) || typeof m.data !== 'string' || m.data.length > SNAPSHOT_PART)

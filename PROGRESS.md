@@ -70,7 +70,7 @@ Must fix before merging:
 - [x] F7 A bad command must not hurt a room
 
 Should fix:
-- [ ] F8 Keep within the free plan under abuse
+- [x] F8 Keep within the free plan under abuse
 - [x] F9 Leaving a room breaks undo in the copy you keep
 - [x] F10 Peer-to-peer dead ends
 - [ ] F11 Phones
@@ -751,6 +751,17 @@ misses with either build (`startup-slow.log`).
   commands applied over 113,018 ticks (6.5 game years). **No unexplained resyncs**, and at the end
   every game agreed with the host's part for part. Log: `bench-results/soak.log`.
 
+## Network (multiplayer review, F8)
+- `npx tsx scripts/dev/netbudget.ts 3 3 4`, before and after back to back on the cloud VM: an hour of
+  four-player play now writes **180 rows** (0.2 % of 100,000), down from 1,180 (which the old store
+  also undercounted); requests stay at 1,128 (1.1 %) and duration at no more than 450 GB-s (3.5 %);
+  messages are unchanged (the pacer 184 a minute, the others 64). An honest four-city region hour
+  writes 78 rows (532 before). Abuse on the fake clock (`relay/tests/freeplan.test.ts`): 519 commands
+  in a minute write 10 rows (one per command before), a city changing its offers every second for a
+  minute writes 5 (60 before). Daily budgets per object: rooms 5,000 rows, regions 3,000. Wrangler
+  4.152 ran `relay/tests/local.test.ts` against the Worker (2/2), and a probed code left none of our
+  tables behind.
+
 ## Network (M33)
 - Progress reports once a second, the clock every half second and presence at most four times a
   second (with the worker pacing the city at the room's speed between clock moves) halved the
@@ -837,6 +848,9 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer review (F8): how many snapshot parts the ~110k bench city needs against the 40-part
+  (8 MB) cap (`encodeSnapshot` on `bench-results/city.gz`'s save); a city past it is told it's too big
+  to share.
 - Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.

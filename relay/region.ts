@@ -6,10 +6,26 @@
  * its own clock from what the others last reported, so an offline city's last offer stands.
  *
  * Runs in the local relay, a Durable Object (`/region/CODE`) and a host's browser alike.
+ *
+ * Within Cloudflare's free plan under abuse (F8): every connection is rate limited (generously:
+ * honest cities report every half minute, and a burst of reports is never dropped); what's written
+ * is throttled instead, each city's changes put together and written at a measured pace, never
+ * lost; a city's save for visitors is kept at most every ten minutes; and the region stops writing
+ * at a daily row budget and says when it may be forgotten (`expiresAt`).
  */
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
-import { MAX_NAME, PLAYER_COLORS, PROTOCOL_VERSION, SNAPSHOT_PART, cleanName, makeSecret } from './protocol';
+import {
+  MAX_NAME,
+  MAX_SNAPSHOT_PARTS,
+  PLAYER_COLORS,
+  PROTOCOL_VERSION,
+  SNAPSHOT_PART,
+  cleanName,
+  makeSecret,
+} from './protocol';
+import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from './limits';
+import type { RoomEnv } from './room';
 
 export const MAX_CITIES = 4;
 /** The region project: what it costs all told, and the power it gives its contributors (MW). */
@@ -77,7 +93,8 @@ export type RegionRoomMsg =
   | {
       t: 'error';
       /** `closed`: the region shut for good (a peer-to-peer host's browser left, F10). */
-      code: 'version' | 'no-region' | 'full' | 'exists' | 'bad-message' | 'no-save' | 'closed';
+      code:
+        'version' | 'no-region' | 'full' | 'exists' | 'bad-message' | 'no-save' | 'rate' | 'limit' | 'closed';
       text: string;
     };
 
@@ -85,6 +102,8 @@ export interface RegionConn {
   send(m: RegionRoomMsg): void;
   close(code: number, reason: string): void;
   bind?(slot: number): void;
+  /** May this connection make a region (F8)? As a room's `Conn.mayCreate`. */
+  mayCreate?: boolean;
 }
 
 interface City {
@@ -98,6 +117,8 @@ interface City {
   heard: number;
   /** A save of it is kept for visitors. */
   saved?: boolean;
+  /** When that save was last kept (ms; F8). */
+  savedAt?: number;
 }
 
 export interface RegionMeta {
@@ -107,6 +128,10 @@ export interface RegionMeta {
   nextSlot: number;
   cities: City[];
   project: { total: number; by: Record<number, number>; host: number; built: boolean };
+  /** When the record was last saved (ms): the region expires a while after (F8). */
+  lastActive?: number;
+  /** Rows written today (F8). */
+  budget?: RowBudget;
 }
 
 export interface RegionStore {
@@ -114,6 +139,10 @@ export interface RegionStore {
   saveMeta(m: RegionMeta): void;
   saveCity(slot: number, parts: string[]): void;
   loadCity(slot: number): string[] | null;
+  /** Forget the region (it expired). */
+  deleteAll(): void;
+  /** Rows written so far, as a Durable Object's SQLite counts them. */
+  readonly rowsWritten: number;
 }
 
 export class MemoryRegionStore implements RegionStore {
@@ -128,12 +157,66 @@ export class MemoryRegionStore implements RegionStore {
     this.meta = JSON.parse(JSON.stringify(m)) as RegionMeta;
   }
   saveCity(slot: number, parts: string[]) {
-    this.rowsWritten += parts.length;
-    this.saves.set(slot, parts);
+    // Each part upserted, and the old parts past the new count deleted (`relay/sqlStore.ts`).
+    this.rowsWritten += parts.length + Math.max(0, (this.saves.get(slot)?.length ?? 0) - parts.length);
+    this.saves.set(slot, parts.slice());
   }
   loadCity(slot: number) {
     return this.saves.get(slot) ?? null;
   }
+  deleteAll() {
+    this.meta = null;
+    this.saves.clear();
+  }
+}
+
+/** What one connection may send, and what the region may write (F8). */
+export interface RegionLimits {
+  /** Messages a second per connection and a burst: past it they're dropped; past twice it, closed. */
+  rate: number;
+  burst: number;
+  /** Writes a second one city's changes may cause, and a burst; more are put together. */
+  writeRate: number;
+  writeBurst: number;
+  /** Changes that don't matter to the other cities (numbers, pictures) are written this often (ms). */
+  keepEvery: number;
+  /** A city's save for visitors is kept at most this often (ms). */
+  saveEvery: number;
+  /** A connection may read a city's save this often (ms). */
+  visitEvery: number;
+  /** Rows the region may write in a UTC day. */
+  dailyRows: number;
+  /** How long a region nobody comes back to is kept (ms). */
+  ttl: number;
+  /** Connections at once. */
+  maxConns: number;
+}
+
+/** Online defaults. Four honest cities write about a hundred rows an hour. */
+export const REGION_LIMITS: RegionLimits = {
+  rate: 2,
+  burst: 60,
+  writeRate: 1 / 30,
+  writeBurst: 4,
+  keepEvery: 5 * 60_000,
+  saveEvery: 10 * 60_000,
+  visitEvery: 30_000,
+  dailyRows: 3000,
+  ttl: 60 * DAY_MS,
+  maxConns: 16,
+};
+
+/** Past the day's budget, the record is still saved as the region empties, but at most this often. */
+const OVER_BUDGET_SAVE = 10 * 60_000;
+
+interface ConnState {
+  /** The city it speaks for (0: a visitor, or not said hello yet). */
+  slot: number;
+  hello: boolean;
+  all: TokenBucket;
+  visits: TokenBucket;
+  /** Order of opening, to drop the oldest silent socket when full. */
+  n: number;
 }
 
 const finite = (v: unknown, lo: number, hi: number): v is number =>
@@ -224,7 +307,7 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       if (
         typeof m.id !== 'string' ||
         m.id.length > 40 ||
-        !finite(m.parts, 1, 200) ||
+        !finite(m.parts, 1, MAX_SNAPSHOT_PARTS) ||
         !finite(m.part, 0, (m.parts as number) - 1)
       )
         return null;
@@ -239,27 +322,76 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
 
 export class RegionRoom {
   private meta: RegionMeta | null;
-  /** Connections and the city each speaks for (0: a visitor, or not said hello yet). */
-  private conns = new Map<RegionConn, number>();
-  private incoming = new Map<number, { id: string; parts: (string | null)[] }>();
+  private conns = new Map<RegionConn, ConnState>();
+  /** Each city's save for visitors arriving in parts: one in flight per city (F8). */
+  private incoming = new Map<number, { id: string; parts: (string | null)[]; got: number }>();
+  private readonly limits: RegionLimits;
+  /** Each city's allowance of writes. */
+  private writes = new Map<number, TokenBucket>();
+  /** Changes not yet written, and the timer that will write them. */
+  private dirty = false;
+  private saveTimer: (() => void) | null = null;
+  private saveDue = 0;
+  private lastSaved: number;
+  private readonly budget: DailyRows;
+  private overSaved = -Infinity;
+  private opened = 0;
 
   constructor(
     readonly code: string,
     readonly kind: RegionView['kind'],
     private readonly store: RegionStore,
-    private readonly env: { now(): number },
+    private readonly env: RoomEnv,
+    limits: Partial<RegionLimits> = {},
   ) {
+    this.limits = { ...REGION_LIMITS, ...limits };
+    const now = env.now();
     this.meta = store.loadMeta();
+    this.lastSaved = this.meta?.lastActive ?? now;
+    this.budget = new DailyRows(this.limits.dailyRows, () => store.rowsWritten, this.meta?.budget, now);
   }
 
   get exists(): boolean {
     return !!this.meta;
   }
 
+  /** Sockets open now. */
+  get connections(): number {
+    return this.conns.size;
+  }
+
+  /** When this region may be forgotten (F8): a while after its record was last saved. */
+  expiresAt(): number | null {
+    if (!this.meta || this.conns.size) return null;
+    return this.lastSaved + this.limits.ttl;
+  }
+
+  private connState(slot: number): ConnState {
+    const now = this.env.now();
+    return {
+      slot,
+      hello: slot > 0,
+      all: new TokenBucket(this.limits.rate, this.limits.burst, now),
+      visits: new TokenBucket(1000 / this.limits.visitEvery, 1, now),
+      n: ++this.opened,
+    };
+  }
+
   open(conn: RegionConn): void {
     // A shut room answers whatever comes next (the hello) with why.
     if (this.shut) return;
-    this.conns.set(conn, 0);
+    if (this.conns.size >= this.limits.maxConns) {
+      // Sockets opened by a script mustn't crowd cities out: the oldest yet to say hello goes.
+      let oldest: [RegionConn, ConnState] | null = null;
+      for (const e of this.conns) if (!e[1].hello && (!oldest || e[1].n < oldest[1].n)) oldest = e;
+      if (!oldest) {
+        conn.send({ t: 'error', code: 'full', text: 'Too many connections to this region' });
+        return conn.close(4000, 'full');
+      }
+      this.conns.delete(oldest[0]);
+      oldest[0].close(4000, 'full');
+    }
+    this.conns.set(conn, this.connState(0));
   }
 
   /** Why the region shut for good, once it has (F10). */
@@ -277,18 +409,74 @@ export class RegionRoom {
 
   /** After a Durable Object wakes: a socket and the city it spoke for. */
   reattach(conn: RegionConn, slot: number): void {
-    this.conns.set(conn, slot);
+    this.conns.set(conn, this.connState(slot));
   }
 
   closed(conn: RegionConn): void {
-    const slot = this.conns.get(conn);
+    const st = this.conns.get(conn);
     this.conns.delete(conn);
-    if (slot) this.broadcast();
+    if (!st?.slot) return;
+    if (!this.online(st.slot)) this.incoming.delete(st.slot);
+    // A city leaving: what's changed is written now, not left to a timer that may never run.
+    if (this.dirty) this.save(this.conns.size ? 'change' : 'empty');
+    this.broadcast();
   }
 
   private online(slot: number): boolean {
-    for (const s of this.conns.values()) if (s === slot) return true;
+    for (const s of this.conns.values()) if (s.slot === slot) return true;
     return false;
+  }
+
+  /**
+   * Write the region's record. Past the day's budget only as the region empties, now and then; the
+   * changes stay in memory meanwhile.
+   */
+  private save(why: 'change' | 'empty' = 'change'): void {
+    const meta = this.meta;
+    if (!meta) return;
+    const now = this.env.now();
+    if (this.budget.over(now)) {
+      if (why !== 'empty' || now - this.overSaved < OVER_BUDGET_SAVE) return;
+      this.overSaved = now;
+    }
+    this.saveTimer?.();
+    this.saveTimer = null;
+    this.dirty = false;
+    this.lastSaved = now;
+    meta.lastActive = now;
+    meta.budget = this.budget.record(now);
+    this.store.saveMeta(meta);
+  }
+
+  private writesOf(slot: number): TokenBucket {
+    let b = this.writes.get(slot);
+    if (!b)
+      this.writes.set(
+        slot,
+        (b = new TokenBucket(this.limits.writeRate, this.limits.writeBurst, this.env.now())),
+      );
+    return b;
+  }
+
+  /**
+   * A change the other cities care about: written now if the city's allowance has room, else put
+   * together with whatever follows and written when it has (or when the city leaves).
+   */
+  private changed(slot: number): void {
+    this.dirty = true;
+    const b = this.writesOf(slot);
+    if (b.take(this.env.now())) return this.save();
+    const later = this.env.later;
+    if (!later) return;
+    const wait = b.wait(this.env.now());
+    const due = this.env.now() + wait;
+    if (this.saveTimer && this.saveDue <= due) return;
+    this.saveTimer?.();
+    this.saveDue = due;
+    this.saveTimer = later(wait, () => {
+      this.saveTimer = null;
+      if (this.dirty) this.changed(slot);
+    });
   }
 
   view(): RegionView {
@@ -333,7 +521,7 @@ export class RegionRoom {
   private reject(conn: RegionConn, code: Extract<RegionRoomMsg, { t: 'error' }>['code'], text: string): void {
     conn.send({ t: 'error', code, text });
     conn.close(4000, code);
-    this.conns.delete(conn);
+    this.closed(conn);
   }
 
   message(conn: RegionConn, raw: string): void {
@@ -342,13 +530,26 @@ export class RegionRoom {
       conn.send({ t: 'error', code: 'closed', text: this.shut });
       return conn.close(1000, 'closed');
     }
-    if (!this.conns.has(conn)) return;
+    const st = this.conns.get(conn);
+    if (!st) return;
+    // A burst is fine, a flood is dropped, a torrent closes the connection.
+    const now = this.env.now();
+    const left = st.all.spend(now);
+    if (left < -this.limits.burst) return this.reject(conn, 'rate', 'Too many messages');
+    if (left < 0) return;
     const m = parseRegionMsg(raw);
     if (!m) return this.reject(conn, 'bad-message', 'A message the region could not read');
-    const slot = this.conns.get(conn)!;
-    if (m.t === 'rhello') return this.hello(conn, m);
+    const slot = st.slot;
+    if (m.t === 'rhello') {
+      if (st.hello) return this.reject(conn, 'bad-message', 'One hello is enough');
+      st.hello = true;
+      return this.hello(conn, st, m);
+    }
+    if (!st.hello) return this.reject(conn, 'bad-message', 'Say hello first');
     if (!this.meta) return;
     if (m.t === 'visit') {
+      // Each read sends a whole city: a few a minute at most.
+      if (!st.visits.take(now)) return;
       const parts = this.store.loadCity(m.slot);
       if (!parts)
         return conn.send({
@@ -363,16 +564,29 @@ export class RegionRoom {
     }
     const city = this.meta.cities.find((c) => c.slot === slot);
     if (!city) return;
-    city.heard = this.env.now();
+    city.heard = now;
     switch (m.t) {
-      case 'report':
+      case 'report': {
+        // Every report goes to the others at once; only offers, deals and the like are written
+        // promptly, the numbers and the picture now and then.
+        const matters = (c: City) =>
+          JSON.stringify([c.name, c.report?.kind, c.report?.offers, c.report?.deals, c.report?.projectBuilt]);
+        const before = JSON.stringify([city.report, city.thumb]);
+        const was = matters(city);
         city.name = m.city;
         city.report = m.report;
         if (m.thumb) city.thumb = m.thumb;
-        if (m.report.projectBuilt && this.meta.project.host === slot) this.meta.project.built = true;
-        this.store.saveMeta(this.meta);
+        const p = this.meta.project;
+        const built = m.report.projectBuilt && p.host === slot && !p.built;
+        if (built) p.built = true;
         this.broadcast();
+        if (built || matters(city) !== was) this.changed(slot);
+        else if (JSON.stringify([city.report, city.thumb]) !== before) {
+          this.dirty = true;
+          if (now - this.lastSaved >= this.limits.keepEvery) this.save();
+        }
         return;
+      }
       case 'contribute': {
         const p = this.meta.project;
         if (p.total >= REGION_PROJECT.goal) return;
@@ -390,30 +604,38 @@ export class RegionRoom {
               text: `${REGION_PROJECT.name} is paid for: ${host?.name ?? 'a city'} will build it`,
             });
         }
-        this.store.saveMeta(this.meta);
+        // The city has paid already: written promptly, never dropped.
         this.broadcast();
+        this.changed(slot);
         return;
       }
       case 'save': {
+        // Kept at most every so often; parts in between are ignored before they take memory.
+        if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
         let inc = this.incoming.get(slot);
         if (!inc || inc.id !== m.id)
-          this.incoming.set(slot, (inc = { id: m.id, parts: new Array<string | null>(m.parts).fill(null) }));
+          this.incoming.set(
+            slot,
+            (inc = { id: m.id, parts: new Array<string | null>(m.parts).fill(null), got: 0 }),
+          );
         if (inc.parts.length !== m.parts) return;
+        if (inc.parts[m.part] === null) inc.got++;
         inc.parts[m.part] = m.data;
-        if (inc.parts.some((x) => x === null)) return;
+        if (inc.got < inc.parts.length) return;
         this.incoming.delete(slot);
+        if (this.budget.over(now)) return;
         this.store.saveCity(slot, inc.parts as string[]);
-        if (!city.saved) {
-          city.saved = true;
-          this.store.saveMeta(this.meta);
-          this.broadcast();
-        }
+        const first = !city.saved;
+        city.saved = true;
+        city.savedAt = now;
+        this.save();
+        if (first) this.broadcast();
         return;
       }
     }
   }
 
-  private hello(conn: RegionConn, m: Extract<RegionClientMsg, { t: 'rhello' }>): void {
+  private hello(conn: RegionConn, st: ConnState, m: Extract<RegionClientMsg, { t: 'rhello' }>): void {
     if (m.v !== PROTOCOL_VERSION)
       return this.reject(
         conn,
@@ -421,6 +643,8 @@ export class RegionRoom {
         'This region runs a different version of Citybloom: reload to update',
       );
     if (m.create) {
+      if (conn.mayCreate === false)
+        return this.reject(conn, 'version', 'Making a region needs a newer Citybloom: reload to update');
       if (this.meta) return this.reject(conn, 'exists', 'That region code is taken');
       this.meta = {
         code: this.code,
@@ -439,9 +663,14 @@ export class RegionRoom {
     let city = m.rejoin
       ? this.meta.cities.find((c) => c.slot === m.rejoin!.slot && c.secret === m.rejoin!.secret)
       : undefined;
+    const now = this.env.now();
+    // Written only for a new city, or a mayor's new name or colour (F8): coming back writes nothing.
+    let write: 'new' | 'changed' | null = null;
     if (!city) {
       if (this.meta.cities.length >= MAX_CITIES)
         return this.reject(conn, 'full', `This region is full (${MAX_CITIES} cities)`);
+      if (this.budget.over(now)) return this.reject(conn, 'limit', dailyLimitText('region'));
+      write = 'new';
       city = {
         slot: this.meta.nextSlot++,
         name: m.city,
@@ -450,17 +679,19 @@ export class RegionRoom {
         secret: makeSecret(),
         report: null,
         thumb: null,
-        heard: this.env.now(),
+        heard: now,
       };
       this.meta.cities.push(city);
       for (const c of this.conns.keys()) c.send({ t: 'notice', text: `${m.city} joined the region` });
-    }
+    } else if (city.mayor !== m.mayor || city.color !== m.color) write = 'changed';
     city.mayor = m.mayor;
     city.color = m.color;
-    city.heard = this.env.now();
-    this.conns.set(conn, city.slot);
+    city.heard = now;
+    st.slot = city.slot;
     conn.bind?.(city.slot);
-    this.store.saveMeta(this.meta);
+    // A new city is written at once (four at most, ever); a change at the city's pace.
+    if (write === 'new') this.save();
+    else if (write === 'changed') this.changed(city.slot);
     conn.send({ t: 'rwelcome', slot: city.slot, secret: city.secret, region: this.view() });
     this.broadcast();
   }

@@ -175,7 +175,9 @@ export class RoomSession {
         } catch {
           return;
         }
-        this.chain = this.chain.then(() => this.receive(m)).catch((err: unknown) => this.fail(String(err)));
+        this.chain = this.chain
+          .then(() => this.receive(m))
+          .catch((err: unknown) => this.fail(err instanceof Error ? err.message : String(err)));
       };
       // After any messages still being handled (an error comes just before its close).
       link.onclose = (why) => {
@@ -379,8 +381,16 @@ export class RoomSession {
         return;
       case 'snapshot': {
         const id = m.reason === 'upload' ? `${this.you}-up` : `${this.you}-${m.tick}`;
-        const { meta, parts } = encodeSnapshot(m.snapshot, id);
-        parts.forEach((data, part) => this.send({ t: 'snap', meta, part, data }));
+        let snap: ReturnType<typeof encodeSnapshot>;
+        try {
+          snap = encodeSnapshot(m.snapshot, id);
+        } catch (err) {
+          // Past the cap no room would take it (F8): say so, rather than leave everyone waiting.
+          this.fail(err instanceof Error ? err.message : String(err));
+          this.link?.close();
+          return;
+        }
+        snap.parts.forEach((data, part) => this.send({ t: 'snap', meta: snap.meta, part, data }));
         return;
       }
       case 'late':

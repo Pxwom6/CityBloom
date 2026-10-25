@@ -229,7 +229,13 @@ export class RegionLink {
     if (force || now - this.lastSave > (this.opts.saveEvery ?? 300_000)) {
       this.lastSave = now;
       const save = await this.city.save();
-      const { parts } = encodeSnapshot({ save, history: [], seq: -1, eventHash: 0 }, `${this.slot}`);
+      let parts: string[];
+      try {
+        parts = encodeSnapshot({ save, history: [], seq: -1, eventHash: 0 }, `${this.slot}`).parts;
+      } catch {
+        // Too big to keep for visitors (F8): the region still has the numbers and the picture.
+        return;
+      }
       const id = `${this.slot}-${Math.round(now)}`;
       parts.forEach((data, part) => this.send({ t: 'save', id, part, parts: parts.length, data }));
     }

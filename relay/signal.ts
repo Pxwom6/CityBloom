@@ -9,26 +9,39 @@
  *   ← { t: 'host', id }                   the host has arrived
  *   ← { t: 'from', from: id, data }
  *   ← { t: 'gone', id }
+ *
+ * Each peer is rate limited (F8): a connection takes a few dozen messages, so a flood is dropped and
+ * a torrent closed.
  */
+import { TokenBucket } from './limits';
+
 export interface SignalPeer {
   id: number;
   send: (text: string) => void;
+  close?: () => void;
+  bucket?: TokenBucket;
 }
 
-const MAX_PEERS = 16;
-const MAX_DATA = 16_000;
+export const MAX_PEERS = 16;
+export const MAX_DATA = 16_000;
+/** Messages a second per peer, and a burst: past it they're dropped; past twice it, closed. */
+export const SIGNAL_RATE = 5;
+export const SIGNAL_BURST = 60;
 
 export class Signal {
   private peers = new Map<number, SignalPeer>();
   private next = 1;
   private host = 0;
 
-  open(send: (text: string) => void): SignalPeer {
-    const p = { id: this.next++, send };
+  constructor(private readonly env: { now(): number } = { now: () => Date.now() }) {}
+
+  open(send: (text: string) => void, close?: () => void): SignalPeer {
+    const p: SignalPeer = { id: this.next++, send, ...(close ? { close } : {}) };
     if (this.peers.size >= MAX_PEERS) {
       send(JSON.stringify({ t: 'error', text: 'Too many players are connecting at once' }));
       return p;
     }
+    p.bucket = new TokenBucket(SIGNAL_RATE, SIGNAL_BURST, this.env.now());
     this.peers.set(p.id, p);
     send(JSON.stringify({ t: 'you', id: p.id, host: this.host }));
     return p;
@@ -36,6 +49,12 @@ export class Signal {
 
   message(p: SignalPeer, raw: string): void {
     if (!this.peers.has(p.id) || raw.length > MAX_DATA + 200) return;
+    const left = p.bucket!.spend(this.env.now());
+    if (left < -SIGNAL_BURST) {
+      this.closed(p);
+      return p.close?.();
+    }
+    if (left < 0) return;
     let m: { t?: unknown; to?: unknown; data?: unknown };
     try {
       m = JSON.parse(raw) as typeof m;

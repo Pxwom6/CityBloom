@@ -92,7 +92,8 @@ export class Multiplayer {
     if (kind === 'online') {
       const url = relayUrl();
       if (!url) throw new Error("Online rooms aren't set up yet: host on this computer instead");
-      connect = () => webSocketLink(`${url}/room/${code}`);
+      // `?create=1`: the relay makes rooms only when asked to (F8).
+      connect = () => webSocketLink(`${url}/room/${code}?create=1`);
     } else {
       // The city lives in this browser: each snapshot the room keeps is saved here too.
       host = new P2PHost(code, key!, signalling(), (s) => {

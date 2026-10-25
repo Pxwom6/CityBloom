@@ -114,7 +114,7 @@ const act = (): Command => {
 };
 
 const end = Date.now() + minutes * 60_000;
-let next = {
+const next = {
   act: Date.now() + 3000,
   drop: Date.now() + 4 * 60_000 * K,
   leave: Date.now() + 9 * 60_000 * K,

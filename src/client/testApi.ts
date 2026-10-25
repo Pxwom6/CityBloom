@@ -25,6 +25,7 @@ import type { ModelData } from '../render/assets/builder';
 import { handmade } from '../render/assets/handmade';
 import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
+import type { Stamped } from '../sim/lockstep';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -36,6 +37,20 @@ export interface Box {
 }
 
 export interface TestApi {
+  /**
+   * Lockstep without a network (M29): this page's worker becomes one player of a shared city fed
+   * stamped events by the test; `lockstepState` reports its tick, how far behind it is, its hourly
+   * checksums and how many events it applied or found late.
+   */
+  lockstepShare(player: number): void;
+  lockstepFeed(events: Stamped[], allow: number): void;
+  lockstepState(): {
+    tick: number;
+    behind: number;
+    checksums: [number, string][];
+    applied: number;
+    late: number;
+  };
   ready: boolean;
   dispatch(cmd: Command): Promise<CommandResult>;
   /** Roundabout mode (P5): the size chosen, the last preview's ring and whether it fits, and the short road. */
@@ -453,8 +468,28 @@ export function installTestApi(game: Game): TestApi {
     }
     return { warm: warm / n, white: white / n, lum: lum / n / 255 };
   };
+  const shared = { checksums: [] as [number, string][], applied: 0, late: 0, listening: false };
   const api: TestApi = {
     ready: true,
+    lockstepShare: (player) => {
+      if (!shared.listening) {
+        shared.listening = true;
+        game.client.onShared((m) => {
+          if (m.type === 'checksum') shared.checksums.push([m.tick, m.sum]);
+          else if (m.type === 'applied') shared.applied += m.list.length;
+          else if (m.type === 'late') shared.late++;
+        });
+      }
+      game.client.share(player, -1);
+    },
+    lockstepFeed: (events, allow) => game.client.stamped(events, allow),
+    lockstepState: () => ({
+      tick: game.world.stats?.tick ?? 0,
+      behind: game.perf.behind ?? -1,
+      checksums: shared.checksums.slice(),
+      applied: shared.applied,
+      late: shared.late,
+    }),
     dispatch: (cmd) => game.dispatch(cmd),
     preview: (cmd) => game.client.preview(cmd),
     getRing: () => game.tools.road.ringPreview(),

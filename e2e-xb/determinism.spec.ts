@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { buildSync } from 'esbuild';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runDeterminism, type DeterminismResult } from '../tests/lockstep/determinism';
 import { ALL_KINDS } from '../tests/lockstep/scriptedTown';
 import { decodeSave } from '../src/client/saves';
@@ -51,5 +54,36 @@ test('the scripted town gives the same state hash at every month end as in Node'
   expect(got.editor).toBe(want.editor);
   expect(got.scenario).toEqual(want.scenario);
   expect(got.used).toEqual(want.used);
+  expect(got.refused).toEqual(want.refused);
+});
+
+/**
+ * SpiderMonkey on its own (Firefox's engine), when a `js` shell is given in JS_SHELL: Playwright's
+ * Firefox doesn't launch on the owner's Mac (macOS 27); this checks the engine there meanwhile.
+ */
+test('the scripted town gives the same hashes in the SpiderMonkey shell', async ({ browserName }) => {
+  test.skip(browserName !== 'chromium' || !process.env.JS_SHELL, 'needs JS_SHELL (a SpiderMonkey js shell)');
+  const want = reference();
+  const shellBundle = buildSync({
+    entryPoints: ['tests/lockstep/shellEntry.ts'],
+    bundle: true,
+    format: 'iife',
+    write: false,
+    target: 'es2022',
+    logLevel: 'silent',
+  }).outputFiles[0]!.text;
+  const args = { months: MONTHS, id: SCENARIO_ID, save: saveBytes.toString('base64') };
+  const file = join(mkdtempSync(join(tmpdir(), 'xb-')), 'run.js');
+  writeFileSync(file, `var CITYBLOOM_ARGS = ${JSON.stringify(args)};\n${shellBundle}`);
+  const t0 = Date.now();
+  const out = execFileSync(process.env.JS_SHELL!, [file], { encoding: 'utf8', maxBuffer: 1 << 26 });
+  const got = JSON.parse(out.trim().split('\n').at(-1)!) as DeterminismResult;
+  const version = execFileSync(process.env.JS_SHELL!, ['--version'], { encoding: 'utf8' }).trim();
+  console.log(
+    `[xb] SpiderMonkey (${version}): ${MONTHS} months in ${((Date.now() - t0) / 1000).toFixed(1)} s`,
+  );
+  expect(got.months).toEqual(want.months);
+  expect(got.editor).toBe(want.editor);
+  expect(got.scenario).toEqual(want.scenario);
   expect(got.refused).toEqual(want.refused);
 });

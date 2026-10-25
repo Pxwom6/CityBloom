@@ -14,3 +14,4 @@ dist-base
 dist-before
 dist-batch1
 dist-*
+.cache

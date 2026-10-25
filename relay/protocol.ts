@@ -180,13 +180,34 @@ const DIGITS = CODE_ALPHABET.replace(/[A-Z]/g, '');
 const LETTERS = CODE_ALPHABET.replace(/[0-9]/g, '');
 
 /**
- * A fresh room code from a source of random numbers in [0, 1). Online rooms' codes start with a
- * digit and peer-to-peer rooms' with a letter, so a code says where to find its room.
+ * A whole number in [0, n) from the platform's cryptographic source (the browser, Node and a Worker
+ * all have `crypto.getRandomValues`), without the bias a plain modulo would give. Codes and secrets
+ * must not be guessable, so they never come from `Math.random`.
  */
-export function makeCode(random: () => number, kind: 'online' | 'p2p' = 'online'): string {
+export function secureIndex(n: number): number {
+  const limit = Math.floor(0x1_0000_0000 / n) * n;
+  const a = new Uint32Array(1);
+  for (;;) {
+    crypto.getRandomValues(a);
+    if (a[0]! < limit) return a[0]! % n;
+  }
+}
+
+/** A player's or city's secret: 128 random bits in hex. */
+export function makeSecret(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A fresh room code. Online rooms' codes start with a digit and peer-to-peer rooms' with a letter, so
+ * a code says where to find its room.
+ */
+export function makeCode(kind: 'online' | 'p2p' = 'online'): string {
   const first = kind === 'online' ? DIGITS : LETTERS;
-  let s = first[Math.floor(random() * first.length)]!;
-  for (let i = 1; i < CODE_LENGTH; i++) s += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length)];
+  let s = first[secureIndex(first.length)]!;
+  for (let i = 1; i < CODE_LENGTH; i++) s += CODE_ALPHABET[secureIndex(CODE_ALPHABET.length)];
   return s;
 }
 

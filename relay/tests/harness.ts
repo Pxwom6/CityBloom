@@ -7,14 +7,12 @@ import { loopbackPair, type Link } from '../../src/net/link';
 import { HeadlessDriver } from '../../src/net/driver';
 import { RoomSession, type NetNotice, type SessionOptions } from '../../src/net/session';
 import { Sim } from '../../src/sim/sim';
-import { Rng } from '../../src/sim/rng';
 
 /** Game ticks a second at speeds 0–3 in tests: a game month in a few seconds. */
 export const FAST = [0, 300, 600, 1200] as const;
 
 export function makeRoom(code = 'TESTRM', store = new MemoryStore()): Room {
-  const rng = Rng.fromSeed(code);
-  return new Room(code, 'local', store, { now: () => performance.now(), random: () => rng.next() });
+  return new Room(code, 'local', store, { now: () => performance.now() });
 }
 
 /** A way to reach `room` over a loopback link, as a transport would. */

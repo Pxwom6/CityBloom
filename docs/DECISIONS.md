@@ -633,3 +633,8 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   other way; it would move an online room's city to another Durable Object and break every player's
   saved credentials, for no gain over a lock the host controls. Players already in the room still
   reconnect after a dropped link, locked or not.
+- **F3 Codes and secrets from the cryptographic source.** `makeCode(kind)` and `makeSecret()` in
+  `relay/protocol.ts` draw from `crypto.getRandomValues` (the browser, Node and a Worker all have it),
+  with rejection sampling so no character is likelier than another; secrets are 128 bits in hex. Rooms
+  and regions no longer take a `random` from their surroundings, so no transport can hand them
+  `Math.random` again.

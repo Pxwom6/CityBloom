@@ -63,7 +63,7 @@ reproduced in a test first. Reasons in `docs/DECISIONS.md`, "Multiplayer review 
 Must fix before merging:
 - [x] F1 Kicked players come straight back
 - [ ] F2 Strangers can find peer-to-peer rooms
-- [ ] F3 Codes and player secrets come from `Math.random`
+- [x] F3 Codes and player secrets come from `Math.random`
 - [ ] F4 Lobby choices leak into a later single-player city
 - [ ] F5 Visiting a neighbour's city overwrites your autosave
 - [ ] F6 A stale region binding

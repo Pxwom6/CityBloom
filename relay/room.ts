@@ -11,6 +11,7 @@ import type { Stamped } from '../src/sim/lockstep';
 import {
   MAX_PLAYERS,
   PROTOCOL_VERSION,
+  makeSecret,
   parseClientMsg,
   type ClientMsg,
   type PlayerInfo,
@@ -60,7 +61,6 @@ export interface RoomMeta {
 export interface RoomEnv {
   /** Milliseconds, for rate limits and how often to save (never for the city's time). */
   now(): number;
-  random(): number;
 }
 
 interface Player {
@@ -324,15 +324,12 @@ export class Room {
   }
 
   private addPlayer(conn: Conn, name: string, color: number, host: boolean): Player {
-    const secret = Array.from({ length: 4 }, () => Math.floor(this.env.random() * 2 ** 32).toString(36)).join(
-      '',
-    );
     const p: Player = {
       id: this.nextPlayer++,
       name,
       color,
       host,
-      secret,
+      secret: makeSecret(),
       tick: this.allowed,
       visible: true,
       joining: false,

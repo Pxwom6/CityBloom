@@ -136,7 +136,7 @@ export class RoomObject extends DurableObject<Env> {
     const c = code ?? this.store.code;
     if (!c) return null;
     this.store.code = c;
-    this.room = new Room(c, 'online', this.store, { now: () => Date.now(), random: Math.random });
+    this.room = new Room(c, 'online', this.store, { now: () => Date.now() });
     for (const ws of this.ctx.getWebSockets()) {
       const a = ws.deserializeAttachment() as { player?: number } | null;
       if (a?.player) this.room.reattach(this.conn(ws), a.player);
@@ -301,7 +301,7 @@ export class RegionObject extends DurableObject<Env> {
     const store = new RegionSqlStore(this.ctx.storage.sql);
     const c = code ?? store.loadMeta()?.code;
     if (!c) return null;
-    this.region = new RegionRoom(c, 'online', store, { now: () => Date.now(), random: Math.random });
+    this.region = new RegionRoom(c, 'online', store, { now: () => Date.now() });
     for (const ws of this.ctx.getWebSockets()) {
       const a = ws.deserializeAttachment() as { slot?: number } | null;
       if (a?.slot) this.region.reattach(this.conn(ws), a.slot);

@@ -81,7 +81,7 @@ export function startRelay(port = 8787, dataDir: string | null = null): Promise<
     let r = rooms.get(code);
     if (!r) {
       const store = dataDir ? new FileStore(join(dataDir, `${code}.json`)) : new MemoryStore();
-      r = new Room(code, 'local', store, { now: () => Date.now(), random: Math.random });
+      r = new Room(code, 'local', store, { now: () => Date.now() });
       rooms.set(code, r);
     }
     return r;
@@ -95,10 +95,7 @@ export function startRelay(port = 8787, dataDir: string | null = null): Promise<
       if (!reg)
         regions.set(
           code!,
-          (reg = new RegionRoom(code!, 'local', new MemoryRegionStore(), {
-            now: () => Date.now(),
-            random: Math.random,
-          })),
+          (reg = new RegionRoom(code!, 'local', new MemoryRegionStore(), { now: () => Date.now() })),
         );
       const conn: RegionConn = {
         send: (msg) => {

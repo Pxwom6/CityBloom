@@ -60,7 +60,7 @@ export class Multiplayer {
     profile: Profile,
     cityName: string,
   ): Promise<Multiplayer> {
-    const code = makeCode(Math.random, kind);
+    const code = makeCode(kind);
     let host: P2PHost | null = null;
     let connect: () => Promise<Link>;
     if (kind === 'online') {

@@ -87,7 +87,7 @@ export class P2PHost {
         onSnapshot(s);
       };
     }
-    this.room = new Room(code, 'p2p', store, { now: () => performance.now(), random: Math.random });
+    this.room = new Room(code, 'p2p', store, { now: () => performance.now() });
   }
 
   /** The host's own game reaches the room through this. */

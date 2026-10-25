@@ -9,7 +9,7 @@
  */
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
-import { MAX_NAME, PLAYER_COLORS, PROTOCOL_VERSION, SNAPSHOT_PART, cleanName } from './protocol';
+import { MAX_NAME, PLAYER_COLORS, PROTOCOL_VERSION, SNAPSHOT_PART, cleanName, makeSecret } from './protocol';
 
 export const MAX_CITIES = 4;
 /** The region project: what it costs all told, and the power it gives its contributors (MW). */
@@ -246,7 +246,7 @@ export class RegionRoom {
     readonly code: string,
     readonly kind: RegionView['kind'],
     private readonly store: RegionStore,
-    private readonly env: { now(): number; random(): number },
+    private readonly env: { now(): number },
   ) {
     this.meta = store.loadMeta();
   }
@@ -427,9 +427,7 @@ export class RegionRoom {
         name: m.city,
         mayor: m.mayor,
         color: m.color,
-        secret: Array.from({ length: 4 }, () => Math.floor(this.env.random() * 2 ** 32).toString(36)).join(
-          '',
-        ),
+        secret: makeSecret(),
         report: null,
         thumb: null,
         heard: this.env.now(),

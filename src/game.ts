@@ -454,7 +454,7 @@ export class Game {
   /** Start a shared region with this city in it (M32), online or from this browser. */
   async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
     if (this.region || this.net) return false;
-    const code = makeCode(Math.random, kind);
+    const code = makeCode(kind);
     try {
       let connect: () => Promise<Link>;
       if (kind === 'online') {
@@ -462,10 +462,7 @@ export class Game {
         if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
         connect = () => webSocketLink(`${url}/region/${code}`);
       } else {
-        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), {
-          now: () => performance.now(),
-          random: Math.random,
-        });
+        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
         this.regionHost = new P2PHost(code, signalling(), null, hub);
         await this.regionHost.listen();
         const host = this.regionHost;

@@ -5,8 +5,18 @@ import { makeRoom, loopTo, player, stopAll, until, type TestPlayer } from './har
 import { MemoryStore } from '../room';
 import { startRelay } from '../local';
 import { webSocketLink, type Link } from '../../src/net/link';
-import { P2PHost } from '../../src/net/p2p';
-import { CODE_ALPHABET, PROTOCOL_VERSION, codeKind, makeCode } from '../protocol';
+import { P2PHost, TRYSTERO_APP } from '../../src/net/p2p';
+import {
+  CODE_ALPHABET,
+  PROTOCOL_VERSION,
+  codeKind,
+  formatInvite,
+  inviteProblem,
+  makeCode,
+  makeKey,
+  parseInvite,
+} from '../protocol';
+import { startNostr, trysteroTopic } from './nostr';
 
 /**
  * The multiplayer review follow-ups (F1–F14, docs/DECISIONS.md "Multiplayer review follow-ups"):
@@ -131,7 +141,7 @@ describe('F3: codes and secrets come from the cryptographic source, not Math.ran
         [rhello('Ada', true), rhello('Sam')],
       );
       // Players in a peer-to-peer host's room (the host's browser runs it).
-      const host = new P2PHost('SECRET', { kind: 'relay', url });
+      const host = new P2PHost('SECRET', makeKey(), { kind: 'relay', url });
       const p2p = await secretsOf(() => host.connectSelf(), [hello('Ada', true), hello('Sam')]);
       for (const pair of [room, region, p2p]) {
         expect(pair[0]).not.toBe(pair[1]);
@@ -254,4 +264,46 @@ describe('F9: the copy a removed player keeps is theirs to play', () => {
     expect(sam.driver.sim.shared).toBe(false);
     expect(sam.driver.sim.dispatch({ type: 'renameCity', name: 'Samford' }).ok).toBe(true);
   }, 60_000);
+});
+
+describe("F2: a peer-to-peer room isn't found by its short code", () => {
+  it('invites carry the key; a short peer-to-peer code alone is turned away', () => {
+    const code = makeCode('p2p');
+    const key = makeKey();
+    const invite = formatInvite({ code, key });
+    expect(invite).toMatch(/^[A-Z2-9]{6}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(parseInvite(invite)).toEqual({ code, key });
+    expect(parseInvite(` ${invite.toLowerCase().replace(/-/g, ' ')} `)).toEqual({ code, key });
+    expect(inviteProblem(parseInvite(invite))).toBeNull();
+    expect(inviteProblem(parseInvite(code))).toMatch(/missing its second part/);
+    // An online room is found by its code through our relay.
+    const online = makeCode('online');
+    expect(inviteProblem(parseInvite(online))).toBeNull();
+    expect(inviteProblem(parseInvite('HELLO'))).toMatch(/six letters and numbers/);
+  });
+
+  it('announces itself on the relays only under its code and key, and nothing on the wire gives either away', async () => {
+    const nostr = await startNostr();
+    const code = makeCode('p2p');
+    const key = makeKey();
+    const host = new P2PHost(code, key, { kind: 'trystero', relays: [nostr.url] });
+    try {
+      await host.listen();
+      await until(() => nostr.events.length >= 3, 15_000, 'the host to announce itself');
+      const topics = new Set(
+        nostr.events.flatMap((e) => e.tags.filter((t) => t[0] === 'x').map((t) => t[1])),
+      );
+      // What a stranger who knows only the code would look for: not there.
+      expect(topics.has(trysteroTopic(TRYSTERO_APP, code))).toBe(false);
+      // What the invite leads to: there.
+      expect(topics.has(trysteroTopic(TRYSTERO_APP, `${code}-${key}`))).toBe(true);
+      for (const e of nostr.events) {
+        expect(e.content).not.toContain(code);
+        expect(e.content).not.toContain(key);
+      }
+    } finally {
+      host.close();
+      await nostr.close();
+    }
+  }, 30_000);
 });

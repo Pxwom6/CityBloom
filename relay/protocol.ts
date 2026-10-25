@@ -216,6 +216,56 @@ export function codeKind(code: string): 'online' | 'p2p' {
   return /^[0-9]/.test(code) ? 'online' : 'p2p';
 }
 
+/**
+ * A peer-to-peer room's or region's key (F2): twelve more characters from the code alphabet, about
+ * 59 bits. Its players find each other on public relays by a topic made from the code and the key,
+ * and encrypt their connection details with it, so the short code alone (which anyone watching the
+ * relays could try one by one) finds nothing. Online rooms are found through our own relay by code.
+ */
+export const KEY_LENGTH = 12;
+/** The longest invite a player types: the code, the key and the dashes between their groups. */
+export const INVITE_INPUT_MAX = 32;
+
+export function makeKey(): string {
+  let s = '';
+  for (let i = 0; i < KEY_LENGTH; i++) s += CODE_ALPHABET[secureIndex(CODE_ALPHABET.length)];
+  return s;
+}
+
+/** What an invite names: a room's or region's code and, for one in a player's browser, its key. */
+export interface Invite {
+  code: string;
+  key: string | null;
+}
+
+/**
+ * An invite as typed or linked: `7KQ2MX` (an online room) or `A7KQ2M-BCDF-GHJK-MNPQ` (peer-to-peer:
+ * the code and its key), in any case, with spaces or dashes anywhere and look-alikes mapped as in
+ * `normaliseCode`. Null if it can't be one. A peer-to-peer code without its key parses with `key:
+ * null`: the caller says what's missing. An online code ignores a key.
+ */
+export function parseInvite(input: string): Invite | null {
+  const s = input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  if (s.length !== CODE_LENGTH && s.length !== CODE_LENGTH + KEY_LENGTH) return null;
+  for (const ch of s) if (!CODE_ALPHABET.includes(ch)) return null;
+  const code = s.slice(0, CODE_LENGTH);
+  const key = s.length > CODE_LENGTH && codeKind(code) === 'p2p' ? s.slice(CODE_LENGTH) : null;
+  return { code, key };
+}
+
+/** An invite as shown and linked: the code, then the key in groups of four. */
+export function formatInvite(inv: Invite): string {
+  return inv.key ? [inv.code, ...(inv.key.match(/.{1,4}/g) ?? [])].join('-') : inv.code;
+}
+
+/** Why an invite can't be used, or null: a peer-to-peer code needs its key. */
+export function inviteProblem(inv: Invite | null): string | null {
+  if (!inv) return 'That code isn’t one of ours: a code has six letters and numbers, like 7KQ2MX.';
+  if (codeKind(inv.code) === 'p2p' && !inv.key)
+    return 'That code is missing its second part: a room on someone’s computer has a longer code, like A7KQ2M-BCDF-GHJK-MNPQ. Ask them for the whole code or the invite link.';
+  return null;
+}
+
 /** A code as typed by a player: upper case, look-alikes mapped (O→0 isn't in it, so O→Q…), or null. */
 export function normaliseCode(input: string): string | null {
   const s = input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');

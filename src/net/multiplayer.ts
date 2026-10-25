@@ -3,7 +3,8 @@
  * joining one by its code, and the session that keeps this game in it. Nothing here touches the
  * network until the player opens multiplayer.
  */
-import { codeKind, makeCode } from '../../relay/protocol';
+import { codeKind, formatInvite, makeCode, makeKey, type Invite } from '../../relay/protocol';
+import { IS_TEST_BUILD } from '../config';
 import type { SimDriver } from './driver';
 import { webSocketLink, type Link } from './link';
 import { P2PHost, p2pConnect, type Signalling } from './p2p';
@@ -18,15 +19,30 @@ export function relayUrl(): string | null {
   return url ? url.replace(/\/$/, '') : null;
 }
 
-/** How peer-to-peer players find each other: our relay's signalling if there is one, else Trystero. */
+/**
+ * How peer-to-peer players find each other: our relay's signalling if there is one, else Trystero.
+ * Test builds can try Trystero against relays on this computer (`VITE_TRYSTERO_RELAYS`, and
+ * `citybloom.signal = trystero` in local storage to prefer it over the local relay).
+ */
 export function signalling(): Signalling {
   const url = relayUrl();
-  return url ? { kind: 'relay', url } : { kind: 'trystero' };
+  const relays = (import.meta.env.VITE_TRYSTERO_RELAYS as string | undefined)
+    ?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let prefer = false;
+  try {
+    prefer = IS_TEST_BUILD && localStorage.getItem('citybloom.signal') === 'trystero';
+  } catch {
+    /* no storage */
+  }
+  if (url && !prefer) return { kind: 'relay', url };
+  return relays?.length ? { kind: 'trystero', relays } : { kind: 'trystero' };
 }
 
-/** The invite link for a room: opens the game straight into it. */
-export function inviteLink(code: string): string {
-  return `${location.origin}${location.pathname}?join=${code}`;
+/** The invite link for a room (its code, and its key for a room in a player's browser): opens the game straight into it. */
+export function inviteLink(invite: string): string {
+  return `${location.origin}${location.pathname}?join=${invite}`;
 }
 
 export class Multiplayer {
@@ -35,6 +51,8 @@ export class Multiplayer {
 
   private constructor(
     readonly code: string,
+    /** A peer-to-peer room's key (F2), or null for an online room. */
+    readonly key: string | null,
     connect: () => Promise<Link>,
     driver: SimDriver,
     opts: SessionOptions,
@@ -53,6 +71,11 @@ export class Multiplayer {
     };
   }
 
+  /** What friends type or follow to join: the code, and the key for a room in this browser. */
+  get invite(): string {
+    return formatInvite({ code: this.code, key: this.key });
+  }
+
   /** Make a room from the city the driver holds; resolves once it's open with this game in it. */
   static async host(
     kind: 'online' | 'p2p',
@@ -61,6 +84,7 @@ export class Multiplayer {
     cityName: string,
   ): Promise<Multiplayer> {
     const code = makeCode(kind);
+    const key = kind === 'p2p' ? makeKey() : null;
     let host: P2PHost | null = null;
     let connect: () => Promise<Link>;
     if (kind === 'online') {
@@ -69,7 +93,7 @@ export class Multiplayer {
       connect = () => webSocketLink(`${url}/room/${code}`);
     } else {
       // The city lives in this browser: each snapshot the room keeps is saved here too.
-      host = new P2PHost(code, signalling(), (s) => {
+      host = new P2PHost(code, key!, signalling(), (s) => {
         try {
           const snap = decodeSnapshot(s.parts);
           void writeSlot(`room${code}`, snap.save, `Shared: ${snap.save.meta.cityName}`).catch(
@@ -82,12 +106,13 @@ export class Multiplayer {
       await host.listen();
       connect = () => host!.connectSelf();
     }
-    const mp = new Multiplayer(code, connect, driver, { ...profile, create: { cityName } }, host);
+    const mp = new Multiplayer(code, key, connect, driver, { ...profile, create: { cityName } }, host);
     return mp;
   }
 
-  /** Join a room by its code. */
-  static join(code: string, driver: SimDriver, profile: Profile): Multiplayer {
+  /** Join a room by its invite (a peer-to-peer room's carries its key: see `inviteProblem`). */
+  static join(invite: Invite, driver: SimDriver, profile: Profile): Multiplayer {
+    const { code, key } = invite;
     const kind = codeKind(code);
     let connect: () => Promise<Link>;
     if (kind === 'online') {
@@ -95,9 +120,16 @@ export class Multiplayer {
       connect = url
         ? () => webSocketLink(`${url}/room/${code}`)
         : () => Promise.reject(new Error("Online rooms aren't set up yet, so this code can't be reached"));
-    } else connect = () => p2pConnect(code, signalling());
+    } else connect = () => p2pConnect(code, key ?? '', signalling());
     const again = roomCredentials(code);
-    return new Multiplayer(code, connect, driver, { ...profile, ...(again ? { rejoin: again } : {}) }, null);
+    return new Multiplayer(
+      code,
+      kind === 'p2p' ? key : null,
+      connect,
+      driver,
+      { ...profile, ...(again ? { rejoin: again } : {}) },
+      null,
+    );
   }
 
   leave(): void {

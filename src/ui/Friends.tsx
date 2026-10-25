@@ -8,11 +8,14 @@ import { useGame, useGameUpdates } from './hooks';
 import { loadProfile, saveProfile, type Profile } from '../client/profile';
 import { inviteLink, relayUrl } from '../net/multiplayer';
 import {
+  INVITE_INPUT_MAX,
   MAX_CHAT,
   MAX_NAME,
   PLAYER_COLORS,
   cleanName,
-  normaliseCode,
+  formatInvite,
+  inviteProblem,
+  parseInvite,
   type PlayerInfo,
 } from '../../relay/protocol';
 import type { Game } from '../game';
@@ -78,9 +81,10 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
   };
   const ready = !!cleanName(profile.name);
   const join = () => {
-    const c = normaliseCode(code);
-    if (!c) return setProblem('A room code has six letters and numbers, like 7KQ2MX.');
-    location.href = `${location.pathname}?join=${c}`;
+    const inv = parseInvite(code);
+    const why = inviteProblem(inv);
+    if (why) return setProblem(why);
+    location.href = `${location.pathname}?join=${formatInvite(inv!)}`;
   };
   const city = props.latestName ? `“${props.latestName}”` : 'a new city';
   return (
@@ -140,7 +144,7 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
               autoCapitalize="characters"
               autoComplete="off"
               spellcheck={false}
-              maxLength={9}
+              maxLength={INVITE_INPUT_MAX}
               placeholder="7KQ2MX"
               value={code}
               data-testid="friends-code"
@@ -214,7 +218,7 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
           <span>Region code</span>
           <input
             type="text"
-            maxLength={9}
+            maxLength={INVITE_INPUT_MAX}
             placeholder="4RT9KW"
             value={code}
             data-testid="friends-region-code"
@@ -229,9 +233,10 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
           data-testid="friends-region-join"
           disabled={!props.ready || !code.trim()}
           onClick={() => {
-            const c = normaliseCode(code);
-            if (!c) return setProblem('A region code has six letters and numbers.');
-            go(`region=${c}`);
+            const inv = parseInvite(code);
+            const why = inviteProblem(inv);
+            if (why) return setProblem(why.replace('a room', 'a region'));
+            go(`region=${formatInvite(inv!)}`);
           }}
         >
           <span>Join with {city}</span>
@@ -304,7 +309,7 @@ export function RoomPanel() {
   if (game.panel !== 'room' || !mp) return null;
   const s = mp.session;
   const room = s.room;
-  const link = inviteLink(mp.code);
+  const link = inviteLink(mp.invite);
   const copy = () => {
     void navigator.clipboard?.writeText(link).then(
       () => setCopied(true),
@@ -338,6 +343,11 @@ export function RoomPanel() {
             {copied ? 'Copied' : 'Copy link'}
           </button>
         </div>
+        {mp.key && (
+          <p class="muted room-invite-code">
+            Or the code to type: <strong data-testid="room-invite">{mp.invite}</strong>
+          </p>
+        )}
         {line && (
           <p class="room-line" data-testid="room-line">
             {line}

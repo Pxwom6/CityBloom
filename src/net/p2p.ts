@@ -6,6 +6,9 @@
  *   relay in development and tests);
  * - with no server of ours at all, through Trystero over public Nostr relays (DECISIONS, M30).
  *
+ * Either way a peer-to-peer room is found by its code and its key (F2): the code alone, which anyone
+ * watching the public relays could try one by one, finds nothing.
+ *
  * Public STUN servers find a way through home routers; when two players still can't connect, the
  * guest is told so plainly and offered an online room.
  */
@@ -24,8 +27,24 @@ export const P2P_FAILED =
 
 export const TRYSTERO_APP = 'citybloom-rooms-v1';
 
-/** How a peer-to-peer room's players find each other: our relay's signalling, or Trystero. */
-export type Signalling = { kind: 'relay'; url: string } | { kind: 'trystero' };
+/**
+ * How a peer-to-peer room's players find each other: our relay's signalling, or Trystero over public
+ * Nostr relays (`relays` overrides Trystero's own list: tests use a relay on this computer).
+ */
+export type Signalling = { kind: 'relay'; url: string } | { kind: 'trystero'; relays?: string[] };
+
+/** Trystero's room for a code and its key: the topic and the encryption both depend on the key (F2). */
+function trysteroRoom(code: string, key: string, signalling: { relays?: string[] }) {
+  return {
+    config: {
+      appId: TRYSTERO_APP,
+      password: key,
+      rtcConfig: { iceServers: ICE_SERVERS },
+      ...(signalling.relays?.length ? { relayConfig: { urls: signalling.relays } } : {}),
+    },
+    room: `${code}-${key}`,
+  };
+}
 
 /** What a host's browser runs for its guests: a room (co-op, M30) or a region (M32). */
 export interface Hub<C> {
@@ -69,6 +88,8 @@ export class P2PHost {
 
   constructor(
     readonly code: string,
+    /** The room's key, which every guest's invite carries (F2). */
+    readonly key: string,
     private readonly signalling: Signalling,
     /** Every snapshot the room keeps (the host's browser saves the city then, M31). */
     onSnapshot: ((s: StoredSnapshot) => void) | null = null,
@@ -99,7 +120,7 @@ export class P2PHost {
 
   async listen(): Promise<void> {
     if (this.signalling.kind === 'relay') await this.listenRelay(this.signalling.url);
-    else await this.listenTrystero();
+    else await this.listenTrystero(this.signalling);
   }
 
   close(): void {
@@ -117,8 +138,9 @@ export class P2PHost {
       if (m.t === 'gone' && m.id) peers.delete(m.id);
       if (m.t !== 'from' || !m.from || !m.data) return;
       const from = m.from;
-      const d = JSON.parse(m.data) as { kind: string; sdp: string };
-      if (d.kind !== 'offer') return;
+      const d = JSON.parse(m.data) as { kind: string; sdp: string; key?: string };
+      // Only guests with the whole invite are answered (F2): a code guessed on the relay isn't enough.
+      if (d.kind !== 'offer' || d.key !== this.key) return;
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peers.set(from, pc);
       pc.ondatachannel = (e) => {
@@ -147,9 +169,10 @@ export class P2PHost {
     sig.send(JSON.stringify({ t: 'host' }));
   }
 
-  private async listenTrystero(): Promise<void> {
+  private async listenTrystero(signalling: { relays?: string[] }): Promise<void> {
     const { joinRoom } = await import('trystero');
-    const t = joinRoom({ appId: TRYSTERO_APP, rtcConfig: { iceServers: ICE_SERVERS } }, this.code);
+    const { config, room } = trysteroRoom(this.code, this.key, signalling);
+    const t = joinRoom(config, room);
     this.stops.push(() => void t.leave());
     const msg = t.makeAction<string>('room');
     const hello = t.makeAction<string>('host');
@@ -179,13 +202,18 @@ export class P2PHost {
 }
 
 /** A guest's way to the host's room: resolves with a link once the data channel is open. */
-export function p2pConnect(code: string, signalling: Signalling, timeoutMs = 20_000): Promise<Link> {
+export function p2pConnect(
+  code: string,
+  key: string,
+  signalling: Signalling,
+  timeoutMs = 20_000,
+): Promise<Link> {
   return signalling.kind === 'relay'
-    ? viaRelay(code, signalling.url, timeoutMs)
-    : viaTrystero(code, timeoutMs);
+    ? viaRelay(code, key, signalling.url, timeoutMs)
+    : viaTrystero(code, key, signalling, timeoutMs);
 }
 
-async function viaRelay(code: string, url: string, timeoutMs: number): Promise<Link> {
+async function viaRelay(code: string, key: string, url: string, timeoutMs: number): Promise<Link> {
   const sig = await webSocketLink(`${url}/signal/${code}`);
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   const dc = pc.createDataChannel('room', { ordered: true });
@@ -214,7 +242,7 @@ async function viaRelay(code: string, url: string, timeoutMs: number): Promise<L
         JSON.stringify({
           t: 'to',
           to: host,
-          data: JSON.stringify({ kind: 'offer', sdp: pc.localDescription!.sdp }),
+          data: JSON.stringify({ kind: 'offer', sdp: pc.localDescription!.sdp, key }),
         }),
       );
     };
@@ -236,11 +264,15 @@ async function viaRelay(code: string, url: string, timeoutMs: number): Promise<L
   });
 }
 
-async function viaTrystero(code: string, timeoutMs: number): Promise<Link> {
+async function viaTrystero(
+  code: string,
+  key: string,
+  signalling: { relays?: string[] },
+  timeoutMs: number,
+): Promise<Link> {
   const { joinRoom } = await import('trystero');
-  const t = joinRoom({ appId: TRYSTERO_APP, rtcConfig: { iceServers: ICE_SERVERS } }, code, {
-    onJoinError: () => undefined,
-  });
+  const { config, room } = trysteroRoom(code, key, signalling);
+  const t = joinRoom(config, room, { onJoinError: () => undefined });
   const msg = t.makeAction<string>('room');
   const hello = t.makeAction<string>('host');
   return new Promise<Link>((resolve, reject) => {

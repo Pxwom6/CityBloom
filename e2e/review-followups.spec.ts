@@ -78,7 +78,7 @@ test('F5: looking round a neighbour’s city never saves it in your browser', as
     })
     .toBe(true);
   expect(await page.evaluate(() => window.__game!.autosaveNow())).toBe(true);
-  const invite = (await page.evaluate(() => window.__game!.getRegion()))!.code;
+  const invite = (await page.evaluate(() => window.__game!.getRegion()))!.invite;
 
   // A visit (as a neighbour would make it), in another tab of this browser.
   const visit = await page.context().newPage();

@@ -33,7 +33,7 @@ import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionL
 import { P2PHost, p2pConnect } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
-import { codeKind, makeCode } from '../relay/protocol';
+import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
 import { forgetRegionOf, keepRegionCredentials, regionCredentials } from './client/profile';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -416,6 +416,13 @@ export class Game {
   /** The shared region this city stands in, if it does (M32), and its code. */
   region: RegionLink | null = null;
   regionCode: string | null = null;
+  /** A peer-to-peer region's key (F2): its invite carries it, so the code alone finds nothing. */
+  regionKey: string | null = null;
+
+  /** What friends type or follow to bring their cities in: the code, and the key for one in a browser. */
+  get regionInvite(): string | null {
+    return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
+  }
   private regionHost: P2PHost | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
@@ -455,6 +462,7 @@ export class Game {
   async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
     if (this.region || this.net || this.readOnly) return false;
     const code = makeCode(kind);
+    const key = kind === 'p2p' ? makeKey() : null;
     try {
       let connect: () => Promise<Link>;
       if (kind === 'online') {
@@ -463,13 +471,17 @@ export class Game {
         connect = () => webSocketLink(`${url}/region/${code}`);
       } else {
         const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
-        this.regionHost = new P2PHost(code, signalling(), null, hub);
+        this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
         await this.regionHost.listen();
         const host = this.regionHost;
         connect = () => host.connectSelf();
       }
-      await this.attachRegion(code, connect, { create: { name } });
-      this.toast(`Your region is open: code ${code}. Friends join it with their own cities.`, 'ok', 8000);
+      await this.attachRegion(code, key, connect, { create: { name } });
+      this.toast(
+        `Your region is open: code ${formatInvite({ code, key })}. Friends join it with their own cities.`,
+        'ok',
+        8000,
+      );
       return true;
     } catch (err) {
       this.leaveRegion(false);
@@ -478,18 +490,25 @@ export class Game {
     }
   }
 
-  /** Bring this city into a shared region by its code (M32). */
-  async joinRegion(code: string): Promise<boolean> {
+  /** Bring this city into a shared region by its invite: the code, and the key for one in a browser (M32, F2). */
+  async joinRegion(invite: string): Promise<boolean> {
     if (this.region || this.net || this.readOnly) return false;
+    const inv = parseInvite(invite);
+    const why = inviteProblem(inv);
+    if (why) {
+      this.toast(why.replace('a room', 'a region'), 'bad', 8000);
+      return false;
+    }
+    const { code, key } = inv!;
     const url = relayUrl();
     const connect: () => Promise<Link> =
       codeKind(code) === 'online'
         ? url
           ? () => webSocketLink(`${url}/region/${code}`)
           : () => Promise.reject(new Error("Online regions aren't set up yet"))
-        : () => p2pConnect(code, signalling());
+        : () => p2pConnect(code, key!, signalling());
     try {
-      await this.attachRegion(code, connect, {
+      await this.attachRegion(code, key, connect, {
         ...(regionCredentials(code) ? { rejoin: regionCredentials(code)! } : {}),
       });
       this.toast(`${this.world.stats.cityName} joined the region.`, 'ok', 5000);
@@ -503,6 +522,7 @@ export class Game {
 
   private async attachRegion(
     code: string,
+    key: string | null,
     connect: () => Promise<Link>,
     extra: Partial<RegionLinkOptions>,
   ): Promise<void> {
@@ -514,9 +534,11 @@ export class Game {
     });
     this.region = link;
     this.regionCode = code;
+    this.regionKey = key;
     link.onNotice = (t) => this.toast(t, 'info', 4500);
     link.onChange = () => {
-      if (link.slot) keepRegionCredentials(code, link.slot, link.secret, this.slot);
+      if (link.slot)
+        keepRegionCredentials(code, link.slot, link.secret, this.slot, formatInvite({ code, key }));
       if (link.state === 'closed' && this.region === link) {
         if (link.error) this.toast(link.error, 'bad', 8000);
         this.leaveRegion(false);
@@ -531,6 +553,7 @@ export class Game {
     const link = this.region;
     this.region = null;
     this.regionCode = null;
+    this.regionKey = null;
     link?.leave();
     this.regionHost?.close();
     this.regionHost = null;
@@ -1107,7 +1130,13 @@ export class Game {
       if (slot !== 'auto') this.slot = slot;
       // A city in a shared region rejoins it when this save is opened again (M32).
       if (this.region?.slot && this.regionCode)
-        keepRegionCredentials(this.regionCode, this.region.slot, this.region.secret, slot);
+        keepRegionCredentials(
+          this.regionCode,
+          this.region.slot,
+          this.region.secret,
+          slot,
+          this.regionInvite!,
+        );
       // The slot's name, as the load list shows it, not the city's (P22).
       if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;

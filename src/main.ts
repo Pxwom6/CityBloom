@@ -28,8 +28,7 @@ import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
 import { fetchCitySave } from './net/regionLink';
-import { codeKind } from '../relay/protocol';
-import { normaliseCode } from '../relay/protocol';
+import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -111,7 +110,7 @@ function townPose(world: ClientWorld) {
 }
 
 /** Join a room and wait for its city; rejects with a message the player can read. */
-async function joinRoom(code: string, client: SimClient): Promise<{ mp: Multiplayer; snap: Snapshot }> {
+async function joinRoom(invite: Invite, client: SimClient): Promise<{ mp: Multiplayer; snap: Snapshot }> {
   let first: ((s: Snapshot) => void) | null = null;
   const loaded = new Promise<Snapshot>((r) => (first = r));
   // The first snapshot is the city this page opens with.
@@ -131,7 +130,7 @@ async function joinRoom(code: string, client: SimClient): Promise<{ mp: Multipla
       return s;
     },
   };
-  const mp = Multiplayer.join(code, driver, loadProfile());
+  const mp = Multiplayer.join(invite, driver, loadProfile());
   await mp.session.start();
   return { mp, snap: await loaded };
 }
@@ -139,20 +138,22 @@ async function joinRoom(code: string, client: SimClient): Promise<{ mp: Multipla
 async function boot(): Promise<void> {
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
-  // Without a city to open, show the main menu over a backdrop map.
-  const joinCode = params.get('join') ? normaliseCode(params.get('join')!) : null;
+  // Without a city to open, show the main menu over a backdrop map. An invite carries a room's code
+  // and, for a room in a player's browser, its key (F2).
+  const joinInvite = params.get('join') ? parseInvite(params.get('join')!) : null;
   // Looking round a neighbour's city in a shared region (M32), read-only.
-  const visitCode = params.get('visit') ? normaliseCode(params.get('visit')!) : null;
+  const visitInvite = params.get('visit') ? parseInvite(params.get('visit')!) : null;
   let visited: SaveFile | null = null;
-  if (visitCode) {
+  if (visitInvite && !inviteProblem(visitInvite)) {
     const url = relayUrl();
+    const { code, key } = visitInvite;
     const connect =
-      codeKind(visitCode) === 'online'
+      codeKind(code) === 'online'
         ? () =>
             url
-              ? webSocketLink(`${url}/region/${visitCode}`)
+              ? webSocketLink(`${url}/region/${code}`)
               : Promise.reject(new Error('Online regions aren’t set up'))
-        : () => p2pConnect(visitCode, signalling());
+        : () => p2pConnect(code, key!, signalling());
     visited = await fetchCitySave(connect, Number(params.get('city') ?? 0), loadProfile().name).catch(
       () => null,
     );
@@ -164,9 +165,9 @@ async function boot(): Promise<void> {
   client.testMode = IS_TEST_BUILD;
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
-  let joinError: string | null = params.has('join') && !joinCode ? 'That room code isn’t one of ours.' : null;
-  if (joinCode) {
-    const result = await joinRoom(joinCode, client).catch((err: unknown) => {
+  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : null;
+  if (joinInvite && !joinError) {
+    const result = await joinRoom(joinInvite, client).catch((err: unknown) => {
       joinError = err instanceof Error ? err.message : String(err);
       return null;
     });
@@ -262,9 +263,9 @@ async function boot(): Promise<void> {
     // A first launch picks graphics to suit the device from the menu's first few seconds.
     if (!game.settings.graphicsChecked) game.startGraphicsCheck();
     // A region's invite link: the friends screen, to choose the city to bring (M32).
-    const invited = params.get('region') ? normaliseCode(params.get('region')!) : null;
-    if (invited) {
-      game.pendingRegion = invited;
+    const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
+    if (invited && !inviteProblem(invited)) {
+      game.pendingRegion = formatInvite(invited);
       game.openScreen('friends');
       history.replaceState(null, '', location.pathname);
     }
@@ -304,7 +305,7 @@ async function boot(): Promise<void> {
     if (host === 'online' || host === 'p2p') void game.hostRoom(host);
     // Shared regions (M32): start one with this city, join one, or rejoin the one it stands in.
     const newRegion = params.get('newregion');
-    const regionCode = params.get('region') ? normaliseCode(params.get('region')!) : null;
+    const regionCode = params.get('region');
     const known = loadSlot && save ? regionOf(loadSlot) : null;
     if (newRegion === 'online' || newRegion === 'p2p')
       void game.startRegion(

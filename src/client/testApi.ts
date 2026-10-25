@@ -46,6 +46,8 @@ export interface TestApi {
   /** The shared city's room (M30), as this page sees it; null when not shared. */
   getNet(): {
     code: string;
+    /** What friends type or follow: the code, and a peer-to-peer room's key (F2). */
+    invite: string;
     kind: 'online' | 'p2p';
     state: string;
     you: number;
@@ -65,6 +67,7 @@ export interface TestApi {
   /** The shared region this city stands in (M32), as this page sees it; null when none. */
   getRegion(): {
     code: string;
+    invite: string;
     slot: number;
     state: string;
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
@@ -519,6 +522,7 @@ export function installTestApi(game: Game): TestApi {
       const s = mp.session;
       return {
         code: mp.code,
+        invite: mp.invite,
         kind: mp.kind,
         state: s.state,
         you: s.you,
@@ -547,6 +551,7 @@ export function installTestApi(game: Game): TestApi {
       const v = r.view;
       return {
         code: game.regionCode,
+        invite: game.regionInvite ?? game.regionCode,
         slot: r.slot,
         state: r.state,
         cities: (v?.cities ?? []).map((c) => ({

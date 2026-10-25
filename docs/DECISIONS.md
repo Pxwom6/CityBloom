@@ -671,3 +671,17 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   leaves without saving ("You were only visiting: nothing is saved"), an update reloads without
   saving first, and a visit can't be shared in a room or a region (before, Continue could open the
   neighbour's city in place of one's own).
+- **F2 A peer-to-peer room is found by its code and a key.** Trystero announced a room on the
+  public Nostr relays under a topic made from our public app id and the six-character code, so anyone
+  watching could try every code offline (about 29 bits) and join. Peer-to-peer rooms and regions now
+  have a 12-character key from the same alphabet (about 59 bits; with the code public, a GPU would
+  take months to find a live room, and rooms last hours). The key is part of Trystero's room name, so
+  the topic can't be computed from the code, and it is Trystero's `password`, which encrypts the
+  connection details. With our own relay's signalling the host answers only offers that carry the key.
+  Invites are `A7KQ2M-BCDF-GHJK-MNPQ`, the same text in the link and in the box a friend types into
+  (spaces, dashes and case don't matter); the room chip still shows the short code, and the room panel
+  shows the whole code beside the link. A short peer-to-peer code alone is turned away with a plain
+  message. Online rooms keep their six-character codes: our relay finds them, and a key wouldn't
+  protect them more than the room's own rules do. Test builds can send Trystero through a Nostr relay
+  on this computer (`VITE_TRYSTERO_RELAYS`, preferred when `citybloom.signal` is `trystero`), which
+  `e2e/f2-trystero.spec.ts` uses to test the real join path.

@@ -90,16 +90,18 @@ export function keepRegionCredentials(
   slot: number,
   secret: string,
   saveSlot: string | null,
+  /** The region's whole invite (a peer-to-peer region's carries its key, F2). */
+  invite = code,
 ): void {
   try {
     localStorage.setItem(`citybloom.region.${code}`, JSON.stringify({ slot, secret }));
-    if (saveSlot) localStorage.setItem(`citybloom.regionOf.${saveSlot}`, code);
+    if (saveSlot) localStorage.setItem(`citybloom.regionOf.${saveSlot}`, invite);
   } catch {
     /* private window: the city joins as new next time */
   }
 }
 
-/** The region a saved city stands in, if any. */
+/** The region a saved city stands in, if any: its invite. */
 export function regionOf(saveSlot: string): string | null {
   try {
     return localStorage.getItem(`citybloom.regionOf.${saveSlot}`);

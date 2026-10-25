@@ -104,13 +104,17 @@ for (const kind of ['online', 'p2p'] as const) {
     const room = (await net(ada))!;
     expect(room.kind).toBe(kind);
     expect(room.code).toMatch(kind === 'online' ? /^[2-9][A-Z2-9]{5}$/ : /^[A-Z][A-Z2-9]{5}$/);
+    // A room in Ada's browser is found by its code and its key (F2); an online one by its code.
+    expect(room.invite).toMatch(
+      kind === 'online' ? /^[2-9][A-Z2-9]{5}$/ : /^[A-Z][A-Z2-9]{5}(-[A-Z2-9]{4}){3}$/,
+    );
     await expect(ada.getByTestId('room-panel')).toBeVisible();
     const link = await ada.getByTestId('room-link').inputValue();
-    expect(link).toContain(`?join=${room.code}`);
+    expect(link).toContain(`?join=${room.invite}`);
 
     // Sam opens the invite link and lands in the same city.
     const sam = await newPage(browser, 'Sam', 1);
-    await sam.goto(`./?join=${room.code}`);
+    await sam.goto(`./?join=${room.invite}`);
     await sam.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
     await expect.poll(async () => (await net(sam))?.state, { timeout: 60_000 }).toBe('playing');
     await expect(sam.getByTestId('room-chip')).toContainText(room.code);
@@ -125,7 +129,7 @@ for (const kind of ['online', 'p2p'] as const) {
 
     // Kit joins halfway through.
     const kit = await newPage(browser, 'Kit', 2);
-    await kit.goto(`./?join=${room.code}`);
+    await kit.goto(`./?join=${room.invite}`);
     await kit.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
     await expect.poll(async () => (await net(kit))?.state, { timeout: 180_000 }).toBe('playing');
     expect((await zone(kit, 'I', 110)).ok).toBe(true);

@@ -1936,6 +1936,8 @@ body {
   top: calc(var(--topbar-height) + var(--space-5));
   left: var(--space-3);
   width: 25rem;
+  /* A phone held upright is narrower than the panel (M33). */
+  max-width: calc(100vw - 2 * var(--space-3));
   max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 4rem);
   display: flex;
   flex-direction: column;

@@ -27,7 +27,14 @@ export interface SharedRules {
 }
 
 /** New players' permissions: friends trust each other until the host says otherwise (DECISIONS). */
-export const DEFAULT_PERMS: readonly Permission[] = ['bulldoze', 'money', 'policies', 'projects', 'spend', 'speed'];
+export const DEFAULT_PERMS: readonly Permission[] = [
+  'bulldoze',
+  'money',
+  'policies',
+  'projects',
+  'spend',
+  'speed',
+];
 
 const NEED: Partial<Record<Command['type'], Permission>> = {
   setTax: 'money',

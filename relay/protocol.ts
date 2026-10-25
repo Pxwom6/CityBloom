@@ -9,6 +9,7 @@
  * room sleeps between messages. Snapshots of the city travel as opaque compressed parts.
  */
 import type { Stamped } from '../src/sim/lockstep';
+import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules';
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_PLAYERS = 8;
@@ -58,6 +59,10 @@ export interface RoomInfo {
   /** The player whose game sets the pace (0: nobody online). */
   pacer: number;
   cityName: string;
+  /** Who may do what (M31). */
+  rules: SharedRules;
+  /** Players the host has muted in the chat. */
+  muted: number[];
 }
 
 /** A snapshot's description; its data travels in parts (`snap`). */
@@ -71,6 +76,27 @@ export interface SnapshotMeta {
   parts: number;
   cityName: string;
   population: number;
+}
+
+/**
+ * A tool's ghost in outline, for the others to see (M31): polylines as flat [x, z, x, z…] lists,
+ * circles [x, z, r] and rectangles [x, z, half width, half depth, angle].
+ */
+export interface Shape {
+  lines?: number[][];
+  circles?: number[][];
+  rects?: number[][];
+}
+
+/** Where a player is and what they're doing (M31): not ordered, not kept, just passed on. */
+export interface Presence {
+  /** The cursor on the ground, or null when it's off the map. */
+  at: [number, number] | null;
+  /** The tool in hand ('select', 'road', 'zone'…). */
+  tool: string;
+  ghost?: Shape;
+  /** The camera, for following: x, z, distance, yaw, tilt. */
+  cam?: [number, number, number, number, number];
 }
 
 /** What a player asks for when making a room (the city comes after, as a snapshot). */
@@ -103,8 +129,13 @@ export type ClientMsg =
   /** A snapshot part (the city at a settle event, or the first upload). */
   | { t: 'snap'; meta: SnapshotMeta; part: number; data: string }
   | { t: 'speed'; speed: Speed }
+  | ({ t: 'here' } & Presence)
+  /** "Look here" (M31). */
+  | { t: 'ping'; at: [number, number] }
   | { t: 'chat'; text: string }
-  | { t: 'admin'; action: 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick'; player?: number }
+  | { t: 'admin'; action: AdminAction; player?: number }
+  /** The host sets a player's permissions, or the spending limit (M31). */
+  | { t: 'rules'; player?: number; perms?: Permission[]; spendLimit?: number | null }
   | { t: 'bye' };
 
 // ---------------------------------------------------------------- room → player
@@ -133,8 +164,12 @@ export type RoomMsg =
   /** The room turned a command down before ordering it (roles, rate). */
   | { t: 'refused'; ref: number; reason: string }
   | { t: 'chat'; from: number; text: string }
+  | ({ t: 'here'; from: number } & Presence)
+  | { t: 'ping'; from: number; at: [number, number] }
   | { t: 'notice'; text: string }
   | { t: 'error'; code: ErrorCode; text: string };
+
+export type AdminAction = 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick' | 'mute' | 'unmute';
 
 export type ErrorCode =
   'version' | 'no-room' | 'full' | 'locked' | 'kicked' | 'bad-message' | 'rate' | 'exists' | 'gone';
@@ -209,6 +244,43 @@ export function boundedJson(v: unknown, depth = 0): boolean {
     );
   }
   return false;
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e6;
+
+/** A ground point [x, z]; undefined if it isn't one. */
+function point(v: unknown): [number, number] | undefined {
+  return Array.isArray(v) && v.length === 2 && finite(v[0]) && finite(v[1]) ? [v[0], v[1]] : undefined;
+}
+
+function numberLists(v: unknown, lists: number, len: number, even: boolean): number[][] | null {
+  if (!Array.isArray(v) || v.length > lists) return null;
+  for (const l of v)
+    if (!Array.isArray(l) || l.length > len || (even && l.length % 2) || !l.every(finite)) return null;
+  return v as number[][];
+}
+
+/** A ghost outline within bounds, or null. */
+function shape(v: unknown): Shape | null {
+  if (!v || typeof v !== 'object') return null;
+  const g = v as Record<string, unknown>;
+  const out: Shape = {};
+  if (g.lines !== undefined) {
+    const l = numberLists(g.lines, 8, 128, true);
+    if (!l) return null;
+    out.lines = l;
+  }
+  if (g.circles !== undefined) {
+    const c = numberLists(g.circles, 8, 3, false);
+    if (!c || c.some((x) => x.length !== 3)) return null;
+    out.circles = c;
+  }
+  if (g.rects !== undefined) {
+    const r = numberLists(g.rects, 8, 5, false);
+    if (!r || r.some((x) => x.length !== 5)) return null;
+    out.rects = r;
+  }
+  return out;
 }
 
 const isInt = (v: unknown, lo: number, hi: number): v is number =>
@@ -296,13 +368,52 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'speed':
       return isSpeed(m.speed) ? { t: 'speed', speed: m.speed } : null;
+    case 'here': {
+      const at = m.at === null ? null : point(m.at);
+      if (at === undefined || typeof m.tool !== 'string' || m.tool.length > 16) return null;
+      const out: ClientMsg = { t: 'here', at, tool: m.tool };
+      if (m.ghost !== undefined) {
+        const g = shape(m.ghost);
+        if (!g) return null;
+        out.ghost = g;
+      }
+      if (m.cam !== undefined) {
+        if (
+          !Array.isArray(m.cam) ||
+          m.cam.length !== 5 ||
+          !m.cam.every((v) => typeof v === 'number' && Number.isFinite(v))
+        )
+          return null;
+        out.cam = m.cam as Presence['cam'];
+      }
+      return out;
+    }
+    case 'ping': {
+      const at = point(m.at);
+      return at ? { t: 'ping', at } : null;
+    }
     case 'chat': {
       const text = cleanChat(m.text);
       return text ? { t: 'chat', text } : null;
     }
+    case 'rules': {
+      const out: ClientMsg = { t: 'rules' };
+      if (m.player !== undefined) {
+        if (!isInt(m.player, 1, 1e6) || !Array.isArray(m.perms)) return null;
+        const ids = PERMISSIONS.map((p) => p.id) as string[];
+        if (!m.perms.every((x) => typeof x === 'string' && ids.includes(x))) return null;
+        out.player = m.player;
+        out.perms = [...new Set(m.perms as Permission[])];
+      }
+      if (m.spendLimit !== undefined) {
+        if (m.spendLimit !== null && !isInt(m.spendLimit, 0, 1e9)) return null;
+        out.spendLimit = m.spendLimit as number | null;
+      }
+      return out;
+    }
     case 'admin': {
-      const actions = ['lock', 'unlock', 'chatOff', 'chatOn', 'kick'];
-      if (typeof m.action !== 'string' || !actions.includes(m.action)) return null;
+      const actions: AdminAction[] = ['lock', 'unlock', 'chatOff', 'chatOn', 'kick', 'mute', 'unmute'];
+      if (typeof m.action !== 'string' || !actions.includes(m.action as AdminAction)) return null;
       if (m.player !== undefined && !isInt(m.player, 1, 1e6)) return null;
       return {
         t: 'admin',

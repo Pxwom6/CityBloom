@@ -118,7 +118,11 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'command', id, cmd }));
   }
 
+  /** Every preview the tools ask for (a shared city shows it to the others as this player's ghost). */
+  onPreview: ((cmd: Command) => void) | null = null;
+
   preview(cmd: Command): Promise<CommandResult> {
+    this.onPreview?.(cmd);
     return this.request((id) => ({ type: 'preview', id, cmd }));
   }
 

@@ -1,5 +1,6 @@
 import type { Applied, Stamped } from './lockstep';
 import type { PlayerHistory } from './history';
+import type { SharedRules } from './rules';
 import type { WeatherSummary } from './systems/weather';
 import type { RegionSummary } from './systems/region';
 import type { ScenarioSummary } from './systems/scenario';
@@ -472,6 +473,8 @@ export interface SharedSnapshot {
   /** The last event applied before it was taken, and the running fingerprint of events. */
   seq: number;
   eventHash: number;
+  /** Who may do what (M31), if the host has set it. */
+  rules?: SharedRules | null;
 }
 
 export type Query =

@@ -3361,3 +3361,27 @@ body {
   gap: 1rem;
   margin: 0.5rem 0 0.75rem;
 }
+
+/* ---------------------------------------------------------------- the others on the map (M31) */
+.presence-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.presence-name {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0.6rem 0 0 0.6rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--player, #2e86de);
+  color: #fff;
+  font: 600 0.75rem/1.4 var(--font-family);
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.presence-name.ping {
+  margin: -2.2rem 0 0 -2rem;
+}

@@ -29,6 +29,9 @@ import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClass, widthClass } from './ui/layout';
 import { Multiplayer } from './net/multiplayer';
+import { commandShape } from './net/shapes';
+import { PLAYER_COLORS, type Shape } from '../relay/protocol';
+import type { PresenceMark } from './render/presence';
 import { loadProfile } from './client/profile';
 import {
   DRAW_DISTANCE_PARAMS,
@@ -265,8 +268,113 @@ export class Game {
   }
 
   dispatch(cmd: Command): Promise<CommandResult> {
-    // In a shared city the room orders every command, so all the players' games apply it alike.
-    return this.net ? this.net.session.command(cmd) : this.client.command(cmd);
+    // In a shared city the room orders every command, so all the players' games apply it alike;
+    // until it comes back its outline shows as pending (M31).
+    if (!this.net) return this.client.command(cmd);
+    const shape = commandShape(cmd);
+    const key = this.pendingKey++;
+    if (shape) this.pending.set(key, shape);
+    return this.net.session.command(cmd).finally(() => this.pending.delete(key));
+  }
+
+  /** This player's commands waiting for the room, as outlines (M31). */
+  private pending = new Map<number, Shape>();
+  private pendingKey = 1;
+  /** What this player last told the others about where they are (M31). */
+  private here = {
+    at: null as [number, number] | null,
+    ghost: null as Shape | null,
+    ghostAt: 0,
+    sentAt: 0,
+    camAt: 0,
+    last: '',
+  };
+
+  /** The pointer moved over the map: where it is on the ground, for the others (M31). */
+  pointerAt(clientX: number, clientY: number): void {
+    if (!this.net) return;
+    const g = this.renderer.controller.screenToGround(clientX, clientY);
+    this.here.at = g ? [Math.round(g.x), Math.round(g.z)] : null;
+  }
+
+  /** Point the others at a spot ("look here"). */
+  pingAt(at: { x: number; z: number }): void {
+    const mp = this.net;
+    if (!mp) return;
+    const p: [number, number] = [Math.round(at.x), Math.round(at.z)];
+    mp.session.ping(p);
+    const me = mp.session.me;
+    this.renderer.presence.ping(p, PLAYER_COLORS[me?.color ?? 0], 'You', performance.now());
+  }
+
+  /** Each frame in a shared city: tell the others where this player is, and show where they are. */
+  private presenceFrame(now: number): void {
+    const mp = this.net;
+    const r = this.renderer;
+    const w = r.canvas.clientWidth || window.innerWidth;
+    const h = r.canvas.clientHeight || window.innerHeight;
+    if (!mp) {
+      r.presence.update([], r.camera, w, h, now);
+      return;
+    }
+    const s = mp.session;
+    const here = this.here;
+    const tool = this.tools.activeId;
+    if (now - here.sentAt > 150) {
+      const ghost = tool !== 'select' && here.ghost && now - here.ghostAt < 1500 ? here.ghost : undefined;
+      const g = r.controller.goal;
+      const camDue = now - here.camAt > 600;
+      const msg = { at: here.at, tool, ...(ghost ? { ghost } : {}) };
+      const key = JSON.stringify(msg);
+      if (key !== here.last || camDue) {
+        const cam: [number, number, number, number, number] = [
+          Math.round(g.x),
+          Math.round(g.z),
+          Math.round(g.distance),
+          Math.round(g.yaw * 1000) / 1000,
+          Math.round(g.tilt * 1000) / 1000,
+        ];
+        s.sendPresence(camDue ? { ...msg, cam } : msg);
+        here.last = key;
+        here.sentAt = now;
+        if (camDue) here.camAt = now;
+      }
+    }
+    const marks: PresenceMark[] = [];
+    const t = performance.now();
+    for (const p of s.players) {
+      if (p.id === s.you || !p.online) continue;
+      const pr = s.presence.get(p.id);
+      if (!pr || t - pr.heard > 30_000) continue;
+      marks.push({
+        key: p.id,
+        color: PLAYER_COLORS[p.color],
+        name: p.name,
+        at: pr.at,
+        ...(pr.ghost ? { ghost: pr.ghost } : {}),
+      });
+    }
+    const mine = PLAYER_COLORS[s.me?.color ?? 0];
+    for (const [k, shape] of this.pending)
+      marks.push({ key: -k, color: mine, name: null, at: null, ghost: shape, pending: true });
+    r.presence.update(marks, r.camera, w, h, now);
+    // Following someone: ride along with their camera.
+    if (this.following && r.controller.isDragging) this.following = 0;
+    if (this.following) {
+      const f = s.presence.get(this.following)?.cam;
+      if (f) r.controller.setPose({ x: f[0], z: f[1], distance: f[2], yaw: f[3], tilt: f[4] }, false);
+    }
+  }
+
+  /** The player whose camera this one rides along with (M31), or 0. */
+  following = 0;
+
+  follow(player: number): void {
+    this.following = this.following === player ? 0 : player;
+    const name = this.net?.session.players.find((p) => p.id === player)?.name;
+    if (this.following && name)
+      this.toast(`Following ${name}'s view. Move the camera to stop.`, 'info', 3500);
+    this.notify();
   }
 
   // ---------------------------------------------------------------- shared cities (phase 4)
@@ -298,6 +406,20 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    this.client.onPreview = (cmd) => {
+      const shape = commandShape(cmd);
+      if (shape) {
+        this.here.ghost = shape;
+        this.here.ghostAt = performance.now();
+      }
+    };
+    mp.session.onPing = (from, at) => {
+      const p = mp.session.players.find((x) => x.id === from);
+      if (!p) return;
+      this.renderer.presence.ping(at, PLAYER_COLORS[p.color], p.name, performance.now());
+      this.audio?.play('alert');
+      this.toast(`${p.name}: look here`, 'info', 4000, { x: at[0], z: at[1] });
+    };
     // Menus and photo mode don't pause a shared city; it runs at the room's speed.
     this.speedBeforeMenu = null;
     mp.session.onNotice = (n) => {
@@ -1180,6 +1302,7 @@ export class Game {
       w.displayTick = Math.min(next, w.stats.tick + 8);
     }
     if (this.photo) this.photoFrame(dt);
+    this.presenceFrame(now);
     const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.

@@ -159,9 +159,14 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4, M29 Same city everywhere (the lockstep core, no network yet): deterministic maths in
-`src/sim`, total-order sorts, a cross-browser test, stamped commands in the worker, snapshots and
-previews that leave the future alone, out-of-step checksums, an undo rule, cheats refused in rooms.
+Phase 4 on the `multiplayer` branch. **M29 Same city everywhere** is done (lockstep core, no
+network): deterministic maths in `src/sim` (`dmath.ts`) with a lint rule, sorts audited, the
+cross-browser test (`npm run xbrowser`), the lockstep runner and the worker's shared mode (stamped
+events, run to the allowed tick, never drop one, `perf.behind`), settle snapshots, previews and
+queries proven harmless over a year, hourly checksums, month-end part hashes and a desync report,
+per-player undo carried in snapshots, cheats refused in shared cities. Next: **M30 rooms** (a room
+protocol over a local relay, a Cloudflare Worker with a Durable Object per room, and WebRTC
+peer-to-peer; the lobby, joining midway, reconnects and resyncs).
 
 ## Next tasks
 1. M29 (above), then M30 rooms (local relay, Cloudflare Worker, peer-to-peer), M31 co-op, M32 shared
@@ -693,6 +698,13 @@ misses with either build (`startup-slow.log`).
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
+## Performance (M29)
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, MacBook Pro M5): identical to `main` — the same city (110,174 residents, 2,158 buildings) and the same tick times: month 6 avg 0.237 ms (main 0.239), p99 2.14 ms; worst 15.1 ms (main 15.2), both in month 1's first ticks.
+- **Balance** (`npx tsx scripts/balance.ts 20`): greedy and neglectful identical to `main`; careful identical for nine years, then wanders within its spread (year 20: 67,373 residents, $1.84M; `main` 65,767, $0.77M) — last-bit drift from the new maths, amplified by a long run (DECISIONS, M29).
+- **Out-of-step checks** on the 110k city (`npx tsx scripts/dev/synccost.ts bench-results/city.gz`): hourly checksum 0.4 ms; month-end part hashes 44 ms (in a shared city only, outside the tick); full `hash()` 40 ms; a save 24 ms, 3.0 MB of JSON.
+- **Cross-browser** (`XB_FIREFOX=0 npm run xbrowser`): the scripted town's 24 months in 3.3 s in Chromium, 4.6 s in WebKit, 8.2 s in SpiderMonkey's shell, all matching Node.
+- **Network budget:** none yet (no network until M30).
+
 ## Performance (playthrough fixes)
 - `balance.ts 20` on the Mac, base `main` at 5b261bd against this branch: greedy (420 / 16 % at year
   20, $566k) and neglectful (354 / 36 %, $480k) are byte-identical. The careful mayor's city ends
@@ -745,6 +757,7 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
 - Level crossings and trams (Phase 2 review): the barriers coming down and cars waiting behind them, and trams and cars sharing a busy avenue, at 60 fps; visible cars cost 0.3–1.2 ms a frame in the rail scene on this VM, where a slow frame runs up to 20 traffic steps (`renderStats.trafficMs`).

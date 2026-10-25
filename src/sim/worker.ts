@@ -171,6 +171,8 @@ function handle(msg: MainToWorker): void {
     case 'share':
       if (!sim) return;
       player = msg.player;
+      // Single player's undo history belongs to the city before it was shared.
+      sim.setHistoryState([]);
       share(sim, msg.lastSeq);
       break;
     case 'unshare':

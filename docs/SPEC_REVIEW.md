@@ -379,6 +379,21 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| Deterministic maths: replace hypot, sin, cos, atan2, pow, exp in `src/sim` | `src/sim/dmath.ts` (fdlibm ports built from exact operations), used across `src/sim` and `src/data`; `tests/lockstep/dmath.test.ts` (accuracy against the engine, golden bits). V8, SpiderMonkey and JavaScriptCore were checked to give different bits for five of the six functions (DECISIONS, M29) |
+| A lint rule that forbids the originals | `eslint.config.js` `DETERMINISM`: engine maths, `**`, `toLocaleString`, `localeCompare`, `Intl` in `src/sim` and `src/data` |
+| Fix any sort that isn't a total order | all 119 sorts audited; id tie-breaks added where values could tie, a divide-by-zero guarded (DECISIONS) |
+| Single player changes only in the last bits; rerun balance, bench, scenario tests | every unit, scenario and legacy test passes unchanged; `bench` identical populations and tick times; `balance`: greedy and neglectful identical, careful identical for nine years then within its spread (PROGRESS, "Performance (M29)") |
+| Cross-browser test: every command kind, two game years, same hash each month in Chromium, WebKit and Firefox | `npm run xbrowser` (`e2e-xb/determinism.spec.ts`, `tests/lockstep/scriptedTown.ts`, `determinism.ts`): Chromium, WebKit and the SpiderMonkey shell match Node at all 24 month ends, plus the map editor's commands and a scenario; Playwright's Firefox doesn't launch on macOS 27 (DECISIONS; "To check on the Mac") |
+| Stamped commands: run to a given tick, apply at the stamped tick, never drop a tick, report how far behind; single player keeps its clock | `src/sim/lockstep.ts`, the worker's shared mode (`share`, `stamped`, `perf.behind`); `tests/lockstep/worker.test.ts` (the real worker with a stand-in scope), `e2e/m29-lockstep.spec.ts` (two real pages) |
+| Snapshots leave the future alone, or every player takes them at the same tick | `settle` events (every machine finishes the commute round at that tick; the taker saves); a copy in a shared city doesn't settle; `tests/lockstep/lockstep.test.ts` ("a settled snapshot carries on exactly…") |
+| No preview or query changes a city's future (two identical sims, a year) | `tests/lockstep/lockstep.test.ts`: every command the town issued previewed, every query kind, stats, frames and budgets between ticks on one of two sims for a year: identical |
+| Out-of-step detection: hourly checksum, full hash at month end, a report naming the first difference | `src/sim/sync.ts` (`checksum` 0.4 ms at 110k, `partHashes` 44 ms monthly outside the tick, `desyncReport`/`simDesync`), the event fingerprint in `Lockstep` |
+| Undo rule every machine agrees on and a late joiner can follow | per-player stacks, own newest action only while nothing since changed it, carried in room snapshots (`historyState`); tests in `tests/lockstep/lockstep.test.ts` ("undo in a shared city") |
+| Cheats refused in a shared city | `Sim.shared`; tested in the lockstep and worker tests |
+| Done when: the cross-browser test passes | as above |
+| Done when: two sims fed the same stamped commands stay in step for a game year | `tests/lockstep/lockstep.test.ts` (two runners and the reference, every hour's checksum and every month's part hashes); `e2e/m29-lockstep.spec.ts` (two pages for three months, every hour's checksum equal to each other and to Node) |
+| Done when: a third sim given one command a tick late is caught within a game hour, and the report names what differs | `tests/lockstep/lockstep.test.ts` ("a sim given one command a tick late…") |
+| Done when: single player's tests, balance and bench unchanged apart from documented last-bit drift | as above |
 
 ## M30 Rooms, online and peer-to-peer
 

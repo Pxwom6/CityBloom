@@ -622,3 +622,14 @@ One line each: what was decided and why. Newest at the bottom of each section.
 - **Fewer messages for the free plan**: progress once a second, the clock every half second (both well inside the three-second lead), presence at most four times a second. The worker paces a shared city at the room's speed between clock messages, so a slower clock doesn't make the city jerky; far behind, or with the room paused, it runs straight to the allowed tick.
 - **Panels never wider than the window** (a phone held upright is 390 px; the side panels were 400): a change every player gets, not only shared cities.
 - **Help where it's needed**: "Trouble connecting?" in the lobby and the room panel, plain messages for every network event, tips for a shared city, its host and a region, and the README's "When something goes wrong".
+
+## Multiplayer review follow-ups
+The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
+
+- **F1 A removed player stays removed.** Rooms have no accounts, so nothing but the room code tells
+  one visitor from another: a kick now locks the room behind the player (the host is told, and can
+  unlock it to let someone new in), and the removed player's id stays on the room's list, so their old
+  secret is turned away too ("The host removed you from this room"). Giving the room a new code was the
+  other way; it would move an online room's city to another Durable Object and break every player's
+  saved credentials, for no gain over a lock the host controls. Players already in the room still
+  reconnect after a dropped link, locked or not.

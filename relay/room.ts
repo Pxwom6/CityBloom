@@ -278,9 +278,12 @@ export class Room {
       return;
     }
     if (!this.exists) return this.reject(conn, 'no-room', 'No room with that code');
+    // A removed player's record is gone, but not their id: their old secret doesn't let them back.
+    if (m.rejoin && this.kicked.has(m.rejoin.id))
+      return this.reject(conn, 'kicked', 'The host removed you from this room');
     if (m.rejoin) {
       const p = this.players.get(m.rejoin.id);
-      if (p && p.secret === m.rejoin.secret && !this.kicked.has(p.id)) {
+      if (p && p.secret === m.rejoin.secret) {
         // The same player on a new connection: the old one is stale.
         if (p.conn && p.conn !== conn) {
           const old = p.conn;
@@ -307,8 +310,6 @@ export class Room {
         this.broadcastRoom();
         return;
       }
-      if (p && this.kicked.has(p.id))
-        return this.reject(conn, 'kicked', 'The host removed you from this room');
     }
     if (this.info.locked) return this.reject(conn, 'locked', 'The host has locked this room');
     if (this.online >= MAX_PLAYERS)
@@ -472,7 +473,19 @@ export class Room {
         this.closed(c);
       }
       this.players.delete(player);
+      this.waiting.delete(player);
+      // Rooms have no accounts, so the code alone would let them straight back in as someone new:
+      // the room locks behind them (players already in it still come back after a dropped link).
+      const wasLocked = this.info.locked;
+      this.info.locked = true;
       this.broadcast({ t: 'notice', text: `${target.name} was removed by the host` });
+      const host = [...this.players.values()].find((p) => p.host);
+      host?.conn?.send({
+        t: 'notice',
+        text: wasLocked
+          ? `The room stays locked so they can’t come back.`
+          : `The room is now locked so they can’t come back. Unlock it to let someone new join.`,
+      });
       this.broadcastPlayers();
     }
     this.broadcastRoom();

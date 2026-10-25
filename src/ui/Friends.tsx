@@ -390,7 +390,10 @@ export function RoomPanel() {
         <Troubleshooting />
         {s.isHost && room && (
           <div class="room-host">
-            <label class="check" title="Nobody new can join while the room is locked">
+            <label
+              class="check"
+              title="Nobody new can join while the room is locked (it locks by itself when you remove someone); players already in it can still come back"
+            >
               <input
                 type="checkbox"
                 checked={room.locked}
@@ -479,7 +482,7 @@ function PlayerRules(props: {
         <button
           class="btn small danger"
           data-testid={`room-kick-${player.id}`}
-          title={`Remove ${player.name} from the room (they can't come back)`}
+          title={`Remove ${player.name} from the room: it locks behind them so they can’t come back`}
           onClick={props.onKick}
         >
           Remove

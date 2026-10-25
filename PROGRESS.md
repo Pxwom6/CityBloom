@@ -55,6 +55,30 @@ without it.
 - [x] M32 Shared regions
 - [x] M33 Ready for friends
 
+## Multiplayer review follow-ups (PRs #17–#21)
+The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
+top of `m33-ready` (the same commits as `multiplayer`), commits numbered F1, F2…, each problem
+reproduced in a test first. Reasons in `docs/DECISIONS.md`, "Multiplayer review follow-ups".
+
+Must fix before merging:
+- [x] F1 Kicked players come straight back
+- [ ] F2 Strangers can find peer-to-peer rooms
+- [ ] F3 Codes and player secrets come from `Math.random`
+- [ ] F4 Lobby choices leak into a later single-player city
+- [ ] F5 Visiting a neighbour's city overwrites your autosave
+- [ ] F6 A stale region binding
+- [ ] F7 A bad command must not hurt a room
+
+Should fix:
+- [ ] F8 Keep within the free plan under abuse
+- [ ] F9 Leaving a room breaks undo in the copy you keep
+- [ ] F10 Peer-to-peer dead ends
+- [ ] F11 Phones
+- [ ] F12 Invite links
+- [ ] F13 Tests
+- [ ] F14 Balance
+- [ ] Minor items
+
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
 

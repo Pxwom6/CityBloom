@@ -561,3 +561,6 @@ One line each: what was decided and why. Newest at the bottom of each section.
 - **The load screen says where cities live**: in this browser, and Export then Import moves one elsewhere. Short and always shown, rather than a warning that depends on what the browser said.
 - **The main menu scrolls when the window is too short for it** (a phone held sideways): the extra button made it taller, and at 390 px high its last buttons were already off the bottom with no way to reach them.
 - **Tested with a stand-in offer.** Playwright's browser contexts are incognito, where Chrome never offers installing (`Page.getInstallabilityErrors` gives only `in-incognito`; the manifest has no errors), so `e2e/app-install.spec.ts` dispatches its own `beforeinstallprompt` and `appinstalled`, and stubs `navigator.storage` to count the asks. A one-off check with a persistent Chromium profile saw the browser's real offer bring the button up and the click open its dialog, which can't be answered from a script.
+
+## Phase 4 (SPEC-4.md)
+- **Branch:** `multiplayer`, made from `main` at 6f049d3 (local session on the owner's Mac).

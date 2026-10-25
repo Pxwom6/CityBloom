@@ -1,10 +1,8 @@
 # PROGRESS
 
-Phase 3 (graphics, SPEC-3.md) and all five model batches are merged into `main`, which deploys the
-live site at https://pxwom6.github.io/CityBloom/, and so is the playthrough fix round
-(`PLAYTHROUGH-FIXES.md`, P1–P26 below; PR #14). Getting the game to players (an Install button on the
-main menu, and asking the browser to keep the saves) is on the `install-and-keep-saves` branch, in a
-pull request into `main` for the owner to merge.
+Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
+`main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
+SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session on the owner's Mac).
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -35,6 +33,11 @@ pull request into `main` for the owner to merge.
 - [x] M26 Light and sky
 - [x] M27 Ground, lots and streets
 - [x] M28 Buildings and variety
+- [ ] M29 Same city everywhere
+- [ ] M30 Rooms, online and peer-to-peer
+- [ ] M31 Building together
+- [ ] M32 Shared regions
+- [ ] M33 Ready for friends
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
@@ -156,32 +159,15 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Getting the game to players, on the `install-and-keep-saves` branch (no executable: the site is
-already an installable app; DECISIONS, "Sharing the game"):
-- **Install Citybloom** on the main menu: the browser's own install dialog in Chrome and Edge, the
-  steps in Safari on a Mac (File → Add to Dock) and on iPhone and iPad; hidden in the installed app
-  and where the browser can't install (`src/client/install.ts`).
-- **Keeping the saves**: the game asks the browser for persistent storage when a city or the map
-  editor opens (not on the main menu, where Firefox would ask a first-time visitor), at once in the
-  installed app, and again right after installing (`src/client/keepSaves.ts`). The load screen says
-  cities live in this browser and move by Export and Import.
-- The main menu scrolls in a window too short for it (a phone held sideways).
-
-Checked with `tests/install.test.ts` and `e2e/app-install.spec.ts` (a stand-in for the browser's offer:
-Playwright's contexts are incognito, where Chrome never offers installing), screenshots
-`docs/screenshots/install-*.png`, and once with a persistent Chromium profile, where the browser's
-real offer brought the button up and the click opened its dialog. The playthrough fix round is
-merged (PR #14); its record is in DECISIONS, "Playthrough fixes".
+Phase 4, M29 Same city everywhere (the lockstep core, no network yet): deterministic maths in
+`src/sim`, total-order sorts, a cross-browser test, stamped commands in the worker, snapshots and
+previews that leave the future alone, out-of-step checksums, an undo rule, cheats refused in rooms.
 
 ## Next tasks
-1. The owner: merge the `install-and-keep-saves` pull request, then try installing on the Mac ("To
-   check on the Mac").
-2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
-   buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
-   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it
-   builds to the winter warning, which now plans for a cold spell; "Performance (playthrough
-   fixes)"). Easy can stay as it is; Normal and Hard should scale the pressure up.
-3. Ideas above.
+1. M29 (above), then M30 rooms (local relay, Cloudflare Worker, peer-to-peer), M31 co-op, M32 shared
+   regions, M33 polish and soak.
+2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
+   empty tax bands): later, after phase 4.
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic

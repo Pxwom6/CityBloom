@@ -369,3 +369,33 @@ Each phase-2 milestone mapped to where it's done. Filled in as milestones comple
 | The social preview image | `public/social.jpg` (1200×630): the bench city at 17:24 on the real GPU (`node scripts/dev/socialshot.mjs bench-results/city.gz public/social.jpg 17.4 2.4 520 0.36 --gpu`) |
 | Walk through the game at every zoom, by day and night and in each season, and fix whatever looks off | 72 shots: the demo town in spring, summer, autumn and winter and the bench city in summer and winter, each at the whole-city view, city zoom and street level at dawn, noon, golden hour and night (`lookshot.mjs`), reviewed by six reviewers and a consolidation pass, then by six checkers comparing before and after. Fixed (DECISIONS, "Phase 3 walk-through"): glass towers glowing as cream slabs at night, golden-hour snow reading as sand, olive dawn and golden-hour overviews, autumn grass green at noon, the night water lit teal, lamp heads blooming into pearls from far off, a very dark whole-city view at night, pencil-thin towers on narrow lots, stippled half-trees at the near-to-far hand-over, black cars, and the problem icons showing in photo mode (a bug since M4). Left, with reasons: the hand-made C213's floor-wide window groups (model side), bare rock on the steepest scenery cliffs, the river ending at the map edge |
 
+
+# Phase 4 (SPEC-4.md)
+
+Multiplayer: co-op in one city, then a shared region, over online rooms (Cloudflare) and peer-to-peer.
+Each milestone's rows are filled in as it's done.
+
+## M29 Same city everywhere
+
+| Item | Where |
+|---|---|
+
+## M30 Rooms, online and peer-to-peer
+
+| Item | Where |
+|---|---|
+
+## M31 Building together
+
+| Item | Where |
+|---|---|
+
+## M32 Shared regions
+
+| Item | Where |
+|---|---|
+
+## M33 Ready for friends
+
+| Item | Where |
+|---|---|

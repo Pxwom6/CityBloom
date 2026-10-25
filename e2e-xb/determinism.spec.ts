@@ -27,7 +27,10 @@ let expected: DeterminismResult | null = null;
 const reference = () =>
   (expected ??= runDeterminism(MONTHS, { id: SCENARIO_ID, save: decodeSave(new Uint8Array(saveBytes)) }));
 
-test('the scripted town gives the same state hash at every month end as in Node', async ({ page, browserName }) => {
+test('the scripted town gives the same state hash at every month end as in Node', async ({
+  page,
+  browserName,
+}) => {
   const want = reference();
   expect(want.used, 'the script uses every kind of command').toEqual([...ALL_KINDS].sort());
   await page.goto('about:blank');
@@ -35,14 +38,16 @@ test('the scripted town gives the same state hash at every month end as in Node'
   const t0 = Date.now();
   const got = await page.evaluate(
     ([months, id, save]) =>
-      (globalThis as unknown as { citybloomDeterminism: (m: number, s: unknown) => DeterminismResult }).citybloomDeterminism(
-        months,
-        { id, save },
-      ),
+      (
+        globalThis as unknown as { citybloomDeterminism: (m: number, s: unknown) => DeterminismResult }
+      ).citybloomDeterminism(months, { id, save }),
     [MONTHS, SCENARIO_ID, saveBytes.toString('base64')] as const,
   );
-  console.log(`[xb] ${browserName}: ${MONTHS} months in ${((Date.now() - t0) / 1000).toFixed(1)} s, population ${got.population}`);
-  for (let m = 0; m < MONTHS; m++) expect(got.months[m], `${browserName}, month ${m + 1}`).toBe(want.months[m]);
+  console.log(
+    `[xb] ${browserName}: ${MONTHS} months in ${((Date.now() - t0) / 1000).toFixed(1)} s, population ${got.population}`,
+  );
+  for (let m = 0; m < MONTHS; m++)
+    expect(got.months[m], `${browserName}, month ${m + 1}`).toBe(want.months[m]);
   expect(got.editor).toBe(want.editor);
   expect(got.scenario).toEqual(want.scenario);
   expect(got.used).toEqual(want.used);

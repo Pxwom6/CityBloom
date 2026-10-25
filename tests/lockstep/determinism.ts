@@ -20,7 +20,10 @@ export interface DeterminismResult {
   refused: string[];
 }
 
-export function runDeterminism(months: number, scenario: { id: string; save: SaveFile } | null): DeterminismResult {
+export function runDeterminism(
+  months: number,
+  scenario: { id: string; save: SaveFile } | null,
+): DeterminismResult {
   const refused: string[] = [];
   const used = new Set<CommandType>();
   const note = (cmd: Command, r: CommandResult) => {

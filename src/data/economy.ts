@@ -137,6 +137,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   grants: 'Regional grant (election)',
   imports: 'Bought from neighbours',
   exports: 'Sold to neighbours',
+  regionProject: 'The region’s great work',
   landscaping: 'Landscaping',
 };
 

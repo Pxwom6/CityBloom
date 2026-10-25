@@ -10,6 +10,7 @@ import type { PolicyId } from '../data/policies';
 import type { TerraformMode } from '../data/terraform';
 import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
+import type { RegionUpdate } from './systems/region';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -119,6 +120,13 @@ export type Command =
   /** Where the highway or railway comes in on the map's west edge (null: no railway). */
   | { type: 'setMapEntry'; entry: 'highway' | 'rail'; z: number | null }
   | { type: 'setMapInfo'; name?: string; climate?: ClimateId }
+  /**
+   * A shared region's news (M32): the other cities in the neighbours' places, the deals they signed
+   * with this city, and the region project's progress. Sent by the page from the region room.
+   */
+  | { type: 'regionUpdate'; update: RegionUpdate }
+  /** Pay into the shared region's project (M32). */
+  | { type: 'contributeProject'; amount: number }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
   | { type: 'addModule'; civic: number; module: string };
 

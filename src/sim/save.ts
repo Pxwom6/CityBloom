@@ -12,7 +12,7 @@ import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 25;
+export const SAVE_VERSION = 26;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -231,6 +231,12 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   },
   // v24 → v25 (M31): who built what in a shared city. Older cities were built by one player.
   24: (s) => ({ ...s, builtBy: s.builtBy ?? { $m: [] } }),
+  // v25 → v26 (M32): shared regions. Neighbours may be other players' cities and deals may be signed
+  // by them; an older city's are all its own, and it has no region project.
+  25: (s) => ({
+    ...s,
+    region: { ...(s.region as object), project: (s.region as { project?: unknown }).project ?? null },
+  }),
 };
 
 export function encodeState(state: SimState): unknown {

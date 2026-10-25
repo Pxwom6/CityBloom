@@ -498,7 +498,9 @@ export type Query =
   /** The map editor's map as edited, and its playability check (M24). */
   | { type: 'exportMap' }
   /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
-  | { type: 'builtBy'; id: number };
+  | { type: 'builtBy'; id: number }
+  /** What this city tells a shared region about itself (M32). */
+  | { type: 'regionReport' };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {

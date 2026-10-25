@@ -325,6 +325,15 @@ export function checkPlacement(
     const why = projectBlocked(sim, def);
     if (why) return { ...res, reason: why };
   }
+  // The shared region's great work (M32): its host builds it once the region has paid for it.
+  if (def.regionProject && !ignoreCivic) {
+    const p = sim.state.region.project;
+    if (!p) return { ...res, reason: 'Only a city in a shared region can host its great work' };
+    if (!p.funded) return { ...res, reason: 'The region hasn’t paid for it yet' };
+    if (!p.host) return { ...res, reason: 'Another city in the region hosts it' };
+    if (p.built || [...sim.state.civics.values()].some((c) => civicDef(c).regionProject))
+      return { ...res, reason: 'It stands already' };
+  }
   // Uneven ground: level a pad at the height where the building meets its road (M13).
   if (hi - lo > GRADING.padFrom) {
     const away = awayDir(angle, side);

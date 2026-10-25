@@ -15,7 +15,7 @@ describe('who built what, and who may do what (M31)', () => {
     save.version = 24;
     const back = Sim.fromSave(decodeSave(encodeSave(save)));
     expect(back.state.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(25);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(25);
     expect(back.state.builtBy.size).toBe(0);
   });
 

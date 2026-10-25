@@ -117,6 +117,8 @@ export interface CivicDef {
   model: string;
   /** Big projects (M17): built in stages with requirements and a perk; see src/data/projects.ts. */
   project?: ProjectInfo;
+  /** The shared region's great work (M32): built by its host once the region has paid for it. */
+  regionProject?: true;
 }
 
 export const CIVIC_DEFS: CivicDef[] = [
@@ -181,6 +183,21 @@ export const CIVIC_DEFS: CivicDef[] = [
     blurb: 'Silent and clean; needs plenty of land.',
     unlockPopulation: 5_000,
     model: 'solar',
+  },
+  {
+    id: 'sunfield',
+    name: 'Sunfield Commons',
+    category: 'power',
+    dept: 'power',
+    w: 72,
+    d: 56,
+    cost: 0,
+    upkeep: 0,
+    blurb:
+      'The region’s great work: a commons of mirrors and meadow that every city paying into it shares the power of.',
+    unlockPopulation: 0,
+    model: 'solar',
+    regionProject: true,
   },
   {
     id: 'nuclear',

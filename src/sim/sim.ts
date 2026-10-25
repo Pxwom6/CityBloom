@@ -103,7 +103,15 @@ import {
 } from './systems/weather';
 import { emptyRegionFlows, type RegionFlows } from './systems/regionFlows';
 import { computeNoise } from './systems/noise';
-import { garbageDealsHour, initialRegion, regionMonth, regionSummary, setDeal } from './systems/region';
+import {
+  applyRegionUpdate,
+  garbageDealsHour,
+  initialRegion,
+  regionMonth,
+  regionReport,
+  regionSummary,
+  setDeal,
+} from './systems/region';
 import { railTerminals } from './systems/rail';
 import { SpatialHash } from './world/spatial';
 import { seatHeight } from './world/earthworks';
@@ -1242,6 +1250,25 @@ export class Sim {
       case 'setDisasters':
         if (!dryRun) this.state.options = { ...this.state.options, disasters: cmd.on };
         return ok(0);
+      case 'regionUpdate': {
+        if (!dryRun) applyRegionUpdate(this, cmd.update);
+        return ok(0);
+      }
+      case 'contributeProject': {
+        const p = this.state.region.project;
+        if (!p) return fail('This city isn’t in a shared region with a project');
+        if (p.funded) return fail('The region’s project is paid for already');
+        const amount = Math.round(cmd.amount);
+        if (!(amount > 0)) return fail('Nothing to give');
+        const give = Math.min(amount, p.goal - p.total);
+        if (this.state.treasury < give) return fail('Not enough money');
+        if (!dryRun) {
+          this.spend(give, 'regionProject');
+          p.mine += give;
+          p.total += give;
+        }
+        return ok(give);
+      }
       case 'setDeal': {
         const r = setDeal(this, cmd.neighbour, cmd.resource, cmd.direction, cmd.amount, !dryRun);
         return r.ok ? ok(0) : fail(r.reason);
@@ -2161,6 +2188,8 @@ export class Sim {
     switch (q.type) {
       case 'builtBy':
         return this.state.builtBy.get(q.id) ?? null;
+      case 'regionReport':
+        return regionReport(this);
       case 'hash':
         return this.hash();
       case 'summary':

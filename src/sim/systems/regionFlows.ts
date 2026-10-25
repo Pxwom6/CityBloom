@@ -141,6 +141,14 @@ function pools(sim: Sim): Pools {
   const forJobs = Math.min(1, REGION.attractBase + t.jobs / REGION.attractJobs);
   const forShops = Math.min(1, REGION.attractBase + t.cJobs / REGION.attractShops);
   const per = sim.state.region.neighbours.map((n) => {
+    // Another player's city (M32): its own workers looking, open jobs and shoppers, as it reported.
+    if (n.player)
+      return {
+        id: n.id,
+        workers: n.player.workers * forJobs,
+        jobs: n.player.jobs,
+        shoppers: n.player.shoppers * forShops,
+      };
     const p = NEIGHBOUR_KIND[n.kind].per;
     const k = n.population / 1000;
     const seasonal = n.kind === 'resort' ? REGION.resortSeason[season] : 1;

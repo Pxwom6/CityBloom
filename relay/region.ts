@@ -76,7 +76,8 @@ export type RegionRoomMsg =
   | { t: 'notice'; text: string }
   | {
       t: 'error';
-      code: 'version' | 'no-region' | 'full' | 'exists' | 'bad-message' | 'no-save';
+      /** `closed`: the region shut for good (a peer-to-peer host's browser left, F10). */
+      code: 'version' | 'no-region' | 'full' | 'exists' | 'bad-message' | 'no-save' | 'closed';
       text: string;
     };
 
@@ -256,7 +257,22 @@ export class RegionRoom {
   }
 
   open(conn: RegionConn): void {
+    // A shut room answers whatever comes next (the hello) with why.
+    if (this.shut) return;
     this.conns.set(conn, 0);
+  }
+
+  /** Why the region shut for good, once it has (F10). */
+  private shut: string | null = null;
+
+  /** The region shuts for good (its peer-to-peer host's browser is leaving): every city is told. */
+  close(text: string): void {
+    this.shut = text;
+    for (const c of [...this.conns.keys()]) {
+      c.send({ t: 'error', code: 'closed', text });
+      c.close(1000, 'closed');
+    }
+    this.conns.clear();
   }
 
   /** After a Durable Object wakes: a socket and the city it spoke for. */
@@ -322,6 +338,10 @@ export class RegionRoom {
 
   message(conn: RegionConn, raw: string): void {
     if (raw === 'ping') return;
+    if (this.shut) {
+      conn.send({ t: 'error', code: 'closed', text: this.shut });
+      return conn.close(1000, 'closed');
+    }
     if (!this.conns.has(conn)) return;
     const m = parseRegionMsg(raw);
     if (!m) return this.reject(conn, 'bad-message', 'A message the region could not read');

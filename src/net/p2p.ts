@@ -10,7 +10,7 @@
  * watching the public relays could try one by one, finds nothing.
  *
  * Public STUN servers find a way through home routers; when two players still can't connect, the
- * guest is told so plainly and offered an online room.
+ * guest is told so plainly, and what to try (an online room only when those are set up, F10).
  */
 import { Room, MemoryStore, type Conn, type StoredSnapshot } from '../../relay/room';
 import type { RegionConn, RegionRoom } from '../../relay/region';
@@ -21,9 +21,15 @@ export const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
-/** The words a guest sees when no direct connection could be made. */
-export const P2P_FAILED =
-  "Couldn't connect directly to the host's computer (some home and office networks block it). Ask them to host an online room instead.";
+/**
+ * The words a guest sees when no direct connection could be made (F10): an online room goes through a
+ * server and works on any network, but only when online rooms are set up.
+ */
+export function p2pFailed(online: boolean): string {
+  return online
+    ? "Couldn't connect directly to the host's computer (some home and office networks block it). Ask them to host an online room instead: it goes through a server, so it works on any network."
+    : "Couldn't connect directly to the host's computer (some home, school and office networks block it). Try another network (a phone's hotspot often works), or let a friend on a different network host.";
+}
 
 export const TRYSTERO_APP = 'citybloom-rooms-v1';
 
@@ -123,9 +129,19 @@ export class P2PHost {
     else await this.listenTrystero(this.signalling);
   }
 
-  close(): void {
-    for (const s of this.stops) s();
+  /**
+   * Stop hosting. The room or region shuts first and tells everyone why (F10); the connections go a
+   * moment later, once the goodbyes have left.
+   */
+  close(
+    text = 'The host closed the room: it ran in their browser. You keep a copy of the city to play on your own.',
+  ): void {
+    (this.room as { close?(text: string): void }).close?.(text);
+    const stops = this.stops;
     this.stops = [];
+    setTimeout(() => {
+      for (const s of stops) s();
+    }, 500);
   }
 
   private async listenRelay(url: string): Promise<void> {
@@ -232,7 +248,7 @@ async function viaRelay(code: string, key: string, url: string, timeoutMs: numbe
       } else resolve(link);
     };
     const timer = setTimeout(
-      () => finish(new Error(host ? P2P_FAILED : 'No host is waiting with that code')),
+      () => finish(new Error(host ? p2pFailed(true) : 'No host is waiting with that code')),
       timeoutMs,
     );
     const offer = async () => {
@@ -259,7 +275,7 @@ async function viaRelay(code: string, key: string, url: string, timeoutMs: numbe
     };
     dc.addEventListener('open', () => finish(null), { once: true });
     pc.addEventListener('connectionstatechange', () => {
-      if (pc.connectionState === 'failed') finish(new Error(P2P_FAILED));
+      if (pc.connectionState === 'failed') finish(new Error(p2pFailed(true)));
     });
   });
 }
@@ -278,7 +294,7 @@ async function viaTrystero(
   return new Promise<Link>((resolve, reject) => {
     const timer = setTimeout(() => {
       void t.leave();
-      reject(new Error(`${P2P_FAILED} (or no host is waiting with that code)`));
+      reject(new Error(`${p2pFailed(false)} (Or no host is waiting with that code.)`));
     }, timeoutMs);
     hello.onMessage = (_data, { peerId: host }) => {
       clearTimeout(timer);

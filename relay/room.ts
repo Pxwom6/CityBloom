@@ -212,7 +212,26 @@ export class Room {
   // ---------------------------------------------------------------- connections
 
   open(conn: Conn): void {
+    // A shut room answers whatever comes next (the hello) with why.
+    if (this.shut) return;
     this.conns.set(conn, { player: 0, tokens: BURST, chatTokens: 3, last: this.env.now() });
+  }
+
+  /** Why the room shut for good, once it has (F10). */
+  private shut: string | null = null;
+
+  /**
+   * The room shuts for good: a peer-to-peer host's browser is leaving, and the city with it (F10).
+   * Everyone still here is told why, and nobody new gets in.
+   */
+  close(text: string): void {
+    this.shut = text;
+    for (const c of [...this.conns.keys()]) {
+      c.send({ t: 'error', code: 'closed', text });
+      c.close(1000, 'closed');
+    }
+    this.conns.clear();
+    for (const p of this.players.values()) p.conn = null;
   }
 
   closed(conn: Conn): void {
@@ -232,6 +251,10 @@ export class Room {
   message(conn: Conn, raw: string): void {
     // A keep-alive (a Durable Object answers these itself without waking).
     if (raw === 'ping') return;
+    if (this.shut) {
+      conn.send({ t: 'error', code: 'closed', text: this.shut });
+      return conn.close(1000, 'closed');
+    }
     this.received++;
     const st = this.conns.get(conn);
     if (!st) return;

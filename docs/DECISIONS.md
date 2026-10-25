@@ -693,3 +693,13 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   joins nothing, an invited city joins as new unless it already stands there, and a copy opened in
   another browser never comes back as a duplicate. Leaving a region for good drops the binding and the
   secret.
+- **F10 No dead ends when a room or region in a browser goes.** A peer-to-peer room or region lives
+  in its host's page, so it shuts with it: leaving now tells every guest ("Ada closed the room: it ran
+  in their browser. You keep a copy of the city to play on your own.") before the connections close,
+  and nobody new gets in. A guest whose host vanished without a word (a closed tab) stops reconnecting
+  after three tries in a row ("The host's game has closed, and the room with it…") instead of showing
+  "Reconnecting…" for ever; online rooms keep trying, since their city waits on the server. A city in
+  a peer-to-peer region does the same, keeping its neighbours' last offers, and forgets the region
+  once its host has closed it; the host's own city, reopened, says its region closed with the page
+  rather than looking for it. What to do when two browsers can't connect depends on the site: "Host
+  online" is offered only once online rooms are set up, otherwise another network or another host.

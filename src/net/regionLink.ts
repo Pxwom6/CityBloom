@@ -71,6 +71,11 @@ export interface RegionLinkOptions {
   /** How often to report (ms) and to keep a save for visitors. */
   reportEvery?: number;
   saveEvery?: number;
+  /**
+   * Stop reconnecting after this many tries in a row that couldn't reach the region (F10): a region in
+   * its host's browser is gone while the host isn't playing.
+   */
+  giveUpAfter?: number;
 }
 
 export class RegionLink {
@@ -79,7 +84,10 @@ export class RegionLink {
   secret = '';
   view: RegionView | null = null;
   error: string | null = null;
+  /** The region shut for good (its host's browser left it, F10): the city's place there is gone. */
+  gone = false;
   private link: Link | null = null;
+  private misses = 0;
   private timers: ReturnType<typeof setInterval>[] = [];
   private started: { resolve: () => void; reject: (e: Error) => void } | null = null;
   private retry = 0;
@@ -139,6 +147,10 @@ export class RegionLink {
         ...(this.slot ? { rejoin: { slot: this.slot, secret: this.secret } } : {}),
       });
     } catch (err) {
+      if (this.opts.giveUpAfter && ++this.misses >= this.opts.giveUpAfter)
+        return this.fail(
+          'The region isn’t open: it runs in its host’s browser while they play. Your city keeps its neighbours as they last were.',
+        );
       if (this.slot) return this.dropped();
       this.fail(`Couldn't reach the region (${err instanceof Error ? err.message : String(err)})`);
     }
@@ -174,6 +186,7 @@ export class RegionLink {
         this.slot = m.slot;
         this.secret = m.secret;
         this.retry = 0;
+        this.misses = 0;
         if (this.state === 'reconnecting') this.onNotice?.('Back in the region');
         this.state = 'in';
         await this.take(m.region);
@@ -188,6 +201,7 @@ export class RegionLink {
         this.onNotice?.(m.text);
         return;
       case 'error':
+        if (m.code === 'closed') this.gone = true;
         this.fail(m.text);
         this.link?.close();
         return;

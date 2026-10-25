@@ -4,8 +4,11 @@ import { buildTown, serveTown } from '../../tests/helpers';
 import { makeRoom, loopTo, player, stopAll, until, type TestPlayer } from './harness';
 import { MemoryStore } from '../room';
 import { startRelay } from '../local';
-import { webSocketLink, type Link } from '../../src/net/link';
-import { P2PHost, TRYSTERO_APP } from '../../src/net/p2p';
+import { loopbackPair, webSocketLink, type Link } from '../../src/net/link';
+import { P2PHost, TRYSTERO_APP, p2pFailed } from '../../src/net/p2p';
+import { RegionLink, type CityPort } from '../../src/net/regionLink';
+import { RegionRoom, MemoryRegionStore, type RegionConn } from '../region';
+import { regionReport } from '../../src/sim/systems/region';
 import {
   CODE_ALPHABET,
   PROTOCOL_VERSION,
@@ -306,4 +309,105 @@ describe("F2: a peer-to-peer room isn't found by its short code", () => {
       await nostr.close();
     }
   }, 30_000);
+});
+
+describe('F10: peer-to-peer dead ends', () => {
+  it("a host's browser closing the room tells the guests, who keep a city of their own", async () => {
+    const p2p = new P2PHost(makeCode('p2p'), makeKey(), { kind: 'relay', url: 'ws://localhost:1' });
+    const host = player('Ada', () => p2p.connectSelf(), hostTown(), { create: { cityName: 'Roomford' } });
+    players.push(host);
+    await host.session.start();
+    const sam = player('Sam', () => p2p.connectSelf(), null);
+    players.push(sam);
+    await sam.session.start();
+    host.session.leave();
+    p2p.close(
+      'Ada closed the room: it ran in their browser. You keep a copy of the city to play on your own.',
+    );
+    await until(() => sam.session.state === 'closed', 5000, 'Sam to be told');
+    expect(sam.session.error).toMatch(/closed the room/);
+    expect(sam.driver.lockstep).toBeNull();
+    // Nobody new gets in.
+    const kit = player('Kit', () => p2p.connectSelf(), null);
+    players.push(kit);
+    await expect(kit.session.start()).rejects.toThrow(/closed/);
+  }, 60_000);
+
+  it('a guest whose host has gone stops reconnecting after a few tries and says why', async () => {
+    const room = makeRoom('GONEAB');
+    const host = player('Ada', loopTo(room), hostTown(), { create: { cityName: 'Roomford' } });
+    players.push(host);
+    await host.session.start();
+    let up = true;
+    const sam = player(
+      'Sam',
+      () => (up ? loopTo(room)() : Promise.reject(new Error('No host is waiting with that code'))),
+      null,
+      { giveUpAfter: 3 },
+    );
+    players.push(sam);
+    await sam.session.start();
+    // The host's browser goes away without a word (its tab closed).
+    up = false;
+    sam.session.dropForTest();
+    expect(sam.session.state).toBe('reconnecting');
+    await until(() => sam.session.state === 'closed', 15_000, 'Sam to give up');
+    expect(sam.session.error).toMatch(/host’s game has closed/);
+    expect(sam.driver.lockstep).toBeNull();
+  }, 60_000);
+
+  it('a city whose peer-to-peer region has gone stops reconnecting; a region that closes tells its cities', async () => {
+    const port = (name: string): CityPort => {
+      const sim = Sim.create({ seed: name, preset: 'river', cityName: name });
+      return {
+        command: async (cmd) => sim.dispatch(cmd),
+        report: async () => regionReport(sim),
+        save: async () => sim.save(),
+        cityName: () => name,
+      };
+    };
+    const lost = new RegionLink(
+      port('Lostby'),
+      () => Promise.reject(new Error('No host is waiting with that code')),
+      {
+        mayor: 'Sam',
+        color: 1,
+        rejoin: { slot: 2, secret: 's' },
+        giveUpAfter: 2,
+      },
+    );
+    const gaveUp = await Promise.race([
+      lost.start().then(
+        () => 'joined',
+        (e: Error) => e.message,
+      ),
+      new Promise((r) => setTimeout(() => r('still trying'), 10_000)),
+    ]);
+    expect(gaveUp).toMatch(/isn’t open/);
+    expect(lost.state).toBe('closed');
+
+    const region = new RegionRoom('A7KQ2M', 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
+    const loop = async () => {
+      const [mine, theirs] = loopbackPair();
+      const conn: RegionConn = { send: (m) => theirs.send(JSON.stringify(m)), close: () => theirs.close() };
+      region.open(conn);
+      theirs.onmessage = (t) => region.message(conn, t);
+      theirs.onclose = () => region.closed(conn);
+      return mine;
+    };
+    const ada = new RegionLink(port('Adaville'), loop, { mayor: 'Ada', color: 0, create: { name: 'Vale' } });
+    const sam = new RegionLink(port('Samford'), loop, { mayor: 'Sam', color: 1 });
+    await ada.start();
+    await sam.start();
+    region.close('Ada’s region closed: it ran in her browser.');
+    await until(() => sam.state === 'closed', 5000, 'Samford to be told');
+    expect(sam.error).toMatch(/region closed/);
+    expect(sam.gone).toBe(true);
+  }, 30_000);
+
+  it('says what to do when two players can’t connect, whether or not online rooms are set up', () => {
+    expect(p2pFailed(true)).toMatch(/online room/);
+    expect(p2pFailed(false)).not.toMatch(/online/i);
+    expect(p2pFailed(false)).toMatch(/another network|hotspot/);
+  });
 });

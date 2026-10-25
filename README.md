@@ -42,12 +42,14 @@ can check again.
 ## Play with friends
 
 Build one city together, or each play your own side by side. No accounts: a room or a region is
-found by its six-character code, and nobody sees anything about you but the name and colour you
-choose.
+found by its code (six characters for an online one; one on someone's computer has a longer code,
+like `A7KQ2M-BCDF-GHJK-MNPQ`, which the invite link carries), and nobody sees anything about you but
+the name and colour you choose.
 
 - **One city together (co-op, up to 8).** Main menu → **Play with friends**: pick a name and a
-  colour, then **Host online** (the city lives in an online room and waits there between sessions)
-  or **Host on this computer** (your browser is the room; friends play while you're there). Or, in a
+  colour, then **Host online** (the city lives in an online room and waits there between sessions;
+  once online rooms are set up for the site, until then the button says so) or **Host on this
+  computer** (your browser is the room; friends play while you're there). Or, in a
   city you're already playing, pause (Escape) → **Invite friends**. Send your friends the invite
   link from the room button by the city's name; opening it drops them straight into the city.
   Everyone builds on the same map with the same money; you see each other's cursors and what's in
@@ -66,8 +68,11 @@ choose.
 **When something goes wrong**
 
 - **"Couldn't connect directly to the host's computer"**: some home, school and office networks
-  block direct connections between browsers. Ask the host to use **Host online** instead, which
-  goes through a server and always works.
+  block direct connections between browsers. Try another network (a phone's hotspot often works),
+  or let a friend on a different network host. Once online rooms are set up, **Host online** goes
+  through a server and works on any network.
+- **"The host's game has closed, and the room with it"**: a room on someone's computer runs in
+  their browser, so it closes when they leave; everyone keeps a copy of the city to play alone.
 - **"This room is full"** (8 players), **"This region is full"** (4 cities) or **"The host has locked
   this room"**: ask the host to remove someone who's left, or to unlock it.
 - **"Sam's game fell out of step; catching up"**: one player's game stopped agreeing with the

@@ -72,7 +72,7 @@ Must fix before merging:
 Should fix:
 - [ ] F8 Keep within the free plan under abuse
 - [x] F9 Leaving a room breaks undo in the copy you keep
-- [ ] F10 Peer-to-peer dead ends
+- [x] F10 Peer-to-peer dead ends
 - [ ] F11 Phones
 - [ ] F12 Invite links
 - [ ] F13 Tests

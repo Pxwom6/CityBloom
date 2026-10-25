@@ -172,7 +172,17 @@ export type RoomMsg =
 export type AdminAction = 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick' | 'mute' | 'unmute';
 
 export type ErrorCode =
-  'version' | 'no-room' | 'full' | 'locked' | 'kicked' | 'bad-message' | 'rate' | 'exists' | 'gone';
+  | 'version'
+  | 'no-room'
+  | 'full'
+  | 'locked'
+  | 'kicked'
+  | 'bad-message'
+  | 'rate'
+  | 'exists'
+  | 'gone'
+  /** The room shut for good: a peer-to-peer host's browser left (F10). */
+  | 'closed';
 
 // ---------------------------------------------------------------- checks
 

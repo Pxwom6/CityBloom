@@ -43,7 +43,16 @@ export interface SessionOptions {
   now?: () => number;
   /** Game ticks a second at each speed (tests run the city faster than any player would). */
   ticksPerSecond?: readonly number[];
+  /**
+   * Stop reconnecting after this many tries in a row that couldn't reach the room (F10): a room in
+   * the host's browser is gone once the host has, so a guest isn't left on "Reconnecting…" for ever.
+   */
+  giveUpAfter?: number;
 }
+
+/** What a guest sees when the room in the host's browser has gone with it (F10). */
+export const HOST_GONE =
+  'The host’s game has closed, and the room with it: it ran in their browser. This copy of the city is yours to play on your own.';
 
 export interface NetNotice {
   text: string;
@@ -83,6 +92,8 @@ export class RoomSession {
   private timers: ReturnType<typeof setInterval>[] = [];
   private unsub: (() => void) | null = null;
   private retry = 0;
+  /** Tries in a row that couldn't reach the room (`giveUpAfter`). */
+  private misses = 0;
   private started: { resolve: () => void; reject: (e: Error) => void } | null = null;
   private readonly now: () => number;
   /** Messages this player sent and their bytes (the network budget). */
@@ -182,7 +193,10 @@ export class RoomSession {
           : {}),
       });
     } catch (err) {
-      if (rejoin && this.loadedOnce) return this.dropped(err instanceof Error ? err.message : String(err));
+      if (rejoin && this.loadedOnce) {
+        if (this.opts.giveUpAfter && ++this.misses >= this.opts.giveUpAfter) return this.fail(HOST_GONE);
+        return this.dropped(err instanceof Error ? err.message : String(err));
+      }
       this.fail(`Couldn't reach the room (${err instanceof Error ? err.message : String(err)})`);
     }
   }
@@ -231,6 +245,7 @@ export class RoomSession {
   }
 
   private playing(): void {
+    this.misses = 0;
     if (this.state !== 'playing') {
       const back = this.state === 'reconnecting';
       this.state = 'playing';

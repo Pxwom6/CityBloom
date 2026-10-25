@@ -308,8 +308,18 @@ async function boot(): Promise<void> {
     const regionCode = params.get('region');
     // The region a loaded city's own save names, if this browser holds its secret (F6).
     const meta = loadSlot && save ? save.meta.region : undefined;
-    const mine = meta && regionRejoin(meta, null);
+    let mine = meta && regionRejoin(meta, null);
     if (mine) game.boundRegion = meta!;
+    // A region that ran in this browser closed when the page did (F10): say so rather than look for it.
+    if (mine && meta?.hosted && codeKind(parseInvite(mine.invite)?.code ?? '') === 'p2p') {
+      game.toast(
+        `Your region ${mine.invite} ran in this browser and closed when you left it. Start a new one from the Region panel (Shift+N).`,
+        'info',
+        9000,
+      );
+      game.boundRegion = null;
+      mine = null;
+    }
     if (newRegion === 'online' || newRegion === 'p2p')
       void game.startRegion(
         newRegion,

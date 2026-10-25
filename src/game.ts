@@ -514,7 +514,11 @@ export class Game {
           : () => Promise.reject(new Error("Online regions aren't set up yet"))
         : () => p2pConnect(code, key!, signalling());
     try {
-      await this.attachRegion(code, key, connect, rejoin ? { rejoin } : {});
+      // A region in its host's browser is gone while they aren't playing: stop after a few tries (F10).
+      await this.attachRegion(code, key, connect, {
+        ...(rejoin ? { rejoin } : {}),
+        ...(codeKind(code) === 'p2p' ? { giveUpAfter: 3 } : {}),
+      });
       this.toast(`${this.world.stats.cityName} joined the region.`, 'ok', 5000);
       return true;
     } catch (err) {
@@ -542,6 +546,8 @@ export class Game {
     this.regionCode = code;
     this.regionKey = key;
     link.onNotice = (t) => this.toast(t, 'info', 4500);
+    // Until it's in, a failure is the caller's to report (one toast, not two).
+    let started = false;
     link.onChange = () => {
       // The city's place in the region travels with the city, in its saves (F6).
       if (link.slot && link.secret) {
@@ -553,13 +559,24 @@ export class Game {
         };
       }
       if (link.state === 'closed' && this.region === link) {
-        if (link.error) this.toast(link.error, 'bad', 8000);
+        if (link.error && started) this.toast(link.error, 'bad', 8000);
+        // The region shut for good (its host left it): the city's saves no longer name it (F10).
+        if (link.gone) this.forgetRegion();
         this.leaveRegion(false);
       }
       this.notify();
     };
     await link.start();
+    started = true;
     this.notify();
+  }
+
+  /** The city no longer stands in its region: drop the binding its saves carry, and its secret (F6). */
+  private forgetRegion(): void {
+    const bound = this.boundRegion;
+    const code = bound ? parseInvite(bound.invite)?.code : null;
+    if (bound && code) forgetRegionSecret(code, bound.slot);
+    this.boundRegion = null;
   }
 
   leaveRegion(say = true): void {
@@ -568,14 +585,14 @@ export class Game {
     this.regionCode = null;
     this.regionKey = null;
     link?.leave();
-    this.regionHost?.close();
+    // A region in this browser closes with it, and its cities are told (F10).
+    this.regionHost?.close(
+      `${loadProfile().name}’s region closed: it ran in their browser. Your city keeps its neighbours as they last were.`,
+    );
     this.regionHost = null;
     if (say) {
       // Left for good: the city's saves no longer name the region.
-      const bound = this.boundRegion;
-      const code = bound ? parseInvite(bound.invite)?.code : null;
-      if (bound && code) forgetRegionSecret(code, bound.slot);
-      this.boundRegion = null;
+      this.forgetRegion();
       this.toast('Your city left the region: its neighbours stay as they last were.', 'info', 6000);
     }
     this.notify();

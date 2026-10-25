@@ -567,7 +567,14 @@ export function Troubleshooting() {
       <ul>
         <li>
           <strong>Can’t connect to the host’s computer?</strong> Some home, school and office networks block
-          direct connections between browsers. Ask the host to choose Host online instead.
+          direct connections between browsers.{' '}
+          {relayUrl()
+            ? 'Ask the host to choose Host online instead: it goes through a server and works on any network.'
+            : 'Try another network (a phone’s hotspot often works), or let a friend on a different network host.'}
+        </li>
+        <li>
+          <strong>“The host’s game has closed”?</strong> A room on someone’s computer runs in their browser
+          and closes when they leave; everyone keeps a copy of the city to play alone.
         </li>
         <li>
           <strong>Room full or locked?</strong> A room takes 8 players and a region 4 cities. Ask the host to

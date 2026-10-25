@@ -61,6 +61,8 @@ export class Multiplayer {
     this.kind = codeKind(code);
     this.session = new RoomSession(driver, connect, {
       ...opts,
+      // A room in the host's browser goes when the host does: stop trying after a few (F10).
+      ...(codeKind(code) === 'p2p' && !host ? { giveUpAfter: 3 } : {}),
       visible: () => typeof document === 'undefined' || document.visibilityState === 'visible',
     });
     const prev = this.session.onChange;
@@ -132,8 +134,12 @@ export class Multiplayer {
     );
   }
 
+  /** Leave the room; a host's browser closes it, and the guests are told who closed it (F10). */
   leave(): void {
+    const name = this.session.me?.name ?? 'The host';
     this.session.leave();
-    this.host?.close();
+    this.host?.close(
+      `${name} closed the room: it ran in their browser. You keep a copy of the city to play on your own.`,
+    );
   }
 }

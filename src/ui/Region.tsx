@@ -171,7 +171,8 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
   const cap = n.offers[dir][res];
   const [want, setWant] = useState<number | null>(null);
   const value = Math.min(cap, want ?? deal?.amount ?? Math.round(cap / 2));
-  const price = REGION.price[dir][res];
+  // Between two players' cities one price, paid by the buyer and earned by the seller (M32).
+  const price = n.player ? REGION.playerPrice[res] : REGION.price[dir][res];
   const act = (a: number) =>
     void game
       .dispatch({ type: 'setDeal', neighbour: n.id, resource: res, direction: dir, amount: a })
@@ -294,9 +295,31 @@ function NeighbourCard({ n }: { n: N }) {
           {f.shop > 0 && <>{formatNumber(f.shop)} shop here each day.</>}
         </p>
       )}
-      {offers.map((o) => (
-        <DealRow key={`${o.dir}-${o.res}`} n={n} res={o.res} dir={o.dir} />
-      ))}
+      {game.world.stats.region.deals
+        .filter((d) => d.remote && d.neighbour === n.id)
+        .map((d) => (
+          <p
+            class="region-deal-now"
+            key={d.id}
+            data-testid={`remote-deal-${n.id}-${d.direction}-${d.resource}`}
+          >
+            {n.name} {d.direction === 'sell' ? 'buys' : 'sells'} {amount(d.resource, d.amount)} of{' '}
+            {WHAT[d.resource]} {d.direction === 'sell' ? 'from' : 'to'} you (their deal):{' '}
+            {amount(d.resource, d.delivered)} went through in the last hour,{' '}
+            {formatMoney(d.delivered * REGION.playerPrice[d.resource])}/month{' '}
+            {d.direction === 'sell' ? 'earned' : 'paid'}.
+          </p>
+        ))}
+      {offers
+        .filter(
+          (o) =>
+            !game.world.stats.region.deals.some(
+              (d) => d.remote && d.neighbour === n.id && d.resource === o.res && d.direction === o.dir,
+            ),
+        )
+        .map((o) => (
+          <DealRow key={`${o.dir}-${o.res}`} n={n} res={o.res} dir={o.dir} />
+        ))}
     </section>
   );
 }

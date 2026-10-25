@@ -33,7 +33,7 @@ SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session 
 - [x] M26 Light and sky
 - [x] M27 Ground, lots and streets
 - [x] M28 Buildings and variety
-- [ ] M29 Same city everywhere
+- [x] M29 Same city everywhere
 - [ ] M30 Rooms, online and peer-to-peer
 - [ ] M31 Building together
 - [ ] M32 Shared regions

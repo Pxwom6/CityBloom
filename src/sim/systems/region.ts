@@ -191,6 +191,8 @@ export function regionExport(sim: Sim, u: 'power' | 'water' | 'sewage', spare: n
   if (!sales.length) return 0;
   const want = sales.map((d) => {
     const n = neighbour(sim, d.neighbour);
+    // Another player's city signed for it against this city's offer: it takes what it signed for.
+    if (d.remote) return n ? d.amount : 0;
     return n ? Math.min(d.amount, capacity(sim, n, u, 'sell')) : 0;
   });
   const total = want.reduce((a, b) => a + b, 0);
@@ -274,7 +276,8 @@ export function regionRates(sim: Sim): { imports: number; exports: number } {
   let imports = 0;
   let exports = 0;
   for (const d of sim.state.region.deals) {
-    const price = REGION.price[d.direction][d.resource];
+    const player = !!neighbour(sim, d.neighbour)?.player;
+    const price = player ? REGION.playerPrice[d.resource] : REGION.price[d.direction][d.resource];
     if (d.direction === 'buy') imports -= d.delivered * price;
     else exports += d.delivered * price;
   }

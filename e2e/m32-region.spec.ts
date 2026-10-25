@@ -21,7 +21,8 @@ const region = (page: Page) => page.evaluate(() => window.__game!.getRegion());
 const stats = (page: Page) => page.evaluate(() => window.__game!.getState());
 
 test('two players run their own cities in one region: trade, a great work, a visit', async ({ browser }) => {
-  test.setTimeout(600_000);
+  // Two 3D pages at full graphics: about 5 minutes on a Mac, 20–25 on SwiftShader in a cloud VM.
+  test.setTimeout(1_800_000);
   const ada = await player(browser, 'Ada', 0);
   await openGame(ada, '&seed=regionada&preset=river&name=Adaville');
   await buildTownViaApi(ada);
@@ -38,7 +39,9 @@ test('two players run their own cities in one region: trade, a great work, a vis
   // Ada starts a region from her Region panel.
   await ada.keyboard.press('Shift+N');
   await ada.getByTestId('region-start').click();
-  await expect.poll(async () => (await region(ada))?.state, { timeout: 30_000 }).toBe('in');
+  // Joining draws the city's picture for the region: on SwiftShader in a cloud VM that one frame can
+  // hold the page for most of a minute.
+  await expect.poll(async () => (await region(ada))?.state, { timeout: 120_000 }).toBe('in');
   const code = (await region(ada))!.code;
   await expect(ada.getByTestId('region-share')).toContainText(code);
 
@@ -46,7 +49,7 @@ test('two players run their own cities in one region: trade, a great work, a vis
   await sam.keyboard.press('Shift+N');
   await sam.getByTestId('region-code').fill(code);
   await sam.getByTestId('region-join').click();
-  await expect.poll(async () => (await region(sam))?.state, { timeout: 30_000 }).toBe('in');
+  await expect.poll(async () => (await region(sam))?.state, { timeout: 120_000 }).toBe('in');
   await ada.evaluate(() => window.__game!.regionReportNow());
   await sam.evaluate(() => window.__game!.regionReportNow());
   // In Sam's panel, Adaville stands where a neighbouring town stood, played by Ada.
@@ -99,6 +102,9 @@ test('two players run their own cities in one region: trade, a great work, a vis
       timeout: 15_000,
     })
     .toBe(true);
+  // Sam's own autosave holds Samford (F5: a visit must never overwrite it).
+  expect(await sam.evaluate(() => window.__game!.autosaveNow())).toBe(true);
+  expect(await sam.evaluate(() => window.__game!.slotCity('auto'))).toBe('Samford');
   const [visit] = await Promise.all([
     sam.context().waitForEvent('page'),
     adaCard.locator('[data-testid^="visit-"]').click(),
@@ -113,5 +119,20 @@ test('two players run their own cities in one region: trade, a great work, a vis
     ).ok,
   ).toBe(false);
   await visit.screenshot({ path: 'docs/screenshots/m32-visit.png' });
+  // Nothing of Adaville lands in Sam's saves (F5): no autosave, no Save or Quick save, no Invite,
+  // and quitting saves nothing.
+  expect(await visit.evaluate(() => window.__game!.autosaveNow())).toBe(false);
+  await visit.getByTestId('menu-button').click();
+  await expect(visit.getByTestId('pause-menu')).toBeVisible();
+  for (const id of ['pause-save', 'menu-save', 'pause-export', 'pause-invite', 'pause-invite-p2p'])
+    await expect(visit.getByTestId(id), id).toHaveCount(0);
+  await expect(visit.getByTestId('pause-quit')).toContainText('nothing is saved');
+  await Promise.all([
+    visit.waitForURL((u) => !u.searchParams.has('visit'), { timeout: 60_000 }),
+    visit.getByTestId('pause-quit').click(),
+  ]);
+  // Any save would have been written before the page left: Sam's own still holds Samford.
+  await visit.close();
+  expect(await sam.evaluate(() => window.__game!.slotCity('auto'))).toBe('Samford');
   for (const p of [ada, sam]) await p.context().close();
 });

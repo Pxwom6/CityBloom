@@ -458,39 +458,48 @@ function PauseMenu() {
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
           <span>Resume</span>
         </button>
-        <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
-          <span>Save city…</span>
-        </button>
-        <button
-          class="shell-btn"
-          data-testid="menu-save"
-          disabled={game.saving}
-          onClick={() => void game.saveTo('quick', 'Quick save')}
-        >
-          <span>Quick save</span>
-        </button>
+        {/* A neighbour's city seen read-only is never saved here (F5). */}
+        {!game.readOnly && (
+          <>
+            <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
+              <span>Save city…</span>
+            </button>
+            <button
+              class="shell-btn"
+              data-testid="menu-save"
+              disabled={game.saving}
+              onClick={() => void game.saveTo('quick', 'Quick save')}
+            >
+              <span>Quick save</span>
+            </button>
+          </>
+        )}
         <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
           <span>Load city…</span>
         </button>
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
-        {!game.net && <InviteButtons />}
+        {!game.net && !game.readOnly && <InviteButtons />}
         <div class="shell-row">
-          <button
-            class="shell-btn"
-            data-testid="pause-export"
-            onClick={async () => exportSave(await game.client.save())}
-          >
-            <span>Export to file</span>
-          </button>
+          {!game.readOnly && (
+            <button
+              class="shell-btn"
+              data-testid="pause-export"
+              onClick={async () => exportSave(await game.client.save())}
+            >
+              <span>Export to file</span>
+            </button>
+          )}
           <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
             <span>Import file</span>
           </button>
         </div>
         <button class="shell-btn quiet" data-testid="pause-quit" onClick={() => void game.quitToMenu()}>
           <span>Quit to main menu</span>
-          <small>Your city is autosaved first.</small>
+          <small>
+            {game.readOnly ? 'You were only visiting: nothing is saved.' : 'Your city is autosaved first.'}
+          </small>
         </button>
       </nav>
       <ImportInput inputRef={file} />

@@ -65,7 +65,7 @@ Must fix before merging:
 - [ ] F2 Strangers can find peer-to-peer rooms
 - [x] F3 Codes and player secrets come from `Math.random`
 - [x] F4 Lobby choices leak into a later single-player city
-- [ ] F5 Visiting a neighbour's city overwrites your autosave
+- [x] F5 Visiting a neighbour's city overwrites your autosave
 - [ ] F6 A stale region binding
 - [x] F7 A bad command must not hurt a room
 

@@ -53,3 +53,50 @@ test('F4: backing out of the lobby leaves the next new city your own', async ({ 
   expect(await page.evaluate(() => window.__game!.getNet())).toBeNull();
   expect(await page.evaluate(() => window.__game!.getRegion())).toBeNull();
 });
+
+test('F5: looking round a neighbour’s city never saves it in your browser', async ({ page }) => {
+  test.setTimeout(420_000);
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.addInitScript(() =>
+    localStorage.setItem('citybloom.player', JSON.stringify({ name: 'Ada', color: 0 })),
+  );
+  await menu(page);
+  // Adaville starts a region, keeps a save there for visitors, and is autosaved here.
+  await page.goto('./?paused=1&seed=visitada&preset=river&name=Adaville');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await page.evaluate(() => window.__game!.waitFrames(2));
+  await page.mouse.click(600, 300);
+  await page.keyboard.press('Shift+N');
+  await page.getByTestId('region-start').click();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__game!.getRegion()))?.state, { timeout: 120_000 })
+    .toBe('in');
+  await page.evaluate(() => window.__game!.regionReportNow());
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__game!.getRegion()))?.cities[0]?.visitable, {
+      timeout: 30_000,
+    })
+    .toBe(true);
+  expect(await page.evaluate(() => window.__game!.autosaveNow())).toBe(true);
+  const invite = (await page.evaluate(() => window.__game!.getRegion()))!.code;
+
+  // A visit (as a neighbour would make it), in another tab of this browser.
+  const visit = await page.context().newPage();
+  await visit.goto(`./?visit=${invite}&city=1`);
+  await visit.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120_000 });
+  await expect(visit.getByTestId('visit-banner')).toBeVisible();
+  expect(await visit.evaluate(() => window.__game!.autosaveNow())).toBe(false);
+  await visit.getByTestId('menu-button').click();
+  await expect(visit.getByTestId('pause-menu')).toBeVisible();
+  for (const id of ['pause-save', 'menu-save', 'pause-export', 'pause-invite', 'pause-invite-p2p'])
+    await expect(visit.getByTestId(id), id).toHaveCount(0);
+  await expect(visit.getByTestId('pause-quit')).toContainText('nothing is saved');
+  const before = await page.evaluate(() => window.__game!.slotSavedAt('auto'));
+  await Promise.all([
+    visit.waitForURL((u) => !u.searchParams.has('visit'), { timeout: 60_000 }),
+    visit.getByTestId('pause-quit').click(),
+  ]);
+  await visit.close();
+  // Adaville's autosave is the one Adaville made, untouched by the visit.
+  expect(await page.evaluate(() => window.__game!.slotSavedAt('auto'))).toBe(before);
+});

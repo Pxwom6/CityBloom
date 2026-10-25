@@ -453,7 +453,7 @@ export class Game {
 
   /** Start a shared region with this city in it (M32), online or from this browser. */
   async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
-    if (this.region || this.net) return false;
+    if (this.region || this.net || this.readOnly) return false;
     const code = makeCode(kind);
     try {
       let connect: () => Promise<Link>;
@@ -480,7 +480,7 @@ export class Game {
 
   /** Bring this city into a shared region by its code (M32). */
   async joinRegion(code: string): Promise<boolean> {
-    if (this.region || this.net) return false;
+    if (this.region || this.net || this.readOnly) return false;
     const url = relayUrl();
     const connect: () => Promise<Link> =
       codeKind(code) === 'online'
@@ -558,6 +558,8 @@ export class Game {
   /** Share this city: make a room online or in this browser; resolves once it's open. */
   async hostRoom(kind: 'online' | 'p2p'): Promise<boolean> {
     if (this.net) return true;
+    // A visit isn't this player's city to share (F5).
+    if (this.readOnly) return false;
     try {
       const mp = await Multiplayer.host(kind, this.client, loadProfile(), this.world.stats.cityName);
       this.attachNet(mp);
@@ -1090,6 +1092,11 @@ export class Game {
 
   /** Save the city to a slot (with an optional label for the slot list). */
   async saveTo(slot: string, label?: string, quiet = false): Promise<boolean> {
+    // A neighbour's city seen read-only is theirs: it never lands in this browser's saves (F5).
+    if (this.readOnly) {
+      if (!quiet) this.toast('You’re visiting a neighbour’s city: nothing here is saved.', 'info');
+      return false;
+    }
     if (this.saving) return false;
     this.saving = true;
     this.notify();
@@ -1113,20 +1120,35 @@ export class Game {
     }
   }
 
-  /** Autosave now and then (settings), unless the city has gone bankrupt. */
-  private autosave(now: number): void {
+  /**
+   * Autosave now and then (settings), unless the city has gone bankrupt or isn't this player's (a
+   * visit, F5). `force` skips the wait (tests); resolves with whether it saved.
+   */
+  autosave(now: number, force = false): Promise<boolean> {
     const every = this.settings.autosaveMinutes * 60_000;
-    if (this.mode !== 'play' || every <= 0 || this.saving || this.world.stats.bankrupt) return;
+    if (
+      this.mode !== 'play' ||
+      this.readOnly ||
+      (every <= 0 && !force) ||
+      this.saving ||
+      this.world.stats.bankrupt
+    )
+      return Promise.resolve(false);
     if (!this.lastSavedAt) this.lastSavedAt = now;
-    if (now - this.lastSavedAt < every) return;
-    void this.saveTo('auto', 'Autosave', true);
+    if (now - this.lastSavedAt < every && !force) return Promise.resolve(false);
+    return this.saveTo('auto', 'Autosave', true);
   }
 
   private quitUnsaved = false;
 
   /** Autosave, then go back to the main menu (if saving fails, a second try leaves without it). */
   async quitToMenu(): Promise<void> {
-    if (!this.world.stats.bankrupt && !this.quitUnsaved && !(await this.saveTo('auto', 'Autosave', true))) {
+    if (
+      !this.readOnly &&
+      !this.world.stats.bankrupt &&
+      !this.quitUnsaved &&
+      !(await this.saveTo('auto', 'Autosave', true))
+    ) {
       this.quitUnsaved = true;
       this.toast('The city could not be saved. Choose Quit again to leave without saving.', 'bad', 8000);
       return;
@@ -1142,6 +1164,7 @@ export class Game {
     this.notify();
     if (
       this.mode === 'play' &&
+      !this.readOnly &&
       !this.world.stats.bankrupt &&
       !(await this.saveTo('auto', 'Autosave', true))
     ) {
@@ -1517,7 +1540,7 @@ export class Game {
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
-    else this.autosave(now);
+    else void this.autosave(now);
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();

@@ -26,6 +26,7 @@ import { handmade } from '../render/assets/handmade';
 import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 import type { Stamped } from '../sim/lockstep';
+import { readSlot } from './saves';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -403,6 +404,12 @@ export interface TestApi {
   };
   /** Ask the server for a new version of the app now (M15). */
   checkForUpdate(): Promise<void>;
+  /** Autosave now, as the timer would (F5): resolves with whether it saved. */
+  autosaveNow(): Promise<boolean>;
+  /** The city name in a save slot of this browser, or null. */
+  slotCity(slot: string): Promise<string | null>;
+  /** When the save in a slot of this browser was made, or null. */
+  slotSavedAt(slot: string): Promise<string | null>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
   /** What the city makes, uses, buys and sells of power, water and garbage, and the winter forecast (P20). */
@@ -1014,6 +1021,9 @@ export function installTestApi(game: Game): TestApi {
       newCity: { host: game.hostKind, region: game.regionParam },
     }),
     checkForUpdate: () => game.updates.check(),
+    autosaveNow: () => game.autosave(performance.now(), true),
+    slotCity: async (slot) => (await readSlot(slot).catch(() => null))?.meta.cityName ?? null,
+    slotSavedAt: async (slot) => (await readSlot(slot).catch(() => null))?.meta.savedAt ?? null,
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
     getSupply: () => game.client.query<SupplyBalance>({ type: 'supply' }),
     getScenario: () => ({

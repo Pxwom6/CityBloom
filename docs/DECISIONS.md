@@ -666,3 +666,8 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   backing out of that screen or the friends screen now drops the choice, and New city from the main
   menu always founds a city of one's own. The new-city screen says what the city will be founded for
   ("It opens shared from this browser for your friends"), and the two choices exclude each other.
+- **F5 A visit is never saved.** Looking round a neighbour's city is read-only, and now nothing of it
+  reaches this browser's saves: no autosave, no Save, Quick save or Export in the pause menu, Quit
+  leaves without saving ("You were only visiting: nothing is saved"), an update reloads without
+  saving first, and a visit can't be shared in a room or a region (before, Continue could open the
+  neighbour's city in place of one's own).

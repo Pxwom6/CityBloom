@@ -2159,6 +2159,8 @@ export class Sim {
 
   query(q: Query): unknown {
     switch (q.type) {
+      case 'builtBy':
+        return this.state.builtBy.get(q.id) ?? null;
       case 'hash':
         return this.hash();
       case 'summary':

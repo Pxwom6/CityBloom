@@ -366,6 +366,11 @@ export class Game {
     }
   }
 
+  private pingKey: ((e: KeyboardEvent) => void) | null = null;
+
+  /** The room's chat, latest last (M31). */
+  chatLog: { name: string; color: number; text: string }[] = [];
+
   /** The player whose camera this one rides along with (M31), or 0. */
   following = 0;
 
@@ -413,6 +418,16 @@ export class Game {
         this.here.ghostAt = performance.now();
       }
     };
+    if (!this.pingKey) {
+      // Shift+G over the map: "look here" for the others.
+      this.pingKey = (e: KeyboardEvent) => {
+        const t = e.target as HTMLElement | null;
+        if (e.code !== 'KeyG' || !e.shiftKey || e.metaKey || e.ctrlKey || !this.net || !this.here.at) return;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        this.pingAt({ x: this.here.at[0], z: this.here.at[1] });
+      };
+      window.addEventListener('keydown', this.pingKey);
+    }
     mp.session.onPing = (from, at) => {
       const p = mp.session.players.find((x) => x.id === from);
       if (!p) return;
@@ -425,7 +440,11 @@ export class Game {
     mp.session.onNotice = (n) => {
       if (n.kind === 'chat') {
         const who = mp.session.players.find((p) => p.id === n.from);
-        this.toast(`${who?.name ?? 'Someone'}: ${n.text}`, 'info', 6000);
+        this.chatLog = [
+          ...this.chatLog,
+          { name: who?.name ?? 'Someone', color: who?.color ?? 0, text: n.text },
+        ].slice(-40);
+        if (this.panel !== 'room') this.toast(`${who?.name ?? 'Someone'}: ${n.text}`, 'info', 6000);
       } else this.toast(n.text, n.kind === 'warn' ? 'bad' : 'info', 4500);
     };
     mp.session.onChange = ((prev) => () => {

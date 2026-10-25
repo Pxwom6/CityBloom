@@ -34,7 +34,7 @@ describe('who built what, and who may do what (M31)', () => {
       1,
     );
     expect(road.ok).toBe(true);
-    const seg = road.created!.find((id) => sim.state.net.segments.has(id))!;
+    const seg = (road.ok ? road.created! : []).find((id) => sim.state.net.segments.has(id))!;
     expect(sim.state.builtBy.get(seg)).toBe(1);
     sim.rules = { host: 1, perms: { 2: ['money'] }, spendLimit: 500 };
     // Player 2 may change taxes but not policies, may not bulldoze player 1's road, nor spend much.

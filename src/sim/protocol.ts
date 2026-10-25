@@ -496,7 +496,9 @@ export type Query =
   /** Districts' figures and budgets (M21). */
   | { type: 'districts' }
   /** The map editor's map as edited, and its playability check (M24). */
-  | { type: 'exportMap' };
+  | { type: 'exportMap' }
+  /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
+  | { type: 'builtBy'; id: number };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {

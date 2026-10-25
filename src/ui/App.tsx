@@ -45,7 +45,7 @@ function Shortcuts({ game }: { game: Game }) {
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
-      else if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey && game.world.stats.scenario)
+      else if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey && !e.shiftKey && game.world.stats.scenario)
         game.openPanel('goals');
       else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey)
         game.overlay.set(game.overlay.active ? null : 'power');

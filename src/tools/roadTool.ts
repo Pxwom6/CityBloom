@@ -1020,7 +1020,7 @@ export class RoadTool implements Tool {
       this.stepRing(e.code === 'BracketRight' ? 1 : -1);
       return true;
     }
-    if (e.code === 'KeyG') {
+    if (e.code === 'KeyG' && !e.shiftKey) {
       this.grid = !this.grid;
       this.game.notify();
       return true;

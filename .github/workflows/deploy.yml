@@ -18,7 +18,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The online relay for shared cities (M30): a Cloudflare Worker with a Durable Object per room.
+  # Deployed only once the repository has the secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+  # (PROGRESS.md says how to make them); without them the site builds with online rooms switched off
+  # and peer-to-peer still works.
+  relay:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.address.outputs.url }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: echo "ready=$([ -n "$TOKEN" ] && [ -n "$ACCOUNT" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+      - if: steps.check.outputs.ready == 'yes'
+        uses: actions/checkout@v4
+      - if: steps.check.outputs.ready == 'yes'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.check.outputs.ready == 'yes'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'yes'
+        name: Relay tests
+        run: npx vitest run relay
+      - if: steps.check.outputs.ready == 'yes'
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy -c relay/wrangler.jsonc
+      - id: address
+        if: steps.check.outputs.ready == 'yes'
+        env:
+          OUT: ${{ steps.deploy.outputs.command-output }}
+          FIXED: ${{ vars.RELAY_URL }}
+        run: |
+          # The Worker's workers.dev address, as a WebSocket address (a repository variable RELAY_URL
+          # overrides it, e.g. for a custom domain).
+          url="$FIXED"
+          if [ -z "$url" ]; then
+            url=$(echo "$OUT" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1 | sed 's#^https#wss#')
+          fi
+          echo "Relay: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: relay
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +89,8 @@ jobs:
           # Absolute address for the share preview image.
           SITE_URL: ${{ steps.pages.outputs.base_url }}/
           BUILD_ID: ${{ github.sha }}
+          # Shared cities' online rooms (empty: not set up yet).
+          VITE_RELAY_URL: ${{ needs.relay.outputs.url }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

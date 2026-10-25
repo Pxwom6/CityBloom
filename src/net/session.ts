@@ -149,6 +149,7 @@ export class RoomSession {
       link.onmessage = (t) => {
         this.received.messages++;
         this.received.bytes += t.length;
+        if (t === 'pong') return;
         let m: RoomMsg;
         try {
           m = JSON.parse(t) as RoomMsg;
@@ -358,8 +359,15 @@ export class RoomSession {
     const visible = this.opts.visible?.() ?? true;
     const now = this.now();
     const quiet = tick === this.lastStatus.tick && visible === this.lastStatus.visible && !this.sums.length;
-    // Report while the city runs; when it stands still, only now and then (a sleeping room stays asleep).
-    if (quiet && now - this.lastStatus.at < 20_000) return;
+    // Report while the city runs; when it stands still, only a keep-alive now and then, which an
+    // online room answers without waking up.
+    if (quiet) {
+      if (now - this.lastStatus.at > 25_000) {
+        this.lastStatus.at = now;
+        this.link.send('ping');
+      }
+      return;
+    }
     this.lastStatus = { tick, at: now, visible };
     const sums = this.sums.splice(0);
     this.send({ t: 'status', tick, visible, ...(sums.length ? { sums } : {}) });

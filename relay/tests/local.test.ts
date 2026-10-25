@@ -11,17 +11,26 @@ import { player, settle, stopAll, until, type TestPlayer } from './harness';
  * Through the local relay's real sockets (M30): two headless players build one city in step for a
  * game year, with the network budget counted on the way.
  */
-let relay: LocalRelay;
+/** RELAY_URL runs the same test against another relay (`wrangler dev` of the online Worker). */
+const external = process.env.RELAY_URL ?? null;
+let relay: LocalRelay | null = null;
 beforeAll(async () => {
-  relay = await startRelay(0);
+  if (!external) relay = await startRelay(0);
 });
 afterAll(async () => {
-  await relay.close();
+  await relay?.close();
 });
 
 describe('the local relay (M30)', () => {
   it('two players stay in step for a game year, building as they go', async () => {
-    const url = `ws://localhost:${relay.port}/room/YEARAB`;
+    const code = external
+      ? `Y${Date.now()
+          .toString(36)
+          .toUpperCase()
+          .replace(/[^A-HJ-NP-Z2-9]/g, 'A')
+          .slice(-5)}`
+      : 'YEARAB';
+    const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
     const connect = () => webSocketLink(url);
     const sim = Sim.create({ seed: 'year', preset: 'river', cityName: 'Yearling' });
     buildTown(sim, { zone: false });
@@ -63,6 +72,51 @@ describe('the local relay (M30)', () => {
       expect(ada.driver.sim.state.totals.population).toBeGreaterThan(300);
       const per = (p: TestPlayer) => ({ messages: p.session.sent.messages, bytes: p.session.sent.bytes });
       console.log('[net] a game year at 1,200 ticks/s:', JSON.stringify({ ada: per(ada), sam: per(sam) }));
+    } finally {
+      stopAll(players);
+    }
+  }, 300_000);
+
+  it('keeps the city after everyone has left, for whoever comes back', async () => {
+    const code = external
+      ? `K${Date.now()
+          .toString(36)
+          .toUpperCase()
+          .replace(/[^A-HJ-NP-Z2-9]/g, 'B')
+          .slice(-5)}`
+      : 'KEEPAB';
+    const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
+    const connect = () => webSocketLink(url);
+    const sim = Sim.create({ seed: 'keep', preset: 'river', cityName: 'Keepsake' });
+    buildTown(sim, { zone: true });
+    serveTown(sim);
+    const players: TestPlayer[] = [];
+    try {
+      const ada = player('Ada', connect, sim, { create: { cityName: 'Keepsake' } });
+      players.push(ada);
+      await ada.session.start();
+      ada.session.setSpeed(3);
+      await until(() => ada.driver.tick >= sim.tick + TICKS_PER_MONTH, 60_000, 'a month');
+      // A snapshot is stored when a player joins; then everyone leaves.
+      const sam = player('Sam', connect, null);
+      players.push(sam);
+      await sam.session.start();
+      await settle(ada, players);
+      const hash = ada.driver.sim.hash();
+      ada.session.leave();
+      sam.session.leave();
+      await new Promise((r) => setTimeout(r, 500));
+      // Kit comes along later with the code: the city is there, exactly as it was left.
+      const kit = player('Kit', connect, null);
+      players.push(kit);
+      await kit.session.start();
+      await until(
+        () => kit.driver.tick === kit.session.allowed && kit.session.allowed > 0,
+        30_000,
+        'catch up',
+      );
+      expect(kit.driver.sim.hash()).toBe(hash);
+      await until(() => kit.session.isPacer, 10_000, 'Kit to keep time');
     } finally {
       stopAll(players);
     }

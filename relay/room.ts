@@ -23,6 +23,8 @@ import {
 export interface Conn {
   send(msg: RoomMsg): void;
   close(code: number, reason: string): void;
+  /** The player this connection now is (a Durable Object keeps it on the socket through hibernation). */
+  bind?(player: number): void;
 }
 
 export interface StoredSnapshot {
@@ -137,7 +139,11 @@ export class Room {
     return n;
   }
 
+  /** Brought back from the store and not yet moved on by the pacer. */
+  private restored = false;
+
   private restore(meta: RoomMeta): void {
+    this.restored = true;
     this.info = { ...meta.info, pacer: 0 };
     for (const p of meta.players)
       this.players.set(p.id, { ...p, visible: false, joining: false, conn: null });
@@ -204,6 +210,8 @@ export class Room {
   }
 
   message(conn: Conn, raw: string): void {
+    // A keep-alive (a Durable Object answers these itself without waking).
+    if (raw === 'ping') return;
     this.received++;
     const st = this.conns.get(conn);
     if (!st) return;
@@ -262,6 +270,7 @@ export class Room {
         p.name = m.name;
         p.color = m.color;
         st.player = p.id;
+        conn.bind?.(p.id);
         const first = this.events[0]?.seq ?? this.seq + 1;
         if (m.rejoin.seq >= first - 1 && !this.waiting.has(p.id)) {
           p.joining = false;
@@ -309,6 +318,7 @@ export class Room {
     };
     this.players.set(p.id, p);
     this.conns.get(conn)!.player = p.id;
+    conn.bind?.(p.id);
     return p;
   }
 
@@ -332,6 +342,7 @@ export class Room {
         if (p.id !== this.info.pacer) return;
         if (m.allow <= this.allowed || m.allow > this.allowed + MAX_CLOCK_STEP) return;
         this.allowed = m.allow;
+        this.restored = false;
         this.broadcastEvents([]);
         const now = this.env.now();
         if (now - this.metaSaved > META_EVERY) this.saveMeta();
@@ -339,11 +350,15 @@ export class Room {
         return;
       }
       case 'status': {
+        // A room woken from sleep may have lost its last few clock moves: never stamp behind a player.
+        if (this.restored && m.tick > this.allowed && m.tick <= this.allowed + MAX_CLOCK_STEP)
+          this.allowed = m.tick;
         const moved = p.tick !== m.tick;
         p.tick = m.tick;
         if (moved) this.broadcast({ t: 'ticks', ticks: [[p.id, p.tick]] }, p.id);
         if (p.joining && !this.waiting.has(p.id) && m.tick >= this.allowed - CAUGHT_UP) {
           p.joining = false;
+          this.choosePacer();
           this.broadcastPlayers();
         }
         if (p.visible !== m.visible) {

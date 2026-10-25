@@ -1,3 +1,5 @@
+import type { Applied, Stamped } from './lockstep';
+import type { PlayerHistory } from './history';
 import type { WeatherSummary } from './systems/weather';
 import type { RegionSummary } from './systems/region';
 import type { ScenarioSummary } from './systems/scenario';
@@ -459,6 +461,17 @@ export interface WorkerPerf {
   tickMsMax: number;
   ticksPerSecond: number;
   droppedTicks: number;
+  /** In a shared city (M29): ticks the room has allowed that this sim hasn't run yet. */
+  behind?: number;
+}
+
+/** A room snapshot (M29): the city settled at a tick, every player's undo history, and where the room's events stand. */
+export interface SharedSnapshot {
+  save: SaveFile;
+  history: [number, PlayerHistory][];
+  /** The last event applied before it was taken, and the running fingerprint of events. */
+  seq: number;
+  eventHash: number;
 }
 
 export type Query =
@@ -513,13 +526,31 @@ export type MainToWorker =
   | { type: 'query'; id: number; q: Query }
   | { type: 'setSpeed'; speed: Speed }
   | { type: 'advance'; id: number; ticks: number }
-  | { type: 'save'; id: number };
+  | { type: 'save'; id: number }
+  /** Shared city (M29): from now on the room keeps time; `player` is who this machine is. */
+  | { type: 'share'; player: number; lastSeq: number }
+  /** Back to single player's own clock. */
+  | { type: 'unshare' }
+  /** The room's events, in order, and how far the sim may now run. */
+  | { type: 'stamped'; events: Stamped[]; allow: number }
+  /** Join or resync a shared city from a room snapshot (answers with `ready`). */
+  | { type: 'loadShared'; snapshot: SharedSnapshot; player: number; testMode?: boolean };
 
 export type WorkerToMain =
   | { type: 'ready'; snapshot: Snapshot }
   | { type: 'frame'; diff: FrameDiff; perf: WorkerPerf; speed: Speed }
   | { type: 'reply'; id: number; result: unknown }
   | { type: 'loadFailed'; message: string }
+  /** Shared city (M29): what the room's events did, in order (commands with their results). */
+  | { type: 'applied'; list: Applied[] }
+  /** The checksum at the end of a game hour, to compare with the other players. */
+  | { type: 'checksum'; tick: number; sum: string }
+  /** At each month's end: a hash per part of the state (names the part when players disagree). */
+  | { type: 'monthHashes'; tick: number; parts: Record<string, string> }
+  /** A snapshot this machine was asked to take (at a settle event). */
+  | { type: 'snapshot'; tick: number; reason: 'snapshot' | 'autosave'; snapshot: SharedSnapshot }
+  /** An event arrived for a tick already passed: this machine can't agree any more. */
+  | { type: 'late'; tick: number; seq: number }
   | { type: 'error'; message: string };
 
 export type { CommandResult };

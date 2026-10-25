@@ -1,11 +1,26 @@
 import type { Command, CommandResult } from '../sim/commands';
-import type { FrameDiff, MainToWorker, Query, Snapshot, WorkerPerf, WorkerToMain } from '../sim/protocol';
+import type {
+  FrameDiff,
+  MainToWorker,
+  Query,
+  SharedSnapshot,
+  Snapshot,
+  WorkerPerf,
+  WorkerToMain,
+} from '../sim/protocol';
+import type { Stamped } from '../sim/lockstep';
 import type { SaveFile } from '../sim/save';
 import type { GameOptions } from '../sim/state';
 import type { MapData } from '../sim/terrain/customMap';
 import type { Speed } from '../sim/time';
 
 type FrameListener = (diff: FrameDiff, perf: WorkerPerf, speed: Speed) => void;
+/** What a shared city's worker reports (M29): applied events, checksums, snapshots, late events. */
+export type SharedMessage = Extract<
+  WorkerToMain,
+  { type: 'applied' | 'checksum' | 'monthHashes' | 'snapshot' | 'late' }
+>;
+type SharedListener = (msg: SharedMessage) => void;
 
 /** Typed wrapper around the sim worker: request/reply by id, frames to listeners. */
 export class SimClient {
@@ -13,6 +28,7 @@ export class SimClient {
   private nextId = 1;
   private pending = new Map<number, (v: unknown) => void>();
   private frameListeners: FrameListener[] = [];
+  private sharedListeners: SharedListener[] = [];
   private readyResolve: ((s: Snapshot) => void) | null = null;
   private readyReject: ((e: Error) => void) | null = null;
   onError: (message: string) => void = (m) => console.error(`[sim] ${m}`);
@@ -44,6 +60,13 @@ export class SimClient {
       }
       case 'error':
         this.onError(msg.message);
+        break;
+      case 'applied':
+      case 'checksum':
+      case 'monthHashes':
+      case 'snapshot':
+      case 'late':
+        for (const l of this.sharedListeners) l(msg);
         break;
     }
   }
@@ -105,6 +128,36 @@ export class SimClient {
 
   save(): Promise<SaveFile> {
     return this.request((id) => ({ type: 'save', id }));
+  }
+
+  /** Shared city (M29): hand the clock to the room; this machine is `player`. */
+  share(player: number, lastSeq: number): void {
+    this.post({ type: 'share', player, lastSeq });
+  }
+
+  unshare(): void {
+    this.post({ type: 'unshare' });
+  }
+
+  /** The room's events in order, and how far the sim may run. */
+  stamped(events: Stamped[], allow: number): void {
+    this.post({ type: 'stamped', events, allow });
+  }
+
+  /** Join or resync from a room snapshot. */
+  loadShared(snapshot: SharedSnapshot, player: number, testMode = false): Promise<Snapshot> {
+    return new Promise((resolve, reject) => {
+      this.readyResolve = resolve;
+      this.readyReject = reject;
+      this.post({ type: 'loadShared', snapshot, player, testMode });
+    });
+  }
+
+  onShared(l: SharedListener): () => void {
+    this.sharedListeners.push(l);
+    return () => {
+      this.sharedListeners = this.sharedListeners.filter((x) => x !== l);
+    };
   }
 
   terminate(): void {

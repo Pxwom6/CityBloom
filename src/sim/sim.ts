@@ -1659,8 +1659,13 @@ export class Sim {
     this.syncRng();
   }
 
-  save(savedAt = ''): SaveFile {
-    this.finishMatching();
+  /**
+   * The city as a save file. Finishes the commute round under way first, so a loaded city carries
+   * on the same; in a shared city that would change this machine's future alone, so a copy saved
+   * there (`settle: false`) leaves the round be (room snapshots settle every machine at once, M29).
+   */
+  save(savedAt = '', settle = true): SaveFile {
+    if (settle) this.finishMatching();
     this.syncRng();
     return makeSaveFile(this.state, this.state.totals.population, savedAt);
   }

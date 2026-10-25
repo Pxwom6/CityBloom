@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "bench": "tsx scripts/bench.ts",
     "balance": "tsx scripts/balance.ts",
-    "models:check": "tsx scripts/models-check.ts"
+    "models:check": "tsx scripts/models-check.ts",
+    "xbrowser": "playwright test -c playwright.xb.config.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",

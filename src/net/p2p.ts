@@ -9,7 +9,7 @@
  * Public STUN servers find a way through home routers; when two players still can't connect, the
  * guest is told so plainly and offered an online room.
  */
-import { Room, MemoryStore, type Conn } from '../../relay/room';
+import { Room, MemoryStore, type Conn, type StoredSnapshot } from '../../relay/room';
 import type { RoomMsg } from '../../relay/protocol';
 import { dataChannelLink, loopbackPair, webSocketLink, type Link } from './link';
 
@@ -63,11 +63,18 @@ export class P2PHost {
   constructor(
     readonly code: string,
     private readonly signalling: Signalling,
+    /** Every snapshot the room keeps (the host's browser saves the city then, M31). */
+    onSnapshot: ((s: StoredSnapshot) => void) | null = null,
   ) {
-    this.room = new Room(code, 'p2p', new MemoryStore(), {
-      now: () => performance.now(),
-      random: Math.random,
-    });
+    const store = new MemoryStore();
+    if (onSnapshot) {
+      const save = store.saveSnapshot.bind(store);
+      store.saveSnapshot = (s) => {
+        save(s);
+        onSnapshot(s);
+      };
+    }
+    this.room = new Room(code, 'p2p', store, { now: () => performance.now(), random: Math.random });
   }
 
   /** The host's own game reaches the room through this. */

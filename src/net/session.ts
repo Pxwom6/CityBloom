@@ -376,6 +376,12 @@ export class RoomSession {
     const quiet = tick === this.lastStatus.tick && visible === this.lastStatus.visible && !this.sums.length;
     // Report while the city runs; when it stands still, only a keep-alive now and then, which an
     // online room answers without waking up.
+    // While joining, keep the room hearing from us (it checks on a stalled snapshot as messages come).
+    if (quiet && this.state === 'joining' && now - this.lastStatus.at > 2000) {
+      this.lastStatus.at = now;
+      this.send({ t: 'status', tick, visible });
+      return;
+    }
     if (quiet) {
       if (now - this.lastStatus.at > 25_000) {
         this.lastStatus.at = now;

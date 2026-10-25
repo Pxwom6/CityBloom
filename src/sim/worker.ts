@@ -58,6 +58,7 @@ function runTicks(n: number): void {
 function runShared(): void {
   const ls = lockstep!;
   const t0 = performance.now();
+  if (ls.behind === 0 && ls.pending) ls.run(0);
   while (ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
     timeTick(() => ls.run(1));
     // The full check at each month's end (about 40 ms at 100k residents, outside the tick).

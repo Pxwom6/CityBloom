@@ -43,6 +43,31 @@ function brush(points: Vec2[], radius: number): Shape {
   };
 }
 
+/** A shape's bounding box [minX, minZ, maxX, maxZ], or null for an empty one. */
+export function shapeBox(s: Shape): [number, number, number, number] | null {
+  let x0 = Infinity;
+  let z0 = Infinity;
+  let x1 = -Infinity;
+  let z1 = -Infinity;
+  const add = (x: number, z: number, r: number) => {
+    x0 = Math.min(x0, x - r);
+    z0 = Math.min(z0, z - r);
+    x1 = Math.max(x1, x + r);
+    z1 = Math.max(z1, z + r);
+  };
+  for (const l of s.lines ?? []) for (let i = 0; i + 1 < l.length; i += 2) add(l[i]!, l[i + 1]!, 8);
+  for (const [x, z, r] of s.circles ?? []) add(x!, z!, r!);
+  for (const [x, z, hw, hd] of s.rects ?? []) add(x!, z!, Math.hypot(hw!, hd!));
+  return x0 <= x1 ? [x0, z0, x1, z1] : null;
+}
+
+/** Do two shapes' boxes overlap? */
+export function shapesMeet(a: Shape, b: Shape): boolean {
+  const p = shapeBox(a);
+  const q = shapeBox(b);
+  return !!p && !!q && p[0] <= q[2] && q[0] <= p[2] && p[1] <= q[3] && q[1] <= p[3];
+}
+
 export function commandShape(cmd: Command): Shape | null {
   switch (cmd.type) {
     case 'buildRoad':

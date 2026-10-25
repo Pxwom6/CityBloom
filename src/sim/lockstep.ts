@@ -114,6 +114,10 @@ export class Lockstep {
 
   /** Run up to `maxTicks` ticks towards the allowed tick; returns how many ran. */
   run(maxTicks = Infinity): number {
+    // Events for the tick this sim waits at apply now, not when time next moves: they arrive in
+    // order, so applying them early or just before stepping comes to the same, and a paused city
+    // still takes commands and settles (a joiner's snapshot).
+    this.applyDue();
     let n = 0;
     while (n < maxTicks && this.sim.tick < this.allowed) {
       this.applyDue();

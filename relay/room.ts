@@ -86,6 +86,8 @@ interface ConnState {
 export const MAX_CLOCK_STEP = 30 * 60;
 /** A joining player is in step once within this many ticks of the frontier (the city keeps moving). */
 const CAUGHT_UP = 120;
+/** How long to wait for the pacer's snapshot before falling back to the stored one (ms). */
+const SETTLE_WAIT = 8_000;
 /** Checksums kept for comparing (game hours). */
 const KEEP_SUMS = 48;
 /** Messages per second a player may send, and a burst. */
@@ -110,7 +112,7 @@ export class Room {
   /** Players waiting for the next snapshot, and why. */
   private waiting = new Map<number, 'join' | 'resync'>();
   /** A settle asked of the pacer and not yet answered. */
-  private settleAsked: { seq: number; taker: number } | null = null;
+  private settleAsked: { seq: number; taker: number; at: number } | null = null;
   /** Hourly checksums by tick: player → sum. */
   private sums = new Map<number, Map<number, string>>();
   private metaSaved = 0;
@@ -242,6 +244,7 @@ export class Room {
     if (st.tokens < 0) return;
     const msg = parseClientMsg(raw);
     if (!msg) return this.reject(conn, 'bad-message', 'A message the room could not read');
+    this.checkStall(now);
     if (msg.t === 'hello') return this.hello(conn, msg);
     const p = st.player ? this.players.get(st.player) : null;
     if (!p) return this.reject(conn, 'bad-message', 'Say hello first');
@@ -541,9 +544,25 @@ export class Room {
     if (!taker) return false;
     if (this.settleAsked && this.settleAsked.taker === taker) return true;
     const e = this.order({ kind: 'settle', taker, reason });
-    this.settleAsked = { seq: e.seq, taker };
+    this.settleAsked = { seq: e.seq, taker, at: this.env.now() };
     this.lastSnapshot = this.env.now();
     return true;
+  }
+
+  /**
+   * A snapshot asked of a game that hasn't answered (its tab frozen, its connection dead but not yet
+   * closed): those waiting get the stored one and the events since instead.
+   */
+  private checkStall(now: number): void {
+    const asked = this.settleAsked;
+    if (!asked || now - asked.at < SETTLE_WAIT || !this.waiting.size) return;
+    this.settleAsked = null;
+    const stored = this.snapshotSeq === null ? null : this.store.loadSnapshot();
+    if (!stored) return;
+    for (const [id, reason] of [...this.waiting]) {
+      const w = this.players.get(id);
+      if (w) this.sendSnapshot(w, stored, reason);
+    }
   }
 
   /** Get a player the city: a fresh snapshot from the pacer if anyone's playing, else the stored one. */

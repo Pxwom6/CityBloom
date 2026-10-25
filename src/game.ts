@@ -29,7 +29,7 @@ import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClass, widthClass } from './ui/layout';
 import { Multiplayer } from './net/multiplayer';
-import { commandShape } from './net/shapes';
+import { commandShape, shapesMeet } from './net/shapes';
 import { PLAYER_COLORS, type Shape } from '../relay/protocol';
 import type { PresenceMark } from './render/presence';
 import { loadProfile } from './client/profile';
@@ -274,8 +274,21 @@ export class Game {
     const shape = commandShape(cmd);
     const key = this.pendingKey++;
     if (shape) this.pending.set(key, shape);
-    return this.net.session.command(cmd).finally(() => this.pending.delete(key));
+    return this.net.session
+      .command(cmd)
+      .then((r) => {
+        // Two players on the same spot: the room's order decided, so say who got there first.
+        if (r.ok || !shape) return r;
+        const t = performance.now();
+        const rival = this.recentOthers.find((o) => t - o.at < 6000 && shapesMeet(o.shape, shape));
+        const who = rival && this.net?.session.players.find((p) => p.id === rival.by)?.name;
+        return who ? { ...r, reason: `${r.reason} (${who} got there first)` } : r;
+      })
+      .finally(() => this.pending.delete(key));
   }
+
+  /** The others' latest commands and where they acted, to explain a clash (M31). */
+  private recentOthers: { by: number; shape: Shape; at: number }[] = [];
 
   /** This player's commands waiting for the room, as outlines (M31). */
   private pending = new Map<number, Shape>();
@@ -428,6 +441,12 @@ export class Game {
       };
       window.addEventListener('keydown', this.pingKey);
     }
+    mp.session.onApplied = (a) => {
+      if (a.ev.kind !== 'cmd' || a.ev.by === mp.session.you || !a.result?.ok) return;
+      const shape = commandShape(a.ev.cmd);
+      if (shape)
+        this.recentOthers = [...this.recentOthers, { by: a.ev.by, shape, at: performance.now() }].slice(-12);
+    };
     mp.session.onPing = (from, at) => {
       const p = mp.session.players.find((x) => x.id === from);
       if (!p) return;

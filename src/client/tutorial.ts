@@ -104,6 +104,20 @@ export interface Tip {
 
 export const TIPS: Tip[] = [
   {
+    id: 'shared',
+    text:
+      'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
+      'shows who is here, the invite link and the chat; Shift+G over the map points the others at a spot.',
+    when: (g) => !!g.net && g.net.session.state === 'playing',
+  },
+  {
+    id: 'sharedHost',
+    text:
+      'You are the host: from the room button you can lock the room, choose what each player may do ' +
+      '(taxes, policies, bulldozing others’ work, big spending) and turn the chat off.',
+    when: (g) => !!g.net?.session.isHost && g.net.session.players.length > 1,
+  },
+  {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',
     when: (g) => g.world.stats.utilities.power.unserved > 3,

@@ -66,7 +66,7 @@ Must fix before merging:
 - [x] F3 Codes and player secrets come from `Math.random`
 - [x] F4 Lobby choices leak into a later single-player city
 - [x] F5 Visiting a neighbour's city overwrites your autosave
-- [ ] F6 A stale region binding
+- [x] F6 A stale region binding
 - [x] F7 A bad command must not hurt a room
 
 Should fix:

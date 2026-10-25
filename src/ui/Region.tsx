@@ -13,6 +13,7 @@ import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconRegion } from './icons';
 import { INVITE_INPUT_MAX, PLAYER_COLORS, parseInvite } from '../../relay/protocol';
 import { inviteLink, relayUrl } from '../net/multiplayer';
+import { regionRejoin } from '../client/profile';
 
 /**
  * The region (M23): the neighbouring towns, what they'll trade, the deals made with them, and the
@@ -441,7 +442,9 @@ function SharedRegion() {
             class="btn"
             disabled={busy || !parseInvite(code)}
             data-testid="region-join"
-            onClick={() => void go(() => game.joinRegion(code))}
+            onClick={() =>
+              void go(() => game.joinRegion(code, regionRejoin(game.boundRegion, code)?.rejoin ?? null))
+            }
           >
             Join
           </button>

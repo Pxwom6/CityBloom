@@ -685,3 +685,11 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   protect them more than the room's own rules do. Test builds can send Trystero through a Nostr relay
   on this computer (`VITE_TRYSTERO_RELAYS`, preferred when `citybloom.signal` is `trystero`), which
   `e2e/f2-trystero.spec.ts` uses to test the real join path.
+- **F6 A city's region travels with the city.** The region a city stands in (its invite, its place,
+  and whether this browser ran it) is kept in the city's save, in the save's meta beside the city
+  rather than in the sim's state, so it needs no save version; the city's secret is kept in this
+  browser by region and place. A city rejoins only the region its own save names, as itself, and only
+  when this browser holds its secret; another city saved over the same slot carries no binding and
+  joins nothing, an invited city joins as new unless it already stands there, and a copy opened in
+  another browser never comes back as a duplicate. Leaving a region for good drops the binding and the
+  secret.

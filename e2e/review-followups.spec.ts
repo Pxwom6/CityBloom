@@ -100,3 +100,43 @@ test('F5: looking round a neighbour’s city never saves it in your browser', as
   // Adaville's autosave is the one Adaville made, untouched by the visit.
   expect(await page.evaluate(() => window.__game!.slotSavedAt('auto'))).toBe(before);
 });
+
+test("F6: a city saved over another's slot doesn't take its place in the region", async ({ page }) => {
+  test.setTimeout(420_000);
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.addInitScript(() =>
+    localStorage.setItem('citybloom.player', JSON.stringify({ name: 'Ada', color: 0 })),
+  );
+  await menu(page);
+  // Adaville starts a region (online, through the local relay) and is autosaved.
+  await page.goto('./?paused=1&seed=bindada&preset=river&name=Adaville');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await page.evaluate(() => window.__game!.waitFrames(2));
+  await page.mouse.click(600, 300);
+  await page.keyboard.press('Shift+N');
+  await page.getByTestId('region-start').click();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__game!.getRegion()))?.state, { timeout: 120_000 })
+    .toBe('in');
+  expect(await page.evaluate(() => window.__game!.autosaveNow())).toBe(true);
+  // Opening Adaville's save again rejoins the region as Adaville.
+  await page.goto('./?load=auto');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__game!.getRegion()))?.state, { timeout: 120_000 })
+    .toBe('in');
+  expect((await page.evaluate(() => window.__game!.getRegion()))!.slot).toBe(1);
+
+  // Later, an unrelated city is autosaved into the same slot.
+  await page.goto('./?paused=1&seed=bindother&preset=lakes&name=Otherby');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  expect(await page.evaluate(() => window.__game!.getRegion())).toBeNull();
+  expect(await page.evaluate(() => window.__game!.autosaveNow())).toBe(true);
+  expect(await page.evaluate(() => window.__game!.slotCity('auto'))).toBe('Otherby');
+  // Continue opens Otherby: it stays out of Adaville's region.
+  await page.goto('./?load=auto');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await page.evaluate(() => window.__game!.waitFrames(30));
+  expect(await page.evaluate(() => window.__game!.getState().then((s) => s.cityName))).toBe('Otherby');
+  expect(await page.evaluate(() => window.__game!.getRegion())).toBeNull();
+});

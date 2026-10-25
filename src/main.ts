@@ -23,7 +23,7 @@ import type { SaveFile } from './sim/save';
 import type { Snapshot } from './sim/protocol';
 import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
-import { loadProfile, regionOf } from './client/profile';
+import { loadProfile, regionRejoin } from './client/profile';
 import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
@@ -306,14 +306,17 @@ async function boot(): Promise<void> {
     // Shared regions (M32): start one with this city, join one, or rejoin the one it stands in.
     const newRegion = params.get('newregion');
     const regionCode = params.get('region');
-    const known = loadSlot && save ? regionOf(loadSlot) : null;
+    // The region a loaded city's own save names, if this browser holds its secret (F6).
+    const meta = loadSlot && save ? save.meta.region : undefined;
+    const mine = meta && regionRejoin(meta, null);
+    if (mine) game.boundRegion = meta!;
     if (newRegion === 'online' || newRegion === 'p2p')
       void game.startRegion(
         newRegion,
         params.get('rname')?.trim().slice(0, 40) || `${world.stats.cityName} and friends`,
       );
-    else if (regionCode) void game.joinRegion(regionCode);
-    else if (known) void game.joinRegion(known);
+    else if (regionCode) void game.joinRegion(regionCode, regionRejoin(meta, regionCode)?.rejoin ?? null);
+    else if (mine) void game.joinRegion(mine.invite, mine.rejoin);
   }
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);

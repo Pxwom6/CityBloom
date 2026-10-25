@@ -91,4 +91,5 @@ test('two players fed the same stamped commands stay in step with each other and
     await page.evaluate((p) => window.__game!.setCamera(p), pose);
     await shot(page, `m29-lockstep-player${i + 1}`);
   }
+  for (const page of pages) await page.context().close();
 });

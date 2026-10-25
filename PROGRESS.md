@@ -64,7 +64,7 @@ Must fix before merging:
 - [x] F1 Kicked players come straight back
 - [ ] F2 Strangers can find peer-to-peer rooms
 - [x] F3 Codes and player secrets come from `Math.random`
-- [ ] F4 Lobby choices leak into a later single-player city
+- [x] F4 Lobby choices leak into a later single-player city
 - [ ] F5 Visiting a neighbour's city overwrites your autosave
 - [ ] F6 A stale region binding
 - [x] F7 A bad command must not hurt a room

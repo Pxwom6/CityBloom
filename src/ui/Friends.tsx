@@ -58,6 +58,8 @@ function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void
 function hostCity(game: Game, kind: 'online' | 'p2p', latest: string | null) {
   if (latest) location.href = `${location.pathname}?load=${encodeURIComponent(latest)}&host=${kind}`;
   else {
+    // Shared or brought to a region, never both (F4).
+    game.forgetFriendsChoice();
     game.hostKind = kind;
     game.openScreen('newGame');
   }
@@ -186,6 +188,7 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
     if (props.latestSlot)
       location.href = `${location.pathname}?load=${encodeURIComponent(props.latestSlot)}&${q}`;
     else {
+      game.forgetFriendsChoice();
       game.regionParam = q;
       game.openScreen('newGame');
     }

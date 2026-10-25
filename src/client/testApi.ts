@@ -398,6 +398,8 @@ export interface TestApi {
     };
     /** First-launch graphics check: running, and its last answer. */
     graphics: { checking: boolean; result: CheckResult | null };
+    /** What the friends screen chose for the next new city (F4): share it, or bring it to a region. */
+    newCity: { host: 'online' | 'p2p' | null; region: string | null };
   };
   /** Ask the server for a new version of the app now (M15). */
   checkForUpdate(): Promise<void>;
@@ -1009,6 +1011,7 @@ export function installTestApi(game: Game): TestApi {
         savesAsked: game.keeper.asks,
       },
       graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
+      newCity: { host: game.hostKind, region: game.regionParam },
     }),
     checkForUpdate: () => game.updates.check(),
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),

@@ -540,10 +540,18 @@ export class Game {
     }
     this.notify();
   }
-  /** A new city founded from the friends screen is shared at once, online or from this browser. */
+  /**
+   * A new city founded from the friends screen is shared at once, online or from this browser; or it
+   * goes into a region (`newregion=…` or `region=CODE`). Both last only while the friends and new-city
+   * screens are open (F4).
+   */
   hostKind: 'online' | 'p2p' | null = null;
-  /** A new city founded from the friends screen goes into a region (`newregion=…` or `region=CODE`). */
   regionParam: string | null = null;
+
+  forgetFriendsChoice(): void {
+    this.hostKind = null;
+    this.regionParam = null;
+  }
   /** A region's invite link opened on the main menu: its code, for the friends screen (M32). */
   pendingRegion: string | null = null;
 
@@ -1040,6 +1048,8 @@ export class Game {
 
   /** Open a menu screen on top of any others; in a city, the game pauses while menus are up. */
   openScreen(s: Screen): void {
+    // A new city founded from anywhere but the friends screen is the player's own (F4).
+    if (s === 'newGame' && this.screen !== 'friends') this.forgetFriendsChoice();
     if (this.mode === 'play' && this.screens.length === 0) {
       if (!this.net) {
         this.speedBeforeMenu = this.speed;
@@ -1056,6 +1066,9 @@ export class Game {
   /** Back out of the top screen (the main menu itself never closes). */
   closeScreen(): void {
     if (this.mode === 'menu' && this.screens.length <= 1) return;
+    // Backing out of the friends or new-city screen drops what the lobby chose (F4): a city founded
+    // later must not be shared, or put in a region, without the player knowing.
+    if (this.screen === 'friends' || this.screen === 'newGame') this.forgetFriendsChoice();
     this.screens = this.screens.slice(0, -1);
     if (this.screens.length === 0) this.resumeFromMenu();
     this.notify();

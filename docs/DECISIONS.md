@@ -661,3 +661,8 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   since). A session that ends because the player was removed or the room went away does the same
   (before, the copy kept waiting for a room that would never move it on), and a new room hosted from
   the same page starts without the old one's rules.
+- **F4 The lobby's choice lasts only while its screens are open.** Host (with no saved city) and
+  Start a region (likewise) open the new-city screen set to share the city or bring it to a region;
+  backing out of that screen or the friends screen now drops the choice, and New city from the main
+  menu always founds a city of one's own. The new-city screen says what the city will be founded for
+  ("It opens shared from this browser for your friends"), and the two choices exclude each other.

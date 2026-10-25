@@ -272,10 +272,25 @@ function NewGame() {
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
   };
+  const region = game.regionParam ? new URLSearchParams(game.regionParam) : null;
+  const sharing = game.hostKind
+    ? game.hostKind === 'online'
+      ? 'It opens in an online room for your friends.'
+      : 'It opens shared from this browser for your friends.'
+    : region?.has('newregion')
+      ? 'It starts a shared region for your friends.'
+      : region?.get('region')
+        ? `It joins the region ${region.get('region')}.`
+        : null;
   return (
     <div class="shell-card panel new-game" data-testid="new-game">
       <header>
         <h2>New city</h2>
+        {sharing && (
+          <span class="muted" data-testid="new-sharing">
+            {sharing}
+          </span>
+        )}
       </header>
       <div class="new-game-body">
         <div class="new-game-map">

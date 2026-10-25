@@ -399,6 +399,26 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| One room protocol over two transports | `relay/protocol.ts`, `relay/room.ts` (the same Room in the local relay, the Durable Object and a host's browser), `src/net/session.ts` (a player's side), `src/net/link.ts` |
+| Online rooms on Cloudflare: a Durable Object per room, Hibernation API, SQLite; the city kept between sessions | `relay/worker.ts` (`RoomObject`, `SqlStore`), `relay/wrangler.jsonc`; tested under `wrangler dev` with `RELAY_URL=ws://localhost:8790 npx vitest run relay/tests/local.test.ts` (a year in step; a city kept after everyone left) |
+| Peer-to-peer: the host's browser is the room, WebRTC data channels | `src/net/p2p.ts` (`P2PHost`, `p2pConnect`); `e2e/m30-rooms.spec.ts` (p2p) |
+| Signal through the Worker; also a way with no server of ours | relay signalling (`relay/signal.ts`, `SignalObject`); Trystero over Nostr when no relay is set up, tried between two pages over the internet (DECISIONS, M30) |
+| Public STUN; plain words when players can't connect, offering an online room; TURN optional | `ICE_SERVERS`, `P2P_FAILED` in `src/net/p2p.ts`; no TURN for now (DECISIONS) |
+| A clock that suits both; waits for anyone too far behind; a background host doesn't stall everyone | the pacer's `clock` (`RoomSession.clockTick`), "Waiting for …" (`waitingFor`), pacer handover and background tabs not waited for (`relay/tests/room.test.ts`, "a host whose tab goes to the background…") |
+| Lobby: Host online, Host on this computer, Join with a code | `src/ui/Friends.tsx` (`FriendsScreen`), `e2e/m30-lobby.spec.ts`, `docs/screenshots/m30-lobby.png`, `m30-lobby-no-relay.png` |
+| Short codes without look-alikes; invite links `?join=CODE` | `makeCode`/`normaliseCode`/`codeKind` in `relay/protocol.ts`; `inviteLink`, the boot path in `src/main.ts` |
+| A name and colour each; up to 8 players | `src/client/profile.ts`, `MAX_PLAYERS`; the room panel (`RoomPanel`) |
+| Joining midway loads a snapshot and catches up | settle snapshots; `relay/tests/room.test.ts`, `e2e/m30-rooms.spec.ts` (Kit) |
+| A dropped connection reconnects without a reload | `RoomSession.dropped`/rejoin; tests as above (Sam) |
+| An out-of-step player is resynced with a short message | the room's checksum comparison; `Sim.takeOverFrom` (no reload); tests as above (Kit) |
+| A local relay speaking the same protocol | `relay/local.ts` (`npm run relay`), started by the e2e config |
+| A workflow that deploys the Worker from main once the secrets exist and gives the site its address | `.github/workflows/deploy.yml` (`relay` job → `VITE_RELAY_URL`); PROGRESS.md top says what's needed |
+| With no relay, online says it isn't set up; peer-to-peer still works | `relayUrl()`; `docs/screenshots/m30-lobby-no-relay.png`; Trystero tried |
+| Done when: two players build one city together, in step for a game year, through the local relay and peer-to-peer | headless through the local relay's sockets for a game year (`relay/tests/local.test.ts`); real pages online and peer-to-peer building and running together, hashes equal (`e2e/m30-rooms.spec.ts`); peer-to-peer for a full year headlessly isn't possible without WebRTC in Node, so it runs the same Room in-page over loopback for the year-long tests and over real data channels in the browser test |
+| Done when: a third player joins halfway and catches up | as above |
+| Done when: a dropped connection comes back | as above |
+| Done when: a deliberately desynced player is caught and resynced | as above (`netPerturb`, the headless `treasury` nudge) |
+| Done when: the free-plan cost of an hour of play is logged | PROGRESS.md "Network (M30)", DECISIONS M30 (`scripts/dev/netbudget.ts`) |
 
 ## M31 Building together
 

@@ -1,5 +1,19 @@
 # PROGRESS
 
+## Needed from the owner: Cloudflare for online rooms
+Online rooms (phase 4) run on Cloudflare's free plan. Until these exist the site builds with online
+rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still works.
+1. A free Cloudflare account (https://dash.cloudflare.com/sign-up). In Workers & Pages, open the
+   Workers overview once so the account gets its `workers.dev` subdomain.
+2. An API token: My Profile → API Tokens → Create Token → the **Edit Cloudflare Workers** template,
+   limited to that one account (it includes Account › Workers Scripts › Edit, which deploys the
+   Worker and its Durable Objects).
+3. In GitHub: Settings → Secrets and variables → Actions → New repository secret:
+   `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID` (shown on the Workers overview).
+   Optional: a repository *variable* `RELAY_URL` (e.g. `wss://relay.example.com`) for a custom domain.
+4. The next push to `main` deploys the relay and builds the site with its address. Please don't
+   paste the token into a session.
+
 Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
 `main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
 SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session on the owner's Mac).
@@ -159,18 +173,16 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4 on the `multiplayer` branch. **M29 Same city everywhere** is done (lockstep core, no
-network): deterministic maths in `src/sim` (`dmath.ts`) with a lint rule, sorts audited, the
-cross-browser test (`npm run xbrowser`), the lockstep runner and the worker's shared mode (stamped
-events, run to the allowed tick, never drop one, `perf.behind`), settle snapshots, previews and
-queries proven harmless over a year, hourly checksums, month-end part hashes and a desync report,
-per-player undo carried in snapshots, cheats refused in shared cities. Next: **M30 rooms** (a room
-protocol over a local relay, a Cloudflare Worker with a Durable Object per room, and WebRTC
-peer-to-peer; the lobby, joining midway, reconnects and resyncs).
+Phase 4 on the `multiplayer` branch. **M29** is done (PR #17). **M30 Rooms** is done: the room
+protocol and Room (`relay/`), the local relay (`npm run relay`), the Cloudflare Worker with Durable
+Objects (`relay/worker.ts`, deployed by the Pages workflow once the secrets above exist), peer-to-peer
+over WebRTC (relay signalling, or Trystero with no server of ours), the lobby (main menu → Play with
+friends), invite links (`?join=CODE`), the room chip and panel, Invite friends in the pause menu,
+joining midway, reconnects, resyncs without a reload. Next: **M31 Building together** (cursors,
+pending commands, roles, chat, who built what, autosaves in the room).
 
 ## Next tasks
-1. M29 (above), then M30 rooms (local relay, Cloudflare Worker, peer-to-peer), M31 co-op, M32 shared
-   regions, M33 polish and soak.
+1. M31 co-op, M32 shared regions, M33 polish and soak.
 2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
    empty tax bands): later, after phase 4.
 
@@ -697,6 +709,15 @@ misses with either build (`startup-slow.log`).
 
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
+
+## Network (M30)
+- **Network budget** (`npx tsx scripts/dev/netbudget.ts 3 3 4`: four players at 3× in real time, each
+  doing something every 15 s, through the local relay): the player keeping time sends 363 messages a
+  minute (12.5 KB), the others 123 (6.3 KB); each receives 614 (22 KB). Clock and progress reports
+  are most of it; batching them is M33's.
+- **Free plan, an hour of four-player play**: about 2,200 requests (2.2 % of the daily 100,000), at
+  most 450 GB-s (3.5 % of 13,000), about 1,200 rows written (1.2 % of 100,000), almost no rows read.
+- **Settles** (snapshots): a save and a load in every player's worker, about 95 ms at 110k residents.
 
 ## Performance (M29)
 - **Bench** (`npx tsx scripts/bench.ts 6 --big`, MacBook Pro M5): identical to `main` — the same city (110,174 residents, 2,158 buildings) and the same tick times: month 6 avg 0.237 ms (main 0.239), p99 2.14 ms; worst 15.1 ms (main 15.2), both in month 1's first ticks.

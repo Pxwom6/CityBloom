@@ -151,4 +151,29 @@ describe('a room (M30), with headless players', () => {
     link.send('{"t":"cmd","ref":1,"cmd":{"type":"zone","points":' + '['.repeat(20) + '}}');
     await until(() => closed, 5000, 'the close');
   });
+
+  it('a host whose tab goes to the background hands the clock to someone else, and gets it back', async () => {
+    const room = makeRoom('BGTABS');
+    let front = true;
+    const host = player('Ada', loopTo(room), hostTown(), {
+      create: { cityName: 'Roomford' },
+      visible: () => front,
+    });
+    players.push(host);
+    await host.session.start();
+    const sam = player('Sam', loopTo(room), null);
+    players.push(sam);
+    await sam.session.start();
+    host.session.setSpeed(1);
+    await until(() => sam.session.room?.pacer === 1, 5000, 'Ada keeping time');
+    // Ada's tab goes to the background (the browser slows its timers right down).
+    front = false;
+    host.driver.frozen = true;
+    await until(() => sam.session.isPacer, 5000, 'Sam to take over the clock');
+    const t = sam.driver.tick;
+    await until(() => sam.driver.tick > t + 200, 10_000, 'the city to keep going without Ada');
+    front = true;
+    host.driver.frozen = false;
+    await until(() => host.session.isPacer, 10_000, 'Ada to take the clock back');
+  }, 60_000);
 });

@@ -389,7 +389,9 @@ export class RoomSession {
     if (n < 1) return;
     let slowest = this.driver.tick;
     for (const p of this.players)
-      if (p.online && !p.joining && p.id !== this.you) slowest = Math.min(slowest, p.tick);
+      // Not waited for: players catching up, and games in a background tab (the browser slows them
+      // right down); they catch up when they come back.
+      if (p.online && !p.joining && p.visible && p.id !== this.you) slowest = Math.min(slowest, p.tick);
     const lead = leadTicks(room.speed, this.tps);
     const target = Math.min(this.allowed + n, slowest + lead, this.allowed + MAX_CLOCK_STEP);
     if (target <= this.allowed) {
@@ -409,7 +411,8 @@ export class RoomSession {
     if (speed > 0 && this.state === 'playing' && now - this.lastAllowAt > 1500) {
       let slow: PlayerInfo | null = null;
       for (const p of this.players)
-        if (p.online && !p.joining && p.id !== this.you && (!slow || p.tick < slow.tick)) slow = p;
+        if (p.online && !p.joining && p.visible && p.id !== this.you && (!slow || p.tick < slow.tick))
+          slow = p;
       if (slow && slow.tick < this.allowed - leadTicks(speed, this.tps) / 2) who = slow.name;
     }
     if (who !== this.waitingFor) {

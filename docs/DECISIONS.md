@@ -616,3 +616,9 @@ One line each: what was decided and why. Newest at the bottom of each section.
 - **Visiting**: each city keeps its latest save in the region (every five minutes and when it leaves); Visit opens it in a new tab, read-only (`?visit=CODE&city=N`; the toolbar is replaced by a banner and every command is refused).
 - **Starting and joining** from the city's own Region panel (Start a region / a code and Join), or from the lobby, which opens the latest saved city (or a new one) with `newregion=` or `region=`. A saved city remembers its region (`citybloom.regionOf.<slot>`) and rejoins it when opened again. A city can be in a region or shared in a co-op room, not both.
 - **Sewage isn't traded**: M23's deals are power, water and garbage (the brief lists sewage too); players' deals follow M23's.
+
+### M33 Ready for friends
+- **The soak runs headless** (`scripts/dev/soak.ts`): four players with the real session, sim and relay code over real sockets, without four 3D pages (which SwiftShader can't keep up with); the browser side is covered by the multiplayer e2e specs.
+- **Fewer messages for the free plan**: progress once a second, the clock every half second (both well inside the three-second lead), presence at most four times a second. The worker paces a shared city at the room's speed between clock messages, so a slower clock doesn't make the city jerky; far behind, or with the room paused, it runs straight to the allowed tick.
+- **Panels never wider than the window** (a phone held upright is 390 px; the side panels were 400): a change every player gets, not only shared cities.
+- **Help where it's needed**: "Trouble connecting?" in the lobby and the room panel, plain messages for every network event, tips for a shared city, its host and a region, and the README's "When something goes wrong".

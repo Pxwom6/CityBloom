@@ -16,7 +16,9 @@ rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still wor
 
 Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
 `main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
-SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session on the owner's Mac).
+SPEC-4.md, M29–M33) is complete on the `multiplayer` branch**, in pull requests #17–#20 and M33's
+for the owner to merge in order. Online rooms need the Cloudflare setup below; peer-to-peer works
+without it.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -51,7 +53,7 @@ SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session 
 - [x] M30 Rooms, online and peer-to-peer
 - [x] M31 Building together
 - [x] M32 Shared regions
-- [ ] M33 Ready for friends
+- [x] M33 Ready for friends
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
@@ -185,17 +187,12 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4 on the `multiplayer` branch. **M29** (PR #17), **M30** (PR #18), **M31** (PR #19) and
-**M32 Shared regions** are done: up to four players each run their own city side by side (online,
-or from a host's browser); their cities take the simulated neighbours' places, trade power, water
-and garbage at one price settled on each city's own clock, send commuters and shoppers along the
-highway, keep playing on an offline neighbour's last offer, pay together for Sunfield Commons
-(built by the biggest giver, its power shared by every giver), and look round each other's cities
-read-only. Next: **M33 Ready for friends** (the two-hour soak, narrow windows and touch, tips,
-README, troubleshooting, the free-plan tune-up).
+Nothing: phase 4 is done. The owner: merge #17 (M29), #18 (M30), #19 (M31), #20 (M32) and M33's
+pull request in order, set up Cloudflare (above) for online rooms, then try a shared city with a
+friend on another computer and a phone ("To check on the Mac").
 
 ## Next tasks
-1. M33: the soak (`npx tsx scripts/dev/soak.ts 120`), polish, README, troubleshooting, the free-plan check.
+1. The real-device checks for multiplayer ("To check on the Mac"), then the balance round below.
 2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
    empty tax bands): later, after phase 4.
 
@@ -723,6 +720,21 @@ misses with either build (`startup-slow.log`).
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
+## Soak (M33)
+- `npx tsx scripts/dev/soak.ts 120`: four headless players in an online room on the local relay for
+  two hours of real time at mixed speeds (the room's speed changed every few minutes); 18 dropped
+  connections, 8 players leaving and coming back, 3 deliberate desyncs caught and resynced, 1,548
+  commands applied over 113,018 ticks (6.5 game years). **No unexplained resyncs**, and at the end
+  every game agreed with the host's part for part. Log: `bench-results/soak.log`.
+
+## Network (M33)
+- Progress reports once a second, the clock every half second and presence at most four times a
+  second (with the worker pacing the city at the room's speed between clock moves) halved the
+  messages: four players at 3× send 64 messages a minute each (184 for the one keeping time), and an
+  hour costs about 1,130 requests (1.1 % of the daily 100,000), plus up to about 2,900 more while
+  all four move their mouse non-stop; at most 450 GB-s of duration (3.5 %); about 1,200 rows written
+  (1.2 %). The free plan carries about 25 such four-player hours a day across every room.
+
 ## Network (M31)
 - **Four players, frame and tick** (`scripts/dev/coopbench.ts`: the 110k bench city in an online room
   on the local relay, three headless players building and moving their cursors with brushes out,
@@ -801,6 +813,7 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.

@@ -476,3 +476,12 @@ Each milestone's rows are filled in as it's done.
 | Done when: the soak test passes | as above |
 | Done when: the cross-browser test passes | `XB_FIREFOX=0 npm run xbrowser` (Chromium, WebKit, SpiderMonkey) |
 | Done when: a friend could be sent a link and play without reading instructions | the invite link opens the game straight into the room; the lobby, room panel and messages say what to do (PROGRESS.md "Final playthrough (phase 4)") |
+
+## When every milestone is done (phase 4)
+
+| Item | Where |
+|---|---|
+| Update the summary at the top of PROGRESS.md | PROGRESS.md: the phase 4 paragraph, the soak, the network budget, the Cloudflare steps |
+| This brief's section in SPEC_REVIEW | the M29–M33 sections above and this one |
+| The README | `README.md`: Play with friends, When something goes wrong, the relay and cross-browser scripts |
+| Play a co-op city and a region through the real UI with at least two players, and fix whatever feels off | `e2e/m30-*.spec.ts`, `e2e/m31-together.spec.ts`, `e2e/m32-region.spec.ts`, `e2e/m33-narrow.spec.ts` and their screenshots (reviewed). Fixed on the way: joining a paused room waited for ever; a frozen pacer held joiners; a city in a shared room moved in bursts between clock messages (now paced); panels ran off a phone; the region's first view didn't show the others' deals |

@@ -467,3 +467,12 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| A soak test: four players for two hours of real time at mixed speeds, with joins, leaves, reconnects and a resync, and no unexplained desync | `scripts/dev/soak.ts` (four headless players through the local relay's sockets; the log is `bench-results/soak.log`); PROGRESS.md "Soak (M33)" |
+| The lobby, invites and messages on narrow windows and touch screens | `e2e/m33-narrow.spec.ts` (a phone and a tablet, by touch), `docs/screenshots/m33-*.png` |
+| Tutorial tips for the multiplayer screens | tips `shared`, `sharedHost`, `region` in `src/client/tutorial.ts`; tooltips on the lobby's and room panel's controls |
+| A "Play with friends" section in the README | `README.md` |
+| Troubleshooting in the game and the README: peer-to-peer can't connect, a full room, out of step | `Troubleshooting` in `src/ui/Friends.tsx` (the lobby and the room panel), `README.md` "When something goes wrong" |
+| Free-plan check: compare with real play, tune batching and snapshot writes | progress each second, the clock each half second and presence at most four times a second halved the messages (`scripts/dev/netbudget.ts`: 1,128 requests an hour for four players, 1.1 %); the worker paces the city between clock moves; snapshots every ten minutes of play; PROGRESS.md "Network (M33)" |
+| Done when: the soak test passes | as above |
+| Done when: the cross-browser test passes | `XB_FIREFOX=0 npm run xbrowser` (Chromium, WebKit, SpiderMonkey) |
+| Done when: a friend could be sent a link and play without reading instructions | the invite link opens the game straight into the room; the lobby, room panel and messages say what to do (PROGRESS.md "Final playthrough (phase 4)") |

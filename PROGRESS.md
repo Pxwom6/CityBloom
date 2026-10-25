@@ -150,6 +150,18 @@ neighbours look alike (M28). Every effect has a switch in the graphics quality. 
 Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 10–11 ms a frame at High
 with batch 5's models, against 22–25 at the start of the phase; the whole-city view draws 1.9M triangles where it drew 2.7M.
 
+**Phase 4 (multiplayer, M29–M33)** made Citybloom a game to play with friends. The simulation now
+gives the same city bit for bit in every browser (its maths are its own, checked in Chromium, WebKit
+and Firefox's engine each milestone), and runs in lockstep: only commands travel, each stamped by a
+room with the tick it applies at. Friends build one city together (up to eight) in an online room
+on Cloudflare's free plan or straight from the host's browser over WebRTC, found by a six-character
+code or an invite link: they see each other's cursors and tools, point at spots, chat, follow each
+other's view, and the host decides who may do what. A player who joins midway loads a snapshot and
+catches up, a dropped connection comes back by itself, and a game that falls out of step is caught
+within the game hour and put right without a reload. Or up to four players each run their own city
+side by side in a shared region, trading power, water and garbage, sharing commuters, paying
+together for Sunfield Commons and visiting each other's cities. Single player is unchanged.
+
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).

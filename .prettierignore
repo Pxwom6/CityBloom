@@ -11,3 +11,5 @@ dist-e2e-next
 dist-base
 dist-*
 bench-results
+.wrangler
+.cache

@@ -49,7 +49,7 @@ SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session 
 - [x] M28 Buildings and variety
 - [x] M29 Same city everywhere
 - [x] M30 Rooms, online and peer-to-peer
-- [ ] M31 Building together
+- [x] M31 Building together
 - [ ] M32 Shared regions
 - [ ] M33 Ready for friends
 
@@ -173,13 +173,11 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4 on the `multiplayer` branch. **M29** is done (PR #17). **M30 Rooms** is done: the room
-protocol and Room (`relay/`), the local relay (`npm run relay`), the Cloudflare Worker with Durable
-Objects (`relay/worker.ts`, deployed by the Pages workflow once the secrets above exist), peer-to-peer
-over WebRTC (relay signalling, or Trystero with no server of ours), the lobby (main menu → Play with
-friends), invite links (`?join=CODE`), the room chip and panel, Invite friends in the pause menu,
-joining midway, reconnects, resyncs without a reload. Next: **M31 Building together** (cursors,
-pending commands, roles, chat, who built what, autosaves in the room).
+Phase 4 on the `multiplayer` branch. **M29** (PR #17), **M30** (PR #18) and **M31 Building together**
+are done: everyone's cursor, tool ghost and name on the map, pings (Shift+G), Follow, pending
+outlines, one treasury and budget, the host's permissions per player and a spending limit, who built
+what in the inspector (save v25), chat with mute and chat off, notices for speed changes, Invite
+friends in the pause menu, the room's own saves. Next: **M32 Shared regions**.
 
 ## Next tasks
 1. M31 co-op, M32 shared regions, M33 polish and soak.

@@ -710,6 +710,16 @@ misses with either build (`startup-slow.log`).
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
+## Network (M31)
+- **Four players, frame and tick** (`scripts/dev/coopbench.ts`: the 110k bench city in an online room
+  on the local relay, three headless players building and moving their cursors with brushes out,
+  this Mac's Chrome (M5, High, frame cap off) as the fourth, at 3×): overview 4.1 ms a frame
+  (p95 7.1), city 5.2 (p95 9.3), street 3.8 (p95 5.0); the page's sim ticks 0.90–0.98 ms on
+  average, worst 4.8 ms; nobody fell behind. The frame budget holds; the tick average sits just under
+  its 1 ms ceiling (the worker's tick includes the lockstep's hourly checksum).
+- **Presence** (cursors, ghosts, cameras) adds at most 7 messages a second per player while the mouse
+  moves, nothing while it's still.
+
 ## Network (M30)
 - **Network budget** (`npx tsx scripts/dev/netbudget.ts 3 3 4`: four players at 3× in real time, each
   doing something every 15 s, through the local relay): the player keeping time sends 363 messages a

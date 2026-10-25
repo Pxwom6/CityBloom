@@ -39,6 +39,47 @@ screen to keep a copy or move one to another browser or device. On the first lau
 picks graphics that suit the device (a lighter preset on older laptops); Settings shows the pick and
 can check again.
 
+## Play with friends
+
+Build one city together, or each play your own side by side. No accounts: a room or a region is
+found by its six-character code, and nobody sees anything about you but the name and colour you
+choose.
+
+- **One city together (co-op, up to 8).** Main menu → **Play with friends**: pick a name and a
+  colour, then **Host online** (the city lives in an online room and waits there between sessions)
+  or **Host on this computer** (your browser is the room; friends play while you're there). Or, in a
+  city you're already playing, pause (Escape) → **Invite friends**. Send your friends the invite
+  link from the room button by the city's name; opening it drops them straight into the city.
+  Everyone builds on the same map with the same money; you see each other's cursors and what's in
+  their hands, **Shift+G** over the map points the others at a spot, the room panel has a short
+  chat and **Follow** to ride along with someone's view. The host decides who may do what (taxes,
+  policies, big projects, bulldozing others' work, spending above a limit, pausing) and can lock the
+  room, mute someone, turn the chat off or remove a player.
+- **A shared region (up to 4 cities).** Open your city → **Region** (Shift+N) → **Start a region**,
+  and give friends the code; each brings their own city with **Join**. Your cities take the places
+  of the neighbouring towns: you trade power, water and garbage (each city settles its deals every
+  game month on its own clock), share commuters and shoppers along the highway, pay together for
+  **Sunfield Commons** (the biggest giver builds it, everyone who gave shares its power) and can
+  **Visit** each other's cities, read-only. Everyone plays at their own speed; a city that's offline
+  keeps its last offers.
+
+**When something goes wrong**
+
+- **"Couldn't connect directly to the host's computer"**: some home, school and office networks
+  block direct connections between browsers. Ask the host to use **Host online** instead, which
+  goes through a server and always works.
+- **"This room is full"** (8 players), **"This region is full"** (4 cities) or **"The host has locked
+  this room"**: ask the host to remove someone who's left, or to unlock it.
+- **"Sam's game fell out of step; catching up"**: one player's game stopped agreeing with the
+  others (rare; a crashed or very slow tab can do it). The room sends that player the city as it
+  stands and they carry on a moment later; nothing is lost.
+- **"Waiting for Sam…"**: one player's computer is falling behind; the city waits up to a few
+  seconds for them. Games in a background tab aren't waited for, and catch up when they return.
+- **"Reconnecting…"**: the connection dropped; the game keeps trying by itself and carries on where
+  it was.
+- **Online rooms aren't set up yet**: the online relay needs a one-time setup by whoever runs this
+  copy of the game (`PROGRESS.md`); hosting on your own computer works without it.
+
 ## Run it
 
 Needs Node.js 20.19+ or 22.12+ and a browser with WebGL2.
@@ -239,6 +280,8 @@ npm run soak         # ten minutes of top-speed play with disasters; fails on an
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful
 npm run models:check # check every hand-made model in assets/models against its spec
+npm run relay        # the local relay for shared cities and regions (ws://localhost:8787)
+npm run xbrowser     # the same city, bit for bit, in Chromium, WebKit and Firefox
 ```
 
 Frame times on real hardware come from `scripts/dev/framebench.mjs` (a headed Chrome window with the
@@ -248,7 +291,10 @@ The simulation is pure, deterministic TypeScript running in a Web Worker (`src/s
 renders a mirror of it (`src/client`, `src/render`) and every player action is a command, so the
 same seed and commands always give the same city. Balancing numbers live in `src/data`.
 
-- `SPEC.md`, `SPEC-2.md`, `SPEC-3.md`: the briefs (the game, phase 2's features, phase 3's graphics).
+- `SPEC.md`, `SPEC-2.md`, `SPEC-3.md`, `SPEC-4.md`: the briefs (the game, phase 2's features,
+  phase 3's graphics, phase 4's multiplayer).
+- `relay/`: the rooms and regions for playing with friends (the local relay, the Cloudflare Worker,
+  and the room code a host's browser runs), with their own tests in `relay/tests`.
 - `docs/models/PROMPTS.md`: the model spec and a prompt for every building; `PROMPTS-2.md`, `PROMPTS-3.md`, …
   the later batches (further designs, each with the spec as it then stood).
 - `DESIGN.md`: the technical design (architecture, simulation model, rendering, saves).

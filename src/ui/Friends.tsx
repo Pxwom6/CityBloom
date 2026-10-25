@@ -166,6 +166,7 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
         </section>
       </div>
       <RegionWays latestSlot={props.latestSlot} latestName={props.latestName} ready={ready} />
+      <Troubleshooting />
       <footer class="shell-actions">
         <button class="btn" data-testid="shell-back" onClick={() => game.closeScreen()}>
           Back
@@ -386,6 +387,7 @@ export function RoomPanel() {
         </ul>
         <p class="muted room-tip">Press Shift+G over the map to point the others at a spot.</p>
         <Chat />
+        <Troubleshooting />
         {s.isHost && room && (
           <div class="room-host">
             <label class="check" title="Nobody new can join while the room is locked">
@@ -538,5 +540,32 @@ function Chat() {
         </p>
       )}
     </div>
+  );
+}
+
+/** What to do when playing together goes wrong (M33): short, and only when asked for. */
+export function Troubleshooting() {
+  return (
+    <details class="friends-help" data-testid="friends-help">
+      <summary>Trouble connecting?</summary>
+      <ul>
+        <li>
+          <strong>Can’t connect to the host’s computer?</strong> Some home, school and office networks block
+          direct connections between browsers. Ask the host to choose Host online instead.
+        </li>
+        <li>
+          <strong>Room full or locked?</strong> A room takes 8 players and a region 4 cities. Ask the host to
+          remove someone who has left, or to unlock the room.
+        </li>
+        <li>
+          <strong>“Fell out of step”?</strong> One game stopped agreeing with the others. The room sends it
+          the city as it stands and it carries on a moment later; nothing is lost.
+        </li>
+        <li>
+          <strong>“Waiting for …”?</strong> Someone’s computer is falling behind; the city waits a few seconds
+          for them. A game in a background tab isn’t waited for.
+        </li>
+      </ul>
+    </details>
   );
 }

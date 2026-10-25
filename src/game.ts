@@ -345,7 +345,7 @@ export class Game {
     const s = mp.session;
     const here = this.here;
     const tool = this.tools.activeId;
-    if (now - here.sentAt > 150) {
+    if (now - here.sentAt > 250) {
       const ghost = tool !== 'select' && here.ghost && now - here.ghostAt < 1500 ? here.ghost : undefined;
       const g = r.controller.goal;
       const camDue = now - here.camAt > 600;
@@ -411,6 +411,8 @@ export class Game {
 
   /** The room this city is shared in, if it is (M30). */
   net: Multiplayer | null = null;
+  /** The speed the worker paces a shared city at (the room's), as last told. */
+  private workerSpeed: Speed | -1 = -1;
   /** The shared region this city stands in, if it does (M32), and its code. */
   region: RegionLink | null = null;
   regionCode: string | null = null;
@@ -570,6 +572,7 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    this.workerSpeed = -1;
     this.client.onPreview = (cmd) => {
       const shape = commandShape(cmd);
       if (shape) {
@@ -616,6 +619,11 @@ export class Game {
       prev?.();
       const room = mp.session.room;
       if (room && room.speed !== this.speed) this.speed = room.speed;
+      // The worker paces the city at the room's speed between the pacer's clock messages.
+      if (room && room.speed !== this.workerSpeed) {
+        this.workerSpeed = room.speed;
+        this.client.setSpeed(room.speed);
+      }
       if (mp.session.state === 'closed' && this.net === mp) {
         if (mp.session.error) this.toast(mp.session.error, 'bad', 8000);
         this.leaveRoom(false);

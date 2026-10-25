@@ -3534,3 +3534,18 @@ body {
   padding: 0.6rem 0.9rem;
   max-width: calc(100vw - 2rem);
 }
+.friends-help {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+.friends-help summary {
+  cursor: pointer;
+  color: var(--color-accent-strong);
+}
+.friends-help ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+.friends-help li {
+  margin-bottom: 0.3rem;
+}

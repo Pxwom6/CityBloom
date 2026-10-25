@@ -55,16 +55,30 @@ function runTicks(n: number): void {
 }
 
 /** Shared city: run towards the allowed tick within the time budget. */
-function runShared(): void {
+/**
+ * Shared city: run at the room's speed up to the tick it allows, so the city moves smoothly between
+ * the pacer's clock messages; far behind (joining, a slow spell, a background tab), as fast as the
+ * time budget lets it until caught up.
+ */
+function runShared(elapsed: number): void {
   const ls = lockstep!;
   const t0 = performance.now();
   if (ls.behind === 0 && ls.pending) ls.run(0);
-  while (ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+  const tps = SPEED_TICKS_PER_SECOND[speed];
+  due += (elapsed / 1000) * tps;
+  // Paused (the room stopped where it is) or far behind: straight there.
+  const catchUp = tps === 0 || ls.behind > Math.max(48, tps * 2);
+  let n = catchUp ? Infinity : Math.floor(due);
+  while (n > 0 && ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+    n--;
+    if (!catchUp) due--;
     timeTick(() => ls.run(1));
     // The full check at each month's end (about 40 ms at 100k residents, outside the tick).
     if (isMonthStart(ls.sim.tick))
       post({ type: 'monthHashes', tick: ls.sim.tick, parts: partHashes(ls.sim) });
   }
+  // Time not run because the room hasn't allowed it yet isn't banked (or the city would race after).
+  if (ls.behind === 0) due = Math.min(due, 1);
   for (const [tick, sum] of ls.checksums)
     if (tick > lastChecksum) {
       post({ type: 'checksum', tick, sum });
@@ -95,7 +109,7 @@ function loop(): void {
   const now = performance.now();
   const elapsed = Math.min(250, now - last);
   last = now;
-  if (lockstep) runShared();
+  if (lockstep) runShared(elapsed);
   else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);

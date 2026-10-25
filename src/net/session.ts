@@ -122,8 +122,10 @@ export class RoomSession {
     this.unsub = this.driver.onShared((m) => this.fromSim(m));
     const p = new Promise<void>((resolve, reject) => (this.started = { resolve, reject }));
     void this.open(!!this.opts.rejoin);
-    this.timers.push(setInterval(() => this.statusTick(), this.opts.statusEvery ?? 500));
-    this.timers.push(setInterval(() => this.clockTick(), this.opts.clockEvery ?? 250));
+    // A second between progress reports and half a second between clock moves: well inside the
+    // three-second lead, and few enough messages for an online room's free plan (M33).
+    this.timers.push(setInterval(() => this.statusTick(), this.opts.statusEvery ?? 1000));
+    this.timers.push(setInterval(() => this.clockTick(), this.opts.clockEvery ?? 500));
     return p;
   }
 

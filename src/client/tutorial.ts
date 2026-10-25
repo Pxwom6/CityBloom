@@ -111,6 +111,13 @@ export const TIPS: Tip[] = [
     when: (g) => !!g.net && g.net.session.state === 'playing',
   },
   {
+    id: 'region',
+    text:
+      'Your city is in a shared region: the other players’ cities now stand where neighbouring towns did. ' +
+      'Open the Region panel (Shift+N) to trade with them, pay into Sunfield Commons, or visit their cities.',
+    when: (g) => g.region?.state === 'in',
+  },
+  {
     id: 'sharedHost',
     text:
       'You are the host: from the room button you can lock the room, choose what each player may do ' +

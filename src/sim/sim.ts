@@ -41,7 +41,7 @@ import {
   capture,
   diff,
   merge,
-  type Edit,
+  type PlayerHistory,
   type Scope,
   type Touched,
 } from './history';
@@ -1040,7 +1040,8 @@ export class Sim {
 
   // ---------------------------------------------------------------- commands
 
-  dispatch(cmd: Command): CommandResult {
+  dispatch(cmd: Command, by = 0): CommandResult {
+    this.actor = by;
     const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
     if (scope) {
       // A command that will be refused changes nothing: skip the undo snapshot, which costs
@@ -1052,14 +1053,19 @@ export class Sim {
     const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
     if (result.ok) {
-      this.log.push({ tick: this.state.tick, cmd: JSON.parse(JSON.stringify(cmd)) as Command });
+      this.log.push({
+        tick: this.state.tick,
+        cmd: JSON.parse(JSON.stringify(cmd)) as Command,
+        ...(by ? { by } : {}),
+      });
       if (pre) this.record(cmd, pre);
     }
     return result;
   }
 
   /** Dry run: validity and cost without changing any state. */
-  preview(cmd: Command): CommandResult {
+  preview(cmd: Command, by = 0): CommandResult {
+    this.actor = by;
     return this.apply(cmd, true);
   }
 
@@ -1069,6 +1075,7 @@ export class Sim {
     if (this.state.options.editor && !EDITOR_COMMANDS.has(cmd.type)) return fail('Not in the map editor');
     switch (cmd.type) {
       case 'cheat': {
+        if (this.shared) return fail('Cheats are off in a shared city');
         if (cmd.cheat === 'unlockAll') {
           if (!dryRun) this.state.unlockAll = true;
           return ok(0);
@@ -1257,8 +1264,45 @@ export class Sim {
 
   // ---------------------------------------------------------------- undo and redo (M14)
 
-  /** The last actions, for undo, and those taken back, for redo. Not saved. */
-  readonly history: { undo: Edit[]; redo: Edit[] } = { undo: [], redo: [] };
+  /**
+   * Each player's last actions, for undo, and those taken back, for redo (M14; per player since
+   * M29). Not saved with the city: a shared city carries them in its room snapshots
+   * (`historyState`). Undo takes back only the player's own newest action, and only while nothing
+   * since has changed what it touched (`applyEdit` checks), so every machine agrees. DECISIONS.
+   */
+  private readonly histories = new Map<number, PlayerHistory>();
+  /** The player this machine shows (undo labels in the frame stats). Not part of the city. */
+  viewer = 0;
+  /** Who issued the command being applied (0 in single player). */
+  private actor = 0;
+  /**
+   * A city shared in a room (M29): cheats are refused, since a test-mode machine could otherwise
+   * give one player's city money the others don't have. Set by whoever runs the sim, on every machine.
+   */
+  shared = false;
+
+  historyOf(player: number): PlayerHistory {
+    let h = this.histories.get(player);
+    if (!h) this.histories.set(player, (h = { undo: [], redo: [] }));
+    return h;
+  }
+
+  /** The viewer's history (single player: the only one). */
+  get history(): PlayerHistory {
+    return this.historyOf(this.viewer);
+  }
+
+  /** Every player's undo history, for a room snapshot (plain JSON). */
+  historyState(): [number, PlayerHistory][] {
+    return [...this.histories]
+      .sort((a, b) => a[0] - b[0])
+      .map(([p, h]) => [p, JSON.parse(JSON.stringify(h))]);
+  }
+
+  setHistoryState(list: [number, PlayerHistory][]): void {
+    this.histories.clear();
+    for (const [p, h] of list) this.histories.set(p, JSON.parse(JSON.stringify(h)) as PlayerHistory);
+  }
 
   /** What an undoable command may change; null for commands that aren't undone. */
   private undoScope(cmd: Command): Scope | null {
@@ -1344,7 +1388,8 @@ export class Sim {
     this.syncRng();
     const d = diff(pre, capture(this.state, pre.scope));
     if (!d.changes.length && !d.treasury) return;
-    const top = this.history.undo[this.history.undo.length - 1];
+    const h = this.historyOf(this.actor);
+    const top = h.undo[h.undo.length - 1];
     const stroke =
       cmd.type === 'zone' ||
       cmd.type === 'setTram' ||
@@ -1355,19 +1400,20 @@ export class Sim {
         : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
-      this.history.undo.push({
+      h.undo.push({
         label: this.undoLabel(cmd),
         tick: this.state.tick,
         ...d,
         ...(stroke !== undefined ? { stroke } : {}),
       });
-      if (this.history.undo.length > HISTORY_LIMIT) this.history.undo.shift();
+      if (h.undo.length > HISTORY_LIMIT) h.undo.shift();
     }
-    this.history.redo = [];
+    h.redo = [];
   }
 
   private undoRedo(dir: 'undo' | 'redo', dryRun: boolean): CommandResult {
-    const from = dir === 'undo' ? this.history.undo : this.history.redo;
+    const h = this.historyOf(this.actor);
+    const from = dir === 'undo' ? h.undo : h.redo;
     const edit = from[from.length - 1];
     if (!edit) return fail(dir === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
     const cost = dir === 'undo' ? edit.treasury : -edit.treasury;
@@ -1376,7 +1422,7 @@ export class Sim {
     const r = applyEdit(this.state, edit, dir);
     if (!r.ok) return fail(`Can't ${dir} the ${edit.label}: ${r.reason}`, { info: { label: edit.label } });
     from.pop();
-    (dir === 'undo' ? this.history.redo : this.history.undo).push(edit);
+    (dir === 'undo' ? h.redo : h.undo).push(edit);
     this.afterEdit(r.touched);
     return ok(cost, { info: { label: edit.label } });
   }
@@ -1592,7 +1638,10 @@ export class Sim {
     const sim = Sim.create(opts);
     let i = 0;
     for (;;) {
-      while (i < log.length && log[i]!.tick === sim.tick) sim.dispatch(log[i++]!.cmd);
+      while (i < log.length && log[i]!.tick === sim.tick) {
+        const e = log[i++]!;
+        sim.dispatch(e.cmd, e.by ?? 0);
+      }
       if (sim.tick >= untilTick) break;
       sim.step();
     }
@@ -1603,6 +1652,11 @@ export class Sim {
 
   private syncRng(): void {
     for (const s of RNG_STREAMS) this.state.rng[s] = this.rng[s].getState();
+  }
+
+  /** Copy the live random streams into the state (before hashing or serialising it). */
+  syncRngState(): void {
+    this.syncRng();
   }
 
   save(savedAt = ''): SaveFile {

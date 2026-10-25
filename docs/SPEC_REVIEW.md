@@ -424,11 +424,44 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| Every player's cursor and tool ghost on the map, in their colour, with their name | `src/render/presence.ts`, presence messages (`relay/protocol.ts` `here`), `Game.presenceFrame`; `e2e/m31-together.spec.ts`, `docs/screenshots/m31-ada.png` |
+| A player list in the top bar | the room chip (`RoomChip`: code, a dot per player, what's being waited for) |
+| Follow rides along with someone's camera | room panel Follow (`Game.follow`) |
+| Ping a spot ("look here") | Shift+G (`Game.pingAt`), a ring, a sound and a toast; tested in `e2e/m31-together.spec.ts` |
+| One treasury, budget, tax rates and policies | one sim; a tax change by Ada shows in Sam's budget (`e2e/m31-together.spec.ts`) |
+| Own commands show at once as pending, settle when ordered | pending outlines (`Game.pending`) |
+| A refusal goes back to the player who acted; same spot: the room's order decides, the loser is told why | refusals return to the issuer's promise; "(Sam got there first)" (`Game.dispatch`) |
+| Roles: the host decides who can bulldoze others' work, change taxes and policies, take loans, start big projects, spend above an amount | `src/sim/rules.ts`, the room panel's Allow… and Spending limit; `tests/lockstep/rules.test.ts` |
+| The room checks roles before ordering | `roomRefusal` in `Room.handle`; the sim checks the rest (`simRefusal`) |
+| The inspector shows who built what | `SimState.builtBy` (save v25), `BuiltBy` in `src/ui/Inspector.tsx`; tested in `e2e/m31-together.spec.ts` |
+| Chat, join/leave notices, the host can mute a player or turn chat off | room panel chat, `admin` mute/chatOff; tested in `e2e/m31-together.spec.ts` |
+| Who can pause, change speed or save; everyone sees who did it | the speed permission, notices ("Sam paused the city"); DECISIONS |
+| Invite friends in the pause menu turns the city into a room | `InviteButtons` (`pause-invite`) |
+| Any player can export a copy | Export in the pause menu (an unsettled copy) |
+| Online rooms autosave in the room, peer-to-peer cities in the host's browser, at a moment every player agrees on | settle snapshots every ten minutes and on joins; P2P hosts write them to "Shared: <city>" (`Multiplayer.host`) |
+| Elections, approval, scenarios, achievements in a shared city | they're the sim's: one city, one mayor's office (DECISIONS) |
+| Done when: a scripted e2e with two players grows a town through the real UI, each laying roads, zones and a service | `e2e/m31-together.spec.ts` |
+| Done when: each sees the other's cursor and chat | as above |
+| Done when: a tax change by one player shows for the other | as above |
+| Done when: the room's city reopens later with everything in it | as above (Kit opens the code after both left) |
+| Done when: the frame and tick budgets hold with 4 players | PROGRESS.md "Network (M31)" (`scripts/dev/coopbench.ts`) |
 
 ## M32 Shared regions
 
 | Item | Where |
 |---|---|
+| Up to 4 player cities share a region, online or peer-to-peer while the host is online | `relay/region.ts` (`MAX_CITIES`), the Worker's `RegionObject`, a host's browser (`P2PHost` with a `RegionRoom`) |
+| Each city played on its owner's machine at its own speed | the cities stay single player; region news is a `regionUpdate` command |
+| Players take the place of M23's simulated neighbours; empty spots keep simulated ones | `applyRegionUpdate` in `src/sim/systems/region.ts` |
+| Deals between player cities | player offers and contracts (`capacity`, `regionExport`), `REGION.playerPrice` |
+| Commuters and shoppers along the highway and rail links, and visitors | `pools` in `regionFlows.ts` from the reports |
+| Deals settle every game month on each city's own clock; offline neighbours' last offers stand; nobody gains by pausing or 3× | DECISIONS M32; `relay/tests/region.test.ts` |
+| The region view: name, mayor, population, a small picture, the deals, visiting read-only | the Region panel (`NeighbourCard`, `SharedRegion`), `Game.thumbnail`, `?visit=`; `docs/screenshots/m32-*.png` |
+| A region project | Sunfield Commons (`REGION_PROJECT`, CIVIC `sunfield`, `contributeProject`) |
+| Done when: three players in one region trade power and commuters | `relay/tests/region.test.ts` (three cities); `e2e/m32-region.spec.ts` (two through the interface) |
+| Done when: one goes offline and the others keep playing on the last deals | `relay/tests/region.test.ts` |
+| Done when: a scripted test shows each deal settling the same in both cities | `relay/tests/region.test.ts` (`regionRates` both sides), `e2e/m32-region.spec.ts` |
+| Done when: the region project completes with money from all three | `relay/tests/region.test.ts` |
 
 ## M33 Ready for friends
 

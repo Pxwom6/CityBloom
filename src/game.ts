@@ -42,7 +42,7 @@ import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
 import { PLAYER_COLORS, type Shape } from '../relay/protocol';
 import type { PresenceMark } from './render/presence';
-import { loadProfile } from './client/profile';
+import { loadProfile, storedProfile } from './client/profile';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -199,6 +199,8 @@ export class Game {
   /** Player settings (volumes now; graphics and controls with the game shell). */
   settings: Settings = loadSettings();
   private ambientAt = 0;
+  /** When the forces' colour was last looked up (M34). */
+  private ownerAt = -Infinity;
   /** 'menu': the main menu over a backdrop map; 'play': a city. */
   /** The main menu, a city, or the map editor (M24). */
   mode: 'menu' | 'play' | 'editor' = 'play';
@@ -1167,6 +1169,7 @@ export class Game {
       cascades: q.cascades,
       ground: q.ground,
       closeShadowHz: q.closeShadowHz,
+      units: q.units,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;
@@ -1699,6 +1702,13 @@ export class Game {
     this.districts.update();
     this.regionView.update();
     this.editor?.update();
+    // The city's forces wear its player's colour; a shared city's wear the host's, so every player
+    // sees the same (M34). Looked up once a second.
+    if (w.forces && now - this.ownerAt > 1000) {
+      this.ownerAt = now;
+      const host = this.net?.session.players.find((p) => p.host);
+      this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
+    }
     this.renderer.frame(dt);
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {

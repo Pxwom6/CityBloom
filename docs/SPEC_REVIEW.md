@@ -501,3 +501,31 @@ filled in as it's done.
 | CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M40 | `CLAUDE.md` |
 | M34–M40 on PROGRESS.md's checklist; a phase 5 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 5" |
 | Read the war models' README before M34 | `assets/models/war/README.md` (its allowances are taken up in M34) |
+
+## Rules for all of phase 5
+
+| Rule | Where |
+|---|---|
+| Peaceful play doesn't change; existing saves load and play on (save version bumps with a migration and a test) | war state only where war is on (DESIGN §3.28); `tests/war/forces.test.ts` "peace is unchanged" (part hashes against a golden from `main`); save v27 (`migrations[26]`), the legacy corpus tests |
+| Phase 4's rules: deterministic maths, the cross-browser test each milestone, the sim pure, free plan, safe for friends, budgets | war code uses DMath and its own dice; the cross-browser run grows a rivals town too (`tests/lockstep/determinism.ts` `war`); region rules through the region room (protocol 2) |
+| Battles are deterministic, applied as commands to each city's sim | M35 |
+| Reuse what's there | civic buildings, the seaport's quay rules, the noise raster, mood factors, loans' annuity, the region room |
+| Models: sites and sizes from the prompts; PROMPTS-WAR budgets; spec v6 and unit spec v1; the README's allowances; a generated look for every one | M34: see the M34 rows |
+| Budgets for big battles | M35, M37 |
+| Keep players informed: warnings, a war room, plain reasons, tutorial tips | M34: the war room, refusal reasons ("Military buildings need war on…", "Needs a Military HQ first", "The barracks is full…"), tips `rivals` and `warRoom` |
+| Milestones: playable and tested through the real UI, screenshots reviewed, an `M<n> complete:` commit and pull request, balance and bench | per milestone below |
+
+## M34 Armed forces
+
+| Item | Where |
+|---|---|
+| Military buildings with upkeep, jobs and power, and an effect on approval (safety, noise) | `MILITARY_DEFS` (src/data/war.ts), `militaryStaffing`, `serveMilitary`, `safetyAt`, noise.ts; `tests/war/forces.test.ts` |
+| Barracks, vehicle depot, airfield, naval yard on deep water, radar, anti-air, coastal guns, bunkers, shelters, military HQ (opens the war room), proving ground | the same; `WATERFRONT` (naval yard, coastal gun) and its test |
+| Units: infantry, tanks, artillery, planes, helicopters, drones, boats, transport | `UNIT_DEFS` (base set; research adds the rest in M37) |
+| Cost from money, goods, ore, oil and power; upkeep; train over time | `trainUnit`, `unitBill`, the stores (`warHour`), `forcesUpkeep`, the war clock |
+| Visible in the city: parked, on drills, patrolling | `src/render/units.ts` (see below) |
+| A defence line in the budget | `upkeep:defence` and `forces`, the Defence funding slider (war only) |
+| War bonds with an approval cost | `issueBond`, `bondsHour`, `bondMood` |
+| An arms factory: munitions and vehicles, jobs | `armsfactory` (`arms`: goods, munitions, storage, faster vehicles) |
+| The war room: forces, upkeep, readiness, research | `WarRoomPanel` (src/ui/Military.tsx), Shift+M, the top-bar button, the HQ's inspector |
+| "Rival neighbours": the new-city option; region rules (war on/off, largest scale) | `new-rivals`, `?rivals=1`, `markRivals`/`rivalsMonth`; `RegionWarRules`, `rrules`, the Region panel's War in the region; `relay/tests/warRules.test.ts` |

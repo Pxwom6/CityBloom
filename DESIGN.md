@@ -1118,6 +1118,60 @@ A fix round after a full playthrough; `docs/DECISIONS.md` ("Playthrough fixes") 
 - **Calendar years** (P16, §3.23), the tax tab's `payers` per band (P17), loan terms from `annuity`
   in `src/data/economy.ts` (P24), tips checked again before they show (`pickTip`, P15).
 
+### 3.28 War: armed forces (phase 5, M34)
+
+War is optional and off by default (SPEC-5). A city has war on when founded with rival neighbours
+(`options.rivals`, the new-city option, `?rivals=1`) or when its shared region's host turns war on;
+only then does `SimState.war` exist, so a peaceful city's state, saves, checksum and play are part
+for part as before (`tests/war/forces.test.ts` compares the scripted town with a golden from `main`;
+`balance` with rivals off is unchanged). Data in `src/data/war.ts`, the sim in
+`src/sim/systems/war.ts`, the screens in `src/ui/Military.tsx`.
+- **Military buildings** are civic buildings in the `military` category and the `defence`
+  department, with a `military` block (`MilitaryInfo`): staff, power, noise, safety, what they train
+  and keep, shelter places, defences, radar, the arms factory's output. Placement needs war on, the
+  HQ first (`requires`), and the naval yard deep water right behind its quay, the coastal gun its back
+  at the water's edge (`waterfront`, `WATERFRONT` in `world/civic.ts`, the seaport's quay rules).
+- **Staff** are recruited at the start of each matching round (`militaryStaffing`, called from
+  `MatchRound`'s constructor): each base, in id order, takes the workers nearest it by road before
+  businesses look for theirs, and they drive there with everyone else; the matcher places the rest of
+  each home's workers. `Civic.staff` is the share of posts filled. **Power**: military buildings are
+  served in the same network order as homes and businesses (`serveMilitary` in `utilities.ts`), with
+  more drawn while a base trains (`Civic.powered`). Both fields exist only on military buildings.
+- **Units** (`UnitDef`: price, goods, ore, oil, power while training, hours, upkeep, size from the
+  prompts, battle stats for M35) are ordered at a base (`trainUnit`), paid at once, and trained one at
+  a time per base on the **war clock** (`WarState.clock`, an hour a game hour in a city of its own; in a
+  shared region it is held to the region's fair clock, M39), at a rate set by staff, power and defence
+  funding (an arms factory speeds vehicles). A base keeps `holds` units; bulldozing it stands them
+  down (undo brings them back: `units` and `orders` are undo containers).
+- **The stores** (`WarState.stock`: goods, ore, oil, munitions) fill an hour at a time while below
+  capacity: free from arms factories, and at the local price from the city's industry (goods per
+  filled industrial job) and its mines and wells (a share of their output, paid at its export price,
+  which nets out as the sale it isn't). A unit's materials come from the stores first; the rest are
+  bought from the region at the import price. The stores exist only once there's a military building.
+- **The budget**: military buildings' upkeep is `upkeep:defence` and the units' `forces`, both scaled
+  by defence funding (`economy.funding.defence`, absent in a peaceful city: `fundingPct` reads 100) and
+  the usual difficulty and big-city factor; training, materials and bonds have their own lines.
+  **War bonds** (`WAR.bonds`) amortise like loans and cost city-wide approval while owed (`bondMood`,
+  in totals' cheer term).
+- **Readiness** eases a tenth a day towards a target of staff × power × defence funding (capped at
+  half without an HQ, halved while the treasury is negative), plus a proving ground's drills.
+- **Approval**: noise from depots, ranges, the arms factory and an airfield's runway (the airport's
+  shape) joins the noise raster; homes near shelters, the HQ and defences feel safer (`safetyAt`, a
+  mood factor, liked more by the wealthy).
+- **Rival neighbours**: a city's computer neighbours get a character (`Personality`: aggressive,
+  cautious, mercantile, honourable, treacherous), forces, defences and a relation from their own dice
+  (`${seed}:rivals`), and arm month by month towards what their character keeps (`rivalsMonth`, on
+  the war's own stream `WarState.rng`; the city's other streams are never drawn). Another player's
+  city in a region is never a computer rival.
+- **A region's war rules** (`RegionWarRules`: on/off and the largest scale) live in the region room
+  (`RegionMeta.rules`, set only by its host, slot 1, with `rrules`; protocol 2), travel in its view
+  and reach each city as `regionUpdate.rules` (`RegionState.rules`, present only while war is on).
+- **On the page**: `CityStats.war` (a summary worked out once a tick) and `ForceData` (the roster, sent
+  when it changes and each hour training moves on; `ClientWorld.forces`, with progress carried on
+  between rosters). The Military toolbar category (the bars fold a button's width sooner,
+  `barsClassWith`), the inspector's military section (`CivicDetails.military`), the war room
+  (`WarRoomPanel`: forces, upkeep and stores and bonds, readiness, research), Shift+M.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

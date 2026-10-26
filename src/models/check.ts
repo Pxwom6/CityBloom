@@ -5,10 +5,12 @@ import {
   GROUND_ROLES,
   PART,
   ROLE_INDEX,
+  WAR_ALLOW,
   budgetFor,
   targetOf,
   type ModelTarget,
   type Role,
+  type WarSite,
 } from './spec';
 
 /**
@@ -48,14 +50,21 @@ export function onGround(p: GlbPart, b: Box3 = growBox(emptyBox(), p.tris)): boo
 }
 
 /**
+ * Ground lying deeper than this (m) is in a pit the model digs (a war building's dry dock or
+ * basement ramp, which the lot base leaves open), not ground laid a little low.
+ */
+export const PIT = 0.05;
+
+/**
  * How far a model's own ground must be lifted to lie clear of the game's lot base: the top of its
- * lowest ground part up to `GROUND_FLOOR` (0 when it is there already).
+ * lowest ground part up to `GROUND_FLOOR` (0 when it is there already). Ground in a pit (the water
+ * in a dry dock) stays where it is.
  */
 export function groundLift(parts: GlbPart[]): number {
   let lowest = Infinity;
   for (const p of parts) {
     const b = growBox(emptyBox(), p.tris);
-    if (onGround(p, b)) lowest = Math.min(lowest, b.max[1]);
+    if (onGround(p, b) && b.max[1] >= -PIT) lowest = Math.min(lowest, b.max[1]);
   }
   return lowest < GROUND_FLOOR - 0.001 ? GROUND_FLOOR - lowest : 0;
 }
@@ -138,6 +147,127 @@ export function orientFaces(tris: Float32Array): { tris: Float32Array; turned: n
   return turned ? { tris: out, turned } : { tris, turned: 0 };
 }
 
+/**
+ * An open part's faces turned to agree with their neighbours (war models, phase 5): `orientFaces`
+ * leaves a part that isn't a closed surface alone, but a tyre stack open at the bottom with one side
+ * wound the other way still shows a hole where that side should be. Each piece joined by edges two
+ * faces share is walked as `orientFaces` walks a closed one; where its faces disagree, the side with
+ * less area is turned round (one face of a drum, a rim's sliver). Pieces that agree are left alone.
+ */
+export function orientOpen(tris: Float32Array): { tris: Float32Array; turned: number } {
+  const n = tris.length / 9;
+  const key = (i: number) => `${tris[i]!.toFixed(3)},${tris[i + 1]!.toFixed(3)},${tris[i + 2]!.toFixed(3)}`;
+  const faceEdges: [string, boolean][][] = [];
+  const edges = new Map<string, number[]>();
+  for (let t = 0; t < n; t++) {
+    const v = [key(t * 9), key(t * 9 + 3), key(t * 9 + 6)];
+    const mine: [string, boolean][] = [];
+    for (let k = 0; k < 3; k++) {
+      const [a, b] = [v[k]!, v[(k + 1) % 3]!];
+      const e = a < b ? `${a}|${b}` : `${b}|${a}`;
+      mine.push([e, a < b]);
+      let list = edges.get(e);
+      if (!list) edges.set(e, (list = []));
+      list.push(t);
+    }
+    faceEdges.push(mine);
+  }
+  const area = (t: number) => {
+    const i = t * 9;
+    const ux = tris[i + 3]! - tris[i]!;
+    const uy = tris[i + 4]! - tris[i + 1]!;
+    const uz = tris[i + 5]! - tris[i + 2]!;
+    const vx = tris[i + 6]! - tris[i]!;
+    const vy = tris[i + 7]! - tris[i + 1]!;
+    const vz = tris[i + 8]! - tris[i + 2]!;
+    return Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+  };
+  const flip = new Int8Array(n).fill(-1);
+  for (let s = 0; s < n; s++) {
+    if (flip[s]! >= 0) continue;
+    const piece: number[] = [];
+    flip[s] = 0;
+    const queue = [s];
+    while (queue.length) {
+      const t = queue.pop()!;
+      piece.push(t);
+      for (const [e, fwd] of faceEdges[t]!) {
+        const list = edges.get(e)!;
+        // Only through an edge two faces share: three or more meet where pieces cross.
+        if (list.length !== 2) continue;
+        const o = list[0] === t ? list[1]! : list[0]!;
+        if (flip[o]! >= 0) continue;
+        const ofwd = faceEdges[o]!.find(([k]) => k === e)![1];
+        flip[o] = ofwd === (fwd !== (flip[t] === 1)) ? 1 : 0;
+        queue.push(o);
+      }
+    }
+    let one = 0;
+    let other = 0;
+    for (const t of piece) {
+      if (flip[t] === 1) one += area(t);
+      else other += area(t);
+    }
+    // The faces walked from the first agree with it: keep whichever side has more area.
+    if (one > other) for (const t of piece) flip[t] = flip[t] === 1 ? 0 : 1;
+  }
+  let turned = 0;
+  const out = new Float32Array(tris);
+  for (let t = 0; t < n; t++) {
+    // Slivers (a panel's edge pinched to nothing) show either way.
+    if (flip[t] !== 1 || area(t) < 1e-3) continue;
+    turned++;
+    for (let k = 0; k < 3; k++) {
+      out[t * 9 + 3 + k] = tris[t * 9 + 6 + k]!;
+      out[t * 9 + 6 + k] = tris[t * 9 + 3 + k]!;
+    }
+  }
+  return turned ? { tris: out, turned } : { tris, turned: 0 };
+}
+
+/**
+ * A box made with a bottom but no top (a crane's cab or trolley): from above it shows a hole, unless
+ * something lies on it. Every face is on a side of its bounding box, some on the bottom, none on the top.
+ */
+export function openTop(tris: Float32Array): boolean {
+  const b = growBox(emptyBox(), tris);
+  if (b.max[1] - b.min[1] < 0.3 || (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]) < 0.25) return false;
+  let bottom = false;
+  for (let i = 0; i < tris.length; i += 9) {
+    let face = -1;
+    for (let k = 0; k < 3 && face < 0; k++)
+      for (const [s, at] of [b.min[k]!, b.max[k]!].entries())
+        if ([0, 3, 6].every((c) => Math.abs(tris[i + c + k]! - at) <= 1e-3)) face = k * 2 + s;
+    if (face < 0 || face === 3) return false;
+    if (face === 2) bottom = true;
+  }
+  return bottom;
+}
+
+/** Do other parts lie on most of (90 %) a part's top, within 30 cm of it? */
+function coveredTop(b: Box3, others: Box3[]): boolean {
+  const N = 6;
+  let covered = 0;
+  for (let i = 0; i < N; i++)
+    for (let j = 0; j < N; j++) {
+      const x = b.min[0] + ((i + 0.5) / N) * (b.max[0] - b.min[0]);
+      const z = b.min[2] + ((j + 0.5) / N) * (b.max[2] - b.min[2]);
+      if (
+        others.some(
+          (o) =>
+            o !== b &&
+            x >= o.min[0] &&
+            x <= o.max[0] &&
+            z >= o.min[2] &&
+            z <= o.max[2] &&
+            Math.abs(o.min[1] - b.max[1]) < 0.3,
+        )
+      )
+        covered++;
+    }
+  return covered >= 0.9 * N * N;
+}
+
 /** Is this part (or a group above it) called `name`? */
 export function under(p: GlbPart, name: string): boolean {
   return p.name === name || p.path.includes(name);
@@ -181,6 +311,8 @@ export interface ModelReport {
   trees: number;
   stacks: number;
   parts: number;
+  /** A war building (PROMPTS-WAR.md): checked with the war allowances, packed in the war models file. */
+  war: boolean;
 }
 
 const EXACT = 0.05;
@@ -191,9 +323,17 @@ const OVERHANG_SIDE = 0.75;
 /** A length to the centimetre, without trailing zeros. */
 const f1 = (v: number) => String(Number(v.toFixed(2)));
 
-/** Check a model file's bytes. Never throws: an unreadable file is a failed report. */
-export function checkModel(bytes: Uint8Array, fileName: string, budgets: Map<string, number>): ModelReport {
-  return inspectModel(bytes, fileName, budgets).report;
+/**
+ * Check a model file's bytes. Never throws: an unreadable file is a failed report. `war` are the
+ * war buildings' sites (PROMPTS-WAR.md), for the ones the game doesn't have yet.
+ */
+export function checkModel(
+  bytes: Uint8Array,
+  fileName: string,
+  budgets: Map<string, number>,
+  war?: Map<string, WarSite>,
+): ModelReport {
+  return inspectModel(bytes, fileName, budgets, war).report;
 }
 
 /** As `checkModel`, also handing back the parsed file (null when it couldn't be read). */
@@ -201,13 +341,16 @@ export function inspectModel(
   bytes: Uint8Array,
   fileName: string,
   budgets: Map<string, number>,
+  war?: Map<string, WarSite>,
 ): { report: ModelReport; file: GlbFile | null } {
   const id = fileName.replace(/\.glb$/i, '');
+  const target = targetOf(id, war);
   const report: ModelReport = {
     file: fileName,
     id,
     ok: false,
-    target: targetOf(id),
+    target,
+    war: target?.kind === 'civic' && target.war === true,
     errors: [],
     warnings: [],
     triangles: 0,
@@ -227,6 +370,12 @@ export function inspectModel(
     report.errors.push(e instanceof GlbError ? e.message : `can't be read (${(e as Error).message})`);
     return { report, file: null };
   }
+  // A war building the game has is checked on the game's site: say if its prompt's differs.
+  const site = war?.get(id.replace(/-\d+$/, ''));
+  if (site && target && (Math.abs(site.w - target.w) > 0.01 || Math.abs(site.d - target.d) > 0.01))
+    report.warnings.push(
+      `its prompt's site is ${f1(site.w)} × ${f1(site.d)} m, the game's ${f1(target.w)} × ${f1(target.d)} m: checked on the game's`,
+    );
   try {
     checkParsed(file, report);
   } catch (e) {
@@ -261,10 +410,11 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
   const drawn = parts.filter((p) => !under(p, PART.treeSpot));
   report.triangles = drawn.reduce((s, p) => s + p.tris.length / 9, 0);
 
-  // Materials: named exactly by role.
+  // Materials: named exactly by role (`light` on war buildings only: the atom silo's searchlights).
   const unknown = new Map<string, string>();
   for (const p of parts)
-    if (!ROLE_INDEX.has(p.material)) unknown.set(p.rawMaterial || '(none)', p.rawName || '(unnamed)');
+    if (!ROLE_INDEX.has(p.material) || (p.material === 'light' && !report.war))
+      unknown.set(p.rawMaterial || '(none)', p.rawName || '(unnamed)');
   if (unknown.size)
     errors.push(
       `materials that aren't roles in the spec: ${[...unknown]
@@ -277,7 +427,13 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
   const all = boxOf(parts);
   report.size = [all.max[0] - all.min[0], all.max[1] - all.min[1], all.max[2] - all.min[2]];
   const grounded = boxOf(parts.filter((p) => !under(p, 'quay')));
-  if (grounded.min[1] < -EXACT)
+  // A war building whose prompt asks for parts below ground (a quay, a dry dock, a basement ramp).
+  const below = report.war ? WAR_ALLOW.below[report.id.replace(/-\d+$/, '')] : undefined;
+  if (below && grounded.min[1] < -EXACT && grounded.min[1] >= -below.depth - EXACT)
+    warnings.push(
+      `goes ${f1(-all.min[1])} m below the ground (${below.what}), as its prompt asks: the lot base leaves it open`,
+    );
+  else if (grounded.min[1] < -EXACT)
     errors.push(`goes ${f1(-grounded.min[1])} m below the ground: the origin should be at ground level`);
   else if (all.min[1] > EXACT)
     errors.push(`floats ${f1(all.min[1])} m above the ground: the origin should be at ground level`);
@@ -299,6 +455,30 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
         .map(([name, n]) => `${n} in ${name}`)
         .join(', ')}; the game turns them round`,
     );
+  if (report.war) {
+    // War models (phase 5): open parts too, and parts left without a top.
+    const open = new Map<string, number>();
+    const tops = new Map<string, number>();
+    const boxes = parts.map((p) => growBox(emptyBox(), p.tris));
+    parts.forEach((p, i) => {
+      const name = p.rawName || '(unnamed)';
+      if (!orientFaces(p.tris).turned) {
+        const n = orientOpen(p.tris).turned;
+        if (n) open.set(name, (open.get(name) ?? 0) + n);
+      }
+      if (openTop(p.tris) && !coveredTop(boxes[i]!, boxes)) tops.set(name, (tops.get(name) ?? 0) + 1);
+    });
+    const list = (m: Map<string, number>, what: string) =>
+      [...m].map(([name, n]) => `${n} ${what} in ${name}`).join(', ');
+    if (open.size)
+      warnings.push(
+        `open parts with faces wound inside out, which leave holes: ${list(open, 'faces')}; the game turns them round`,
+      );
+    if (tops.size)
+      warnings.push(
+        `parts with no top, which show a hole from above: ${[...tops].map(([name, n]) => (n > 1 ? `${n} × ${name}` : name)).join(', ')}`,
+      );
+  }
   facing(parts, report);
   supported(parts, report);
 
@@ -556,14 +736,21 @@ function facing(parts: GlbPart[], report: ModelReport): void {
   // An add-on annex is a wing in a back corner: its door can be on any side.
   if (report.target?.kind === 'annex') return;
   const { road, back, side } = frontEvidence(parts);
+  let wrong: string | null = null;
   if (back > road * 1.5 && back >= 4)
-    report.errors.push(
-      'the front faces +Z: its entrances, shopfronts and canopies look away from the road (turn the model half round)',
-    );
+    wrong =
+      'the front faces +Z: its entrances, shopfronts and canopies look away from the road (turn the model half round)';
   else if ((road === 0 && back === 0 && side > 0) || (side > Math.max(road, back) * 2.5 && side >= 4))
-    report.errors.push(
-      'the front faces along X: its doors and shopfronts are in the side walls (turn the model a quarter round)',
+    wrong =
+      'the front faces along X: its doors and shopfronts are in the side walls (turn the model a quarter round)';
+  if (!wrong) return;
+  // Three war buildings follow their prompts with their doors away from the road.
+  const allowed = report.war ? WAR_ALLOW.facing[report.id.replace(/-\d+$/, '')] : undefined;
+  if (allowed)
+    report.warnings.push(
+      `the facing check would turn it (${wrong.split(':')[0]}), but ${allowed}, as its prompt asks: allowed`,
     );
+  else report.errors.push(wrong);
 }
 
 /**

@@ -20,6 +20,7 @@ import type { ToolHint, ToolQuestion } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
+import { loadWarModels } from './client/models';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import type { AppInstall } from './client/install';
@@ -1612,6 +1613,22 @@ export class Game {
     this.notify();
   }
 
+  /** The war models asked for (phase 5): once, when a city with war on is open. */
+  private warAsked = false;
+
+  /**
+   * A city with war on (rival neighbours, or a region whose rules allow it, M34) fetches the war
+   * models once, when it opens or when war comes on; its military buildings are drawn again with
+   * them when they arrive. A peaceful city, and the main menu, never ask.
+   */
+  private warModels(): void {
+    if (this.warAsked || !this.world.stats?.war) return;
+    this.warAsked = true;
+    void loadWarModels().then(({ models }) => {
+      if (models) this.renderer.civics.redraw((def) => CIVIC.get(def)?.category === 'military');
+    });
+  }
+
   /** Called every animation frame. */
   frame(now: number): void {
     const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
@@ -1630,7 +1647,10 @@ export class Game {
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
-    else void this.autosave(now);
+    else {
+      void this.autosave(now);
+      this.warModels();
+    }
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();

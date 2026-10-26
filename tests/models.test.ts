@@ -18,9 +18,16 @@ import {
 import { checkModel, formatReports, frontEvidence, inspectModel, orientFaces } from '../src/models/check';
 import { decodeModels, encodeModels } from '../src/models/codec';
 import { GlbError, normaliseName, parseGlb } from '../src/models/glb';
-import { ROLES, budgetFor, targetOf } from '../src/models/spec';
+import { ROLES, budgetFor, parseBudgets, targetOf } from '../src/models/spec';
 import { BREAKS, breakModel, editGlb } from '../scripts/lib/breakModel';
-import { buildModels, modelFiles, readBudgets } from '../scripts/lib/modelPipeline';
+import {
+  WAR_MODELS_DIR,
+  batchOf,
+  buildModels,
+  isUnitFile,
+  modelFiles,
+  readBudgets,
+} from '../scripts/lib/modelPipeline';
 
 /** Stable copies of delivered models (assets/models changes as models arrive). */
 const GOOD = 'tests/fixtures/models/good';
@@ -70,6 +77,34 @@ describe('model spec', () => {
     writeFileSync(join(root, 'docs/models/PROMPTS-10.md'), prompt(300));
     writeFileSync(join(root, 'docs/models/notes.md'), prompt(999));
     expect(readBudgets(root).get('R001')).toBe(300);
+  });
+
+  it('reads the war prompts’ budgets as a batch after batch 5 (PROMPTS-WAR.md)', () => {
+    // Buildings (spec v6) and units (unit spec v1): 39 prompts.
+    expect(budgets.get('barracks')).toBe(2500);
+    expect(budgets.get('airfield')).toBe(5000);
+    expect(budgets.get('atomsilo')).toBe(3000);
+    expect(budgets.get('unit-tank')).toBe(700);
+    expect(budgets.get('unit-windupbot')).toBe(5000);
+    expect(budgets.get('unit-atombomb')).toBe(600);
+    const war = parseBudgets(readFileSync('docs/models/PROMPTS-WAR.md', 'utf8'));
+    expect(war.size).toBe(39);
+    for (const [id, n] of war) expect(budgets.get(id), id).toBe(n);
+    // In order: after PROMPTS-5, before any later batch.
+    expect(
+      ['PROMPTS-6.md', 'PROMPTS-WAR.md', 'PROMPTS-5.md', 'PROMPTS.md'].sort(
+        (a, b) => batchOf(a) - batchOf(b),
+      ),
+    ).toEqual(['PROMPTS.md', 'PROMPTS-5.md', 'PROMPTS-WAR.md', 'PROMPTS-6.md']);
+    const root = mkdtempSync(join(tmpdir(), 'prompts-'));
+    mkdirSync(join(root, 'docs/models'), { recursive: true });
+    const prompt = (n: number) =>
+      `### Barracks (\`barracks.glb\`)\n\nSave as barracks.glb. Budget ${n} triangles.\n`;
+    writeFileSync(join(root, 'docs/models/PROMPTS-5.md'), prompt(100));
+    writeFileSync(join(root, 'docs/models/PROMPTS-WAR.md'), prompt(200));
+    expect(readBudgets(root).get('barracks')).toBe(200);
+    writeFileSync(join(root, 'docs/models/PROMPTS-6.md'), prompt(300));
+    expect(readBudgets(root).get('barracks')).toBe(300);
   });
 
   it('normalises exporter suffixes on names', () => {
@@ -812,5 +847,15 @@ describe('the models in assets/models', () => {
       expect(m.counts.sky, m.id).toBeLessThanOrEqual(m.counts.far);
       expect(m.counts.sky, m.id).toBeGreaterThan(0);
     }
+  });
+
+  it('keeps the war models in a folder of their own, which the main file never reads', () => {
+    const files = modelFiles(WAR_MODELS_DIR);
+    expect(files).toHaveLength(39);
+    expect(files.filter(isUnitFile)).toHaveLength(18);
+    expect(files.filter((f) => !isUnitFile(f))).toHaveLength(21);
+    // assets/models' own files only: the folder isn't a model, and none of its files are among them.
+    const main = new Set(modelFiles('assets/models'));
+    for (const f of files) expect(main.has(f), f).toBe(false);
   });
 });

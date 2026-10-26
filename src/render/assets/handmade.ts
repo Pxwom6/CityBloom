@@ -347,6 +347,8 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
         else win = c.unit0 + u;
       } else if (role === ROLE.grass) emi = SURF_GRASS;
       else if (role === ROLE.hedge) emi = SURF_HEDGE;
+      // A war building's lamps (the atom silo's searchlights) are lit all night, as bright as a lit window.
+      else if (role === ROLE.light) emi = LAMP;
       // A building site: bare earth until the last stage, and nothing lit until it opens.
       if (o.bare && (role === ROLE.grass || role === ROLE.hedge || role === ROLE.water)) {
         col = EARTH;
@@ -380,6 +382,8 @@ function emit(model: BakedModel, copies: Copy[], level: number, o: HandOptions, 
 
 const WHITE = new Color(1, 1, 1);
 const INSIDE = new Color();
+/** The night glow of a `light` part (a lit window glows 0.6–1). */
+const LAMP = 1;
 
 /** The part of a triangle at or below height `cut` (a building rising stage by stage). */
 function clipBelow(v: Float64Array, cut: number, out: Soup, col: Color, emi: number, win: number): void {
@@ -423,7 +427,7 @@ function clipBelow(v: Float64Array, cut: number, out: Soup, col: Color, emi: num
  * hand-made model brings its own ground, so the base's top is at the model's zero and shows only
  * where the model leaves the lot bare (a yard behind a shallow model).
  */
-function base(out: Soup, W: number, D: number, top: Color, sides: boolean): void {
+function base(out: Soup, W: number, D: number, top: Color, sides: boolean, pits: number[] = []): void {
   out.casting = false;
   const x0 = -W / 2;
   const x1 = W / 2;
@@ -433,18 +437,94 @@ function base(out: Soup, W: number, D: number, top: Color, sides: boolean): void
   // Just above the ground a level site is graded to (or the two would flicker), and under the
   // model's own lawns and paving (5 cm up or more).
   const y1 = BASE_TOP;
-  out.tri(x0, y1, z0, x0, y1, z1, x1, y1, z1, top, tag, 0);
-  out.tri(x0, y1, z0, x1, y1, z1, x1, y1, z0, top, tag, 0);
+  if (!pits.length) {
+    out.tri(x0, y1, z0, x0, y1, z1, x1, y1, z1, top, tag, 0);
+    out.tri(x0, y1, z0, x1, y1, z1, x1, y1, z0, top, tag, 0);
+  } else {
+    // A war building's pits (a dry dock, a basement ramp, its quay): the top is left out over them,
+    // in the cells between their edges.
+    const cuts = (lo: number, hi: number, k: number) =>
+      [...new Set([lo, hi, ...pits.filter((_, i) => i % 5 === k || i % 5 === k + 2)])]
+        .map((v) => Math.min(hi, Math.max(lo, v)))
+        .sort((a, b) => a - b)
+        .filter((v, i, a) => i === 0 || v - a[i - 1]! > 1e-3);
+    const xs = cuts(x0, x1, 0);
+    const zs = cuts(z0, z1, 1);
+    for (let i = 0; i + 1 < xs.length; i++)
+      for (let j = 0; j + 1 < zs.length; j++) {
+        const [ax, bx, az, bz] = [xs[i]!, xs[i + 1]!, zs[j]!, zs[j + 1]!];
+        if (pitAt(pits, (ax + bx) / 2, (az + bz) / 2)) continue;
+        out.tri(ax, y1, az, ax, y1, bz, bx, y1, bz, top, tag, 0);
+        out.tri(ax, y1, az, bx, y1, bz, bx, y1, az, top, tag, 0);
+      }
+  }
   if (!sides) return;
   const y0 = -5;
-  const wall = (ax: number, az: number, bx: number, bz: number) => {
-    out.tri(ax, y0, az, ax, y1, az, bx, y1, bz, STONE, 0, 0);
-    out.tri(ax, y0, az, bx, y1, bz, bx, y0, bz, STONE, 0, 0);
+  const wall = (ax: number, az: number, bx: number, bz: number, y = y1) => {
+    out.tri(ax, y0, az, ax, y, az, bx, y, bz, STONE, 0, 0);
+    out.tri(ax, y0, az, bx, y, bz, bx, y0, bz, STONE, 0, 0);
   };
-  wall(x0, z0, x1, z0);
-  wall(x1, z1, x0, z1);
-  wall(x0, z1, x0, z0);
-  wall(x1, z0, x1, z1);
+  // Where a pit meets an edge (a quay, a dock's mouth, a ramp's wall), the side stops at its foot:
+  // the model's own walls show above it.
+  const side = (ax: number, az: number, bx: number, bz: number) => {
+    const alongX = az === bz;
+    const open: [number, number, number][] = [];
+    for (let i = 0; i < pits.length; i += 5) {
+      const [px0, pz0, px1, pz1, bottom] = pits.slice(i, i + 5) as [number, number, number, number, number];
+      const at = alongX ? az : ax;
+      const near = alongX ? [pz0, pz1] : [px0, px1];
+      if (near.some((v) => Math.abs(v - at) < 0.05))
+        open.push(alongX ? [px0, px1, bottom] : [pz0, pz1, bottom]);
+    }
+    if (!open.length) return wall(ax, az, bx, bz);
+    const [s0, s1] = alongX ? [ax, bx] : [az, bz];
+    const stops = [...new Set([s0, s1, ...open.flatMap(([a, b]) => [a, b])])]
+      .filter((s) => s >= Math.min(s0, s1) && s <= Math.max(s0, s1))
+      .sort((a, b) => (s1 > s0 ? a - b : b - a));
+    for (let k = 0; k + 1 < stops.length; k++) {
+      const [a, b] = [stops[k]!, stops[k + 1]!];
+      const mid = (a + b) / 2;
+      const y = Math.min(
+        y1,
+        ...open.filter(([lo, hi]) => mid > lo && mid < hi).map(([, , bottom]) => bottom),
+      );
+      if (y <= y0 + 0.01) continue;
+      if (alongX) wall(a, az, b, bz, y);
+      else wall(ax, a, bx, b, y);
+    }
+  };
+  side(x0, z0, x1, z0);
+  side(x1, z1, x0, z1);
+  side(x0, z1, x0, z0);
+  side(x1, z0, x1, z1);
+}
+
+/** Is (x, z) in one of a model's pits (x0, z0, x1, z1, bottom each)? */
+function pitAt(pits: number[], x: number, z: number): boolean {
+  for (let i = 0; i < pits.length; i += 5)
+    if (x > pits[i]! && x < pits[i + 2]! && z > pits[i + 1]! && z < pits[i + 3]!) return true;
+  return false;
+}
+
+/** A model's pits where its copies stand on the lot (mirrored with them). */
+function pitsOn(model: BakedModel, copies: Copy[]): number[] {
+  const out: number[] = [];
+  const p = model.pits ?? [];
+  for (const c of copies)
+    for (let i = 0; i < p.length; i += 5) {
+      const sx = (c.mirror ? -1 : 1) * (c.turn ? -1 : 1) * c.scale;
+      const sz = (c.turn ? -1 : 1) * c.scale;
+      const [ax, bx] = [p[i]! * sx + c.x, p[i + 2]! * sx + c.x];
+      const [az, bz] = [p[i + 1]! * sz + c.z, p[i + 3]! * sz + c.z];
+      out.push(
+        Math.min(ax, bx),
+        Math.min(az, bz),
+        Math.max(ax, bx),
+        Math.max(az, bz),
+        p[i + 4]! * c.scale + c.y,
+      );
+    }
+  return out;
 }
 
 /** A box's top and four sides (no bottom), each wound to face out. */
@@ -781,9 +861,10 @@ export function buildHandModel(
   }
   // The yard a shallow model leaves at the back of its lot (M27).
   const yardFrom = copies.length ? copies[0]!.z + model.d / 2 : o.D / 2;
+  const pits = pitsOn(model, copies);
   const level = (flag: number, sides: boolean, height?: number): ModelData => {
     const s = new Soup();
-    if (o.base) base(s, o.W, o.D, o.base, sides);
+    if (o.base) base(s, o.W, o.D, o.base, sides, pits);
     if (o.base && o.yard && flag !== TRI_SKY)
       yard(s, o.W, o.D, yardFrom, o.yard, o.base, flag === TRI_NEAR, o.seed);
     emit(model, copies, flag, o, s);
@@ -857,6 +938,11 @@ export class HandmadeModels {
   /** Units with a hand-made model. */
   get unitCount(): number {
     return this.units.size;
+  }
+
+  /** The war models file's buildings and units, as loaded (dev and tests). */
+  warList(): { designs: BakedModel[]; units: BakedUnit[] } {
+    return { designs: [...this.warDesigns.values()].flat(), units: [...this.units.values()] };
   }
 
   set(models: BakedModel[]): void {

@@ -206,10 +206,14 @@ export function BudgetPanel() {
             returns.
           </p>
           <BigCityNote factor={b.bigCity} />
-          {DEPTS.map((d) => {
+          {DEPTS.filter((d) => !d.war || !!game.world.stats.war).map((d) => {
             const v = b.funding[d.id] ?? 100;
+            // Defence (M34) covers the military buildings and the units' upkeep.
             const cost =
-              d.id === 'roads' ? (b.projection.roadUpkeep ?? 0) : (b.projection[`upkeep:${d.id}`] ?? 0);
+              d.id === 'roads'
+                ? (b.projection.roadUpkeep ?? 0)
+                : (b.projection[`upkeep:${d.id}`] ?? 0) +
+                  (d.id === 'defence' ? (b.projection.forces ?? 0) : 0);
             return (
               <label key={d.id} class="slider-row" title={d.effect}>
                 <span>{d.name}</span>

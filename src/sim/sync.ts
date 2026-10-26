@@ -90,6 +90,17 @@ export function checksum(sim: Sim): string {
   m.num(sumArray(s.crime));
   m.num(sumArray(s.terrainDelta));
   m.num(s.weather.temp);
+  // War (M34), only where it's on: a peaceful city's checksum is as before.
+  const w = s.war;
+  if (w) {
+    m.int(w.units.size);
+    m.int(w.orders.size);
+    for (const o of w.orders.values()) m.num(o.done);
+    m.num(w.readiness);
+    m.num(w.clock);
+    m.num(w.stock.goods + w.stock.ore + w.stock.oil + w.stock.munitions);
+    m.int(w.bonds.length);
+  }
   return m.hex();
 }
 

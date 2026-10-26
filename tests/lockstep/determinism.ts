@@ -16,6 +16,8 @@ export interface DeterminismResult {
   population: number;
   editor: string;
   scenario: string[];
+  /** A town with rival neighbours (M34): its state hash at each month's end. */
+  war: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -41,6 +43,19 @@ export function runDeterminism(
     (s, cmd) => note(cmd, s.dispatch(cmd)),
   );
 
+  // The same town with rival neighbours (M34): military buildings, training, bonds.
+  const warHashes: string[] = [];
+  growTown(
+    Math.min(months, 12),
+    (s) => {
+      checkInvariants(s);
+      warHashes.push(s.hash());
+    },
+    (s, cmd) => note(cmd, s.dispatch(cmd)),
+    false,
+    true,
+  );
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -59,6 +74,7 @@ export function runDeterminism(
     population: sim.state.totals.population,
     editor: editor.hash(),
     scenario: scenarioHashes,
+    war: warHashes,
     used: [...used].sort(),
     refused,
   };

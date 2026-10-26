@@ -43,6 +43,12 @@ export interface Civic {
   collection?: { today: CollectionDay; last: CollectionDay };
   /** Big projects (M17): the construction in hand; absent once finished (and for everything else). */
   build?: ProjectBuild;
+  /**
+   * Military buildings (M34): the share of their posts filled at the last matching round, and of
+   * their power need served at the last utilities pass. Absent on every other building.
+   */
+  staff?: number;
+  powered?: number;
 }
 
 /** A day of garbage collection at one facility: units unloaded, rounds finished, their minutes and stops. */
@@ -172,19 +178,32 @@ export const BERTH_DEPTH = -6;
 export function berth(
   sim: Sim,
   c: { x: number; z: number; angle: number; side: 1 | -1; def: string },
+  search: { from: number; to: number; step: number; depth: number } = SEAPORT_BERTH,
 ): { x: number; z: number } | null {
   const d = CIVIC.get(c.def);
   if (!d) return null;
   const away = awayDir(c.angle, c.side);
   const along = { x: DMath.cos(c.angle), z: DMath.sin(c.angle) };
-  for (let dist = 10; dist <= 60; dist += 10)
+  for (let dist = search.from; dist <= search.to; dist += search.step)
     for (const u of [0, -0.35, 0.35]) {
       const x = c.x + away.x * (d.d / 2 + dist) + along.x * d.w * u;
       const z = c.z + away.z * (d.d / 2 + dist) + along.z * d.w * u;
-      if (sim.terrain.heightAt(x, z) <= BERTH_DEPTH) return { x, z };
+      if (sim.terrain.heightAt(x, z) <= search.depth) return { x, z };
     }
   return null;
 }
+
+/** Where a seaport's ships berth: deep water 10–60 m behind it (M23). */
+const SEAPORT_BERTH = { from: 10, to: 60, step: 10, depth: BERTH_DEPTH };
+
+/**
+ * Waterfront military sites (M34): a naval yard's quay needs deep water right behind it (its
+ * warships berth at the quay), a coastal gun its back at the water's edge.
+ */
+export const WATERFRONT = {
+  deep: { from: 0, to: 24, step: 4, depth: BERTH_DEPTH },
+  shore: { from: -2, to: 8, step: 2, depth: SHORE_HEIGHT - 0.5 },
+};
 
 /** Nearest road the front edge touches (within its corridor plus a few metres). */
 export function findAccess(
@@ -231,6 +250,9 @@ export function checkPlacement(
   // A scenario's limits (M18) come first: no spot would do.
   const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id });
   if (forbidden) return { ...res, reason: forbidden };
+  // Military buildings (M34) only where war is on: rival neighbours, or a region at war.
+  if (def.military && !sim.state.war)
+    return { ...res, reason: 'Military buildings need war on: found a city with rival neighbours' };
   if (![x, z, angle].every(Number.isFinite)) return { ...res, reason: 'Invalid position' };
   const rect: ORect = { x, z, hw: def.w / 2, hd: def.d / 2, angle };
   const c = DMath.cos(angle);
@@ -250,7 +272,8 @@ export function checkPlacement(
   }
   // A seaport's quay (M23) stands out over the water on piles: its back edge may be in the sea, and
   // it's built up over a sloping shore.
-  const quay = def.seaport ? -side : 0;
+  // A naval yard's quay and a coastal gun's sea wall (M34) stand in the water the same way.
+  const quay = def.seaport || def.waterfront ? -side : 0;
   let lo = Infinity;
   let hi = -Infinity;
   for (const p of pts) {
@@ -262,7 +285,8 @@ export function checkPlacement(
     lo = Math.min(lo, h);
     hi = Math.max(hi, h);
   }
-  if (hi - lo > GRADING.padMax * (def.seaport ? 2 : 1)) return { ...res, reason: 'Ground is too steep' };
+  if (hi - lo > GRADING.padMax * (def.seaport || def.waterfront ? 2 : 1))
+    return { ...res, reason: 'Ground is too steep' };
   res.y = hi;
   if (def.nearWater !== undefined) {
     const i = Math.min(GRID_RES - 1, Math.max(0, Math.floor(x / GRID_CELL)));
@@ -314,6 +338,11 @@ export function checkPlacement(
   // A seaport needs deep water along its back for the ships (M23).
   if (def.seaport && !berth(sim, { x, z, angle, side, def: defId }))
     return { ...res, reason: 'Needs deep water along its back for the ships (the sea or a deep lake)' };
+  // A naval yard's quay stands in deep water, and a coastal gun's back is at the water's edge (M34).
+  if (def.waterfront === 'deep' && !berth(sim, { x, z, angle, side, def: defId }, WATERFRONT.deep))
+    return { ...res, reason: 'Needs deep water along its back for the warships (the sea or a deep lake)' };
+  if (def.waterfront === 'shore' && !berth(sim, { x, z, angle, side, def: defId }, WATERFRONT.shore))
+    return { ...res, reason: 'Must stand on the shore with its back to the water' };
   // Zoned buildings in the way are demolished.
   for (const id of sim.bldHash.queryPoint(x, z, rad + 40)) {
     const b = sim.state.buildings.get(id)!;

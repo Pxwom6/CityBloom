@@ -12,7 +12,7 @@ import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 26;
+export const SAVE_VERSION = 27;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -250,6 +250,9 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
     ...s,
     region: { ...(s.region as object), project: (s.region as { project?: unknown }).project ?? null },
   }),
+  // v26 → v27 (M34): war. Every older city is at peace: no rival neighbours, no forces (both keys
+  // stay absent, as in a peaceful city founded now).
+  26: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

@@ -65,6 +65,11 @@ const SAMPLES: Record<CommandType, Command> = {
   },
   contributeProject: { type: 'contributeProject', amount: 1000 },
   addModule: { type: 'addModule', civic: 5, module: 'engineBay' },
+  trainUnit: { type: 'trainUnit', base: 5, kind: 'tank' },
+  cancelTraining: { type: 'cancelTraining', order: 7 },
+  disbandUnit: { type: 'disbandUnit', unit: 8 },
+  issueBond: { type: 'issueBond', amount: 40_000 },
+  repayBond: { type: 'repayBond', id: 9 },
 };
 
 /** Values a field might carry instead of what it should. */

@@ -26,8 +26,8 @@ export const ALL_KINDS: readonly CommandType[] = COMMAND_TYPES;
  * `shared`: as in a room, where cheats are refused; the town is then a sandbox (money and unlocks
  * without them).
  */
-export function newTown(shared = false): Sim {
-  const sim = Sim.create({ ...TOWN_OPTIONS, sandbox: shared });
+export function newTown(shared = false, rivals = false): Sim {
+  const sim = Sim.create({ ...TOWN_OPTIONS, sandbox: shared, rivals });
   sim.shared = shared;
   // Test mode for the test-only cheats (weather, election date, rail link); invariants are
   // checked by the scripts at month ends rather than every tick.
@@ -370,6 +370,48 @@ export function act(sim: Sim, issue: Issue, m: number): void {
       if (m % 6 === 0) placeAlong(sim, issue, 'pump', roadIds(sim, 'street').reverse());
       if (m % 4 === 0) issue({ type: 'setTax', zone: 'C', wealth: 'all', rate: 0.09 + 0.001 * (m % 10) });
   }
+  // A town with rival neighbours (M34) raises forces too; a peaceful one never gets here.
+  if (s.war) warAct(sim, issue, m);
+}
+
+/** The armed forces' commands (M34), in a town with war on. */
+function warAct(sim: Sim, issue: Issue, m: number): void {
+  const s = sim.state;
+  const w = s.war!;
+  const base = (def: string) =>
+    [...s.civics.values()].filter((x) => x.def === def).sort((a, b) => a.id - b.id)[0]?.id;
+  switch (m) {
+    case 3: {
+      const streets = roadIds(sim).reverse();
+      for (const def of ['militaryhq', 'barracks', 'vehicledepot', 'shelter', 'armsfactory'])
+        placeAlong(sim, issue, def, streets);
+      issue({ type: 'setFunding', dept: 'defence', pct: 120 });
+      issue({ type: 'issueBond', amount: 40_000 });
+      break;
+    }
+    case 4: {
+      const barracks = base('barracks');
+      const depot = base('vehicledepot');
+      if (barracks) {
+        issue({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+        const second = issue({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+        issue({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+        if (second.ok) issue({ type: 'cancelTraining', order: second.created![0]! });
+      }
+      if (depot) {
+        issue({ type: 'trainUnit', base: depot, kind: 'tank' });
+        issue({ type: 'trainUnit', base: depot, kind: 'transport' });
+      }
+      break;
+    }
+    case 6: {
+      const first = [...w.units.values()].sort((a, b) => a.id - b.id)[0];
+      if (first) issue({ type: 'disbandUnit', unit: first.id });
+      const bond = w.bonds[0];
+      if (bond) issue({ type: 'repayBond', id: bond.id });
+      break;
+    }
+  }
 }
 
 /** The map editor's commands, on an editor city (they're refused anywhere else). */
@@ -405,8 +447,9 @@ export function growTown(
   monthEnd: (sim: Sim, month: number) => void,
   issue?: (sim: Sim, cmd: Command) => CommandResult,
   shared = false,
+  rivals = false,
 ): { sim: Sim; used: Map<CommandType, number> } {
-  const sim = newTown(shared);
+  const sim = newTown(shared, rivals);
   const used = new Map<CommandType, number>();
   const doIssue: Issue = (cmd) => {
     const r = issue ? issue(sim, cmd) : sim.dispatch(cmd);

@@ -22,6 +22,7 @@ import { DEAL_RESOURCES } from '../data/region';
 import { TERRAFORM, TERRAFORM_MODES } from '../data/terraform';
 import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
+import { UNIT, WAR } from '../data/war';
 import { MAP_SIZE } from '../data/world';
 
 /**
@@ -88,6 +89,7 @@ const stroke = (c: Fields): { stroke?: number } | null =>
 const ROADS = BUILDABLE_ROADS as readonly string[];
 const DEPT_IDS = DEPTS.map((d) => d.id) as readonly string[];
 const LOANS = LOAN_OPTIONS.map((l) => l.amount);
+const BONDS = WAR.bonds.map((b) => b.amount);
 const PROMISE_IDS = PROMISES.map((p) => p.id) as readonly string[];
 const MODES = TERRAFORM_MODES.map((m) => m.id) as readonly string[];
 const BRUSHES = MAP_BRUSHES.map((b) => b.id) as readonly string[];
@@ -305,6 +307,14 @@ const CHECKS: Record<CommandType, Check> = {
     isInt(c.civic) && typeof c.module === 'string' && MODULE.has(c.module)
       ? { type: 'addModule', civic: c.civic, module: c.module }
       : BAD,
+  trainUnit: (c) =>
+    isInt(c.base) && typeof c.kind === 'string' && UNIT.has(c.kind as never)
+      ? { type: 'trainUnit', base: c.base, kind: c.kind as Extract<Command, { type: 'trainUnit' }>['kind'] }
+      : BAD,
+  cancelTraining: (c) => (isInt(c.order) ? { type: 'cancelTraining', order: c.order } : BAD),
+  disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
+  issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
+  repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),
 };
 
 /**

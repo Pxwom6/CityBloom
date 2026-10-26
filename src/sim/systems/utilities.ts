@@ -7,6 +7,7 @@ import { TICKS_PER_MONTH } from '../time';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline, type Civic } from '../world/civic';
 import { attachmentOf } from './commute';
+import { militaryCivics, militaryPowerNeed } from './war';
 import { garbageMadePerDay } from './garbage';
 import { Dijkstra } from './graph';
 import { capacity, neighbour, regionExport, regionImport } from './region';
@@ -141,7 +142,12 @@ export function updateUtilities(sim: Sim): void {
       }))
       .sort((a, b) => a.comp - b.comp || a.d - b.d || a.b.id - b.b.id);
     const left = new Map(compCap);
+    // Military buildings (M34) draw power too, served in the same order of distance as the rest.
+    const mil = u === 'power' && s.war ? militaryConsumers(sim, g, dist) : [];
+    let k = 0;
     for (const e of order) {
+      while (k < mil.length && servedBefore(mil[k]!, e.comp, e.d, e.b.id))
+        serveMilitary(mil[k++]!, left, stats[u]);
       const need = buildingUse(e.b, u, use);
       stats[u].demand += need;
       let served = 0;
@@ -161,6 +167,7 @@ export function updateUtilities(sim: Sim): void {
           cap > 0 && served > 0 ? Math.round(((compPolluted.get(e.comp) ?? 0) / cap) * 1000) / 1000 : 0;
       }
     }
+    while (k < mil.length) serveMilitary(mil[k++]!, left, stats[u]);
     // What's sold is the city's own surplus at the highway's end of the network: what's left once its
     // buildings are served, less what was bought in (bought power and water are never resold).
     const spare = hwNode !== undefined ? Math.max(0, (left.get(g.component[hwNode]!) ?? 0) - bought) : 0;
@@ -170,6 +177,50 @@ export function updateUtilities(sim: Sim): void {
     stats[u].demand = Math.round(stats[u].demand);
   }
   s.utilityStats = stats;
+}
+
+/** A military building waiting for power (M34), where it stands on the network. */
+interface MilitaryConsumer {
+  c: Civic;
+  need: number;
+  comp: number;
+  d: number;
+}
+
+/** The city's military buildings with their power need, in the order they're served. */
+function militaryConsumers(sim: Sim, g: ReturnType<Sim['graph']>, dist: Float64Array): MilitaryConsumer[] {
+  const out: MilitaryConsumer[] = [];
+  for (const c of militaryCivics(sim)) {
+    const need = militaryPowerNeed(sim, c);
+    let node = -1;
+    if (c.access) {
+      const seg = sim.state.net.segments.get(c.access.seg);
+      if (seg) {
+        const len = sim.net.curve(seg.id).length;
+        node = g.index.get(c.access.s <= len / 2 ? seg.a : seg.b) ?? -1;
+      }
+    }
+    out.push({ c, need, comp: node >= 0 ? g.component[node]! : -1, d: node >= 0 ? dist[node]! : Infinity });
+  }
+  return out.sort((a, b) => a.comp - b.comp || a.d - b.d || a.c.id - b.c.id);
+}
+
+/** Is a military building ahead of a home or business in the queue for power? */
+function servedBefore(m: MilitaryConsumer, comp: number, d: number, id: number): boolean {
+  return m.comp < comp || (m.comp === comp && (m.d < d || (m.d === d && m.c.id < id)));
+}
+
+function serveMilitary(m: MilitaryConsumer, left: Map<number, number>, stat: UtilityStat): void {
+  stat.demand += m.need;
+  let served = 0;
+  if (m.need <= 0) served = civicOnline(m.c) ? 1 : 0;
+  else if (Number.isFinite(m.d)) {
+    const avail = left.get(m.comp) ?? 0;
+    const take = Math.min(avail, m.need);
+    left.set(m.comp, avail - take);
+    served = take / m.need;
+  }
+  m.c.powered = Math.round(served * 1000) / 1000;
 }
 
 /** Hourly outage bookkeeping: businesses close after UTILITIES.closeAfterHours without power or water. */
@@ -193,6 +244,8 @@ export function utilityConsequences(sim: Sim): void {
 export function cityUse(sim: Sim, u: Utility, k?: ReturnType<typeof weatherUse>): number {
   let n = 0;
   for (const b of sim.state.buildings.values()) if (b.state === BState.Active) n += buildingUse(b, u, k);
+  // Military buildings' power (M34), only in a city with war on.
+  if (u === 'power' && sim.state.war) for (const c of militaryCivics(sim)) n += militaryPowerNeed(sim, c);
   return n;
 }
 

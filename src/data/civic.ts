@@ -3,6 +3,7 @@
  * Footprints are in metres (w along the road, d away from it). DESIGN.md §3.6–3.7.
  */
 import { PROJECT_DEFS, type ProjectInfo } from './projects';
+import { MILITARY_DEFS, type MilitaryInfo } from './war';
 import type { Dept } from './economy';
 
 export type Utility = 'power' | 'water' | 'sewage';
@@ -20,7 +21,9 @@ export type CivicCategory =
   | 'transit'
   | 'landmark'
   | 'special'
-  | 'project';
+  | 'project'
+  /** Military buildings (M34): only in cities with war on. */
+  | 'military';
 
 export interface CivicDef {
   id: string;
@@ -119,6 +122,13 @@ export interface CivicDef {
   project?: ProjectInfo;
   /** The shared region's great work (M32): built by its host once the region has paid for it. */
   regionProject?: true;
+  /** Military buildings (M34): staff, power, noise, safety, and the units they train; see src/data/war.ts. */
+  military?: MilitaryInfo;
+  /**
+   * A waterfront site (M34): its back edge stands in the water, deep enough for warships (`deep`, the
+   * naval yard) or at the shore (`shore`, the coastal gun).
+   */
+  waterfront?: 'deep' | 'shore';
 }
 
 export const CIVIC_DEFS: CivicDef[] = [
@@ -819,6 +829,8 @@ CIVIC_DEFS.push(
 
 // Big projects (M17).
 CIVIC_DEFS.push(...PROJECT_DEFS);
+// Military buildings (M34): placed only in cities with war on.
+CIVIC_DEFS.push(...MILITARY_DEFS);
 
 export const CIVIC = new Map(CIVIC_DEFS.map((d) => [d.id, d]));
 

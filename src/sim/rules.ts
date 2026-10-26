@@ -41,6 +41,8 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   setFunding: 'money',
   takeLoan: 'money',
   repayLoan: 'money',
+  issueBond: 'money',
+  repayBond: 'money',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',

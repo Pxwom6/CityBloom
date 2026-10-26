@@ -30,7 +30,10 @@ export type Container =
   | 'stops'
   | 'traffic'
   | 'roadDamage'
-  | 'districts';
+  | 'districts'
+  /** War (M34): units and training (a base's are stood down with it, and come back with an undo). */
+  | 'units'
+  | 'orders';
 
 export const CONTAINERS: readonly Container[] = [
   'buildings',
@@ -44,6 +47,8 @@ export const CONTAINERS: readonly Container[] = [
   'traffic',
   'roadDamage',
   'districts',
+  'units',
+  'orders',
 ];
 
 /**
@@ -76,6 +81,8 @@ const STRUCTURAL: Record<Container, true | false | readonly string[]> = {
   traffic: false,
   roadDamage: false,
   districts: false,
+  units: false,
+  orders: false,
 };
 
 /**
@@ -113,6 +120,10 @@ function containerOf(s: SimState, c: Container): Map<number, unknown> {
       return s.net.blocks as Map<number, unknown>;
     case 'stops':
       return s.transit.stops as Map<number, unknown>;
+    case 'units':
+      return (s.war?.units ?? NONE) as Map<number, unknown>;
+    case 'orders':
+      return (s.war?.orders ?? NONE) as Map<number, unknown>;
     default:
       return s[c] as Map<number, unknown>;
   }
@@ -129,6 +140,9 @@ function setValue(s: SimState, k: ValueKey, v: unknown): void {
   else if (k === 'load') s.transit.load = v as SimState['transit']['load'];
   else (s as unknown as Record<string, unknown>)[k] = v;
 }
+
+/** A container a city without it (war off) reads as empty. */
+const NONE: ReadonlyMap<number, unknown> = new Map();
 
 const enc = (v: unknown): string => canonicalStringify(encodeValue(v));
 const dec = (json: string): unknown => decodeValue(JSON.parse(json));

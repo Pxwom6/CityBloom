@@ -19,6 +19,7 @@ import type {
   BuildingData,
   CityStats,
   FrameDiff,
+  ForceData,
   NetDiff,
   NodeData,
   SegmentData,
@@ -203,6 +204,19 @@ import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
+import {
+  baseRemoved,
+  bondsHour,
+  cancelTraining,
+  disbandUnit,
+  initialWar,
+  issueBond,
+  repayBond,
+  forceData,
+  trainUnit,
+  warHour,
+  warSummary,
+} from './systems/war';
 import { rectsOverlap, type ORect } from './geom';
 import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
 import {
@@ -211,6 +225,7 @@ import {
   defaultEconomy,
   districtReports,
   economyHour,
+  fundingPct,
   monthlyRates,
   taxPayers,
   repayLoan,
@@ -268,7 +283,10 @@ export type SimEvent = {
     | 'scenarioLost'
     | 'season'
     | 'seasonsNew'
-    | 'weather';
+    | 'weather'
+    // War (M34).
+    | 'unitTrained'
+    | 'bondRepaid';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -334,6 +352,8 @@ export class Sim {
    */
   static create(opts: Partial<GameOptions> = {}, map: MapData | null = null): Sim {
     const options: GameOptions = { ...DEFAULT_OPTIONS, ...opts };
+    // Rival neighbours (M34) only when on: a peaceful city's options have no such key.
+    if (!options.rivals || options.editor) delete options.rivals;
     if (map) {
       options.seed = map.seed;
       options.preset = map.preset;
@@ -391,6 +411,7 @@ export class Sim {
       map,
       builtBy: new Map(),
     };
+    if (options.rivals) state.war = initialWar();
     const sim = new Sim(state, terrain);
     // The map editor's city has no roads: the highway and railway entries are the map's own.
     if (options.editor) return sim;
@@ -694,7 +715,7 @@ export class Sim {
 
   /** Effectiveness (0..1.25) of a department at its current funding. */
   fundingEff(dept: Dept): number {
-    return fundingEffect(this.state.economy.funding[dept] / 100);
+    return fundingEffect(fundingPct(this.state.economy, dept) / 100);
   }
 
   avgTax(zone: 'R' | 'C' | 'I'): number {
@@ -772,6 +793,12 @@ export class Sim {
 
   private blockedCache: Set<number> | null = null;
   private disastersDirty = true;
+  /** The forces changed (M34): units, training or bonds; the next frame carries the roster. */
+  private warDirty = true;
+
+  warChanged(): void {
+    this.warDirty = true;
+  }
 
   /** Roads were damaged, repaired, flooded or drained: routing and everything built on it changes. */
   roadsBlockedChanged(): void {
@@ -970,6 +997,8 @@ export class Sim {
     const c = this.state.civics.get(id);
     if (!c) return;
     for (const v of [...this.state.vehicles.values()]) if (v.home === id) this.state.vehicles.delete(v.id);
+    // A military base's units are stood down with it (M34).
+    baseRemoved(this, id);
     this.state.civics.delete(id);
     this.coverageCache = null;
     this.transitChanged();
@@ -1194,6 +1223,8 @@ export class Sim {
         return setTax(this, cmd.zone, cmd.wealth, cmd.rate, dryRun);
       }
       case 'setFunding':
+        if (cmd.dept === 'defence' && !this.state.war)
+          return fail('Defence funding is for a city with war on');
         return setFunding(this, cmd.dept, cmd.pct, dryRun);
       case 'takeLoan': {
         const no = scenarioForbids(this, { loan: true });
@@ -1233,6 +1264,17 @@ export class Sim {
       }
       case 'addModule':
         return addModule(this, cmd.civic, cmd.module, dryRun);
+      // War (M34).
+      case 'trainUnit':
+        return trainUnit(this, cmd.base, cmd.kind, dryRun);
+      case 'cancelTraining':
+        return cancelTraining(this, cmd.order, dryRun);
+      case 'disbandUnit':
+        return disbandUnit(this, cmd.unit, dryRun);
+      case 'issueBond':
+        return issueBond(this, cmd.amount, dryRun);
+      case 'repayBond':
+        return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
         return createDistrict(this, cmd.name, dryRun);
       case 'paintDistrict':
@@ -1511,6 +1553,8 @@ export class Sim {
       this.markNetworkChanged();
       this.deckCache.clear();
     }
+    // Units and training (M34) came back or went with their base.
+    if (t.ids.units || t.ids.orders) this.warChanged();
     for (const id of t.ids.buildings ?? []) {
       if (this.state.buildings.has(id)) {
         this.removedBuildings.delete(id);
@@ -1677,6 +1721,12 @@ export class Sim {
           updateDemand(this);
         });
         run('economy', () => economyHour(this));
+        // War (M34): training, readiness, the stores and war bonds, after the money of the hour.
+        if (s.war)
+          run('war', () => {
+            warHour(this, (c) => extractionPerDay(this, c));
+            bondsHour(this);
+          });
         run('progress', () => {
           specialisationsHour(this);
           progressHour(this);
@@ -1790,6 +1840,7 @@ export class Sim {
             editor: !!this.state.options.editor,
           }
         : null,
+      war: warSummary(this, (c) => extractionPerDay(this, c)),
     };
   }
 
@@ -1929,7 +1980,13 @@ export class Sim {
       transit: this.transitData(),
       disasters: this.disasterData(),
       districts: this.districtData(),
+      ...(this.state.war ? { forces: this.forceData()! } : {}),
     };
+  }
+
+  /** The forces for the page (M34), or null with war off. */
+  forceData(): ForceData | null {
+    return forceData(this);
   }
 
   /** Districts for the client (M21). */
@@ -2062,6 +2119,7 @@ export class Sim {
     for (const id of n.segments.keys()) this.snowDirty.add(id);
     this.vehiclesDirty = this.trafficDirty = this.transitDirty = true;
     this.districtsDirty = this.disastersDirty = true;
+    this.warDirty = true;
   }
 
   collectFrame(): FrameDiff {
@@ -2152,6 +2210,11 @@ export class Sim {
     if (this.disastersDirty) {
       frame.disasters = this.disasterData();
       this.disastersDirty = false;
+    }
+    if (this.warDirty) {
+      const f = this.forceData();
+      if (f) frame.forces = f;
+      this.warDirty = false;
     }
     if (this.snowDirty.size) {
       frame.roadSnow = [...this.snowDirty]
@@ -2264,8 +2327,10 @@ export class Sim {
       name: d.name,
       category: d.category,
       blurb: d.blurb,
-      upkeep: Math.round(civicUpkeep(c) * (this.state.economy.funding[d.dept] / 100) * this.upkeepScale()),
-      funding: this.state.economy.funding[d.dept],
+      upkeep: Math.round(
+        civicUpkeep(c) * (fundingPct(this.state.economy, d.dept) / 100) * this.upkeepScale(),
+      ),
+      funding: fundingPct(this.state.economy, d.dept),
       access: !!c.access,
       produces,
       polluted:

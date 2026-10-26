@@ -11,6 +11,7 @@ import type { TerraformMode } from '../data/terraform';
 import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
 import type { RegionUpdate } from './systems/region';
+import type { UnitKind } from '../data/war';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -128,7 +129,14 @@ export type Command =
   /** Pay into the shared region's project (M32). */
   | { type: 'contributeProject'; amount: number }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
-  | { type: 'addModule'; civic: number; module: string };
+  | { type: 'addModule'; civic: number; module: string }
+  /** War (M34): train a unit at a military building, call training off, or stand a unit down. */
+  | { type: 'trainUnit'; base: number; kind: UnitKind }
+  | { type: 'cancelTraining'; order: number }
+  | { type: 'disbandUnit'; unit: number }
+  /** War bonds (M34): borrow from the residents, or pay one off early. */
+  | { type: 'issueBond'; amount: number }
+  | { type: 'repayBond'; id: number };
 
 export type CommandType = Command['type'];
 
@@ -177,6 +185,11 @@ const COMMAND_KINDS = {
   regionUpdate: true,
   contributeProject: true,
   addModule: true,
+  trainUnit: true,
+  cancelTraining: true,
+  disbandUnit: true,
+  issueBond: true,
+  repayBond: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

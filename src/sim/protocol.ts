@@ -3,6 +3,8 @@ import type { PlayerHistory } from './history';
 import type { SharedRules } from './rules';
 import type { WeatherSummary } from './systems/weather';
 import type { RegionSummary } from './systems/region';
+import type { WarSummary } from './systems/war';
+import type { UnitKind } from '../data/war';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
@@ -86,6 +88,8 @@ export interface CityStats {
     railZ: number | null;
     editor: boolean;
   } | null;
+  /** War (M34): the forces' figures for the war room, budget and toolbar; null with war off. */
+  war: WarSummary | null;
 }
 
 export interface ElectionSummary {
@@ -354,6 +358,15 @@ export interface Snapshot {
   disasters: DisasterData;
   /** Districts (M21). */
   districts: DistrictData;
+  /** The city's forces (M34); absent with war off. */
+  forces?: ForceData;
+}
+
+/** The city's units and the training under way (M34), sent whenever they change. */
+export interface ForceData {
+  units: { id: number; kind: UnitKind; base: number; hp: number }[];
+  /** Training at each base, oldest first: hours done of `hours`, and hours gained an hour now. */
+  orders: { id: number; kind: UnitKind; base: number; done: number; hours: number; rate: number }[];
 }
 
 export interface CivicData {
@@ -404,6 +417,8 @@ export interface FrameDiff {
   traffic?: TrafficData;
   transit?: TransitData;
   disasters?: DisasterData;
+  /** The forces (M34), when they changed. */
+  forces?: ForceData;
   districts?: DistrictData;
   /** Snow on roads (M22): segments whose snow changed, with their new depth (0 = clear). */
   roadSnow?: [number, number][];

@@ -76,6 +76,33 @@ export function computeNoise(sim: Sim): Float32Array {
       });
     }
   }
+  // Military buildings (M34): an airfield is loud along its runway like the airport; depots, ranges
+  // and factories round about them.
+  for (const c of s.war ? s.civics.values() : []) {
+    const def = CIVIC.get(c.def);
+    const m = def?.military;
+    if (!m || !civicOnline(c)) continue;
+    if (m.runway) {
+      const ux = DMath.cos(c.angle);
+      const uz = DMath.sin(c.angle);
+      const half = def.w / 2;
+      const reach = m.runway;
+      stamp(c.x, c.z, reach + half, (x, z) => {
+        const dx = x - c.x;
+        const dz = z - c.z;
+        const along = Math.max(0, Math.abs(dx * ux + dz * uz) - half);
+        const across = Math.abs(-dx * uz + dz * ux);
+        const r = DMath.hypot(along / reach, across / (reach * NOISE.across));
+        return r >= 1 ? 0 : NOISE.airport * DMath.pow(1 - r, 1.5);
+      });
+    }
+    const n = m.noise;
+    if (n)
+      stamp(c.x, c.z, n.reach, (x, z) => {
+        const d = DMath.hypot(x - c.x, z - c.z);
+        return d >= n.reach ? 0 : n.level * (1 - d / n.reach);
+      });
+  }
   for (const b of s.buildings.values()) {
     if (b.zone !== ZONE_I || b.state !== BState.Active || b.wealth !== 0) continue;
     stamp(b.x, b.z, NOISE.industryReach, (x, z) => {

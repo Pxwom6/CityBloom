@@ -25,8 +25,13 @@ export type Dept =
   | 'parks'
   | 'transit'
   | 'tourism'
-  | 'trade';
-export const DEPTS: { id: Dept; name: string; effect: string }[] = [
+  | 'trade'
+  | 'defence';
+/**
+ * Funding departments. `war`: only in cities with war on (M34); a peaceful city's funding record has
+ * no such key (it reads as 100 %), so its saves are as before.
+ */
+export const DEPTS: { id: Dept; name: string; effect: string; war?: true }[] = [
   { id: 'roads', name: 'Road maintenance', effect: 'Below 100 %, roads wear and traffic slows.' },
   { id: 'power', name: 'Power', effect: 'Scales power plant output.' },
   { id: 'water', name: 'Water', effect: 'Scales pumping capacity.' },
@@ -40,6 +45,12 @@ export const DEPTS: { id: Dept; name: string; effect: string }[] = [
   { id: 'transit', name: 'Transit', effect: 'Scales bus frequency.' },
   { id: 'tourism', name: 'Tourism', effect: 'Scales how many visitors landmarks draw and hotels host.' },
   { id: 'trade', name: 'Trade and research', effect: 'Scales freight, mining, oil and research income.' },
+  {
+    id: 'defence',
+    name: 'Defence',
+    effect: 'Scales military readiness and how fast units train.',
+    war: true,
+  },
 ];
 export const FUNDING_MIN = 0;
 export const FUNDING_MAX = 150;
@@ -139,6 +150,14 @@ export const LEDGER_LABELS: Record<string, string> = {
   exports: 'Sold to neighbours',
   regionProject: 'The region’s great work',
   landscaping: 'Landscaping',
+  // War (M34).
+  forces: 'Forces upkeep',
+  training: 'Training units',
+  warImports: 'War materials bought in',
+  warMaterials: 'War materials (local)',
+  bonds: 'War bonds sold',
+  bondInterest: 'War bond interest',
+  bondPrincipal: 'War bond repayments',
 };
 
 export function ledgerLabel(key: string): string {

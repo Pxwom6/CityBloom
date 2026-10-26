@@ -408,6 +408,8 @@ export function resolveBattle(
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), input.id].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;
+  // Its opening picture at once: a battle being watched shows before its first tick.
+  sim.battleFrame = run.frame();
   sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
   if (mode === 'instant') {
     try {

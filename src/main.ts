@@ -323,9 +323,10 @@ async function boot(): Promise<void> {
       game.toast(`That battle can’t be shown: ${shown.reason}.`, 'info', 6000);
       setTimeout(() => game.backToCity(), 3000);
     }
-    game.setSpeed(1);
+    // It plays once the town is drawn (a big one takes a while on a slow device), not before.
+    game.setSpeed(0);
+    game.viewerStart = 3;
     game.setCamera('overview', true);
-    setTimeout(() => game.followBattle(), 1500);
     history.replaceState(null, '', location.pathname);
   } else if (visited) {
     game.readOnly = true;

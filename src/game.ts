@@ -500,6 +500,8 @@ export class Game {
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
     postBattle: (slot, input) => void this.region?.sendBattle(slot, input),
   });
+  /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
+  viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
   viewing: { record: BattleRecord; back: string | null } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
@@ -1973,6 +1975,10 @@ export class Game {
       this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
     }
     this.renderer.frame(dt);
+    if (this.viewerStart > 0 && --this.viewerStart === 0) {
+      this.setSpeed(1);
+      setTimeout(() => this.followBattle(), 1500);
+    }
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {
       this.ambientAt = now;

@@ -3,6 +3,35 @@ import { closeContextsAfterEach, newContext, openGame, shot, watchErrors } from 
 import { frames } from './ui';
 import { armTown, servedTown } from './war';
 
+/**
+ * On a failure, what each player's page showed and did: a screenshot, its console, and its region
+ * socket's messages (their kinds), to tell a slow page from a lost message.
+ */
+const watched: { name: string; page: Page; log: string[] }[] = [];
+function watch(name: string, page: Page): void {
+  const log: string[] = [];
+  const kind = (payload: string | Buffer) => {
+    const t = String(payload);
+    return t.startsWith('{') ? (/"t":"(\w+)"/.exec(t)?.[1] ?? '?') : t.slice(0, 20);
+  };
+  page.on('console', (m) => log.push(`${m.type()}: ${m.text().slice(0, 200)}`));
+  page.on('pageerror', (e) => log.push(`pageerror: ${e.message}`));
+  page.on('websocket', (ws) => {
+    log.push(`ws open ${ws.url()}`);
+    ws.on('framesent', (f) => log.push(`ws > ${kind(f.payload)}`));
+    ws.on('framereceived', (f) => log.push(`ws < ${kind(f.payload)}`));
+    ws.on('close', () => log.push('ws close'));
+  });
+  watched.push({ name, page, log });
+}
+test.afterEach(async ({ browserName: _ }, info) => {
+  if (info.status !== info.expectedStatus)
+    for (const w of watched) {
+      await w.page.screenshot({ path: `test-results/m35-friends-${w.name}.png` }).catch(() => undefined);
+      console.log(`--- ${w.name} at ${w.page.url()}\n${w.log.slice(-80).join('\n')}`);
+    }
+  watched.length = 0;
+});
 closeContextsAfterEach();
 
 /**
@@ -35,10 +64,12 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
 }) => {
   test.setTimeout(3_600_000);
   const ada = await player(browser, 'Ada', 0);
+  watch('ada', ada);
   const adaErrs = watchErrors(ada);
   await openGame(ada, '&seed=regionada&preset=river&name=Adaville');
   await servedTown(ada);
   const sam = await player(browser, 'Sam', 1);
+  watch('sam', sam);
   // What Sam's page said, to print if the menu doesn't come (once it never did, in a loaded VM).
   const samLog: string[] = [];
   sam.on('console', (m) => samLog.push(`${m.type()}: ${m.text()}`));

@@ -14,6 +14,8 @@ import type { Sim } from '../sim';
 import type { RegionFlows } from './regionFlows';
 import { civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
+import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
+import { startWar } from './war';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -55,6 +57,21 @@ export interface Neighbour {
   trend: number;
   /** Population at the end of each of the last 24 months (oldest first), for the panel's chart. */
   history: number[];
+  /**
+   * A computer neighbour's character and forces in a city with war on (M34); absent otherwise, and
+   * for another player's city.
+   */
+  rival?: RivalNeighbour;
+}
+
+/** A computer neighbour as a rival (M34): its character, its forces and defences, how it feels. */
+export interface RivalNeighbour {
+  personality: Personality;
+  /** Fighting strength of its forces and of its fixed defences (strength points). */
+  forces: number;
+  defences: number;
+  /** Its feelings towards the city, −100 (hostile) to 100 (friendly). */
+  relation: number;
 }
 
 export interface Deal {
@@ -95,6 +112,11 @@ export interface RegionState {
   nextDeal: number;
   /** The shared region's project (M32), or null when the city isn't in a shared region. */
   project?: RegionProjectState | null;
+  /**
+   * The shared region's war rules (M34), set by its host: present only while they allow war, so a
+   * peaceful city's state has no such key.
+   */
+  rules?: RegionWarRules;
 }
 
 const SIDES: NeighbourSide[] = ['north', 'south', 'west'];
@@ -384,6 +406,8 @@ export interface RegionUpdate {
   cities: RegionCity[];
   contracts: RegionContract[];
   project: Omit<RegionProjectState, 'mine'> | null;
+  /** The region's war rules (M34); none from an older region: peace. */
+  rules?: RegionWarRules;
 }
 
 /**
@@ -396,6 +420,8 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
   for (const c of [...u.cities].sort((a, b) => a.slot - b.slot)) {
     const n = r.neighbours.find((x) => x.player?.slot === c.slot) ?? r.neighbours.find((x) => !x.player);
     if (!n) continue;
+    // A friend's city isn't a computer rival: its war stance is its own.
+    delete n.rival;
     n.name = c.name;
     n.kind = c.kind;
     n.population = Math.max(0, Math.round(c.population));
@@ -431,6 +457,13 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
   }
   r.deals = keep;
   r.project = u.project ? { ...u.project, mine: r.project?.mine ?? 0 } : null;
+  // War (M34): the region's host turns it on, and the city raises forces. Turned off again, the
+  // city keeps what it built and trained, but can't fight (later milestones say what that means).
+  const rules = u.rules ? cleanWarRules(u.rules) : null;
+  if (rules?.war) {
+    r.rules = rules;
+    startWar(sim);
+  } else delete r.rules;
 }
 
 /** What this city offers the others in a shared region (M32): its spare and its needs, its people. */

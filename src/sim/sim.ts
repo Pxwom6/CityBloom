@@ -209,10 +209,11 @@ import {
   bondsHour,
   cancelTraining,
   disbandUnit,
-  initialWar,
+  forceData,
   issueBond,
   repayBond,
-  forceData,
+  rivalsMonth,
+  startWar,
   trainUnit,
   warHour,
   warSummary,
@@ -412,8 +413,9 @@ export class Sim {
       map,
       builtBy: new Map(),
     };
-    if (options.rivals) state.war = initialWar();
     const sim = new Sim(state, terrain);
+    // Rival neighbours (M34): the war state, and characters and forces for the computer neighbours.
+    if (options.rivals) startWar(sim);
     // The map editor's city has no roads: the highway and railway entries are the map's own.
     if (options.editor) return sim;
     sim.buildHighway();
@@ -1660,6 +1662,8 @@ export class Sim {
         projectEvents(this);
         electionsMonth(this);
         regionMonth(this);
+        // Computer neighbours arm (M34), only where war is on.
+        if (s.war) rivalsMonth(this);
         scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;

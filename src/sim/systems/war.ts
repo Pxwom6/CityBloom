@@ -1,7 +1,18 @@
 import { CIVIC } from '../../data/civic';
 import { COMMUTE, TRAFFIC } from '../../data/balance';
 import { annuity } from '../../data/economy';
-import { UNIT, UNIT_CLASSES, WAR, type MilitaryInfo, type UnitClass, type UnitKind } from '../../data/war';
+import {
+  PERSONALITY,
+  PERSONALITY_IDS,
+  RIVALS,
+  UNIT,
+  UNIT_CLASSES,
+  WAR,
+  type MilitaryInfo,
+  type UnitClass,
+  type UnitKind,
+} from '../../data/war';
+import { Rng, type RngState } from '../rng';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
@@ -74,6 +85,11 @@ export interface WarState {
   stock: WarStock;
   bonds: Bond[];
   /**
+   * The war's own dice (M34), seeded from the city's seed: the neighbours' arming and, later,
+   * battles draw from these, never from the city's other streams (a peaceful city's are untouched).
+   */
+  rng: RngState;
+  /**
    * The war clock (hours) that training runs on. In a city of its own it is the city's game hours;
    * in a shared region it can't run ahead of the region's fair clock (SPEC-5: 3× must not raise an
    * army in minutes that others need hours to answer).
@@ -81,15 +97,64 @@ export interface WarState {
   clock: number;
 }
 
-export function initialWar(): WarState {
+export function initialWar(seed: string): WarState {
   return {
     units: new Map(),
     orders: new Map(),
     readiness: 0,
     stock: { goods: 0, ore: 0, oil: 0, munitions: 0 },
     bonds: [],
+    rng: Rng.fromSeed(`${seed}:war`).getState(),
     clock: 0,
   };
+}
+
+/**
+ * War comes to a city (M34): founded with rival neighbours, or its region's host turned war on.
+ * It gets its war state, and its computer neighbours each a character and forces to match.
+ */
+export function startWar(sim: Sim): void {
+  const s = sim.state;
+  if (s.war) return;
+  s.war = initialWar(s.options.seed);
+  markRivals(sim);
+  sim.warChanged();
+}
+
+/** Characters and starting forces for the computer neighbours, from the city's seed (M34). */
+export function markRivals(sim: Sim): void {
+  const rng = Rng.fromSeed(`${sim.state.options.seed}:rivals`);
+  const left = [...PERSONALITY_IDS];
+  for (const n of sim.state.region.neighbours) {
+    if (n.player || n.rival) continue;
+    // Different characters while they last, so a city's rivals aren't three of a kind.
+    const pick = left.splice(rng.int(left.length), 1)[0] ?? PERSONALITY_IDS[rng.int(PERSONALITY_IDS.length)]!;
+    const p = PERSONALITY[pick];
+    const k = n.population / 1000;
+    n.rival = {
+      personality: pick,
+      forces: Math.round(k * p.forces * rng.range(0.5, 0.8) * 10) / 10,
+      defences: Math.round(k * p.defences * rng.range(0.5, 0.8) * 10) / 10,
+      relation: Math.round(p.relation + rng.range(-10, 10)),
+    };
+  }
+}
+
+/** The computer neighbours arm month by month towards what their character keeps (M34). */
+export function rivalsMonth(sim: Sim): void {
+  const w = sim.state.war;
+  if (!w) return;
+  const rng = new Rng(w.rng);
+  for (const n of sim.state.region.neighbours) {
+    const r = n.rival;
+    if (!r || n.player) continue;
+    const p = PERSONALITY[r.personality];
+    const k = n.population / 1000;
+    const step = RIVALS.arming * (1 + RIVALS.jitter * rng.range(-1, 1));
+    r.forces = Math.round((r.forces + (k * p.forces - r.forces) * step) * 10) / 10;
+    r.defences = Math.round((r.defences + (k * p.defences - r.defences) * step) * 10) / 10;
+  }
+  w.rng = rng.getState();
 }
 
 /** Is war on in this city (M34)? Its military state exists only then. */

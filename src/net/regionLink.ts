@@ -10,6 +10,7 @@ import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg, RegionView } from '../../relay/region';
 import type { Link } from './link';
+import type { RegionWarRules } from '../data/war';
 import { decodeSnapshot, encodeSnapshot } from './snapshot';
 
 /** What a region link needs from the city: its own commands and queries, and a save. */
@@ -60,13 +61,15 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
       built: p.built,
       power: p.built ? Math.round((p.power * mine) / p.goal) : 0,
     },
+    // War (M34): what the region's host allows (an older region sends none: peace).
+    ...(view.rules?.war ? { rules: { ...view.rules } } : {}),
   };
 }
 
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
-  create?: { name: string };
+  create?: { name: string; rules?: RegionWarRules };
   rejoin?: { slot: number; secret: string };
   /** How often to report (ms) and to keep a save for visitors. */
   reportEvery?: number;
@@ -239,6 +242,16 @@ export class RegionLink {
       const id = `${this.slot}-${Math.round(now)}`;
       parts.forEach((data, part) => this.send({ t: 'save', id, part, parts: parts.length, data }));
     }
+  }
+
+  /** Set the region's war rules (M34): only its host's are taken. */
+  setRules(rules: RegionWarRules): void {
+    this.send({ t: 'rrules', rules });
+  }
+
+  /** Is this city the region's host (it made the region and sets its rules, M34)? */
+  get isHost(): boolean {
+    return !!this.slot && (this.view?.host ?? 1) === this.slot;
   }
 
   /** Pay into the region project: this city's sim takes the money, then the region hears of it. */

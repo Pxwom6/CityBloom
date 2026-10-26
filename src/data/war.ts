@@ -823,3 +823,126 @@ export const WAR = {
   /** Residents' liking for feeling safe, by wealth (the wealthy like it most). */
   safetyLike: [0.7, 1, 1.25] as [number, number, number],
 };
+
+/**
+ * How far a war may go (SPEC-5): a skirmish (a raid on military and border targets; nothing changes
+ * hands), a war (declared, with peace terms and occupied districts), or total war (a city whose city
+ * hall is held long enough can be conquered).
+ */
+export type WarScale = 'skirmish' | 'war' | 'total';
+export const WAR_SCALES: readonly WarScale[] = ['skirmish', 'war', 'total'];
+export const WAR_SCALE_NAMES: Record<WarScale, string> = {
+  skirmish: 'Skirmishes only',
+  war: 'Up to war',
+  total: 'Total war allowed',
+};
+
+/** A shared region's rules for war (M34), set by its host: is war on, and how far may it go. */
+export interface RegionWarRules {
+  war: boolean;
+  scale: WarScale;
+}
+export const PEACE_RULES: RegionWarRules = { war: false, scale: 'skirmish' };
+
+/** The rules in a sentence, for notices and refusals ("Your region's rules allow skirmishes only"). */
+export function warRulesText(r: RegionWarRules): string {
+  if (!r.war) return 'war is off';
+  return r.scale === 'skirmish'
+    ? 'skirmishes only'
+    : r.scale === 'war'
+      ? 'war, but not total war'
+      : 'total war';
+}
+
+/** A clean copy of rules from outside (a region's message), or null if they don't make sense. */
+export function cleanWarRules(raw: unknown): RegionWarRules | null {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || typeof r !== 'object' || typeof r.war !== 'boolean') return null;
+  if (!WAR_SCALES.includes(r.scale as WarScale)) return null;
+  return { war: r.war, scale: r.scale as WarScale };
+}
+
+/** A computer neighbour's character in war (SPEC-5): how it arms, fights, trades and keeps its word. */
+export type Personality = 'aggressive' | 'cautious' | 'mercantile' | 'honourable' | 'treacherous';
+export const PERSONALITY_IDS: readonly Personality[] = [
+  'aggressive',
+  'cautious',
+  'mercantile',
+  'honourable',
+  'treacherous',
+];
+
+export interface PersonalityDef {
+  name: string;
+  blurb: string;
+  /** Forces it keeps per 1,000 residents (strength points, as `UnitDef.strength`), and defences. */
+  forces: number;
+  defences: number;
+  /** How readily it goes to war (0–1), keeps a pact (0–1), and trades (0–1); used from M35. */
+  aggression: number;
+  keepsPacts: number;
+  trade: number;
+  /** Where its feelings towards the city start (−100 to 100). */
+  relation: number;
+}
+
+export const PERSONALITY: Record<Personality, PersonalityDef> = {
+  aggressive: {
+    name: 'Aggressive',
+    blurb: 'Arms hard and picks fights: expect raids once it thinks it can win.',
+    forces: 2.4,
+    defences: 0.8,
+    aggression: 0.8,
+    keepsPacts: 0.5,
+    trade: 0.3,
+    relation: -20,
+  },
+  cautious: {
+    name: 'Cautious',
+    blurb: 'Digs in behind strong defences and rarely starts anything.',
+    forces: 1,
+    defences: 1.8,
+    aggression: 0.15,
+    keepsPacts: 0.8,
+    trade: 0.5,
+    relation: 0,
+  },
+  mercantile: {
+    name: 'Mercantile',
+    blurb: 'Would rather trade than fight: keeps a modest force and sells arms to anyone.',
+    forces: 0.8,
+    defences: 1,
+    aggression: 0.2,
+    keepsPacts: 0.7,
+    trade: 0.9,
+    relation: 10,
+  },
+  honourable: {
+    name: 'Honourable',
+    blurb: 'Keeps its word and its pacts, and expects the same: break one and it remembers.',
+    forces: 1.4,
+    defences: 1.2,
+    aggression: 0.35,
+    keepsPacts: 1,
+    trade: 0.6,
+    relation: 5,
+  },
+  treacherous: {
+    name: 'Treacherous',
+    blurb: 'Smiles, signs, and strikes when you look away: never trust a pact with it.',
+    forces: 1.8,
+    defences: 0.8,
+    aggression: 0.6,
+    keepsPacts: 0.2,
+    trade: 0.5,
+    relation: 0,
+  },
+};
+
+/** Computer neighbours' forces (M34): they arm towards their character's level month by month. */
+export const RIVALS = {
+  /** Share of the gap to its target strength a neighbour closes each month. */
+  arming: 0.06,
+  /** Monthly jitter in that, either way (share). */
+  jitter: 0.25,
+};

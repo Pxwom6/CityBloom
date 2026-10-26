@@ -15,6 +15,7 @@
  */
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
+import { PEACE_RULES, cleanWarRules, warRulesText, type RegionWarRules } from '../src/data/war';
 import {
   MAX_SNAPSHOT_PARTS,
   PLAYER_COLORS,
@@ -66,6 +67,10 @@ export interface RegionView {
   kind: 'online' | 'p2p' | 'local';
   cities: RegionCityView[];
   project: RegionProjectView;
+  /** The city that made the region (M34): it sets the rules. */
+  host: number;
+  /** War in the region (M34): on or off, and the largest scale; set by the host. */
+  rules: RegionWarRules;
 }
 
 export type RegionClientMsg =
@@ -75,7 +80,7 @@ export type RegionClientMsg =
       mayor: string;
       color: number;
       city: string;
-      create?: { name: string };
+      create?: { name: string; rules?: RegionWarRules };
       rejoin?: { slot: number; secret: string };
       /** Just looking (a visitor reading a city): no slot. */
       visitor?: boolean;
@@ -83,7 +88,9 @@ export type RegionClientMsg =
   | { t: 'report'; city: string; report: RegionReport; thumb?: string }
   | { t: 'contribute'; amount: number }
   | { t: 'save'; id: string; part: number; parts: number; data: string }
-  | { t: 'visit'; slot: number };
+  | { t: 'visit'; slot: number }
+  /** The host changes the region's war rules (M34). */
+  | { t: 'rrules'; rules: RegionWarRules };
 
 export type RegionRoomMsg =
   | { t: 'rwelcome'; slot: number; secret: string; region: RegionView }
@@ -128,6 +135,10 @@ export interface RegionMeta {
   nextSlot: number;
   cities: City[];
   project: { total: number; by: Record<number, number>; host: number; built: boolean };
+  /** The city that made it, which sets its rules (M34); older records: slot 1. */
+  host?: number;
+  /** War in the region (M34); older records: peace. */
+  rules?: RegionWarRules;
   /** When the record was last saved (ms): the region expires a while after (F8). */
   lastActive?: number;
   /** Rows written today (F8). */
@@ -276,6 +287,11 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         const c = m.create as Record<string, unknown>;
         if (typeof c?.name !== 'string') return null;
         out.create = { name: cleanCityName(c.name) };
+        if (c.rules !== undefined) {
+          const rules = cleanWarRules(c.rules);
+          if (!rules) return null;
+          out.create.rules = rules;
+        }
       }
       if (m.rejoin !== undefined) {
         const r = m.rejoin as Record<string, unknown>;
@@ -314,6 +330,10 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       return { t: 'save', id: m.id, part: m.part as number, parts: m.parts as number, data: m.data };
     case 'visit':
       return finite(m.slot, 1, 64) ? { t: 'visit', slot: m.slot as number } : null;
+    case 'rrules': {
+      const rules = cleanWarRules(m.rules);
+      return rules ? { t: 'rrules', rules } : null;
+    }
     default:
       return null;
   }
@@ -508,6 +528,8 @@ export class RegionRoom {
         built: p.built,
         power: REGION_PROJECT.power,
       },
+      host: m.host ?? 1,
+      rules: { ...(m.rules ?? PEACE_RULES) },
     };
   }
 
@@ -608,6 +630,18 @@ export class RegionRoom {
         this.changed(slot);
         return;
       }
+      case 'rrules': {
+        // Only the host sets the rules; the change goes to everyone and is written at its pace.
+        if (slot !== (this.meta.host ?? 1)) return;
+        const was = this.meta.rules ?? PEACE_RULES;
+        if (was.war === m.rules.war && was.scale === m.rules.scale) return;
+        this.meta.rules = m.rules;
+        for (const c of this.conns.keys())
+          c.send({ t: 'notice', text: `${city.name} set the region's rules: ${warRulesText(m.rules)}` });
+        this.broadcast();
+        this.changed(slot);
+        return;
+      }
       case 'save': {
         // Kept at most every so often; parts in between are ignored before they take memory.
         if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
@@ -652,6 +686,9 @@ export class RegionRoom {
         nextSlot: 1,
         cities: [],
         project: { total: 0, by: {}, host: 0, built: false },
+        // The city making it is its first and its host (M34); war only if it asked for it.
+        host: 1,
+        ...(m.create.rules?.war ? { rules: m.create.rules } : {}),
       };
     }
     if (!this.meta) return this.reject(conn, 'no-region', 'No region with that code');

@@ -186,7 +186,9 @@ describe('armed forces (M34)', () => {
     const spare = sim.state.totals.workers * WAR.enlistShare;
     // The town can't staff all 430 posts.
     expect(posts(hq) + posts(factory) + posts(depot) + posts(barracks)).toBeGreaterThan(spare);
-    expect(staffed(hq) + staffed(factory) + staffed(depot) + staffed(barracks)).toBeLessThanOrEqual(spare * 1.05);
+    expect(staffed(hq) + staffed(factory) + staffed(depot) + staffed(barracks)).toBeLessThanOrEqual(
+      spare * 1.05,
+    );
     expect(sim.state.civics.get(hq)!.staff).toBeGreaterThan(0.9);
     expect(sim.state.civics.get(barracks)!.staff).toBeGreaterThan(0.9);
     expect(sim.state.civics.get(factory)!.staff).toBe(0);

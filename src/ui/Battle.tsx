@@ -442,12 +442,19 @@ export function RegionMap() {
           const hours = travelHours('highway', n.side, []);
           const front = (n.rival && n.rival.relation <= -40) || recent.has(n.name);
           const mid = lerp(p, me, 0.5);
-          // The hours go beside the road, on the side away from the air route drawn up and right of it.
+          // A front's label goes beside the road, on the side away from the air route drawn up and
+          // right of it; the hours by the town, on the side away from its road (above a town to the
+          // north, under one to the south or west).
           const len = Math.hypot(me.x - p.x, me.y - p.y) || 1;
           let nx = -(me.y - p.y) / len;
           let ny = (me.x - p.x) / len;
           if (nx * 6 - ny * 6 > 0) [nx, ny] = [-nx, -ny];
-          const label = { x: mid.x + nx * 14, y: mid.y + ny * 14 + 3 };
+          const label =
+            n.side === 'north'
+              ? { x: p.x, y: p.y - 18, anchor: 'middle' }
+              : n.side === 'south'
+                ? { x: p.x, y: p.y + (n.rival ? 48 : 37), anchor: 'middle' }
+                : { x: 6, y: p.y + (n.rival ? 48 : 37), anchor: 'start' };
           return (
             <g key={n.id} data-testid={`map-${n.id}`}>
               <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class={`war-map-route ${front ? 'front' : ''}`} />
@@ -455,7 +462,7 @@ export function RegionMap() {
               {w.routes.sea && (
                 <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class="war-map-sea" transform="translate(-6 6)" />
               )}
-              <text x={label.x} y={label.y} class="war-map-hours">
+              <text x={label.x} y={label.y} class="war-map-hours" text-anchor={label.anchor}>
                 road {hours} h{w.routes.rail && ` · rail ${travelHours('rail', n.side, [])} h`}
                 {w.routes.sea && ` · sea ${travelHours('sea', n.side, [])} h`} · air{' '}
                 {travelHours('air', n.side, [])} h

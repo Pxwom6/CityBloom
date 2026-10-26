@@ -3962,8 +3962,7 @@ body {
   fill: var(--color-text-muted);
 }
 .war-map-note.town,
-.war-map-front,
-.war-map-hours {
+.war-map-front {
   text-anchor: middle;
 }
 /* Labels keep a halo of the map's colour, so lines running under them don't cut through. */

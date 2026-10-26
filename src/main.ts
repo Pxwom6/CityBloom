@@ -71,6 +71,8 @@ function optionsFrom(params: URLSearchParams): Partial<GameOptions> {
   o.elections = params.has('elections') ? params.get('elections') === '1' : loadSettings().elections;
   const name = params.get('name')?.trim();
   if (name) o.cityName = name.slice(0, 40);
+  // Rival neighbours (M34): war on for this city. Off unless asked for.
+  if (params.get('rivals') === '1') o.rivals = true;
   return o;
 }
 

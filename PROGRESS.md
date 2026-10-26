@@ -230,16 +230,28 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 5 started: SPEC-5.md saved, CLAUDE.md, SPEC_REVIEW and DECISIONS set up for it. Next: M34
-Armed forces (below).
+**M34 Armed forces**, nearly done. In: the "Rival neighbours" option (new-city screen, `rivals=1`)
+and a region's war rules (host only, `rrules`, protocol 2); rivals with a personality each; twelve
+military buildings (Military bar, gated on war; the HQ first; the naval yard and coastal gun on the
+waterfront); units that train at their bases, one order at a time, from staff (recruited before any
+business hires), power and materials (`src/sim/systems/war.ts`); the defence line, forces upkeep,
+war bonds, the arms factory and war stores; the inspector's military section and the war room
+(Shift+M); the 39 war models checked and packed in their own file (`war-models-*.bin`, fetched only
+by a city at war; the main models file is byte-identical); generated looks for all 21 war buildings
+and 14 units, and units in the city (parked, on drills, patrols, flights, boats). Save v27; peace
+plays part for part as on `main` (`tests/war/forces.test.ts`), and `balance` is unchanged.
+
+Left for M34: review the units' screenshots (`node scripts/dev/unitshot.mjs <out>`), the M34 e2e
+(`e2e/m34-forces.spec.ts`, last run failed only because one airfield trains three kinds in turn, now
+given eight months and a second power plant), lint, the full unit suite, the layout specs, `bench`,
+the cross-browser test, then the `M34 complete:` commit and its pull request.
 
 ## Next tasks
-1. M34 Armed forces: bring the war buildings' and units' models into the pipeline (PROMPTS-WAR.md
-   budgets, spec v6 for buildings, unit spec v1, the README's allowances), the "Rival neighbours"
-   option and the region's war rules, military buildings, units that train, the war economy (defence
-   line, war bonds, arms factory) and the war room panel.
-2. M35–M40 in order.
-3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+1. Finish M34 (above).
+2. M35 Into battle: battles as deterministic commands to each city's sim; computer neighbours' towns
+   (grown headlessly and cached), the region map, expeditions, defence while the owner is away.
+3. M36–M40 in order.
+4. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic

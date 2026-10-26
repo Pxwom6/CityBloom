@@ -194,32 +194,65 @@ export class P2PHost {
     const msg = t.makeAction<string>('room');
     const hello = t.makeAction<string>('host');
     // Each guest's messages are numbered both ways, so Trystero can't reorder them (`order.ts`).
-    const links = new Map<string, { link: Link; receive: (raw: unknown) => void }>();
-    const gone = (peer: string, why: string) => {
-      const entry = links.get(peer);
+    type Entry = { link: Link; receive: (raw: unknown) => void; sending: Set<Promise<void>> };
+    const links = new Map<string, Entry>();
+    /**
+     * A guest's connection ends. The room hears of it unless the room ended it itself (`why` null). A
+     * guest that didn't leave is told, once what was sent to it before has gone, so its game reconnects
+     * or stops as after any dropped connection (`viaTrystero`); one that can't be told loses its
+     * connection.
+     */
+    const end = (peer: string, entry: Entry, why: string | null, tell: boolean) => {
+      if (links.get(peer) !== entry) return;
       links.delete(peer);
-      if (entry) {
-        this.guests--;
-        entry.link.onclose?.(why);
-      }
+      this.guests--;
+      if (why !== null) entry.link.onclose?.(why);
+      if (!tell) return;
+      let wait: ReturnType<typeof setTimeout> | undefined;
+      const sent = Promise.race([
+        Promise.allSettled(entry.sending),
+        new Promise((r) => (wait = setTimeout(r, 10_000))),
+      ]);
+      void sent.then(() => {
+        clearTimeout(wait);
+        hello.send('bye', { target: peer }).catch(() => t.getPeers()[peer]?.close());
+      });
     };
     t.onPeerJoin = (peer) => {
-      hello.send('host', { target: peer });
-      const link: Link = {
-        send: numbered((text) => void msg.send(text, { target: peer })),
-        close: () => links.delete(peer),
-        onmessage: null,
-        onclose: null,
+      // (Trystero shouldn't announce a peer twice, but a second one starts afresh.)
+      const old = links.get(peer);
+      if (old) end(peer, old, 'joined again', false);
+      hello.send('host', { target: peer }).catch(() => undefined);
+      const entry: Entry = {
+        link: {
+          send: numbered((text) => {
+            // Trystero gives up on a message it can't get through: the rest would wait behind it.
+            const p = msg
+              .send(text, { target: peer })
+              .catch(() => end(peer, entry, 'a message was lost', true));
+            entry.sending.add(p);
+            void p.finally(() => entry.sending.delete(p));
+          }),
+          close: () => end(peer, entry, null, true),
+          onmessage: null,
+          onclose: null,
+        },
+        receive: inOrder(
+          (text) => {
+            if (links.get(peer) === entry) entry.link.onmessage?.(text);
+          },
+          (why) => end(peer, entry, why, true),
+        ),
+        sending: new Set(),
       };
-      const receive = inOrder(
-        (text) => link.onmessage?.(text),
-        (why) => gone(peer, why),
-      );
-      links.set(peer, { link, receive });
-      attach(this.room as Hub<Conn>, link);
+      links.set(peer, entry);
+      attach(this.room as Hub<Conn>, entry.link);
       this.guests++;
     };
-    t.onPeerLeave = (peer) => gone(peer, 'left');
+    t.onPeerLeave = (peer) => {
+      const entry = links.get(peer);
+      if (entry) end(peer, entry, 'left', false);
+    };
     msg.onMessage = (data, { peerId }) => links.get(peerId)?.receive(data);
   }
 }
@@ -309,17 +342,31 @@ async function viaTrystero(
   const msg = t.makeAction<string>('room');
   const hello = t.makeAction<string>('host');
   return new Promise<Link>((resolve, reject) => {
+    let host: string | null = null;
+    let end: ((why: string) => void) | null = null;
+    let late = false;
     const timer = setTimeout(() => {
+      late = true;
       void t.leave();
       reject(new Error(`${p2pFailed(false)} (Or no host is waiting with that code.)`));
     }, timeoutMs);
-    hello.onMessage = (_data, { peerId: host }) => {
+    hello.onMessage = (data, { peerId }) => {
+      if (host !== null) {
+        // The host let this guest go (`listenTrystero`). A second hello changes nothing.
+        if (data === 'bye' && peerId === host) end?.('the host closed the connection');
+        return;
+      }
+      if (data !== 'host' || late) return;
+      host = peerId;
       clearTimeout(timer);
       onHost?.();
       // Numbered both ways, so Trystero can't reorder the room's messages (`order.ts`).
       let over = false;
       const link: Link = {
-        send: numbered((text) => void msg.send(text, { target: host })),
+        send: numbered((text) => {
+          // Trystero gives up on a message it can't get through: the rest would wait behind it.
+          msg.send(text, { target: peerId }).catch(() => end?.('a message was lost'));
+        }),
         close: () => {
           over = true;
           void t.leave();
@@ -327,23 +374,24 @@ async function viaTrystero(
         onmessage: null,
         onclose: null,
       };
-      const end = (why: string) => {
+      // However the link ends, this Trystero room is left, so a reconnect starts with a fresh one.
+      end = (why: string) => {
         if (over) return;
         over = true;
         link.onclose?.(why);
+        void t.leave();
       };
       const receive = inOrder(
-        (text) => link.onmessage?.(text),
-        (why) => {
-          end(why);
-          void t.leave();
+        (text) => {
+          if (!over) link.onmessage?.(text);
         },
+        (why) => end?.(why),
       );
-      msg.onMessage = (data, { peerId }) => {
-        if (peerId === host) receive(data);
+      msg.onMessage = (data, { peerId: from }) => {
+        if (from === host) receive(data);
       };
       t.onPeerLeave = (peer) => {
-        if (peer === host) end('the host left');
+        if (peer === host) end?.('the host left');
       };
       resolve(link);
     };

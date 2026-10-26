@@ -793,8 +793,17 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   the city running, the next clock's events finished the join, but events could still be applied
   out of order). Every message on a Trystero link now carries its number, and the other side hands
   them on in that order (`src/net/order.ts`, both directions, rooms and regions alike). A link whose
-  messages can't be put back in order (not text, without a number, or more than 4,096 messages or 16
-  million characters waiting for an earlier one) is given up like a dropped connection. Our relay's
+  messages can't be put back in order (not text, without a number, more than 4,096 messages or 16
+  million characters waiting for an earlier one, or a gap nothing has filled for a minute) is given
+  up like a dropped connection, and so is one with a message Trystero gave up sending (its send
+  failed after 10 s of a full buffer or 2 minutes unanswered): the rest would wait behind it. Given
+  up on either side, the guest reconnects: the host's side tells a guest it lets go (a `bye` on the
+  hello action, once what it sent before has gone, or it closes the guest's connection if even that
+  can't be sent), the room closing a guest's connection tells it too, and a guest leaves its
+  Trystero room however its link ends, so the reconnect starts with a fresh one rather than waiting
+  for a hello that already came (`tests/p2pLinks.test.ts`, with a stand-in for Trystero). A minute
+  without progress is far longer than any one message takes: none is much over 200 KB (a city goes in
+  parts of that size), and each one that lands moves the gap on. Our relay's
   sockets and data channels keep order themselves, so their messages aren't numbered. Tested in
   `tests/p2pOrder.test.ts`, and through two pages over Trystero and a Nostr relay on this computer: a
   friend now joins a city held still, builds, and the two run on together with the same hash.

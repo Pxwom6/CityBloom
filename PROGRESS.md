@@ -80,6 +80,9 @@ Should fix:
 - [x] Minor items
 - [x] Second review: messages over Trystero arrive in order (a friend couldn't join a city that stood
   still; `src/net/order.ts`, DECISIONS)
+- [x] Second review, after an independent read of that fix: a guest the host lets go is told (it
+  was left on a link nothing came down), a lost message ends the link instead of holding the rest
+  for half an hour, and a guest leaves its Trystero room however its link ends (`tests/p2pLinks.test.ts`)
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).

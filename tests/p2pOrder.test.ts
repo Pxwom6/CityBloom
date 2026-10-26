@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { inOrder, numbered, ORDER_LIMITS } from '../src/net/order';
 
 /**
@@ -75,5 +75,77 @@ describe('messages over Trystero arrive in the order they were sent', () => {
     const { why, receive } = pair();
     receive(`1:${'x'.repeat(ORDER_LIMITS.chars + 1)}`);
     expect(why).toEqual(['too many messages out of order']);
+  });
+
+  it('the message that fills a gap releases everything held, even at the limit', () => {
+    const { got, why, receive } = pair();
+    for (let n = 1; n <= ORDER_LIMITS.held; n++) receive(`${n}:{}`);
+    receive('0:{}');
+    expect(got.length).toBe(ORDER_LIMITS.held + 1);
+    expect(why).toEqual([]);
+  });
+
+  it('hands on a message that is next straight away, however big', () => {
+    const { got, why, receive } = pair();
+    receive(`0:${'x'.repeat(ORDER_LIMITS.chars + 1)}`);
+    expect(got.length).toBe(1);
+    expect(why).toEqual([]);
+  });
+
+  it('still hands on the messages behind one whose handler threw, then throws', () => {
+    const got: string[] = [];
+    const receive = inOrder(
+      (t) => {
+        got.push(t);
+        if (t === 'boom') throw new Error('bad part');
+      },
+      () => undefined,
+    );
+    receive('1:b');
+    receive('2:c');
+    expect(() => receive('0:boom')).toThrow('bad part');
+    expect(got).toEqual(['boom', 'b', 'c']);
+  });
+});
+
+describe('a gap that never fills', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('gives the link up once nothing has moved it on for a minute (a message Trystero lost)', () => {
+    vi.useFakeTimers();
+    const { got, why, receive } = pair();
+    receive('1:{}');
+    receive('2:{}');
+    vi.advanceTimersByTime(ORDER_LIMITS.gapMs - 1);
+    expect(why).toEqual([]);
+    receive('3:{}');
+    vi.advanceTimersByTime(1);
+    expect(why).toEqual(['a message never arrived']);
+    receive('0:{}');
+    expect(got).toEqual([]);
+  });
+
+  it('waits as long as the gap keeps moving on (a big city arriving in parts)', () => {
+    vi.useFakeTimers();
+    const { got, why, receive } = pair();
+    // Each part takes most of a minute, and the small messages after it wait.
+    for (let part = 0; part < 5; part++) {
+      receive(`${part * 2 + 1}:{"t":"ev"}`);
+      vi.advanceTimersByTime(ORDER_LIMITS.gapMs - 1000);
+      receive(`${part * 2}:{"t":"snap"}`);
+    }
+    expect(got.length).toBe(10);
+    expect(why).toEqual([]);
+  });
+
+  it('keeps no timer while nothing is held back', () => {
+    vi.useFakeTimers();
+    const { receive } = pair();
+    receive('1:{}');
+    expect(vi.getTimerCount()).toBe(1);
+    receive('0:{}');
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -39,6 +39,10 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await openGame(ada, '&seed=regionada&preset=river&name=Adaville');
   await servedTown(ada);
   const sam = await player(browser, 'Sam', 1);
+  // What Sam's page said, to print if the menu doesn't come (once it never did, in a loaded VM).
+  const samLog: string[] = [];
+  sam.on('console', (m) => samLog.push(`${m.type()}: ${m.text()}`));
+  sam.on('pageerror', (e) => samLog.push(`pageerror: ${e.message}`));
   await openGame(sam, '&seed=regionsam&preset=lakes&name=Samford');
   await servedTown(sam);
 
@@ -71,7 +75,14 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await sam.getByTestId('menu-button').click();
   await sam.getByTestId('pause-quit').click();
   // The menu grows its backdrop town first: slow on SwiftShader beside another 3D page.
-  await expect(sam.getByTestId('main-continue')).toBeVisible({ timeout: 300_000 });
+  try {
+    await expect(sam.getByTestId('main-menu')).toBeVisible({ timeout: 300_000 });
+    await expect(sam.getByTestId('main-continue')).toBeVisible({ timeout: 60_000 });
+  } catch (err) {
+    await sam.screenshot({ path: 'test-results/m35-friends-sam-menu.png' }).catch(() => undefined);
+    console.log(`Sam's page at ${sam.url()}:\n${samLog.slice(-40).join('\n')}`);
+    throw err;
+  }
   await expect
     .poll(async () => (await region(ada))?.cities.find((c) => c.name === 'Samford')?.online, {
       timeout: 30_000,

@@ -28,11 +28,21 @@ async function newPage(browser: Browser, name: string, color: number): Promise<P
       const key = 'citybloom.settings';
       const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
       localStorage.setItem(key, JSON.stringify({ ...s, tips: false, graphicsChecked: true, quality: 'low' }));
+      // Every toast as it appears: SwiftShader's first frames can outlast a toast's few seconds.
+      const seen: string[] = [];
+      (window as unknown as { __toasts: string[] }).__toasts = seen;
+      new MutationObserver(() => {
+        for (const t of document.querySelectorAll('[data-testid="toast"]'))
+          if (t.textContent && !seen.includes(t.textContent)) seen.push(t.textContent);
+      }).observe(document, { childList: true, subtree: true, characterData: true });
     },
     [name, color] as const,
   );
   return ctx.newPage();
 }
+
+const toasts = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.join(' | '));
 
 const net = (page: Page) => page.evaluate(() => window.__game!.getNet());
 
@@ -41,6 +51,15 @@ test('a friend joins a room in the host’s browser through Trystero, by the who
 }) => {
   test.setTimeout(420_000);
   const ada = await newPage(browser, 'Ada', 0);
+  const sam = await newPage(browser, 'Sam', 1);
+  try {
+    await together(ada, sam);
+  } finally {
+    for (const p of [ada, sam]) await p.context().close();
+  }
+});
+
+async function together(ada: Page, sam: Page): Promise<void> {
   await openGame(ada, '&seed=trystero&preset=river&name=Trystford');
   await ada.keyboard.press('Escape');
   await ada.getByTestId('pause-invite-p2p').click();
@@ -52,10 +71,9 @@ test('a friend joins a room in the host’s browser through Trystero, by the who
   await expect.poll(() => nostr.events.length, { timeout: 30_000 }).toBeGreaterThan(2);
 
   // The short code alone is turned away before anything is tried.
-  const sam = await newPage(browser, 'Sam', 1);
   await sam.goto(`./?join=${room.code}`);
   await sam.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
-  await expect(sam.getByTestId('toast').first()).toContainText('missing its second part');
+  await expect.poll(() => toasts(sam), { timeout: 30_000 }).toContain('missing its second part');
   expect(await net(sam)).toBeNull();
 
   // The invite link: Sam lands in Ada's city over WebRTC, found through the relay.
@@ -99,5 +117,4 @@ test('a friend joins a room in the host’s browser through Trystero, by the who
   const [code, ...key] = room.invite.split('-');
   expect(topics.has(trysteroTopic('citybloom-rooms-v1', `${code}-${key.join('')}`))).toBe(true);
   for (const e of nostr.events) expect(e.content).not.toContain(room.code);
-  for (const p of [ada, sam]) await p.context().close();
-});
+}

@@ -151,10 +151,12 @@ try {
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
   const at = (def) => placed.find((c) => c.def === def);
+  // The towers (the blackout tower is 55 m, the dome shield's spire 41 m) from further off.
+  const TALL = { blackouttower: 120, domeshield: 100, expressgate: 80 };
   const close = (c, yaw = 0.45, tilt = 0.3) => ({
     x: c.x,
     z: c.z,
-    distance: Math.max(c.w, c.d) * 1.1 + 24,
+    distance: TALL[c.def] ?? Math.max(c.w, c.d) * 1.1 + 24,
     yaw,
     tilt,
   });

@@ -85,11 +85,14 @@ const MUZZLE_SIZE = [0.15, 0.6];
 
 /**
  * What the far version keeps: a part as big face on (its second-largest dimension) as this share
- * of the unit's longest side, and never less than `FAR_MIN` m. Studs, lamps, bolts and bars go;
- * hulls, turrets, barrels, wheels, rotors and limbs stay.
+ * of the unit's longest side, and never less than `FAR_MIN` m; a long one (a stripe down a hull)
+ * `FAR_LONG` times that long and a third as wide; and what moves (a barrel, a dish, a rotor) if it
+ * is that long. Studs, lamps, windows, bolts and bars go; hulls, turrets, barrels, wheels, rotors
+ * and limbs stay.
  */
-const FAR_SHARE = 0.06;
+const FAR_SHARE = 0.04;
 const FAR_MIN = 0.35;
+const FAR_LONG = 3;
 
 export interface UnitReport {
   file: string;
@@ -412,7 +415,12 @@ export function bakeUnit(file: GlbFile, report: UnitReport): BakedUnit {
     const k = index.get(movingOf(file, p.node)) ?? 0;
     const b = growBox(emptyBox(), p.tris);
     const ext = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]].sort((x, y) => y - x);
-    const kept = ext[1]! >= farMin ? 1 : 0;
+    const kept =
+      ext[1]! >= farMin ||
+      (ext[0]! >= FAR_LONG * farMin && ext[1]! >= farMin / 3) ||
+      (k > 0 && ext[0]! >= farMin)
+        ? 1
+        : 0;
     const tris = keep.includes(p.name) ? p.tris : orientFaces(p.tris).tris;
     for (let i = 0; i < tris.length; i += 9) {
       for (let c = 0; c < 9; c++) pos.push(tris[i + c]!);

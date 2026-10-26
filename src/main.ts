@@ -23,7 +23,12 @@ import type { SaveFile } from './sim/save';
 import type { Snapshot } from './sim/protocol';
 import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
-import { loadProfile } from './client/profile';
+import { loadProfile, regionOf } from './client/profile';
+import { relayUrl, signalling } from './net/multiplayer';
+import { webSocketLink } from './net/link';
+import { p2pConnect } from './net/p2p';
+import { fetchCitySave } from './net/regionLink';
+import { codeKind } from '../relay/protocol';
 import { normaliseCode } from '../relay/protocol';
 
 /** The map behind the main menu, if the demo town can't be opened. */
@@ -136,7 +141,23 @@ async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   // Without a city to open, show the main menu over a backdrop map.
   const joinCode = params.get('join') ? normaliseCode(params.get('join')!) : null;
-  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join'].some((k) =>
+  // Looking round a neighbour's city in a shared region (M32), read-only.
+  const visitCode = params.get('visit') ? normaliseCode(params.get('visit')!) : null;
+  let visited: SaveFile | null = null;
+  if (visitCode) {
+    const url = relayUrl();
+    const connect =
+      codeKind(visitCode) === 'online'
+        ? () =>
+            url
+              ? webSocketLink(`${url}/region/${visitCode}`)
+              : Promise.reject(new Error('Online regions aren’t set up'))
+        : () => p2pConnect(visitCode, signalling());
+    visited = await fetchCitySave(connect, Number(params.get('city') ?? 0), loadProfile().name).catch(
+      () => null,
+    );
+  }
+  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join', 'visit'].some((k) =>
     params.has(k),
   );
   const client = new SimClient();
@@ -175,13 +196,15 @@ async function boot(): Promise<void> {
   const loadSlot = params.get('load');
   // A scenario (M18) opens its starting city, shipped as a save beside the game.
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
-  const found = loadSlot
-    ? await readSlot(loadSlot).catch(() => null)
-    : scenario
-      ? await shippedSave(`scenarios/${scenario.save}`)
-      : menu
-        ? await shippedSave('demo.citybloom')
-        : null;
+  const found = visited
+    ? visited
+    : loadSlot
+      ? await readSlot(loadSlot).catch(() => null)
+      : scenario
+        ? await shippedSave(`scenarios/${scenario.save}`)
+        : menu
+          ? await shippedSave('demo.citybloom')
+          : null;
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
@@ -218,6 +241,15 @@ async function boot(): Promise<void> {
     game.setCamera('overview', true);
     // A reload carries on editing this map.
     history.replaceState(null, '', `${location.pathname}?editor=${encodeURIComponent(editing.id)}`);
+  } else if (visited) {
+    game.readOnly = true;
+    game.setSpeed(0);
+    game.setCamera('overview', true);
+    game.toast(
+      `Visiting ${world.stats.cityName}: look round as much as you like; nothing here can be changed.`,
+      'info',
+      8000,
+    );
   } else if (joined) {
     game.attachNet(joined.mp);
     game.setCamera('overview', true);
@@ -229,6 +261,13 @@ async function boot(): Promise<void> {
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
     // A first launch picks graphics to suit the device from the menu's first few seconds.
     if (!game.settings.graphicsChecked) game.startGraphicsCheck();
+    // A region's invite link: the friends screen, to choose the city to bring (M32).
+    const invited = params.get('region') ? normaliseCode(params.get('region')!) : null;
+    if (invited) {
+      game.pendingRegion = invited;
+      game.openScreen('friends');
+      history.replaceState(null, '', location.pathname);
+    }
     if (joinError) {
       game.toast(joinError, 'bad', 9000);
       history.replaceState(null, '', location.pathname);
@@ -263,6 +302,17 @@ async function boot(): Promise<void> {
     // Founded or opened to share with friends (the lobby's Host buttons, M30).
     const host = params.get('host');
     if (host === 'online' || host === 'p2p') void game.hostRoom(host);
+    // Shared regions (M32): start one with this city, join one, or rejoin the one it stands in.
+    const newRegion = params.get('newregion');
+    const regionCode = params.get('region') ? normaliseCode(params.get('region')!) : null;
+    const known = loadSlot && save ? regionOf(loadSlot) : null;
+    if (newRegion === 'online' || newRegion === 'p2p')
+      void game.startRegion(
+        newRegion,
+        params.get('rname')?.trim().slice(0, 40) || `${world.stats.cityName} and friends`,
+      );
+    else if (regionCode) void game.joinRegion(regionCode);
+    else if (known) void game.joinRegion(known);
   }
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);

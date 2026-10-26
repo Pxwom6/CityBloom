@@ -8,9 +8,10 @@
     "bindings": [
       { "name": "ROOMS", "class_name": "RoomObject" },
       { "name": "SIGNALS", "class_name": "SignalObject" },
+      { "name": "REGIONS", "class_name": "RegionObject" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject", "RegionObject"] }],
   "vars": { "ALLOWED_ORIGINS": "https://pxwom6.github.io" },
   "observability": { "enabled": true },
 }

@@ -61,6 +61,16 @@ export interface TestApi {
     tickMsAvg: number;
     tickMsMax: number;
   } | null;
+  /** The shared region this city stands in (M32), as this page sees it; null when none. */
+  getRegion(): {
+    code: string;
+    slot: number;
+    state: string;
+    cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
+    project: { total: number; goal: number; funded: boolean; host: number; built: boolean } | null;
+  } | null;
+  /** Report to the region now (it does every 30 s by itself). */
+  regionReportNow(): Promise<void>;
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
   netDrop(): void;
   /** Knock this page's city out of step (the room should catch it and resync). */
@@ -521,6 +531,35 @@ export function installTestApi(game: Game): TestApi {
         tickMsAvg: game.perf.tickMsAvg,
         tickMsMax: game.perf.tickMsMax,
       };
+    },
+    getRegion: () => {
+      const r = game.region;
+      if (!r || !game.regionCode) return null;
+      const v = r.view;
+      return {
+        code: game.regionCode,
+        slot: r.slot,
+        state: r.state,
+        cities: (v?.cities ?? []).map((c) => ({
+          slot: c.slot,
+          name: c.name,
+          online: c.online,
+          population: c.report?.population ?? 0,
+          visitable: c.visitable,
+        })),
+        project: v
+          ? {
+              total: v.project.total,
+              goal: v.project.goal,
+              funded: v.project.funded,
+              host: v.project.host,
+              built: v.project.built,
+            }
+          : null,
+      };
+    },
+    regionReportNow: async () => {
+      await game.region?.reportNow(true);
     },
     netDrop: () => game.net?.session.dropForTest(),
     netPerturb: () => game.client.perturb(),

@@ -11,6 +11,8 @@ import type { RegionSummary } from '../sim/systems/region';
 import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconRegion } from './icons';
+import { PLAYER_COLORS } from '../../relay/protocol';
+import { inviteLink, relayUrl } from '../net/multiplayer';
 
 /**
  * The region (M23): the neighbouring towns, what they'll trade, the deals made with them, and the
@@ -169,7 +171,8 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
   const cap = n.offers[dir][res];
   const [want, setWant] = useState<number | null>(null);
   const value = Math.min(cap, want ?? deal?.amount ?? Math.round(cap / 2));
-  const price = REGION.price[dir][res];
+  // Between two players' cities one price, paid by the buyer and earned by the seller (M32).
+  const price = n.player ? REGION.playerPrice[res] : REGION.price[dir][res];
   const act = (a: number) =>
     void game
       .dispatch({ type: 'setDeal', neighbour: n.id, resource: res, direction: dir, amount: a })
@@ -240,12 +243,37 @@ function NeighbourCard({ n }: { n: N }) {
   const offers = (['buy', 'sell'] as const).flatMap((dir) =>
     DEAL_RESOURCES.filter((res) => n.offers[dir][res] > 0).map((res) => ({ dir, res })),
   );
+  const pl = n.player;
+  const view = pl ? game.region?.view?.cities.find((c) => c.slot === pl.slot) : undefined;
   return (
-    <section class="region-town" data-testid={`neighbour-${n.id}`}>
+    <section class={`region-town ${pl ? 'player' : ''}`} data-testid={`neighbour-${n.id}`}>
       <header>
-        <h3>{n.name}</h3>
-        <span class="region-kind">{def.label}</span>
+        <h3>
+          {pl && <span class="player-dot" style={{ background: PLAYER_COLORS[pl.color] }} />} {n.name}
+        </h3>
+        <span class="region-kind">{pl ? `${pl.mayor}’s city` : def.label}</span>
       </header>
+      {pl && (
+        <div class="region-player" data-testid={`neighbour-${n.id}-player`}>
+          {view?.thumb && <img class="region-thumb" src={view.thumb} alt={`${n.name} from above`} />}
+          <p class="muted">
+            Played by {pl.mayor}.{' '}
+            {(view?.online ?? pl.online) ? 'Playing now.' : 'Away: its last offers stand.'}
+          </p>
+          {view?.visitable && game.regionCode && (
+            <a
+              class="btn small"
+              data-testid={`visit-${pl.slot}`}
+              href={`${location.pathname}?visit=${game.regionCode}&city=${pl.slot}`}
+              target="_blank"
+              rel="noopener"
+              title={`Look round ${n.name} as it was last saved (read-only, in a new tab)`}
+            >
+              Visit
+            </a>
+          )}
+        </div>
+      )}
       <div class="region-pop">
         {formatNumber(n.population)} residents ·{' '}
         <span class={growth >= 0.05 ? 'pos' : growth <= -0.05 ? 'neg' : 'muted'}>
@@ -255,9 +283,11 @@ function NeighbourCard({ n }: { n: N }) {
         </span>
         <Trend values={n.history} />
       </div>
-      <p class="muted">
-        {def.blurb} To the {SIDE[n.side] ?? n.side}.
-      </p>
+      {!pl && (
+        <p class="muted">
+          {def.blurb} To the {SIDE[n.side] ?? n.side}.
+        </p>
+      )}
       {f && (f.in > 0 || f.out > 0 || f.shop > 0) && (
         <p class="region-flow" data-testid={`neighbour-${n.id}-flow`}>
           {f.in > 0 && <>{formatNumber(f.in)} of its people work here. </>}
@@ -265,9 +295,31 @@ function NeighbourCard({ n }: { n: N }) {
           {f.shop > 0 && <>{formatNumber(f.shop)} shop here each day.</>}
         </p>
       )}
-      {offers.map((o) => (
-        <DealRow key={`${o.dir}-${o.res}`} n={n} res={o.res} dir={o.dir} />
-      ))}
+      {game.world.stats.region.deals
+        .filter((d) => d.remote && d.neighbour === n.id)
+        .map((d) => (
+          <p
+            class="region-deal-now"
+            key={d.id}
+            data-testid={`remote-deal-${n.id}-${d.direction}-${d.resource}`}
+          >
+            {n.name} {d.direction === 'sell' ? 'buys' : 'sells'} {amount(d.resource, d.amount)} of{' '}
+            {WHAT[d.resource]} {d.direction === 'sell' ? 'from' : 'to'} you (their deal):{' '}
+            {amount(d.resource, d.delivered)} went through in the last hour,{' '}
+            {formatMoney(d.delivered * REGION.playerPrice[d.resource])}/month{' '}
+            {d.direction === 'sell' ? 'earned' : 'paid'}.
+          </p>
+        ))}
+      {offers
+        .filter(
+          (o) =>
+            !game.world.stats.region.deals.some(
+              (d) => d.remote && d.neighbour === n.id && d.resource === o.res && d.direction === o.dir,
+            ),
+        )
+        .map((o) => (
+          <DealRow key={`${o.dir}-${o.res}`} n={n} res={o.res} dir={o.dir} />
+        ))}
     </section>
   );
 }
@@ -306,6 +358,7 @@ export function RegionPanel() {
               {r.flows.shoppersIn > 0 && <>{formatNumber(r.flows.shoppersIn)} come in to shop. </>}
               {arrivals.length > 0 && <>Visitors today: {arrivals.join(', ')}.</>}
             </p>
+            <SharedRegion />
             <Supply />
             <p class="muted">
               Deals are paid for what actually comes through, each month. Power and water bought come in along
@@ -335,5 +388,132 @@ export function RegionButton() {
     >
       <IconRegion />
     </button>
+  );
+}
+
+/**
+ * A shared region (M32): start one with this city, join one by its code, or, once in, its code,
+ * the region project and leaving.
+ */
+function SharedRegion() {
+  const game = useGameUpdates(500);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const link = game.region;
+  if (game.net || game.readOnly) return null;
+  if (!link) {
+    const online = !!relayUrl();
+    const go = async (f: () => Promise<boolean>) => {
+      setBusy(true);
+      await f();
+      setBusy(false);
+    };
+    return (
+      <section class="region-share" data-testid="region-share">
+        <h3>Play this region with friends</h3>
+        <p class="muted">
+          Up to four of you each play your own city side by side: their cities take the neighbours’ places,
+          and you trade power, water and garbage, share commuters and build a great work together.
+        </p>
+        <div class="region-share-row">
+          <button
+            class="btn"
+            disabled={busy}
+            data-testid="region-start"
+            onClick={() =>
+              void go(() =>
+                game.startRegion(online ? 'online' : 'p2p', `${game.world.stats.cityName}’s region`),
+              )
+            }
+          >
+            {online ? 'Start a region' : 'Start a region on this computer'}
+          </button>
+          <input
+            type="text"
+            placeholder="Region code"
+            maxLength={9}
+            value={code}
+            data-testid="region-code"
+            onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())}
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          <button
+            class="btn"
+            disabled={busy || code.trim().length < 6}
+            data-testid="region-join"
+            onClick={() => void go(() => game.joinRegion(code.replace(/[\s-]/g, '').toUpperCase()))}
+          >
+            Join
+          </button>
+        </div>
+      </section>
+    );
+  }
+  const v = link.view;
+  const p = v?.project;
+  const mine = p ? (p.by[link.slot] ?? 0) : 0;
+  const host = p?.host ? v?.cities.find((c) => c.slot === p.host)?.name : null;
+  return (
+    <section class="region-share in" data-testid="region-share">
+      <h3>
+        {v?.name ?? 'Shared region'} <span class="room-code">{game.regionCode}</span>
+      </h3>
+      <p class="muted">
+        Friends join with their own cities: Region → Join, with this code
+        {game.regionCode && (
+          <>
+            {' '}
+            (<span class="region-link">{inviteLink(game.regionCode).replace('?join=', '?region=')}</span>)
+          </>
+        )}
+        . {link.state === 'reconnecting' ? 'Reconnecting…' : ''}
+      </p>
+      {p && (
+        <div class="region-project" data-testid="region-project">
+          <h4>{p.name}</h4>
+          <p class="muted">
+            A great work the region pays for together; the city that gives most builds it, and every city that
+            gave shares its {formatNumber(p.power)} MW of clean power, in proportion to what it gave.
+          </p>
+          <div class="bar">
+            <span style={{ width: `${Math.min(100, (p.total / p.goal) * 100)}%` }} />
+          </div>
+          <p data-testid="region-project-status">
+            {formatMoney(p.total)} of {formatMoney(p.goal)}
+            {mine > 0 && <> · you gave {formatMoney(mine)}</>}
+            {p.built
+              ? ' · built: power flowing'
+              : p.funded
+                ? ` · paid for: ${host ?? 'a city'} builds it`
+                : ''}
+          </p>
+          {!p.funded && (
+            <div class="region-share-row">
+              {[25_000, 100_000].map((a) => (
+                <button
+                  key={a}
+                  class="btn"
+                  data-testid={`region-give-${a}`}
+                  onClick={() =>
+                    void link.contribute(a).then((r) => {
+                      if (r.ok) game.toast(`You gave ${formatMoney(r.cost)} to ${p.name}`, 'ok', 3000);
+                      else game.toast(r.reason, 'bad', 4000);
+                    })
+                  }
+                >
+                  Give {formatMoney(a)}
+                </button>
+              ))}
+            </div>
+          )}
+          {p.funded && !p.built && p.host === link.slot && (
+            <p class="room-line">It’s yours to build: find it with the power plants (Sunfield Commons).</p>
+          )}
+        </div>
+      )}
+      <button class="btn small" data-testid="region-leave" onClick={() => game.leaveRegion()}>
+        Leave the region
+      </button>
+    </section>
   );
 }

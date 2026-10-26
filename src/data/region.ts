@@ -91,6 +91,11 @@ export const REGION = {
     buy: { power: 3, water: 3, garbage: 15 },
     sell: { power: 2, water: 2, garbage: 12 },
   } as Record<DealDirection, Record<DealResource, number>>,
+  /**
+   * Between two players' cities (M32) one price, paid by the buyer and earned by the seller, so a
+   * deal settles the same in both cities: between the simulated towns' buying and selling prices.
+   */
+  playerPrice: { power: 2.5, water: 2.5, garbage: 13.5 } as Record<DealResource, number>,
   /** A neighbour's trend drifts by up to this much a month. */
   trendStep: 0.004,
   /** Minutes of regional highway between a neighbour and the city's edge. */

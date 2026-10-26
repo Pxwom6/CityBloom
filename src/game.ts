@@ -28,7 +28,14 @@ import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './cl
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClass, widthClass } from './ui/layout';
-import { Multiplayer } from './net/multiplayer';
+import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
+import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionLink';
+import { P2PHost, p2pConnect } from './net/p2p';
+import { webSocketLink, type Link } from './net/link';
+import { RegionRoom, MemoryRegionStore } from '../relay/region';
+import { codeKind, makeCode } from '../relay/protocol';
+import type { RegionReport } from './sim/systems/region';
+import { forgetRegionOf, keepRegionCredentials, regionCredentials } from './client/profile';
 import { commandShape, shapesMeet } from './net/shapes';
 import { PLAYER_COLORS, type Shape } from '../relay/protocol';
 import type { PresenceMark } from './render/presence';
@@ -268,6 +275,11 @@ export class Game {
   }
 
   dispatch(cmd: Command): Promise<CommandResult> {
+    if (this.readOnly)
+      return Promise.resolve({
+        ok: false,
+        reason: 'You’re visiting a neighbour’s city: nothing can be changed here',
+      });
     // In a shared city the room orders every command, so all the players' games apply it alike;
     // until it comes back its outline shows as pending (M31).
     if (!this.net) return this.client.command(cmd);
@@ -399,8 +411,142 @@ export class Game {
 
   /** The room this city is shared in, if it is (M30). */
   net: Multiplayer | null = null;
+  /** The shared region this city stands in, if it does (M32), and its code. */
+  region: RegionLink | null = null;
+  regionCode: string | null = null;
+  private regionHost: P2PHost | null = null;
+  /** Looking round another player's city in the region: nothing can be changed (M32). */
+  readOnly = false;
+
+  /** What a region link needs from this city. */
+  private cityPort(): CityPort {
+    return {
+      command: (cmd) => this.client.command(cmd),
+      report: () => this.client.query<RegionReport>({ type: 'regionReport' }),
+      save: () => this.client.save(),
+      cityName: () => this.world.stats.cityName,
+      thumb: () => this.thumbnail(),
+    };
+  }
+
+  /** A small picture of the city as the camera sees it, for the region view. */
+  thumbnail(): string | null {
+    try {
+      this.renderer.frame(0);
+      const src = this.renderer.canvas;
+      const c = document.createElement('canvas');
+      c.width = 192;
+      c.height = 120;
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      const k = Math.max(c.width / src.width, c.height / src.height);
+      const w = src.width * k;
+      const h = src.height * k;
+      ctx.drawImage(src, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      return c.toDataURL('image/jpeg', 0.6);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Start a shared region with this city in it (M32), online or from this browser. */
+  async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
+    if (this.region || this.net) return false;
+    const code = makeCode(Math.random, kind);
+    try {
+      let connect: () => Promise<Link>;
+      if (kind === 'online') {
+        const url = relayUrl();
+        if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
+        connect = () => webSocketLink(`${url}/region/${code}`);
+      } else {
+        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), {
+          now: () => performance.now(),
+          random: Math.random,
+        });
+        this.regionHost = new P2PHost(code, signalling(), null, hub);
+        await this.regionHost.listen();
+        const host = this.regionHost;
+        connect = () => host.connectSelf();
+      }
+      await this.attachRegion(code, connect, { create: { name } });
+      this.toast(`Your region is open: code ${code}. Friends join it with their own cities.`, 'ok', 8000);
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  /** Bring this city into a shared region by its code (M32). */
+  async joinRegion(code: string): Promise<boolean> {
+    if (this.region || this.net) return false;
+    const url = relayUrl();
+    const connect: () => Promise<Link> =
+      codeKind(code) === 'online'
+        ? url
+          ? () => webSocketLink(`${url}/region/${code}`)
+          : () => Promise.reject(new Error("Online regions aren't set up yet"))
+        : () => p2pConnect(code, signalling());
+    try {
+      await this.attachRegion(code, connect, {
+        ...(regionCredentials(code) ? { rejoin: regionCredentials(code)! } : {}),
+      });
+      this.toast(`${this.world.stats.cityName} joined the region.`, 'ok', 5000);
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  private async attachRegion(
+    code: string,
+    connect: () => Promise<Link>,
+    extra: Partial<RegionLinkOptions>,
+  ): Promise<void> {
+    const profile = loadProfile();
+    const link = new RegionLink(this.cityPort(), connect, {
+      mayor: profile.name,
+      color: profile.color,
+      ...extra,
+    });
+    this.region = link;
+    this.regionCode = code;
+    link.onNotice = (t) => this.toast(t, 'info', 4500);
+    link.onChange = () => {
+      if (link.slot) keepRegionCredentials(code, link.slot, link.secret, this.slot);
+      if (link.state === 'closed' && this.region === link) {
+        if (link.error) this.toast(link.error, 'bad', 8000);
+        this.leaveRegion(false);
+      }
+      this.notify();
+    };
+    await link.start();
+    this.notify();
+  }
+
+  leaveRegion(say = true): void {
+    const link = this.region;
+    this.region = null;
+    this.regionCode = null;
+    link?.leave();
+    this.regionHost?.close();
+    this.regionHost = null;
+    if (say) {
+      if (this.slot) forgetRegionOf(this.slot);
+      this.toast('Your city left the region: its neighbours stay as they last were.', 'info', 6000);
+    }
+    this.notify();
+  }
   /** A new city founded from the friends screen is shared at once, online or from this browser. */
   hostKind: 'online' | 'p2p' | null = null;
+  /** A new city founded from the friends screen goes into a region (`newregion=…` or `region=CODE`). */
+  regionParam: string | null = null;
+  /** A region's invite link opened on the main menu: its code, for the friends screen (M32). */
+  pendingRegion: string | null = null;
 
   /** Share this city: make a room online or in this browser; resolves once it's open. */
   async hostRoom(kind: 'online' | 'p2p'): Promise<boolean> {
@@ -929,6 +1075,9 @@ export class Game {
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (slot !== 'auto') this.slot = slot;
+      // A city in a shared region rejoins it when this save is opened again (M32).
+      if (this.region?.slot && this.regionCode)
+        keepRegionCredentials(this.regionCode, this.region.slot, this.region.secret, slot);
       // The slot's name, as the load list shows it, not the city's (P22).
       if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;

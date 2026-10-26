@@ -450,6 +450,18 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| Up to 4 player cities share a region, online or peer-to-peer while the host is online | `relay/region.ts` (`MAX_CITIES`), the Worker's `RegionObject`, a host's browser (`P2PHost` with a `RegionRoom`) |
+| Each city played on its owner's machine at its own speed | the cities stay single player; region news is a `regionUpdate` command |
+| Players take the place of M23's simulated neighbours; empty spots keep simulated ones | `applyRegionUpdate` in `src/sim/systems/region.ts` |
+| Deals between player cities | player offers and contracts (`capacity`, `regionExport`), `REGION.playerPrice` |
+| Commuters and shoppers along the highway and rail links, and visitors | `pools` in `regionFlows.ts` from the reports |
+| Deals settle every game month on each city's own clock; offline neighbours' last offers stand; nobody gains by pausing or 3× | DECISIONS M32; `relay/tests/region.test.ts` |
+| The region view: name, mayor, population, a small picture, the deals, visiting read-only | the Region panel (`NeighbourCard`, `SharedRegion`), `Game.thumbnail`, `?visit=`; `docs/screenshots/m32-*.png` |
+| A region project | Sunfield Commons (`REGION_PROJECT`, CIVIC `sunfield`, `contributeProject`) |
+| Done when: three players in one region trade power and commuters | `relay/tests/region.test.ts` (three cities); `e2e/m32-region.spec.ts` (two through the interface) |
+| Done when: one goes offline and the others keep playing on the last deals | `relay/tests/region.test.ts` |
+| Done when: a scripted test shows each deal settling the same in both cities | `relay/tests/region.test.ts` (`regionRates` both sides), `e2e/m32-region.spec.ts` |
+| Done when: the region project completes with money from all three | `relay/tests/region.test.ts` |
 
 ## M33 Ready for friends
 

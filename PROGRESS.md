@@ -50,7 +50,7 @@ SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session 
 - [x] M29 Same city everywhere
 - [x] M30 Rooms, online and peer-to-peer
 - [x] M31 Building together
-- [ ] M32 Shared regions
+- [x] M32 Shared regions
 - [ ] M33 Ready for friends
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
@@ -173,14 +173,17 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4 on the `multiplayer` branch. **M29** (PR #17), **M30** (PR #18) and **M31 Building together**
-are done: everyone's cursor, tool ghost and name on the map, pings (Shift+G), Follow, pending
-outlines, one treasury and budget, the host's permissions per player and a spending limit, who built
-what in the inspector (save v25), chat with mute and chat off, notices for speed changes, Invite
-friends in the pause menu, the room's own saves. Next: **M32 Shared regions**.
+Phase 4 on the `multiplayer` branch. **M29** (PR #17), **M30** (PR #18), **M31** (PR #19) and
+**M32 Shared regions** are done: up to four players each run their own city side by side (online,
+or from a host's browser); their cities take the simulated neighbours' places, trade power, water
+and garbage at one price settled on each city's own clock, send commuters and shoppers along the
+highway, keep playing on an offline neighbour's last offer, pay together for Sunfield Commons
+(built by the biggest giver, its power shared by every giver), and look round each other's cities
+read-only. Next: **M33 Ready for friends** (the two-hour soak, narrow windows and touch, tips,
+README, troubleshooting, the free-plan tune-up).
 
 ## Next tasks
-1. M31 co-op, M32 shared regions, M33 polish and soak.
+1. M33: the soak (`npx tsx scripts/dev/soak.ts 120`), polish, README, troubleshooting, the free-plan check.
 2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
    empty tax bands): later, after phase 4.
 

@@ -165,11 +165,79 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
           )}
         </section>
       </div>
+      <RegionWays latestSlot={props.latestSlot} latestName={props.latestName} ready={ready} />
       <footer class="shell-actions">
         <button class="btn" data-testid="shell-back" onClick={() => game.closeScreen()}>
           Back
         </button>
       </footer>
+    </div>
+  );
+}
+
+/** Shared regions from the lobby (M32): each brings their own city. */
+function RegionWays(props: { latestSlot: string | null; latestName: string | null; ready: boolean }) {
+  const game = useGame();
+  const [code, setCode] = useState(game.pendingRegion ?? '');
+  const [problem, setProblem] = useState<string | null>(null);
+  const city = props.latestName ? `“${props.latestName}”` : 'a new city';
+  const go = (q: string) => {
+    if (props.latestSlot)
+      location.href = `${location.pathname}?load=${encodeURIComponent(props.latestSlot)}&${q}`;
+    else {
+      game.regionParam = q;
+      game.openScreen('newGame');
+    }
+  };
+  return (
+    <div class="friends-region">
+      <h3>A shared region</h3>
+      <p class="muted">
+        Or each play your own city side by side (up to four): your cities take the neighbouring towns’ places,
+        trade power and water, share commuters and build a great work together.
+      </p>
+      <div class="friends-region-row">
+        <button
+          class="shell-btn"
+          data-testid="friends-region-start"
+          disabled={!props.ready}
+          onClick={() => go(`newregion=${relayUrl() ? 'online' : 'p2p'}`)}
+        >
+          <span>Start a region</span>
+          <small>with {city}</small>
+        </button>
+        <label class="field">
+          <span>Region code</span>
+          <input
+            type="text"
+            maxLength={9}
+            placeholder="4RT9KW"
+            value={code}
+            data-testid="friends-region-code"
+            onInput={(e) => {
+              setCode((e.target as HTMLInputElement).value.toUpperCase());
+              setProblem(null);
+            }}
+          />
+        </label>
+        <button
+          class="shell-btn"
+          data-testid="friends-region-join"
+          disabled={!props.ready || !code.trim()}
+          onClick={() => {
+            const c = normaliseCode(code);
+            if (!c) return setProblem('A region code has six letters and numbers.');
+            go(`region=${c}`);
+          }}
+        >
+          <span>Join with {city}</span>
+        </button>
+      </div>
+      {problem && (
+        <p class="friends-problem" role="alert">
+          {problem}
+        </p>
+      )}
     </div>
   );
 }

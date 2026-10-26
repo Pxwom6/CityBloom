@@ -10,17 +10,20 @@ import { armTown, servedTown } from './war';
 const watched: { name: string; page: Page; log: string[] }[] = [];
 function watch(name: string, page: Page): void {
   const log: string[] = [];
+  const t0 = performance.now();
+  const at = () => `${((performance.now() - t0) / 1000).toFixed(0)}s`;
   const kind = (payload: string | Buffer) => {
     const t = String(payload);
     return t.startsWith('{') ? (/"t":"(\w+)"/.exec(t)?.[1] ?? '?') : t.slice(0, 20);
   };
-  page.on('console', (m) => log.push(`${m.type()}: ${m.text().slice(0, 200)}`));
-  page.on('pageerror', (e) => log.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => log.push(`${at()} ${m.type()}: ${m.text().slice(0, 200)}`));
+  page.on('pageerror', (e) => log.push(`${at()} pageerror: ${e.message}`));
+  page.on('framenavigated', (f) => f === page.mainFrame() && log.push(`${at()} page ${f.url()}`));
   page.on('websocket', (ws) => {
-    log.push(`ws open ${ws.url()}`);
-    ws.on('framesent', (f) => log.push(`ws > ${kind(f.payload)}`));
-    ws.on('framereceived', (f) => log.push(`ws < ${kind(f.payload)}`));
-    ws.on('close', () => log.push('ws close'));
+    log.push(`${at()} ws open ${ws.url()}`);
+    ws.on('framesent', (f) => log.push(`${at()} ws > ${kind(f.payload)}`));
+    ws.on('framereceived', (f) => log.push(`${at()} ws < ${kind(f.payload)}`));
+    ws.on('close', () => log.push(`${at()} ws close`));
   });
   watched.push({ name, page, log });
 }
@@ -77,13 +80,16 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await openGame(sam, '&seed=regionsam&preset=lakes&name=Samford');
   await servedTown(sam);
 
-  // Ada starts a region and turns war on; Sam brings Samford in with the code.
+  // Ada starts a region and turns war on; Sam brings Samford in with the code. (Each player's page is
+  // brought to the front to play, as a player's own tab is: a page left behind has its timers slowed.)
+  await ada.bringToFront();
   await ada.keyboard.press('Shift+N');
   await ada.getByTestId('region-start').click();
   await expect.poll(async () => (await region(ada))?.state, { timeout: 120_000 }).toBe('in');
   await ada.getByTestId('region-war-on').check();
   await expect.poll(async () => (await region(ada))?.rules.war, { timeout: 15_000 }).toBe(true);
   const code = (await region(ada))!.code;
+  await sam.bringToFront();
   await sam.keyboard.press('Shift+N');
   await sam.getByTestId('region-code').fill(code);
   await sam.getByTestId('region-join').click();
@@ -94,10 +100,12 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await sam.keyboard.press('Shift+N');
 
   // Both arm: Ada a raiding force, Sam an HQ and a bunker.
+  await ada.bringToFront();
   await armTown(ada, ['militaryhq', 'barracks', 'vehicledepot'], {
     infantry: 4,
     vehicles: ['tank', 'transport', 'tank'],
   });
+  await sam.bringToFront();
   await armTown(sam, ['militaryhq', 'bunker']);
   const before = await sam.evaluate(() => window.__game!.getDamage());
   expect((await reports(sam)).length).toBe(0);
@@ -122,6 +130,7 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
     .toBe(false);
 
   // Ada sends a force against Samford from the war room.
+  await ada.bringToFront();
   await ada.evaluate(() => window.__game!.regionReportNow());
   const target = await ada.evaluate(async () => {
     const s = await window.__game!.getState();
@@ -153,6 +162,7 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await shot(ada, 'm35-friends-attacker');
 
   // Sam comes back: Samford rejoins the region and takes the battle at once.
+  await sam.bringToFront();
   await sam.getByTestId('main-continue').click();
   await sam.waitForFunction(
     () => window.__game?.ready === true && window.__game.getShell().mode === 'play',

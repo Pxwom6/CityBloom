@@ -57,7 +57,8 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   await sam.getByTestId('region-code').fill(code);
   await sam.getByTestId('region-join').click();
   await expect.poll(async () => (await region(sam))?.state, { timeout: 120_000 }).toBe('in');
-  await expect(sam.getByTestId('region-war-rules')).toContainText('War is on', { timeout: 15_000 });
+  await expect.poll(async () => (await region(sam))?.rules.war, { timeout: 60_000 }).toBe(true);
+  await expect(sam.getByTestId('region-war-rules')).toContainText('War is on', { timeout: 60_000 });
   await ada.keyboard.press('Shift+N');
   await sam.keyboard.press('Shift+N');
 

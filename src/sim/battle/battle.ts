@@ -325,8 +325,8 @@ export class Battle {
 
   // --- Path fields. ---
 
-  private field(key: string, goals: { edge: number; at: number }[]): Field {
-    let f = this.fields.get(key);
+  private field(key: string, goals: { edge: number; at: number }[], cache = true): Field {
+    let f = cache ? this.fields.get(key) : undefined;
     if (f) return f;
     const nn = this.adj.length;
     const dist = new Float64Array(nn).fill(Infinity);
@@ -364,7 +364,7 @@ export class Battle {
       }
     }
     f = { dist, next, edge: goals[0]?.edge ?? -1, at: goals[0]?.at ?? 0 };
-    if (goals.length === 1) this.fields.set(key, f);
+    if (cache && goals.length === 1) this.fields.set(key, f);
     return f;
   }
 
@@ -390,7 +390,8 @@ export class Battle {
       else if (u.backEdge >= 0) goals.push({ edge: u.backEdge, at: u.backAt });
     }
     this.interceptAt = this.step;
-    this.intercept = goals.length ? this.field('intercept', goals) : null;
+    // Found again each time: never from the cache, wherever the attackers were last time.
+    this.intercept = goals.length ? this.field('intercept', goals, false) : null;
     return this.intercept;
   }
 
@@ -1004,6 +1005,9 @@ export class Battle {
   /** One step of BATTLE.dt game seconds. */
   stepOnce(): void {
     if (this.outcome) return;
+    // Events this step alone (not those the caller hasn't drained yet): a battle plays the same
+    // whether it's ticked, run straight through or re-run after a load.
+    const before = this.events.length;
     this.orders();
     for (const u of this.units) {
       // Units pulling out don't stop to shoot back.
@@ -1014,7 +1018,7 @@ export class Battle {
     this.guns();
     for (const u of this.units) if (this.alive(u)) this.move(u);
     this.step++;
-    if (this.step % 10 === 0 || this.events.length) this.check();
+    if (this.step % 10 === 0 || this.events.length > before) this.check();
   }
 
   /** Steps for one city tick; returns the events since the last call. */

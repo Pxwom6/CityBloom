@@ -20,6 +20,59 @@ describe('battles (M35)', () => {
     expect(events.at(-1)).toBe('end');
   });
 
+  it('a battle plays the same run straight through, ticked, or re-run from any step after a load', () => {
+    // Partial hits that push losses past the stance's threshold without knocking anything out:
+    // whether the battle checks on that step mustn't depend on when its events are drained.
+    const bunkers = [0, 1].map((k) => ({
+      id: 30 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 600 + k * 40,
+      z: 520,
+      r: 6,
+      hp: 600,
+      gun: 3,
+      range: 140,
+      against: ['land' as const],
+    }));
+    let checked = 0;
+    for (const stance of ['cautious', 'bold'] as const)
+      for (let seed = 0; seed < 6; seed++) {
+        const defenders = units('tank', 4, { x: 900, z: 540 }, 0);
+        const force = [...units('tank', 3), ...units('artillery', 2), ...units('infantry', 4)];
+        const make = () => {
+          const i = input(
+            lineLayout([...TOWN, ...bunkers], structuredClone(defenders), 1),
+            structuredClone(force),
+            {
+              stance,
+            },
+          );
+          i.seed = `drain-${seed}`;
+          return i;
+        };
+        const straight = Battle.run(make()).result();
+        const ticked = new Battle(make());
+        const hashes = new Map<number, string>();
+        while (!ticked.outcome) {
+          ticked.tick();
+          hashes.set(ticked.step, ticked.hash());
+        }
+        expect(ticked.result(), `${stance} ${seed}: ticked`).toEqual(straight);
+        // A save at any tick: the battle is re-run to that step (as after a load), then ticked on.
+        for (const [step, hash] of hashes) {
+          if (step % 20 !== 0) continue;
+          const again = new Battle(make());
+          while (again.step < step && !again.outcome) again.stepOnce();
+          again.drain();
+          expect(again.hash(), `${stance} ${seed}: re-run to ${step}`).toBe(hash);
+          while (!again.outcome) again.tick();
+          expect(again.result(), `${stance} ${seed}: played on from ${step}`).toEqual(straight);
+          checked++;
+        }
+      }
+    expect(checked).toBeGreaterThan(50);
+  });
+
   it('eight tanks knock out a bunker and wreck the depot', () => {
     const b = Battle.run(input(lineLayout(TOWN), units('tank', 8)));
     const r = b.result();

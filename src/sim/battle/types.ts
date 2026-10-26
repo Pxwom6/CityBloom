@@ -7,7 +7,7 @@ import type { BattleRoute, BattleTarget, Stance } from '../../data/battle';
 import type { UnitKind } from '../../data/war';
 
 /** Bumped whenever the same input could play out differently. */
-export const BATTLE_VERSION = 1;
+export const BATTLE_VERSION = 2;
 
 export type Side = 0 | 1; // attacker, defender
 

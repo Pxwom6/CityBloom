@@ -97,7 +97,12 @@ export const SKIRMISH = {
   /** In a skirmish nothing changes hands, and no more than this many buildings fall. */
   maxCollapse: 12,
   maxWreck: 3,
+  /** Roads cratered at most (each closed for `WAR_DAMAGE.roadHours`). */
+  maxCraters: 12,
 } as const;
+
+/** A force that has arrived and heard nothing of its battle (the page never fought it) comes home. */
+export const FIGHT_TIMEOUT_HOURS = 72;
 
 /** Computer neighbours' raids (M35): when they come, how big, and what they strike. */
 export const RAIDS = {

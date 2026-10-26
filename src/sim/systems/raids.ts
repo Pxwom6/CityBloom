@@ -21,9 +21,11 @@ import {
 } from '../../data/battle';
 import { PERSONALITY, UNIT, type UnitKind } from '../../data/war';
 import { Battle } from '../battle/battle';
-import { battleLayout } from '../battle/layout';
+import { checkBattleInput } from '../battle/check';
+import { battleLayout, objectiveSpots, structureAsSeen } from '../battle/layout';
 import {
   BATTLE_VERSION,
+  S,
   type BattleEvent,
   type BattleFrame,
   type BattleInput,
@@ -37,8 +39,7 @@ import type { Sim } from '../sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { BState } from '../world/buildings';
 import { civicOnline } from '../world/civic';
-import { ZONE_I, ZONE_R } from '../../data/zones';
-import { CIVIC } from '../../data/civic';
+import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
 import type { Neighbour, RivalNeighbour } from './region';
@@ -114,7 +115,7 @@ export function cityStrength(sim: Sim): number {
   const w = sim.state.war;
   if (!w) return 0;
   let s = 0;
-  for (const u of w.units.values()) s += (UNIT.get(u.kind)?.strength ?? 1) * u.hp;
+  for (const u of w.units.values()) if (!u.away) s += (UNIT.get(u.kind)?.strength ?? 1) * u.hp;
   for (const c of militaryCivics(sim)) {
     const d = militaryOf(c)!.defends;
     if (d && civicOnline(c)) s += d.strength * Math.min(1, c.staff ?? 0) * (c.powered ?? 0);
@@ -140,7 +141,8 @@ export function travelHours(route: BattleRoute, side: string, units: { kind: Uni
     if (squads && !trucks) h *= TRAVEL.walking;
     else if (squads && trucks * 4 >= squads) h *= TRAVEL.riding;
   }
-  return Math.max(1, Math.ceil(h));
+  // To the half hour: air's hour and a half stays one, and riding saves time on rail too.
+  return Math.max(1, Math.ceil(h * 2) / 2);
 }
 
 /** A computer neighbour's raiding force: its strength's share in units, mixed by its character. */
@@ -259,19 +261,8 @@ export function planRaid(sim: Sim, n: Neighbour, r: RivalNeighbour, rng: Rng, ho
 /** Residents near what a raid is after: the homes within reach of those targets. */
 function shelterCount(sim: Sim, target: BattleTarget): { near: number; sheltered: number } {
   const s = sim.state;
-  const spots: { x: number; z: number }[] = [];
-  for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
-    const def = CIVIC.get(c.def);
-    if (!def) continue;
-    if (
-      (target === 'military' && def.category === 'military') ||
-      (target === 'power' && def.category === 'power')
-    )
-      spots.push({ x: c.x, z: c.z });
-  }
-  if (target === 'industry')
-    for (const b of s.buildings.values())
-      if (b.zone === ZONE_I && b.state === BState.Active) spots.push({ x: b.x, z: b.z });
+  // Around what the raid can strike: military buildings, or industry and power near the border.
+  const spots = objectiveSpots(sim, target);
   let near = 0;
   if (spots.length)
     for (const b of s.buildings.values()) {
@@ -382,10 +373,21 @@ export function resolveBattle(
   const s = sim.state;
   const w = s.war;
   if (!w) return fail('War is off in this city');
-  if (w.battle) return fail('A battle is on in the city already');
-  if (input.v !== BATTLE_VERSION) return fail('That battle was fought by another version of the game');
+  const why = checkBattleInput(input);
+  if (why) return fail(why);
+  if (w.battle) return fail(BATTLE_BUSY);
+  if (w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
   if (dryRun) return ok(0);
-  const a = input.attacker;
+  // Only what really stands here, at home, takes the battle's damage; the caps are this city's.
+  const adopted = adoptBattle(sim, input);
+  let run: Battle;
+  try {
+    run = new Battle(adopted);
+  } catch {
+    return fail('That battle could not be read');
+  }
+  const a = adopted.attacker;
+  const shelter = shelterCount(sim, a.target);
   const raid: Raid = {
     id: s.nextId++,
     from: -1,
@@ -398,22 +400,101 @@ export function resolveBattle(
     warn: s.tick,
     arrive: s.tick,
     warned: true,
-    near: 0,
-    sheltered: 0,
+    near: shelter.near,
+    sheltered: shelter.sheltered,
   };
-  w.battle = { id: raid.id, input, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
+  w.battle = { id: raid.id, input: adopted, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
   if (replay) w.battle.report.replay = replay.slice(0, 60);
-  sim.battleRun = null;
+  // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
+  w.taken = [...(w.taken ?? []), input.id].slice(-BATTLE_TAKEN_KEEP);
+  sim.battleRun = run;
   sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
   if (mode === 'instant') {
-    const run = new Battle(input);
-    while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick());
-    w.battle.step = run.step;
-    sim.battleFrame = run.frame();
-    endHomeBattle(sim, run);
+    try {
+      while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick());
+      w.battle.step = run.step;
+      sim.battleFrame = run.frame();
+      endHomeBattle(sim, run);
+    } catch {
+      abandonBattle(sim);
+    }
   }
   sim.warChanged();
   return ok(0, { created: [raid.id] });
+}
+
+/** Why a battle from outside waits: one is on in the city already (it's offered again later). */
+export const BATTLE_BUSY = 'A battle is on in the city already';
+/** Why a battle from outside is turned away for good: the city took it already. */
+export const BATTLE_TAKEN = 'The city has taken that battle already';
+const BATTLE_TAKEN_KEEP = 32;
+
+/**
+ * A battle fought on a picture of this city made elsewhere (a friend's page, from the region's save
+ * of it), brought home: its course is left as it was, so both cities see the same battle, but only
+ * buildings that really stand where it says, and units of this city's at home and of that kind,
+ * answer to its ids; anything else it names is a stranger to this city and takes no damage. The
+ * caps are this city's own.
+ */
+export function adoptBattle(sim: Sim, input: BattleInput): BattleInput {
+  const s = sim.state;
+  const w = s.war;
+  const L = input.layout;
+  const structs = L.structs.slice();
+  const n = structs.length / S.stride;
+  for (let k = 0; k < n; k++) {
+    const row = (f: number) => structs[k * S.stride + f]!;
+    // As this city's own picture has it: in its place, the same kind of thing, no weaker.
+    const seen = structureAsSeen(sim, row(S.id));
+    const same =
+      !!seen &&
+      Math.abs(seen.x - row(S.x)) <= 2 &&
+      Math.abs(seen.z - row(S.z)) <= 2 &&
+      seen.tags === row(S.tags) &&
+      row(S.hp) >= seen.hp - 1 &&
+      seen.gun === row(S.gun) &&
+      seen.range === row(S.range) &&
+      seen.against === row(S.against);
+    if (!same) structs[k * S.stride + S.id] = -(k + 1);
+  }
+  const defenders = L.defenders.map((u, k) => {
+    // One of this city's units at home, of that kind, at its base, and no weaker than it is.
+    const mine = w?.units.get(u.id);
+    const base = mine ? s.civics.get(mine.base) : undefined;
+    const same =
+      !!mine &&
+      !mine.away &&
+      mine.kind === u.kind &&
+      u.hp >= mine.hp - 0.05 &&
+      !!base &&
+      Math.abs(base.x - u.x) <= 2 &&
+      Math.abs(base.z - u.z) <= 2 &&
+      (u.base < 0 || structs[u.base * S.stride + S.id] === mine.base);
+    return same ? u : { ...u, id: -(k + 1) };
+  });
+  return {
+    ...input,
+    layout: { ...L, structs, defenders },
+    caps: {
+      maxCollapse: Math.min(input.caps.maxCollapse, SKIRMISH.maxCollapse),
+      maxWreck: Math.min(input.caps.maxWreck, SKIRMISH.maxWreck),
+    },
+  };
+}
+
+/** A battle that can't go on (it could not be read after all): it ends, nothing more is done. */
+function abandonBattle(sim: Sim): void {
+  const w = sim.state.war!;
+  const hb = w.battle;
+  if (!hb) return;
+  const report = hb.report;
+  report.end = sim.state.tick;
+  report.outcome ??= 'withdrew';
+  w.reports = [...(w.reports ?? []), report].slice(-12);
+  delete w.battle;
+  sim.battleRun = null;
+  sim.battleFrame = null;
+  sim.warChanged();
 }
 
 /** Every tick a battle is on: its steps for the tick, their damage to the city, the frame. */
@@ -422,18 +503,23 @@ export function battleTick(sim: Sim): void {
   const hb = w?.battle;
   if (!w || !hb) return;
   let run = sim.battleRun;
-  if (!run || run.input !== hb.input) {
-    // After a load (or the first tick): play the battle up to where it was, its damage long done.
-    run = new Battle(hb.input);
-    while (run.step < hb.step && !run.outcome) run.stepOnce();
-    run.drain();
-    sim.battleRun = run;
+  try {
+    if (!run || run.input !== hb.input) {
+      // After a load (or the first tick): play the battle up to where it was, its damage long done.
+      run = new Battle(hb.input);
+      while (run.step < hb.step && !run.outcome) run.stepOnce();
+      run.drain();
+      sim.battleRun = run;
+    }
+    const events = run.tick();
+    applyWarDamage(sim, hb.report, events);
+    hb.step = run.step;
+    sim.battleFrame = run.frame();
+    if (run.outcome) endHomeBattle(sim, run);
+  } catch {
+    // A city is never left stuck on a battle it can't play (one kept from an older, broken save).
+    abandonBattle(sim);
   }
-  const events = run.tick();
-  applyWarDamage(sim, hb.report, events);
-  hb.step = run.step;
-  sim.battleFrame = run.frame();
-  if (run.outcome) endHomeBattle(sim, run);
 }
 
 /** The single way a battle's damage reaches the city. */
@@ -475,6 +561,7 @@ export function applyWarDamage(sim: Sim, report: BattleReport, events: BattleEve
       }
     } else if (e.k === 'crater') {
       if (!s.net.segments.has(e.seg) || e.seg === s.highway.segment) continue;
+      if (report.craters >= SKIRMISH.maxCraters) continue;
       const had = s.roadDamage.get(e.seg) ?? 0;
       s.roadDamage.set(e.seg, Math.max(had, WAR_DAMAGE.roadHours));
       if (!had) {
@@ -483,7 +570,8 @@ export function applyWarDamage(sim: Sim, report: BattleReport, events: BattleEve
       }
     } else if (e.k === 'out') {
       if (e.side === 1) {
-        if (w?.units.delete(e.unit)) {
+        const u = w?.units.get(e.unit);
+        if (u && !u.away && w!.units.delete(e.unit)) {
           report.lost[e.kind] = (report.lost[e.kind] ?? 0) + 1;
           sim.events.push({ kind: 'unitLost', id: e.unit, info: { kind: e.kind } });
           sim.warChanged();
@@ -511,11 +599,15 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   const hb = w.battle!;
   const s = sim.state;
   const result = run.result();
-  // The defenders who came through keep their scars; they mend at their bases.
+  // The defenders who came through keep their scars (what the battle took off them); they mend at
+  // their bases.
+  const went = new Map(hb.input.layout.defenders.map((u) => [u.id, u.hp]));
   for (const u of result.units) {
     if (u.side !== 1 || u.out) continue;
     const unit = w.units.get(u.id);
-    if (unit) unit.hp = Math.max(0.05, u.hp);
+    if (!unit || unit.away) continue;
+    const took = Math.max(0, (went.get(u.id) ?? u.hp) - u.hp);
+    if (took > 0) unit.hp = Math.max(0.05, Math.round((unit.hp - took) * 1000) / 1000);
   }
   // The neighbour's losses come off its forces.
   const n = s.region.neighbours.find((x) => x.id === hb.raid.from);
@@ -548,8 +640,9 @@ function endHomeBattle(sim: Sim, run: Battle): void {
 /** Approval the last raid costs for three days, by the share of nearby residents left unsheltered. */
 export function raidMood(sim: Sim): number {
   const w = sim.state.war;
-  const r = w?.reports?.at(-1);
-  if (!r || r.ours || !r.near) return 0;
+  // The newest raid on the city that found residents near (a report of our own raid doesn't count).
+  const r = [...(w?.reports ?? [])].reverse().find((x) => !x.ours && x.near > 0);
+  if (!r) return 0;
   const age = sim.state.tick - r.end;
   const span = 3 * 24 * TICKS_PER_HOUR;
   if (age >= span) return 0;
@@ -561,7 +654,7 @@ export function mendUnits(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
   for (const u of [...w.units.values()].sort((a, b) => a.id - b.id)) {
-    if (u.hp >= 1) continue;
+    if (u.hp >= 1 || u.away) continue;
     const c = sim.state.civics.get(u.base);
     if (!c || !civicOnline(c)) continue;
     const rate = 0.05 * Math.min(1, c.staff ?? 0) * (c.powered ?? 0);

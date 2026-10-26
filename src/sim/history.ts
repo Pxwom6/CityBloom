@@ -81,7 +81,9 @@ const STRUCTURAL: Record<Container, true | false | readonly string[]> = {
   traffic: false,
   roadDamage: false,
   districts: false,
-  units: false,
+  // A unit's coming and going is checked (one lost in battle isn't brought back by a redo and an
+  // undo); its health and whereabouts change freely.
+  units: ['kind', 'base'],
   orders: false,
 };
 
@@ -361,6 +363,7 @@ const REASONS: Partial<Record<string, string>> = {
   segments: 'the roads there have changed since',
   stops: 'the bus stops there have changed since',
   terrainDelta: 'the ground there has been reshaped since',
+  units: 'a unit there has been lost or moved since',
 };
 
 function structural(c: string, f?: string): boolean {
@@ -445,7 +448,13 @@ export function applyEdit(
       if (next === null) {
         if (cur !== undefined) map.delete(ch.id!);
       } else if (cur === undefined || structural(c) || enc(cur) === want) {
-        map.set(ch.id!, dec(next as string));
+        const v = dec(next as string);
+        // A unit brought back with a force that has since come home is home too.
+        if (c === 'units') {
+          const u = v as { away?: number };
+          if (u.away !== undefined && !s.war?.expeditions?.some((e) => e.id === u.away)) delete u.away;
+        }
+        map.set(ch.id!, v);
       } else continue;
       touch(c, ch.id!);
       continue;

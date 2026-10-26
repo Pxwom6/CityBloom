@@ -91,9 +91,28 @@ describe('raids (M35)', () => {
 
   it('a city saved in the middle of a battle plays on exactly as if it never stopped', () => {
     const { sim } = raidTown();
+    // A raid big enough to be fought a while (every neighbour well armed).
+    for (const n of sim.state.region.neighbours)
+      if (n.rival) sim.dispatch({ type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 40, defences: 5 });
     sim.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0 });
     expect(sim.state.war!.battle).toBeDefined();
-    sim.advance(90);
+    // Saved after the fighting has begun to tell (a building hit, a unit lost), not before.
+    const told = () => {
+      const r = sim.state.war!.battle?.report;
+      return (
+        !r ||
+        r.collapsed.length +
+          r.burning.length +
+          r.civics.length +
+          r.craters +
+          r.theirLost +
+          Object.keys(r.lost).length >
+          0
+      );
+    };
+    for (let t = 0; t < 600 && !told(); t++) sim.step();
+    expect(sim.state.war!.battle).toBeDefined();
+    sim.advance(7);
     const copy = Sim.fromSave(sim.save());
     copy.testMode = true;
     for (let t = 0; t < 600; t++) {

@@ -229,7 +229,7 @@ import {
   resolveBattle,
   startHomeBattle,
 } from './systems/raids';
-import { battleReport, expeditionsHour, recallForce, sendForce } from './systems/expeditions';
+import { battleReport, expeditionsTick, recallForce, sendForce } from './systems/expeditions';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -1748,6 +1748,8 @@ export class Sim {
     // Raids on their way and a battle in the city (M35): warnings, arrivals, the battle's steps.
     if (s.war?.incoming) run('raids', () => raidsTick(this));
     if (s.war?.battle) run('battle', () => battleTick(this));
+    // Forces away (M35): arrivals and homecomings on the minute, as the war room counts them down.
+    if (s.war?.expeditions) run('expeditions', () => expeditionsTick(this));
     if (t % GROWTH.passInterval === 0) run('growth', () => growthPass(this));
     // Hourly systems, spread over the hour in their usual order (HOURLY_AT).
     const minute = t % TICKS_PER_HOUR;
@@ -1820,9 +1822,8 @@ export class Sim {
           run('war', () => {
             warHour(this, (c) => extractionPerDay(this, c));
             bondsHour(this);
-            // Raids (M35): warnings, arrivals, the neighbours' decisions; units mend at their bases.
+            // Raids (M35): the neighbours' decisions; units mend at their bases.
             raidsHour(this);
-            expeditionsHour(this);
             mendUnits(this);
           });
         run('progress', () => {

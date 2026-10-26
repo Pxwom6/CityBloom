@@ -12,8 +12,8 @@ import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import { CELL, ZONE_I, ZONE_R } from '../../data/zones';
 import { DMath } from '../dmath';
 import type { Sim } from '../sim';
-import { BState } from '../world/buildings';
-import { BERTH_DEPTH, civicOnline } from '../world/civic';
+import { BState, type Building } from '../world/buildings';
+import { BERTH_DEPTH, civicOnline, type Civic } from '../world/civic';
 import type { NeighbourSide } from '../../data/region';
 import {
   BATTLE_VERSION,
@@ -55,7 +55,7 @@ interface Cand {
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /** City buildings that count as industry for a raid on it (freight, mines, wells, the arms factory). */
-const INDUSTRY_CIVICS = new Set([
+export const INDUSTRY_CIVICS = new Set([
   'railfreight',
   'freighthub',
   'seaport',
@@ -103,6 +103,125 @@ export function isObjective(tags: number, target: BattleTarget): boolean {
   return (tags & TAG.hq) !== 0;
 }
 
+/**
+ * Where a skirmish's targets of a kind stand (M35): military buildings anywhere; industry and power
+ * only within `SKIRMISH.border` of the highway's way in. The battle aims at these, the city's
+ * residents near them shelter, and nothing further in is struck.
+ */
+export function objectiveSpots(sim: Sim, target: BattleTarget): { x: number; z: number }[] {
+  const s = sim.state;
+  const connect = s.net.nodes.get(s.highway.connect)!;
+  const near = (x: number, z: number) => DMath.hypot(x - connect.x, z - connect.z) <= SKIRMISH.border;
+  const out: { x: number; z: number }[] = [];
+  for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
+    const def = CIVIC.get(c.def);
+    if (!def) continue;
+    const hit =
+      target === 'military'
+        ? def.category === 'military'
+        : target === 'power'
+          ? def.category === 'power' && near(c.x, c.z)
+          : target === 'industry'
+            ? INDUSTRY_CIVICS.has(def.id) && near(c.x, c.z)
+            : !!def.military?.hq;
+    if (hit) out.push({ x: c.x, z: c.z });
+  }
+  if (target === 'industry')
+    for (const b of [...s.buildings.values()].sort((a, b) => a.id - b.id))
+      if (b.zone === ZONE_I && b.state !== BState.Rubble && near(b.x, b.z)) out.push({ x: b.x, z: b.z });
+  return out;
+}
+
+/** A city building as a battle sees it. */
+function civicCand(c: Civic): Cand | null {
+  const def = CIVIC.get(c.def);
+  if (!def) return null;
+  const m = def.military;
+  let tags = TAG.civic;
+  if (def.category === 'military') tags |= TAG.military;
+  if (def.category === 'power') tags |= TAG.power;
+  if (INDUSTRY_CIVICS.has(def.id)) tags |= TAG.industry;
+  if (m?.defends) tags |= TAG.defence;
+  if (m?.shelters) tags |= TAG.shelter;
+  if (m?.hq) tags |= TAG.hq;
+  if (m?.trains?.length) tags |= TAG.base;
+  if (m?.jobs) tags |= TAG.job;
+  const area = def.w * def.d;
+  const hp = m?.defends
+    ? BATTLE.defence.hp
+    : Math.max(BATTLE.hpMin, area * BATTLE.hpPerM2) * (m ? BATTLE.military : BATTLE.civic);
+  let against = 0;
+  for (const d of m?.defends?.against ?? []) against |= DOMAIN_BIT[d];
+  return {
+    id: c.id,
+    tags,
+    x: c.x,
+    z: c.z,
+    r: Math.max(def.w, def.d) / 2,
+    rIn: Math.min(def.w, def.d) / 2,
+    hp,
+    gun: m?.defends?.strength ?? 0,
+    range: m?.defends?.range ?? 0,
+    against,
+    manned: m?.defends && civicOnline(c) ? Math.min(1, c.staff ?? 0) * (c.powered ?? 0) : 0,
+    name: def.name,
+    rank: 0,
+  };
+}
+
+/** A home or business as a battle sees it (none for rubble). */
+function buildingCand(b: Building): Cand | null {
+  if (b.state === BState.Rubble) return null;
+  let tags = b.zone === ZONE_R ? TAG.home : TAG.job;
+  if (b.zone === ZONE_I) tags |= TAG.industry;
+  const w = b.w * CELL;
+  const d = b.d * CELL;
+  return {
+    id: b.id,
+    tags,
+    x: b.x,
+    z: b.z,
+    r: Math.max(w, d) / 2,
+    rIn: Math.min(w, d) / 2,
+    hp: Math.max(BATTLE.hpMin, w * d * BATTLE.hpPerM2 * (1 + b.level * 0.5)),
+    gun: 0,
+    range: 0,
+    against: 0,
+    manned: 0,
+    name: null,
+    rank: 0,
+  };
+}
+
+/** Is a spot within a skirmish's reach of the highway's way in (SKIRMISH.border)? */
+function nearBorder(sim: Sim, x: number, z: number): boolean {
+  const connect = sim.state.net.nodes.get(sim.state.highway.connect)!;
+  return DMath.hypot(x - connect.x, z - connect.z) <= SKIRMISH.border;
+}
+
+/**
+ * A structure of this city as its own battle picture would have it (packed as `battleLayout` packs
+ * it), or null when nothing stands under that id: a battle made elsewhere is checked against it.
+ */
+export function structureAsSeen(
+  sim: Sim,
+  id: number,
+): { tags: number; x: number; z: number; hp: number; gun: number; range: number; against: number } | null {
+  const c = sim.state.civics.get(id);
+  const b = c ? undefined : sim.state.buildings.get(id);
+  const cand = c ? civicCand(c) : b ? buildingCand(b) : null;
+  if (!cand) return null;
+  return {
+    tags: nearBorder(sim, cand.x, cand.z) ? cand.tags : cand.tags & ~(TAG.industry | TAG.power),
+    x: round1(cand.x),
+    z: round1(cand.z),
+    hp: Math.round(cand.hp),
+    gun: cand.gun,
+    range: cand.range,
+    against: cand.against,
+  };
+}
+
 export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
   const s = sim.state;
   const net = sim.net;
@@ -117,61 +236,12 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
   // --- Structures: every candidate, ranked. ---
   const cands: Cand[] = [];
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
-    const def = CIVIC.get(c.def);
-    if (!def) continue;
-    const m = def.military;
-    let tags = TAG.civic;
-    if (def.category === 'military') tags |= TAG.military;
-    if (def.category === 'power') tags |= TAG.power;
-    if (INDUSTRY_CIVICS.has(def.id)) tags |= TAG.industry;
-    if (m?.defends) tags |= TAG.defence;
-    if (m?.shelters) tags |= TAG.shelter;
-    if (m?.hq) tags |= TAG.hq;
-    if (m?.trains?.length) tags |= TAG.base;
-    if (m?.jobs) tags |= TAG.job;
-    const area = def.w * def.d;
-    const hp = m?.defends
-      ? BATTLE.defence.hp
-      : Math.max(BATTLE.hpMin, area * BATTLE.hpPerM2) * (m ? BATTLE.military : BATTLE.civic);
-    let against = 0;
-    for (const d of m?.defends?.against ?? []) against |= DOMAIN_BIT[d];
-    cands.push({
-      id: c.id,
-      tags,
-      x: c.x,
-      z: c.z,
-      r: Math.max(def.w, def.d) / 2,
-      rIn: Math.min(def.w, def.d) / 2,
-      hp,
-      gun: m?.defends?.strength ?? 0,
-      range: m?.defends?.range ?? 0,
-      against,
-      manned: m?.defends && civicOnline(c) ? Math.min(1, c.staff ?? 0) * (c.powered ?? 0) : 0,
-      name: def.name,
-      rank: 0,
-    });
+    const cand = civicCand(c);
+    if (cand) cands.push(cand);
   }
   for (const b of [...s.buildings.values()].sort((a, b) => a.id - b.id)) {
-    if (b.state === BState.Rubble) continue;
-    let tags = b.zone === ZONE_R ? TAG.home : TAG.job;
-    if (b.zone === ZONE_I) tags |= TAG.industry;
-    const w = b.w * CELL;
-    const d = b.d * CELL;
-    cands.push({
-      id: b.id,
-      tags,
-      x: b.x,
-      z: b.z,
-      r: Math.max(w, d) / 2,
-      rIn: Math.min(w, d) / 2,
-      hp: Math.max(BATTLE.hpMin, w * d * BATTLE.hpPerM2 * (1 + b.level * 0.5)),
-      gun: 0,
-      range: 0,
-      against: 0,
-      manned: 0,
-      name: null,
-      rank: 0,
-    });
+    const cand = buildingCand(b);
+    if (cand) cands.push(cand);
   }
   // What matters: military and defences anywhere; the target kind's candidates near the border
   // (industry and power within SKIRMISH.border of the way in).
@@ -297,7 +367,9 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
     const road = nearestRoad(c.x, c.z, c.r + 80);
     structs.push(
       c.id,
-      c.tags,
+      // A skirmish strikes industry and power only near the border (SKIRMISH.border): further in,
+      // they're ordinary buildings to the battle, never its objectives.
+      near(c) ? c.tags : c.tags & ~(TAG.industry | TAG.power),
       round1(c.x),
       round1(c.z),
       round1(c.r),
@@ -340,7 +412,8 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
     const index = new Map(structsIn.map((c, i) => [c.id, i]));
     for (const u of [...war.units.values()].sort((a, b) => a.id - b.id)) {
       if (defenders.length >= BATTLE.maxDefenders) break;
-      if (!UNIT.get(u.kind)) continue;
+      // Units away raiding another town aren't here to defend.
+      if (!UNIT.get(u.kind) || u.away) continue;
       const base = s.civics.get(u.base);
       if (!base) continue;
       const i = index.get(base.id);

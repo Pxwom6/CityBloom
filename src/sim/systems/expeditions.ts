@@ -6,7 +6,15 @@
  * units knocked out are gone, the rest come home scarred, the neighbour's numbers fall and it
  * remembers. Skirmishes only in M35: military buildings, industry or power near the border.
  */
-import { BATTLE, RAIDS, SKIRMISH, type BattleRoute, type BattleTarget, type Stance } from '../../data/battle';
+import {
+  BATTLE,
+  FIGHT_TIMEOUT_HOURS,
+  RAIDS,
+  SKIRMISH,
+  type BattleRoute,
+  type BattleTarget,
+  type Stance,
+} from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
 import { fail, ok, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
@@ -99,9 +107,9 @@ export function sendRefusal(
           : route === 'rail'
             ? `${d.plural} can’t go by rail`
             : `${d.plural} can’t go by road`;
-    if (d.stats.attack <= 0 && units.every((x) => UNIT.get(w.units.get(x)!.kind)!.stats.attack <= 0))
-      return 'A force needs units that fight';
   }
+  if (units.every((x) => UNIT.get(w.units.get(x)!.kind)!.stats.attack <= 0))
+    return 'A force needs units that fight';
   if (route === 'rail' && !s.railway) return 'The city has no rail link';
   if (w.expeditions?.some((e) => e.to === to && e.state !== 'back'))
     return `A force is already on its way to ${n.name}`;
@@ -145,27 +153,44 @@ export function sendForce(
   return ok(0, { created: [e.id] });
 }
 
-/** Call a force back before it arrives: it turns round and comes home the way it went. */
+/**
+ * Call a force back: on its way, it turns round and comes home the way it went; at its target
+ * (whose battle hasn't been reported), it pulls out and comes home.
+ */
 export function recallForce(sim: Sim, id: number, dryRun: boolean): CommandResult {
   const w = sim.state.war;
   const e = w?.expeditions?.find((x) => x.id === id);
   if (!w || !e) return fail('No such force');
-  if (e.state !== 'out')
-    return fail(e.state === 'fighting' ? 'The force is fighting' : 'The force is on its way home');
+  if (e.state === 'back') return fail('The force is on its way home');
   if (dryRun) return ok(0);
-  const s = sim.state;
-  e.state = 'back';
-  e.home = s.tick + Math.max(TICKS_PER_HOUR, s.tick - e.depart);
-  sim.warChanged();
+  turnBack(sim, e);
   return ok(0);
 }
 
-/** Each hour: forces arriving (the page fights their battles) and forces home again. */
-export function expeditionsHour(sim: Sim): void {
+/** A force turns for home: back as far as it came (the whole way from its target). */
+function turnBack(sim: Sim, e: Expedition): void {
+  const s = sim.state;
+  const out = e.state === 'out' ? s.tick - e.depart : e.arrive - e.depart;
+  e.state = 'back';
+  e.home = s.tick + Math.max(TICKS_PER_HOUR, out);
+  sim.warChanged();
+}
+
+/** Every tick while forces are away: arrivals (the page fights their battles) and homecomings. */
+export function expeditionsTick(sim: Sim): void {
   const w = sim.state.war;
   if (!w?.expeditions?.length) return;
   const s = sim.state;
   for (const e of w.expeditions) {
+    // A city shared with friends can't report a battle fought away (its page alone could): the
+    // force turns back instead, everywhere alike. One that hears nothing of its battle comes home.
+    if (
+      (e.state === 'out' && sim.shared && s.tick >= e.arrive) ||
+      (e.state === 'fighting' && (sim.shared || s.tick >= e.arrive + FIGHT_TIMEOUT_HOURS * TICKS_PER_HOUR))
+    ) {
+      turnBack(sim, e);
+      continue;
+    }
     if (e.state === 'out' && s.tick >= e.arrive) {
       e.state = 'fighting';
       sim.events.push({
@@ -179,7 +204,8 @@ export function expeditionsHour(sim: Sim): void {
         const u = w.units.get(id);
         if (u) delete u.away;
       }
-      sim.events.push({ kind: 'forceHome', id: e.id, info: { from: e.name } });
+      if (e.units.some((id) => w.units.has(id)))
+        sim.events.push({ kind: 'forceHome', id: e.id, info: { from: e.name } });
       e.units = [];
       sim.warChanged();
     }

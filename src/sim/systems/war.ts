@@ -114,6 +114,8 @@ export interface WarState {
   struck?: Record<number, number>;
   /** The city has passed the bar past which neighbours may raid it (told once, M35). */
   exposed?: true;
+  /** Battles from outside the city it has taken, by input id, newest last (each is taken once). */
+  taken?: string[];
 }
 
 export function initialWar(seed: string): WarState {

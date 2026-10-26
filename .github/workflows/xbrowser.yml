@@ -5,7 +5,7 @@ name: Cross-browser and relay timing
 
 on:
   push:
-    branches: [m33-ready, multiplayer]
+    branches: [m33-ready, multiplayer, war]
   pull_request:
   workflow_dispatch:
 

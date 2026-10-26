@@ -4,7 +4,8 @@
 // and shoots them by day and at night, plus the naval yard's dry dock and the spy agency's ramp
 // from above (with the ground, and without it to see what the lot base leaves open).
 // Usage: npm run build:test && node scripts/dev/warshot.mjs outDir [--only day,each,night,pits]
-//        [--hour 13] [--night 22] [--dist dist-test] [--gpu]
+//        [--hour 13] [--night 22] [--dist dist-test] [--gpu] [--quality low|medium|high] [--size 1100x720]
+// In a VM whose Chromium isn't Playwright's own revision: PW_CHROMIUM=/path/to/headless_shell.
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -22,6 +23,9 @@ const day = Number(flag('hour', '13'));
 const night = Number(flag('night', '22'));
 const dist = flag('dist', 'dist-test');
 const gpu = argv.includes('--gpu');
+// Graphics quality (low is quickest on the software renderer; medium has the night glow).
+const quality = flag('quality', 'medium');
+const [vw, vh] = flag('size', '1100x720').split('x').map(Number);
 
 /** Every war building, biggest first so the rows pack. */
 const WAR = [
@@ -53,7 +57,15 @@ const server = spawn('npx', ['vite', 'preview', '--outDir', dist, '--port', Stri
   stdio: 'ignore',
   detached: true,
 });
-await new Promise((r) => setTimeout(r, 1500));
+// Until the preview server answers (it can take a few seconds on a busy machine).
+for (let t = 0; t < 60; t++) {
+  const up = await fetch(`http://localhost:${PORT}/`).then(
+    (r) => r.ok,
+    () => false,
+  );
+  if (up) break;
+  await new Promise((r) => setTimeout(r, 500));
+}
 const browser = await chromium.launch(
   gpu
     ? { channel: 'chrome', headless: false, args: ['--window-size=1300,900', '--window-position=0,0'] }
@@ -66,7 +78,7 @@ const browser = await chromium.launch(
 const t0 = Date.now();
 const files = [];
 try {
-  const page = await browser.newPage({ viewport: { width: 1100, height: 720 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 });
   // The software renderer takes many seconds a frame.
   page.setDefaultTimeout(300_000);
   const errors = [];
@@ -74,11 +86,13 @@ try {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   page.on('request', (r) => /models-[\w-]+\.bin/.test(r.url()) && fetched.push(r.url().replace(/^.*\//, '')));
-  await page.addInitScript(() =>
-    localStorage.setItem(
-      'citybloom.settings',
-      JSON.stringify({ tips: false, graphicsChecked: true, quality: 'medium' }),
-    ),
+  await page.addInitScript(
+    (q) =>
+      localStorage.setItem(
+        'citybloom.settings',
+        JSON.stringify({ tips: false, graphicsChecked: true, quality: q }),
+      ),
+    quality,
   );
   // An open map with war on: the game fetches the war models itself.
   await page.goto(`http://localhost:${PORT}/?paused=1&seed=models&preset=lakes&rivals=1`);
@@ -159,13 +173,24 @@ try {
     }
   if (only.has('pits')) {
     if (!only.has('day') && !only.has('each')) await toHour(day);
-    for (const def of ['navalyard', 'spyagency', 'coastalgun']) {
-      const c = at(def);
-      const d = def === 'navalyard' ? 110 : 40;
-      // From above and behind (the site's back is +z here), with the ground and without it.
-      const pose = { x: c.x, z: c.z + c.d * 0.15, distance: d, yaw: Math.PI - 0.3, tilt: 0.6 };
-      await shoot(`pit-${def}`, pose);
-      await shoot(`pit-${def}-noground`, pose, { terrain: false });
+    // A site stands turned half round here (its front faces +z): a model's (x, z) is at (−x, −z).
+    // Each from above, with the ground and without it (to see what the lot base leaves open).
+    const yard = at('navalyard');
+    const spy = at('spyagency');
+    const gun = at('coastalgun');
+    const poses = {
+      // The whole yard from above and behind (the quay).
+      navalyard: { x: yard.x, z: yard.z - 6, distance: 110, yaw: Math.PI - 0.3, tilt: 0.6 },
+      // Into the dry dock's mouth, from the water behind the quay.
+      navaldock: { x: yard.x + 38, z: yard.z - 20, distance: 55, yaw: Math.PI - 0.15, tilt: 0.25 },
+      // Down the basement ramp to its garage door, from the road side.
+      spyagency: { x: spy.x - 10, z: spy.z + 2, distance: 30, yaw: 0.25, tilt: 0.5 },
+      // The quay at the back, from the water.
+      coastalgun: { x: gun.x, z: gun.z - 4, distance: 34, yaw: Math.PI - 0.35, tilt: 0.3 },
+    };
+    for (const [name, pose] of Object.entries(poses)) {
+      await shoot(`pit-${name}`, pose);
+      await shoot(`pit-${name}-noground`, pose, { terrain: false });
     }
   }
   if (only.has('night')) {

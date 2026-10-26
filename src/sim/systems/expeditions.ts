@@ -213,6 +213,7 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
     n.rival.forces = Math.max(0, Math.round((n.rival.forces - r.theirLost) * 10) / 10);
     n.rival.defences = Math.max(0, Math.round((n.rival.defences - r.defencesLost * 3) * 10) / 10);
     n.rival.relation = Math.max(-100, n.rival.relation - RAIDS.relationHit);
+    w.struck = { ...(w.struck ?? {}), [n.id]: s.tick };
   }
   const report: BattleReport = {
     id: e.id,

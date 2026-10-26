@@ -304,6 +304,7 @@ export type SimEvent = {
     | 'unitTrained'
     | 'bondRepaid'
     // Battles (M35).
+    | 'raidsOpen'
     | 'raidWarning'
     | 'battleStarted'
     | 'battleEnded'

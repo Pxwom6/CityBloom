@@ -20,6 +20,7 @@ import type { ForceData, MilitaryDetails } from '../protocol';
 import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
 import { accessOf, BState, type Building } from '../world/buildings';
 import { ZONE_I } from '../../data/zones';
+import { RAIDS } from '../../data/battle';
 import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic';
 import type { Origin } from './commute';
 import type { BattleReport, HostedBattle, Raid } from './raids';
@@ -109,6 +110,10 @@ export interface WarState {
   reports?: BattleReport[];
   /** When the neighbours last set off to raid it: any, and each (ticks). */
   raided?: { any: number; by: Record<number, number> };
+  /** When the city's own forces last struck each computer neighbour (ticks; M35, retaliation). */
+  struck?: Record<number, number>;
+  /** The city has passed the bar past which neighbours may raid it (told once, M35). */
+  exposed?: true;
 }
 
 export function initialWar(seed: string): WarState {
@@ -717,6 +722,8 @@ export interface WarSummary {
   } | null;
   battle: { id: number; from: string; start: number } | null;
   reports: BattleReport[];
+  /** Whether neighbours may raid yet, and those that may answer a raid of the city's own. */
+  threat: { open: boolean; answering: number[] };
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -730,6 +737,23 @@ export interface WarSummary {
     arrive: number;
     home: number;
   }[];
+}
+
+/**
+ * Whether computer neighbours may raid the city (M35): not a young or small one, except a
+ * neighbour it struck within `RAIDS.retaliate` months, which may answer (the neighbours' ids).
+ */
+export function raidThreat(sim: Sim): { open: boolean; answering: number[] } {
+  const s = sim.state;
+  const w = s.war;
+  const open = s.totals.population >= RAIDS.minPopulation && s.tick >= RAIDS.minMonths * TICKS_PER_MONTH;
+  const answering = s.region.neighbours
+    .filter(
+      (n) =>
+        n.rival && !n.player && s.tick - (w?.struck?.[n.id] ?? -Infinity) < RAIDS.retaliate * TICKS_PER_MONTH,
+    )
+    .map((n) => n.id);
+  return { open, answering };
 }
 
 export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSummary | null {
@@ -803,6 +827,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     incoming: incomingSummary(w),
     battle: w.battle ? { id: w.battle.id, from: w.battle.raid.name, start: w.battle.start } : null,
     reports: [...(w.reports ?? [])].reverse(),
+    threat: raidThreat(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

@@ -1124,6 +1124,12 @@ export class Game {
       } else if (e.kind === 'bondRepaid')
         this.notice('bondRepaid', 'A war bond is repaid in full.', 'ok', undefined, false);
       // Battles (M35).
+      else if (e.kind === 'raidsOpen')
+        this.notice(
+          'raidsOpen',
+          'The city has grown enough for its rivals to take notice: from now on they may raid it. The war room’s Map tab shows who and how far.',
+          'info',
+        );
       else if (e.kind === 'raidWarning') {
         const i = e.info ?? {};
         const shelter = Number(i.near)

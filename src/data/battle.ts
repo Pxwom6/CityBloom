@@ -101,13 +101,12 @@ export const SKIRMISH = {
 
 /** Computer neighbours' raids (M35): when they come, how big, and what they strike. */
 export const RAIDS = {
+  /** Computer neighbours decide to raid on their own (the `raidIn` cheat brings one on in tests). */
+  decide: true,
   /**
-   * Computer neighbours decide to raid on their own. Off until M35's battle view and war room land
-   * (raids are tested through the `raidIn` cheat meanwhile), so a war city never meets a battle it
-   * can't see.
+   * No raids on a city under this many residents or younger than this many months, unless it struck
+   * a neighbour within `retaliate` months: that neighbour may answer.
    */
-  decide: false,
-  /** No raids on a city under this many residents or younger than this many months. */
   minPopulation: 3_000,
   minMonths: 12,
   /** Months between one neighbour's raids, and between any two. */

@@ -3,7 +3,7 @@ import { Sim } from '../../src/sim/sim';
 import { checksum } from '../../src/sim/sync';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { warningHours } from '../../src/sim/systems/raids';
-import { WARNING } from '../../src/data/battle';
+import { RAIDS, WARNING } from '../../src/data/battle';
 import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
 
 /** M35: raids from computer neighbours, fought in the city. */
@@ -104,6 +104,86 @@ describe('raids (M35)', () => {
     expect(checksum(copy)).toBe(checksum(sim));
     expect(copy.state.war!.reports?.length ?? 0).toBe(sim.state.war!.reports?.length ?? 0);
   });
+
+  it('neighbours raid a city past the bar on their own, at most one raid at a time', () => {
+    const { sim } = raidTown();
+    // The test town tops out under the bar of RAIDS.minPopulation residents: lowered for this run.
+    const bar = RAIDS.minPopulation;
+    (RAIDS as { minPopulation: number }).minPopulation = 1_000;
+    try {
+      const raids: string[] = [];
+      for (let t = 0; t < 30 * TICKS_PER_MONTH && raids.length < 2; t++) {
+        sim.step();
+        const w = sim.state.war!;
+        expect(w.incoming?.length ?? 0).toBeLessThanOrEqual(1);
+        for (const e of sim.events.splice(0))
+          if (e.kind === 'raidWarning') {
+            raids.push(String(e.info?.name ?? ''));
+            // Not before the city is a year old.
+            expect(sim.state.tick).toBeGreaterThanOrEqual(RAIDS.minMonths * TICKS_PER_MONTH);
+          }
+      }
+      expect(raids.length).toBeGreaterThan(0);
+      const w = sim.state.war!;
+      // Each neighbour waits its months between raids; any two are a few months apart.
+      const by = Object.values(w.raided!.by);
+      expect(by.length).toBeGreaterThan(0);
+    } finally {
+      (RAIDS as { minPopulation: number }).minPopulation = bar;
+    }
+  }, 300_000);
+
+  it('a neighbour the city struck may answer, even while the city is small', () => {
+    const { sim } = raidTown();
+    const w = sim.state.war!;
+    const rival = sim.state.region.neighbours.find((n) => n.rival)!;
+    expect(
+      sim.dispatch({ type: 'cheat', cheat: 'rival', neighbour: rival.id, forces: 60, defences: 0 }).ok,
+    ).toBe(true);
+    const units = [...w.units.values()].map((u) => u.id);
+    const sent = sim.dispatch({
+      type: 'sendForce',
+      units,
+      to: rival.id,
+      route: 'highway',
+      target: 'military',
+      stance: 'bold',
+    });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) throw new Error(sent.reason);
+    const id = sent.created![0]!;
+    for (
+      let t = 0;
+      t < 24 * TICKS_PER_HOUR && w.expeditions!.find((e) => e.id === id)!.state !== 'fighting';
+      t++
+    )
+      sim.step();
+    const r = sim.dispatch({
+      type: 'battleReport',
+      expedition: id,
+      result: {
+        outcome: 'raided',
+        units: units.map((u) => ({ id: u, hp: 0.8, out: false })),
+        theirLost: 2,
+        theirStrength: 6,
+        defencesLost: 0,
+        destroyed: 3,
+        damaged: 2,
+        objectives: { aimed: 2, down: 1 },
+        hash: 'x',
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(w.struck![rival.id]).toBe(sim.state.tick);
+    // The city is small and young, but the neighbour it struck sets off within the months it remembers.
+    expect(sim.state.totals.population).toBeLessThan(RAIDS.minPopulation);
+    let raid: string | undefined;
+    for (let t = 0; t < RAIDS.retaliate * TICKS_PER_MONTH && !raid; t++) {
+      sim.step();
+      raid = w.incoming?.[0]?.name;
+    }
+    expect(raid).toBe(rival.name);
+  }, 300_000);
 
   it('working radars give earlier warning', () => {
     const { sim, place } = raidTown();

@@ -4,7 +4,7 @@
  */
 import { useState } from 'preact/hooks';
 import { CIVIC } from '../data/civic';
-import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
+import { RAIDS, type BattleRoute, type BattleTarget, type Stance } from '../data/battle';
 import { travelHours } from '../sim/systems/raids';
 import { UNIT, type UnitKind } from '../data/war';
 import type { BattleReport } from '../sim/systems/raids';
@@ -408,14 +408,14 @@ export function RegionMap() {
   const place = (side: string, k: number, of: number) => {
     const t = (k + 1) / (of + 1);
     return side === 'north'
-      ? { x: 60 + t * 240, y: 34 }
+      ? { x: 60 + t * 240, y: 36 }
       : side === 'south'
-        ? { x: 60 + t * 240, y: 226 }
-        : { x: 46, y: 50 + t * 160 };
+        ? { x: 60 + t * 240, y: 222 }
+        : { x: 46, y: 50 + t * 180 };
   };
   for (const [side, list] of Object.entries(sides))
     list.forEach((n, k) => (at[n.id] = place(side, k, list.length)));
-  const me = { x: 210, y: 130 };
+  const me = { x: 210, y: 140 };
   const recent = new Set(w.reports.filter((r) => tick - r.end < 3 * TICKS_PER_MONTH).map((r) => r.other));
   const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
     x: a.x + (b.x - a.x) * t,
@@ -424,21 +424,27 @@ export function RegionMap() {
   return (
     <div class="war-map" data-testid="war-map">
       <svg
-        viewBox="0 0 360 260"
+        viewBox="0 0 360 280"
         role="img"
         aria-label="The region: the city, its neighbours, forces on the move"
       >
-        <rect x="0" y="0" width="360" height="260" rx="10" class="war-map-bg" />
+        <rect x="0" y="0" width="360" height="280" rx="10" class="war-map-bg" />
         {ns.map((n) => {
           const p = at[n.id]!;
           const hours = travelHours('highway', n.side, []);
           const front = (n.rival && n.rival.relation <= -40) || recent.has(n.name);
           const mid = lerp(p, me, 0.5);
+          // The hours go beside the road, on the side away from the air route drawn up and right of it.
+          const len = Math.hypot(me.x - p.x, me.y - p.y) || 1;
+          let nx = -(me.y - p.y) / len;
+          let ny = (me.x - p.x) / len;
+          if (nx * 6 - ny * 6 > 0) [nx, ny] = [-nx, -ny];
+          const label = { x: mid.x + nx * 14, y: mid.y + ny * 14 + 3 };
           return (
             <g key={n.id} data-testid={`map-${n.id}`}>
               <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class={`war-map-route ${front ? 'front' : ''}`} />
               <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class="war-map-air" transform="translate(6 -6)" />
-              <text x={mid.x + 6} y={mid.y - 2} class="war-map-hours">
+              <text x={label.x} y={label.y} class="war-map-hours">
                 {hours} h · air {travelHours('air', n.side, [])} h
               </text>
               <circle
@@ -451,12 +457,12 @@ export function RegionMap() {
                 {n.name}
               </text>
               {n.rival && (
-                <text x={p.x} y={p.y + 37} class="war-map-note">
+                <text x={p.x} y={p.y + 37} class="war-map-note town">
                   {n.rival.personality} · {formatNumber(n.rival.forces)}
                 </text>
               )}
               {front && (
-                <text x={mid.x - 6} y={mid.y + 14} class="war-map-front">
+                <text x={mid.x - nx * 14} y={mid.y - ny * 14 + 3} class="war-map-front">
                   front
                 </text>
               )}
@@ -513,6 +519,16 @@ export function RegionMap() {
         forces on the move: ours in blue, theirs in red. A front is where there's been fighting lately or
         feelings are hostile.
       </p>
+      <p class="muted" data-testid="war-threat">
+        {w.threat.open
+          ? 'Your neighbours may raid the city: the more they outgun you and the worse their feelings, the sooner.'
+          : `Neighbours leave a city alone until it has ${formatNumber(RAIDS.minPopulation)} residents and is a year old.`}
+        {w.threat.answering.length > 0 &&
+          ` ${ns
+            .filter((n) => w.threat.answering.includes(n.id))
+            .map((n) => n.name)
+            .join(' and ')} may answer your raid within ${RAIDS.retaliate} months of it.`}
+      </p>
     </div>
   );
 }
@@ -527,8 +543,8 @@ export function ViewerBar() {
     <div class="viewer-bar panel" data-testid="viewer-bar" role="status">
       <span>
         {f
-          ? `Watching ${v.record.city}'s raid on ${v.record.other}.`
-          : `${v.record.other} after the raid: crews are clearing up and repairing.`}{' '}
+          ? `Watching ${v.record.input.attacker.name}'s raid on ${v.record.input.defender.name}.`
+          : `${v.record.input.defender.name} after the raid: crews are clearing up and repairing.`}{' '}
         Nothing here can be changed.
       </span>
       <button class="btn primary" data-testid="viewer-back" onClick={() => game.backToCity()}>

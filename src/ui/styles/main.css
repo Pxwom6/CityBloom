@@ -3956,6 +3956,21 @@ body {
   font-size: 9px;
   fill: var(--color-text-muted);
 }
+.war-map-note.town,
+.war-map-front,
+.war-map-hours {
+  text-anchor: middle;
+}
+/* Labels keep a halo of the map's colour, so lines running under them don't cut through. */
+.war-map-name,
+.war-map-note,
+.war-map-hours,
+.war-map-front {
+  paint-order: stroke;
+  stroke: var(--color-accent-soft);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
 .war-map-front {
   font-size: 10px;
   font-weight: 700;
@@ -3968,8 +3983,8 @@ body {
   fill: var(--color-negative);
 }
 .viewer-bar {
-  position: absolute;
-  top: calc(var(--space-6) + 3.6rem);
+  position: fixed;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

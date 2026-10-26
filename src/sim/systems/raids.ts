@@ -40,7 +40,7 @@ import { civicOnline } from '../world/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { CIVIC } from '../../data/civic';
 import { ignite, toRubble } from './incidents';
-import { militaryCivics, militaryOf } from './war';
+import { militaryCivics, militaryOf, raidThreat } from './war';
 import type { Neighbour, RivalNeighbour } from './region';
 
 /** A force on its way to the city. */
@@ -172,11 +172,6 @@ export function rivalForce(r: RivalNeighbour, share: number, rng: Rng): { kind: 
   return out;
 }
 
-function eligible(sim: Sim): boolean {
-  const s = sim.state;
-  return s.totals.population >= RAIDS.minPopulation && s.tick >= RAIDS.minMonths * TICKS_PER_MONTH;
-}
-
 /** Every tick while a raid is on its way: its warning when the city hears of it, and its arrival. */
 export function raidsTick(sim: Sim): void {
   const w = sim.state.war;
@@ -199,19 +194,31 @@ export function raidsHour(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
   const s = sim.state;
-  if (!RAIDS.decide || w.incoming?.length || w.battle || !eligible(sim)) return;
+  if (!RAIDS.decide) return;
+  // A young or small city is left alone, unless it struck a neighbour first: that one may answer.
+  const threat = raidThreat(sim);
+  if (threat.open && !w.exposed && s.region.neighbours.some((n) => n.rival && !n.player)) {
+    w.exposed = true;
+    sim.events.push({ kind: 'raidsOpen', id: 0 });
+  }
+  if (w.incoming?.length || w.battle) return;
   const last = w.raided?.any ?? -Infinity;
   if (s.tick - last < RAIDS.gapAny * TICKS_PER_MONTH) return;
+  if (!threat.open && !threat.answering.length) return;
   const rng = new Rng(w.rng);
   const strength = Math.max(1, cityStrength(sim));
   for (const n of s.region.neighbours) {
     const r = n.rival;
     if (!r || n.player) continue;
+    const answering = threat.answering.includes(n.id);
+    if (!threat.open && !answering) continue;
     if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < RAIDS.gapEach * TICKS_PER_MONTH) continue;
+    if (r.forces < 1) continue;
     const p = PERSONALITY[r.personality];
     let chance = (p.aggression * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
     if (r.relation <= RAIDS.hostile) chance *= 2;
     else if (r.relation >= RAIDS.friendly) chance *= 0.25;
+    if (answering) chance *= 4;
     if (!rng.chance(chance)) continue;
     w.rng = rng.getState();
     planRaid(sim, n, r, rng);

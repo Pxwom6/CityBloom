@@ -4,7 +4,7 @@
 // moments, following the fighting), the battle bar, the war room's report, and the town repaired.
 // Prints what the battle draws.
 // Usage: npm run build:test && node scripts/dev/battleshot.mjs outDir
-// Env: QUALITY=medium (low|medium|high), PORT=4392, SEED=port, ONLY=warning,battle,bar,report,repaired
+// Env: QUALITY=medium (low|medium|high), PORT=4392, SEED=port, ONLY=warning,battle,bar,report,map,repaired
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -172,6 +172,13 @@ try {
     await page.evaluate(() => window.__game.openPanel('war'));
     await page.getByTestId('war-tab-reports').click();
     await snap('report', { x: civ.x, z: civ.z, distance: 420, yaw: 0.5, tilt: 0.45 }, 3);
+    await page.evaluate(() => window.__game.openPanel('war'));
+  }
+  if (want('map')) {
+    // The war room's map: the neighbours, the roads' hours, the front, and when raids may come.
+    await page.evaluate(() => window.__game.openPanel('war'));
+    await page.getByTestId('war-tab-map').click();
+    await snap('map', { x: civ.x, z: civ.z, distance: 420, yaw: 0.5, tilt: 0.45 }, 2);
     await page.evaluate(() => window.__game.openPanel('war'));
   }
   if (want('repaired')) {

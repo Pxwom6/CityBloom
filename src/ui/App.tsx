@@ -99,7 +99,8 @@ export function App({ game }: { game: Game }) {
       <Shortcuts game={game} />
       <TopBar />
       <DebugPanel />
-      {game.readOnly ? <VisitBanner /> : <Toolbar />}
+      {/* Watching a battle (M35), the viewer bar takes the visit banner's place. */}
+      {game.readOnly ? !game.viewing && <VisitBanner /> : <Toolbar />}
       <ToolHintLabel />
       <ToolQuestionCard />
       <Inspector />

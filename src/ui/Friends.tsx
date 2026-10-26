@@ -117,11 +117,11 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
             class="shell-btn"
             data-testid="friends-host-p2p"
             disabled={!ready}
-            title="Your browser is the room: friends connect straight to it while you play. The city stays in your saves."
+            title="Your browser is the room: friends connect straight to it while you play. The city stays in your saves. Connecting straight means they can see your internet (IP) address; an online room doesn't share it."
             onClick={() => hostCity(game, 'p2p', props.latestSlot)}
           >
             <span>Host on this computer</span>
-            <small>Share {city} straight from this browser</small>
+            <small>Share {city} straight from this browser (friends see your IP address)</small>
           </button>
           {props.latestSlot && (
             <button
@@ -333,7 +333,7 @@ export function RoomPanel() {
         <p class="muted">
           {mp.kind === 'online'
             ? 'An online room: the city waits here between sessions, and friends can join any time with the code.'
-            : 'This room runs in the host’s browser: friends can play while the host is here.'}
+            : 'This room runs in the host’s browser: friends can play while the host is here. Everyone connects straight to it, so the players can see each other’s internet (IP) addresses.'}
         </p>
         <div class="invite">
           <input
@@ -591,8 +591,14 @@ export function Troubleshooting() {
           and closes when they leave; everyone keeps a copy of the city to play alone.
         </li>
         <li>
-          <strong>Room full or locked?</strong> A room takes 8 players and a region 4 cities. Ask the host to
-          remove someone who has left, or to unlock the room.
+          <strong>Room full or locked?</strong> A room takes 8 players at a time (players who are away don’t
+          count): try again when someone leaves. Removing a player locks the room, so nobody new gets in until
+          the host unlocks it. A region keeps a place for each of its 4 cities, even while their mayors are
+          away: start another region for more.
+        </li>
+        <li>
+          <strong>Hosting on your computer?</strong> Everyone connects straight to your browser, so the
+          players can see each other’s internet (IP) addresses. An online room doesn’t share them.
         </li>
         <li>
           <strong>“Fell out of step”?</strong> One game stopped agreeing with the others. The room sends it

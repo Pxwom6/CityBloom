@@ -34,7 +34,7 @@ export default defineConfig({
     // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect.
     {
       command: 'npx tsx relay/local.ts 8787',
-      url: 'http://localhost:8787/health',
+      url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60_000,
     },

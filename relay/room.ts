@@ -559,7 +559,11 @@ export class Room {
     }
     if (this.info.locked) return this.reject(conn, 'locked', 'The host has locked this room');
     if (this.online >= MAX_PLAYERS)
-      return this.reject(conn, 'full', `This room is full (${MAX_PLAYERS} players)`);
+      return this.reject(
+        conn,
+        'full',
+        `This room is full: ${MAX_PLAYERS} players are in it. Try again when someone leaves`,
+      );
     if (this.budget.over(this.env.now())) return this.reject(conn, 'limit', dailyLimitText('room'));
     const p = this.addPlayer(conn, m.name, m.color, false);
     p.joining = true;

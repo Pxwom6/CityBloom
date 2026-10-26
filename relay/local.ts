@@ -2,12 +2,13 @@
  * The local relay (M30): the room protocol on this computer, for development and tests with no
  * internet. Speaks exactly what the online rooms speak:
  *
- *   ws://localhost:8787/room/<CODE>[?create=1]    a room (the same Room class a Durable Object runs)
- *   ws://localhost:8787/region/<CODE>[?create=1]  a shared region (M32)
- *   ws://localhost:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
+ *   ws://127.0.0.1:8787/room/<CODE>[?create=1]    a room (the same Room class a Durable Object runs)
+ *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
+ *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days]`: with --data, rooms are kept in files and
- * survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr]`: it listens on this computer
+ * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
+ * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
  * socket opened with `?create=1`, and their codes start with a digit, signalling's with a letter.
  * Rooms and regions nobody comes back to are forgotten after `--ttl` days (60), empty signalling at
@@ -96,6 +97,11 @@ export interface RelayOptions {
   ttl?: number;
   /** Rooms' message limits (tests' headless players may report faster than a game). */
   limits?: Partial<RoomLimits>;
+  /**
+   * The address to listen on: this computer only (127.0.0.1) unless told otherwise, e.g. 0.0.0.0 to
+   * try a phone on the same network (review, minor).
+   */
+  host?: string;
 }
 
 export interface LocalRelay {
@@ -247,7 +253,7 @@ export function startRelay(
   sweeper.unref();
 
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    server.listen(port, opts.host ?? '127.0.0.1', () => {
       const addr = server.address();
       const actual = typeof addr === 'object' && addr ? addr.port : port;
       resolve({
@@ -275,15 +281,18 @@ if (process.argv[1]?.endsWith('local.ts')) {
   const args = process.argv.slice(2);
   const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1]! : null);
   const days = option('--ttl');
+  const host = option('--host') ?? '127.0.0.1';
   const port = Number(
-    args.find((a, i) => /^\d+$/.test(a) && !['--data', '--ttl'].includes(args[i - 1] ?? '')) ?? 8787,
+    args.find((a, i) => /^\d+$/.test(a) && !['--data', '--ttl', '--host'].includes(args[i - 1] ?? '')) ??
+      8787,
   );
   void startRelay(port, option('--data'), {
     strict: true,
+    host,
     ...(days ? { ttl: Number(days) * DAY_MS } : {}),
   }).then((r) => {
     console.log(
-      `Citybloom relay on ws://localhost:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,
+      `Citybloom relay on ws://${host}:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,
     );
     const stop = () => void r.close().then(() => process.exit(0));
     process.on('SIGINT', stop);

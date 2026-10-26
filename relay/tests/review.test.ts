@@ -132,7 +132,7 @@ describe('F3: codes and secrets come from the cryptographic source, not Math.ran
     };
     const relay = await startRelay(0);
     try {
-      const url = `ws://localhost:${relay.port}`;
+      const url = `ws://127.0.0.1:${relay.port}`;
       // Players in a room on the local relay (as the online Worker makes them).
       const room = await secretsOf(
         () => webSocketLink(`${url}/room/SECRET`),
@@ -313,7 +313,7 @@ describe("F2: a peer-to-peer room isn't found by its short code", () => {
 
 describe('F10: peer-to-peer dead ends', () => {
   it("a host's browser closing the room tells the guests, who keep a city of their own", async () => {
-    const p2p = new P2PHost(makeCode('p2p'), makeKey(), { kind: 'relay', url: 'ws://localhost:1' });
+    const p2p = new P2PHost(makeCode('p2p'), makeKey(), { kind: 'relay', url: 'ws://127.0.0.1:1' });
     const host = player('Ada', () => p2p.connectSelf(), hostTown(), { create: { cityName: 'Roomford' } });
     players.push(host);
     await host.session.start();

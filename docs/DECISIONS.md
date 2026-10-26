@@ -762,3 +762,20 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   takes. Pings work by touch: the room panel's "Point the others at a spot" closes the panel, the next
   tap on the map points the others there, and the tool before comes back; Shift+G still works with a
   keyboard, and the shared-city tip names both.
+- **The minor items.** The pause menu in a shared city says "Menu" and "Back to the city", since the
+  city keeps running, and Quit says what happens to the room (a host on this computer closes it for
+  everyone; a guest leaves it to the others). Invite isn't offered in a region or a visit, a city in a
+  region can't also be hosted, and a city opened both to host and into its region stays out of the
+  region (the two at once would run the region's news outside the room's order). The full-room advice
+  is true now: a room takes 8 players at a time (away players don't count) and removing one locks it;
+  a region keeps a place for each of its 4 cities even while their mayors are away, so the advice is
+  to start another (a way for a city to leave its region for good, freeing its place, is left for
+  later). Player cities at the map's edge read "Sam's city · 240", not "Industrial town · 0k". Chat
+  and toasts wrap a long word (a pasted link), and chat can be selected to copy. Following another
+  player's camera stops at any move of one's own (wheel, keys, pinch, drag, a "Show me", a preset),
+  not only a drag. City and region names from players are cleaned as players' names are (control,
+  invisible and reordering characters, markup) and keep up to 40 characters (a region's was cut to
+  20). The local relay listens on 127.0.0.1 unless `--host` says otherwise (test builds use
+  127.0.0.1). The lobby, the room panel, the pause menu's "Host on this computer", "Start a region on
+  this computer" and Troubleshooting say that connecting straight shows the players' internet (IP)
+  addresses to each other; online rooms don't.

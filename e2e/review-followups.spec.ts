@@ -119,6 +119,12 @@ test("F6: a city saved over another's slot doesn't take its place in the region"
     .poll(async () => (await page.evaluate(() => window.__game!.getRegion()))?.state, { timeout: 120_000 })
     .toBe('in');
   expect(await page.evaluate(() => window.__game!.autosaveNow())).toBe(true);
+  // In a region the pause menu doesn't offer to share the city in a room too (review, minor).
+  await page.getByTestId('menu-button').click();
+  await expect(page.getByTestId('pause-menu')).toBeVisible();
+  for (const id of ['pause-invite', 'pause-invite-p2p'])
+    await expect(page.getByTestId(id), id).toHaveCount(0);
+  await page.getByTestId('pause-resume').click();
   // Opening Adaville's save again rejoins the region as Adaville.
   await page.goto('./?load=auto');
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
@@ -193,6 +199,12 @@ test('F12: an invite link asks for a name, checks the graphics and says what itâ
   await expect
     .poll(async () => (await ada.evaluate(() => window.__game!.getNet()))!.players.map((p) => p.name))
     .toContain('Sam');
+  // A shared city keeps running behind the menu, and the menu says so (review, minor).
+  await ada.getByTestId('menu-button').click();
+  await expect(ada.getByTestId('pause-menu').locator('h2')).toHaveText('Menu');
+  await expect(ada.getByTestId('pause-resume')).toHaveText('Back to the city');
+  await expect(ada.getByTestId('pause-quit')).toContainText('the city carries on for the others');
+  await ada.getByTestId('pause-resume').click();
   // The boot screen said what it was waiting for.
   const said = await sam.evaluate(() => (window as unknown as { __boot: string[] }).__boot);
   expect(said.join(' | ')).toMatch(/Connecting to room/);

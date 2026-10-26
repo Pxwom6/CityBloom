@@ -676,7 +676,7 @@ describe('F8: the local relay', () => {
   it('as players run it: makes rooms only when asked, by the right kind of code', async () => {
     const relay = await startRelay(0, null, { strict: true });
     try {
-      const url = `ws://localhost:${relay.port}`;
+      const url = `ws://127.0.0.1:${relay.port}`;
       const wrongKind = await listen(await webSocketLink(`${url}/room/ABCDEF`));
       await until(() => wrongKind.closed(), 5000, 'the close');
       const unasked = await listen(await webSocketLink(`${url}/room/2ABCDE`));
@@ -697,7 +697,7 @@ describe('F8: the local relay', () => {
     const dir = mkdtempSync(join(tmpdir(), 'citybloom-relay-'));
     const relay = await startRelay(0, dir, { ttl: 1000 });
     try {
-      const url = `ws://localhost:${relay.port}`;
+      const url = `ws://127.0.0.1:${relay.port}`;
       const ada = await listen(await webSocketLink(`${url}/room/2QUETA`));
       ada.link.send(hello('Ada', create));
       ada.link.send(

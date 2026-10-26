@@ -429,6 +429,12 @@ function SharedRegion() {
           >
             {online ? 'Start a region' : 'Start a region on this computer'}
           </button>
+          {!online && (
+            <span class="muted region-ip">
+              The cities connect straight to each other: their players see each other’s internet (IP)
+              addresses.
+            </span>
+          )}
           <input
             type="text"
             placeholder="Region code"

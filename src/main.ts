@@ -361,7 +361,11 @@ async function boot(): Promise<void> {
       game.boundRegion = null;
       mine = null;
     }
-    if (newRegion === 'online' || newRegion === 'p2p')
+    // Hosting wins: a city opened to share in a room isn't also brought into its region (both at once
+    // would run its region's news outside the room's order).
+    if (host === 'online' || host === 'p2p') {
+      if (mine) game.toast('This city stays out of its region while it’s shared in a room.', 'info', 6000);
+    } else if (newRegion === 'online' || newRegion === 'p2p')
       void game.startRegion(
         newRegion,
         params.get('rname')?.trim().slice(0, 40) || `${world.stats.cityName} and friends`,

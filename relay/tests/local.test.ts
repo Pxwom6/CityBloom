@@ -36,7 +36,7 @@ afterAll(async () => {
 describe('the local relay (M30)', () => {
   it('two players stay in step for a game year, building as they go', async () => {
     const code = external ? freshCode('2') : '2YEARB';
-    const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
+    const url = `${external ?? `ws://127.0.0.1:${relay!.port}`}/room/${code}`;
     const connect = () => webSocketLink(url);
     const hosting = () => webSocketLink(`${url}?create=1`);
     const sim = Sim.create({ seed: 'year', preset: 'river', cityName: 'Yearling' });
@@ -86,7 +86,7 @@ describe('the local relay (M30)', () => {
 
   it('keeps the city after everyone has left, for whoever comes back', async () => {
     const code = external ? freshCode('3') : '3KEEPB';
-    const url = `${external ?? `ws://localhost:${relay!.port}`}/room/${code}`;
+    const url = `${external ?? `ws://127.0.0.1:${relay!.port}`}/room/${code}`;
     const connect = () => webSocketLink(url);
     const hosting = () => webSocketLink(`${url}?create=1`);
     const sim = Sim.create({ seed: 'keep', preset: 'river', cityName: 'Keepsake' });

@@ -77,7 +77,7 @@ Should fix:
 - [x] F12 Invite links
 - [x] F13 Tests
 - [ ] F14 Balance
-- [ ] Minor items
+- [x] Minor items
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).

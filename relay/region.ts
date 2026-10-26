@@ -16,11 +16,11 @@
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
 import {
-  MAX_NAME,
   MAX_SNAPSHOT_PARTS,
   PLAYER_COLORS,
   PROTOCOL_VERSION,
   SNAPSHOT_PART,
+  cleanCityName,
   cleanName,
   makeSecret,
 } from './protocol';
@@ -268,15 +268,14 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
   switch (m.t) {
     case 'rhello': {
       const mayor = cleanName(m.mayor);
-      const city = typeof m.city === 'string' ? m.city.slice(0, 40) : null;
+      const city = typeof m.city === 'string' ? cleanCityName(m.city) : null;
       if (!finite(m.v, 0, 1e6) || !mayor || city === null || !finite(m.color, 0, PLAYER_COLORS.length - 1))
         return null;
       const out: RegionClientMsg = { t: 'rhello', v: m.v as number, mayor, color: m.color as number, city };
       if (m.create !== undefined) {
         const c = m.create as Record<string, unknown>;
-        const name = cleanName(c?.name);
-        if (!name) return null;
-        out.create = { name: name.slice(0, MAX_NAME + 20) };
+        if (typeof c?.name !== 'string') return null;
+        out.create = { name: cleanCityName(c.name) };
       }
       if (m.rejoin !== undefined) {
         const r = m.rejoin as Record<string, unknown>;
@@ -296,7 +295,7 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         return null;
       return {
         t: 'report',
-        city: m.city.slice(0, 40),
+        city: cleanCityName(m.city),
         report,
         ...(m.thumb ? { thumb: m.thumb as string } : {}),
       };
@@ -668,7 +667,11 @@ export class RegionRoom {
     let write: 'new' | 'changed' | null = null;
     if (!city) {
       if (this.meta.cities.length >= MAX_CITIES)
-        return this.reject(conn, 'full', `This region is full (${MAX_CITIES} cities)`);
+        return this.reject(
+          conn,
+          'full',
+          `This region is full: it has places for ${MAX_CITIES} cities, and each keeps its place while its mayor is away`,
+        );
       if (this.budget.over(now)) return this.reject(conn, 'limit', dailyLimitText('region'));
       write = 'new';
       city = {

@@ -294,15 +294,35 @@ export function normaliseCode(input: string): string | null {
 }
 
 /** A display name with control characters, markup and extra spaces removed. */
+/**
+ * Characters a name never shows: control characters, and the invisible ones that reorder or hide text
+ * (zero-width spaces and joiners, right-to-left overrides and isolates, the byte-order mark).
+ */
+// eslint-disable-next-line no-control-regex -- stripping control characters is the point
+const UNSEEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+
 export function cleanName(input: unknown): string | null {
   if (typeof input !== 'string') return null;
+  const s = input.replace(UNSEEN, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+  return s.length ? s : null;
+}
+
+/** A city's or region's longest name. */
+export const MAX_CITY_NAME = 40;
+
+/**
+ * A city's or region's name as the others will see it (review, minor): cleaned as players' names are,
+ * and never empty, since every city shows one.
+ */
+export function cleanCityName(input: string): string {
   const s = input
-    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
-    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .replace(UNSEEN, ' ')
+    .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, MAX_NAME);
-  return s.length ? s : null;
+    .slice(0, MAX_CITY_NAME)
+    .trim();
+  return s.length ? s : 'A city';
 }
 
 export function cleanChat(input: unknown): string | null {
@@ -394,7 +414,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       if (m.create !== undefined) {
         const c = m.create as Record<string, unknown>;
         if (!c || typeof c !== 'object' || typeof c.cityName !== 'string') return null;
-        out.create = { cityName: c.cityName.slice(0, 40) };
+        out.create = { cityName: cleanCityName(c.cityName) };
       }
       if (m.rejoin !== undefined) {
         const r = m.rejoin as Record<string, unknown>;
@@ -453,7 +473,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
           seq: meta.seq,
           eventHash: meta.eventHash,
           parts: meta.parts,
-          cityName: meta.cityName.slice(0, 40),
+          cityName: cleanCityName(meta.cityName),
           population: meta.population,
         },
         part: m.part,

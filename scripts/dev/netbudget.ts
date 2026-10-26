@@ -23,7 +23,7 @@ const count = Number(process.argv[4] ?? 4);
 
 const relay = await startRelay(0);
 const code = 'B2DGET';
-const url = `ws://localhost:${relay.port}/room/${code}`;
+const url = `ws://127.0.0.1:${relay.port}/room/${code}`;
 const sim = Sim.create({ seed: 'budget', preset: 'river', cityName: 'Budgetby' });
 buildTown(sim, { zone: true });
 serveTown(sim);

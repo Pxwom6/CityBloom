@@ -73,8 +73,12 @@ the name and colour you choose.
   through a server and works on any network.
 - **"The host's game has closed, and the room with it"**: a room on someone's computer runs in
   their browser, so it closes when they leave; everyone keeps a copy of the city to play alone.
-- **"This room is full"** (8 players), **"This region is full"** (4 cities) or **"The host has locked
-  this room"**: ask the host to remove someone who's left, or to unlock it.
+- **"This room is full"**: 8 players are in it (players who are away don't count); try again when
+  someone leaves. **"The host has locked this room"**: nobody new gets in until the host unlocks it
+  (removing a player locks it). **"This region is full"**: a region has places for 4 cities, and each
+  keeps its place while its mayor is away, so start another region for more.
+- **Hosting on your own computer** connects everyone straight to your browser, so the players can see
+  each other's internet (IP) addresses; an online room doesn't share them.
 - **"Sam's game fell out of step; catching up"**: one player's game stopped agreeing with the
   others (rare; a crashed or very slow tab can do it). The room sends that player the city as it
   stands and they carry on a moment later; nothing is lost.
@@ -285,7 +289,7 @@ npm run soak         # ten minutes of top-speed play with disasters; fails on an
 npm run bench        # sim tick timing (add --big for a ~100k-resident city)
 npm run balance      # scripted players over 20 game years: careful, greedy, neglectful
 npm run models:check # check every hand-made model in assets/models against its spec
-npm run relay        # the local relay for shared cities and regions (ws://localhost:8787)
+npm run relay        # the local relay for shared cities and regions (ws://127.0.0.1:8787)
 npm run xbrowser     # the same city, bit for bit, in Chromium, WebKit and Firefox
 ```
 

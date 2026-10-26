@@ -449,14 +449,16 @@ function PauseMenu() {
   return (
     <div class="shell-card panel pause-menu" data-testid="pause-menu">
       <header>
-        <h2>Paused</h2>
+        {/* A shared city doesn't pause for menus: it runs at the room's speed (review, minor). */}
+        <h2>{game.net ? 'Menu' : 'Paused'}</h2>
         <span class="muted">
           {st.cityName} · {formatDate(dateOf(st.tick))}
+          {game.net && ' · the city keeps running for everyone'}
         </span>
       </header>
       <nav class="shell-nav compact">
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
-          <span>Resume</span>
+          <span>{game.net ? 'Back to the city' : 'Resume'}</span>
         </button>
         {/* A neighbour's city seen read-only is never saved here (F5). */}
         {!game.readOnly && (
@@ -480,7 +482,7 @@ function PauseMenu() {
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
-        {!game.net && !game.readOnly && <InviteButtons />}
+        {!game.net && !game.readOnly && !game.region && <InviteButtons />}
         <div class="shell-row">
           {!game.readOnly && (
             <button
@@ -498,7 +500,13 @@ function PauseMenu() {
         <button class="shell-btn quiet" data-testid="pause-quit" onClick={() => void game.quitToMenu()}>
           <span>Quit to main menu</span>
           <small>
-            {game.readOnly ? 'You were only visiting: nothing is saved.' : 'Your city is autosaved first.'}
+            {game.readOnly
+              ? 'You were only visiting: nothing is saved.'
+              : game.net?.host
+                ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
+                : game.net
+                  ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
+                  : 'Your city is autosaved first.'}
           </small>
         </button>
       </nav>
@@ -532,7 +540,12 @@ function InviteButtons() {
         <small>{online ? 'an online room' : 'from this computer'}</small>
       </button>
       {online && (
-        <button class="shell-btn" data-testid="pause-invite-p2p" onClick={() => void host('p2p')}>
+        <button
+          class="shell-btn"
+          data-testid="pause-invite-p2p"
+          title="Friends connect straight to this browser, so they can see your internet (IP) address; an online room doesn't share it"
+          onClick={() => void host('p2p')}
+        >
           <span>Host on this computer</span>
         </button>
       )}

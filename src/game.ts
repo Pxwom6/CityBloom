@@ -401,8 +401,9 @@ export class Game {
     for (const [k, shape] of this.pending)
       marks.push({ key: -k, color: mine, name: null, at: null, ghost: shape, pending: true });
     r.presence.update(marks, r.camera, w, h, now);
-    // Following someone: ride along with their camera.
-    if (this.following && r.controller.isDragging) this.following = 0;
+    // Following someone: ride along with their camera, until this player moves theirs in any way (a
+    // drag, the wheel, a pinch, the keys).
+    if (this.following && r.controller.userMoves !== this.followMoves) this.following = 0;
     if (this.following) {
       const f = s.presence.get(this.following)?.cam;
       if (f) r.controller.setPose({ x: f[0], z: f[1], distance: f[2], yaw: f[3], tilt: f[4] }, false);
@@ -417,8 +418,12 @@ export class Game {
   /** The player whose camera this one rides along with (M31), or 0. */
   following = 0;
 
+  /** The camera's count of the player's own moves when following began. */
+  private followMoves = 0;
+
   follow(player: number): void {
     this.following = this.following === player ? 0 : player;
+    this.followMoves = this.renderer.controller.userMoves;
     const name = this.net?.session.players.find((p) => p.id === player)?.name;
     if (this.following && name)
       this.toast(`Following ${name}'s view. Move the camera to stop.`, 'info', 3500);
@@ -634,6 +639,15 @@ export class Game {
     if (this.net) return true;
     // A visit isn't this player's city to share (F5).
     if (this.readOnly) return false;
+    // A city in a shared region is played alone, at its own speed (M32): not also in a room.
+    if (this.region) {
+      this.toast(
+        'A city in a shared region can’t also be shared in a room: leave the region first.',
+        'bad',
+        6000,
+      );
+      return false;
+    }
     try {
       const mp = await Multiplayer.host(kind, this.client, loadProfile(), this.world.stats.cityName);
       this.attachNet(mp);
@@ -1552,6 +1566,7 @@ export class Game {
 
   /** Fly the camera to a spot (advisors, notifications), optionally opening a data map. */
   flyTo(at: { x: number; z: number }, map?: string): void {
+    this.following = 0;
     const cur = this.renderer.controller.goal;
     this.renderer.controller.setPose(
       {
@@ -1579,6 +1594,7 @@ export class Game {
   }
 
   setCamera(preset: CameraPresetName | Partial<CameraPose>, instant = true): void {
+    this.following = 0;
     if (typeof preset === 'string') this.renderer.controller.preset(preset, instant);
     else this.renderer.controller.setPose(preset, instant);
   }

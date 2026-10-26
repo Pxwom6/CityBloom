@@ -40,7 +40,8 @@ function openDb(version: number | undefined = 2): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
       // A newer build in another tab took the database further: open it as it is.
-      if (version !== undefined && req.error?.name === 'VersionError') openDb(undefined).then(resolve, reject);
+      if (version !== undefined && req.error?.name === 'VersionError')
+        openDb(undefined).then(resolve, reject);
       else reject(req.error ?? new Error('IndexedDB unavailable'));
     };
   });

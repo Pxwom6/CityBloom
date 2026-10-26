@@ -55,6 +55,8 @@ async function state(page: Page) {
 test('two players fed the same stamped commands stay in step with each other and Node', async ({
   browser,
 }) => {
+  // Two 3D pages on a software renderer, as the other two-page specs allow.
+  test.setTimeout(420_000);
   const { events, ref, sums } = record();
   expect(sums.size).toBe(MONTHS * 24);
   const pages: Page[] = [];

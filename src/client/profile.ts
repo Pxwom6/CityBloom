@@ -30,7 +30,8 @@ export interface Profile {
   color: number;
 }
 
-export function loadProfile(): Profile {
+/** The name and colour this player chose, or null if they never have (F12: an invite link asks). */
+export function storedProfile(): Profile | null {
   try {
     const p = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Profile> | null;
     const name = cleanName(p?.name);
@@ -38,12 +39,19 @@ export function loadProfile(): Profile {
       typeof p?.color === 'number' && p.color >= 0 && p.color < PLAYER_COLORS.length ? p.color : null;
     if (name && color !== null) return { name, color };
   } catch {
-    /* a fresh profile below */
+    /* none */
   }
-  return {
-    name: SUGGEST[Math.floor(Math.random() * SUGGEST.length)]!,
-    color: Math.floor(Math.random() * PLAYER_COLORS.length),
-  };
+  return null;
+}
+
+/** The player's name and colour, or a friendly suggestion for them to change. */
+export function loadProfile(): Profile {
+  return (
+    storedProfile() ?? {
+      name: SUGGEST[Math.floor(Math.random() * SUGGEST.length)]!,
+      color: Math.floor(Math.random() * PLAYER_COLORS.length),
+    }
+  );
 }
 
 export function saveProfile(p: Profile): void {

@@ -11,7 +11,13 @@ import { placeFromToolbar } from './ui';
 async function player(browser: Browser, name: string, color: number): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(
-    ([n, c]) => localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c })),
+    ([n, c]) => {
+      localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));
+      // The visit tab opens a city straight from a link: skip the first-launch graphics check there.
+      const key = 'citybloom.settings';
+      const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+      localStorage.setItem(key, JSON.stringify({ ...s, graphicsChecked: true }));
+    },
     [name, color] as const,
   );
   return ctx.newPage();

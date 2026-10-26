@@ -114,7 +114,13 @@ export class Multiplayer {
   }
 
   /** Join a room by its invite (a peer-to-peer room's carries its key: see `inviteProblem`). */
-  static join(invite: Invite, driver: SimDriver, profile: Profile): Multiplayer {
+  static join(
+    invite: Invite,
+    driver: SimDriver,
+    profile: Profile,
+    /** Called once a peer-to-peer host has answered, before the connection is made (F12). */
+    onHost?: () => void,
+  ): Multiplayer {
     const { code, key } = invite;
     const kind = codeKind(code);
     let connect: () => Promise<Link>;
@@ -123,7 +129,7 @@ export class Multiplayer {
       connect = url
         ? () => webSocketLink(`${url}/room/${code}`)
         : () => Promise.reject(new Error("Online rooms aren't set up yet, so this code can't be reached"));
-    } else connect = () => p2pConnect(code, key ?? '', signalling());
+    } else connect = () => p2pConnect(code, key ?? '', signalling(), 20_000, onHost);
     const again = roomCredentials(code);
     return new Multiplayer(
       code,

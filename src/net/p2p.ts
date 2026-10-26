@@ -223,13 +223,21 @@ export function p2pConnect(
   key: string,
   signalling: Signalling,
   timeoutMs = 20_000,
+  /** Called once the host's browser has answered (F12: the boot screen says so). */
+  onHost?: () => void,
 ): Promise<Link> {
   return signalling.kind === 'relay'
-    ? viaRelay(code, key, signalling.url, timeoutMs)
-    : viaTrystero(code, key, signalling, timeoutMs);
+    ? viaRelay(code, key, signalling.url, timeoutMs, onHost)
+    : viaTrystero(code, key, signalling, timeoutMs, onHost);
 }
 
-async function viaRelay(code: string, key: string, url: string, timeoutMs: number): Promise<Link> {
+async function viaRelay(
+  code: string,
+  key: string,
+  url: string,
+  timeoutMs: number,
+  onHost?: () => void,
+): Promise<Link> {
   const sig = await webSocketLink(`${url}/signal/${code}`);
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   const dc = pc.createDataChannel('room', { ordered: true });
@@ -267,6 +275,7 @@ async function viaRelay(code: string, key: string, url: string, timeoutMs: numbe
       if ((m.t === 'you' && m.host) || m.t === 'host') {
         if (host) return;
         host = m.t === 'you' ? m.host! : m.id!;
+        onHost?.();
         void offer();
       } else if (m.t === 'from' && m.from === host && m.data) {
         const d = JSON.parse(m.data) as { kind: string; sdp: string };
@@ -285,6 +294,7 @@ async function viaTrystero(
   key: string,
   signalling: { relays?: string[] },
   timeoutMs: number,
+  onHost?: () => void,
 ): Promise<Link> {
   const { joinRoom } = await import('trystero');
   const { config, room } = trysteroRoom(code, key, signalling);
@@ -298,6 +308,7 @@ async function viaTrystero(
     }, timeoutMs);
     hello.onMessage = (_data, { peerId: host }) => {
       clearTimeout(timer);
+      onHost?.();
       const link: Link = {
         send: (text) => void msg.send(text, { target: host }),
         close: () => void t.leave(),

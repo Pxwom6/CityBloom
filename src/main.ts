@@ -23,7 +23,8 @@ import type { SaveFile } from './sim/save';
 import type { Snapshot } from './sim/protocol';
 import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
-import { loadProfile, regionRejoin } from './client/profile';
+import { loadProfile, regionRejoin, storedProfile } from './client/profile';
+import { askName } from './ui/JoinPrompt';
 import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
@@ -109,6 +110,16 @@ function townPose(world: ClientWorld) {
   };
 }
 
+/** The boot screen's line while the game gets ready (F12: say what an invite link is waiting for). */
+function bootStatus(text: string): void {
+  const boot = document.getElementById('boot');
+  if (boot && !boot.classList.contains('hidden') && !boot.classList.contains('asking'))
+    boot.textContent = text;
+}
+
+/** How long a join may take to bring the room's city, all told (ms). */
+const JOIN_DEADLINE = 120_000;
+
 /** Join a room and wait for its city; rejects with a message the player can read. */
 async function joinRoom(invite: Invite, client: SimClient): Promise<{ mp: Multiplayer; snap: Snapshot }> {
   let first: ((s: Snapshot) => void) | null = null;
@@ -130,21 +141,48 @@ async function joinRoom(invite: Invite, client: SimClient): Promise<{ mp: Multip
       return s;
     },
   };
-  const mp = Multiplayer.join(invite, driver, loadProfile());
-  await mp.session.start();
-  return { mp, snap: await loaded };
+  const p2p = codeKind(invite.code) === 'p2p';
+  bootStatus(p2p ? 'Looking for the host’s computer…' : `Connecting to room ${invite.code}…`);
+  const mp = Multiplayer.join(invite, driver, loadProfile(), () => bootStatus('Connecting to the host…'));
+  // Once the room has said hello, its city is on its way.
+  const prev = mp.session.onChange;
+  mp.session.onChange = () => {
+    if (mp.session.state === 'joining') bootStatus('Loading the city…');
+    prev?.();
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('The room didn’t send its city in time: try the invite link again.')),
+      JOIN_DEADLINE,
+    );
+  });
+  try {
+    await Promise.race([mp.session.start(), deadline]);
+    return { mp, snap: await Promise.race([loaded, deadline]) };
+  } catch (err) {
+    mp.leave();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    mp.session.onChange = prev;
+  }
 }
 
 async function boot(): Promise<void> {
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
+  // The hand-made building models download while the city is made, opened or fetched from a room.
+  const models = loadModels();
   // Without a city to open, show the main menu over a backdrop map. An invite carries a room's code
   // and, for a room in a player's browser, its key (F2).
   const joinInvite = params.get('join') ? parseInvite(params.get('join')!) : null;
   // Looking round a neighbour's city in a shared region (M32), read-only.
   const visitInvite = params.get('visit') ? parseInvite(params.get('visit')!) : null;
   let visited: SaveFile | null = null;
-  if (visitInvite && !inviteProblem(visitInvite)) {
+  let visitError: string | null = params.has('visit') ? inviteProblem(visitInvite) : null;
+  if (visitInvite && !visitError) {
+    bootStatus('Fetching the city from the region…');
     const url = relayUrl();
     const { code, key } = visitInvite;
     const connect =
@@ -155,7 +193,10 @@ async function boot(): Promise<void> {
               : Promise.reject(new Error('Online regions aren’t set up'))
         : () => p2pConnect(code, key!, signalling());
     visited = await fetchCitySave(connect, Number(params.get('city') ?? 0), loadProfile().name).catch(
-      () => null,
+      (err: unknown) => {
+        visitError = `That city couldn’t be fetched from the region (${err instanceof Error ? err.message : String(err)}).`;
+        return null;
+      },
     );
   }
   const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join', 'visit'].some((k) =>
@@ -165,16 +206,17 @@ async function boot(): Promise<void> {
   client.testMode = IS_TEST_BUILD;
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
-  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : null;
+  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : visitError;
   if (joinInvite && !joinError) {
+    // A friend arriving for the first time picks the name the others will see (F12).
+    const boot = document.getElementById('boot');
+    if (!storedProfile() && boot) await askName(boot, `Join room ${joinInvite.code}`, loadProfile());
     const result = await joinRoom(joinInvite, client).catch((err: unknown) => {
       joinError = err instanceof Error ? err.message : String(err);
       return null;
     });
     joined = result;
   }
-  // The hand-made building models download while the city is made or opened.
-  const models = loadModels();
   // The map editor (M24): a new map from the generator (or flat), or one of the player's maps.
   const editorParam = params.get('editor');
   let editing: { id: string; map: MapData } | null = null;
@@ -228,6 +270,7 @@ async function boot(): Promise<void> {
         )
       : opened ||
         (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
+  if (joined || visited) bootStatus('Building the scene…');
   const world = new ClientWorld(snap);
   await models;
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -260,8 +303,6 @@ async function boot(): Promise<void> {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
-    // A first launch picks graphics to suit the device from the menu's first few seconds.
-    if (!game.settings.graphicsChecked) game.startGraphicsCheck();
     // A region's invite link: the friends screen, to choose the city to bring (M32).
     const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
     if (invited && !inviteProblem(invited)) {
@@ -328,6 +369,10 @@ async function boot(): Promise<void> {
     else if (regionCode) void game.joinRegion(regionCode, regionRejoin(meta, regionCode)?.rejoin ?? null);
     else if (mine) void game.joinRegion(mine.invite, mine.rejoin);
   }
+  // A first launch picks graphics to suit the device from its first few seconds: on the main menu, and
+  // in a room or a visit an invite link opened straight into (F12).
+  if (!game.settings.graphicsChecked && (game.mode === 'menu' || joined || visited))
+    game.startGraphicsCheck();
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);
   // Built pages keep a copy of the game for offline play and offer new versions (not the dev server).

@@ -140,3 +140,68 @@ test("F6: a city saved over another's slot doesn't take its place in the region"
   expect(await page.evaluate(() => window.__game!.getState().then((s) => s.cityName))).toBe('Otherby');
   expect(await page.evaluate(() => window.__game!.getRegion())).toBeNull();
 });
+
+test('F12: an invite link asks for a name, checks the graphics and says what it’s waiting for', async ({
+  browser,
+}) => {
+  test.setTimeout(420_000);
+  // Ada shares her city in an online room.
+  const actx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  await actx.addInitScript(() => {
+    localStorage.setItem('citybloom.player', JSON.stringify({ name: 'Ada', color: 0 }));
+    localStorage.setItem(
+      'citybloom.settings',
+      JSON.stringify({ tips: false, graphicsChecked: true, quality: 'low' }),
+    );
+  });
+  const ada = await actx.newPage();
+  await ada.goto('./?paused=1&seed=invite&preset=river&name=Inviteby');
+  await ada.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await ada.keyboard.press('Escape');
+  await ada.getByTestId('pause-invite').click();
+  await expect
+    .poll(async () => (await ada.evaluate(() => window.__game!.getNet()))?.state, { timeout: 30_000 })
+    .toBe('playing');
+  const invite = (await ada.evaluate(() => window.__game!.getNet()))!.invite;
+
+  // Sam opens the link on a fresh browser: no name yet, graphics never checked.
+  const sctx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  await sctx.addInitScript(() => {
+    // What the boot screen says as it goes.
+    const seen: string[] = [];
+    (window as unknown as { __boot: string[] }).__boot = seen;
+    const watch = () => {
+      const b = document.getElementById('boot');
+      if (!b) return void requestAnimationFrame(watch);
+      new MutationObserver(() => {
+        const t = b.textContent ?? '';
+        if (t && seen.at(-1) !== t) seen.push(t);
+      }).observe(b, { childList: true, characterData: true, subtree: true });
+    };
+    watch();
+  });
+  const sam = await sctx.newPage();
+  await sam.goto(`./?join=${invite}`);
+  await expect(sam.getByTestId('join-name')).toContainText(`Join room ${invite}`, { timeout: 60_000 });
+  await sam.getByTestId('join-name-input').fill('Sam');
+  await sam.getByTestId('join-name-go').click();
+  // A room on the page once it's ready means Sam got in (a join that fails opens the menu instead).
+  await sam.waitForFunction(() => window.__game?.ready === true && !!window.__game.getNet(), null, {
+    timeout: 120_000,
+  });
+  // Ada sees Sam by the name he chose.
+  await expect
+    .poll(async () => (await ada.evaluate(() => window.__game!.getNet()))!.players.map((p) => p.name))
+    .toContain('Sam');
+  // The boot screen said what it was waiting for.
+  const said = await sam.evaluate(() => (window as unknown as { __boot: string[] }).__boot);
+  expect(said.join(' | ')).toMatch(/Connecting to room/);
+  expect(said.join(' | ')).toMatch(/Loading the city|Building the scene/);
+  // The first-launch graphics check ran here too.
+  await expect
+    .poll(async () => (await sam.evaluate(() => window.__game!.getShell())).settings.graphicsChecked, {
+      timeout: 60_000,
+    })
+    .toBe(true);
+  for (const c of [actx, sctx]) await c.close();
+});

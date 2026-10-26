@@ -745,3 +745,13 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   never gates a deploy) runs the live tests and the cross-browser test in Chromium, WebKit and real
   Firefox, which the cloud VM can't download and which won't start on the Mac. The frozen-pacer test
   pushes the room's clock past its 8 s wait instead of waiting it out.
+- **F12 An invite link asks, checks and says.** A friend opening an invite link for the first time
+  picks the name and colour the others will see, on the boot screen and before anything connects
+  (`src/ui/JoinPrompt.tsx`), instead of being handed a random one; it's kept like the lobby's, so they
+  aren't asked again. The first-launch graphics check now runs in a room or a visit an invite opened
+  straight into, not only on the main menu (a phone used to join on the default graphics). The boot
+  screen says what it's waiting for: looking for the host's computer or connecting to the room,
+  connecting to the host, loading the city, building the scene (fetching the city, for a visit). A
+  join gives up after two minutes with a message rather than waiting for ever, and the building
+  models download during the wait instead of after it. A visit that can't be fetched says why on the
+  menu.

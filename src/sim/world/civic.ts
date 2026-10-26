@@ -12,6 +12,7 @@ import { sendHome } from '../systems/vehicles';
 import { planPad, reshapeGround, type EarthPlan } from './earthworks';
 import { RAIL } from '../../data/balance';
 import { DMath, formatInt } from '../dmath';
+import { standsDown } from '../systems/diplomacy';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -264,6 +265,9 @@ export function checkPlacement(
   if (def.military && !sim.state.war)
     return { ...res, reason: 'Military buildings need war on: found a city with rival neighbours' };
   if (![x, z, angle].every(Number.isFinite)) return { ...res, reason: 'Invalid position' };
+  // A treaty's demilitarised zone (M36) keeps military buildings back from that border.
+  if (def.military && standsDown(sim, x, z))
+    return { ...res, reason: 'A treaty keeps military buildings out of the zone by that border' };
   const rect: ORect = { x, z, hw: def.w / 2, hd: def.d / 2, angle };
   const c = DMath.cos(angle);
   const s = DMath.sin(angle);

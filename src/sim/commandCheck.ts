@@ -23,6 +23,7 @@ import { TERRAFORM, TERRAFORM_MODES } from '../data/terraform';
 import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
 import { UNIT, WAR } from '../data/war';
+import { cleanTerm, DIPLOMACY, type Term } from '../data/diplomacy';
 import { MAP_SIZE } from '../data/world';
 
 /**
@@ -329,6 +330,7 @@ const CHECKS: Record<CommandType, Check> = {
           route: c.route,
           target: c.target,
           stance: c.stance,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
         }
       : BAD,
   recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
@@ -337,6 +339,42 @@ const CHECKS: Record<CommandType, Check> = {
   disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
   issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
   repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),
+  declareWar: (c) =>
+    isInt(c.neighbour) &&
+    oneOf(c.scale, ['war', 'total'] as const) &&
+    typeof c.reason === 'string' &&
+    c.reason.length <= DIPLOMACY.reasonMax
+      ? {
+          type: 'declareWar',
+          neighbour: c.neighbour,
+          scale: c.scale,
+          reason: c.reason,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
+  propose: (c) => {
+    if (!isInt(c.neighbour) || !Array.isArray(c.terms) || c.terms.length > DIPLOMACY.maxTerms) return BAD;
+    const terms = c.terms.map((t) => cleanTerm(t));
+    if (terms.some((t) => !t)) return BAD;
+    if (c.counters !== undefined && !isInt(c.counters)) return BAD;
+    return {
+      type: 'propose',
+      neighbour: c.neighbour,
+      terms: terms as Term[],
+      ...(c.counters !== undefined ? { counters: c.counters as number } : {}),
+    };
+  },
+  answerProposal: (c) =>
+    isInt(c.proposal) && typeof c.accept === 'boolean'
+      ? { type: 'answerProposal', proposal: c.proposal, accept: c.accept }
+      : BAD,
+  withdrawProposal: (c) => (isInt(c.proposal) ? { type: 'withdrawProposal', proposal: c.proposal } : BAD),
+  endPact: (c) =>
+    isInt(c.pact)
+      ? { type: 'endPact', pact: c.pact, ...(c.breakPact === true ? { breakPact: true } : {}) }
+      : BAD,
+  buyBack: (c) => (isInt(c.pact) ? { type: 'buyBack', pact: c.pact } : BAD),
+  setNeutral: (c) => (typeof c.on === 'boolean' ? { type: 'setNeutral', on: c.on } : BAD),
 };
 
 /**

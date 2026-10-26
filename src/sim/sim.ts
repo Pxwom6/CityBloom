@@ -230,6 +230,18 @@ import {
   startHomeBattle,
 } from './systems/raids';
 import { battleReport, expeditionsTick, recallForce, sendForce } from './systems/expeditions';
+import {
+  answerProposal,
+  buyBack,
+  declareWar,
+  diplomacyHour,
+  diplomacyMonth,
+  endPact,
+  proposalCheat,
+  propose,
+  setNeutral,
+  withdrawProposal,
+} from './systems/diplomacy';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -311,7 +323,9 @@ export type SimEvent = {
     | 'unitLost'
     | 'forceArrived'
     | 'forceHome'
-    | 'expeditionReport';
+    | 'expeditionReport'
+    // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
+    | 'diplomacy';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -1211,6 +1225,10 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'proposal') {
+          if (!this.testMode) return fail('Test mode only');
+          return proposalCheat(this, cmd.neighbour, cmd.terms, dryRun);
+        }
         if (cmd.cheat === 'rival') {
           if (!this.testMode) return fail('Test mode only');
           const n = this.state.region.neighbours.find((x) => x.id === cmd.neighbour);
@@ -1235,7 +1253,7 @@ export class Sim {
           if (!Number.isFinite(cmd.hours) || cmd.hours < 0) return fail('Invalid hours');
           if (!dryRun) {
             const rng = new Rng(w.rng);
-            const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)));
+            const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)), !!cmd.seat);
             w.rng = rng.getState();
             if (cmd.hours === 0) {
               w.incoming = w.incoming!.filter((r) => r !== raid);
@@ -1349,19 +1367,33 @@ export class Sim {
       case 'trainUnit':
         return trainUnit(this, cmd.base, cmd.kind, dryRun);
       case 'sendForce':
-        return sendForce(this, cmd.units, cmd.to, cmd.route, cmd.target, cmd.stance, dryRun);
+        return sendForce(this, cmd.units, cmd.to, cmd.route, cmd.target, cmd.stance, !!cmd.breakPact, dryRun);
       case 'recallForce':
         return recallForce(this, cmd.expedition, dryRun);
       case 'battleReport':
         return battleReport(this, cmd.expedition, cmd.result, dryRun);
       case 'battleResolve':
-        return resolveBattle(this, cmd.input, cmd.mode, dryRun, cmd.replay);
+        return resolveBattle(this, cmd.input, cmd.mode, dryRun, cmd.replay, cmd.from, !!cmd.away);
       case 'cancelTraining':
         return cancelTraining(this, cmd.order, dryRun);
       case 'disbandUnit':
         return disbandUnit(this, cmd.unit, dryRun);
       case 'issueBond':
         return issueBond(this, cmd.amount, dryRun);
+      case 'declareWar':
+        return declareWar(this, cmd.neighbour, cmd.scale, cmd.reason, !!cmd.breakPact, dryRun);
+      case 'propose':
+        return propose(this, cmd.neighbour, cmd.terms, cmd.counters, dryRun);
+      case 'answerProposal':
+        return answerProposal(this, cmd.proposal, cmd.accept, dryRun);
+      case 'withdrawProposal':
+        return withdrawProposal(this, cmd.proposal, dryRun);
+      case 'endPact':
+        return endPact(this, cmd.pact, !!cmd.breakPact, dryRun);
+      case 'buyBack':
+        return buyBack(this, cmd.pact, dryRun);
+      case 'setNeutral':
+        return setNeutral(this, cmd.on, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -1734,7 +1766,11 @@ export class Sim {
         electionsMonth(this);
         regionMonth(this);
         // Computer neighbours arm (M34), only where war is on.
-        if (s.war) rivalsMonth(this);
+        if (s.war) {
+          rivalsMonth(this);
+          // Diplomacy (M36): tribute counted, computer neighbours' proposals and declarations.
+          diplomacyMonth(this);
+        }
         scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
@@ -1825,6 +1861,8 @@ export class Sim {
             // Raids (M35): the neighbours' decisions; units mend at their bases.
             raidsHour(this);
             mendUnits(this);
+            // Diplomacy (M36): wars open, seats of power held, proposals answered.
+            diplomacyHour(this);
           });
         run('progress', () => {
           specialisationsHour(this);

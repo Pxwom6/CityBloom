@@ -15,7 +15,8 @@ import type { RegionFlows } from './regionFlows';
 import { civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
-import { startWar } from './war';
+import { raidThreat, startWar } from './war';
+import { embargoed } from './diplomacy';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -43,7 +44,16 @@ export interface PlayerNeighbour {
   shoppers: number;
   /** Playing now (an offline city's last offer stands). */
   online: boolean;
+  /**
+   * In a region at war (M36): raids it may still take today (the region's limit), and why it can't
+   * be raided at all: a newcomer (under the bar computer neighbours keep to) or neutral.
+   */
+  raidsLeft?: number;
+  shield?: Shield;
 }
+
+/** Why a friend's city can't be raided (M36). */
+export type Shield = 'new' | 'neutral';
 
 export interface Neighbour {
   id: number;
@@ -72,6 +82,10 @@ export interface RivalNeighbour {
   defences: number;
   /** Its feelings towards the city, −100 (hostile) to 100 (friendly). */
   relation: number;
+  /** Other computer neighbours it would stand by (M36): their ids. */
+  allies?: number[];
+  /** Conquered by the city (M36): it pays a fifth of its taxes, and may rise again. */
+  vassal?: { since: number };
 }
 
 export interface Deal {
@@ -327,6 +341,8 @@ export function setDeal(
     if (i >= 0 && apply) deals.splice(i, 1);
     return { ok: true };
   }
+  // An embargo (M36) stops trade with that neighbour until a treaty resumes it.
+  if (embargoed(sim, n.id)) return { ok: false, reason: `Trade with ${n.name} is under embargo` };
   if (cap <= 0)
     return {
       ok: false,
@@ -392,6 +408,9 @@ export interface RegionCity {
   jobs: number;
   shoppers: number;
   online: boolean;
+  /** In a region at war (M36): raids it may still take today, and its shield if it has one. */
+  raidsLeft?: number;
+  shield?: Shield;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -434,6 +453,8 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       jobs: Math.max(0, c.jobs),
       shoppers: Math.max(0, c.shoppers),
       online: c.online,
+      ...(c.raidsLeft !== undefined ? { raidsLeft: Math.max(0, Math.round(c.raidsLeft)) } : {}),
+      ...(c.shield === 'new' || c.shield === 'neutral' ? { shield: c.shield } : {}),
     };
   }
   // The other cities' deals with this one: replaced as a whole with each update.
@@ -478,6 +499,8 @@ export interface RegionReport {
   deals: { slot: number; resource: DealResource; direction: DealDirection; amount: number }[];
   /** The region project's building stands in this city. */
   projectBuilt: boolean;
+  /** War (M36): why friends can't raid it, if they can't. */
+  shield?: Shield;
 }
 
 export function regionReport(sim: Sim): RegionReport {
@@ -516,5 +539,13 @@ export function regionReport(sim: Sim): RegionReport {
           : [];
       }),
     projectBuilt: [...s.civics.values()].some((c) => civicDef(c).regionProject),
+    // War (M36): friends may not raid a neutral city, nor one under the newcomer bar.
+    ...(s.war
+      ? s.war.diplomacy?.neutral
+        ? { shield: 'neutral' as const }
+        : !raidThreat(sim).open
+          ? { shield: 'new' as const }
+          : {}
+      : {}),
   };
 }

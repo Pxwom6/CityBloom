@@ -15,7 +15,7 @@ const TARGETS: Record<string, string> = {
   military: 'military buildings',
   industry: 'industry',
   power: 'power plants',
-  cityhall: 'the city hall',
+  cityhall: 'the HQ, the seat of power',
 };
 
 /** The top bar's warning: a raid on its way (with a countdown), or a battle on now. */
@@ -236,6 +236,7 @@ export function SendForce() {
   const [stance, setStance] = useState<Stance>('bold');
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [why, setWhy] = useState<string | null>(null);
+  const [breaks, setBreaks] = useState<string | null>(null);
   if (!w) return null;
   if (!rivals.length) return <p class="muted">No rival neighbours to raid.</p>;
   const home = (game.world.forces?.units ?? []).filter((u) => !u.away && u.hp >= 0.5);
@@ -254,8 +255,22 @@ export function SendForce() {
     n.side,
     chosen.map((id) => ({ kind: home.find((u) => u.id === id)!.kind })),
   );
-  const send = async () => {
-    const r = await game.dispatch({ type: 'sendForce', units: chosen, to: n.id, route, target, stance });
+  const send = async (breakPact = false) => {
+    const r = await game.dispatch({
+      type: 'sendForce',
+      units: chosen,
+      to: n.id,
+      route,
+      target,
+      stance,
+      ...(breakPact ? { breakPact: true } : {}),
+    });
+    // A pact in the way (M36): asked first.
+    if (!r.ok && r.info?.breaks) {
+      setBreaks(r.reason);
+      return;
+    }
+    setBreaks(null);
     setWhy(r.ok ? null : r.reason);
     if (r.ok) setPicked({});
     // A friend hears of it, if they're playing.
@@ -295,6 +310,7 @@ export function SendForce() {
           <option value="military">its military buildings</option>
           <option value="industry">its industry near the border</option>
           <option value="power">its power plants near the border</option>
+          <option value="cityhall">its HQ, the seat of power (in a declared war)</option>
         </select>
       </label>
       <label>
@@ -361,6 +377,19 @@ export function SendForce() {
         <p class="war-warn" data-testid="send-why">
           {why}
         </p>
+      )}
+      {breaks && (
+        <div class="dip-confirm" role="alertdialog" data-testid="send-breaks">
+          <p>{breaks}. Your reputation will suffer, and its allies will turn against the city.</p>
+          <div class="dip-actions">
+            <button class="btn danger" data-testid="send-breaks-yes" onClick={() => void send(true)}>
+              Send it anyway
+            </button>
+            <button class="btn" onClick={() => setBreaks(null)}>
+              Keep the city’s word
+            </button>
+          </div>
+        </div>
       )}
       <button
         class="btn primary"

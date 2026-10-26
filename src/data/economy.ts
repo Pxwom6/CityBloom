@@ -158,6 +158,16 @@ export const LEDGER_LABELS: Record<string, string> = {
   bonds: 'War bonds sold',
   bondInterest: 'War bond interest',
   bondPrincipal: 'War bond repayments',
+  // Diplomacy (M36).
+  tributeIn: 'Tribute received',
+  tributeOut: 'Tribute paid',
+  reparationsIn: 'Reparations received',
+  reparationsOut: 'Reparations paid',
+  occupationIn: 'Taxes from occupied districts',
+  occupationOut: 'Taxes to occupiers',
+  vassals: 'Vassals’ dues',
+  overlord: 'Dues to the overlord',
+  buyBack: 'District bought back',
 };
 
 export function ledgerLabel(key: string): string {

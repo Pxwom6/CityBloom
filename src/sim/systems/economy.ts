@@ -30,6 +30,7 @@ import { civicDef, civicUpkeep } from '../world/civic';
 import type { DistrictReport } from '../protocol';
 import { formatInt } from '../dmath';
 import { bondRates, forcesUpkeep } from './war';
+import { diplomacyRates } from './diplomacy';
 
 export interface Loan {
   id: number;
@@ -243,6 +244,12 @@ export function monthlyRates(sim: Sim): Record<string, number> {
     const bonds = bondRates(sim);
     add('bondInterest', -bonds.interest);
     add('bondPrincipal', -bonds.principal);
+    // Diplomacy (M36): tribute, occupied districts' taxes and vassals' dues, in and out.
+    if (s.war.diplomacy || s.region.neighbours.some((n) => n.rival?.vassal)) {
+      let taxes = 0;
+      for (const [k, v] of Object.entries(out)) if (k.startsWith('tax')) taxes += v;
+      for (const [k, v] of Object.entries(diplomacyRates(sim, taxes))) add(k, v);
+    }
   }
   return out;
 }

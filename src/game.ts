@@ -33,7 +33,7 @@ import {
   unpostedBattles,
   type BattleRecord,
 } from './client/battles';
-import { BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
+import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
@@ -45,7 +45,13 @@ import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
-import { RegionLink, type BattleAnswer, type CityPort, type RegionLinkOptions } from './net/regionLink';
+import {
+  RegionLink,
+  type BattleAnswer,
+  type BattleMeta,
+  type CityPort,
+  type RegionLinkOptions,
+} from './net/regionLink';
 import { P2PHost, p2pConnect } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
@@ -499,6 +505,17 @@ export class Game {
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
     postBattle: (slot, input) => void this.region?.sendBattle(slot, input),
+    mayStrike: (slot) => {
+      const c = this.region?.view?.cities.find((x) => x.slot === slot);
+      if (!c) return null;
+      if (c.raidsLeft === 0) return `${c.name} has taken the region’s raids for today`;
+      if (c.report?.shield === 'neutral') return `${c.name} is neutral`;
+      return null;
+    },
+    recall: async (expedition, why) => {
+      await this.dispatch({ type: 'recallForce', expedition });
+      this.notice(`recalled:${expedition}`, `The force turns for home: ${why}.`, 'info');
+    },
   });
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
@@ -526,17 +543,25 @@ export class Game {
    * The city is saved before the region is told it has the battle, so closing the page never
    * loses one; a battle offered again (that word was lost) is known and only acknowledged.
    */
-  private async takeBattle(
-    input: BattleInput,
-    meta: { from: number; id: string; late: boolean },
-  ): Promise<BattleAnswer> {
+  private async takeBattle(input: BattleInput, meta: BattleMeta): Promise<BattleAnswer> {
     if (this.readOnly) return 'later';
     // Only from a city of the region, and named as the region names it.
     const sender = this.region?.view?.cities.find((c) => c.slot === meta.from);
     if (!sender || typeof input !== 'object' || !input?.attacker) return 'refused';
     input = { ...input, attacker: { ...input.attacker, name: sender.name } };
+    // Made while the player was away: half the damage, kept that way for the replay (M36).
+    if (meta.away && typeof input.caps === 'object' && input.caps) input = awayCaps(input);
     const id = `def-${input.id}`.slice(0, 60);
-    const cmd = { type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch', replay: id } as const;
+    // Who sent it (a newcomer or a neutral city refuses friends' raids), and whether the player was
+    // away when it came: then it does half the damage (M36).
+    const cmd = {
+      type: 'battleResolve',
+      input,
+      mode: meta.late ? 'instant' : 'watch',
+      replay: id,
+      from: meta.from,
+      ...(meta.away ? { away: true } : {}),
+    } as const;
     const pre = await this.client.preview(cmd);
     if (!pre.ok) {
       if (pre.reason === BATTLE_BUSY) return 'later';
@@ -564,7 +589,7 @@ export class Game {
     if (meta.late)
       this.notice(
         `late:${id}`,
-        `While you were away, ${input.attacker.name} raided the city. The war room has the report, and you can watch it.`,
+        `While you were away, ${input.attacker.name} raided the city${meta.away ? ' (with you away, it did half the damage it could)' : ''}. The war room has the report, and you can watch it.`,
         'bad',
       );
     return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
@@ -691,6 +716,11 @@ export class Game {
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
     link.onBattleKept = (id) => void battlePosted(id);
+    // Turned away (M36: the target has taken the day's raids): not sent again.
+    link.onBattleRefused = (id, reason) => {
+      void battlePosted(id);
+      this.notice(`refused:${id}`, `The region turned your raid away. ${reason}.`, 'info');
+    };
     link.onIncoming = ({ from, units, hours }) => {
       const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
       this.notice(
@@ -1219,7 +1249,23 @@ export class Game {
         );
       } else if (e.kind === 'forceHome')
         this.notice('forceHome', `Our force is home from ${String(e.info?.from)}.`, 'ok', undefined, false);
-      else if (e.kind === 'decayed')
+      // Diplomacy (M36): declarations, treaties, pacts, capitulations and conquests.
+      else if (e.kind === 'diplomacy') {
+        const what = String(e.info?.what ?? '');
+        const text = String(e.info?.text ?? '');
+        const bad = [
+          'declaredOn',
+          'capitulated',
+          'fell',
+          'broken',
+          'pactsEnded',
+          'theyBroke',
+          'hold',
+        ].includes(what);
+        const good = ['signed', 'theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what);
+        this.notice(`dip:${what}:${e.id}`, text, bad ? 'bad' : good ? 'ok' : 'info');
+        if (what === 'declaredOn' || what === 'fell') this.audio?.play('raid');
+      } else if (e.kind === 'decayed')
         this.notice(
           'decayed',
           'An abandoned building fell into ruin; the lot will clear.',

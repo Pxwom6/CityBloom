@@ -27,10 +27,19 @@ export interface CityPort {
    * this city was away. `taken`: the city has it, saved (the region then forgets it); `later`: not
    * now (it's offered again); `refused`: never (unreadable, or not from a city of the region).
    */
-  battle?(input: BattleInput, meta: { from: number; id: string; late: boolean }): Promise<BattleAnswer>;
+  battle?(input: BattleInput, meta: BattleMeta): Promise<BattleAnswer>;
 }
 
 export type BattleAnswer = 'taken' | 'later' | 'refused';
+
+/** Where a battle came from: the sending city's place, its id, kept while away; `away` (M36): the
+ * player wasn't here when it came, so it does half the damage. */
+export interface BattleMeta {
+  from: number;
+  id: string;
+  late: boolean;
+  away?: boolean;
+}
 
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
 export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
@@ -50,6 +59,9 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
       jobs: c.report!.jobs,
       shoppers: c.report!.shoppers,
       online: c.online,
+      // War (M36): what the region allows against it today, and its shield.
+      ...(view.rules?.war && c.raidsLeft !== undefined ? { raidsLeft: c.raidsLeft } : {}),
+      ...(view.rules?.war && c.report!.shield ? { shield: c.report!.shield } : {}),
     })),
     // The others' deals with this city, from this city's side.
     contracts: others.flatMap((c) =>
@@ -109,6 +121,8 @@ export class RegionLink {
   onNotice: ((text: string) => void) | null = null;
   /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
   onBattleKept: ((id: string) => void) | null = null;
+  /** The region turned a battle away (M36: its target has taken the day's raids). */
+  onBattleRefused: ((id: string, reason: string) => void) | null = null;
   onIncoming: ((m: { from: number; units: number; hours: number }) => void) | null = null;
   /** Battles coming in, in parts (by sender and id), and those taken already (M35). */
   private battlesIn = new Map<string, (string | null)[]>();
@@ -116,7 +130,10 @@ export class RegionLink {
   /** Taken and acknowledged: offered again (the word was lost), they're acknowledged again. */
   private battlesDone = new Set<string>();
   /** Battles the city couldn't take yet (one was on already): tried again with each report. */
-  private battlesWaiting = new Map<string, { input: BattleInput; from: number; late: boolean }>();
+  private battlesWaiting = new Map<
+    string,
+    { input: BattleInput; from: number; late: boolean; away?: boolean }
+  >();
   sent = { messages: 0, bytes: 0 };
 
   constructor(
@@ -248,11 +265,14 @@ export class RegionLink {
           this.send({ t: 'battleSeen', id: m.id });
           return;
         }
-        await this.takeBattle(m.id, { input, from: m.from, late: m.late });
+        await this.takeBattle(m.id, { input, from: m.from, late: m.late, ...(m.away ? { away: true } : {}) });
         return;
       }
       case 'battleKept':
         this.onBattleKept?.(m.id);
+        return;
+      case 'battleRefused':
+        this.onBattleRefused?.(m.id, m.reason);
         return;
       case 'incoming':
         this.onIncoming?.({ from: m.from, units: m.units, hours: m.hours });
@@ -263,12 +283,18 @@ export class RegionLink {
   /** Hand a whole battle to the city; once it has it, the region can forget it. */
   private async takeBattle(
     id: string,
-    b: { input: BattleInput; from: number; late: boolean },
+    b: { input: BattleInput; from: number; late: boolean; away?: boolean },
   ): Promise<void> {
     if (this.battlesTaken.has(id)) return;
     this.battlesTaken.add(id);
     this.battlesWaiting.delete(id);
-    const answer = (await this.city.battle?.(b.input, { from: b.from, id, late: b.late })) ?? 'later';
+    const answer =
+      (await this.city.battle?.(b.input, {
+        from: b.from,
+        id,
+        late: b.late,
+        ...(b.away ? { away: true } : {}),
+      })) ?? 'later';
     if (answer !== 'later') {
       this.battlesDone.add(id);
       this.send({ t: 'battleSeen', id });

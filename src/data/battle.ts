@@ -99,6 +99,9 @@ export const SKIRMISH = {
   maxWreck: 3,
   /** Roads cratered at most (each closed for `WAR_DAMAGE.roadHours`). */
   maxCraters: 12,
+  /** A raid on a friend whose player was away (M36): about half the damage. */
+  awayCollapse: 6,
+  awayWreck: 1,
 } as const;
 
 /** A force that has arrived and heard nothing of its battle (the page never fought it) comes home. */

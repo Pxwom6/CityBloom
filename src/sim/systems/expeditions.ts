@@ -16,13 +16,14 @@ import {
   type Stance,
 } from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
-import { fail, ok, type CommandResult } from '../commands';
+import { fail, ok, type CommandErr, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
 import { civicOnline } from '../world/civic';
 import type { Outcome } from '../battle/types';
 import { travelHours, type BattleReport } from './raids';
 import { militaryCivics, militaryOf } from './war';
+import { scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
 
 /** A force away from the city. */
 export interface Expedition {
@@ -74,6 +75,20 @@ export function sendRefusal(
   to: number,
   route: BattleRoute,
   target: BattleTarget,
+  breakPact = false,
+): CommandErr | null {
+  const why = forceRefusal(sim, units, to, route, target);
+  if (why) return fail(why);
+  // Diplomacy (M36): neutrality, vassals, wars not yet open, the seat of power, pacts in the way.
+  return strikeRefusal(sim, to, target, breakPact);
+}
+
+function forceRefusal(
+  sim: Sim,
+  units: number[],
+  to: number,
+  route: BattleRoute,
+  target: BattleTarget,
 ): string | null {
   const s = sim.state;
   const w = s.war;
@@ -86,8 +101,8 @@ export function sendRefusal(
   if (n.player && !rules?.war) return 'Your region’s rules don’t allow war';
   if (!n.player && !n.rival) return `${n.name} isn’t a rival`;
   if (rules && !rules.war) return 'Your region’s rules don’t allow war';
-  if (target === 'cityhall') return 'A skirmish can’t strike the city hall: that takes a declared war';
-  if (!SKIRMISH.targets.includes(target)) return 'A skirmish strikes military buildings, industry or power';
+  if (target !== 'cityhall' && !SKIRMISH.targets.includes(target))
+    return 'A skirmish strikes military buildings, industry or power';
   const hq = militaryCivics(sim).find((c) => militaryOf(c)!.hq);
   if (!hq || !civicOnline(hq) || (hq.staff ?? 0) < 0.25) return 'Forces are sent from a working military HQ';
   if (!units.length) return 'Choose the units to send';
@@ -123,11 +138,13 @@ export function sendForce(
   route: BattleRoute,
   target: BattleTarget,
   stance: Stance,
+  breakPact: boolean,
   dryRun: boolean,
 ): CommandResult {
-  const why = sendRefusal(sim, units, to, route, target);
-  if (why) return fail(why);
+  const why = sendRefusal(sim, units, to, route, target, breakPact);
+  if (why) return why;
   if (dryRun) return ok(0);
+  strikeBreaks(sim, to);
   const s = sim.state;
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === to)!;
@@ -168,7 +185,7 @@ export function recallForce(sim: Sim, id: number, dryRun: boolean): CommandResul
 }
 
 /** A force turns for home: back as far as it came (the whole way from its target). */
-function turnBack(sim: Sim, e: Expedition): void {
+export function turnBack(sim: Sim, e: Expedition): void {
   const s = sim.state;
   const out = e.state === 'out' ? s.tick - e.depart : e.arrive - e.depart;
   e.state = 'back';
@@ -233,14 +250,16 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
       sim.events.push({ kind: 'unitLost', id: u.id, info: { kind: unit.kind } });
     } else unit.hp = Math.max(0.05, Math.min(1, Math.round(u.hp * 1000) / 1000));
   }
+  const sent = e.units.length;
   e.units = e.units.filter((u) => w.units.has(u));
   const n = s.region.neighbours.find((x) => x.id === e.to);
   if (n?.rival) {
     n.rival.forces = Math.max(0, Math.round((n.rival.forces - r.theirLost) * 10) / 10);
     n.rival.defences = Math.max(0, Math.round((n.rival.defences - r.defencesLost * 3) * 10) / 10);
     n.rival.relation = Math.max(-100, n.rival.relation - RAIDS.relationHit);
-    w.struck = { ...(w.struck ?? {}), [n.id]: s.tick };
   }
+  // Struck: a computer neighbour may answer, and a friend's city may answer even as a newcomer.
+  if (n) w.struck = { ...(w.struck ?? {}), [n.id]: s.tick };
   const report: BattleReport = {
     id: e.id,
     start: e.arrive,
@@ -263,6 +282,8 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
     ...(typeof r.replay === 'string' ? { replay: r.replay.slice(0, 60) } : {}),
   };
   w.reports = [...(w.reports ?? []), report].slice(-12);
+  // In a declared war the battle moves the score, and may take the seat of power (M36).
+  scoreAwayBattle(sim, e.to, report, sent);
   e.state = 'back';
   e.home = s.tick + Math.max(TICKS_PER_HOUR, e.arrive - e.depart);
   if (!e.units.length) e.home = s.tick;

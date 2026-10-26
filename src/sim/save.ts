@@ -10,9 +10,11 @@ import { GAME_TITLE } from '../config';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
+import { rivalAllies } from './systems/war';
+import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 28;
+export const SAVE_VERSION = 29;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -256,6 +258,24 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // v27 → v28 (M35): battles. A city saved before them has none on, no raids on their way and no
   // reports (the keys stay absent, as in a war city that has never fought).
   27: (s) => s,
+  // v28 → v29 (M36): diplomacy. A war city's computer neighbours get the alliances a city founded
+  // now would have (from the same dice); the city's own diplomacy appears when first used.
+  28: (s) => {
+    if (!s.war) return s;
+    type Rival = { personality: Personality; allies?: number[] };
+    const region = s.region as { neighbours: { id: number; player?: unknown; rival?: Rival }[] };
+    const rivals = region.neighbours.filter((n) => n.rival && !n.player);
+    const allies = rivalAllies(
+      (s.options as { seed: string }).seed,
+      rivals.map((n) => ({ id: n.id, personality: n.rival!.personality })),
+    );
+    const neighbours = region.neighbours.map((n) =>
+      n.rival && !n.player
+        ? { ...n, rival: { ...n.rival, allies: n.rival.allies ?? allies.get(n.id) ?? [] } }
+        : n,
+    );
+    return { ...s, region: { ...region, neighbours } };
+  },
 };
 
 export function encodeState(state: SimState): unknown {

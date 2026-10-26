@@ -37,6 +37,8 @@ export interface AwayCity {
     /** A friend's city in a shared region: its place there (the battle is fought in its save). */
     slot: number | null;
     colour: number;
+    /** A friend whose player isn't here (M36): the raid does half the damage. */
+    absent?: boolean;
   };
 }
 
@@ -63,6 +65,7 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
       rival: n.rival ? { ...n.rival } : null,
       slot: n.player?.slot ?? null,
       colour: n.player?.color ?? neighbourColour(city, n.id),
+      ...(n.player && !n.player.online ? { absent: true } : {}),
     },
   };
 }
@@ -100,7 +103,10 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
     },
     defender: { name: n.name, color: n.colour },
     orders: [],
-    caps: { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
+    // A friend away when the raid comes takes half the damage (M36), as its own sim will hold it to.
+    caps: n.absent
+      ? { maxCollapse: SKIRMISH.awayCollapse, maxWreck: SKIRMISH.awayWreck }
+      : { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
   };
 }
 

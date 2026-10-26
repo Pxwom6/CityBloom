@@ -1,3 +1,5 @@
+import type { DiplomacySummary } from '../sim/systems/diplomacy';
+import type { BudgetReport } from '../sim/protocol';
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
 import {
@@ -135,6 +137,10 @@ export interface TestApi {
   };
   /** The war room (M34): open, its top-bar button shown, the HQ's id. */
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
+  /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
+  getDiplomacy(): DiplomacySummary | null;
+  /** The budget as the Budget panel reads it: this month's ledger, the closed months, rates. */
+  getLedger(): Promise<BudgetReport>;
   /** Report to the region now (it does every 30 s by itself). */
   regionReportNow(): Promise<void>;
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
@@ -713,6 +719,8 @@ export function installTestApi(game: Game): TestApi {
       scouting: game.away.scouting ? { ...game.away.scouting } : null,
       viewing: game.viewing?.record.id ?? null,
     }),
+    getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
+    getLedger: () => game.client.query<BudgetReport>({ type: 'budget' }),
     getWarRoom: () => ({
       open: game.panel === 'war',
       button: !!document.querySelector('[data-testid="open-war"]'),

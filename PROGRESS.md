@@ -231,8 +231,8 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 
 ## In progress
 **M34 Armed forces and M35 Into battle are complete**, in pull request #23 ("M34 complete: Armed
-forces; M35 complete: Into battle"). **M36 Diplomacy and the stakes of war** is next, on the same
-branch (it joins #23 while that is open). Plan: `docs/plans/M36-design.md`.
+forces; M35 complete: Into battle"). **M36 Diplomacy and the stakes of war** is in progress on
+the same branch (it joins #23 while that is open). Plan: `docs/plans/M36-design.md`.
 
 M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
 their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
@@ -241,9 +241,22 @@ kept for them, taken by their own sim on their return, with a report and a repla
 viewer, the war room's Send / Map / Reports, effects, notices and sirens. An adversarial review
 confirmed 39 findings, all fixed. Calls: DECISIONS "M35"; design: DESIGN §3.29; SPEC_REVIEW "M35".
 
+Done for M36, tested (`tests/war/diplomacy.test.ts`, 16; `relay/tests/freeplan.test.ts`, raided
+all night; the cross-browser script now uses every diplomacy command): declarations with a warning
+and a reason, the war score and capitulation, treaties (proposals, counters, the computer's answers
+by character), tribute and occupations in the ledger, pacts and breaking them (allies turn), total
+war, conquest, vassals and risings both ways, neutrality, newcomer protection, cooldowns, the
+region's three raids a day per city and half damage while away (protocol 4), save v29; the war
+room's Diplomacy tab, notices, tips and the fallen city's card. Calls: DECISIONS "M36"; design:
+DESIGN §3.30; SPEC_REVIEW "M36".
+
+Left for M36:
+1. The e2e (`e2e/m36-diplomacy.spec.ts`, written, not run yet), screenshots reviewed.
+2. An adversarial review of M36 (as M35's), and its fixes.
+3. Balance, bench, the cross-browser run on the PR, PROGRESS numbers, `M36 complete:`, PR #23.
+
 ## Next tasks
-1. M36 (plan above): diplomacy with computer neighbours, the war score, treaties, pacts and allies,
-   total war and vassals, fairness (the region's daily raid limit, raids on absent players).
+1. Finish M36 (above).
 2. M37–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 

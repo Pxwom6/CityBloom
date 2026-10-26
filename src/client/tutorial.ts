@@ -162,6 +162,19 @@ export const TIPS: Tip[] = [
     when: (g) => (g.world.stats.war?.units ?? 0) >= 3 && g.world.stats.war?.hq != null,
   },
   {
+    // Diplomacy (M36): the first proposal, declaration or war.
+    id: 'diplomacy',
+    text:
+      'Diplomacy is in the war room’s Diplomacy tab: proposals to answer (accept, counter or refuse), ' +
+      'your wars and their scores, treaties in force, and each neighbour’s mood. A declared war opens after ' +
+      'a warning; at a score of −60 a side gives up and the winner sets the terms. Break a pact and every ' +
+      'neighbour hears of it.',
+    when: (g) => {
+      const d = g.world.stats.war?.diplomacy;
+      return !!d && (d.wars.length > 0 || d.proposals.some((p) => p.from === 'them'));
+    },
+  },
+  {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',
     when: (g) => g.world.stats.utilities.power.unserved > 3,

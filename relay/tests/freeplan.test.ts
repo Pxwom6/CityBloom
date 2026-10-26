@@ -22,6 +22,7 @@ import { encodeSnapshot } from '../../src/net/snapshot';
 import type { SharedSnapshot } from '../../src/sim/protocol';
 import type { Stamped } from '../../src/sim/lockstep';
 import { FakeClock, loopTo, makeRoom, player, stopAll, until } from './harness';
+import { DAY_MS } from '../limits';
 import { RegionLink } from '../../src/net/regionLink';
 import { Sim } from '../../src/sim/sim';
 import { regionReport } from '../../src/sim/systems/region';
@@ -477,7 +478,8 @@ describe('F8: a region keeps within the free plan', () => {
   it('keeps a city’s battles a few at once, then one every few minutes, and says each is kept (M35)', () => {
     const clock = new FakeClock();
     const store = new MemoryRegionStore();
-    const region = new RegionRoom('6RWARS', 'local', store, clock);
+    // The pace alone (the day's limit on raids a city takes, M36, has a test of its own).
+    const region = new RegionRoom('6RWARS', 'local', store, clock, { raidsPerDay: 99 });
     const ada = rawRegion(region);
     ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
     const sam = rawRegion(region);
@@ -507,6 +509,49 @@ describe('F8: a region keeps within the free plan', () => {
     expect(ada.got.some((m) => m.t === 'incoming')).toBe(false);
     region.closed(ada.conn);
     region.closed(sam.conn);
+  });
+
+  it('holds a friend raided all night while its player is away to the day’s raids, each marked away (M36)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('6RNITE', 'local', store, clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const welcome = sam.got.find((m) => m.t === 'rwelcome') as Extract<RegionRoomMsg, { t: 'rwelcome' }>;
+    // Sam goes to bed at nine in the evening (UTC); Ada raids every twenty minutes until nine.
+    clock.advance((Math.ceil(clock.t / DAY_MS) * DAY_MS - clock.t) % DAY_MS);
+    clock.advance(21 * 3600_000);
+    region.closed(sam.conn);
+    for (let i = 0; i < 36; i++) {
+      clock.advance(20 * 60_000);
+      ada.say({ t: 'battle', to: 2, id: `night${i}`, part: 0, parts: 1, data: `DATA${i}` });
+    }
+    // Three before midnight, three after: the rest turned away, and Ada's page told why.
+    const kept = ada.got.filter((m) => m.t === 'battleKept');
+    const refused = ada.got.filter((m) => m.t === 'battleRefused');
+    expect(kept).toHaveLength(2 * REGION_LIMITS.raidsPerDay);
+    expect(refused).toHaveLength(36 - 2 * REGION_LIMITS.raidsPerDay);
+    expect(refused[0]).toMatchObject({ reason: expect.stringContaining('Samton') });
+    // The region says so to every city, before anyone sends another.
+    const views = ada.got.filter((m) => m.t === 'region') as Extract<RegionRoomMsg, { t: 'region' }>[];
+    expect(views.at(-1)!.region.cities.find((c) => c.slot === 2)!.raidsLeft).toBe(0);
+    // Sam comes back in the morning: every raid of the night comes, marked as made while away.
+    const back = rawRegion(region);
+    back.say(rhello('Sam', { rejoin: { slot: 2, secret: welcome.secret } }));
+    const battles = back.got.filter((m) => m.t === 'battle') as Extract<RegionRoomMsg, { t: 'battle' }>[];
+    expect(battles).toHaveLength(2 * REGION_LIMITS.raidsPerDay);
+    for (const b of battles) expect(b).toMatchObject({ late: true, away: true });
+    // A new day: the region allows raids again.
+    clock.advance(DAY_MS);
+    ada.say({ t: 'battle', to: 2, id: 'nextday', part: 0, parts: 1, data: 'NEXT' });
+    expect(ada.got.some((m) => m.t === 'battleKept' && m.id === 'nextday')).toBe(true);
+    // Sam, here now, gets it as it comes: not made while away.
+    const live = back.got.filter((m) => m.t === 'battle' && m.id === 'nextday');
+    expect(live[0]).toMatchObject({ late: false, away: false });
+    region.closed(ada.conn);
+    region.closed(back.conn);
   });
 
   it('keeps the leaving save once, even sent again under the same name (M35)', () => {

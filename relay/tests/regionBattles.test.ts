@@ -7,8 +7,9 @@ import { regionReport, type RegionReport } from '../../src/sim/systems/region';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
-import { BATTLE_BUSY } from '../../src/sim/systems/raids';
+import { awayCaps, BATTLE_BUSY } from '../../src/sim/systems/raids';
 import type { BattleInput } from '../../src/sim/battle/types';
+import { SKIRMISH } from '../../src/data/battle';
 import { BState } from '../../src/sim/world/buildings';
 import { buildTown, newSim, placeAlong, serveTown } from '../../tests/helpers';
 
@@ -85,7 +86,7 @@ async function regionAtWar() {
   const sam = town('sam-war', 'Samford');
   // What Sam's city takes when a battle comes in: a backdrop kept for the replay, then the battle.
   const backdrops = new Map<string, ReturnType<Sim['save']>>();
-  const taken: { input: BattleInput; late: boolean }[] = [];
+  const taken: { input: BattleInput; late: boolean; away: boolean }[] = [];
   const port = (sim: Sim): CityPort => ({
     command: async (cmd) => sim.dispatch(cmd),
     report: async (): Promise<RegionReport> => regionReport(sim),
@@ -93,8 +94,17 @@ async function regionAtWar() {
     cityName: () => sim.state.cityName,
     battle: async (input, meta) => {
       backdrops.set(meta.id, sim.save());
-      taken.push({ input, late: meta.late });
-      const r = sim.dispatch({ type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch' });
+      // As the game keeps it: one made while the player was away at its halved caps (M36).
+      if (meta.away) input = awayCaps(input);
+      taken.push({ input, late: meta.late, away: !!meta.away });
+      // As the game sends it: who fought it, and whether the player was away (M36).
+      const r = sim.dispatch({
+        type: 'battleResolve',
+        input,
+        mode: meta.late ? 'instant' : 'watch',
+        from: meta.from,
+        ...(meta.away ? { away: true } : {}),
+      });
       return r.ok ? 'taken' : r.reason === BATTLE_BUSY ? 'later' : 'refused';
     },
   });
@@ -124,6 +134,12 @@ async function regionAtWar() {
   sam.place('bunker');
   ada.sim.advance(7 * TICKS_PER_MONTH);
   sam.sim.advance(1 * TICKS_PER_MONTH);
+  // Both cities are newcomers, which friends may raid only once struck by them (M36): Sam struck
+  // Ada first, as each city's own sim remembers it.
+  await flush();
+  const samIn = (s: Sim, slot: number) => s.state.region.neighbours.find((n) => n.player?.slot === slot)!;
+  ada.sim.state.war!.friendRaids = { [samIn(ada.sim, ls.slot).id]: ada.sim.state.tick };
+  sam.sim.state.war!.struck = { [samIn(sam.sim, la.slot).id]: sam.sim.state.tick };
   return { room, ada, sam, la, ls, backdrops, taken, join };
 }
 
@@ -194,8 +210,12 @@ describe('battles between friends (M35)', () => {
     await flush(100);
     expect(taken).toHaveLength(1);
     expect(taken[0]!.late).toBe(true);
+    // Made while Sam was away: half the damage, on both sides alike (M36).
+    expect(taken[0]!.away).toBe(true);
+    expect(input.caps.maxCollapse).toBe(SKIRMISH.awayCollapse);
     expect(pending()).toBeUndefined();
     const report = sam.sim.state.war!.reports!.at(-1)!;
+    expect(report.absent).toBe(true);
     expect(report.other).toBe(ada.sim.state.cityName);
     expect(report.outcome).toBe(result.outcome);
     expect(

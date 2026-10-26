@@ -3999,3 +3999,135 @@ body {
   pointer-events: auto;
   font-size: var(--font-size-sm);
 }
+
+/* Diplomacy (M36): the war room's Diplomacy tab and the fallen city's card. */
+.dip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dip h4 {
+  margin: 0 0 var(--space-1);
+}
+.dip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.dip-war,
+.dip-proposal,
+.dip-neighbour,
+.dip-builder,
+.dip-confirm {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.dip-war + .dip-war,
+.dip-neighbour + .dip-neighbour,
+.dip-proposal + .dip-proposal {
+  margin-top: var(--space-2);
+}
+.dip-war p,
+.dip-proposal p,
+.dip-neighbour p,
+.dip-builder p {
+  margin: 0;
+}
+.dip-proposal ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.dip-confirm {
+  border-color: var(--color-negative);
+  background: color-mix(in srgb, var(--color-negative) 8%, transparent);
+}
+.dip-why {
+  color: var(--color-negative);
+  margin: 0;
+}
+.dip-good {
+  color: var(--color-positive);
+}
+.dip-bad,
+.dip-vassal {
+  color: var(--color-negative);
+}
+.dip-score {
+  position: relative;
+  flex: 1;
+  min-width: 6rem;
+  max-width: 10rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+.dip-score-mid {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-text-muted);
+}
+.dip-score-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.dip-score-fill.good {
+  background: var(--color-positive);
+}
+.dip-score-fill.bad {
+  background: var(--color-negative);
+}
+.dip-declare,
+.dip-term {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.dip-declare {
+  flex-direction: column;
+  align-items: stretch;
+}
+.dip-declare label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.dip-term input[type='number'] {
+  width: 6rem;
+}
+.dip-term .btn.icon {
+  margin-left: auto;
+}
+.dip-log {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--font-size-sm);
+}
+.fallen {
+  position: fixed;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  width: min(28rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 30;
+}
+.fallen h2 {
+  margin: 0;
+}
+.fallen p {
+  margin: 0;
+}

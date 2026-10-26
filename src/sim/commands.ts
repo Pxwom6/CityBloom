@@ -15,6 +15,7 @@ import type { AwayResult } from './systems/expeditions';
 import type { BattleInput } from './battle/types';
 import type { RegionUpdate } from './systems/region';
 import type { UnitKind } from '../data/war';
+import type { DeclaredScale, Term } from '../data/diplomacy';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -66,7 +67,9 @@ export type Command =
    * Test mode only (M35): a computer neighbour (the first rival, or `neighbour`) sets off to raid the
    * city now, arriving in `hours` (0: the battle begins at once).
    */
-  | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number }
+  | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number; seat?: boolean }
+  /** Test mode (M36): a computer neighbour puts these terms to the city. */
+  | { type: 'cheat'; cheat: 'proposal'; neighbour: number; terms: Term[] }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -150,17 +153,38 @@ export type Command =
       route: BattleRoute;
       target: BattleTarget;
       stance: Stance;
+      /** Send it even though it breaks a pact (M36; the page asks first). */
+      breakPact?: boolean;
     }
   | { type: 'recallForce'; expedition: number }
   /** The page's account of an expedition's battle, fought in the other town (page only). */
   | { type: 'battleReport'; expedition: number; result: AwayResult }
   /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
-  | { type: 'battleResolve'; input: BattleInput; mode: 'watch' | 'instant'; replay?: string }
+  | {
+      type: 'battleResolve';
+      input: BattleInput;
+      mode: 'watch' | 'instant';
+      replay?: string;
+      /** A friend's city that fought it (its place in the region), and whether the player was away (M36). */
+      from?: number;
+      away?: boolean;
+    }
   | { type: 'cancelTraining'; order: number }
   | { type: 'disbandUnit'; unit: number }
   /** War bonds (M34): borrow from the residents, or pay one off early. */
   | { type: 'issueBond'; amount: number }
-  | { type: 'repayBond'; id: number };
+  | { type: 'repayBond'; id: number }
+  /**
+   * Diplomacy (M36): declare war on a computer neighbour, put terms to it or answer its own, take a
+   * proposal back, end a pact, buy an occupied district back, or stand neutral.
+   */
+  | { type: 'declareWar'; neighbour: number; scale: DeclaredScale; reason: string; breakPact?: boolean }
+  | { type: 'propose'; neighbour: number; terms: Term[]; counters?: number }
+  | { type: 'answerProposal'; proposal: number; accept: boolean }
+  | { type: 'withdrawProposal'; proposal: number }
+  | { type: 'endPact'; pact: number; breakPact?: boolean }
+  | { type: 'buyBack'; pact: number }
+  | { type: 'setNeutral'; on: boolean };
 
 export type CommandType = Command['type'];
 
@@ -218,6 +242,13 @@ const COMMAND_KINDS = {
   disbandUnit: true,
   issueBond: true,
   repayBond: true,
+  declareWar: true,
+  propose: true,
+  answerProposal: true,
+  withdrawProposal: true,
+  endPact: true,
+  buyBack: true,
+  setNeutral: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

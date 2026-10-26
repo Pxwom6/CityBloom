@@ -42,6 +42,9 @@ import { civicOnline } from '../world/civic';
 import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
+import { anyWarOpen, raidStance, scoreHomeBattle, shieldRefusal } from './diplomacy';
+import { DIPLOMACY } from '../../data/diplomacy';
+import { CIVIC } from '../../data/civic';
 import type { Neighbour, RivalNeighbour } from './region';
 
 /** A force on its way to the city. */
@@ -90,6 +93,10 @@ export interface BattleReport {
   away?: { destroyed: number; damaged: number; objectives: { aimed: number; down: number } };
   /** The page's record of the battle to watch again, if it kept one. */
   replay?: string;
+  /** What the city's buildings knocked down or wrecked were worth ($; M36's war score). */
+  worth?: number;
+  /** A friend's raid that came while the player was away: half the damage (M36). */
+  absent?: true;
 }
 
 /** The battle being fought in this city. Its course is re-run from `input` after a load. */
@@ -204,26 +211,32 @@ export function raidsHour(sim: Sim): void {
     sim.events.push({ kind: 'raidsOpen', id: 0 });
   }
   if (w.incoming?.length || w.battle) return;
+  // In a declared war (M36) raids come closer together, and a city at war is raided however young.
+  const atWar = anyWarOpen(sim);
   const last = w.raided?.any ?? -Infinity;
-  if (s.tick - last < RAIDS.gapAny * TICKS_PER_MONTH) return;
-  if (!threat.open && !threat.answering.length) return;
+  if (s.tick - last < (atWar ? DIPLOMACY.war.gapAnyMonths : RAIDS.gapAny) * TICKS_PER_MONTH) return;
+  if (!threat.open && !threat.answering.length && !atWar) return;
   const rng = new Rng(w.rng);
   const strength = Math.max(1, cityStrength(sim));
   for (const n of s.region.neighbours) {
     const r = n.rival;
     if (!r || n.player) continue;
+    const stance = raidStance(sim, n);
+    if (!stance) continue;
     const answering = threat.answering.includes(n.id);
-    if (!threat.open && !answering) continue;
-    if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < RAIDS.gapEach * TICKS_PER_MONTH) continue;
+    if (!threat.open && !answering && !stance.war) continue;
+    if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < stance.gapEach * TICKS_PER_MONTH) continue;
     if (r.forces < 1) continue;
     const p = PERSONALITY[r.personality];
     let chance = (p.aggression * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
     if (r.relation <= RAIDS.hostile) chance *= 2;
     else if (r.relation >= RAIDS.friendly) chance *= 0.25;
     if (answering) chance *= 4;
+    chance *= stance.factor;
     if (!rng.chance(chance)) continue;
     w.rng = rng.getState();
-    planRaid(sim, n, r, rng);
+    // In a total war a neighbour that clearly outguns the city goes for its seat of power.
+    planRaid(sim, n, r, rng, undefined, stance.seat && r.forces >= 1.2 * strength);
     w.rng = rng.getState();
     return;
   }
@@ -231,7 +244,14 @@ export function raidsHour(sim: Sim): void {
 }
 
 /** A neighbour sets off: the raid's force, target and timing. */
-export function planRaid(sim: Sim, n: Neighbour, r: RivalNeighbour, rng: Rng, hours?: number): Raid {
+export function planRaid(
+  sim: Sim,
+  n: Neighbour,
+  r: RivalNeighbour,
+  rng: Rng,
+  hours?: number,
+  seat = false,
+): Raid {
   const w = sim.state.war!;
   const s = sim.state;
   const units = rivalForce(r, RAIDS.share, rng);
@@ -244,7 +264,7 @@ export function planRaid(sim: Sim, n: Neighbour, r: RivalNeighbour, rng: Rng, ho
     from: n.id,
     name: n.name,
     units,
-    target: RIVAL_TARGET[r.personality] ?? 'military',
+    target: seat ? 'cityhall' : (RIVAL_TARGET[r.personality] ?? 'military'),
     route,
     stance: r.personality === 'cautious' || r.personality === 'mercantile' ? 'cautious' : 'bold',
     readiness: 0.8,
@@ -369,6 +389,8 @@ export function resolveBattle(
   mode: 'watch' | 'instant',
   dryRun: boolean,
   replay?: string,
+  from?: number,
+  away = false,
 ): CommandResult {
   const s = sim.state;
   const w = s.war;
@@ -377,9 +399,16 @@ export function resolveBattle(
   if (why) return fail(why);
   if (w.battle) return fail(BATTLE_BUSY);
   if (w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
+  // A friend's raid (M36): never on a neutral city, nor on a newcomer that hasn't struck it first.
+  const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
+  if (friend) {
+    const shielded = shieldRefusal(sim, friend.id);
+    if (shielded) return fail(shielded);
+  }
   if (dryRun) return ok(0);
-  // Only what really stands here, at home, takes the battle's damage; the caps are this city's.
-  const adopted = adoptBattle(sim, input);
+  // Only what really stands here, at home, takes the battle's damage; the caps are this city's, and
+  // half them for a raid that came while the player was away.
+  const adopted = adoptBattle(sim, input, away);
   let run: Battle;
   try {
     run = new Battle(adopted);
@@ -390,7 +419,7 @@ export function resolveBattle(
   const shelter = shelterCount(sim, a.target);
   const raid: Raid = {
     id: s.nextId++,
-    from: -1,
+    from: friend?.id ?? -1,
     name: a.name,
     units: a.units.map((u) => ({ kind: u.kind, hp: u.hp })),
     target: a.target,
@@ -405,6 +434,9 @@ export function resolveBattle(
   };
   w.battle = { id: raid.id, input: adopted, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
   if (replay) w.battle.report.replay = replay.slice(0, 60);
+  if (away) w.battle.report.absent = true;
+  // A friend that raided the city may be answered even by a newcomer (M36).
+  if (friend) w.friendRaids = { ...(w.friendRaids ?? {}), [friend.id]: s.tick };
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), input.id].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;
@@ -438,7 +470,7 @@ const BATTLE_TAKEN_KEEP = 32;
  * answer to its ids; anything else it names is a stranger to this city and takes no damage. The
  * caps are this city's own.
  */
-export function adoptBattle(sim: Sim, input: BattleInput): BattleInput {
+export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleInput {
   const s = sim.state;
   const w = s.war;
   const L = input.layout;
@@ -478,8 +510,22 @@ export function adoptBattle(sim: Sim, input: BattleInput): BattleInput {
     ...input,
     layout: { ...L, structs, defenders },
     caps: {
-      maxCollapse: Math.min(input.caps.maxCollapse, SKIRMISH.maxCollapse),
-      maxWreck: Math.min(input.caps.maxWreck, SKIRMISH.maxWreck),
+      maxCollapse: Math.min(input.caps.maxCollapse, away ? SKIRMISH.awayCollapse : SKIRMISH.maxCollapse),
+      maxWreck: Math.min(input.caps.maxWreck, away ? SKIRMISH.awayWreck : SKIRMISH.maxWreck),
+    },
+  };
+}
+
+/**
+ * A battle as a city whose player was away takes it (M36): half the damage. The page keeps the
+ * battle this way too, so its replay plays out as it happened.
+ */
+export function awayCaps(input: BattleInput): BattleInput {
+  return {
+    ...input,
+    caps: {
+      maxCollapse: Math.min(input.caps.maxCollapse, SKIRMISH.awayCollapse),
+      maxWreck: Math.min(input.caps.maxWreck, SKIRMISH.awayWreck),
     },
   };
 }
@@ -549,6 +595,7 @@ export function applyWarDamage(sim: Sim, report: BattleReport, events: BattleEve
       if (b) {
         if (b.state !== BState.Rubble) {
           report.homeless += b.zone === ZONE_R ? Math.round(b.pop) : 0;
+          report.worth = (report.worth ?? 0) + Math.max(10_000, b.cap * 2_000);
           toRubble(sim, b, 'collapsed');
           report.collapsed.push(b.id);
         }
@@ -556,6 +603,7 @@ export function applyWarDamage(sim: Sim, report: BattleReport, events: BattleEve
       }
       const c = s.civics.get(e.s);
       if (c) {
+        if (!c.wrecked) report.worth = (report.worth ?? 0) + (CIVIC.get(c.def)?.cost ?? 0);
         damageCivic(sim, c.id, WAR_DAMAGE.wreckHours, true);
         const r = report.civics.find((x) => x.id === c.id);
         if (r) r.wrecked = true;
@@ -624,6 +672,8 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   w.reports = [...(w.reports ?? []), report].slice(-12);
   delete w.battle;
   sim.battleRun = null;
+  // In a declared war the battle moves the score, and may take or free the seat of power (M36).
+  scoreHomeBattle(sim, hb.raid.from, report, result.objectives.aimed, result.objectives.down);
   sim.events.push({
     kind: 'battleEnded',
     id: report.id,

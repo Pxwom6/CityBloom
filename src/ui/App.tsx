@@ -22,6 +22,7 @@ import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
 import { WarRoomPanel } from './Military';
+import { FallenCard } from './Diplomacy';
 import { BattleBar, ViewerBar } from './Battle';
 import { EditorApp } from './Editor';
 import { typingIn } from '../client/keys';
@@ -114,6 +115,7 @@ export function App({ game }: { game: Game }) {
       <DistrictsPanel />
       <RegionPanel />
       <WarRoomPanel />
+      <FallenCard />
       <BattleBar />
       <ViewerBar />
       <RoomPanel />

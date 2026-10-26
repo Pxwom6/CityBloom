@@ -9,6 +9,7 @@ import {
   UNIT_CLASSES,
   WAR,
   type MilitaryInfo,
+  type Personality,
   type UnitClass,
   type UnitKind,
 } from '../../data/war';
@@ -27,6 +28,8 @@ import type { BattleReport, HostedBattle, Raid } from './raids';
 import type { Expedition } from './expeditions';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
+import { diplomacySummary, standsDown, theirDmz, type Diplomacy, type DiplomacySummary } from './diplomacy';
+import { DIPLOMACY, DIPLOMATS } from '../../data/diplomacy';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -116,6 +119,10 @@ export interface WarState {
   exposed?: true;
   /** Battles from outside the city it has taken, by input id, newest last (each is taken once). */
   taken?: string[];
+  /** Declarations, treaties, pacts and the city's standing (M36); absent until first used. */
+  diplomacy?: Diplomacy;
+  /** When each friend's city last raided this one (ticks; M36: a newcomer may answer it). */
+  friendRaids?: Record<number, number>;
 }
 
 export function initialWar(seed: string): WarState {
@@ -159,6 +166,39 @@ export function markRivals(sim: Sim): void {
       relation: Math.round(p.relation + rng.range(-10, 10)),
     };
   }
+  assignAllies(sim);
+}
+
+/**
+ * Which computer neighbours stand by each other (M36), from dice of their own so a city's
+ * neighbours have the same alliances wherever it's played: honourable and cautious ones ally
+ * readily, treacherous ones hardly ever. A neighbour attacked calls on these.
+ */
+export function assignAllies(sim: Sim): void {
+  const rivals = sim.state.region.neighbours.filter((n) => n.rival && !n.player);
+  const allies = rivalAllies(
+    sim.state.options.seed,
+    rivals.map((n) => ({ id: n.id, personality: n.rival!.personality })),
+  );
+  for (const n of rivals) n.rival!.allies = allies.get(n.id) ?? [];
+}
+
+/** Each computer neighbour's allies, from the city's seed (also the v29 migration's). */
+export function rivalAllies(
+  seed: string,
+  rivals: { id: number; personality: Personality }[],
+): Map<number, number[]> {
+  const rng = Rng.fromSeed(`${seed}:allies`);
+  const out = new Map<number, number[]>(rivals.map((n) => [n.id, []]));
+  for (let i = 0; i < rivals.length; i++)
+    for (let j = i + 1; j < rivals.length; j++) {
+      const a = rivals[i]!;
+      const b = rivals[j]!;
+      if (!rng.chance(DIPLOMATS[a.personality].allies * DIPLOMATS[b.personality].allies * 1.5)) continue;
+      out.get(a.id)!.push(b.id);
+      out.get(b.id)!.push(a.id);
+    }
+  return out;
 }
 
 /** The computer neighbours arm month by month towards what their character keeps (M34). */
@@ -172,8 +212,12 @@ export function rivalsMonth(sim: Sim): void {
     const p = PERSONALITY[r.personality];
     const k = n.population / 1000;
     const step = RIVALS.arming * (1 + RIVALS.jitter * rng.range(-1, 1));
-    r.forces = Math.round((r.forces + (k * p.forces - r.forces) * step) * 10) / 10;
-    r.defences = Math.round((r.defences + (k * p.defences - r.defences) * step) * 10) / 10;
+    // A demilitarised zone on its side (M36) halves the defences it keeps.
+    const keep = theirDmz(sim, n.id) ? 0.5 : 1;
+    // A vassal of the city (M36) rebuilds its forces only so far.
+    const allowed = r.vassal ? DIPLOMACY.vassal.forcesLeft : 1;
+    r.forces = Math.round((r.forces + (k * p.forces * allowed - r.forces) * step) * 10) / 10;
+    r.defences = Math.round((r.defences + (k * p.defences * keep - r.defences) * step) * 10) / 10;
   }
   w.rng = rng.getState();
 }
@@ -627,7 +671,8 @@ export function militaryStaffing(
     c.staff = 0;
     const m = militaryOf(c)!;
     const node = civicOnline(c) ? accessNode(sim, g, c) : undefined;
-    if (node === undefined || m.jobs <= 0) continue;
+    // In a demilitarised zone on the city's side (M36) the building stands down: no one is posted.
+    if (node === undefined || m.jobs <= 0 || standsDown(sim, c.x, c.z)) continue;
     bases.push({ c, m, node });
   }
   const rank = (c: Civic) => (militaryOf(c)!.hq ? -1 : (first.get(c.id) ?? Number.MAX_SAFE_INTEGER));
@@ -728,6 +773,8 @@ export interface WarSummary {
   threat: { open: boolean; answering: number[] };
   /** The routes a force could take besides road and air: rail with a rail link, sea with ships. */
   routes: { rail: boolean; sea: boolean };
+  /** Wars, treaties, pacts and the neighbours' standing (M36). */
+  diplomacy: DiplomacySummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -836,6 +883,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
       rail: !!s.railway,
       sea: [...w.units.values()].some((u) => UNIT.get(u.kind)?.domain === 'sea'),
     },
+    diplomacy: diplomacySummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

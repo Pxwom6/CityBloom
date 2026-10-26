@@ -49,6 +49,8 @@ export interface RegionCityView {
   quietFor: number;
   /** A save of the city is kept for visitors. */
   visitable: boolean;
+  /** Where war is allowed (M36): raids it may still take today (UTC), by the region's limit. */
+  raidsLeft?: number;
 }
 
 export interface RegionProjectView {
@@ -108,10 +110,24 @@ export type RegionRoomMsg =
   | { t: 'rwelcome'; slot: number; secret: string; region: RegionView }
   | { t: 'region'; region: RegionView }
   | { t: 'citysave'; slot: number; part: number; parts: number; data: string }
-  /** A battle fought against this city (M35); `late`: kept while it was away. */
-  | { t: 'battle'; from: number; id: string; part: number; parts: number; data: string; late: boolean }
+  /**
+   * A battle fought against this city (M35); `late`: kept while it was away and offered on its
+   * return; `away` (M36): its player wasn't here when it came, so it does half the damage.
+   */
+  | {
+      t: 'battle';
+      from: number;
+      id: string;
+      part: number;
+      parts: number;
+      data: string;
+      late: boolean;
+      away?: boolean;
+    }
   /** The region keeps the battle a city sent until its target has seen it (M35). */
   | { t: 'battleKept'; id: string }
+  /** The region turned a battle away (M36): its target has taken the day's raids already. */
+  | { t: 'battleRefused'; id: string; reason: string }
   /** Another city's force is on its way to this one (M35): `hours` of the sender's game time. */
   | { t: 'incoming'; from: number; units: number; hours: number }
   | { t: 'notice'; text: string }
@@ -144,8 +160,13 @@ interface City {
   saved?: boolean;
   /** When that save was last kept (ms; F8). */
   savedAt?: number;
-  /** Battles fought against it that it hasn't seen yet (M35): id, attacker, when, store row. */
-  pending?: { id: string; from: number; at: number; k: number }[];
+  /**
+   * Battles fought against it that it hasn't seen yet (M35): id, attacker, when, store row, and
+   * whether its player was away when it came (M36).
+   */
+  pending?: { id: string; from: number; at: number; k: number; away?: boolean }[];
+  /** Raids it took on a UTC day (M36): the day's number and how many. */
+  raids?: { day: number; n: number };
 }
 
 export interface RegionMeta {
@@ -234,6 +255,8 @@ export interface RegionLimits {
   /** A city may send another city a battle this often (ms), with a few at once (M35). */
   battleEvery: number;
   battleBurst: number;
+  /** Raids a city may take in a UTC day, from all the others together (M36). */
+  raidsPerDay: number;
   /** Rows the region may write in a UTC day. */
   dailyRows: number;
   /** How long a region nobody comes back to is kept (ms). */
@@ -253,6 +276,7 @@ export const REGION_LIMITS: RegionLimits = {
   visitEvery: 30_000,
   battleEvery: 5 * 60_000,
   battleBurst: 3,
+  raidsPerDay: 3,
   dailyRows: 3000,
   ttl: 60 * DAY_MS,
   maxConns: 16,
@@ -308,6 +332,7 @@ function cleanReport(r: unknown): RegionReport | null {
     shoppers: o.shoppers as number,
     deals: (o.deals as RegionReport['deals']).map((d) => ({ ...d })),
     projectBuilt: o.projectBuilt === true,
+    ...(o.shield === 'new' || o.shield === 'neutral' ? { shield: o.shield } : {}),
   };
 }
 
@@ -611,6 +636,7 @@ export class RegionRoom {
         thumb: c.thumb,
         quietFor: Math.max(0, now - c.heard),
         visitable: !!c.saved,
+        ...(m.rules?.war ? { raidsLeft: this.raidsLeft(c, now) } : {}),
       })),
       project: {
         name: REGION_PROJECT.name,
@@ -625,6 +651,12 @@ export class RegionRoom {
       host: m.host ?? 1,
       rules: { ...(m.rules ?? PEACE_RULES) },
     };
+  }
+
+  /** Raids a city may still take today (UTC; M36). */
+  private raidsLeft(c: City, now: number): number {
+    const day = Math.floor(now / DAY_MS);
+    return Math.max(0, this.limits.raidsPerDay - (c.raids?.day === day ? c.raids.n : 0));
   }
 
   private broadcast(): void {
@@ -754,8 +786,17 @@ export class RegionRoom {
         this.battleIn.delete(key);
         // Sent again (its acknowledgement was lost): kept already.
         if (target.pending?.some((p) => p.id === m.id)) return conn.send({ t: 'battleKept', id: m.id });
+        // A city takes so many raids a day, from everyone together (M36): the rest are turned away.
+        if (this.raidsLeft(target, now) <= 0)
+          return conn.send({
+            t: 'battleRefused',
+            id: m.id,
+            reason: `${target.name} has been raided ${this.limits.raidsPerDay} times today: the region allows no more until midnight (UTC)`,
+          });
         // A few at once, then one every few minutes; within the region's day.
         if (this.budget.over(now) || !this.battlesOf(slot).take(now)) return;
+        const day = Math.floor(now / DAY_MS);
+        target.raids = { day, n: (target.raids?.day === day ? target.raids.n : 0) + 1 };
         const pending = (target.pending ??= []);
         // Eight at most: the oldest gives way.
         if (pending.length >= MAX_PENDING_BATTLES) {
@@ -766,14 +807,26 @@ export class RegionRoom {
         while (pending.some((p) => p.k === k)) k++;
         const parts = inc.parts as string[];
         this.store.saveBattle(target.slot, k, parts);
-        pending.push({ id: m.id, from: slot, at: now, k });
+        // A battle against a city whose player isn't here does half the damage (M36).
+        const away = !this.online(target.slot);
+        pending.push({ id: m.id, from: slot, at: now, k, ...(away ? { away } : {}) });
         this.save();
         conn.send({ t: 'battleKept', id: m.id });
+        this.broadcast();
         // The defender playing now gets it at once (it stays kept until it says it has seen it).
         for (const [c, s] of this.conns)
           if (s.slot === target.slot)
             parts.forEach((data, part) =>
-              c.send({ t: 'battle', from: slot, id: m.id, part, parts: parts.length, data, late: false }),
+              c.send({
+                t: 'battle',
+                from: slot,
+                id: m.id,
+                part,
+                parts: parts.length,
+                data,
+                late: false,
+                away,
+              }),
             );
         return;
       }
@@ -894,7 +947,16 @@ export class RegionRoom {
       const parts = this.store.loadBattle(city.slot, p.k);
       if (parts)
         parts.forEach((data, part) =>
-          conn.send({ t: 'battle', from: p.from, id: p.id, part, parts: parts.length, data, late: true }),
+          conn.send({
+            t: 'battle',
+            from: p.from,
+            id: p.id,
+            part,
+            parts: parts.length,
+            data,
+            late: true,
+            away: p.away === true,
+          }),
         );
     }
     this.broadcast();

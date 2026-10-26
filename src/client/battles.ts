@@ -136,6 +136,10 @@ export interface AwayHost {
   /** In a shared region (M35): the latest save it keeps of a friend's city, and passing a battle on. */
   fetchSave?(slot: number): Promise<SaveFile>;
   postBattle?(slot: number, input: BattleInput): void;
+  /** Why a friend's city can't be raided now (M36: the region's daily limit, its shield), or null. */
+  mayStrike?(slot: number): string | null;
+  /** Call a force home without a battle, saying why. */
+  recall?(expedition: number, why: string): Promise<void>;
 }
 
 /** How long a battle job may take before it's given up (growing a big town on a slow phone). */
@@ -211,6 +215,12 @@ export class AwayBattles {
       if (n.slot !== null) {
         // A friend's city: fought in the latest save the region keeps of it, then passed on to it.
         if (!this.host.fetchSave || !this.host.postBattle) throw new Error('Not in the region');
+        // Not when the region would turn it away (M36): the force comes home without a battle.
+        const why = this.host.mayStrike?.(n.slot);
+        if (why) {
+          await this.host.recall?.(expedition, why);
+          return;
+        }
         const save = await this.host.fetchSave(n.slot);
         const reply = await this.run({ type: 'awayCity', id, city, save });
         if (reply.type !== 'away') throw new Error(reply.type === 'error' ? reply.message : 'No battle');

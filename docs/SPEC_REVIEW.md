@@ -553,3 +553,23 @@ filled in as it's done.
 | *Done:* a scripted skirmish against a computer neighbour, the same result in Chromium, WebKit and Firefox | `tests/lockstep/determinism.ts` `battle` (an expedition against a mayor-grown town, and a raid fought in the war town), `e2e-xb/determinism.spec.ts`; Chromium here, WebKit and Firefox in `.github/workflows/xbrowser.yml` |
 | *Done:* an e2e sends a force through the real UI, watches the battle and sees the damage repaired | `e2e/m35-battle.spec.ts` (and a neighbour's raid with its countdown and siren, fought and repaired) |
 | *Done:* an offline defender gets the replay and a report that matches the damage | `e2e/m35-friends.spec.ts` (two players through the UI), `relay/tests/regionBattles.test.ts` |
+
+## M36 Diplomacy and the stakes of war
+
+| Item | Where |
+|---|---|
+| Declaring war at each scale, within the region's rules, with a warning period and a reason the other side sees | `declareWar`/`declareRefusal` (`warScaleAllowed`: the region's rules, total war in a rivals city), `War.opens` 12 game hours on, `War.reason` (80 characters) in the notice and the war card; computer neighbours' own declarations give theirs (`WAR_REASONS`) |
+| War score from battles won, targets held and economic damage; capitulation once it collapses | `scoreBattle` (8–15 a battle by how decisive, ±1 per $25,000 of buildings lost, `holdPerHour`, `allyPerDay`), `checkCapitulation` at −60 (`capitulate`: a ceasefire, raids and forces turned back, the winner's terms imposed) |
+| Treaties: proposals and counter-proposals with ceasefire, peace with reparations, tribute, demilitarised zones, occupied districts, non-aggression, alliances, defensive pacts, embargoes | `Term` (src/data/diplomacy.ts), `propose`, `answerProposal`, `withdrawProposal`, `sign` (`Pact`s), `counterTerms`; tribute and occupations in `diplomacyRates` (ledger lines), embargoes in `setDeal`, DMZs in `standsDown` and placement |
+| Both sides must accept, except terms imposed after a capitulation | `answerFromComputer` (`weigh` by character, feelings, reputation and the score) and `answerProposal`; `propose` to a capitulated neighbour signs at once (`imposed`), `imposedTerms` for the city's own capitulation |
+| Breaking a pact has consequences: reputation, allies leaving | `breakPacts` (reputation −30, the victim's allies −40, their pacts ended, those that keep pacts at war); asked first (`info.breaks`, `breakPact`) |
+| Total war and conquest: hold a city hall long enough and the city falls | the military HQ is the seat of power (DECISIONS); `War.hold` from a seat knocked down in a total war, broken by a battle its defender wins, `conquer` after 48 hours |
+| Its player plays on as a vassal or starts again; a vassal can rebel when strong enough | `diplomacy.vassal` (a fifth of its taxes to the overlord, no wars but a rising), `FallenCard` (play on, or start again with the save kept), a rising at 1.2× the overlord's strength (`declareRefusal`); a conquered computer neighbour (`rival.vassal`) pays and rises in `computerMoves` |
+| Fairness: newcomer protection, attack limits per real day, the damage cap while away, cooldowns between wars, a neutral stance | `raidThreat` for computer declarations and `shieldRefusal`/`strikeRefusal` for friends (unless struck first); the region room's three raids a UTC day (`raidsPerDay`, `battleRefused`, `raidsLeft`); half caps for a battle kept while its target was away (`away`, `SKIRMISH.awayCollapse`); three months between wars (`ended`); `setNeutral` (a month to leave) |
+| Computer neighbours' diplomacy follows personality and reputation | `DIPLOMATS`, `weigh`, `computerMoves` (proposals by character, declarations by aggressive and treacherous neighbours that outgun and dislike the city), `rivalAllies` |
+| *Done:* a skirmish changes no land | `tests/war/diplomacy.test.ts` "a skirmish changes no land" |
+| *Done:* a war ends in a treaty with tribute paid month by month | `tests/war/diplomacy.test.ts` "declared, won in battle, and settled" (six months' tribute, each a full month's) |
+| *Done:* a total war conquers a city that then plays on as a vassal and later rebels | `tests/war/diplomacy.test.ts` "a city whose HQ is held falls, plays on as a vassal, and later rises and goes free" (and a conquered neighbour that rises) |
+| *Done:* a pact broken with a computer neighbour turns its allies | `tests/war/diplomacy.test.ts` "a pact broken with a computer neighbour turns its allies" |
+| *Done:* the fairness limits hold against a test that tries to raid an offline city all night | `relay/tests/freeplan.test.ts` "holds a friend raided all night…" (and the sim's own checks in `tests/war/diplomacy.test.ts` "friends' raids") |
+

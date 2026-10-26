@@ -27,6 +27,8 @@ export interface DeterminismResult {
    * and the battle's result).
    */
   battle: { home: string[]; homeEnd: string; town: string; away: string };
+  /** The war town's diplomacy after its scripted declarations and treaties (M36). */
+  diplomacy: string;
   used: CommandType[];
   refused: string[];
 }
@@ -134,6 +136,51 @@ export function runDeterminism(
     report?.lost,
   ]);
 
+  // Diplomacy (M36): a proposal taken back, neutrality on and off, a declared war, a treaty the
+  // neighbour puts to the city and its terms in force, a pact broken, a district bought back.
+  const act = (cmd: Command) => note(cmd, warSim.dispatch(cmd));
+  const rivals = warSim.state.region.neighbours.filter((n) => n.rival && !n.player);
+  const foe = rivals[0]!;
+  const other = rivals[1] ?? foe;
+  warSim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
+  const offer = act({ type: 'propose', neighbour: other.id, terms: [{ k: 'nonAggression', months: 12 }] });
+  if (offer.ok) act({ type: 'withdrawProposal', proposal: offer.created![0]! });
+  warSim.advance(3 * TICKS_PER_MONTH);
+  act({ type: 'setNeutral', on: true });
+  act({ type: 'setNeutral', on: false });
+  warSim.advance(TICKS_PER_MONTH + 60);
+  act({ type: 'declareWar', neighbour: foe.id, scale: 'war', reason: 'Our border' });
+  warSim.advance(13 * TICKS_PER_HOUR);
+  // A district for the neighbour to occupy, round the town's first building.
+  const made = act({ type: 'createDistrict', name: 'Border Ward' });
+  const homes = [...warSim.state.buildings.values()].sort((a, b) => a.id - b.id);
+  if (made.ok && homes[0])
+    act({
+      type: 'paintDistrict',
+      district: made.created![0]!,
+      area: { kind: 'brush', points: [{ x: homes[0].x, z: homes[0].z }], radius: 120 },
+    });
+  const district = made.ok ? made.created![0]! : undefined;
+  warSim.dispatch({
+    type: 'cheat',
+    cheat: 'proposal',
+    neighbour: foe.id,
+    terms: [
+      { k: 'peace' },
+      { k: 'tribute', payer: 'us', amount: 500, months: 3 },
+      ...(district !== undefined ? [{ k: 'occupy' as const, side: 'us' as const, district }] : []),
+    ],
+  });
+  const theirs = warSim.state.war!.diplomacy?.proposals.find((p) => p.from === 'them' && p.with === foe.id);
+  if (theirs) act({ type: 'answerProposal', proposal: theirs.id, accept: true });
+  const pacts = warSim.state.war!.diplomacy?.pacts ?? [];
+  const tribute = pacts.find((p) => p.term.k === 'tribute');
+  if (tribute) act({ type: 'endPact', pact: tribute.id, breakPact: true });
+  const occupied = pacts.find((p) => p.term.k === 'occupy');
+  if (occupied) act({ type: 'buyBack', pact: occupied.id });
+  warSim.advance(2 * TICKS_PER_MONTH);
+  const diplomacy = JSON.stringify([warSim.hash(), warSim.state.war!.diplomacy]);
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -154,6 +201,7 @@ export function runDeterminism(
     scenario: scenarioHashes,
     war: warHashes,
     battle: { home, homeEnd, town: town.hash(), away },
+    diplomacy,
     used: [...used].sort(),
     refused,
   };

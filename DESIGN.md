@@ -1247,6 +1247,63 @@ in `src/ui/Battle.tsx`. `docs/plans/M35-design.md` has the numbers' reasoning.
   shows the raid chip with its countdown, the battle bar (sides, structures' health, follow), the
   war room's Send, Map and Reports tabs, notices and the siren.
 
+### 3.30 Diplomacy and the stakes of war (phase 5, M36)
+
+`WarState.diplomacy` (`src/sim/systems/diplomacy.ts`, numbers in `src/data/diplomacy.ts`) appears
+at a war city's first month close (or its first declaration, proposal or stance), with dice of its
+own (`<seed>:diplomacy`), so peace is unchanged and the war's raids draw as before. Calls and their
+reasons: DECISIONS "M36".
+
+- **Scales**: skirmishes are M35's raids (no declaration, no score, nothing changes hands). `declareWar`
+  (war or total, within `warScaleAllowed`: the region's rules, or total war in a city founded with
+  rivals) gives a reason and opens after 12 game hours (`War.opens`); it lets forces strike the seat
+  of power (`cityhall`, the military HQ: there's no city hall building) and keeps a score.
+- **The score** (`scoreBattle`, from `scoreHomeBattle` in `endHomeBattle` and `scoreAwayBattle` in
+  `battleReport`): 8–15 by how decisive a battle was, ±1 per $25,000 of buildings lost
+  (`BattleReport.worth`; a building in the neighbour's town $40,000), +1 an hour holding the other's
+  seat, +1 a day per ally at the city's side (`helpers`). At −60 a side capitulates: a ceasefire,
+  raids and forces turned back, and the winner's terms stand without consent (the computer's at
+  once, `imposedTerms`; the city's within 7 days, then `defaultTerms`).
+- **Treaties**: `propose` (terms from `cleanTerm`, checked by `termsRefusal`), `answerProposal`,
+  `withdrawProposal`; terms in force are `Pact`s (`sign`): a ceasefire, tribute (from the next month's
+  start, a ledger line each month until paid), a demilitarised zone (`standsDown`: military
+  buildings there get no staff and can't be built; on a neighbour's side its defences halve), an
+  occupied district (a fixed monthly amount, bought back with `buyBack` for 24 of them), non-aggression,
+  alliance, defensive pact, embargo (deals with the neighbour cancelled and refused) and their
+  undoing (`release`, `trade`, `independence`). Reparations are paid at signing. `endPact` ends one;
+  ending (or declaring, or striking) under a pact that binds is refused with `info.breaks` until sent
+  again with `breakPact`, and then `breakPacts`: reputation −30, the victim's allies −40 and their
+  pacts ended, and allies that keep pacts (≥ 0.5) at war with the city.
+- **Computer neighbours**: `weigh` scores terms by character (`DIPLOMATS`), the war score, feelings
+  and reputation; `answerFromComputer` signs, counters (`counterTerms`) or refuses two hours after a
+  proposal; `computerMoves` (each month, a game day) proposes, declares (aggressive and treacherous
+  ones that outgun the city 1.5× and dislike it, past the newcomer bar) and rises from vassalage.
+  `RivalNeighbour.allies` pair them from `<seed>:allies` (`rivalAllies`; v29 adds them to older war
+  saves). `raidStance` sets how a neighbour raids: more often at war (and at the HQ in a total war
+  when it outguns the city), never under a pact, a capitulation or vassalage, a quarter as often
+  when the city is neutral (treacherous ones as ever).
+- **Conquest**: a seat knocked down in a total war starts `War.hold`; a battle its defender wins
+  breaks it; after 48 hours the city falls (`conquer`). A computer neighbour becomes a vassal
+  (`rival.vassal`: a fifth of its taxes, 40 % of its forces, no raids); the city becomes one
+  (`diplomacy.vassal`, `fell` for the page's card: play on, or start again with the save kept), its
+  wars with the conqueror's allies ending too; it may rise (a total war) at 1.2× its overlord's
+  strength.
+- **Fairness**: newcomer protection (`raidThreat`: computer declarations and friends' raids, unless
+  struck first: `WarState.friendRaids`, `struck`); `setNeutral` (no wars or forces; leaving takes a
+  month to count); a cooldown of three months between wars with the same neighbour (`ended`).
+  Friends' raids: the region room counts the raids each city takes per UTC day (`City.raids`, three,
+  `raidsPerDay`), turns the rest away (`battleRefused`) and shows what's left (`raidsLeft` in the
+  view, `PlayerNeighbour.raidsLeft` in the sim, checked by `strikeRefusal` and the page before it
+  fights); a battle kept while its target's player is away is marked `away` and does half the damage
+  (`SKIRMISH.awayCollapse`, `awayWreck`; the attacker's page uses the same caps). A city's own sim
+  refuses a friend's raid while neutral or new (`shieldRefusal`), and its region report says so
+  (`shield`). Protocol 4.
+- **UI**: the war room's Diplomacy tab (`src/ui/Diplomacy.tsx`: reputation and stance, wars with
+  their score bars, holds and capitulations, proposals in and out with accept, counter and refuse,
+  the terms builder, treaties in force with end and buy back, each neighbour with declare and
+  propose), the Send tab's seat-of-power target and pact question, notices (`diplomacy` events), and
+  the fallen city's card (`FallenCard`).
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

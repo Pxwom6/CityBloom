@@ -95,6 +95,17 @@ const SAMPLES: Record<CommandType, Command> = {
       hash: '0',
     },
   },
+  declareWar: { type: 'declareWar', neighbour: 2, scale: 'war', reason: 'Our border' },
+  propose: {
+    type: 'propose',
+    neighbour: 2,
+    terms: [{ k: 'peace' }, { k: 'tribute', payer: 'them', amount: 1_000, months: 12 }],
+  },
+  answerProposal: { type: 'answerProposal', proposal: 4, accept: true },
+  withdrawProposal: { type: 'withdrawProposal', proposal: 4 },
+  endPact: { type: 'endPact', pact: 5 },
+  buyBack: { type: 'buyBack', pact: 5 },
+  setNeutral: { type: 'setNeutral', on: true },
 };
 
 /** Values a field might carry instead of what it should. */

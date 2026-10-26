@@ -54,7 +54,7 @@ without it.
 - [x] M31 Building together
 - [x] M32 Shared regions
 - [x] M33 Ready for friends
-- [ ] M34 Armed forces
+- [x] M34 Armed forces
 - [ ] M35 Into battle
 - [ ] M36 Diplomacy and the stakes of war
 - [ ] M37 Weapon development and intelligence
@@ -62,7 +62,7 @@ without it.
 - [ ] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 is complete, M35 in progress.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,28 +230,55 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces**, nearly done. In: the "Rival neighbours" option (new-city screen, `rivals=1`)
-and a region's war rules (host only, `rrules`, protocol 2); rivals with a personality each; twelve
-military buildings (Military bar, gated on war; the HQ first; the naval yard and coastal gun on the
-waterfront); units that train at their bases, one order at a time, from staff (recruited before any
-business hires), power and materials (`src/sim/systems/war.ts`); the defence line, forces upkeep,
-war bonds, the arms factory and war stores; the inspector's military section and the war room
-(Shift+M); the 39 war models checked and packed in their own file (`war-models-*.bin`, fetched only
-by a city at war; the main models file is byte-identical); generated looks for all 21 war buildings
-and 14 units, and units in the city (parked, on drills, patrols, flights, boats). Save v27; peace
-plays part for part as on `main` (`tests/war/forces.test.ts`), and `balance` is unchanged.
+**M34 Armed forces is complete** (pull request "M34 complete: Armed forces"). **M35 Into battle is
+under way** on the same branch (its commits so far ride in that pull request; M35 joins it when
+done). Plan: `docs/plans/M35-design.md`; calls made: DECISIONS "M35".
 
-Left for M34: review the units' screenshots (`node scripts/dev/unitshot.mjs <out>`), the M34 e2e
-(`e2e/m34-forces.spec.ts`, last run failed only because one airfield trains three kinds in turn, now
-given eight months and a second power plant), lint, the full unit suite, the layout specs, `bench`,
-the cross-browser test, then the `M34 complete:` commit and its pull request.
+Done for M35, tested: the battle simulation (`src/sim/battle`: layout, battle, away; 9 + 4 + 4
+tests); raids by computer neighbours fought in the city (`src/sim/systems/raids.ts`: warning with
+radar, shelters, damage through the disasters' machinery, reports, mid-battle saves; save v28;
+the neighbours' own decisions are switched off with `RAIDS.decide` until M35's e2e passes, the
+`raidIn` test cheat starts one); expeditions (`expeditions.ts`: send with plain refusals, call back,
+travel, arrival, report, home) against computer neighbours' towns grown by the balance mayor (now
+`src/sim/ai/mayor.ts`; `src/sim/ai/town.ts`, 8,000 residents at most, kept in IndexedDB v3, grown
+in `src/client/battleWorker.ts`); the battle viewer (`?battle=`, the town read-only, its battle
+played again); on screen: battle units in both colours with wrecks, tracers, shells and smoke,
+the raid countdown, the battle bar, notices, a raid siren; war room tabs Send, Map, Reports.
+`scripts/dev/battleshot.mjs` shoots a raid (reviewed: the battle bar, the report; the
+follow-the-fighting camera was moved closer since). The cross-browser run fights an expedition and
+a raid (Chromium matches Node).
+
+Left for M35:
+1. Screens: rerun `battleshot.mjs` (closer camera, the countdown after the warning), shoot an
+   expedition and the viewer; tutorial tips for the Send and Map tabs and the battle bar.
+2. The e2e (`e2e/m35-battle.spec.ts`): send a force through the war room, watch the battle in the
+   neighbour's town, see the damage repaired; a raid with its countdown and siren. Then switch
+   `RAIDS.decide` on (with a test that an aggressive neighbour raids a grown city).
+3. Friends' cities in a shared region (done criterion 3): forces between players' cities through the
+   region room (relay protocol 3), the battle fought from the region's save of an absent defender,
+   a replay and a report waiting for them that match the damage (`src/net/regionWar.ts`, relay
+   messages, a two-city test, an e2e).
+4. Bench a big battle (`scripts/dev/battlebench.ts` on the 100k city), the frame budget with many
+   units, balance, the cross-browser run; DESIGN §3.29, SPEC_REVIEW rows; `M35 complete:`.
 
 ## Next tasks
-1. Finish M34 (above).
-2. M35 Into battle: battles as deterministic commands to each city's sim; computer neighbours' towns
-   (grown headlessly and cached), the region map, expeditions, defence while the owner is away.
-3. M36–M40 in order.
-4. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+1. Finish M35 (above).
+2. M36–M40 in order.
+3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+
+## Performance (M34)
+- **Balance** (`npx tsx scripts/balance.ts 20`): careful, greedy and neglectful are line for line the
+  same as `main` (only the timings differ), with M34 and M35's work so far, and again after the
+  balance mayor moved into the sim with `DMath.hypot`.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM, branch then `main` back to back): the same
+  city (110,174 residents, 2,158 buildings at month 6); tick avg month 4–6 1.34 / 1.09 / 1.17 ms
+  against `main`'s 1.50 / 1.34 / 1.31, p99 10–12 against 13–15, worst 73 against 75 ms (month 1's
+  cold start). A city without war runs no war code.
+- **Cross-browser** (`XB_FIREFOX=0 npx playwright test -c playwright.xb.config.ts --project
+  chromium`): 24 months of the scripted town, the 12-month war town, an expedition into a grown town
+  and a raid, all matching Node (15.4 s); WebKit and Firefox run on the pull request (`xbrowser.yml`).
+- **Tests**: the unit suite, 737 tests in 101 files, passes; `e2e/m34-forces.spec.ts` 3 passed (9.9 min).
+- **Network budget**: M34 adds the `rrules` message only (once, when a host changes the rules).
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
@@ -907,6 +934,11 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M34): the war models in a real Chrome window (the HQ, depot, airfield and naval yard
+  close up, by day and night, and the generated looks with `showWarModels`); units parked, drilling,
+  patrolling and flying at High; frame times with a war city's units on screen (`framebench.mjs` on
+  a war city: none measured yet, the VM's software renderer says nothing about it); the raid siren
+  and the gun pops through real speakers.
 - Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
   app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
   to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),

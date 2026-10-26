@@ -485,3 +485,19 @@ Each milestone's rows are filled in as it's done.
 | This brief's section in SPEC_REVIEW | the M29–M33 sections above and this one |
 | The README | `README.md`: Play with friends, When something goes wrong, the relay and cross-browser scripts |
 | Play a co-op city and a region through the real UI with at least two players, and fix whatever feels off | `e2e/m30-*.spec.ts`, `e2e/m31-together.spec.ts`, `e2e/m32-region.spec.ts`, `e2e/m33-narrow.spec.ts` and their screenshots (reviewed). Fixed on the way: joining a paused room waited for ever; a frozen pacer held joiners; a city in a shared room moved in bursts between clock messages (now paced); panels ran off a phone; the region's first view didn't show the others' deals |
+
+# Phase 5 (SPEC-5.md)
+
+War between cities: armed forces, live battles, diplomacy and the stakes of war, weapon research and
+spies, investments, war with friends, and the race for the atom bomb. Each milestone's rows are
+filled in as it's done.
+
+## Before you start
+
+| Item | Where |
+|---|---|
+| Start from the latest `main` (phase 4 and the war models merged) | the session's branch `claude/new-session-a0qpy4` (standing in for `war`), made from `main` at 6883790 |
+| SPEC-5.md saved word for word | `SPEC-5.md` |
+| CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M40 | `CLAUDE.md` |
+| M34–M40 on PROGRESS.md's checklist; a phase 5 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 5" |
+| Read the war models' README before M34 | `assets/models/war/README.md` (its allowances are taken up in M34) |

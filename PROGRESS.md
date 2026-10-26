@@ -54,6 +54,20 @@ without it.
 - [x] M31 Building together
 - [x] M32 Shared regions
 - [x] M33 Ready for friends
+- [ ] M34 Armed forces
+- [ ] M35 Into battle
+- [ ] M36 Diplomacy and the stakes of war
+- [ ] M37 Weapon development and intelligence
+- [ ] M38 Investments and the war economy
+- [ ] M39 War with friends
+- [ ] M40 The final race: the atom bomb
+
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way.** Branch: this cloud session's
+`claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
+in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
+`main` from this branch; a milestone finished while the last one's pull request is still open joins
+it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
+done in `docs/SPEC_REVIEW.md`, "Phase 5".
 
 ## Multiplayer review follow-ups (PRs #17–#21)
 The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
@@ -216,16 +230,16 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Nothing: the multiplayer review's follow-ups (F1–F14 and the minor items) are done on `m33-ready`
-and `multiplayer` (the same commits, pushed from a cloud session; PR #21 carries them). The owner:
-review them, merge #17–#21 in order, set up Cloudflare (above) for online rooms, then run the e2e
-specs the cloud VM couldn't and try a shared city with a friend on another computer and a phone
-("To check on the Mac").
+Phase 5 started: SPEC-5.md saved, CLAUDE.md, SPEC_REVIEW and DECISIONS set up for it. Next: M34
+Armed forces (below).
 
 ## Next tasks
-1. The real-device checks for multiplayer ("To check on the Mac"), then the balance round below.
-2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
-   empty tax bands): later, after phase 4.
+1. M34 Armed forces: bring the war buildings' and units' models into the pipeline (PROMPTS-WAR.md
+   budgets, spec v6 for buildings, unit spec v1, the README's allowances), the "Rival neighbours"
+   option and the region's war rules, military buildings, units that train, the war economy (defence
+   line, war bonds, arms factory) and the war room panel.
+2. M35–M40 in order.
+3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic

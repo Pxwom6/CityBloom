@@ -807,3 +807,6 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   sockets and data channels keep order themselves, so their messages aren't numbered. Tested in
   `tests/p2pOrder.test.ts`, and through two pages over Trystero and a Nostr relay on this computer: a
   friend now joins a city held still, builds, and the two run on together with the same hash.
+
+## Phase 5 (SPEC-5.md)
+- **Branch:** the cloud session's `claude/new-session-a0qpy4` stands in for `war`, made from `main` at 6883790 (phase 4, its review follow-ups and the war models, PR #22, merged).

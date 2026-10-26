@@ -224,9 +224,20 @@ try {
       JSON.stringify(br),
     );
   };
+  /** Day shots are taken between 08:00 and 17:00: past it, on to 08:00 the next day. */
+  const daylight = () =>
+    page.evaluate(async () => {
+      const g = window.__game;
+      const s = await g.getState();
+      const now = (s.tick + 420) % 1440;
+      if (now >= 8 * 60 && now < 17 * 60) return;
+      await g.advance((8 * 60 - now + 1440) % 1440);
+      await g.waitFrames(1);
+    });
   /** Advance the clock a little at a time until some unit is doing `what` (and `pred`). */
   const until = async (what, pred = () => true, step = 15, max = 200) => {
     for (let k = 0; k < max; k++) {
+      await daylight();
       const list = (await units()).filter((u) => u.doing === what && pred(u));
       if (list.length) return list;
       await page.evaluate(async (s) => {
@@ -243,6 +254,9 @@ try {
     return { n: list.length, by };
   };
   log('units now', JSON.stringify(await counts()));
+  // No tips over the pictures.
+  await page.evaluate(() => window.__game.setSettings({ tips: false }));
+  await daylight();
   const hq = civ('militaryhq');
   if (want('overview') && hq)
     await snap('overview', { x: hq.x + 250, z: hq.z - 150, distance: 1300, yaw: 0.3, tilt: 0.05 }, 2, wide);
@@ -265,6 +279,7 @@ try {
   }
   const dep = civ('vehicledepot');
   if (dep) {
+    if (want('depot')) await daylight();
     if (want('depot')) await snap('depot', { x: dep.x, z: dep.z, distance: 80, yaw: 2.6, tilt: 0.05 });
     if (want('pad')) {
       const list = await until('drill', (u) => u.kind === 'tank' || u.kind === 'heavytank', 30, 60);
@@ -295,6 +310,7 @@ try {
   }
   const air = civ('airfield');
   if (air) {
+    if (want('airfield')) await daylight();
     if (want('airfield')) await snap('airfield', { x: air.x, z: air.z, distance: 180, yaw: 0.4, tilt: 0.05 });
     if (want('flying')) {
       const list = await until('flying', (u) => u.kind === 'fighter' || u.kind === 'bomber', 25, 120);

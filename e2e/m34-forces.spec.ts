@@ -231,6 +231,8 @@ test('M34: every military building from the toolbar, every kind of unit trained,
   await inspect(page, 'barracks');
   await expect(page.getByTestId('military-unit-list')).toContainText('Infantry squad');
   await expect(page.getByTestId('inspector')).toContainText('/month');
+  // Its effect on approval: the noise its neighbours mind.
+  await expect(page.getByTestId('military-approval')).toContainText('mind the noise');
   await page.keyboard.press('Escape');
   await page.keyboard.press('KeyM');
   await expect(page.getByTestId('budget')).toContainText('Forces upkeep');
@@ -241,6 +243,7 @@ test('M34: every military building from the toolbar, every kind of unit trained,
 
   // --- The war room: from the HQ's inspector, Shift+M, and the top bar. ---
   await inspect(page, 'militaryhq');
+  await expect(page.getByTestId('military-approval')).toContainText('feel safer');
   await page.getByTestId('open-war-room').click();
   const room = page.getByTestId('war-room');
   await expect(room).toBeVisible();

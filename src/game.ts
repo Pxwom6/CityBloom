@@ -23,7 +23,8 @@ import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { loadWarModels } from './client/models';
 import { formatNumber } from './ui/hooks';
-import { AwayBattles, type BattleRecord } from './client/battles';
+import { AwayBattles, keepBattle, keepTown, type BattleRecord } from './client/battles';
+import type { BattleInput } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
@@ -484,6 +485,9 @@ export class Game {
       (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
     tick: () => this.world.stats.tick,
     changed: () => this.notify(),
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    postBattle: (slot, input) => void this.region?.sendBattle(slot, input),
   });
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
   viewing: { record: BattleRecord; back: string | null } | null = null;
@@ -498,7 +502,50 @@ export class Game {
       save: () => this.client.save(),
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
+      battle: (input, meta) => this.takeBattle(input, meta),
     };
+  }
+
+  /**
+   * A battle a friend's city fought against this one (M35): the city as it stands is kept as the
+   * replay's backdrop, then its own sim takes the battle: as it happens while the player is here,
+   * all at once if it was fought while they were away (the report then waits in the war room).
+   */
+  private async takeBattle(
+    input: BattleInput,
+    meta: { from: number; id: string; late: boolean },
+  ): Promise<boolean> {
+    if (this.readOnly) return false;
+    const id = `def-${input.id}`.slice(0, 60);
+    try {
+      const backdrop = await this.client.save();
+      await keepTown(`replay:${id}`, backdrop);
+      await keepBattle({
+        id,
+        city: this.world.stats.cityName,
+        other: input.attacker.name,
+        tick: this.world.stats.tick,
+        input,
+        townKey: `replay:${id}`,
+        savedAt: new Date().toISOString(),
+      });
+    } catch {
+      /* the replay is a nicety: the battle still counts */
+    }
+    const r = await this.client.command({
+      type: 'battleResolve',
+      input,
+      mode: meta.late ? 'instant' : 'watch',
+      replay: id,
+    });
+    if (!r.ok) return false;
+    if (meta.late)
+      this.notice(
+        `late:${id}`,
+        `While you were away, ${input.attacker.name} raided the city. The war room has the report, and you can watch it.`,
+        'bad',
+      );
+    return true;
   }
 
   /** A small picture of the city as the camera sees it, for the region view. */

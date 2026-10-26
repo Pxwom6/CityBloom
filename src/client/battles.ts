@@ -58,6 +58,9 @@ export interface AwayHost {
   report(expedition: number, result: Extract<BattleJobReply, { type: 'away' }>['result']): Promise<boolean>;
   tick(): number;
   changed(): void;
+  /** In a shared region (M35): the latest save it keeps of a friend's city, and passing a battle on. */
+  fetchSave?(slot: number): Promise<SaveFile>;
+  postBattle?(slot: number, input: BattleInput): void;
 }
 
 export class AwayBattles {
@@ -103,8 +106,31 @@ export class AwayBattles {
     this.busy.add(expedition);
     try {
       const city = await this.host.query<AwayCity | null>({ type: 'awayCity', expedition });
-      if (!city?.neighbour.rival) return;
+      if (!city) return;
       const n = city.neighbour;
+      if (n.slot !== null) {
+        // A friend's city: fought in the latest save the region keeps of it, then passed on to it.
+        if (!this.host.fetchSave || !this.host.postBattle) throw new Error('Not in the region');
+        const save = await this.host.fetchSave(n.slot);
+        const reply = await this.run({ type: 'awayCity', id: this.seq++, city, save });
+        if (reply.type !== 'away') throw new Error(reply.type === 'error' ? reply.message : 'No battle');
+        const key = `player:${reply.input.id}`;
+        await keepTown(key, save);
+        await keepBattle({
+          id: reply.input.id,
+          city: city.cityName,
+          other: n.name,
+          tick: this.host.tick(),
+          input: reply.input,
+          townKey: key,
+          savedAt: new Date().toISOString(),
+        });
+        if (await this.host.report(expedition, { ...reply.result, replay: reply.input.id }))
+          this.host.postBattle(n.slot, reply.input);
+        else this.failed.set(expedition, (this.failed.get(expedition) ?? 0) + 1);
+        return;
+      }
+      if (!n.rival) return;
       const spec: TownSpec = {
         citySeed: city.seed,
         neighbour: n.id,
@@ -131,7 +157,7 @@ export class AwayBattles {
         townKey: key,
         savedAt: new Date().toISOString(),
       });
-      if (!(await this.host.report(expedition, reply.result)))
+      if (!(await this.host.report(expedition, { ...reply.result, replay: reply.input.id })))
         this.failed.set(expedition, (this.failed.get(expedition) ?? 0) + 1);
     } catch {
       this.scouting = null;

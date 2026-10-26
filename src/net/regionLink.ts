@@ -11,7 +11,8 @@ import { PROTOCOL_VERSION } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg, RegionView } from '../../relay/region';
 import type { Link } from './link';
 import type { RegionWarRules } from '../data/war';
-import { decodeSnapshot, encodeSnapshot } from './snapshot';
+import { decodeBattle, decodeSnapshot, encodeBattle, encodeSnapshot } from './snapshot';
+import type { BattleInput } from '../sim/battle/types';
 
 /** What a region link needs from the city: its own commands and queries, and a save. */
 export interface CityPort {
@@ -21,6 +22,11 @@ export interface CityPort {
   cityName(): string;
   /** A small picture of the city (a data URL), or null. */
   thumb?(): string | null;
+  /**
+   * A battle another city of the region fought against this one (M35): `late` when it was kept while
+   * this city was away. Resolves true once the city has taken it (the region then forgets it).
+   */
+  battle?(input: BattleInput, meta: { from: number; id: string; late: boolean }): Promise<boolean>;
 }
 
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
@@ -98,6 +104,9 @@ export class RegionLink {
   private lastThumb = 0;
   onChange: (() => void) | null = null;
   onNotice: ((text: string) => void) | null = null;
+  /** Battles coming in, in parts, and those taken already (M35). */
+  private battlesIn = new Map<string, (string | null)[]>();
+  private battlesTaken = new Set<string>();
   sent = { messages: 0, bytes: 0 };
 
   constructor(
@@ -210,7 +219,41 @@ export class RegionLink {
         return;
       case 'citysave':
         return;
+      case 'battle': {
+        // A battle fought against this city (M35): once whole, the city's own sim re-runs it.
+        let list = this.battlesIn.get(m.id);
+        if (!list || list.length !== m.parts)
+          this.battlesIn.set(m.id, (list = new Array<string | null>(m.parts).fill(null)));
+        list[m.part] = m.data;
+        if (list.some((x) => x === null)) return;
+        this.battlesIn.delete(m.id);
+        if (this.battlesTaken.has(m.id)) return;
+        let input: BattleInput;
+        try {
+          input = decodeBattle(list as string[]);
+        } catch {
+          return;
+        }
+        this.battlesTaken.add(m.id);
+        const done = await (this.city.battle?.(input, { from: m.from, id: m.id, late: m.late }) ?? false);
+        if (done) this.send({ t: 'battleSeen', id: m.id });
+        else this.battlesTaken.delete(m.id);
+        return;
+      }
     }
+  }
+
+  /** Send a battle fought against another city of the region (M35), to keep until it's seen. */
+  sendBattle(to: number, input: BattleInput): string {
+    const id = input.id.replace(/[^\w-]/g, '').slice(0, 40) || `b${Math.round(performance.now())}`;
+    const parts = encodeBattle(input);
+    parts.forEach((data, part) => this.send({ t: 'battle', to, id, part, parts: parts.length, data }));
+    return id;
+  }
+
+  /** The latest save the region keeps of a city in it (M35: battles fought there are fought in it). */
+  fetchSave(slot: number): Promise<SaveFile> {
+    return fetchCitySave(this.connect, slot, this.opts.mayor);
   }
 
   /** The region's news into this city's sim. */
@@ -222,7 +265,7 @@ export class RegionLink {
   }
 
   /** Tell the region how this city stands (and, now and then, its picture and a save for visitors). */
-  async reportNow(force = false): Promise<void> {
+  async reportNow(force = false, last = false): Promise<void> {
     if (this.state !== 'in' || !this.link) return;
     const now = performance.now();
     const report = await this.city.report();
@@ -240,7 +283,16 @@ export class RegionLink {
         return;
       }
       const id = `${this.slot}-${Math.round(now)}`;
-      parts.forEach((data, part) => this.send({ t: 'save', id, part, parts: parts.length, data }));
+      parts.forEach((data, part) =>
+        this.send({
+          t: 'save',
+          id,
+          part,
+          parts: parts.length,
+          data,
+          ...(last ? { last: true as const } : {}),
+        }),
+      );
     }
   }
 
@@ -263,7 +315,8 @@ export class RegionLink {
 
   leave(): void {
     if (this.state === 'closed') return;
-    void this.reportNow(true).finally(() => {
+    // The save sent as the player leaves is the one the region keeps (a raid while away is fought in it).
+    void this.reportNow(true, true).finally(() => {
       this.state = 'closed';
       for (const t of this.timers) clearInterval(t);
       this.timers = [];

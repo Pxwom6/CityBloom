@@ -67,6 +67,8 @@ export type Command =
    * city now, arriving in `hours` (0: the battle begins at once).
    */
   | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number }
+  /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
+  | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
@@ -153,7 +155,7 @@ export type Command =
   /** The page's account of an expedition's battle, fought in the other town (page only). */
   | { type: 'battleReport'; expedition: number; result: AwayResult }
   /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
-  | { type: 'battleResolve'; input: BattleInput; mode: 'watch' | 'instant' }
+  | { type: 'battleResolve'; input: BattleInput; mode: 'watch' | 'instant'; replay?: string }
   | { type: 'cancelTraining'; order: number }
   | { type: 'disbandUnit'; unit: number }
   /** War bonds (M34): borrow from the residents, or pay one off early. */

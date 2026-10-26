@@ -119,6 +119,16 @@ export interface TestApi {
       theirLost: number;
     }[];
   };
+  /**
+   * What's broken in the city now (M35): city buildings closed for repairs, rubble, fires, and
+   * damaged roads.
+   */
+  getDamage(): { civics: number; rubble: number; burning: number; roads: number };
+  /** The page's battles away (M35): a town being grown for one, and whether it's busy. */
+  getAway(): {
+    scouting: { name: string; population: number; target: number } | null;
+    viewing: string | null;
+  };
   /** The war room (M34): open, its top-bar button shown, the HQ's id. */
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
   /** Report to the region now (it does every 30 s by itself). */
@@ -683,6 +693,19 @@ export function installTestApi(game: Game): TestApi {
         })),
       };
     },
+    getDamage: () => {
+      const w = game.world;
+      return {
+        civics: [...w.civics.values()].filter((c) => c.damage > 0).length,
+        rubble: [...w.buildings.values()].filter((b) => b.state === 3).length,
+        burning: [...w.buildings.values()].filter((b) => b.fire > 0).length,
+        roads: w.disasters.damaged.length,
+      };
+    },
+    getAway: () => ({
+      scouting: game.away.scouting ? { ...game.away.scouting } : null,
+      viewing: game.viewing?.record.id ?? null,
+    }),
     getWarRoom: () => ({
       open: game.panel === 'war',
       button: !!document.querySelector('[data-testid="open-war"]'),

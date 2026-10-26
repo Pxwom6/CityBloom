@@ -29,6 +29,9 @@ import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from '
 import type { RoomEnv } from './room';
 
 export const MAX_CITIES = 4;
+/** Battles kept for a city at most (M35), and the parts one may come in. */
+export const MAX_PENDING_BATTLES = 8;
+const MAX_BATTLE_PARTS = 8;
 /** The region project: what it costs all told, and the power it gives its contributors (MW). */
 export const REGION_PROJECT = { name: 'Sunfield Commons', goal: 600_000, power: 1_600 };
 /** The biggest small picture of a city we keep (characters of a data URL). */
@@ -87,15 +90,24 @@ export type RegionClientMsg =
     }
   | { t: 'report'; city: string; report: RegionReport; thumb?: string }
   | { t: 'contribute'; amount: number }
-  | { t: 'save'; id: string; part: number; parts: number; data: string }
+  /** A save for visitors; `last` marks the one a city sends as its player leaves. */
+  | { t: 'save'; id: string; part: number; parts: number; data: string; last?: true }
   | { t: 'visit'; slot: number }
   /** The host changes the region's war rules (M34). */
-  | { t: 'rrules'; rules: RegionWarRules };
+  | { t: 'rrules'; rules: RegionWarRules }
+  /**
+   * A battle fought against another city (M35), in parts: its input, kept for that city until it
+   * says it has seen it (its own sim re-runs it and applies the damage).
+   */
+  | { t: 'battle'; to: number; id: string; part: number; parts: number; data: string }
+  | { t: 'battleSeen'; id: string };
 
 export type RegionRoomMsg =
   | { t: 'rwelcome'; slot: number; secret: string; region: RegionView }
   | { t: 'region'; region: RegionView }
   | { t: 'citysave'; slot: number; part: number; parts: number; data: string }
+  /** A battle fought against this city (M35); `late`: kept while it was away. */
+  | { t: 'battle'; from: number; id: string; part: number; parts: number; data: string; late: boolean }
   | { t: 'notice'; text: string }
   | {
       t: 'error';
@@ -126,6 +138,8 @@ interface City {
   saved?: boolean;
   /** When that save was last kept (ms; F8). */
   savedAt?: number;
+  /** Battles fought against it that it hasn't seen yet (M35): id, attacker, when, store row. */
+  pending?: { id: string; from: number; at: number; k: number }[];
 }
 
 export interface RegionMeta {
@@ -150,6 +164,10 @@ export interface RegionStore {
   saveMeta(m: RegionMeta): void;
   saveCity(slot: number, parts: string[]): void;
   loadCity(slot: number): string[] | null;
+  /** Battles kept for a city that hasn't seen them (M35): `k` 0–7, a row of its own each. */
+  saveBattle(slot: number, k: number, parts: string[]): void;
+  loadBattle(slot: number, k: number): string[] | null;
+  deleteBattle(slot: number, k: number): void;
   /** Forget the region (it expired). */
   deleteAll(): void;
   /** Rows written so far, as a Durable Object's SQLite counts them. */
@@ -175,9 +193,21 @@ export class MemoryRegionStore implements RegionStore {
   loadCity(slot: number) {
     return this.saves.get(slot) ?? null;
   }
+  battles = new Map<string, string[]>();
+  saveBattle(slot: number, k: number, parts: string[]) {
+    this.rowsWritten += parts.length;
+    this.battles.set(`${slot}:${k}`, parts.slice());
+  }
+  loadBattle(slot: number, k: number) {
+    return this.battles.get(`${slot}:${k}`) ?? null;
+  }
+  deleteBattle(slot: number, k: number) {
+    if (this.battles.delete(`${slot}:${k}`)) this.rowsWritten++;
+  }
   deleteAll() {
     this.meta = null;
     this.saves.clear();
+    this.battles.clear();
   }
 }
 
@@ -228,6 +258,8 @@ interface ConnState {
   visits: TokenBucket;
   /** Order of opening, to drop the oldest silent socket when full. */
   n: number;
+  /** The save of a city whose player is leaving (M35): kept whatever the pace, once a connection. */
+  lastSave?: string;
 }
 
 const finite = (v: unknown, lo: number, hi: number): v is number =>
@@ -327,13 +359,41 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       )
         return null;
       if (typeof m.data !== 'string' || m.data.length > SNAPSHOT_PART) return null;
-      return { t: 'save', id: m.id, part: m.part as number, parts: m.parts as number, data: m.data };
+      return {
+        t: 'save',
+        id: m.id,
+        part: m.part as number,
+        parts: m.parts as number,
+        data: m.data,
+        ...(m.last === true ? { last: true as const } : {}),
+      };
     case 'visit':
       return finite(m.slot, 1, 64) ? { t: 'visit', slot: m.slot as number } : null;
     case 'rrules': {
       const rules = cleanWarRules(m.rules);
       return rules ? { t: 'rrules', rules } : null;
     }
+    case 'battle':
+      if (
+        !finite(m.to, 1, 64) ||
+        typeof m.id !== 'string' ||
+        !/^[\w-]{1,40}$/.test(m.id) ||
+        !finite(m.parts, 1, MAX_BATTLE_PARTS) ||
+        !finite(m.part, 0, (m.parts as number) - 1) ||
+        typeof m.data !== 'string' ||
+        m.data.length > SNAPSHOT_PART
+      )
+        return null;
+      return {
+        t: 'battle',
+        to: m.to as number,
+        id: m.id,
+        part: m.part as number,
+        parts: m.parts as number,
+        data: m.data,
+      };
+    case 'battleSeen':
+      return typeof m.id === 'string' && /^[\w-]{1,40}$/.test(m.id) ? { t: 'battleSeen', id: m.id } : null;
     default:
       return null;
   }
@@ -344,6 +404,8 @@ export class RegionRoom {
   private conns = new Map<RegionConn, ConnState>();
   /** Each city's save for visitors arriving in parts: one in flight per city (F8). */
   private incoming = new Map<number, { id: string; parts: (string | null)[]; got: number }>();
+  /** Battles coming in, in parts, by sender and id (M35). */
+  private battleIn = new Map<string, { parts: (string | null)[]; got: number }>();
   private readonly limits: RegionLimits;
   /** Each city's allowance of writes. */
   private writes = new Map<number, TokenBucket>();
@@ -642,9 +704,60 @@ export class RegionRoom {
         this.changed(slot);
         return;
       }
+      case 'battle': {
+        // Only where war is allowed, against another city of the region (M35).
+        if (!this.meta.rules?.war || m.to === slot) return;
+        const target = this.meta.cities.find((c) => c.slot === m.to);
+        if (!target) return;
+        const key = `${slot}:${m.id}`;
+        let inc = this.battleIn.get(key);
+        if (!inc) {
+          if (this.battleIn.size > 16) this.battleIn.clear();
+          this.battleIn.set(key, (inc = { parts: new Array<string | null>(m.parts).fill(null), got: 0 }));
+        }
+        if (inc.parts.length !== m.parts) return;
+        if (inc.parts[m.part] === null) inc.got++;
+        inc.parts[m.part] = m.data;
+        if (inc.got < inc.parts.length) return;
+        this.battleIn.delete(key);
+        if (this.budget.over(now)) return;
+        const pending = (target.pending ??= []);
+        if (pending.some((p) => p.id === m.id)) return;
+        // Eight at most: the oldest gives way.
+        if (pending.length >= MAX_PENDING_BATTLES) {
+          const old = pending.shift()!;
+          this.store.deleteBattle(target.slot, old.k);
+        }
+        let k = 0;
+        while (pending.some((p) => p.k === k)) k++;
+        const parts = inc.parts as string[];
+        this.store.saveBattle(target.slot, k, parts);
+        pending.push({ id: m.id, from: slot, at: now, k });
+        this.save();
+        // The defender playing now gets it at once (it stays kept until it says it has seen it).
+        for (const [c, s] of this.conns)
+          if (s.slot === target.slot)
+            parts.forEach((data, part) =>
+              c.send({ t: 'battle', from: slot, id: m.id, part, parts: parts.length, data, late: false }),
+            );
+        return;
+      }
+      case 'battleSeen': {
+        const pending = city.pending;
+        const i = pending?.findIndex((p) => p.id === m.id) ?? -1;
+        if (i < 0) return;
+        const [seen] = pending!.splice(i, 1);
+        if (!pending!.length) delete city.pending;
+        this.store.deleteBattle(slot, seen!.k);
+        this.save();
+        return;
+      }
       case 'save': {
-        // Kept at most every so often; parts in between are ignored before they take memory.
-        if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
+        // Kept at most every so often; parts in between are ignored before they take memory. The
+        // save a city sends as its player leaves is kept whatever the pace, once a connection: in a
+        // region at war, a raid on an absent friend is fought in the city as it was left (M35).
+        if (m.last && (st.lastSave ?? m.id) === m.id) st.lastSave = m.id;
+        else if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
         let inc = this.incoming.get(slot);
         if (!inc || inc.id !== m.id)
           this.incoming.set(
@@ -733,6 +846,14 @@ export class RegionRoom {
     if (write === 'new') this.save();
     else if (write === 'changed') this.changed(city.slot);
     conn.send({ t: 'rwelcome', slot: city.slot, secret: city.secret, region: this.view() });
+    // Battles fought against it while it was away (M35), oldest first.
+    for (const p of city.pending ?? []) {
+      const parts = this.store.loadBattle(city.slot, p.k);
+      if (parts)
+        parts.forEach((data, part) =>
+          conn.send({ t: 'battle', from: p.from, id: p.id, part, parts: parts.length, data, late: true }),
+        );
+    }
     this.broadcast();
   }
 }

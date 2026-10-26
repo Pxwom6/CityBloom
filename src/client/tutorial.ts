@@ -146,6 +146,22 @@ export const TIPS: Tip[] = [
     when: (g) => g.world.stats.war?.hq != null,
   },
   {
+    id: 'raidComing',
+    text:
+      'A raid is on its way: the red countdown in the top bar says when it arrives. Your bunkers, guns and ' +
+      'units fight on their own; residents near the targets go to the shelters. A radar gives earlier ' +
+      'warning. When it comes, the battle bar follows the fighting.',
+    when: (g) => !!g.world.stats.war?.incoming || !!g.world.stats.war?.battle,
+  },
+  {
+    id: 'sendForce',
+    text:
+      'With units at home you can raid a rival: the war room’s Send tab picks the town, what to strike, ' +
+      'the way there and the units; the Map tab shows the roads between the towns and forces on the move. ' +
+      'Every raid is reported in the Reports tab, and you can watch it.',
+    when: (g) => (g.world.stats.war?.units ?? 0) >= 3 && g.world.stats.war?.hq != null,
+  },
+  {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',
     when: (g) => g.world.stats.utilities.power.unserved > 3,

@@ -13,7 +13,7 @@ import type { Stamped } from '../src/sim/lockstep';
 import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules';
 
 /** 2: war (M34): a region's war rules, and the war commands a shared city may carry. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

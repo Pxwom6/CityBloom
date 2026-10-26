@@ -457,6 +457,23 @@ describe('F8: a region keeps within the free plan', () => {
     expect(visitor.got.filter((m) => m.t === 'citysave').length).toBeLessThanOrEqual(2);
   });
 
+  it('keeps the save a city sends as its player leaves, once a connection, whatever the pace (M35)', () => {
+    const clock = new FakeClock();
+    const { region, store, ada } = openRegion('6RLAST', clock);
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's0', part: 0, parts: 1, data: 'FIRST' });
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: 'SOON' });
+    expect(store.loadCity(1)).toEqual(['FIRST']);
+    ada.say({ t: 'save', id: 's2', part: 0, parts: 1, data: 'LEAVING', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    // Only once: another "last" save on the same connection waits its turn like any other.
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's3', part: 0, parts: 1, data: 'AGAIN', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    region.closed(ada.conn);
+  });
+
   it('expires when no city has come back for a long while', () => {
     const clock = new FakeClock();
     const { region, ada } = openRegion('7RQUET', clock);

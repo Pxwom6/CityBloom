@@ -87,6 +87,8 @@ export interface BattleReport {
   homeless: number;
   /** An expedition's battle in the other town: what fell there, and the objectives hit. */
   away?: { destroyed: number; damaged: number; objectives: { aimed: number; down: number } };
+  /** The page's record of the battle to watch again, if it kept one. */
+  replay?: string;
 }
 
 /** The battle being fought in this city. Its course is re-run from `input` after a load. */
@@ -175,21 +177,28 @@ function eligible(sim: Sim): boolean {
   return s.totals.population >= RAIDS.minPopulation && s.tick >= RAIDS.minMonths * TICKS_PER_MONTH;
 }
 
-/** Each hour, in the war hour: raids on their way are announced and arrive; the neighbours decide. */
+/** Every tick while a raid is on its way: its warning when the city hears of it, and its arrival. */
+export function raidsTick(sim: Sim): void {
+  const w = sim.state.war;
+  if (!w?.incoming) return;
+  const s = sim.state;
+  for (const r of w.incoming) if (!r.warned && s.tick >= r.warn) warnRaid(sim, r);
+  const due = w.incoming.find((r) => s.tick >= r.arrive);
+  if (!due) return;
+  // One battle at a time: a second force waits an hour.
+  if (w.battle) due.arrive = s.tick + TICKS_PER_HOUR;
+  else {
+    w.incoming = w.incoming.filter((r) => r !== due);
+    if (!w.incoming.length) delete w.incoming;
+    startHomeBattle(sim, due);
+  }
+}
+
+/** Each hour, in the war hour: the neighbours decide whether to raid. */
 export function raidsHour(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
   const s = sim.state;
-  for (const r of w.incoming ?? []) if (!r.warned && s.tick >= r.warn) warnRaid(sim, r);
-  const due = (w.incoming ?? []).find((r) => s.tick >= r.arrive);
-  if (due) {
-    if (w.battle) due.arrive = s.tick + TICKS_PER_HOUR;
-    else {
-      w.incoming = w.incoming!.filter((r) => r !== due);
-      if (!w.incoming.length) delete w.incoming;
-      startHomeBattle(sim, due);
-    }
-  }
   if (!RAIDS.decide || w.incoming?.length || w.battle || !eligible(sim)) return;
   const last = w.raided?.any ?? -Infinity;
   if (s.tick - last < RAIDS.gapAny * TICKS_PER_MONTH) return;
@@ -361,6 +370,7 @@ export function resolveBattle(
   input: BattleInput,
   mode: 'watch' | 'instant',
   dryRun: boolean,
+  replay?: string,
 ): CommandResult {
   const s = sim.state;
   const w = s.war;
@@ -385,6 +395,7 @@ export function resolveBattle(
     sheltered: 0,
   };
   w.battle = { id: raid.id, input, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
+  if (replay) w.battle.report.replay = replay.slice(0, 60);
   sim.battleRun = null;
   sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
   if (mode === 'instant') {

@@ -220,7 +220,15 @@ import {
   warSummary,
   type WarSummary,
 } from './systems/war';
-import { battleTick, mendUnits, planRaid, raidsHour, resolveBattle, startHomeBattle } from './systems/raids';
+import {
+  battleTick,
+  mendUnits,
+  planRaid,
+  raidsHour,
+  raidsTick,
+  resolveBattle,
+  startHomeBattle,
+} from './systems/raids';
 import { battleReport, expeditionsHour, recallForce, sendForce } from './systems/expeditions';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
@@ -1202,6 +1210,18 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'rival') {
+          if (!this.testMode) return fail('Test mode only');
+          const n = this.state.region.neighbours.find((x) => x.id === cmd.neighbour);
+          if (!n?.rival) return fail('No such rival');
+          if (![cmd.forces, cmd.defences].every((v) => Number.isFinite(v) && v >= 0))
+            return fail('Invalid numbers');
+          if (!dryRun) {
+            n.rival.forces = cmd.forces;
+            n.rival.defences = cmd.defences;
+          }
+          return ok(0);
+        }
         if (cmd.cheat === 'raidIn') {
           if (!this.testMode) return fail('Test mode only');
           const w = this.state.war;
@@ -1334,7 +1354,7 @@ export class Sim {
       case 'battleReport':
         return battleReport(this, cmd.expedition, cmd.result, dryRun);
       case 'battleResolve':
-        return resolveBattle(this, cmd.input, cmd.mode, dryRun);
+        return resolveBattle(this, cmd.input, cmd.mode, dryRun, cmd.replay);
       case 'cancelTraining':
         return cancelTraining(this, cmd.order, dryRun);
       case 'disbandUnit':
@@ -1724,7 +1744,8 @@ export class Sim {
     run('vehicles', () => stepVehicles(this));
     run('incidents', () => incidentsTick(this));
     run('disasters', () => disastersTick(this));
-    // A battle in the city (M35): its steps for this tick, and their damage.
+    // Raids on their way and a battle in the city (M35): warnings, arrivals, the battle's steps.
+    if (s.war?.incoming) run('raids', () => raidsTick(this));
     if (s.war?.battle) run('battle', () => battleTick(this));
     if (t % GROWTH.passInterval === 0) run('growth', () => growthPass(this));
     // Hourly systems, spread over the hour in their usual order (HOURLY_AT).

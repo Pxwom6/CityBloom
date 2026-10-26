@@ -123,13 +123,11 @@ export function ReportCard({ r }: { r: BattleReport }) {
       <li class="war-report" data-testid={`report-${r.id}`}>
         <strong>{head}</strong>
         {day && <span class="muted"> · {day}</span>}
-        <button
-          class="btn"
-          data-testid={`watch-${r.id}`}
-          onClick={() => void game.watchBattle(`exp-${r.id}`)}
-        >
-          Watch
-        </button>
+        {r.replay && (
+          <button class="btn" data-testid={`watch-${r.id}`} onClick={() => void game.watchBattle(r.replay!)}>
+            Watch
+          </button>
+        )}
         <ul>
           <li>
             In {r.other}: {formatNumber(r.away.objectives.down)} of {formatNumber(r.away.objectives.aimed)}{' '}
@@ -149,7 +147,11 @@ export function ReportCard({ r }: { r: BattleReport }) {
     <li class="war-report" data-testid={`report-${r.id}`}>
       <strong>{head}</strong>
       {day && <span class="muted"> · {day}</span>}
-
+      {r.replay && (
+        <button class="btn" data-testid={`watch-${r.id}`} onClick={() => void game.watchBattle(r.replay!)}>
+          Watch
+        </button>
+      )}
       <ul>
         <li>
           Their force: {r.theirLost} of {r.theirTotal} knocked out

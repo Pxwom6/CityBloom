@@ -14,6 +14,7 @@ import { neighbourColour } from '../systems/raids';
 import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
 import { battleLayout } from './layout';
+import { fnv1a } from '../hash';
 import { BATTLE_VERSION, S, type BattleInput, type BattleUnitIn } from './types';
 
 /** From the town's side, where the city's force comes from. */
@@ -33,6 +34,8 @@ export interface AwayCity {
     kind: NeighbourKind;
     population: number;
     rival: RivalNeighbour | null;
+    /** A friend's city in a shared region: its place there (the battle is fought in its save). */
+    slot: number | null;
     colour: number;
   };
 }
@@ -58,7 +61,8 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
       kind: n.kind,
       population: n.population,
       rival: n.rival ? { ...n.rival } : null,
-      colour: neighbourColour(city, n.id),
+      slot: n.player?.slot ?? null,
+      colour: n.player?.color ?? neighbourColour(city, n.id),
     },
   };
 }
@@ -80,7 +84,8 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
   }));
   return {
     v: BATTLE_VERSION,
-    id: `exp-${e.id}`,
+    // Unique across the cities of a region: the city's seed, hashed, and the expedition.
+    id: `exp-${fnv1a(city.seed).slice(0, 8)}-${e.id}`,
     seed,
     scale: 'skirmish',
     layout,

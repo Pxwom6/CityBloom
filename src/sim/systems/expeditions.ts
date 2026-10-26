@@ -20,9 +20,10 @@ import { militaryCivics, militaryOf } from './war';
 export interface Expedition {
   id: number;
   units: number[];
-  /** The neighbour it's raiding (id) and its name. */
+  /** The neighbour it's raiding (id) and its name; a friend's city's place in the region. */
   to: number;
   name: string;
+  slot?: number;
   route: BattleRoute;
   target: BattleTarget;
   stance: Stance;
@@ -47,6 +48,8 @@ export interface AwayResult {
   damaged: number;
   objectives: { aimed: number; down: number };
   hash: string;
+  /** The page's record of the battle, to watch again. */
+  replay?: string;
 }
 
 const ROUTE_DOMAINS: Record<BattleRoute, readonly string[]> = {
@@ -70,9 +73,10 @@ export function sendRefusal(
   if (sim.shared) return 'Sending forces from a shared city comes with war among friends';
   const n = s.region.neighbours.find((x) => x.id === to);
   if (!n) return 'No such neighbour';
-  if (n.player) return 'Raids on friends’ cities come with war among friends';
-  if (!n.rival) return `${n.name} isn’t a rival`;
+  // A friend's city in a shared region (M35): only where the region's rules allow war.
   const rules = s.region.rules;
+  if (n.player && !rules?.war) return 'Your region’s rules don’t allow war';
+  if (!n.player && !n.rival) return `${n.name} isn’t a rival`;
   if (rules && !rules.war) return 'Your region’s rules don’t allow war';
   if (target === 'cityhall') return 'A skirmish can’t strike the city hall: that takes a declared war';
   if (!SKIRMISH.targets.includes(target)) return 'A skirmish strikes military buildings, industry or power';
@@ -126,6 +130,7 @@ export function sendForce(
     units: [...units],
     to,
     name: n.name,
+    ...(n.player ? { slot: n.player.slot } : {}),
     route,
     target,
     stance,
@@ -163,7 +168,11 @@ export function expeditionsHour(sim: Sim): void {
   for (const e of w.expeditions) {
     if (e.state === 'out' && s.tick >= e.arrive) {
       e.state = 'fighting';
-      sim.events.push({ kind: 'forceArrived', id: e.id, info: { to: e.name, neighbour: e.to } });
+      sim.events.push({
+        kind: 'forceArrived',
+        id: e.id,
+        info: { to: e.name, neighbour: e.to, ...(e.slot ? { slot: e.slot } : {}) },
+      });
       sim.warChanged();
     } else if (e.state === 'back' && s.tick >= e.home) {
       for (const id of e.units) {
@@ -224,6 +233,7 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
     sheltered: 0,
     homeless: 0,
     away: { destroyed: r.destroyed, damaged: r.damaged, objectives: r.objectives },
+    ...(typeof r.replay === 'string' ? { replay: r.replay.slice(0, 60) } : {}),
   };
   w.reports = [...(w.reports ?? []), report].slice(-12);
   e.state = 'back';

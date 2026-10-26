@@ -14,6 +14,8 @@ import type { AwayResult } from '../sim/systems/expeditions';
 
 export type BattleJob =
   | { type: 'away'; id: number; spec: TownSpec; city: AwayCity; town: SaveFile | null }
+  /** A friend's city (M35): fought in the save the region keeps of it. */
+  | { type: 'awayCity'; id: number; city: AwayCity; save: SaveFile }
   | { type: 'town'; id: number; spec: TownSpec };
 
 export type BattleJobReply =
@@ -33,6 +35,17 @@ self.onmessage = (ev: MessageEvent<BattleJob>) => {
   try {
     if (job.type === 'town') {
       post({ type: 'town', id: job.id, town: grow(job.id, job.spec).save() });
+      return;
+    }
+    if (job.type === 'awayCity') {
+      const input = awayInput(job.city, Sim.fromSave(job.save));
+      post({
+        type: 'away',
+        id: job.id,
+        input,
+        result: awayResult(input, Battle.run(structuredClone(input))),
+        town: null,
+      });
       return;
     }
     const town = job.town ? Sim.fromSave(job.town) : grow(job.id, job.spec);

@@ -256,6 +256,8 @@ try {
   log('units now', JSON.stringify(await counts()));
   // No tips over the pictures.
   await page.evaluate(() => window.__game.setSettings({ tips: false }));
+  const gotIt = page.getByText('Got it');
+  if (await gotIt.isVisible()) await gotIt.click();
   await daylight();
   const hq = civ('militaryhq');
   if (want('overview') && hq)

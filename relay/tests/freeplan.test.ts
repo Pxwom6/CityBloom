@@ -474,6 +474,56 @@ describe('F8: a region keeps within the free plan', () => {
     region.closed(ada.conn);
   });
 
+  it('keeps a city’s battles a few at once, then one every few minutes, and says each is kept (M35)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('6RWARS', 'local', store, clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const before = store.rowsWritten;
+    for (let i = 0; i < 40; i++) {
+      clock.advance(1000);
+      ada.say({ t: 'battle', to: 2, id: `b${i}`, part: 0, parts: 1, data: `DATA${i}` });
+    }
+    const kept = ada.got.filter((m) => m.t === 'battleKept');
+    expect(kept.length).toBeLessThanOrEqual(REGION_LIMITS.battleBurst);
+    expect(store.rowsWritten - before).toBeLessThanOrEqual(REGION_LIMITS.battleBurst * 3);
+    // One sent again (its acknowledgement lost) is acknowledged again, and not kept twice.
+    ada.say({ t: 'battle', to: 2, id: 'b0', part: 0, parts: 1, data: 'DATA0' });
+    expect(ada.got.filter((m) => m.t === 'battleKept' && m.id === 'b0')).toHaveLength(2);
+    // Sam, playing, got each one kept as it came.
+    expect(sam.got.filter((m) => m.t === 'battle')).toHaveLength(kept.length);
+    // Ten minutes on, another is kept.
+    clock.advance(10 * 60_000);
+    ada.say({ t: 'battle', to: 2, id: 'later', part: 0, parts: 1, data: 'LATER' });
+    expect(ada.got.some((m) => m.t === 'battleKept' && m.id === 'later')).toBe(true);
+    // A force on its way is told to its target only, where war is on.
+    ada.say({ t: 'forceOut', to: 2, units: 7, hours: 6 });
+    expect(sam.got.filter((m) => m.t === 'incoming')).toEqual([
+      { t: 'incoming', from: 1, units: 7, hours: 6 },
+    ]);
+    expect(ada.got.some((m) => m.t === 'incoming')).toBe(false);
+    region.closed(ada.conn);
+    region.closed(sam.conn);
+  });
+
+  it('keeps the leaving save once, even sent again under the same name (M35)', () => {
+    const clock = new FakeClock();
+    const { region, store, ada } = openRegion('6RLST2', clock);
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's0', part: 0, parts: 1, data: 'FIRST' });
+    ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: 'LEAVING', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    const rows = store.rowsWritten;
+    for (let i = 0; i < 10; i++)
+      ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: `AGAIN${i}`, last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    expect(store.rowsWritten).toBe(rows);
+    region.closed(ada.conn);
+  });
+
   it('expires when no city has come back for a long while', () => {
     const clock = new FakeClock();
     const { region, ada } = openRegion('7RQUET', clock);

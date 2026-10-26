@@ -7,6 +7,7 @@ import { regionReport, type RegionReport } from '../../src/sim/systems/region';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
+import { BATTLE_BUSY } from '../../src/sim/systems/raids';
 import type { BattleInput } from '../../src/sim/battle/types';
 import { BState } from '../../src/sim/world/buildings';
 import { buildTown, newSim, placeAlong, serveTown } from '../../tests/helpers';
@@ -93,7 +94,8 @@ async function regionAtWar() {
     battle: async (input, meta) => {
       backdrops.set(meta.id, sim.save());
       taken.push({ input, late: meta.late });
-      return sim.dispatch({ type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch' }).ok;
+      const r = sim.dispatch({ type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch' });
+      return r.ok ? 'taken' : r.reason === BATTLE_BUSY ? 'later' : 'refused';
     },
   });
   const join = async (sim: Sim, mayor: string, color: number, extra: object = {}) => {
@@ -171,6 +173,8 @@ describe('battles between friends (M35)', () => {
     const w = await regionAtWar();
     const { room, ada, sam, la, backdrops, taken, join } = w;
     let ls = w.ls;
+    const kept: string[] = [];
+    la.onBattleKept = (id) => kept.push(id);
     // Sam leaves: the city as it was left is what the region keeps.
     const samSlot = ls.slot;
     const secret = ls.secret;
@@ -218,6 +222,16 @@ describe('battles between friends (M35)', () => {
     expect(r2.collapsed).toEqual(report.collapsed);
     expect(r2.civics).toEqual(report.civics);
     expect(r2.lost).toEqual(report.lost);
+    // The region told Ada it kept the battle. Sent again (as after a lost word), Sam's city knows
+    // it: the region forgets it again and nothing more happens to the city.
+    expect(kept).toEqual([input.id]);
+    const reports = sam.sim.state.war!.reports!.length;
+    const hash = sam.sim.hash();
+    la.sendBattle(samSlot, input);
+    await flush(100);
+    expect(pendingFor(room, samSlot)).toBeUndefined();
+    expect(sam.sim.state.war!.reports!.length).toBe(reports);
+    expect(sam.sim.hash()).toBe(hash);
   }, 240_000);
 
   it('a raid that comes while the city is fighting another waits, and is taken once that one ends', async () => {

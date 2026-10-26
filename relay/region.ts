@@ -100,7 +100,9 @@ export type RegionClientMsg =
    * says it has seen it (its own sim re-runs it and applies the damage).
    */
   | { t: 'battle'; to: number; id: string; part: number; parts: number; data: string }
-  | { t: 'battleSeen'; id: string };
+  | { t: 'battleSeen'; id: string }
+  /** A force set off against another city of the region (M35): it's told, if its player is here. */
+  | { t: 'forceOut'; to: number; units: number; hours: number };
 
 export type RegionRoomMsg =
   | { t: 'rwelcome'; slot: number; secret: string; region: RegionView }
@@ -108,6 +110,10 @@ export type RegionRoomMsg =
   | { t: 'citysave'; slot: number; part: number; parts: number; data: string }
   /** A battle fought against this city (M35); `late`: kept while it was away. */
   | { t: 'battle'; from: number; id: string; part: number; parts: number; data: string; late: boolean }
+  /** The region keeps the battle a city sent until its target has seen it (M35). */
+  | { t: 'battleKept'; id: string }
+  /** Another city's force is on its way to this one (M35): `hours` of the sender's game time. */
+  | { t: 'incoming'; from: number; units: number; hours: number }
   | { t: 'notice'; text: string }
   | {
       t: 'error';
@@ -225,6 +231,9 @@ export interface RegionLimits {
   saveEvery: number;
   /** A connection may read a city's save this often (ms). */
   visitEvery: number;
+  /** A city may send another city a battle this often (ms), with a few at once (M35). */
+  battleEvery: number;
+  battleBurst: number;
   /** Rows the region may write in a UTC day. */
   dailyRows: number;
   /** How long a region nobody comes back to is kept (ms). */
@@ -242,6 +251,8 @@ export const REGION_LIMITS: RegionLimits = {
   keepEvery: 5 * 60_000,
   saveEvery: 10 * 60_000,
   visitEvery: 30_000,
+  battleEvery: 5 * 60_000,
+  battleBurst: 3,
   dailyRows: 3000,
   ttl: 60 * DAY_MS,
   maxConns: 16,
@@ -260,6 +271,7 @@ interface ConnState {
   n: number;
   /** The save of a city whose player is leaving (M35): kept whatever the pace, once a connection. */
   lastSave?: string;
+  lastUsed?: boolean;
 }
 
 const finite = (v: unknown, lo: number, hi: number): v is number =>
@@ -394,6 +406,15 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       };
     case 'battleSeen':
       return typeof m.id === 'string' && /^[\w-]{1,40}$/.test(m.id) ? { t: 'battleSeen', id: m.id } : null;
+    case 'forceOut':
+      return finite(m.to, 1, 64) && finite(m.units, 1, 24) && finite(m.hours, 0, 72)
+        ? {
+            t: 'forceOut',
+            to: m.to as number,
+            units: Math.round(m.units as number),
+            hours: m.hours as number,
+          }
+        : null;
     default:
       return null;
   }
@@ -407,8 +428,9 @@ export class RegionRoom {
   /** Battles coming in, in parts, by sender and id (M35). */
   private battleIn = new Map<string, { parts: (string | null)[]; got: number }>();
   private readonly limits: RegionLimits;
-  /** Each city's allowance of writes. */
+  /** Each city's allowance of writes, and of battles sent (M35). */
   private writes = new Map<number, TokenBucket>();
+  private battles = new Map<number, TokenBucket>();
   /** Changes not yet written, and the timer that will write them. */
   private dirty = false;
   private saveTimer: (() => void) | null = null;
@@ -527,6 +549,16 @@ export class RegionRoom {
     meta.lastActive = now;
     meta.budget = this.budget.record(now);
     this.store.saveMeta(meta);
+  }
+
+  private battlesOf(slot: number): TokenBucket {
+    let b = this.battles.get(slot);
+    if (!b)
+      this.battles.set(
+        slot,
+        (b = new TokenBucket(1000 / this.limits.battleEvery, this.limits.battleBurst, this.env.now())),
+      );
+    return b;
   }
 
   private writesOf(slot: number): TokenBucket {
@@ -720,9 +752,11 @@ export class RegionRoom {
         inc.parts[m.part] = m.data;
         if (inc.got < inc.parts.length) return;
         this.battleIn.delete(key);
-        if (this.budget.over(now)) return;
+        // Sent again (its acknowledgement was lost): kept already.
+        if (target.pending?.some((p) => p.id === m.id)) return conn.send({ t: 'battleKept', id: m.id });
+        // A few at once, then one every few minutes; within the region's day.
+        if (this.budget.over(now) || !this.battlesOf(slot).take(now)) return;
         const pending = (target.pending ??= []);
-        if (pending.some((p) => p.id === m.id)) return;
         // Eight at most: the oldest gives way.
         if (pending.length >= MAX_PENDING_BATTLES) {
           const old = pending.shift()!;
@@ -734,6 +768,7 @@ export class RegionRoom {
         this.store.saveBattle(target.slot, k, parts);
         pending.push({ id: m.id, from: slot, at: now, k });
         this.save();
+        conn.send({ t: 'battleKept', id: m.id });
         // The defender playing now gets it at once (it stays kept until it says it has seen it).
         for (const [c, s] of this.conns)
           if (s.slot === target.slot)
@@ -752,11 +787,18 @@ export class RegionRoom {
         this.save();
         return;
       }
+      case 'forceOut': {
+        // Its target's player hears of it, if they're here (where war is allowed).
+        if (!this.meta.rules?.war || m.to === slot) return;
+        for (const [c, s] of this.conns)
+          if (s.slot === m.to) c.send({ t: 'incoming', from: slot, units: m.units, hours: m.hours });
+        return;
+      }
       case 'save': {
         // Kept at most every so often; parts in between are ignored before they take memory. The
         // save a city sends as its player leaves is kept whatever the pace, once a connection: in a
         // region at war, a raid on an absent friend is fought in the city as it was left (M35).
-        if (m.last && (st.lastSave ?? m.id) === m.id) st.lastSave = m.id;
+        if (m.last && !st.lastUsed && (st.lastSave ?? m.id) === m.id) st.lastSave = m.id;
         else if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
         let inc = this.incoming.get(slot);
         if (!inc || inc.id !== m.id)
@@ -769,6 +811,7 @@ export class RegionRoom {
         inc.parts[m.part] = m.data;
         if (inc.got < inc.parts.length) return;
         this.incoming.delete(slot);
+        if (m.last && st.lastSave === m.id) st.lastUsed = true;
         if (this.budget.over(now)) return;
         this.store.saveCity(slot, inc.parts as string[]);
         const first = !city.saved;

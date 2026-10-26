@@ -24,10 +24,13 @@ export interface CityPort {
   thumb?(): string | null;
   /**
    * A battle another city of the region fought against this one (M35): `late` when it was kept while
-   * this city was away. Resolves true once the city has taken it (the region then forgets it).
+   * this city was away. `taken`: the city has it, saved (the region then forgets it); `later`: not
+   * now (it's offered again); `refused`: never (unreadable, or not from a city of the region).
    */
-  battle?(input: BattleInput, meta: { from: number; id: string; late: boolean }): Promise<boolean>;
+  battle?(input: BattleInput, meta: { from: number; id: string; late: boolean }): Promise<BattleAnswer>;
 }
+
+export type BattleAnswer = 'taken' | 'later' | 'refused';
 
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
 export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
@@ -104,9 +107,14 @@ export class RegionLink {
   private lastThumb = 0;
   onChange: (() => void) | null = null;
   onNotice: ((text: string) => void) | null = null;
-  /** Battles coming in, in parts, and those taken already (M35). */
+  /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
+  onBattleKept: ((id: string) => void) | null = null;
+  onIncoming: ((m: { from: number; units: number; hours: number }) => void) | null = null;
+  /** Battles coming in, in parts (by sender and id), and those taken already (M35). */
   private battlesIn = new Map<string, (string | null)[]>();
   private battlesTaken = new Set<string>();
+  /** Taken and acknowledged: offered again (the word was lost), they're acknowledged again. */
+  private battlesDone = new Set<string>();
   /** Battles the city couldn't take yet (one was on already): tried again with each report. */
   private battlesWaiting = new Map<string, { input: BattleInput; from: number; late: boolean }>();
   sent = { messages: 0, bytes: 0 };
@@ -223,22 +231,32 @@ export class RegionLink {
         return;
       case 'battle': {
         // A battle fought against this city (M35): once whole, the city's own sim re-runs it.
-        let list = this.battlesIn.get(m.id);
+        const key = `${m.from}:${m.id}`;
+        let list = this.battlesIn.get(key);
         if (!list || list.length !== m.parts)
-          this.battlesIn.set(m.id, (list = new Array<string | null>(m.parts).fill(null)));
+          this.battlesIn.set(key, (list = new Array<string | null>(m.parts).fill(null)));
         list[m.part] = m.data;
         if (list.some((x) => x === null)) return;
-        this.battlesIn.delete(m.id);
+        this.battlesIn.delete(key);
+        if (this.battlesDone.has(m.id)) return this.send({ t: 'battleSeen', id: m.id });
         if (this.battlesTaken.has(m.id)) return;
         let input: BattleInput;
         try {
           input = decodeBattle(list as string[]);
         } catch {
+          // Unreadable: it never will be, so the region needn't keep offering it.
+          this.send({ t: 'battleSeen', id: m.id });
           return;
         }
         await this.takeBattle(m.id, { input, from: m.from, late: m.late });
         return;
       }
+      case 'battleKept':
+        this.onBattleKept?.(m.id);
+        return;
+      case 'incoming':
+        this.onIncoming?.({ from: m.from, units: m.units, hours: m.hours });
+        return;
     }
   }
 
@@ -250,12 +268,19 @@ export class RegionLink {
     if (this.battlesTaken.has(id)) return;
     this.battlesTaken.add(id);
     this.battlesWaiting.delete(id);
-    const done = await (this.city.battle?.(b.input, { from: b.from, id, late: b.late }) ?? false);
-    if (done) this.send({ t: 'battleSeen', id });
-    else {
+    const answer = (await this.city.battle?.(b.input, { from: b.from, id, late: b.late })) ?? 'later';
+    if (answer !== 'later') {
+      this.battlesDone.add(id);
+      this.send({ t: 'battleSeen', id });
+    } else {
       this.battlesTaken.delete(id);
       this.battlesWaiting.set(id, b);
     }
+  }
+
+  /** A force of this city's has set off against another city of the region (M35): it's told. */
+  forceOut(to: number, units: number, hours: number): void {
+    this.send({ t: 'forceOut', to, units, hours });
   }
 
   /** Send a battle fought against another city of the region (M35), to keep until it's seen. */

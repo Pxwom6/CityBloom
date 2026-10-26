@@ -10,8 +10,6 @@ const STORE = 'saves';
 /** Custom maps from the map editor (M24), in the same database. */
 export const MAP_STORE = 'maps';
 /** Computer neighbours' towns, grown once and kept (M35), and battles kept for replays. */
-export const TOWN_STORE = 'towns';
-export const BATTLE_STORE = 'battles';
 
 export interface SlotInfo {
   slot: string;
@@ -28,22 +26,23 @@ interface SlotRecord extends SlotInfo {
   data: Uint8Array;
 }
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(version: number | undefined = 2): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    // Version 2 (M24) adds the maps store, version 3 (M35) the towns and battles; saves are untouched.
-    const req = indexedDB.open(DB_NAME, 3);
+    // Version 2 (M24) adds the maps store; saves are untouched. (M35's towns and battles keep a
+    // database of their own, src/client/battles.ts, so this one needn't change.)
+    const req = indexedDB.open(DB_NAME, version);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE))
         req.result.createObjectStore(STORE, { keyPath: 'slot' });
       if (!req.result.objectStoreNames.contains(MAP_STORE))
         req.result.createObjectStore(MAP_STORE, { keyPath: 'id' });
-      if (!req.result.objectStoreNames.contains(TOWN_STORE))
-        req.result.createObjectStore(TOWN_STORE, { keyPath: 'key' });
-      if (!req.result.objectStoreNames.contains(BATTLE_STORE))
-        req.result.createObjectStore(BATTLE_STORE, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB unavailable'));
+    req.onerror = () => {
+      // A newer build in another tab took the database further: open it as it is.
+      if (version !== undefined && req.error?.name === 'VersionError') openDb(undefined).then(resolve, reject);
+      else reject(req.error ?? new Error('IndexedDB unavailable'));
+    };
   });
 }
 

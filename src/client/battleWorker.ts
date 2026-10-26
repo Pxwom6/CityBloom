@@ -38,13 +38,20 @@ self.onmessage = (ev: MessageEvent<BattleJob>) => {
       return;
     }
     if (job.type === 'awayCity') {
-      const input = awayInput(job.city, Sim.fromSave(job.save));
+      // The friend's city as the region keeps it, without a battle of its own going on (its replay
+      // shows only this one), and kept as such for watching again.
+      const town = Sim.fromSave(job.save);
+      if (town.state.war?.battle) {
+        delete town.state.war.battle;
+        town.battleRun = null;
+      }
+      const input = awayInput(job.city, town);
       post({
         type: 'away',
         id: job.id,
         input,
         result: awayResult(input, Battle.run(structuredClone(input))),
-        town: null,
+        town: town.save(),
       });
       return;
     }

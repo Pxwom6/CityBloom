@@ -1201,7 +1201,9 @@ in `src/ui/Battle.tsx`. `docs/plans/M35-design.md` has the numbers' reasoning.
   (as many as there are places); those left out cost approval for three days (`raidMood`).
 - **Hosted in the city** (`WarState.battle`, `HostedBattle`): a raid on the city keeps its input and
   the steps played; `battleTick` steps it with the city, a save mid-battle re-runs the battle to the
-  same step after a load. **Fought elsewhere and resolved here**: the page-only `battleResolve`
+  same step after a load (a battle's checks never depend on when its events are drained, so running
+  it straight through, a tick at a time or again after a load all give the same battle; one that
+  can't be played ends). **Fought elsewhere and resolved here**: the page-only `battleResolve`
   command (`instant` or `watch`) hosts or runs a battle that came from outside (a friend's raid, a
   replay, a neighbour's town being watched); `battleReport` hands an expedition's result to the city
   that sent it.
@@ -1212,7 +1214,9 @@ in `src/ui/Battle.tsx`. `docs/plans/M35-design.md` has the numbers' reasoning.
   `WarState.struck`); its force is a share of its forces by character. Warning: an hour, three more
   per working radar (`warningHours`); travel by route and side (`travelHours`).
 - **Expeditions** (`sendForce`, `recallForce`, `expeditionsHour`): units leave from a working HQ, are
-  `away` until home, and on arrival the city emits `forceArrived`; the page asks the city for
+  `away` until home (not defending, not mending), arrive on the minute (`expeditionsTick`), turn
+  back if the city is shared, come home after 72 game hours with no word of their battle, and can
+  be called back at their target; on arrival the city emits `forceArrived`; the page asks the city for
   `awayCity`, takes the neighbour's town (computer: grown once by the balance mayor in the battle
   worker and kept in IndexedDB `towns`; friend: the region's save of their city), fights in the
   worker (`awayInput`, `awayResult`), keeps the battle (IndexedDB `battles`) and dispatches
@@ -1228,9 +1232,14 @@ in `src/ui/Battle.tsx`. `docs/plans/M35-design.md` has the numbers' reasoning.
   for the defender (`City.pending`, eight at most, stored rows) and forwards it live if they're
   playing; a defender coming back gets it with the welcome (`late`). Their page keeps the city as it
   was (the replay's backdrop), dispatches `battleResolve` (instant when late, watched when live) and
-  answers `battleSeen`, which drops it from the room. The battle runs in the defender's own sim on
-  the layout the attacker saw, so a city that changed since its last save takes the damage that
-  still lands on what's there.
+  answers `battleSeen` once the city is saved, which drops it from the room. The battle runs in the
+  defender's own sim on the layout the attacker saw (`checkBattleInput` first, then `adoptBattle`:
+  only structures matching the city's own picture and its own units at home answer to the battle's
+  ids, the caps are the city's, and `WarState.taken` keeps each battle from being taken twice), so
+  a city that changed since its last save takes the damage that still lands on what's there. The
+  attacker keeps the battle as unsent until the room answers `battleKept` and sends it again at each
+  welcome; a force setting off is announced to its target (`forceOut` → `incoming`). The room allows
+  a city a battle every five minutes after the first three.
 - **Watching** (`?battle=<id>&back=<slot>`): the page saves the city, opens the battle's town (the
   kept backdrop or town) read-only, re-runs the battle there tick by tick (`battleResolve watch`),
   and "Back to my city" reopens the save. In the city, the battle draws through `BattleEffects`

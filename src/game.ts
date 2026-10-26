@@ -23,7 +23,17 @@ import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { loadWarModels } from './client/models';
 import { formatNumber } from './ui/hooks';
-import { AwayBattles, keepBattle, keepTown, type BattleRecord } from './client/battles';
+import {
+  AwayBattles,
+  battlePosted,
+  keepBattle,
+  keepTown,
+  loadBattle,
+  loadTown,
+  unpostedBattles,
+  type BattleRecord,
+} from './client/battles';
+import { BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
@@ -35,7 +45,7 @@ import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
-import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionLink';
+import { RegionLink, type BattleAnswer, type CityPort, type RegionLinkOptions } from './net/regionLink';
 import { P2PHost, p2pConnect } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
@@ -510,16 +520,27 @@ export class Game {
    * A battle a friend's city fought against this one (M35): the city as it stands is kept as the
    * replay's backdrop, then its own sim takes the battle: as it happens while the player is here,
    * all at once if it was fought while they were away (the report then waits in the war room).
+   * The city is saved before the region is told it has the battle, so closing the page never
+   * loses one; a battle offered again (that word was lost) is known and only acknowledged.
    */
   private async takeBattle(
     input: BattleInput,
     meta: { from: number; id: string; late: boolean },
-  ): Promise<boolean> {
-    if (this.readOnly) return false;
+  ): Promise<BattleAnswer> {
+    if (this.readOnly) return 'later';
+    // Only from a city of the region, and named as the region names it.
+    const sender = this.region?.view?.cities.find((c) => c.slot === meta.from);
+    if (!sender || typeof input !== 'object' || !input?.attacker) return 'refused';
+    input = { ...input, attacker: { ...input.attacker, name: sender.name } };
     const id = `def-${input.id}`.slice(0, 60);
     const cmd = { type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch', replay: id } as const;
-    // Not now (a battle is on in the city already): the region link tries again later.
-    if (!(await this.client.preview(cmd)).ok) return false;
+    const pre = await this.client.preview(cmd);
+    if (!pre.ok) {
+      if (pre.reason === BATTLE_BUSY) return 'later';
+      if (pre.reason === BATTLE_TAKEN)
+        return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
+      return 'refused';
+    }
     try {
       const backdrop = await this.client.save();
       await keepTown(`replay:${id}`, backdrop);
@@ -536,14 +557,21 @@ export class Game {
       /* the replay is a nicety: the battle still counts */
     }
     const r = await this.client.command(cmd);
-    if (!r.ok) return false;
+    if (!r.ok) return r.reason === BATTLE_BUSY ? 'later' : 'refused';
     if (meta.late)
       this.notice(
         `late:${id}`,
         `While you were away, ${input.attacker.name} raided the city. The war room has the report, and you can watch it.`,
         'bad',
       );
-    return true;
+    return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
+  }
+
+  /** Battles against friends' cities the region hasn't confirmed it keeps: sent again (M35). */
+  private async repostBattles(): Promise<void> {
+    const link = this.region;
+    if (!link) return;
+    for (const r of await unpostedBattles()) if (r.postTo !== undefined) link.sendBattle(r.postTo, r.input);
   }
 
   /** A small picture of the city as the camera sees it, for the region view. */
@@ -657,6 +685,19 @@ export class Game {
     this.regionCode = code;
     this.regionKey = key;
     link.onNotice = (t) => this.toast(t, 'info', 4500);
+    // Battles between friends (M35): sent again until the region keeps them; a friend's force on
+    // its way is announced, with the siren.
+    link.onBattleKept = (id) => void battlePosted(id);
+    link.onIncoming = ({ from, units, hours }) => {
+      const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
+      this.notice(
+        `incoming:${from}`,
+        `Sirens! ${who} is sending ${units} units against the city: about ${hours} hours of their time away.`,
+        'bad',
+      );
+      this.audio?.play('raid');
+    };
+    let welcomed = false;
     // Until it's in, a failure is the caller's to report (one toast, not two).
     let started = false;
     link.onChange = () => {
@@ -669,6 +710,11 @@ export class Game {
           ...(hosted ? { hosted } : {}),
         };
       }
+      // Each time it's in (again), battles the region hasn't confirmed are sent again.
+      if (link.state === 'in' && !welcomed) {
+        welcomed = true;
+        void this.repostBattles();
+      } else if (link.state !== 'in') welcomed = false;
       if (link.state === 'closed' && this.region === link) {
         if (link.error && started) this.toast(link.error, 'bad', 8000);
         // The region shut for good (its host left it): the city's saves no longer name it (F10).
@@ -1777,6 +1823,12 @@ export class Game {
    * page, read-only, where the battle plays out again. "Back to my city" reopens the save.
    */
   async watchBattle(id: string): Promise<void> {
+    // Only when this browser keeps the battle and its town: otherwise there's nothing to show.
+    const rec = await loadBattle(id);
+    if (!rec || (rec.townKey && !(await loadTown(rec.townKey)))) {
+      this.toast('That battle’s replay isn’t kept in this browser.', 'info');
+      return;
+    }
     const slot = this.slot ?? 'auto';
     if (!this.readOnly && !(await this.saveTo(slot, undefined, true))) {
       this.toast('The city couldn’t be saved first, so the battle can’t be shown now.', 'bad');

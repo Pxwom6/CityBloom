@@ -268,6 +268,15 @@ async function boot(): Promise<void> {
             ? await shippedSave('demo.citybloom')
             : null;
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
+  // A battle this browser doesn't keep (or whose town won't open): back to the city it came from,
+  // never a fresh city in its place (which would autosave over the player's).
+  if (battleId && !(battleRecord && battleTown && opened)) {
+    const back = params.get('back');
+    location.replace(
+      back ? `${location.pathname}?load=${encodeURIComponent(back)}&noreplay=1` : location.pathname,
+    );
+    return;
+  }
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
   const snap = joined
@@ -308,7 +317,12 @@ async function boot(): Promise<void> {
     // The battle again, in the town's own sim: its fires and rubble, then its repairs.
     game.readOnly = true;
     game.viewing = { record: battleRecord, back: params.get('back') };
-    await client.command({ type: 'battleResolve', input: battleRecord.input, mode: 'watch' });
+    const shown = await client.command({ type: 'battleResolve', input: battleRecord.input, mode: 'watch' });
+    if (!shown.ok) {
+      // Nothing to show here after all (another version's battle, say): say why, and go back.
+      game.toast(`That battle can’t be shown: ${shown.reason}.`, 'info', 6000);
+      setTimeout(() => game.backToCity(), 3000);
+    }
     game.setSpeed(1);
     game.setCamera('overview', true);
     setTimeout(() => game.followBattle(), 1500);
@@ -369,6 +383,9 @@ async function boot(): Promise<void> {
     // re-creating this city from scratch.
     if (params.has('new') || params.has('load') || scenario)
       history.replaceState(null, '', location.pathname);
+    // Back from a battle this browser doesn't keep (M35).
+    if (params.get('noreplay') === '1')
+      game.toast('That battle’s replay isn’t kept in this browser.', 'info', 6000);
     // Founded or opened to share with friends (the lobby's Host buttons, M30).
     const host = params.get('host');
     if (host === 'online' || host === 'p2p') void game.hostRoom(host);

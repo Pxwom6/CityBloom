@@ -55,6 +55,18 @@ export function encodeBattle(input: BattleInput): string[] {
   return parts.length ? parts : [''];
 }
 
+/** How big a battle may be once unpacked (a big city's picture is a few MB). */
+export const BATTLE_MAX_BYTES = 24 * 1024 * 1024;
+
+/**
+ * A battle off the wire: refused before unpacking when its gzip trailer says it's too big, and
+ * unpacked into a buffer of that size alone, so a crafted one can't fill the page's memory.
+ */
 export function decodeBattle(parts: string[]): BattleInput {
-  return JSON.parse(strFromU8(gunzipSync(base64ToBytes(parts.join(''))))) as BattleInput;
+  const bytes = base64ToBytes(parts.join(''));
+  if (bytes.length < 18) throw new Error('Not a battle');
+  const n = bytes.length;
+  const size = (bytes[n - 4]! | (bytes[n - 3]! << 8) | (bytes[n - 2]! << 16) | (bytes[n - 1]! << 24)) >>> 0;
+  if (size > BATTLE_MAX_BYTES) throw new Error('That battle is too big');
+  return JSON.parse(strFromU8(gunzipSync(bytes, { out: new Uint8Array(size) }))) as BattleInput;
 }

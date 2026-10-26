@@ -225,7 +225,11 @@ const ROUTE_DOMAINS: Record<BattleRoute, string[]> = {
 export function SendForce() {
   const game = useGameUpdates(400);
   const w = game.world.stats.war;
-  const rivals = game.world.stats.region.neighbours.filter((n) => n.rival && !n.player);
+  // Computer rivals, and friends' cities where the region's rules allow war.
+  const war = !!game.region?.view?.rules.war;
+  const rivals = game.world.stats.region.neighbours.filter(
+    (n) => (n.rival && !n.player) || (n.player && war),
+  );
   const [to, setTo] = useState<number | null>(rivals[0]?.id ?? null);
   const [target, setTarget] = useState<BattleTarget>('military');
   const [route, setRoute] = useState<BattleRoute>('highway');
@@ -254,6 +258,8 @@ export function SendForce() {
     const r = await game.dispatch({ type: 'sendForce', units: chosen, to: n.id, route, target, stance });
     setWhy(r.ok ? null : r.reason);
     if (r.ok) setPicked({});
+    // A friend hears of it, if they're playing.
+    if (r.ok && n.player) game.region?.forceOut(n.player.slot, chosen.length, hours);
   };
   return (
     <div class="war-send" data-testid="war-send-form">
@@ -272,7 +278,9 @@ export function SendForce() {
         >
           {rivals.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.name} (forces {formatNumber(r.rival!.forces)}, defences {formatNumber(r.rival!.defences)})
+              {r.rival
+                ? `${r.name} (forces ${formatNumber(r.rival.forces)}, defences ${formatNumber(r.rival.defences)})`
+                : `${r.name} (${r.player?.mayor ?? 'a friend'}’s city)`}
             </option>
           ))}
         </select>
@@ -377,7 +385,7 @@ export function SendForce() {
                   : e.state === 'fighting'
                     ? `fighting in ${e.name}`
                     : `coming home from ${e.name}: ${left.toFixed(1)} h`}
-                {e.state === 'out' && (
+                {e.state !== 'back' && (
                   <button
                     class="btn"
                     data-testid={`recall-${e.id}`}
@@ -401,7 +409,7 @@ export function RegionMap() {
   const w = game.world.stats.war;
   if (!w) return null;
   const tick = game.world.displayTick;
-  const ns = game.world.stats.region.neighbours.filter((n) => !n.player);
+  const ns = game.world.stats.region.neighbours;
   const at: Record<string, { x: number; y: number }> = {};
   const sides: Record<string, typeof ns> = { north: [], south: [], west: [] };
   for (const n of ns) sides[n.side]?.push(n);

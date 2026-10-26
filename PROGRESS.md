@@ -260,6 +260,15 @@ Left for M36:
 2. M37–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
+## Performance (M36)
+- **Balance** (`npx tsx scripts/balance.ts 20` on `main` and this branch back to back): careful, greedy
+  and neglectful line for line the same as `main` (only the run times differ).
+- **Cross-browser**: `xbrowser.yml` (Chromium, WebKit, real Firefox) green on 5152368 and after,
+  with the determinism script's new diplomacy section (every diplomacy command: a proposal taken
+  back, neutrality on and off, a declared war, a treaty with tribute and an occupied district, a
+  pact broken, a district bought back).
+- **E2e**: `e2e/m36-diplomacy.spec.ts` passed (3.3 min) through the war room's Diplomacy tab.
+
 ## Performance (M35)
 - **Balance** (`npx tsx scripts/balance.ts 20`, branch and `main` back to back): careful, greedy and
   neglectful line for line the same as `main` (only the run times differ), with raids decided by

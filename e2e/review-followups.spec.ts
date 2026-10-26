@@ -1,4 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
+import { closeContextsAfterEach, newContext } from './helpers';
+
+closeContextsAfterEach();
 
 /**
  * The multiplayer review follow-ups that only a real page shows (docs/DECISIONS.md, "Multiplayer
@@ -152,7 +155,7 @@ test('F12: an invite link asks for a name, checks the graphics and says what itâ
 }) => {
   test.setTimeout(420_000);
   // Ada shares her city in an online room.
-  const actx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  const actx = await newContext(browser, { viewport: { width: 960, height: 640 } });
   await actx.addInitScript(() => {
     localStorage.setItem('citybloom.player', JSON.stringify({ name: 'Ada', color: 0 }));
     localStorage.setItem(
@@ -171,7 +174,7 @@ test('F12: an invite link asks for a name, checks the graphics and says what itâ
   const invite = (await ada.evaluate(() => window.__game!.getNet()))!.invite;
 
   // Sam opens the link on a fresh browser: no name yet, graphics never checked.
-  const sctx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  const sctx = await newContext(browser, { viewport: { width: 960, height: 640 } });
   await sctx.addInitScript(() => {
     // What the boot screen says as it goes.
     const seen: string[] = [];

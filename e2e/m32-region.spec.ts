@@ -1,6 +1,8 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { buildTownViaApi, openGame, serveTownViaApi } from './helpers';
+import { buildTownViaApi, closeContextsAfterEach, newContext, openGame, serveTownViaApi } from './helpers';
 import { placeFromToolbar } from './ui';
+
+closeContextsAfterEach();
 
 /**
  * M32, shared regions, through the interface: Ada starts a region from her city's Region panel and
@@ -9,7 +11,7 @@ import { placeFromToolbar } from './ui';
  * giver) builds; Sam looks round Ada's city read-only.
  */
 async function player(browser: Browser, name: string, color: number): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await newContext(browser, { viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(
     ([n, c]) => {
       localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));

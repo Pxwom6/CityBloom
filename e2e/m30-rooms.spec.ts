@@ -1,5 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { openGame, shot } from './helpers';
+import { closeContextsAfterEach, newContext, openGame, shot } from './helpers';
+
+closeContextsAfterEach();
 
 /**
  * M30, rooms online and peer-to-peer, through real pages: a host shares a city from the pause
@@ -13,7 +15,7 @@ test.describe.configure({ mode: 'serial' });
 const QUERY = '&seed=rooms&preset=river&name=Roomsby';
 
 async function newPage(browser: Browser, name: string, color: number): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  const ctx = await newContext(browser, { viewport: { width: 960, height: 640 } });
   ctx.on('console', (m) => {
     if (m.type() === 'error' || m.text().startsWith('[p2p')) console.log(`[${name}] ${m.text()}`);
   });

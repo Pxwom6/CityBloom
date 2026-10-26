@@ -1,4 +1,31 @@
-import { expect, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type Page,
+} from '@playwright/test';
+
+/** Contexts a multi-page spec opened itself, closed after each test by `closeContextsAfterEach`. */
+const opened: BrowserContext[] = [];
+
+/** A browser context of a spec's own (another player), closed after the test even if it fails. */
+export async function newContext(browser: Browser, options: BrowserContextOptions): Promise<BrowserContext> {
+  const ctx = await browser.newContext(options);
+  opened.push(ctx);
+  return ctx;
+}
+
+/**
+ * Close every context `newContext` opened after each test, passed or failed: a failed spec's pages
+ * left running slow the next spec into a timeout on a software renderer.
+ */
+export function closeContextsAfterEach(): void {
+  test.afterEach(async () => {
+    for (const c of opened.splice(0)) await c.close().catch(() => undefined);
+  });
+}
 
 /** Collects console errors and unhandled rejections; call `check()` at the end of a test. */
 export function watchErrors(page: Page): { errors: string[]; check: () => void } {

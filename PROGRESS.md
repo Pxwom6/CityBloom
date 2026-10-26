@@ -211,9 +211,11 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Nothing: phase 4 is done. The owner: merge #17 (M29), #18 (M30), #19 (M31), #20 (M32) and M33's
-pull request in order, set up Cloudflare (above) for online rooms, then try a shared city with a
-friend on another computer and a phone ("To check on the Mac").
+Nothing: the multiplayer review's follow-ups (F1–F14 and the minor items) are done on `m33-ready`
+and `multiplayer` (the same commits, pushed from a cloud session; PR #21 carries them). The owner:
+review them, merge #17–#21 in order, set up Cloudflare (above) for online rooms, then run the e2e
+specs the cloud VM couldn't and try a shared city with a friend on another computer and a phone
+("To check on the Mac").
 
 ## Next tasks
 1. The real-device checks for multiplayer ("To check on the Mac"), then the balance round below.
@@ -467,6 +469,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
+  the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
+  machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
+  software-rendered pages that replay sometimes never catches the room up (m30-rooms, m31-together,
+  the Trystero spec's join): seen on the original M33 tip too. Worth a look on a slow phone; if it
+  shows, the room could wait for a joiner within a limit, or the pacer could settle off the main
+  thread's frame budget.
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
@@ -867,6 +876,21 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
+  app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
+  to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),
+  review-followups (F4, F5, F6, F12) pass. **Failed in the VM**, to run on the Mac: m30-rooms online
+  (Sam never reached "playing"; the original M33 tip fails the same way here), m30-lobby (timed out
+  joining; the original tip too), f2-trystero (the joining page stopped answering for 30 s after
+  boot; the same join from a plain script got in within 6 s), and m30-rooms p2p (didn't run after
+  online failed). m31-together failed in the full batch only because m30's failed pages were left
+  running; multi-page specs now close their contexts after every test (`newContext`,
+  `closeContextsAfterEach` in `e2e/helpers.ts`). The joins are described under Known issues.
+- The rest of the e2e suite wasn't run in the cloud (the owner's instruction): everything except
+  the specs above, including review-legacy (now four saves with v24), the fix-layout and fixes-ui
+  specs (eight of their tests fail in the cloud on `main` too), and the playthroughs.
+- Cross-browser: real Firefox (142) and WebKit (26) pass on GitHub (`xbrowser.yml`); the cloud VM
+  can't download them (Playwright's download hosts and archive.mozilla.org are blocked there).
 - Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
   `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
   WebKit results.

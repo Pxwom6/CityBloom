@@ -216,6 +216,7 @@ import {
   trainUnit,
   warHour,
   warSummary,
+  type WarSummary,
 } from './systems/war';
 import { rectsOverlap, type ORect } from './geom';
 import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
@@ -798,6 +799,21 @@ export class Sim {
 
   warChanged(): void {
     this.warDirty = true;
+    this.warStatsAt = -1;
+  }
+
+  /** The forces' figures for the page, worked out at most once a tick (frames ask 20 times a second). */
+  private warStatsAt = -1;
+  private warStatsCache: WarSummary | null = null;
+
+  private warStats(): WarSummary | null {
+    if (!this.state.war) return null;
+    const key = this.state.tick * 1_000_003 + this.log.length;
+    if (this.warStatsAt !== key) {
+      this.warStatsCache = warSummary(this, (c) => extractionPerDay(this, c));
+      this.warStatsAt = key;
+    }
+    return this.warStatsCache;
   }
 
   /** Roads were damaged, repaired, flooded or drained: routing and everything built on it changes. */
@@ -1840,7 +1856,7 @@ export class Sim {
             editor: !!this.state.options.editor,
           }
         : null,
-      war: warSummary(this, (c) => extractionPerDay(this, c)),
+      war: this.warStats(),
     };
   }
 

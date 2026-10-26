@@ -11,7 +11,9 @@ import type {
   VehicleData,
   DisasterData,
   DistrictData,
+  ForceData,
 } from '../sim/protocol';
+import { TICKS_PER_HOUR } from '../sim/time';
 import { Network, type NetworkState, type RoadSegment, type ZoneBlock } from '../sim/world/network';
 import { SpatialHash, type Box } from '../sim/world/spatial';
 import { roadIslands, type RoadIsland } from '../sim/world/islands';
@@ -100,6 +102,13 @@ export class ClientWorld {
   /** Disasters under way, damaged and flooded roads, craters (bumped version on change). */
   disasters: DisasterData = { active: [], damaged: [], flooded: [], craters: [] };
   disastersVersion = 0;
+  /**
+   * The city's forces (M34): every unit and the training at each base, and the tick they came at
+   * (training bars extrapolate from it). Null with war off.
+   */
+  forces: ForceData | null = null;
+  forcesTick = 0;
+  forcesVersion = 0;
   /** Recent sim events (built, abandoned, ...) for notifications and sounds. */
   events: { kind: string; id: number; info?: Record<string, number | string> }[] = [];
   /** Fractional tick, advanced smoothly between frames for lighting. */
@@ -132,6 +141,24 @@ export class ClientWorld {
     this.setTransit(snap.transit);
     this.setDisasters(snap.disasters);
     this.setDistricts(snap.districts);
+    this.forces = snap.forces ?? null;
+    this.forcesTick = snap.stats.tick;
+  }
+
+  /** Units based at a building (M34). */
+  unitsAt(base: number): ForceData['units'] {
+    return this.forces?.units.filter((u) => u.base === base) ?? [];
+  }
+
+  /** Training at a building, oldest (the one in progress) first (M34). */
+  ordersAt(base: number): ForceData['orders'] {
+    return this.forces?.orders.filter((o) => o.base === base) ?? [];
+  }
+
+  /** How far along a unit in training is (0–1), carried on from the last roster at its rate. */
+  orderProgress(o: ForceData['orders'][number]): number {
+    const hours = (this.displayTick - this.forcesTick) / TICKS_PER_HOUR;
+    return Math.max(0, Math.min(1, (o.done + o.rate * Math.max(0, hours)) / o.hours));
   }
 
   /** Bumped whenever snow on any road changes (M22); segments carry `snow`. */
@@ -532,6 +559,17 @@ export class ClientWorld {
     if (diff.vehicles) {
       this.vehicles = diff.vehicles;
       this.vehiclesTick = diff.tick;
+    }
+    if (diff.forces) {
+      this.forces = diff.forces;
+      this.forcesTick = diff.tick;
+      this.forcesVersion++;
+      this.emit('forces');
+    } else if (!diff.stats.war && this.forces) {
+      // War switched off (a region's rules): the roster goes.
+      this.forces = null;
+      this.forcesVersion++;
+      this.emit('forces');
     }
     if (diff.traffic) {
       this.setTraffic(diff.traffic);

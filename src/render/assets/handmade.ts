@@ -12,6 +12,7 @@ import {
   UNIT_GLOW,
   UNIT_SHOP,
   type BakedModel,
+  type BakedUnit,
 } from '../../models/baked';
 import { ROLES, type Role } from '../../models/spec';
 import { SURF_GRASS, SURF_HEDGE, modelRng, type ModelData } from './builder';
@@ -824,8 +825,39 @@ export function buildHandModel(
 /** Hand-made designs by what they stand for. */
 export class HandmadeModels {
   private designs = new Map<string, BakedModel[]>();
+  /**
+   * The war models (M34), loaded from their own file only in a city with war on: the military
+   * buildings' designs (kept apart, so the main file arriving later doesn't drop them) and units.
+   */
+  private warDesigns = new Map<string, BakedModel[]>();
+  private units = new Map<string, BakedUnit>();
   /** Goes up whenever the set of models changes: caches built from it are stale. */
   version = 0;
+
+  /** Add the war models file's buildings and units (M34). */
+  setWar(models: BakedModel[], units: BakedUnit[]): void {
+    this.warDesigns.clear();
+    for (const m of models) {
+      const k = `${m.kind}:${m.def}`;
+      let list = this.warDesigns.get(k);
+      if (!list) this.warDesigns.set(k, (list = []));
+      list.push(m);
+    }
+    for (const list of this.warDesigns.values()) list.sort((a, b) => a.design - b.design);
+    this.units.clear();
+    for (const u of units) this.units.set(u.kind, u);
+    this.version++;
+  }
+
+  /** A unit's hand-made model (M34), or null for its generated look. */
+  unit(kind: string): BakedUnit | null {
+    return this.units.get(kind) ?? null;
+  }
+
+  /** Units with a hand-made model. */
+  get unitCount(): number {
+    return this.units.size;
+  }
 
   set(models: BakedModel[]): void {
     this.designs.clear();
@@ -842,16 +874,18 @@ export class HandmadeModels {
   get count(): number {
     let n = 0;
     for (const l of this.designs.values()) n += l.length;
+    for (const l of this.warDesigns.values()) n += l.length;
     return n;
   }
 
   /** Every design, by kind and what it stands for. */
   list(): BakedModel[] {
-    return [...this.designs.values()].flat();
+    return [...this.designs.values(), ...this.warDesigns.values()].flat();
   }
 
   all(kind: BakedModel['kind'], def: string): BakedModel[] {
-    return this.designs.get(`${kind}:${def}`) ?? [];
+    const k = `${kind}:${def}`;
+    return this.designs.get(k) ?? this.warDesigns.get(k) ?? [];
   }
 
   /** A design stands on a lot as wide as it, or twice or three times as wide, and no shallower. */

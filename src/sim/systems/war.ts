@@ -252,7 +252,10 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
       w.orders.delete(o.id);
       continue;
     }
+    const was = o.done;
     o.done = round3(o.done + trainingRate(sim, c, o.kind) * step);
+    // The page's training bars follow the roster: send it again as training moves on.
+    if (o.done !== was) sim.warChanged();
     if (o.done + 1e-9 >= def.hours) {
       w.orders.delete(o.id);
       const id = sim.state.nextId++;

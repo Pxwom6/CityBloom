@@ -8,7 +8,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { MODULE, modulesFor } from '../data/modules';
 import { DENSITY_NAMES, INDUSTRY_TIER_NAMES, WEALTH_NAMES, ZONED_DEFS } from '../data/buildings';
 import type { BuildingDetails, CivicDetails } from '../sim/protocol';
-import { formatNumber, useGameUpdates } from './hooks';
+import { formatNumber, useGame, useGameUpdates } from './hooks';
+import { PLAYER_COLORS } from '../../relay/protocol';
 import { modKey } from '../client/platform';
 import { moveFee } from '../sim/world/civic';
 import { IconBulldozer, IconMove } from './icons';
@@ -323,6 +324,7 @@ function RoadInspector({ id }: { id: number }) {
             {rt.name}
             {seg.oneway ? ` · one-way ${heading(seg.oneway)}` : ''}
           </div>
+          <BuiltBy id={id} />
         </div>
         <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
           ×
@@ -647,6 +649,28 @@ function CarInspector({ id, walker = false }: { id: number; walker?: boolean }) 
   );
 }
 
+/** In a shared city: who built it (M31). */
+function BuiltBy({ id }: { id: number }) {
+  const game = useGame();
+  const [by, setBy] = useState<number | null>(null);
+  const shared = !!game.net;
+  useEffect(() => {
+    if (!shared) return;
+    let live = true;
+    void game.client.query<number | null>({ type: 'builtBy', id }).then((r) => live && setBy(r));
+    return () => {
+      live = false;
+    };
+  }, [id, game, shared]);
+  const p = by ? game.net?.session.players.find((x) => x.id === by) : null;
+  if (!p) return null;
+  return (
+    <div class="sub built-by" data-testid="built-by">
+      <span class="player-dot" style={{ background: PLAYER_COLORS[p.color] }} /> Built by {p.name}
+    </div>
+  );
+}
+
 function CivicInspector({ id }: { id: number }) {
   const game = useGameUpdates(200);
   const [d, setD] = useState<CivicDetails | null>(null);
@@ -675,6 +699,7 @@ function CivicInspector({ id }: { id: number }) {
             })()}
           </div>
           <div class="sub">{d.blurb}</div>
+          <BuiltBy id={d.id} />
         </div>
         <button class="btn icon" aria-label="Close" onClick={() => game.select(null)}>
           ×

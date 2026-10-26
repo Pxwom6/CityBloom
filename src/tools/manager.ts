@@ -159,6 +159,7 @@ export class ToolManager {
   }
 
   private onMove(e: PointerEvent): void {
+    if (e.isPrimary) this.game.pointerAt(e.clientX, e.clientY);
     if (this.game.photo || !e.isPrimary || this.pinch) return;
     if (this.game.renderer.controller.isDragging && !this.active.usesLeftDrag) return;
     this.active.pointerMove(this.pointer(e));

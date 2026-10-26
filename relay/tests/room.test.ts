@@ -176,4 +176,20 @@ describe('a room (M30), with headless players', () => {
     host.driver.frozen = false;
     await until(() => host.session.isPacer, 10_000, 'Ada to take the clock back');
   }, 60_000);
+
+  it("a joiner isn't left waiting on a pacer whose game has frozen", async () => {
+    const room = makeRoom('FRZNAB');
+    const host = player('Ada', loopTo(room), hostTown(), { create: { cityName: 'Roomford' } });
+    players.push(host);
+    await host.session.start();
+    host.session.setSpeed(1);
+    await until(() => host.driver.tick > hostTown().tick + 100, 10_000, 'some time');
+    host.driver.frozen = true;
+    const kit = player('Kit', loopTo(room), null);
+    players.push(kit);
+    const t0 = performance.now();
+    await kit.session.start();
+    expect(performance.now() - t0).toBeGreaterThan(7000);
+    expect(kit.driver.sim.state.cityName).toBe('Roomford');
+  }, 60_000);
 });

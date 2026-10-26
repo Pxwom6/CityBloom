@@ -11,15 +11,18 @@ import { SPEED_TICKS_PER_SECOND } from '../sim/time';
 import { MAX_CLOCK_STEP } from '../../relay/room';
 import {
   PROTOCOL_VERSION,
+  type AdminAction,
   type ClientMsg,
   type CreateRoom,
   type PlayerInfo,
+  type Presence,
   type RoomInfo,
   type RoomMsg,
   type Speed,
 } from '../../relay/protocol';
 import type { SharedMessage } from '../client/simClient';
 import type { SimDriver } from './driver';
+import type { Permission } from '../sim/rules';
 import type { Link } from './link';
 import { decodeSnapshot, encodeSnapshot, SnapshotAssembler } from './snapshot';
 
@@ -86,6 +89,9 @@ export class RoomSession {
   sent = { messages: 0, bytes: 0 };
   received = { messages: 0, bytes: 0 };
 
+  /** Where the others are and what they're doing (M31), with when it was heard (ms). */
+  readonly presence = new Map<number, Presence & { heard: number }>();
+  onPing: ((from: number, at: [number, number]) => void) | null = null;
   onChange: (() => void) | null = null;
   onNotice: ((n: NetNotice) => void) | null = null;
   /** Every command the room ordered, once this sim applied it (for "who did what"). */
@@ -262,6 +268,7 @@ export class RoomSession {
       case 'players': {
         const before = new Map(this.players.map((p) => [p.id, p]));
         this.players = m.list;
+        for (const p of m.list) if (!p.online) this.presence.delete(p.id);
         for (const p of m.list) {
           const was = before.get(p.id);
           if (p.id === this.you) continue;
@@ -272,6 +279,14 @@ export class RoomSession {
         this.changed();
         return;
       }
+      case 'here': {
+        const { t: _t, from, ...rest } = m;
+        this.presence.set(from, { ...rest, heard: this.now() });
+        return;
+      }
+      case 'ping':
+        this.onPing?.(m.from, m.at);
+        return;
       case 'ticks':
         for (const [id, tick] of m.ticks) {
           const p = this.players.find((x) => x.id === id);
@@ -443,6 +458,15 @@ export class RoomSession {
     });
   }
 
+  /** Tell the others where this player is and what they're doing (the caller keeps it sparing). */
+  sendPresence(p: Presence): void {
+    if (this.state === 'playing') this.send({ t: 'here', ...p });
+  }
+
+  ping(at: [number, number]): void {
+    this.send({ t: 'ping', at });
+  }
+
   setSpeed(speed: Speed): void {
     this.send({ t: 'speed', speed });
   }
@@ -451,7 +475,16 @@ export class RoomSession {
     this.send({ t: 'chat', text });
   }
 
-  admin(action: 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick', player?: number): void {
+  /** The host: what a player may do, or the spending limit (M31). */
+  setPermissions(player: number, perms: Permission[]): void {
+    this.send({ t: 'rules', player, perms });
+  }
+
+  setSpendLimit(limit: number | null): void {
+    this.send({ t: 'rules', spendLimit: limit });
+  }
+
+  admin(action: AdminAction, player?: number): void {
     this.send({ t: 'admin', action, ...(player ? { player } : {}) });
   }
 

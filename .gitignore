@@ -16,3 +16,4 @@ dist-batch1
 dist-*
 .cache
 .wrangler
+dist-coop

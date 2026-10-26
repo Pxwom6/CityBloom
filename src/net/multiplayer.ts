@@ -8,6 +8,8 @@ import type { SimDriver } from './driver';
 import { webSocketLink, type Link } from './link';
 import { P2PHost, p2pConnect, type Signalling } from './p2p';
 import { RoomSession, type SessionOptions } from './session';
+import { writeSlot } from '../client/saves';
+import { decodeSnapshot } from './snapshot';
 import { keepRoomCredentials, roomCredentials, type Profile } from '../client/profile';
 
 /** The online relay's address from the build (`VITE_RELAY_URL`), or null when none is set up. */
@@ -66,7 +68,17 @@ export class Multiplayer {
       if (!url) throw new Error("Online rooms aren't set up yet: host on this computer instead");
       connect = () => webSocketLink(`${url}/room/${code}`);
     } else {
-      host = new P2PHost(code, signalling());
+      // The city lives in this browser: each snapshot the room keeps is saved here too.
+      host = new P2PHost(code, signalling(), (s) => {
+        try {
+          const snap = decodeSnapshot(s.parts);
+          void writeSlot(`room${code}`, snap.save, `Shared: ${snap.save.meta.cityName}`).catch(
+            () => undefined,
+          );
+        } catch {
+          /* a part that won't decode: the next snapshot will do */
+        }
+      });
       await host.listen();
       connect = () => host!.connectSelf();
     }

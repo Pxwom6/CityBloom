@@ -17,8 +17,10 @@ import {
   type RoomInfo,
   type RoomMsg,
   type SnapshotMeta,
+  type AdminAction,
   type Speed,
 } from './protocol';
+import { may, roomRefusal, type SharedRules } from '../src/sim/rules';
 
 export interface Conn {
   send(msg: RoomMsg): void;
@@ -125,7 +127,17 @@ export class Room {
     private readonly store: RoomStore,
     private readonly env: RoomEnv,
   ) {
-    this.info = { code, kind, locked: false, chat: true, speed: 1, pacer: 0, cityName: '' };
+    this.info = {
+      code,
+      kind,
+      locked: false,
+      chat: true,
+      speed: 1,
+      pacer: 0,
+      cityName: '',
+      rules: { perms: {}, host: 0, spendLimit: null },
+      muted: [],
+    };
     const meta = store.loadMeta();
     if (meta) this.restore(meta);
   }
@@ -146,7 +158,12 @@ export class Room {
 
   private restore(meta: RoomMeta): void {
     this.restored = true;
-    this.info = { ...meta.info, pacer: 0 };
+    this.info = {
+      ...meta.info,
+      pacer: 0,
+      rules: meta.info.rules ?? { perms: {}, host: 0, spendLimit: null },
+      muted: meta.info.muted ?? [],
+    };
     for (const p of meta.players)
       this.players.set(p.id, { ...p, visible: false, joining: false, conn: null });
     this.nextPlayer = meta.nextPlayer;
@@ -253,6 +270,7 @@ export class Room {
       if (this.exists) return this.reject(conn, 'exists', 'That room code is taken');
       const p = this.addPlayer(conn, m.name, m.color, true);
       this.info.cityName = m.create.cityName;
+      this.info.rules.host = p.id;
       this.info.pacer = p.id;
       p.joining = true;
       conn.send(this.welcome(p, 'upload'));
@@ -338,6 +356,11 @@ export class Room {
           p.conn?.send({ t: 'refused', ref: m.ref, reason: 'Cheats are off in a shared city' });
           return;
         }
+        const why = roomRefusal(this.info.rules, p.id, m.cmd as never);
+        if (why) {
+          p.conn?.send({ t: 'refused', ref: m.ref, reason: why });
+          return;
+        }
         this.order({ kind: 'cmd', cmd: m.cmd as never, by: p.id, ref: m.ref });
         return;
       }
@@ -376,10 +399,38 @@ export class Room {
         this.snapPart(p, m);
         return;
       case 'speed':
+        if (!may(this.info.rules, p.id, 'speed')) {
+          p.conn?.send({ t: 'notice', text: "The host hasn't let you pause or change the speed" });
+          return;
+        }
+        if (m.speed !== this.info.speed)
+          this.broadcast({
+            t: 'notice',
+            text: `${p.name} ${m.speed === 0 ? 'paused the city' : this.info.speed === 0 ? 'set the city going' : `set the speed to ${['', 'normal', 'fast', 'fastest'][m.speed]}`}`,
+          });
         this.setSpeed(m.speed);
         return;
+      case 'rules': {
+        if (!p.host) return;
+        const r = this.info.rules;
+        if (m.player !== undefined && m.perms) r.perms[m.player] = m.perms;
+        if (m.spendLimit !== undefined) r.spendLimit = m.spendLimit;
+        // Every game applies the same rules at the same tick: the sim checks what the room can't.
+        this.order({ kind: 'rules', rules: JSON.parse(JSON.stringify(r)) as SharedRules });
+        this.broadcastRoom();
+        this.saveMeta();
+        return;
+      }
+      case 'here': {
+        const { t: _t, ...rest } = m;
+        this.broadcast({ t: 'here', from: p.id, ...rest }, p.id);
+        return;
+      }
+      case 'ping':
+        this.broadcast({ t: 'ping', from: p.id, at: m.at }, p.id);
+        return;
       case 'chat':
-        if (!this.info.chat || st.chatTokens < 1) return;
+        if (!this.info.chat || st.chatTokens < 1 || this.info.muted.includes(p.id)) return;
         st.chatTokens--;
         this.broadcast({ t: 'chat', from: p.id, text: m.text });
         return;
@@ -404,9 +455,12 @@ export class Room {
     if (speed === 0) this.saveMeta();
   }
 
-  private admin(action: 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick', player?: number): void {
+  private admin(action: AdminAction, player?: number): void {
     if (action === 'lock' || action === 'unlock') this.info.locked = action === 'lock';
-    else if (action === 'chatOff' || action === 'chatOn') this.info.chat = action === 'chatOn';
+    else if ((action === 'mute' || action === 'unmute') && player) {
+      this.info.muted = this.info.muted.filter((x) => x !== player);
+      if (action === 'mute') this.info.muted.push(player);
+    } else if (action === 'chatOff' || action === 'chatOn') this.info.chat = action === 'chatOn';
     else if (action === 'kick' && player) {
       const target = this.players.get(player);
       if (!target || target.host) return;

@@ -14,6 +14,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import type { ClientWorld } from '../client/world';
+import { PresenceLayer } from './presence';
 import { CIVIC } from '../data/civic';
 import { CELL } from '../data/zones';
 import { hourOfDay } from '../sim/time';
@@ -131,6 +132,8 @@ export class GameRenderer {
   readonly roads: RoadRenderer;
   readonly zones: ZoneRenderer;
   readonly ghost: GhostRenderer;
+  /** The other players' cursors, ghosts and pings in a shared city (M31). */
+  readonly presence: PresenceLayer;
   readonly buildings: BuildingRenderer;
   readonly civics: CivicRenderer;
   readonly vehicles: VehicleRenderer;
@@ -268,6 +271,8 @@ export class GameRenderer {
     this.scene.add(this.routeTint.group);
     this.ghost = new GhostRenderer((x, z) => world.heightAt(x, z));
     this.scene.add(this.ghost.group);
+    this.presence = new PresenceLayer((x, z) => world.heightAt(x, z), canvas);
+    this.scene.add(this.presence.group);
     this.trees = new TreeRenderer(world);
     this.trees.weather = this.weather.uniforms;
     this.trees.blocked = (x, z) =>

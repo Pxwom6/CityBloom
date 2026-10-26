@@ -82,12 +82,18 @@ export class HeadlessDriver implements SimDriver {
     };
     ls.onApplied = (a) => {
       if (a.ev.kind === 'cmd') this.emit({ type: 'applied', list: [a] });
-      else if (a.ev.taker === this.player && a.save)
+      else if (a.ev.kind === 'settle' && a.ev.taker === this.player && a.save)
         this.emit({
           type: 'snapshot',
           tick: a.tick,
           reason: a.ev.reason,
-          snapshot: { save: a.save, history: ls.sim.historyState(), seq: a.seq, eventHash: ls.eventHash },
+          snapshot: {
+            save: a.save,
+            rules: ls.sim.rules,
+            history: ls.sim.historyState(),
+            seq: a.seq,
+            eventHash: ls.eventHash,
+          },
         });
     };
     this.lockstep = ls;
@@ -118,6 +124,7 @@ export class HeadlessDriver implements SimDriver {
     this.player = player;
     this.sim = Sim.fromSave(snapshot.save);
     this.sim.setHistoryState(snapshot.history);
+    this.sim.rules = snapshot.rules ?? null;
     this.attach(snapshot.seq, snapshot.eventHash);
   }
 

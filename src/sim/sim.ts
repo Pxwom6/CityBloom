@@ -4,6 +4,7 @@ import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
 import { fail, ok, type Command, type CommandLogEntry, type CommandResult } from './commands';
+import { simRefusal, type SharedRules } from './rules';
 import { RNG_STREAMS, DEFAULT_OPTIONS, type GameOptions, type RngStream, type SimState } from './state';
 import { Terrain } from './terrain/terrain';
 import { SAVE_VERSION, makeSaveFile, readSaveFile, stateToCanonicalJson, type SaveFile } from './save';
@@ -379,6 +380,7 @@ export class Sim {
           ? { neighbours: [], deals: [], nextDeal: 1 }
           : initialRegion(options.seed),
       map,
+      builtBy: new Map(),
     };
     const sim = new Sim(state, terrain);
     // The map editor's city has no roads: the highway and railway entries are the map's own.
@@ -1042,6 +1044,14 @@ export class Sim {
 
   dispatch(cmd: Command, by = 0): CommandResult {
     this.actor = by;
+    // A shared city's rules (M31): what this player may do, whose work it is, what it costs.
+    if (this.shared && by && this.rules) {
+      const dry = this.apply(cmd, true);
+      if (!dry.ok) return dry;
+      this.syncRng();
+      const why = simRefusal(this.rules, by, cmd, (id) => this.state.builtBy.get(id), dry.cost);
+      if (why) return fail(why);
+    }
     const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
     if (scope) {
       // A command that will be refused changes nothing: skip the undo snapshot, which costs
@@ -1052,6 +1062,7 @@ export class Sim {
     }
     const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
+    if (result.ok && by && this.shared) for (const id of result.created ?? []) this.state.builtBy.set(id, by);
     if (result.ok) {
       this.log.push({
         tick: this.state.tick,
@@ -1275,6 +1286,8 @@ export class Sim {
   viewer = 0;
   /** Who issued the command being applied (0 in single player). */
   private actor = 0;
+  /** What each player may do in a shared city (M31; not saved: room snapshots carry it). */
+  rules: SharedRules | null = null;
   /**
    * A city shared in a room (M29): cheats are refused, since a test-mode machine could otherwise
    * give one player's city money the others don't have. Set by whoever runs the sim, on every machine.
@@ -2146,6 +2159,8 @@ export class Sim {
 
   query(q: Query): unknown {
     switch (q.type) {
+      case 'builtBy':
+        return this.state.builtBy.get(q.id) ?? null;
       case 'hash':
         return this.hash();
       case 'summary':

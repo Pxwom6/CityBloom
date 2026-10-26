@@ -11,6 +11,7 @@
 import type { Command, CommandResult } from './commands';
 import { Sim } from './sim';
 import type { SaveFile } from './save';
+import type { SharedRules } from './rules';
 import { checksum } from './sync';
 import { TICKS_PER_HOUR } from './time';
 
@@ -22,7 +23,9 @@ export type RoomEvent =
    * Settle the city for a snapshot or an autosave: every player finishes the commute round under
    * way at this tick, so the one who saves and the ones who don't carry on alike. `taker` saves.
    */
-  | { kind: 'settle'; taker: number; reason: 'snapshot' | 'autosave' };
+  | { kind: 'settle'; taker: number; reason: 'snapshot' | 'autosave' }
+  /** The host changed who may do what (M31). */
+  | { kind: 'rules'; rules: SharedRules };
 
 export interface Stamped {
   tick: number;
@@ -149,6 +152,7 @@ export class Lockstep {
     fresh.viewer = old.viewer;
     fresh.timer = old.timer;
     fresh.setHistoryState(old.historyState());
+    fresh.rules = old.rules;
     // Notices not yet shown still are.
     fresh.events = [...old.events, ...fresh.events];
     this.sim = fresh;
@@ -165,6 +169,10 @@ export class Lockstep {
         const result = this.sim.dispatch(e.ev.cmd, e.ev.by);
         this.noteEvent(e, result.ok);
         this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev, result });
+      } else if (e.ev.kind === 'rules') {
+        this.sim.rules = e.ev.rules;
+        this.noteEvent(e, true);
+        this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev });
       } else {
         this.noteEvent(e, true);
         this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev, save: this.rebirth() });

@@ -155,4 +155,9 @@ export interface SimState {
   region: RegionState;
   /** The custom map the city was founded on (M24), or null for a generated one. */
   map: MapData | null;
+  /**
+   * Who built what in a shared city (M31): the id of a road, civic building, stop or district → the
+   * player who made it. Empty in single player.
+   */
+  builtBy: Map<number, number>;
 }

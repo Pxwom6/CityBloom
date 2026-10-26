@@ -126,9 +126,10 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
   };
   lockstep.onApplied = (a) => {
     if (a.ev.kind === 'cmd') applied.push(a);
-    else if (a.ev.taker === player && a.save) {
+    else if (a.ev.kind === 'settle' && a.ev.taker === player && a.save) {
       const snapshot: SharedSnapshot = {
         save: a.save,
+        rules: lockstep!.sim.rules,
         history: lockstep!.sim.historyState(),
         seq: a.seq,
         eventHash: lockstep!.eventHash,
@@ -171,6 +172,7 @@ function handle(msg: MainToWorker): void {
       }
       sim.testMode = !!msg.testMode;
       sim.setHistoryState(msg.snapshot.history);
+      sim.rules = msg.snapshot.rules ?? null;
       // A resync keeps the page's city and brings it up to date in the next frame.
       if (msg.resync && old) sim.takeOverFrom(old);
       player = msg.player;

@@ -7,8 +7,16 @@ import { useState } from 'preact/hooks';
 import { useGame, useGameUpdates } from './hooks';
 import { loadProfile, saveProfile, type Profile } from '../client/profile';
 import { inviteLink, relayUrl } from '../net/multiplayer';
-import { MAX_NAME, PLAYER_COLORS, cleanName, normaliseCode, type PlayerInfo } from '../../relay/protocol';
+import {
+  MAX_CHAT,
+  MAX_NAME,
+  PLAYER_COLORS,
+  cleanName,
+  normaliseCode,
+  type PlayerInfo,
+} from '../../relay/protocol';
 import type { Game } from '../game';
+import { DEFAULT_PERMS, PERMISSIONS, type Permission } from '../sim/rules';
 
 function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
   const { profile, onChange } = props;
@@ -219,6 +227,7 @@ export function RoomChip() {
 export function RoomPanel() {
   const game = useGameUpdates(300);
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(0);
   const mp = game.net;
   if (game.panel !== 'room' || !mp) return null;
   const s = mp.session;
@@ -274,19 +283,41 @@ export function RoomPanel() {
                 {p.host ? 'host' : ''}
                 {!p.online ? ' away' : p.joining ? ' joining…' : room?.pacer === p.id ? ' keeps time' : ''}
               </span>
+              {p.id !== s.you && p.online && (
+                <button
+                  class={`btn small ${game.following === p.id ? 'active' : ''}`}
+                  data-testid={`room-follow-${p.id}`}
+                  title={`Ride along with ${p.name}'s view (move the camera to stop)`}
+                  onClick={() => game.follow(p.id)}
+                >
+                  {game.following === p.id ? 'Following' : 'Follow'}
+                </button>
+              )}
               {s.isHost && !p.host && (
                 <button
-                  class="btn small"
-                  data-testid={`room-kick-${p.id}`}
-                  title={`Remove ${p.name} from the room (they can't come back)`}
-                  onClick={() => s.admin('kick', p.id)}
+                  class={`btn small ${open === p.id ? 'active' : ''}`}
+                  data-testid={`room-perms-${p.id}`}
+                  title={`What ${p.name} may do`}
+                  onClick={() => setOpen(open === p.id ? 0 : p.id)}
                 >
-                  Remove
+                  Allow…
                 </button>
+              )}
+              {s.isHost && !p.host && open === p.id && room && (
+                <PlayerRules
+                  player={p}
+                  perms={room.rules.perms[p.id] ?? DEFAULT_PERMS}
+                  muted={room.muted.includes(p.id)}
+                  onPerms={(perms) => s.setPermissions(p.id, perms)}
+                  onMute={(m) => s.admin(m ? 'mute' : 'unmute', p.id)}
+                  onKick={() => s.admin('kick', p.id)}
+                />
               )}
             </li>
           ))}
         </ul>
+        <p class="muted room-tip">Press Shift+G over the map to point the others at a spot.</p>
+        <Chat />
         {s.isHost && room && (
           <div class="room-host">
             <label class="check" title="Nobody new can join while the room is locked">
@@ -307,6 +338,24 @@ export function RoomPanel() {
               />
               <span>Chat on</span>
             </label>
+            <label
+              class="field spend"
+              title="Players without “Spend above the limit” can't spend more than this on one action"
+            >
+              <span>Spending limit</span>
+              <input
+                type="number"
+                min={0}
+                step={1000}
+                placeholder="none"
+                value={room.rules.spendLimit ?? ''}
+                data-testid="room-spend-limit"
+                onChange={(e) => {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  s.setSpendLimit(v === '' ? null : Math.max(0, Math.round(Number(v))));
+                }}
+              />
+            </label>
           </div>
         )}
         <button class="shell-btn quiet" data-testid="room-leave" onClick={() => game.leaveRoom()}>
@@ -319,5 +368,107 @@ export function RoomPanel() {
         </button>
       </div>
     </aside>
+  );
+}
+
+/** The host's say over one player (M31): what they may do, muting and removing. */
+function PlayerRules(props: {
+  player: PlayerInfo;
+  perms: readonly Permission[];
+  muted: boolean;
+  onPerms: (p: Permission[]) => void;
+  onMute: (m: boolean) => void;
+  onKick: () => void;
+}) {
+  const { player, perms } = props;
+  return (
+    <div class="player-rules" data-testid={`room-rules-${player.id}`}>
+      {PERMISSIONS.map((p) => (
+        <label key={p.id} class="check" title={p.blurb}>
+          <input
+            type="checkbox"
+            checked={perms.includes(p.id)}
+            data-testid={`perm-${player.id}-${p.id}`}
+            onChange={(e) =>
+              props.onPerms(
+                (e.target as HTMLInputElement).checked ? [...perms, p.id] : perms.filter((x) => x !== p.id),
+              )
+            }
+          />
+          <span>{p.label}</span>
+        </label>
+      ))}
+      <div class="player-rules-actions">
+        <button
+          class="btn small"
+          data-testid={`room-mute-${player.id}`}
+          onClick={() => props.onMute(!props.muted)}
+        >
+          {props.muted ? 'Unmute' : 'Mute in chat'}
+        </button>
+        <button
+          class="btn small danger"
+          data-testid={`room-kick-${player.id}`}
+          title={`Remove ${player.name} from the room (they can't come back)`}
+          onClick={props.onKick}
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A short chat (M31): the last messages and a line to type in. */
+function Chat() {
+  const game = useGameUpdates(300);
+  const [text, setText] = useState('');
+  const mp = game.net;
+  if (!mp) return null;
+  const s = mp.session;
+  const on = s.room?.chat !== false;
+  const muted = !!s.room?.muted.includes(s.you);
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    s.chat(t);
+    setText('');
+  };
+  return (
+    <div class="chat" data-testid="chat">
+      <ul class="chat-log" data-testid="chat-log">
+        {game.chatLog.slice(-8).map((m, i) => (
+          <li key={i}>
+            <span class="who" style={{ color: PLAYER_COLORS[m.color] }}>
+              {m.name}
+            </span>{' '}
+            {m.text}
+          </li>
+        ))}
+      </ul>
+      {on && !muted ? (
+        <div class="chat-input">
+          <input
+            type="text"
+            maxLength={MAX_CHAT}
+            placeholder="Say something…"
+            value={text}
+            data-testid="chat-input"
+            onInput={(e) => setText((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') send();
+            }}
+          />
+          <button class="btn" data-testid="chat-send" onClick={send}>
+            Send
+          </button>
+        </div>
+      ) : (
+        <p class="muted">
+          {muted ? 'The host has muted you in the chat.' : 'The host has turned the chat off.'}
+        </p>
+      )}
+    </div>
   );
 }

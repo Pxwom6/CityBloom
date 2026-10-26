@@ -57,6 +57,9 @@ export interface TestApi {
     players: { id: number; name: string; online: boolean; joining: boolean; host: boolean }[];
     sent: { messages: number; bytes: number };
     received: { messages: number; bytes: number };
+    /** This page's sim: average and worst tick (ms) over the last second. */
+    tickMsAvg: number;
+    tickMsMax: number;
   } | null;
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
   netDrop(): void;
@@ -515,6 +518,8 @@ export function installTestApi(game: Game): TestApi {
         })),
         sent: { ...s.sent },
         received: { ...s.received },
+        tickMsAvg: game.perf.tickMsAvg,
+        tickMsMax: game.perf.tickMsMax,
       };
     },
     netDrop: () => game.net?.session.dropForTest(),

@@ -75,6 +75,11 @@ export interface PhotoState extends PhotoView {
 
 let uiScale = 1;
 
+/** The window's width in scaled rem (pixels over 16 times the interface scale). */
+export function uiRem(): number {
+  return typeof window === 'undefined' ? 120 : window.innerWidth / (16 * uiScale);
+}
+
 /**
  * Size class of the interface, in scaled rem, for layouts that tighten on narrow screens or at large
  * interface sizes (see `#ui[data-width]` in main.css).
@@ -321,6 +326,18 @@ export class Game {
     if (!this.net) return;
     const g = this.renderer.controller.screenToGround(clientX, clientY);
     this.here.at = g ? [Math.round(g.x), Math.round(g.z)] : null;
+  }
+
+  /**
+   * Ready a ping by touch (F11): the next tap on the map points the others there. The room panel
+   * closes so the map can be tapped (on a phone it covers most of it).
+   */
+  armPing(): void {
+    if (!this.net) return;
+    if (this.panel === 'room') this.openPanel('room');
+    if (this.tools.activeId !== 'ping') this.tools.ping.back = this.tools.activeId;
+    this.tools.use('ping');
+    this.toast('Tap the map where you want the others to look.', 'info', 4000);
   }
 
   /** Point the others at a spot ("look here"). */

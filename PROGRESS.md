@@ -73,7 +73,7 @@ Should fix:
 - [x] F8 Keep within the free plan under abuse
 - [x] F9 Leaving a room breaks undo in the copy you keep
 - [x] F10 Peer-to-peer dead ends
-- [ ] F11 Phones
+- [x] F11 Phones
 - [x] F12 Invite links
 - [x] F13 Tests
 - [ ] F14 Balance

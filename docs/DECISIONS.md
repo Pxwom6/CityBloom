@@ -755,3 +755,10 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   join gives up after two minutes with a message rather than waiting for ever, and the building
   models download during the wait instead of after it. A visit that can't be fetched says why on the
   menu.
+- **F11 Phones in a room.** In a room the top bar wraps onto more rows below about 52 rem (46 rem
+  alone), that is a phone held upright and a tablet in a room: the city, its room (shrunk to a count
+  of who's here) and its figures first, then the More menu, the date (month only), speed and the
+  menu. The panels below are placed by the bar's measured height, however many rows a long city name
+  takes. Pings work by touch: the room panel's "Point the others at a spot" closes the panel, the next
+  tap on the map points the others there, and the tool before comes back; Shift+G still works with a
+  keyboard, and the shared-city tip names both.

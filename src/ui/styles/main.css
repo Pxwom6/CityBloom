@@ -1444,6 +1444,63 @@ body {
   padding: 0 var(--space-3);
 }
 
+/*
+ * Rows (F11): a phone held upright, or a tablet in a room, can't fit the bar on one line. Row one is
+ * the city, its room and its figures (the demand bars wrap below them on a phone); the last row the
+ * More menu, the date, speed and the menu. Panels below the bar move down with it: TopBar sets
+ * --topbar-height to the bar's height.
+ */
+.topbar .topbar-break,
+.topbar .date-short,
+.room-count {
+  display: none;
+}
+.topbar.rows {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: var(--space-1);
+  column-gap: var(--space-2);
+  min-height: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-lg);
+}
+.topbar.rows .topbar-break {
+  display: block;
+  flex-basis: 100%;
+  height: 0;
+}
+.topbar.rows .date-long,
+.topbar.rows .divider,
+.topbar.rows .stat-date .label {
+  display: none;
+}
+.topbar.rows .date-short {
+  display: inline;
+}
+.topbar.rows .room-chip {
+  margin-left: 0;
+}
+.topbar.rows .room-chip :is(.room-code, .room-dots, .room-state) {
+  display: none;
+}
+.topbar.rows .room-chip .room-count {
+  display: inline;
+  font-weight: var(--font-weight-bold);
+}
+.topbar.rows .room-chip .room-count::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.3rem;
+  border-radius: 50%;
+  background: var(--color-positive);
+  vertical-align: middle;
+}
+.topbar.rows .weather-pop {
+  max-width: calc(100vw - 2 * var(--space-3));
+}
+
 /* The top bar folds its lesser buttons into a More menu while the bars are compact (data-bars). */
 .topbar-more,
 .topbar-panels {
@@ -3414,7 +3471,11 @@ body {
 .presence-name.ping {
   margin: -2.2rem 0 0 -2rem;
 }
-.room-tip {
+.room-ping {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   font-size: var(--font-size-xs);
 }
 .room-players li {

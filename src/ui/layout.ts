@@ -28,6 +28,15 @@ export function barsClass(rem: number): BarsClass {
 }
 
 /**
+ * Whether the top bar wraps onto more than one row (F11): one row needs about 44 rem (city, treasury,
+ * population, demand, the More menu, the date, speed and the menu) and about 6 rem more for a shared
+ * city's room button, so a phone held upright, and a tablet in a room, wrap.
+ */
+export function topbarRows(rem: number, inRoom: boolean): boolean {
+  return rem < (inRoom ? 52 : 46);
+}
+
+/**
  * How far (px) to slide a tooltip sideways so it stays inside the window: `left` and `right` are its
  * edges where it was centred on its button, `viewport` the window's width.
  */

@@ -28,6 +28,29 @@ async function overflow(page: Page, scope: string): Promise<string[]> {
   }, scope);
 }
 
+/** Buttons in `scope` that are off the window or covered where a finger would tap them. */
+async function unreachable(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate((scope) => {
+    const bad: string[] = [];
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    for (const b of document.querySelectorAll<HTMLElement>(`[data-testid="${scope}"] button`)) {
+      const r = b.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      const name = b.dataset.testid ?? b.getAttribute('aria-label') ?? (b.textContent ?? '').trim();
+      const at = `${Math.round(r.left)}..${Math.round(r.right)} x ${Math.round(r.top)}..${Math.round(r.bottom)}`;
+      if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) {
+        bad.push(`${name} is outside the ${vw}x${vh} window (${at})`);
+        continue;
+      }
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!hit || !(hit === b || b.contains(hit)))
+        bad.push(`${name} is covered by ${hit?.tagName}.${hit?.className} (${at})`);
+    }
+    return bad;
+  }, scope);
+}
+
 for (const [label, size] of [
   ['phone', { width: 390, height: 844 }],
   ['tablet', { width: 820, height: 1180 }],
@@ -40,6 +63,13 @@ for (const [label, size] of [
       const key = 'citybloom.settings';
       const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
       localStorage.setItem(key, JSON.stringify({ ...s, tips: false, graphicsChecked: true, quality: 'low' }));
+      // Every "look here" label as it appears (each lasts three seconds).
+      const pings: string[] = [];
+      (window as unknown as { __pings: string[] }).__pings = pings;
+      new MutationObserver(() => {
+        for (const el of document.querySelectorAll('.presence-name.ping'))
+          if (el.textContent && !pings.includes(el.textContent)) pings.push(el.textContent);
+      }).observe(document, { childList: true, subtree: true });
     });
     await page.goto('./');
     await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
@@ -69,5 +99,24 @@ for (const [label, size] of [
     await expect(page.getByTestId('room-chip')).toBeVisible();
     await page.getByTestId('room-chip').tap();
     await expect(page.getByTestId('room-panel')).toBeVisible();
+
+    // F11: in a room every button on the top bar can still be tapped (on more rows on a phone), and
+    // an open panel sits below it, not over it.
+    expect(await unreachable(page, 'topbar'), 'top bar over the room panel').toEqual([]);
+    // (A tap on this VM's software renderer is now and then lost under load: tap again until it closes.)
+    await expect(async () => {
+      await page.getByTestId('room-panel').getByRole('button', { name: 'Close' }).tap();
+      await expect(page.getByTestId('room-panel')).toHaveCount(0, { timeout: 3000 });
+    }).toPass({ timeout: 30_000 });
+    expect(await unreachable(page, 'topbar'), 'top bar in a room').toEqual([]);
+    await page.screenshot({ path: `docs/screenshots/m33-topbar-${label}.png` });
+    // A ping by touch: the room panel's button, then a tap on the map.
+    await page.getByTestId('room-chip').tap();
+    await page.getByTestId('room-ping').tap();
+    await expect(page.getByTestId('room-panel')).toHaveCount(0);
+    await page.touchscreen.tap(size.width / 2, size.height / 2);
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __pings: string[] }).__pings))
+      .toContain('You: look here');
   });
 }

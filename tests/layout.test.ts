@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { barsClass, tipShift, widthClass } from '../src/ui/layout';
+import { barsClass, tipShift, topbarRows, widthClass } from '../src/ui/layout';
 
 describe('interface size classes', () => {
   it('sorts a window by its width in scaled rem', () => {
@@ -25,5 +25,16 @@ describe('tooltip placement', () => {
     expect(tipShift(-17, 228, 1280)).toBe(25);
     expect(tipShift(1039, 1311, 1280)).toBe(-39);
     expect(tipShift(-145, 100, 1024)).toBe(153);
+  });
+});
+
+describe('the top bar on a phone (F11)', () => {
+  it('wraps onto two rows when one row would clip, sooner in a room', () => {
+    // 390 px (a phone held upright) and 768 px (a tablet) at the normal interface size.
+    expect(topbarRows(390 / 16, false)).toBe(true);
+    expect(topbarRows(390 / 16, true)).toBe(true);
+    expect(topbarRows(768 / 16, false)).toBe(false);
+    expect(topbarRows(768 / 16, true)).toBe(true);
+    expect(topbarRows(1280 / 16, true)).toBe(false);
   });
 });

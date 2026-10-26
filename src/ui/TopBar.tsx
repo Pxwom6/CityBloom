@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
-import { dateOf, formatDate, type Speed } from '../sim/time';
+import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { WEATHER_ICON, weatherBrief, weatherLines, weatherName } from './weather';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
@@ -12,6 +12,8 @@ import { HistoryButton } from './History';
 import { RegionButton } from './Region';
 import { NotificationsButton } from './Notifications';
 import { RoomChip } from './Friends';
+import { topbarRows } from './layout';
+import { uiRem } from '../game';
 
 const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[] = [
   { s: 0, label: 'Pause', Icon: IconPause, key: 'Space' },
@@ -37,8 +39,29 @@ export function TopBar() {
     window.addEventListener('pointerdown', away);
     return () => window.removeEventListener('pointerdown', away);
   }, [moreOpen]);
+  // A phone held upright (and a tablet in a room) wraps the bar onto more rows (F11); the panels
+  // below it are placed by its height, however many rows a long city name takes.
+  const rows = topbarRows(uiRem(), !!game.net);
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bar.current;
+    const ui = document.getElementById('ui');
+    if (!rows || !el || !ui) return;
+    const fit = () => ui.style.setProperty('--topbar-height', `${el.offsetHeight}px`);
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => {
+      watch.disconnect();
+      ui.style.removeProperty('--topbar-height');
+    };
+  }, [rows]);
   return (
-    <div class={`topbar panel ${st.scenario ? 'scenario' : ''}`} data-testid="topbar">
+    <div
+      ref={bar}
+      class={`topbar panel ${st.scenario ? 'scenario' : ''} ${rows ? 'rows' : ''}`}
+      data-testid="topbar"
+    >
       {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
       <RoomChip />
       <span class="divider" />
@@ -76,6 +99,7 @@ export function TopBar() {
         </span>
       </div>
       <Rci />
+      <span class="topbar-break" />
       <div class="topbar-more" ref={moreRef}>
         <button
           class="btn icon more-toggle"
@@ -112,9 +136,10 @@ export function TopBar() {
           <WeatherIcon width={13} height={13} />
           {weatherBrief(st.weather)}
         </span>
-        <span class="value" data-testid="date">
+        <span class="value date-long" data-testid="date">
           {formatDate(date)}
         </span>
+        <span class="value date-short">{formatMonth(Math.floor(game.world.displayTick))}</span>
       </button>
       {weatherOpen && (
         <div class="weather-pop panel" data-testid="weather-panel" role="dialog" aria-label="Weather">

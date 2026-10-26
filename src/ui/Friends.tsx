@@ -285,6 +285,10 @@ export function RoomChip() {
       onClick={() => game.openPanel('room')}
     >
       <span class="room-code">{game.net.code}</span>
+      {/* On two rows (a phone) the chip shrinks to a count of who's here (F11). */}
+      <span class="room-count" aria-hidden="true">
+        {s.players.filter((p) => p.online).length}
+      </span>
       <span class="room-dots">
         {s.players
           .filter((p) => p.online)
@@ -398,7 +402,17 @@ export function RoomPanel() {
             </li>
           ))}
         </ul>
-        <p class="muted room-tip">Press Shift+G over the map to point the others at a spot.</p>
+        <div class="room-ping">
+          <button
+            class="btn"
+            data-testid="room-ping"
+            title="Point the others at a spot: tap the map after this (with a keyboard, Shift+G over the map)"
+            onClick={() => game.armPing()}
+          >
+            Point the others at a spot
+          </button>
+          <span class="muted">or Shift+G over the map</span>
+        </div>
         <Chat />
         <Troubleshooting />
         {s.isHost && room && (

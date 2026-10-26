@@ -49,6 +49,7 @@ function sections(): [string, Row[]][] {
         ['Notifications, city', ['N', 'P']],
         ['City history, photo mode', ['Y', 'K']],
         ['Scenario goals', ['G']],
+        ['War room (with a military HQ)', ['Shift+M']],
         ['Shared city: look here', ['Shift+G']],
         ['Data maps', ['L']],
         ['Pause menu', ['Esc']],

@@ -3645,3 +3645,129 @@ body {
 .friends-help li {
   margin-bottom: 0.3rem;
 }
+
+/* War (M34): the war room, a military building's section in the inspector. */
+.advisors.war-room {
+  width: 27rem;
+}
+.war-room header .war-head {
+  font-size: var(--font-size-sm);
+  margin-left: auto;
+  margin-right: var(--space-2);
+}
+.war-room .tabs {
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.war-room .tab-body {
+  flex: 1;
+  min-height: 0;
+}
+.war-bar {
+  flex: 1;
+  min-width: 4rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.war-bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-positive);
+}
+.war-bar.warn span {
+  background: var(--color-warning);
+}
+.war-bar.bad span {
+  background: var(--color-negative);
+}
+.war-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.war-row > span:first-child {
+  min-width: 7rem;
+}
+.war-store-name {
+  min-width: 5rem;
+}
+.war-groups {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.war-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: var(--font-size-xs);
+}
+.war-group strong {
+  font-size: var(--font-size-lg);
+}
+.war-group.none {
+  opacity: 0.5;
+}
+.war-base h4,
+.war-rivals h4 {
+  margin: var(--space-2) 0 var(--space-1);
+}
+.war-base .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.war-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+}
+.war-dl dd {
+  margin: 0;
+}
+.war-warn {
+  color: var(--color-negative);
+  font-size: var(--font-size-sm);
+}
+.war-reasons {
+  font-size: var(--font-size-sm);
+  padding-left: var(--space-4);
+}
+.military h3 {
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 var(--space-1);
+}
+.military .btn svg {
+  width: 1rem;
+  height: 1rem;
+  vertical-align: -0.15rem;
+}
+.region-rival {
+  font-size: var(--font-size-sm);
+}
+.region-war {
+  margin: var(--space-3) 0;
+}
+.new-region-war .segmented {
+  margin: var(--space-1) 0 var(--space-2) var(--space-5);
+}
+#ui[data-width='xs'] .war-room .tab,
+#ui[data-width='s'] .war-room .tab {
+  padding: var(--space-1) var(--space-2);
+}
+#ui[data-width='xs'] .war-groups {
+  grid-template-columns: repeat(2, 1fr);
+}

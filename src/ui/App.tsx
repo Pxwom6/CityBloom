@@ -21,6 +21,7 @@ import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
+import { WarRoomPanel } from './Military';
 import { EditorApp } from './Editor';
 
 function Shortcuts({ game }: { game: Game }) {
@@ -39,7 +40,11 @@ function Shortcuts({ game }: { game: Game }) {
       } else if (e.code === 'Digit1') game.setSpeed(1);
       else if (e.code === 'Digit2') game.setSpeed(2);
       else if (e.code === 'Digit3') game.setSpeed(3);
-      else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
+      // The war room (M34): Shift+M, before M's budget (which ignores Shift).
+      else if (e.code === 'KeyM' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        if (game.world.stats.war?.hq != null) game.openPanel('war');
+        else if (game.world.stats.war) game.toast('Build a military HQ to open the war room', 'info', 3000);
+      } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
       else if (e.code === 'KeyN' && e.shiftKey && !e.ctrlKey && !e.metaKey) game.openPanel('region');
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
@@ -106,6 +111,7 @@ export function App({ game }: { game: Game }) {
       <GoalsPanel />
       <DistrictsPanel />
       <RegionPanel />
+      <WarRoomPanel />
       <RoomPanel />
       <MilestoneBanner />
       <ThoughtsFeed />

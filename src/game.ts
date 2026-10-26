@@ -1,3 +1,4 @@
+import type { RegionWarRules } from './data/war';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -27,7 +28,7 @@ import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
-import { barsClass, widthClass } from './ui/layout';
+import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
 import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionLink';
 import { P2PHost, p2pConnect } from './net/p2p';
@@ -89,7 +90,17 @@ function layoutUi(): void {
   if (!ui) return;
   const rem = window.innerWidth / (16 * uiScale);
   ui.dataset.width = widthClass(rem);
-  ui.dataset.bars = barsClass(rem);
+  ui.dataset.bars = barsClassWith(rem, extraTools);
+}
+
+/** Toolbar buttons beyond a peaceful city's (M34: the Military category with war on). */
+let extraTools = 0;
+
+/** Lay the bars out again for a toolbar with `n` extra buttons. */
+export function setExtraTools(n: number): void {
+  if (n === extraTools) return;
+  extraTools = n;
+  layoutUi();
 }
 if (typeof window !== 'undefined') window.addEventListener('resize', layoutUi);
 
@@ -159,6 +170,8 @@ export class Game {
     | 'room'
     /** The map editor's playability check (M24). */
     | 'editorCheck'
+    /** The war room (M34), with a military HQ. */
+    | 'war'
     | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
@@ -232,6 +245,9 @@ export class Game {
     install.onChange = () => this.notify();
     client.onFrame((diff, perf, speed) => {
       this.world.applyFrame(diff);
+      // A city with war on (M34) has the Military category in its toolbar, and the war models.
+      const war = !!diff.stats.war && !this.inMenu();
+      setExtraTools(war ? 1 : 0);
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
       const sel = this.selected;
@@ -484,7 +500,7 @@ export class Game {
   }
 
   /** Start a shared region with this city in it (M32), online or from this browser. */
-  async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
+  async startRegion(kind: 'online' | 'p2p', name: string, rules?: RegionWarRules): Promise<boolean> {
     if (this.region || this.net || this.readOnly) return false;
     const code = makeCode(kind);
     const key = kind === 'p2p' ? makeKey() : null;
@@ -501,7 +517,13 @@ export class Game {
         const host = this.regionHost;
         connect = () => host.connectSelf();
       }
-      await this.attachRegion(code, key, connect, { create: { name } }, kind === 'p2p');
+      await this.attachRegion(
+        code,
+        key,
+        connect,
+        { create: { name, ...(rules?.war ? { rules } : {}) } },
+        kind === 'p2p',
+      );
       this.toast(
         `Your region is open: code ${formatInvite({ code, key })}. Friends join it with their own cities.`,
         'ok',
@@ -751,6 +773,16 @@ export class Game {
     this.notify();
   }
 
+  /**
+   * Open the war room (M34) without closing it if it's open; on a narrow window the inspector
+   * (which covers it) steps aside.
+   */
+  openWarRoom(): void {
+    if (this.panel !== 'war') this.openPanel('war');
+    const w = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
+    if (w === 'xs' || w === 's') this.select(null);
+  }
+
   select(sel: Selection | null): void {
     this.selected = sel;
     let rect: { x: number; z: number; hw: number; hd: number; angle: number } | null = null;
@@ -972,6 +1004,18 @@ export class Game {
         if (text) this.notice('weather', text, 'info', undefined, true);
       } else if (e.kind === 'roadRepaired')
         this.notice('roadRepaired', 'A damaged road reopened.', 'ok', undefined, false);
+      else if (e.kind === 'unitTrained') {
+        // War (M34): a unit finished training at its base.
+        const base = Number(e.info?.base);
+        this.notice(
+          'unitTrained',
+          `${String(e.info?.unit ?? 'A unit')} trained and ready.`,
+          'ok',
+          this.placeOf(base),
+          false,
+        );
+      } else if (e.kind === 'bondRepaid')
+        this.notice('bondRepaid', 'A war bond is repaid in full.', 'ok', undefined, false);
       else if (e.kind === 'decayed')
         this.notice(
           'decayed',

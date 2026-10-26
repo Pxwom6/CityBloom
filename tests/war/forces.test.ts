@@ -10,6 +10,7 @@ import { decodeValue, encodeValue } from '../../src/sim/serialize';
 import { safetyAt } from '../../src/sim/systems/war';
 import { growTown } from '../lockstep/scriptedTown';
 import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
+import { WATERFRONT, berth, roadsidePose } from '../../src/sim/world/civic';
 
 /**
  * M34 Armed forces: military buildings, units that train, the war economy, and peace unchanged.
@@ -297,5 +298,60 @@ describe('armed forces (M34)', () => {
     loaded.advance(TICKS_PER_MONTH);
     sim.advance(TICKS_PER_MONTH);
     expect(loaded.hash()).toBe(sim.hash());
+  });
+});
+
+describe('waterfront military sites (M34)', () => {
+  it('a naval yard needs deep water behind it, and a coastal gun stands with its back to the shore', () => {
+    const sim = newSim({ seed: 'port', preset: 'coast', rivals: true });
+    sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 900_000 });
+    buildTown(sim);
+    serveTown(sim);
+    const c = { ...sim.state.net.nodes.get(sim.state.highway.connect)! };
+    const streets = allSegments(sim);
+    place(sim, 'militaryhq', streets);
+    // Inland: both refused, with their reasons.
+    const reasons = new Set<string>();
+    for (const def of ['navalyard', 'coastalgun'])
+      for (const seg of streets.slice(0, 6)) {
+        const len = sim.net.curve(seg).length;
+        for (let s = 20; s < len - 20; s += 10)
+          for (const side of [1, -1] as const) {
+            const pose = roadsidePose(sim.net, seg, s, side, CIVIC.get(def)!.d);
+            const r = sim.preview({ type: 'placeBuilding', def, ...pose });
+            if (!r.ok) reasons.add(r.reason);
+          }
+      }
+    expect([...reasons].some((r) => /deep water along its back for the warships/.test(r))).toBe(true);
+    expect([...reasons].some((r) => /shore with its back to the water/.test(r))).toBe(true);
+    // Out to the sea: an avenue east, then a street along the shore where it comes close.
+    expect(
+      sim.dispatch({
+        type: 'buildRoad',
+        road: 'avenue',
+        points: [
+          { x: c.x + 480, z: c.z },
+          { x: 1430, z: c.z },
+        ],
+      }).ok,
+    ).toBe(true);
+    const made = sim.dispatch({
+      type: 'buildRoad',
+      road: 'street',
+      points: [
+        { x: 1430, z: c.z - 560 },
+        { x: 1430, z: c.z },
+      ],
+    });
+    expect(made.ok).toBe(true);
+    const shore = [...sim.state.net.segments.values()]
+      .filter((sg) => Math.abs(sim.net.curve(sg.id).pointAt(0).x - 1430) < 2)
+      .map((sg) => sg.id);
+    const yard = place(sim, 'navalyard', shore);
+    const gun = place(sim, 'coastalgun', shore);
+    const y = sim.state.civics.get(yard)!;
+    expect(berth(sim, y, WATERFRONT.deep)).not.toBeNull();
+    expect(berth(sim, sim.state.civics.get(gun)!, WATERFRONT.shore)).not.toBeNull();
   });
 });

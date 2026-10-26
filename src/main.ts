@@ -30,6 +30,7 @@ import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
 import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
+import { WAR_SCALES, type WarScale } from './data/war';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -371,6 +372,15 @@ async function boot(): Promise<void> {
       void game.startRegion(
         newRegion,
         params.get('rname')?.trim().slice(0, 40) || `${world.stats.cityName} and friends`,
+        // War in the region (M34), as its host chose on the new-city screen.
+        params.get('rwar') === '1'
+          ? {
+              war: true,
+              scale: (WAR_SCALES as readonly string[]).includes(params.get('rscale') ?? '')
+                ? (params.get('rscale') as WarScale)
+                : 'skirmish',
+            }
+          : undefined,
       );
     else if (regionCode) void game.joinRegion(regionCode, regionRejoin(meta, regionCode)?.rejoin ?? null);
     else if (mine) void game.joinRegion(mine.invite, mine.rejoin);

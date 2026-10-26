@@ -72,7 +72,17 @@ export interface TestApi {
     state: string;
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
     project: { total: number; goal: number; funded: boolean; host: number; built: boolean } | null;
+    /** War in the region (M34): its rules, and whether this city is its host. */
+    rules: { war: boolean; scale: string };
+    host: boolean;
   } | null;
+  /** The city's forces (M34): every unit and the training at each base; null with war off. */
+  getForces(): {
+    units: { id: number; kind: string; base: number; hp: number }[];
+    orders: { id: number; kind: string; base: number; done: number; hours: number; rate: number }[];
+  } | null;
+  /** The war room (M34): open, its top-bar button shown, the HQ's id. */
+  getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
   /** Report to the region now (it does every 30 s by itself). */
   regionReportNow(): Promise<void>;
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
@@ -570,8 +580,20 @@ export function installTestApi(game: Game): TestApi {
               built: v.project.built,
             }
           : null,
+        rules: { ...(v?.rules ?? { war: false, scale: 'skirmish' }) },
+        host: r.isHost,
       };
     },
+    getForces: () => {
+      const f = game.world.forces;
+      return f ? { units: f.units.map((u) => ({ ...u })), orders: f.orders.map((o) => ({ ...o })) } : null;
+    },
+    getWarRoom: () => ({
+      open: game.panel === 'war',
+      button: !!document.querySelector('[data-testid="open-war"]'),
+      hq: game.world.stats.war?.hq ?? null,
+      war: !!game.world.stats.war,
+    }),
     regionReportNow: async () => {
       await game.region?.reportNow(true);
     },

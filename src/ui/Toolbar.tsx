@@ -7,12 +7,14 @@ import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { tipShift } from './layout';
-import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
+import { CIVIC, CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
+import { UNIT } from '../data/war';
 import { TRAM, TRANSIT } from '../data/balance';
 import { POLICY, type PolicyId } from '../data/policies';
 import { districtColour } from '../client/districtView';
 import { MAPS } from '../client/overlay';
 import {
+  IconMilitary,
   IconBolt,
   IconBulldozer,
   IconDrop,
@@ -419,6 +421,7 @@ export function Toolbar() {
                     ...out,
                     ...(d.garbage ? [`${d.garbage.trucks} trucks`] : []),
                     ...(d.service ? [serviceLine(d.service)] : []),
+                    ...(d.military ? militaryLines(d) : []),
                     d.blurb,
                     ...(d.railLink
                       ? [
@@ -596,6 +599,17 @@ export function Toolbar() {
               'Big projects',
               'A stadium, a launch complex, a solar tower array, a garden expo, a convention centre: built in stages over months, each with a lasting perk.',
             ],
+            // Only in a city with war on (M34).
+            ...(game.world.stats.war
+              ? [
+                  [
+                    'military',
+                    IconMilitary,
+                    'Military',
+                    'Forces and defences: a military HQ first (it opens the war room), then barracks, depots, an airfield, a naval yard, defences and shelters. Each has upkeep, staff and power; neighbours feel safer for some and mind the noise of others.',
+                  ],
+                ]
+              : []),
           ] as [CivicCategory, typeof IconBolt, string, string][]
         ).map(([cat, Icon, name, blurb]) => (
           <ToolButton
@@ -1080,4 +1094,22 @@ function ProjectButton({ def }: { def: CivicDef }) {
       <span class="tool-label">{def.name}</span>
     </ToolButton>
   );
+}
+
+/** A military building's tooltip lines (M34): staff and power, what it trains, what it does. */
+function militaryLines(d: CivicDef): string[] {
+  const m = d.military!;
+  const out = [`${m.jobs} staff · ${m.power} power units`];
+  const trains = (m.trains ?? []).map((k) => UNIT.get(k)).filter((u) => u && !u.research);
+  if (trains.length)
+    out.push(`Trains ${trains.map((u) => u!.plural.toLowerCase()).join(', ')}; keeps ${m.holds ?? 0}`);
+  if (m.shelters) out.push(`Shelters ${m.shelters} residents in a raid`);
+  if (m.defends) out.push(`Defends against ${m.defends.against.join(' and ')} forces on its own`);
+  if (m.radar) out.push(`Sees forces coming ${(m.radar / 1000).toFixed(0)} km out`);
+  if (m.safety) out.push('Homes nearby feel safer');
+  if (m.noise || m.runway) out.push('Loud: nearby homes mind the noise');
+  if (d.requires) out.push(`Needs a ${CIVIC.get(d.requires)?.name ?? d.requires} first`);
+  if (d.waterfront === 'deep') out.push('Its back must stand in deep water');
+  if (d.waterfront === 'shore') out.push('Stands on the shore, its back to the water');
+  return out;
 }

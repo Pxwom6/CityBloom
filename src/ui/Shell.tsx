@@ -31,6 +31,7 @@ import { drawCustomMapPreview, drawMapPreview } from './mapPreview';
 import { decodeMapFile, listMaps, newMapId, readMap, writeMap, type MapInfo } from '../client/maps';
 import { checkMap, type MapData } from '../sim/terrain/customMap';
 import { MapsScreen } from './Maps';
+import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
 const NAME_B = ['Marsh', 'Oak', 'Pine', 'Rowan', 'Sorrel', 'Thistle', 'Willow', 'Yarrow', 'Alder', 'Birch'];
@@ -211,6 +212,11 @@ function NewGame() {
   const [disasters, setDisasters] = useState(game.settings.disasters);
   const [elections, setElections] = useState(game.settings.elections);
   const [tutorial, setTutorial] = useState<boolean | null>(null);
+  // Rival neighbours (M34): off for every new city unless asked for; never remembered.
+  const [rivals, setRivals] = useState(false);
+  // A new shared region's war rules (M34), when this city starts one.
+  const [regionWar, setRegionWar] = useState(false);
+  const [regionScale, setRegionScale] = useState<WarScale>('skirmish');
   // A map of the player's own (M24) instead of a generated one.
   const [maps, setMaps] = useState<MapInfo[]>([]);
   const [mine, setMine] = useState<{ id: string; map: MapData } | null>(null);
@@ -269,6 +275,12 @@ function NewGame() {
     // Founded to bring into a shared region (M32).
     if (game.regionParam) for (const [k, v] of new URLSearchParams(game.regionParam)) q.set(k, v);
     if (tut && !sandbox) q.set('tutorial', '1');
+    // War (M34): rival neighbours for a city of its own; a region's war follows its host's rules.
+    if (rivals && !game.regionParam) q.set('rivals', '1');
+    if (regionWar && new URLSearchParams(game.regionParam ?? '').has('newregion')) {
+      q.set('rwar', '1');
+      q.set('rscale', regionScale);
+    }
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
   };
@@ -416,6 +428,52 @@ function NewGame() {
               Elections <small class="muted">every four years, won mostly on approval</small>
             </span>
           </label>
+          {region?.has('newregion') ? (
+            <div class="new-region-war">
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={regionWar}
+                  data-testid="new-region-war"
+                  onChange={(e) => setRegionWar((e.target as HTMLInputElement).checked)}
+                />
+                <span>
+                  War in the region{' '}
+                  <small class="muted">its cities raise forces and may fight; you can change it later</small>
+                </span>
+              </label>
+              {regionWar && (
+                <Segmented
+                  value={regionScale}
+                  options={WAR_SCALES}
+                  label={(v) => WAR_SCALE_NAMES[v]}
+                  testid="new-region-scale"
+                  onChange={setRegionScale}
+                />
+              )}
+            </div>
+          ) : (
+            <label
+              class="check"
+              title={region ? 'In a shared region, war follows its host’s rules' : undefined}
+            >
+              <input
+                type="checkbox"
+                checked={rivals && !region}
+                disabled={!!region}
+                data-testid="new-rivals"
+                onChange={(e) => setRivals((e.target as HTMLInputElement).checked)}
+              />
+              <span>
+                Rival neighbours{' '}
+                <small class="muted">
+                  {region
+                    ? 'in a shared region, war follows its host’s rules'
+                    : 'military buildings and forces; neighbouring towns that arm, and in time fight'}
+                </small>
+              </span>
+            </label>
+          )}
           <label class="check">
             <input
               type="checkbox"

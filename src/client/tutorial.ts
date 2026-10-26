@@ -126,6 +126,26 @@ export const TIPS: Tip[] = [
     when: (g) => !!g.net?.session.isHost && g.net.session.players.length > 1,
   },
   {
+    // War (M34): a city with rival neighbours, or in a region at war, once it may build an HQ.
+    id: 'rivals',
+    text:
+      'Your city has rivals: the towns along the highway arm month by month (see their characters in the ' +
+      'Region panel). The Military bar in the toolbar builds a military HQ first: it opens the war room ' +
+      'and the other military buildings.',
+    when: (g) =>
+      !!g.world.stats.war &&
+      (g.world.stats.unlockAll || g.world.stats.peak >= (CIVIC.get('militaryhq')?.unlockPopulation ?? 0)) &&
+      !hasCivic(g, (d) => d === 'militaryhq'),
+  },
+  {
+    id: 'warRoom',
+    text:
+      'Your military HQ opens the war room (Shift+M, or its button in the top bar): your forces, their ' +
+      'upkeep and stores, readiness and research. Train units at a barracks, depot, airfield or naval ' +
+      'yard: click one. They take staff from the workers nearest them, and power.',
+    when: (g) => g.world.stats.war?.hq != null,
+  },
+  {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',
     when: (g) => g.world.stats.utilities.power.unserved > 3,

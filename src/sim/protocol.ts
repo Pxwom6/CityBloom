@@ -195,6 +195,34 @@ export interface CivicDetails {
     /** Match days or launches, when open. */
     nextEvent: string | null;
   } | null;
+  /** Military buildings (M34): staff, power, what it trains and keeps, and what it does. */
+  military?: MilitaryDetails | null;
+}
+
+/** A military building in the inspector (M34). */
+export interface MilitaryDetails {
+  /** Posts and those filled; power it draws now and the share served. */
+  jobs: number;
+  staffed: number;
+  power: number;
+  powered: number;
+  /** Units it keeps at most, and those based here now. */
+  holds: number;
+  units: { id: number; kind: UnitKind; hp: number }[];
+  /** Training here, oldest (in progress) first: hours done of `hours`, gained an hour now. */
+  training: { id: number; kind: UnitKind; done: number; hours: number; rate: number }[];
+  /** What it can train, each with its price now (money, and materials bought in) or why not. */
+  trains: { kind: UnitKind; cost: number; imports: number; hours: number; why: string | null }[];
+  /** Why training is held up here, or null. */
+  stalled: string | null;
+  hq: boolean;
+  /** Residents it shelters; what it defends against; how far its radar sees (M35). */
+  shelters: number;
+  defends: { against: string[]; strength: number; range: number } | null;
+  radar: number;
+  /** Homes nearby that feel safer for it, and the noise it makes (reach, m). */
+  safety: { radius: number; value: number } | null;
+  noise: number;
 }
 
 export interface BudgetReport {

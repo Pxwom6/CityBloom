@@ -168,6 +168,14 @@ export function railSiding(
   return { seg: hit.seg, s: hit.s, x: hit.x, z: hit.z };
 }
 
+/** A building's name inside a sentence: lower case, but an abbreviation keeps its capitals ("military HQ"). */
+export function lowerName(name: string): string {
+  return name
+    .split(' ')
+    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
+    .join(' ');
+}
+
 /** Water deep enough for ships (m below the shore). */
 export const BERTH_DEPTH = -6;
 
@@ -202,7 +210,7 @@ const SEAPORT_BERTH = { from: 10, to: 60, step: 10, depth: BERTH_DEPTH };
  */
 export const WATERFRONT = {
   deep: { from: 0, to: 24, step: 4, depth: BERTH_DEPTH },
-  shore: { from: -2, to: 8, step: 2, depth: SHORE_HEIGHT - 0.5 },
+  shore: { from: -2, to: 12, step: 2, depth: SHORE_HEIGHT - 0.5 },
 };
 
 /** Nearest road the front edge touches (within its corridor plus a few metres). */
@@ -300,7 +308,7 @@ export function checkPlacement(
       if (o.def === def.id && o.id !== ignoreCivic)
         return { ...res, reason: `The city already has a ${def.name.toLowerCase()}` };
   if (def.requires && ![...sim.state.civics.values()].some((o) => o.def === def.requires))
-    return { ...res, reason: `Needs a ${CIVIC.get(def.requires)?.name.toLowerCase() ?? def.requires} first` };
+    return { ...res, reason: `Needs a ${lowerName(CIVIC.get(def.requires)?.name ?? def.requires)} first` };
   if (def.resource && resourceRichness(sim, def.resource.kind, rect) < SPECIALISATION.minRichness)
     return {
       ...res,

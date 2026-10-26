@@ -16,11 +16,11 @@ import { Rng, type RngState } from '../rng';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
-import type { ForceData } from '../protocol';
+import type { ForceData, MilitaryDetails } from '../protocol';
 import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
 import { accessOf, BState, type Building } from '../world/buildings';
 import { ZONE_I } from '../../data/zones';
-import { civicOnline, civicUpkeep, type Civic } from '../world/civic';
+import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic';
 import type { Origin } from './commute';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
@@ -389,12 +389,12 @@ export function trainUnit(sim: Sim, baseId: number, kind: UnitKind, dryRun: bool
   if (!c || !m) return fail('Units are trained at military buildings');
   const name = CIVIC.get(c.def)!.name;
   if (!m.trains?.includes(kind))
-    return fail(`The ${name.toLowerCase()} doesn't train ${def.plural.toLowerCase()}`);
+    return fail(`The ${lowerName(name)} doesn't train ${def.plural.toLowerCase()}`);
   if (def.research) return fail(`${def.plural} need weapons research first`);
   if (s.economy.bankrupt) return fail('The city is bankrupt');
   const load = baseLoad(sim, baseId);
   if (load.units + load.orders >= (m.holds ?? 0))
-    return fail(`The ${name.toLowerCase()} is full: it keeps ${m.holds ?? 0} units`);
+    return fail(`The ${lowerName(name)} is full: it keeps ${m.holds ?? 0} units`);
   const bill = unitBill(sim, kind);
   const total = bill.money + bill.imports;
   if (!s.options.sandbox && s.treasury < total)
@@ -764,5 +764,74 @@ export function forceData(sim: Sim): ForceData | null {
         rate: head && c ? Math.round(trainingRate(sim, c, o.kind) * 1000) / 1000 : 0,
       };
     }),
+  };
+}
+
+/** A military building in the inspector (M34): staff, power, units, training and prices. */
+export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
+  const m = militaryOf(c)!;
+  const w = sim.state.war;
+  const name = lowerName(CIVIC.get(c.def)!.name);
+  const load = baseLoad(sim, c.id);
+  const full = load.units + load.orders >= (m.holds ?? 0);
+  const units = w
+    ? [...w.units.values()]
+        .filter((u) => u.base === c.id)
+        .sort((a, b) => a.id - b.id)
+        .map((u) => ({ id: u.id, kind: u.kind, hp: u.hp }))
+    : [];
+  const training = w
+    ? [...w.orders.values()]
+        .filter((o) => o.base === c.id)
+        .sort((a, b) => a.id - b.id)
+        .map((o, i) => ({
+          id: o.id,
+          kind: o.kind,
+          done: o.done,
+          hours: UNIT.get(o.kind)?.hours ?? 1,
+          rate: i === 0 ? Math.round(trainingRate(sim, c, o.kind) * 1000) / 1000 : 0,
+        }))
+    : [];
+  const trains = (m.trains ?? []).map((kind) => {
+    const def = UNIT.get(kind)!;
+    const bill = unitBill(sim, kind);
+    const why = !w
+      ? 'War is off in this city'
+      : def.research
+        ? `${def.plural} need weapons research first`
+        : full
+          ? `The ${name} is full: it keeps ${m.holds ?? 0} units`
+          : !sim.state.options.sandbox && sim.state.treasury < bill.money + bill.imports
+            ? 'Not enough money'
+            : null;
+    return { kind, cost: bill.money, imports: bill.imports, hours: def.hours, why };
+  });
+  const staff = c.staff ?? 0;
+  const powered = c.powered ?? 0;
+  const stalled = !training.length
+    ? null
+    : !civicOnline(c)
+      ? 'Closed for repairs'
+      : staff < WAR.minStaffed
+        ? `Short of staff (${Math.round(staff * 100)} %): not enough residents looking for work nearby`
+        : powered < 0.5
+          ? 'Short of power'
+          : null;
+  return {
+    jobs: m.jobs,
+    staffed: Math.round(m.jobs * Math.min(1, staff)),
+    power: Math.round(militaryPowerNeed(sim, c)),
+    powered,
+    holds: m.holds ?? 0,
+    units,
+    training,
+    trains,
+    stalled,
+    hq: !!m.hq,
+    shelters: m.shelters ?? 0,
+    defends: m.defends ? { ...m.defends, against: [...m.defends.against] } : null,
+    radar: m.radar ?? 0,
+    safety: m.safety ? { ...m.safety } : null,
+    noise: m.noise?.reach ?? m.runway ?? 0,
   };
 }

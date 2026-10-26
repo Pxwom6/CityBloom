@@ -211,6 +211,7 @@ import {
   disbandUnit,
   forceData,
   issueBond,
+  militaryDetails,
   repayBond,
   rivalsMonth,
   startWar,
@@ -2390,6 +2391,7 @@ export class Sim {
             yesterday: c.lastDay,
           }
         : null,
+      military: d.military ? militaryDetails(this, c) : null,
       project: d.project
         ? {
             stages: d.project.stages.map((st) => ({ ...st })),

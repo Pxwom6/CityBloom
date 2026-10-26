@@ -76,7 +76,7 @@ Should fix:
 - [x] F11 Phones
 - [x] F12 Invite links
 - [x] F13 Tests
-- [ ] F14 Balance
+- [x] F14 Balance
 - [x] Minor items
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
@@ -750,6 +750,15 @@ misses with either build (`startup-slow.log`).
   connections, 8 players leaving and coming back, 3 deliberate desyncs caught and resynced, 1,548
   commands applied over 113,018 ticks (6.5 game years). **No unexplained resyncs**, and at the end
   every game agreed with the host's part for part. Log: `bench-results/soak.log`.
+
+## Balance (multiplayer review, F14)
+- `npx tsx scripts/balance.ts 20` on this branch (after F1–F13 and the minor items) and on `main`
+  (6f049d3) back to back on the cloud VM. Greedy (420 residents, 16 %, $566k at year 20) and
+  neglectful (354, 36 %, $480k) are byte-identical. The careful mayor is identical for nine years,
+  then wanders within its spread as it did at M29: year 20 **67,373 residents, 73 %, $1.84M**, every
+  election won, against `main`'s 65,767, 73 % and $0.77M. Those are exactly the M29 numbers, so M31's
+  and M32's changes to `dispatch` and the region code, and these follow-ups, changed nothing in a
+  city played alone (the drift is M29's deterministic maths, DECISIONS M29).
 
 ## Tests (multiplayer review, F13)
 - Cross-browser determinism, Node side, 24 months, now covering all 40 command kinds: 26.8 s,

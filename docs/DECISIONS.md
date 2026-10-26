@@ -779,3 +779,7 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   127.0.0.1). The lobby, the room panel, the pause menu's "Host on this computer", "Start a region on
   this computer" and Troubleshooting say that connecting straight shows the players' internet (IP)
   addresses to each other; online rooms don't.
+- **F14 Balance rerun.** `balance.ts 20` after these follow-ups matches the M29 log to the last digit
+  (careful 67,373 residents and $1.84M at year 20, greedy and neglectful identical to `main`): M31's
+  and M32's changes to `dispatch` and the region code only act in shared cities and regions, so no
+  tuning was needed.

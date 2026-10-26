@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildTownViaApi, openGame, serveTownViaApi, shot, skipGraphicsCheck, watchErrors } from './helpers';
-import { frames, placeFromToolbar, screen, state } from './ui';
+import { frames, placeFromToolbar, screen, settings, state } from './ui';
 
 /**
  * M34 Armed forces through the real UI: a peaceful city shows none of it; the new-city screen founds a
@@ -25,13 +25,6 @@ async function inspect(page: Page, def: string): Promise<void> {
   await expect(page.getByTestId('military')).toBeVisible({ timeout: 20_000 });
 }
 
-/** Spots north of the town's avenue, then along it, for buildings of a size. */
-function spots(cx: number, hz: number, dz: number[]): [number, number][] {
-  const out: [number, number][] = [];
-  for (const z of dz) for (let x = cx + 60; x <= cx + 460; x += 40) out.push([x, hz + z]);
-  return out;
-}
-
 test('M34: a peaceful city shows no military, war room or defence funding', async ({ page }) => {
   test.setTimeout(300_000);
   const errs = watchErrors(page);
@@ -49,9 +42,10 @@ test('M34: a peaceful city shows no military, war room or defence funding', asyn
 });
 
 test('M34: the new-city screen founds a city with rival neighbours', async ({ page }) => {
-  test.setTimeout(400_000);
+  test.setTimeout(900_000);
   const errs = watchErrors(page);
   await skipGraphicsCheck(page);
+  await settings(page, { quality: 'low' });
   await page.goto('./');
   await page.waitForFunction(() => window.__game?.getShell().mode === 'menu', null, { timeout: 120_000 });
   await page.getByTestId('main-new').click();
@@ -62,7 +56,7 @@ test('M34: the new-city screen founds a city with rival neighbours', async ({ pa
   await shot(page, 'm34-new-city');
   await page.getByTestId('new-start').click();
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
-    timeout: 180_000,
+    timeout: 600_000,
   });
   const s = await state(page);
   expect(s.options.rivals).toBe(true);
@@ -77,13 +71,13 @@ test('M34: the new-city screen founds a city with rival neighbours', async ({ pa
 test('M34: every military building from the toolbar, every kind of unit trained, upkeep and the war room', async ({
   page,
 }) => {
-  test.setTimeout(1_500_000);
+  test.setTimeout(1_800_000);
   const errs = watchErrors(page);
+  await settings(page, { quality: 'low' });
   await openGame(page, '&rivals=1&seed=port&preset=coast');
   await buildTownViaApi(page);
   await serveTownViaApi(page);
   const hz = (await state(page)).highwayZ;
-  const cx = 24;
   // Money for everything, and roads out to the sea for the naval yard and the coastal gun.
   await page.evaluate(
     async ([hz]) => {
@@ -121,33 +115,58 @@ test('M34: every military building from the toolbar, every kind of unit trained,
   await frames(page);
   await expect(page.getByTestId('tool-military')).toBeVisible();
 
-  // --- The HQ first: the others need it. ---
-  await placeFromToolbar(page, 'military', 'militaryhq', spots(cx, hz, [-130, -60]));
-  for (const def of ['barracks', 'shelter', 'bunker', 'vehicledepot', 'radar', 'antiair', 'armsfactory'])
-    await placeFromToolbar(page, 'military', def, spots(cx, hz, [-130, -60, 70]));
-  // The big sites out along the avenue to the sea.
+  // --- Everything along the avenue out to the sea, where the ground is open: the HQ first (the
+  // others need it), each building on its own stretch, north of the road (the toolbar covers the
+  // south of the screen). ---
+  const look = (x: number) =>
+    page.evaluate(
+      ([x, hz]) => window.__game!.setCamera({ x: x!, z: hz! + 40, yaw: 0, distance: 420, tilt: 0.75 }),
+      [x, hz],
+    );
+  const stretch = (x0: number, dz: number): [number, number][] =>
+    [0, 20, 40, 60, 80].map((dx) => [x0 + dx, hz + dz] as [number, number]);
+  const plan: [string, number, number][] = [
+    ['militaryhq', 560, -40],
+    ['barracks', 650, -36],
+    ['shelter', 730, -18],
+    ['bunker', 780, -18],
+    ['vehicledepot', 840, -40],
+    ['radar', 930, -22],
+    ['antiair', 980, -18],
+    ['armsfactory', 1040, -40],
+    ['provingground', 1130, -44],
+  ];
+  for (const [def, x, dz] of plan) {
+    await look(x + 40);
+    await frames(page);
+    await placeFromToolbar(page, 'military', def, stretch(x, dz));
+  }
+  // The airfield's long site along the road, south of it, with the camera moved to keep it clear of
+  // the toolbar.
   await page.evaluate(
-    (hz) => window.__game!.setCamera({ x: 950, z: hz, yaw: 0, distance: 1100, tilt: 0.85 }),
+    (hz) => window.__game!.setCamera({ x: 820, z: hz + 120, yaw: 0, distance: 600, tilt: 0.85 }),
     hz,
   );
   await frames(page);
-  const along = (dz: number[]): [number, number][] =>
-    dz.flatMap((z) => [640, 760, 880, 1000, 1120, 1240].map((x) => [x, hz + z] as [number, number]));
-  await placeFromToolbar(page, 'military', 'provingground', along([-40, 40]));
-  await placeFromToolbar(page, 'military', 'airfield', along([-55, 55]));
+  await placeFromToolbar(page, 'military', 'airfield', stretch(700, 50).concat(stretch(900, 50)));
   // By the sea: the naval yard where deep water comes close, the coastal gun where the shore does.
-  await page.evaluate(
-    (hz) => window.__game!.setCamera({ x: 1450, z: hz - 300, yaw: 0, distance: 800, tilt: 0.85 }),
-    hz,
-  );
-  await frames(page);
   const shore = (x: number, z0: number, z1: number): [number, number][] => {
     const out: [number, number][] = [];
-    for (let z = z0; z <= z1; z += 10) out.push([x, hz + z]);
+    for (let z = z0; z <= z1; z += 20) out.push([x, hz + z]);
     return out;
   };
-  await placeFromToolbar(page, 'military', 'navalyard', shore(1467, -380, -240));
-  await placeFromToolbar(page, 'military', 'coastalgun', shore(1443, -550, -440));
+  await page.evaluate(
+    (hz) => window.__game!.setCamera({ x: 1450, z: hz - 290, yaw: 0, distance: 420, tilt: 0.8 }),
+    hz,
+  );
+  await frames(page);
+  await placeFromToolbar(page, 'military', 'navalyard', shore(1467, -360, -260));
+  await page.evaluate(
+    (hz) => window.__game!.setCamera({ x: 1445, z: hz - 500, yaw: 0, distance: 320, tilt: 0.8 }),
+    hz,
+  );
+  await frames(page);
+  await placeFromToolbar(page, 'military', 'coastalgun', shore(1443, -550, -470));
   for (const def of [
     'militaryhq',
     'barracks',

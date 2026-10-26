@@ -171,7 +171,8 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
       timeout: 120_000,
     },
   );
-  await expect.poll(async () => (await region(sam))?.state, { timeout: 120_000 }).toBe('in');
+  // A city that has just opened is busy building its scene for a minute or more on SwiftShader.
+  await expect.poll(async () => (await region(sam))?.state, { timeout: 300_000 }).toBe('in');
   await expect
     .poll(async () => (await reports(sam)).length, { timeout: 120_000, intervals: [1_000] })
     .toBe(1);

@@ -38,6 +38,8 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'setMapEntry',
   'setMapInfo',
   'startScenario',
+  'battleReport',
+  'battleResolve',
 ]);
 
 const DISASTERS = { earthquake: true, tornado: true, flood: true, meteor: true } as const satisfies Record<
@@ -312,6 +314,26 @@ const CHECKS: Record<CommandType, Check> = {
       ? { type: 'trainUnit', base: c.base, kind: c.kind as Extract<Command, { type: 'trainUnit' }>['kind'] }
       : BAD,
   cancelTraining: (c) => (isInt(c.order) ? { type: 'cancelTraining', order: c.order } : BAD),
+  sendForce: (c) =>
+    Array.isArray(c.units) &&
+    c.units.length <= 64 &&
+    c.units.every((u) => isInt(u)) &&
+    isInt(c.to) &&
+    oneOf(c.route, ['highway', 'rail', 'sea', 'air'] as const) &&
+    oneOf(c.target, ['military', 'industry', 'power', 'cityhall'] as const) &&
+    oneOf(c.stance, ['cautious', 'bold'] as const)
+      ? {
+          type: 'sendForce',
+          units: [...(c.units as number[])],
+          to: c.to,
+          route: c.route,
+          target: c.target,
+          stance: c.stance,
+        }
+      : BAD,
+  recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
+  battleReport: () => 'Only your own game reports its battles',
+  battleResolve: () => 'Only your own game hosts its battles',
   disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
   issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
   repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),

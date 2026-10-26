@@ -70,6 +70,31 @@ const SAMPLES: Record<CommandType, Command> = {
   disbandUnit: { type: 'disbandUnit', unit: 8 },
   issueBond: { type: 'issueBond', amount: 40_000 },
   repayBond: { type: 'repayBond', id: 9 },
+  sendForce: {
+    type: 'sendForce',
+    units: [3, 4],
+    to: 2,
+    route: 'highway',
+    target: 'military',
+    stance: 'bold',
+  },
+  recallForce: { type: 'recallForce', expedition: 6 },
+  battleResolve: { type: 'battleResolve', input: {} as never, mode: 'watch' },
+  battleReport: {
+    type: 'battleReport',
+    expedition: 6,
+    result: {
+      outcome: 'raided',
+      units: [],
+      theirLost: 0,
+      theirStrength: 0,
+      defencesLost: 0,
+      destroyed: 0,
+      damaged: 0,
+      objectives: { aimed: 1, down: 1 },
+      hash: '0',
+    },
+  },
 };
 
 /** Values a field might carry instead of what it should. */

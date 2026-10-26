@@ -23,6 +23,7 @@ import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { loadWarModels } from './client/models';
 import { formatNumber } from './ui/hooks';
+import { AwayBattles, type BattleRecord } from './client/battles';
 import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
@@ -256,6 +257,11 @@ export class Game {
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
       if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
+      // Forces arrived at a neighbour's town (M35): this page fights their battles. In a shared city
+      // only the host's page does (a second report would be turned away anyway).
+      const exps = diff.stats.war?.expeditions;
+      if (exps?.length && !this.inMenu() && !this.readOnly && (!this.net || this.net.session.isHost))
+        this.away.check(exps);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -471,6 +477,16 @@ export class Game {
   private regionHost: P2PHost | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
+  /** Battles away from the city (M35): fought by this page when the city's forces arrive. */
+  readonly away = new AwayBattles({
+    query: (q) => this.client.query(q),
+    report: async (expedition, result) =>
+      (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
+    tick: () => this.world.stats.tick,
+    changed: () => this.notify(),
+  });
+  /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
+  viewing: { record: BattleRecord; back: string | null } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
   boundRegion: RegionBinding | null = null;
 
@@ -1080,6 +1096,30 @@ export class Game {
         );
         this.audio?.play('raid');
       } else if (e.kind === 'battleEnded') this.battleReport(e.info ?? {});
+      else if (e.kind === 'forceArrived')
+        this.notice(
+          `force:${e.id}`,
+          `Our force has reached ${String(e.info?.to)}: the battle is on.`,
+          'info',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'expeditionReport') {
+        const i = e.info ?? {};
+        const lost = Number(i.lost) || 0;
+        const head =
+          i.outcome === 'raided'
+            ? `Our raid on ${String(i.to)} struck home: ${String(i.down)} of their targets knocked out`
+            : i.outcome === 'repelled'
+              ? `Our raid on ${String(i.to)} was beaten off`
+              : `Our force pulled back from ${String(i.to)}`;
+        this.notice(
+          `force:${e.id}`,
+          `${head}${lost ? `, and ${lost} of our units were knocked out` : ''}. The war room has the report.`,
+          i.outcome === 'raided' ? 'ok' : 'info',
+        );
+      } else if (e.kind === 'forceHome')
+        this.notice('forceHome', `Our force is home from ${String(e.info?.from)}.`, 'ok', undefined, false);
       else if (e.kind === 'decayed')
         this.notice(
           'decayed',
@@ -1674,6 +1714,25 @@ export class Game {
   }
 
   /** Fly the camera to a spot (advisors, notifications), optionally opening a data map. */
+  /**
+   * Watch a battle fought in a neighbour's town (M35): the city is saved, and the town opens in this
+   * page, read-only, where the battle plays out again. "Back to my city" reopens the save.
+   */
+  async watchBattle(id: string): Promise<void> {
+    const slot = this.slot ?? 'auto';
+    if (!this.readOnly && !(await this.saveTo(slot, undefined, true))) {
+      this.toast('The city couldn’t be saved first, so the battle can’t be shown now.', 'bad');
+      return;
+    }
+    location.href = `${location.pathname}?battle=${encodeURIComponent(id)}&back=${encodeURIComponent(slot)}`;
+  }
+
+  /** Leave a battle being watched for the city it came from. */
+  backToCity(): void {
+    const back = this.viewing?.back;
+    location.href = back ? `${location.pathname}?load=${encodeURIComponent(back)}` : location.pathname;
+  }
+
   /** Look at the battle in the city (M35): the middle of its units, from far enough to see them. */
   followBattle(): void {
     const f = this.world.battle;
@@ -1681,15 +1740,22 @@ export class Game {
       this.openPanel('war');
       return;
     }
+    // The attackers still in it (where the fighting is), else whoever is left; the toy units are
+    // small, so close in on the middle of the group nearest its centre.
     const live = f.units.filter((u) => u.state !== 2);
-    const list = live.length ? live : f.units;
-    const x = list.reduce((a, u) => a + u.x, 0) / list.length;
-    const z = list.reduce((a, u) => a + u.z, 0) / list.length;
-    const spread = Math.max(...list.map((u) => Math.hypot(u.x - x, u.z - z)));
+    const attackers = live.filter((u) => u.side === 0);
+    const list = attackers.length ? attackers : live.length ? live : f.units;
+    let x = list.reduce((a, u) => a + u.x, 0) / list.length;
+    let z = list.reduce((a, u) => a + u.z, 0) / list.length;
+    const near = [...list].sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+    const core = near.slice(0, Math.max(1, Math.ceil(near.length * 0.6)));
+    x = core.reduce((a, u) => a + u.x, 0) / core.length;
+    z = core.reduce((a, u) => a + u.z, 0) / core.length;
+    const spread = Math.max(...core.map((u) => Math.hypot(u.x - x, u.z - z)));
     const cur = this.renderer.controller.goal;
     this.following = 0;
     this.renderer.controller.setPose(
-      { x, z, distance: Math.min(900, Math.max(220, spread * 2.2)), yaw: cur.yaw, tilt: cur.tilt },
+      { x, z, distance: Math.min(420, Math.max(120, spread * 1.8 + 80)), yaw: cur.yaw, tilt: cur.tilt },
       false,
     );
   }

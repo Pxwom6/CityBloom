@@ -10,6 +10,7 @@ import { App } from './ui/App';
 import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
 import { decodeSave, readSlot } from './client/saves';
+import { loadBattle, loadTown } from './client/battles';
 import { newMapId, readMap, writeMap } from './client/maps';
 import { MapEditor } from './client/editor';
 import { mapFromGenerator, type MapData } from './sim/terrain/customMap';
@@ -202,9 +203,22 @@ async function boot(): Promise<void> {
       },
     );
   }
-  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join', 'visit'].some((k) =>
-    params.has(k),
-  );
+  // Watching a battle fought in a neighbour's town (M35): its record and the town it was fought in.
+  const battleId = params.get('battle');
+  const battleRecord = battleId ? await loadBattle(battleId).catch(() => null) : null;
+  const battleTown = battleRecord?.townKey ? await loadTown(battleRecord.townKey).catch(() => null) : null;
+  const menu = ![
+    'paused',
+    'seed',
+    'preset',
+    'load',
+    'new',
+    'scenario',
+    'editor',
+    'join',
+    'visit',
+    'battle',
+  ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
   // An invite link (M30): into the room, whose city comes as a snapshot.
@@ -244,13 +258,15 @@ async function boot(): Promise<void> {
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
   const found = visited
     ? visited
-    : loadSlot
-      ? await readSlot(loadSlot).catch(() => null)
-      : scenario
-        ? await shippedSave(`scenarios/${scenario.save}`)
-        : menu
-          ? await shippedSave('demo.citybloom')
-          : null;
+    : battleTown
+      ? battleTown
+      : loadSlot
+        ? await readSlot(loadSlot).catch(() => null)
+        : scenario
+          ? await shippedSave(`scenarios/${scenario.save}`)
+          : menu
+            ? await shippedSave('demo.citybloom')
+            : null;
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
@@ -288,6 +304,15 @@ async function boot(): Promise<void> {
     game.setCamera('overview', true);
     // A reload carries on editing this map.
     history.replaceState(null, '', `${location.pathname}?editor=${encodeURIComponent(editing.id)}`);
+  } else if (battleRecord && battleTown && opened) {
+    // The battle again, in the town's own sim: its fires and rubble, then its repairs.
+    game.readOnly = true;
+    game.viewing = { record: battleRecord, back: params.get('back') };
+    await client.command({ type: 'battleResolve', input: battleRecord.input, mode: 'watch' });
+    game.setSpeed(1);
+    game.setCamera('overview', true);
+    setTimeout(() => game.followBattle(), 1500);
+    history.replaceState(null, '', location.pathname);
   } else if (visited) {
     game.readOnly = true;
     game.setSpeed(0);

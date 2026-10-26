@@ -220,7 +220,9 @@ import {
   warSummary,
   type WarSummary,
 } from './systems/war';
-import { battleTick, mendUnits, planRaid, raidsHour, startHomeBattle } from './systems/raids';
+import { battleTick, mendUnits, planRaid, raidsHour, resolveBattle, startHomeBattle } from './systems/raids';
+import { battleReport, expeditionsHour, recallForce, sendForce } from './systems/expeditions';
+import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
 import { rectsOverlap, type ORect } from './geom';
@@ -297,7 +299,10 @@ export type SimEvent = {
     | 'raidWarning'
     | 'battleStarted'
     | 'battleEnded'
-    | 'unitLost';
+    | 'unitLost'
+    | 'forceArrived'
+    | 'forceHome'
+    | 'expeditionReport';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -1322,6 +1327,14 @@ export class Sim {
       // War (M34).
       case 'trainUnit':
         return trainUnit(this, cmd.base, cmd.kind, dryRun);
+      case 'sendForce':
+        return sendForce(this, cmd.units, cmd.to, cmd.route, cmd.target, cmd.stance, dryRun);
+      case 'recallForce':
+        return recallForce(this, cmd.expedition, dryRun);
+      case 'battleReport':
+        return battleReport(this, cmd.expedition, cmd.result, dryRun);
+      case 'battleResolve':
+        return resolveBattle(this, cmd.input, cmd.mode, dryRun);
       case 'cancelTraining':
         return cancelTraining(this, cmd.order, dryRun);
       case 'disbandUnit':
@@ -1787,6 +1800,7 @@ export class Sim {
             bondsHour(this);
             // Raids (M35): warnings, arrivals, the neighbours' decisions; units mend at their bases.
             raidsHour(this);
+            expeditionsHour(this);
             mendUnits(this);
           });
         run('progress', () => {
@@ -2358,6 +2372,10 @@ export class Sim {
         return districtReports(this);
       case 'exportMap':
         return exportMap(this);
+      case 'awayCity': {
+        const e = this.state.war?.expeditions?.find((x) => x.id === q.expedition);
+        return e && e.state === 'fighting' ? awayCity(this, e) : null;
+      }
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':

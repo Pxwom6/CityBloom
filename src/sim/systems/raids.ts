@@ -31,6 +31,7 @@ import {
   type Outcome,
 } from '../battle/types';
 import { DMath } from '../dmath';
+import { fail, ok, type CommandResult } from '../commands';
 import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
@@ -84,6 +85,8 @@ export interface BattleReport {
   sheltered: number;
   /** Residents whose homes fell (they move out). */
   homeless: number;
+  /** An expedition's battle in the other town: what fell there, and the objectives hit. */
+  away?: { destroyed: number; damaged: number; objectives: { aimed: number; down: number } };
 }
 
 /** The battle being fought in this city. Its course is re-run from `input` after a load. */
@@ -99,7 +102,7 @@ export interface HostedBattle {
 /** Colours for computer neighbours' forces, by their place in the region. */
 const RIVAL_COLOURS = [0xd8493f, 0x8e4fb5, 0xe08a2a, 0x3d9a6a];
 
-function neighbourColour(sim: Sim, id: number): number {
+export function neighbourColour(sim: Sim, id: number): number {
   const k = sim.state.region.neighbours.findIndex((n) => n.id === id);
   return RIVAL_COLOURS[Math.max(0, k) % RIVAL_COLOURS.length]!;
 }
@@ -346,6 +349,53 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
   sim.battleRun = null;
   sim.events.push({ kind: 'battleStarted', id: r.id, info: { from: r.name, target: r.target } });
   sim.warChanged();
+}
+
+/**
+ * A battle fought elsewhere, hosted here (M35): `watch` plays it out a tick at a time (a replay, or
+ * the view of a neighbour's town), `instant` plays it to its end at once (a city whose player was
+ * away). Its damage reaches the city as any battle's does.
+ */
+export function resolveBattle(
+  sim: Sim,
+  input: BattleInput,
+  mode: 'watch' | 'instant',
+  dryRun: boolean,
+): CommandResult {
+  const s = sim.state;
+  const w = s.war;
+  if (!w) return fail('War is off in this city');
+  if (w.battle) return fail('A battle is on in the city already');
+  if (input.v !== BATTLE_VERSION) return fail('That battle was fought by another version of the game');
+  if (dryRun) return ok(0);
+  const a = input.attacker;
+  const raid: Raid = {
+    id: s.nextId++,
+    from: -1,
+    name: a.name,
+    units: a.units.map((u) => ({ kind: u.kind, hp: u.hp })),
+    target: a.target,
+    route: a.route,
+    stance: a.stance,
+    readiness: a.readiness,
+    warn: s.tick,
+    arrive: s.tick,
+    warned: true,
+    near: 0,
+    sheltered: 0,
+  };
+  w.battle = { id: raid.id, input, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
+  sim.battleRun = null;
+  sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
+  if (mode === 'instant') {
+    const run = new Battle(input);
+    while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick());
+    w.battle.step = run.step;
+    sim.battleFrame = run.frame();
+    endHomeBattle(sim, run);
+  }
+  sim.warChanged();
+  return ok(0, { created: [raid.id] });
 }
 
 /** Every tick a battle is on: its steps for the tick, their damage to the city, the frame. */

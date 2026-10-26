@@ -23,6 +23,7 @@ import { ZONE_I } from '../../data/zones';
 import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic';
 import type { Origin } from './commute';
 import type { BattleReport, HostedBattle, Raid } from './raids';
+import type { Expedition } from './expeditions';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
 import type { FlowAccumulator } from './traffic';
@@ -44,6 +45,8 @@ export interface Unit {
   hp: number;
   /** Tick it finished training. */
   born: number;
+  /** Away on an expedition (its id, M35); absent at home. */
+  away?: number;
 }
 
 /** A unit being trained at a base. Each base trains its orders one at a time, oldest first. */
@@ -100,6 +103,8 @@ export interface WarState {
   incoming?: Raid[];
   /** The battle being fought in the city now (M35). */
   battle?: HostedBattle;
+  /** Forces away raiding neighbours (M35). */
+  expeditions?: Expedition[];
   /** The last battles' reports, newest last (M35). */
   reports?: BattleReport[];
   /** When the neighbours last set off to raid it: any, and each (ticks). */
@@ -712,6 +717,19 @@ export interface WarSummary {
   } | null;
   battle: { id: number; from: string; start: number } | null;
   reports: BattleReport[];
+  /** Forces away (M35): where to, how many, and when they arrive or are home. */
+  expeditions: {
+    id: number;
+    to: number;
+    name: string;
+    state: 'out' | 'fighting' | 'back';
+    units: number;
+    route: string;
+    target: string;
+    depart: number;
+    arrive: number;
+    home: number;
+  }[];
 }
 
 export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSummary | null {
@@ -785,6 +803,18 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     incoming: incomingSummary(w),
     battle: w.battle ? { id: w.battle.id, from: w.battle.raid.name, start: w.battle.start } : null,
     reports: [...(w.reports ?? [])].reverse(),
+    expeditions: (w.expeditions ?? []).map((e) => ({
+      id: e.id,
+      to: e.to,
+      name: e.name,
+      state: e.state,
+      units: e.units.length,
+      route: e.route,
+      target: e.target,
+      depart: e.depart,
+      arrive: e.arrive,
+      home: e.home,
+    })),
   };
 }
 
@@ -810,7 +840,11 @@ export function forceData(sim: Sim): ForceData | null {
   return {
     units: [...w.units.values()]
       .sort((a, b) => a.id - b.id)
-      .map((u) => ({ id: u.id, kind: u.kind, base: u.base, hp: u.hp })),
+      .map((u) =>
+        u.away
+          ? { id: u.id, kind: u.kind, base: u.base, hp: u.hp, away: u.away }
+          : { id: u.id, kind: u.kind, base: u.base, hp: u.hp },
+      ),
     orders: orders.map((o) => {
       const c = sim.state.civics.get(o.base);
       const head = c && trainingAt(sim, c.id)?.id === o.id;

@@ -10,6 +10,9 @@ import type { PolicyId } from '../data/policies';
 import type { TerraformMode } from '../data/terraform';
 import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
+import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
+import type { AwayResult } from './systems/expeditions';
+import type { BattleInput } from './battle/types';
 import type { RegionUpdate } from './systems/region';
 import type { UnitKind } from '../data/war';
 
@@ -137,6 +140,20 @@ export type Command =
   | { type: 'addModule'; civic: number; module: string }
   /** War (M34): train a unit at a military building, call training off, or stand a unit down. */
   | { type: 'trainUnit'; base: number; kind: UnitKind }
+  /** Battles (M35): send a force to raid a neighbour, or call it back before it arrives. */
+  | {
+      type: 'sendForce';
+      units: number[];
+      to: number;
+      route: BattleRoute;
+      target: BattleTarget;
+      stance: Stance;
+    }
+  | { type: 'recallForce'; expedition: number }
+  /** The page's account of an expedition's battle, fought in the other town (page only). */
+  | { type: 'battleReport'; expedition: number; result: AwayResult }
+  /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
+  | { type: 'battleResolve'; input: BattleInput; mode: 'watch' | 'instant' }
   | { type: 'cancelTraining'; order: number }
   | { type: 'disbandUnit'; unit: number }
   /** War bonds (M34): borrow from the residents, or pay one off early. */
@@ -191,6 +208,10 @@ const COMMAND_KINDS = {
   contributeProject: true,
   addModule: true,
   trainUnit: true,
+  sendForce: true,
+  recallForce: true,
+  battleReport: true,
+  battleResolve: true,
   cancelTraining: true,
   disbandUnit: true,
   issueBond: true,

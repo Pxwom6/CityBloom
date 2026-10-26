@@ -393,7 +393,8 @@ export interface Snapshot {
 
 /** The city's units and the training under way (M34), sent whenever they change. */
 export interface ForceData {
-  units: { id: number; kind: UnitKind; base: number; hp: number }[];
+  /** `away`: on an expedition (M35), so not at its base. */
+  units: { id: number; kind: UnitKind; base: number; hp: number; away?: number }[];
   /** Training at each base, oldest first: hours done of `hours`, and hours gained an hour now. */
   orders: { id: number; kind: UnitKind; base: number; done: number; hours: number; rate: number }[];
 }
@@ -543,6 +544,8 @@ export type Query =
   | { type: 'districts' }
   /** The map editor's map as edited, and its playability check (M24). */
   | { type: 'exportMap' }
+  /** An expedition fighting (M35): what its battle needs of the city, or null. */
+  | { type: 'awayCity'; expedition: number }
   /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
   | { type: 'builtBy'; id: number }
   /** What this city tells a shared region about itself (M32). */

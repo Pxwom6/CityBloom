@@ -9,6 +9,9 @@ const DB_NAME = 'citybloom';
 const STORE = 'saves';
 /** Custom maps from the map editor (M24), in the same database. */
 export const MAP_STORE = 'maps';
+/** Computer neighbours' towns, grown once and kept (M35), and battles kept for replays. */
+export const TOWN_STORE = 'towns';
+export const BATTLE_STORE = 'battles';
 
 export interface SlotInfo {
   slot: string;
@@ -27,13 +30,17 @@ interface SlotRecord extends SlotInfo {
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    // Version 2 (M24) adds the maps store; saves are untouched.
-    const req = indexedDB.open(DB_NAME, 2);
+    // Version 2 (M24) adds the maps store, version 3 (M35) the towns and battles; saves are untouched.
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE))
         req.result.createObjectStore(STORE, { keyPath: 'slot' });
       if (!req.result.objectStoreNames.contains(MAP_STORE))
         req.result.createObjectStore(MAP_STORE, { keyPath: 'id' });
+      if (!req.result.objectStoreNames.contains(TOWN_STORE))
+        req.result.createObjectStore(TOWN_STORE, { keyPath: 'key' });
+      if (!req.result.objectStoreNames.contains(BATTLE_STORE))
+        req.result.createObjectStore(BATTLE_STORE, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('IndexedDB unavailable'));

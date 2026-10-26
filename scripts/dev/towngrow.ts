@@ -19,7 +19,7 @@ for (const preset of presets)
   for (const sandbox of modes) {
     const t0 = performance.now();
     const sim = Sim.create({
-      seed: `town-${preset}`,
+      seed: process.env.SEED ? `${process.env.SEED}-${preset}` : `town-${preset}`,
       preset,
       cityName: 'Rival',
       difficulty: 'easy',

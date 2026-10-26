@@ -3873,3 +3873,110 @@ body {
   margin: var(--space-1) 0 0;
   padding-left: 1.1rem;
 }
+.war-report button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.war-send {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.war-send label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.war-send select {
+  max-width: 16rem;
+}
+.war-send-units {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.war-send-unit input {
+  width: 4rem;
+}
+.war-expeditions {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.war-expeditions li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.war-map svg {
+  width: 100%;
+  height: auto;
+}
+.war-map-bg {
+  fill: var(--color-accent-soft);
+}
+.war-map-route {
+  stroke: var(--color-text-muted);
+  stroke-width: 3;
+}
+.war-map-route.front {
+  stroke: var(--color-negative);
+  stroke-dasharray: 6 4;
+}
+.war-map-air {
+  stroke: var(--color-accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.war-map-town {
+  fill: #fff;
+  stroke: var(--color-text-muted);
+  stroke-width: 2;
+}
+.war-map-town.rival {
+  stroke: var(--color-negative);
+}
+.war-map-town.mine {
+  fill: var(--color-accent);
+  stroke: var(--color-accent-strong);
+}
+.war-map-name {
+  font-size: 11px;
+  text-anchor: middle;
+  font-weight: 600;
+  fill: currentColor;
+}
+.war-map-note,
+.war-map-hours {
+  font-size: 9px;
+  fill: var(--color-text-muted);
+}
+.war-map-front {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--color-negative);
+}
+.war-map-token.ours {
+  fill: var(--color-accent);
+}
+.war-map-token.theirs {
+  fill: var(--color-negative);
+}
+.viewer-bar {
+  position: absolute;
+  top: calc(var(--space-6) + 3.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  max-width: min(40rem, calc(100vw - 2rem));
+  pointer-events: auto;
+  font-size: var(--font-size-sm);
+}

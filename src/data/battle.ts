@@ -146,4 +146,4 @@ export const RIVAL_TARGET: Record<string, BattleTarget> = {
 };
 
 /** Computer neighbours' towns: grown from their seed by the balance mayor, at most this big. */
-export const TOWN = { cap: 12_000, testCap: 1_500, version: 1 } as const;
+export const TOWN = { cap: 8_000, testCap: 1_500, version: 1 } as const;

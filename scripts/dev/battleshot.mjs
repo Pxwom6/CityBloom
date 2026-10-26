@@ -122,7 +122,8 @@ try {
     await g.advance((9 * 60 - now + 1440) % 1440);
     const r = await g.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 4 });
     if (!r.ok) throw new Error(r.reason);
-    await g.advance(60);
+    // Past the warning (an hour before it arrives, with no radar).
+    await g.advance(3 * 60 + 20);
   });
   const hq = town.bases.militaryhq;
   const civ = await page.evaluate((id) => window.__game.getCivics().find((c) => c.id === id), hq);
@@ -147,6 +148,14 @@ try {
       }, ticks);
       await snap(name, null, 6);
     }
+  if (want('close')) {
+    // Down among the units: the nearest attacker still fighting, close up.
+    const u = await page.evaluate(() => {
+      const f = window.__game.getBattle();
+      return f.frame ? window.__game.getUnits().find((x) => x.doing === 'battle' && x.id < -999_999) : null;
+    });
+    if (u) await snap('close', { x: u.x, z: u.z, distance: 60, yaw: 0.7, tilt: 0.12 }, 4);
+  }
   if (want('bar')) {
     await page.evaluate(() => window.__game.followBattle());
     await snap('bar', null, 3);

@@ -848,6 +848,8 @@ export function unitPoses(world: ClientWorld, tick: number, lim: UnitLimits, cac
   if (!forces?.units.length) return out;
   const byBase = new Map<number, { id: number; kind: UnitKind }[]>();
   for (const u of forces.units) {
+    // Away on an expedition (M35): not at its base.
+    if (u.away) continue;
     let l = byBase.get(u.base);
     if (!l) byBase.set(u.base, (l = []));
     l.push(u);

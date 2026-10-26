@@ -10,7 +10,7 @@ import type { MilitaryDetails } from '../sim/protocol';
 import type { WarSummary } from '../sim/systems/war';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconWarRoom } from './icons';
-import { Reports } from './Battle';
+import { RegionMap, Reports, SendForce } from './Battle';
 
 /** Training time in the game's own terms: hours, or months for longer (a month is a day and night). */
 export function trainingTime(hours: number): string {
@@ -193,9 +193,11 @@ export function MilitarySection({ civicId, m }: { civicId: number; m: MilitaryDe
   );
 }
 
-type Tab = 'forces' | 'economy' | 'readiness' | 'reports' | 'research';
+type Tab = 'forces' | 'send' | 'map' | 'economy' | 'readiness' | 'reports' | 'research';
 const TABS: { id: Tab; name: string }[] = [
   { id: 'forces', name: 'Forces' },
+  { id: 'send', name: 'Send' },
+  { id: 'map', name: 'Map' },
   { id: 'economy', name: 'Upkeep' },
   { id: 'readiness', name: 'Readiness' },
   { id: 'reports', name: 'Reports' },
@@ -238,6 +240,8 @@ export function WarRoomPanel() {
         {tab === 'economy' && <Economy w={w} />}
         {tab === 'readiness' && <Readiness w={w} />}
         {tab === 'reports' && <Reports reports={w.reports} />}
+        {tab === 'send' && <SendForce />}
+        {tab === 'map' && <RegionMap />}
         {tab === 'research' && <Research />}
       </div>
     </aside>

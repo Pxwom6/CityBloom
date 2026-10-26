@@ -2,10 +2,13 @@
  * Battles on the page (M35): the top bar's raid countdown, the battle bar while the city is
  * fighting, and the war room's reports. DESIGN.md §3.29.
  */
+import { useState } from 'preact/hooks';
 import { CIVIC } from '../data/civic';
+import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
+import { travelHours } from '../sim/systems/raids';
 import { UNIT, type UnitKind } from '../data/war';
 import type { BattleReport } from '../sim/systems/raids';
-import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
 import { formatNumber, useGameUpdates } from './hooks';
 
 const TARGETS: Record<string, string> = {
@@ -102,18 +105,51 @@ const unitName = (kind: string, n: number) => {
 /** One battle's report: what happened, what it cost, what's being repaired. */
 export function ReportCard({ r }: { r: BattleReport }) {
   const game = useGameUpdates(1000);
-  const head =
-    r.outcome === 'repelled'
+  const head = r.ours
+    ? r.outcome === 'raided'
+      ? `Our raid on ${r.other} hit ${TARGETS[r.target] ?? r.target}`
+      : r.outcome === 'repelled'
+        ? `Our raid on ${r.other} was beaten off`
+        : `Our force pulled back from ${r.other}`
+    : r.outcome === 'repelled'
       ? `${r.other}'s raid was beaten off`
       : r.outcome === 'withdrew'
         ? `${r.other}'s force pulled back`
         : `${r.other}'s raiders hit ${TARGETS[r.target] ?? r.target}`;
   const lost = Object.entries(r.lost).filter(([, n]) => (n ?? 0) > 0);
   const day = formatDate(dateOf(r.end));
+  if (r.ours && r.away)
+    return (
+      <li class="war-report" data-testid={`report-${r.id}`}>
+        <strong>{head}</strong>
+        {day && <span class="muted"> · {day}</span>}
+        <button
+          class="btn"
+          data-testid={`watch-${r.id}`}
+          onClick={() => void game.watchBattle(`exp-${r.id}`)}
+        >
+          Watch
+        </button>
+        <ul>
+          <li>
+            In {r.other}: {formatNumber(r.away.objectives.down)} of {formatNumber(r.away.objectives.aimed)}{' '}
+            targets knocked out, {formatNumber(r.away.destroyed)} buildings down
+          </li>
+          <li>
+            Their defenders lost {formatNumber(r.theirLost)} of {formatNumber(r.theirTotal)} strength
+          </li>
+          <li data-testid={`report-${r.id}-lost`}>
+            Our units lost:{' '}
+            {lost.length ? lost.map(([k, n]) => `${n} ${unitName(k, n ?? 0)}`).join(', ') : 'none'}
+          </li>
+        </ul>
+      </li>
+    );
   return (
     <li class="war-report" data-testid={`report-${r.id}`}>
       <strong>{head}</strong>
       {day && <span class="muted"> · {day}</span>}
+
       <ul>
         <li>
           Their force: {r.theirLost} of {r.theirTotal} knocked out
@@ -167,5 +203,335 @@ export function Reports({ reports }: { reports: BattleReport[] }) {
         <ReportCard key={r.id} r={r} />
       ))}
     </ul>
+  );
+}
+
+const ROUTE_NAMES: Record<BattleRoute, string> = {
+  highway: 'By road',
+  rail: 'By rail',
+  sea: 'By sea',
+  air: 'By air',
+};
+const ROUTE_DOMAINS: Record<BattleRoute, string[]> = {
+  highway: ['land', 'air'],
+  rail: ['land'],
+  sea: ['sea', 'air'],
+  air: ['air'],
+};
+
+/** The war room's Send tab (M35): choose a neighbour, what to strike, the way, and the units. */
+export function SendForce() {
+  const game = useGameUpdates(400);
+  const w = game.world.stats.war;
+  const rivals = game.world.stats.region.neighbours.filter((n) => n.rival && !n.player);
+  const [to, setTo] = useState<number | null>(rivals[0]?.id ?? null);
+  const [target, setTarget] = useState<BattleTarget>('military');
+  const [route, setRoute] = useState<BattleRoute>('highway');
+  const [stance, setStance] = useState<Stance>('bold');
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const [why, setWhy] = useState<string | null>(null);
+  if (!w) return null;
+  if (!rivals.length) return <p class="muted">No rival neighbours to raid.</p>;
+  const home = (game.world.forces?.units ?? []).filter((u) => !u.away && u.hp >= 0.5);
+  const kinds = [...new Set(home.map((u) => u.kind))].filter((k) =>
+    ROUTE_DOMAINS[route].includes(UNIT.get(k)?.domain ?? 'land'),
+  );
+  const chosen = kinds.flatMap((k) =>
+    home
+      .filter((u) => u.kind === k)
+      .slice(0, picked[k] ?? 0)
+      .map((u) => u.id),
+  );
+  const n = rivals.find((x) => x.id === to) ?? rivals[0]!;
+  const hours = travelHours(
+    route,
+    n.side,
+    chosen.map((id) => ({ kind: home.find((u) => u.id === id)!.kind })),
+  );
+  const send = async () => {
+    const r = await game.dispatch({ type: 'sendForce', units: chosen, to: n.id, route, target, stance });
+    setWhy(r.ok ? null : r.reason);
+    if (r.ok) setPicked({});
+  };
+  return (
+    <div class="war-send" data-testid="war-send-form">
+      {game.away.scouting && (
+        <p class="muted" data-testid="war-scouting">
+          Scouting {game.away.scouting.name}’s streets: {formatNumber(game.away.scouting.population)} of about{' '}
+          {formatNumber(game.away.scouting.target)} residents mapped…
+        </p>
+      )}
+      <label>
+        Raid{' '}
+        <select
+          data-testid="send-to"
+          value={n.id}
+          onChange={(e) => setTo(Number((e.target as HTMLSelectElement).value))}
+        >
+          {rivals.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} (forces {formatNumber(r.rival!.forces)}, defences {formatNumber(r.rival!.defences)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Strike{' '}
+        <select
+          data-testid="send-target"
+          value={target}
+          onChange={(e) => setTarget((e.target as HTMLSelectElement).value as BattleTarget)}
+        >
+          <option value="military">its military buildings</option>
+          <option value="industry">its industry near the border</option>
+          <option value="power">its power plants near the border</option>
+        </select>
+      </label>
+      <label>
+        Go{' '}
+        <select
+          data-testid="send-route"
+          value={route}
+          onChange={(e) => setRoute((e.target as HTMLSelectElement).value as BattleRoute)}
+        >
+          {(['highway', 'rail', 'sea', 'air'] as const).map((r) => (
+            <option key={r} value={r}>
+              {ROUTE_NAMES[r]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Pull back{' '}
+        <select
+          data-testid="send-stance"
+          value={stance}
+          onChange={(e) => setStance((e.target as HTMLSelectElement).value as Stance)}
+        >
+          <option value="bold">after heavy losses (bold)</option>
+          <option value="cautious">at the first losses (cautious)</option>
+        </select>
+      </label>
+      <div class="war-send-units">
+        {kinds.length ? (
+          kinds.map((k) => {
+            const have = home.filter((u) => u.kind === k).length;
+            const v = Math.min(picked[k] ?? 0, have);
+            return (
+              <label key={k} class="war-send-unit">
+                <span>
+                  {unitName(k, have)} ({have} at home)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={have}
+                  value={v}
+                  data-testid={`send-${k}`}
+                  onInput={(e) =>
+                    setPicked({
+                      ...picked,
+                      [k]: Math.max(0, Math.min(have, Number((e.target as HTMLInputElement).value) || 0)),
+                    })
+                  }
+                />
+              </label>
+            );
+          })
+        ) : (
+          <p class="muted">No units at home can go this way.</p>
+        )}
+      </div>
+      <p class="muted">
+        {chosen.length
+          ? `${chosen.length} units, ${hours} hours to get there; they come back the same way.`
+          : 'Choose the units to send.'}
+      </p>
+      {why && (
+        <p class="war-warn" data-testid="send-why">
+          {why}
+        </p>
+      )}
+      <button
+        class="btn primary"
+        data-testid="send-force"
+        disabled={!chosen.length}
+        onClick={() => void send()}
+      >
+        Send the force
+      </button>
+      {w.expeditions.length > 0 && (
+        <ul class="war-expeditions" data-testid="war-expeditions">
+          {w.expeditions.map((e) => {
+            const left = Math.max(
+              0,
+              ((e.state === 'back' ? e.home : e.arrive) - game.world.displayTick) / TICKS_PER_HOUR,
+            );
+            return (
+              <li key={e.id} data-testid={`expedition-${e.id}`}>
+                {e.units} units{' '}
+                {e.state === 'out'
+                  ? `on the way to ${e.name}: ${left.toFixed(1)} h`
+                  : e.state === 'fighting'
+                    ? `fighting in ${e.name}`
+                    : `coming home from ${e.name}: ${left.toFixed(1)} h`}
+                {e.state === 'out' && (
+                  <button
+                    class="btn"
+                    data-testid={`recall-${e.id}`}
+                    onClick={() => void game.dispatch({ type: 'recallForce', expedition: e.id })}
+                  >
+                    Call back
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The war room's map (M35): the city, its neighbours, the ways between, forces on the move, fronts. */
+export function RegionMap() {
+  const game = useGameUpdates(400);
+  const w = game.world.stats.war;
+  if (!w) return null;
+  const tick = game.world.displayTick;
+  const ns = game.world.stats.region.neighbours.filter((n) => !n.player);
+  const at: Record<string, { x: number; y: number }> = {};
+  const sides: Record<string, typeof ns> = { north: [], south: [], west: [] };
+  for (const n of ns) sides[n.side]?.push(n);
+  const place = (side: string, k: number, of: number) => {
+    const t = (k + 1) / (of + 1);
+    return side === 'north'
+      ? { x: 60 + t * 240, y: 34 }
+      : side === 'south'
+        ? { x: 60 + t * 240, y: 226 }
+        : { x: 46, y: 50 + t * 160 };
+  };
+  for (const [side, list] of Object.entries(sides))
+    list.forEach((n, k) => (at[n.id] = place(side, k, list.length)));
+  const me = { x: 210, y: 130 };
+  const recent = new Set(w.reports.filter((r) => tick - r.end < 3 * TICKS_PER_MONTH).map((r) => r.other));
+  const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  });
+  return (
+    <div class="war-map" data-testid="war-map">
+      <svg
+        viewBox="0 0 360 260"
+        role="img"
+        aria-label="The region: the city, its neighbours, forces on the move"
+      >
+        <rect x="0" y="0" width="360" height="260" rx="10" class="war-map-bg" />
+        {ns.map((n) => {
+          const p = at[n.id]!;
+          const hours = travelHours('highway', n.side, []);
+          const front = (n.rival && n.rival.relation <= -40) || recent.has(n.name);
+          const mid = lerp(p, me, 0.5);
+          return (
+            <g key={n.id} data-testid={`map-${n.id}`}>
+              <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class={`war-map-route ${front ? 'front' : ''}`} />
+              <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class="war-map-air" transform="translate(6 -6)" />
+              <text x={mid.x + 6} y={mid.y - 2} class="war-map-hours">
+                {hours} h · air {travelHours('air', n.side, [])} h
+              </text>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={n.rival ? 13 : 10}
+                class={`war-map-town ${n.rival ? 'rival' : ''}`}
+              />
+              <text x={p.x} y={p.y + 26} class="war-map-name">
+                {n.name}
+              </text>
+              {n.rival && (
+                <text x={p.x} y={p.y + 37} class="war-map-note">
+                  {n.rival.personality} · {formatNumber(n.rival.forces)}
+                </text>
+              )}
+              {front && (
+                <text x={mid.x - 6} y={mid.y + 14} class="war-map-front">
+                  front
+                </text>
+              )}
+            </g>
+          );
+        })}
+        <circle cx={me.x} cy={me.y} r={18} class="war-map-town mine" />
+        <text x={me.x} y={me.y + 34} class="war-map-name">
+          {game.world.stats.cityName}
+        </text>
+        {w.expeditions.map((e) => {
+          const p = at[e.to];
+          if (!p) return null;
+          const t =
+            e.state === 'out'
+              ? Math.min(1, Math.max(0, (tick - e.depart) / Math.max(1, e.arrive - e.depart)))
+              : e.state === 'fighting'
+                ? 1
+                : 1 -
+                  Math.min(
+                    1,
+                    Math.max(0, (tick - (e.home - (e.arrive - e.depart))) / Math.max(1, e.arrive - e.depart)),
+                  );
+          const q = lerp(me, p, t);
+          return (
+            <g key={e.id} data-testid={`token-${e.id}`}>
+              <rect x={q.x - 7} y={q.y - 7} width="14" height="14" rx="3" class="war-map-token ours" />
+              <text x={q.x + 10} y={q.y + 4} class="war-map-note">
+                {e.units}
+              </text>
+            </g>
+          );
+        })}
+        {w.incoming &&
+          (() => {
+            const n = ns.find((x) => x.name === w.incoming!.from);
+            const p = n && at[n.id];
+            if (!p) return null;
+            const left = Math.max(0, (w.incoming.arrive - tick) / TICKS_PER_HOUR);
+            const t = 1 - Math.min(1, left / Math.max(1, travelHours('highway', n.side, [])));
+            const q = lerp(p, me, t);
+            return (
+              <g data-testid="token-incoming">
+                <rect x={q.x - 7} y={q.y - 7} width="14" height="14" rx="3" class="war-map-token theirs" />
+                <text x={q.x + 10} y={q.y + 4} class="war-map-note">
+                  {w.incoming.units} · {left.toFixed(1)} h
+                </text>
+              </g>
+            );
+          })()}
+      </svg>
+      <p class="muted">
+        Lines are the roads between the towns, with the hours a force takes by road and by air. Squares are
+        forces on the move: ours in blue, theirs in red. A front is where there's been fighting lately or
+        feelings are hostile.
+      </p>
+    </div>
+  );
+}
+
+/** While watching a battle in a neighbour's town (M35): what this is, and the way home. */
+export function ViewerBar() {
+  const game = useGameUpdates(500);
+  const v = game.viewing;
+  if (!v) return null;
+  const f = game.world.battle;
+  return (
+    <div class="viewer-bar panel" data-testid="viewer-bar" role="status">
+      <span>
+        {f
+          ? `Watching ${v.record.city}'s raid on ${v.record.other}.`
+          : `${v.record.other} after the raid: crews are clearing up and repairing.`}{' '}
+        Nothing here can be changed.
+      </span>
+      <button class="btn primary" data-testid="viewer-back" onClick={() => game.backToCity()}>
+        Back to my city
+      </button>
+    </div>
   );
 }

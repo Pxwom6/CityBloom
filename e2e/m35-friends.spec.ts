@@ -222,7 +222,8 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
       timeout: 120_000,
     },
   );
-  await expect.poll(async () => (await region(sam))?.state, { timeout: 120_000 }).toBe('in');
+  // A page just back from the viewer can be busy for minutes in a loaded VM before its socket opens.
+  await expect.poll(async () => (await region(sam))?.state, { timeout: 300_000 }).toBe('in');
   await sam.waitForTimeout(3_000);
   expect((await reports(sam)).length).toBe(1);
   adaErrs.check();

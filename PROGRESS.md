@@ -55,14 +55,14 @@ without it.
 - [x] M32 Shared regions
 - [x] M33 Ready for friends
 - [x] M34 Armed forces
-- [ ] M35 Into battle
+- [x] M35 Into battle
 - [ ] M36 Diplomacy and the stakes of war
 - [ ] M37 Weapon development and intelligence
 - [ ] M38 Investments and the war economy
 - [ ] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 is complete, M35 in progress.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 and M35 are complete, M36 in progress.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,41 +230,47 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces is complete** (pull request #23, "M34 complete: Armed forces"). **M35 Into battle
-is nearly done** on the same branch (its commits ride in #23; M35 joins it when done). Plan:
-`docs/plans/M35-design.md`; calls made: DECISIONS "M35"; design: DESIGN §3.29; SPEC_REVIEW "M35".
+**M34 Armed forces and M35 Into battle are complete**, in pull request #23 ("M34 complete: Armed
+forces; M35 complete: Into battle"). **M36 Diplomacy and the stakes of war** is next, on the same
+branch (it joins #23 while that is open). Plan: `docs/plans/M36-design.md`.
 
-Done for M35, tested: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided
-on their own past 3,000 residents and a year, retaliation within three months of a raid of the
-city's own), expeditions against towns grown by the balance mayor, battles between friends' cities
-through the region room (a raid on an absent friend kept for them, their own sim taking it on their
-return, a report and a replay waiting), the battle viewer, war room Send / Map / Reports, battle
-effects, notices and sirens. An adversarial review (five reviewers, every finding checked by a
-skeptic) confirmed 39 findings; all are fixed (DECISIONS "An adversarial review of M35"). Unit
-suite 755 tests in 103 files; the cross-browser run green on PR #23 (Chromium, WebKit, Firefox);
-`balance` 20 years identical to `main`.
-
-Left for M35:
-1. The e2e (`e2e/m35-battle.spec.ts`, 2 tests; `e2e/m35-friends.spec.ts`, two players) on the
-   review fixes, screenshots reviewed. The friends spec failed twice in a loaded VM before the
-   fixes (Sam's main menu slow to appear; Sam's panel slow to show the rules) and once could never
-   have passed (the Send tab couldn't reach friends: fixed).
-2. Bench: `npx tsx scripts/bench.ts 6 --big --save bench-results/city.gz` (the city isn't in a fresh
-   VM), then `npx tsx scripts/dev/battlebench.ts bench-results/city.gz` (a full raid's tick cost,
-   the whole battle at once, the message size); log the numbers below.
-3. PROGRESS numbers, `M35 complete:` commit, PR #23's title and description to include M35.
+M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
+their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
+balance mayor, battles between friends' cities through the region room (a raid on an absent friend
+kept for them, taken by their own sim on their return, with a report and a replay), the battle
+viewer, the war room's Send / Map / Reports, effects, notices and sirens. An adversarial review
+confirmed 39 findings, all fixed. Calls: DECISIONS "M35"; design: DESIGN §3.29; SPEC_REVIEW "M35".
 
 ## Next tasks
-1. Finish M35 (above).
-2. M36–M40 in order.
+1. M36 (plan above): diplomacy with computer neighbours, the war score, treaties, pacts and allies,
+   total war and vassals, fairness (the region's daily raid limit, raids on absent players).
+2. M37–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Performance (M35)
 - **Balance** (`npx tsx scripts/balance.ts 20`, branch and `main` back to back): careful, greedy and
   neglectful line for line the same as `main` (only the run times differ), with raids decided by
   neighbours, retaliation and friends' battles in.
-- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit and real Firefox) passes on 60b6f03,
-  with the expedition into a mayor-grown town and the raid in the war town.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM): the same city as M34 (110,174 residents,
+  2,158 buildings at month 6); tick avg months 4–6 1.27 / 1.23 / 1.02 ms, p99 9–12 ms, worst 61 ms
+  (month 1's cold start). Peace runs no battle code.
+- **A raid on the 100k city** (`npx tsx scripts/dev/battlebench.ts bench-results/city.gz`: war on,
+  an HQ, barracks, depot, three bunkers and two anti-air guns, six units): its first day after
+  loading (cold caches) avg 4.1 ms a tick, p99 29 ms; the day of a 24-unit raid on its military
+  (286 structures, 743 ticks) avg 4.3 ms, p99 30 ms, of which the battle itself avg 0.28 ms, worst
+  4.6 ms; the whole battle at once (a raid taken while away) 103 ms; the battle's message to a
+  friend 10.4 KB (one part).
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit and real Firefox) green on every
+  push through 924a3a3, with the expedition into a mayor-grown town and the raid in the war town.
+- **Tests**: the unit suite, 764 tests in 106 files, passes.
+- **E2e**: `e2e/m35-battle.spec.ts` 2 passed (a force sent from the war room, watched and repaired;
+  a neighbour's raid with its countdown, fought and repaired); `e2e/m35-friends.spec.ts` 1 passed
+  (26 min: two players, a raid on an absent friend, its report on both sides, the replay with the
+  same damage, back in the region). Run it alone: beside other work, its pages in SwiftShader miss
+  their waits.
+- **Network**: a battle between friends is one 10 KB message to the room, kept as one row until
+  seen; `forceOut` and `battleKept` are a few bytes. Within the free plan (a city may send a battle
+  every five minutes after three).
 
 ## Performance (M34)
 - **Balance** (`npx tsx scripts/balance.ts 20`): careful, greedy and neglectful are line for line the

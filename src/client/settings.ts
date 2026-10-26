@@ -3,6 +3,7 @@
  * and game options. DESIGN.md §5.
  */
 import type { WeatherIntensity } from '../data/climate';
+import type { UnitQuality } from '../render/units';
 
 export type Quality = 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
@@ -100,6 +101,11 @@ export const QUALITY_PARAMS: Record<
     aoFar: number;
     ground: 0 | 1;
     closeShadowHz: number;
+    /**
+     * Units (M34): how far the near and far versions reach before dots, whether parts move, their
+     * shadows, and per base how many squads drill, vehicles and boats go out, and aircraft fly.
+     */
+    units: UnitQuality;
   }
 > = {
   low: {
@@ -114,6 +120,7 @@ export const QUALITY_PARAMS: Record<
     aoFar: 0,
     ground: 0,
     closeShadowHz: 60,
+    units: { near: 110, far: 700, animate: false, shadows: false, drill: 2, patrol: 1, fly: 1 },
   },
   medium: {
     pixelRatio: 1,
@@ -127,6 +134,7 @@ export const QUALITY_PARAMS: Record<
     aoFar: 600,
     ground: 1,
     closeShadowHz: 60,
+    units: { near: 180, far: 1000, animate: true, shadows: true, drill: 4, patrol: 2, fly: 2 },
   },
   high: {
     pixelRatio: 2,
@@ -140,6 +148,7 @@ export const QUALITY_PARAMS: Record<
     aoFar: 900,
     ground: 1,
     closeShadowHz: 0,
+    units: { near: 260, far: 1400, animate: true, shadows: true, drill: 8, patrol: 3, fly: 4 },
   },
 };
 

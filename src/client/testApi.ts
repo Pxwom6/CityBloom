@@ -1,6 +1,14 @@
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
-import { Vector3, type Mesh } from 'three';
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Group,
+  Mesh as ThreeMesh,
+  MeshLambertMaterial,
+  Vector3,
+  type Mesh,
+} from 'three';
 import { CIVIC } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
@@ -27,6 +35,10 @@ import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 import type { Stamped } from '../sim/lockstep';
 import { readSlot } from './saves';
+import type { UnitShown } from '../render/units';
+import { MILITARY_SITES } from '../render/assets/militaryModels';
+import { buildCivicModel } from '../render/assets/civicModels';
+import type { CivicDef } from '../data/civic';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -185,6 +197,21 @@ export interface TestApi {
   };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
+  /**
+   * The city's units drawn last frame (M34): which version (near, far or a dot), where, and what
+   * each is doing (parked, drill, patrol, flying, sailing). Units indoors aren't listed.
+   */
+  getUnits(): UnitShown[];
+  /**
+   * Dev (M34): every war building's generated look by model id (the 21 in PROMPTS-WAR.md, those
+   * not in the game yet too), laid out in rows from `at` on the ground, `width` m wide. Returns how
+   * many were shown; an empty list takes them away.
+   */
+  showWarModels(
+    ids: string[],
+    at: { x: number; z: number },
+    width: number,
+  ): { id: string; x: number; z: number }[];
   /** Planes and ships drawn last frame (M23), with their positions. */
   getPorts(): {
     counts: { planes: number; ships: number };
@@ -757,6 +784,51 @@ export function installTestApi(game: Game): TestApi {
       })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getUnits: () => game.renderer.units.shown.map((u) => ({ ...u })),
+    showWarModels: (ids, at, width) => {
+      const scene = game.renderer.scene;
+      const old = scene.getObjectByName('war-gallery');
+      if (old) {
+        scene.remove(old);
+        old.traverse((o) => (o as ThreeMesh).geometry?.dispose());
+      }
+      const out: { id: string; x: number; z: number }[] = [];
+      if (!ids.length) return out;
+      const group = new Group();
+      group.name = 'war-gallery';
+      const mat = new MeshLambertMaterial({ vertexColors: true });
+      let x = at.x;
+      let z = at.z;
+      let deep = 0;
+      for (const id of ids) {
+        const site = MILITARY_SITES[id];
+        if (!site) continue;
+        const [w, d] = site;
+        if (x > at.x && x + w > at.x + width) {
+          x = at.x;
+          z += deep + 10;
+          deep = 0;
+        }
+        const def = { id, model: id, w, d } as unknown as CivicDef;
+        const m = buildCivicModel(def, 0);
+        const g = new BufferGeometry();
+        g.setAttribute('position', new BufferAttribute(m.pos, 3));
+        g.setAttribute('normal', new BufferAttribute(m.nrm, 3));
+        g.setAttribute('color', new BufferAttribute(m.col, 3));
+        const mesh = new ThreeMesh(g, mat);
+        const cx = x + w / 2;
+        const cz = z + d / 2;
+        mesh.position.set(cx, game.world.heightAt(cx, cz), cz);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+        out.push({ id, x: cx, z: cz });
+        x += w + 10;
+        deep = Math.max(deep, d);
+      }
+      scene.add(group);
+      return out;
+    },
     getPorts: () => ({
       counts: { ...game.renderer.ports.counts },
       shown: game.renderer.ports.shown.map((f) => ({ ...f })),

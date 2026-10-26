@@ -39,6 +39,7 @@ import type { UnitShown } from '../render/units';
 import { MILITARY_SITES } from '../render/assets/militaryModels';
 import { buildCivicModel } from '../render/assets/civicModels';
 import type { CivicDef } from '../data/civic';
+import type { UnitKind } from '../data/war';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -212,6 +213,11 @@ export interface TestApi {
     at: { x: number; z: number },
     width: number,
   ): { id: string; x: number; z: number }[];
+  /**
+   * Dev (M34): add units to the client's roster only (the sim never hears of them), as if trained at
+   * these bases: for looking at kinds that need research the sim can't train yet. Returns their ids.
+   */
+  showUnits(extra: { kind: string; base: number }[]): number[];
   /** Planes and ships drawn last frame (M23), with their positions. */
   getPorts(): {
     counts: { planes: number; ships: number };
@@ -828,6 +834,20 @@ export function installTestApi(game: Game): TestApi {
       }
       scene.add(group);
       return out;
+    },
+    showUnits: (extra) => {
+      const w = game.world;
+      if (!w.forces) return [];
+      let id = 9_900_000 + w.forces.units.length;
+      const ids: number[] = [];
+      const units = [...w.forces.units];
+      for (const e of extra) {
+        units.push({ id, kind: e.kind as UnitKind, base: e.base, hp: 1 });
+        ids.push(id++);
+      }
+      w.forces = { ...w.forces, units };
+      w.forcesVersion++;
+      return ids;
     },
     getPorts: () => ({
       counts: { ...game.renderer.ports.counts },

@@ -115,7 +115,7 @@ void unitMove(inout vec3 p, inout vec3 n) {
 }
 `;
 
-function unitMaterial(
+export function unitMaterial(
   uniforms: { uNight: { value: number }; uSlow: { value: number } },
   animate: boolean,
 ): Material {
@@ -139,8 +139,8 @@ function unitMaterial(
       .replace(
         '#include <color_vertex>',
         `#include <color_vertex>
-if (aPart.z > 0.5 && aPart.z < 1.5) vColor = iBody;
-else if (aPart.z > 1.5 && aPart.z < 2.5) vColor = iAlt;
+if (aPart.z > 0.5 && aPart.z < 1.5) vColor.rgb = iBody;
+else if (aPart.z > 1.5 && aPart.z < 2.5) vColor.rgb = iAlt;
 vLight = aPart.z > 2.5 ? 1.0 : 0.0;`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -154,7 +154,7 @@ vLight = aPart.z > 2.5 ? 1.0 : 0.0;`,
 }
 
 /** The shadow pass's material: it moves the parts as the colour pass does. */
-function unitDepthMaterial(uniforms: { uSlow: { value: number } }, animate: boolean): Material {
+export function unitDepthMaterial(uniforms: { uSlow: { value: number } }, animate: boolean): Material {
   const mat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   mat.customProgramCacheKey = () => `unit-depth-${animate ? 1 : 0}`;
   if (animate) mat.defines = { UNIT_ANIM: 1 };

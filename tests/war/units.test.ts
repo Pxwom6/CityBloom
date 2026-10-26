@@ -1,4 +1,4 @@
-import { Vector3 } from 'three';
+import { ShaderLib, Vector3, type Material, type WebGLProgramParametersWithUniforms } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ClientWorld } from '../../src/client/world';
 import { QUALITY_PARAMS } from '../../src/client/settings';
@@ -8,7 +8,7 @@ import { UNIT_ROLES } from '../../src/models/baked';
 import { generatedUnit, generatedWinding, unitModel } from '../../src/render/assets/unitModels';
 import { buildMilitaryModel, MILITARY_SITES } from '../../src/render/assets/militaryModels';
 import { ModelBuilder, modelRng } from '../../src/render/assets/builder';
-import { unitGeometry, UnitRenderer } from '../../src/render/units';
+import { unitDepthMaterial, unitGeometry, unitMaterial, UnitRenderer } from '../../src/render/units';
 import { PoseCache, Site, unitPoses, type UnitPose } from '../../src/render/unitPoses';
 import { newSim } from '../helpers';
 import { kindsAt, unitTown } from './unitTown';
@@ -141,6 +141,30 @@ describe('generated units (M34)', () => {
     expect(kindOf('bomber', 'propeller')).toBe(5);
     expect(kindOf('drone', 'propeller')).toBe(4);
     expect(kindOf('tank', 'wheel')).toBe(6);
+  });
+
+  it('patches three.js’s own shader chunks: parts move in the colour and shadow passes', () => {
+    const patch = (m: Material, lib: { vertexShader: string; fragmentShader: string }) => {
+      const shader = { ...lib, uniforms: {} } as unknown as WebGLProgramParametersWithUniforms;
+      m.onBeforeCompile(shader, undefined as never);
+      return shader;
+    };
+    const u = { uNight: { value: 0 }, uSlow: { value: 0 } };
+    for (const anim of [true, false]) {
+      const colour = patch(unitMaterial(u, anim), ShaderLib.lambert);
+      expect(colour.vertexShader).toContain('unitMove(unitPos, objectNormal)');
+      expect(colour.vertexShader).toContain('vec3 transformed = unitPos;');
+      expect(colour.vertexShader).not.toContain('#include <begin_vertex>');
+      // vColor is a vec4 in this three.js: paint its rgb.
+      expect(colour.vertexShader).toContain('vColor.rgb = iBody');
+      expect(colour.fragmentShader).toContain('totalEmissiveRadiance += vLight');
+      expect(colour.uniforms).toHaveProperty('uSlow');
+      const depth = patch(unitDepthMaterial(u, anim), ShaderLib.depth);
+      expect(depth.vertexShader).toContain('unitMove(transformed, unitN)');
+      expect(unitMaterial(u, anim).customProgramCacheKey()).not.toBe(
+        unitMaterial(u, !anim).customProgramCacheKey(),
+      );
+    }
   });
 
   it('wears a hand-made model when there is one, and the generated look otherwise', () => {

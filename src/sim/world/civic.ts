@@ -11,6 +11,7 @@ import { clearTreesUnder, footprint as zonedFootprint } from './buildings';
 import { sendHome } from '../systems/vehicles';
 import { planPad, reshapeGround, type EarthPlan } from './earthworks';
 import { RAIL } from '../../data/balance';
+import { DMath, formatInt } from '../dmath';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -87,7 +88,7 @@ export function addModule(sim: Sim, civicId: number, moduleId: string, dryRun: b
   const have = c.modules.filter((x) => x === m.id).length;
   if (have >= (m.max ?? 1)) return { ok: false, reason: m.max ? `Already has ${m.max}` : 'Already added' };
   if (!sim.isUnlocked(m.unlockPopulation))
-    return { ok: false, reason: `Unlocks at ${m.unlockPopulation.toLocaleString('en-US')} residents` };
+    return { ok: false, reason: `Unlocks at ${formatInt(m.unlockPopulation)} residents` };
   if (!sim.state.options.sandbox && sim.state.treasury < m.cost)
     return { ok: false, reason: 'Not enough money' };
   if (dryRun) return { ok: true, cost: m.cost };
@@ -101,8 +102,8 @@ export function addModule(sim: Sim, civicId: number, moduleId: string, dryRun: b
 /** Mean richness (0–1) of an ore or oil deposit under a footprint. */
 export function resourceRichness(sim: Sim, kind: 'ore' | 'oil', r: ORect): number {
   const raster = kind === 'ore' ? sim.terrain.ore : sim.terrain.oil;
-  const c = Math.cos(r.angle);
-  const s = Math.sin(r.angle);
+  const c = DMath.cos(r.angle);
+  const s = DMath.sin(r.angle);
   let sum = 0;
   let n = 0;
   for (let u = -1; u <= 1; u += 0.5)
@@ -134,7 +135,7 @@ export function civicRect(c: { x: number; z: number; angle: number; def: string 
 /** Unit vector from the road towards the back of the lot. */
 export function awayDir(angle: number, side: 1 | -1): Vec2 {
   // Left normal of the tangent (cos a, sin a) is (sin a, −cos a); `side` picks the road side.
-  return { x: Math.sin(angle) * side, z: -Math.cos(angle) * side };
+  return { x: DMath.sin(angle) * side, z: -DMath.cos(angle) * side };
 }
 
 /** Middle of the front edge (the side facing the road). */
@@ -175,7 +176,7 @@ export function berth(
   const d = CIVIC.get(c.def);
   if (!d) return null;
   const away = awayDir(c.angle, c.side);
-  const along = { x: Math.cos(c.angle), z: Math.sin(c.angle) };
+  const along = { x: DMath.cos(c.angle), z: DMath.sin(c.angle) };
   for (let dist = 10; dist <= 60; dist += 10)
     for (const u of [0, -0.35, 0.35]) {
       const x = c.x + away.x * (d.d / 2 + dist) + along.x * d.w * u;
@@ -232,8 +233,8 @@ export function checkPlacement(
   if (forbidden) return { ...res, reason: forbidden };
   if (![x, z, angle].every(Number.isFinite)) return { ...res, reason: 'Invalid position' };
   const rect: ORect = { x, z, hw: def.w / 2, hd: def.d / 2, angle };
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
+  const c = DMath.cos(angle);
+  const s = DMath.sin(angle);
   const pts: (Vec2 & { v: number })[] = [{ x, z, v: 0 }];
   for (const [u, v] of [
     [-1, -1],
@@ -283,7 +284,7 @@ export function checkPlacement(
     };
   // Roads crossing the footprint.
   const shrunk: ORect = { ...rect, hw: rect.hw - 0.5, hd: rect.hd - 0.5 };
-  const rad = Math.hypot(rect.hw, rect.hd);
+  const rad = DMath.hypot(rect.hw, rect.hd);
   for (const sid of sim.net.segHash.queryPoint(x, z, rad + 16)) {
     const curve = sim.net.curve(sid);
     const hw = sim.net.halfWidth(sid);
@@ -319,7 +320,7 @@ export function checkPlacement(
     if (rectsOverlap(shrunk, zonedFootprint(b, 0.5))) res.demolish.push(id);
   }
   if (!ignoreCivic && !sim.isUnlocked(def.unlockPopulation))
-    return { ...res, reason: `Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents` };
+    return { ...res, reason: `Unlocks at ${formatInt(def.unlockPopulation)} residents` };
   if (def.project && !ignoreCivic) {
     const why = projectBlocked(sim, def);
     if (why) return { ...res, reason: why };
@@ -422,7 +423,7 @@ export function moveCivic(
 ): CommandResult {
   const c = sim.state.civics.get(id);
   if (!c) return fail('Nothing to move');
-  if (Math.hypot(x - c.x, z - c.z) < 1 && Math.abs(angle - c.angle) < 1e-3 && side === c.side)
+  if (DMath.hypot(x - c.x, z - c.z) < 1 && Math.abs(angle - c.angle) < 1e-3 && side === c.side)
     return fail('It is already here');
   const fee = moveFee(c.def);
   const chk = checkPlacement(sim, c.def, x, z, angle, side, id, fee);
@@ -477,5 +478,5 @@ export function roadsidePose(
   const hw = net.halfWidth(segId);
   const away = { x: t.z * side, z: -t.x * side };
   const off = hw + d / 2 + 0.5;
-  return { x: p.x + away.x * off, z: p.z + away.z * off, angle: Math.atan2(t.z, t.x), side };
+  return { x: p.x + away.x * off, z: p.z + away.z * off, angle: DMath.atan2(t.z, t.x), side };
 }

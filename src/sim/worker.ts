@@ -1,10 +1,16 @@
 /**
  * Worker entry: owns the Sim, runs the fixed-timestep loop at the chosen speed and posts compact
  * frames to the main thread. This is the only sim file allowed to touch worker globals and timers.
+ *
+ * In a shared city (M29) the room keeps time instead: the worker applies the room's stamped events
+ * at their ticks, runs as far as the room allows, as fast as its time budget lets it, and never
+ * drops a tick; it reports how far behind it is, an hourly checksum, and snapshots it's asked for.
  */
 import { Sim } from './sim';
-import { SPEED_TICKS_PER_SECOND, type Speed } from './time';
-import type { MainToWorker, WorkerPerf, WorkerToMain } from './protocol';
+import { isMonthStart, SPEED_TICKS_PER_SECOND, type Speed } from './time';
+import { partHashes } from './sync';
+import { Lockstep, type Applied } from './lockstep';
+import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
 
 interface WorkerScope {
   postMessage(msg: unknown, transfer: Transferable[]): void;
@@ -17,25 +23,52 @@ let speed: Speed = 0;
 let due = 0;
 let last = performance.now();
 const MAX_TICKS_PER_LOOP = 60;
+/** Shared city: milliseconds of ticks per loop when catching up (the loop runs every 50 ms). */
+const SHARED_BUDGET_MS = 35;
 const perf: WorkerPerf = { tickMsAvg: 0, tickMsMax: 0, ticksPerSecond: 0, droppedTicks: 0 };
 let perfWindowStart = performance.now();
 let perfWindowTicks = 0;
 let perfWindowMax = 0;
 
+/** The room's runner while the city is shared, and who this machine is. */
+let lockstep: Lockstep | null = null;
+let player = 0;
+let applied: Applied[] = [];
+let lastChecksum = 0;
+
 function post(msg: WorkerToMain, transfer: Transferable[] = []): void {
   ctx.postMessage(msg, transfer);
 }
 
+function timeTick(fn: () => void): void {
+  const t0 = performance.now();
+  fn();
+  const dt = performance.now() - t0;
+  perf.tickMsAvg = perf.tickMsAvg * 0.98 + dt * 0.02;
+  if (dt > perfWindowMax) perfWindowMax = dt;
+  perfWindowTicks++;
+}
+
 function runTicks(n: number): void {
   if (!sim) return;
-  for (let i = 0; i < n; i++) {
-    const t0 = performance.now();
-    sim.step();
-    const dt = performance.now() - t0;
-    perf.tickMsAvg = perf.tickMsAvg * 0.98 + dt * 0.02;
-    if (dt > perfWindowMax) perfWindowMax = dt;
-    perfWindowTicks++;
+  for (let i = 0; i < n; i++) timeTick(() => sim!.step());
+}
+
+/** Shared city: run towards the allowed tick within the time budget. */
+function runShared(): void {
+  const ls = lockstep!;
+  const t0 = performance.now();
+  while (ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+    timeTick(() => ls.run(1));
+    // The full check at each month's end (about 40 ms at 100k residents, outside the tick).
+    if (isMonthStart(ls.sim.tick))
+      post({ type: 'monthHashes', tick: ls.sim.tick, parts: partHashes(ls.sim) });
   }
+  for (const [tick, sum] of ls.checksums)
+    if (tick > lastChecksum) {
+      post({ type: 'checksum', tick, sum });
+      lastChecksum = tick;
+    }
 }
 
 function flush(): void {
@@ -48,6 +81,12 @@ function flush(): void {
     perfWindowTicks = 0;
     perfWindowMax = 0;
   }
+  if (applied.length) {
+    post({ type: 'applied', list: applied });
+    applied = [];
+  }
+  if (lockstep) perf.behind = lockstep.behind;
+  else delete perf.behind;
   post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
 }
 
@@ -55,7 +94,8 @@ function loop(): void {
   const now = performance.now();
   const elapsed = Math.min(250, now - last);
   last = now;
-  if (sim && speed > 0) {
+  if (lockstep) runShared();
+  else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);
     if (n > MAX_TICKS_PER_LOOP) {
@@ -72,14 +112,35 @@ function loop(): void {
 
 setInterval(loop, 50);
 
+function share(s: Sim, lastSeq: number, eventHash?: number): void {
+  lockstep = new Lockstep(s, lastSeq);
+  if (eventHash !== undefined) lockstep.eventHash = eventHash;
+  s.viewer = player;
+  lastChecksum = s.tick;
+  lockstep.onApplied = (a) => {
+    if (a.ev.kind === 'cmd') applied.push(a);
+    else if (a.ev.taker === player) {
+      const snapshot: SharedSnapshot = {
+        save: s.save(new Date().toISOString()),
+        history: s.historyState(),
+        seq: a.seq,
+        eventHash: lockstep!.eventHash,
+      };
+      post({ type: 'snapshot', tick: a.tick, reason: a.ev.reason, snapshot });
+    }
+  };
+}
+
 function handle(msg: MainToWorker): void {
   switch (msg.type) {
     case 'init':
+      lockstep = null;
       sim = Sim.create(msg.options, msg.map ?? null);
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
     case 'load':
+      lockstep = null;
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
@@ -91,8 +152,51 @@ function handle(msg: MainToWorker): void {
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
+    case 'loadShared':
+      try {
+        sim = Sim.fromSave(msg.snapshot.save);
+      } catch (err) {
+        sim = null;
+        lockstep = null;
+        post({ type: 'loadFailed', message: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+      sim.testMode = !!msg.testMode;
+      sim.setHistoryState(msg.snapshot.history);
+      player = msg.player;
+      share(sim, msg.snapshot.seq, msg.snapshot.eventHash);
+      applied = [];
+      post({ type: 'ready', snapshot: sim.snapshot() });
+      break;
+    case 'share':
+      if (!sim) return;
+      player = msg.player;
+      share(sim, msg.lastSeq);
+      break;
+    case 'unshare':
+      if (sim) sim.shared = false;
+      lockstep = null;
+      delete perf.behind;
+      break;
+    case 'stamped': {
+      if (!lockstep) return;
+      for (const e of msg.events) {
+        if (lockstep.push(e) === 'late') post({ type: 'late', tick: e.tick, seq: e.seq });
+      }
+      lockstep.allow(msg.allow);
+      break;
+    }
     case 'command': {
       if (!sim) return;
+      // In a shared city every command goes through the room, so all machines apply it at once.
+      if (lockstep) {
+        post({
+          type: 'reply',
+          id: msg.id,
+          result: { ok: false, reason: 'In a shared city, commands go through the room' },
+        });
+        return;
+      }
       const result = sim.dispatch(msg.cmd);
       flush();
       post({ type: 'reply', id: msg.id, result });
@@ -100,7 +204,7 @@ function handle(msg: MainToWorker): void {
     }
     case 'preview':
       if (!sim) return;
-      post({ type: 'reply', id: msg.id, result: sim.preview(msg.cmd) });
+      post({ type: 'reply', id: msg.id, result: sim.preview(msg.cmd, player) });
       break;
     case 'query':
       if (!sim) return;
@@ -112,13 +216,14 @@ function handle(msg: MainToWorker): void {
       break;
     case 'advance':
       if (!sim) return;
-      runTicks(msg.ticks);
+      // A shared city's time is the room's: advancing on one machine would split it.
+      if (!lockstep) runTicks(msg.ticks);
       flush();
       post({ type: 'reply', id: msg.id, result: sim.tick });
       break;
     case 'save':
       if (!sim) return;
-      post({ type: 'reply', id: msg.id, result: sim.save(new Date().toISOString()) });
+      post({ type: 'reply', id: msg.id, result: sim.save(new Date().toISOString(), !lockstep) });
       break;
   }
 }

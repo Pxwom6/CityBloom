@@ -4,6 +4,7 @@ import { LOAN_OPTIONS } from './economy';
 import { MODULES } from './modules';
 import { POLICIES } from './policies';
 import { ROAD_TYPES } from './roads';
+import { formatInt } from '../sim/dmath';
 
 /** Everything that unlocks at exactly this population, as short labels for the UI. */
 export function unlocksAt(population: number): string[] {
@@ -16,7 +17,6 @@ export function unlocksAt(population: number): string[] {
   for (const m of MODULES) if (m.unlockPopulation === population) out.push(`${m.name} (module)`);
   for (const p of POLICIES) if (p.unlockPopulation === population) out.push(`${p.name} (policy)`);
   for (const l of LOAN_OPTIONS)
-    if (l.unlockPopulation === population && population > 0)
-      out.push(`$${l.amount.toLocaleString('en-US')} loan`);
+    if (l.unlockPopulation === population && population > 0) out.push(`$${formatInt(l.amount)} loan`);
   return out;
 }

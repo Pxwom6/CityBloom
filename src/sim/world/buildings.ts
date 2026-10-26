@@ -4,6 +4,7 @@ import { GRID_CELL, GRID_RES } from '../../data/world';
 import { pointInRect, type ORect, type Vec2 } from '../geom';
 import { seatHeight } from './earthworks';
 import type { Sim } from '../sim';
+import { DMath } from '../dmath';
 
 export const BState = { Construction: 0, Active: 1, Abandoned: 2, Rubble: 3 } as const;
 export type BState = (typeof BState)[keyof typeof BState];
@@ -121,10 +122,10 @@ export function placeOnLot(sim: Sim, b: Building): void {
   let sz = 0;
   for (let c = b.col; c < b.col + b.w; c++) {
     const a = net.cellAngle(block.id, c * ROWS);
-    sx += Math.cos(a);
-    sz += Math.sin(a);
+    sx += DMath.cos(a);
+    sz += DMath.sin(a);
   }
-  b.angle = Math.atan2(sz, sx);
+  b.angle = DMath.atan2(sz, sx);
   b.side = block.side;
   b.y = seatHeight((x, z) => sim.terrain.heightAt(x, z), footprint(b), false);
 }
@@ -146,7 +147,7 @@ export function setLotCells(sim: Sim, b: Building, id: number): void {
 /** Reduce the tree-density grid under a footprint. */
 export function clearTreesUnder(sim: Sim, rect: ORect): void {
   const trees = sim.state.trees;
-  const rad = Math.hypot(rect.hw, rect.hd) + GRID_CELL;
+  const rad = DMath.hypot(rect.hw, rect.hd) + GRID_CELL;
   const i0 = Math.max(0, Math.floor((rect.x - rad) / GRID_CELL));
   const i1 = Math.min(GRID_RES - 1, Math.floor((rect.x + rad) / GRID_CELL));
   const j0 = Math.max(0, Math.floor((rect.z - rad) / GRID_CELL));

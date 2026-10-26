@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`deterministic maths > gives fixed bits for fixed inputs (the golden values every browser must match) 1`] = `
+[
+  "3fee33c23ed44442",
+  "3fd62f45e66f5c2f",
+  "bfef730bd281f69b",
+  "40285d6fd931e0bb",
+  "4006aa6bc1fa7f7a",
+  "3fe99ec9c4a0cdc3",
+]
+`;

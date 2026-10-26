@@ -2,6 +2,7 @@ import { JUNCTION } from '../../data/balance';
 import { ROAD_TYPES, isRail, roadHalfWidth, type RoadTypeId } from '../../data/roads';
 import type { Vec2 } from '../geom';
 import type { Network } from './network';
+import { DMath } from '../dmath';
 
 /**
  * Room for a roundabout (P5). Each road meeting the ring is measured to the next real junction
@@ -204,7 +205,7 @@ export function planStraighten(
     for (let d = 1; d <= len; d += 1) {
       const s = fromA ? d : len - d;
       const p = curve.pointAt(s);
-      if (Math.hypot(p.x - c.x, p.z - c.z) < want) continue;
+      if (DMath.hypot(p.x - c.x, p.z - c.z) < want) continue;
       const far = fromA ? seg.b : seg.a;
       if (len - d < 1) return { arm, k, s: fromA ? len : 0, nearIsA: fromA, whole: true, at: net.node(far) };
       return { arm, k, s, nearIsA: fromA, whole: false, at: p };

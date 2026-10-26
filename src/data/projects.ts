@@ -4,6 +4,7 @@
  * `project` block; until the last stage is done they count as offline. All designs are original.
  */
 import type { CivicDef } from './civic';
+import { formatInt } from '../sim/dmath';
 
 export interface ProjectStage {
   /** What the stage builds ("Foundations", "Stands"). */
@@ -57,7 +58,7 @@ export interface RequirementStatus {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;
-const num = (v: number) => v.toLocaleString('en-US');
+const num = (v: number) => formatInt(v);
 
 export function requirementStatus(r: ProjectRequirement, ctx: RequirementContext): RequirementStatus {
   switch (r.kind) {

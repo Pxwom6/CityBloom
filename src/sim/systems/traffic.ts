@@ -4,6 +4,7 @@ import { ROAD_TYPES, isRail } from '../../data/roads';
 import type { Sim } from '../sim';
 import { hourOfDay } from '../time';
 import type { Dijkstra, Leg, RoadGraph } from './graph';
+import { DMath } from '../dmath';
 
 /**
  * Traffic as aggregated flows (DESIGN §3.8): every assignment round the matcher routes the day's
@@ -39,7 +40,7 @@ export interface TripSample {
 
 /** Travel-time multiplier for a volume/capacity ratio. */
 export function slowdown(vc: number): number {
-  return Math.min(TRAFFIC.maxSlowdown, 1 + TRAFFIC.bprAlpha * Math.pow(Math.max(0, vc), TRAFFIC.bprBeta));
+  return Math.min(TRAFFIC.maxSlowdown, 1 + TRAFFIC.bprAlpha * DMath.pow(Math.max(0, vc), TRAFFIC.bprBeta));
 }
 
 /** Seconds to drive a segment that takes `t0` at free flow, at volume/capacity `vc`. */
@@ -285,7 +286,7 @@ export class TripReservoir {
   /** Offer `weight` trips; `make` builds the sample only if it is kept. */
   offer(weight: number, make: () => TripSample | null): void {
     if (weight <= 0) return;
-    const key = Math.pow(this.sim.rng.traffic.next(), 1 / weight);
+    const key = DMath.pow(this.sim.rng.traffic.next(), 1 / weight);
     if (this.items.length >= this.size && key <= this.items[0]!.key) return;
     const sample = make();
     if (!sample || !sample.legs.length) return;

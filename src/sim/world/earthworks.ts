@@ -6,6 +6,7 @@ import type { Terrain } from '../terrain/terrain';
 import type { Network } from './network';
 import type { Box } from './spatial';
 import { profileAt, type GradeProfile } from './grading';
+import { DMath } from '../dmath';
 
 /**
  * Earthworks (M13): the cut and fill that lays a graded road into the ground. A flat formation
@@ -222,8 +223,8 @@ export function seatHeight(
   r: { x: number; z: number; hw: number; hd: number; angle: number },
   edges: boolean,
 ): number {
-  const c = Math.cos(r.angle);
-  const s = Math.sin(r.angle);
+  const c = DMath.cos(r.angle);
+  const s = DMath.sin(r.angle);
   let hi = heightAt(r.x, r.z);
   for (const [u, v] of edges ? SEAT_EDGES : SEAT_CORNERS)
     hi = Math.max(hi, heightAt(r.x + u * r.hw * c - v * r.hd * s, r.z + u * r.hw * s + v * r.hd * c));
@@ -308,7 +309,7 @@ export function planPad(
 ): EarthPlan {
   const out: EarthPlan = { idx: [], to: [], volume: 0, cut: 0, fill: 0, cost: 0, box: null };
   const margin = GRADING.padMargin;
-  const rad = Math.hypot(rect.hw, rect.hd);
+  const rad = DMath.hypot(rect.hw, rect.hd);
   let span = 0;
   const scan = (r: number, f: (idx: number, x: number, z: number, d: number) => void) => {
     const i0 = Math.max(0, Math.ceil((rect.x - rad - r) / HEIGHT_STEP));

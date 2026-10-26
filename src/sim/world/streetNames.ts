@@ -51,7 +51,7 @@ export function straightPairs(net: Geometry, nodeId: number): [number, number][]
       const d = angleDiff(dirs[i]!.a, dirs[j]!.a);
       if (d > STRAIGHT_ON) pairs.push({ a: dirs[i]!.sid, b: dirs[j]!.sid, d });
     }
-  pairs.sort((p, q) => q.d - p.d);
+  pairs.sort((p, q) => q.d - p.d || p.a - q.a || p.b - q.b);
   const out: [number, number][] = [];
   for (const p of pairs) {
     if (used.has(p.a) || used.has(p.b)) continue;

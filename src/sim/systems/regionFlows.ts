@@ -10,6 +10,7 @@ import { Dijkstra, routeBetween, type Leg, type RoadGraph } from './graph';
 import { linkedToRegion } from './rail';
 import type { FlowAccumulator, TripPurpose, TripReservoir, TripSample } from './traffic';
 import { legsThroughTree } from './traffic';
+import { DMath } from '../dmath';
 import { segSpeed } from './vehicles';
 import { seasonAt } from './weather';
 
@@ -69,7 +70,7 @@ function nodeNear(sim: Sim, g: RoadGraph, x: number, z: number, max: number): nu
     // A node on the road network: the nearest to a station is always one of its railway's own
     // (Phase 2 review: regional riders arrived there and could go nowhere).
     if (!sim.net.segmentsAt(n.id).some((sg) => ROAD_TYPES[sim.net.segment(sg).type].access)) continue;
-    const d = (n.x - x) ** 2 + (n.z - z) ** 2;
+    const d = DMath.pow(n.x - x, 2) + DMath.pow(n.z - z, 2);
     if (d < bd) {
       bd = d;
       best = i;

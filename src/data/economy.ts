@@ -1,3 +1,4 @@
+import { DMath } from '../sim/dmath';
 /** Money: tax bases, upkeep, funding departments, loans, bankruptcy. DESIGN.md §3.5. */
 export type ZoneKey = 'R' | 'C' | 'I';
 
@@ -51,7 +52,7 @@ export function fundingEffect(f: number): number {
 /** Monthly payment of a loan repaid in equal instalments (shown on the loan buttons, P24). */
 export function annuity(principal: number, annualRate: number, months: number): number {
   const r = annualRate / 12;
-  return r === 0 ? principal / months : (principal * r) / (1 - Math.pow(1 + r, -months));
+  return r === 0 ? principal / months : (principal * r) / (1 - DMath.pow(1 + r, -months));
 }
 
 export const LOAN_OPTIONS: {

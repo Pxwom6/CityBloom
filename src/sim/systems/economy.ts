@@ -28,6 +28,7 @@ import { BState, type Building } from '../world/buildings';
 import { districtAt, districtFigures } from './districts';
 import { civicDef, civicUpkeep } from '../world/civic';
 import type { DistrictReport } from '../protocol';
+import { formatInt } from '../dmath';
 
 export interface Loan {
   id: number;
@@ -314,7 +315,7 @@ export function takeLoan(sim: Sim, amount: number, dryRun: boolean): CommandResu
   const opt = LOAN_OPTIONS.find((o) => o.amount === amount);
   if (!opt) return fail('No such loan');
   if (!sim.isUnlocked(opt.unlockPopulation))
-    return fail(`Needs ${opt.unlockPopulation.toLocaleString('en-US')} residents`);
+    return fail(`Needs ${formatInt(opt.unlockPopulation)} residents`);
   if (s.economy.loans.length >= MAX_LOANS) return fail(`At most ${MAX_LOANS} loans at a time`);
   if (s.economy.bankrupt) return fail('The city is bankrupt');
   const payment = annuity(opt.amount, opt.annualRate, opt.months);

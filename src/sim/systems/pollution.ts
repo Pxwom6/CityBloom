@@ -7,6 +7,7 @@ import { ZONE_I } from '../../data/zones';
 import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
+import { DMath } from '../dmath';
 
 /**
  * Ground pollution raster (DESIGN §3.11). M4: industry, sewage outflows, landfills and unserved
@@ -15,7 +16,7 @@ import { civicDef, civicOnline } from '../world/civic';
 /** Crime fades over time. */
 export function decayCrime(sim: Sim, hours: number): void {
   const f = sim.state.crime;
-  const k = Math.pow(0.97, hours);
+  const k = DMath.pow(0.97, hours);
   for (let i = 0; i < f.length; i++) f[i] = f[i]! < 0.001 ? 0 : f[i]! * k;
 }
 
@@ -66,13 +67,13 @@ export function updateGroundPollution(sim: Sim, hours: number): void {
     const def = civicDef(c);
     if (def.groundPollution) {
       const radius = def.pollutionRadius ?? (def.w + 80) / 2;
-      const area = (radius / 60) ** 2;
+      const area = DMath.pow(radius / 60, 2);
       splat(add, c.x, c.z, def.groundPollution * 0.8 * area * hours, radius / GRID_CELL);
     }
   }
   // Slow spread, decay, sources; clamp to [0, 1].
   const out = new Float32Array(field.length);
-  const decay = Math.pow(0.994, hours);
+  const decay = DMath.pow(0.994, hours);
   for (let j = 0; j < GRID_RES; j++) {
     for (let i = 0; i < GRID_RES; i++) {
       const k = j * GRID_RES + i;
@@ -113,7 +114,7 @@ export function fieldAt(field: Float32Array, x: number, z: number): number {
  */
 export function windAngle(seed: string, tick: number): number {
   const base = (seedFromString(`${seed}:wind`)[0] / 4294967296) * Math.PI * 2;
-  return base + 0.35 * Math.sin((2 * Math.PI * tick) / (TICKS_PER_MONTH * 5));
+  return base + 0.35 * DMath.sin((2 * Math.PI * tick) / (TICKS_PER_MONTH * 5));
 }
 
 /**
@@ -156,9 +157,9 @@ export function updateAirPollution(sim: Sim, hours: number): void {
     stamp(parks, c.x, c.z, Math.max(1.5, (def.w + 24) / 2 / GRID_CELL));
   }
   const a = windAngle(s.options.seed, s.tick);
-  const dx = Math.cos(a) * E.windCells * k;
-  const dz = Math.sin(a) * E.windCells * k;
-  const decay = Math.pow(E.airDecay, k);
+  const dx = DMath.cos(a) * E.windCells * k;
+  const dz = DMath.sin(a) * E.windCells * k;
+  const decay = DMath.pow(E.airDecay, k);
   const moved = new Float32Array(field.length);
   const at = (i: number, j: number) =>
     i < 0 || j < 0 || i >= GRID_RES || j >= GRID_RES ? 0 : field[j * GRID_RES + i]!;
@@ -221,7 +222,7 @@ function stamp(field: Float32Array, x: number, z: number, radiusCells: number): 
       const i = ci + di;
       const j = cj + dj;
       if (i < 0 || j < 0 || i >= GRID_RES || j >= GRID_RES) continue;
-      const d = Math.hypot(di, dj) / radiusCells;
+      const d = DMath.hypot(di, dj) / radiusCells;
       if (d > 1) continue;
       const k = j * GRID_RES + i;
       field[k] = Math.max(field[k]!, 1 - 0.5 * d);

@@ -1,10 +1,8 @@
 # PROGRESS
 
-Phase 3 (graphics, SPEC-3.md) and all five model batches are merged into `main`, which deploys the
-live site at https://pxwom6.github.io/CityBloom/, and so is the playthrough fix round
-(`PLAYTHROUGH-FIXES.md`, P1–P26 below; PR #14). Getting the game to players (an Install button on the
-main menu, and asking the browser to keep the saves) is on the `install-and-keep-saves` branch, in a
-pull request into `main` for the owner to merge.
+Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
+`main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
+SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session on the owner's Mac).
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -35,6 +33,11 @@ pull request into `main` for the owner to merge.
 - [x] M26 Light and sky
 - [x] M27 Ground, lots and streets
 - [x] M28 Buildings and variety
+- [x] M29 Same city everywhere
+- [ ] M30 Rooms, online and peer-to-peer
+- [ ] M31 Building together
+- [ ] M32 Shared regions
+- [ ] M33 Ready for friends
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
@@ -156,32 +159,20 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Getting the game to players, on the `install-and-keep-saves` branch (no executable: the site is
-already an installable app; DECISIONS, "Sharing the game"):
-- **Install Citybloom** on the main menu: the browser's own install dialog in Chrome and Edge, the
-  steps in Safari on a Mac (File → Add to Dock) and on iPhone and iPad; hidden in the installed app
-  and where the browser can't install (`src/client/install.ts`).
-- **Keeping the saves**: the game asks the browser for persistent storage when a city or the map
-  editor opens (not on the main menu, where Firefox would ask a first-time visitor), at once in the
-  installed app, and again right after installing (`src/client/keepSaves.ts`). The load screen says
-  cities live in this browser and move by Export and Import.
-- The main menu scrolls in a window too short for it (a phone held sideways).
-
-Checked with `tests/install.test.ts` and `e2e/app-install.spec.ts` (a stand-in for the browser's offer:
-Playwright's contexts are incognito, where Chrome never offers installing), screenshots
-`docs/screenshots/install-*.png`, and once with a persistent Chromium profile, where the browser's
-real offer brought the button up and the click opened its dialog. The playthrough fix round is
-merged (PR #14); its record is in DECISIONS, "Playthrough fixes".
+Phase 4 on the `multiplayer` branch. **M29 Same city everywhere** is done (lockstep core, no
+network): deterministic maths in `src/sim` (`dmath.ts`) with a lint rule, sorts audited, the
+cross-browser test (`npm run xbrowser`), the lockstep runner and the worker's shared mode (stamped
+events, run to the allowed tick, never drop one, `perf.behind`), settle snapshots, previews and
+queries proven harmless over a year, hourly checksums, month-end part hashes and a desync report,
+per-player undo carried in snapshots, cheats refused in shared cities. Next: **M30 rooms** (a room
+protocol over a local relay, a Cloudflare Worker with a Durable Object per room, and WebRTC
+peer-to-peer; the lobby, joining midway, reconnects and resyncs).
 
 ## Next tasks
-1. The owner: merge the `install-and-keep-saves` pull request, then try installing on the Mac ("To
-   check on the Mac").
-2. The balance round the brief parks: money piling up after Year 2, neglect's bite, room for civic
-   buildings along zoned frontage, growth in bursts, smog that never clears, empty tax bands in the
-   demand bar (P17), school coverage (P25), and the careful balance mayor's power planning (it
-   builds to the winter warning, which now plans for a cold spell; "Performance (playthrough
-   fixes)"). Easy can stay as it is; Normal and Hard should scale the pressure up.
-3. Ideas above.
+1. M29 (above), then M30 rooms (local relay, Cloudflare Worker, peer-to-peer), M31 co-op, M32 shared
+   regions, M33 polish and soak.
+2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
+   empty tax bands): later, after phase 4.
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
@@ -707,6 +698,13 @@ misses with either build (`startup-slow.log`).
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
+## Performance (M29)
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, MacBook Pro M5): identical to `main` — the same city (110,174 residents, 2,158 buildings) and the same tick times: month 6 avg 0.237 ms (main 0.239), p99 2.14 ms; worst 15.1 ms (main 15.2), both in month 1's first ticks.
+- **Balance** (`npx tsx scripts/balance.ts 20`): greedy and neglectful identical to `main`; careful identical for nine years, then wanders within its spread (year 20: 67,373 residents, $1.84M; `main` 65,767, $0.77M) — last-bit drift from the new maths, amplified by a long run (DECISIONS, M29).
+- **Out-of-step checks** on the 110k city (`npx tsx scripts/dev/synccost.ts bench-results/city.gz`): hourly checksum 0.4 ms; month-end part hashes 44 ms (in a shared city only, outside the tick); full `hash()` 40 ms; a save 24 ms, 3.0 MB of JSON.
+- **Cross-browser** (`XB_FIREFOX=0 npm run xbrowser`): the scripted town's 24 months in 3.3 s in Chromium, 4.6 s in WebKit, 8.2 s in SpiderMonkey's shell, all matching Node.
+- **Network budget:** none yet (no network until M30).
+
 ## Performance (playthrough fixes)
 - `balance.ts 20` on the Mac, base `main` at 5b261bd against this branch: greedy (420 / 16 % at year
   20, $566k) and neglectful (354 / 36 %, $480k) are byte-identical. The careful mayor's city ends
@@ -759,6 +757,7 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.
 - Level crossings and trams (Phase 2 review): the barriers coming down and cars waiting behind them, and trams and cars sharing a busy avenue, at 60 fps; visible cars cost 0.3–1.2 ms a frame in the rail scene on this VM, where a slow frame runs up to 20 traffic steps (`renderStats.trafficMs`).

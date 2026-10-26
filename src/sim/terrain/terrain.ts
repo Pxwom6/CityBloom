@@ -2,6 +2,7 @@ import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE, SHORE_HEIGHT } 
 import type { MapPreset } from '../../data/world';
 import { TERRAIN_VERSION, TerrainGen, generateTerrain, sampleHeights } from './generate';
 import { mapGroundwater, mapParams, unpackHeights, type MapData } from './customMap';
+import { DMath } from '../dmath';
 
 /**
  * Terrain derived from the seed: heights and static resource grids, regenerated on load. Earthworks
@@ -56,7 +57,7 @@ export class Terrain {
   slopeAt(x: number, z: number): number {
     const dx = this.heightAt(x + 4, z) - this.heightAt(x - 4, z);
     const dz = this.heightAt(x, z + 4) - this.heightAt(x, z - 4);
-    return Math.hypot(dx, dz) / 8;
+    return DMath.hypot(dx, dz) / 8;
   }
 
   isWater(x: number, z: number): boolean {

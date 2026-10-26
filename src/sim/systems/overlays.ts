@@ -4,6 +4,7 @@ import type { Sim } from '../sim';
 import { BState, footprint } from '../world/buildings';
 import { civicOutput } from './utilities';
 import { coverageOnSegment } from './services';
+import { DMath } from '../dmath';
 
 /** Data maps (DESIGN §4): values in [0, 1] per raster cell, −1 where there is nothing to show. */
 export type OverlayMap =
@@ -47,8 +48,8 @@ function stampBuildings(
     const v = value(b);
     if (v === null) continue;
     const r = footprint(b);
-    const c = Math.cos(r.angle);
-    const s = Math.sin(r.angle);
+    const c = DMath.cos(r.angle);
+    const s = DMath.sin(r.angle);
     for (let u = -r.hw + 4; u <= r.hw; u += 8) {
       for (let w = -r.hd + 4; w <= r.hd; w += 8) {
         const x = b.x + u * c - w * s;

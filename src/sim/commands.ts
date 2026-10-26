@@ -142,6 +142,8 @@ export type CommandResult = CommandOk | CommandErr;
 export interface CommandLogEntry {
   tick: number;
   cmd: Command;
+  /** The player who issued it, in a shared city (M29); absent for player 0. */
+  by?: number;
 }
 
 export const ok = (cost = 0, extra: Partial<CommandOk> = {}): CommandOk => ({ ok: true, cost, ...extra });

@@ -16,6 +16,7 @@ import {
   driveOn,
   type Vehicle,
 } from './vehicles';
+import { DMath } from '../dmath';
 
 const dijkstra = new Dijkstra();
 
@@ -135,7 +136,7 @@ function nextStop(sim: Sim, v: Vehicle): boolean {
     .queryPoint(here.x, here.z, GARBAGE.round.radius)
     .map((id) => s.buildings.get(id)!)
     .filter((b) => b && b.garbage >= GARBAGE.pickupMin && !taken.has(b.id))
-    .map((b) => ({ b, d: Math.hypot(b.x - here.x, b.z - here.z) }))
+    .map((b) => ({ b, d: DMath.hypot(b.x - here.x, b.z - here.z) }))
     .sort((a, b) => a.d - b.d || a.b.id - b.b.id);
   for (const { b } of near.slice(0, 4)) {
     const acc = sim.buildingAccess(b);

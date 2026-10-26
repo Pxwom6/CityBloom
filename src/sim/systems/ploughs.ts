@@ -12,6 +12,7 @@ import {
   spawnVehicle,
   type Vehicle,
 } from './vehicles';
+import { DMath } from '../dmath';
 
 /**
  * Snow ploughs (M22), DESIGN.md §3.23. A public works depot sends its ploughs out whenever snow lies
@@ -144,7 +145,7 @@ function nextRoad(sim: Sim, v: Vehicle): boolean {
     .map((r) => {
       const c = sim.net.curve(r.id);
       const p = c.pointAt(c.length / 2);
-      return { ...r, d: Math.hypot(p.x - hereMid.x, p.z - hereMid.z) };
+      return { ...r, d: DMath.hypot(p.x - hereMid.x, p.z - hereMid.z) };
     })
     .sort((a, b) => a.d - b.d || a.id - b.id);
   for (const r of near.slice(0, 4)) {

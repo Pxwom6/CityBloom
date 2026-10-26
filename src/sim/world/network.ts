@@ -7,6 +7,7 @@ import { SpatialHash, type Box } from './spatial';
 import type { Terrain } from '../terrain/terrain';
 import { profileAt } from './grading';
 import { restyleName } from './streetNames';
+import { DMath } from '../dmath';
 
 export interface RoadNode {
   id: number;
@@ -173,19 +174,19 @@ export class Network {
     if (s.a === nodeId) {
       dx = s.cx - a.x;
       dz = s.cz - a.z;
-      if (Math.hypot(dx, dz) < 1e-6) {
+      if (DMath.hypot(dx, dz) < 1e-6) {
         dx = b.x - a.x;
         dz = b.z - a.z;
       }
     } else {
       dx = s.cx - b.x;
       dz = s.cz - b.z;
-      if (Math.hypot(dx, dz) < 1e-6) {
+      if (DMath.hypot(dx, dz) < 1e-6) {
         dx = a.x - b.x;
         dz = a.z - b.z;
       }
     }
-    const l = Math.hypot(dx, dz) || 1;
+    const l = DMath.hypot(dx, dz) || 1;
     return { x: dx / l, z: dz / l };
   }
 
@@ -201,7 +202,7 @@ export class Network {
     let best: RoadNode | null = null;
     let bd = tol;
     for (const n of this.st.nodes.values()) {
-      const d = Math.hypot(n.x - p.x, n.z - p.z);
+      const d = DMath.hypot(n.x - p.x, n.z - p.z);
       if (d <= bd) {
         bd = d;
         best = n;
@@ -267,7 +268,7 @@ export class Network {
       // Left normal of the tangent (x/z plane, y up): (t.z, −t.x).
       const nx = t.z * b.side;
       const nz = -t.x * b.side;
-      const ang = Math.atan2(t.z, t.x);
+      const ang = DMath.atan2(t.z, t.x);
       for (let r = 0; r < ROWS; r++) {
         const off = hw + (r + 0.5) * CELL;
         const i = c * ROWS + r;
@@ -694,8 +695,8 @@ export class Network {
   private cellPoints(blockId: number, idx: number): Vec2[] {
     const r = this.cellRect(blockId, idx, 0);
     const h = CELL / 2;
-    const c = Math.cos(r.angle);
-    const s = Math.sin(r.angle);
+    const c = DMath.cos(r.angle);
+    const s = DMath.sin(r.angle);
     const pts: Vec2[] = [{ x: r.x, z: r.z }];
     for (const [u, v] of [
       [-1, -1],
@@ -754,7 +755,7 @@ export class Network {
     })) {
       if (!n.roundabout) continue;
       const outer = n.roundabout + JUNCTION.ringWidth / 2 + ROAD_TYPES.street.sidewalk;
-      for (const p of pts) if (Math.hypot(p.x - n.x, p.z - n.z) < outer) return false;
+      for (const p of pts) if (DMath.hypot(p.x - n.x, p.z - n.z) < outer) return false;
     }
     const bld = this.st.blocks.get(blockId)!.bld[idx]!;
     if (this.hooks.footprintBlocked(this.cellRect(blockId, idx), bld)) return false;
@@ -841,7 +842,7 @@ export class Network {
         const l2 = dx * dx + dz * dz;
         let t = l2 > 0 ? ((c.x - a.x) * dx + (c.z - a.z) * dz) / l2 : 0;
         t = Math.max(0, Math.min(1, t));
-        if (Math.hypot(a.x + dx * t - c.x, a.z + dz * t - c.z) <= r) out.add(key);
+        if (DMath.hypot(a.x + dx * t - c.x, a.z + dz * t - c.z) <= r) out.add(key);
       }
     }
     return [...out].sort((x, y) => x - y);

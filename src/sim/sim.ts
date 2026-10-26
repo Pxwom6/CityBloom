@@ -41,7 +41,7 @@ import {
   capture,
   diff,
   merge,
-  type Edit,
+  type PlayerHistory,
   type Scope,
   type Touched,
 } from './history';
@@ -210,6 +210,7 @@ import {
   takeLoan,
 } from './systems/economy';
 import { DIFFICULTY, SANDBOX_FUNDS, bigCityFactor, fundingEffect, type Dept } from '../data/economy';
+import { DMath, formatInt } from './dmath';
 
 export { HIGHWAY_CONNECT_X };
 
@@ -909,7 +910,7 @@ export class Sim {
 
   private indexCivic(c: Civic): void {
     const r = civicRect(c);
-    const rad = Math.hypot(r.hw, r.hd);
+    const rad = DMath.hypot(r.hw, r.hd);
     this.civHash.insert(c.id, { minX: c.x - rad, minZ: c.z - rad, maxX: c.x + rad, maxZ: c.z + rad });
   }
 
@@ -928,7 +929,7 @@ export class Sim {
     this.indexCivic(c);
     this.dirtyCivics.add(c.id);
     const r = civicRect(c);
-    const pad = Math.hypot(r.hw, r.hd) + 40;
+    const pad = DMath.hypot(r.hw, r.hd) + 40;
     this.net.revalidate({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad });
     this.events.push({ kind: 'civicBuilt', id: c.id });
   }
@@ -940,7 +941,7 @@ export class Sim {
   ): void {
     const box = (k: Civic) => {
       const r = civicRect(k);
-      const pad = Math.hypot(r.hw, r.hd) + 40;
+      const pad = DMath.hypot(r.hw, r.hd) + 40;
       return { minX: k.x - pad, minZ: k.z - pad, maxX: k.x + pad, maxZ: k.z + pad };
     };
     const from = box(c);
@@ -966,7 +967,7 @@ export class Sim {
     this.removedCivics.add(id);
     this.vehiclesDirty = true;
     const r = civicRect(c);
-    const pad = Math.hypot(r.hw, r.hd) + 40;
+    const pad = DMath.hypot(r.hw, r.hd) + 40;
     this.net.revalidate({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad });
     this.events.push({ kind: 'civicRemoved', id });
   }
@@ -991,7 +992,7 @@ export class Sim {
 
   private indexBuilding(b: Building): void {
     const r = footprint(b);
-    const rad = Math.hypot(r.hw, r.hd);
+    const rad = DMath.hypot(r.hw, r.hd);
     this.bldHash.insert(b.id, { minX: b.x - rad, minZ: b.z - rad, maxX: b.x + rad, maxZ: b.z + rad });
   }
 
@@ -1039,7 +1040,8 @@ export class Sim {
 
   // ---------------------------------------------------------------- commands
 
-  dispatch(cmd: Command): CommandResult {
+  dispatch(cmd: Command, by = 0): CommandResult {
+    this.actor = by;
     const scope = this.state.economy.bankrupt ? null : this.undoScope(cmd);
     if (scope) {
       // A command that will be refused changes nothing: skip the undo snapshot, which costs
@@ -1051,14 +1053,19 @@ export class Sim {
     const pre = scope ? capture(this.state, scope) : null;
     const result = this.apply(cmd, false);
     if (result.ok) {
-      this.log.push({ tick: this.state.tick, cmd: JSON.parse(JSON.stringify(cmd)) as Command });
+      this.log.push({
+        tick: this.state.tick,
+        cmd: JSON.parse(JSON.stringify(cmd)) as Command,
+        ...(by ? { by } : {}),
+      });
       if (pre) this.record(cmd, pre);
     }
     return result;
   }
 
   /** Dry run: validity and cost without changing any state. */
-  preview(cmd: Command): CommandResult {
+  preview(cmd: Command, by = 0): CommandResult {
+    this.actor = by;
     return this.apply(cmd, true);
   }
 
@@ -1068,6 +1075,7 @@ export class Sim {
     if (this.state.options.editor && !EDITOR_COMMANDS.has(cmd.type)) return fail('Not in the map editor');
     switch (cmd.type) {
       case 'cheat': {
+        if (this.shared) return fail('Cheats are off in a shared city');
         if (cmd.cheat === 'unlockAll') {
           if (!dryRun) this.state.unlockAll = true;
           return ok(0);
@@ -1186,7 +1194,7 @@ export class Sim {
         if (def.scope === 'district')
           return fail(`${def.name} is for districts: set it in a district's panel`);
         if (cmd.on && !this.isUnlocked(def.unlockPopulation))
-          return fail(`Unlocks at ${def.unlockPopulation.toLocaleString('en-US')} residents`);
+          return fail(`Unlocks at ${formatInt(def.unlockPopulation)} residents`);
         if (!dryRun) {
           const set = new Set(this.state.policies);
           if (cmd.on) set.add(cmd.id);
@@ -1256,8 +1264,45 @@ export class Sim {
 
   // ---------------------------------------------------------------- undo and redo (M14)
 
-  /** The last actions, for undo, and those taken back, for redo. Not saved. */
-  readonly history: { undo: Edit[]; redo: Edit[] } = { undo: [], redo: [] };
+  /**
+   * Each player's last actions, for undo, and those taken back, for redo (M14; per player since
+   * M29). Not saved with the city: a shared city carries them in its room snapshots
+   * (`historyState`). Undo takes back only the player's own newest action, and only while nothing
+   * since has changed what it touched (`applyEdit` checks), so every machine agrees. DECISIONS.
+   */
+  private readonly histories = new Map<number, PlayerHistory>();
+  /** The player this machine shows (undo labels in the frame stats). Not part of the city. */
+  viewer = 0;
+  /** Who issued the command being applied (0 in single player). */
+  private actor = 0;
+  /**
+   * A city shared in a room (M29): cheats are refused, since a test-mode machine could otherwise
+   * give one player's city money the others don't have. Set by whoever runs the sim, on every machine.
+   */
+  shared = false;
+
+  historyOf(player: number): PlayerHistory {
+    let h = this.histories.get(player);
+    if (!h) this.histories.set(player, (h = { undo: [], redo: [] }));
+    return h;
+  }
+
+  /** The viewer's history (single player: the only one). */
+  get history(): PlayerHistory {
+    return this.historyOf(this.viewer);
+  }
+
+  /** Every player's undo history, for a room snapshot (plain JSON). */
+  historyState(): [number, PlayerHistory][] {
+    return [...this.histories]
+      .sort((a, b) => a[0] - b[0])
+      .map(([p, h]) => [p, JSON.parse(JSON.stringify(h))]);
+  }
+
+  setHistoryState(list: [number, PlayerHistory][]): void {
+    this.histories.clear();
+    for (const [p, h] of list) this.histories.set(p, JSON.parse(JSON.stringify(h)) as PlayerHistory);
+  }
 
   /** What an undoable command may change; null for commands that aren't undone. */
   private undoScope(cmd: Command): Scope | null {
@@ -1343,7 +1388,8 @@ export class Sim {
     this.syncRng();
     const d = diff(pre, capture(this.state, pre.scope));
     if (!d.changes.length && !d.treasury) return;
-    const top = this.history.undo[this.history.undo.length - 1];
+    const h = this.historyOf(this.actor);
+    const top = h.undo[h.undo.length - 1];
     const stroke =
       cmd.type === 'zone' ||
       cmd.type === 'setTram' ||
@@ -1354,19 +1400,20 @@ export class Sim {
         : undefined;
     if (stroke !== undefined && top?.stroke === stroke) merge(top, d);
     else {
-      this.history.undo.push({
+      h.undo.push({
         label: this.undoLabel(cmd),
         tick: this.state.tick,
         ...d,
         ...(stroke !== undefined ? { stroke } : {}),
       });
-      if (this.history.undo.length > HISTORY_LIMIT) this.history.undo.shift();
+      if (h.undo.length > HISTORY_LIMIT) h.undo.shift();
     }
-    this.history.redo = [];
+    h.redo = [];
   }
 
   private undoRedo(dir: 'undo' | 'redo', dryRun: boolean): CommandResult {
-    const from = dir === 'undo' ? this.history.undo : this.history.redo;
+    const h = this.historyOf(this.actor);
+    const from = dir === 'undo' ? h.undo : h.redo;
     const edit = from[from.length - 1];
     if (!edit) return fail(dir === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
     const cost = dir === 'undo' ? edit.treasury : -edit.treasury;
@@ -1375,7 +1422,7 @@ export class Sim {
     const r = applyEdit(this.state, edit, dir);
     if (!r.ok) return fail(`Can't ${dir} the ${edit.label}: ${r.reason}`, { info: { label: edit.label } });
     from.pop();
-    (dir === 'undo' ? this.history.redo : this.history.undo).push(edit);
+    (dir === 'undo' ? h.redo : h.undo).push(edit);
     this.afterEdit(r.touched);
     return ok(cost, { info: { label: edit.label } });
   }
@@ -1591,7 +1638,10 @@ export class Sim {
     const sim = Sim.create(opts);
     let i = 0;
     for (;;) {
-      while (i < log.length && log[i]!.tick === sim.tick) sim.dispatch(log[i++]!.cmd);
+      while (i < log.length && log[i]!.tick === sim.tick) {
+        const e = log[i++]!;
+        sim.dispatch(e.cmd, e.by ?? 0);
+      }
       if (sim.tick >= untilTick) break;
       sim.step();
     }
@@ -1604,8 +1654,18 @@ export class Sim {
     for (const s of RNG_STREAMS) this.state.rng[s] = this.rng[s].getState();
   }
 
-  save(savedAt = ''): SaveFile {
-    this.finishMatching();
+  /** Copy the live random streams into the state (before hashing or serialising it). */
+  syncRngState(): void {
+    this.syncRng();
+  }
+
+  /**
+   * The city as a save file. Finishes the commute round under way first, so a loaded city carries
+   * on the same; in a shared city that would change this machine's future alone, so a copy saved
+   * there (`settle: false`) leaves the round be (room snapshots settle every machine at once, M29).
+   */
+  save(savedAt = '', settle = true): SaveFile {
+    if (settle) this.finishMatching();
     this.syncRng();
     return makeSaveFile(this.state, this.state.totals.population, savedAt);
   }

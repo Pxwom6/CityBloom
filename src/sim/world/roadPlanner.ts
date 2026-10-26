@@ -18,6 +18,7 @@ import type { Network } from './network';
 import { BRIDGE, deckAt, deckProfile, rampLengthAt } from './bridge';
 import { gradeProfile, profileAt, type GradeLimit, type GradeProfile } from './grading';
 import { planEarthworks, type EarthPiece, type EarthPlan } from './earthworks';
+import { DMath } from '../dmath';
 
 /**
  * Road planning: turns a drawn path into validated pieces with automatic intersections.
@@ -595,7 +596,7 @@ export function planRoad(
     const cap = type === 'ramp' || v.types.includes('ramp') || isRail(type) ? 200 : 80;
     skipAt.set(
       k,
-      all.length > 1 ? Math.min(cap, (hwNew + maxHw + ROAD_RULES.clearance) / Math.sin(effective) + 2) : 0,
+      all.length > 1 ? Math.min(cap, (hwNew + maxHw + ROAD_RULES.clearance) / DMath.sin(effective) + 2) : 0,
     );
   }
 
@@ -843,8 +844,8 @@ function separation(
   const ta = curve.tangentAt(x.sa);
   const tb = other.tangentAt(x.sb);
   const ang = angleDiff(angleOf(ta), angleOf(tb));
-  const sin = Math.sin(Math.min(ang, Math.PI - ang));
-  if (sin < Math.sin(ROAD_RULES.minAngleDeg * DEG)) return 'Roads cross at too shallow an angle';
+  const sin = DMath.sin(Math.min(ang, Math.PI - ang));
+  if (sin < DMath.sin(ROAD_RULES.minAngleDeg * DEG)) return 'Roads cross at too shallow an angle';
   const hwOther = net.halfWidth(sid);
   const half = (hwOther + GRADING.shoulder + GRADE_SEP.margin) / sin;
   const skip = (roadHalfWidth(type) + hwOther + ROAD_RULES.clearance) / sin + 2;

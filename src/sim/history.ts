@@ -243,6 +243,12 @@ export interface Edit {
   stroke?: number;
 }
 
+/** One player's undo and redo stacks (newest last). */
+export interface PlayerHistory {
+  undo: Edit[];
+  redo: Edit[];
+}
+
 /** The difference between two captures of the same scope. */
 export function diff(pre: Capture, post: Capture): Omit<Edit, 'label' | 'tick'> {
   const changes: Change[] = [];

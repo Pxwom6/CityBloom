@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeSave } from '../../src/client/saves';
 import { Sim } from '../../src/sim/sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
-import { DIPLOMACY } from '../../src/data/diplomacy';
+import { DIPLOMACY, type Term } from '../../src/data/diplomacy';
 import { SKIRMISH } from '../../src/data/battle';
 import { battleLayout } from '../../src/sim/battle/layout';
 import { BATTLE_VERSION, type BattleInput } from '../../src/sim/battle/types';
@@ -616,12 +616,196 @@ describe('M36: computer neighbours of their own accord', () => {
         dues - Math.round(n.population * DIPLOMACY.neighbourTaxPerResident * DIPLOMACY.vassal.taxShare),
       ),
     ).toBeLessThanOrEqual(Math.max(5, n.population * 0.1));
-    // It raids no more; rebuilt past the city's strength, it rises.
+    // It raids no more; rebuilt past the city's strength, it rises. It stays a vassal until the
+    // rising wins, and pays no dues while it's up in arms.
     ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 300, defences: 50 });
-    for (let d = 0; d < 30 && n.rival!.vassal; d++) sim.advance(M);
-    expect(n.rival!.vassal).toBeUndefined();
-    const war = sim.state.war!.diplomacy!.wars.find((w) => w.with === n.id)!;
+    const rising = () => sim.state.war!.diplomacy!.wars.find((w) => w.with === n.id);
+    for (let d = 0; d < 30 && !rising(); d++) sim.advance(M);
+    const war = rising()!;
     expect(war.by).toBe('them');
     expect(war.rebellion).toBe(true);
+    expect(n.rival!.vassal).toBeDefined();
+    sim.advance(2 * M);
+    expect(ledger(sim, 'vassals').slice(-1)[0] ?? 0).toBe(0);
+  });
+});
+
+describe('M36 review: the rules hold at their edges', () => {
+  /** A treaty a neighbour puts to the city, accepted. */
+  const treaty = (sim: Sim, n: Neighbour, terms: Term[]) => {
+    ok(sim, { type: 'cheat', cheat: 'proposal', neighbour: n.id, terms });
+    const p = dip(sim).proposals.find((x) => x.from === 'them' && x.with === n.id)!;
+    ok(sim, { type: 'answerProposal', proposal: p.id, accept: true });
+  };
+
+  it('whatever the city had with a computer neighbour ends when a friend’s city takes its place', () => {
+    const { sim } = warTown();
+    const [n, m] = rivals(sim);
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n!.id, scale: 'war', reason: '' });
+    sim.state.war!.diplomacy!.vassal = { overlord: m!.id, since: sim.state.tick };
+    // Friends take both places (each goes to the first neighbour that isn't a player yet).
+    const none = { power: 0, water: 0, garbage: 0 };
+    const city = (slot: number, name: string) => ({
+      slot,
+      name,
+      mayor: name,
+      color: slot,
+      population: 4_000,
+      kind: 'suburb' as const,
+      offers: { buy: { ...none }, sell: { ...none } },
+      workers: 0,
+      jobs: 0,
+      shoppers: 0,
+      online: true,
+    });
+    ok(sim, {
+      type: 'regionUpdate',
+      update: {
+        cities: [city(2, 'Samton'), city(3, 'Tamton')],
+        contracts: [],
+        project: null,
+        rules: { war: true, scale: 'total' },
+      },
+    });
+    expect(n!.player && m!.player).toBeTruthy();
+    expect(dip(sim).wars).toHaveLength(0);
+    expect(dip(sim).vassal).toBeUndefined();
+    for (const r of rivals(sim)) expect(r.rival!.allies ?? []).not.toContain(n!.id);
+    // Nothing keyed to them is left to throw or pay out.
+    sim.advance(10 * M);
+    expect(
+      ledger(sim, 'overlord')
+        .slice(-3)
+        .every((v) => v === 0),
+    ).toBe(true);
+  });
+
+  it('a raid that finds nothing to strike scores nothing', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    // No military buildings left: nothing a raid could aim at.
+    for (const c of [...sim.state.civics.values()].filter(
+      (c) => c.def === 'militaryhq' || c.def === 'barracks' || c.def === 'bunker',
+    ))
+      ok(sim, { type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 200, defences: 10 });
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    for (let k = 0; k < 3; k++) {
+      for (let t = 0; t < M && (sim.state.war!.battle || sim.state.war!.incoming?.length); t++) sim.step();
+      ok(sim, { type: 'cheat', cheat: 'raidIn', hours: 0, neighbour: n.id, seat: true });
+      for (let t = 0; t < M && sim.state.war!.battle; t++) sim.step();
+    }
+    const war = dip(sim).wars.find((w) => w.with === n.id)!;
+    expect(war.battles).toBe(0);
+    expect(war.capitulated).toBeUndefined();
+  });
+
+  it('a ceasefire freezes a hold on a seat of power', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    strike(sim, n, {}, 'cityhall');
+    const war = () => dip(sim).wars.find((w) => w.with === n.id);
+    expect(war()!.hold?.by).toBe('us');
+    treaty(sim, n, [{ k: 'ceasefire', hours: 72 }]);
+    const score = war()!.score;
+    sim.advance(60 * H);
+    expect(n.rival!.vassal).toBeUndefined();
+    expect(war()!.hold?.by).toBe('us');
+    expect(war()!.score).toBe(score);
+    // Once it lapses the hold runs on, and the city falls.
+    sim.advance((12 + DIPLOMACY.conquestHours + 2) * H);
+    expect(n.rival!.vassal).toBeDefined();
+  });
+
+  it('an ally of the target with a pact with the city keeps its word and stays out', () => {
+    const { sim } = warTown();
+    const [n, a] = rivals(sim);
+    disarm(sim);
+    n!.rival!.allies = [a!.id];
+    a!.rival!.allies = [n!.id];
+    a!.rival!.personality = 'honourable';
+    treaty(sim, a!, [{ k: 'nonAggression', months: 24 }]);
+    ok(sim, { type: 'declareWar', neighbour: n!.id, scale: 'war', reason: '' });
+    expect(dip(sim).wars.some((w) => w.with === a!.id)).toBe(false);
+  });
+
+  it('conquest ends the fallen side’s claims, and a fallen city’s other wars', () => {
+    const { sim } = warTown();
+    const [n, m] = rivals(sim);
+    disarm(sim);
+    // The city pays n tribute, then conquers it: the tribute ends with n's fall.
+    treaty(sim, n!, [{ k: 'tribute', payer: 'us', amount: 500, months: 24 }]);
+    ok(sim, { type: 'declareWar', neighbour: n!.id, scale: 'total', reason: '', breakPact: true });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    strike(sim, n!, {}, 'cityhall');
+    sim.advance(DIPLOMACY.conquestHours * H + H);
+    expect(n!.rival!.vassal).toBeDefined();
+    expect(dip(sim).pacts.some((p) => p.with === n!.id && p.term.k === 'tribute')).toBe(false);
+    // At war with m too, the city falls to it: every war of its ends under its overlord's peace.
+    const other = rivals(sim).find((x) => x.id !== n!.id && x.id !== m!.id) ?? m!;
+    ok(sim, { type: 'declareWar', neighbour: other.id, scale: 'war', reason: '' });
+    ok(sim, { type: 'cheat', cheat: 'fall', neighbour: m!.id });
+    expect(dip(sim).vassal?.overlord).toBe(m!.id);
+    expect(dip(sim).wars).toHaveLength(0);
+  });
+
+  it('a computer vassal whose rising is beaten stays a vassal', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    strike(sim, n, {}, 'cityhall');
+    sim.advance(DIPLOMACY.conquestHours * H + H);
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 300, defences: 50 });
+    const rising = () => dip(sim).wars.find((w) => w.with === n.id);
+    for (let d = 0; d < 30 && !rising(); d++) sim.advance(M);
+    expect(rising()?.rebellion).toBe(true);
+    // Beaten (its forces spent, then struck hard until it capitulates); the usual terms stand.
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 0.5, defences: 1 });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    for (let k = 0; k < 4 && !rising()?.capitulated; k++) strike(sim, n, { destroyed: 12 });
+    expect(rising()?.capitulated?.by).toBe('them');
+    sim.advance(DIPLOMACY.termsDays * M + H);
+    expect(rising()).toBeUndefined();
+    expect(n.rival!.vassal).toBeDefined();
+  });
+
+  it('a neutral city that is attacked is neutral no more, and may answer', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    for (const r of rivals(sim)) r.rival!.allies = [];
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    strike(sim, n, {}, 'cityhall');
+    sim.advance(DIPLOMACY.conquestHours * H + H);
+    expect(n.rival!.vassal).toBeDefined();
+    // Neutral once the strike is far enough behind it; then its vassal rises against it.
+    sim.advance(DIPLOMACY.neutral.afterStrikeMonths * M);
+    ok(sim, { type: 'setNeutral', on: true });
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 300, defences: 50 });
+    for (let d = 0; d < 30 && !dip(sim).wars.length; d++) sim.advance(M);
+    expect(dip(sim).wars[0]?.rebellion).toBe(true);
+    expect(dip(sim).neutral).toBeUndefined();
+    expect(dip(sim).log.some((e) => e.text.includes('neutral no more'))).toBe(true);
+    // And it may answer at once.
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    const units = [...sim.state.war!.units.values()].filter((u) => !u.away).map((u) => u.id);
+    expect(
+      sim.dispatch({
+        type: 'sendForce',
+        units,
+        to: n.id,
+        route: 'highway',
+        target: 'military',
+        stance: 'bold',
+      }).ok,
+    ).toBe(true);
   });
 });

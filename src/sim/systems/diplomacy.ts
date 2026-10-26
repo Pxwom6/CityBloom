@@ -156,11 +156,12 @@ function dip(sim: Sim): Diplomacy {
   });
 }
 
-function note(sim: Sim, withId: number, what: string, text: string): void {
+/** Something happened: logged, and a notice (`tone` good or bad for the city, else news). */
+function note(sim: Sim, withId: number, what: string, text: string, tone?: 'good' | 'bad'): void {
   const d = dip(sim);
   d.log.push({ tick: sim.state.tick, with: withId, text });
   if (d.log.length > LOG_KEEP) d.log.splice(0, d.log.length - LOG_KEEP);
-  sim.events.push({ kind: 'diplomacy', id: withId, info: { what, text } });
+  sim.events.push({ kind: 'diplomacy', id: withId, info: { what, text, ...(tone ? { tone } : {}) } });
   sim.warChanged();
 }
 
@@ -324,13 +325,21 @@ function startWarWith(
         ? `The city rises against ${n.name}: a total war opens in ${DIPLOMACY.warningHours} hours`
         : `The city declares ${what} on ${n.name}: it opens in ${DIPLOMACY.warningHours} hours`,
     );
-  else
+  else {
     note(
       sim,
       n.id,
       'declaredOn',
       `${n.name} declares ${what} on the city: “${war.reason}”. It opens in ${DIPLOMACY.warningHours} hours`,
+      'bad',
     );
+    // Attacked, a neutral city is neutral no more: it may answer at once.
+    if (d.neutral || d.leaving !== undefined) {
+      delete d.neutral;
+      delete d.leaving;
+      note(sim, 0, 'notNeutral', 'Attacked, the city is neutral no more');
+    }
+  }
   // A neighbour attacked: its allies true to their word come to its side.
   if (by === 'us')
     for (const a of alliesOf(sim, n))
@@ -341,6 +350,8 @@ function startWarWith(
 /** A computer neighbour comes into a war against the city on another's side. */
 function joinAgainst(sim: Sim, a: Neighbour, friend: Neighbour): void {
   if (warWith(sim, a.id) || a.rival?.vassal || sim.state.war?.diplomacy?.vassal?.overlord === a.id) return;
+  // True to its word to both sides: a neighbour with a pact with the city stays out.
+  if (bindingPacts(sim, a.id).length) return;
   if (!warScaleAllowed(sim) || warScaleAllowed(sim) === 'skirmish') return;
   startWarWith(sim, a, 'war', 'them', `We stand by ${friend.name}`);
 }
@@ -391,6 +402,8 @@ export function scoreBattle(
 ): void {
   const war = warWith(sim, withId);
   if (!war || sim.state.tick < war.opens || war.capitulated) return;
+  const nb = neighbourOf(sim, withId);
+  if (!nb?.rival || nb.player) return;
   const S = DIPLOMACY.score;
   const weWon = b.ours ? b.outcome === 'raided' : b.outcome !== 'raided';
   const pts = S.battleMin + (S.battleMax - S.battleMin) * clamp(b.decisive, 0, 1);
@@ -435,6 +448,10 @@ export function scoreHomeBattle(
   down: number,
 ): void {
   if (!warWith(sim, from)) return;
+  // Nothing to strike (the target wasn't there), or no contact at all: no battle to score.
+  const contact =
+    report.theirLost > 0 || Object.values(report.lost).some((v) => (v ?? 0) > 0) || (report.worth ?? 0) > 0;
+  if (aimed === 0 || (report.outcome === 'withdrew' && !contact)) return;
   const won = report.outcome !== 'raided';
   const decisive = won
     ? report.theirTotal
@@ -461,6 +478,8 @@ export function scoreAwayBattle(sim: Sim, to: number, report: BattleReport, sent
   const won = report.outcome === 'raided';
   const lost = Object.values(report.lost).reduce((a, v) => a + (v ?? 0), 0);
   const o = report.away.objectives;
+  // Nothing there to strike: no battle to score.
+  if (o.aimed === 0) return;
   scoreBattle(sim, to, {
     ours: true,
     outcome: report.outcome,
@@ -482,11 +501,11 @@ function checkCapitulation(sim: Sim, war: War): void {
 function capitulate(sim: Sim, war: War, by: Party): void {
   const s = sim.state;
   const n = neighbourOf(sim, war.with);
-  if (!n) return;
+  if (!n?.rival || n.player) return;
   war.capitulated = { by, until: s.tick + DIPLOMACY.termsDays * M };
   stopFighting(sim, n.id);
   if (by === 'us') {
-    note(sim, n.id, 'capitulated', `The city capitulates to ${n.name}`);
+    note(sim, n.id, 'capitulated', `The city capitulates to ${n.name}`, 'bad');
     sign(sim, n, imposedTerms(sim, n), true);
   } else
     note(
@@ -494,6 +513,7 @@ function capitulate(sim: Sim, war: War, by: Party): void {
       n.id,
       'theyCapitulate',
       `${n.name} capitulates: set your terms within ${DIPLOMACY.termsDays} days, or the usual terms stand`,
+      'good',
     );
 }
 
@@ -528,15 +548,18 @@ function imposedTerms(sim: Sim, n: Neighbour): Term[] {
       .sort((a, b) => b.taxes - a.taxes || a.id - b.id)[0];
     if (best) terms.push({ k: 'occupy', side: 'us', district: best.id });
   } else if (r.personality === 'cautious') terms.push({ k: 'dmz', side: 'us', months: 12 });
+  // A vassal of the city whose rising won goes free.
+  if (r.vassal) terms.push({ k: 'independence' });
   return terms;
 }
 
 /** The terms that stand when a capitulated computer neighbour's winner sets none. */
-function defaultTerms(n: Neighbour, war: War): Term[] {
+function defaultTerms(sim: Sim, n: Neighbour, war: War): Term[] {
   const terms: Term[] = [{ k: 'peace' }];
   const amount = Math.round((neighbourTaxes(n) * DIPLOMACY.defaults.reparationsMonths) / 100) * 100;
   if (amount > 0) terms.push({ k: 'reparations', payer: 'them', amount });
-  if (war.rebellion) terms.push({ k: 'independence' });
+  // Only the city's own rising, won, sets it free; a vassal's beaten rising leaves it a vassal.
+  if (war.rebellion && sim.state.war?.diplomacy?.vassal?.overlord === n.id) terms.push({ k: 'independence' });
   return terms;
 }
 
@@ -731,6 +754,9 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
     }
   }
   d.proposals = d.proposals.filter((p) => p.with !== n.id);
+  // Peace with an overlord the city stays a vassal of ends its allies' wars on the city too.
+  if (terms.some((t) => t.k === 'peace') && d.vassal?.overlord === n.id)
+    for (const a of alliesOf(sim, n)) if (warWith(sim, a.id)) endWar(sim, a.id);
   if (!imposed && n.rival) n.rival.relation = clamp(n.rival.relation + 10, -100, 100);
   note(
     sim,
@@ -1178,7 +1204,10 @@ export function diplomacyHour(sim: Sim): void {
       war.opened = true;
       note(sim, war.with, 'opened', `The war with ${war.name} has begun`);
     }
-    if (war.hold) {
+    if (war.hold && pactsWith(sim, war.with, 'ceasefire').length) {
+      // A ceasefire freezes the front: the hold neither runs on nor counts.
+      war.hold.since += H;
+    } else if (war.hold) {
       war.score = clamp(
         round1(war.score + DIPLOMACY.score.holdPerHour * (war.hold.by === 'us' ? 1 : -1)),
         -100,
@@ -1187,7 +1216,7 @@ export function diplomacyHour(sim: Sim): void {
       if (s.tick - war.hold.since >= DIPLOMACY.conquestHours * H) conquer(sim, war);
     } else if (war.capitulated?.by === 'them' && s.tick >= war.capitulated.until) {
       const n = neighbourOf(sim, war.with);
-      if (n) sign(sim, n, defaultTerms(n, war), true);
+      if (n?.rival && !n.player) sign(sim, n, defaultTerms(sim, n, war), true);
     } else if (war.opened) checkCapitulation(sim, war); // a score a broken hold left past the bar
   }
   for (const p of [...d.pacts])
@@ -1225,10 +1254,17 @@ function conquer(sim: Sim, war: War): void {
   d.proposals = d.proposals.filter((p) => p.with !== war.with);
   stopFighting(sim, war.with);
   if (!n?.rival) return;
+  // The fallen side's pacts with the winner end, and so do its claims on it (tribute it was owed,
+  // districts it held, a demilitarised zone it imposed, an embargo).
+  const loser: Party = by === 'us' ? 'them' : 'us';
+  const owed = (t: Term) =>
+    (t.k === 'tribute' && t.payer !== loser) ||
+    ((t.k === 'occupy' || t.k === 'dmz') && t.side !== loser) ||
+    t.k === 'embargo';
+  d.pacts = d.pacts.filter((p) => !(p.with === n.id && (BINDING.includes(p.term.k) || owed(p.term))));
   if (by === 'us') {
     n.rival.vassal = { since: s.tick };
     n.rival.forces = round1(n.rival.forces * DIPLOMACY.vassal.forcesLeft);
-    d.pacts = d.pacts.filter((p) => !(p.with === n.id && BINDING.includes(p.term.k)));
     if (d.vassal?.overlord === n.id) delete d.vassal;
     delete d.fell;
     note(
@@ -1236,19 +1272,23 @@ function conquer(sim: Sim, war: War): void {
       n.id,
       'conquered',
       `${n.name} falls to the city: it is the city’s vassal now and pays a fifth of its taxes`,
+      'good',
     );
   } else {
     d.vassal = { overlord: n.id, since: s.tick };
     d.fell = { by: n.id, name: n.name, at: s.tick };
-    d.pacts = d.pacts.filter((p) => !(p.with === n.id && BINDING.includes(p.term.k)));
+    delete n.rival.vassal;
     delete d.neutral;
-    // Its allies fought for it: their wars with the city end with its fall.
-    for (const a of alliesOf(sim, n)) if (warWith(sim, a.id)) endWar(sim, a.id);
+    delete d.leaving;
+    // Under its overlord's peace: every other war of the city's ends with its fall (a vassal sends
+    // no forces, so it couldn't fight them).
+    for (const other of [...d.wars]) endWar(sim, other.with);
     note(
       sim,
       n.id,
       'fell',
       `The city falls to ${n.name}: it is ${n.name}’s vassal and pays it a fifth of its taxes`,
+      'bad',
     );
   }
 }
@@ -1312,23 +1352,24 @@ function computerMoves(sim: Sim): void {
     const d = w.diplomacy;
     const war = warWith(sim, n.id);
     const pending = d?.proposals.some((x) => x.with === n.id && x.from === 'them');
-    // A vassal of the city rises once its forces are strong enough (a rising takes an army).
-    if (r.vassal) {
+    // A vassal of the city rises once its forces are strong enough (a rising takes an army). It
+    // stays a vassal until the rising wins: by a hold, by the city's capitulation, or by treaty.
+    if (r.vassal && !war) {
       if (
         r.forces >= strength * DIPLOMACY.vassal.rebelRatio &&
         rng.chance(0.25) &&
         allowed &&
         allowed !== 'skirmish'
-      ) {
-        delete r.vassal;
+      )
         startWarWith(sim, n, allowed === 'total' ? 'total' : 'war', 'them', 'We will not kneel', true);
-      }
       continue;
     }
     if (war) {
       if (pending || s.tick < war.opens || war.capitulated) continue;
       const ours = monthlyTaxes(sim);
-      if (war.score >= 30 && rng.chance(0.5)) {
+      if (r.vassal && war.score <= -30 && rng.chance(0.4))
+        putToCity(sim, n, [{ k: 'peace' }, { k: 'independence' }]);
+      else if (war.score >= 30 && rng.chance(0.5)) {
         const amount = Math.round((neighbourTaxes(n) * Math.min(6, war.score / 15)) / 100) * 100;
         putToCity(
           sim,
@@ -1407,9 +1448,12 @@ export function diplomacyRates(sim: Sim, taxes: number): Record<string, number> 
         p.term.side === 'us' ? -(p.amount ?? 0) : (p.amount ?? 0),
       );
   }
-  if (d?.vassal) add('overlord', -taxes * DIPLOMACY.vassal.taxShare);
+  // A vassal rising against its overlord pays nothing while the rising is on.
+  if (d?.vassal && !d.wars.some((w) => w.with === d.vassal!.overlord))
+    add('overlord', -taxes * DIPLOMACY.vassal.taxShare);
   for (const n of s.region.neighbours)
-    if (n.rival?.vassal && !n.player) add('vassals', neighbourTaxes(n) * DIPLOMACY.vassal.taxShare);
+    if (n.rival?.vassal && !n.player && !d?.wars.some((w) => w.with === n.id))
+      add('vassals', neighbourTaxes(n) * DIPLOMACY.vassal.taxShare);
   return out;
 }
 
@@ -1464,10 +1508,10 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
     return fail(`${n.name} has taken the region’s three raids for today: no more until midnight (UTC)`);
   if (d?.leaving !== undefined && s.tick < d.leaving)
     return fail(`Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / H)} hours`);
-  if (n.rival?.vassal) return fail(`${n.name} is your vassal`);
   const war = warWith(sim, to);
-  if (d?.vassal && !(war && d.vassal.overlord === to))
-    return fail('A vassal sends no forces, except to rise against its overlord');
+  if (n.rival?.vassal && !war) return fail(`${n.name} is your vassal`);
+  // A vassal fights only in its rising (against its overlord, and those who came to its side).
+  if (d?.vassal && !war) return fail('A vassal sends no forces, except to rise against its overlord');
   if (war && s.tick < war.opens)
     return fail(`The war with ${n.name} opens in ${Math.ceil((war.opens - s.tick) / H)} hours`);
   if (war?.capitulated?.by === 'them') return fail(`${n.name} has capitulated: set your terms`);
@@ -1499,6 +1543,24 @@ export function strikeBreaks(sim: Sim, to: number): void {
   const bound = bindingPacts(sim, to);
   const n = neighbourOf(sim, to);
   if (bound.length && n) breakPacts(sim, n, bound);
+}
+
+/**
+ * A friend's city takes a computer neighbour's place in a shared region (M36): whatever the city
+ * had with that neighbour ends with it (wars, pacts, proposals, vassalage), and it's no one's ally.
+ */
+export function forgetNeighbour(sim: Sim, id: number): void {
+  const s = sim.state;
+  for (const n of s.region.neighbours)
+    if (n.rival?.allies?.includes(id)) n.rival.allies = n.rival.allies.filter((x) => x !== id);
+  const d = s.war?.diplomacy;
+  if (!d) return;
+  if (d.wars.some((w) => w.with === id)) endWar(sim, id);
+  d.pacts = d.pacts.filter((p) => p.with !== id);
+  d.proposals = d.proposals.filter((p) => p.with !== id);
+  if (d.vassal?.overlord === id) delete d.vassal;
+  if (d.fell?.by === id) delete d.fell;
+  sim.warChanged();
 }
 
 /** Is trade with this neighbour under embargo? */

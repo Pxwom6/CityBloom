@@ -264,7 +264,7 @@ export function planRaid(
     from: n.id,
     name: n.name,
     units,
-    target: seat ? 'cityhall' : (RIVAL_TARGET[r.personality] ?? 'military'),
+    target: raidTarget(sim, seat ? 'cityhall' : (RIVAL_TARGET[r.personality] ?? 'military')),
     route,
     stance: r.personality === 'cautious' || r.personality === 'mercantile' ? 'cautious' : 'bold',
     readiness: 0.8,
@@ -276,6 +276,13 @@ export function planRaid(
   sim.warChanged();
   if (s.tick >= raid.warn) warnRaid(sim, raid);
   return raid;
+}
+
+/** What a raid goes for: what it wants if the city has one, else its military (M36: a raid that
+ * finds nothing to strike is no battle at all). */
+function raidTarget(sim: Sim, want: BattleTarget): BattleTarget {
+  if (want === 'military' || objectiveSpots(sim, want).length) return want;
+  return 'military';
 }
 
 /** Residents near what a raid is after: the homes within reach of those targets. */

@@ -16,7 +16,7 @@ import { civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
-import { embargoed } from './diplomacy';
+import { embargoed, forgetNeighbour } from './diplomacy';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -439,7 +439,9 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
   for (const c of [...u.cities].sort((a, b) => a.slot - b.slot)) {
     const n = r.neighbours.find((x) => x.player?.slot === c.slot) ?? r.neighbours.find((x) => !x.player);
     if (!n) continue;
-    // A friend's city isn't a computer rival: its war stance is its own.
+    // A friend's city isn't a computer rival: its war stance is its own, and whatever the city had
+    // with the town it replaces ends (M36).
+    if (n.rival) forgetNeighbour(sim, n.id);
     delete n.rival;
     n.name = c.name;
     n.kind = c.kind;

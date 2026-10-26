@@ -272,10 +272,25 @@ function NewGame() {
     game.updateSettings({ disasters, elections });
     location.href = `${location.pathname}?${q.toString()}`;
   };
+  const region = game.regionParam ? new URLSearchParams(game.regionParam) : null;
+  const sharing = game.hostKind
+    ? game.hostKind === 'online'
+      ? 'It opens in an online room for your friends.'
+      : 'It opens shared from this browser for your friends.'
+    : region?.has('newregion')
+      ? 'It starts a shared region for your friends.'
+      : region?.get('region')
+        ? `It joins the region ${region.get('region')}.`
+        : null;
   return (
     <div class="shell-card panel new-game" data-testid="new-game">
       <header>
         <h2>New city</h2>
+        {sharing && (
+          <span class="muted" data-testid="new-sharing">
+            {sharing}
+          </span>
+        )}
       </header>
       <div class="new-game-body">
         <div class="new-game-map">
@@ -434,48 +449,65 @@ function PauseMenu() {
   return (
     <div class="shell-card panel pause-menu" data-testid="pause-menu">
       <header>
-        <h2>Paused</h2>
+        {/* A shared city doesn't pause for menus: it runs at the room's speed (review, minor). */}
+        <h2>{game.net ? 'Menu' : 'Paused'}</h2>
         <span class="muted">
           {st.cityName} · {formatDate(dateOf(st.tick))}
+          {game.net && ' · the city keeps running for everyone'}
         </span>
       </header>
       <nav class="shell-nav compact">
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
-          <span>Resume</span>
+          <span>{game.net ? 'Back to the city' : 'Resume'}</span>
         </button>
-        <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
-          <span>Save city…</span>
-        </button>
-        <button
-          class="shell-btn"
-          data-testid="menu-save"
-          disabled={game.saving}
-          onClick={() => void game.saveTo('quick', 'Quick save')}
-        >
-          <span>Quick save</span>
-        </button>
+        {/* A neighbour's city seen read-only is never saved here (F5). */}
+        {!game.readOnly && (
+          <>
+            <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
+              <span>Save city…</span>
+            </button>
+            <button
+              class="shell-btn"
+              data-testid="menu-save"
+              disabled={game.saving}
+              onClick={() => void game.saveTo('quick', 'Quick save')}
+            >
+              <span>Quick save</span>
+            </button>
+          </>
+        )}
         <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
           <span>Load city…</span>
         </button>
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
-        {!game.net && <InviteButtons />}
+        {!game.net && !game.readOnly && !game.region && <InviteButtons />}
         <div class="shell-row">
-          <button
-            class="shell-btn"
-            data-testid="pause-export"
-            onClick={async () => exportSave(await game.client.save())}
-          >
-            <span>Export to file</span>
-          </button>
+          {!game.readOnly && (
+            <button
+              class="shell-btn"
+              data-testid="pause-export"
+              onClick={async () => exportSave(await game.client.save())}
+            >
+              <span>Export to file</span>
+            </button>
+          )}
           <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
             <span>Import file</span>
           </button>
         </div>
         <button class="shell-btn quiet" data-testid="pause-quit" onClick={() => void game.quitToMenu()}>
           <span>Quit to main menu</span>
-          <small>Your city is autosaved first.</small>
+          <small>
+            {game.readOnly
+              ? 'You were only visiting: nothing is saved.'
+              : game.net?.host
+                ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
+                : game.net
+                  ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
+                  : 'Your city is autosaved first.'}
+          </small>
         </button>
       </nav>
       <ImportInput inputRef={file} />
@@ -508,7 +540,12 @@ function InviteButtons() {
         <small>{online ? 'an online room' : 'from this computer'}</small>
       </button>
       {online && (
-        <button class="shell-btn" data-testid="pause-invite-p2p" onClick={() => void host('p2p')}>
+        <button
+          class="shell-btn"
+          data-testid="pause-invite-p2p"
+          title="Friends connect straight to this browser, so they can see your internet (IP) address; an online room doesn't share it"
+          onClick={() => void host('p2p')}
+        >
           <span>Host on this computer</span>
         </button>
       )}

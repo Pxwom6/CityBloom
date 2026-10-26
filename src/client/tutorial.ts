@@ -107,8 +107,16 @@ export const TIPS: Tip[] = [
     id: 'shared',
     text:
       'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
-      'shows who is here, the invite link and the chat; Shift+G over the map points the others at a spot.',
+      'shows who is here, the invite link and the chat; its Point button (or Shift+G over the map) shows ' +
+      'the others a spot.',
     when: (g) => !!g.net && g.net.session.state === 'playing',
+  },
+  {
+    id: 'region',
+    text:
+      'Your city is in a shared region: the other players’ cities now stand where neighbouring towns did. ' +
+      'Open the Region panel (Shift+N) to trade with them, pay into Sunfield Commons, or visit their cities.',
+    when: (g) => g.region?.state === 'in',
   },
   {
     id: 'sharedHost',

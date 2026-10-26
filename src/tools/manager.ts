@@ -11,9 +11,20 @@ import { DisasterTool } from './disasterTool';
 import { DistrictTool } from './districtTool';
 import { TerrainTool } from './terrainTool';
 import { MapTool } from './mapTool';
+import { PingTool } from './pingTool';
 
 export type ToolId =
-  'select' | 'road' | 'zone' | 'bulldoze' | 'place' | 'stop' | 'disaster' | 'district' | 'terrain' | 'map';
+  | 'select'
+  | 'road'
+  | 'zone'
+  | 'bulldoze'
+  | 'place'
+  | 'stop'
+  | 'disaster'
+  | 'district'
+  | 'terrain'
+  | 'map'
+  | 'ping';
 
 /** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
 const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
@@ -33,6 +44,8 @@ export class ToolManager {
   readonly terrain: TerrainTool;
   /** The map editor's brushes and entries (M24). */
   readonly map: MapTool;
+  /** One tap on the map points the others in a shared city at it (F11). */
+  readonly ping: PingTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
   /** Where a left press began for a click-only tool (P3), until the button comes up. */
@@ -49,6 +62,7 @@ export class ToolManager {
     this.district = new DistrictTool(game);
     this.terrain = new TerrainTool(game);
     this.map = new MapTool(game);
+    this.ping = new PingTool(game);
     this.active = this.select;
     const canvas = game.renderer.canvas;
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));

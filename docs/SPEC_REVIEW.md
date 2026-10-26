@@ -403,7 +403,7 @@ Each milestone's rows are filled in as it's done.
 | Online rooms on Cloudflare: a Durable Object per room, Hibernation API, SQLite; the city kept between sessions | `relay/worker.ts` (`RoomObject`, `SqlStore`), `relay/wrangler.jsonc`; tested under `wrangler dev` with `RELAY_URL=ws://localhost:8790 npx vitest run relay/tests/local.test.ts` (a year in step; a city kept after everyone left) |
 | Peer-to-peer: the host's browser is the room, WebRTC data channels | `src/net/p2p.ts` (`P2PHost`, `p2pConnect`); `e2e/m30-rooms.spec.ts` (p2p) |
 | Signal through the Worker; also a way with no server of ours | relay signalling (`relay/signal.ts`, `SignalObject`); Trystero over Nostr when no relay is set up, tried between two pages over the internet (DECISIONS, M30) |
-| Public STUN; plain words when players can't connect, offering an online room; TURN optional | `ICE_SERVERS`, `P2P_FAILED` in `src/net/p2p.ts`; no TURN for now (DECISIONS) |
+| Public STUN; plain words when players can't connect, offering an online room; TURN optional | `ICE_SERVERS`, `p2pFailed` in `src/net/p2p.ts` (an online room only offered when those are set up, review F10); no TURN for now (DECISIONS) |
 | A clock that suits both; waits for anyone too far behind; a background host doesn't stall everyone | the pacer's `clock` (`RoomSession.clockTick`), "Waiting for …" (`waitingFor`), pacer handover and background tabs not waited for (`relay/tests/room.test.ts`, "a host whose tab goes to the background…") |
 | Lobby: Host online, Host on this computer, Join with a code | `src/ui/Friends.tsx` (`FriendsScreen`), `e2e/m30-lobby.spec.ts`, `docs/screenshots/m30-lobby.png`, `m30-lobby-no-relay.png` |
 | Short codes without look-alikes; invite links `?join=CODE` | `makeCode`/`normaliseCode`/`codeKind` in `relay/protocol.ts`; `inviteLink`, the boot path in `src/main.ts` |
@@ -467,3 +467,21 @@ Each milestone's rows are filled in as it's done.
 
 | Item | Where |
 |---|---|
+| A soak test: four players for two hours of real time at mixed speeds, with joins, leaves, reconnects and a resync, and no unexplained desync | `scripts/dev/soak.ts` (four headless players through the local relay's sockets; the log is `bench-results/soak.log`); PROGRESS.md "Soak (M33)" |
+| The lobby, invites and messages on narrow windows and touch screens | `e2e/m33-narrow.spec.ts` (a phone and a tablet, by touch), `docs/screenshots/m33-*.png` |
+| Tutorial tips for the multiplayer screens | tips `shared`, `sharedHost`, `region` in `src/client/tutorial.ts`; tooltips on the lobby's and room panel's controls |
+| A "Play with friends" section in the README | `README.md` |
+| Troubleshooting in the game and the README: peer-to-peer can't connect, a full room, out of step | `Troubleshooting` in `src/ui/Friends.tsx` (the lobby and the room panel), `README.md` "When something goes wrong" |
+| Free-plan check: compare with real play, tune batching and snapshot writes | progress each second, the clock each half second and presence at most four times a second halved the messages (`scripts/dev/netbudget.ts`: 1,128 requests an hour for four players, 1.1 %); the worker paces the city between clock moves; snapshots every ten minutes of play; PROGRESS.md "Network (M33)" |
+| Done when: the soak test passes | as above |
+| Done when: the cross-browser test passes | `XB_FIREFOX=0 npm run xbrowser` (Chromium, WebKit, SpiderMonkey) |
+| Done when: a friend could be sent a link and play without reading instructions | the invite link opens the game straight into the room; the lobby, room panel and messages say what to do (PROGRESS.md "Final playthrough (phase 4)") |
+
+## When every milestone is done (phase 4)
+
+| Item | Where |
+|---|---|
+| Update the summary at the top of PROGRESS.md | PROGRESS.md: the phase 4 paragraph, the soak, the network budget, the Cloudflare steps |
+| This brief's section in SPEC_REVIEW | the M29–M33 sections above and this one |
+| The README | `README.md`: Play with friends, When something goes wrong, the relay and cross-browser scripts |
+| Play a co-op city and a region through the real UI with at least two players, and fix whatever feels off | `e2e/m30-*.spec.ts`, `e2e/m31-together.spec.ts`, `e2e/m32-region.spec.ts`, `e2e/m33-narrow.spec.ts` and their screenshots (reviewed). Fixed on the way: joining a paused room waited for ever; a frozen pacer held joiners; a city in a shared room moved in bursts between clock messages (now paced); panels ran off a phone; the region's first view didn't show the others' deals |

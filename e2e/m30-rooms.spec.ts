@@ -1,5 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { openGame, shot } from './helpers';
+import { closeContextsAfterEach, newContext, openGame, shot } from './helpers';
+
+closeContextsAfterEach();
 
 /**
  * M30, rooms online and peer-to-peer, through real pages: a host shares a city from the pause
@@ -13,7 +15,7 @@ test.describe.configure({ mode: 'serial' });
 const QUERY = '&seed=rooms&preset=river&name=Roomsby';
 
 async function newPage(browser: Browser, name: string, color: number): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  const ctx = await newContext(browser, { viewport: { width: 960, height: 640 } });
   ctx.on('console', (m) => {
     if (m.type() === 'error' || m.text().startsWith('[p2p')) console.log(`[${name}] ${m.text()}`);
   });
@@ -104,13 +106,17 @@ for (const kind of ['online', 'p2p'] as const) {
     const room = (await net(ada))!;
     expect(room.kind).toBe(kind);
     expect(room.code).toMatch(kind === 'online' ? /^[2-9][A-Z2-9]{5}$/ : /^[A-Z][A-Z2-9]{5}$/);
+    // A room in Ada's browser is found by its code and its key (F2); an online one by its code.
+    expect(room.invite).toMatch(
+      kind === 'online' ? /^[2-9][A-Z2-9]{5}$/ : /^[A-Z][A-Z2-9]{5}(-[A-Z2-9]{4}){3}$/,
+    );
     await expect(ada.getByTestId('room-panel')).toBeVisible();
     const link = await ada.getByTestId('room-link').inputValue();
-    expect(link).toContain(`?join=${room.code}`);
+    expect(link).toContain(`?join=${room.invite}`);
 
     // Sam opens the invite link and lands in the same city.
     const sam = await newPage(browser, 'Sam', 1);
-    await sam.goto(`./?join=${room.code}`);
+    await sam.goto(`./?join=${room.invite}`);
     await sam.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
     await expect.poll(async () => (await net(sam))?.state, { timeout: 60_000 }).toBe('playing');
     await expect(sam.getByTestId('room-chip')).toContainText(room.code);
@@ -125,7 +131,7 @@ for (const kind of ['online', 'p2p'] as const) {
 
     // Kit joins halfway through.
     const kit = await newPage(browser, 'Kit', 2);
-    await kit.goto(`./?join=${room.code}`);
+    await kit.goto(`./?join=${room.invite}`);
     await kit.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
     await expect.poll(async () => (await net(kit))?.state, { timeout: 180_000 }).toBe('playing');
     expect((await zone(kit, 'I', 110)).ok).toBe(true);

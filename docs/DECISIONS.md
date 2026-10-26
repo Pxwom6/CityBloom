@@ -616,3 +616,194 @@ One line each: what was decided and why. Newest at the bottom of each section.
 - **Visiting**: each city keeps its latest save in the region (every five minutes and when it leaves); Visit opens it in a new tab, read-only (`?visit=CODE&city=N`; the toolbar is replaced by a banner and every command is refused).
 - **Starting and joining** from the city's own Region panel (Start a region / a code and Join), or from the lobby, which opens the latest saved city (or a new one) with `newregion=` or `region=`. A saved city remembers its region (`citybloom.regionOf.<slot>`) and rejoins it when opened again. A city can be in a region or shared in a co-op room, not both.
 - **Sewage isn't traded**: M23's deals are power, water and garbage (the brief lists sewage too); players' deals follow M23's.
+
+### M33 Ready for friends
+- **The soak runs headless** (`scripts/dev/soak.ts`): four players with the real session, sim and relay code over real sockets, without four 3D pages (which SwiftShader can't keep up with); the browser side is covered by the multiplayer e2e specs.
+- **Fewer messages for the free plan**: progress once a second, the clock every half second (both well inside the three-second lead), presence at most four times a second. The worker paces a shared city at the room's speed between clock messages, so a slower clock doesn't make the city jerky; far behind, or with the room paused, it runs straight to the allowed tick.
+- **Panels never wider than the window** (a phone held upright is 390 px; the side panels were 400): a change every player gets, not only shared cities.
+- **Help where it's needed**: "Trouble connecting?" in the lobby and the room panel, plain messages for every network event, tips for a shared city, its host and a region, and the README's "When something goes wrong".
+
+## Multiplayer review follow-ups
+The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
+
+- **F1 A removed player stays removed.** Rooms have no accounts, so nothing but the room code tells
+  one visitor from another: a kick now locks the room behind the player (the host is told, and can
+  unlock it to let someone new in), and the removed player's id stays on the room's list, so their old
+  secret is turned away too ("The host removed you from this room"). Giving the room a new code was the
+  other way; it would move an online room's city to another Durable Object and break every player's
+  saved credentials, for no gain over a lock the host controls. Players already in the room still
+  reconnect after a dropped link, locked or not.
+- **F3 Codes and secrets from the cryptographic source.** `makeCode(kind)` and `makeSecret()` in
+  `relay/protocol.ts` draw from `crypto.getRandomValues` (the browser, Node and a Worker all have it),
+  with rejection sampling so no character is likelier than another; secrets are 128 bits in hex. Rooms
+  and regions no longer take a `random` from their surroundings, so no transport can hand them
+  `Math.random` again.
+- **F7 Another player's command is checked field by field** (`src/sim/commandCheck.ts`). The room
+  orders only a clean copy of a command whose every field has the right type and bounds (ground
+  coordinates within the map and a margin round it, ids whole numbers, names short, enums from their
+  data lists, brushes of at most 64 points): a malformed one threw in a handler, hung every player's
+  worker (a zoning brush a million metres long) or quietly damaged the city (`setTax` with
+  `wealth: 'length'`). Every sim checks again when the city is shared, so an old peer-to-peer host or
+  an altered room can't get round it; single player's own commands aren't checked (the page makes
+  them). The table of checks is keyed by command type, so a new command doesn't compile until it has
+  one (`COMMAND_TYPES` in `commands.ts` likewise). The tests' disaster `size` and `heading` are
+  dropped from players' commands (no tool sends them). **Page-only commands are refused from
+  players**: cheats, the region's news and payments (`regionUpdate`, `contributeProject`: a city in a
+  region isn't shared, so these only ever come from its own page), the map editor's, and
+  `startScenario` (which would reset a shared city's options, neighbours and deals). **A command that
+  throws anyway** counts as refused on every machine with the same fixed reason (never the engine's
+  own wording, which differs between browsers), the city carries on, the issuer is told, and the
+  worker posts the error to the page; the worker's loop and the headless driver catch and report what
+  escapes, and a command or preview that throws still gets an answer.
+- **F9 Leaving a room leaves a city of one's own.** The worker and the headless driver forget which
+  player they were, the room's rules and the other players' undo histories; the player's own recent
+  edits stay undoable as single player's (an undo still refuses anything someone else has changed
+  since). A session that ends because the player was removed or the room went away does the same
+  (before, the copy kept waiting for a room that would never move it on), and a new room hosted from
+  the same page starts without the old one's rules.
+- **F4 The lobby's choice lasts only while its screens are open.** Host (with no saved city) and
+  Start a region (likewise) open the new-city screen set to share the city or bring it to a region;
+  backing out of that screen or the friends screen now drops the choice, and New city from the main
+  menu always founds a city of one's own. The new-city screen says what the city will be founded for
+  ("It opens shared from this browser for your friends"), and the two choices exclude each other.
+- **F5 A visit is never saved.** Looking round a neighbour's city is read-only, and now nothing of it
+  reaches this browser's saves: no autosave, no Save, Quick save or Export in the pause menu, Quit
+  leaves without saving ("You were only visiting: nothing is saved"), an update reloads without
+  saving first, and a visit can't be shared in a room or a region (before, Continue could open the
+  neighbour's city in place of one's own).
+- **F2 A peer-to-peer room is found by its code and a key.** Trystero announced a room on the
+  public Nostr relays under a topic made from our public app id and the six-character code, so anyone
+  watching could try every code offline (about 29 bits) and join. Peer-to-peer rooms and regions now
+  have a 12-character key from the same alphabet (about 59 bits; with the code public, a GPU would
+  take months to find a live room, and rooms last hours). The key is part of Trystero's room name, so
+  the topic can't be computed from the code, and it is Trystero's `password`, which encrypts the
+  connection details. With our own relay's signalling the host answers only offers that carry the key.
+  Invites are `A7KQ2M-BCDF-GHJK-MNPQ`, the same text in the link and in the box a friend types into
+  (spaces, dashes and case don't matter); the room chip still shows the short code, and the room panel
+  shows the whole code beside the link. A short peer-to-peer code alone is turned away with a plain
+  message. Online rooms keep their six-character codes: our relay finds them, and a key wouldn't
+  protect them more than the room's own rules do. Test builds can send Trystero through a Nostr relay
+  on this computer (`VITE_TRYSTERO_RELAYS`, preferred when `citybloom.signal` is `trystero`), which
+  `e2e/f2-trystero.spec.ts` uses to test the real join path.
+- **F6 A city's region travels with the city.** The region a city stands in (its invite, its place,
+  and whether this browser ran it) is kept in the city's save, in the save's meta beside the city
+  rather than in the sim's state, so it needs no save version; the city's secret is kept in this
+  browser by region and place. A city rejoins only the region its own save names, as itself, and only
+  when this browser holds its secret; another city saved over the same slot carries no binding and
+  joins nothing, an invited city joins as new unless it already stands there, and a copy opened in
+  another browser never comes back as a duplicate. Leaving a region for good drops the binding and the
+  secret.
+- **F10 No dead ends when a room or region in a browser goes.** A peer-to-peer room or region lives
+  in its host's page, so it shuts with it: leaving now tells every guest ("Ada closed the room: it ran
+  in their browser. You keep a copy of the city to play on your own.") before the connections close,
+  and nobody new gets in. A guest whose host vanished without a word (a closed tab) stops reconnecting
+  after three tries in a row ("The host's game has closed, and the room with it…") instead of showing
+  "Reconnecting…" for ever; online rooms keep trying, since their city waits on the server. A city in
+  a peer-to-peer region does the same, keeping its neighbours' last offers, and forgets the region
+  once its host has closed it; the host's own city, reopened, says its region closed with the page
+  rather than looking for it. What to do when two browsers can't connect depends on the site: "Host
+  online" is offered only once online rooms are set up, otherwise another network or another host.
+- **F8 Within the free plan under abuse.** Every object is rate limited and writes in batches, and a
+  daily row budget caps each one, so one person with a script can no longer use up the account's
+  100,000 rows a day. Rooms write ordered events a batch to a row: at most 30 s while the city runs,
+  2 s when it stands still, at once at 100 events or 256 KB. A pending timer keeps the Durable Object
+  awake until then, and the room's record holds sequence numbers reserved 256 at a time, so events
+  lost with an evicted object never have their numbers reused and anyone who saw them catches up
+  from a snapshot. Commands have their own limit (8 a second, burst 40; over it they're refused with
+  "Slow down a little", never dropped), as do speed, rules and admin (2 a second), and those write
+  only when something changed. Regions take bursts of reports but write at a measured pace: offers,
+  deals, contributions and new cities promptly through a per-city allowance (put together, never
+  lost), the numbers and pictures every five minutes, a city's save for visitors at most every ten.
+  Snapshots and saves are capped at 40 parts (8 MB) with one in flight per room or city; a city past
+  that is told so in words when it tries to share ("This city is too big to share…"), and a region
+  keeps its numbers and picture without a save for visitors. Past 5,000 rows a day (3,000 for a
+  region) commands are refused until midnight UTC while chat and presence pass. Rooms and regions are
+  forgotten 60 days after the last player leaves (an alarm online, a sweep in the local relay). A
+  code nobody hosts stores nothing: tables are made on the first write, the object learns its code
+  from its socket, room and region codes must start with a digit and signalling codes with a letter,
+  and only a socket opened with `?create=1` may make a room or region (the local relay run from the
+  command line keeps the same rules, so e2e tests catch a client that forgets). Signalling keeps
+  nothing in storage (random peer ids). Left as accepted risks: creations aren't limited per IP (each
+  probe still costs a request and a moment of an object), a running room left open overnight keeps
+  its object awake (duration, not rows; on the free plan the failure is "unavailable until midnight
+  UTC", not a bill), signalling guests have no maximum lifetime, and player records aren't pruned
+  (each join costs rows, so the budget bounds them).
+- **F13 Tests that test what they say.** The M29 spec compared the first game day of its three with
+  itself (Node's runner keeps only 48 hourly checksums, and a missing one fell back to the page's
+  own); its reference now steps an hour at a time into a map of every checksum, and every page hour
+  must equal it. The cross-browser script's command kinds come from `COMMAND_TYPES`, the
+  compiler-checked list beside `Command`, and its month 7 passes on a region's news and pays into its
+  project, so all 40 kinds run in every browser (in a room both are refused as page-only, alike on
+  every machine); `tests/lockstep/determinism.test.ts` checks the same in Node. A real v24 save, grown
+  by the live site's own code (main at 6f049d3, `legacy-corpus.mjs 24 --presets river`), joins the
+  corpus with `tests/legacy/v24.test.ts`: its street names stay as saved, nothing is anyone else's,
+  and a shared copy keeps step with one played alone. The real Trystero join path (code and key,
+  over a Nostr relay on this computer) is `e2e/f2-trystero.spec.ts` and a Node test in
+  `relay/tests/review.test.ts`. The relay's wall-clock tests are a Vitest project of their own
+  (`live`, one retry): `npm test` runs everything, the deploy only `--project unit`, so a slow runner
+  can't hold back the site or switch its online rooms off. A separate workflow (`xbrowser.yml`, which
+  never gates a deploy) runs the live tests and the cross-browser test in Chromium, WebKit and real
+  Firefox, which the cloud VM can't download and which won't start on the Mac. The frozen-pacer test
+  pushes the room's clock past its 8 s wait instead of waiting it out.
+- **F12 An invite link asks, checks and says.** A friend opening an invite link for the first time
+  picks the name and colour the others will see, on the boot screen and before anything connects
+  (`src/ui/JoinPrompt.tsx`), instead of being handed a random one; it's kept like the lobby's, so they
+  aren't asked again. The first-launch graphics check now runs in a room or a visit an invite opened
+  straight into, not only on the main menu (a phone used to join on the default graphics). The boot
+  screen says what it's waiting for: looking for the host's computer or connecting to the room,
+  connecting to the host, loading the city, building the scene (fetching the city, for a visit). A
+  join gives up after two minutes with a message rather than waiting for ever, and the building
+  models download during the wait instead of after it. A visit that can't be fetched says why on the
+  menu.
+- **F11 Phones in a room.** In a room the top bar wraps onto more rows below about 52 rem (46 rem
+  alone), that is a phone held upright and a tablet in a room: the city, its room (shrunk to a count
+  of who's here) and its figures first, then the More menu, the date (month only), speed and the
+  menu. The panels below are placed by the bar's measured height, however many rows a long city name
+  takes. Pings work by touch: the room panel's "Point the others at a spot" closes the panel, the next
+  tap on the map points the others there, and the tool before comes back; Shift+G still works with a
+  keyboard, and the shared-city tip names both.
+- **The minor items.** The pause menu in a shared city says "Menu" and "Back to the city", since the
+  city keeps running, and Quit says what happens to the room (a host on this computer closes it for
+  everyone; a guest leaves it to the others). Invite isn't offered in a region or a visit, a city in a
+  region can't also be hosted, and a city opened both to host and into its region stays out of the
+  region (the two at once would run the region's news outside the room's order). The full-room advice
+  is true now: a room takes 8 players at a time (away players don't count) and removing one locks it;
+  a region keeps a place for each of its 4 cities even while their mayors are away, so the advice is
+  to start another (a way for a city to leave its region for good, freeing its place, is left for
+  later). Player cities at the map's edge read "Sam's city · 240", not "Industrial town · 0k". Chat
+  and toasts wrap a long word (a pasted link), and chat can be selected to copy. Following another
+  player's camera stops at any move of one's own (wheel, keys, pinch, drag, a "Show me", a preset),
+  not only a drag. City and region names from players are cleaned as players' names are (control,
+  invisible and reordering characters, markup) and keep up to 40 characters (a region's was cut to
+  20). The local relay listens on 127.0.0.1 unless `--host` says otherwise (test builds use
+  127.0.0.1). The lobby, the room panel, the pause menu's "Host on this computer", "Start a region on
+  this computer" and Troubleshooting say that connecting straight shows the players' internet (IP)
+  addresses to each other; online rooms don't.
+- **F14 Balance rerun.** `balance.ts 20` after these follow-ups matches the M29 log to the last digit
+  (careful 67,373 residents and $1.84M at year 20, greedy and neglectful identical to `main`): M31's
+  and M32's changes to `dispatch` and the region code only act in shared cities and regions, so no
+  tuning was needed.
+- **Messages over Trystero in order (the owner's second review).** Trystero 0.26 sends a message
+  bigger than one frame (about 16 KB) as a transfer of its own, offered and accepted before its
+  chunks go, so a small message sent after a big one can arrive first: two pages on this computer
+  sent 50,000, 100, 30,000, 200 and 300 characters and received 100, 200, 300, 50,000 and 30,000. A
+  room sends a joining player the city and then the events since; through Trystero the events
+  overtook the city, the join waited for events that had already come and gone, and a friend joining
+  a city that stood still sat on "Loading the city…" until the join gave up after two minutes (with
+  the city running, the next clock's events finished the join, but events could still be applied
+  out of order). Every message on a Trystero link now carries its number, and the other side hands
+  them on in that order (`src/net/order.ts`, both directions, rooms and regions alike). A link whose
+  messages can't be put back in order (not text, without a number, more than 4,096 messages or 16
+  million characters waiting for an earlier one, or a gap nothing has filled for a minute) is given
+  up like a dropped connection, and so is one with a message Trystero gave up sending (its send
+  failed after 10 s of a full buffer or 2 minutes unanswered): the rest would wait behind it. Given
+  up on either side, the guest reconnects: the host's side tells a guest it lets go (a `bye` on the
+  hello action, once what it sent before has gone, or it closes the guest's connection if even that
+  can't be sent), the room closing a guest's connection tells it too, and a guest leaves its
+  Trystero room however its link ends, so the reconnect starts with a fresh one rather than waiting
+  for a hello that already came (`tests/p2pLinks.test.ts`, with a stand-in for Trystero). A minute
+  without progress is far longer than any one message takes: none is much over 200 KB (a city goes in
+  parts of that size), and each one that lands moves the gap on. Our relay's
+  sockets and data channels keep order themselves, so their messages aren't numbered. Tested in
+  `tests/p2pOrder.test.ts`, and through two pages over Trystero and a Nostr relay on this computer: a
+  friend now joins a city held still, builds, and the two run on together with the same hash.

@@ -21,6 +21,19 @@ export interface SaveMeta {
   population: number;
   tick: number;
   savedAt: string;
+  /**
+   * The shared region this city stands in (M32, F6), written by the page beside the city, never by
+   * the sim: the city rejoins it when this save is opened again. Older saves have none.
+   */
+  region?: RegionBinding;
+}
+
+/** A city's place in a shared region: the region's invite (its key too, for one in a browser), its slot. */
+export interface RegionBinding {
+  invite: string;
+  slot: number;
+  /** The region ran in this browser (peer-to-peer): it closed when the page did. */
+  hosted?: boolean;
 }
 
 export interface SaveFile {

@@ -1,6 +1,8 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { openGame } from './helpers';
+import { closeContextsAfterEach, newContext, openGame } from './helpers';
 import { placeFromToolbar } from './ui';
+
+closeContextsAfterEach();
 
 /**
  * M31, building together, through the real interface: Ada shares her city, Sam joins with the
@@ -11,7 +13,7 @@ import { placeFromToolbar } from './ui';
 test.describe.configure({ mode: 'serial' });
 
 async function player(browser: Browser, name: string, color: number): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 1100, height: 720 } });
+  const ctx = await newContext(browser, { viewport: { width: 1100, height: 720 } });
   await ctx.addInitScript(
     ([n, c]) => {
       localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));

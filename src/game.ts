@@ -33,9 +33,10 @@ import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionL
 import { P2PHost, p2pConnect } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
-import { codeKind, makeCode } from '../relay/protocol';
+import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
-import { forgetRegionOf, keepRegionCredentials, regionCredentials } from './client/profile';
+import { forgetRegionSecret, keepRegionSecret } from './client/profile';
+import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
 import { PLAYER_COLORS, type Shape } from '../relay/protocol';
 import type { PresenceMark } from './render/presence';
@@ -73,6 +74,11 @@ export interface PhotoState extends PhotoView {
 }
 
 let uiScale = 1;
+
+/** The window's width in scaled rem (pixels over 16 times the interface scale). */
+export function uiRem(): number {
+  return typeof window === 'undefined' ? 120 : window.innerWidth / (16 * uiScale);
+}
 
 /**
  * Size class of the interface, in scaled rem, for layouts that tighten on narrow screens or at large
@@ -322,6 +328,18 @@ export class Game {
     this.here.at = g ? [Math.round(g.x), Math.round(g.z)] : null;
   }
 
+  /**
+   * Ready a ping by touch (F11): the next tap on the map points the others there. The room panel
+   * closes so the map can be tapped (on a phone it covers most of it).
+   */
+  armPing(): void {
+    if (!this.net) return;
+    if (this.panel === 'room') this.openPanel('room');
+    if (this.tools.activeId !== 'ping') this.tools.ping.back = this.tools.activeId;
+    this.tools.use('ping');
+    this.toast('Tap the map where you want the others to look.', 'info', 4000);
+  }
+
   /** Point the others at a spot ("look here"). */
   pingAt(at: { x: number; z: number }): void {
     const mp = this.net;
@@ -345,7 +363,7 @@ export class Game {
     const s = mp.session;
     const here = this.here;
     const tool = this.tools.activeId;
-    if (now - here.sentAt > 150) {
+    if (now - here.sentAt > 250) {
       const ghost = tool !== 'select' && here.ghost && now - here.ghostAt < 1500 ? here.ghost : undefined;
       const g = r.controller.goal;
       const camDue = now - here.camAt > 600;
@@ -383,8 +401,9 @@ export class Game {
     for (const [k, shape] of this.pending)
       marks.push({ key: -k, color: mine, name: null, at: null, ghost: shape, pending: true });
     r.presence.update(marks, r.camera, w, h, now);
-    // Following someone: ride along with their camera.
-    if (this.following && r.controller.isDragging) this.following = 0;
+    // Following someone: ride along with their camera, until this player moves theirs in any way (a
+    // drag, the wheel, a pinch, the keys).
+    if (this.following && r.controller.userMoves !== this.followMoves) this.following = 0;
     if (this.following) {
       const f = s.presence.get(this.following)?.cam;
       if (f) r.controller.setPose({ x: f[0], z: f[1], distance: f[2], yaw: f[3], tilt: f[4] }, false);
@@ -399,8 +418,12 @@ export class Game {
   /** The player whose camera this one rides along with (M31), or 0. */
   following = 0;
 
+  /** The camera's count of the player's own moves when following began. */
+  private followMoves = 0;
+
   follow(player: number): void {
     this.following = this.following === player ? 0 : player;
+    this.followMoves = this.renderer.controller.userMoves;
     const name = this.net?.session.players.find((p) => p.id === player)?.name;
     if (this.following && name)
       this.toast(`Following ${name}'s view. Move the camera to stop.`, 'info', 3500);
@@ -411,12 +434,23 @@ export class Game {
 
   /** The room this city is shared in, if it is (M30). */
   net: Multiplayer | null = null;
+  /** The speed the worker paces a shared city at (the room's), as last told. */
+  private workerSpeed: Speed | -1 = -1;
   /** The shared region this city stands in, if it does (M32), and its code. */
   region: RegionLink | null = null;
   regionCode: string | null = null;
+  /** A peer-to-peer region's key (F2): its invite carries it, so the code alone finds nothing. */
+  regionKey: string | null = null;
+
+  /** What friends type or follow to bring their cities in: the code, and the key for one in a browser. */
+  get regionInvite(): string | null {
+    return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
+  }
   private regionHost: P2PHost | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
+  /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
+  boundRegion: RegionBinding | null = null;
 
   /** What a region link needs from this city. */
   private cityPort(): CityPort {
@@ -451,26 +485,28 @@ export class Game {
 
   /** Start a shared region with this city in it (M32), online or from this browser. */
   async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
-    if (this.region || this.net) return false;
-    const code = makeCode(Math.random, kind);
+    if (this.region || this.net || this.readOnly) return false;
+    const code = makeCode(kind);
+    const key = kind === 'p2p' ? makeKey() : null;
     try {
       let connect: () => Promise<Link>;
       if (kind === 'online') {
         const url = relayUrl();
         if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
-        connect = () => webSocketLink(`${url}/region/${code}`);
+        connect = () => webSocketLink(`${url}/region/${code}?create=1`);
       } else {
-        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), {
-          now: () => performance.now(),
-          random: Math.random,
-        });
-        this.regionHost = new P2PHost(code, signalling(), null, hub);
+        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
+        this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
         await this.regionHost.listen();
         const host = this.regionHost;
         connect = () => host.connectSelf();
       }
-      await this.attachRegion(code, connect, { create: { name } });
-      this.toast(`Your region is open: code ${code}. Friends join it with their own cities.`, 'ok', 8000);
+      await this.attachRegion(code, key, connect, { create: { name } }, kind === 'p2p');
+      this.toast(
+        `Your region is open: code ${formatInvite({ code, key })}. Friends join it with their own cities.`,
+        'ok',
+        8000,
+      );
       return true;
     } catch (err) {
       this.leaveRegion(false);
@@ -479,19 +515,31 @@ export class Game {
     }
   }
 
-  /** Bring this city into a shared region by its code (M32). */
-  async joinRegion(code: string): Promise<boolean> {
-    if (this.region || this.net) return false;
+  /**
+   * Bring this city into a shared region by its invite: the code, and the key for one in a browser
+   * (M32, F2); as its old self with `rejoin` (see `regionRejoin`, F6), else as a new city.
+   */
+  async joinRegion(invite: string, rejoin: { slot: number; secret: string } | null = null): Promise<boolean> {
+    if (this.region || this.net || this.readOnly) return false;
+    const inv = parseInvite(invite);
+    const why = inviteProblem(inv);
+    if (why) {
+      this.toast(why.replace('a room', 'a region'), 'bad', 8000);
+      return false;
+    }
+    const { code, key } = inv!;
     const url = relayUrl();
     const connect: () => Promise<Link> =
       codeKind(code) === 'online'
         ? url
           ? () => webSocketLink(`${url}/region/${code}`)
           : () => Promise.reject(new Error("Online regions aren't set up yet"))
-        : () => p2pConnect(code, signalling());
+        : () => p2pConnect(code, key!, signalling());
     try {
-      await this.attachRegion(code, connect, {
-        ...(regionCredentials(code) ? { rejoin: regionCredentials(code)! } : {}),
+      // A region in its host's browser is gone while they aren't playing: stop after a few tries (F10).
+      await this.attachRegion(code, key, connect, {
+        ...(rejoin ? { rejoin } : {}),
+        ...(codeKind(code) === 'p2p' ? { giveUpAfter: 3 } : {}),
       });
       this.toast(`${this.world.stats.cityName} joined the region.`, 'ok', 5000);
       return true;
@@ -504,8 +552,11 @@ export class Game {
 
   private async attachRegion(
     code: string,
+    key: string | null,
     connect: () => Promise<Link>,
     extra: Partial<RegionLinkOptions>,
+    /** The region runs in this browser. */
+    hosted = false,
   ): Promise<void> {
     const profile = loadProfile();
     const link = new RegionLink(this.cityPort(), connect, {
@@ -515,42 +566,88 @@ export class Game {
     });
     this.region = link;
     this.regionCode = code;
+    this.regionKey = key;
     link.onNotice = (t) => this.toast(t, 'info', 4500);
+    // Until it's in, a failure is the caller's to report (one toast, not two).
+    let started = false;
     link.onChange = () => {
-      if (link.slot) keepRegionCredentials(code, link.slot, link.secret, this.slot);
+      // The city's place in the region travels with the city, in its saves (F6).
+      if (link.slot && link.secret) {
+        keepRegionSecret(code, link.slot, link.secret);
+        this.boundRegion = {
+          invite: formatInvite({ code, key }),
+          slot: link.slot,
+          ...(hosted ? { hosted } : {}),
+        };
+      }
       if (link.state === 'closed' && this.region === link) {
-        if (link.error) this.toast(link.error, 'bad', 8000);
+        if (link.error && started) this.toast(link.error, 'bad', 8000);
+        // The region shut for good (its host left it): the city's saves no longer name it (F10).
+        if (link.gone) this.forgetRegion();
         this.leaveRegion(false);
       }
       this.notify();
     };
     await link.start();
+    started = true;
     this.notify();
+  }
+
+  /** The city no longer stands in its region: drop the binding its saves carry, and its secret (F6). */
+  private forgetRegion(): void {
+    const bound = this.boundRegion;
+    const code = bound ? parseInvite(bound.invite)?.code : null;
+    if (bound && code) forgetRegionSecret(code, bound.slot);
+    this.boundRegion = null;
   }
 
   leaveRegion(say = true): void {
     const link = this.region;
     this.region = null;
     this.regionCode = null;
+    this.regionKey = null;
     link?.leave();
-    this.regionHost?.close();
+    // A region in this browser closes with it, and its cities are told (F10).
+    this.regionHost?.close(
+      `${loadProfile().name}’s region closed: it ran in their browser. Your city keeps its neighbours as they last were.`,
+    );
     this.regionHost = null;
     if (say) {
-      if (this.slot) forgetRegionOf(this.slot);
+      // Left for good: the city's saves no longer name the region.
+      this.forgetRegion();
       this.toast('Your city left the region: its neighbours stay as they last were.', 'info', 6000);
     }
     this.notify();
   }
-  /** A new city founded from the friends screen is shared at once, online or from this browser. */
+  /**
+   * A new city founded from the friends screen is shared at once, online or from this browser; or it
+   * goes into a region (`newregion=…` or `region=CODE`). Both last only while the friends and new-city
+   * screens are open (F4).
+   */
   hostKind: 'online' | 'p2p' | null = null;
-  /** A new city founded from the friends screen goes into a region (`newregion=…` or `region=CODE`). */
   regionParam: string | null = null;
+
+  forgetFriendsChoice(): void {
+    this.hostKind = null;
+    this.regionParam = null;
+  }
   /** A region's invite link opened on the main menu: its code, for the friends screen (M32). */
   pendingRegion: string | null = null;
 
   /** Share this city: make a room online or in this browser; resolves once it's open. */
   async hostRoom(kind: 'online' | 'p2p'): Promise<boolean> {
     if (this.net) return true;
+    // A visit isn't this player's city to share (F5).
+    if (this.readOnly) return false;
+    // A city in a shared region is played alone, at its own speed (M32): not also in a room.
+    if (this.region) {
+      this.toast(
+        'A city in a shared region can’t also be shared in a room: leave the region first.',
+        'bad',
+        6000,
+      );
+      return false;
+    }
     try {
       const mp = await Multiplayer.host(kind, this.client, loadProfile(), this.world.stats.cityName);
       this.attachNet(mp);
@@ -570,6 +667,7 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    this.workerSpeed = -1;
     this.client.onPreview = (cmd) => {
       const shape = commandShape(cmd);
       if (shape) {
@@ -589,7 +687,12 @@ export class Game {
     }
     mp.session.onApplied = (a) => {
       if (a.ev.kind !== 'cmd' || a.ev.by === mp.session.you || !a.result?.ok) return;
-      const shape = commandShape(a.ev.cmd);
+      let shape: Shape | null = null;
+      try {
+        shape = commandShape(a.ev.cmd);
+      } catch {
+        return;
+      }
       if (shape)
         this.recentOthers = [...this.recentOthers, { by: a.ev.by, shape, at: performance.now() }].slice(-12);
     };
@@ -616,6 +719,11 @@ export class Game {
       prev?.();
       const room = mp.session.room;
       if (room && room.speed !== this.speed) this.speed = room.speed;
+      // The worker paces the city at the room's speed between the pacer's clock messages.
+      if (room && room.speed !== this.workerSpeed) {
+        this.workerSpeed = room.speed;
+        this.client.setSpeed(room.speed);
+      }
       if (mp.session.state === 'closed' && this.net === mp) {
         if (mp.session.error) this.toast(mp.session.error, 'bad', 8000);
         this.leaveRoom(false);
@@ -1030,6 +1138,8 @@ export class Game {
 
   /** Open a menu screen on top of any others; in a city, the game pauses while menus are up. */
   openScreen(s: Screen): void {
+    // A new city founded from anywhere but the friends screen is the player's own (F4).
+    if (s === 'newGame' && this.screen !== 'friends') this.forgetFriendsChoice();
     if (this.mode === 'play' && this.screens.length === 0) {
       if (!this.net) {
         this.speedBeforeMenu = this.speed;
@@ -1046,6 +1156,9 @@ export class Game {
   /** Back out of the top screen (the main menu itself never closes). */
   closeScreen(): void {
     if (this.mode === 'menu' && this.screens.length <= 1) return;
+    // Backing out of the friends or new-city screen drops what the lobby chose (F4): a city founded
+    // later must not be shared, or put in a region, without the player knowing.
+    if (this.screen === 'friends' || this.screen === 'newGame') this.forgetFriendsChoice();
     this.screens = this.screens.slice(0, -1);
     if (this.screens.length === 0) this.resumeFromMenu();
     this.notify();
@@ -1067,17 +1180,22 @@ export class Game {
 
   /** Save the city to a slot (with an optional label for the slot list). */
   async saveTo(slot: string, label?: string, quiet = false): Promise<boolean> {
+    // A neighbour's city seen read-only is theirs: it never lands in this browser's saves (F5).
+    if (this.readOnly) {
+      if (!quiet) this.toast('You’re visiting a neighbour’s city: nothing here is saved.', 'info');
+      return false;
+    }
     if (this.saving) return false;
     this.saving = true;
     this.notify();
     try {
       const s = await this.client.save();
+      // A city in a shared region rejoins it when this save is opened again (M32); the binding is the
+      // city's, so another city saved over this slot later doesn't inherit it (F6).
+      if (this.boundRegion) s.meta.region = { ...this.boundRegion };
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (slot !== 'auto') this.slot = slot;
-      // A city in a shared region rejoins it when this save is opened again (M32).
-      if (this.region?.slot && this.regionCode)
-        keepRegionCredentials(this.regionCode, this.region.slot, this.region.secret, slot);
       // The slot's name, as the load list shows it, not the city's (P22).
       if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;
@@ -1090,20 +1208,35 @@ export class Game {
     }
   }
 
-  /** Autosave now and then (settings), unless the city has gone bankrupt. */
-  private autosave(now: number): void {
+  /**
+   * Autosave now and then (settings), unless the city has gone bankrupt or isn't this player's (a
+   * visit, F5). `force` skips the wait (tests); resolves with whether it saved.
+   */
+  autosave(now: number, force = false): Promise<boolean> {
     const every = this.settings.autosaveMinutes * 60_000;
-    if (this.mode !== 'play' || every <= 0 || this.saving || this.world.stats.bankrupt) return;
+    if (
+      this.mode !== 'play' ||
+      this.readOnly ||
+      (every <= 0 && !force) ||
+      this.saving ||
+      this.world.stats.bankrupt
+    )
+      return Promise.resolve(false);
     if (!this.lastSavedAt) this.lastSavedAt = now;
-    if (now - this.lastSavedAt < every) return;
-    void this.saveTo('auto', 'Autosave', true);
+    if (now - this.lastSavedAt < every && !force) return Promise.resolve(false);
+    return this.saveTo('auto', 'Autosave', true);
   }
 
   private quitUnsaved = false;
 
   /** Autosave, then go back to the main menu (if saving fails, a second try leaves without it). */
   async quitToMenu(): Promise<void> {
-    if (!this.world.stats.bankrupt && !this.quitUnsaved && !(await this.saveTo('auto', 'Autosave', true))) {
+    if (
+      !this.readOnly &&
+      !this.world.stats.bankrupt &&
+      !this.quitUnsaved &&
+      !(await this.saveTo('auto', 'Autosave', true))
+    ) {
       this.quitUnsaved = true;
       this.toast('The city could not be saved. Choose Quit again to leave without saving.', 'bad', 8000);
       return;
@@ -1119,6 +1252,7 @@ export class Game {
     this.notify();
     if (
       this.mode === 'play' &&
+      !this.readOnly &&
       !this.world.stats.bankrupt &&
       !(await this.saveTo('auto', 'Autosave', true))
     ) {
@@ -1432,6 +1566,7 @@ export class Game {
 
   /** Fly the camera to a spot (advisors, notifications), optionally opening a data map. */
   flyTo(at: { x: number; z: number }, map?: string): void {
+    this.following = 0;
     const cur = this.renderer.controller.goal;
     this.renderer.controller.setPose(
       {
@@ -1459,6 +1594,7 @@ export class Game {
   }
 
   setCamera(preset: CameraPresetName | Partial<CameraPose>, instant = true): void {
+    this.following = 0;
     if (typeof preset === 'string') this.renderer.controller.preset(preset, instant);
     else this.renderer.controller.setPose(preset, instant);
   }
@@ -1494,7 +1630,7 @@ export class Game {
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
-    else this.autosave(now);
+    else void this.autosave(now);
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();

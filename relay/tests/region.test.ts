@@ -7,7 +7,6 @@ import { regionRates, regionReport, type RegionReport } from '../../src/sim/syst
 import { REGION } from '../../src/data/region';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
 import { buildTown, placeAlong, serveTown } from '../../tests/helpers';
-import { Rng } from '../../src/sim/rng';
 
 /**
  * Shared regions (M32), headless: three players' cities side by side, each run at its own pace.
@@ -15,11 +14,7 @@ import { Rng } from '../../src/sim/rng';
  * deal the same in both cities, and pay together for the region project, which its host builds.
  */
 function regionRoom(code: string): RegionRoom {
-  const rng = Rng.fromSeed(code);
-  return new RegionRoom(code, 'local', new MemoryRegionStore(), {
-    now: () => performance.now(),
-    random: () => rng.next(),
-  });
+  return new RegionRoom(code, 'local', new MemoryRegionStore(), { now: () => performance.now() });
 }
 
 function loopTo(room: RegionRoom): () => Promise<Link> {

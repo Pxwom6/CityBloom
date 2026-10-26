@@ -7,12 +7,17 @@ declare module 'cloudflare:workers' {
     ctx: DurableObjectState;
     env: Env;
     constructor(ctx: DurableObjectState, env: Env);
+    /** Called when the alarm set with `storage.setAlarm` rings. */
+    alarm?(): Promise<void>;
   }
 }
 
 interface SqlCursor<T> {
   toArray(): T[];
   one(): T;
+  /** Rows written and read by the statement: what the free plan counts. */
+  readonly rowsWritten: number;
+  readonly rowsRead: number;
 }
 interface SqlStorage {
   exec<T = Record<string, string | number | null>>(query: string, ...bindings: unknown[]): SqlCursor<T>;
@@ -20,6 +25,11 @@ interface SqlStorage {
 interface DurableObjectStorage {
   sql: SqlStorage;
   transactionSync<T>(fn: () => T): T;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number | Date): Promise<void>;
+  deleteAlarm(): Promise<void>;
+  /** Delete everything stored (not the alarm: delete that first). */
+  deleteAll(): Promise<void>;
 }
 interface CfWebSocket {
   send(data: string): void;

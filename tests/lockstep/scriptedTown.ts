@@ -5,7 +5,7 @@
  * only the sim and uses only deterministic maths.
  */
 import { Sim } from '../../src/sim/sim';
-import type { Command, CommandResult, CommandType } from '../../src/sim/commands';
+import { COMMAND_TYPES, type Command, type CommandResult, type CommandType } from '../../src/sim/commands';
 import type { Vec2 } from '../../src/sim/geom';
 import { DMath } from '../../src/sim/dmath';
 import { CIVIC } from '../../src/data/civic';
@@ -16,47 +16,11 @@ export type Issue = (cmd: Command) => CommandResult;
 
 export const TOWN_OPTIONS = { seed: 'lockstep', preset: 'river' as const, cityName: 'Stepford' };
 
-/** Every command kind (the cross-browser test checks the script used each one). */
-export const ALL_KINDS: readonly CommandType[] = [
-  'cheat',
-  'renameCity',
-  'buildRoad',
-  'bulldoze',
-  'placeStop',
-  'upgradeRoad',
-  'setOneWay',
-  'setTram',
-  'roundabout',
-  'removeRoundabout',
-  'zone',
-  'undo',
-  'redo',
-  'setTax',
-  'setFunding',
-  'takeLoan',
-  'promise',
-  'repayLoan',
-  'placeBuilding',
-  'disaster',
-  'setDisasters',
-  'setWeather',
-  'setDeal',
-  'setElections',
-  'startScenario',
-  'setPolicy',
-  'moveBuilding',
-  'createDistrict',
-  'paintDistrict',
-  'renameDistrict',
-  'removeDistrict',
-  'setDistrictPolicy',
-  'buildRailLink',
-  'terraform',
-  'editMap',
-  'setMapEntry',
-  'setMapInfo',
-  'addModule',
-];
+/**
+ * Every command kind, from the compiler-checked list beside `Command` (the cross-browser test checks
+ * the script used each one, so a new kind fails it until the script issues it).
+ */
+export const ALL_KINDS: readonly CommandType[] = COMMAND_TYPES;
 
 /**
  * `shared`: as in a room, where cheats are refused; the town is then a sandbox (money and unlocks
@@ -316,6 +280,39 @@ export function act(sim: Sim, issue: Issue, m: number): void {
           break;
         }
       }
+      break;
+    }
+    case 7: {
+      // A shared region's news and a payment into its project (M32), as the page passes them on: a
+      // player city takes a neighbour's place and signs a deal, and the project gets a share. Only
+      // the page's own game sends these, so a room's players are refused both (alike on every
+      // machine); the single-player run uses them.
+      issue({
+        type: 'regionUpdate',
+        update: {
+          cities: [
+            {
+              slot: 1,
+              name: 'Upstream',
+              mayor: 'Ada',
+              color: 0x4a90d9,
+              population: 5200,
+              kind: 'industrial',
+              offers: {
+                buy: { power: 20, water: 0, garbage: 0 },
+                sell: { power: 0, water: 30, garbage: 10 },
+              },
+              workers: 400,
+              jobs: 250,
+              shoppers: 120,
+              online: true,
+            },
+          ],
+          contracts: [{ slot: 1, resource: 'water', direction: 'buy', amount: 10 }],
+          project: { total: 50_000, goal: 400_000, funded: false, host: false, built: false, power: 0 },
+        },
+      });
+      issue({ type: 'contributeProject', amount: 20_000 });
       break;
     }
     case 8: {

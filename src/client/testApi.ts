@@ -26,6 +26,7 @@ import { handmade } from '../render/assets/handmade';
 import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 import type { Stamped } from '../sim/lockstep';
+import { readSlot } from './saves';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -45,6 +46,8 @@ export interface TestApi {
   /** The shared city's room (M30), as this page sees it; null when not shared. */
   getNet(): {
     code: string;
+    /** What friends type or follow: the code, and a peer-to-peer room's key (F2). */
+    invite: string;
     kind: 'online' | 'p2p';
     state: string;
     you: number;
@@ -64,6 +67,7 @@ export interface TestApi {
   /** The shared region this city stands in (M32), as this page sees it; null when none. */
   getRegion(): {
     code: string;
+    invite: string;
     slot: number;
     state: string;
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
@@ -398,9 +402,17 @@ export interface TestApi {
     };
     /** First-launch graphics check: running, and its last answer. */
     graphics: { checking: boolean; result: CheckResult | null };
+    /** What the friends screen chose for the next new city (F4): share it, or bring it to a region. */
+    newCity: { host: 'online' | 'p2p' | null; region: string | null };
   };
   /** Ask the server for a new version of the app now (M15). */
   checkForUpdate(): Promise<void>;
+  /** Autosave now, as the timer would (F5): resolves with whether it saved. */
+  autosaveNow(): Promise<boolean>;
+  /** The city name in a save slot of this browser, or null. */
+  slotCity(slot: string): Promise<string | null>;
+  /** When the save in a slot of this browser was made, or null. */
+  slotSavedAt(slot: string): Promise<string | null>;
   /** City history as the sim holds it (M16). */
   getChronicle(): Promise<Chronicle>;
   /** What the city makes, uses, buys and sells of power, water and garbage, and the winter forecast (P20). */
@@ -510,6 +522,7 @@ export function installTestApi(game: Game): TestApi {
       const s = mp.session;
       return {
         code: mp.code,
+        invite: mp.invite,
         kind: mp.kind,
         state: s.state,
         you: s.you,
@@ -538,6 +551,7 @@ export function installTestApi(game: Game): TestApi {
       const v = r.view;
       return {
         code: game.regionCode,
+        invite: game.regionInvite ?? game.regionCode,
         slot: r.slot,
         state: r.state,
         cities: (v?.cities ?? []).map((c) => ({
@@ -1009,8 +1023,12 @@ export function installTestApi(game: Game): TestApi {
         savesAsked: game.keeper.asks,
       },
       graphics: { checking: !!game.graphicsCheck, result: game.graphicsResult },
+      newCity: { host: game.hostKind, region: game.regionParam },
     }),
     checkForUpdate: () => game.updates.check(),
+    autosaveNow: () => game.autosave(performance.now(), true),
+    slotCity: async (slot) => (await readSlot(slot).catch(() => null))?.meta.cityName ?? null,
+    slotSavedAt: async (slot) => (await readSlot(slot).catch(() => null))?.meta.savedAt ?? null,
     getChronicle: () => game.client.query<Chronicle>({ type: 'chronicle' }),
     getSupply: () => game.client.query<SupplyBalance>({ type: 'supply' }),
     getScenario: () => ({

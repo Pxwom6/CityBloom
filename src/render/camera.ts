@@ -55,6 +55,8 @@ export class CameraController {
   /** Set by the app so presets can focus on where the city is. */
   focus: () => { x: number; z: number } = () => ({ x: MAP_SIZE / 2, z: MAP_SIZE / 2 });
   private keys = new Set<string>();
+  /** How many times the player has moved the camera themselves (a drag, the wheel, a pinch, the keys). */
+  userMoves = 0;
   private drag: { mode: 'pan' | 'rotate'; plane: Plane; grab: Vector3; lastX: number; lastY: number } | null =
     null;
   private ray = new Raycaster();
@@ -190,6 +192,7 @@ export class CameraController {
    * one that began on a panel floating over the map and then turned into a drag.
    */
   beginDrag(mode: 'pan' | 'rotate', clientX: number, clientY: number, pointerId: number): void {
+    this.userMoves++;
     const grab = this.screenToGround(clientX, clientY) ?? this.target.clone();
     this.drag = {
       mode,
@@ -237,6 +240,7 @@ export class CameraController {
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    this.userMoves++;
     const lines = e.deltaMode === 1 ? 30 : e.deltaMode === 2 ? 600 : 1;
     const dx = e.deltaX * lines;
     const dy = e.deltaY * lines;
@@ -296,6 +300,7 @@ export class CameraController {
       this.gesture = null;
       return;
     }
+    this.userMoves++;
     if (scale > 0) this.zoomBy(this.gesture.scale / scale, e.clientX, e.clientY);
     this.goal.yaw -= ((rotation - this.gesture.rotation) * Math.PI) / 180;
     this.gesture = { scale, rotation };
@@ -343,6 +348,12 @@ export class CameraController {
       if (this.pointer.y < m) fz -= 1;
       if (this.pointer.y > rect.height - m) fz += 1;
     }
+    if (
+      fx ||
+      fz ||
+      ['KeyQ', 'KeyE', 'KeyR', 'KeyF', 'Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract'].some((c) => k.has(c))
+    )
+      this.userMoves++;
     if (fx || fz) {
       const s = Math.sin(g.yaw);
       const c = Math.cos(g.yaw);

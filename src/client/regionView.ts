@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { NEIGHBOUR_KIND } from '../data/region';
 import { MAP_SIZE } from '../data/world';
 import type { Game } from '../game';
+import type { Neighbour } from '../sim/systems/region';
 
 /**
  * Where the neighbours are (M23): a label at the edge of the map where each one's road or railway
@@ -62,8 +63,28 @@ export class RegionView {
         return;
       }
       el.style.display = '';
-      el.textContent = `${a.arrow} ${nb.name} · ${NEIGHBOUR_KIND[nb.kind].label} · ${Math.round(nb.population / 1000)}k`;
+      el.textContent = neighbourLabel(a.arrow, nb);
       el.style.transform = `translate(${((this.v.x + 1) / 2) * rect.width}px, ${((1 - this.v.y) / 2) * rect.height}px) translate(-50%, -50%)`;
     });
   }
+}
+
+/**
+ * A neighbour's label at the map's edge (review, minor): a player's city is theirs, not a kind of town,
+ * and a small town's population isn't "0k".
+ */
+export function neighbourLabel(
+  arrow: string,
+  nb: Pick<Neighbour, 'name' | 'kind' | 'population' | 'player'>,
+): string {
+  const what = nb.player ? `${nb.player.mayor}’s city` : NEIGHBOUR_KIND[nb.kind].label;
+  return `${arrow} ${nb.name} · ${what} · ${townSize(nb.population)}`;
+}
+
+/** A town's population for its label: 640, 4.2k, 38k. */
+export function townSize(pop: number): string {
+  const n = Math.max(0, Math.round(pop));
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${Math.round(n / 1000)}k`;
 }

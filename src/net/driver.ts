@@ -38,6 +38,8 @@ export class HeadlessDriver implements SimDriver {
   slowMs = 0;
   /** Stop running (as a frozen tab would). */
   frozen = false;
+  /** Errors applying the room's events or running the city (F7), as the worker would post them. */
+  errors: string[] = [];
 
   constructor(
     public sim: Sim,
@@ -80,6 +82,8 @@ export class HeadlessDriver implements SimDriver {
     ls.onRebirth = () => {
       this.sim = ls.sim;
     };
+    ls.onError = (what, err) =>
+      this.errors.push(`${what.type} by ${what.by} at ${what.tick}: ${String(err)}`);
     ls.onApplied = (a) => {
       if (a.ev.kind === 'cmd') this.emit({ type: 'applied', list: [a] });
       else if (a.ev.kind === 'settle' && a.ev.taker === this.player && a.save)
@@ -102,6 +106,7 @@ export class HeadlessDriver implements SimDriver {
   share(player: number, lastSeq: number): void {
     this.player = player;
     this.sim.setHistoryState([]);
+    this.sim.rules = null;
     this.attach(lastSeq);
     const ls = this.lockstep!;
     const save = ls.rebirth();
@@ -129,8 +134,9 @@ export class HeadlessDriver implements SimDriver {
   }
 
   unshare(): void {
-    this.sim.shared = false;
+    this.sim.leaveShared();
     this.lockstep = null;
+    this.player = 0;
   }
 
   async save(): Promise<SaveFile> {
@@ -139,6 +145,14 @@ export class HeadlessDriver implements SimDriver {
 
   /** Run as the worker does: within the budget, emitting checksums and month hashes. */
   pump(): void {
+    try {
+      this.run();
+    } catch (err) {
+      this.errors.push(String(err));
+    }
+  }
+
+  private run(): void {
     const ls = this.lockstep;
     if (!ls || this.frozen) return;
     const t0 = performance.now();

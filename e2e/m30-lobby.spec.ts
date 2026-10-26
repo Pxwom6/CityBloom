@@ -1,5 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { shot } from './helpers';
+import { closeContextsAfterEach, newContext, shot } from './helpers';
+
+closeContextsAfterEach();
 
 /**
  * M30, the lobby: from the main menu, Play with friends → a name and colour → Host online founds a
@@ -7,7 +9,7 @@ import { shot } from './helpers';
  * in it. A bad code is caught before it's tried.
  */
 async function menuPage(browser: Browser): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 1100, height: 720 } });
+  const ctx = await newContext(browser, { viewport: { width: 1100, height: 720 } });
   await ctx.addInitScript(() => {
     const key = 'citybloom.settings';
     const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;

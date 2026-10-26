@@ -3,7 +3,7 @@ import { Sim } from '../../src/sim/sim';
 import { simDesync } from '../../src/sim/sync';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
 import type { Command } from '../../src/sim/commands';
-import { MemoryStore } from '../room';
+import { MemoryStore, Room } from '../room';
 import { buildTown, serveTown } from '../../tests/helpers';
 import { makeRoom, loopTo, player, settle, stopAll, until, type TestPlayer } from './harness';
 
@@ -178,18 +178,29 @@ describe('a room (M30), with headless players', () => {
   }, 60_000);
 
   it("a joiner isn't left waiting on a pacer whose game has frozen", async () => {
-    const room = makeRoom('FRZNAB');
+    // The room's clock is pushed past its wait for a frozen pacer's snapshot (8 s) instead of the
+    // test waiting it out beside the heavy suites (F13).
+    let skew = 0;
+    const room = new Room('FRZNAB', 'local', new MemoryStore(), { now: () => performance.now() + skew });
     const host = player('Ada', loopTo(room), hostTown(), { create: { cityName: 'Roomford' } });
     players.push(host);
     await host.session.start();
     host.session.setSpeed(1);
-    await until(() => host.driver.tick > hostTown().tick + 100, 10_000, 'some time');
+    // From where Ada's city stood (building a town in the wait's condition held up her game).
+    const from = host.driver.tick;
+    await until(() => host.driver.tick > from + 100, 10_000, 'some time');
     host.driver.frozen = true;
     const kit = player('Kit', loopTo(room), null);
     players.push(kit);
-    const t0 = performance.now();
-    await kit.session.start();
-    expect(performance.now() - t0).toBeGreaterThan(7000);
+    const joined = kit.session.start();
+    // Welcomed, the room has asked Ada's frozen game for a snapshot: Kit waits for it a while...
+    await until(() => kit.session.state === 'joining', 5000, 'Kit to be welcomed');
+    await new Promise((r) => setTimeout(r, 500));
+    expect(kit.session.state).toBe('joining');
+    // ...until the room gives up on it and sends the stored city with the events since.
+    skew = 60_000;
+    await joined;
+    expect(kit.session.state).toBe('playing');
     expect(kit.driver.sim.state.cityName).toBe('Roomford');
   }, 60_000);
 });

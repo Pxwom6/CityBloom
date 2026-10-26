@@ -9,7 +9,7 @@ if (!process.env.JS_SHELL && existsSync('.cache/jsshell/js')) process.env.JS_SHE
  * The cross-browser determinism test (M29): the sim alone in a blank page, in Chromium, WebKit and
  * Firefox (`npx playwright install webkit firefox`), compared with Node. No server, no rendering.
  * On the owner's Mac run `XB_FIREFOX=0 npm run xbrowser` (Firefox under Playwright fails to launch
- * there; the SpiderMonkey shell stands in).
+ * there; the SpiderMonkey shell stands in). Real Firefox runs in CI (`.github/workflows/xbrowser.yml`).
  */
 export default defineConfig({
   testDir: 'e2e-xb',
@@ -21,6 +21,17 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-    ...(process.env.XB_FIREFOX === '0' ? [] : [{ name: 'firefox', use: { ...devices['Desktop Firefox'] } }]),
+    ...(process.env.XB_FIREFOX === '0'
+      ? []
+      : [
+          {
+            name: 'firefox',
+            use: {
+              ...devices['Desktop Firefox'],
+              // Two game years run in one long call into the page: never stop it as a slow script.
+              launchOptions: { firefoxUserPrefs: { 'dom.max_script_run_time': 0 } },
+            },
+          },
+        ]),
   ],
 });

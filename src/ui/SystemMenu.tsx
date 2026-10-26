@@ -48,7 +48,8 @@ function UpdateNotice() {
   const game = useGame();
   const u = game.updates;
   if (!u.waiting || u.dismissed) return null;
-  const inCity = game.mode === 'play';
+  // A visit to a neighbour's city is never saved (F5).
+  const inCity = game.mode === 'play' && !game.readOnly;
   return (
     <div class="toast update-notice" role="status" data-testid="update-notice">
       <strong>New version of Citybloom</strong>

@@ -5,8 +5,9 @@
  *
  * A room orders the players' commands: it stamps each with the tick it applies at and a sequence
  * number, and says how far every sim may run (`allow`). Time moves when the pacer (the host, or
- * whoever stands in for them) sends `clock`; the room never runs a timer of its own, so an online
- * room sleeps between messages. Snapshots of the city travel as opaque compressed parts.
+ * whoever stands in for them) sends `clock`; the room's only timer writes events it's holding, so an
+ * online room sleeps whenever it has nothing unsaved. Snapshots of the city travel as opaque
+ * compressed parts.
  */
 import type { Stamped } from '../src/sim/lockstep';
 import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules';
@@ -20,6 +21,11 @@ export const CODE_LENGTH = 6;
 export const MAX_MESSAGE = 300_000;
 /** Snapshot parts, in characters of base64. */
 export const SNAPSHOT_PART = 200_000;
+/**
+ * The most parts a snapshot (or a region's city save) may have (F8): 8 MB of base64, about 6 MB of
+ * gzipped city. Rooms and regions refuse more, so a script can't fill an object's 128 MB.
+ */
+export const MAX_SNAPSHOT_PARTS = 40;
 export const MAX_NAME = 20;
 export const MAX_CHAT = 280;
 /** Player colours (an index into this list travels). */
@@ -172,7 +178,19 @@ export type RoomMsg =
 export type AdminAction = 'lock' | 'unlock' | 'chatOff' | 'chatOn' | 'kick' | 'mute' | 'unmute';
 
 export type ErrorCode =
-  'version' | 'no-room' | 'full' | 'locked' | 'kicked' | 'bad-message' | 'rate' | 'exists' | 'gone';
+  | 'version'
+  | 'no-room'
+  | 'full'
+  | 'locked'
+  | 'kicked'
+  | 'bad-message'
+  | 'rate'
+  | 'exists'
+  | 'gone'
+  /** The room shut for good: a peer-to-peer host's browser left (F10). */
+  | 'closed'
+  /** The room has written all it may today (F8). */
+  | 'limit';
 
 // ---------------------------------------------------------------- checks
 
@@ -180,19 +198,90 @@ const DIGITS = CODE_ALPHABET.replace(/[A-Z]/g, '');
 const LETTERS = CODE_ALPHABET.replace(/[0-9]/g, '');
 
 /**
- * A fresh room code from a source of random numbers in [0, 1). Online rooms' codes start with a
- * digit and peer-to-peer rooms' with a letter, so a code says where to find its room.
+ * A whole number in [0, n) from the platform's cryptographic source (the browser, Node and a Worker
+ * all have `crypto.getRandomValues`), without the bias a plain modulo would give. Codes and secrets
+ * must not be guessable, so they never come from `Math.random`.
  */
-export function makeCode(random: () => number, kind: 'online' | 'p2p' = 'online'): string {
+export function secureIndex(n: number): number {
+  const limit = Math.floor(0x1_0000_0000 / n) * n;
+  const a = new Uint32Array(1);
+  for (;;) {
+    crypto.getRandomValues(a);
+    if (a[0]! < limit) return a[0]! % n;
+  }
+}
+
+/** A player's or city's secret: 128 random bits in hex. */
+export function makeSecret(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A fresh room code. Online rooms' codes start with a digit and peer-to-peer rooms' with a letter, so
+ * a code says where to find its room.
+ */
+export function makeCode(kind: 'online' | 'p2p' = 'online'): string {
   const first = kind === 'online' ? DIGITS : LETTERS;
-  let s = first[Math.floor(random() * first.length)]!;
-  for (let i = 1; i < CODE_LENGTH; i++) s += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length)];
+  let s = first[secureIndex(first.length)]!;
+  for (let i = 1; i < CODE_LENGTH; i++) s += CODE_ALPHABET[secureIndex(CODE_ALPHABET.length)];
   return s;
 }
 
 /** Where a code's room lives. */
 export function codeKind(code: string): 'online' | 'p2p' {
   return /^[0-9]/.test(code) ? 'online' : 'p2p';
+}
+
+/**
+ * A peer-to-peer room's or region's key (F2): twelve more characters from the code alphabet, about
+ * 59 bits. Its players find each other on public relays by a topic made from the code and the key,
+ * and encrypt their connection details with it, so the short code alone (which anyone watching the
+ * relays could try one by one) finds nothing. Online rooms are found through our own relay by code.
+ */
+export const KEY_LENGTH = 12;
+/** The longest invite a player types: the code, the key and the dashes between their groups. */
+export const INVITE_INPUT_MAX = 32;
+
+export function makeKey(): string {
+  let s = '';
+  for (let i = 0; i < KEY_LENGTH; i++) s += CODE_ALPHABET[secureIndex(CODE_ALPHABET.length)];
+  return s;
+}
+
+/** What an invite names: a room's or region's code and, for one in a player's browser, its key. */
+export interface Invite {
+  code: string;
+  key: string | null;
+}
+
+/**
+ * An invite as typed or linked: `7KQ2MX` (an online room) or `A7KQ2M-BCDF-GHJK-MNPQ` (peer-to-peer:
+ * the code and its key), in any case, with spaces or dashes anywhere and look-alikes mapped as in
+ * `normaliseCode`. Null if it can't be one. A peer-to-peer code without its key parses with `key:
+ * null`: the caller says what's missing. An online code ignores a key.
+ */
+export function parseInvite(input: string): Invite | null {
+  const s = input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  if (s.length !== CODE_LENGTH && s.length !== CODE_LENGTH + KEY_LENGTH) return null;
+  for (const ch of s) if (!CODE_ALPHABET.includes(ch)) return null;
+  const code = s.slice(0, CODE_LENGTH);
+  const key = s.length > CODE_LENGTH && codeKind(code) === 'p2p' ? s.slice(CODE_LENGTH) : null;
+  return { code, key };
+}
+
+/** An invite as shown and linked: the code, then the key in groups of four. */
+export function formatInvite(inv: Invite): string {
+  return inv.key ? [inv.code, ...(inv.key.match(/.{1,4}/g) ?? [])].join('-') : inv.code;
+}
+
+/** Why an invite can't be used, or null: a peer-to-peer code needs its key. */
+export function inviteProblem(inv: Invite | null): string | null {
+  if (!inv) return 'That code isn’t one of ours: a code has six letters and numbers, like 7KQ2MX.';
+  if (codeKind(inv.code) === 'p2p' && !inv.key)
+    return 'That code is missing its second part: a room on someone’s computer has a longer code, like A7KQ2M-BCDF-GHJK-MNPQ. Ask them for the whole code or the invite link.';
+  return null;
 }
 
 /** A code as typed by a player: upper case, look-alikes mapped (O→0 isn't in it, so O→Q…), or null. */
@@ -205,15 +294,35 @@ export function normaliseCode(input: string): string | null {
 }
 
 /** A display name with control characters, markup and extra spaces removed. */
+/**
+ * Characters a name never shows: control characters, and the invisible ones that reorder or hide text
+ * (zero-width spaces and joiners, right-to-left overrides and isolates, the byte-order mark).
+ */
+// eslint-disable-next-line no-control-regex -- stripping control characters is the point
+const UNSEEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+
 export function cleanName(input: unknown): string | null {
   if (typeof input !== 'string') return null;
+  const s = input.replace(UNSEEN, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+  return s.length ? s : null;
+}
+
+/** A city's or region's longest name. */
+export const MAX_CITY_NAME = 40;
+
+/**
+ * A city's or region's name as the others will see it (review, minor): cleaned as players' names are,
+ * and never empty, since every city shows one.
+ */
+export function cleanCityName(input: string): string {
   const s = input
-    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
-    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .replace(UNSEEN, ' ')
+    .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, MAX_NAME);
-  return s.length ? s : null;
+    .slice(0, MAX_CITY_NAME)
+    .trim();
+  return s.length ? s : 'A city';
 }
 
 export function cleanChat(input: unknown): string | null {
@@ -305,7 +414,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       if (m.create !== undefined) {
         const c = m.create as Record<string, unknown>;
         if (!c || typeof c !== 'object' || typeof c.cityName !== 'string') return null;
-        out.create = { cityName: c.cityName.slice(0, 40) };
+        out.create = { cityName: cleanCityName(c.cityName) };
       }
       if (m.rejoin !== undefined) {
         const r = m.rejoin as Record<string, unknown>;
@@ -346,7 +455,12 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const meta = m.meta as Record<string, unknown>;
       if (!meta || typeof meta !== 'object') return null;
       if (typeof meta.id !== 'string' || meta.id.length > 40) return null;
-      if (!isInt(meta.tick, 0, 1e12) || !isInt(meta.seq, -1, 1e12) || !isInt(meta.parts, 1, 400)) return null;
+      if (
+        !isInt(meta.tick, 0, 1e12) ||
+        !isInt(meta.seq, -1, 1e12) ||
+        !isInt(meta.parts, 1, MAX_SNAPSHOT_PARTS)
+      )
+        return null;
       if (typeof meta.eventHash !== 'number' || !Number.isFinite(meta.eventHash)) return null;
       if (typeof meta.cityName !== 'string' || !isInt(meta.population, 0, 1e9)) return null;
       if (!isInt(m.part, 0, meta.parts - 1) || typeof m.data !== 'string' || m.data.length > SNAPSHOT_PART)
@@ -359,7 +473,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
           seq: meta.seq,
           eventHash: meta.eventHash,
           parts: meta.parts,
-          cityName: meta.cityName.slice(0, 40),
+          cityName: cleanCityName(meta.cityName),
           population: meta.population,
         },
         part: m.part,

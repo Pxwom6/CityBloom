@@ -2,19 +2,60 @@
  * Test rooms and headless players (M30): a Room in this process, players talking to it over
  * loopback links (or real sockets through the local relay), each with its own sim run in place.
  */
-import { Room, MemoryStore } from '../room';
+import { Room, MemoryStore, type RoomEnv, type RoomLimits } from '../room';
 import { loopbackPair, type Link } from '../../src/net/link';
 import { HeadlessDriver } from '../../src/net/driver';
 import { RoomSession, type NetNotice, type SessionOptions } from '../../src/net/session';
 import { Sim } from '../../src/sim/sim';
-import { Rng } from '../../src/sim/rng';
 
 /** Game ticks a second at speeds 0–3 in tests: a game month in a few seconds. */
 export const FAST = [0, 300, 600, 1200] as const;
 
-export function makeRoom(code = 'TESTRM', store = new MemoryStore()): Room {
-  const rng = Rng.fromSeed(code);
-  return new Room(code, 'local', store, { now: () => performance.now(), random: () => rng.next() });
+/**
+ * Message limits for test rooms: the headless players report ten times a second and the pacer moves
+ * the clock twenty times (`statusEvery`, `clockEvery` below), more than a real game sends.
+ */
+export const TEST_LIMITS: Partial<RoomLimits> = { rate: 60, burst: 180 };
+
+export function makeRoom(
+  code = 'TESTRM',
+  store = new MemoryStore(),
+  env: RoomEnv = { now: () => performance.now() },
+  limits: Partial<RoomLimits> = TEST_LIMITS,
+): Room {
+  return new Room(code, 'local', store, env, limits);
+}
+
+/**
+ * Time that moves only when a test says so (F8), for rooms and regions: their timers (`later`) run
+ * in order as `advance` passes them.
+ */
+export class FakeClock {
+  t = 1_800_000_000_000;
+  private timers: { at: number; fn: () => void }[] = [];
+  now = (): number => this.t;
+  later = (ms: number, fn: () => void): (() => void) => {
+    const timer = { at: this.t + Math.max(0, ms), fn };
+    this.timers.push(timer);
+    return () => {
+      this.timers = this.timers.filter((x) => x !== timer);
+    };
+  };
+  /** Timers still to run. */
+  get pending(): number {
+    return this.timers.length;
+  }
+  advance(ms: number): void {
+    const end = this.t + ms;
+    for (;;) {
+      const next = this.timers.filter((x) => x.at <= end).sort((a, b) => a.at - b.at)[0];
+      if (!next) break;
+      this.timers = this.timers.filter((x) => x !== next);
+      this.t = Math.max(this.t, next.at);
+      next.fn();
+    }
+    this.t = end;
+  }
 }
 
 /** A way to reach `room` over a loopback link, as a transport would. */

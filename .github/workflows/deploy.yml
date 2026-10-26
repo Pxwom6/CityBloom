@@ -41,9 +41,11 @@ jobs:
           cache: npm
       - if: steps.check.outputs.ready == 'yes'
         run: npm ci
+      # The relay's wall-clock tests (the vitest project `live`) run in xbrowser.yml instead: a slow
+      # runner mustn't fail them here and ship the site with online rooms switched off.
       - if: steps.check.outputs.ready == 'yes'
         name: Relay tests
-        run: npx vitest run relay
+        run: npx vitest run --project unit relay
       - if: steps.check.outputs.ready == 'yes'
         id: deploy
         uses: cloudflare/wrangler-action@v4
@@ -80,7 +82,7 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v5
       - name: Unit tests
-        run: npm test
+        run: npm test -- --project unit
       - name: Build
         run: npm run build
         env:

@@ -8,11 +8,14 @@ import { useGame, useGameUpdates } from './hooks';
 import { loadProfile, saveProfile, type Profile } from '../client/profile';
 import { inviteLink, relayUrl } from '../net/multiplayer';
 import {
+  INVITE_INPUT_MAX,
   MAX_CHAT,
   MAX_NAME,
   PLAYER_COLORS,
   cleanName,
-  normaliseCode,
+  formatInvite,
+  inviteProblem,
+  parseInvite,
   type PlayerInfo,
 } from '../../relay/protocol';
 import type { Game } from '../game';
@@ -58,6 +61,8 @@ function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void
 function hostCity(game: Game, kind: 'online' | 'p2p', latest: string | null) {
   if (latest) location.href = `${location.pathname}?load=${encodeURIComponent(latest)}&host=${kind}`;
   else {
+    // Shared or brought to a region, never both (F4).
+    game.forgetFriendsChoice();
     game.hostKind = kind;
     game.openScreen('newGame');
   }
@@ -76,9 +81,10 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
   };
   const ready = !!cleanName(profile.name);
   const join = () => {
-    const c = normaliseCode(code);
-    if (!c) return setProblem('A room code has six letters and numbers, like 7KQ2MX.');
-    location.href = `${location.pathname}?join=${c}`;
+    const inv = parseInvite(code);
+    const why = inviteProblem(inv);
+    if (why) return setProblem(why);
+    location.href = `${location.pathname}?join=${formatInvite(inv!)}`;
   };
   const city = props.latestName ? `“${props.latestName}”` : 'a new city';
   return (
@@ -111,11 +117,11 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
             class="shell-btn"
             data-testid="friends-host-p2p"
             disabled={!ready}
-            title="Your browser is the room: friends connect straight to it while you play. The city stays in your saves."
+            title="Your browser is the room: friends connect straight to it while you play. The city stays in your saves. Connecting straight means they can see your internet (IP) address; an online room doesn't share it."
             onClick={() => hostCity(game, 'p2p', props.latestSlot)}
           >
             <span>Host on this computer</span>
-            <small>Share {city} straight from this browser</small>
+            <small>Share {city} straight from this browser (friends see your IP address)</small>
           </button>
           {props.latestSlot && (
             <button
@@ -138,7 +144,7 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
               autoCapitalize="characters"
               autoComplete="off"
               spellcheck={false}
-              maxLength={9}
+              maxLength={INVITE_INPUT_MAX}
               placeholder="7KQ2MX"
               value={code}
               data-testid="friends-code"
@@ -166,6 +172,7 @@ export function FriendsScreen(props: { latestSlot: string | null; latestName: st
         </section>
       </div>
       <RegionWays latestSlot={props.latestSlot} latestName={props.latestName} ready={ready} />
+      <Troubleshooting />
       <footer class="shell-actions">
         <button class="btn" data-testid="shell-back" onClick={() => game.closeScreen()}>
           Back
@@ -185,6 +192,7 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
     if (props.latestSlot)
       location.href = `${location.pathname}?load=${encodeURIComponent(props.latestSlot)}&${q}`;
     else {
+      game.forgetFriendsChoice();
       game.regionParam = q;
       game.openScreen('newGame');
     }
@@ -210,7 +218,7 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
           <span>Region code</span>
           <input
             type="text"
-            maxLength={9}
+            maxLength={INVITE_INPUT_MAX}
             placeholder="4RT9KW"
             value={code}
             data-testid="friends-region-code"
@@ -225,9 +233,10 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
           data-testid="friends-region-join"
           disabled={!props.ready || !code.trim()}
           onClick={() => {
-            const c = normaliseCode(code);
-            if (!c) return setProblem('A region code has six letters and numbers.');
-            go(`region=${c}`);
+            const inv = parseInvite(code);
+            const why = inviteProblem(inv);
+            if (why) return setProblem(why.replace('a room', 'a region'));
+            go(`region=${formatInvite(inv!)}`);
           }}
         >
           <span>Join with {city}</span>
@@ -276,6 +285,10 @@ export function RoomChip() {
       onClick={() => game.openPanel('room')}
     >
       <span class="room-code">{game.net.code}</span>
+      {/* On two rows (a phone) the chip shrinks to a count of who's here (F11). */}
+      <span class="room-count" aria-hidden="true">
+        {s.players.filter((p) => p.online).length}
+      </span>
       <span class="room-dots">
         {s.players
           .filter((p) => p.online)
@@ -300,7 +313,7 @@ export function RoomPanel() {
   if (game.panel !== 'room' || !mp) return null;
   const s = mp.session;
   const room = s.room;
-  const link = inviteLink(mp.code);
+  const link = inviteLink(mp.invite);
   const copy = () => {
     void navigator.clipboard?.writeText(link).then(
       () => setCopied(true),
@@ -320,7 +333,7 @@ export function RoomPanel() {
         <p class="muted">
           {mp.kind === 'online'
             ? 'An online room: the city waits here between sessions, and friends can join any time with the code.'
-            : 'This room runs in the host’s browser: friends can play while the host is here.'}
+            : 'This room runs in the host’s browser: friends can play while the host is here. Everyone connects straight to it, so the players can see each other’s internet (IP) addresses.'}
         </p>
         <div class="invite">
           <input
@@ -334,6 +347,11 @@ export function RoomPanel() {
             {copied ? 'Copied' : 'Copy link'}
           </button>
         </div>
+        {mp.key && (
+          <p class="muted room-invite-code">
+            Or the code to type: <strong data-testid="room-invite">{mp.invite}</strong>
+          </p>
+        )}
         {line && (
           <p class="room-line" data-testid="room-line">
             {line}
@@ -384,11 +402,25 @@ export function RoomPanel() {
             </li>
           ))}
         </ul>
-        <p class="muted room-tip">Press Shift+G over the map to point the others at a spot.</p>
+        <div class="room-ping">
+          <button
+            class="btn"
+            data-testid="room-ping"
+            title="Point the others at a spot: tap the map after this (with a keyboard, Shift+G over the map)"
+            onClick={() => game.armPing()}
+          >
+            Point the others at a spot
+          </button>
+          <span class="muted">or Shift+G over the map</span>
+        </div>
         <Chat />
+        <Troubleshooting />
         {s.isHost && room && (
           <div class="room-host">
-            <label class="check" title="Nobody new can join while the room is locked">
+            <label
+              class="check"
+              title="Nobody new can join while the room is locked (it locks by itself when you remove someone); players already in it can still come back"
+            >
               <input
                 type="checkbox"
                 checked={room.locked}
@@ -477,7 +509,7 @@ function PlayerRules(props: {
         <button
           class="btn small danger"
           data-testid={`room-kick-${player.id}`}
-          title={`Remove ${player.name} from the room (they can't come back)`}
+          title={`Remove ${player.name} from the room: it locks behind them so they can’t come back`}
           onClick={props.onKick}
         >
           Remove
@@ -538,5 +570,45 @@ function Chat() {
         </p>
       )}
     </div>
+  );
+}
+
+/** What to do when playing together goes wrong (M33): short, and only when asked for. */
+export function Troubleshooting() {
+  return (
+    <details class="friends-help" data-testid="friends-help">
+      <summary>Trouble connecting?</summary>
+      <ul>
+        <li>
+          <strong>Can’t connect to the host’s computer?</strong> Some home, school and office networks block
+          direct connections between browsers.{' '}
+          {relayUrl()
+            ? 'Ask the host to choose Host online instead: it goes through a server and works on any network.'
+            : 'Try another network (a phone’s hotspot often works), or let a friend on a different network host.'}
+        </li>
+        <li>
+          <strong>“The host’s game has closed”?</strong> A room on someone’s computer runs in their browser
+          and closes when they leave; everyone keeps a copy of the city to play alone.
+        </li>
+        <li>
+          <strong>Room full or locked?</strong> A room takes 8 players at a time (players who are away don’t
+          count): try again when someone leaves. Removing a player locks the room, so nobody new gets in until
+          the host unlocks it. A region keeps a place for each of its 4 cities, even while their mayors are
+          away: start another region for more.
+        </li>
+        <li>
+          <strong>Hosting on your computer?</strong> Everyone connects straight to your browser, so the
+          players can see each other’s internet (IP) addresses. An online room doesn’t share them.
+        </li>
+        <li>
+          <strong>“Fell out of step”?</strong> One game stopped agreeing with the others. The room sends it
+          the city as it stands and it carries on a moment later; nothing is lost.
+        </li>
+        <li>
+          <strong>“Waiting for …”?</strong> Someone’s computer is falling behind; the city waits a few seconds
+          for them. A game in a background tab isn’t waited for.
+        </li>
+      </ul>
+    </details>
   );
 }

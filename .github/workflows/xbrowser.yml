@@ -1,0 +1,51 @@
+# Checks that never hold back a deploy (F13): the cross-browser determinism test in Chromium, WebKit
+# and real Firefox (the cloud VM can't download Playwright's WebKit or Firefox, and Firefox under
+# Playwright won't start on the owner's Mac), and the relay's wall-clock tests on their own.
+name: Cross-browser and relay timing
+
+on:
+  push:
+    branches: [m33-ready, multiplayer]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request replaces a run still going.
+concurrency:
+  group: xbrowser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  xbrowser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The browsers that match the pinned Playwright, with their system libraries.
+      - run: npx playwright install --with-deps chromium webkit firefox
+      # No build or server: the spec bundles the sim with esbuild into a blank page and compares
+      # each browser's hashes with Node's. XB_FIREFOX stays unset so Firefox runs; without a
+      # SpiderMonkey shell (JS_SHELL) its stand-in test is skipped.
+      - name: Cross-browser determinism (Chromium, WebKit, Firefox)
+        run: npm run xbrowser
+
+  relay-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # One file at a time, nothing else beside them (vitest.config.ts gives each test a retry).
+      - name: Relay wall-clock tests
+        run: npx vitest run --project live --no-file-parallelism

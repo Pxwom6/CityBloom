@@ -3,7 +3,7 @@
  * local relay, three headless players building and moving their cursors, and this machine's real
  * Chrome (GPU, frame cap off) as the fourth, timed at the city's three camera presets at 3×.
  *
- *   VITE_RELAY_URL=ws://localhost:8799 npx vite build --mode test --outDir dist-coop
+ *   VITE_RELAY_URL=ws://127.0.0.1:8799 npx vite build --mode test --outDir dist-coop
  *   npx tsx scripts/dev/coopbench.ts bench-results/city.gz [seconds]
  */
 import { chromium } from '@playwright/test';
@@ -22,7 +22,7 @@ const raw = readFileSync(file);
 const save = JSON.parse(new TextDecoder().decode(raw[0] === 0x1f ? gunzipSync(raw) : raw));
 const relay = await startRelay(8799);
 const code = '2CQPBN';
-const url = `ws://localhost:8799/room/${code}`;
+const url = `ws://127.0.0.1:8799/room/${code}`;
 const headless: { s: RoomSession; d: HeadlessDriver }[] = [];
 for (let i = 0; i < 3; i++) {
   const d = new HeadlessDriver(i === 0 ? Sim.fromSave(save) : Sim.create({ seed: 'x' }));

@@ -35,7 +35,7 @@ const log = (s: string) => {
 
 const relay = await startRelay(8798);
 const code = '3SQAKW';
-const url = `ws://localhost:8798/room/${code}`;
+const url = `ws://127.0.0.1:8798/room/${code}`;
 const rng = Rng.fromSeed('soak');
 const sim = Sim.create({ seed: 'soak', preset: 'river', cityName: 'Soakworth' });
 buildTown(sim, { length: 600, streets: 5 });

@@ -220,6 +220,7 @@ import {
 } from './systems/economy';
 import { DIFFICULTY, SANDBOX_FUNDS, bigCityFactor, fundingEffect, type Dept } from '../data/economy';
 import { DMath, formatInt } from './dmath';
+import { checkCommand } from './commandCheck';
 
 export { HIGHWAY_CONNECT_X };
 
@@ -1052,6 +1053,13 @@ export class Sim {
 
   dispatch(cmd: Command, by = 0): CommandResult {
     this.actor = by;
+    // Another player's command in a shared city (F7): checked here as the room checks it, so an old
+    // or altered room can't hand every game something that throws, hangs or damages the city.
+    if (this.shared && by) {
+      const checked = checkCommand(cmd);
+      if ('problem' in checked) return fail(checked.problem);
+      cmd = checked.cmd;
+    }
     // A shared city's rules (M31): what this player may do, whose work it is, what it costs.
     if (this.shared && by && this.rules) {
       const dry = this.apply(cmd, true);
@@ -1342,6 +1350,18 @@ export class Sim {
   setHistoryState(list: [number, PlayerHistory][]): void {
     this.histories.clear();
     for (const [p, h] of list) this.histories.set(p, JSON.parse(JSON.stringify(h)) as PlayerHistory);
+  }
+
+  /**
+   * The city stops being shared (F9): this copy is single player again. The player's own recent
+   * edits stay undoable as single player's; the other players' histories and the room's rules go.
+   */
+  leaveShared(): void {
+    const mine = this.historyOf(this.viewer);
+    this.setHistoryState(mine.undo.length || mine.redo.length ? [[0, mine]] : []);
+    this.viewer = 0;
+    this.rules = null;
+    this.shared = false;
   }
 
   /** What an undoable command may change; null for commands that aren't undone. */

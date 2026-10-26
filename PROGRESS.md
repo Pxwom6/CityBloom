@@ -16,7 +16,9 @@ rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still wor
 
 Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
 `main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
-SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session on the owner's Mac).
+SPEC-4.md, M29–M33) is complete on the `multiplayer` branch**, in pull requests #17–#20 and M33's
+for the owner to merge in order. Online rooms need the Cloudflare setup below; peer-to-peer works
+without it.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -51,7 +53,36 @@ SPEC-4.md, M29–M33) is under way on the `multiplayer` branch** (local session 
 - [x] M30 Rooms, online and peer-to-peer
 - [x] M31 Building together
 - [x] M32 Shared regions
-- [ ] M33 Ready for friends
+- [x] M33 Ready for friends
+
+## Multiplayer review follow-ups (PRs #17–#21)
+The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
+top of `m33-ready` (the same commits as `multiplayer`), commits numbered F1, F2…, each problem
+reproduced in a test first. Reasons in `docs/DECISIONS.md`, "Multiplayer review follow-ups".
+
+Must fix before merging:
+- [x] F1 Kicked players come straight back
+- [x] F2 Strangers can find peer-to-peer rooms
+- [x] F3 Codes and player secrets come from `Math.random`
+- [x] F4 Lobby choices leak into a later single-player city
+- [x] F5 Visiting a neighbour's city overwrites your autosave
+- [x] F6 A stale region binding
+- [x] F7 A bad command must not hurt a room
+
+Should fix:
+- [x] F8 Keep within the free plan under abuse
+- [x] F9 Leaving a room breaks undo in the copy you keep
+- [x] F10 Peer-to-peer dead ends
+- [x] F11 Phones
+- [x] F12 Invite links
+- [x] F13 Tests
+- [x] F14 Balance
+- [x] Minor items
+- [x] Second review: messages over Trystero arrive in order (a friend couldn't join a city that stood
+  still; `src/net/order.ts`, DECISIONS)
+- [x] Second review, after an independent read of that fix: a guest the host lets go is told (it
+  was left on a link nothing came down), a lost message ends the link instead of holding the rest
+  for half an hour, and a guest leaves its Trystero room however its link ends (`tests/p2pLinks.test.ts`)
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
@@ -150,6 +181,18 @@ neighbours look alike (M28). Every effect has a switch in the graphics quality. 
 Pro the heaviest view (the 110k city at night at 3× with a tornado) takes 10–11 ms a frame at High
 with batch 5's models, against 22–25 at the start of the phase; the whole-city view draws 1.9M triangles where it drew 2.7M.
 
+**Phase 4 (multiplayer, M29–M33)** made Citybloom a game to play with friends. The simulation now
+gives the same city bit for bit in every browser (its maths are its own, checked in Chromium, WebKit
+and Firefox's engine each milestone), and runs in lockstep: only commands travel, each stamped by a
+room with the tick it applies at. Friends build one city together (up to eight) in an online room
+on Cloudflare's free plan or straight from the host's browser over WebRTC, found by a six-character
+code or an invite link: they see each other's cursors and tools, point at spots, chat, follow each
+other's view, and the host decides who may do what. A player who joins midway loads a snapshot and
+catches up, a dropped connection comes back by itself, and a game that falls out of step is caught
+within the game hour and put right without a reload. Or up to four players each run their own city
+side by side in a shared region, trading power, water and garbage, sharing commuters, paying
+together for Sunfield Commons and visiting each other's cities. Single player is unchanged.
+
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
@@ -173,17 +216,14 @@ with batch 5's models, against 22–25 at the start of the phase; the whole-city
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Phase 4 on the `multiplayer` branch. **M29** (PR #17), **M30** (PR #18), **M31** (PR #19) and
-**M32 Shared regions** are done: up to four players each run their own city side by side (online,
-or from a host's browser); their cities take the simulated neighbours' places, trade power, water
-and garbage at one price settled on each city's own clock, send commuters and shoppers along the
-highway, keep playing on an offline neighbour's last offer, pay together for Sunfield Commons
-(built by the biggest giver, its power shared by every giver), and look round each other's cities
-read-only. Next: **M33 Ready for friends** (the two-hour soak, narrow windows and touch, tips,
-README, troubleshooting, the free-plan tune-up).
+Nothing: the multiplayer review's follow-ups (F1–F14 and the minor items) are done on `m33-ready`
+and `multiplayer` (the same commits, pushed from a cloud session; PR #21 carries them). The owner:
+review them, merge #17–#21 in order, set up Cloudflare (above) for online rooms, then run the e2e
+specs the cloud VM couldn't and try a shared city with a friend on another computer and a phone
+("To check on the Mac").
 
 ## Next tasks
-1. M33: the soak (`npx tsx scripts/dev/soak.ts 120`), polish, README, troubleshooting, the free-plan check.
+1. The real-device checks for multiplayer ("To check on the Mac"), then the balance round below.
 2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
    empty tax bands): later, after phase 4.
 
@@ -434,6 +474,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
+  the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
+  machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
+  software-rendered pages that replay sometimes never catches the room up (m30-rooms, m31-together,
+  the Trystero spec's join): seen on the original M33 tip too. Worth a look on a slow phone; if it
+  shows, the room could wait for a joiner within a limit, or the pacer could settle off the main
+  thread's frame budget.
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
@@ -711,6 +758,51 @@ misses with either build (`startup-slow.log`).
 ## Real hardware (Phase 2 review)
 - The ~110k bench city on a MacBook Pro M5, High graphics, 3× speed: about 60 fps (58–65) in Safari in every view (whole city, mid-zoom, street level, night, a tornado), which is Safari's 60 fps cap; in Chrome at 120 Hz, 100–118 fps with 1.5–4.4 ms of frame work. 287 draw calls and 2.75M triangles at the whole-city view. Sim tick avg 0.6–0.8 ms, worst 6 ms, at 24 ticks a second: the worst ticks this VM measured (15–28 ms) are the VM, so the profile-guided pass on the matcher and happiness (review item 6) was dropped.
 
+## Soak (M33)
+- `npx tsx scripts/dev/soak.ts 120`: four headless players in an online room on the local relay for
+  two hours of real time at mixed speeds (the room's speed changed every few minutes); 18 dropped
+  connections, 8 players leaving and coming back, 3 deliberate desyncs caught and resynced, 1,548
+  commands applied over 113,018 ticks (6.5 game years). **No unexplained resyncs**, and at the end
+  every game agreed with the host's part for part. Log: `bench-results/soak.log`.
+
+## Balance (multiplayer review, F14)
+- `npx tsx scripts/balance.ts 20` on this branch (after F1–F13 and the minor items) and on `main`
+  (6f049d3) back to back on the cloud VM. Greedy (420 residents, 16 %, $566k at year 20) and
+  neglectful (354, 36 %, $480k) are byte-identical. The careful mayor is identical for nine years,
+  then wanders within its spread as it did at M29: year 20 **67,373 residents, 73 %, $1.84M**, every
+  election won, against `main`'s 65,767, 73 % and $0.77M. Those are exactly the M29 numbers, so M31's
+  and M32's changes to `dispatch` and the region code, and these follow-ups, changed nothing in a
+  city played alone (the drift is M29's deterministic maths, DECISIONS M29).
+
+## Tests (multiplayer review, F13)
+- Cross-browser determinism, Node side, 24 months, now covering all 40 command kinds: 26.8 s,
+  population 2,360, last month hash `1382620c`, none refused. Chromium, WebKit and real Firefox run in
+  `.github/workflows/xbrowser.yml` on every push to `m33-ready` and `multiplayer` (the cloud VM can't
+  download WebKit or Firefox).
+- Legacy corpus: `Saves/legacy/v24-river.citybloom` (grown by the live site's code, v24): 2,178 →
+  2,249 residents over two years, approval 60 → 63 %, $13,015 → $300,138.
+- Vitest: `npm test` runs projects `unit` and `live` (`relay/tests/{room,local,review}.test.ts`, one
+  retry); the deploy runs `--project unit`. The frozen-pacer test went from 12.8 s to 3.5 s.
+
+## Network (multiplayer review, F8)
+- `npx tsx scripts/dev/netbudget.ts 3 3 4`, before and after back to back on the cloud VM: an hour of
+  four-player play now writes **180 rows** (0.2 % of 100,000), down from 1,180 (which the old store
+  also undercounted); requests stay at 1,128 (1.1 %) and duration at no more than 450 GB-s (3.5 %);
+  messages are unchanged (the pacer 184 a minute, the others 64). An honest four-city region hour
+  writes 78 rows (532 before). Abuse on the fake clock (`relay/tests/freeplan.test.ts`): 519 commands
+  in a minute write 10 rows (one per command before), a city changing its offers every second for a
+  minute writes 5 (60 before). Daily budgets per object: rooms 5,000 rows, regions 3,000. Wrangler
+  4.152 ran `relay/tests/local.test.ts` against the Worker (2/2), and a probed code left none of our
+  tables behind.
+
+## Network (M33)
+- Progress reports once a second, the clock every half second and presence at most four times a
+  second (with the worker pacing the city at the room's speed between clock moves) halved the
+  messages: four players at 3× send 64 messages a minute each (184 for the one keeping time), and an
+  hour costs about 1,130 requests (1.1 % of the daily 100,000), plus up to about 2,900 more while
+  all four move their mouse non-stop; at most 450 GB-s of duration (3.5 %); about 1,200 rows written
+  (1.2 %). The free plan carries about 25 such four-player hours a day across every room.
+
 ## Network (M31)
 - **Four players, frame and tick** (`scripts/dev/coopbench.ts`: the 110k bench city in an online room
   on the local relay, three headless players building and moving their cursors with brushes out,
@@ -789,6 +881,34 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
+  app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
+  to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),
+  review-followups (F4, F5, F6, F12) pass. **Failed in the VM**, to run on the Mac: m30-rooms online
+  (Sam never reached "playing"; the original M33 tip fails the same way here), m30-lobby (timed out
+  joining; the original tip too), f2-trystero (the joining page stopped answering for 30 s after
+  boot; the same join from a plain script got in within 6 s), and m30-rooms p2p (didn't run after
+  online failed). m31-together failed in the full batch only because m30's failed pages were left
+  running; multi-page specs now close their contexts after every test (`newContext`,
+  `closeContextsAfterEach` in `e2e/helpers.ts`). The joins are described under Known issues.
+- Second review (a 2-CPU cloud VM): through Trystero and a local Nostr relay, a friend joining a city
+  held still never got in (Trystero reordered the room's messages, now fixed: DECISIONS); after the
+  fix the friend joins, builds, and the two run on together to the same tick and hash, and an online
+  room does the same. f2-trystero still fails in the VM: its short-code toast lasts 9 s and expires
+  before a slow VM's first render, and its join is into a running city (the room starts at 1×), the
+  catch-up described under Known issues. Run it on the Mac.
+- The rest of the e2e suite wasn't run in the cloud (the owner's instruction): everything except
+  the specs above, including review-legacy (now four saves with v24), the fix-layout and fixes-ui
+  specs (eight of their tests fail in the cloud on `main` too), and the playthroughs.
+- Cross-browser: real Firefox (142) and WebKit (26) pass on GitHub (`xbrowser.yml`); the cloud VM
+  can't download them (Playwright's download hosts and archive.mozilla.org are blocked there).
+- Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
+  `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
+  WebKit results.
+- Multiplayer review (F8): how many snapshot parts the ~110k bench city needs against the 40-part
+  (8 MB) cap (`encodeSnapshot` on `bench-results/city.gz`'s save); a city past it is told it's too big
+  to share.
+- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.

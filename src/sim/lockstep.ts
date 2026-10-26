@@ -68,6 +68,12 @@ export class Lockstep {
 
   /** Called when the sim is replaced by a fresh copy at a settle (the old one, for its dirty marks). */
   onRebirth: ((old: Sim) => void) | null = null;
+  /**
+   * Called when applying an event threw (F7): the event counts as refused on every machine, and the
+   * error goes to whoever is watching (the worker posts it to the page).
+   */
+  onError: ((what: { tick: number; seq: number; by: number; type: string }, err: unknown) => void) | null =
+    null;
 
   constructor(
     public sim: Sim,
@@ -166,7 +172,16 @@ export class Lockstep {
     while (this.queue.length && this.queue[0]!.tick === t) {
       const e = this.queue.shift()!;
       if (e.ev.kind === 'cmd') {
-        const result = this.sim.dispatch(e.ev.cmd, e.ev.by);
+        let result: CommandResult;
+        try {
+          result = this.sim.dispatch(e.ev.cmd, e.ev.by);
+        } catch (err) {
+          // Never the error's own words in the result: engines word errors differently, and the
+          // result goes back to the player who issued it. The fingerprint takes only "refused".
+          result = { ok: false, reason: 'The game could not carry out that command' };
+          const type = typeof e.ev.cmd?.type === 'string' ? e.ev.cmd.type : '?';
+          this.onError?.({ tick: t, seq: e.seq, by: e.ev.by, type }, err);
+        }
         this.noteEvent(e, result.ok);
         this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev, result });
       } else if (e.ev.kind === 'rules') {

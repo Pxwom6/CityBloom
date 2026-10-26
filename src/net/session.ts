@@ -43,7 +43,16 @@ export interface SessionOptions {
   now?: () => number;
   /** Game ticks a second at each speed (tests run the city faster than any player would). */
   ticksPerSecond?: readonly number[];
+  /**
+   * Stop reconnecting after this many tries in a row that couldn't reach the room (F10): a room in
+   * the host's browser is gone once the host has, so a guest isn't left on "Reconnecting…" for ever.
+   */
+  giveUpAfter?: number;
 }
+
+/** What a guest sees when the room in the host's browser has gone with it (F10). */
+export const HOST_GONE =
+  'The host’s game has closed, and the room with it: it ran in their browser. This copy of the city is yours to play on your own.';
 
 export interface NetNotice {
   text: string;
@@ -83,6 +92,8 @@ export class RoomSession {
   private timers: ReturnType<typeof setInterval>[] = [];
   private unsub: (() => void) | null = null;
   private retry = 0;
+  /** Tries in a row that couldn't reach the room (`giveUpAfter`). */
+  private misses = 0;
   private started: { resolve: () => void; reject: (e: Error) => void } | null = null;
   private readonly now: () => number;
   /** Messages this player sent and their bytes (the network budget). */
@@ -122,8 +133,10 @@ export class RoomSession {
     this.unsub = this.driver.onShared((m) => this.fromSim(m));
     const p = new Promise<void>((resolve, reject) => (this.started = { resolve, reject }));
     void this.open(!!this.opts.rejoin);
-    this.timers.push(setInterval(() => this.statusTick(), this.opts.statusEvery ?? 500));
-    this.timers.push(setInterval(() => this.clockTick(), this.opts.clockEvery ?? 250));
+    // A second between progress reports and half a second between clock moves: well inside the
+    // three-second lead, and few enough messages for an online room's free plan (M33).
+    this.timers.push(setInterval(() => this.statusTick(), this.opts.statusEvery ?? 1000));
+    this.timers.push(setInterval(() => this.clockTick(), this.opts.clockEvery ?? 500));
     return p;
   }
 
@@ -162,7 +175,9 @@ export class RoomSession {
         } catch {
           return;
         }
-        this.chain = this.chain.then(() => this.receive(m)).catch((err: unknown) => this.fail(String(err)));
+        this.chain = this.chain
+          .then(() => this.receive(m))
+          .catch((err: unknown) => this.fail(err instanceof Error ? err.message : String(err)));
       };
       // After any messages still being handled (an error comes just before its close).
       link.onclose = (why) => {
@@ -180,7 +195,10 @@ export class RoomSession {
           : {}),
       });
     } catch (err) {
-      if (rejoin && this.loadedOnce) return this.dropped(err instanceof Error ? err.message : String(err));
+      if (rejoin && this.loadedOnce) {
+        if (this.opts.giveUpAfter && ++this.misses >= this.opts.giveUpAfter) return this.fail(HOST_GONE);
+        return this.dropped(err instanceof Error ? err.message : String(err));
+      }
       this.fail(`Couldn't reach the room (${err instanceof Error ? err.message : String(err)})`);
     }
   }
@@ -205,6 +223,11 @@ export class RoomSession {
     this.started?.reject(new Error(text));
     this.started = null;
     this.stopTimers();
+    // Removed, or the room closed: the city on screen is this player's own now (F9), not one still
+    // waiting for a room that will never move it on.
+    this.unsub?.();
+    this.unsub = null;
+    this.driver.unshare();
     for (const r of this.pending.values()) r({ ok: false, reason: 'Not connected to the room' });
     this.pending.clear();
     this.changed();
@@ -224,6 +247,7 @@ export class RoomSession {
   }
 
   private playing(): void {
+    this.misses = 0;
     if (this.state !== 'playing') {
       const back = this.state === 'reconnecting';
       this.state = 'playing';
@@ -348,13 +372,25 @@ export class RoomSession {
             this.pending.delete(a.ev.ref);
             r?.(a.result!);
           }
-          this.onApplied?.(a);
+          try {
+            this.onApplied?.(a);
+          } catch {
+            /* what the page shows of it; the next commands' results still go back */
+          }
         }
         return;
       case 'snapshot': {
         const id = m.reason === 'upload' ? `${this.you}-up` : `${this.you}-${m.tick}`;
-        const { meta, parts } = encodeSnapshot(m.snapshot, id);
-        parts.forEach((data, part) => this.send({ t: 'snap', meta, part, data }));
+        let snap: ReturnType<typeof encodeSnapshot>;
+        try {
+          snap = encodeSnapshot(m.snapshot, id);
+        } catch (err) {
+          // Past the cap no room would take it (F8): say so, rather than leave everyone waiting.
+          this.fail(err instanceof Error ? err.message : String(err));
+          this.link?.close();
+          return;
+        }
+        snap.parts.forEach((data, part) => this.send({ t: 'snap', meta: snap.meta, part, data }));
         return;
       }
       case 'late':
@@ -495,9 +531,12 @@ export class RoomSession {
     this.state = 'closed';
     this.stopTimers();
     this.unsub?.();
+    this.unsub = null;
     this.link?.close();
     this.link = null;
     this.driver.unshare();
+    for (const r of this.pending.values()) r({ ok: false, reason: 'You left the room' });
+    this.pending.clear();
     this.changed();
   }
 

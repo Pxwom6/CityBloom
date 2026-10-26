@@ -55,16 +55,30 @@ function runTicks(n: number): void {
 }
 
 /** Shared city: run towards the allowed tick within the time budget. */
-function runShared(): void {
+/**
+ * Shared city: run at the room's speed up to the tick it allows, so the city moves smoothly between
+ * the pacer's clock messages; far behind (joining, a slow spell, a background tab), as fast as the
+ * time budget lets it until caught up.
+ */
+function runShared(elapsed: number): void {
   const ls = lockstep!;
   const t0 = performance.now();
   if (ls.behind === 0 && ls.pending) ls.run(0);
-  while (ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+  const tps = SPEED_TICKS_PER_SECOND[speed];
+  due += (elapsed / 1000) * tps;
+  // Paused (the room stopped where it is) or far behind: straight there.
+  const catchUp = tps === 0 || ls.behind > Math.max(48, tps * 2);
+  let n = catchUp ? Infinity : Math.floor(due);
+  while (n > 0 && ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+    n--;
+    if (!catchUp) due--;
     timeTick(() => ls.run(1));
     // The full check at each month's end (about 40 ms at 100k residents, outside the tick).
     if (isMonthStart(ls.sim.tick))
       post({ type: 'monthHashes', tick: ls.sim.tick, parts: partHashes(ls.sim) });
   }
+  // Time not run because the room hasn't allowed it yet isn't banked (or the city would race after).
+  if (ls.behind === 0) due = Math.min(due, 1);
   for (const [tick, sum] of ls.checksums)
     if (tick > lastChecksum) {
       post({ type: 'checksum', tick, sum });
@@ -91,11 +105,28 @@ function flush(): void {
   post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
 }
 
+/** The last error the loop reported, so a sim that fails every tick says so once, not 20 times a second. */
+let lastLoopError = '';
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+}
+
 function loop(): void {
+  try {
+    step();
+  } catch (err) {
+    const message = errorText(err);
+    if (message !== lastLoopError) post({ type: 'error', message });
+    lastLoopError = message;
+  }
+}
+
+function step(): void {
   const now = performance.now();
   const elapsed = Math.min(250, now - last);
   last = now;
-  if (lockstep) runShared();
+  if (lockstep) runShared(elapsed);
   else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);
@@ -124,6 +155,12 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
     sim = lockstep!.sim;
     sim.takeOverFrom(old);
   };
+  // A command that threw counts as refused on every machine (F7); the page hears why.
+  lockstep.onError = (what, err) =>
+    post({
+      type: 'error',
+      message: `A ${what.type} command from player ${what.by} failed at tick ${what.tick}: ${errorText(err)}`,
+    });
   lockstep.onApplied = (a) => {
     if (a.ev.kind === 'cmd') applied.push(a);
     else if (a.ev.kind === 'settle' && a.ev.taker === player && a.save) {
@@ -143,12 +180,14 @@ function handle(msg: MainToWorker): void {
   switch (msg.type) {
     case 'init':
       lockstep = null;
+      player = 0;
       sim = Sim.create(msg.options, msg.map ?? null);
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
     case 'load':
       lockstep = null;
+      player = 0;
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
@@ -184,8 +223,10 @@ function handle(msg: MainToWorker): void {
     case 'share':
       if (!sim) return;
       player = msg.player;
-      // Single player's undo history belongs to the city before it was shared.
+      // Single player's undo history belongs to the city before it was shared, and a new room has
+      // no rules until its host sets some.
       sim.setHistoryState([]);
+      sim.rules = null;
       share(sim, msg.lastSeq);
       {
         // The city the room is made from: this machine carries on from it as the others will.
@@ -203,8 +244,11 @@ function handle(msg: MainToWorker): void {
       if (sim?.testMode) sim.rng.growth.next();
       break;
     case 'unshare':
-      if (sim) sim.shared = false;
+      // This copy is the player's own now (F9): their undo, no room rules, no other players.
+      sim?.leaveShared();
       lockstep = null;
+      player = 0;
+      applied = [];
       delete perf.behind;
       break;
     case 'stamped': {
@@ -261,9 +305,14 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   try {
     handle(e.data);
   } catch (err) {
-    post({
-      type: 'error',
-      message: err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err),
-    });
+    post({ type: 'error', message: errorText(err) });
+    // A command or preview that threw still answers, or the page would wait for it for ever.
+    const msg = e.data;
+    if (msg.type === 'command' || msg.type === 'preview')
+      post({
+        type: 'reply',
+        id: msg.id,
+        result: { ok: false, reason: 'The game could not carry out that command' },
+      });
   }
 };

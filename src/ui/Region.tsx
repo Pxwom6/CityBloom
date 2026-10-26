@@ -11,8 +11,9 @@ import type { RegionSummary } from '../sim/systems/region';
 import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconRegion } from './icons';
-import { PLAYER_COLORS } from '../../relay/protocol';
+import { INVITE_INPUT_MAX, PLAYER_COLORS, parseInvite } from '../../relay/protocol';
 import { inviteLink, relayUrl } from '../net/multiplayer';
+import { regionRejoin } from '../client/profile';
 
 /**
  * The region (M23): the neighbouring towns, what they'll trade, the deals made with them, and the
@@ -260,11 +261,11 @@ function NeighbourCard({ n }: { n: N }) {
             Played by {pl.mayor}.{' '}
             {(view?.online ?? pl.online) ? 'Playing now.' : 'Away: its last offers stand.'}
           </p>
-          {view?.visitable && game.regionCode && (
+          {view?.visitable && game.regionInvite && (
             <a
               class="btn small"
               data-testid={`visit-${pl.slot}`}
-              href={`${location.pathname}?visit=${game.regionCode}&city=${pl.slot}`}
+              href={`${location.pathname}?visit=${game.regionInvite}&city=${pl.slot}`}
               target="_blank"
               rel="noopener"
               title={`Look round ${n.name} as it was last saved (read-only, in a new tab)`}
@@ -428,10 +429,16 @@ function SharedRegion() {
           >
             {online ? 'Start a region' : 'Start a region on this computer'}
           </button>
+          {!online && (
+            <span class="muted region-ip">
+              The cities connect straight to each other: their players see each other’s internet (IP)
+              addresses.
+            </span>
+          )}
           <input
             type="text"
             placeholder="Region code"
-            maxLength={9}
+            maxLength={INVITE_INPUT_MAX}
             value={code}
             data-testid="region-code"
             onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())}
@@ -439,9 +446,11 @@ function SharedRegion() {
           />
           <button
             class="btn"
-            disabled={busy || code.trim().length < 6}
+            disabled={busy || !parseInvite(code)}
             data-testid="region-join"
-            onClick={() => void go(() => game.joinRegion(code.replace(/[\s-]/g, '').toUpperCase()))}
+            onClick={() =>
+              void go(() => game.joinRegion(code, regionRejoin(game.boundRegion, code)?.rejoin ?? null))
+            }
           >
             Join
           </button>
@@ -459,11 +468,12 @@ function SharedRegion() {
         {v?.name ?? 'Shared region'} <span class="room-code">{game.regionCode}</span>
       </h3>
       <p class="muted">
-        Friends join with their own cities: Region → Join, with this code
-        {game.regionCode && (
+        Friends join with their own cities: Region → Join, with the code{' '}
+        <strong data-testid="region-invite">{game.regionInvite}</strong>
+        {game.regionInvite && (
           <>
             {' '}
-            (<span class="region-link">{inviteLink(game.regionCode).replace('?join=', '?region=')}</span>)
+            (<span class="region-link">{inviteLink(game.regionInvite).replace('?join=', '?region=')}</span>)
           </>
         )}
         . {link.state === 'reconnecting' ? 'Reconnecting…' : ''}

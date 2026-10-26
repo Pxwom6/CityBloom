@@ -783,3 +783,18 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   (careful 67,373 residents and $1.84M at year 20, greedy and neglectful identical to `main`): M31's
   and M32's changes to `dispatch` and the region code only act in shared cities and regions, so no
   tuning was needed.
+- **Messages over Trystero in order (the owner's second review).** Trystero 0.26 sends a message
+  bigger than one frame (about 16 KB) as a transfer of its own, offered and accepted before its
+  chunks go, so a small message sent after a big one can arrive first: two pages on this computer
+  sent 50,000, 100, 30,000, 200 and 300 characters and received 100, 200, 300, 50,000 and 30,000. A
+  room sends a joining player the city and then the events since; through Trystero the events
+  overtook the city, the join waited for events that had already come and gone, and a friend joining
+  a city that stood still sat on "Loading the city…" until the join gave up after two minutes (with
+  the city running, the next clock's events finished the join, but events could still be applied
+  out of order). Every message on a Trystero link now carries its number, and the other side hands
+  them on in that order (`src/net/order.ts`, both directions, rooms and regions alike). A link whose
+  messages can't be put back in order (not text, without a number, or more than 4,096 messages or 16
+  million characters waiting for an earlier one) is given up like a dropped connection. Our relay's
+  sockets and data channels keep order themselves, so their messages aren't numbered. Tested in
+  `tests/p2pOrder.test.ts`, and through two pages over Trystero and a Nostr relay on this computer: a
+  friend now joins a city held still, builds, and the two run on together with the same hash.

@@ -15,6 +15,7 @@
 import { Room, MemoryStore, type Conn, type StoredSnapshot } from '../../relay/room';
 import type { RegionConn, RegionRoom } from '../../relay/region';
 import { dataChannelLink, loopbackPair, webSocketLink, type Link } from './link';
+import { inOrder, numbered } from './order';
 
 export const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -192,28 +193,34 @@ export class P2PHost {
     this.stops.push(() => void t.leave());
     const msg = t.makeAction<string>('room');
     const hello = t.makeAction<string>('host');
-    const links = new Map<string, Link>();
+    // Each guest's messages are numbered both ways, so Trystero can't reorder them (`order.ts`).
+    const links = new Map<string, { link: Link; receive: (raw: unknown) => void }>();
+    const gone = (peer: string, why: string) => {
+      const entry = links.get(peer);
+      links.delete(peer);
+      if (entry) {
+        this.guests--;
+        entry.link.onclose?.(why);
+      }
+    };
     t.onPeerJoin = (peer) => {
       hello.send('host', { target: peer });
       const link: Link = {
-        send: (text) => void msg.send(text, { target: peer }),
+        send: numbered((text) => void msg.send(text, { target: peer })),
         close: () => links.delete(peer),
         onmessage: null,
         onclose: null,
       };
-      links.set(peer, link);
+      const receive = inOrder(
+        (text) => link.onmessage?.(text),
+        (why) => gone(peer, why),
+      );
+      links.set(peer, { link, receive });
       attach(this.room as Hub<Conn>, link);
       this.guests++;
     };
-    t.onPeerLeave = (peer) => {
-      const link = links.get(peer);
-      links.delete(peer);
-      if (link) {
-        this.guests--;
-        link.onclose?.('left');
-      }
-    };
-    msg.onMessage = (data, { peerId }) => links.get(peerId)?.onmessage?.(data);
+    t.onPeerLeave = (peer) => gone(peer, 'left');
+    msg.onMessage = (data, { peerId }) => links.get(peerId)?.receive(data);
   }
 }
 
@@ -309,17 +316,34 @@ async function viaTrystero(
     hello.onMessage = (_data, { peerId: host }) => {
       clearTimeout(timer);
       onHost?.();
+      // Numbered both ways, so Trystero can't reorder the room's messages (`order.ts`).
+      let over = false;
       const link: Link = {
-        send: (text) => void msg.send(text, { target: host }),
-        close: () => void t.leave(),
+        send: numbered((text) => void msg.send(text, { target: host })),
+        close: () => {
+          over = true;
+          void t.leave();
+        },
         onmessage: null,
         onclose: null,
       };
+      const end = (why: string) => {
+        if (over) return;
+        over = true;
+        link.onclose?.(why);
+      };
+      const receive = inOrder(
+        (text) => link.onmessage?.(text),
+        (why) => {
+          end(why);
+          void t.leave();
+        },
+      );
       msg.onMessage = (data, { peerId }) => {
-        if (peerId === host) link.onmessage?.(data);
+        if (peerId === host) receive(data);
       };
       t.onPeerLeave = (peer) => {
-        if (peer === host) link.onclose?.('the host left');
+        if (peer === host) end('the host left');
       };
       resolve(link);
     };

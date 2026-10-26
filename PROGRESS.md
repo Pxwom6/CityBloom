@@ -78,6 +78,8 @@ Should fix:
 - [x] F13 Tests
 - [x] F14 Balance
 - [x] Minor items
+- [x] Second review: messages over Trystero arrive in order (a friend couldn't join a city that stood
+  still; `src/net/order.ts`, DECISIONS)
 
 ## Playthrough fixes (PLAYTHROUGH-FIXES.md)
 Work order: roads (P7, P2, P1, P5, P10), input and layout (P3, P4, P11, P6, P13, P14, P23, P12), economy, advice and labels (P8, P9, P15, P25, P16, P17, P19, P20, P24, P22, P21, P18, P26).
@@ -886,6 +888,12 @@ misses with either build (`startup-slow.log`).
   online failed). m31-together failed in the full batch only because m30's failed pages were left
   running; multi-page specs now close their contexts after every test (`newContext`,
   `closeContextsAfterEach` in `e2e/helpers.ts`). The joins are described under Known issues.
+- Second review (a 2-CPU cloud VM): through Trystero and a local Nostr relay, a friend joining a city
+  held still never got in (Trystero reordered the room's messages, now fixed: DECISIONS); after the
+  fix the friend joins, builds, and the two run on together to the same tick and hash, and an online
+  room does the same. f2-trystero still fails in the VM: its short-code toast lasts 9 s and expires
+  before a slow VM's first render, and its join is into a running city (the room starts at 1×), the
+  catch-up described under Known issues. Run it on the Mac.
 - The rest of the e2e suite wasn't run in the cloud (the owner's instruction): everything except
   the specs above, including review-legacy (now four saves with v24), the fix-layout and fixes-ui
   specs (eight of their tests fail in the cloud on `main` too), and the playthroughs.

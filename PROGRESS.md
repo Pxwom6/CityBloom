@@ -230,36 +230,29 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces is complete** (pull request "M34 complete: Armed forces"). **M35 Into battle is
-under way** on the same branch (its commits so far ride in that pull request; M35 joins it when
-done). Plan: `docs/plans/M35-design.md`; calls made: DECISIONS "M35".
+**M34 Armed forces is complete** (pull request #23, "M34 complete: Armed forces"). **M35 Into battle
+is nearly done** on the same branch (its commits ride in #23; M35 joins it when done). Plan:
+`docs/plans/M35-design.md`; calls made: DECISIONS "M35"; design: DESIGN §3.29; SPEC_REVIEW "M35".
 
-Done for M35, tested: the battle simulation (`src/sim/battle`: layout, battle, away; 9 + 4 + 4
-tests); raids by computer neighbours fought in the city (`src/sim/systems/raids.ts`: warning with
-radar, shelters, damage through the disasters' machinery, reports, mid-battle saves; save v28;
-the neighbours' own decisions are switched off with `RAIDS.decide` until M35's e2e passes, the
-`raidIn` test cheat starts one); expeditions (`expeditions.ts`: send with plain refusals, call back,
-travel, arrival, report, home) against computer neighbours' towns grown by the balance mayor (now
-`src/sim/ai/mayor.ts`; `src/sim/ai/town.ts`, 8,000 residents at most, kept in IndexedDB v3, grown
-in `src/client/battleWorker.ts`); the battle viewer (`?battle=`, the town read-only, its battle
-played again); on screen: battle units in both colours with wrecks, tracers, shells and smoke,
-the raid countdown, the battle bar, notices, a raid siren; war room tabs Send, Map, Reports.
-`scripts/dev/battleshot.mjs` shoots a raid (reviewed: the battle bar, the report; the
-follow-the-fighting camera was moved closer since). The cross-browser run fights an expedition and
-a raid (Chromium matches Node).
+Done for M35, tested: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided
+on their own past 3,000 residents and a year, retaliation within three months of a raid of the
+city's own), expeditions against towns grown by the balance mayor, battles between friends' cities
+through the region room (a raid on an absent friend kept for them, their own sim taking it on their
+return, a report and a replay waiting), the battle viewer, war room Send / Map / Reports, battle
+effects, notices and sirens. An adversarial review (five reviewers, every finding checked by a
+skeptic) confirmed 39 findings; all are fixed (DECISIONS "An adversarial review of M35"). Unit
+suite 755 tests in 103 files; the cross-browser run green on PR #23 (Chromium, WebKit, Firefox);
+`balance` 20 years identical to `main`.
 
 Left for M35:
-1. Screens: rerun `battleshot.mjs` (closer camera, the countdown after the warning), shoot an
-   expedition and the viewer; tutorial tips for the Send and Map tabs and the battle bar.
-2. The e2e (`e2e/m35-battle.spec.ts`): send a force through the war room, watch the battle in the
-   neighbour's town, see the damage repaired; a raid with its countdown and siren. Then switch
-   `RAIDS.decide` on (with a test that an aggressive neighbour raids a grown city).
-3. Friends' cities in a shared region (done criterion 3): forces between players' cities through the
-   region room (relay protocol 3), the battle fought from the region's save of an absent defender,
-   a replay and a report waiting for them that match the damage (`src/net/regionWar.ts`, relay
-   messages, a two-city test, an e2e).
-4. Bench a big battle (`scripts/dev/battlebench.ts` on the 100k city), the frame budget with many
-   units, balance, the cross-browser run; DESIGN §3.29, SPEC_REVIEW rows; `M35 complete:`.
+1. The e2e (`e2e/m35-battle.spec.ts`, 2 tests; `e2e/m35-friends.spec.ts`, two players) on the
+   review fixes, screenshots reviewed. The friends spec failed twice in a loaded VM before the
+   fixes (Sam's main menu slow to appear; Sam's panel slow to show the rules) and once could never
+   have passed (the Send tab couldn't reach friends: fixed).
+2. Bench: `npx tsx scripts/bench.ts 6 --big --save bench-results/city.gz` (the city isn't in a fresh
+   VM), then `npx tsx scripts/dev/battlebench.ts bench-results/city.gz` (a full raid's tick cost,
+   the whole battle at once, the message size); log the numbers below.
+3. PROGRESS numbers, `M35 complete:` commit, PR #23's title and description to include M35.
 
 ## Next tasks
 1. Finish M35 (above).

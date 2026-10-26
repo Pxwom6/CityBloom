@@ -266,6 +266,13 @@ Left for M35:
 2. M36–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
+## Performance (M35)
+- **Balance** (`npx tsx scripts/balance.ts 20`, branch and `main` back to back): careful, greedy and
+  neglectful line for line the same as `main` (only the run times differ), with raids decided by
+  neighbours, retaliation and friends' battles in.
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit and real Firefox) passes on 60b6f03,
+  with the expedition into a mayor-grown town and the raid in the war town.
+
 ## Performance (M34)
 - **Balance** (`npx tsx scripts/balance.ts 20`): careful, greedy and neglectful are line for line the
   same as `main` (only the timings differ), with M34 and M35's work so far, and again after the

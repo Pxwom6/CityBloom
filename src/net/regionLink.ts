@@ -307,10 +307,12 @@ export class RegionLink {
   /** Tell the region how this city stands (and, now and then, its picture and a save for visitors). */
   async reportNow(force = false, last = false): Promise<void> {
     if (this.state !== 'in' || !this.link) return;
-    for (const [id, b] of [...this.battlesWaiting]) await this.takeBattle(id, b);
+    if (!last) for (const [id, b] of [...this.battlesWaiting]) await this.takeBattle(id, b);
     const now = performance.now();
     const report = await this.city.report();
-    const thumb = force || now - this.lastThumb > 120_000 ? this.city.thumb?.() : null;
+    // Leaving, the save goes first and no picture is drawn (a slow device could take seconds over
+    // it, and the page is going): the region keeps the last one.
+    const thumb = !last && (force || now - this.lastThumb > 120_000) ? this.city.thumb?.() : null;
     if (thumb) this.lastThumb = now;
     this.send({ t: 'report', city: this.city.cityName(), report, ...(thumb ? { thumb } : {}) });
     if (force || now - this.lastSave > (this.opts.saveEvery ?? 300_000)) {

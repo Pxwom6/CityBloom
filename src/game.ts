@@ -1493,7 +1493,7 @@ export class Game {
     const link = this.region;
     if (link) {
       this.region = null;
-      await Promise.race([link.leave(), new Promise((r) => setTimeout(r, 3000))]);
+      await Promise.race([link.leave(), new Promise((r) => setTimeout(r, 6000))]);
     }
     location.href = location.pathname;
   }

@@ -24,6 +24,7 @@ import { ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import { TRAFFIC, JUNCTION } from '../data/balance';
 import type { TripSample } from '../sim/systems/traffic';
 import type { GameOptions } from '../sim/state';
+import type { BattleFrame } from '../sim/battle/types';
 import { GRID_CELL, GRID_RES, HEIGHT_RES, HEIGHT_STEP, MAP_SIZE } from '../data/world';
 
 type Listener = () => void;
@@ -109,6 +110,14 @@ export class ClientWorld {
   forces: ForceData | null = null;
   forcesTick = 0;
   forcesVersion = 0;
+  /**
+   * A battle in the city (M35): the latest frame and the one before (units are drawn between them
+   * as the display clock moves), and the ticks they came at. Null when none is on.
+   */
+  battle: BattleFrame | null = null;
+  battlePrev: BattleFrame | null = null;
+  battleTick = 0;
+  battleVersion = 0;
   /** Recent sim events (built, abandoned, ...) for notifications and sounds. */
   events: { kind: string; id: number; info?: Record<string, number | string> }[] = [];
   /** Fractional tick, advanced smoothly between frames for lighting. */
@@ -559,6 +568,18 @@ export class ClientWorld {
     if (diff.vehicles) {
       this.vehicles = diff.vehicles;
       this.vehiclesTick = diff.tick;
+    }
+    if (diff.battle !== undefined) {
+      if (diff.battle) {
+        this.battlePrev = this.battle?.id === diff.battle.id ? this.battle : null;
+        this.battle = diff.battle;
+        this.battleTick = diff.tick;
+      } else {
+        this.battle = null;
+        this.battlePrev = null;
+      }
+      this.battleVersion++;
+      this.emit('battle');
     }
     if (diff.forces) {
       this.forces = diff.forces;

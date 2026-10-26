@@ -22,6 +22,7 @@ import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
 import { WarRoomPanel } from './Military';
+import { BattleBar } from './Battle';
 import { EditorApp } from './Editor';
 
 function Shortcuts({ game }: { game: Game }) {
@@ -112,6 +113,7 @@ export function App({ game }: { game: Game }) {
       <DistrictsPanel />
       <RegionPanel />
       <WarRoomPanel />
+      <BattleBar />
       <RoomPanel />
       <MilestoneBanner />
       <ThoughtsFeed />

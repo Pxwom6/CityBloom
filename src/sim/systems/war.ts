@@ -697,6 +697,21 @@ export interface WarSummary {
   hq: number | null;
   /** Military buildings. */
   bases: number;
+  /**
+   * Battles (M35): a raid on its way once the city has heard of it (who, how many, the tick it
+   * arrives), the battle on now, and the last reports, newest first.
+   */
+  incoming: {
+    id: number;
+    from: string;
+    units: number;
+    arrive: number;
+    target: string;
+    near: number;
+    sheltered: number;
+  } | null;
+  battle: { id: number; from: string; start: number } | null;
+  reports: BattleReport[];
 }
 
 export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSummary | null {
@@ -767,6 +782,23 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     power: { need: Math.round(need), served: Math.round(served) },
     hq,
     bases: bases.length,
+    incoming: incomingSummary(w),
+    battle: w.battle ? { id: w.battle.id, from: w.battle.raid.name, start: w.battle.start } : null,
+    reports: [...(w.reports ?? [])].reverse(),
+  };
+}
+
+function incomingSummary(w: WarState): WarSummary['incoming'] {
+  const r = (w.incoming ?? []).find((x) => x.warned);
+  if (!r) return null;
+  return {
+    id: r.id,
+    from: r.name,
+    units: r.units.length,
+    arrive: r.arrive,
+    target: r.target,
+    near: r.near ?? 0,
+    sheltered: r.sheltered ?? 0,
   };
 }
 

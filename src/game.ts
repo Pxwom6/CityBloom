@@ -22,6 +22,8 @@ import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
 import { loadWarModels } from './client/models';
+import { formatNumber } from './ui/hooks';
+import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import type { AppInstall } from './client/install';
@@ -253,6 +255,7 @@ export class Game {
       setExtraTools(war ? 1 : 0);
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
+      if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -909,6 +912,44 @@ export class Game {
     }
   }
 
+  private lastPop = 0;
+  private lastBoom = 0;
+
+  /** A battle on screen (M35): a few toy pops for its guns and a boom now and then for its shells. */
+  private battleSounds(f: BattleFrame): void {
+    const now = performance.now();
+    if (f.shots.length && now - this.lastPop > 330) {
+      this.lastPop = now;
+      this.audio?.play('pop');
+    }
+    if (f.shots.some((s) => s.kind === 1 && s.hit) && now - this.lastBoom > 1200) {
+      this.lastBoom = now;
+      this.audio?.play('boom');
+    }
+  }
+
+  /** What a battle in the city left behind (M35). */
+  private battleReport(info: Record<string, number | string>): void {
+    const n = (v: unknown) => Number(v) || 0;
+    const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+    const head =
+      info.outcome === 'repelled'
+        ? `${String(info.from)}'s raid was beaten off`
+        : info.outcome === 'withdrew'
+          ? `${String(info.from)}'s force pulled back`
+          : `${String(info.from)}'s raiders struck their target and left`;
+    const parts: string[] = [];
+    if (n(info.collapsed)) parts.push(`${plural(n(info.collapsed), 'building')} knocked down`);
+    if (n(info.civics)) parts.push(`${plural(n(info.civics), 'city building')} to repair`);
+    if (n(info.lost)) parts.push(`${plural(n(info.lost), 'of our units', 'of our units')} knocked out`);
+    parts.push(`${plural(n(info.theirLost), 'of theirs', 'of theirs')} knocked out`);
+    this.notice(
+      'battleEnded',
+      `${head}: ${parts.join(', ')}. Crews are repairing the damage; the war room has the report.`,
+      info.outcome === 'repelled' ? 'ok' : 'info',
+    );
+  }
+
   /** What a disaster left behind, when it's over. */
   private disasterReport(info: Record<string, number | string>): void {
     const name = { earthquake: 'earthquake', tornado: 'tornado', flood: 'flood', meteor: 'meteor strike' }[
@@ -1019,6 +1060,26 @@ export class Game {
         );
       } else if (e.kind === 'bondRepaid')
         this.notice('bondRepaid', 'A war bond is repaid in full.', 'ok', undefined, false);
+      // Battles (M35).
+      else if (e.kind === 'raidWarning') {
+        const i = e.info ?? {};
+        const shelter = Number(i.near)
+          ? ` ${formatNumber(Number(i.sheltered))} of the ${formatNumber(Number(i.near))} residents nearby head for the shelters.`
+          : '';
+        this.notice(
+          `raid:${e.id}`,
+          `Sirens! ${String(i.from)} is sending ${String(i.units)} units against the city: they arrive in ${String(i.hours)} hours.${shelter}`,
+          'bad',
+        );
+        this.audio?.play('raid');
+      } else if (e.kind === 'battleStarted') {
+        this.notice(
+          `battle:${e.id}`,
+          `${String(e.info?.from)}'s force has reached the city, and the defences are fighting back.`,
+          'bad',
+        );
+        this.audio?.play('raid');
+      } else if (e.kind === 'battleEnded') this.battleReport(e.info ?? {});
       else if (e.kind === 'decayed')
         this.notice(
           'decayed',
@@ -1613,6 +1674,32 @@ export class Game {
   }
 
   /** Fly the camera to a spot (advisors, notifications), optionally opening a data map. */
+  /** Look at the battle in the city (M35): the middle of its units, from far enough to see them. */
+  followBattle(): void {
+    const f = this.world.battle;
+    if (!f?.units.length) {
+      this.openPanel('war');
+      return;
+    }
+    const live = f.units.filter((u) => u.state !== 2);
+    const list = live.length ? live : f.units;
+    const x = list.reduce((a, u) => a + u.x, 0) / list.length;
+    const z = list.reduce((a, u) => a + u.z, 0) / list.length;
+    const spread = Math.max(...list.map((u) => Math.hypot(u.x - x, u.z - z)));
+    const cur = this.renderer.controller.goal;
+    this.following = 0;
+    this.renderer.controller.setPose(
+      { x, z, distance: Math.min(900, Math.max(220, spread * 2.2)), yaw: cur.yaw, tilt: cur.tilt },
+      false,
+    );
+  }
+
+  /** Fly to a building or city building by id. */
+  flyToId(id: number): void {
+    const at = this.placeOf(id);
+    if (at) this.flyTo(at);
+  }
+
   flyTo(at: { x: number; z: number }, map?: string): void {
     this.following = 0;
     const cur = this.renderer.controller.goal;

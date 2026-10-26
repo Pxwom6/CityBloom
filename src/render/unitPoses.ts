@@ -17,7 +17,7 @@ import { buildingYaw } from './buildings';
  * z back from it, a heading of 0 faces the road (−z).
  */
 
-export type UnitActivity = 'parked' | 'drill' | 'patrol' | 'flying' | 'sailing';
+export type UnitActivity = 'parked' | 'drill' | 'patrol' | 'flying' | 'sailing' | 'battle';
 
 export interface UnitPose {
   id: number;
@@ -39,6 +39,9 @@ export interface UnitPose {
   /** Rotors and propellers: their angle (radians); 0 while still. */
   spin: number;
   doing: UnitActivity;
+  /** In a battle (M35): another side's colour, and a wreck (knocked out). */
+  color?: number;
+  wreck?: boolean;
 }
 
 /** How many units may be away from their slots at once, per base (the graphics quality's). */

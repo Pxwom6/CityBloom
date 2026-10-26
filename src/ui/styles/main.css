@@ -3771,3 +3771,105 @@ body {
 #ui[data-width='xs'] .war-groups {
   grid-template-columns: repeat(2, 1fr);
 }
+
+/* Battles (M35): the raid countdown, the battle bar, reports. */
+.raid-chip {
+  background: var(--color-negative);
+  color: #fff;
+  border-color: transparent;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.raid-chip strong {
+  font-variant-numeric: tabular-nums;
+}
+.raid-chip.fighting {
+  animation: raid-pulse 1.4s ease-in-out infinite;
+}
+@keyframes raid-pulse {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .raid-chip.fighting {
+    animation: none;
+  }
+}
+.battle-bar {
+  position: absolute;
+  top: calc(var(--space-6) + 3.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  max-width: min(36rem, calc(100vw - 2rem));
+  pointer-events: auto;
+  font-size: var(--font-size-sm);
+}
+.battle-sides {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.battle-side i {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  vertical-align: -0.05rem;
+}
+.battle-side i.ours {
+  background: var(--color-accent);
+}
+.battle-vs {
+  color: var(--color-text-muted);
+}
+.battle-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.battle-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 7rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.battle-target .bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.battle-target .bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-negative);
+}
+.battle-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.war-reports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.war-report ul {
+  margin: var(--space-1) 0 0;
+  padding-left: 1.1rem;
+}

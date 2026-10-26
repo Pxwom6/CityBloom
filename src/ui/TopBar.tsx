@@ -1,4 +1,5 @@
 import { WarRoomButton } from './Military';
+import { RaidChip } from './Battle';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
@@ -126,6 +127,7 @@ export function TopBar() {
           <WarRoomButton />
         </div>
       </div>
+      <RaidChip />
       <span class="divider" />
       <button
         class="stat stat-btn stat-date"

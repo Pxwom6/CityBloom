@@ -15,7 +15,9 @@ export type SoundName =
   | 'boom'
   | 'fanfare'
   | 'thunder'
-  | 'earth';
+  | 'earth'
+  | 'raid'
+  | 'pop';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -199,6 +201,47 @@ export const SOUNDS: Record<
     osc.start(t);
     osc.stop(t + 2.25);
     return t + 2.2;
+  },
+
+  /**
+   * A raid warning (M35): a hand-cranked siren winding slowly up, holding, and winding down, two
+   * voices a little apart, softened so it carries without grating.
+   */
+  raid: (ctx, out, t, v) => {
+    const base = 210 + v * 20;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.8);
+    g.gain.setValueAtTime(0.09, t + 3.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 4.4);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1400;
+    lp.connect(g).connect(out);
+    for (const [type, detune] of [
+      ['square', 0],
+      ['triangle', 1.006],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      const f = osc.frequency;
+      f.setValueAtTime(base * (detune || 1), t);
+      f.exponentialRampToValueAtTime(base * 2.6 * (detune || 1), t + 1.6);
+      f.setValueAtTime(base * 2.6 * (detune || 1), t + 2.8);
+      f.exponentialRampToValueAtTime(base * 1.2 * (detune || 1), t + 4.4);
+      const vg = ctx.createGain();
+      vg.gain.value = type === 'square' ? 0.35 : 0.65;
+      osc.connect(vg).connect(lp);
+      osc.start(t);
+      osc.stop(t + 4.45);
+    }
+    return t + 4.4;
+  },
+
+  /** A toy gun's pop in a battle (M35): a short cork-like knock and a little hiss. */
+  pop: (ctx, out, t, v) => {
+    burst(ctx, out, t, { colour: 'brown', filter: 'lowpass', f0: 900 + v * 300, gain: 0.12, dur: 0.12 });
+    return tone(ctx, out, t, { type: 'triangle', f0: 240 + v * 60, f1: 90, gain: 0.14, dur: 0.09 });
   },
 };
 

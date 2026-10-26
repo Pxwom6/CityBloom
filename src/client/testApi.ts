@@ -94,6 +94,31 @@ export interface TestApi {
     units: { id: number; kind: string; base: number; hp: number }[];
     orders: { id: number; kind: string; base: number; done: number; hours: number; rate: number }[];
   } | null;
+  /**
+   * A battle in the city (M35): who's fighting, units on screen and wrecks, shots and puffs drawn
+   * last frame, and the reports kept; null frame when none is on.
+   */
+  getBattle(): {
+    frame: {
+      id: string;
+      step: number;
+      units: number;
+      wrecks: number;
+      sides: { name: string; alive: number; total: number }[];
+      outcome: string | null;
+    } | null;
+    effects: { tracers: number; puffs: number };
+    drawn: number;
+    incoming: { from: string; arrive: number } | null;
+    reports: {
+      id: number;
+      outcome: string | null;
+      collapsed: number;
+      civics: number;
+      lost: number;
+      theirLost: number;
+    }[];
+  };
   /** The war room (M34): open, its top-bar button shown, the HQ's id. */
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
   /** Report to the region now (it does every 30 s by itself). */
@@ -484,6 +509,10 @@ export interface TestApi {
     groundY: number;
   };
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
+  /** Look at the battle in the city, as its button does (M35). */
+  followBattle(): void;
+  /** Open (or close) a panel by name, as its button does. */
+  openPanel(name: string): void;
   /** Change photo mode's settings directly (dev scenes). */
   setPhoto(patch: Partial<PhotoState>): void;
   /** Seasons and weather (M22): force a look on screen (null for the city's own), and read it. */
@@ -626,6 +655,33 @@ export function installTestApi(game: Game): TestApi {
     getForces: () => {
       const f = game.world.forces;
       return f ? { units: f.units.map((u) => ({ ...u })), orders: f.orders.map((o) => ({ ...o })) } : null;
+    },
+    getBattle: () => {
+      const f = game.world.battle;
+      const w = game.world.stats.war;
+      return {
+        frame: f
+          ? {
+              id: f.id,
+              step: f.step,
+              units: f.units.length,
+              wrecks: f.units.filter((u) => u.state === 2).length,
+              sides: f.sides.map((s) => ({ name: s.name, alive: s.alive, total: s.total })),
+              outcome: f.outcome,
+            }
+          : null,
+        effects: { ...game.renderer.battle.counts },
+        drawn: game.renderer.units.shown.filter((u) => u.doing === 'battle').length,
+        incoming: w?.incoming ? { from: w.incoming.from, arrive: w.incoming.arrive } : null,
+        reports: (w?.reports ?? []).map((r) => ({
+          id: r.id,
+          outcome: r.outcome,
+          collapsed: r.collapsed.length,
+          civics: r.civics.length,
+          lost: Object.values(r.lost).reduce((a, v) => a + (v ?? 0), 0),
+          theirLost: r.theirLost,
+        })),
+      };
     },
     getWarRoom: () => ({
       open: game.panel === 'war',
@@ -1172,6 +1228,8 @@ export function installTestApi(game: Game): TestApi {
       };
     },
     followNearest: (kinds) => game.followNearest(kinds),
+    followBattle: () => game.followBattle(),
+    openPanel: (name) => game.openPanel(name as Parameters<Game['openPanel']>[0]),
     setPhoto: (patch) => game.setPhoto(patch),
     setWeatherLook: (look) => {
       game.renderer.weatherOverride = look;

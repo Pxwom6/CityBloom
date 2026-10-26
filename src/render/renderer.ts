@@ -39,6 +39,7 @@ import { TrafficRenderer } from './traffic';
 import { TransitRenderer } from './transit';
 import { PortRenderer } from './ports';
 import { UnitRenderer, type UnitQuality } from './units';
+import { BattleEffects } from './battle';
 import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
@@ -153,6 +154,8 @@ export class GameRenderer {
   readonly ports: PortRenderer;
   /** The city's forces (M34): nothing is made or drawn with war off. */
   readonly units: UnitRenderer;
+  /** A battle's tracers, shells and smoke (M35). */
+  readonly battle: BattleEffects;
   readonly streetLights: StreetLightRenderer;
   /** Benches, bins and planters along the pavements (M27). */
   readonly streetProps: StreetProps;
@@ -271,6 +274,8 @@ export class GameRenderer {
     this.scene.add(this.ports.group);
     this.units = new UnitRenderer(world);
     this.scene.add(this.units.group);
+    this.battle = new BattleEffects(world);
+    this.scene.add(this.battle.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
     this.streetProps = new StreetProps(world);
@@ -352,6 +357,7 @@ export class GameRenderer {
       [this.railVehicles.group, 'railVehicles'],
       [this.ports.group, 'ports'],
       [this.units.group, 'units'],
+      [this.battle.group, 'battle'],
       [this.streetLights.group, 'streetLights'],
       [this.streetProps.group, 'streetProps'],
       [this.routeTint.group, 'routeTint'],
@@ -784,6 +790,7 @@ export class GameRenderer {
       0.35 + 0.65 * l.light,
     );
     this.disasters.update(dt, this.world.displayTick, pxPerMetre, 0.35 + 0.65 * l.light);
+    this.battle.update(this.time, pxPerMetre);
     this.camera.position.add(this.disasters.shake);
     // Trees under new buildings: rebuilt at most twice a second.
     if (this.treePoints.length && this.time - this.treeRebuildAt > 0.5) {

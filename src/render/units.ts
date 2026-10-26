@@ -23,6 +23,8 @@ import { UNIT_ROLES, type BakedUnit } from '../models/baked';
 import type { UnitKind } from '../data/war';
 import { UNIT_ROLE_COLOURS, unitModel } from './assets/unitModels';
 import { PoseCache, unitPoses, type UnitActivity, type UnitPose } from './unitPoses';
+import { UNIT } from '../data/war';
+import type { BattleFrame } from '../sim/battle/types';
 
 /**
  * The city's units on screen (phase 5, M34): one instanced mesh per unit kind and level (near, and
@@ -471,12 +473,78 @@ export class UnitRenderer {
     return d;
   }
 
+  private tintBody = new Color();
+  private tintAlt = new Color();
+  /** Distance each battle unit has rolled up to the latest frame (wheels and tracks turn by it). */
+  private rolled = new Map<string, number>();
+  private rolledVersion = -1;
+
+  /** A battle unit's colours: another side's, or the owner's; darkened for a wreck. */
+  private tint(u: UnitPose): Color {
+    this.tintBody.set(u.color ?? this.body.getHex());
+    if (u.wreck) this.tintBody.multiplyScalar(0.28);
+    this.tintAlt.copy(this.tintBody).multiplyScalar(0.55);
+    return this.tintBody;
+  }
+
+  /** The battle's units at display time: between the last two frames (`t` 0–1 from one to the next). */
+  private battlePoses(f: BattleFrame, prev: BattleFrame | null, t: number, tick: number): UnitPose[] {
+    const w = this.world;
+    const k = Math.min(1, Math.max(0, t));
+    const before = new Map((prev?.units ?? []).map((u) => [`${u.side}:${u.id}`, u]));
+    if (this.rolledVersion !== w.battleVersion) {
+      this.rolledVersion = w.battleVersion;
+      if (!prev) this.rolled.clear();
+      for (const u of f.units) {
+        const p = before.get(`${u.side}:${u.id}`);
+        if (p)
+          this.rolled.set(
+            `${u.side}:${u.id}`,
+            (this.rolled.get(`${u.side}:${u.id}`) ?? 0) + Math.hypot(u.x - p.x, u.z - p.z),
+          );
+      }
+    }
+    const out: UnitPose[] = [];
+    for (const u of f.units) {
+      const key = `${u.side}:${u.id}`;
+      const p = before.get(key) ?? u;
+      const x = p.x + (u.x - p.x) * k;
+      const z = p.z + (u.z - p.z) * k;
+      let dy = u.yaw - p.yaw;
+      if (dy > Math.PI) dy -= Math.PI * 2;
+      if (dy < -Math.PI) dy += Math.PI * 2;
+      const domain = UNIT.get(u.kind)?.domain ?? 'land';
+      const ground = domain === 'sea' ? 0 : w.heightAt(x, z);
+      const moved = Math.hypot(u.x - p.x, u.z - p.z);
+      out.push({
+        id: u.side === 0 ? -1_000_000 - Math.abs(u.id) : u.id,
+        kind: u.kind,
+        x,
+        y: ground + (domain === 'air' ? u.y : 0),
+        z,
+        yaw: p.yaw + dy * k,
+        pitch: 0,
+        bank: u.state === 2 ? 0.35 : 0,
+        turret: u.state === 2 ? 0.6 : u.aim,
+        barrel: u.state === 1 ? 0.12 : 0,
+        rolled: (this.rolled.get(key) ?? 0) - moved * (1 - k),
+        open: 0,
+        spin: domain === 'air' && u.state !== 2 ? tick * 1.9 : 0,
+        doing: 'battle',
+        color: u.side === 0 ? f.sides[0]?.color : undefined,
+        wreck: u.state === 2,
+      });
+    }
+    return out;
+  }
+
   /** Move every unit to where it is at `tick`, seen from `eye`; `night` lights their lamps. */
   update(tick: number, eye: Vector3, night: number): void {
     const w = this.world;
     this.shown.length = 0;
     const units = w.forces?.units;
-    if (!units?.length) {
+    const battle = w.battle;
+    if (!units?.length && !battle) {
       // War off, or no units yet: nothing drawn (and nothing made until there is).
       for (const k of this.kinds.values()) for (const mesh of [k.near, k.far]) if (mesh) mesh.count = 0;
       this.dots?.geometry.setDrawRange(0, 0);
@@ -491,7 +559,14 @@ export class UnitRenderer {
     const q = this.quality;
     this.uniforms.uNight.value = night;
     this.uniforms.uSlow.value = (tick * 0.06) % (Math.PI * 2);
-    const poses = unitPoses(w, tick, { drill: q.drill, patrol: q.patrol, fly: q.fly }, this.cache);
+    let poses = unitPoses(w, tick, { drill: q.drill, patrol: q.patrol, fly: q.fly }, this.cache);
+    if (battle) {
+      // A battle on (M35): its units where the battle has them; the defenders in it leave their slots.
+      const fighting = new Set(battle.units.filter((u) => u.side === 1).map((u) => u.id));
+      poses = poses.filter((p) => !fighting.has(p.id));
+      for (const p of this.battlePoses(battle, w.battlePrev, w.displayTick - (w.battleTick - 1), tick))
+        poses.push(p);
+    }
     // Sort by level and kind.
     const byKind = new Map<string, UnitPose[]>();
     const dots: UnitPose[] = [];
@@ -538,6 +613,8 @@ export class UnitRenderer {
       const ba = body.array as Float32Array;
       const aa = alt.array as Float32Array;
       list.forEach((u, i) => {
+        const body = u.color !== undefined || u.wreck ? this.tint(u) : this.body;
+        const alt = body === this.body ? this.alt : this.tintAlt;
         this.p.set(u.x, u.y, u.z);
         this.e.set(u.pitch, u.yaw, -u.bank, 'YXZ');
         this.q.setFromEuler(this.e);
@@ -548,12 +625,12 @@ export class UnitRenderer {
         pa[i * 4 + 2] = u.rolled;
         pa[i * 4 + 3] = u.open;
         ma[i * 4] = u.spin;
-        ba[i * 3] = this.body.r;
-        ba[i * 3 + 1] = this.body.g;
-        ba[i * 3 + 2] = this.body.b;
-        aa[i * 3] = this.alt.r;
-        aa[i * 3 + 1] = this.alt.g;
-        aa[i * 3 + 2] = this.alt.b;
+        ba[i * 3] = body.r;
+        ba[i * 3 + 1] = body.g;
+        ba[i * 3 + 2] = body.b;
+        aa[i * 3] = alt.r;
+        aa[i * 3 + 1] = alt.g;
+        aa[i * 3 + 2] = alt.b;
       });
       mesh.count = list.length;
       uploadRange(mesh.instanceMatrix, list.length);
@@ -570,12 +647,13 @@ export class UnitRenderer {
       const pa = pos.array as Float32Array;
       const ca = col.array as Float32Array;
       dots.forEach((u, i) => {
+        const c = u.color !== undefined || u.wreck ? this.tint(u) : this.body;
         pa[i * 3] = u.x;
         pa[i * 3 + 1] = u.y + 2;
         pa[i * 3 + 2] = u.z;
-        ca[i * 3] = this.body.r;
-        ca[i * 3 + 1] = this.body.g;
-        ca[i * 3 + 2] = this.body.b;
+        ca[i * 3] = c.r;
+        ca[i * 3 + 1] = c.g;
+        ca[i * 3 + 2] = c.b;
       });
       layer.geometry.setDrawRange(0, dots.length);
       uploadRange(pos, dots.length);

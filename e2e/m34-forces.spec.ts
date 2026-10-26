@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, openGame, serveTownViaApi, shot, skipGraphicsCheck, watchErrors } from './helpers';
+import { buildTownViaApi, openGame, shot, skipGraphicsCheck, watchErrors } from './helpers';
 import { frames, placeFromToolbar, screen, settings, state } from './ui';
 
 /**
@@ -76,38 +76,45 @@ test('M34: every military building from the toolbar, every kind of unit trained,
   await settings(page, { quality: 'low' });
   await openGame(page, '&rivals=1&seed=port&preset=coast');
   await buildTownViaApi(page);
-  await serveTownViaApi(page);
   const hz = (await state(page)).highwayZ;
-  // Money for everything, and roads out to the sea for the naval yard and the coastal gun.
+  // Services on a utility street south of the town (as scripts/dev/unitshot.mjs), money for
+  // everything, roads out to the sea for the naval yard and the coastal gun, and three months for
+  // the town to grow before the forces: they may take a quarter of its workers.
   await page.evaluate(
     async ([hz]) => {
       const g = window.__game!;
-      await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
-      const roads: { road: 'avenue' | 'street'; points: { x: number; z: number }[] }[] = [
-        {
-          road: 'avenue',
-          points: [
-            { x: 504, z: hz! },
-            { x: 1430, z: hz! },
-          ],
-        },
-        {
-          road: 'street',
-          points: [
-            { x: 1430, z: hz! - 560 },
-            { x: 1430, z: hz! },
-          ],
-        },
-      ];
-      for (const r of roads) {
-        const res = await g.dispatch({ type: 'buildRoad', ...r });
-        if (!res.ok) throw new Error(res.reason);
+      const ok = async (cmd: Parameters<typeof g.dispatch>[0]) => {
+        const r = await g.dispatch(cmd);
+        if (!r.ok) throw new Error(`${cmd.type}: ${r.reason}`);
+      };
+      await ok({ type: 'cheat', cheat: 'unlockAll' });
+      await ok({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
+      const at = (dx: number, dz: number) => ({ x: 24 + dx, z: hz! + dz });
+      let util = 0;
+      for (const dz of [230, 250, 270, 210, 290]) {
+        const pts = [at(30, dz), at(470, dz)];
+        if ((await g.preview({ type: 'buildRoad', road: 'street', points: pts })).ok) {
+          await ok({ type: 'buildRoad', road: 'street', points: pts });
+          util = dz;
+          break;
+        }
       }
-      // A second coal plant: the bases draw nearly 600 power between them.
-      if ((await g.placeCivic('coal', { x: 300, z: hz! + 170 })) === null)
-        throw new Error('no room for coal');
-      // A few hours for the town to fill its homes before the forces recruit.
-      await g.advance(60 * 20);
+      for (const x of [96, 192, 288, 384])
+        await ok({ type: 'buildRoad', road: 'street', points: [at(x, 160), at(x, util)] });
+      for (const def of ['coal', 'coal', 'pump', 'pump', 'treatment', 'landfill', 'pump'])
+        if ((await g.placeCivic(def, at(240, util))) === null) throw new Error(`no room for ${def}`);
+      for (const def of ['firestation', 'police', 'clinic', 'primary'])
+        if ((await g.placeCivic(def, at(240, 0))) === null) throw new Error(`no room for ${def}`);
+      await ok({ type: 'buildRoad', road: 'avenue', points: [at(480, 0), { x: 1430, z: hz! }] });
+      await ok({
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: 1430, z: hz! - 560 },
+          { x: 1430, z: hz! },
+        ],
+      });
+      await g.advance(1440 * 3);
     },
     [hz],
   );
@@ -210,11 +217,15 @@ test('M34: every military building from the toolbar, every kind of unit trained,
     if (base === 'vehicledepot') await shot(page, 'm34-inspector-depot');
     await page.keyboard.press('Escape');
   }
-  // A base trains its orders in turn: the airfield's fighter, helicopter and drone take five and a
-  // half months at full staff, and the bases fill their posts as the town grows (scripts/dev/forces.ts).
-  await page.evaluate(() => window.__game!.advance(1440 * 8));
-  const forces = (await page.evaluate(() => window.__game!.getForces()))!;
-  const kinds = new Set(forces.units.map((u) => u.kind));
+  // A base trains its orders in turn (the airfield's three take five and a half months at full
+  // staff), and the town's quarter of workers staffs the bases training soonest first: every kind is
+  // trained within a year here (scripts/dev/forces.ts).
+  let kinds = new Set<string>();
+  for (let month = 0; month < 14 && kinds.size < 8; month++) {
+    await page.evaluate(() => window.__game!.advance(1440));
+    const forces = (await page.evaluate(() => window.__game!.getForces()))!;
+    kinds = new Set(forces.units.map((u) => u.kind));
+  }
   for (const k of [
     'infantry',
     'tank',

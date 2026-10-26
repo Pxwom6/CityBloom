@@ -595,12 +595,29 @@ export function militaryStaffing(
   const out: MilitaryStaff = { taken: new Map(), seconds: new Map() };
   if (!sim.state.war) return out;
   const { g, costs, flows, origins, car } = r;
+  // The forces may take a share of the city's workers at most. The HQ is staffed first, then bases
+  // training units (oldest order first), each in full while the share lasts; then the rest, in
+  // build order.
+  const first = new Map<number, number>();
+  for (const o of [...sim.state.war.orders.values()].sort((a, b) => a.id - b.id))
+    if (!first.has(o.base)) first.set(o.base, o.id);
+  const bases: { c: Civic; m: MilitaryInfo; node: number }[] = [];
   for (const c of militaryCivics(sim)) {
-    const m = militaryOf(c)!;
     c.staff = 0;
+    const m = militaryOf(c)!;
     const node = civicOnline(c) ? accessNode(sim, g, c) : undefined;
     if (node === undefined || m.jobs <= 0) continue;
-    let jobs = m.jobs;
+    bases.push({ c, m, node });
+  }
+  const rank = (c: Civic) => (militaryOf(c)!.hq ? -1 : (first.get(c.id) ?? Number.MAX_SAFE_INTEGER));
+  bases.sort((a, b) => rank(a.c) - rank(b.c) || a.c.id - b.c.id);
+  let workforce = 0;
+  for (const o of origins.values()) for (const e of o.list) workforce += e.workers;
+  let spare = Math.floor(workforce * WAR.enlistShare);
+  for (const { c, m, node } of bases) {
+    const want = Math.min(m.jobs, spare);
+    if (want <= 0) continue;
+    let jobs = want;
     const loads = new Map<number, number>();
     const search = (g.hasOneWay ? dijkstra.runReverse : dijkstra.run).bind(dijkstra);
     search(
@@ -630,7 +647,8 @@ export function militaryStaffing(
     for (const [u, n] of loads) flows.addLoad(u, n);
     if (g.hasOneWay) flows.accumulateReverse(dijkstra);
     else flows.accumulate(dijkstra);
-    c.staff = round3((m.jobs - jobs) / m.jobs);
+    c.staff = round3((want - jobs) / m.jobs);
+    spare -= want - jobs;
   }
   return out;
 }
@@ -808,12 +826,17 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
   });
   const staff = c.staff ?? 0;
   const powered = c.powered ?? 0;
+  let posts = 0;
+  for (const o of militaryCivics(sim)) if (civicOnline(o)) posts += militaryOf(o)!.jobs;
+  const spare = Math.floor(sim.state.totals.workers * WAR.enlistShare);
   const stalled = !training.length
     ? null
     : !civicOnline(c)
       ? 'Closed for repairs'
       : staff < WAR.minStaffed
-        ? `Short of staff (${Math.round(staff * 100)} %): not enough residents looking for work nearby`
+        ? posts > spare
+          ? `Short of staff (${Math.round(staff * 100)} %): the forces may take a quarter of the city's workers (${formatInt(spare)}) and the bases have ${formatInt(posts)} posts; bases that started training sooner come first`
+          : `Short of staff (${Math.round(staff * 100)} %): not enough residents looking for work nearby`
         : powered < 0.5
           ? 'Short of power'
           : null;

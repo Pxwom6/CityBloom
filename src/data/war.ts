@@ -792,6 +792,11 @@ export const WAR = {
   readinessPerDay: 0.1,
   /** Units in training don't progress while their base is unpowered or understaffed below this share. */
   minStaffed: 0.25,
+  /**
+   * The forces take at most this share of the city's workers (they recruit before businesses hire);
+   * when the bases want more, every base gets the same share of its posts filled.
+   */
+  enlistShare: 0.25,
   /** War bonds: borrowing from residents (M34). */
   bonds: [
     { amount: 40_000, annualRate: 0.04, months: 60, unlockPopulation: 2_000 },

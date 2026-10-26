@@ -16,8 +16,18 @@ const months = Number(process.argv[2] ?? 5);
 const sim = Sim.create({ seed: 'port', preset: 'coast', rivals: true });
 sim.testMode = true;
 buildTown(sim);
-serveTown(sim);
 const start = sim.state.net.nodes.get(sim.state.highway.connect)!;
+if (process.env.E2E) {
+  // As e2e/helpers.ts serveTownViaApi: plants along the town's own streets, no services.
+  sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+  sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 80_000 });
+  for (const def of ['coal', 'pump', 'pump', 'treatment', 'landfill', 'coal'])
+    placeNear(def, start.x + 276, start.z + 170);
+} else serveTown(sim);
+// Months for the town to grow before the forces (E2E_MONTHS; the e2e's default is a few hours).
+const grow = Number(process.env.GROW ?? 0);
+if (grow) sim.advance(grow * TICKS_PER_MONTH);
+console.log(`town before the forces: ${sim.state.totals.population} residents`);
 sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
 const hz = start.z;
 const road = (type: 'avenue' | 'street', points: { x: number; z: number }[]) => {
@@ -83,7 +93,7 @@ const plan: [string, number, number][] = [
   ['coastalgun', 1443, -510],
 ];
 // A second coal plant: the bases draw nearly 600 power between them.
-placeNear('coal', start.x + 300, hz + 250);
+if (!process.env.E2E) placeNear('coal', start.x + 300, hz + 250);
 const ids = new Map<string, number>();
 for (const [def, x, dz] of plan) ids.set(def, placeNear(def, x, hz + dz));
 sim.advance(4 * TICKS_PER_HOUR);

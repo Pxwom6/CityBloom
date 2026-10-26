@@ -169,6 +169,31 @@ describe('armed forces (M34)', () => {
     expect(full.ok ? '' : full.reason).toMatch(/full/);
   });
 
+  it('the forces take at most a quarter of the workers: the HQ first, then bases training, oldest order first', () => {
+    const { sim } = warTown();
+    const segs = allSegments(sim);
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
+    const hq = place(sim, 'militaryhq', segs);
+    // Built before the bases that train, but idle: it waits for what's left.
+    const factory = place(sim, 'armsfactory', segs);
+    const depot = place(sim, 'vehicledepot', segs);
+    const barracks = place(sim, 'barracks', segs);
+    expect(sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' }).ok).toBe(true);
+    expect(sim.dispatch({ type: 'trainUnit', base: depot, kind: 'tank' }).ok).toBe(true);
+    sim.advance(6 * TICKS_PER_HOUR);
+    const posts = (id: number) => CIVIC.get(sim.state.civics.get(id)!.def)!.military!.jobs;
+    const staffed = (id: number) => (sim.state.civics.get(id)!.staff ?? 0) * posts(id);
+    const spare = sim.state.totals.workers * WAR.enlistShare;
+    // The town can't staff all 430 posts.
+    expect(posts(hq) + posts(factory) + posts(depot) + posts(barracks)).toBeGreaterThan(spare);
+    expect(staffed(hq) + staffed(factory) + staffed(depot) + staffed(barracks)).toBeLessThanOrEqual(spare * 1.05);
+    expect(sim.state.civics.get(hq)!.staff).toBeGreaterThan(0.9);
+    expect(sim.state.civics.get(barracks)!.staff).toBeGreaterThan(0.9);
+    expect(sim.state.civics.get(factory)!.staff).toBe(0);
+    // The town keeps most of its workers for its businesses.
+    expect(sim.state.totals.employed).toBeGreaterThan(sim.state.totals.workers * 0.5);
+  });
+
   it('materials come from the stores first, then from the region at the import price', () => {
     const { sim } = warTown();
     const segs = allSegments(sim);

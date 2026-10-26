@@ -562,7 +562,7 @@ function RegionWar({ link }: { link: RegionLink }) {
               onChange={(e) => link.setRules({ ...rules, war: (e.target as HTMLInputElement).checked })}
             />
             <span>
-              War on <small class="muted">every city raises forces; later, they may fight each other</small>
+              War on <small class="muted">every city raises forces, and they may raid each other</small>
             </span>
           </label>
           {rules.war && (

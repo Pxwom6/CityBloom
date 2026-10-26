@@ -1172,6 +1172,72 @@ for part as before (`tests/war/forces.test.ts` compares the scripted town with a
   `barsClassWith`), the inspector's military section (`CivicDetails.military`), the war room
   (`WarRoomPanel`: forces, upkeep and stores and bonds, readiness, research), Shift+M.
 
+### 3.29 Battles (phase 5, M35)
+
+A battle is its own deterministic simulation on a frozen picture of the defending city, and each
+city stays the authority over itself: whatever happens to a city reaches it as a command or through
+its own sim. Data in `src/data/battle.ts`; the battle in `src/sim/battle`; raids in
+`src/sim/systems/raids.ts`; expeditions in `src/sim/systems/expeditions.ts`; computer neighbours'
+towns in `src/sim/ai`; the page's part in `src/client/battles.ts` and `battleWorker.ts`; the screens
+in `src/ui/Battle.tsx`. `docs/plans/M35-design.md` has the numbers' reasoning.
+- **The input** (`BattleInput`): a `BattleLayout` taken from the defender's city at the moment the
+  battle starts (`battleLayout`: roads as a graph with points every 12 m, at most 4,000 structures
+  with military and targets first, their strength, guns and tags, a 32 m height grid, the ways in,
+  and the defenders' units from the city's forces at home), the attacker's force (units, route,
+  target, stance, readiness), the seed and the skirmish caps. Plain numbers in packed arrays, so it
+  travels as JSON and hashes the same everywhere.
+- **The battle** (`Battle`): steps of half a game second, two a city tick. Land units drive the
+  road graph by Dijkstra path fields towards their objective and leave the road to close in; air
+  units fly straight, boats follow the water. Everything picks a target every few steps, hits by
+  chance (from the unit and readiness, its own dice), with cover beside buildings; defences fire at
+  what they defend against, manned by staff × power. Events: `damaged`, `destroyed`, `crater`, `out`,
+  `left`, `end`. A force pulls back at its stance's losses, when its objectives are down, or at the
+  step limit; units pulling out don't fire. `Battle.hash()` and the result are what the
+  cross-browser run compares.
+- **Into the city** (`applyWarDamage`): every event goes through the disasters' machinery: homes and
+  businesses catch fire (`ignite`) or fall to rubble (`toRubble`), city buildings close for repairs
+  or are wrecked (`Civic.damage`, `wrecked`; `disastersHour` repairs them and books the cost), roads
+  crater (`roadDamage`), defenders knocked out leave the roster. Residents near the target shelter
+  (as many as there are places); those left out cost approval for three days (`raidMood`).
+- **Hosted in the city** (`WarState.battle`, `HostedBattle`): a raid on the city keeps its input and
+  the steps played; `battleTick` steps it with the city, a save mid-battle re-runs the battle to the
+  same step after a load. **Fought elsewhere and resolved here**: the page-only `battleResolve`
+  command (`instant` or `watch`) hosts or runs a battle that came from outside (a friend's raid, a
+  replay, a neighbour's town being watched); `battleReport` hands an expedition's result to the city
+  that sent it.
+- **Raids by computer neighbours** (`raidsHour` decides, `raidsTick` warns and starts them each
+  tick): past 3,000 residents and 12 months (one notice, `raidsOpen`), a rival may set off, its
+  chance an hour from its aggression and how far it outguns the city, more when hostile, less when
+  friendly, four times within 3 months of the city's own raid on it (which may come at any size,
+  `WarState.struck`); its force is a share of its forces by character. Warning: an hour, three more
+  per working radar (`warningHours`); travel by route and side (`travelHours`).
+- **Expeditions** (`sendForce`, `recallForce`, `expeditionsHour`): units leave from a working HQ, are
+  `away` until home, and on arrival the city emits `forceArrived`; the page asks the city for
+  `awayCity`, takes the neighbour's town (computer: grown once by the balance mayor in the battle
+  worker and kept in IndexedDB `towns`; friend: the region's save of their city), fights in the
+  worker (`awayInput`, `awayResult`), keeps the battle (IndexedDB `battles`) and dispatches
+  `battleReport`; the neighbour loses forces and goodwill, the force comes home with its scars and
+  mends at its bases (`mendUnits`).
+- **Computer neighbours' towns** (`growRivalTown`): from the city's seed and the neighbour's id, on
+  a preset for its kind, careful mayor on Easy, to its population or `TOWN.cap` (8,000; 1,500 in
+  test builds), sister seeds when one doesn't grow; then `armTown` builds its military by the
+  highway and `rivalDefence` mans it from the neighbour's forces and defences.
+- **Friends** (shared regions with war on): the attacker's page fights in the latest save the
+  region keeps of the friend's city (the save a city sends as its player leaves is kept whatever the
+  pace) and sends the input to the region room (`battle`, in parts, protocol 3). The room keeps it
+  for the defender (`City.pending`, eight at most, stored rows) and forwards it live if they're
+  playing; a defender coming back gets it with the welcome (`late`). Their page keeps the city as it
+  was (the replay's backdrop), dispatches `battleResolve` (instant when late, watched when live) and
+  answers `battleSeen`, which drops it from the room. The battle runs in the defender's own sim on
+  the layout the attacker saw, so a city that changed since its last save takes the damage that
+  still lands on what's there.
+- **Watching** (`?battle=<id>&back=<slot>`): the page saves the city, opens the battle's town (the
+  kept backdrop or town) read-only, re-runs the battle there tick by tick (`battleResolve watch`),
+  and "Back to my city" reopens the save. In the city, the battle draws through `BattleEffects`
+  (`src/render/battle.ts`: units from the battle's frame, tracers, shells, smoke, wrecks) and the UI
+  shows the raid chip with its countdown, the battle bar (sides, structures' health, follow), the
+  war room's Send, Map and Reports tabs, notices and the siren.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

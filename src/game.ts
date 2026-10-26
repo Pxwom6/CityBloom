@@ -517,6 +517,9 @@ export class Game {
   ): Promise<boolean> {
     if (this.readOnly) return false;
     const id = `def-${input.id}`.slice(0, 60);
+    const cmd = { type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch', replay: id } as const;
+    // Not now (a battle is on in the city already): the region link tries again later.
+    if (!(await this.client.preview(cmd)).ok) return false;
     try {
       const backdrop = await this.client.save();
       await keepTown(`replay:${id}`, backdrop);
@@ -532,12 +535,7 @@ export class Game {
     } catch {
       /* the replay is a nicety: the battle still counts */
     }
-    const r = await this.client.command({
-      type: 'battleResolve',
-      input,
-      mode: meta.late ? 'instant' : 'watch',
-      replay: id,
-    });
+    const r = await this.client.command(cmd);
     if (!r.ok) return false;
     if (meta.late)
       this.notice(
@@ -1444,6 +1442,13 @@ export class Game {
       return;
     }
     this.leaveRoom(false);
+    // A city in a shared region leaves it as its player does, keeping its place: its last save goes
+    // to the region first, so a friend's raid while it's away is fought in the city as it was left.
+    const link = this.region;
+    if (link) {
+      this.region = null;
+      await Promise.race([link.leave(), new Promise((r) => setTimeout(r, 3000))]);
+    }
     location.href = location.pathname;
   }
 

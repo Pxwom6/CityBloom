@@ -107,6 +107,8 @@ export class RegionLink {
   /** Battles coming in, in parts, and those taken already (M35). */
   private battlesIn = new Map<string, (string | null)[]>();
   private battlesTaken = new Set<string>();
+  /** Battles the city couldn't take yet (one was on already): tried again with each report. */
+  private battlesWaiting = new Map<string, { input: BattleInput; from: number; late: boolean }>();
   sent = { messages: 0, bytes: 0 };
 
   constructor(
@@ -234,12 +236,25 @@ export class RegionLink {
         } catch {
           return;
         }
-        this.battlesTaken.add(m.id);
-        const done = await (this.city.battle?.(input, { from: m.from, id: m.id, late: m.late }) ?? false);
-        if (done) this.send({ t: 'battleSeen', id: m.id });
-        else this.battlesTaken.delete(m.id);
+        await this.takeBattle(m.id, { input, from: m.from, late: m.late });
         return;
       }
+    }
+  }
+
+  /** Hand a whole battle to the city; once it has it, the region can forget it. */
+  private async takeBattle(
+    id: string,
+    b: { input: BattleInput; from: number; late: boolean },
+  ): Promise<void> {
+    if (this.battlesTaken.has(id)) return;
+    this.battlesTaken.add(id);
+    this.battlesWaiting.delete(id);
+    const done = await (this.city.battle?.(b.input, { from: b.from, id, late: b.late }) ?? false);
+    if (done) this.send({ t: 'battleSeen', id });
+    else {
+      this.battlesTaken.delete(id);
+      this.battlesWaiting.set(id, b);
     }
   }
 
@@ -267,6 +282,7 @@ export class RegionLink {
   /** Tell the region how this city stands (and, now and then, its picture and a save for visitors). */
   async reportNow(force = false, last = false): Promise<void> {
     if (this.state !== 'in' || !this.link) return;
+    for (const [id, b] of [...this.battlesWaiting]) await this.takeBattle(id, b);
     const now = performance.now();
     const report = await this.city.report();
     const thumb = force || now - this.lastThumb > 120_000 ? this.city.thumb?.() : null;
@@ -313,10 +329,11 @@ export class RegionLink {
     return r;
   }
 
-  leave(): void {
-    if (this.state === 'closed') return;
+  /** Leave the region: the city's last report and save go first (resolves once they're sent). */
+  leave(): Promise<void> {
+    if (this.state === 'closed') return Promise.resolve();
     // The save sent as the player leaves is the one the region keeps (a raid while away is fought in it).
-    void this.reportNow(true, true).finally(() => {
+    return this.reportNow(true, true).finally(() => {
       this.state = 'closed';
       for (const t of this.timers) clearInterval(t);
       this.timers = [];

@@ -3933,6 +3933,11 @@ body {
   stroke-width: 1;
   stroke-dasharray: 2 4;
 }
+.war-map-sea {
+  stroke: var(--color-accent-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 4;
+}
 .war-map-town {
   fill: #fff;
   stroke: var(--color-text-muted);

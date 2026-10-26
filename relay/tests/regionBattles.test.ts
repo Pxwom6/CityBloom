@@ -73,96 +73,116 @@ function broken(sim: Sim) {
   };
 }
 
+/**
+ * Two towns in a region at war, joined and armed: Ada with tanks, artillery and infantry, Sam with
+ * an HQ and a bunker. What Sam's city takes when a battle comes in is recorded: a backdrop kept for
+ * the replay, then the battle.
+ */
+async function regionAtWar() {
+  const room = new RegionRoom('FIGHTS', 'local', new MemoryRegionStore(), { now: () => performance.now() });
+  const ada = town('ada-war', 'Adaville');
+  const sam = town('sam-war', 'Samford');
+  // What Sam's city takes when a battle comes in: a backdrop kept for the replay, then the battle.
+  const backdrops = new Map<string, ReturnType<Sim['save']>>();
+  const taken: { input: BattleInput; late: boolean }[] = [];
+  const port = (sim: Sim): CityPort => ({
+    command: async (cmd) => sim.dispatch(cmd),
+    report: async (): Promise<RegionReport> => regionReport(sim),
+    save: async () => sim.save(),
+    cityName: () => sim.state.cityName,
+    battle: async (input, meta) => {
+      backdrops.set(meta.id, sim.save());
+      taken.push({ input, late: meta.late });
+      return sim.dispatch({ type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch' }).ok;
+    },
+  });
+  const join = async (sim: Sim, mayor: string, color: number, extra: object = {}) => {
+    const l = new RegionLink(port(sim), loopTo(room), { mayor, color, saveEvery: 0, ...extra });
+    links.push(l);
+    await l.start();
+    await flush();
+    return l;
+  };
+  const la = await join(ada.sim, 'Ada', 0, {
+    create: { name: 'Two Rivers', rules: { war: true, scale: 'skirmish' } },
+  });
+  const ls = await join(sam.sim, 'Sam', 1);
+  // War is on in both: each builds its forces.
+  for (const s of [ada.sim, sam.sim]) {
+    expect(s.state.war).toBeDefined();
+    s.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
+  }
+  ada.place('militaryhq');
+  const depot = ada.place('vehicledepot');
+  const barracks = ada.place('barracks');
+  for (const kind of ['tank', 'tank', 'artillery'] as const)
+    ada.sim.dispatch({ type: 'trainUnit', base: depot, kind });
+  for (let k = 0; k < 3; k++) ada.sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+  sam.place('militaryhq');
+  sam.place('bunker');
+  ada.sim.advance(7 * TICKS_PER_MONTH);
+  sam.sim.advance(1 * TICKS_PER_MONTH);
+  return { room, ada, sam, la, ls, backdrops, taken, join };
+}
+
+/** Ada's force raids Sam's city: fought by Ada's page in the region's save of it, reported, sent on. */
+async function raidFriend(ada: { sim: Sim }, la: RegionLink, samSlot: number) {
+  // Ada's force sets off for Sam's city and arrives.
+  await la.reportNow(true);
+  await flush();
+  const neighbour = ada.sim.state.region.neighbours.find((n) => n.player?.slot === samSlot)!;
+  expect(neighbour).toBeDefined();
+  const units = [...ada.sim.state.war!.units.values()].map((u) => u.id);
+  expect(units.length).toBeGreaterThanOrEqual(5);
+  const sent = ada.sim.dispatch({
+    type: 'sendForce',
+    units,
+    to: neighbour.id,
+    route: 'highway',
+    target: 'military',
+    stance: 'bold',
+  });
+  expect(sent.ok).toBe(true);
+  const fighting = () => ada.sim.state.war!.expeditions?.find((x) => x.state === 'fighting');
+  for (let t = 0; t < 24 * TICKS_PER_HOUR && !fighting(); t++) ada.sim.step();
+  const e = fighting()!;
+  expect(e.slot).toBe(samSlot);
+  // Ada's page: fought in the save the region keeps of Sam's city, reported, passed on.
+  const save = await la.fetchSave(samSlot);
+  const theirs = Sim.fromSave(save);
+  const input = awayInput(awayCity(ada.sim, e), theirs);
+  const result = awayResult(input, Battle.run(structuredClone(input)));
+  expect(
+    ada.sim.dispatch({ type: 'battleReport', expedition: e.id, result: { ...result, replay: input.id } }).ok,
+  ).toBe(true);
+  la.sendBattle(samSlot, input);
+  await flush();
+  return { input, result, theirs };
+}
+
+/** The battles the region keeps for a city. */
+const pendingFor = (room: RegionRoom, slot: number) =>
+  (room as unknown as { meta: { cities: { slot: number; pending?: unknown[] }[] } }).meta.cities.find(
+    (c) => c.slot === slot,
+  )!.pending;
+
 describe('battles between friends (M35)', () => {
   it('a raid on an absent friend is kept for them, taken when they come back, and reported as it happened', async () => {
-    const room = new RegionRoom('FIGHTS', 'local', new MemoryRegionStore(), { now: () => performance.now() });
-    const ada = town('ada-war', 'Adaville');
-    const sam = town('sam-war', 'Samford');
-    // What Sam's city takes when a battle comes in: a backdrop kept for the replay, then the battle.
-    const backdrops = new Map<string, ReturnType<Sim['save']>>();
-    const taken: { input: BattleInput; late: boolean }[] = [];
-    const port = (sim: Sim): CityPort => ({
-      command: async (cmd) => sim.dispatch(cmd),
-      report: async (): Promise<RegionReport> => regionReport(sim),
-      save: async () => sim.save(),
-      cityName: () => sim.state.cityName,
-      battle: async (input, meta) => {
-        backdrops.set(meta.id, sim.save());
-        taken.push({ input, late: meta.late });
-        return sim.dispatch({ type: 'battleResolve', input, mode: meta.late ? 'instant' : 'watch' }).ok;
-      },
-    });
-    const join = async (sim: Sim, mayor: string, color: number, extra: object = {}) => {
-      const l = new RegionLink(port(sim), loopTo(room), { mayor, color, saveEvery: 0, ...extra });
-      links.push(l);
-      await l.start();
-      await flush();
-      return l;
-    };
-    const la = await join(ada.sim, 'Ada', 0, {
-      create: { name: 'Two Rivers', rules: { war: true, scale: 'skirmish' } },
-    });
-    let ls = await join(sam.sim, 'Sam', 1);
-    // War is on in both: each builds its forces.
-    for (const s of [ada.sim, sam.sim]) {
-      expect(s.state.war).toBeDefined();
-      s.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
-    }
-    ada.place('militaryhq');
-    const depot = ada.place('vehicledepot');
-    const barracks = ada.place('barracks');
-    for (const kind of ['tank', 'tank', 'artillery'] as const)
-      ada.sim.dispatch({ type: 'trainUnit', base: depot, kind });
-    for (let k = 0; k < 3; k++) ada.sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
-    sam.place('militaryhq');
-    sam.place('bunker');
-    ada.sim.advance(7 * TICKS_PER_MONTH);
-    sam.sim.advance(1 * TICKS_PER_MONTH);
+    const w = await regionAtWar();
+    const { room, ada, sam, la, backdrops, taken, join } = w;
+    let ls = w.ls;
     // Sam leaves: the city as it was left is what the region keeps.
     const samSlot = ls.slot;
     const secret = ls.secret;
     ls.leave();
     links = links.filter((l) => l !== ls);
     await flush();
-    // Ada's force sets off for Sam's city and arrives.
-    await la.reportNow(true);
-    await flush();
-    const neighbour = ada.sim.state.region.neighbours.find((n) => n.player?.slot === samSlot)!;
-    expect(neighbour).toBeDefined();
-    const units = [...ada.sim.state.war!.units.values()].map((u) => u.id);
-    expect(units.length).toBeGreaterThanOrEqual(5);
-    const sent = ada.sim.dispatch({
-      type: 'sendForce',
-      units,
-      to: neighbour.id,
-      route: 'highway',
-      target: 'military',
-      stance: 'bold',
-    });
-    expect(sent.ok).toBe(true);
-    const fighting = () => ada.sim.state.war!.expeditions?.find((x) => x.state === 'fighting');
-    for (let t = 0; t < 24 * TICKS_PER_HOUR && !fighting(); t++) ada.sim.step();
-    const e = fighting()!;
-    expect(e.slot).toBe(samSlot);
-    // Ada's page: fought in the save the region keeps of Sam's city, reported, passed on.
-    const save = await la.fetchSave(samSlot);
-    const theirs = Sim.fromSave(save);
+    const { input, result, theirs } = await raidFriend(ada, la, samSlot);
+    // Fought in the city as Sam left it: Sam's HQ and bunker are there to aim at.
     expect(theirs.state.tick).toBe(sam.sim.state.tick);
-    const input = awayInput(awayCity(ada.sim, e), theirs);
-    const result = awayResult(input, Battle.run(structuredClone(input)));
-    // Sam's HQ and bunker are there to aim at, and the bunker fights back.
     expect(Battle.run(structuredClone(input)).result().objectives.aimed).toBeGreaterThan(0);
-    expect(
-      ada.sim.dispatch({ type: 'battleReport', expedition: e.id, result: { ...result, replay: input.id } })
-        .ok,
-    ).toBe(true);
-    la.sendBattle(samSlot, input);
-    await flush();
     // The region keeps it for Sam.
-    const pending = () =>
-      (room as unknown as { meta: { cities: { slot: number; pending?: unknown[] }[] } }).meta.cities.find(
-        (c) => c.slot === samSlot,
-      )!.pending;
+    const pending = () => pendingFor(room, samSlot);
     expect(pending()).toHaveLength(1);
     // Sam comes back: the battle comes with the welcome, and Sam's own sim takes it at once.
     const before = broken(sam.sim);
@@ -198,6 +218,27 @@ describe('battles between friends (M35)', () => {
     expect(r2.collapsed).toEqual(report.collapsed);
     expect(r2.civics).toEqual(report.civics);
     expect(r2.lost).toEqual(report.lost);
+  }, 240_000);
+
+  it('a raid that comes while the city is fighting another waits, and is taken once that one ends', async () => {
+    const { room, ada, sam, la, ls, taken } = await regionAtWar();
+    const samSlot = ls.slot;
+    // A computer neighbour's raid is on in Samford when Ada's battle arrives.
+    expect(sam.sim.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0 }).ok).toBe(true);
+    expect(sam.sim.state.war!.battle).toBeDefined();
+    await raidFriend(ada, la, samSlot);
+    await flush(100);
+    expect(taken).toHaveLength(1);
+    expect(taken[0]!.late).toBe(false);
+    expect(pendingFor(room, samSlot)).toHaveLength(1);
+    // That battle ends; with the next report the city takes Ada's, to watch as it happens.
+    for (let t = 0; t < 24 * TICKS_PER_HOUR && sam.sim.state.war!.battle; t++) sam.sim.step();
+    expect(sam.sim.state.war!.battle).toBeUndefined();
+    await ls.reportNow();
+    await flush(100);
+    expect(taken).toHaveLength(2);
+    expect(pendingFor(room, samSlot)).toBeUndefined();
+    expect(sam.sim.state.war!.battle?.input.attacker.name).toBe('Adaville');
   }, 240_000);
 
   it('the room reads only sensible battle messages', () => {

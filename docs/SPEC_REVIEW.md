@@ -534,3 +534,22 @@ filled in as it's done.
 | *Done:* every military building built and every kind of unit trained through the real UI | `e2e/m34-forces.spec.ts` (the kinds without research; heavy tanks, repair crews, bombers, gunboats, submarines and landing craft need M37's research, and say so) |
 | *Done:* upkeep and approval in the budget and the inspector | the budget's Forces upkeep and Defence upkeep lines and the Defence slider; the inspector's upkeep, staff, power, "feel safer" and noise lines; homes' "Feels safe" mood factor; the e2e checks each |
 | *Done:* war off plays and saves exactly as before; `balance` with rivals off unchanged | `tests/war/forces.test.ts` "peace is unchanged" (14 months, part for part, against `main`); `balance` 20 years careful, greedy and neglectful identical to `main` (PROGRESS) |
+
+## M35 Into battle
+
+| Item | Where |
+|---|---|
+| A region map: the cities, routes (highway, rail, sea lanes, air) with travel times, forces in transit as tokens, fronts | the war room's Map tab (`RegionMap`, src/ui/Battle.tsx): road and air hours to each neighbour, rail with a rail link, the sea lane with boats (`WarSummary.routes`), our tokens and the raid on its way, fronts (fighting lately or hostile), when raids may come (`war-threat`) |
+| Sending forces: units, route, target (military, industry, power, city hall); leave by the edge, arrive after the travel time, with a warning to the defender | the Send tab (`SendForce`), `sendForce`/`sendRefusal`/`recallForce`, `travelHours`; the city hall needs a declared war (M36) and says so; raids on the city warn by `warningHours` (radars) with the raid chip's countdown and the siren |
+| A deterministic battle simulation in the defender's city: roads and terrain, fire, cover, buildings hit | `src/sim/battle/battle.ts` on `battleLayout`'s picture; `tests/battle/battle.test.ts`, `layout.test.ts`, `away.test.ts` |
+| Defences and units respond on their own | defences fire at what they defend against (staff × power); defenders from the city's forces; computer towns manned by `rivalDefence` |
+| Buildings damaged, on fire, falling into rubble through the disaster system | `applyWarDamage` (`ignite`, `toRubble`, civic damage and wrecks, road craters), repairs in `disastersHour`; `tests/war/raid.test.ts` |
+| Residents shelter, then move out or come back | `shelterCount` (places in shelters near the target), `raidMood` for those left out; homes in rubble move out and regrow as after a disaster |
+| Watchable from both cities, speed and camera each player's own | a raid on the city plays in its own sim at its own speed; the attacker watches in the town (`?battle=`, the replay re-run there); a friend online watches theirs live (`battleResolve watch`); Follow the fighting |
+| The defender away: the battle runs from the latest layout the region holds; applied when they next open their city; a replay and a damage report waiting | `relay/region.ts` (`battle`, `battleSeen`, `City.pending`), `RegionLink.sendBattle`, the leaving save (`last`), `Game.takeBattle`; `relay/tests/regionBattles.test.ts`, `e2e/m35-friends.spec.ts` |
+| Computer neighbours attack and defend with simple tactics | `raidsHour` (bar, gaps, aggression × odds, hostility, retaliation), `rivalForce` by character, `RIVAL_TARGET`, cautious or bold; towns grown by the mayor (`growRivalTown`) and armed (`armTown`) |
+| Skirmishes the only scale | `BattleInput.scale: 'skirmish'`, `SKIRMISH` (targets, 12 buildings and 3 city buildings at most) |
+| Players kept informed | notices (raids may come now, sirens, battle started, our force arrived, the report, home), the raid chip and battle bar, the Reports tab, tips `raidComing` and `sendForce`, refusal reasons in the Send tab |
+| *Done:* a scripted skirmish against a computer neighbour, the same result in Chromium, WebKit and Firefox | `tests/lockstep/determinism.ts` `battle` (an expedition against a mayor-grown town, and a raid fought in the war town), `e2e-xb/determinism.spec.ts`; Chromium here, WebKit and Firefox in `.github/workflows/xbrowser.yml` |
+| *Done:* an e2e sends a force through the real UI, watches the battle and sees the damage repaired | `e2e/m35-battle.spec.ts` (and a neighbour's raid with its countdown and siren, fought and repaired) |
+| *Done:* an offline defender gets the replay and a report that matches the damage | `e2e/m35-friends.spec.ts` (two players through the UI), `relay/tests/regionBattles.test.ts` |

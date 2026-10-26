@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, openGame, shot, watchErrors } from './helpers';
-import { frames, settings, state } from './ui';
+import { openGame, shot, watchErrors } from './helpers';
+import { frames, settings } from './ui';
+import { armTown, servedTown } from './war';
 
 /**
  * M35 Into battle through the real UI. A city with rival neighbours, a military HQ, barracks and a
@@ -10,59 +11,13 @@ import { frames, settings, state } from './ui';
  * the city, reported in the war room, and repaired.
  */
 
-/** A serviced town (as e2e/m34-forces.spec.ts) with an HQ, barracks and depot, and trained units. */
+/** A serviced town with an HQ, barracks, a depot, a bunker and a shelter, and trained units. */
 async function warTown(page: Page): Promise<void> {
-  await buildTownViaApi(page);
-  const hz = (await state(page)).highwayZ;
-  await page.evaluate(
-    async ([hz]) => {
-      const g = window.__game!;
-      const ok = async (cmd: Parameters<typeof g.dispatch>[0]) => {
-        const r = await g.dispatch(cmd);
-        if (!r.ok) throw new Error(`${cmd.type}: ${r.reason}`);
-        return r;
-      };
-      await ok({ type: 'cheat', cheat: 'unlockAll' });
-      await ok({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
-      const at = (dx: number, dz: number) => ({ x: 24 + dx, z: hz! + dz });
-      let util = 0;
-      for (const dz of [230, 250, 270, 210, 290]) {
-        const pts = [at(30, dz), at(470, dz)];
-        if ((await g.preview({ type: 'buildRoad', road: 'street', points: pts })).ok) {
-          await ok({ type: 'buildRoad', road: 'street', points: pts });
-          util = dz;
-          break;
-        }
-      }
-      for (const x of [96, 192, 288, 384])
-        await ok({ type: 'buildRoad', road: 'street', points: [at(x, 160), at(x, util)] });
-      for (const def of ['coal', 'coal', 'pump', 'pump', 'treatment', 'landfill', 'pump'])
-        if ((await g.placeCivic(def, at(240, util))) === null) throw new Error(`no room for ${def}`);
-      for (const def of ['firestation', 'police', 'clinic', 'primary'])
-        if ((await g.placeCivic(def, at(240, 0))) === null) throw new Error(`no room for ${def}`);
-      await g.advance(1440 * 3);
-      const place = async (def: string, near: { x: number; z: number }) => {
-        const id = await g.placeCivic(def, near);
-        if (id === null) throw new Error(`no room for ${def}`);
-        return id;
-      };
-      await place('militaryhq', at(300, -160));
-      const barracks = await place('barracks', at(380, -160));
-      const depot = await place('vehicledepot', at(200, 160));
-      await place('bunker', at(100, -160));
-      await place('shelter', at(200, -160));
-      for (let k = 0; k < 4; k++) await ok({ type: 'trainUnit', base: barracks, kind: 'infantry' });
-      for (const kind of ['tank', 'transport', 'tank'] as const)
-        await ok({ type: 'trainUnit', base: depot, kind });
-      for (let m = 0; m < 10; m++) {
-        await g.advance(1440);
-        const f = g.getForces();
-        if (f && f.units.length >= 7 && !f.orders.length) break;
-      }
-    },
-    [hz],
-  );
-  expect((await page.evaluate(() => window.__game!.getForces()))!.units.length).toBeGreaterThanOrEqual(7);
+  await servedTown(page);
+  await armTown(page, ['militaryhq', 'barracks', 'vehicledepot', 'bunker', 'shelter'], {
+    infantry: 4,
+    vehicles: ['tank', 'transport', 'tank'],
+  });
 }
 
 test('M35: a force sent from the war room raids a neighbour, is watched there, and the town repairs', async ({

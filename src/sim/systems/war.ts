@@ -724,6 +724,8 @@ export interface WarSummary {
   reports: BattleReport[];
   /** Whether neighbours may raid yet, and those that may answer a raid of the city's own. */
   threat: { open: boolean; answering: number[] };
+  /** The routes a force could take besides road and air: rail with a rail link, sea with ships. */
+  routes: { rail: boolean; sea: boolean };
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -828,6 +830,10 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     battle: w.battle ? { id: w.battle.id, from: w.battle.raid.name, start: w.battle.start } : null,
     reports: [...(w.reports ?? [])].reverse(),
     threat: raidThreat(sim),
+    routes: {
+      rail: !!s.railway,
+      sea: [...w.units.values()].some((u) => UNIT.get(u.kind)?.domain === 'sea'),
+    },
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

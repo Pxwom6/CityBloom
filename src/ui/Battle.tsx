@@ -444,8 +444,13 @@ export function RegionMap() {
             <g key={n.id} data-testid={`map-${n.id}`}>
               <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class={`war-map-route ${front ? 'front' : ''}`} />
               <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class="war-map-air" transform="translate(6 -6)" />
+              {w.routes.sea && (
+                <line x1={p.x} y1={p.y} x2={me.x} y2={me.y} class="war-map-sea" transform="translate(-6 6)" />
+              )}
               <text x={label.x} y={label.y} class="war-map-hours">
-                {hours} h · air {travelHours('air', n.side, [])} h
+                road {hours} h{w.routes.rail && ` · rail ${travelHours('rail', n.side, [])} h`}
+                {w.routes.sea && ` · sea ${travelHours('sea', n.side, [])} h`} · air{' '}
+                {travelHours('air', n.side, [])} h
               </text>
               <circle
                 cx={p.x}
@@ -515,9 +520,9 @@ export function RegionMap() {
           })()}
       </svg>
       <p class="muted">
-        Lines are the roads between the towns, with the hours a force takes by road and by air. Squares are
-        forces on the move: ours in blue, theirs in red. A front is where there's been fighting lately or
-        feelings are hostile.
+        Lines are the roads between the towns (dotted: the air route; dashed blue: the sea lane, with ships),
+        with the hours a force takes each way, and by rail with a rail link. Squares are forces on the move:
+        ours in blue, theirs in red. A front is where there's been fighting lately or feelings are hostile.
       </p>
       <p class="muted" data-testid="war-threat">
         {w.threat.open

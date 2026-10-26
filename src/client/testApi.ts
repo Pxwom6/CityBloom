@@ -110,13 +110,17 @@ export interface TestApi {
     effects: { tracers: number; puffs: number };
     drawn: number;
     incoming: { from: string; arrive: number } | null;
+    /** Newest first: the other side, whether we went to them, and (away) the targets aimed at. */
     reports: {
       id: number;
+      other: string;
+      ours: boolean;
       outcome: string | null;
       collapsed: number;
       civics: number;
       lost: number;
       theirLost: number;
+      aimed: number | null;
     }[];
   };
   /**
@@ -685,11 +689,14 @@ export function installTestApi(game: Game): TestApi {
         incoming: w?.incoming ? { from: w.incoming.from, arrive: w.incoming.arrive } : null,
         reports: (w?.reports ?? []).map((r) => ({
           id: r.id,
+          other: r.other,
+          ours: r.ours,
           outcome: r.outcome,
           collapsed: r.collapsed.length,
           civics: r.civics.length,
           lost: Object.values(r.lost).reduce((a, v) => a + (v ?? 0), 0),
           theirLost: r.theirLost,
+          aimed: r.away?.objectives.aimed ?? null,
         })),
       };
     },

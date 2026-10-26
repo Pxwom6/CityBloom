@@ -18,7 +18,7 @@ import { RNG_STREAMS } from './state';
 const f64 = new Float64Array(1);
 const u32 = new Uint32Array(f64.buffer);
 
-class Mixer {
+export class Mixer {
   private h1 = 0x811c9dc5;
   private h2 = 0x01000193;
   num(v: number): void {

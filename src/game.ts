@@ -64,6 +64,7 @@ import {
   saveSettings,
   type Settings,
 } from './client/settings';
+import { typingIn } from './client/keys';
 
 type Listener = () => void;
 
@@ -813,9 +814,8 @@ export class Game {
     if (!this.pingKey) {
       // Shift+G over the map: "look here" for the others.
       this.pingKey = (e: KeyboardEvent) => {
-        const t = e.target as HTMLElement | null;
         if (e.code !== 'KeyG' || !e.shiftKey || e.metaKey || e.ctrlKey || !this.net || !this.here.at) return;
-        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (typingIn(e)) return;
         this.pingAt({ x: this.here.at[0], z: this.here.at[1] });
       };
       window.addEventListener('keydown', this.pingKey);

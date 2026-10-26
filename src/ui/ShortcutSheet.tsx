@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { isMac, modKey } from '../client/platform';
 import { useGameUpdates } from './hooks';
+import { typingIn } from '../client/keys';
 
 type Row = [what: string, keys: string[]];
 
@@ -63,8 +64,7 @@ export function ShortcutSheet() {
   const game = useGameUpdates(200);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (typingIn(e)) return;
       if (game.screen) return;
       if (e.key === '?') {
         e.preventDefault();

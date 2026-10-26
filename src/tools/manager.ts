@@ -12,6 +12,7 @@ import { DistrictTool } from './districtTool';
 import { TerrainTool } from './terrainTool';
 import { MapTool } from './mapTool';
 import { PingTool } from './pingTool';
+import { typingIn } from '../client/keys';
 
 export type ToolId =
   | 'select'
@@ -238,8 +239,7 @@ export class ToolManager {
   }
 
   private onKey(e: KeyboardEvent): void {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    if (typingIn(e)) return;
     // Menus handle their own keys.
     if (this.game.screen) return;
     if (this.game.photo) {

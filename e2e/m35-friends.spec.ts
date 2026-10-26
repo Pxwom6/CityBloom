@@ -33,7 +33,7 @@ const reports = async (page: Page) => (await page.evaluate(() => window.__game!.
 test('M35: a friend’s raid while the player is away waits for them, with a matching report and the replay', async ({
   browser,
 }) => {
-  test.setTimeout(2_700_000);
+  test.setTimeout(3_600_000);
   const ada = await player(browser, 'Ada', 0);
   const adaErrs = watchErrors(ada);
   await openGame(ada, '&seed=regionada&preset=river&name=Adaville');

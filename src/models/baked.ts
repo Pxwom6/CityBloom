@@ -78,6 +78,13 @@ export interface BakedModel {
   trees: number[];
   /** Tops of smoke_stack parts: x, y, z each. */
   stacks: number[];
+  /**
+   * War buildings (phase 5) only: what they build below ground (a quay, a dry dock, a basement
+   * ramp), as boxes across the site, x0, z0, x1, z1 and the lowest point (m) each. The lot base
+   * leaves its top out over them and its stone sides open above that depth where one meets an
+   * edge. Absent on every other model.
+   */
+  pits?: number[];
   /** Triangles in the file, drawn near, and drawn far. */
   counts: { file: number; near: number; far: number; sky: number };
 }

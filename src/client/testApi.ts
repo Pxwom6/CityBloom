@@ -1,7 +1,7 @@
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
 import { Vector3, type Mesh } from 'three';
-import { CIVIC } from '../data/civic';
+import { CIVIC, type CivicDef } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Game } from '../game';
@@ -27,6 +27,7 @@ import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 import type { Stamped } from '../sim/lockstep';
 import { readSlot } from './saves';
+import { loadWarModels, warModelsAsked } from './models';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -317,6 +318,12 @@ export interface TestApi {
   getHandDesigns(): { id: string; kind: 'zoned' | 'civic' | 'annex'; def: string; w: number; d: number }[];
   /** A civic building's site, in metres. */
   civicSize(def: string): { w: number; d: number };
+  /**
+   * The war models (phase 5): fetch them now, as a city with war on does (once a page), and draw
+   * the military buildings again with them; and what this page has asked for and loaded.
+   */
+  loadWarModels(): Promise<{ models: number; units: number }>;
+  getWarModels(): { asked: boolean; designs: string[]; units: string[] };
   /** Dev (phase 3): civic buildings side by side, wrapping after `width` metres; each with its add-ons, fill and stage. */
   showCivics(
     items: { def: string; variant?: number; modules?: string[]; fill?: number; stage?: number }[],
@@ -1140,7 +1147,7 @@ export function installTestApi(game: Game): TestApi {
       let z = at.z;
       let deep = 0;
       for (const it of items) {
-        const def = CIVIC.get(it.def);
+        const def = CIVIC.get(it.def) ?? warStandIn(it.def);
         if (!def) continue;
         if (x > at.x && x + def.w > at.x + width) {
           x = at.x;
@@ -1290,6 +1297,15 @@ export function installTestApi(game: Game): TestApi {
     getHandDesigns: () =>
       handmade.list().map((m) => ({ id: m.id, kind: m.kind, def: m.def, w: m.w, d: m.d })),
     civicSize: (def) => ({ w: CIVIC.get(def)?.w ?? 0, d: CIVIC.get(def)?.d ?? 0 }),
+    loadWarModels: async () => {
+      const got = await loadWarModels();
+      game.renderer.civics.redraw((def) => CIVIC.get(def)?.category === 'military');
+      return got;
+    },
+    getWarModels: () => {
+      const { designs, units } = handmade.warList();
+      return { asked: warModelsAsked(), designs: designs.map((m) => m.id), units: units.map((u) => u.id) };
+    },
     showProjects: (at) => {
       const w = game.world;
       const upserts: CivicData[] = [];
@@ -1330,6 +1346,30 @@ export function installTestApi(game: Game): TestApi {
   };
   window.__game = api;
   return api;
+}
+
+/**
+ * Dev: a war building the game doesn't have yet (M37, M40) but has a hand-made design loaded, as a
+ * stand-in civic on this page only (never the sim's), so `showCivics` can lay it out to look at.
+ */
+function warStandIn(id: string): CivicDef | undefined {
+  const m = handmade.all('civic', id)[0];
+  if (!m) return undefined;
+  const def: CivicDef = {
+    id,
+    name: id,
+    category: 'military',
+    dept: 'defence',
+    w: m.w,
+    d: m.d,
+    cost: 0,
+    upkeep: 0,
+    blurb: 'A war building not in the game yet (dev).',
+    unlockPopulation: 0,
+    model: id,
+  };
+  CIVIC.set(id, def);
+  return def;
 }
 
 function countZones(game: Game): { R: number; C: number; I: number } {

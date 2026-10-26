@@ -237,6 +237,7 @@ import {
   diplomacyHour,
   diplomacyMonth,
   endPact,
+  fallCheat,
   proposalCheat,
   propose,
   setNeutral,
@@ -1224,6 +1225,10 @@ export class Sim {
             this.markNetworkChanged();
           }
           return ok(0);
+        }
+        if (cmd.cheat === 'fall') {
+          if (!this.testMode) return fail('Test mode only');
+          return fallCheat(this, cmd.neighbour, dryRun);
         }
         if (cmd.cheat === 'proposal') {
           if (!this.testMode) return fail('Test mode only');

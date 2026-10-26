@@ -1154,6 +1154,18 @@ export function proposalCheat(sim: Sim, to: number, raw: Term[], dryRun: boolean
   return ok(0);
 }
 
+/** Test mode: the city falls to this neighbour at once, as if it had held the HQ (the `fall` cheat). */
+export function fallCheat(sim: Sim, to: number, dryRun: boolean): CommandResult {
+  const n = neighbourOf(sim, to);
+  if (!n?.rival || n.player) return fail('No such rival');
+  if (!sim.state.war) return fail('War is off in this city');
+  if (dryRun) return ok(0);
+  const war = warWith(sim, to) ?? startWarWith(sim, n, 'total', 'them', 'A test of arms');
+  war.hold = { by: 'them', since: sim.state.tick - DIPLOMACY.conquestHours * H };
+  conquer(sim, war);
+  return ok(0);
+}
+
 // ----- Each hour and each month -----
 
 /** Each hour, in the war hour: wars open, holds run, proposals are answered and lapse. */

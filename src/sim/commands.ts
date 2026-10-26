@@ -70,6 +70,8 @@ export type Command =
   | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number; seat?: boolean }
   /** Test mode (M36): a computer neighbour puts these terms to the city. */
   | { type: 'cheat'; cheat: 'proposal'; neighbour: number; terms: Term[] }
+  /** Test mode (M36): the city falls to a computer neighbour at once. */
+  | { type: 'cheat'; cheat: 'fall'; neighbour: number }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */

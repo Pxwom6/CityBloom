@@ -121,5 +121,21 @@ test('M36: proposals, a declared war, a treaty with tribute and a neutral stance
   await expect(page.getByTestId('dip-standing')).toContainText('Neutral');
   await expect(page.getByTestId(`dip-declare-${b!.id}`)).toBeDisabled();
   await shot(page, 'm36-neutral');
+
+  // --- A city that falls (the cheat stands in for a total war lost): its player chooses. ---
+  await page.evaluate(
+    async ([id]) => {
+      const r = await window.__game!.dispatch({ type: 'cheat', cheat: 'fall', neighbour: id! });
+      if (!r.ok) throw new Error(r.reason);
+    },
+    [b!.id],
+  );
+  await expect(page.getByTestId('fallen-card')).toBeVisible();
+  await expect(page.getByTestId('fallen-card')).toContainText(b!.name);
+  await shot(page, 'm36-fallen');
+  await page.getByTestId('fallen-play-on').click();
+  await expect(page.getByTestId('fallen-card')).toHaveCount(0);
+  await expect(page.getByTestId('dip-vassal')).toContainText(`${b!.name}’s vassal`);
+  await shot(page, 'm36-vassal');
   errs.check();
 });

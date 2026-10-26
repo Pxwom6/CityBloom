@@ -103,6 +103,8 @@ test('M34: every military building from the toolbar, every kind of unit trained,
         const res = await g.dispatch({ type: 'buildRoad', ...r });
         if (!res.ok) throw new Error(res.reason);
       }
+      // A second coal plant: the bases draw nearly 600 power between them.
+      if ((await g.placeCivic('coal', { x: 300, z: hz! + 170 })) === null) throw new Error('no room for coal');
       // A few hours for the town to fill its homes before the forces recruit.
       await g.advance(60 * 20);
     },
@@ -207,8 +209,9 @@ test('M34: every military building from the toolbar, every kind of unit trained,
     if (base === 'vehicledepot') await shot(page, 'm34-inspector-depot');
     await page.keyboard.press('Escape');
   }
-  // Training takes up to three months for the fighter and the patrol boat at full staff and power.
-  await page.evaluate(() => window.__game!.advance(1440 * 5));
+  // A base trains its orders in turn: the airfield's fighter, helicopter and drone take five and a
+  // half months at full staff, and the bases fill their posts as the town grows (scripts/dev/forces.ts).
+  await page.evaluate(() => window.__game!.advance(1440 * 8));
   const forces = (await page.evaluate(() => window.__game!.getForces()))!;
   const kinds = new Set(forces.units.map((u) => u.kind));
   for (const k of [

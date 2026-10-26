@@ -1,4 +1,5 @@
 import { RegionPanel } from './Region';
+import { RoomPanel } from './Friends';
 import { useEffect, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { DebugPanel } from './DebugPanel';
@@ -105,6 +106,7 @@ export function App({ game }: { game: Game }) {
       <GoalsPanel />
       <DistrictsPanel />
       <RegionPanel />
+      <RoomPanel />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

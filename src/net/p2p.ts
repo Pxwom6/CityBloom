@@ -1,0 +1,248 @@
+/**
+ * Peer-to-peer rooms (M30): the host's browser runs the room itself, and friends connect to it over
+ * WebRTC data channels. Two ways to find each other:
+ *
+ * - through our relay's signalling (`/signal/CODE`), when online rooms are set up (and the local
+ *   relay in development and tests);
+ * - with no server of ours at all, through Trystero over public Nostr relays (DECISIONS, M30).
+ *
+ * Public STUN servers find a way through home routers; when two players still can't connect, the
+ * guest is told so plainly and offered an online room.
+ */
+import { Room, MemoryStore, type Conn } from '../../relay/room';
+import type { RoomMsg } from '../../relay/protocol';
+import { dataChannelLink, loopbackPair, webSocketLink, type Link } from './link';
+
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+];
+
+/** The words a guest sees when no direct connection could be made. */
+export const P2P_FAILED =
+  "Couldn't connect directly to the host's computer (some home and office networks block it). Ask them to host an online room instead.";
+
+export const TRYSTERO_APP = 'citybloom-rooms-v1';
+
+/** How a peer-to-peer room's players find each other: our relay's signalling, or Trystero. */
+export type Signalling = { kind: 'relay'; url: string } | { kind: 'trystero' };
+
+/** Attach a link to a room as one more connection. */
+export function attach(room: Room, link: Link): Conn {
+  const conn: Conn = {
+    send: (m: RoomMsg) => link.send(JSON.stringify(m)),
+    close: () => link.close(),
+  };
+  room.open(conn);
+  link.onmessage = (t) => room.message(conn, t);
+  link.onclose = () => room.closed(conn);
+  return conn;
+}
+
+/** Wait until ICE gathering is done (non-trickle: one offer or answer carries every candidate). */
+function gathered(pc: RTCPeerConnection, ms = 4000): Promise<void> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(t);
+        resolve();
+      }
+    });
+  });
+}
+
+/** The host's side: a room in this page, its own game on a loopback, guests over data channels. */
+export class P2PHost {
+  readonly room: Room;
+  private stops: (() => void)[] = [];
+  /** Guests connected now (for the lobby). */
+  guests = 0;
+
+  constructor(
+    readonly code: string,
+    private readonly signalling: Signalling,
+  ) {
+    this.room = new Room(code, 'p2p', new MemoryStore(), {
+      now: () => performance.now(),
+      random: Math.random,
+    });
+  }
+
+  /** The host's own game reaches the room through this. */
+  connectSelf(): Promise<Link> {
+    const [mine, theirs] = loopbackPair();
+    attach(this.room, theirs);
+    return Promise.resolve(mine);
+  }
+
+  async listen(): Promise<void> {
+    if (this.signalling.kind === 'relay') await this.listenRelay(this.signalling.url);
+    else await this.listenTrystero();
+  }
+
+  close(): void {
+    for (const s of this.stops) s();
+    this.stops = [];
+  }
+
+  private async listenRelay(url: string): Promise<void> {
+    const sig = await webSocketLink(`${url}/signal/${this.code}`);
+    this.stops.push(() => sig.close());
+    const peers = new Map<number, RTCPeerConnection>();
+    sig.onmessage = (text) => {
+      const m = JSON.parse(text) as { t: string; from?: number; data?: string; id?: number };
+      // (A guest leaves signalling once its data channel is open: that isn't it leaving the room.)
+      if (m.t === 'gone' && m.id) peers.delete(m.id);
+      if (m.t !== 'from' || !m.from || !m.data) return;
+      const from = m.from;
+      const d = JSON.parse(m.data) as { kind: string; sdp: string };
+      if (d.kind !== 'offer') return;
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      peers.set(from, pc);
+      pc.ondatachannel = (e) => {
+        const link = dataChannelLink(e.channel);
+        if (e.channel.readyState === 'open') attach(this.room, link);
+        else e.channel.addEventListener('open', () => attach(this.room, link), { once: true });
+        this.guests++;
+        e.channel.addEventListener('close', () => {
+          this.guests--;
+          pc.close();
+        });
+      };
+      void (async () => {
+        await pc.setRemoteDescription({ type: 'offer', sdp: d.sdp });
+        await pc.setLocalDescription(await pc.createAnswer());
+        await gathered(pc);
+        sig.send(
+          JSON.stringify({
+            t: 'to',
+            to: from,
+            data: JSON.stringify({ kind: 'answer', sdp: pc.localDescription!.sdp }),
+          }),
+        );
+      })();
+    };
+    sig.send(JSON.stringify({ t: 'host' }));
+  }
+
+  private async listenTrystero(): Promise<void> {
+    const { joinRoom } = await import('trystero');
+    const t = joinRoom({ appId: TRYSTERO_APP, rtcConfig: { iceServers: ICE_SERVERS } }, this.code);
+    this.stops.push(() => void t.leave());
+    const msg = t.makeAction<string>('room');
+    const hello = t.makeAction<string>('host');
+    const links = new Map<string, Link>();
+    t.onPeerJoin = (peer) => {
+      hello.send('host', { target: peer });
+      const link: Link = {
+        send: (text) => void msg.send(text, { target: peer }),
+        close: () => links.delete(peer),
+        onmessage: null,
+        onclose: null,
+      };
+      links.set(peer, link);
+      attach(this.room, link);
+      this.guests++;
+    };
+    t.onPeerLeave = (peer) => {
+      const link = links.get(peer);
+      links.delete(peer);
+      if (link) {
+        this.guests--;
+        link.onclose?.('left');
+      }
+    };
+    msg.onMessage = (data, { peerId }) => links.get(peerId)?.onmessage?.(data);
+  }
+}
+
+/** A guest's way to the host's room: resolves with a link once the data channel is open. */
+export function p2pConnect(code: string, signalling: Signalling, timeoutMs = 20_000): Promise<Link> {
+  return signalling.kind === 'relay'
+    ? viaRelay(code, signalling.url, timeoutMs)
+    : viaTrystero(code, timeoutMs);
+}
+
+async function viaRelay(code: string, url: string, timeoutMs: number): Promise<Link> {
+  const sig = await webSocketLink(`${url}/signal/${code}`);
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const dc = pc.createDataChannel('room', { ordered: true });
+  const link = dataChannelLink(dc);
+  return new Promise<Link>((resolve, reject) => {
+    let host = 0;
+    let done = false;
+    const finish = (err: Error | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      sig.close();
+      if (err) {
+        pc.close();
+        reject(err);
+      } else resolve(link);
+    };
+    const timer = setTimeout(
+      () => finish(new Error(host ? P2P_FAILED : 'No host is waiting with that code')),
+      timeoutMs,
+    );
+    const offer = async () => {
+      await pc.setLocalDescription(await pc.createOffer());
+      await gathered(pc);
+      sig.send(
+        JSON.stringify({
+          t: 'to',
+          to: host,
+          data: JSON.stringify({ kind: 'offer', sdp: pc.localDescription!.sdp }),
+        }),
+      );
+    };
+    sig.onmessage = (text) => {
+      const m = JSON.parse(text) as { t: string; host?: number; id?: number; from?: number; data?: string };
+      if ((m.t === 'you' && m.host) || m.t === 'host') {
+        if (host) return;
+        host = m.t === 'you' ? m.host! : m.id!;
+        void offer();
+      } else if (m.t === 'from' && m.from === host && m.data) {
+        const d = JSON.parse(m.data) as { kind: string; sdp: string };
+        if (d.kind === 'answer') void pc.setRemoteDescription({ type: 'answer', sdp: d.sdp });
+      }
+    };
+    dc.addEventListener('open', () => finish(null), { once: true });
+    pc.addEventListener('connectionstatechange', () => {
+      if (pc.connectionState === 'failed') finish(new Error(P2P_FAILED));
+    });
+  });
+}
+
+async function viaTrystero(code: string, timeoutMs: number): Promise<Link> {
+  const { joinRoom } = await import('trystero');
+  const t = joinRoom({ appId: TRYSTERO_APP, rtcConfig: { iceServers: ICE_SERVERS } }, code, {
+    onJoinError: () => undefined,
+  });
+  const msg = t.makeAction<string>('room');
+  const hello = t.makeAction<string>('host');
+  return new Promise<Link>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      void t.leave();
+      reject(new Error(`${P2P_FAILED} (or no host is waiting with that code)`));
+    }, timeoutMs);
+    hello.onMessage = (_data, { peerId: host }) => {
+      clearTimeout(timer);
+      const link: Link = {
+        send: (text) => void msg.send(text, { target: host }),
+        close: () => void t.leave(),
+        onmessage: null,
+        onclose: null,
+      };
+      msg.onMessage = (data, { peerId }) => {
+        if (peerId === host) link.onmessage?.(data);
+      };
+      t.onPeerLeave = (peer) => {
+        if (peer === host) link.onclose?.('the host left');
+      };
+      resolve(link);
+    };
+  });
+}

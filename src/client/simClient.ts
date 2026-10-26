@@ -9,6 +9,7 @@ import type {
   WorkerToMain,
 } from '../sim/protocol';
 import type { Stamped } from '../sim/lockstep';
+import type { SimDriver } from '../net/driver';
 import type { SaveFile } from '../sim/save';
 import type { GameOptions } from '../sim/state';
 import type { MapData } from '../sim/terrain/customMap';
@@ -23,7 +24,7 @@ export type SharedMessage = Extract<
 type SharedListener = (msg: SharedMessage) => void;
 
 /** Typed wrapper around the sim worker: request/reply by id, frames to listeners. */
-export class SimClient {
+export class SimClient implements SimDriver {
   private worker: Worker;
   private nextId = 1;
   private pending = new Map<number, (v: unknown) => void>();
@@ -31,6 +32,11 @@ export class SimClient {
   private sharedListeners: SharedListener[] = [];
   private readyResolve: ((s: Snapshot) => void) | null = null;
   private readyReject: ((e: Error) => void) | null = null;
+  /** The sim's tick and, in a shared city, how far behind the room it is (from the latest frame). */
+  tick = 0;
+  behind = 0;
+  /** Test builds pass test mode on to every city the worker opens. */
+  testMode = false;
   onError: (message: string) => void = (m) => console.error(`[sim] ${m}`);
 
   constructor() {
@@ -50,6 +56,8 @@ export class SimClient {
         this.readyResolve = this.readyReject = null;
         break;
       case 'frame':
+        this.tick = msg.diff.stats.tick;
+        this.behind = msg.perf.behind ?? 0;
         for (const l of this.frameListeners) l(msg.diff, msg.perf, msg.speed);
         break;
       case 'reply': {
@@ -135,6 +143,11 @@ export class SimClient {
     this.post({ type: 'share', player, lastSeq });
   }
 
+  /** Test builds: knock this machine's city out of step. */
+  perturb(): void {
+    this.post({ type: 'perturb' });
+  }
+
   unshare(): void {
     this.post({ type: 'unshare' });
   }
@@ -145,11 +158,11 @@ export class SimClient {
   }
 
   /** Join or resync from a room snapshot. */
-  loadShared(snapshot: SharedSnapshot, player: number, testMode = false): Promise<Snapshot> {
+  loadShared(snapshot: SharedSnapshot, player: number, resync = false): Promise<Snapshot> {
     return new Promise((resolve, reject) => {
       this.readyResolve = resolve;
       this.readyReject = reject;
-      this.post({ type: 'loadShared', snapshot, player, testMode });
+      this.post({ type: 'loadShared', snapshot, player, testMode: this.testMode, resync });
     });
   }
 

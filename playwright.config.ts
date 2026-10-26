@@ -24,10 +24,19 @@ export default defineConfig({
       args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
     },
   },
-  webServer: {
-    command: `node e2e/serve.mjs dist-e2e ${PORT} ${E2E_BASE}`,
-    url: `http://localhost:${PORT}${E2E_BASE}`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `node e2e/serve.mjs dist-e2e ${PORT} ${E2E_BASE}`,
+      url: `http://localhost:${PORT}${E2E_BASE}`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect.
+    {
+      command: 'npx tsx relay/local.ts 8787',
+      url: 'http://localhost:8787/health',
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+  ],
 });

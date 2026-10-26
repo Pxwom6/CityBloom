@@ -58,6 +58,7 @@ function runTicks(n: number): void {
 function runShared(): void {
   const ls = lockstep!;
   const t0 = performance.now();
+  if (ls.behind === 0 && ls.pending) ls.run(0);
   while (ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
     timeTick(() => ls.run(1));
     // The full check at each month's end (about 40 ms at 100k residents, outside the tick).
@@ -117,12 +118,18 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
   if (eventHash !== undefined) lockstep.eventHash = eventHash;
   s.viewer = player;
   lastChecksum = s.tick;
+  // At a settle every machine carries on from a fresh copy of the saved city (Lockstep.rebirth):
+  // the page's mirror is brought up to date from the old one.
+  lockstep.onRebirth = (old) => {
+    sim = lockstep!.sim;
+    sim.takeOverFrom(old);
+  };
   lockstep.onApplied = (a) => {
     if (a.ev.kind === 'cmd') applied.push(a);
-    else if (a.ev.taker === player) {
+    else if (a.ev.taker === player && a.save) {
       const snapshot: SharedSnapshot = {
-        save: s.save(new Date().toISOString()),
-        history: s.historyState(),
+        save: a.save,
+        history: lockstep!.sim.historyState(),
         seq: a.seq,
         eventHash: lockstep!.eventHash,
       };
@@ -152,7 +159,8 @@ function handle(msg: MainToWorker): void {
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
-    case 'loadShared':
+    case 'loadShared': {
+      const old = sim;
       try {
         sim = Sim.fromSave(msg.snapshot.save);
       } catch (err) {
@@ -163,15 +171,34 @@ function handle(msg: MainToWorker): void {
       }
       sim.testMode = !!msg.testMode;
       sim.setHistoryState(msg.snapshot.history);
+      // A resync keeps the page's city and brings it up to date in the next frame.
+      if (msg.resync && old) sim.takeOverFrom(old);
       player = msg.player;
       share(sim, msg.snapshot.seq, msg.snapshot.eventHash);
       applied = [];
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
+    }
     case 'share':
       if (!sim) return;
       player = msg.player;
+      // Single player's undo history belongs to the city before it was shared.
+      sim.setHistoryState([]);
       share(sim, msg.lastSeq);
+      {
+        // The city the room is made from: this machine carries on from it as the others will.
+        const save = lockstep!.rebirth();
+        post({
+          type: 'snapshot',
+          tick: sim.tick,
+          reason: 'upload',
+          snapshot: { save, history: [], seq: msg.lastSeq, eventHash: lockstep!.eventHash },
+        });
+      }
+      break;
+    case 'perturb':
+      // One draw from a random stream: nothing visible changes, but the next checksum differs.
+      if (sim?.testMode) sim.rng.growth.next();
       break;
     case 'unshare':
       if (sim) sim.shared = false;

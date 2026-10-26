@@ -1977,6 +1977,33 @@ export class Sim {
   }
 
   /** Changes since the last call, for the main-thread mirror. */
+  /**
+   * This sim replaces `old` on the same map (a shared city resynced from a snapshot, M30): mark
+   * everything that may differ so the next frame brings the page's mirror up to date without a reload.
+   */
+  takeOverFrom(old: Sim): void {
+    const s = this.state;
+    for (let i = 0; i < s.trees.length; i++) if (s.trees[i] !== old.state.trees[i]) this.dirtyTrees.add(i);
+    for (let i = 0; i < s.terrainDelta.length; i++)
+      if (s.terrainDelta[i] !== old.state.terrainDelta[i]) this.dirtyTerrain.add(i);
+    const d = this.net.dirty;
+    const r = this.net.removed;
+    const n = s.net;
+    for (const id of n.nodes.keys()) d.nodes.add(id);
+    for (const id of n.segments.keys()) d.segments.add(id);
+    for (const id of n.blocks.keys()) d.blocks.add(id);
+    for (const id of old.state.net.nodes.keys()) if (!n.nodes.has(id)) r.nodes.add(id);
+    for (const id of old.state.net.segments.keys()) if (!n.segments.has(id)) r.segments.add(id);
+    for (const id of old.state.net.blocks.keys()) if (!n.blocks.has(id)) r.blocks.add(id);
+    for (const id of s.buildings.keys()) this.dirtyBuildings.add(id);
+    for (const id of old.state.buildings.keys()) if (!s.buildings.has(id)) this.removedBuildings.add(id);
+    for (const id of s.civics.keys()) this.dirtyCivics.add(id);
+    for (const id of old.state.civics.keys()) if (!s.civics.has(id)) this.removedCivics.add(id);
+    for (const id of n.segments.keys()) this.snowDirty.add(id);
+    this.vehiclesDirty = this.trafficDirty = this.transitDirty = true;
+    this.districtsDirty = this.disastersDirty = true;
+  }
+
   collectFrame(): FrameDiff {
     const frame: FrameDiff = { tick: this.state.tick, stats: this.stats() };
     if (this.dirtyTrees.size) {

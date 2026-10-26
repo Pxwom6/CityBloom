@@ -28,6 +28,8 @@ import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './cl
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
 import { barsClass, widthClass } from './ui/layout';
+import { Multiplayer } from './net/multiplayer';
+import { loadProfile } from './client/profile';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -83,7 +85,17 @@ export function applyUiScale(scale: number): void {
 }
 
 /** Full-screen menus: the main menu and new-game screen, the pause menu and the screens inside it. */
-export type Screen = 'main' | 'newGame' | 'scenarios' | 'pause' | 'save' | 'load' | 'settings' | 'maps';
+export type Screen =
+  | 'main'
+  | 'newGame'
+  | 'scenarios'
+  | 'pause'
+  | 'save'
+  | 'load'
+  | 'settings'
+  | 'maps'
+  /** Play with friends (M30). */
+  | 'friends';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -127,6 +139,8 @@ export class Game {
     | 'goals'
     | 'districts'
     | 'region'
+    /** The shared city's room (M30). */
+    | 'room'
     /** The map editor's playability check (M24). */
     | 'editorCheck'
     | null = null;
@@ -251,7 +265,71 @@ export class Game {
   }
 
   dispatch(cmd: Command): Promise<CommandResult> {
-    return this.client.command(cmd);
+    // In a shared city the room orders every command, so all the players' games apply it alike.
+    return this.net ? this.net.session.command(cmd) : this.client.command(cmd);
+  }
+
+  // ---------------------------------------------------------------- shared cities (phase 4)
+
+  /** The room this city is shared in, if it is (M30). */
+  net: Multiplayer | null = null;
+  /** A new city founded from the friends screen is shared at once, online or from this browser. */
+  hostKind: 'online' | 'p2p' | null = null;
+
+  /** Share this city: make a room online or in this browser; resolves once it's open. */
+  async hostRoom(kind: 'online' | 'p2p'): Promise<boolean> {
+    if (this.net) return true;
+    try {
+      const mp = await Multiplayer.host(kind, this.client, loadProfile(), this.world.stats.cityName);
+      this.attachNet(mp);
+      await mp.session.start();
+      this.toast(
+        `Your city is shared: room ${mp.code}. Send friends the invite link from the room button.`,
+        'ok',
+        8000,
+      );
+      return true;
+    } catch (err) {
+      this.leaveRoom(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  attachNet(mp: Multiplayer): void {
+    this.net = mp;
+    // Menus and photo mode don't pause a shared city; it runs at the room's speed.
+    this.speedBeforeMenu = null;
+    mp.session.onNotice = (n) => {
+      if (n.kind === 'chat') {
+        const who = mp.session.players.find((p) => p.id === n.from);
+        this.toast(`${who?.name ?? 'Someone'}: ${n.text}`, 'info', 6000);
+      } else this.toast(n.text, n.kind === 'warn' ? 'bad' : 'info', 4500);
+    };
+    mp.session.onChange = ((prev) => () => {
+      prev?.();
+      const room = mp.session.room;
+      if (room && room.speed !== this.speed) this.speed = room.speed;
+      if (mp.session.state === 'closed' && this.net === mp) {
+        if (mp.session.error) this.toast(mp.session.error, 'bad', 8000);
+        this.leaveRoom(false);
+      }
+      this.notify();
+    })(mp.session.onChange);
+    this.notify();
+  }
+
+  /** Stop sharing (the others carry on, unless this browser was the room). */
+  leaveRoom(say = true): void {
+    const mp = this.net;
+    if (!mp) return;
+    this.net = null;
+    mp.leave();
+    this.client.setSpeed(0);
+    this.speed = 0;
+    if (say)
+      this.toast('You left the room. This copy of the city is yours to play on your own.', 'info', 6000);
+    this.notify();
   }
 
   openPanel(p: Game['panel']): void {
@@ -647,8 +725,10 @@ export class Game {
   /** Open a menu screen on top of any others; in a city, the game pauses while menus are up. */
   openScreen(s: Screen): void {
     if (this.mode === 'play' && this.screens.length === 0) {
-      this.speedBeforeMenu = this.speed;
-      this.setSpeed(0);
+      if (!this.net) {
+        this.speedBeforeMenu = this.speed;
+        this.setSpeed(0);
+      }
       this.tools.use('select');
       this.select(null);
     }
@@ -719,6 +799,7 @@ export class Game {
       this.toast('The city could not be saved. Choose Quit again to leave without saving.', 'bad', 8000);
       return;
     }
+    this.leaveRoom(false);
     location.href = location.pathname;
   }
 
@@ -791,7 +872,7 @@ export class Game {
     if (!p) return;
     // A season or weather picked for the photo shows at once (M22).
     if ('season' in patch || 'weather' in patch) this.renderer.weather.snapNext = true;
-    if ('running' in patch && patch.running !== p.running) {
+    if ('running' in patch && patch.running !== p.running && !this.net) {
       if (patch.running) this.setSpeed(this.photoSpeed);
       else {
         this.photoSpeed = this.speed || this.photoSpeed;
@@ -1030,6 +1111,11 @@ export class Game {
   }
 
   setSpeed(speed: Speed): void {
+    if (this.net) {
+      // The room's speed: everyone's city changes together (the room says so back).
+      this.net.session.setSpeed(speed);
+      return;
+    }
     this.speed = speed;
     this.client.setSpeed(speed);
     this.notify();

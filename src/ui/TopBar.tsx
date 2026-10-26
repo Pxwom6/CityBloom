@@ -11,6 +11,7 @@ import { CityButton } from './CityPanel';
 import { HistoryButton } from './History';
 import { RegionButton } from './Region';
 import { NotificationsButton } from './Notifications';
+import { RoomChip } from './Friends';
 
 const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[] = [
   { s: 0, label: 'Pause', Icon: IconPause, key: 'Space' },
@@ -39,6 +40,7 @@ export function TopBar() {
   return (
     <div class={`topbar panel ${st.scenario ? 'scenario' : ''}`} data-testid="topbar">
       {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
+      <RoomChip />
       <span class="divider" />
       <button
         class="stat stat-btn"

@@ -64,6 +64,8 @@ export default tseslint.config(
       'dist-test',
       'dist-e2e',
       'dist-e2e-next',
+      '**/.wrangler/**',
+      '.cache',
       'dist-base',
       // Other builds kept for comparisons (dist-before, …).
       'dist-*',

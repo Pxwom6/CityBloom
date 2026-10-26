@@ -93,7 +93,8 @@ describe('the worker in a shared city (M29)', () => {
       [131, 3, false],
     ]);
     expect(applied[2]!.result).toMatchObject({ reason: 'Cheats are off in a shared city' });
-    const snap = out.find((m) => m.type === 'snapshot');
+    const snap = out.find((m) => m.type === 'snapshot' && m.reason === 'snapshot');
+    expect(out.find((m) => m.type === 'snapshot' && m.reason === 'upload')).toBeTruthy();
     expect(snap?.type === 'snapshot' && snap.tick).toBe(130);
     if (snap?.type === 'snapshot') {
       expect(snap.snapshot.seq).toBe(2);

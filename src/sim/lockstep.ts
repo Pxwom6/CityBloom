@@ -9,7 +9,8 @@
  * many ticks to run at a time (the worker by its time budget, tests all at once).
  */
 import type { Command, CommandResult } from './commands';
-import type { Sim } from './sim';
+import { Sim } from './sim';
+import type { SaveFile } from './save';
 import { checksum } from './sync';
 import { TICKS_PER_HOUR } from './time';
 
@@ -35,6 +36,8 @@ export interface Applied {
   ev: RoomEvent;
   /** For commands: what the sim said. */
   result?: CommandResult;
+  /** For settles: the city saved at that moment (every machine started afresh from it). */
+  save?: SaveFile;
 }
 
 /** How many hourly checksums to keep (a game day's worth). */
@@ -60,8 +63,11 @@ export class Lockstep {
    */
   eventHash = 0x811c9dc5;
 
+  /** Called when the sim is replaced by a fresh copy at a settle (the old one, for its dirty marks). */
+  onRebirth: ((old: Sim) => void) | null = null;
+
   constructor(
-    readonly sim: Sim,
+    public sim: Sim,
     lastSeq = -1,
   ) {
     sim.shared = true;
@@ -105,6 +111,10 @@ export class Lockstep {
 
   /** Run up to `maxTicks` ticks towards the allowed tick; returns how many ran. */
   run(maxTicks = Infinity): number {
+    // Events for the tick this sim waits at apply now, not when time next moves: they arrive in
+    // order, so applying them early or just before stepping comes to the same, and a paused city
+    // still takes commands and settles (a joiner's snapshot).
+    this.applyDue();
     let n = 0;
     while (n < maxTicks && this.sim.tick < this.allowed) {
       this.applyDue();
@@ -125,6 +135,27 @@ export class Lockstep {
     this.eventHash = h;
   }
 
+  /**
+   * Settle: save the city and carry on from a fresh copy of that save, as a player joining from it
+   * would. Every machine does this at the same tick, so whatever a sim keeps beside its saved state
+   * (caches, the commute round under way) can never set a joiner apart from the others.
+   */
+  rebirth(): SaveFile {
+    const old = this.sim;
+    const save = old.save('');
+    const fresh = Sim.fromSave(save);
+    fresh.testMode = old.testMode;
+    fresh.shared = true;
+    fresh.viewer = old.viewer;
+    fresh.timer = old.timer;
+    fresh.setHistoryState(old.historyState());
+    // Notices not yet shown still are.
+    fresh.events = [...old.events, ...fresh.events];
+    this.sim = fresh;
+    this.onRebirth?.(old);
+    return save;
+  }
+
   /** Apply every event stamped for the current tick, in sequence order. */
   private applyDue(): void {
     const t = this.sim.tick;
@@ -135,9 +166,8 @@ export class Lockstep {
         this.noteEvent(e, result.ok);
         this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev, result });
       } else {
-        this.sim.finishMatching();
         this.noteEvent(e, true);
-        this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev });
+        this.onApplied?.({ tick: t, seq: e.seq, ev: e.ev, save: this.rebirth() });
       }
     }
   }

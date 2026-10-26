@@ -6,6 +6,7 @@ import { workforceEducation } from './health';
 import { launchCheer, matchDayNow } from './projects';
 import { honeymoon } from './elections';
 import { bondMood } from './war';
+import { raidMood } from './raids';
 
 /** City-wide totals, recomputed each hour and saved (they feed demand and the UI). */
 export interface CityTotals {
@@ -104,7 +105,7 @@ export function computeTotals(sim: Sim): CityTotals {
   // So does a won election, for a year.
   const md = matchDayNow(sim);
   // War bonds (M34) weigh on it while they're owed.
-  const cheer = (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim) + bondMood(sim);
+  const cheer = (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim) + bondMood(sim) + raidMood(sim);
   if (cheer && resW > 0) t.approval = Math.max(0, Math.min(1, t.approval + cheer));
   t.highwayConnected = sim.highwayConnectedBlocks() > 0;
   const [e1, e2] = workforceEducation(sim);

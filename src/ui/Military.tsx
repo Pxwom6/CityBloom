@@ -434,8 +434,8 @@ function Readiness({ w }: { w: WarSummary }) {
   return (
     <>
       <p>
-        Readiness <strong data-testid="war-readiness">{pct(w.readiness)}</strong>, heading for {pct(w.target)}
-        .
+        Readiness <strong data-testid="war-readiness-value">{pct(w.readiness)}</strong>, heading for{' '}
+        {pct(w.target)}.
       </p>
       <Bar value={w.readiness} tone={toneOf(w.readiness)} />
       <p class="muted">

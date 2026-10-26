@@ -22,6 +22,7 @@ import { accessOf, BState, type Building } from '../world/buildings';
 import { ZONE_I } from '../../data/zones';
 import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic';
 import type { Origin } from './commute';
+import type { BattleReport, HostedBattle, Raid } from './raids';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
 import type { FlowAccumulator } from './traffic';
@@ -95,6 +96,14 @@ export interface WarState {
    * army in minutes that others need hours to answer).
    */
   clock: number;
+  /** Raids on their way (M35); absent when none. */
+  incoming?: Raid[];
+  /** The battle being fought in the city now (M35). */
+  battle?: HostedBattle;
+  /** The last battles' reports, newest last (M35). */
+  reports?: BattleReport[];
+  /** When the neighbours last set off to raid it: any, and each (ticks). */
+  raided?: { any: number; by: Record<number, number> };
 }
 
 export function initialWar(seed: string): WarState {

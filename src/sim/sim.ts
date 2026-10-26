@@ -220,6 +220,9 @@ import {
   warSummary,
   type WarSummary,
 } from './systems/war';
+import { battleTick, mendUnits, planRaid, raidsHour, startHomeBattle } from './systems/raids';
+import type { Battle } from './battle/battle';
+import type { BattleFrame } from './battle/types';
 import { rectsOverlap, type ORect } from './geom';
 import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
 import {
@@ -289,7 +292,12 @@ export type SimEvent = {
     | 'weather'
     // War (M34).
     | 'unitTrained'
-    | 'bondRepaid';
+    | 'bondRepaid'
+    // Battles (M35).
+    | 'raidWarning'
+    | 'battleStarted'
+    | 'battleEnded'
+    | 'unitLost';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -799,6 +807,12 @@ export class Sim {
   private disastersDirty = true;
   /** The forces changed (M34): units, training or bonds; the next frame carries the roster. */
   private warDirty = true;
+  /**
+   * The battle in the city (M35), as it runs: derived from `state.war.battle` (its input and the
+   * steps played), rebuilt after a load; and the frame it showed last.
+   */
+  battleRun: Battle | null = null;
+  battleFrame: BattleFrame | null = null;
 
   warChanged(): void {
     this.warDirty = true;
@@ -1180,6 +1194,28 @@ export class Sim {
             this.net.removeNodeIfOrphan(r.connect);
             this.state.railway = null;
             this.markNetworkChanged();
+          }
+          return ok(0);
+        }
+        if (cmd.cheat === 'raidIn') {
+          if (!this.testMode) return fail('Test mode only');
+          const w = this.state.war;
+          if (!w) return fail('War is off in this city');
+          if (w.battle || w.incoming?.length) return fail('A raid is already on its way');
+          const n = this.state.region.neighbours.find(
+            (x) => !!x.rival && !x.player && (cmd.neighbour === undefined || x.id === cmd.neighbour),
+          );
+          if (!n) return fail('No rival neighbour');
+          if (!Number.isFinite(cmd.hours) || cmd.hours < 0) return fail('Invalid hours');
+          if (!dryRun) {
+            const rng = new Rng(w.rng);
+            const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)));
+            w.rng = rng.getState();
+            if (cmd.hours === 0) {
+              w.incoming = w.incoming!.filter((r) => r !== raid);
+              if (!w.incoming.length) delete w.incoming;
+              startHomeBattle(this, raid);
+            }
           }
           return ok(0);
         }
@@ -1675,6 +1711,8 @@ export class Sim {
     run('vehicles', () => stepVehicles(this));
     run('incidents', () => incidentsTick(this));
     run('disasters', () => disastersTick(this));
+    // A battle in the city (M35): its steps for this tick, and their damage.
+    if (s.war?.battle) run('battle', () => battleTick(this));
     if (t % GROWTH.passInterval === 0) run('growth', () => growthPass(this));
     // Hourly systems, spread over the hour in their usual order (HOURLY_AT).
     const minute = t % TICKS_PER_HOUR;
@@ -1747,6 +1785,9 @@ export class Sim {
           run('war', () => {
             warHour(this, (c) => extractionPerDay(this, c));
             bondsHour(this);
+            // Raids (M35): warnings, arrivals, the neighbours' decisions; units mend at their bases.
+            raidsHour(this);
+            mendUnits(this);
           });
         run('progress', () => {
           specialisationsHour(this);
@@ -2236,6 +2277,11 @@ export class Sim {
       const f = this.forceData();
       if (f) frame.forces = f;
       this.warDirty = false;
+    }
+    // A battle on (M35): where everyone is this tick; once more as it ends, then nothing.
+    if (this.state.war?.battle || this.battleFrame) {
+      frame.battle = this.state.war?.battle ? this.battleFrame : null;
+      if (!this.state.war?.battle) this.battleFrame = null;
     }
     if (this.snowDirty.size) {
       frame.roadSnow = [...this.snowDirty]

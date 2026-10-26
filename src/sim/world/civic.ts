@@ -36,6 +36,8 @@ export interface Civic {
   variant: number;
   /** Hours until disaster damage is repaired (offline until then), and under flood water now. */
   damage: number;
+  /** Knocked out in a battle (M35): a wreck until repaired. Absent otherwise. */
+  wrecked?: true;
   flooded: boolean;
   /** Add-on modules installed (M10); a repeatable one appears once per copy. */
   modules: string[];

@@ -484,6 +484,7 @@ export function disastersHour(sim: Sim): void {
     if (c.damage <= 0) continue;
     c.damage--;
     if (c.damage > 0) continue;
+    delete c.wrecked;
     book(sim, 'repairs', -civicDef(c).cost * DISASTERS.civicRepairShare);
     sim.civicStatusChanged(c.id);
     sim.events.push({ kind: 'civicRepaired', id: c.id });

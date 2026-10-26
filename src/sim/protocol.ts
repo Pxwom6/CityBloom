@@ -5,6 +5,7 @@ import type { WeatherSummary } from './systems/weather';
 import type { RegionSummary } from './systems/region';
 import type { WarSummary } from './systems/war';
 import type { UnitKind } from '../data/war';
+import type { BattleFrame } from './battle/types';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
@@ -447,6 +448,8 @@ export interface FrameDiff {
   disasters?: DisasterData;
   /** The forces (M34), when they changed. */
   forces?: ForceData;
+  /** A battle in the city (M35): every tick while it's on, then null once as it ends. */
+  battle?: BattleFrame | null;
   districts?: DistrictData;
   /** Snow on roads (M22): segments whose snow changed, with their new depth (0 = clear). */
   roadSnow?: [number, number][];

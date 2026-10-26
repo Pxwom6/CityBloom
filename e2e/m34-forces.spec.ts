@@ -275,7 +275,7 @@ test('M34: every military building from the toolbar, every kind of unit trained,
   await expect(page.locator('[data-testid^="repay-bond-"]')).toHaveCount(1);
   await shot(page, 'm34-war-room-upkeep');
   await page.getByTestId('war-tab-readiness').click();
-  await expect(page.getByTestId('war-readiness')).not.toHaveText('0 %');
+  await expect(page.getByTestId('war-readiness-value')).not.toHaveText('0 %');
   await page.keyboard.press('Shift+KeyM');
   await expect(room).toHaveCount(0);
   await page.keyboard.press('Shift+KeyM');

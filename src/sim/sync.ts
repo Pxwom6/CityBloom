@@ -100,6 +100,13 @@ export function checksum(sim: Sim): string {
     m.num(w.clock);
     m.num(w.stock.goods + w.stock.ore + w.stock.oil + w.stock.munitions);
     m.int(w.bonds.length);
+    // Battles (M35), only once there's been one.
+    if (w.battle) {
+      m.int(w.battle.step);
+      m.int(w.battle.report.collapsed.length + w.battle.report.burning.length);
+    }
+    if (w.incoming) m.int(w.incoming.length);
+    if (w.reports) m.int(w.reports.length);
   }
   return m.hex();
 }

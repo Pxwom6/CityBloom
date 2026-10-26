@@ -59,6 +59,11 @@ export type Command =
   | { type: 'cheat'; cheat: 'electionIn'; months: number }
   /** Test mode: take the regional rail link away, as an old city whose edge was full had none. */
   | { type: 'cheat'; cheat: 'removeRailLink' }
+  /**
+   * Test mode only (M35): a computer neighbour (the first rival, or `neighbour`) sets off to raid the
+   * city now, arriving in `hours` (0: the battle begins at once).
+   */
+  | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */

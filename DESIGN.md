@@ -1349,6 +1349,55 @@ a city first queues research, so peace and M34–M36 war cities are unchanged. P
   (`specialisationIncome`).
 - **Superweapons** may be had where `superweaponsAllowed`: a region's rules (`RegionWarRules.supers`,
   ticked by the host) or, in a city of its own, rivals. Tier-4 research stays open when they're off.
+  The three units (`windupbot` at the vehicle depot, `skyfortress` at the airfield, `clockworkwhale`
+  at the naval yard; `UnitDef.super`) are one a force and one a city each, take twice as long on the
+  road (robot and fortress; `super.travel`), and never fight at home. They are never lost: knocked
+  out, one is towed home at hp 0.05. A battle fought (`Expedition.fought`, set only for a force with
+  a superweapon, so M36 reports are unchanged) starts its cooldown on homecoming, `Unit.ready` = 240
+  war hours, 480 if knocked out (`downed`); `superRefusal` says why one can't go (coast for the whale,
+  winding up, the rules). A base keeping or building one can't be bulldozed (`baseKeepsSuper`).
+- **Superweapon buildings** (`src/sim/systems/supers.ts`, `supersHour` in `warHour`; projects of
+  stages like M17's): the **dome shield** charges 240 war hours while staffed and powered, is raised
+  over a home battle by its mode (`setDome`: all raids, superweapon raids only, off) as a 40,000-point
+  pool the battle's `coverWithDome` spends before the city's own, and is lowered empty after
+  (`raiseDome`/`lowerDome`; a 'dome' battle event pops it); the **blackout tower** (`useBlackout`)
+  charges an hour at a computer neighbour (warned), then blacks it out for 12 h (guns manned 0.3, no
+  raids from it, its windows dark on the map) and recharges 240 h; a friend's city gets its power
+  plants at 0.4 through the region (step 9); the **express gate** sends one force anywhere in an hour
+  (`sendForce.gate`), then recharges 120 h. Each is one a city (`CivicDef.max`), staffed at MAX-1.
+- **Battle version 3** (`src/sim/battle`, `BATTLE_VERSION` 3; `stampBattle` stamps 2 when a battle
+  uses nothing new, so v2 replays and goldens are untouched): research's modifiers per domain
+  (`BattleMods`: hp, armour, damage, evasion, hardened buildings, shield), interceptor batteries
+  (`TAG.intercept`, shot kind 3: shells from 150 m or more and bombs, by chance and cooldown), the
+  dome's pool, and the superweapons: the robot's stomp, the fortress's carried drones (ids
+  −(1000+k), at most 16, launched by the battle) and the whale's dives (state 3), all within
+  `SUPER.caps` of damage. A computer neighbour's tech gives its side the same modifiers
+  (`src/sim/ai/tech.ts`, `rivalMods`; `rivalHardened`).
+- **Intelligence** (`src/sim/systems/intel.ts`, numbers in `src/data/intel.ts`; `WarState.intel`):
+  a spy agency keeps two agents (three with Stealth), each mission (`spyMission`) out and back on
+  the war clock with the outcome at half way. Odds are whole numbers per thousand (`spyOdds`):
+  success × (1 − counter-intelligence), and a share of the failures caught; the room works out a
+  friend's the same way. A look round reveals a neighbour for 240 h (its forces, defences and tech;
+  battles there +0.1 readiness, its raids seen 2 h sooner); sabotage closes its power (guns manned
+  0.5 and no raids for 72 h) or its depot (forces ×0.9, no arming for six months), re-checked as a
+  strike when the agent lands (`strikeRefusal`); stealing banks a quarter of a tier the neighbour
+  is ahead in (`bankPoints`, once per neighbour and tier). A caught agent is an incident (relation,
+  reputation and a grievance, `incident` in diplomacy) and is replaced after 48 h. Computer
+  neighbours send spies too (`intelMonth`, at most one a month, only to a city with a lab or an
+  agency): they look round, steal (their next tech step six days sooner), or, only while fighting
+  the city, sabotage (its biggest power plant or a vehicle depot closed for a day); the city's
+  counter-intelligence (50, +300 for a working agency, up to 750) catches them, and a catch gives
+  the city a grievance (war on them costs no reputation).
+- **Computer tech** (`RivalNeighbour.tech` 0–4, `techAt`): moves on only once the city has research,
+  a 6 % chance a month by character and town size, at least 12 days apart; tech 1 and 3 bring the
+  battle modifiers of tiers 1 and 3, tech 2 heavier units in its raids (`RIVAL_MIX_TECH`), and each
+  step +50 to its counter-intelligence.
+- **Rendering and UI**: trials run on the proving ground's track (`unitPoses` 'trial'); the dome,
+  the tower's beam, the gate's ring and interceptor flashes are `src/render/shields.ts`
+  (`SuperEffects`, with a cost switch per quality: `units.shields`, `units.dust`). The war room has
+  Research (branch chips, the chosen branch's tiers, prototypes and trials) and Intelligence tabs
+  (`src/ui/Research.tsx`, `Intel.tsx`), a superweapons strip on Forces, and the region map shows
+  superweapons on the move, the gate's arc, revealed and blacked-out towns.
 
 ## 4. Rendering
 

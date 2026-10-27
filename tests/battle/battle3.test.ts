@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BATTLE, SKIRMISH, SUPER, TOWN as TOWNS } from '../../src/data/battle';
 import type { TierKey } from '../../src/data/research';
-import type { UnitKind } from '../../src/data/war';
+import { UNIT, type UnitKind } from '../../src/data/war';
 import { growRivalTown } from '../../src/sim/ai/town';
 import { awayInput, type AwayCity } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
@@ -132,6 +132,60 @@ describe('battles version 3: what stays as it was', () => {
     expect(same((i) => (i.attacker.mods = { land: {}, air: {} }))).toEqual(kept[0]!.result);
     expect(same((i) => (i.layout.mods = { land: {} }))).toEqual(kept[0]!.result);
     expect(same((i) => (i.layout.dome = 0))).toEqual(kept[0]!.result);
+  });
+
+  it('battles without a superweapon play as before the superweapons were tuned', () => {
+    // Drones, helicopters and tanks against anti-air, a capped drone raid, and a version 3 battle
+    // with research and a dome: hashes taken on a037629 (M37 step 7), before bomb drones, the whale's
+    // reach and the caps' early pull-out, which only a superweapon's battle may change.
+    const aa: StructSpec[] = [0, 1].map((k) => ({
+      id: 40 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 800 + k * 100,
+      z: 440,
+      r: 6,
+      hp: 600,
+      gun: 5,
+      range: 320,
+      against: ['air'],
+    }));
+    const air = { stance: 'bold', route: 'air' } as const;
+    const capped = input(lineLayout(TOWN), units('drone', 12), air);
+    capped.caps = { maxCollapse: 12, maxWreck: 1 };
+    const modded = input(
+      lineLayout([...TOWN, ...aa]),
+      [...units('drone', 6), ...units('tank', 4, undefined, -1, 30)],
+      {
+        stance: 'bold',
+      },
+    );
+    modded.attacker.mods = { air: { hp: 1.5, evade: 0.2 } };
+    modded.layout.dome = 500;
+    const cases: [string, BattleInput, number, string][] = [
+      ['drones', input(lineLayout([...TOWN, ...aa]), units('drone', 8), air), 2, 'c9ed84bb36842f9d'],
+      ['dronesCapped', capped, 2, 'fda6b586a11de360'],
+      [
+        'mixed',
+        input(
+          lineLayout([...TOWN, ...aa]),
+          [
+            ...units('drone', 6),
+            ...units('helicopter', 3, undefined, -1, 20),
+            ...units('tank', 4, undefined, -1, 30),
+          ],
+          { stance: 'cautious' },
+        ),
+        2,
+        'd0574a75d07b5424',
+      ],
+      ['modded', modded, BATTLE_VERSION, '935a0572f151a570'],
+    ];
+    for (const [name, i, v, hash] of cases) {
+      i.seed = `golden-${name}`;
+      const s = stampBattle(i);
+      expect(s.v, name).toBe(v);
+      expect(Battle.run(structuredClone(s)).result().hash, name).toBe(hash);
+    }
   });
 
   it('a version 2 battle can’t carry anything of version 3', () => {
@@ -439,8 +493,11 @@ describe('battles version 3: superweapons', () => {
   });
 
   it('the sky fortress launches its 16 drones near its objective, one at a time', () => {
+    // Military buildings too strong to fall, so the force stays to launch them all (its drones are
+    // bomb drones: the town's own depot and bunker would fall to the first five).
+    const sturdy = TOWN.map((s) => (s.tags & TAG.military ? { ...s, hp: 1e6 } : s));
     const make = (hp = 1, extra: StructSpec[] = []) => {
-      const i = input(lineLayout([...TOWN, ...extra]), fortress(hp), { stance: 'bold' });
+      const i = input(lineLayout([...sturdy, ...extra]), fortress(hp), { stance: 'bold' });
       i.seed = 'fortress';
       return stampBattle(i);
     };
@@ -466,6 +523,29 @@ describe('battles version 3: superweapons', () => {
     ).toBeGreaterThan(SUPER.launch - 30);
     // Drones are shown only once launched: none before.
     expect(a.frames.slice(0, ticks[0]!).some((f) => f.units.some((u) => u.kind === 'drone'))).toBe(false);
+  });
+
+  it('what a fortress carries are bomb drones; drones of its own aren’t', () => {
+    const drone = UNIT.get('drone')!.stats;
+    const carries = UNIT.get('skyfortress')!.stats.carries!;
+    expect(carries.siege).toBeGreaterThan(1);
+    // A fortress, its sixteen, and four drones flown in alongside: only the sixteen carry bombs.
+    const i = stampBattle(
+      input(lineLayout(TOWN), [...fortress(), ...units('drone', 4, undefined, -1, 700)], { stance: 'bold' }),
+    );
+    const b = new Battle(structuredClone(i));
+    const sieges = (carried: boolean) =>
+      b.units.filter((u) => u.kind === 'drone' && u.carrier >= 0 === carried).map((u) => u.siege);
+    expect(sieges(true)).toEqual(Array<number>(16).fill(carries.siege!));
+    expect(sieges(false)).toEqual(Array<number>(4).fill(drone.siege));
+    // A drone raid without a fortress uses nothing of version 3, and plays as it did.
+    const plain = stampBattle(
+      input(lineLayout(TOWN), units('drone', 6, undefined, -1, 800), { stance: 'bold' }),
+    );
+    expect(plain.v).toBe(2);
+    expect(
+      new Battle(structuredClone(plain)).units.every((u) => u.side === 1 || u.siege === drone.siege),
+    ).toBe(true);
   });
 
   it('a fortress knocked out before it has launched them all takes the rest home', () => {
@@ -859,8 +939,16 @@ function resortTown() {
     population: n.population,
     cap: TOWNS.testCap,
   });
-  /** A strike on the town by one unit of `kind` (and an escort), as an expedition from the city. */
-  const strike = (kind: UnitKind, route: 'highway' | 'air' | 'sea', escort: UnitKind[] = []) =>
+  /**
+   * A strike on the town by one unit of `kind` (and an escort), as an expedition from the city;
+   * `defences` mans the town's guns as a neighbour with that many defence points would.
+   */
+  const strike = (
+    kind: UnitKind,
+    route: 'highway' | 'air' | 'sea',
+    escort: UnitKind[] = [],
+    defences = n.rival!.defences,
+  ) =>
     awayInput(
       {
         seed: city.state.options.seed,
@@ -874,7 +962,7 @@ function resortTown() {
           side: n.side,
           kind: n.kind,
           population: n.population,
-          rival: { ...n.rival! },
+          rival: { ...n.rival!, defences },
           slot: null,
           colour: 0xd04040,
         },
@@ -916,5 +1004,27 @@ describe('superweapons in a grown computer town', () => {
     if (r.objectives.down < r.objectives.aimed) expect(f.wrecked).toBe(SUPER.caps.maxWreck);
     // And it was out of the town again (raid and walk back) before the clock ran out.
     expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+  });
+
+  it('the sky fortress’s bomb drones knock down as much as the robot; anti-air shoots them down', () => {
+    const robot = Battle.run(structuredClone(resort.strike('windupbot', 'highway'))).result();
+    const i = resort.strike('skyfortress', 'air');
+    const r = Battle.run(structuredClone(i)).result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    expect(r.outcome).toBe('raided');
+    const f = fallen(i, r);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    // As many of its objectives down as the robot's, and as many city buildings wrecked.
+    expect(r.objectives.down).toBeGreaterThanOrEqual(robot.objectives.down);
+    expect(f.wrecked).toBeGreaterThanOrEqual(fallen(i, robot).wrecked);
+    // The town's anti-air still brought drones down.
+    const downed = (x: typeof r) => x.units.filter((u) => u.id <= -SUPER.carriedId && u.out).length;
+    expect(downed(r)).toBeGreaterThan(0);
+    // With every post manned, it shoots down all sixteen and the town keeps more standing.
+    const manned = resort.strike('skyfortress', 'air', [], 40);
+    const m = Battle.run(structuredClone(manned)).result();
+    expect(downed(m)).toBe(16);
+    expect(m.objectives.down).toBeLessThan(r.objectives.down);
   });
 });

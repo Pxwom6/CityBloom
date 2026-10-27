@@ -385,6 +385,8 @@ export class Battle {
     if (!unit) return;
     unit.carrier = carrier.i;
     unit.aboard = true;
+    // Bomb drones: what a carrier brings hits buildings with the carrier's siege, not its own.
+    if (carrier.carries.siege !== undefined) unit.siege = carrier.carries.siege;
     unit.x = carrier.x;
     unit.z = carrier.z;
     unit.objective = carrier.objective;
@@ -894,7 +896,8 @@ export class Battle {
         if (!gun && !obj) continue;
         const d = Math.max(0, DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn));
         if (d > u.range) continue;
-        consider(-(k + 1), gun ? 1 : 2, d);
+        // Bomb drones (version 3: what a carrier brings) dive on the objectives first, then the guns.
+        consider(-(k + 1), u.carrier >= 0 ? (obj ? 1 : 2) : gun ? 1 : 2, d);
       }
     }
     u.target = best;

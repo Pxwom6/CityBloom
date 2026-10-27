@@ -132,6 +132,6 @@ for (const name of only) {
     where = `, up at (${at.x.toFixed(0)}, ${at.z.toFixed(0)}): objectives from ${Math.min(...objs).toFixed(0)} m, ${inReach} structures within 450 m (nearest ${nearest.toFixed(0)} m; the town's nearest ${townNearest.toFixed(0)} m)`;
   }
   console.log(
-    `${name}${kinds.length > 1 ? ` + ${kinds.length - 1}` : ''}: ${r.outcome}, ${r.destroyed.length - wrecked} collapsed (cap ${input.caps.maxCollapse}), ${wrecked} wrecked (cap ${input.caps.maxWreck}), ${r.damaged.length} damaged, objectives ${r.objectives.down}/${r.objectives.aimed}, ${r.steps} steps (limit ${BATTLE.maxSteps}), ${sup.kind} hp ${sup.hp}${sup.out ? ' out' : ''}, ${L.defenders.length} defenders, shots by it ${shots}${name === 'fortress' ? `, drones launched ${drones.size}` : ''}${where}, ${ms.toFixed(0)} ms at once`,
+    `${name}${kinds.length > 1 ? ` + ${kinds.length - 1}` : ''}: ${r.outcome}, ${r.destroyed.length - wrecked} collapsed (cap ${input.caps.maxCollapse}), ${wrecked} wrecked (cap ${input.caps.maxWreck}), ${r.damaged.length} damaged, objectives ${r.objectives.down}/${r.objectives.aimed}, ${r.steps} steps (limit ${BATTLE.maxSteps}), ${sup.kind} hp ${sup.hp}${sup.out ? ' out' : ''}, ${L.defenders.length} defenders, shots by it ${shots}${name === 'fortress' ? `, drones launched ${drones.size}, shot down ${r.units.filter((u) => u.side === 0 && u.id <= -SUPER.carriedId && u.out).length}` : ''}${where}, ${ms.toFixed(0)} ms at once`,
   );
 }

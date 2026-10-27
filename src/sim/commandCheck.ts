@@ -48,6 +48,7 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'spySettling',
   'missionResult',
   'opResolve',
+  'warClock',
 ]);
 
 const DISASTERS = { earthquake: true, tornado: true, flood: true, meteor: true } as const satisfies Record<
@@ -348,6 +349,7 @@ const CHECKS: Record<CommandType, Check> = {
   spySettling: () => 'Only your own game hears from the region',
   missionResult: () => 'Only your own game hears from the region',
   opResolve: () => 'Only your own game hears from the region',
+  warClock: () => 'Only your own game hears from the region',
   disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
   issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
   repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),

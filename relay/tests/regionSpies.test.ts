@@ -84,10 +84,12 @@ async function friends() {
     },
   });
   const join = async (sim: Sim, mayor: string, color: number, extra: object = {}) => {
+    // The test fast-forwards its cities: no fair clock here (fairClock.test.ts has its own).
     const l = new RegionLink(port(sim), loopTo(room), {
       mayor,
       color,
       saveEvery: 0,
+      fairClock: false,
       ...extra,
     });
     l.onNotice = (t) => notices.push(`${mayor}: ${t}`);

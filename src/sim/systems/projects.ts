@@ -2,7 +2,7 @@ import { CIVIC, type CivicDef } from '../../data/civic';
 import { requirementStatus, type RequirementContext, type RequirementStatus } from '../../data/projects';
 import type { Sim } from '../sim';
 import type { Civic } from '../world/civic';
-import { dateOf, TICKS_PER_MONTH } from '../time';
+import { dateOf, HOURLY_AT, START_TICK_OFFSET, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { civicOnline } from '../world/civic';
 import { chronicleEvent } from './chronicle';
 import { researched } from './research';
@@ -20,6 +20,34 @@ export interface ProjectBuild {
   months: number;
   /** The last stage finished but the next couldn't be paid for yet. */
   waiting: boolean;
+  /**
+   * A war project's (M37: the superweapon buildings) war clock when its stage started, counted from
+   * the month's start: the stage ends only once the war clock has run its months too, so a city
+   * ahead of its region's fair clock waits as its research does. Absent on other projects.
+   */
+  clock?: number;
+}
+
+/**
+ * The war clock a war project's stage counts from when it starts (M37): the war hours since the
+ * month began are taken off, as the stage's months count from the month's start. In a city of its
+ * own the war clock runs an hour a game hour (the economy's minute of each), so the stage ends at
+ * the month close it always did.
+ */
+export function stageClock(sim: Sim): number {
+  const s = sim.state;
+  const w = s.war;
+  if (!w) return 0;
+  const intoMonth = (s.tick + START_TICK_OFFSET) % TICKS_PER_MONTH;
+  const start = s.tick - intoMonth;
+  // War hours run at the economy's minute of each hour after the month's start, up to now.
+  const hours = (t: number) => Math.floor((t - HOURLY_AT.economy) / TICKS_PER_HOUR);
+  return w.clock - (hours(s.tick) - hours(start));
+}
+
+/** Is this a war project (M37): a superweapon building, built on the war clock as well as by months? */
+export function warProject(def: CivicDef): boolean {
+  return !!def.project && !!def.military?.superweapon;
 }
 
 /** Every requirement of a project and whether the city meets it. */
@@ -75,6 +103,8 @@ export function projectsMonth(sim: Sim): void {
     const stages = def.project.stages;
     if (!b.waiting) b.months++;
     if (b.months < stages[b.stage]!.months) continue;
+    // A war project's stage (M37) also waits for the war clock to run its months.
+    if (b.clock !== undefined && (s.war?.clock ?? 0) - b.clock < 24 * stages[b.stage]!.months) continue;
     if (b.stage + 1 >= stages.length) {
       delete c.build;
       sim.civicStatusChanged(c.id);
@@ -93,6 +123,7 @@ export function projectsMonth(sim: Sim): void {
     b.stage++;
     b.months = 0;
     b.waiting = false;
+    if (b.clock !== undefined) b.clock = s.war?.clock ?? 0;
     sim.civicStatusChanged(c.id);
     sim.events.push({ kind: 'projectStage', id: c.id });
   }

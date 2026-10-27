@@ -50,6 +50,8 @@ async function player(browser: Browser, name: string, color: number): Promise<Pa
   await ctx.addInitScript(
     ([n, c]) => {
       localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));
+      // The spec trains its forces by fast-forwarding, far past the region's 1× clock (M37).
+      localStorage.setItem('citybloom.fairClock', 'off');
       const key = 'citybloom.settings';
       const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
       localStorage.setItem(key, JSON.stringify({ ...s, graphicsChecked: true, tips: false, quality: 'low' }));

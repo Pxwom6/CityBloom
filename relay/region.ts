@@ -50,6 +50,12 @@ const MAX_BATTLE_PARTS = 8;
 /** Operations kept for a city at most (M37), apart from its battles, and verdicts a sender's kept. */
 export const MAX_PENDING_OPS = 8;
 const VERDICTS_KEEP = 24;
+/**
+ * The fair clock (M37, design call 15): a city's war clock may run at most this far ahead of the
+ * hours the region has seen it play at 1× (a game hour is 7.5 s), and a report adds at most two
+ * minutes' worth however long since the last.
+ */
+export const FAIR = { msPerHour: 7_500, gapMax: 120_000, bank: 48 };
 
 /** What a friend's spy or the blackout tower does in another city of the region (M37). */
 export type RegionOp = SpyOp | 'blackout';
@@ -83,6 +89,8 @@ export interface RegionCityView {
    */
   opsLeft?: number;
   supersLeft?: number;
+  /** Its fair clock (M37): the war-clock hours the region has seen it play at 1×. */
+  fair?: number;
 }
 
 export interface RegionProjectView {
@@ -271,6 +279,8 @@ interface City {
   supers?: { day: number; n: number };
   /** The region's verdicts on its own last operations (M37): one sent again gets the same answer. */
   verdicts?: { id: string; to: number; op: RegionOp; outcome: OpOutcome; stole?: TierKey }[];
+  /** Its fair clock (M37): war-clock hours at 1× while its player is here, and when last moved (ms). */
+  fair?: { hours: number; at: number };
 }
 
 export interface RegionMeta {
@@ -825,6 +835,7 @@ export class RegionRoom {
               supersLeft: this.supersLeft(c, now),
             }
           : {}),
+        ...(c.fair ? { fair: c.fair.hours } : {}),
       })),
       project: {
         name: REGION_PROJECT.name,
@@ -1026,17 +1037,29 @@ export class RegionRoom {
             c.report?.projectBuilt,
             c.report?.shield,
           ]);
-        const before = JSON.stringify([city.report, city.thumb]);
+        // The fair clock (M37) is kept with the rest of what changes now and then.
+        const kept = () => JSON.stringify([city.report, city.thumb, city.fair?.hours]);
+        const before = kept();
         const was = matters(city);
         city.name = m.city;
         city.report = m.report;
+        // The fair clock (M37): started at the city's war clock, then moved on at 1× for the time
+        // since the last report (two minutes at most: a city away isn't playing here), written with
+        // the rest now and then.
+        if (m.report.clock !== undefined) {
+          if (!city.fair) city.fair = { hours: m.report.clock, at: now };
+          else {
+            const gain = Math.min(Math.max(0, now - city.fair.at), FAIR.gapMax) / FAIR.msPerHour;
+            city.fair = { hours: Math.round((city.fair.hours + gain) * 1000) / 1000, at: now };
+          }
+        }
         if (m.thumb) city.thumb = m.thumb;
         const p = this.meta.project;
         const built = m.report.projectBuilt && p.host === slot && !p.built;
         if (built) p.built = true;
         this.broadcast();
         if (built || matters(city) !== was) this.changed(slot);
-        else if (JSON.stringify([city.report, city.thumb]) !== before) {
+        else if (kept() !== before) {
           this.dirty = true;
           if (now - this.lastSaved >= this.limits.keepEvery) this.save();
         }
@@ -1316,6 +1339,8 @@ export class RegionRoom {
     if (write === 'new') this.save();
     else if (write === 'changed') this.changed(city.slot);
     conn.send({ t: 'rwelcome', slot: city.slot, secret: city.secret, region: this.view() });
+    // Its fair clock carries on from now (M37): the time away isn't play.
+    if (city.fair) city.fair = { ...city.fair, at: now };
     // Battles fought against it while it was away (M35), oldest first.
     for (const p of city.pending ?? []) {
       const parts = this.store.loadBattle(city.slot, p.k);

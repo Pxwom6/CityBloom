@@ -127,6 +127,7 @@ const SAMPLES: Record<CommandType, Command> = {
     target: 'power',
     late: false,
   },
+  warClock: { type: 'warClock', cap: 120 },
 };
 
 /** Values a field might carry instead of what it should. */

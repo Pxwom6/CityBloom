@@ -1,5 +1,11 @@
 import { scenarioForbids } from '../systems/scenario';
-import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
+import {
+  placementPrice,
+  projectBlocked,
+  stageClock,
+  warProject,
+  type ProjectBuild,
+} from '../systems/projects';
 import { MODULE } from '../../data/modules';
 import { CIVIC, MOVE, SPECIALISATION, type CivicDef } from '../../data/civic';
 import { GRADING, ROAD_RULES, ROAD_TYPES, isRail } from '../../data/roads';
@@ -446,8 +452,14 @@ export function placeCivic(
     flooded: false,
     modules: [],
   };
-  // A big project starts on its first stage (M17).
-  if (def.project) civ.build = { stage: 0, months: 0, waiting: false };
+  // A big project starts on its first stage (M17); a war project's on the war clock too (M37).
+  if (def.project)
+    civ.build = {
+      stage: 0,
+      months: 0,
+      waiting: false,
+      ...(warProject(def) && s.war ? { clock: stageClock(sim) } : {}),
+    };
   for (const id of chk.demolish) sim.removeBuilding(id);
   sim.addCivic(civ);
   sim.spend(price, def.project ? 'projects' : 'construction');

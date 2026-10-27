@@ -214,7 +214,7 @@ import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/po
 import { healthHour } from './systems/health';
 import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
 import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
-import { missionResult, opResolve, spySettling } from './systems/regionOps';
+import { missionResult, opResolve, spySettling, warClock } from './systems/regionOps';
 import {
   baseRemoved,
   bondsHour,
@@ -350,10 +350,11 @@ export type SimEvent = {
     | 'rivalTech'
     | 'forceArrived'
     | 'forceHome'
-    // Operations between friends (M37).
+    // Operations between friends and the fair clock (M37).
     | 'spyArrived'
     | 'blackoutWarning'
     | 'blackoutRefused'
+    | 'clockHeld'
     | 'researchDone'
     | 'researchWaiting'
     | 'spinoff'
@@ -1528,6 +1529,8 @@ export class Sim {
           },
           dryRun,
         );
+      case 'warClock':
+        return warClock(this, cmd.cap, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

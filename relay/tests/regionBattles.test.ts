@@ -109,7 +109,15 @@ async function regionAtWar() {
     },
   });
   const join = async (sim: Sim, mayor: string, color: number, extra: object = {}) => {
-    const l = new RegionLink(port(sim), loopTo(room), { mayor, color, saveEvery: 0, ...extra });
+    // The test fast-forwards both cities far past the region's 1× pace: no fair clock (M37; it has
+    // tests of its own in fairClock.test.ts).
+    const l = new RegionLink(port(sim), loopTo(room), {
+      mayor,
+      color,
+      saveEvery: 0,
+      fairClock: false,
+      ...extra,
+    });
     links.push(l);
     await l.start();
     await flush();

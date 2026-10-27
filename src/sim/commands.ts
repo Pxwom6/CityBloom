@@ -228,8 +228,8 @@ export type Command =
     }
   /**
    * Operations between friends (M37, page only): an operation of the city's pinned while the region
-   * decides on it, the region's verdict on it, and an operation against the city as the region
-   * decided it.
+   * decides on it, the region's verdict on it, an operation against the city as the region decided
+   * it, and the cap the region's fair clock puts on the war clock.
    */
   | { type: 'spySettling'; mission: number; on: boolean }
   | {
@@ -240,7 +240,8 @@ export type Command =
       dossier?: Dossier;
       reason?: string;
     }
-  | ({ type: 'opResolve' } & OpInput);
+  | ({ type: 'opResolve' } & OpInput)
+  | { type: 'warClock'; cap: number | null };
 
 export type CommandType = Command['type'];
 
@@ -316,6 +317,7 @@ const COMMAND_KINDS = {
   spySettling: true,
   missionResult: true,
   opResolve: true,
+  warClock: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

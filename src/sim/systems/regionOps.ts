@@ -11,6 +11,7 @@
  * - The target: `opResolve` takes each operation once (`w.taken`): a saboteur closes the city's own
  *   largest working power plant or its vehicle depot for a day, a blackout darkens the city for 12
  *   hours after an hour's warning; one that came while its player was away brings only a notice.
+ * - The fair clock: `warClock` sets the cap the region's fair clock puts on the war clock.
  *
  * Every time here is on the war clock (hours), as the rest of intelligence.
  */
@@ -25,6 +26,7 @@ import { formatInt } from '../dmath';
 import { fnv1a } from '../hash';
 import type { SimState } from '../state';
 import type { Sim } from '../sim';
+import { TICKS_PER_MONTH } from '../time';
 import { lowerName } from '../world/civic';
 import { accrue } from './economy';
 import { strikeRefusal } from './diplomacy';
@@ -574,3 +576,54 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
   });
   return ok(0);
 }
+
+// ---------------------------------------------------------------- the fair clock
+
+/** A game hour at 1× (ms): what the region's fair clock counts in. */
+const HOUR_MS = 7_500;
+
+/**
+ * The region's fair clock caps the city's war clock (M37, design call 15, page only): `null` lifts
+ * it (the city left its region). A city of its own never has one.
+ */
+export function warClock(sim: Sim, cap: number | null, dryRun: boolean): CommandResult {
+  const w = sim.state.war;
+  if (!w) return fail('War is off in this city');
+  if (cap !== null && !isInt(cap, 0, 1e9)) return fail('No such clock');
+  if (dryRun) return ok(0);
+  if (cap === null) delete w.clockCap;
+  else w.clockCap = cap;
+  sim.warChanged();
+  return ok(0);
+}
+
+/**
+ * Is the war clock held at the region's cap this hour? A city ahead of its region waits, and hears
+ * so now and then (a game day apart at most). A city shared with friends in a room isn't in a
+ * region, so it never waits.
+ */
+export function clockHeld(sim: Sim): boolean {
+  const s = sim.state;
+  const w = s.war;
+  if (!w || w.clockCap === undefined || sim.shared || w.clock < w.clockCap) return false;
+  if (w.heldNote === undefined || s.tick - w.heldNote >= TICKS_PER_MONTH) {
+    w.heldNote = s.tick;
+    // The region's clock comes up to the city's at 1×: a game hour every 7.5 s.
+    const ahead = Math.max(1, w.clock - (w.clockCap - FAIR_BANK));
+    const minutes = Math.max(1, Math.ceil((ahead * HOUR_MS) / 60_000));
+    sim.events.push({
+      kind: 'clockHeld',
+      id: 0,
+      info: {
+        hours: ahead,
+        minutes,
+        text: `Your city is ahead of the region’s clock: research waits about ${formatInt(minutes)} minute${minutes === 1 ? '' : 's'}`,
+      },
+    });
+    sim.warChanged();
+  }
+  return true;
+}
+
+/** The bank the page's cap gives over the region's fair clock (game hours; `FAIR.bank` in the room). */
+const FAIR_BANK = 48;

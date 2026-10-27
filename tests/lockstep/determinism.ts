@@ -263,7 +263,7 @@ export function runDeterminism(
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
   // Between friends (M37, step 9): a friend's city takes a neighbour's place in a region at war. An
   // agent waits there for the region's word (pinned, then turned back and refunded), the city takes
-  // a friend's saboteur once.
+  // a friend's saboteur once, and the region's fair clock caps its war clock, then lets it go.
   const none = { power: 0, water: 0, garbage: 0 };
   lab({
     type: 'regionUpdate',
@@ -307,6 +307,12 @@ export function runDeterminism(
     target: 'power',
     late: false,
   });
+  lab({ type: 'warClock', cap: labSim.state.war!.clock + 30 });
+  for (let h = 0; h < 3; h++) {
+    labSim.advance(TICKS_PER_MONTH);
+    research.push(labSim.hash());
+  }
+  lab({ type: 'warClock', cap: null });
   labSim.advance(TICKS_PER_MONTH);
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 

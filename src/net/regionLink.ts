@@ -9,6 +9,7 @@ import type { RaidVerdict, RegionReport, RegionUpdate } from '../sim/systems/reg
 import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
 import {
+  FAIR,
   type OpOutcome,
   type RegionClientMsg,
   type RegionOp,
@@ -151,6 +152,17 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
   };
 }
 
+/**
+ * The cap the region's fair clock puts on this city's war clock (M37, design call 15): the hours the
+ * region has seen it play at 1×, and a bank of two game days; none where war is off or before the
+ * region has heard the city's clock.
+ */
+export function fairCap(view: RegionView, slot: number): number | null {
+  if (!view.rules?.war) return null;
+  const fair = view.cities.find((c) => c.slot === slot)?.fair;
+  return fair === undefined ? null : Math.floor(fair) + FAIR.bank;
+}
+
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
@@ -164,6 +176,11 @@ export interface RegionLinkOptions {
    * its host's browser is gone while the host isn't playing.
    */
   giveUpAfter?: number;
+  /**
+   * The region's fair clock caps the city's war clock (M37): on unless a test that fast-forwards its
+   * cities far past the region's 1× pace turns it off.
+   */
+  fairClock?: boolean;
 }
 
 export class RegionLink {
@@ -195,6 +212,8 @@ export class RegionLink {
   private opsTaking = new Set<string>();
   /** Operations sent, waiting for the region's answer, by id (M37). */
   private opWaits = new Map<string, (a: OpSent) => void>();
+  /** The war-clock cap last given the city (M37): undefined until the region first says. */
+  private cap: number | null | undefined = undefined;
   /**
    * Battles coming in, in parts, and those taken already (M35); all by `sender:id` (M36: two
    * cities' battles may share an id).
@@ -562,7 +581,19 @@ export class RegionLink {
   private async take(view: RegionView): Promise<void> {
     this.view = view;
     if (this.slot) {
-      await this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
+      const update = this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
+      // The fair clock (M37): the city's war clock may run this far, told again once it moves by an
+      // hour or more (or comes off, where war is off).
+      const cap = this.opts.fairClock === false ? null : fairCap(view, this.slot);
+      const moved =
+        cap === null
+          ? this.cap !== undefined && this.cap !== null
+          : this.cap == null || cap - this.cap >= 1 || cap < this.cap;
+      if (moved) {
+        this.cap = cap;
+        void this.city.command({ type: 'warClock', cap });
+      }
+      await update;
     }
     this.onChange?.();
   }

@@ -61,6 +61,7 @@ import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite }
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps } from './client/ops';
 import { OP_TAKEN } from './sim/systems/regionOps';
+import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -768,6 +769,9 @@ export class Game {
     const link = new RegionLink(this.cityPort(), connect, {
       mayor: profile.name,
       color: profile.color,
+      // The region's fair clock caps the war clock (M37); a test build's spec that fast-forwards its
+      // cities far past the region's 1× pace may turn it off (localStorage `citybloom.fairClock`).
+      ...(IS_TEST_BUILD && fairClockOff() ? { fairClock: false } : {}),
       ...extra,
     });
     this.region = link;
@@ -833,6 +837,8 @@ export class Game {
     const code = bound ? parseInvite(bound.invite)?.code : null;
     if (bound && code) forgetRegionSecret(code, bound.slot);
     this.boundRegion = null;
+    // A city of its own again: the region's fair clock no longer caps its war clock (M37).
+    if (this.world.stats.war) void this.dispatch({ type: 'warClock', cap: null });
   }
 
   leaveRegion(say = true): void {
@@ -2099,5 +2105,14 @@ export class Game {
     const work = performance.now() - t0;
     this.frameMs = this.frameMs * 0.9 + work * 0.1;
     if (this.frameSamples && interval > 0) this.frameSamples.push(interval, work);
+  }
+}
+
+/** A test build's spec may turn the region's fair clock off (M37): it fast-forwards its cities. */
+function fairClockOff(): boolean {
+  try {
+    return localStorage.getItem('citybloom.fairClock') === 'off';
+  } catch {
+    return false;
   }
 }

@@ -4,10 +4,21 @@
  * result reaches the defending city as commands to that city's own sim. DESIGN.md §3.29.
  */
 import type { BattleRoute, BattleTarget, Stance } from '../../data/battle';
-import type { UnitKind } from '../../data/war';
+import type { BattleMod } from '../../data/research';
+import type { UnitDomain, UnitKind } from '../../data/war';
 
-/** Bumped whenever the same input could play out differently. */
-export const BATTLE_VERSION = 2;
+/**
+ * Bumped whenever the same input could play out differently. Version 3 (M37) adds research's
+ * modifiers, interceptors, the dome's pool and the superweapons, every one an optional field whose
+ * code runs only when it's there; version 2 (M35–M36) is still read, and a battle using nothing of
+ * version 3 is stamped 2 (`stampBattle`), so it plays and saves exactly as it did.
+ */
+export const BATTLE_VERSION = 3;
+/** The oldest version still read. */
+export const BATTLE_V2 = 2;
+
+/** Research's battle modifiers by domain (M37). */
+export type BattleMods = Partial<Record<UnitDomain, BattleMod>>;
 
 export type Side = 0 | 1; // attacker, defender
 
@@ -23,7 +34,12 @@ export const TAG = {
   hq: 128,
   base: 256,
   civic: 512,
+  /** An interceptor battery (version 3: tags 0–2047). */
+  intercept: 1024,
 } as const;
+/** Tags a structure may carry in a version 2 battle, and in version 3. */
+export const TAGS_V2 = 1023;
+export const TAGS_V3 = 2047;
 
 /** Domains a gun fires at, as bits. */
 export const DOMAIN_BIT = { land: 1, air: 2, sea: 4 } as const;
@@ -80,6 +96,8 @@ export interface BattleUnitIn {
   z: number;
   /** The structure it's based at (defenders), or −1. */
   base: number;
+  /** Version 3: the attacker (its id) that carries it in, launched near the objective (drones). */
+  from?: number;
 }
 
 /**
@@ -103,6 +121,10 @@ export interface BattleLayout {
   entries: BattleEntry[];
   defenders: BattleUnitIn[];
   readiness: number;
+  /** Version 3: the defenders' research modifiers by domain. */
+  mods?: BattleMods;
+  /** Version 3: the dome shield's pool, raised over the city: hits on buildings land on it first. */
+  dome?: number;
 }
 
 /** A force going in. */
@@ -114,6 +136,8 @@ export interface ForceIn {
   target: BattleTarget;
   stance: Stance;
   readiness: number;
+  /** Version 3: the attackers' research modifiers by domain. */
+  mods?: BattleMods;
 }
 
 /** An order given during a battle (M39 adds live orders; M35 has none). */
@@ -148,6 +172,8 @@ export type BattleEvent =
   /** A unit knocked out (a puff of smoke and a wreck), or gone off the map. */
   | { k: 'out'; side: Side; unit: number; kind: UnitKind }
   | { k: 'left'; side: Side; unit: number }
+  /** Version 3: the dome's pool is spent (the dome pops). */
+  | { k: 'dome'; left: 0 }
   | { k: 'end'; outcome: Outcome };
 
 export interface BattleResult {
@@ -175,11 +201,15 @@ export interface BattleUnitView {
   yaw: number;
   aim: number;
   hp: number;
-  /** 0 moving, 1 firing or holding, 2 knocked out (a wreck where it stopped). */
-  state: 0 | 1 | 2;
+  /** 0 moving, 1 firing or holding, 2 knocked out (a wreck where it stopped), 3 dived (the whale,
+   * under water: it can't be hit). */
+  state: 0 | 1 | 2 | 3;
 }
 
-/** A shot fired this tick, for tracers and shell arcs; `kind` 0 gun, 1 shell, 2 flak. */
+/**
+ * A shot fired this tick, for tracers and shell arcs; `kind` 0 gun, 1 shell, 2 flak, 3 a shell or
+ * bomb stopped by an interceptor (it ends in a puff at x1, y1, z1, high over its target).
+ */
 export interface BattleShot {
   x0: number;
   z0: number;
@@ -187,7 +217,7 @@ export interface BattleShot {
   x1: number;
   z1: number;
   y1: number;
-  kind: 0 | 1 | 2;
+  kind: 0 | 1 | 2 | 3;
   hit: boolean;
 }
 
@@ -202,4 +232,6 @@ export interface BattleFrame {
   /** Structures aimed at, with their health (0–1). */
   targets: { id: number; x: number; z: number; hp: number }[];
   outcome: Outcome | null;
+  /** Version 3: the dome's pool left (0–1), in a battle under a dome. */
+  dome?: number;
 }

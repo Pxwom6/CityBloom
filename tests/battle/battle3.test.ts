@@ -1,0 +1,496 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { BATTLE, SUPER } from '../../src/data/battle';
+import type { UnitKind } from '../../src/data/war';
+import { Battle } from '../../src/sim/battle/battle';
+import { checkBattleInput } from '../../src/sim/battle/check';
+import {
+  BATTLE_VERSION,
+  CELL_DEEP,
+  S,
+  TAG,
+  type BattleEvent,
+  type BattleFrame,
+  type BattleInput,
+  type BattleUnitIn,
+} from '../../src/sim/battle/types';
+import { battleVersionOf, stampBattle } from '../../src/sim/battle/version';
+import { input, lineLayout, TOWN, type StructSpec } from './handmade';
+
+/**
+ * Battles, version 3 (M37, `docs/plans/M37-design.md` call 6): research's modifiers, interceptor
+ * batteries, the dome's pool and the three superweapons, each an optional field whose code runs only
+ * when it's there, so version 2 battles (and version 3 ones using nothing new) play as they did.
+ */
+
+/** Every event and frame of a battle, ticked to its end. */
+function play(i: BattleInput): { b: Battle; events: BattleEvent[]; frames: BattleFrame[] } {
+  const b = new Battle(structuredClone(i));
+  const events: BattleEvent[] = [];
+  const frames: BattleFrame[] = [];
+  while (!b.outcome) {
+    events.push(...b.tick());
+    frames.push(b.frame());
+  }
+  return { b, events, frames };
+}
+
+const one = (kind: UnitKind, id: number, over: Partial<BattleUnitIn> = {}): BattleUnitIn => ({
+  id,
+  kind,
+  hp: 1,
+  x: 0,
+  z: 0,
+  base: -1,
+  ...over,
+});
+
+/** Units with fixed ids (from `first`), so two battles made alike are alike. */
+function units(kind: UnitKind, n: number, at = { x: 0, z: 0 }, base = -1, first = 1): BattleUnitIn[] {
+  return Array.from({ length: n }, (_, k) => one(kind, first + k, { x: at.x, z: at.z, base }));
+}
+function force(...spec: [UnitKind, number][]): BattleUnitIn[] {
+  const out: BattleUnitIn[] = [];
+  for (const [kind, n] of spec) out.push(...units(kind, n, { x: 0, z: 0 }, -1, out.length + 1));
+  return out;
+}
+
+/** The fortress (id 500) and the 16 drones it carries. */
+function fortress(hp = 1): BattleUnitIn[] {
+  return [
+    one('skyfortress', 500, { hp }),
+    ...Array.from({ length: 16 }, (_, k) => one('drone', -(SUPER.carriedId + k), { from: 500 })),
+  ];
+}
+
+const interceptor = (id: number, x: number, z: number, manned = 1): StructSpec => ({
+  id,
+  tags: TAG.civic | TAG.military | TAG.defence | TAG.intercept,
+  x,
+  z,
+  r: 12,
+  hp: 600,
+  gun: 3,
+  range: 360,
+  against: ['air'],
+  manned,
+});
+
+/** The same structure without the interceptor's tag: an anti-air gun, nothing more. */
+const plainGun = (s: StructSpec): StructSpec => ({ ...s, tags: s.tags & ~TAG.intercept });
+
+describe('battles version 3: what stays as it was', () => {
+  const kept = JSON.parse(readFileSync('tests/fixtures/war/battle-v2.json', 'utf8')) as {
+    input: BattleInput;
+    result: ReturnType<Battle['result']>;
+  }[];
+
+  it('a version 2 battle stamped version 3, with nothing new, plays to the same result', () => {
+    for (const k of kept) {
+      const v3 = structuredClone(k.input);
+      v3.v = BATTLE_VERSION;
+      v3.layout.v = BATTLE_VERSION;
+      expect(checkBattleInput(v3)).toBeNull();
+      expect(Battle.run(v3).result()).toEqual(k.result);
+      // And it needs nothing of version 3: stamped, it's version 2 again.
+      expect(battleVersionOf(v3)).toBe(2);
+      expect(stampBattle(v3).v).toBe(2);
+      expect(v3.layout.v).toBe(2);
+    }
+  });
+
+  it('an empty modifier, an empty dome and a far or idle interceptor change nothing', () => {
+    const base = kept[0]!.input;
+    const same = (spoil: (i: BattleInput) => void) => {
+      const i = structuredClone(base);
+      i.v = BATTLE_VERSION;
+      i.layout.v = BATTLE_VERSION;
+      spoil(i);
+      expect(checkBattleInput(i)).toBeNull();
+      return Battle.run(i).result();
+    };
+    expect(same((i) => (i.attacker.mods = { land: {}, air: {} }))).toEqual(kept[0]!.result);
+    expect(same((i) => (i.layout.mods = { land: {} }))).toEqual(kept[0]!.result);
+    expect(same((i) => (i.layout.dome = 0))).toEqual(kept[0]!.result);
+  });
+
+  it('a version 2 battle can’t carry anything of version 3', () => {
+    const v2 = () => structuredClone(kept[0]!.input);
+    expect(checkBattleInput(v2())).toBeNull();
+    const spoils: [string, (i: BattleInput) => void][] = [
+      ['attackers’ research', (i) => (i.attacker.mods = { land: { hp: 1.2 } })],
+      ['defenders’ research', (i) => (i.layout.mods = { land: { hp: 1.2 } })],
+      ['a dome', (i) => (i.layout.dome = 1000)],
+      ['an interceptor', (i) => (i.layout.structs[S.tags] = i.layout.structs[S.tags]! | TAG.intercept)],
+      ['a superweapon', (i) => i.attacker.units.push(one('windupbot', 77))],
+      [
+        'a carried drone',
+        (i) => i.attacker.units.push(one('drone', -1000, { from: i.attacker.units[0]!.id })),
+      ],
+      ['a version 3 city in a version 2 battle', (i) => (i.layout.v = BATTLE_VERSION)],
+    ];
+    for (const [what, spoil] of spoils) {
+      const i = v2();
+      spoil(i);
+      expect(checkBattleInput(i), what).not.toBeNull();
+    }
+  });
+
+  it('version 3 takes its fields within bounds, and refuses them beyond', () => {
+    const good = () => input(lineLayout(TOWN, units('tank', 2, { x: 900, z: 540 }, 0)), units('tank', 4));
+    const ok: [string, (i: BattleInput) => void][] = [
+      ['research', (i) => (i.attacker.mods = { land: { hp: 2, attack: 1, armour: 0.3, evade: 0.5 } })],
+      ['the defenders’ research', (i) => (i.layout.mods = { air: { evade: 0.25 }, sea: { hp: 1.2 } })],
+      ['a dome', (i) => (i.layout.dome = 40_000)],
+      ['an interceptor', (i) => (i.layout.structs[S.tags] = i.layout.structs[S.tags]! | TAG.intercept)],
+      ['a robot', (i) => i.attacker.units.push(one('windupbot', 77))],
+      [
+        '24 units and a fortress’s 16 drones',
+        (i) => (i.attacker.units = [...units('tank', 23), ...fortress()]),
+      ],
+      ['a version 2 city in a version 3 battle', (i) => (i.layout.v = 2)],
+    ];
+    for (const [what, set] of ok) {
+      const i = good();
+      set(i);
+      expect(checkBattleInput(i), what).toBeNull();
+    }
+    const bad: [string, (i: BattleInput) => void][] = [
+      ['hit points tripled', (i) => (i.attacker.mods = { land: { hp: 3 } })],
+      ['attack halved', (i) => (i.attacker.mods = { land: { attack: 0.5 } })],
+      ['armour beyond', (i) => (i.layout.mods = { land: { armour: 0.5 } })],
+      ['evasion beyond', (i) => (i.attacker.mods = { air: { evade: 0.9 } })],
+      ['an unknown modifier', (i) => (i.attacker.mods = { land: { speed: 2 } as never })],
+      ['an unknown domain', (i) => (i.attacker.mods = { space: { hp: 1.1 } } as never)],
+      ['a dome below nothing', (i) => (i.layout.dome = -5)],
+      ['a tag beyond', (i) => (i.layout.structs[S.tags] = 4096)],
+      ['a 17th drone', (i) => (i.attacker.units = [...fortress(), one('drone', -2000, { from: 500 })])],
+      ['25 of its own', (i) => (i.attacker.units = [...units('tank', 25), ...fortress().slice(1)])],
+      ['a drone carried by nothing', (i) => i.attacker.units.push(one('drone', -1000, { from: 12345 }))],
+      [
+        'a drone carried by a tank',
+        (i) => i.attacker.units.push(one('drone', -1000, { from: i.attacker.units[0]!.id })),
+      ],
+      [
+        'a tank carried by a fortress',
+        (i) => (i.attacker.units = [one('skyfortress', 500), one('tank', -1000, { from: 500 })]),
+      ],
+      ['a superweapon defending', (i) => i.layout.defenders.push(one('windupbot', 88, { base: 0 }))],
+      ['a carried defender', (i) => (i.layout.defenders[0]!.from = 1)],
+    ];
+    for (const [what, spoil] of bad) {
+      const i = good();
+      spoil(i);
+      expect(checkBattleInput(i), what).not.toBeNull();
+    }
+  });
+});
+
+describe('battles version 3: research’s modifiers', () => {
+  const bunkers: StructSpec[] = [0, 1].map((k) => ({
+    id: 30 + k,
+    tags: TAG.civic | TAG.military | TAG.defence,
+    x: 600 + k * 40,
+    z: 520,
+    r: 6,
+    hp: 600,
+    gun: 3,
+    range: 140,
+    against: ['land', 'air'],
+  }));
+  const fixed = (mods?: BattleInput['attacker']['mods'], theirs?: BattleInput['layout']['mods']) => {
+    const L = lineLayout([...TOWN, ...bunkers], units('tank', 3, { x: 900, z: 540 }, 0, 100), 1);
+    if (theirs) L.mods = theirs;
+    const i = input(L, force(['tank', 4], ['helicopter', 2]), { stance: 'bold' });
+    i.seed = 'mods';
+    if (mods) i.attacker.mods = mods;
+    return stampBattle(i);
+  };
+  const lost = (r: ReturnType<Battle['result']>, side: 0 | 1) =>
+    r.units.filter((u) => u.side === side && u.out).length;
+
+  it('move a fixed battle the same way twice', () => {
+    const plain = Battle.run(fixed()).result();
+    const strong = { land: { hp: 2, attack: 2, armour: 0.3 } };
+    const a = Battle.run(fixed(strong)).result();
+    const b = Battle.run(fixed(strong)).result();
+    expect(a).toEqual(b);
+    expect(a.hash).not.toBe(plain.hash);
+    // Tougher, harder-hitting tanks lose fewer and knock out more.
+    expect(lost(a, 0)).toBeLessThanOrEqual(lost(plain, 0));
+    expect(lost(a, 1)).toBeGreaterThanOrEqual(lost(plain, 1));
+    expect(lost(a, 0) - lost(a, 1)).toBeLessThan(lost(plain, 0) - lost(plain, 1));
+    // The defenders' own research works the other way.
+    const theirs = Battle.run(fixed(undefined, { land: { hp: 2, attack: 2, armour: 0.3 } })).result();
+    expect(theirs).toEqual(
+      Battle.run(fixed(undefined, { land: { hp: 2, attack: 2, armour: 0.3 } })).result(),
+    );
+    expect(lost(theirs, 1) - lost(theirs, 0)).toBeLessThan(lost(plain, 1) - lost(plain, 0));
+  });
+
+  it('beyond the bounds, a battle made at home plays as at the bound', () => {
+    expect(Battle.run(fixed({ land: { hp: 9, attack: 5, armour: 0.9 } })).result()).toEqual(
+      Battle.run(fixed({ land: { hp: 2, attack: 2, armour: 0.3 } })).result(),
+    );
+  });
+
+  it('evasion turns hits away within the one draw', () => {
+    // Helicopters under two anti-air guns: evading half the hits, they take fewer.
+    const guns: StructSpec[] = [0, 1].map((k) => ({
+      id: 40 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 400 + k * 60,
+      z: 460,
+      r: 6,
+      hp: 600,
+      gun: 5,
+      range: 320,
+      against: ['air'],
+    }));
+    const make = (evade?: number) => {
+      const i = input(lineLayout([...TOWN, ...guns]), force(['helicopter', 6]), { stance: 'bold' });
+      i.seed = 'evade';
+      if (evade !== undefined) i.attacker.mods = { air: { evade } };
+      return stampBattle(i);
+    };
+    const hits = (i: BattleInput) => {
+      const b = new Battle(i);
+      let n = 0;
+      while (!b.outcome) {
+        b.tick();
+        n += b.frame().shots.filter((s) => s.kind === 2 && s.hit).length;
+      }
+      return n;
+    };
+    const plain = hits(make());
+    const dodging = hits(make(0.5));
+    expect(plain).toBeGreaterThan(5);
+    expect(dodging).toBeLessThan(plain);
+    expect(hits(make(0.5))).toBe(dodging);
+  });
+});
+
+describe('battles version 3: interceptors', () => {
+  /** Artillery shelling the depot from 300–420 m, the bunker and homes round it. */
+  const shelling = (extra: StructSpec[]) => {
+    const i = input(lineLayout([...TOWN, ...extra]), force(['artillery', 4], ['tank', 1]), {
+      stance: 'bold',
+    });
+    i.seed = 'intercept';
+    return stampBattle(i);
+  };
+  const stopped = (frames: BattleFrame[]) => frames.flatMap((f) => f.shots.filter((s) => s.kind === 3));
+
+  it('stop shells aimed at buildings within their reach, the same every time', () => {
+    const near = interceptor(50, 1000, 700); // about 190 m from the depot
+    const a = play(shelling([near]));
+    const b = play(shelling([near]));
+    expect(a.b.result()).toEqual(b.b.result());
+    const puffs = stopped(a.frames);
+    expect(puffs.length).toBeGreaterThan(0);
+    // Each puff over a target within the battery's 450 m.
+    for (const p of puffs) expect(Math.hypot(p.x1 - 1000, p.z1 - 700)).toBeLessThan(450 + 80);
+    expect(puffs.every((p) => !p.hit && p.y1 > 20)).toBe(true);
+    // The battle goes otherwise than without it.
+    expect(a.b.result().hash).not.toBe(play(shelling([plainGun(near)])).b.result().hash);
+  });
+
+  it('a battery out of reach, or unmanned, draws nothing: the battle is as without one', () => {
+    // Beyond the targets, over 450 m from any of them and out of the artillery's reach (not a
+    // military building here, or the attackers would make it their objective, and it would guard
+    // itself).
+    const far = { ...interceptor(50, 1150, 1000), tags: TAG.civic | TAG.defence | TAG.intercept };
+    const idle = interceptor(50, 1000, 700, 0);
+    for (const s of [far, idle]) {
+      const withIt = play(shelling([s]));
+      const without = play(shelling([plainGun(s)]));
+      expect(stopped(withIt.frames)).toEqual([]);
+      expect(withIt.b.result()).toEqual(without.b.result());
+    }
+  });
+
+  it('shots from close by (tanks at a wall) aren’t stopped', () => {
+    const near = interceptor(50, 1000, 700);
+    const tanks = (s: StructSpec) => {
+      const i = input(lineLayout([...TOWN, s]), force(['tank', 6]), { stance: 'bold' });
+      i.seed = 'close';
+      return stampBattle(i);
+    };
+    const withIt = play(tanks(near));
+    expect(stopped(withIt.frames)).toEqual([]);
+    expect(withIt.b.result()).toEqual(play(tanks(plainGun(near))).b.result());
+  });
+});
+
+describe('battles version 3: the dome', () => {
+  const raid = (dome?: number) => {
+    const L = lineLayout(TOWN);
+    if (dome !== undefined) L.dome = dome;
+    const i = input(L, force(['artillery', 4], ['tank', 4]), { stance: 'bold' });
+    i.seed = 'dome';
+    return stampBattle(i);
+  };
+
+  it('soaks every hit on a building until its pool is spent, then pops', () => {
+    const plain = play(raid());
+    expect(plain.b.result().damaged.length).toBeGreaterThan(0);
+    const a = play(raid(800));
+    expect(a.b.result()).toEqual(play(raid(800)).b.result());
+    const popped = a.events.findIndex((e) => e.k === 'dome');
+    expect(popped).toBeGreaterThanOrEqual(0);
+    expect(a.events.filter((e) => e.k === 'dome').length).toBe(1);
+    // Nothing was damaged before it popped.
+    expect(a.events.slice(0, popped).some((e) => e.k === 'damaged' || e.k === 'destroyed')).toBe(false);
+    // The frames carry the pool left, falling to nothing.
+    const shares = a.frames.map((f) => f.dome!);
+    expect(shares[0]).toBeGreaterThan(0);
+    for (let k = 1; k < shares.length; k++) expect(shares[k]!).toBeLessThanOrEqual(shares[k - 1]!);
+    expect(shares.at(-1)).toBe(0);
+    expect(plain.frames[0]!.dome).toBeUndefined();
+  });
+
+  it('a pool bigger than the battle keeps every building whole', () => {
+    const a = play(raid(1_000_000));
+    const r = a.b.result();
+    expect(r.damaged).toEqual([]);
+    expect(r.destroyed).toEqual([]);
+    expect(a.events.some((e) => e.k === 'dome')).toBe(false);
+    expect(a.frames.at(-1)!.dome!).toBeLessThan(1);
+  });
+});
+
+describe('battles version 3: superweapons', () => {
+  it('the robot leaves the road near its objective and stamps on what stands in its way', () => {
+    // Homes on the straight line from where it leaves the road (500 m out) to the depot.
+    const path = [500, 600, 760, 820].map((x, k) => ({
+      id: 60 + k,
+      tags: TAG.home,
+      x,
+      z: 500 + ((x - 402) * 40) / 498,
+      r: 8,
+      hp: 200,
+    }));
+    const make = (caps?: BattleInput['caps']) => {
+      const i = input(lineLayout([...TOWN, ...path]), [one('windupbot', 1)], { stance: 'bold' });
+      i.seed = 'stomp';
+      if (caps) i.caps = caps;
+      return stampBattle(i);
+    };
+    expect(make().v).toBe(BATTLE_VERSION);
+    const a = play(make());
+    expect(a.b.result()).toEqual(play(make()).b.result());
+    const destroyed = a.b.result().destroyed;
+    for (const h of path) expect(destroyed, `home ${h.id}`).toContain(h.id);
+    // The depot it walked to falls too (stamped and shot).
+    expect(destroyed).toContain(10);
+    expect(a.b.result().outcome).toBe('raided');
+    // It walked off the road: frames put it off z = 500 near the depot.
+    const robot = a.frames.flatMap((f) => f.units.filter((u) => u.kind === 'windupbot'));
+    expect(robot.some((u) => Math.abs(u.z - 500) > 15)).toBe(true);
+    // And the battle's caps still bound it: two homes at most.
+    const capped = play(make({ maxCollapse: 2, maxWreck: 3 })).b.result();
+    expect(capped.destroyed.filter((id) => id >= 20 && id < 70).length).toBe(2);
+  });
+
+  it('the sky fortress launches its 16 drones near its objective, one at a time', () => {
+    const make = (hp = 1, extra: StructSpec[] = []) => {
+      const i = input(lineLayout([...TOWN, ...extra]), fortress(hp), { stance: 'bold' });
+      i.seed = 'fortress';
+      return stampBattle(i);
+    };
+    expect(checkBattleInput(make())).toBeNull();
+    const a = play(make());
+    expect(a.b.result()).toEqual(play(make()).b.result());
+    const seen = new Map<number, number>();
+    a.frames.forEach((f, k) => {
+      for (const u of f.units) if (u.id <= -SUPER.carriedId && !seen.has(u.id)) seen.set(u.id, k);
+    });
+    expect(seen.size).toBe(16);
+    // One at a time (20 steps apart: 10 ticks), the first within 600 m of the depot.
+    const ticks = [...seen.values()].sort((x, y) => x - y);
+    for (let k = 1; k < ticks.length; k++) expect(ticks[k]! - ticks[k - 1]!).toBeGreaterThanOrEqual(10);
+    // Its objective: the military building nearest the way in (the bunker).
+    const k = a.b.objectives[0]!;
+    const L = make().layout;
+    const [ox, oz] = [L.structs[k * S.stride + S.x]!, L.structs[k * S.stride + S.z]!];
+    const first = a.frames[ticks[0]!]!.units.find((u) => u.kind === 'skyfortress')!;
+    expect(Math.hypot(first.x - ox, first.z - oz)).toBeLessThanOrEqual(SUPER.launch);
+    expect(
+      Math.hypot(a.frames[ticks[0]! - 1]!.units[0]!.x - ox, a.frames[ticks[0]! - 1]!.units[0]!.z - oz),
+    ).toBeGreaterThan(SUPER.launch - 30);
+    // Drones are shown only once launched: none before.
+    expect(a.frames.slice(0, ticks[0]!).some((f) => f.units.some((u) => u.kind === 'drone'))).toBe(false);
+  });
+
+  it('a fortress knocked out before it has launched them all takes the rest home', () => {
+    // Anti-air round the depot, and a fortress already badly hurt.
+    const flak: StructSpec[] = [0, 1, 2, 3].map((k) => ({
+      id: 40 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 760 + k * 60,
+      z: 420,
+      r: 6,
+      hp: 600,
+      gun: 5,
+      range: 320,
+      against: ['air'],
+    }));
+    const i = input(lineLayout([...TOWN, ...flak]), fortress(0.05), { stance: 'bold' });
+    i.seed = 'fortress-down';
+    const a = play(stampBattle(i));
+    const r = a.b.result();
+    expect(r.units.find((u) => u.id === 500)!.out).toBe(true);
+    const launched = new Set<number>();
+    for (const f of a.frames) for (const u of f.units) if (u.kind === 'drone') launched.add(u.id);
+    expect(launched.size).toBeLessThan(16);
+    const left = new Set(a.events.flatMap((e) => (e.k === 'left' ? [e.unit] : [])));
+    for (let k = 0; k < 16; k++) {
+      const id = -(SUPER.carriedId + k);
+      expect(launched.has(id) || left.has(id), `drone ${id}`).toBe(true);
+      if (!launched.has(id)) expect(left.has(id)).toBe(true);
+    }
+  });
+
+  it('the whale can’t be hit while it swims; it surfaces off the shore, fires a while, then dives', () => {
+    // Deep water from z = 832 m, its shore 300 m south of the depot; a coastal gun on the shore.
+    const gun: StructSpec = {
+      id: 45,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 900,
+      z: 800,
+      r: 8,
+      hp: 600,
+      gun: 6,
+      range: 480,
+      against: ['sea'],
+    };
+    const make = () => {
+      const L = lineLayout([...TOWN, gun]);
+      const n = L.grid.nx;
+      L.grid.cells = L.grid.cells.map((c, k) => (Math.floor(k / n) * BATTLE.cell > 800 ? CELL_DEEP : c));
+      const i = input(L, [one('clockworkwhale', 7)], { stance: 'bold', route: 'sea' });
+      i.seed = 'whale';
+      return stampBattle(i);
+    };
+    expect(checkBattleInput(make())).toBeNull();
+    const a = play(make());
+    expect(a.b.result()).toEqual(play(make()).b.result());
+    const views = a.frames.flatMap((f) =>
+      f.units.filter((u) => u.kind === 'clockworkwhale').map((u) => ({ ...u, step: f.step })),
+    );
+    expect(views.length).toBeGreaterThan(0);
+    const firstUp = views.findIndex((v) => v.state !== 3);
+    expect(firstUp).toBeGreaterThan(0);
+    // Under water it was never touched.
+    for (const v of views.slice(0, firstUp)) expect(v.hp).toBe(1);
+    // Up, it's within 600 m of its way's end and in reach of the gun, which hits it.
+    expect(views.slice(firstUp).some((v) => v.hp < 1)).toBe(true);
+    // It fired at most 600 steps, then dived again and left.
+    const up = views.filter((v) => v.state !== 3);
+    expect(up.at(-1)!.step - up[0]!.step).toBeLessThanOrEqual(600 + BATTLE.stepsPerTick);
+    const after = views.slice(views.indexOf(up.at(-1)!) + 1);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((v) => v.state === 3 || v.state === 2)).toBe(true);
+    expect(a.b.result().damaged.length + a.b.result().destroyed.length).toBeGreaterThan(0);
+  });
+});

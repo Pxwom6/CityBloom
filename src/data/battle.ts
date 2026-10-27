@@ -159,3 +159,39 @@ export const RIVAL_TARGET: Record<string, BattleTarget> = {
 
 /** Computer neighbours' towns: grown from their seed by the balance mayor, at most this big. */
 export const TOWN = { cap: 8_000, testCap: 1_500, version: 1 } as const;
+
+/**
+ * Battles, version 3 (M37): research's modifiers, as a battle accepts them. A domain's units take
+ * hit points and attack multiplied (1–2), armour and evasion added (0–0.3, 0–0.5), and no unit's
+ * armour goes above `armourMax`. A battle from outside with numbers beyond these is refused.
+ */
+export const BATTLE_MOD = {
+  hp: [1, 2],
+  attack: [1, 2],
+  armour: [0, 0.3],
+  evade: [0, 0.5],
+  armourMax: 0.8,
+} as const;
+
+/**
+ * Superweapons in battle (M37). A superweapon battle in a computer neighbour's town may knock down
+ * more than a skirmish (`caps`; only the score and its forces carry over to the city); against a
+ * friend the skirmish caps stand. The robot leaves the road this close to its objective (m, in a
+ * straight line) and walks there; the sky fortress launches what it carries this close to its
+ * objective; a battle takes this many carried units at most, beyond `BATTLE.maxAttackers`, with ids
+ * −(`carriedId` + k).
+ */
+export const SUPER = {
+  caps: { maxCollapse: 24, maxWreck: 5 },
+  free: 500,
+  launch: 600,
+  maxCarried: 16,
+  carriedId: 1000,
+} as const;
+
+/**
+ * Interceptor batteries (M37) stop heavy shots (siege ≥ 1) aimed at buildings: shells fired from at
+ * least this far (m), and bombs dropped from the air. Their reach, chance and cooldown are the
+ * battery's own (`MilitaryInfo.intercept`).
+ */
+export const INTERCEPT = { from: 150 } as const;

@@ -1288,16 +1288,24 @@ reasons: DECISIONS "M36".
   (`diplomacy.vassal`, `fell` for the page's card: play on, or start again with the save kept), its
   wars with the conqueror's allies ending too; it may rise (a total war) at 1.2× its overlord's
   strength.
-- **Fairness**: newcomer protection (`raidThreat`: computer declarations and friends' raids, unless
-  struck first: `WarState.friendRaids`, `struck`); `setNeutral` (no wars or forces; leaving takes a
-  month to count); a cooldown of three months between wars with the same neighbour (`ended`).
-  Friends' raids: the region room counts the raids each city takes per UTC day (`City.raids`, three,
-  `raidsPerDay`), turns the rest away (`battleRefused`) and shows what's left (`raidsLeft` in the
-  view, `PlayerNeighbour.raidsLeft` in the sim, checked by `strikeRefusal` and the page before it
-  fights); a battle kept while its target's player is away is marked `away` and does half the damage
-  (`SKIRMISH.awayCollapse`, `awayWreck`; the attacker's page uses the same caps). A city's own sim
-  refuses a friend's raid while neutral or new (`shieldRefusal`), and its region report says so
-  (`shield`). Protocol 4.
+- **Fairness**: newcomer protection (`raidThreat`: computer declarations, and a friend's raids
+  unless the city struck first; the test-mode cheat `unshield` lifts it); `setNeutral` (no wars or
+  forces; leaving takes a month to count); a cooldown of three months between wars with the same
+  neighbour (`ended`). Friends' raids are the region room's to allow, on its own clock, so both
+  cities' sims agree on what was fought: each city's report carries its `shield` (`neutral`, or `new`
+  while newcomer protection holds), and the room (`raidRefusal`) turns a battle away
+  (`battleRefused`) when its target is neutral, or new and hasn't raided the sender within a day
+  (`City.raidedBy`, `RAID_ANSWER_MS`), or has been raided three times this UTC day (`City.raids`,
+  `raidsPerDay`). The view shows `raidsLeft` and `raidedBy`; the page turns them into a verdict per
+  friend (`raidVerdict`: open, new, neutral, spent) that `PlayerNeighbour.raid` gives the sim, so
+  `strikeRefusal` refuses a hopeless send before it leaves. The attacker's page fights the battle
+  when its force arrives (marking it `away`, at half damage, `SKIRMISH.awayCollapse`/`awayWreck`,
+  when the target's player isn't playing), posts it and waits for the room: kept, and only then does
+  its own sim take the result (`battleResolve` with `away`, then `battleReport`); refused, and the
+  record is forgotten and the force comes home (or, when the player left meanwhile, the battle is
+  fought again at half, `again`); no word, and it asks again in 20 s (a battle sent twice is
+  acknowledged, not counted twice: `pending` and `seen` ids). The defender's sim takes a friend's
+  battle only from a city it knows. Protocol 4.
 - **UI**: the war room's Diplomacy tab (`src/ui/Diplomacy.tsx`: reputation and stance, wars with
   their score bars, holds and capitulations, proposals in and out with accept, counter and refuse,
   the terms builder, treaties in force with end and buy back, each neighbour with declare and

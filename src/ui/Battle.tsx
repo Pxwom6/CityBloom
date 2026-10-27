@@ -8,6 +8,7 @@ import { RAIDS, type BattleRoute, type BattleTarget, type Stance } from '../data
 import { travelHours } from '../sim/systems/raids';
 import { UNIT, type UnitKind } from '../data/war';
 import type { BattleReport } from '../sim/systems/raids';
+import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
 import { formatNumber, useGameUpdates } from './hooks';
 
@@ -222,6 +223,8 @@ const ROUTE_DOMAINS: Record<BattleRoute, string[]> = {
 };
 
 /** The war room's Send tab (M35): choose a neighbour, what to strike, the way, and the units. */
+type SendCmd = Extract<Command, { type: 'sendForce' }>;
+
 export function SendForce() {
   const game = useGameUpdates(400);
   const w = game.world.stats.war;
@@ -236,7 +239,14 @@ export function SendForce() {
   const [stance, setStance] = useState<Stance>('bold');
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [why, setWhy] = useState<string | null>(null);
-  const [breaks, setBreaks] = useState<string | null>(null);
+  // A pact in the way (M36): the warning and the very command it was about.
+  const [breaks, setBreaks] = useState<{
+    text: string;
+    cmd: SendCmd;
+    slot: number | null;
+    hours: number;
+    form: string;
+  } | null>(null);
   if (!w) return null;
   if (!rivals.length) return <p class="muted">No rival neighbours to raid.</p>;
   const home = (game.world.forces?.units ?? []).filter((u) => !u.away && u.hp >= 0.5);
@@ -255,26 +265,25 @@ export function SendForce() {
     n.side,
     chosen.map((id) => ({ kind: home.find((u) => u.id === id)!.kind })),
   );
-  const send = async (breakPact = false) => {
-    const r = await game.dispatch({
-      type: 'sendForce',
-      units: chosen,
-      to: n.id,
-      route,
-      target,
-      stance,
-      ...(breakPact ? { breakPact: true } : {}),
-    });
-    // A pact in the way (M36): asked first.
+  // The form as it stands: a warning about another choice of force is no longer shown.
+  const form = JSON.stringify([n.id, target, route, stance, chosen]);
+  const send = async (asked?: NonNullable<typeof breaks>) => {
+    const cmd: SendCmd = asked
+      ? { ...asked.cmd, breakPact: true }
+      : { type: 'sendForce', units: chosen, to: n.id, route, target, stance };
+    const slot = asked ? asked.slot : (n.player?.slot ?? null);
+    const time = asked ? asked.hours : hours;
+    const r = await game.dispatch(cmd);
+    // A pact in the way (M36): asked first, about this very force.
     if (!r.ok && r.info?.breaks) {
-      setBreaks(r.reason);
+      setBreaks({ text: r.reason, cmd, slot, hours: time, form });
       return;
     }
     setBreaks(null);
     setWhy(r.ok ? null : r.reason);
     if (r.ok) setPicked({});
     // A friend hears of it, if they're playing.
-    if (r.ok && n.player) game.region?.forceOut(n.player.slot, chosen.length, hours);
+    if (r.ok && slot !== null) game.region?.forceOut(slot, cmd.units.length, time);
   };
   return (
     <div class="war-send" data-testid="war-send-form">
@@ -378,11 +387,11 @@ export function SendForce() {
           {why}
         </p>
       )}
-      {breaks && (
+      {breaks?.form === form && (
         <div class="dip-confirm" role="alertdialog" data-testid="send-breaks">
-          <p>{breaks}. Your reputation will suffer, and its allies will turn against the city.</p>
+          <p>{breaks.text}. Your reputation will suffer, and its allies will turn against the city.</p>
           <div class="dip-actions">
-            <button class="btn danger" data-testid="send-breaks-yes" onClick={() => void send(true)}>
+            <button class="btn danger" data-testid="send-breaks-yes" onClick={() => void send(breaks)}>
               Send it anyway
             </button>
             <button class="btn" onClick={() => setBreaks(null)}>

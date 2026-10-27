@@ -45,15 +45,17 @@ export interface PlayerNeighbour {
   /** Playing now (an offline city's last offer stands). */
   online: boolean;
   /**
-   * In a region at war (M36): raids it may still take today (the region's limit), and why it can't
-   * be raided at all: a newcomer (under the bar computer neighbours keep to) or neutral.
+   * In a region at war (M36): whether the region would let this city raid it now, as the region
+   * room decides (`open`), or why not: a newcomer that hasn't raided this city lately, neutral, or
+   * raided out for the day.
    */
-  raidsLeft?: number;
-  shield?: Shield;
+  raid?: RaidVerdict;
 }
 
-/** Why a friend's city can't be raided (M36). */
+/** Why a friend's city can't be raided (M36): its own report says so. */
 export type Shield = 'new' | 'neutral';
+/** The region's verdict on raiding a friend's city now (M36). */
+export type RaidVerdict = 'open' | 'new' | 'neutral' | 'spent';
 
 export interface Neighbour {
   id: number;
@@ -408,9 +410,8 @@ export interface RegionCity {
   jobs: number;
   shoppers: number;
   online: boolean;
-  /** In a region at war (M36): raids it may still take today, and its shield if it has one. */
-  raidsLeft?: number;
-  shield?: Shield;
+  /** In a region at war (M36): the region's verdict on this city raiding it now. */
+  raid?: RaidVerdict;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -455,8 +456,9 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       jobs: Math.max(0, c.jobs),
       shoppers: Math.max(0, c.shoppers),
       online: c.online,
-      ...(c.raidsLeft !== undefined ? { raidsLeft: Math.max(0, Math.round(c.raidsLeft)) } : {}),
-      ...(c.shield === 'new' || c.shield === 'neutral' ? { shield: c.shield } : {}),
+      ...(c.raid === 'open' || c.raid === 'new' || c.raid === 'neutral' || c.raid === 'spent'
+        ? { raid: c.raid }
+        : {}),
     };
   }
   // The other cities' deals with this one: replaced as a whole with each update.
@@ -541,11 +543,12 @@ export function regionReport(sim: Sim): RegionReport {
           : [];
       }),
     projectBuilt: [...s.civics.values()].some((c) => civicDef(c).regionProject),
-    // War (M36): friends may not raid a neutral city, nor one under the newcomer bar.
+    // War (M36): friends may not raid a neutral city, nor one under the newcomer bar (the region
+    // room holds them to it).
     ...(s.war
       ? s.war.diplomacy?.neutral
         ? { shield: 'neutral' as const }
-        : !raidThreat(sim).open
+        : !raidThreat(sim).open && !s.war.unshielded
           ? { shield: 'new' as const }
           : {}
       : {}),

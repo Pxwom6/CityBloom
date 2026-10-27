@@ -13,8 +13,10 @@ import {
   cleanTerm,
   DIPLOMACY,
   DIPLOMATS,
+  QUARTERS,
   TERM_KINDS,
   TERM_NAMES,
+  termProblem,
   WAR_REASONS,
   type DeclaredScale,
   type Party,
@@ -421,6 +423,7 @@ export function scoreBattle(
       by === 'us'
         ? `${war.name} wins a battle and takes back its seat of power`
         : `The city wins a battle and takes back its HQ from ${war.name}`,
+      by === 'us' ? 'bad' : 'good',
     );
   }
   if (war.scale === 'total' && b.seatDown && !war.hold && !b.away) {
@@ -433,6 +436,7 @@ export function scoreBattle(
       by === 'us'
         ? `The city’s forces hold ${war.name}’s seat of power: in ${DIPLOMACY.conquestHours} hours ${war.name} falls`
         : `${war.name} holds the city’s HQ: win a battle within ${DIPLOMACY.conquestHours} hours or the city falls`,
+      by === 'us' ? 'good' : 'bad',
     );
   }
   if (n) checkCapitulation(sim, war);
@@ -683,6 +687,8 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
       ...(imposed ? { imposed: true } : {}),
     });
   const nextMonth = (dateOf(s.tick).totalMonths + 1) * M - START_TICK_OFFSET;
+  // Terms imposed on the city (it capitulated) are bad news; any others, good.
+  const lost = imposed && warWith(sim, n.id)?.capitulated?.by === 'us';
   const said: string[] = [];
   for (const t of terms) {
     said.push(termText(sim, n, t));
@@ -720,10 +726,7 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
           pact(t, {
             since: nextMonth,
             amount: Math.max(100, Math.round((neighbourTaxes(n) * 0.15) / 10) * 10),
-            label: `${n.name}’s ${['', 'north', 'middle', 'south'][t.district] ?? ''} quarter`.replace(
-              '  ',
-              ' ',
-            ),
+            label: quarterName(n, t.district),
           });
         break;
       }
@@ -763,6 +766,7 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
     n.id,
     'signed',
     `${imposed ? 'Terms imposed' : 'A treaty signed'} with ${n.name}: ${said.join('; ')}`,
+    lost ? 'bad' : 'good',
   );
 }
 
@@ -774,6 +778,11 @@ function endWar(sim: Sim, id: number): void {
   d.pacts = d.pacts.filter((p) => !(p.with === id && p.term.k === 'ceasefire'));
   d.ended = { ...(d.ended ?? {}), [id]: sim.state.tick };
   stopFighting(sim, id);
+}
+
+/** A computer neighbour's quarter (1–3) by name. */
+function quarterName(n: Neighbour, k: number): string {
+  return `${n.name}’s ${QUARTERS[k] ?? 'outer'} quarter`;
 }
 
 /** A term in words, for notices and the war room. */
@@ -793,11 +802,11 @@ export function termText(sim: Sim, n: Neighbour, t: Term): string {
     case 'occupy':
       return t.side === 'us'
         ? `${n.name} occupies ${sim.state.districts.get(t.district)?.name ?? 'a district'}`
-        : `the city occupies a district of ${n.name}`;
+        : `the city occupies ${quarterName(n, t.district)}`;
     case 'release':
       return t.side === 'us'
         ? `${n.name} hands back ${sim.state.districts.get(t.district)?.name ?? 'a district'}`
-        : `the city hands back a district of ${n.name}`;
+        : `the city hands back ${quarterName(n, t.district)}`;
     case 'nonAggression':
       return `a non-aggression pact for ${t.months} months`;
     case 'alliance':
@@ -826,7 +835,7 @@ export function propose(
   const terms: Term[] = [];
   for (const t of raw) {
     const c = cleanTerm(t);
-    if (!c) return fail('A term doesn’t make sense');
+    if (!c) return fail(termProblem(t) ?? 'A term doesn’t make sense');
     terms.push(c);
   }
   const why = termsRefusal(sim, to, terms);
@@ -1172,7 +1181,8 @@ export function proposalCheat(sim: Sim, to: number, raw: Term[], dryRun: boolean
   const n = neighbourOf(sim, to);
   if (!n?.rival || n.player) return fail('No such rival');
   const terms = raw.map((t) => cleanTerm(t));
-  if (terms.some((t) => !t)) return fail('A term doesn’t make sense');
+  const bad = raw.find((t) => !cleanTerm(t));
+  if (bad) return fail(termProblem(bad) ?? 'A term doesn’t make sense');
   const why = termsRefusal(sim, to, terms as Term[]);
   if (why) return fail(why);
   if (dryRun) return ok(0);
@@ -1499,12 +1509,11 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
   const n = neighbourOf(sim, to);
   if (!n) return fail('No such neighbour');
   if (d?.neutral) return fail('A neutral city doesn’t send forces');
-  // A friend's city (M36): the region's daily limit, and its shield as its own sim reports it.
-  const p = n.player;
-  if (p?.shield === 'neutral') return fail(`${n.name} is neutral`);
-  if (p?.shield === 'new' && s.tick - (s.war?.friendRaids?.[to] ?? -Infinity) >= RAIDS.retaliate * M)
-    return fail(`${n.name} is too young or small to raid, unless it strikes first`);
-  if (p?.raidsLeft === 0)
+  // A friend's city (M36): as the region room would decide it (it has the last word).
+  const verdict = n.player?.raid;
+  if (verdict === 'neutral') return fail(`${n.name} is neutral`);
+  if (verdict === 'new') return fail(`${n.name} is too young or small to raid, unless it strikes first`);
+  if (verdict === 'spent')
     return fail(`${n.name} has taken the region’s three raids for today: no more until midnight (UTC)`);
   if (d?.leaving !== undefined && s.tick < d.leaving)
     return fail(`Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / H)} hours`);
@@ -1523,18 +1532,6 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
     return fail(`That breaks your ${TERM_NAMES[bound[0]!.term.k].toLowerCase()} with ${n.name}`, {
       info: { breaks: true },
     });
-  return null;
-}
-
-/**
- * Why a friend's raid can't be taken (M36): a neutral city, or one under the newcomer bar that
- * hasn't struck that friend lately.
- */
-export function shieldRefusal(sim: Sim, from: number): string | null {
-  const w = sim.state.war;
-  if (w?.diplomacy?.neutral) return 'The city is neutral: friends may not raid it';
-  if (!raidThreat(sim).open && sim.state.tick - (w?.struck?.[from] ?? -Infinity) >= RAIDS.retaliate * M)
-    return 'The city is too young or small to be raided';
   return null;
 }
 
@@ -1570,14 +1567,20 @@ export function embargoed(sim: Sim, id: number): boolean {
 
 /** Military buildings that stand down in a demilitarised zone on the city's side. */
 export function standsDown(sim: Sim, x: number, z: number): boolean {
+  return standDownReason(sim, x, z) !== null;
+}
+
+/** Why a military building here stands down (a demilitarised zone on the city's side), or null. */
+export function standDownReason(sim: Sim, x: number, z: number): string | null {
   const d = sim.state.war?.diplomacy;
-  if (!d) return false;
+  if (!d) return null;
   for (const p of d.pacts) {
     if (p.term.k !== 'dmz' || p.term.side !== 'us') continue;
     const n = neighbourOf(sim, p.with);
-    if (n && borderDistance(n.side, x, z) <= DIPLOMACY.dmz) return true;
+    if (n && borderDistance(n.side, x, z) <= DIPLOMACY.dmz)
+      return `Stands down: the treaty with ${n.name} keeps the city’s forces ${DIPLOMACY.dmz} m from its border`;
   }
-  return false;
+  return null;
 }
 
 function borderDistance(side: string, x: number, z: number): number {

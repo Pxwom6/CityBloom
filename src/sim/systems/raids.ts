@@ -42,7 +42,7 @@ import { civicOnline } from '../world/civic';
 import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
-import { anyWarOpen, raidStance, scoreHomeBattle, shieldRefusal } from './diplomacy';
+import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
 import { DIPLOMACY } from '../../data/diplomacy';
 import { CIVIC } from '../../data/civic';
 import type { Neighbour, RivalNeighbour } from './region';
@@ -406,12 +406,10 @@ export function resolveBattle(
   if (why) return fail(why);
   if (w.battle) return fail(BATTLE_BUSY);
   if (w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
-  // A friend's raid (M36): never on a neutral city, nor on a newcomer that hasn't struck it first.
+  // A friend's raid (M36): from a city of the region this one knows. Whether it may raid at all
+  // (shields, the day's raids) the region room has decided already, as both cities' pages heard.
   const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
-  if (friend) {
-    const shielded = shieldRefusal(sim, friend.id);
-    if (shielded) return fail(shielded);
-  }
+  if (from !== undefined && !friend) return fail('That raid came from a city this one doesn’t know');
   if (dryRun) return ok(0);
   // Only what really stands here, at home, takes the battle's damage; the caps are this city's, and
   // half them for a raid that came while the player was away.
@@ -442,8 +440,6 @@ export function resolveBattle(
   w.battle = { id: raid.id, input: adopted, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
   if (replay) w.battle.report.replay = replay.slice(0, 60);
   if (away) w.battle.report.absent = true;
-  // A friend that raided the city may be answered even by a newcomer (M36).
-  if (friend) w.friendRaids = { ...(w.friendRaids ?? {}), [friend.id]: s.tick };
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), input.id].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;

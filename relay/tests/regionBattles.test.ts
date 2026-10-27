@@ -134,12 +134,12 @@ async function regionAtWar() {
   sam.place('bunker');
   ada.sim.advance(7 * TICKS_PER_MONTH);
   sam.sim.advance(1 * TICKS_PER_MONTH);
-  // Both cities are newcomers, which friends may raid only once struck by them (M36): Sam struck
-  // Ada first, as each city's own sim remembers it.
+  // Samford is a newcomer, which friends may raid only once it has raided them (M36): the test
+  // lifts its shield, and both cities tell the region.
+  expect(sam.sim.dispatch({ type: 'cheat', cheat: 'unshield' }).ok).toBe(true);
+  await la.reportNow(true);
+  await ls.reportNow(true);
   await flush();
-  const samIn = (s: Sim, slot: number) => s.state.region.neighbours.find((n) => n.player?.slot === slot)!;
-  ada.sim.state.war!.friendRaids = { [samIn(ada.sim, ls.slot).id]: ada.sim.state.tick };
-  sam.sim.state.war!.struck = { [samIn(sam.sim, la.slot).id]: sam.sim.state.tick };
   return { room, ada, sam, la, ls, backdrops, taken, join };
 }
 
@@ -168,12 +168,15 @@ async function raidFriend(ada: { sim: Sim }, la: RegionLink, samSlot: number) {
   // Ada's page: fought in the save the region keeps of Sam's city, reported, passed on.
   const save = await la.fetchSave(samSlot);
   const theirs = Sim.fromSave(save);
-  const input = awayInput(awayCity(ada.sim, e), theirs);
+  const away = awayCity(ada.sim, e);
+  const input = awayInput(away, theirs);
   const result = awayResult(input, Battle.run(structuredClone(input)));
+  // As the page does (M36): the region keeps it first, then Ada's city takes the result.
+  const answer = await la.sendBattle(samSlot, input, !!away.neighbour.absent, 2_000);
+  expect(answer).toEqual({ kept: true });
   expect(
     ada.sim.dispatch({ type: 'battleReport', expedition: e.id, result: { ...result, replay: input.id } }).ok,
   ).toBe(true);
-  la.sendBattle(samSlot, input);
   await flush();
   return { input, result, theirs };
 }
@@ -247,9 +250,12 @@ describe('battles between friends (M35)', () => {
     expect(kept).toEqual([input.id]);
     const reports = sam.sim.state.war!.reports!.length;
     const hash = sam.sim.hash();
-    la.sendBattle(samSlot, input);
+    const left = room.view().cities.find((c) => c.slot === samSlot)!.raidsLeft;
+    // Acknowledged again, not kept again, and not counted again against Sam's raids for the day.
+    expect(await la.sendBattle(samSlot, input, true, 2_000)).toEqual({ kept: true });
     await flush(100);
     expect(pendingFor(room, samSlot)).toBeUndefined();
+    expect(room.view().cities.find((c) => c.slot === samSlot)!.raidsLeft).toBe(left);
     expect(sam.sim.state.war!.reports!.length).toBe(reports);
     expect(sam.sim.hash()).toBe(hash);
   }, 240_000);

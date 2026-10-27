@@ -47,6 +47,7 @@ import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
 import {
   RegionLink,
+  raidVerdict,
   type BattleAnswer,
   type BattleMeta,
   type CityPort,
@@ -504,13 +505,21 @@ export class Game {
     changed: () => this.notify(),
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
-    postBattle: (slot, input) => void this.region?.sendBattle(slot, input),
+    postBattle: (slot, input, away) =>
+      this.region ? this.region.sendBattle(slot, input, away) : Promise.resolve(null),
+    // As the region room would decide it (it has the last word, before the city takes anything).
     mayStrike: (slot) => {
-      const c = this.region?.view?.cities.find((x) => x.slot === slot);
-      if (!c) return null;
-      if (c.raidsLeft === 0) return `${c.name} has taken the region’s raids for today`;
-      if (c.report?.shield === 'neutral') return `${c.name} is neutral`;
-      return null;
+      const link = this.region;
+      const c = link?.view?.cities.find((x) => x.slot === slot);
+      if (!link?.view || !c) return null;
+      const v = raidVerdict(link.view, link.slot, c);
+      return v === 'neutral'
+        ? `${c.name} is neutral`
+        : v === 'new'
+          ? `${c.name} is too young or small to raid, unless it strikes first`
+          : v === 'spent'
+            ? `${c.name} has taken the region’s raids for today`
+            : null;
     },
     recall: async (expedition, why) => {
       await this.dispatch({ type: 'recallForce', expedition });
@@ -716,11 +725,8 @@ export class Game {
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
     link.onBattleKept = (id) => void battlePosted(id);
-    // Turned away (M36: the target has taken the day's raids): not sent again.
-    link.onBattleRefused = (id, reason) => {
-      void battlePosted(id);
-      this.notice(`refused:${id}`, `The region turned your raid away. ${reason}.`, 'info');
-    };
+    // Turned away (M36): not sent again (the force's own page says why and calls it home).
+    link.onBattleRefused = (id) => void battlePosted(id);
     link.onIncoming = ({ from, units, hours }) => {
       const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
       this.notice(
@@ -1253,18 +1259,18 @@ export class Game {
       else if (e.kind === 'diplomacy') {
         const what = String(e.info?.what ?? '');
         const text = String(e.info?.text ?? '');
-        const bad = [
-          'declaredOn',
-          'capitulated',
-          'fell',
-          'broken',
-          'pactsEnded',
-          'theyBroke',
-          'hold',
-        ].includes(what);
-        const good = ['signed', 'theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what);
-        this.notice(`dip:${what}:${e.id}`, text, bad ? 'bad' : good ? 'ok' : 'info');
-        if (what === 'declaredOn' || what === 'fell') this.audio?.play('raid');
+        // The sim says which way news cuts when it can go either way (a hold, terms signed).
+        const tone = e.info?.tone;
+        const bad =
+          tone === 'bad' ||
+          (!tone &&
+            ['declaredOn', 'capitulated', 'fell', 'broken', 'pactsEnded', 'theyBroke'].includes(what));
+        const good =
+          tone === 'good' ||
+          (!tone && ['theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what));
+        // Keyed by its words too: two different notes of a kind (theirs and ours) never merge.
+        this.notice(`dip:${what}:${e.id}:${text}`, text, bad ? 'bad' : good ? 'ok' : 'info');
+        if (what === 'declaredOn' || what === 'fell' || (what === 'hold' && bad)) this.audio?.play('raid');
       } else if (e.kind === 'decayed')
         this.notice(
           'decayed',

@@ -5,7 +5,7 @@
  * single player: it runs at its own speed on its owner's machine.
  */
 import type { Command, CommandResult } from '../sim/commands';
-import type { RegionReport, RegionUpdate } from '../sim/systems/region';
+import type { RaidVerdict, RegionReport, RegionUpdate } from '../sim/systems/region';
 import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg, RegionView } from '../../relay/region';
@@ -41,6 +41,21 @@ export interface BattleMeta {
   away?: boolean;
 }
 
+/**
+ * Whether the region would let the city in `slot` raid city `c` now (M36), as the room decides it:
+ * not a neutral city, not a newcomer that hasn't raided it lately, not one raided out for the day.
+ */
+export function raidVerdict(view: RegionView, slot: number, c: RegionView['cities'][number]): RaidVerdict {
+  const me = view.cities.find((x) => x.slot === slot);
+  if (c.report?.shield === 'neutral') return 'neutral';
+  if (c.report?.shield === 'new' && !(me?.raidedBy ?? []).includes(c.slot)) return 'new';
+  if (c.raidsLeft === 0) return 'spent';
+  return 'open';
+}
+
+/** What the room answered about a battle sent: kept, turned away (perhaps to fight again), or no word. */
+export type BattleSent = { kept: true } | { kept: false; reason: string; again: boolean } | null;
+
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
 export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
   const others = view.cities.filter((c) => c.slot !== slot && c.report);
@@ -59,9 +74,8 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
       jobs: c.report!.jobs,
       shoppers: c.report!.shoppers,
       online: c.online,
-      // War (M36): what the region allows against it today, and its shield.
-      ...(view.rules?.war && c.raidsLeft !== undefined ? { raidsLeft: c.raidsLeft } : {}),
-      ...(view.rules?.war && c.report!.shield ? { shield: c.report!.shield } : {}),
+      // War (M36): whether the region would let this city raid it now, as the region decides.
+      ...(view.rules?.war ? { raid: raidVerdict(view, slot, c) } : {}),
     })),
     // The others' deals with this city, from this city's side.
     contracts: others.flatMap((c) =>
@@ -269,9 +283,11 @@ export class RegionLink {
         return;
       }
       case 'battleKept':
+        this.answered(m.id, { kept: true });
         this.onBattleKept?.(m.id);
         return;
       case 'battleRefused':
+        this.answered(m.id, { kept: false, reason: m.reason, again: m.again === true });
         this.onBattleRefused?.(m.id, m.reason);
         return;
       case 'incoming':
@@ -309,12 +325,46 @@ export class RegionLink {
     this.send({ t: 'forceOut', to, units, hours });
   }
 
-  /** Send a battle fought against another city of the region (M35), to keep until it's seen. */
-  sendBattle(to: number, input: BattleInput): string {
-    const id = input.id.replace(/[^\w-]/g, '').slice(0, 40) || `b${Math.round(performance.now())}`;
+  /** The id the room knows a battle by. */
+  static battleId(input: BattleInput): string {
+    return input.id.replace(/[^\w-]/g, '').slice(0, 40) || 'battle';
+  }
+
+  /**
+   * Send a battle fought against another city of the region (M35), to keep until it's seen; `away`
+   * (M36): fought at half strength, as against a player who isn't here. The promise is the room's
+   * answer, or null when none came within `wait` ms (the link is down: send it again later).
+   */
+  sendBattle(to: number, input: BattleInput, away = false, wait = 30_000): Promise<BattleSent> {
+    const id = RegionLink.battleId(input);
     const parts = encodeBattle(input);
-    parts.forEach((data, part) => this.send({ t: 'battle', to, id, part, parts: parts.length, data }));
-    return id;
+    const answer = new Promise<BattleSent>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.battleWaits.get(id) === settle) this.battleWaits.delete(id);
+        resolve(null);
+      }, wait);
+      const settle = (a: BattleSent) => {
+        clearTimeout(timer);
+        resolve(a);
+      };
+      this.battleWaits.get(id)?.(null);
+      this.battleWaits.set(id, settle);
+    });
+    if (!this.link) this.answered(id, null);
+    else
+      parts.forEach((data, part) =>
+        this.send({ t: 'battle', to, id, part, parts: parts.length, data, ...(away ? { away: true } : {}) }),
+      );
+    return answer;
+  }
+
+  private battleWaits = new Map<string, (a: BattleSent) => void>();
+
+  private answered(id: string, a: BattleSent): void {
+    const w = this.battleWaits.get(id);
+    if (!w) return;
+    this.battleWaits.delete(id);
+    w(a);
   }
 
   /** The latest save the region keeps of a city in it (M35: battles fought there are fought in it). */

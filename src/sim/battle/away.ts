@@ -70,6 +70,11 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
   };
 }
 
+/** An expedition's battle's id: the same however often it's fought (the region keeps one of each). */
+export function awayBattleId(seed: string, expedition: number): string {
+  return `exp-${fnv1a(seed).slice(0, 8)}-${expedition}`;
+}
+
 /** The battle an expedition fights in the town it raids. */
 export function awayInput(city: AwayCity, town: Sim): BattleInput {
   const e = city.expedition;
@@ -88,7 +93,7 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
   return {
     v: BATTLE_VERSION,
     // Unique across the cities of a region: the city's seed, hashed, and the expedition.
-    id: `exp-${fnv1a(city.seed).slice(0, 8)}-${e.id}`,
+    id: awayBattleId(city.seed, e.id),
     seed,
     scale: 'skirmish',
     layout,

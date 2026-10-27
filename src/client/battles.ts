@@ -8,7 +8,9 @@
  */
 import { TOWN } from '../data/battle';
 import { townKey, type TownSpec } from '../sim/ai/town';
-import type { AwayCity } from '../sim/battle/away';
+import { awayBattleId, type AwayCity } from '../sim/battle/away';
+import type { AwayResult } from '../sim/systems/expeditions';
+import type { BattleSent } from '../net/regionLink';
 import type { BattleInput } from '../sim/battle/types';
 import type { SaveFile } from '../sim/save';
 import { IS_TEST_BUILD } from '../config';
@@ -69,6 +71,13 @@ export interface BattleRecord {
   /** A battle fought against a friend's city: its place in the region, until the region has it. */
   postTo?: number;
   posted?: boolean;
+  /**
+   * M36: the force that fought it, what the city takes once the region keeps it (not before: the
+   * region may turn it away), and whether it was fought at half strength (the player away).
+   */
+  expedition?: number;
+  result?: AwayResult & { replay?: string };
+  away?: boolean;
 }
 
 export async function loadTown(key: string): Promise<SaveFile | null> {
@@ -100,9 +109,23 @@ async function allBattles(): Promise<BattleRecord[]> {
   return (await tx<BattleRecord[]>('readonly', (s) => s.getAll(), BATTLE_STORE).catch(() => [])) ?? [];
 }
 
-/** Battles against friends' cities the region hasn't confirmed it keeps yet (sent again till it has). */
+/**
+ * Battles against friends' cities the region hasn't confirmed it keeps yet, that the city has
+ * already taken (M35's, sent again till the region has them). M36's wait for the region before
+ * the city takes them: their forces' own pages send them again.
+ */
 export async function unpostedBattles(): Promise<BattleRecord[]> {
-  return (await allBattles()).filter((r) => r.postTo !== undefined && !r.posted);
+  return (await allBattles()).filter(
+    (r) => r.postTo !== undefined && !r.posted && r.expedition === undefined,
+  );
+}
+
+/** A battle the region turned away (M36): gone, with its copy of the town. */
+export async function forgetBattle(id: string): Promise<void> {
+  const r = await loadBattle(id);
+  if (!r) return;
+  await tx('readwrite', (st) => st.delete(id), BATTLE_STORE);
+  if (r.townKey?.startsWith('player:')) await tx('readwrite', (st) => st.delete(r.townKey!), TOWN_STORE);
 }
 
 /** The region keeps a battle now: it needn't be sent again. */
@@ -133,9 +156,12 @@ export interface AwayHost {
   report(expedition: number, result: Extract<BattleJobReply, { type: 'away' }>['result']): Promise<boolean>;
   tick(): number;
   changed(): void;
-  /** In a shared region (M35): the latest save it keeps of a friend's city, and passing a battle on. */
+  /**
+   * In a shared region (M35): the latest save it keeps of a friend's city, and passing a battle on
+   * (M36: with the region's answer: kept, turned away, or no word).
+   */
   fetchSave?(slot: number): Promise<SaveFile>;
-  postBattle?(slot: number, input: BattleInput): void;
+  postBattle?(slot: number, input: BattleInput, away: boolean): Promise<BattleSent>;
   /** Why a friend's city can't be raided now (M36: the region's daily limit, its shield), or null. */
   mayStrike?(slot: number): string | null;
   /** Call a force home without a battle, saying why. */
@@ -200,10 +226,19 @@ export class AwayBattles {
 
   /** Fight every arrived expedition not fought yet (call with the war summary's expeditions). */
   check(expeditions: { id: number; state: string }[]): void {
+    const now = performance.now();
     for (const e of expeditions)
-      if (e.state === 'fighting' && !this.busy.has(e.id) && (this.failed.get(e.id) ?? 0) < 3)
+      if (
+        e.state === 'fighting' &&
+        !this.busy.has(e.id) &&
+        (this.failed.get(e.id) ?? 0) < 3 &&
+        now >= (this.waitUntil.get(e.id) ?? 0)
+      )
         void this.fight(e.id);
   }
+
+  /** Forces whose battle the region hasn't answered: asked again after this (ms, page clock). */
+  private waitUntil = new Map<number, number>();
 
   async fight(expedition: number): Promise<void> {
     this.busy.add(expedition);
@@ -214,33 +249,55 @@ export class AwayBattles {
       const n = city.neighbour;
       if (n.slot !== null) {
         // A friend's city: fought in the latest save the region keeps of it, then passed on to it.
+        // The city takes the result only once the region keeps the battle (M36: it may turn it
+        // away, and then the force comes home without one); with no word, it asks again later with
+        // the same battle (one of each force's: the region and the friend know it by its id).
         if (!this.host.fetchSave || !this.host.postBattle) throw new Error('Not in the region');
-        // Not when the region would turn it away (M36): the force comes home without a battle.
-        const why = this.host.mayStrike?.(n.slot);
-        if (why) {
-          await this.host.recall?.(expedition, why);
-          return;
+        let rec = await loadBattle(awayBattleId(city.seed, expedition));
+        if (rec && (rec.expedition !== expedition || rec.postTo !== n.slot)) rec = null;
+        if (!rec) {
+          const why = this.host.mayStrike?.(n.slot);
+          if (why) {
+            await this.host.recall?.(expedition, why);
+            return;
+          }
+          const save = await this.host.fetchSave(n.slot);
+          const reply = await this.run({ type: 'awayCity', id, city, save });
+          if (reply.type !== 'away') throw new Error(reply.type === 'error' ? reply.message : 'No battle');
+          const key = `player:${reply.input.id}`;
+          await keepTown(key, reply.town ?? save);
+          rec = {
+            id: reply.input.id,
+            city: city.cityName,
+            other: n.name,
+            tick: this.host.tick(),
+            input: reply.input,
+            townKey: key,
+            savedAt: new Date().toISOString(),
+            postTo: n.slot,
+            posted: false,
+            expedition,
+            result: { ...reply.result, replay: reply.input.id },
+            ...(n.absent ? { away: true } : {}),
+          };
+          await keepBattle(rec);
         }
-        const save = await this.host.fetchSave(n.slot);
-        const reply = await this.run({ type: 'awayCity', id, city, save });
-        if (reply.type !== 'away') throw new Error(reply.type === 'error' ? reply.message : 'No battle');
-        const key = `player:${reply.input.id}`;
-        await keepTown(key, reply.town ?? save);
-        // Kept as not yet sent until the region says it has it (sent again at each welcome till then).
-        await keepBattle({
-          id: reply.input.id,
-          city: city.cityName,
-          other: n.name,
-          tick: this.host.tick(),
-          input: reply.input,
-          townKey: key,
-          savedAt: new Date().toISOString(),
-          postTo: n.slot,
-          posted: false,
-        });
-        if (await this.host.report(expedition, { ...reply.result, replay: reply.input.id }))
-          this.host.postBattle(n.slot, reply.input);
-        else this.failed.set(expedition, (this.failed.get(expedition) ?? 0) + 1);
+        if (!rec.posted) {
+          const answer = await this.host.postBattle(n.slot, rec.input, !!rec.away);
+          if (!answer) {
+            this.waitUntil.set(expedition, performance.now() + 20_000);
+            return;
+          }
+          if (!answer.kept) {
+            await forgetBattle(rec.id);
+            // Its player left since: fought again at half strength on the next look.
+            if (!answer.again) await this.host.recall?.(expedition, answer.reason);
+            return;
+          }
+          await battlePosted(rec.id);
+        }
+        if (!rec.result || !(await this.host.report(expedition, rec.result)))
+          this.failed.set(expedition, (this.failed.get(expedition) ?? 0) + 1);
         return;
       }
       if (!n.rival) return;

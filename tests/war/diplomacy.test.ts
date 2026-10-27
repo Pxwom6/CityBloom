@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { decodeSave } from '../../src/client/saves';
 import { Sim } from '../../src/sim/sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
-import { DIPLOMACY, type Term } from '../../src/data/diplomacy';
+import { DIPLOMACY, termProblem, type Term } from '../../src/data/diplomacy';
 import { SKIRMISH } from '../../src/data/battle';
+import { MAP_SIZE } from '../../src/data/world';
 import { battleLayout } from '../../src/sim/battle/layout';
 import { BATTLE_VERSION, type BattleInput } from '../../src/sim/battle/types';
 import type { AwayResult } from '../../src/sim/systems/expeditions';
-import type { Neighbour } from '../../src/sim/systems/region';
+import { regionReport, type Neighbour } from '../../src/sim/systems/region';
+import { militaryDetails } from '../../src/sim/systems/war';
 import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
 
 /**
@@ -473,44 +475,36 @@ describe('M36: friends’ raids', () => {
       stance: 'bold',
     });
 
-  it('the attacker’s city won’t send a force to a newcomer, a neutral city, or one raided out for the day', () => {
+  it('the attacker’s city sends no force where the region would turn it away', () => {
     const { sim } = warTown();
-    let sam = friend(sim, { shield: 'new' });
-    let r = send(sim, sam.id);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/too young or small/);
-    // Unless the newcomer struck first.
-    sim.state.war!.friendRaids = { [sam.id]: sim.state.tick };
-    expect(send(sim, sam.id).ok).toBe(true);
-    sim.dispatch({ type: 'recallForce', expedition: sim.state.war!.expeditions![0]!.id });
-    sim.advance(24 * H);
-    sam = friend(sim, { shield: 'neutral' });
-    r = send(sim, sam.id);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/neutral/);
-    sam = friend(sim, { raidsLeft: 0 });
-    r = send(sim, sam.id);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/today/);
-    sam = friend(sim, { raidsLeft: 2 });
+    for (const [verdict, why] of [
+      ['new', /too young or small/],
+      ['neutral', /neutral/],
+      ['spent', /today/],
+    ] as const) {
+      const sam = friend(sim, { raid: verdict });
+      const r = send(sim, sam.id);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(why);
+    }
+    const sam = friend(sim, { raid: 'open' });
     expect(send(sim, sam.id).ok).toBe(true);
   });
 
-  it('the defender’s city refuses a friend’s raid while new or neutral, and takes one made while away at half the damage', () => {
+  it('the defender’s city takes a raid only from a city of the region it knows, at half the damage while away', () => {
     const { sim } = warTown();
-    const sam = friend(sim, { online: true });
+    friend(sim, { online: true });
     const input = (id: string) => ({
       ...strongRaid(sim, id),
       caps: { maxCollapse: 10_000, maxWreck: 10_000 },
     });
-    // A newcomer that hasn't struck that friend: refused, and nothing changes.
+    // From a place in the region the city knows nothing of: refused, and nothing changes.
     const hash = sim.hash();
-    const r = sim.dispatch({ type: 'battleResolve', input: input('f-1'), mode: 'instant', from: 2 });
+    const r = sim.dispatch({ type: 'battleResolve', input: input('f-1'), mode: 'instant', from: 3 });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/too young or small/);
+    if (!r.ok) expect(r.reason).toMatch(/doesn’t know/);
     expect(sim.hash()).toBe(hash);
-    // Struck first: taken, at half the damage while the player was away.
-    sim.state.war!.struck = { [sam.id]: sim.state.tick };
+    // From its friend, made while the player was away: half the damage.
     expect(
       sim.dispatch({ type: 'battleResolve', input: input('f-2'), mode: 'instant', from: 2, away: true }).ok,
     ).toBe(true);
@@ -518,14 +512,16 @@ describe('M36: friends’ raids', () => {
     expect(report.absent).toBe(true);
     expect(report.collapsed.length).toBeLessThanOrEqual(SKIRMISH.awayCollapse);
     expect(report.civics.filter((c) => c.wrecked).length).toBeLessThanOrEqual(SKIRMISH.awayWreck);
-    expect(sim.state.war!.friendRaids?.[sam.id]).toBe(sim.state.tick);
-    // Neutral: refused.
-    sim.advance(DIPLOMACY.neutral.afterStrikeMonths * M);
-    expect(sim.dispatch({ type: 'setNeutral', on: true }).ok).toBe(true);
-    sim.state.war!.struck = { [sam.id]: sim.state.tick };
-    const n = sim.dispatch({ type: 'battleResolve', input: input('f-3'), mode: 'instant', from: 2 });
-    expect(n.ok).toBe(false);
-    if (!n.ok) expect(n.reason).toMatch(/neutral/);
+  });
+
+  it('a city reports its shield to the region: new, neutral, or none once past the bar (or in tests, unshielded)', () => {
+    const { sim } = warTown();
+    expect(regionReport(sim).shield).toBe('new');
+    ok(sim, { type: 'setNeutral', on: true });
+    expect(regionReport(sim).shield).toBe('neutral');
+    ok(sim, { type: 'setNeutral', on: false });
+    ok(sim, { type: 'cheat', cheat: 'unshield' });
+    expect(regionReport(sim).shield).toBeUndefined();
   });
 });
 
@@ -807,5 +803,80 @@ describe('M36 review: the rules hold at their edges', () => {
         stance: 'bold',
       }).ok,
     ).toBe(true);
+  });
+});
+
+describe('M36 review: what the page is told', () => {
+  it('a term out of bounds is named with its limits', () => {
+    const { sim } = warTown(1);
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'war', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    const r = sim.dispatch({ type: 'propose', neighbour: n.id, terms: [{ k: 'ceasefire', hours: 6 }] });
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toBe('Ceasefire: 12 to 720 hours');
+    expect(termProblem({ k: 'tribute', payer: 'them', amount: 50, months: 12 })).toMatch(
+      /^Tribute: \$100 or more/,
+    );
+    expect(termProblem({ k: 'nonAggression', months: 0 })).toMatch(/1 to 120 months/);
+    expect(termProblem({ k: 'peace' })).toBeNull();
+  });
+
+  it('a neighbour’s occupied quarter is named', () => {
+    const { sim } = warTown(1);
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, {
+      type: 'cheat',
+      cheat: 'proposal',
+      neighbour: n.id,
+      terms: [{ k: 'occupy', side: 'them', district: 2 }],
+    });
+    const p = dip(sim).proposals.find((x) => x.from === 'them')!;
+    ok(sim, { type: 'answerProposal', proposal: p.id, accept: true });
+    expect(dip(sim).log.at(-1)!.text).toContain(`the city occupies ${n.name}’s middle quarter`);
+  });
+
+  it('a hold is good news when the city holds and bad when it is held', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    sim.events = [];
+    strike(sim, n, {}, 'cityhall');
+    const hold = sim.events.find((e) => e.kind === 'diplomacy' && e.info?.what === 'hold');
+    expect(hold?.info?.tone).toBe('good');
+  });
+
+  it('a base in a demilitarised zone says it stands down, and trains nothing', () => {
+    const { sim, barracks } = warTown(1);
+    disarm(sim);
+    const c = sim.state.civics.get(barracks)!;
+    // A zone on the city's side towards the neighbour whose border is nearest the barracks.
+    const MAP = MAP_SIZE;
+    const dist = (side: string) =>
+      side === 'north' ? c.z : side === 'south' ? MAP - c.z : side === 'east' ? MAP - c.x : c.x;
+    const n = [...rivals(sim)].sort((a, b) => dist(a.side) - dist(b.side))[0]!;
+    const before = DIPLOMACY.dmz;
+    (DIPLOMACY as { dmz: number }).dmz = dist(n.side) + 1;
+    try {
+      ok(sim, {
+        type: 'cheat',
+        cheat: 'proposal',
+        neighbour: n.id,
+        terms: [{ k: 'dmz', side: 'us', months: 12 }],
+      });
+      const p = dip(sim).proposals.find((x) => x.from === 'them')!;
+      ok(sim, { type: 'answerProposal', proposal: p.id, accept: true });
+      const r = sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+      expect(r.ok).toBe(false);
+      expect(!r.ok && r.reason).toMatch(/^Stands down: the treaty with /);
+      const why = militaryDetails(sim, c).trains.find((t) => t.kind === 'infantry')!.why;
+      expect(why).toMatch(/^Stands down/);
+    } finally {
+      (DIPLOMACY as { dmz: number }).dmz = before;
+    }
   });
 });

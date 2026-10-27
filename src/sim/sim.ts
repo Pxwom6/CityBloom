@@ -1226,6 +1226,12 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'unshield') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!this.state.war) return fail('War is off in this city');
+          if (!dryRun) this.state.war.unshielded = true;
+          return ok(0);
+        }
         if (cmd.cheat === 'fall') {
           if (!this.testMode) return fail('Test mode only');
           return fallCheat(this, cmd.neighbour, dryRun);

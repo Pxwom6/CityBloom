@@ -207,11 +207,11 @@ export function cleanTerm(raw: unknown): Term | null {
     case 'independence':
       return { k: t.k };
     case 'reparations':
-      return isParty(t.payer) && isInt(t.amount, 100, 1e9)
+      return isParty(t.payer) && isInt(t.amount, MIN_MONEY, 1e9)
         ? { k: 'reparations', payer: t.payer, amount: t.amount }
         : null;
     case 'tribute':
-      return isParty(t.payer) && isInt(t.amount, 100, 1e8) && isInt(t.months, L.months[0], L.months[1])
+      return isParty(t.payer) && isInt(t.amount, MIN_MONEY, 1e8) && isInt(t.months, L.months[0], L.months[1])
         ? { k: 'tribute', payer: t.payer, amount: t.amount, months: t.months }
         : null;
     case 'dmz':
@@ -227,4 +227,36 @@ export function cleanTerm(raw: unknown): Term | null {
       return isInt(t.months, L.months[0], L.months[1]) ? { k: 'nonAggression', months: t.months } : null;
   }
   return null;
+}
+
+/** A computer neighbour's three quarters, by number (an occupied "district" of a town). */
+export const QUARTERS = ['', 'north', 'middle', 'south'];
+
+/** Money terms start at this (dollars). */
+export const MIN_MONEY = 100;
+
+/** What's wrong with a term from outside, in words, or null when `cleanTerm` takes it. */
+export function termProblem(raw: unknown): string | null {
+  if (cleanTerm(raw)) return null;
+  const k = raw && typeof raw === 'object' ? (raw as { k?: unknown }).k : undefined;
+  if (typeof k !== 'string' || !(TERM_KINDS as readonly string[]).includes(k))
+    return 'A term doesn’t make sense';
+  const L = DIPLOMACY.limits;
+  const name = TERM_NAMES[k as TermKind];
+  switch (k as TermKind) {
+    case 'ceasefire':
+      return `${name}: ${L.ceasefireHours[0]} to ${L.ceasefireHours[1]} hours`;
+    case 'reparations':
+      return `${name}: $${MIN_MONEY} or more, paid by one side`;
+    case 'tribute':
+      return `${name}: $${MIN_MONEY} or more a month, for ${L.months[0]} to ${L.months[1]} months`;
+    case 'dmz':
+    case 'nonAggression':
+      return `${name}: ${L.months[0]} to ${L.months[1]} months`;
+    case 'occupy':
+    case 'release':
+      return `${name}: pick a district`;
+    default:
+      return `${name} doesn’t make sense`;
+  }
 }

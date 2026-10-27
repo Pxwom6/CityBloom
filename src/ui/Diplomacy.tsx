@@ -3,11 +3,15 @@
  * their scores, proposals in and out, treaties in force, the city's reputation and stance), the
  * terms builder, and the card a fallen city's player chooses on. DESIGN.md §3.30.
  */
-import { useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   DIPLOMACY,
+  MIN_MONEY,
+  QUARTERS,
   TERM_KINDS,
   TERM_NAMES,
+  termProblem,
   type DeclaredScale,
   type Term,
   type TermKind,
@@ -38,61 +42,106 @@ function ScoreBar({ score, id }: { score: number; id: number }) {
   );
 }
 
-/** The war room's Diplomacy tab. */
-export function Diplomacy() {
-  const game = useGameUpdates(400);
-  const d = game.world.stats.war?.diplomacy;
-  const [builder, setBuilder] = useState<{ to: number; terms: Term[]; counters?: number } | null>(null);
-  const [declaring, setDeclaring] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState<{ text: string; yes: string; go: () => void } | null>(null);
-  const [why, setWhy] = useState<string | null>(null);
-  if (!d) return null;
-  const now = game.world.displayTick;
-  /** Send a command; one a pact stands in the way of is asked about first. */
-  const run = async (cmd: Command, yes = 'Break it'): Promise<boolean> => {
-    const r = await game.dispatch(cmd);
-    if (!r.ok && r.info?.breaks) {
-      setConfirm({
-        text: `${r.reason}. Your reputation will suffer, and its allies will turn against the city.`,
-        yes,
-        go: () => void run({ ...cmd, breakPact: true } as Command),
-      });
-      return false;
-    }
-    setWhy(r.ok ? null : r.reason);
-    return r.ok;
-  };
-  const name = (id: number) => d.neighbours.find((n) => n.id === id)?.name ?? 'A neighbour';
-  const incoming = d.proposals.filter((p) => p.from === 'them');
-  const outgoing = d.proposals.filter((p) => p.from === 'us');
+/** What the terms builder was opened for: its own terms, an answer, an offer of peace, or terms set. */
+type BuilderMode = 'propose' | 'counter' | 'offer' | 'impose';
+/** Each opening of the builder starts it afresh. */
+let openings = 0;
+
+/** A question or a refusal, shown where the control that caused it is (`at`). */
+interface Asked {
+  at: string;
+  text: string;
+  yes?: string;
+  go?: () => void;
+}
+
+/** The answer to a control, beside it, scrolled into view when it appears. */
+function Feedback({ at, asked, onClose }: { at: string; asked: Asked | null; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const mine = asked?.at === at ? asked : null;
+  const text = mine?.text ?? '';
+  useEffect(() => {
+    if (text) ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [text]);
+  if (!mine) return null;
   return (
-    <div class="dip" data-testid="war-diplomacy-body">
-      {confirm && (
+    <div ref={ref}>
+      {mine.go ? (
         <div class="dip-confirm" role="alertdialog" data-testid="dip-confirm">
-          <p>{confirm.text}</p>
+          <p>{mine.text}</p>
           <div class="dip-actions">
             <button
               class="btn danger"
               data-testid="dip-confirm-yes"
               onClick={() => {
-                const go = confirm.go;
-                setConfirm(null);
-                go();
+                onClose();
+                mine.go!();
               }}
             >
-              {confirm.yes}
+              {mine.yes}
             </button>
-            <button class="btn" data-testid="dip-confirm-no" onClick={() => setConfirm(null)}>
+            <button class="btn" data-testid="dip-confirm-no" onClick={onClose}>
               Keep the city’s word
             </button>
           </div>
         </div>
-      )}
-      {why && (
+      ) : (
         <p class="dip-why" role="alert" data-testid="dip-why">
-          {why}
+          {mine.text}
         </p>
       )}
+    </div>
+  );
+}
+
+/** The war room's Diplomacy tab. */
+export function Diplomacy() {
+  const game = useGameUpdates(400);
+  const d = game.world.stats.war?.diplomacy;
+  const [builder, setBuilder] = useState<{
+    to: number;
+    terms: Term[];
+    counters?: number;
+    mode: BuilderMode;
+    n: number;
+  } | null>(null);
+  const [declaring, setDeclaring] = useState<number | null>(null);
+  const [asked, setAsked] = useState<Asked | null>(null);
+  if (!d) return null;
+  const now = game.world.displayTick;
+  /**
+   * Send a command; one a pact stands in the way of is asked about first. The answer shows at `at`;
+   * `after` runs once the command (or, asked, the command sent anyway) went through.
+   */
+  const run = async (
+    cmd: Command,
+    at: string,
+    { yes = 'Break it', after }: { yes?: string; after?: () => void } = {},
+  ): Promise<boolean> => {
+    const r = await game.dispatch(cmd);
+    if (!r.ok && r.info?.breaks) {
+      setAsked({
+        at,
+        text: `${r.reason}. Your reputation will suffer, and its allies will turn against the city.`,
+        yes,
+        go: () => void run({ ...cmd, breakPact: true } as Command, at, { yes, after }),
+      });
+      return false;
+    }
+    setAsked(r.ok ? null : { at, text: r.reason });
+    if (r.ok) after?.();
+    return r.ok;
+  };
+  const open = (to: number, terms: Term[], mode: BuilderMode, counters?: number) => {
+    setAsked(null);
+    setBuilder({ to, terms, mode, n: ++openings, ...(counters !== undefined ? { counters } : {}) });
+  };
+  const feedback = (at: string) => <Feedback at={at} asked={asked} onClose={() => setAsked(null)} />;
+  const name = (id: number) => d.neighbours.find((n) => n.id === id)?.name ?? 'A neighbour';
+  const incoming = d.proposals.filter((p) => p.from === 'them');
+  const outgoing = d.proposals.filter((p) => p.from === 'us');
+  return (
+    <div class="dip" data-testid="war-diplomacy-body">
       <section class="dip-standing" data-testid="dip-standing">
         <p class="war-row">
           <span>
@@ -123,11 +172,12 @@ export function Diplomacy() {
           <button
             class="btn"
             data-testid="dip-neutral"
-            onClick={() => void run({ type: 'setNeutral', on: !d.neutral })}
+            onClick={() => void run({ type: 'setNeutral', on: !d.neutral }, 'standing')}
           >
             {d.neutral ? 'Leave neutrality' : 'Stand neutral'}
           </button>
         </p>
+        {feedback('standing')}
       </section>
 
       {d.wars.length > 0 && (
@@ -165,7 +215,7 @@ export function Diplomacy() {
                   <button
                     class="btn primary"
                     data-testid={`dip-impose-${w.with}`}
-                    onClick={() => setBuilder({ to: w.with, terms: [{ k: 'peace' }] })}
+                    onClick={() => open(w.with, [{ k: 'peace' }], 'impose')}
                   >
                     Set terms
                   </button>
@@ -176,7 +226,7 @@ export function Diplomacy() {
                   <button
                     class="btn"
                     data-testid={`dip-peace-${w.with}`}
-                    onClick={() => setBuilder({ to: w.with, terms: [{ k: 'peace' }] })}
+                    onClick={() => open(w.with, [{ k: 'peace' }], 'offer')}
                   >
                     Offer terms
                   </button>
@@ -205,7 +255,9 @@ export function Diplomacy() {
                 <button
                   class="btn primary"
                   data-testid={`dip-accept-${p.id}`}
-                  onClick={() => void run({ type: 'answerProposal', proposal: p.id, accept: true })}
+                  onClick={() =>
+                    void run({ type: 'answerProposal', proposal: p.id, accept: true }, `prop-${p.id}`)
+                  }
                 >
                   Accept
                 </button>
@@ -213,7 +265,12 @@ export function Diplomacy() {
                   class="btn"
                   data-testid={`dip-counter-${p.id}`}
                   onClick={() =>
-                    setBuilder({ to: p.with, terms: p.terms.map((t) => ({ ...t })), counters: p.id })
+                    open(
+                      p.with,
+                      p.terms.map((t) => ({ ...t })),
+                      'counter',
+                      p.id,
+                    )
                   }
                 >
                   Counter…
@@ -221,11 +278,14 @@ export function Diplomacy() {
                 <button
                   class="btn"
                   data-testid={`dip-refuse-${p.id}`}
-                  onClick={() => void run({ type: 'answerProposal', proposal: p.id, accept: false })}
+                  onClick={() =>
+                    void run({ type: 'answerProposal', proposal: p.id, accept: false }, `prop-${p.id}`)
+                  }
                 >
                   Refuse
                 </button>
               </div>
+              {feedback(`prop-${p.id}`)}
             </div>
           ))}
         </section>
@@ -235,35 +295,51 @@ export function Diplomacy() {
         <section data-testid="dip-outgoing">
           <h4>Waiting for an answer</h4>
           {outgoing.map((p) => (
-            <p key={p.id} class="war-row" data-testid={`dip-waiting-${p.id}`}>
-              <span>
-                To {p.name}: {p.texts.join('; ')}
-              </span>
-              <button class="btn" onClick={() => void run({ type: 'withdrawProposal', proposal: p.id })}>
-                Take back
-              </button>
-            </p>
+            <div key={p.id}>
+              <p class="war-row" data-testid={`dip-waiting-${p.id}`}>
+                <span>
+                  To {p.name}: {p.texts.join('; ')}
+                </span>
+                <button
+                  class="btn"
+                  onClick={() => void run({ type: 'withdrawProposal', proposal: p.id }, `out-${p.id}`)}
+                >
+                  Take back
+                </button>
+              </p>
+              {feedback(`out-${p.id}`)}
+            </div>
           ))}
         </section>
       )}
 
       {builder && (
         <TermsBuilder
-          key={`${builder.to}:${builder.counters ?? 0}`}
+          key={builder.n}
           to={builder.to}
           name={name(builder.to)}
           initial={builder.terms}
-          counters={builder.counters}
+          mode={builder.mode}
+          feedback={feedback('builder')}
           onSend={async (terms) => {
-            const ok = await run({
-              type: 'propose',
-              neighbour: builder.to,
-              terms,
-              ...(builder.counters !== undefined ? { counters: builder.counters } : {}),
-            });
-            if (ok) setBuilder(null);
+            // A term out of bounds is named here, before it goes anywhere.
+            const bad = terms.map((t) => termProblem(t)).find((x) => x !== null);
+            if (bad) return setAsked({ at: 'builder', text: bad });
+            await run(
+              {
+                type: 'propose',
+                neighbour: builder.to,
+                terms,
+                ...(builder.counters !== undefined ? { counters: builder.counters } : {}),
+              },
+              'builder',
+              { after: () => setBuilder(null) },
+            );
           }}
-          onCancel={() => setBuilder(null)}
+          onCancel={() => {
+            setAsked(null);
+            setBuilder(null);
+          }}
         />
       )}
 
@@ -285,7 +361,7 @@ export function Diplomacy() {
                 <button
                   class="btn"
                   data-testid={`dip-buyback-${p.id}`}
-                  onClick={() => void run({ type: 'buyBack', pact: p.id })}
+                  onClick={() => void run({ type: 'buyBack', pact: p.id }, `pact-${p.id}`)}
                 >
                   Buy back · {formatMoney(p.buyBack)}
                 </button>
@@ -294,11 +370,12 @@ export function Diplomacy() {
                   class="btn"
                   data-testid={`dip-end-${p.id}`}
                   title={p.breaks ? 'Ending it breaks the city’s word' : 'End it'}
-                  onClick={() => void run({ type: 'endPact', pact: p.id })}
+                  onClick={() => void run({ type: 'endPact', pact: p.id }, `pact-${p.id}`)}
                 >
                   End
                 </button>
               )}
+              {feedback(`pact-${p.id}`)}
             </div>
           ))}
         </section>
@@ -312,11 +389,17 @@ export function Diplomacy() {
             n={n}
             d={d}
             declaring={declaring === n.id}
-            onDeclare={() => setDeclaring(declaring === n.id ? null : n.id)}
-            onPropose={() => setBuilder({ to: n.id, terms: [] })}
+            feedback={feedback(`n-${n.id}`)}
+            onDeclare={() => {
+              setAsked(null);
+              setDeclaring(declaring === n.id ? null : n.id);
+            }}
+            onPropose={() => open(n.id, [], 'propose')}
             send={async (scale, reason) => {
-              if (await run({ type: 'declareWar', neighbour: n.id, scale, reason }, 'Declare war anyway'))
-                setDeclaring(null);
+              await run({ type: 'declareWar', neighbour: n.id, scale, reason }, `n-${n.id}`, {
+                yes: d.vassal?.overlord === n.id ? 'Rise anyway' : 'Declare war anyway',
+                after: () => setDeclaring(null),
+              });
             }}
           />
         ))}
@@ -342,6 +425,7 @@ function NeighbourRow({
   n,
   d,
   declaring,
+  feedback,
   onDeclare,
   onPropose,
   send,
@@ -349,11 +433,14 @@ function NeighbourRow({
   n: Neighbour;
   d: DiplomacySummary;
   declaring: boolean;
+  feedback: ComponentChildren;
   onDeclare: () => void;
   onPropose: () => void;
   send: (scale: DeclaredScale, reason: string) => Promise<void>;
 }) {
-  const [scale, setScale] = useState<DeclaredScale>('war');
+  // A vassal's war on its overlord is a rising, and a rising is a total war.
+  const rising = d.vassal?.overlord === n.id;
+  const [scale, setScale] = useState<DeclaredScale>(rising ? 'total' : 'war');
   const [reason, setReason] = useState('');
   const atWar = d.wars.some((w) => w.with === n.id);
   const canDeclare = !n.declare || n.breaks;
@@ -379,15 +466,15 @@ function NeighbourRow({
             class="btn"
             data-testid={`dip-declare-${n.id}`}
             disabled={!canDeclare}
-            title={n.declare && !n.breaks ? n.declare : 'Declare war'}
+            title={n.declare && !n.breaks ? n.declare : rising ? 'Rise against it' : 'Declare war'}
             onClick={onDeclare}
           >
-            Declare war…
+            {rising ? 'Rise against it…' : 'Declare war…'}
           </button>
         )}
       </div>
       {!canDeclare && !atWar && n.declare && <p class="muted">{n.declare}.</p>}
-      {declaring && (
+      {declaring && !atWar && (
         <div class="dip-declare" data-testid="dip-declare-form">
           <label>
             Scale{' '}
@@ -396,8 +483,14 @@ function NeighbourRow({
               value={scale}
               onChange={(e) => setScale((e.target as HTMLSelectElement).value as DeclaredScale)}
             >
-              <option value="war">War: battles score, terms end it</option>
-              {d.allowed === 'total' && <option value="total">Total war: hold their HQ and they fall</option>}
+              {!rising && <option value="war">War: battles score, terms end it</option>}
+              {d.allowed === 'total' && (
+                <option value="total">
+                  {rising
+                    ? 'A rising: total war, hold their HQ and the city goes free'
+                    : 'Total war: hold their HQ and they fall'}
+                </option>
+              )}
             </select>
           </label>
           <label>
@@ -416,17 +509,18 @@ function NeighbourRow({
             its side.
           </p>
           <button class="btn danger" data-testid="dip-declare-go" onClick={() => void send(scale, reason)}>
-            Declare war on {n.name}
+            {rising ? `Rise against ${n.name}` : `Declare war on ${n.name}`}
           </button>
         </div>
       )}
+      {feedback}
     </div>
   );
 }
 
-/** The fields a term kind starts with. */
-function blankTerm(k: TermKind, taxes: number, district: number | undefined): Term {
-  const amount = Math.max(500, Math.round((taxes * 0.1) / 100) * 100);
+/** The fields a term kind starts with (money measured against the payer's taxes). */
+function blankTerm(k: TermKind, theirTaxes: number, district: number | undefined): Term {
+  const amount = Math.max(500, Math.round((theirTaxes * 0.1) / 100) * 100);
   switch (k) {
     case 'ceasefire':
       return { k, hours: 72 };
@@ -446,19 +540,29 @@ function blankTerm(k: TermKind, taxes: number, district: number | undefined): Te
   }
 }
 
+/** The bounds of a number in a term (the sim's `cleanTerm` and `termProblem` hold the same). */
+function bounds(t: Term, key: 'amount' | 'months' | 'hours'): [number, number] {
+  const L = DIPLOMACY.limits;
+  if (key === 'hours') return L.ceasefireHours;
+  if (key === 'months') return L.months;
+  return [MIN_MONEY, t.k === 'tribute' ? 1e8 : 1e9];
+}
+
 /** Build a proposal's terms: pick each, set its numbers, send. */
 function TermsBuilder({
   to,
   name,
   initial,
-  counters,
+  mode,
+  feedback,
   onSend,
   onCancel,
 }: {
   to: number;
   name: string;
   initial: Term[];
-  counters?: number;
+  mode: BuilderMode;
+  feedback: ComponentChildren;
   onSend: (terms: Term[]) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -466,8 +570,23 @@ function TermsBuilder({
   const d = game.world.stats.war?.diplomacy;
   const [terms, setTerms] = useState<Term[]>(initial);
   const [kind, setKind] = useState<TermKind>('peace');
+  const ref = useRef<HTMLElement>(null);
+  // Opened from further down the tab: brought into view.
+  useEffect(() => ref.current?.scrollIntoView?.({ block: 'nearest' }), []);
   if (!d) return null;
+  const theirs = d.neighbours.find((n) => n.id === to);
   const districts = [...game.world.districts.values()];
+  /** The districts a term may name: free ones to occupy, occupied ones to hand back. */
+  const choices = (k: 'occupy' | 'release', side: 'us' | 'them'): { id: number; label: string }[] => {
+    const held = d.pacts
+      .filter((p) => p.with === to && p.term.k === 'occupy' && p.term.side === side)
+      .map((p) => (p.term as { district: number }).district);
+    const all =
+      side === 'us'
+        ? districts.map((x) => ({ id: x.id, label: x.name }))
+        : [1, 2, 3].map((q) => ({ id: q, label: `its ${QUARTERS[q]} quarter` }));
+    return all.filter((o) => (k === 'release' ? held.includes(o.id) : !held.includes(o.id)));
+  };
   const set = (k: number, t: Term) => setTerms(terms.map((x, i) => (i === k ? t : x)));
   const num = (v: string) => Math.max(0, Math.round(Number(v) || 0));
   const party = (
@@ -478,30 +597,73 @@ function TermsBuilder({
     <select
       data-testid={`dip-term-${k}-${field}`}
       value={t[field]}
-      onChange={(e) => set(k, { ...t, [field]: (e.target as HTMLSelectElement).value } as Term)}
+      onChange={(e) => {
+        const v = (e.target as HTMLSelectElement).value as 'us' | 'them';
+        // A district picked on one side means nothing on the other: the first that fits.
+        if ((t.k === 'occupy' || t.k === 'release') && field === 'side')
+          return set(k, { ...t, side: v, district: choices(t.k, v)[0]?.id ?? 1 });
+        set(k, { ...t, [field]: v } as Term);
+      }}
     >
       <option value="them">{field === 'payer' ? `${name} pays` : `${name}’s side`}</option>
       <option value="us">{field === 'payer' ? 'The city pays' : 'The city’s side'}</option>
     </select>
   );
-  const field = (k: number, t: Term, key: 'amount' | 'months' | 'hours', label: string) => (
-    <label>
-      {label}{' '}
-      <input
-        type="number"
-        min={1}
-        data-testid={`dip-term-${k}-${key}`}
-        value={(t as unknown as Record<string, number>)[key]}
-        onInput={(e) => set(k, { ...t, [key]: num((e.target as HTMLInputElement).value) } as Term)}
-      />
-    </label>
-  );
+  const field = (k: number, t: Term, key: 'amount' | 'months' | 'hours', label: string) => {
+    const [lo, hi] = bounds(t, key);
+    return (
+      <label>
+        {label}{' '}
+        <input
+          type="number"
+          min={lo}
+          max={hi}
+          data-testid={`dip-term-${k}-${key}`}
+          value={(t as unknown as Record<string, number>)[key]}
+          onInput={(e) => set(k, { ...t, [key]: num((e.target as HTMLInputElement).value) } as Term)}
+          // Out of bounds when the field is left: brought back within them.
+          onBlur={(e) => {
+            const v = num((e.target as HTMLInputElement).value);
+            if (v < lo || v > hi) set(k, { ...t, [key]: Math.min(hi, Math.max(lo, v)) } as Term);
+          }}
+        />
+      </label>
+    );
+  };
+  const district = (k: number, t: Extract<Term, { k: 'occupy' | 'release' }>) => {
+    const opts = choices(t.k, t.side);
+    return opts.length ? (
+      <select
+        data-testid={`dip-term-${k}-district`}
+        value={t.district}
+        onChange={(e) => set(k, { ...t, district: Number((e.target as HTMLSelectElement).value) })}
+      >
+        {opts.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <small class="muted">{t.k === 'release' ? 'none occupied' : 'none left to occupy'}</small>
+    );
+  };
   return (
-    <section class="dip-builder" data-testid="dip-builder">
+    <section class="dip-builder" data-testid="dip-builder" ref={ref}>
       <h4>
-        {counters !== undefined ? `Counter ${name}’s proposal` : `Terms for ${name}`}
-        <small class="muted"> · the city’s taxes {formatMoney(d.taxes)} a month</small>
+        {mode === 'counter'
+          ? `Counter ${name}’s proposal`
+          : mode === 'impose'
+            ? `Terms for ${name}, who has capitulated`
+            : mode === 'offer'
+              ? `Terms to end the war with ${name}`
+              : `Terms for ${name}`}
       </h4>
+      <p class="muted">
+        Taxes a month: the city’s {formatMoney(d.taxes)}
+        {theirs ? `, ${name}’s ${formatMoney(theirs.taxes)}` : ''}. Tribute is at most half the payer’s, and
+        reparations a year of them.
+      </p>
       {terms.map((t, k) => (
         <div key={k} class="dip-term" data-testid={`dip-term-${k}`}>
           <strong>{TERM_NAMES[t.k]}</strong>
@@ -528,29 +690,7 @@ function TermsBuilder({
           {(t.k === 'occupy' || t.k === 'release') && (
             <>
               {party(k, t, 'side')}
-              {t.side === 'us' ? (
-                <select
-                  data-testid={`dip-term-${k}-district`}
-                  value={t.district}
-                  onChange={(e) => set(k, { ...t, district: Number((e.target as HTMLSelectElement).value) })}
-                >
-                  {districts.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  data-testid={`dip-term-${k}-district`}
-                  value={t.district}
-                  onChange={(e) => set(k, { ...t, district: Number((e.target as HTMLSelectElement).value) })}
-                >
-                  <option value={1}>its north quarter</option>
-                  <option value={2}>its middle quarter</option>
-                  <option value={3}>its south quarter</option>
-                </select>
-              )}
+              {district(k, t)}
             </>
           )}
           {t.k === 'nonAggression' && field(k, t, 'months', 'months')}
@@ -578,7 +718,16 @@ function TermsBuilder({
         <button
           class="btn"
           data-testid="dip-term-add"
-          onClick={() => setTerms([...terms, blankTerm(kind, d.taxes, districts[0]?.id)])}
+          onClick={() =>
+            setTerms([
+              ...terms,
+              blankTerm(
+                kind,
+                theirs?.taxes ?? d.taxes,
+                kind === 'occupy' || kind === 'release' ? choices(kind, 'them')[0]?.id : undefined,
+              ),
+            ])
+          }
         >
           Add term
         </button>
@@ -590,28 +739,57 @@ function TermsBuilder({
           disabled={!terms.length}
           onClick={() => void onSend(terms)}
         >
-          Send to {name}
+          {mode === 'impose' ? `Impose on ${name}` : `Send to ${name}`}
         </button>
         <button class="btn" onClick={onCancel}>
           Cancel
         </button>
       </div>
+      {feedback}
       <p class="muted">
-        {to ? 'Computer neighbours answer within a couple of hours, by their character.' : ''}
+        {mode === 'impose'
+          ? `${name} has capitulated: these terms stand at once.`
+          : 'Computer neighbours answer within a couple of hours, by their character.'}
       </p>
     </section>
   );
 }
 
-/** The card a city that fell sees once: play on as a vassal, or start again (the save stays). */
+/** Falls already answered (city and tick), kept in this browser so a reload doesn't ask again. */
+const FALLS_KEY = 'citybloom.falls';
+function answeredFalls(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(FALLS_KEY) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function answerFall(key: string): void {
+  try {
+    localStorage.setItem(
+      FALLS_KEY,
+      JSON.stringify([...answeredFalls().filter((k) => k !== key), key].slice(-20)),
+    );
+  } catch {
+    // Storage refused: the card is answered for this page only.
+  }
+}
+
+/**
+ * The card a city that fell sees once: play on as a vassal, or start again (the save stays). Not
+ * for a friend's visit or the battle viewer: the choice is the city's player's.
+ */
 export function FallenCard() {
   const game = useGameUpdates(500);
   const fell = game.world.stats.war?.diplomacy?.fell;
   const key = fell ? `${game.world.stats.cityName}:${fell.at}` : '';
   const [seen, setSeen] = useState<string | null>(null);
-  if (!fell || seen === key || game.inMenu() || seenFalls.has(key)) return null;
+  if (!fell || seen === key || game.inMenu() || game.readOnly || game.viewing) return null;
+  if (seenFalls.has(key) || answeredFalls().includes(key)) return null;
   const close = () => {
     seenFalls.add(key);
+    answerFall(key);
     setSeen(key);
   };
   return (

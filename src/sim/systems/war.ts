@@ -28,7 +28,14 @@ import type { BattleReport, HostedBattle, Raid } from './raids';
 import type { Expedition } from './expeditions';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
-import { diplomacySummary, standsDown, theirDmz, type Diplomacy, type DiplomacySummary } from './diplomacy';
+import {
+  diplomacySummary,
+  standDownReason,
+  standsDown,
+  theirDmz,
+  type Diplomacy,
+  type DiplomacySummary,
+} from './diplomacy';
 import { DIPLOMACY, DIPLOMATS } from '../../data/diplomacy';
 import type { FlowAccumulator } from './traffic';
 
@@ -121,8 +128,8 @@ export interface WarState {
   taken?: string[];
   /** Declarations, treaties, pacts and the city's standing (M36); absent until first used. */
   diplomacy?: Diplomacy;
-  /** When each friend's city last raided this one (ticks; M36: a newcomer may answer it). */
-  friendRaids?: Record<number, number>;
+  /** Test mode (M36): friends may raid it though it's a newcomer (e2e and relay tests). */
+  unshielded?: true;
 }
 
 export function initialWar(seed: string): WarState {
@@ -456,6 +463,8 @@ export function trainUnit(sim: Sim, baseId: number, kind: UnitKind, dryRun: bool
   if (!m.trains?.includes(kind))
     return fail(`The ${lowerName(name)} doesn't train ${def.plural.toLowerCase()}`);
   if (def.research) return fail(`${def.plural} need weapons research first`);
+  const down = standDownReason(sim, c.x, c.z);
+  if (down) return fail(down);
   if (s.economy.bankrupt) return fail('The city is bankrupt');
   const load = baseLoad(sim, baseId);
   if (load.units + load.orders >= (m.holds ?? 0))
@@ -966,6 +975,7 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
           rate: i === 0 ? Math.round(trainingRate(sim, c, o.kind) * 1000) / 1000 : 0,
         }))
     : [];
+  const down = standDownReason(sim, c.x, c.z);
   const trains = (m.trains ?? []).map((kind) => {
     const def = UNIT.get(kind)!;
     const bill = unitBill(sim, kind);
@@ -973,11 +983,13 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
       ? 'War is off in this city'
       : def.research
         ? `${def.plural} need weapons research first`
-        : full
-          ? `The ${name} is full: it keeps ${m.holds ?? 0} units`
-          : !sim.state.options.sandbox && sim.state.treasury < bill.money + bill.imports
-            ? 'Not enough money'
-            : null;
+        : down
+          ? down
+          : full
+            ? `The ${name} is full: it keeps ${m.holds ?? 0} units`
+            : !sim.state.options.sandbox && sim.state.treasury < bill.money + bill.imports
+              ? 'Not enough money'
+              : null;
     return { kind, cost: bill.money, imports: bill.imports, hours: def.hours, why };
   });
   const staff = c.staff ?? 0;
@@ -989,13 +1001,15 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
     ? null
     : !civicOnline(c)
       ? 'Closed for repairs'
-      : staff < WAR.minStaffed
-        ? posts > spare
-          ? `Short of staff (${Math.round(staff * 100)} %): the forces may take a quarter of the city's workers (${formatInt(spare)}) and the bases have ${formatInt(posts)} posts; bases that started training sooner come first`
-          : `Short of staff (${Math.round(staff * 100)} %): not enough residents looking for work nearby`
-        : powered < 0.5
-          ? 'Short of power'
-          : null;
+      : down
+        ? down
+        : staff < WAR.minStaffed
+          ? posts > spare
+            ? `Short of staff (${Math.round(staff * 100)} %): the forces may take a quarter of the city's workers (${formatInt(spare)}) and the bases have ${formatInt(posts)} posts; bases that started training sooner come first`
+            : `Short of staff (${Math.round(staff * 100)} %): not enough residents looking for work nearby`
+          : powered < 0.5
+            ? 'Short of power'
+            : null;
   return {
     jobs: m.jobs,
     staffed: Math.round(m.jobs * Math.min(1, staff)),

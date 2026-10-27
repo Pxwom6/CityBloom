@@ -107,6 +107,13 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   });
   await sam.bringToFront();
   await armTown(sam, ['militaryhq', 'bunker']);
+  // Samford is a newcomer, which friends may raid only once it has raided them (M36): the test
+  // lifts its shield, and the region hears of it before Sam leaves.
+  await sam.evaluate(async () => {
+    const r = await window.__game!.dispatch({ type: 'cheat', cheat: 'unshield' });
+    if (!r.ok) throw new Error(r.reason);
+    await window.__game!.regionReportNow();
+  });
   const before = await sam.evaluate(() => window.__game!.getDamage());
   expect((await reports(sam)).length).toBe(0);
 

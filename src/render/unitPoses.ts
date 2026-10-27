@@ -17,7 +17,7 @@ import { buildingYaw } from './buildings';
  * z back from it, a heading of 0 faces the road (−z).
  */
 
-export type UnitActivity = 'parked' | 'drill' | 'patrol' | 'flying' | 'sailing' | 'battle';
+export type UnitActivity = 'parked' | 'drill' | 'patrol' | 'flying' | 'sailing' | 'battle' | 'trial';
 
 export interface UnitPose {
   id: number;
@@ -848,6 +848,96 @@ function navalPoses(
   });
 }
 
+// ------------------------------------------------------------------ trials (M37)
+
+/** The proving ground's test track: the generated look's loop (the hand-made one follows its prompt). */
+const TRACK = { cx: -4, cz: 2, ax: 20, az: 13 };
+
+/** A prototype on trial's stand-in id: never a real unit's (those are positive). */
+export const trialId = (ground: number): number => -(900_000 + ground);
+
+function ellipse(cx: number, cz: number, ax: number, az: number, n: number): [number, number][] {
+  const pts: [number, number][] = [];
+  for (let k = 0; k <= n; k++) {
+    const a = (k / n) * TAU;
+    pts.push([cx + Math.cos(a) * ax, cz + Math.sin(a) * az]);
+  }
+  return pts;
+}
+
+/**
+ * A prototype on trial (M37), as the war room's Watch shows it: a land prototype runs the proving
+ * ground's track (the robot at a stride), an aircraft circles over the ground, a boat sails off the
+ * city's naval yard. Its run marks (`done` of `hours`) set the lap it's on, so the same moment looks
+ * the same for everyone.
+ */
+function trialPose(
+  world: ClientWorld,
+  t: { ground: number; kind: UnitKind; done: number; hours: number },
+  tick: number,
+  cache: PoseCache,
+  out: UnitPose[],
+): void {
+  const c = world.civics.get(t.ground);
+  const def = UNIT.get(t.kind);
+  if (!c || !def) return;
+  const u = { id: trialId(c.id), kind: t.kind };
+  const site = new Site(c);
+  const key = site.key();
+  if (def.domain === 'land') {
+    // The robot strides; vehicles run the loop at a trial's pace.
+    const v = def.super ? 0.35 : t.kind === 'infantry' ? 0.5 : 1.3;
+    const loop = cache.loop(
+      `${key}|track|${v}`,
+      () => new Loop(site, ellipse(TRACK.cx, TRACK.cz, TRACK.ax, TRACK.az, 32), v),
+    );
+    const p = loop.at(v * tick + idHash(c.id, 21) * loop.route.length);
+    const pose = moving(u, p, 'trial');
+    pose.turret = 0.6 * Math.sin(tick * 0.03 + c.id);
+    out.push(pose);
+    return;
+  }
+  if (def.domain === 'air') {
+    // A wide circle over the ground: the fortress slow and high, a bomber faster.
+    const fortress = !!def.super;
+    const v = fortress ? 1.6 : 7;
+    const alt = fortress ? 80 : 60;
+    const R = fortress ? 140 : 220;
+    const loop = cache.loop(`${key}|sky|${t.kind}`, () => {
+      const l = new Loop(site, ellipse(0, -site.D / 2 - R * 0.6, R, R * 0.7, 40), v);
+      for (const pt of l.route.pts) pt.y += alt;
+      return l;
+    });
+    const p = loop.at(v * tick + idHash(c.id, 22) * loop.route.length);
+    const pose = moving(u, p, 'trial');
+    pose.y = c.y + alt;
+    pose.bank = fortress ? 0.05 : 0.35;
+    pose.spin = (tick * 0.9) % TAU;
+    out.push(pose);
+    return;
+  }
+  // A boat: off the city's naval yard (sea trials need one), round its sea loop.
+  const yard = [...world.civics.values()].filter((x) => x.def === 'navalyard').sort((a, b) => a.id - b.id)[0];
+  if (!yard) return;
+  const ysite = new Site(yard);
+  const route = cache.route(`${ysite.key()}|${world.terrainVersion}|sea`, () => {
+    const pts = seaLoop(world, ysite);
+    return pts ? new Route(pts) : null;
+  });
+  if (!route) return;
+  const T = route.duration;
+  const p = route.at((((tick + idHash(c.id, 23) * T) % T) + T) % T);
+  const pose = moving(u, p, 'trial');
+  pose.y = 0;
+  pose.spin = (tick * 0.7) % TAU;
+  pose.bank = 0.03 * Math.sin(tick * 0.15 + c.id);
+  // The whale surfaces and dives along its run; a submarine dips.
+  if (t.kind === 'clockworkwhale' || t.kind === 'submarine')
+    pose.y = -2 * (0.5 + 0.5 * Math.sin(tick * 0.02));
+  if (t.kind === 'clockworkwhale') pose.open = Math.max(0, Math.sin(tick * 0.05));
+  out.push(pose);
+}
+
 /**
  * Every unit's pose at `tick` (the display clock), by its base. Units whose base has gone, or who
  * have no room on its site (more than its slots) are left out: they're indoors.
@@ -855,7 +945,11 @@ function navalPoses(
 export function unitPoses(world: ClientWorld, tick: number, lim: UnitLimits, cache: PoseCache): UnitPose[] {
   const out: UnitPose[] = [];
   const forces = world.forces;
-  if (!forces?.units.length) return out;
+  if (!forces) return out;
+  // Prototypes on trial (M37): a stand-in for each runs at its proving ground.
+  for (const t of [...(forces.trials ?? [])].sort((a, b) => a.ground - b.ground))
+    trialPose(world, t, tick, cache, out);
+  if (!forces.units.length) return out;
   const byBase = new Map<number, { id: number; kind: UnitKind }[]>();
   for (const u of forces.units) {
     // Away on an expedition (M35): not at its base.

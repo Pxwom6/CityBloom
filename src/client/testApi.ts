@@ -1,4 +1,7 @@
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
+import type { ResearchSummary } from '../sim/systems/research';
+import type { IntelSummary } from '../sim/systems/intel';
+import type { SupersSummary } from '../sim/systems/supers';
 import type { BudgetReport } from '../sim/protocol';
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
@@ -41,7 +44,7 @@ import { loadWarModels, warModelsAsked } from './models';
 import type { UnitShown } from '../render/units';
 import { MILITARY_SITES } from '../render/assets/militaryModels';
 import { buildCivicModel } from '../render/assets/civicModels';
-import type { UnitKind } from '../data/war';
+import { UNIT, type UnitKind } from '../data/war';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -139,6 +142,16 @@ export interface TestApi {
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
   /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
   getDiplomacy(): DiplomacySummary | null;
+  /** Weapons research (M37): the labs, the queue, tiers done, prototypes and trials; null without. */
+  getResearch(): ResearchSummary | null;
+  /** Spies (M37): agents, counter-intelligence, missions and results; null with war off. */
+  getIntel(): IntelSummary | null;
+  /** The superweapon buildings (M37), what the effects draw, and the superweapon units. */
+  getSupers(): {
+    buildings: SupersSummary | null;
+    shown: { dome: boolean; bubbles: number; swirl: boolean; tower: boolean };
+    units: { id: number; kind: string; away: boolean; ready: number | null; hp: number }[];
+  };
   /** The budget as the Budget panel reads it: this month's ledger, the closed months, rates. */
   getLedger(): Promise<BudgetReport>;
   /** Report to the region now (it does every 30 s by itself). */
@@ -720,6 +733,15 @@ export function installTestApi(game: Game): TestApi {
       viewing: game.viewing?.record.id ?? null,
     }),
     getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
+    getResearch: () => game.world.stats.war?.research ?? null,
+    getIntel: () => game.world.stats.war?.intel ?? null,
+    getSupers: () => ({
+      buildings: game.world.stats.war?.supers ?? null,
+      shown: { ...game.renderer.supers.shown },
+      units: (game.world.forces?.units ?? [])
+        .filter((u) => UNIT.get(u.kind)?.super)
+        .map((u) => ({ id: u.id, kind: u.kind, away: !!u.away, ready: u.ready ?? null, hp: u.hp })),
+    }),
     getLedger: () => game.client.query<BudgetReport>({ type: 'budget' }),
     getWarRoom: () => ({
       open: game.panel === 'war',

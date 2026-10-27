@@ -249,3 +249,57 @@ export function superBuildingsReady(sim: Sim): void {
   if (s.tower && !s.tower.charging) s.tower.ready = w!.clock;
   if (s.gate) s.gate.ready = w!.clock;
 }
+
+/** The superweapon buildings as the page shows them (M37): the war room, the inspectors and the effects. */
+export interface SupersSummary {
+  /** The dome: its building, charge (0–1), mode, raised over a battle now. */
+  dome: { civic: number; charge: number; mode: DomeMode; raised: boolean } | null;
+  /** The tower: its building, hours until it can fire, and the neighbour it's charging at. */
+  tower: { civic: number; wait: number; charging: { to: number; hours: number } | null } | null;
+  /** The gate: its building, hours until it can send, and war hours since a force last went through. */
+  gate: { civic: number; wait: number; since: number | null } | null;
+  /** The city blacked out by a friend's tower: by whom (their place), and hours left. */
+  blackout: { by: number; left: number } | null;
+  /** Computer neighbours the city has blacked out, with hours left. */
+  darkened: { id: number; left: number }[];
+}
+
+export function supersSummary(sim: Sim): SupersSummary | null {
+  const w = sim.state.war;
+  if (!w) return null;
+  const s = w.supers;
+  const dome = superBuilding(sim, 'dome');
+  const tower = superBuilding(sim, 'tower');
+  const gate = superBuilding(sim, 'gate');
+  return {
+    dome:
+      dome && s?.dome
+        ? {
+            civic: dome.id,
+            charge: s.dome.hours / DOME.chargeHours,
+            mode: s.dome.mode,
+            raised: !!s.dome.raised,
+          }
+        : null,
+    tower: tower
+      ? {
+          civic: tower.id,
+          wait: superWait(sim, 'tower'),
+          charging: s?.tower?.charging
+            ? { to: s.tower.charging.to, hours: Math.max(0, s.tower.charging.at - w.clock) }
+            : null,
+        }
+      : null,
+    gate: gate
+      ? {
+          civic: gate.id,
+          wait: superWait(sim, 'gate'),
+          since: s?.gate ? w.clock - (s.gate.ready - GATE.recharge) : null,
+        }
+      : null,
+    blackout: blackedOut(sim) ? { by: w.blackout!.by, left: w.blackout!.until - w.clock } : null,
+    darkened: sim.state.region.neighbours
+      .filter((n) => rivalBlackedOut(sim, n))
+      .map((n) => ({ id: n.id, left: n.rival!.blackout!.until - w.clock })),
+  };
+}

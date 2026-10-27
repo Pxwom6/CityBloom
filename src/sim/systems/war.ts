@@ -36,7 +36,7 @@ import {
   type ResearchSummary,
 } from './research';
 import { accrue, book, fundingPct } from './economy';
-import { supersHour, type Supers } from './supers';
+import { supersHour, supersSummary, type Supers, type SupersSummary } from './supers';
 import { depotSabotaged, intelHour, intelSummary, type Intel, type IntelSummary } from './intel';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
@@ -876,6 +876,8 @@ export interface WarSummary {
   research: ResearchSummary | null;
   /** Spies (M37): agents, counter-intelligence, missions and what they found, neighbours revealed. */
   intel: IntelSummary | null;
+  /** The superweapon buildings (M37): the dome, the tower and the gate, and blackouts. */
+  supers: SupersSummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -989,6 +991,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     diplomacy: diplomacySummary(sim),
     research: researchSummary(sim),
     intel: intelSummary(sim),
+    supers: supersSummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

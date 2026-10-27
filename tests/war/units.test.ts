@@ -9,7 +9,7 @@ import { generatedUnit, generatedWinding, unitModel } from '../../src/render/ass
 import { buildMilitaryModel, MILITARY_SITES } from '../../src/render/assets/militaryModels';
 import { ModelBuilder, modelRng } from '../../src/render/assets/builder';
 import { unitDepthMaterial, unitGeometry, unitMaterial, UnitRenderer } from '../../src/render/units';
-import { PoseCache, Site, unitPoses, type UnitPose } from '../../src/render/unitPoses';
+import { PoseCache, Site, trialId, unitPoses, type UnitPose } from '../../src/render/unitPoses';
 import { newSim } from '../helpers';
 import { kindsAt, unitTown } from './unitTown';
 
@@ -346,6 +346,33 @@ describe('unit poses (M34)', () => {
         expect(p.y).toBeGreaterThanOrEqual(c.y - 0.01);
       }
     expect(high).toBeGreaterThan(10);
+  });
+
+  it('a prototype on trial runs at its proving ground, flies over it, or sails off the naval yard (M37)', () => {
+    const ground = bases.vehicledepot!;
+    const c = world.civics.get(ground)!;
+    const site = new Site(c);
+    const was = world.forces!;
+    const trialAt = (kind: UnitKind, tick: number) => {
+      world.forces = { ...was, units: [], trials: [{ ground, kind, done: 3, hours: 36 }] };
+      const poses = unitPoses(world, tick, LIM, new PoseCache());
+      world.forces = was;
+      expect(poses).toHaveLength(1);
+      expect(poses[0]!.id).toBe(trialId(ground));
+      expect(poses[0]!.doing).toBe('trial');
+      return poses[0]!;
+    };
+    // On the track, and moving: two moments apart are in different places.
+    const a = trialAt('heavytank', 100);
+    const b = trialAt('heavytank', 140);
+    expect(Math.hypot(a.x - c.x, a.z - c.z)).toBeLessThan(Math.hypot(site.W, site.D) / 2);
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(5);
+    expect(trialAt('heavytank', 100)).toEqual(a);
+    // Up in the air over it, and on the water off the yard.
+    expect(trialAt('bomber', 100).y).toBeGreaterThan(c.y + 40);
+    const boat = trialAt('gunboat', 100);
+    expect(boat.y).toBe(0);
+    expect(world.heightAt(boat.x, boat.z)).toBeLessThan(0);
   });
 
   it('fewer units leave their slots at a lower quality', () => {

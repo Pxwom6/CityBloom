@@ -80,6 +80,9 @@ export class BattleEffects {
   private lastWreckSmoke = 0;
   /** Shots and puffs on screen last update (tests and stats). */
   counts = { tracers: 0, puffs: 0 };
+  /** M37: share of dust and spray drawn (the robot's stomps, drones launching): the quality's. */
+  dust = 1;
+  private dustAt = 0;
 
   constructor(private world: ClientWorld) {
     const lg = new BufferGeometry();
@@ -139,6 +142,12 @@ export class BattleEffects {
       const y0 = this.ground(s.x0, s.z0) + s.y0;
       const y1 = this.ground(s.x1, s.z1) + s.y1;
       this.tracers.push({ ...s, y0, y1, born: now });
+      if (s.kind === 3) {
+        // Stopped by an interceptor (M37): the shell bursts in a white puff at the top of its arc.
+        const h = Math.hypot(s.x1 - s.x0, s.z1 - s.z0) * 0.25;
+        this.puff((s.x0 + s.x1) / 2, (y0 + y1) / 2 + h, (s.z0 + s.z1) / 2, now + SHELL * 0.5, 8, 0.02, 2);
+        continue;
+      }
       // Hits land in a puff (after the shell's flight); misses kick up a smaller one nearby.
       const delay = s.kind === 1 ? SHELL : TRACER * 0.5;
       const size = s.kind === 1 ? 9 : s.kind === 2 ? 5 : 2.6; // metres
@@ -148,6 +157,9 @@ export class BattleEffects {
     if (this.tracers.length > MAX_LINES) this.tracers.splice(0, this.tracers.length - MAX_LINES);
     for (const u of f.units) {
       const key = `${u.side}:${u.id}`;
+      // A drone launched from a sky fortress (M37): a little puff where it drops out.
+      if (!prev.has(key) && w.battlePrev && u.kind === 'drone' && this.dust > 0)
+        this.puff(u.x, this.ground(u.x, u.z) + u.y, u.z, now, 4, 0.15, 1);
       if (u.state === 2 && prev.get(key) !== 2 && !this.wrecks.has(key)) {
         // Knocked out: a puff of smoke, and a wreck that smoulders.
         const y = this.ground(u.x, u.z) + u.y;
@@ -177,17 +189,38 @@ export class BattleEffects {
       for (const u of w.battle.units)
         if (u.state === 2) this.puff(u.x, this.ground(u.x, u.z) + u.y + 2, u.z, now, 7, 0.8, 10);
     }
-    // Tracers and shells.
-    this.tracers = this.tracers.filter((t) => now - t.born < (t.kind === 1 ? SHELL : TRACER));
+    // The robot's stomps (M37): dust at its feet as it walks, by the quality's share.
+    if (w.battle && this.dust > 0 && now - this.dustAt > 0.35 / this.dust) {
+      this.dustAt = now;
+      for (const u of w.battle.units)
+        if (u.kind === 'windupbot' && u.state !== 2) {
+          const s = Math.sin(u.yaw);
+          const c = Math.cos(u.yaw);
+          for (const side of [-1, 1])
+            this.puff(
+              u.x + c * side * 3 - s * 2,
+              this.ground(u.x, u.z) + 0.5,
+              u.z - s * side * 3 - c * 2,
+              now,
+              6,
+              0.35,
+              2,
+            );
+        }
+    }
+    // Tracers and shells (an intercepted one flies half its arc).
+    this.tracers = this.tracers.filter(
+      (t) => now - t.born < (t.kind === 1 ? SHELL : t.kind === 3 ? SHELL * 0.5 : TRACER),
+    );
     const pos = this.lines.geometry.getAttribute('position') as BufferAttribute;
     const col = this.lines.geometry.getAttribute('color') as BufferAttribute;
     let n = 0;
     for (const t of this.tracers) {
       if (n >= MAX_LINES) break;
-      const life = t.kind === 1 ? SHELL : TRACER;
-      const a = Math.min(1, (now - t.born) / life);
+      const life = t.kind === 1 || t.kind === 3 ? SHELL : TRACER;
+      const a = Math.min(t.kind === 3 ? 0.5 : 1, (now - t.born) / life);
       let x0: number, y0: number, z0: number, x1: number, y1: number, z1: number;
-      if (t.kind === 1) {
+      if (t.kind === 1 || t.kind === 3) {
         // A shell: a short bright dash along an arc.
         const at = (k: number) => {
           const h = Math.hypot(t.x1 - t.x0, t.z1 - t.z0) * 0.25;
@@ -211,7 +244,8 @@ export class BattleEffects {
       }
       pos.setXYZ(n * 2, x0, y0, z0);
       pos.setXYZ(n * 2 + 1, x1, y1, z1);
-      const [r, g, b] = t.kind === 2 ? [0.7, 0.9, 1] : t.kind === 1 ? [1, 0.75, 0.35] : [1, 0.9, 0.55];
+      const [r, g, b] =
+        t.kind === 2 ? [0.7, 0.9, 1] : t.kind === 1 || t.kind === 3 ? [1, 0.75, 0.35] : [1, 0.9, 0.55];
       const fade = 1 - a * 0.5;
       col.setXYZ(n * 2, r * fade * 0.4, g * fade * 0.4, b * fade * 0.4);
       col.setXYZ(n * 2 + 1, r * fade, g * fade, b * fade);

@@ -48,6 +48,10 @@ export interface UnitQuality {
   drill: number;
   patrol: number;
   fly: number;
+  /** M37: shield and dome shells in full (2), as a rim (1) or a ring on the ground (0). */
+  shields: 0 | 1 | 2;
+  /** M37: share of the battle's dust and spray drawn (stomps, launches, the whale's wake). */
+  dust: number;
 }
 
 export const UNIT_QUALITY_DEFAULT: UnitQuality = {
@@ -58,6 +62,8 @@ export const UNIT_QUALITY_DEFAULT: UnitQuality = {
   drill: 8,
   patrol: 3,
   fly: 4,
+  shields: 2,
+  dust: 1,
 };
 
 /** How a part moves (the shader's codes). */
@@ -539,11 +545,13 @@ export class UnitRenderer {
       const domain = UNIT.get(u.kind)?.domain ?? 'land';
       const ground = domain === 'sea' ? 0 : w.heightAt(x, z);
       const moved = Math.hypot(u.x - p.x, u.z - p.z);
+      // The clockwork whale dived (M37): under the water, out of reach.
+      const dived = u.state === 3 ? -7 : 0;
       out.push({
         id: u.side === 0 ? -1_000_000 - Math.abs(u.id) : u.id,
         kind: u.kind,
         x,
-        y: ground + (domain === 'air' ? u.y : 0),
+        y: ground + (domain === 'air' ? u.y : 0) + dived,
         z,
         yaw: p.yaw + dy * k,
         pitch: 0,
@@ -551,7 +559,8 @@ export class UnitRenderer {
         turret: u.state === 2 ? 0.6 : u.aim,
         barrel: u.state === 1 ? 0.12 : 0,
         rolled: (this.rolled.get(key) ?? 0) - moved * (1 - k),
-        open: 0,
+        // Hatches open as it fires: the whale's jaw, the fortress's bays (M37).
+        open: u.state === 1 && UNIT.get(u.kind)?.super ? 1 : 0,
         spin: domain === 'air' && u.state !== 2 ? tick * 1.9 : 0,
         doing: 'battle',
         color: u.side === 0 ? f.sides[0]?.color : undefined,

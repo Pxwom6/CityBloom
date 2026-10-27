@@ -132,7 +132,8 @@ export function ReportCard({ r }: { r: BattleReport }) {
         <ul>
           <li>
             In {r.other}: {formatNumber(r.away.objectives.down)} of {formatNumber(r.away.objectives.aimed)}{' '}
-            targets knocked out, {formatNumber(r.away.destroyed)} buildings down
+            targets knocked out, {formatNumber(r.away.destroyed)} building{r.away.destroyed === 1 ? '' : 's'}{' '}
+            down
           </li>
           <li>
             Their defenders lost {formatNumber(r.theirLost)} of {formatNumber(r.theirTotal)} strength

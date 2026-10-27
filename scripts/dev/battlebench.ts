@@ -12,10 +12,12 @@
  * gunboats by sea), `--dome` raises a dome's pool of 40,000 over the city, and `--guards` gives the
  * city Hardened buildings, four interceptor batteries and two shield generators. The whole battle at
  * once is then fought with the superweapon caps, and its superweapon moments are counted.
+ * `--save out.gz` keeps the war city as it stands before the raid (with `--dome`, a charged dome
+ * shield too) for `framebench.mjs out.gz --views battle`, the frame budget in the heaviest battle.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { gunzipSync, strFromU8 } from 'fflate';
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
 import { Sim } from '../../src/sim/sim';
 import { startWar } from '../../src/sim/systems/war';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
@@ -34,7 +36,10 @@ const superKind = args[args.indexOf('--super') + 1] as 'robot' | 'fortress' | 'w
 const superweapon = args.includes('--super') ? superKind : undefined;
 if (args.includes('--super') && !['robot', 'fortress', 'whale'].includes(superKind ?? ''))
   throw new Error('--super robot|fortress|whale');
-const file = args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--super') ?? 'bench-results/city.gz';
+const saveTo = args.includes('--save') ? args[args.indexOf('--save') + 1] : undefined;
+const file =
+  args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--super' && args[k - 1] !== '--save') ??
+  'bench-results/city.gz';
 const sim = Sim.fromSave(JSON.parse(strFromU8(gunzipSync(readFileSync(file)))));
 sim.testMode = true;
 const s = sim.state;
@@ -59,7 +64,7 @@ const defs = ['militaryhq', 'barracks', 'vehicledepot', 'bunker', 'bunker', 'ant
 if (flag('guards')) {
   // Research done as the labs would leave it, then the batteries and generators near the highway.
   s.war!.research = {
-    done: ['defence1', 'defence2', 'defence3'],
+    done: ['defence1', 'defence2', 'defence3', ...(saveTo && flag('dome') ? (['defence4'] as const) : [])],
     queue: [],
     points: {},
     paid: [],
@@ -68,6 +73,8 @@ if (flag('guards')) {
     trials: [],
   };
   defs.push('interceptor', 'interceptor', 'shieldgen', 'interceptor', 'interceptor', 'shieldgen');
+  // A city kept for the page has a real dome over it (the sim's raid below sets the pool itself).
+  if (saveTo && flag('dome')) defs.push('domeshield');
 }
 for (const def of defs) {
   for (const g of segs)
@@ -88,8 +95,15 @@ const depot = placed.vehicledepot0!;
 for (let k = 0; k < 8; k++) sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
 for (const kind of ['tank', 'tank', 'tank', 'artillery', 'artillery', 'transport'] as const)
   sim.dispatch({ type: 'trainUnit', base: depot, kind });
+if (placed.domeshield0 !== undefined)
+  sim.dispatch({ type: 'cheat', cheat: 'finishStages', civic: placed.domeshield0 });
 sim.advance(3 * TICKS_PER_MONTH);
 console.log(`forces: ${s.war!.units.size} units, readiness ${s.war!.readiness.toFixed(2)}`);
+if (saveTo) {
+  sim.dispatch({ type: 'cheat', cheat: 'superReady' });
+  writeFileSync(saveTo, gzipSync(strToU8(JSON.stringify(sim.save()))));
+  console.log(`saved ${saveTo}${s.war!.supers?.dome ? ' (with a charged dome)' : ''}`);
+}
 
 const stats = (xs: number[]) => {
   const v = [...xs].sort((a, b) => a - b);

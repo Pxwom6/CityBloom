@@ -276,16 +276,23 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
 - Step 11 in part: trial poses, `src/render/shields.ts` (dome, bubbles, gate swirl, tower ring),
   battle effects (intercepts, launches, stomp dust, dived whale), quality switches, windows dark in a
   blackout. Test API `getResearch`, `getIntel`, `getSupers`, `stageBattle`.
-- Step 12 in part: Research and Intelligence tabs, superweapons strip, inspectors, Send tab (gate,
-  superweapons, travel), notices and tips. E2e `e2e/m37-research.spec.ts`, `e2e/m37-super.spec.ts`
-  (being run).
+- Step 12 in part: Research (branch chips, the chosen branch's tiers, prototypes) and Intelligence
+  tabs, superweapons strip, inspectors, Send tab (gate, superweapons, travel), the region map's
+  superweapon tokens, gate arc, revealed and darkened towns, notices, sounds and tips.
+- Adversarial review of the M37 sim: 13 findings confirmed and fixed (DECISIONS "M37", review), bar
+  two in the battle's robot pathing handed to the balance helper.
+- E2e: `e2e/m37-research.spec.ts` passes (7.9 min: all six branches through the tab, nine prototypes
+  tried, each trainable at its base; screenshots reviewed); `e2e/m37-super.spec.ts` (the robot tried,
+  trained, sent once, home and winding up; the blackout tower used and recharging) being run.
 - Running in helpers' worktrees: superweapon battle balance (the fortress's bomb drones, the whale's
-  coastal targets, the robot's time) and steps 9–10 (friends' ops through the region room, protocol
-  5, and the fair clock). An adversarial review of the M37 sim is running too; its findings get fixed
-  before wrap-up.
-- Left: merge both helpers' branches; the region map's superweapon tokens, banners and sirens for
-  superweapon raids, the friends' e2e; screenshots reviewed (`supershot.mjs`); wrap-up (step 13: full
-  tests, e2e, balance, bench, battlebench, cross-browser, docs, `M37 complete:`).
+  coastal targets, the robot's time, the robot's pathing) and steps 9–10 (friends' ops through the
+  region room, protocol 5, and the fair clock).
+- Left: merge both helpers' branches; banners and sirens for friends' superweapon raids, the
+  friends' e2e; `supershot.mjs` screenshots reviewed; the frame budget in the heaviest battle
+  (`battlebench.ts bench-results/city.gz --guards --dome --save bench-results/war.gz`, then
+  `framebench.mjs bench-results/war.gz --views battle` with `--vm` here, real frame times on the Mac);
+  wrap-up (step 13: full tests, e2e, balance, bench, battlebench, cross-browser, docs,
+  `M37 complete:`).
 
 ## Next tasks
 1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by

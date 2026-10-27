@@ -8,6 +8,11 @@
 // `--profile` also samples the main thread during each view and prints the costliest functions.
 // Views: overview, city and street (camera presets) by day (13:00) and @night (22:00), all at 3×
 // speed; `heavy` is the whole city at night at 3× with a tornado on screen (SPEC-3's frame budget).
+// `battle` (M37, a war city such as `battlebench.ts city.gz --guards --dome --save war.gz` keeps)
+// stages the heaviest raid the test API can (`--battle robot|max`: the giant robot and 23 units, or
+// 24 of the heaviest) and follows it, under the dome when the city has one. `--vm` runs headless in
+// Playwright's Chromium on SwiftShader (the cloud VM): frame times mean nothing there, but draw
+// calls, triangles and the game's own work per frame do.
 // Prints average and 95th-percentile frame intervals, the game's own work per frame, draw calls
 // and triangles, and writes them all to JSON.
 import { chromium } from '@playwright/test';
@@ -33,6 +38,8 @@ const shots = flag('shots', null);
 const profile = argv.includes('--profile');
 const dist = flag('dist', 'dist-test');
 const init = flag('init', null);
+const battleKind = flag('battle', 'robot');
+const vm = argv.includes('--vm');
 if (shots) mkdirSync(shots, { recursive: true });
 mkdirSync(dirname(out), { recursive: true });
 
@@ -103,18 +110,22 @@ const f2 = (v) => v.toFixed(2);
 const results = { label, file, date: new Date().toISOString(), seconds, runs: [] };
 try {
   for (const quality of qualities) {
-    const browser = await chromium.launch({
-      channel: 'chrome',
-      headless: false,
-      args: [
-        '--disable-gpu-vsync',
-        '--disable-frame-rate-limit',
-        '--window-size=1512,945',
-        '--window-position=0,0',
-      ],
-    });
+    const browser = await chromium.launch(
+      vm
+        ? { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] }
+        : {
+            channel: 'chrome',
+            headless: false,
+            args: [
+              '--disable-gpu-vsync',
+              '--disable-frame-rate-limit',
+              '--window-size=1512,945',
+              '--window-position=0,0',
+            ],
+          },
+    );
     try {
-      const page = await browser.newPage({ viewport: null });
+      const page = await browser.newPage({ viewport: vm ? { width: 1280, height: 800 } : null });
       page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
       // The whole preset, as the settings screen and the first-launch check apply it.
       await page.addInitScript(
@@ -166,16 +177,25 @@ try {
       for (const view of views) {
         const [name, when] = view.split('@');
         const heavy = name === 'heavy';
-        const preset = heavy ? 'overview' : name;
+        const battle = name === 'battle' ? battleKind : null;
+        const preset = heavy ? 'overview' : battle ? 'city' : name;
         const hour = heavy || when === 'night' ? 22 : 13;
         await page.evaluate(
-          async ({ preset, hour, heavy, cx, cz, warmMs }) => {
+          async ({ preset, hour, heavy, battle, cx, cz, warmMs }) => {
             const g = window.__game;
             g.setSpeed(0);
             const s = await g.getState();
             const now = (s.tick + 7 * 60) % 1440;
             await g.advance((hour * 60 - now + 1440) % 1440 || 1);
             g.setCamera(preset);
+            if (battle) {
+              // The raid arrives now; follow it once its first frame is in.
+              const why = await g.stageBattle(battle);
+              if (why) throw new Error(`stageBattle: ${why}`);
+              for (let k = 0; k < 60 && !g.getBattle().frame; k++) await g.advance(1);
+              if (!g.getBattle().frame) throw new Error('the staged battle never started');
+              g.followBattle();
+            }
             // A tornado lives about 2 s at 3×: whenever none is left, send another across the
             // city, so there is always one (and only one) on screen.
             let k = 0;
@@ -208,7 +228,7 @@ try {
             await new Promise((res) => setTimeout(res, warmMs));
             funnels.length = 0;
           },
-          { preset, hour, heavy, cx: info.cx, cz: info.cz, warmMs: warm * 1000 },
+          { preset, hour, heavy, battle, cx: info.cx, cz: info.cz, warmMs: warm * 1000 },
         );
         let cdp = null;
         if (profile) {
@@ -230,6 +250,11 @@ try {
             triangles: st.renderStats.triangles,
             funnels: funnels.length ? Math.min(...funnels) : st.renderStats.disasters.funnels,
             night: st.renderStats.night,
+            battle: (() => {
+              const b = g.getBattle();
+              if (!b.frame) return null;
+              return { step: b.frame.step, units: b.frame.units, ...b.effects, shown: g.getSupers().shown };
+            })(),
           };
         }, seconds * 1000);
         if (cdp) {
@@ -251,9 +276,10 @@ try {
           triangles: r.triangles,
           funnels: r.funnels,
           night: r.night,
+          battle: r.battle,
         });
         console.log(
-          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}`,
+          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}${r.battle ? ` | battle step ${r.battle.step}, ${r.battle.units} units, ${r.battle.tracers} tracers, ${r.battle.puffs} puffs, shown ${JSON.stringify(r.battle.shown)}` : ''}`,
         );
       }
     } finally {

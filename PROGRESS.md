@@ -256,7 +256,8 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
    research labs and the research park, prototypes tried at the proving ground, civilian spin-offs,
    spies and counter-intelligence (a caught spy is a diplomatic incident: M36's `note` and
    reputation), and a superweapon at the end of each branch (the region's rules can turn them off).
-   Start with a design note (`docs/plans/M37-design.md`) as for M36.
+   Plan: `docs/plans/M37-design.md` (three independent designs judged, then one synthesis; steps 0–13
+   there, starting with goldens at the M36 tip).
 2. M38–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 

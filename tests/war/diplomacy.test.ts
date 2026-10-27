@@ -6,6 +6,7 @@ import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DIPLOMACY, termProblem, type Term } from '../../src/data/diplomacy';
 import { FIGHT_TIMEOUT_HOURS, SKIRMISH } from '../../src/data/battle';
 import { MAP_SIZE } from '../../src/data/world';
+import { CIVIC } from '../../src/data/civic';
 import { battleLayout } from '../../src/sim/battle/layout';
 import { BATTLE_VERSION, type BattleInput } from '../../src/sim/battle/types';
 import type { AwayResult } from '../../src/sim/systems/expeditions';
@@ -111,10 +112,21 @@ describe('M36: a skirmish changes no land', () => {
     const n = rivals(sim)[0]!;
     const deals = JSON.stringify(sim.state.region.deals);
     const districts = JSON.stringify([...sim.state.districts.keys()]);
-    sim.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0, neighbour: n.id });
-    for (let t = 0; t < M && sim.state.war!.battle; t++) sim.step();
-    expect(sim.state.war!.battle).toBeUndefined();
+    // The city's own strike, won.
     strike(sim, n);
+    // Their raid, strong enough to win, and aimed at the city's HQ (outside a war, only the cheat
+    // can aim it there): it knocks the HQ down, and still nothing changes hands.
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 400, defences: 20 });
+    const hqDown = () =>
+      (sim.state.war!.reports ?? []).some(
+        (r) => !r.ours && r.civics.some((c) => c.wrecked && CIVIC.get(c.def)?.military?.hq),
+      );
+    for (let k = 0; k < 4 && !hqDown(); k++) {
+      for (let t = 0; t < M && (sim.state.war!.battle || sim.state.war!.incoming?.length); t++) sim.step();
+      ok(sim, { type: 'cheat', cheat: 'raidIn', hours: 0, neighbour: n.id, seat: true });
+      for (let t = 0; t < M && sim.state.war!.battle; t++) sim.step();
+    }
+    expect(hqDown()).toBe(true);
     sim.advance(2 * M);
     // No declaration, no treaty, no score, the city's word as good as ever.
     const d = sim.state.war!.diplomacy;
@@ -124,6 +136,8 @@ describe('M36: a skirmish changes no land', () => {
     expect(JSON.stringify(sim.state.region.deals)).toBe(deals);
     expect(JSON.stringify([...sim.state.districts.keys()])).toBe(districts);
     for (const r of rivals(sim)) expect(r.rival!.vassal).toBeUndefined();
+    expect(d?.vassal).toBeUndefined();
+    expect(d?.fell).toBeUndefined();
     for (const k of [
       'tributeIn',
       'tributeOut',
@@ -148,6 +162,7 @@ describe('M36: a skirmish changes no land', () => {
       stance: 'bold',
     });
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/skirmish can’t strike the seat of power/);
   });
 });
 

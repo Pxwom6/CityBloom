@@ -175,6 +175,8 @@ export class Battle {
   /** Version 3: the dome's pool, at the start and left (0 for no dome). */
   private domeMax: number;
   private domeLeft: number;
+  /** Version 3: the force brought a superweapon (what only such a battle does is gated on it). */
+  private superweapon = false;
 
   constructor(input: BattleInput) {
     this.input = input;
@@ -230,6 +232,7 @@ export class Battle {
     for (const u of force.filter((x) => x.from !== undefined).slice(0, SUPER.maxCarried)) this.addCarried(u);
     for (const u of L.defenders.slice(0, BATTLE.maxDefenders)) this.addDefender(u);
     for (const u of this.units) if (u.side === 0) this.startStrength += this.strength(u);
+    this.superweapon = this.units.some((u) => u.side === 0 && !!UNIT.get(u.kind)?.super);
     if (!this.objectives.length) this.finish('withdrew');
   }
 
@@ -1214,10 +1217,26 @@ export class Battle {
     if (
       down === this.objectives.length ||
       lost >= BATTLE.withdraw[this.input.attacker.stance] ||
-      this.step >= BATTLE.maxSteps
+      this.step >= BATTLE.maxSteps ||
+      (this.superweapon && this.capsHold())
     )
       this.withdraw();
     else if (down > 0) this.retarget();
+  }
+
+  /**
+   * Version 3, a superweapon's battle: every objective still standing is one the battle's caps won't
+   * let fall (city buildings once `maxWreck` are wrecked, the rest once `maxCollapse` have
+   * collapsed), so the force has done all it may and pulls out rather than wait for the clock.
+   */
+  private capsHold(): boolean {
+    const caps = this.input.caps;
+    for (const k of this.objectives) {
+      if (this.state[k] === 2) continue;
+      const civic = (this.sv(k, S.tags) & TAG.civic) !== 0;
+      if (civic ? this.wrecked < caps.maxWreck : this.collapsed < caps.maxCollapse) return false;
+    }
+    return true;
   }
 
   /** One step of BATTLE.dt game seconds. */

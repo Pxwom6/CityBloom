@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { BATTLE, SKIRMISH, SUPER } from '../../src/data/battle';
+import { BATTLE, SKIRMISH, SUPER, TOWN as TOWNS } from '../../src/data/battle';
 import type { TierKey } from '../../src/data/research';
 import type { UnitKind } from '../../src/data/war';
+import { growRivalTown } from '../../src/sim/ai/town';
 import { awayInput, type AwayCity } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { checkBattleInput } from '../../src/sim/battle/check';
@@ -415,6 +416,28 @@ describe('battles version 3: superweapons', () => {
     expect(capped.destroyed.filter((id) => id >= 20 && id < 70).length).toBe(2);
   });
 
+  it('with the caps spent on its objectives, a superweapon’s force pulls out; one without waits for the clock', () => {
+    // Two military objectives (the depot and the bunker), and room to wreck only one of them.
+    const make = (force: BattleUnitIn[]) => {
+      const i = input(lineLayout(TOWN), force, { stance: 'bold' });
+      i.seed = 'caps-spent';
+      i.caps = { maxCollapse: 12, maxWreck: 1 };
+      return stampBattle(i);
+    };
+    const robot = play(make([one('windupbot', 1)])).b.result();
+    expect(robot.objectives).toEqual({ aimed: 2, down: 1 });
+    expect(robot.outcome).toBe('raided');
+    // It pulled out once the one wreck it may make was made, long before the clock ran out.
+    expect(robot.steps).toBeLessThan(BATTLE.maxSteps);
+    // The same with tanks alone: the battle is as it was (version 2), held on the capped bunker
+    // until the clock pulls them out.
+    const tanks = make(units('tank', 6, undefined, -1, 100));
+    expect(tanks.v).toBe(2);
+    const plain = play(tanks).b.result();
+    expect(plain.objectives).toEqual({ aimed: 2, down: 1 });
+    expect(plain.steps).toBeGreaterThanOrEqual(BATTLE.maxSteps);
+  });
+
   it('the sky fortress launches its 16 drones near its objective, one at a time', () => {
     const make = (hp = 1, extra: StructSpec[] = []) => {
       const i = input(lineLayout([...TOWN, ...extra]), fortress(hp), { stance: 'bold' });
@@ -819,3 +842,79 @@ function cloneSim(sim: Sim): Sim {
 
 const rubble = (sim: Sim) =>
   [...sim.state.buildings.values()].filter((b) => b.state === BState.Rubble).length;
+
+/**
+ * A computer neighbour's town as the page's battle worker grows it (the test size): the test city's
+ * coastal resort, Calhaven. Its military stands about a kilometre in from the sea.
+ */
+function resortTown() {
+  const city = newSim({ rivals: true, disasters: false });
+  const n = city.state.region.neighbours.find((x) => x.rival && x.kind === 'resort')!;
+  const town = growRivalTown({
+    citySeed: city.state.options.seed,
+    neighbour: n.id,
+    name: n.name,
+    kind: n.kind,
+    personality: n.rival!.personality,
+    population: n.population,
+    cap: TOWNS.testCap,
+  });
+  /** A strike on the town by one unit of `kind` (and an escort), as an expedition from the city. */
+  const strike = (kind: UnitKind, route: 'highway' | 'air' | 'sea', escort: UnitKind[] = []) =>
+    awayInput(
+      {
+        seed: city.state.options.seed,
+        cityName: city.state.options.cityName,
+        readiness: 1,
+        expedition: { id: 3, route, target: 'military', stance: 'bold' },
+        units: [kind, ...escort].map((k, i) => ({ id: i + 1, kind: k, hp: 1 })),
+        neighbour: {
+          id: n.id,
+          name: n.name,
+          side: n.side,
+          kind: n.kind,
+          population: n.population,
+          rival: { ...n.rival! },
+          slot: null,
+          colour: 0xd04040,
+        },
+      },
+      town,
+    );
+  return { city, n, town, strike };
+}
+
+/** What a battle knocked down: buildings collapsed and city buildings wrecked. */
+function fallen(i: BattleInput, r: ReturnType<Battle['result']>): { collapsed: number; wrecked: number } {
+  const civics = new Set(
+    rows(i.layout)
+      .filter((x) => x.tags & TAG.civic)
+      .map((x) => x.id),
+  );
+  const wrecked = r.destroyed.filter((id) => civics.has(id)).length;
+  return { collapsed: r.destroyed.length - wrecked, wrecked };
+}
+
+describe('superweapons in a grown computer town', () => {
+  let resort: ReturnType<typeof resortTown>;
+  beforeAll(() => {
+    resort = resortTown();
+  });
+
+  it('the robot raids what the caps allow and is done within its time', () => {
+    const i = resort.strike('windupbot', 'highway');
+    expect(i.caps).toEqual(SUPER.caps);
+    const r = Battle.run(structuredClone(i)).result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    expect(r.outcome).toBe('raided');
+    const f = fallen(i, r);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    // Every objective it could knock down is down: what stands, the caps hold up.
+    expect(r.objectives.aimed).toBe(BATTLE.maxTargets);
+    expect(r.objectives.down).toBeGreaterThanOrEqual(SUPER.caps.maxWreck);
+    if (r.objectives.down < r.objectives.aimed) expect(f.wrecked).toBe(SUPER.caps.maxWreck);
+    // And it was out of the town again (raid and walk back) before the clock ran out.
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+  });
+});

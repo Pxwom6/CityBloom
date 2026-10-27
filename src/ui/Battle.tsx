@@ -240,6 +240,7 @@ export function SendForce() {
   const [stance, setStance] = useState<Stance>('bold');
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [why, setWhy] = useState<string | null>(null);
+  const [gate, setGate] = useState(false);
   // A pact in the way (M36): the warning and the very command it was about.
   const [breaks, setBreaks] = useState<{
     text: string;
@@ -250,7 +251,9 @@ export function SendForce() {
   } | null>(null);
   if (!w) return null;
   if (!rivals.length) return <p class="muted">No rival neighbours to raid.</p>;
-  const home = (game.world.forces?.units ?? []).filter((u) => !u.away && u.hp >= 0.5);
+  // At home and fit to go; a superweapon winding up waits (M37).
+  const home = (game.world.forces?.units ?? []).filter((u) => !u.away && u.hp >= 0.5 && !u.ready);
+  const gateState = w?.supers?.gate ?? null;
   const kinds = [...new Set(home.map((u) => u.kind))].filter((k) =>
     ROUTE_DOMAINS[route].includes(UNIT.get(k)?.domain ?? 'land'),
   );
@@ -261,17 +264,24 @@ export function SendForce() {
       .map((u) => u.id),
   );
   const n = rivals.find((x) => x.id === to) ?? rivals[0]!;
-  const hours = travelHours(
-    route,
-    n.side,
-    chosen.map((id) => ({ kind: home.find((u) => u.id === id)!.kind })),
-  );
+  // As the sim works it out: Supply lines (M37), a superweapon's slow way, or the gate's hour.
+  const picks = chosen.map((id) => ({ kind: home.find((u) => u.id === id)!.kind }));
+  const slow = Math.max(1, ...picks.map((p) => UNIT.get(p.kind)?.super?.travel ?? 1));
+  const hours = gate && gateState ? 1 : travelHours(route, n.side, picks, (w?.research?.travel ?? 1) * slow);
   // The form as it stands: a warning about another choice of force is no longer shown.
-  const form = JSON.stringify([n.id, target, route, stance, chosen]);
+  const form = JSON.stringify([n.id, target, route, stance, chosen, gate]);
   const send = async (asked?: NonNullable<typeof breaks>) => {
     const cmd: SendCmd = asked
       ? { ...asked.cmd, breakPact: true }
-      : { type: 'sendForce', units: chosen, to: n.id, route, target, stance };
+      : {
+          type: 'sendForce',
+          units: chosen,
+          to: n.id,
+          route,
+          target,
+          stance,
+          ...(gate ? { gate: true } : {}),
+        };
     const slot = asked ? asked.slot : (n.player?.slot ?? null);
     const time = asked ? asked.hours : hours;
     const r = await game.dispatch(cmd);
@@ -353,15 +363,16 @@ export function SendForce() {
           kinds.map((k) => {
             const have = home.filter((u) => u.kind === k).length;
             const v = Math.min(picked[k] ?? 0, have);
+            const sup = !!UNIT.get(k)?.super;
             return (
-              <label key={k} class="war-send-unit">
+              <label key={k} class={`war-send-unit ${sup ? 'super' : ''}`}>
                 <span>
-                  {unitName(k, have)} ({have} at home)
+                  {unitName(k, have)} ({sup ? 'superweapon, one a force' : `${have} at home`})
                 </span>
                 <input
                   type="number"
                   min={0}
-                  max={have}
+                  max={sup ? 1 : have}
                   value={v}
                   data-testid={`send-${k}`}
                   onInput={(e) =>
@@ -378,6 +389,27 @@ export function SendForce() {
           <p class="muted">No units at home can go this way.</p>
         )}
       </div>
+      {gateState && (
+        <label class="war-send-gate">
+          <input
+            type="checkbox"
+            data-testid="send-gate"
+            checked={gate}
+            disabled={gateState.wait > 0}
+            onChange={(e) => setGate((e.target as HTMLInputElement).checked)}
+          />{' '}
+          Through the express gate: arrives in an hour
+          {gateState.wait > 0 ? ` (recharging: ${Math.ceil(gateState.wait)} h)` : ''}
+        </label>
+      )}
+      {(game.world.forces?.units ?? []).some((u) => !u.away && u.ready) && (
+        <p class="muted" data-testid="send-winding">
+          {(game.world.forces?.units ?? [])
+            .filter((u) => !u.away && u.ready)
+            .map((u) => `${UNIT.get(u.kind)?.name} winding up: ${Math.ceil(u.ready!)} h`)
+            .join(' · ')}
+        </p>
+      )}
       <p class="muted">
         {chosen.length
           ? `${chosen.length} units, ${hours} hours to get there; they come back the same way.`

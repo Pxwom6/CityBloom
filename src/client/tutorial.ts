@@ -174,6 +174,75 @@ export const TIPS: Tip[] = [
       return !!d && (d.wars.length > 0 || d.proposals.some((p) => p.from === 'them'));
     },
   },
+  // Weapon development and intelligence (M37).
+  {
+    id: 'research',
+    text:
+      'Your weapons lab researches in the war room’s Research tab: six branches of four tiers, each needing ' +
+      'the one before. Queue up to four; a tier’s money is paid when the labs start it. Up to three labs ' +
+      'work together, and a research park speeds them up.',
+    when: (g) => hasCivic(g, (d) => d === 'militarylab'),
+  },
+  {
+    id: 'trial',
+    text:
+      'A new unit is a prototype until it has been tried: a proving ground runs its trial (half its price, ' +
+      'a day or two). Boats need a naval yard for theirs. Once it passes, train it as any other.',
+    when: (g) => (g.world.stats.war?.research?.prototypes.length ?? 0) > 0,
+  },
+  {
+    id: 'spinoff',
+    text:
+      'Some research pays off at home too: spin-offs like better fire engines or prefab panels work for the ' +
+      'whole city from the moment the research is done (see each tier’s chip).',
+    when: (g) =>
+      (g.world.stats.war?.research?.done ?? []).some((k) =>
+        ['land1', 'air1', 'sea1', 'defence1', 'intel1', 'logistics1'].includes(k),
+      ),
+  },
+  {
+    id: 'intelligence',
+    text:
+      'Your spy agency sends agents from the war room’s Intelligence tab: to look round a rival, sabotage its ' +
+      'power or depot, or steal its research. The odds are shown before they go; a caught spy is an incident ' +
+      'that costs the city’s good name.',
+    when: (g) => hasCivic(g, (d) => d === 'spyagency'),
+  },
+  {
+    id: 'superweapon',
+    text:
+      'The fourth tier of each branch is a superweapon, worked on only while a research park is in service: ' +
+      'a giant wind-up robot, a sky fortress, a clockwork whale, a dome shield, a blackout tower or an express ' +
+      'gate. One of each, and they need time to wind up again after use.',
+    when: (g) => {
+      const r = g.world.stats.war?.research;
+      return (
+        !!r &&
+        ['land3', 'air3', 'sea3', 'defence3', 'intel3', 'logistics3'].some((k) => r.done.includes(k as never))
+      );
+    },
+  },
+  {
+    id: 'dome',
+    text:
+      'The dome shield charges for ten days, then rises over the city when a battle comes (or only for one ' +
+      'that brings a superweapon: set its mode in its inspector) and soaks the blows until it pops.',
+    when: (g) => !!g.world.stats.war?.supers?.dome,
+  },
+  {
+    id: 'blackout',
+    text:
+      'Your city is blacked out: power plants falter, the radar is quiet and the maps are out until it ends. ' +
+      'A charged dome shield holds four hours on its reserve.',
+    when: (g) => !!g.world.stats.war?.supers?.blackout,
+  },
+  {
+    id: 'incident',
+    text:
+      'A spy was caught: an incident. Your own caught abroad costs reputation and the neighbour’s goodwill; ' +
+      'one of theirs caught here lets you declare war on them without losing face for a few days.',
+    when: (g) => (g.world.stats.war?.intel?.results ?? []).some((r) => /caught/.test(r.text)),
+  },
   {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',

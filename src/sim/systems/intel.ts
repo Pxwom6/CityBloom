@@ -635,6 +635,13 @@ export interface IntelSummary {
   results: Intel['results'];
   /** Neighbours the city's agents have a fresh look at (ids). */
   revealed: number[];
+  /** The war clock now (missions' times are on it), and each revealed neighbour's hours left. */
+  clock: number;
+  revealedLeft: Record<number, number>;
+  /** Each computer neighbour's counter-intelligence, and the odds of each mission there (‰). */
+  rivals: Record<number, { counter: number; odds: Record<SpyOp, { success: number; caught: number }> }>;
+  /** The research each mission needs is done. */
+  ops: Record<SpyOp, boolean>;
 }
 
 export function intelSummary(sim: Sim): IntelSummary | null {
@@ -649,5 +656,33 @@ export function intelSummary(sim: Sim): IntelSummary | null {
     missions: i ? i.missions.map((m) => ({ ...m })) : [],
     results: i ? i.results.map((r) => ({ ...r })) : [],
     revealed: sim.state.region.neighbours.filter((n) => revealed(sim, n)).map((n) => n.id),
+    clock: w.clock,
+    revealedLeft: Object.fromEntries(
+      sim.state.region.neighbours
+        .filter((n) => revealed(sim, n))
+        .map((n) => [n.id, n.rival!.intel!.revealed! - w.clock]),
+    ),
+    rivals: Object.fromEntries(
+      sim.state.region.neighbours
+        .filter((n) => n.rival && !n.player)
+        .map((n) => {
+          const counter = rivalCounter(sim, n);
+          const tier = intelTier(sim);
+          const stealth = researched(sim, 'intel3');
+          return [
+            n.id,
+            {
+              counter,
+              odds: Object.fromEntries(
+                SPY_OPS.map((op) => [op, spyOdds(op, tier, counter, revealed(sim, n), stealth)]),
+              ) as Record<SpyOp, { success: number; caught: number }>,
+            },
+          ];
+        }),
+    ),
+    ops: Object.fromEntries(SPY_OPS.map((op) => [op, researched(sim, SPY_OP[op].research)])) as Record<
+      SpyOp,
+      boolean
+    >,
   };
 }

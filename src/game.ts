@@ -1,4 +1,4 @@
-import type { RegionWarRules } from './data/war';
+import { UNIT, type RegionWarRules, type UnitKind } from './data/war';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -1281,7 +1281,89 @@ export class Game {
         // Keyed by its words too: two different notes of a kind (theirs and ours) never merge.
         this.notice(`dip:${what}:${e.id}:${text}`, text, bad ? 'bad' : good ? 'ok' : 'info');
         if (what === 'declaredOn' || what === 'fell' || (what === 'hold' && bad)) this.audio?.play('raid');
-      } else if (e.kind === 'decayed')
+      }
+      // Weapon development and intelligence (M37).
+      else if (e.kind === 'researchDone')
+        this.notice(`research:${String(e.info?.key)}`, `Research done: ${String(e.info?.name)}.`, 'ok');
+      else if (e.kind === 'researchWaiting')
+        this.notice('researchWaiting', `The weapons labs are waiting: ${String(e.info?.text)}.`, 'bad');
+      else if (e.kind === 'spinoff')
+        this.notice(
+          `spinoff:${String(e.info?.key)}`,
+          `A civilian spin-off: ${String(e.info?.name)}. The research pays off in the city too.`,
+          'ok',
+        );
+      else if (e.kind === 'trialRun')
+        this.notice(
+          `trial:${e.id}`,
+          `${String(e.info?.name)} trial: run ${String(e.info?.run)} of 3 done.`,
+          'info',
+          this.placeOf(e.id),
+          false,
+        );
+      else if (e.kind === 'trialPassed')
+        this.notice(
+          `trial:${e.id}`,
+          `The ${String(e.info?.name).toLowerCase()} passed its trial: it can be trained now.`,
+          'ok',
+          this.placeOf(e.id),
+        );
+      else if (e.kind === 'superTowed')
+        this.notice(
+          `super:${e.id}`,
+          `Our ${String(UNIT.get(e.info?.kind as UnitKind)?.name ?? 'superweapon').toLowerCase()} was knocked out: it is being towed home, and will wind up again twice as slowly.`,
+          'bad',
+        );
+      else if (e.kind === 'superReady')
+        this.notice(
+          `super:${e.id}`,
+          `The ${String(UNIT.get(e.info?.kind as UnitKind)?.name ?? 'superweapon').toLowerCase()} is wound up and ready.`,
+          'ok',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'domeCharged')
+        this.notice(
+          'dome',
+          'The dome shield is charged: it will rise over the next battle in its mode.',
+          'ok',
+        );
+      else if (e.kind === 'domeRaised') this.notice('dome', 'The dome shield rises over the city!', 'ok');
+      else if (e.kind === 'domePopped') {
+        this.notice('dome', 'The dome shield has popped: it took all it could.', 'bad');
+      } else if (e.kind === 'domeFell')
+        this.notice(
+          'dome',
+          'The blackout drained the dome shield: it will charge again once power is back.',
+          'bad',
+        );
+      else if (e.kind === 'blackoutCharging')
+        this.notice(
+          `blackout:${e.id}`,
+          `The blackout tower is charging at ${String(e.info?.to)}: an hour to go.`,
+          'info',
+        );
+      else if (e.kind === 'blackout') {
+        this.notice(
+          `blackout:${e.id}`,
+          `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: no raids or spies from it, and its guns are half-blind.`,
+          'ok',
+        );
+      } else if (e.kind === 'intel') {
+        const tone = e.info?.tone;
+        this.notice(
+          `intel:${String(e.info?.text)}`,
+          String(e.info?.text),
+          tone === 'good' ? 'ok' : tone === 'bad' ? 'bad' : 'info',
+        );
+      } else if (e.kind === 'sabotaged') this.audio?.play('raid');
+      else if (e.kind === 'rivalTech')
+        this.notice(
+          `rivalTech:${e.id}`,
+          `${String(e.info?.name)} has better weapons now (tech ${String(e.info?.tech)} of 4): your weapons lab has your neighbours worried.`,
+          'info',
+        );
+      else if (e.kind === 'decayed')
         this.notice(
           'decayed',
           'An abandoned building fell into ruin; the lot will clear.',

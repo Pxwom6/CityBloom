@@ -5,13 +5,16 @@
  */
 import { useState } from 'preact/hooks';
 import { CIVIC } from '../data/civic';
-import { PERSONALITY, UNIT, UNIT_CLASSES, UNIT_DEFS, WAR, type UnitKind } from '../data/war';
+import { PERSONALITY, UNIT, UNIT_CLASSES, WAR, type UnitKind } from '../data/war';
 import type { MilitaryDetails } from '../sim/protocol';
 import type { WarSummary } from '../sim/systems/war';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconWarRoom } from './icons';
 import { RegionMap, Reports, SendForce } from './Battle';
 import { Diplomacy } from './Diplomacy';
+import { Research, warHours } from './Research';
+import { TIERS, type TierKey } from '../data/research';
+import { Intelligence } from './Intel';
 
 /** Training time in the game's own terms: hours, or months for longer (a month is a day and night). */
 export function trainingTime(hours: number): string {
@@ -185,6 +188,7 @@ export function MilitarySection({ civicId, m }: { civicId: number; m: MilitaryDe
           })}
         </div>
       )}
+      <NewBuildings civicId={civicId} />
       {m.hq && (
         <button class="btn" data-testid="open-war-room" onClick={() => game.openWarRoom()}>
           <IconWarRoom /> Open the war room
@@ -194,16 +198,189 @@ export function MilitarySection({ civicId, m }: { civicId: number; m: MilitaryDe
   );
 }
 
-type Tab = 'forces' | 'send' | 'map' | 'diplomacy' | 'economy' | 'readiness' | 'reports' | 'research';
+/**
+ * M37's buildings in the inspector: a lab's research, a proving ground's trials, the spy agency's
+ * agents, a shield generator's reach, and the superweapon buildings (the dome's charge and mode, the
+ * tower's target, the gate's recharge). From the war summary; the sim decides every command.
+ */
+function NewBuildings({ civicId }: { civicId: number }) {
+  const game = useGameUpdates(500);
+  const [to, setTo] = useState<number | null>(null);
+  const w = game.world.stats.war;
+  const c = game.world.civics.get(civicId);
+  if (!w || !c) return null;
+  const mil = CIVIC.get(c.def)?.military;
+  const act = (cmd: Parameters<typeof game.dispatch>[0], done?: string) =>
+    void game.dispatch(cmd).then((r) => {
+      if (r.ok) {
+        game.audio?.play('place');
+        if (done) game.toast(done, 'ok', 2500);
+      } else game.toast(r.reason, 'bad');
+    });
+  const r = w.research;
+  if (mil?.lab)
+    return (
+      <p class="muted" data-testid="lab-research">
+        {r?.queue[0]
+          ? `Working on ${TIERS.find((t) => t.key === r.queue[0])!.name}: the labs make ${formatNumber(r.rate)} points an hour together.`
+          : 'Idle: queue research in the war room’s Research tab.'}
+      </p>
+    );
+  if (c.def === 'provingground') {
+    const trial = r?.trials.find((t) => t.ground === civicId);
+    const waiting = (r?.prototypes ?? []).filter((k) => !r!.trials.some((t) => t.kind === k));
+    return (
+      <div class="war-train" data-testid="ground-trials">
+        <h3>Trials</h3>
+        {trial ? (
+          <div class="war-row" data-testid="ground-trial">
+            <span>{UNIT.get(trial.kind)?.name}</span>
+            <Bar value={trial.done / trial.hours} tone="good" />
+            <span class="muted">{warHours(trial.hours - trial.done)} left</span>
+            <button
+              class="btn small"
+              data-testid="ground-trial-stop"
+              title="Call it off: the money for what’s not yet run comes back"
+              onClick={() => act({ type: 'stopTrial', ground: civicId })}
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <p class="muted">{waiting.length ? 'Prototypes waiting for a trial:' : 'No prototypes waiting.'}</p>
+        )}
+        {!trial &&
+          waiting.map((k) => (
+            <div key={k} class="module-row">
+              <strong>{UNIT.get(k)?.name}</strong>
+              <button
+                class="btn small"
+                data-testid={`ground-trial-${k}`}
+                disabled={game.readOnly}
+                onClick={() =>
+                  act({ type: 'startTrial', ground: civicId, kind: k }, `${UNIT.get(k)?.name} on trial`)
+                }
+              >
+                Trial{r?.terms[k] ? ` ${formatMoney(r.terms[k]!.cost)}, ${warHours(r.terms[k]!.hours)}` : ''}
+              </button>
+            </div>
+          ))}
+      </div>
+    );
+  }
+  if (mil?.agency && w.intel)
+    return (
+      <p class="muted" data-testid="agency-agents">
+        {w.intel.free} of {w.intel.agents} agents free · counter-intelligence {formatNumber(w.intel.counter)}{' '}
+        ‰
+      </p>
+    );
+  if (mil?.shield) {
+    let covered = 0;
+    for (const b of game.world.buildings.values())
+      if (Math.hypot(b.x - c.x, b.z - c.z) <= mil.shield.radius) covered++;
+    return (
+      <p class="muted" data-testid="shield-reach">
+        In a battle, the {formatNumber(covered)} buildings within {mil.shield.radius} m stand{' '}
+        {mil.shield.factor}× as strong (when it’s staffed and powered).
+      </p>
+    );
+  }
+  const s = w.supers;
+  if (c.def === 'domeshield' && s?.dome) {
+    const d = s.dome;
+    return (
+      <div class="war-train" data-testid="dome">
+        <h3>Dome</h3>
+        <div class="war-row">
+          <span>{d.raised ? 'Raised' : d.charge >= 1 ? 'Charged' : 'Charging'}</span>
+          <Bar value={d.charge} tone={d.charge >= 1 ? 'good' : 'warn'} />
+        </div>
+        <p class="muted">
+          Holds about a hundred houses’ worth of hits in one battle, then charges for ten days.
+        </p>
+        <div class="segmented" role="radiogroup">
+          {(['all', 'super', 'off'] as const).map((mode) => (
+            <button
+              key={mode}
+              class={`btn small ${d.mode === mode ? 'active' : ''}`}
+              aria-pressed={d.mode === mode}
+              data-testid={`dome-mode-${mode}`}
+              disabled={game.readOnly}
+              onClick={() => act({ type: 'setDome', mode })}
+            >
+              {mode === 'all' ? 'Every battle' : mode === 'super' ? 'Superweapons only' : 'Keep it down'}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (c.def === 'blackouttower' && s?.tower) {
+    const rivals = game.world.stats.region.neighbours.filter((n) => n.rival || n.player);
+    const pick = rivals.find((n) => n.id === to) ?? rivals[0];
+    const t = s.tower;
+    return (
+      <div class="war-train" data-testid="tower">
+        <h3>Blackout</h3>
+        <p class="muted">
+          {t.charging
+            ? `Charging at ${game.world.stats.region.neighbours.find((n) => n.id === t.charging!.to)?.name}: dark in ${warHours(t.charging.hours)}.`
+            : t.wait > 0
+              ? `Recharging: ${warHours(t.wait)}.`
+              : 'Ready: its power, radar and maps go out for 12 hours.'}
+        </p>
+        {pick && (
+          <div class="dip-actions">
+            <select
+              data-testid="blackout-to"
+              value={pick.id}
+              onChange={(e) => setTo(Number((e.target as HTMLSelectElement).value))}
+            >
+              {rivals.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name}
+                </option>
+              ))}
+            </select>
+            <button
+              class="btn danger"
+              data-testid="blackout-use"
+              disabled={game.readOnly || t.wait > 0 || !!t.charging}
+              onClick={() =>
+                act({ type: 'useBlackout', neighbour: pick.id }, `The tower charges at ${pick.name}`)
+              }
+            >
+              Black out
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (c.def === 'expressgate' && s?.gate)
+    return (
+      <p class="muted" data-testid="gate">
+        {s.gate.wait > 0
+          ? `Recharging: ${warHours(s.gate.wait)}.`
+          : 'Ready: tick “Through the express gate” in the war room’s Send tab, and a land or air force arrives in an hour.'}
+      </p>
+    );
+  return null;
+}
+
+type Tab =
+  'forces' | 'send' | 'map' | 'research' | 'intel' | 'diplomacy' | 'economy' | 'readiness' | 'reports';
 const TABS: { id: Tab; name: string }[] = [
   { id: 'forces', name: 'Forces' },
   { id: 'send', name: 'Send' },
   { id: 'map', name: 'Map' },
+  { id: 'research', name: 'Research' },
+  { id: 'intel', name: 'Intelligence' },
   { id: 'diplomacy', name: 'Diplomacy' },
   { id: 'economy', name: 'Upkeep' },
   { id: 'readiness', name: 'Readiness' },
   { id: 'reports', name: 'Reports' },
-  { id: 'research', name: 'Research' },
 ];
 
 /** The war room (M34): the city's forces, what they cost, how ready they are, and research. */
@@ -246,9 +423,102 @@ export function WarRoomPanel() {
         {tab === 'map' && <RegionMap />}
         {tab === 'diplomacy' && <Diplomacy />}
         {tab === 'research' && <Research />}
+        {tab === 'intel' && <Intelligence />}
       </div>
     </aside>
   );
+}
+
+/** A superweapon's slot in the Forces tab (M37): where it stands, in a few words. */
+function superState(
+  w: WarSummary,
+  world: ReturnType<typeof useGameUpdates>['world'],
+  slot: SuperSlot,
+): { text: string; tone: 'ready' | 'off' | '' } {
+  const r = w.research;
+  const done = r?.done.includes(slot.tier) ?? false;
+  if (!(r?.supers ?? false) && done) return { text: 'Off by the region’s rules', tone: 'off' };
+  if (!done) {
+    const q = r?.queue.indexOf(slot.tier) ?? -1;
+    return { text: q >= 0 ? `Researching${q > 0 ? ` (queued #${q + 1})` : ''}` : 'Research it', tone: 'off' };
+  }
+  if (slot.unit) {
+    const k = slot.unit;
+    const trial = r!.trials.find((t) => t.kind === k);
+    if (trial) return { text: `On trial: ${warHours(trial.hours - trial.done)} left`, tone: '' };
+    if (!r!.proven.includes(k)) return { text: 'Needs a trial at the proving ground', tone: '' };
+    const u = world.forces?.units.find((x) => x.kind === k);
+    const o = world.forces?.orders.find((x) => x.kind === k);
+    if (o) return { text: `Training: ${Math.round(world.orderProgress(o) * 100)} %`, tone: '' };
+    if (!u) return { text: `Train it at the ${slot.base}`, tone: '' };
+    if (u.away) return { text: 'Away with a force', tone: '' };
+    if (u.ready) return { text: `Winding up: ${warHours(u.ready)}`, tone: '' };
+    if (u.hp < 0.5) return { text: 'Being mended', tone: '' };
+    return { text: 'Ready', tone: 'ready' };
+  }
+  const s = w.supers;
+  const civic = [...world.civics.values()].find((c) => c.def === slot.civic);
+  if (!civic) return { text: 'Build it (a project)', tone: '' };
+  if (civic.stage !== undefined) return { text: `Building: stage ${civic.stage + 1} of 3`, tone: '' };
+  if (slot.civic === 'domeshield') {
+    const d = s?.dome;
+    if (d?.raised) return { text: 'Raised over a battle', tone: 'ready' };
+    if (!d || d.charge < 1) return { text: `Charging: ${Math.round((d?.charge ?? 0) * 100)} %`, tone: '' };
+    return {
+      text: `Charged (${d.mode === 'all' ? 'every battle' : d.mode === 'super' ? 'superweapons only' : 'kept down'})`,
+      tone: 'ready',
+    };
+  }
+  const b = slot.civic === 'blackouttower' ? s?.tower : s?.gate;
+  if (b && b.wait > 0) return { text: `Charging: ${warHours(b.wait)}`, tone: '' };
+  return { text: 'Ready', tone: 'ready' };
+}
+
+interface SuperSlot {
+  id: string;
+  name: string;
+  tier: TierKey;
+  unit?: UnitKind;
+  base?: string;
+  civic?: string;
+}
+
+const SUPER_SLOTS: readonly SuperSlot[] = [
+  { id: 'windupbot', name: 'Giant wind-up robot', tier: 'land4', unit: 'windupbot', base: 'vehicle depot' },
+  { id: 'skyfortress', name: 'Sky fortress', tier: 'air4', unit: 'skyfortress', base: 'airfield' },
+  { id: 'clockworkwhale', name: 'Clockwork whale', tier: 'sea4', unit: 'clockworkwhale', base: 'naval yard' },
+  { id: 'domeshield', name: 'Dome shield', tier: 'defence4', civic: 'domeshield' },
+  { id: 'blackouttower', name: 'Blackout tower', tier: 'intel4', civic: 'blackouttower' },
+  { id: 'expressgate', name: 'Express gate', tier: 'logistics4', civic: 'expressgate' },
+];
+
+/** The superweapons strip (M37): six slots, from research to ready. */
+function SupersStrip({ w }: { w: WarSummary }) {
+  const game = useGameUpdates(500);
+  if (!w.research || !game.world.civics.size) return null;
+  return (
+    <div class="supers-strip" data-testid="supers-strip">
+      {SUPER_SLOTS.map((s) => {
+        const st = superState(w, game.world, s);
+        return (
+          <div key={s.id} class={`supers-slot ${st.tone}`} data-testid={`super-${s.id}`}>
+            <strong>{s.name}</strong>
+            <span>{st.text}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Units a base keeps: an airfield's more after Swarm control (M37), as the sim's `holdsOf`. */
+function holdsAt(w: WarSummary, def: string): number {
+  const m = CIVIC.get(def)?.military;
+  let n = m?.holds ?? 0;
+  if (m?.runway)
+    for (const t of TIERS)
+      if (t.effects?.airfieldHolds && w.research?.done.includes(t.key)) n = t.effects.airfieldHolds;
+  return n;
 }
 
 function Forces({ w }: { w: WarSummary }) {
@@ -258,6 +528,7 @@ function Forces({ w }: { w: WarSummary }) {
   const rivals = game.world.stats.region.neighbours.filter((n) => n.rival);
   return (
     <>
+      <SupersStrip w={w} />
       <p data-testid="war-strength">
         {w.units ? (
           <>
@@ -293,7 +564,7 @@ function Forces({ w }: { w: WarSummary }) {
                 {def.name}
               </button>{' '}
               <small class="muted">
-                {units.length + orders.length} of {def.military?.holds ?? 0}
+                {units.length + orders.length} of {holdsAt(w, c.def)}
               </small>
             </h4>
             {orders.slice(0, 1).map((o) => (
@@ -471,25 +742,6 @@ function Readiness({ w }: { w: WarSummary }) {
           ))}
         </ul>
       )}
-    </>
-  );
-}
-
-function Research() {
-  const locked = UNIT_DEFS.filter((u) => u.research);
-  return (
-    <>
-      <p>
-        Weapons research needs a weapons lab, which your engineers haven’t designed yet. When they have, it
-        will unlock:
-      </p>
-      <ul data-testid="war-research-locked">
-        {locked.map((u) => (
-          <li key={u.id}>
-            <strong>{u.name}</strong> <span class="muted">— {u.blurb}</span>
-          </li>
-        ))}
-      </ul>
     </>
   );
 }

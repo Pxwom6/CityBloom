@@ -78,6 +78,12 @@ export interface ResearchSummary {
   trials: Trial[];
   /** Superweapons allowed by the region's rules (always with computer rivals). */
   supers: boolean;
+  /** Why each tier that isn't done or queued can't be queued now (absent: it can). */
+  blocked: Partial<Record<TierKey, string>>;
+  /** Each prototype's trial: its price and war-clock hours. */
+  terms: Partial<Record<UnitKind, { cost: number; hours: number }>>;
+  /** Supply lines' factor on a force's way out (1 without it). */
+  travel: number;
 }
 
 export function researchSummary(sim: Sim): ResearchSummary | null {
@@ -97,6 +103,14 @@ export function researchSummary(sim: Sim): ResearchSummary | null {
     proven: [...(r?.proven ?? [])],
     trials: (r?.trials ?? []).map((t) => ({ ...t })),
     supers: superweaponsAllowed(sim),
+    blocked: Object.fromEntries(
+      TIERS.filter((t) => !r?.done.includes(t.key) && !r?.queue.includes(t.key)).flatMap((t) => {
+        const why = queueRefusal(sim, t.key);
+        return why ? [[t.key, why]] : [];
+      }),
+    ),
+    terms: Object.fromEntries((r?.prototypes ?? []).map((k) => [k, trialTerms(k)])),
+    travel: researchEffect(sim, 'travel'),
   };
 }
 

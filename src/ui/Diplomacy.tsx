@@ -322,8 +322,11 @@ export function Diplomacy() {
           mode={builder.mode}
           feedback={feedback('builder')}
           onSend={async (terms) => {
-            // A term out of bounds is named here, before it goes anywhere.
-            const bad = terms.map((t) => termProblem(t)).find((x) => x !== null);
+            // A term out of bounds (or one too many) is named here, before it goes anywhere.
+            const bad =
+              terms.length > DIPLOMACY.maxTerms
+                ? `A treaty has ${DIPLOMACY.maxTerms} terms at most`
+                : terms.map((t) => termProblem(t)).find((x) => x !== null);
             if (bad) return setAsked({ at: 'builder', text: bad });
             await run(
               {
@@ -395,6 +398,7 @@ export function Diplomacy() {
               setDeclaring(declaring === n.id ? null : n.id);
             }}
             onPropose={() => open(n.id, [], 'propose')}
+            onEdit={() => setAsked((a) => (a?.at === `n-${n.id}` ? null : a))}
             send={async (scale, reason) => {
               await run({ type: 'declareWar', neighbour: n.id, scale, reason }, `n-${n.id}`, {
                 yes: d.vassal?.overlord === n.id ? 'Rise anyway' : 'Declare war anyway',
@@ -428,6 +432,7 @@ function NeighbourRow({
   feedback,
   onDeclare,
   onPropose,
+  onEdit,
   send,
 }: {
   n: Neighbour;
@@ -436,11 +441,15 @@ function NeighbourRow({
   feedback: ComponentChildren;
   onDeclare: () => void;
   onPropose: () => void;
+  /** The form changed: a question about what it said before no longer stands. */
+  onEdit: () => void;
   send: (scale: DeclaredScale, reason: string) => Promise<void>;
 }) {
-  // A vassal's war on its overlord is a rising, and a rising is a total war.
+  // A vassal's war on its overlord is a rising, and a rising is a total war (whatever was picked
+  // before the city fell, or before the region's rules changed).
   const rising = d.vassal?.overlord === n.id;
-  const [scale, setScale] = useState<DeclaredScale>(rising ? 'total' : 'war');
+  const [picked, setScale] = useState<DeclaredScale>('war');
+  const scale: DeclaredScale = rising ? 'total' : d.allowed === 'total' ? picked : 'war';
   const [reason, setReason] = useState('');
   const atWar = d.wars.some((w) => w.with === n.id);
   const canDeclare = !n.declare || n.breaks;
@@ -481,7 +490,10 @@ function NeighbourRow({
             <select
               data-testid="dip-scale"
               value={scale}
-              onChange={(e) => setScale((e.target as HTMLSelectElement).value as DeclaredScale)}
+              onChange={(e) => {
+                setScale((e.target as HTMLSelectElement).value as DeclaredScale);
+                onEdit();
+              }}
             >
               {!rising && <option value="war">War: battles score, terms end it</option>}
               {d.allowed === 'total' && (
@@ -501,7 +513,10 @@ function NeighbourRow({
               maxLength={DIPLOMACY.reasonMax}
               placeholder="What they’ll be told"
               value={reason}
-              onInput={(e) => setReason((e.target as HTMLInputElement).value)}
+              onInput={(e) => {
+                setReason((e.target as HTMLInputElement).value);
+                onEdit();
+              }}
             />
           </label>
           <p class="muted">
@@ -718,6 +733,12 @@ function TermsBuilder({
         <button
           class="btn"
           data-testid="dip-term-add"
+          disabled={terms.length >= DIPLOMACY.maxTerms}
+          title={
+            terms.length >= DIPLOMACY.maxTerms
+              ? `A treaty has ${DIPLOMACY.maxTerms} terms at most`
+              : undefined
+          }
           onClick={() =>
             setTerms([
               ...terms,

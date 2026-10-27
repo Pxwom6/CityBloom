@@ -80,6 +80,7 @@ const SAMPLES: Record<CommandType, Command> = {
   },
   recallForce: { type: 'recallForce', expedition: 6 },
   battleResolve: { type: 'battleResolve', input: {} as never, mode: 'watch' },
+  battleSettling: { type: 'battleSettling', expedition: 6, on: true },
   battleReport: {
     type: 'battleReport',
     expedition: 6,

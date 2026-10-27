@@ -405,7 +405,9 @@ export function resolveBattle(
   const why = checkBattleInput(input);
   if (why) return fail(why);
   if (w.battle) return fail(BATTLE_BUSY);
-  if (w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
+  // A friend's battle is known by its sender too (M36: two cities' battles may share an id).
+  const takenKey = from === undefined ? input.id : `${from}:${input.id}`;
+  if (w.taken?.includes(takenKey) || w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
   // A friend's raid (M36): from a city of the region this one knows. Whether it may raid at all
   // (shields, the day's raids) the region room has decided already, as both cities' pages heard.
   const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
@@ -441,7 +443,7 @@ export function resolveBattle(
   if (replay) w.battle.report.replay = replay.slice(0, 60);
   if (away) w.battle.report.absent = true;
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
-  w.taken = [...(w.taken ?? []), input.id].slice(-BATTLE_TAKEN_KEEP);
+  w.taken = [...(w.taken ?? []), takenKey].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;
   // Its opening picture at once: a battle being watched shows before its first tick.
   sim.battleFrame = run.frame();
@@ -676,7 +678,13 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   delete w.battle;
   sim.battleRun = null;
   // In a declared war the battle moves the score, and may take or free the seat of power (M36).
-  scoreHomeBattle(sim, hb.raid.from, report, result.objectives.aimed, result.objectives.down);
+  // Whether any unit of either side was hurt (a raid beaten off by wounds alone is still a battle).
+  const before = new Map<string, number>([
+    ...hb.input.attacker.units.map((u) => [`0:${u.id}`, u.hp] as const),
+    ...hb.input.layout.defenders.map((u) => [`1:${u.id}`, u.hp] as const),
+  ]);
+  const hurt = result.units.some((u) => u.out || u.hp < (before.get(`${u.side}:${u.id}`) ?? u.hp));
+  scoreHomeBattle(sim, hb.raid.from, report, result.objectives.aimed, result.objectives.down, hurt);
   sim.events.push({
     kind: 'battleEnded',
     id: report.id,

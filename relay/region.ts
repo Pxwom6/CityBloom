@@ -117,7 +117,8 @@ export type RegionClientMsg =
       /** Fought at half strength, as against a player who isn't here (M36). */
       away?: boolean;
     }
-  | { t: 'battleSeen'; id: string }
+  /** `from`: the battle's sender (M36: two cities' battles may share an id). */
+  | { t: 'battleSeen'; id: string; from?: number }
   /** A force set off against another city of the region (M35): it's told, if its player is here. */
   | { t: 'forceOut'; to: number; units: number; hours: number };
 
@@ -143,10 +144,11 @@ export type RegionRoomMsg =
   | { t: 'battleKept'; id: string }
   /**
    * The region turned a battle away (M36): its target is neutral, a newcomer the sender may not
-   * raid, or has taken the day's raids. `again`: its player has left since it was fought: fight it
-   * again at half strength.
+   * raid, has taken the day's raids or has as many waiting as it keeps, or war is off. `again`: its
+   * player has left since it was fought: fight it again at half strength. `later`: not now (the
+   * region's pace): ask again after this many ms.
    */
-  | { t: 'battleRefused'; id: string; reason: string; again?: boolean }
+  | { t: 'battleRefused'; id: string; reason: string; again?: boolean; later?: number }
   /** Another city's force is on its way to this one (M35): `hours` of the sender's game time. */
   | { t: 'incoming'; from: number; units: number; hours: number }
   | { t: 'notice'; text: string }
@@ -188,7 +190,7 @@ interface City {
   raids?: { day: number; n: number };
   /** When each other city last raided it (ms, M36): a newcomer may answer those. */
   raidedBy?: Record<number, number>;
-  /** Battles it has seen lately (ids, M36): one sent again isn't counted again. */
+  /** Battles it has seen lately (M36, `sender slot:id`): one sent again isn't counted again. */
   seen?: string[];
 }
 
@@ -454,7 +456,9 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         ...(m.away === true ? { away: true } : {}),
       };
     case 'battleSeen':
-      return typeof m.id === 'string' && /^[\w-]{1,40}$/.test(m.id) ? { t: 'battleSeen', id: m.id } : null;
+      return typeof m.id === 'string' && /^[\w-]{1,40}$/.test(m.id)
+        ? { t: 'battleSeen', id: m.id, ...(finite(m.from, 1, 64) ? { from: m.from as number } : {}) }
+        : null;
     case 'forceOut':
       return finite(m.to, 1, 64) && finite(m.units, 1, 24) && finite(m.hours, 0, 72)
         ? {
@@ -691,7 +695,13 @@ export class RegionRoom {
    */
   private raidRefusal(from: City, target: City, now: number): string | null {
     if (!from.report || !target.report) return `${target.name} isn’t in the region’s war yet`;
+    if (from.report.shield === 'neutral') return `${from.name} is neutral: it raids no one`;
     if (target.report.shield === 'neutral') return `${target.name} is neutral`;
+    // A region on one player's computer ends with its host: a raid there needs its target's player.
+    if (this.kind === 'p2p' && !this.online(target.slot))
+      return `${target.name}’s player isn’t here, and this region keeps nothing for them`;
+    if ((target.pending?.length ?? 0) >= MAX_PENDING_BATTLES)
+      return `${target.name} has ${MAX_PENDING_BATTLES} raids waiting for its player: no more until it takes them`;
     if (target.report.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
       return `${target.name} is too young or small to raid, unless it strikes first`;
     if (this.raidsLeft(target, now) <= 0)
@@ -822,10 +832,18 @@ export class RegionRoom {
         return;
       }
       case 'battle': {
-        // Only where war is allowed, against another city of the region (M35).
-        if (!this.meta.rules?.war || m.to === slot) return;
+        // Only where war is allowed, against another city of the region (M35); every battle is
+        // answered (M36), so its sender's force never waits on nothing.
         const target = this.meta.cities.find((c) => c.slot === m.to);
-        if (!target) return;
+        if (!this.meta.rules?.war || m.to === slot || !target) {
+          if (m.part === 0)
+            conn.send({
+              t: 'battleRefused',
+              id: m.id,
+              reason: !this.meta.rules?.war ? 'War is off in this region' : 'That city isn’t in the region',
+            });
+          return;
+        }
         const key = `${slot}:${m.id}`;
         let inc = this.battleIn.get(key);
         if (!inc) {
@@ -837,8 +855,12 @@ export class RegionRoom {
         inc.parts[m.part] = m.data;
         if (inc.got < inc.parts.length) return;
         this.battleIn.delete(key);
-        // Sent again (its acknowledgement was lost): kept already, or seen already.
-        if (target.pending?.some((p) => p.id === m.id) || target.seen?.includes(m.id))
+        // Sent again (its acknowledgement was lost): kept already, or seen already (by its sender
+        // too: two cities' battles may share an id).
+        if (
+          target.pending?.some((p) => p.id === m.id && p.from === slot) ||
+          target.seen?.includes(`${slot}:${m.id}`)
+        )
           return conn.send({ t: 'battleKept', id: m.id });
         // The region decides whether it stands (M36): the target's shield, the sender's right to
         // answer a newcomer that raided it, and the day's raids. The sender's city hasn't taken the
@@ -854,17 +876,21 @@ export class RegionRoom {
             reason: `${target.name}’s player has left: the raid is fought again at half strength`,
             again: true,
           });
-        // A few at once, then one every few minutes; within the region's day.
-        if (this.budget.over(now) || !this.battlesOf(slot).take(now)) return;
+        // Within the region's day; a few at once, then one every few minutes (asked again later).
+        if (this.budget.over(now))
+          return conn.send({ t: 'battleRefused', id: m.id, reason: dailyLimitText('region') });
+        if (!this.battlesOf(slot).take(now))
+          return conn.send({
+            t: 'battleRefused',
+            id: m.id,
+            reason: 'The region takes a few battles at a time',
+            later: this.limits.battleEvery,
+          });
         const day = Math.floor(now / DAY_MS);
         target.raids = { day, n: (target.raids?.day === day ? target.raids.n : 0) + 1 };
         target.raidedBy = { ...(target.raidedBy ?? {}), [slot]: now };
+        // Eight at most (more are turned away above, so every battle kept is one its target takes).
         const pending = (target.pending ??= []);
-        // Eight at most: the oldest gives way.
-        if (pending.length >= MAX_PENDING_BATTLES) {
-          const old = pending.shift()!;
-          this.store.deleteBattle(target.slot, old.k);
-        }
         let k = 0;
         while (pending.some((p) => p.k === k)) k++;
         const parts = inc.parts as string[];
@@ -894,12 +920,13 @@ export class RegionRoom {
       }
       case 'battleSeen': {
         const pending = city.pending;
-        const i = pending?.findIndex((p) => p.id === m.id) ?? -1;
+        const i =
+          pending?.findIndex((p) => p.id === m.id && (m.from === undefined || p.from === m.from)) ?? -1;
         if (i < 0) return;
         const [seen] = pending!.splice(i, 1);
         if (!pending!.length) delete city.pending;
         // Remembered a while: the same battle sent again is acknowledged, not counted again.
-        city.seen = [...(city.seen ?? []), m.id].slice(-SEEN_KEEP);
+        city.seen = [...(city.seen ?? []), `${seen!.from}:${m.id}`].slice(-SEEN_KEEP);
         this.store.deleteBattle(slot, seen!.k);
         this.save();
         return;

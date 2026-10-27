@@ -1298,14 +1298,18 @@ reasons: DECISIONS "M36".
   (`City.raidedBy`, `RAID_ANSWER_MS`), or has been raided three times this UTC day (`City.raids`,
   `raidsPerDay`). The view shows `raidsLeft` and `raidedBy`; the page turns them into a verdict per
   friend (`raidVerdict`: open, new, neutral, spent) that `PlayerNeighbour.raid` gives the sim, so
-  `strikeRefusal` refuses a hopeless send before it leaves. The attacker's page fights the battle
-  when its force arrives (marking it `away`, at half damage, `SKIRMISH.awayCollapse`/`awayWreck`,
-  when the target's player isn't playing), posts it and waits for the room: kept, and only then does
-  its own sim take the result (`battleResolve` with `away`, then `battleReport`); refused, and the
-  record is forgotten and the force comes home (or, when the player left meanwhile, the battle is
-  fought again at half, `again`); no word, and it asks again in 20 s (a battle sent twice is
-  acknowledged, not counted twice: `pending` and `seen` ids). The defender's sim takes a friend's
-  battle only from a city it knows. Protocol 4.
+  `strikeRefusal` refuses a hopeless send before it leaves (also `absent`: in a peer-to-peer region,
+  which ends with its host, a player who isn't there). The attacker's page fights the battle when its
+  force arrives (marking it `away`, at half damage, `SKIRMISH.awayCollapse`/`awayWreck`, when the
+  target's player isn't playing), pins the force (`battleSettling`: no calling it back, and it waits
+  up to `SETTLE_TIMEOUT_HOURS` for the room), posts it and waits: kept, and only then does its own
+  sim take the result (`battleReport`; the defender's sim `battleResolve` with `away`); refused, and
+  the record is forgotten and the force freed and called home (or, when the player left meanwhile,
+  the battle is fought again at half, `again`; or, at the room's pace, asked again `later`); no word,
+  and it asks again in 20 s. The room answers every battle, refuses rather than evicts when eight
+  wait for a player, and knows battles by sender and id (`pending`, `seen`; the defender's page and
+  `WarState.taken` too). The defender's sim takes a friend's battle only from a city it knows.
+  Protocol 4.
 - **UI**: the war room's Diplomacy tab (`src/ui/Diplomacy.tsx`: reputation and stance, wars with
   their score bars, holds and capitulations, proposals in and out with accept, counter and refuse,
   the terms builder, treaties in force with end and buy back, each neighbour with declare and

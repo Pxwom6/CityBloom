@@ -421,9 +421,11 @@ export function SendForce() {
                 {e.state === 'out'
                   ? `on the way to ${e.name}: ${left.toFixed(1)} h`
                   : e.state === 'fighting'
-                    ? `fighting in ${e.name}`
+                    ? e.settling
+                      ? `fought in ${e.name}: waiting for the region to take the battle`
+                      : `fighting in ${e.name}`
                     : `coming home from ${e.name}: ${left.toFixed(1)} h`}
-                {e.state !== 'back' && (
+                {e.state !== 'back' && !e.settling && (
                   <button
                     class="btn"
                     data-testid={`recall-${e.id}`}

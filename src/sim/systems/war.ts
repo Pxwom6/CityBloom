@@ -124,7 +124,10 @@ export interface WarState {
   struck?: Record<number, number>;
   /** The city has passed the bar past which neighbours may raid it (told once, M35). */
   exposed?: true;
-  /** Battles from outside the city it has taken, by input id, newest last (each is taken once). */
+  /**
+   * Battles from outside the city it has taken, newest last (each is taken once): by input id, or
+   * a friend's by `slot:id` (M36).
+   */
   taken?: string[];
   /** Declarations, treaties, pacts and the city's standing (M36); absent until first used. */
   diplomacy?: Diplomacy;
@@ -790,6 +793,8 @@ export interface WarSummary {
     to: number;
     name: string;
     state: 'out' | 'fighting' | 'back';
+    /** Its battle is with the region (M36): it can't be called back until it answers. */
+    settling: boolean;
     units: number;
     route: string;
     target: string;
@@ -898,6 +903,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
       to: e.to,
       name: e.name,
       state: e.state,
+      settling: !!e.settling,
       units: e.units.length,
       route: e.route,
       target: e.target,

@@ -163,6 +163,8 @@ export type Command =
   | { type: 'recallForce'; expedition: number }
   /** The page's account of an expedition's battle, fought in the other town (page only). */
   | { type: 'battleReport'; expedition: number; result: AwayResult }
+  /** A force's battle with a friend's city is with the region: pinned until it answers (page only, M36). */
+  | { type: 'battleSettling'; expedition: number; on: boolean }
   /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
   | {
       type: 'battleResolve';
@@ -241,6 +243,7 @@ const COMMAND_KINDS = {
   sendForce: true,
   recallForce: true,
   battleReport: true,
+  battleSettling: true,
   battleResolve: true,
   cancelTraining: true,
   disbandUnit: true,

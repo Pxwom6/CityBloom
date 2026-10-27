@@ -106,6 +106,11 @@ export const SKIRMISH = {
 
 /** A force that has arrived and heard nothing of its battle (the page never fought it) comes home. */
 export const FIGHT_TIMEOUT_HOURS = 72;
+/**
+ * A force whose battle with a friend's city is with the region (M36) waits for the region's answer
+ * this long at most (30 game days: at the top speed about half an hour), then comes home.
+ */
+export const SETTLE_TIMEOUT_HOURS = 720;
 
 /** Computer neighbours' raids (M35): when they come, how big, and what they strike. */
 export const RAIDS = {

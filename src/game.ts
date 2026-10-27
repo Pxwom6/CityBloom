@@ -519,12 +519,15 @@ export class Game {
           ? `${c.name} is too young or small to raid, unless it strikes first`
           : v === 'spent'
             ? `${c.name} has taken the region’s raids for today`
-            : null;
+            : v === 'absent'
+              ? `${c.name}’s player isn’t here, and this region keeps nothing for them`
+              : null;
     },
     recall: async (expedition, why) => {
       await this.dispatch({ type: 'recallForce', expedition });
       this.notice(`recalled:${expedition}`, `The force turns for home: ${why}.`, 'info');
     },
+    settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
   });
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
@@ -725,8 +728,10 @@ export class Game {
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
     link.onBattleKept = (id) => void battlePosted(id);
-    // Turned away (M36): not sent again (the force's own page says why and calls it home).
-    link.onBattleRefused = (id) => void battlePosted(id);
+    // Turned away (M36): a battle reposted from before is not sent again; a force's own battle is
+    // its page's to settle (forgotten, fought again, or asked again later).
+    link.onBattleRefused = (id) =>
+      void loadBattle(id).then((r) => (r && r.expedition === undefined ? battlePosted(id) : undefined));
     link.onIncoming = ({ from, units, hours }) => {
       const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
       this.notice(

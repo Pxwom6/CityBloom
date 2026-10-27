@@ -40,6 +40,7 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'setMapInfo',
   'startScenario',
   'battleReport',
+  'battleSettling',
   'battleResolve',
 ]);
 
@@ -335,6 +336,7 @@ const CHECKS: Record<CommandType, Check> = {
       : BAD,
   recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
   battleReport: () => 'Only your own game reports its battles',
+  battleSettling: () => 'Only your own game reports its battles',
   battleResolve: () => 'Only your own game hosts its battles',
   disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
   issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),

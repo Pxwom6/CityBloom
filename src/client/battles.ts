@@ -166,6 +166,11 @@ export interface AwayHost {
   mayStrike?(slot: number): string | null;
   /** Call a force home without a battle, saying why. */
   recall?(expedition: number, why: string): Promise<void>;
+  /**
+   * Pin a force while the region decides on its battle (M36), or free it again: false when the
+   * force isn't fighting any more (called back, or it gave up waiting).
+   */
+  settle?(expedition: number, on: boolean): Promise<boolean>;
 }
 
 /** How long a battle job may take before it's given up (growing a big town on a slow phone). */
@@ -224,9 +229,19 @@ export class AwayBattles {
     });
   }
 
+  /** Forces pinned while the region decides on their battle, and that battle's record. */
+  private pinned = new Map<number, string>();
+
   /** Fight every arrived expedition not fought yet (call with the war summary's expeditions). */
   check(expeditions: { id: number; state: string }[]): void {
     const now = performance.now();
+    // A pinned force that stopped fighting (it waited the longest the region may take): its battle
+    // won't be reported now, so its record and its copy of the friend's city go.
+    for (const [exp, rec] of [...this.pinned])
+      if (!expeditions.some((e) => e.id === exp && e.state === 'fighting')) {
+        this.pinned.delete(exp);
+        void forgetBattle(rec);
+      }
     for (const e of expeditions)
       if (
         e.state === 'fighting' &&
@@ -283,17 +298,32 @@ export class AwayBattles {
           await keepBattle(rec);
         }
         if (!rec.posted) {
+          // Pinned while the region decides: a force called back (or given up) in the meantime has
+          // no battle to put to it, and once put, it can't be called back until the region answers.
+          if (this.host.settle && !(await this.host.settle(expedition, true))) {
+            await forgetBattle(rec.id);
+            return;
+          }
+          this.pinned.set(expedition, rec.id);
           const answer = await this.host.postBattle(n.slot, rec.input, !!rec.away);
           if (!answer) {
             this.waitUntil.set(expedition, performance.now() + 20_000);
             return;
           }
           if (!answer.kept) {
+            // Not now (the region's pace): asked again later, the force still pinned.
+            if (answer.later) {
+              this.waitUntil.set(expedition, performance.now() + answer.later);
+              return;
+            }
+            this.pinned.delete(expedition);
             await forgetBattle(rec.id);
+            await this.host.settle?.(expedition, false);
             // Its player left since: fought again at half strength on the next look.
             if (!answer.again) await this.host.recall?.(expedition, answer.reason);
             return;
           }
+          this.pinned.delete(expedition);
           await battlePosted(rec.id);
         }
         if (!rec.result || !(await this.host.report(expedition, rec.result)))

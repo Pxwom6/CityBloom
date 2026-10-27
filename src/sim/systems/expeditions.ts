@@ -10,6 +10,7 @@ import {
   BATTLE,
   FIGHT_TIMEOUT_HOURS,
   RAIDS,
+  SETTLE_TIMEOUT_HOURS,
   SKIRMISH,
   type BattleRoute,
   type BattleTarget,
@@ -41,6 +42,11 @@ export interface Expedition {
   arrive: number;
   home: number;
   state: 'out' | 'fighting' | 'back';
+  /**
+   * Its battle with a friend's city is with the region (M36): it can't be called back, and waits
+   * for the region's answer (the page reports the battle once the region keeps it).
+   */
+  settling?: true;
 }
 
 /** What the page hands back after fighting an expedition's battle. */
@@ -179,8 +185,24 @@ export function recallForce(sim: Sim, id: number, dryRun: boolean): CommandResul
   const e = w?.expeditions?.find((x) => x.id === id);
   if (!w || !e) return fail('No such force');
   if (e.state === 'back') return fail('The force is on its way home');
+  if (e.settling) return fail('Its battle is with the region: the force comes home once the region answers');
   if (dryRun) return ok(0);
   turnBack(sim, e);
+  return ok(0);
+}
+
+/**
+ * The page has fought a force's battle with a friend's city and puts it to the region (M36): the
+ * force is pinned until the region answers (`on`), or freed again when it turned the battle away.
+ */
+export function battleSettling(sim: Sim, id: number, on: boolean, dryRun: boolean): CommandResult {
+  const e = sim.state.war?.expeditions?.find((x) => x.id === id);
+  if (!e) return fail('No such force');
+  if (on && e.state !== 'fighting') return fail('That force isn’t fighting');
+  if (dryRun) return ok(0);
+  if (on) e.settling = true;
+  else delete e.settling;
+  sim.warChanged();
   return ok(0);
 }
 
@@ -189,6 +211,7 @@ export function turnBack(sim: Sim, e: Expedition): void {
   const s = sim.state;
   const out = e.state === 'out' ? s.tick - e.depart : e.arrive - e.depart;
   e.state = 'back';
+  delete e.settling;
   e.home = s.tick + Math.max(TICKS_PER_HOUR, out);
   sim.warChanged();
 }
@@ -203,7 +226,9 @@ export function expeditionsTick(sim: Sim): void {
     // force turns back instead, everywhere alike. One that hears nothing of its battle comes home.
     if (
       (e.state === 'out' && sim.shared && s.tick >= e.arrive) ||
-      (e.state === 'fighting' && (sim.shared || s.tick >= e.arrive + FIGHT_TIMEOUT_HOURS * TICKS_PER_HOUR))
+      (e.state === 'fighting' &&
+        (sim.shared ||
+          s.tick >= e.arrive + (e.settling ? SETTLE_TIMEOUT_HOURS : FIGHT_TIMEOUT_HOURS) * TICKS_PER_HOUR))
     ) {
       turnBack(sim, e);
       continue;
@@ -240,6 +265,11 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
   if (dryRun) return ok(0);
   const s = sim.state;
   const lost: Partial<Record<UnitKind, number>> = {};
+  // Whether any of the force was hurt (before its scars are taken).
+  const hurt = r.units.some((u) => {
+    const unit = e.units.includes(u.id) ? w.units.get(u.id) : undefined;
+    return !!unit && (u.out || u.hp < unit.hp);
+  });
   for (const u of r.units) {
     if (!e.units.includes(u.id)) continue;
     const unit = w.units.get(u.id);
@@ -283,8 +313,9 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
   };
   w.reports = [...(w.reports ?? []), report].slice(-12);
   // In a declared war the battle moves the score, and may take the seat of power (M36).
-  scoreAwayBattle(sim, e.to, report, sent);
+  scoreAwayBattle(sim, e.to, report, sent, hurt);
   e.state = 'back';
+  delete e.settling;
   e.home = s.tick + Math.max(TICKS_PER_HOUR, e.arrive - e.depart);
   if (!e.units.length) e.home = s.tick;
   sim.events.push({

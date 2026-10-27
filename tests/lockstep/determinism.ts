@@ -107,6 +107,11 @@ export function runDeterminism(
   });
   const input = awayInput(awayCity(warSim, e), town);
   const result = awayResult(input, Battle.run(structuredClone(input)));
+  // Pinned while a region would decide on it (M36), then reported.
+  note(
+    { type: 'battleSettling', expedition: e.id, on: true },
+    warSim.dispatch({ type: 'battleSettling', expedition: e.id, on: true }),
+  );
   note(
     { type: 'battleReport', expedition: e.id, result },
     warSim.dispatch({ type: 'battleReport', expedition: e.id, result }),

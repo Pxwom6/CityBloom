@@ -450,11 +450,18 @@ export function scoreHomeBattle(
   report: BattleReport,
   aimed: number,
   down: number,
+  hurt = false,
 ): void {
   if (!warWith(sim, from)) return;
-  // Nothing to strike (the target wasn't there), or no contact at all: no battle to score.
+  // Nothing to strike (the target wasn't there), or no contact at all (no unit of either side
+  // hurt, nothing hit): no battle to score.
   const contact =
-    report.theirLost > 0 || Object.values(report.lost).some((v) => (v ?? 0) > 0) || (report.worth ?? 0) > 0;
+    hurt ||
+    report.theirLost > 0 ||
+    Object.values(report.lost).some((v) => (v ?? 0) > 0) ||
+    (report.worth ?? 0) > 0 ||
+    report.burning.length > 0 ||
+    report.civics.length > 0;
   if (aimed === 0 || (report.outcome === 'withdrew' && !contact)) return;
   const won = report.outcome !== 'raided';
   const decisive = won
@@ -477,13 +484,27 @@ export function scoreHomeBattle(
 }
 
 /** What an expedition's report means for the score. */
-export function scoreAwayBattle(sim: Sim, to: number, report: BattleReport, sent: number): void {
+export function scoreAwayBattle(
+  sim: Sim,
+  to: number,
+  report: BattleReport,
+  sent: number,
+  hurt = false,
+): void {
   if (!warWith(sim, to) || !report.away) return;
   const won = report.outcome === 'raided';
   const lost = Object.values(report.lost).reduce((a, v) => a + (v ?? 0), 0);
   const o = report.away.objectives;
-  // Nothing there to strike: no battle to score.
-  if (o.aimed === 0) return;
+  // Nothing there to strike, or no contact at all (no unit of either side hurt, nothing hit): no
+  // battle to score.
+  const contact =
+    hurt ||
+    lost > 0 ||
+    report.theirLost > 0 ||
+    report.away.destroyed > 0 ||
+    report.away.damaged > 0 ||
+    o.down > 0;
+  if (o.aimed === 0 || (report.outcome === 'withdrew' && !contact)) return;
   scoreBattle(sim, to, {
     ours: true,
     outcome: report.outcome,
@@ -1210,6 +1231,8 @@ export function diplomacyHour(sim: Sim): void {
   if (!d) return;
   const s = sim.state;
   for (const war of [...d.wars]) {
+    // Ended earlier in this pass (a fall ends every other war): nothing more to do with it.
+    if (!d.wars.includes(war)) continue;
     if (!war.opened && s.tick >= war.opens) {
       war.opened = true;
       note(sim, war.with, 'opened', `The war with ${war.name} has begun`);
@@ -1334,6 +1357,7 @@ export function diplomacyMonth(sim: Sim): void {
       d.reputation = Math.min(DIPLOMACY.reputation.start, d.reputation + DIPLOMACY.reputation.mendPerMonth);
     // Each ally fighting at the city's side wears the enemy down.
     for (const { war } of helpers(sim)) {
+      if (!d.wars.includes(war)) continue;
       war.score = clamp(round1(war.score + DIPLOMACY.score.allyPerDay), -100, 100);
       const enemy = neighbourOf(sim, war.with);
       if (enemy?.rival) enemy.rival.forces = round1(enemy.rival.forces * 0.97);
@@ -1365,6 +1389,9 @@ function computerMoves(sim: Sim): void {
     // A vassal of the city rises once its forces are strong enough (a rising takes an army). It
     // stays a vassal until the rising wins: by a hold, by the city's capitulation, or by treaty.
     if (r.vassal && !war) {
+      // Not again within the cooldown after a rising ended (in peace, the vassal still a vassal).
+      const ended = w.diplomacy?.ended?.[n.id];
+      if (ended !== undefined && s.tick - ended < DIPLOMACY.cooldownMonths * M) continue;
       if (
         r.forces >= strength * DIPLOMACY.vassal.rebelRatio &&
         rng.chance(0.25) &&
@@ -1377,9 +1404,12 @@ function computerMoves(sim: Sim): void {
     if (war) {
       if (pending || s.tick < war.opens || war.capitulated) continue;
       const ours = monthlyTaxes(sim);
-      if (r.vassal && war.score <= -30 && rng.chance(0.4))
-        putToCity(sim, n, [{ k: 'peace' }, { k: 'independence' }]);
-      else if (war.score >= 30 && rng.chance(0.5)) {
+      // A rising wants its freedom: winning, it offers peace with independence, and nothing less.
+      if (r.vassal) {
+        if (war.score <= -30 && rng.chance(0.4)) putToCity(sim, n, [{ k: 'peace' }, { k: 'independence' }]);
+        continue;
+      }
+      if (war.score >= 30 && rng.chance(0.5)) {
         const amount = Math.round((neighbourTaxes(n) * Math.min(6, war.score / 15)) / 100) * 100;
         putToCity(
           sim,
@@ -1515,6 +1545,8 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
   if (verdict === 'new') return fail(`${n.name} is too young or small to raid, unless it strikes first`);
   if (verdict === 'spent')
     return fail(`${n.name} has taken the region’s three raids for today: no more until midnight (UTC)`);
+  if (verdict === 'absent')
+    return fail(`${n.name}’s player isn’t here, and this region keeps nothing for them`);
   if (d?.leaving !== undefined && s.tick < d.leaving)
     return fail(`Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / H)} hours`);
   const war = warWith(sim, to);

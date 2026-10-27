@@ -55,7 +55,8 @@ export interface PlayerNeighbour {
 /** Why a friend's city can't be raided (M36): its own report says so. */
 export type Shield = 'new' | 'neutral';
 /** The region's verdict on raiding a friend's city now (M36). */
-export type RaidVerdict = 'open' | 'new' | 'neutral' | 'spent';
+/** `absent`: its player isn't here, in a region on one player's computer (it keeps nothing for them). */
+export type RaidVerdict = 'open' | 'new' | 'neutral' | 'spent' | 'absent';
 
 export interface Neighbour {
   id: number;
@@ -456,7 +457,11 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       jobs: Math.max(0, c.jobs),
       shoppers: Math.max(0, c.shoppers),
       online: c.online,
-      ...(c.raid === 'open' || c.raid === 'new' || c.raid === 'neutral' || c.raid === 'spent'
+      ...(c.raid === 'open' ||
+      c.raid === 'new' ||
+      c.raid === 'neutral' ||
+      c.raid === 'spent' ||
+      c.raid === 'absent'
         ? { raid: c.raid }
         : {}),
     };

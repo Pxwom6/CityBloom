@@ -603,6 +603,87 @@ describe('F8: a region keeps within the free plan', () => {
     region.closed(ada.conn);
   });
 
+  it('answers every battle, refusing rather than dropping or evicting one, and knows a resend by its sender (M36)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('6RANSW', 'local', store, clock, { raidsPerDay: 99 });
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const cleo = rawRegion(region);
+    cleo.say(rhello('Cleo'));
+    const samWelcome = sam.got.find((m) => m.t === 'rwelcome') as Extract<RegionRoomMsg, { t: 'rwelcome' }>;
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    cleo.say(report(0, 5_000, 'Cleoton'));
+    const answer = (from: RawRegion, id: string) =>
+      from.got.findLast((m) => (m.t === 'battleKept' || m.t === 'battleRefused') && m.id === id);
+    const raid = (from: RawRegion, to: number, id: string, gap = 10 * 60_000, away = false) => {
+      clock.advance(gap);
+      from.say({ t: 'battle', to, id, part: 0, parts: 1, data: id, ...(away ? { away: true } : {}) });
+      return answer(from, id);
+    };
+    // Two cities' battles may share an id: each is kept, and Sam gets both.
+    expect(raid(ada, 2, 'same')).toMatchObject({ t: 'battleKept' });
+    expect(raid(cleo, 2, 'same')).toMatchObject({ t: 'battleKept' });
+    expect(sam.got.filter((m) => m.t === 'battle' && m.id === 'same')).toHaveLength(2);
+    // Sam has seen Ada's: Ada's sent again is acknowledged, not delivered again.
+    sam.say({ t: 'battleSeen', id: 'same', from: 1 });
+    raid(ada, 2, 'same');
+    expect(ada.got.filter((m) => m.t === 'battleKept' && m.id === 'same')).toHaveLength(2);
+    expect(sam.got.filter((m) => m.t === 'battle' && m.id === 'same')).toHaveLength(2);
+    // The pace: a few at once, then "later" (the force waits), never silence.
+    for (const id of ['p1', 'p2', 'p3']) raid(cleo, 1, id, 1000);
+    expect(raid(cleo, 1, 'p4', 1000)).toMatchObject({ t: 'battleRefused', later: REGION_LIMITS.battleEvery });
+    // Sam away: the region keeps eight battles for it at most; the ninth is refused, not one evicted.
+    region.closed(sam.conn);
+    const kept: string[] = [];
+    for (let i = 0; kept.length < 8 && i < 20; i++)
+      if (raid(ada, 2, `q${i}`, 10 * 60_000, true)?.t === 'battleKept') kept.push(`q${i}`);
+    expect(raid(ada, 2, 'q-over', 10 * 60_000, true)).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('waiting'),
+    });
+    const back = rawRegion(region);
+    back.say(rhello('Sam', { rejoin: { slot: 2, secret: samWelcome.secret } }));
+    const waiting = back.got.filter((m) => m.t === 'battle').map((m) => (m as { id: string }).id);
+    expect(waiting).toEqual(expect.arrayContaining(kept.slice(-6)));
+    expect(waiting).toHaveLength(8);
+    // A neutral city raids no one.
+    ada.say({ ...report(0, 5_000, 'Adaton'), report: { ...report().report, shield: 'neutral' } });
+    expect(raid(ada, 3, 'neutral')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('Adaton'),
+    });
+    // War off: told so.
+    ada.say(report(0, 5_000, 'Adaton'));
+    ada.say({ t: 'rrules', rules: { war: false, scale: 'skirmish' } });
+    expect(raid(cleo, 1, 'off')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('War is off'),
+    });
+    for (const c of [ada, back, cleo]) region.closed(c.conn);
+  });
+
+  it('in a region on one player\u2019s computer, turns away raids on a player who isn\u2019t there (M36)', () => {
+    const clock = new FakeClock();
+    const region = new RegionRoom('ARPEER', 'p2p', new MemoryRegionStore(), clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    region.closed(sam.conn);
+    ada.say({ t: 'battle', to: 2, id: 'gone', part: 0, parts: 1, data: 'X', away: true });
+    expect(ada.got.findLast((m) => m.t === 'battleRefused')).toMatchObject({
+      id: 'gone',
+      reason: expect.stringContaining('isn’t here'),
+    });
+    region.closed(ada.conn);
+  });
+
   it('keeps the leaving save once, even sent again under the same name (M35)', () => {
     const clock = new FakeClock();
     const { region, store, ada } = openRegion('6RLST2', clock);

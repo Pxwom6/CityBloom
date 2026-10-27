@@ -4,11 +4,13 @@ import { decodeSave } from '../../src/client/saves';
 import { Sim } from '../../src/sim/sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DIPLOMACY, termProblem, type Term } from '../../src/data/diplomacy';
-import { SKIRMISH } from '../../src/data/battle';
+import { FIGHT_TIMEOUT_HOURS, SKIRMISH } from '../../src/data/battle';
 import { MAP_SIZE } from '../../src/data/world';
 import { battleLayout } from '../../src/sim/battle/layout';
 import { BATTLE_VERSION, type BattleInput } from '../../src/sim/battle/types';
 import type { AwayResult } from '../../src/sim/systems/expeditions';
+import { scoreHomeBattle } from '../../src/sim/systems/diplomacy';
+import type { BattleReport } from '../../src/sim/systems/raids';
 import { regionReport, type Neighbour } from '../../src/sim/systems/region';
 import { militaryDetails } from '../../src/sim/systems/war';
 import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
@@ -491,6 +493,31 @@ describe('M36: friends’ raids', () => {
     expect(send(sim, sam.id).ok).toBe(true);
   });
 
+  it('a force whose battle is with the region can’t be called back until the region answers', () => {
+    const { sim } = warTown();
+    disarm(sim);
+    const sam = friend(sim, { raid: 'open' });
+    const r = send(sim, sam.id);
+    expect(r.ok).toBe(true);
+    const id = r.ok ? r.created![0]! : 0;
+    const e = () => sim.state.war!.expeditions!.find((x) => x.id === id)!;
+    for (let t = 0; t < 2 * M && e().state !== 'fighting'; t++) sim.step();
+    expect(e().state).toBe('fighting');
+    ok(sim, { type: 'battleSettling', expedition: id, on: true });
+    const back = sim.dispatch({ type: 'recallForce', expedition: id });
+    expect(back.ok).toBe(false);
+    if (!back.ok) expect(back.reason).toMatch(/region/);
+    // Waiting on the region outlasts the ordinary wait for a battle.
+    sim.advance((FIGHT_TIMEOUT_HOURS + 1) * H);
+    expect(e().state).toBe('fighting');
+    // Turned away: freed, and called home.
+    ok(sim, { type: 'battleSettling', expedition: id, on: false });
+    ok(sim, { type: 'recallForce', expedition: id });
+    expect(e().state).toBe('back');
+    // A force no longer fighting can't be pinned: its page forgets the battle instead.
+    expect(sim.dispatch({ type: 'battleSettling', expedition: id, on: true }).ok).toBe(false);
+  });
+
   it('the defender’s city takes a raid only from a city of the region it knows, at half the damage while away', () => {
     const { sim } = warTown();
     friend(sim, { online: true });
@@ -878,5 +905,121 @@ describe('M36 review: what the page is told', () => {
     } finally {
       (DIPLOMACY as { dmz: number }).dmz = before;
     }
+  });
+});
+
+describe('M36 second review: the rules at their edges', () => {
+  const treaty = (sim: Sim, n: Neighbour, terms: Term[]) => {
+    ok(sim, { type: 'cheat', cheat: 'proposal', neighbour: n.id, terms });
+    const p = dip(sim).proposals.find((x) => x.from === 'them' && x.with === n.id)!;
+    ok(sim, { type: 'answerProposal', proposal: p.id, accept: true });
+  };
+
+  it('a rising vassal offers its freedom or nothing, and rises again only after the cooldown', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    for (const r of rivals(sim)) r.rival!.allies = [];
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'total', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    strike(sim, n, {}, 'cityhall');
+    sim.advance(DIPLOMACY.conquestHours * H + H);
+    expect(n.rival!.vassal).toBeDefined();
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 300, defences: 50 });
+    const rising = () => dip(sim).wars.find((w) => w.with === n.id);
+    for (let d = 0; d < 30 && !rising(); d++) sim.advance(M);
+    expect(rising()?.rebellion).toBe(true);
+    // Up in arms, it's held to a score (its raids could otherwise win it the city's HQ).
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 0.5, defences: 1 });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    // Winning, it puts terms to the city: always its freedom (refused here, to see more).
+    let offers = 0;
+    for (let d = 0; d < 20; d++) {
+      rising()!.score = -40;
+      sim.advance(M);
+      for (const p of dip(sim).proposals.filter((x) => x.from === 'them' && x.with === n.id)) {
+        offers++;
+        expect(p.terms.map((t) => t.k)).toEqual(expect.arrayContaining(['peace', 'independence']));
+        ok(sim, { type: 'answerProposal', proposal: p.id, accept: false });
+      }
+    }
+    expect(offers).toBeGreaterThan(0);
+    // A peace without its freedom (as the city might agree to): still a vassal, and not up in arms
+    // again before the cooldown (made long here, so the daily dice can't hide a rising).
+    const cooldown = DIPLOMACY.cooldownMonths;
+    (DIPLOMACY as { cooldownMonths: number }).cooldownMonths = 20;
+    try {
+      treaty(sim, n, [{ k: 'peace' }]);
+      expect(rising()).toBeUndefined();
+      expect(n.rival!.vassal).toBeDefined();
+      ok(sim, { type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 300, defences: 50 });
+      for (let d = 0; d < 19; d++) {
+        sim.advance(M);
+        expect(rising()).toBeUndefined();
+      }
+      for (let d = 0; d < 30 && !rising(); d++) sim.advance(M);
+      expect(rising()?.rebellion).toBe(true);
+    } finally {
+      (DIPLOMACY as { cooldownMonths: number }).cooldownMonths = cooldown;
+    }
+  });
+
+  it('a raid beaten off by wounds alone, or that set homes burning, is a battle the score counts', () => {
+    const { sim } = warTown();
+    const n = rivals(sim)[0]!;
+    disarm(sim);
+    ok(sim, { type: 'declareWar', neighbour: n.id, scale: 'war', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    const war = () => dip(sim).wars.find((w) => w.with === n.id)!;
+    const report = (extra: Partial<BattleReport> = {}): BattleReport => ({
+      id: 1,
+      start: 0,
+      end: 0,
+      other: n.name,
+      ours: false,
+      target: 'military',
+      outcome: 'withdrew',
+      collapsed: [],
+      burning: [],
+      civics: [],
+      craters: 0,
+      lost: {},
+      theirLost: 0,
+      theirTotal: 10,
+      near: 0,
+      sheltered: 0,
+      homeless: 0,
+      ...extra,
+    });
+    scoreHomeBattle(sim, n.id, report(), 3, 0, false);
+    expect(war().battles).toBe(0);
+    scoreHomeBattle(sim, n.id, report(), 3, 0, true);
+    expect(war().battles).toBe(1);
+    expect(war().score).toBeGreaterThan(0);
+    scoreHomeBattle(sim, n.id, report({ burning: [1] }), 3, 0, false);
+    expect(war().battles).toBe(2);
+  });
+
+  it('a war a fall has just ended does nothing more in the same hour', () => {
+    const { sim } = warTown();
+    const [a, b] = rivals(sim);
+    disarm(sim);
+    for (const r of rivals(sim)) r.rival!.allies = [];
+    ok(sim, { type: 'declareWar', neighbour: a!.id, scale: 'total', reason: '' });
+    ok(sim, { type: 'declareWar', neighbour: b!.id, scale: 'war', reason: '' });
+    sim.advance(DIPLOMACY.warningHours * H + 60);
+    const d = dip(sim);
+    const wa = d.wars.find((w) => w.with === a!.id)!;
+    const wb = d.wars.find((w) => w.with === b!.id)!;
+    // A holds the city's HQ, its 48 hours up in the same hour B's war would open.
+    wa.hold = { by: 'them', since: sim.state.tick - DIPLOMACY.conquestHours * H + 30 };
+    wb.opened = undefined;
+    wb.opens = sim.state.tick + 30;
+    sim.advance(2 * H);
+    expect(d.vassal?.overlord).toBe(a!.id);
+    expect(d.wars).toHaveLength(0);
+    const fell = d.log.findIndex((e) => e.text.startsWith('The city falls'));
+    expect(fell).toBeGreaterThanOrEqual(0);
+    expect(d.log.slice(fell).some((e) => e.text.includes(`war with ${b!.name} has begun`))).toBe(false);
   });
 });

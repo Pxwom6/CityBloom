@@ -50,11 +50,16 @@ export function raidVerdict(view: RegionView, slot: number, c: RegionView['citie
   if (c.report?.shield === 'neutral') return 'neutral';
   if (c.report?.shield === 'new' && !(me?.raidedBy ?? []).includes(c.slot)) return 'new';
   if (c.raidsLeft === 0) return 'spent';
+  if (view.kind === 'p2p' && !c.online) return 'absent';
   return 'open';
 }
 
 /** What the room answered about a battle sent: kept, turned away (perhaps to fight again), or no word. */
-export type BattleSent = { kept: true } | { kept: false; reason: string; again: boolean } | null;
+export type BattleSent =
+  | { kept: true }
+  /** `again`: fight it again (at half strength); `later`: ask again after this many ms. */
+  | { kept: false; reason: string; again: boolean; later?: number }
+  | null;
 
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
 export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
@@ -138,7 +143,10 @@ export class RegionLink {
   /** The region turned a battle away (M36: its target has taken the day's raids). */
   onBattleRefused: ((id: string, reason: string) => void) | null = null;
   onIncoming: ((m: { from: number; units: number; hours: number }) => void) | null = null;
-  /** Battles coming in, in parts (by sender and id), and those taken already (M35). */
+  /**
+   * Battles coming in, in parts, and those taken already (M35); all by `sender:id` (M36: two
+   * cities' battles may share an id).
+   */
   private battlesIn = new Map<string, (string | null)[]>();
   private battlesTaken = new Set<string>();
   /** Taken and acknowledged: offered again (the word was lost), they're acknowledged again. */
@@ -146,7 +154,7 @@ export class RegionLink {
   /** Battles the city couldn't take yet (one was on already): tried again with each report. */
   private battlesWaiting = new Map<
     string,
-    { input: BattleInput; from: number; late: boolean; away?: boolean }
+    { id: string; input: BattleInput; from: number; late: boolean; away?: boolean }
   >();
   sent = { messages: 0, bytes: 0 };
 
@@ -269,17 +277,23 @@ export class RegionLink {
         list[m.part] = m.data;
         if (list.some((x) => x === null)) return;
         this.battlesIn.delete(key);
-        if (this.battlesDone.has(m.id)) return this.send({ t: 'battleSeen', id: m.id });
-        if (this.battlesTaken.has(m.id)) return;
+        if (this.battlesDone.has(key)) return this.send({ t: 'battleSeen', id: m.id, from: m.from });
+        if (this.battlesTaken.has(key)) return;
         let input: BattleInput;
         try {
           input = decodeBattle(list as string[]);
         } catch {
           // Unreadable: it never will be, so the region needn't keep offering it.
-          this.send({ t: 'battleSeen', id: m.id });
+          this.send({ t: 'battleSeen', id: m.id, from: m.from });
           return;
         }
-        await this.takeBattle(m.id, { input, from: m.from, late: m.late, ...(m.away ? { away: true } : {}) });
+        await this.takeBattle({
+          id: m.id,
+          input,
+          from: m.from,
+          late: m.late,
+          ...(m.away ? { away: true } : {}),
+        });
         return;
       }
       case 'battleKept':
@@ -287,7 +301,12 @@ export class RegionLink {
         this.onBattleKept?.(m.id);
         return;
       case 'battleRefused':
-        this.answered(m.id, { kept: false, reason: m.reason, again: m.again === true });
+        this.answered(m.id, {
+          kept: false,
+          reason: m.reason,
+          again: m.again === true,
+          ...(typeof m.later === 'number' ? { later: m.later } : {}),
+        });
         this.onBattleRefused?.(m.id, m.reason);
         return;
       case 'incoming':
@@ -297,26 +316,30 @@ export class RegionLink {
   }
 
   /** Hand a whole battle to the city; once it has it, the region can forget it. */
-  private async takeBattle(
-    id: string,
-    b: { input: BattleInput; from: number; late: boolean; away?: boolean },
-  ): Promise<void> {
-    if (this.battlesTaken.has(id)) return;
-    this.battlesTaken.add(id);
-    this.battlesWaiting.delete(id);
+  private async takeBattle(b: {
+    id: string;
+    input: BattleInput;
+    from: number;
+    late: boolean;
+    away?: boolean;
+  }): Promise<void> {
+    const key = `${b.from}:${b.id}`;
+    if (this.battlesTaken.has(key)) return;
+    this.battlesTaken.add(key);
+    this.battlesWaiting.delete(key);
     const answer =
       (await this.city.battle?.(b.input, {
         from: b.from,
-        id,
+        id: b.id,
         late: b.late,
         ...(b.away ? { away: true } : {}),
       })) ?? 'later';
     if (answer !== 'later') {
-      this.battlesDone.add(id);
-      this.send({ t: 'battleSeen', id });
+      this.battlesDone.add(key);
+      this.send({ t: 'battleSeen', id: b.id, from: b.from });
     } else {
-      this.battlesTaken.delete(id);
-      this.battlesWaiting.set(id, b);
+      this.battlesTaken.delete(key);
+      this.battlesWaiting.set(key, b);
     }
   }
 
@@ -383,7 +406,7 @@ export class RegionLink {
   /** Tell the region how this city stands (and, now and then, its picture and a save for visitors). */
   async reportNow(force = false, last = false): Promise<void> {
     if (this.state !== 'in' || !this.link) return;
-    if (!last) for (const [id, b] of [...this.battlesWaiting]) await this.takeBattle(id, b);
+    if (!last) for (const b of [...this.battlesWaiting.values()]) await this.takeBattle(b);
     const now = performance.now();
     const report = await this.city.report();
     // Leaving, the save goes first and no picture is drawn (a slow device could take seconds over

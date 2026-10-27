@@ -229,7 +229,7 @@ import {
   resolveBattle,
   startHomeBattle,
 } from './systems/raids';
-import { battleReport, expeditionsTick, recallForce, sendForce } from './systems/expeditions';
+import { battleReport, battleSettling, expeditionsTick, recallForce, sendForce } from './systems/expeditions';
 import {
   answerProposal,
   buyBack,
@@ -1383,6 +1383,8 @@ export class Sim {
         return recallForce(this, cmd.expedition, dryRun);
       case 'battleReport':
         return battleReport(this, cmd.expedition, cmd.result, dryRun);
+      case 'battleSettling':
+        return battleSettling(this, cmd.expedition, cmd.on, dryRun);
       case 'battleResolve':
         return resolveBattle(this, cmd.input, cmd.mode, dryRun, cmd.replay, cmd.from, !!cmd.away);
       case 'cancelTraining':

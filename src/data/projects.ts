@@ -22,7 +22,9 @@ export type ProjectRequirement =
   /** A civic building the city must already run (e.g. a research park). */
   | { kind: 'civic'; def: string; label: string }
   /** Visitors a day (tourism). */
-  | { kind: 'visitors'; min: number };
+  | { kind: 'visitors'; min: number }
+  /** A tier of weapons research done (M37: the superweapon buildings). */
+  | { kind: 'research'; key: string; label: string };
 
 export interface ProjectInfo {
   stages: ProjectStage[];
@@ -48,6 +50,8 @@ export interface RequirementContext {
   visitors: number;
   /** Whether the city runs a finished building of this kind. */
   runs: (def: string) => boolean;
+  /** Whether the city has done this tier of weapons research (M37; absent: none). */
+  researched?: (key: string) => boolean;
 }
 
 export interface RequirementStatus {
@@ -87,6 +91,10 @@ export function requirementStatus(r: ProjectRequirement, ctx: RequirementContext
         met: ctx.visitors >= r.min,
         now: `${num(ctx.visitors)} now`,
       };
+    case 'research': {
+      const done = ctx.researched?.(r.key) ?? false;
+      return { label: `${r.label} research`, met: done, now: done ? 'done' : 'not yet' };
+    }
   }
 }
 

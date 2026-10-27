@@ -47,6 +47,8 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   // Diplomacy (M36): war needs the spending permission, treaties the policies one (M39 brings roles).
   declareWar: 'spend',
   setNeutral: 'policies',
+  queueResearch: 'spend',
+  unqueueResearch: 'spend',
   propose: 'policies',
   answerProposal: 'policies',
   withdrawProposal: 'policies',

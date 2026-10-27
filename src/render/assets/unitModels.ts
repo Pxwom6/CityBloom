@@ -1377,6 +1377,253 @@ function landingcraft(b: UnitBuilder): void {
   }
 }
 
+/** The giant wind-up robot (M37): a boxy toy on stubby legs, claw hands, a wind-up key on its back. */
+function windupbot(b: UnitBuilder): void {
+  // Stubby legs with big flat feet, each swinging from its hip.
+  for (const [name, s] of [
+    ['leg_left', -1],
+    ['leg_right', 1],
+  ] as const)
+    b.addPart(name, [s * 2.3, 12, 0], () => {
+      b.as('body_alt', () => b.box(s * 2.3 - 1.4, s * 2.3 + 1.4, 2, 12.4, -1.6, 1.6));
+      b.as('metal', () => b.box(s * 2.3 - 1.9, s * 2.3 + 1.9, 0, 2.2, -4.6, 2.8));
+      b.near(() => b.as('accent', () => b.cyl('x', [s * 2.3, 7, 0], 1.7, 3.1, 10)));
+    });
+  // A boxy body with chunky studs, and a head with round porthole eyes.
+  b.box(-4.2, 4.2, 12, 24, -3.4, 3.4);
+  b.near(() =>
+    b.as('accent', () => {
+      for (const x of [-2.5, 0, 2.5]) for (const y of [15, 18.5]) b.cyl('z', [x, y, -3.65], 0.65, 0.5, 8);
+    }),
+  );
+  b.as('body_alt', () => b.box(-3, 3, 24, 29.4, -2.8, 2.8));
+  b.as('glass', () => {
+    b.cyl('z', [-1.4, 26.8, -2.9], 0.95, 0.4, 12);
+    b.cyl('z', [1.4, 26.8, -2.9], 0.95, 0.4, 12);
+  });
+  b.near(() => b.as('light', () => b.box(-1.1, 1.1, 25, 25.5, -2.95, -2.8)));
+  b.as('metal', () => b.cyl('y', [0, 29.9, 0], 0.25, 1, 6));
+  // Chunky arms with claw hands, each swinging from its shoulder.
+  for (const [name, s] of [
+    ['arm_left', -1],
+    ['arm_right', 1],
+  ] as const)
+    b.addPart(name, [s * 4.7, 22.5, 0], () => {
+      b.as('metal', () => b.cyl('x', [s * 4.7, 22.5, 0], 1.2, 1.2, 10));
+      const [a0, a1] = s > 0 ? [4.3, 6.6] : [-6.6, -4.3];
+      b.box(a0, a1, 13.5, 22.8, -1.5, 1.5);
+      const [c0, c1] = s > 0 ? [4, 7] : [-7, -4];
+      b.as('accent', () => {
+        b.box(c0, c1, 10.4, 13.6, -2.3, -0.5);
+        b.box(c0, c1, 10.4, 13.6, 0.5, 2.3);
+      });
+      b.muzzle([s * 5.5, 10.4, -1.4]);
+    });
+  // The wind-up key on its back, turning about its axle.
+  b.addPart('windup_key', [0, 19, 3.4], () =>
+    b.as('accent', () => {
+      b.cyl('z', [0, 19, 4], 0.6, 1.2, 8);
+      b.hexa([
+        [-3.2, 16.8, 4.6],
+        [3.2, 16.8, 4.6],
+        [3.2, 21.2, 4.6],
+        [-3.2, 21.2, 4.6],
+        [-3.2, 16.8, 5.4],
+        [3.2, 16.8, 5.4],
+        [3.2, 21.2, 5.4],
+        [-3.2, 21.2, 5.4],
+      ]);
+    }),
+  );
+}
+
+/** The sky fortress (M37): a fat airship with a gondola, drone bays and four propeller pods. */
+function skyfortress(b: UnitBuilder): void {
+  // The envelope, with accent stripes, centred well above the gondola.
+  b.lathe(
+    'z',
+    [0, 15, 0],
+    [
+      [-40, 0],
+      [-37, 5.5],
+      [-28, 10],
+      [-8, 11],
+      [16, 10.6],
+      [30, 7.5],
+      [38, 3],
+      [40, 0],
+    ],
+    16,
+  );
+  b.as('accent', () => {
+    for (const z of [-20, 8])
+      b.lathe(
+        'z',
+        [0, 15, 0],
+        [
+          [z, 0],
+          [z, 11.1],
+          [z + 2, 11.1],
+          [z + 2, 0],
+        ],
+        16,
+      );
+  });
+  // Tail fins: up, down and to each side.
+  b.as('body_alt', () => {
+    b.box(-0.45, 0.45, 20, 26, 29, 38.5);
+    b.box(-0.45, 0.45, 4.6, 10, 29, 38.5);
+    b.box(-11.5, -2, 14.6, 15.4, 30, 38.5);
+    b.box(2, 11.5, 14.6, 15.4, 30, 38.5);
+  });
+  // The gondola underneath, with windows, and the launch deck at its back.
+  b.as('body_alt', () => b.box(-3, 3, 0.4, 4.6, -16, 14));
+  b.as('metal', () => {
+    b.box(-3.6, 3.6, 0, 0.6, 12, 20);
+    b.beam([0, 4.6, -10], [0, 5.6, -10], 0.6);
+    b.beam([0, 4.6, 8], [0, 5.6, 8], 0.6);
+  });
+  b.near(() =>
+    b.as('glass', () => {
+      for (let z = -14; z < 10; z += 3) {
+        b.pane([-3.02, 2.4, z], [-3.02, 2.4, z + 2], [-3.02, 3.8, z + 2], [-3.02, 3.8, z], [-1, 0, 0]);
+        b.pane([3.02, 2.4, z], [3.02, 2.4, z + 2], [3.02, 3.8, z + 2], [3.02, 3.8, z], [1, 0, 0]);
+      }
+      b.pane([-2.5, 2.2, -16.02], [2.5, 2.2, -16.02], [2.5, 4, -16.02], [-2.5, 4, -16.02], [0, 0, -1]);
+    }),
+  );
+  b.muzzle([0, 1.2, -16.4]);
+  // Drone bays along the sides, each a hatch that opens to launch.
+  for (const s of [-1, 1])
+    for (const z of [-8, 2]) {
+      const x = s * 3.05;
+      b.addPart('hatch', [x, 1.2, z], () =>
+        b.as('accent', () =>
+          b.box(Math.min(x, x + s * 0.3), Math.max(x, x + s * 0.3), 1, 3.4, z - 2.4, z + 2.4),
+        ),
+      );
+    }
+  // Four propeller pods on struts, under the envelope's flanks.
+  for (const [x, z] of [
+    [-10, -12],
+    [10, -12],
+    [-9.5, 16],
+    [9.5, 16],
+  ] as const) {
+    b.as('metal', () => b.beam([Math.sign(x) * 5.5, 6.5, z], [x, 6.2, z], 0.6));
+    b.as('body_alt', () => b.cyl('z', [x, 6.2, z], 1.5, 6, 10));
+    b.addPart('propeller', [x, 6.2, z + 3.3], () =>
+      b.as('metal', () => {
+        b.cyl('z', [x, 6.2, z + 3.3], 0.45, 0.6, 6);
+        for (let k = 0; k < 3; k++) {
+          const a = (k / 3) * Math.PI * 2;
+          b.beam([x, 6.2, z + 3.4], [x + Math.cos(a) * 2.5, 6.2 + Math.sin(a) * 2.5, z + 3.4], 0.45);
+        }
+      }),
+    );
+  }
+}
+
+/** The clockwork whale (M37): a riveted whale-shaped hull, a key on top, a sweeping tail, a jaw that opens. */
+function clockworkwhale(b: UnitBuilder): void {
+  // The hull: wider than tall, centred a little below the waterline.
+  b.lathe(
+    'z',
+    [0, -1.5, 0],
+    [
+      [-18, 0],
+      [-17, 4],
+      [-12, 6.6],
+      [0, 7],
+      [12, 5.8],
+      [20, 3.6],
+      [24, 1.6],
+      [25, 0],
+    ],
+    16,
+    1,
+    0.86,
+  );
+  // The head and its jaw, hinged at the back of the mouth.
+  b.lathe(
+    'z',
+    [0, 0.2, -18],
+    [
+      [-11.5, 0],
+      [-10.6, 3.2],
+      [-7, 5],
+      [0, 5.6],
+    ],
+    14,
+    1.15,
+    0.8,
+  );
+  b.addPart('jaw', [0, -3, -18], () =>
+    b.as('body_alt', () =>
+      b.hexa([
+        [-5.5, -7.2, -29.2],
+        [5.5, -7.2, -29.2],
+        [5.5, -3.8, -29.6],
+        [-5.5, -3.8, -29.6],
+        [-6.4, -7.4, -18],
+        [6.4, -7.4, -18],
+        [6.4, -3, -18],
+        [-6.4, -3, -18],
+      ]),
+    ),
+  );
+  b.muzzle([0, -2.6, -29.8]);
+  // Portholes along each side, rivet bands, and a water-spout vent.
+  b.near(() => {
+    b.as('glass', () => {
+      for (const z of [-8, -2, 4, 10]) {
+        b.cyl('x', [-6.85, 0, z], 0.8, 0.4, 10);
+        b.cyl('x', [6.85, 0, z], 0.8, 0.4, 10);
+      }
+    });
+    b.as('metal', () => {
+      for (const z of [-12, 6])
+        b.lathe(
+          'z',
+          [0, -1.5, 0],
+          [
+            [z, 0],
+            [z, 7.05],
+            [z + 0.6, 7.05],
+            [z + 0.6, 0],
+          ],
+          16,
+          1,
+          0.86,
+        );
+      b.cyl('y', [0, 4.6, -6], 0.7, 1.6, 8);
+    });
+  });
+  // The wind-up key on top, turning about its upright axle.
+  b.addPart('windup_key', [0, 5, 2], () =>
+    b.as('accent', () => {
+      b.cyl('y', [0, 5.6, 2], 0.5, 1.6, 8);
+      b.box(-3, 3, 6.2, 8, 1.6, 2.4);
+    }),
+  );
+  // The tail and its flukes, sweeping from the root.
+  b.addPart('tail', [0, -1, 24], () => {
+    b.cyl('z', [0, -1, 26], 1.4, 4, 8);
+    b.as('body_alt', () =>
+      b.hexa([
+        [-1.4, -1.4, 27],
+        [1.4, -1.4, 27],
+        [1.4, -0.6, 27],
+        [-1.4, -0.6, 27],
+        [-7, -1.3, 30],
+        [7, -1.3, 30],
+        [7, -0.7, 30],
+        [-7, -0.7, 30],
+      ]),
+    );
+  });
+}
+
 const BUILDERS: Record<UnitKind, (b: UnitBuilder) => void> = {
   infantry,
   tank,
@@ -1392,6 +1639,9 @@ const BUILDERS: Record<UnitKind, (b: UnitBuilder) => void> = {
   gunboat,
   submarine,
   landingcraft,
+  windupbot,
+  skyfortress,
+  clockworkwhale,
 };
 
 /** Each generated unit's signed volume and any closed shapes drawn inside out (tests). */

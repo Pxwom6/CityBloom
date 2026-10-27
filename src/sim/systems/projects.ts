@@ -5,6 +5,7 @@ import type { Civic } from '../world/civic';
 import { dateOf, TICKS_PER_MONTH } from '../time';
 import { civicOnline } from '../world/civic';
 import { chronicleEvent } from './chronicle';
+import { researched } from './research';
 
 /**
  * Big projects (M17): civic buildings raised in stages over months. Placing one pays for its first
@@ -30,6 +31,7 @@ export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[
     education: s.totals.eduWorkforce,
     visitors: s.tourism.visitors,
     runs: (id) => [...s.civics.values()].some((c) => c.def === id && !c.build),
+    researched: (key) => researched(sim, key),
   };
   return (def.project?.requires ?? []).map((r) => requirementStatus(r, ctx));
 }

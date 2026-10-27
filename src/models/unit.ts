@@ -40,11 +40,8 @@ export const MUZZLE = 'muzzle';
 /** Where engine smoke comes from: drawn, and marked. */
 export const EXHAUST = 'exhaust';
 
-/** Units whose kind the game doesn't have yet (the superweapons and the atom bomb, M37–M40): where each goes. */
+/** Units whose kind the game doesn't have yet (the atom bomb, M40): where each goes. */
 export const LATER_UNITS: Record<string, UnitDomain> = {
-  windupbot: 'land',
-  skyfortress: 'air',
-  clockworkwhale: 'sea',
   atombomb: 'air',
 };
 

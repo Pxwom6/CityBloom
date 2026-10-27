@@ -168,6 +168,9 @@ export const LEDGER_LABELS: Record<string, string> = {
   vassals: 'Vassals’ dues',
   overlord: 'Dues to the overlord',
   buyBack: 'District bought back',
+  // Research (M37).
+  weaponsResearch: 'Weapons research',
+  trials: 'Prototype trials',
 };
 
 export function ledgerLabel(key: string): string {

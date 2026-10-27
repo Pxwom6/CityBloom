@@ -5,12 +5,14 @@
  * it. Sites come from `docs/models/PROMPTS-WAR.md` (each building's site, each unit's size), so the
  * owner's models fit. A toy war: units are knocked out, never killed. DESIGN.md §3.28.
  */
+import type { BattleRoute } from './battle';
 import type { CivicDef } from './civic';
+import type { TierKey } from './research';
 
 /** Where a unit fights: on the ground, in the air or at sea. */
 export type UnitDomain = 'land' | 'air' | 'sea';
 
-/** The kinds of unit (M34's base set; research adds the rest in M37). */
+/** The kinds of unit (M34's base set; research unlocks the rest, and the three superweapons, in M37). */
 export type UnitKind =
   | 'infantry'
   | 'tank'
@@ -25,11 +27,22 @@ export type UnitKind =
   | 'patrolboat'
   | 'gunboat'
   | 'submarine'
-  | 'landingcraft';
+  | 'landingcraft'
+  | 'windupbot'
+  | 'skyfortress'
+  | 'clockworkwhale';
 
 /** How the war room groups units (SPEC-5: infantry, tanks, artillery, planes, helicopters, drones, boats, transport). */
 export type UnitClass =
-  'infantry' | 'tanks' | 'artillery' | 'planes' | 'helicopters' | 'drones' | 'boats' | 'transport';
+  | 'infantry'
+  | 'tanks'
+  | 'artillery'
+  | 'planes'
+  | 'helicopters'
+  | 'drones'
+  | 'boats'
+  | 'transport'
+  | 'superweapons';
 
 export const UNIT_CLASSES: { id: UnitClass; name: string }[] = [
   { id: 'infantry', name: 'Infantry' },
@@ -40,6 +53,7 @@ export const UNIT_CLASSES: { id: UnitClass; name: string }[] = [
   { id: 'drones', name: 'Drones' },
   { id: 'boats', name: 'Boats' },
   { id: 'transport', name: 'Transport' },
+  { id: 'superweapons', name: 'Superweapons' },
 ];
 
 /** What a unit is good against in battle (M35). */
@@ -59,6 +73,20 @@ export interface UnitStats {
   targets: UnitDomain[];
   /** Damage to buildings is this times `attack` (artillery and bombers knock buildings down). */
   siege: number;
+  /** The robot (M37): near its objective it walks straight there, stamping on what's within `radius` every `every` steps. */
+  stomp?: { radius: number; damage: number; every: number };
+  /** The sky fortress (M37): carries `n` units of `kind`, launched one every `every` steps near its objective. */
+  carries?: { kind: UnitKind; n: number; every: number };
+  /** The whale (M37): can't be hit while it swims; it surfaces within `surface` m of its objective and fires for `fire` steps. */
+  dives?: { surface: number; fire: number };
+}
+
+/** A superweapon (M37): one of each per city, one per force; war-clock hours it winds up again after use. */
+export interface SuperInfo {
+  cooldown: number;
+  /** The routes it may take, and its travel time on them (multiplied). */
+  routes: BattleRoute[];
+  travel?: number;
 }
 
 export interface UnitDef {
@@ -89,7 +117,9 @@ export interface UnitDef {
   /** One number for the war room's force strength (rough fighting worth). */
   strength: number;
   /** Research that unlocks it (M37); the base set needs none. */
-  research?: string;
+  research?: TierKey;
+  /** A superweapon (M37). */
+  super?: SuperInfo;
 }
 
 export const UNIT_DEFS: UnitDef[] = [
@@ -505,6 +535,104 @@ export const UNIT_DEFS: UnitDef[] = [
     strength: 2,
     research: 'sea2',
   },
+  // Superweapons (M37): toy-like, very expensive, slow to build, with a long cooldown.
+  {
+    id: 'windupbot',
+    name: 'Giant wind-up robot',
+    plural: 'Giant wind-up robots',
+    blurb: 'A giant toy robot, wound up at the depot: it walks across the region and stomps through a city.',
+    domain: 'land',
+    group: 'superweapons',
+    base: 'vehicledepot',
+    cost: 1_500_000,
+    goods: 600,
+    ore: 1_200,
+    oil: 600,
+    power: 300,
+    hours: 360,
+    upkeep: 5_000,
+    size: [10, 14, 30],
+    model: 'unit-windupbot',
+    stats: {
+      hp: 6_000,
+      attack: 150,
+      reload: 4,
+      range: 50,
+      speed: 4,
+      armour: 0.6,
+      targets: ['land', 'sea'],
+      siege: 4,
+      stomp: { radius: 16, damage: 300, every: 4 },
+    },
+    strength: 60,
+    research: 'land4',
+    super: { cooldown: 240, routes: ['highway'], travel: 2 },
+  },
+  {
+    id: 'skyfortress',
+    name: 'Sky fortress',
+    plural: 'Sky fortresses',
+    blurb: 'A great airship moored at the airfield: over a city it launches a swarm of drones.',
+    domain: 'air',
+    group: 'superweapons',
+    base: 'airfield',
+    cost: 1_600_000,
+    goods: 800,
+    ore: 800,
+    oil: 1_200,
+    power: 350,
+    hours: 360,
+    upkeep: 6_000,
+    size: [80, 24, 26],
+    model: 'unit-skyfortress',
+    stats: {
+      hp: 5_000,
+      attack: 12,
+      reload: 2,
+      range: 250,
+      speed: 15,
+      armour: 0.4,
+      targets: ['air'],
+      siege: 0,
+      carries: { kind: 'drone', n: 16, every: 20 },
+    },
+    strength: 55,
+    research: 'air4',
+    super: { cooldown: 240, routes: ['air'], travel: 2 },
+  },
+  {
+    id: 'clockworkwhale',
+    name: 'Clockwork whale',
+    plural: 'Clockwork whales',
+    blurb: 'A giant clockwork submarine: it swims unseen, surfaces off a coast and opens its jaws.',
+    domain: 'sea',
+    group: 'superweapons',
+    base: 'navalyard',
+    cost: 1_500_000,
+    goods: 600,
+    ore: 1_500,
+    oil: 900,
+    power: 300,
+    hours: 360,
+    upkeep: 5_500,
+    // 16 m tall in all, 8 of them below the waterline when it surfaces.
+    size: [60, 14, 8],
+    model: 'unit-clockworkwhale',
+    stats: {
+      hp: 7_000,
+      attack: 220,
+      reload: 8,
+      range: 450,
+      speed: 8,
+      armour: 0.55,
+      targets: ['sea', 'land'],
+      siege: 3,
+      dives: { surface: 600, fire: 600 },
+    },
+    strength: 60,
+    research: 'sea4',
+    super: { cooldown: 240, routes: ['sea'] },
+  },
 ];
 
 export const UNIT = new Map(UNIT_DEFS.map((u) => [u.id, u]));
@@ -539,6 +667,19 @@ export interface MilitaryInfo {
    * and how much quicker vehicles train with it running (share of the time saved).
    */
   arms?: { goods: number; munitions: number; storage: number; vehicleTime: number };
+  /** Weapons lab (M37): research points it makes a war-clock hour at full staff, power and funding. */
+  lab?: { points: number };
+  /** Spy agency (M37): agents it keeps. */
+  agency?: { agents: number };
+  /**
+   * Interceptor battery (M37): stops shells and bombs aimed at buildings within `range` m, a share
+   * `chance` of the time when fully manned, then waits `cooldown` battle steps.
+   */
+  intercept?: { range: number; chance: number; cooldown: number };
+  /** Shield generator (M37): buildings within `radius` m stand `factor` times as much in battle. */
+  shield?: { radius: number; factor: number };
+  /** The superweapon buildings (M37): the dome shield, the blackout tower and the express gate. */
+  superweapon?: 'dome' | 'tower' | 'gate';
 }
 
 /** Military buildings (M34), all in the Military category and the defence department. */
@@ -629,7 +770,7 @@ export const MILITARY_DEFS: (CivicDef & { military: MilitaryInfo })[] = [
     military: {
       jobs: 90,
       power: 60,
-      trains: ['tank', 'artillery', 'transport', 'heavytank', 'repair'],
+      trains: ['tank', 'artillery', 'transport', 'heavytank', 'repair', 'windupbot'],
       holds: 12,
       noise: { level: 0.5, reach: 100 },
     },
@@ -748,7 +889,7 @@ export const MILITARY_DEFS: (CivicDef & { military: MilitaryInfo })[] = [
     military: {
       jobs: 160,
       power: 120,
-      trains: ['fighter', 'helicopter', 'drone', 'bomber'],
+      trains: ['fighter', 'helicopter', 'drone', 'bomber', 'skyfortress'],
       holds: 12,
       runway: 520,
       safety: { radius: 260, value: 0.008 },
@@ -773,7 +914,7 @@ export const MILITARY_DEFS: (CivicDef & { military: MilitaryInfo })[] = [
     military: {
       jobs: 140,
       power: 90,
-      trains: ['patrolboat', 'gunboat', 'submarine', 'landingcraft'],
+      trains: ['patrolboat', 'gunboat', 'submarine', 'landingcraft', 'clockworkwhale'],
       holds: 8,
       noise: { level: 0.45, reach: 90 },
     },
@@ -782,6 +923,165 @@ export const MILITARY_DEFS: (CivicDef & { military: MilitaryInfo })[] = [
       'A quay, a covered dry dock and a crane: builds and keeps the navy. Its back must stand in deep water.',
     unlockPopulation: 10_000,
     model: 'navalyard',
+  },
+  // Research (M37): the weapons lab, the buildings research unlocks, and the superweapon buildings.
+  {
+    id: 'militarylab',
+    name: 'Weapons lab',
+    category: 'military',
+    dept: 'defence',
+    w: 32,
+    d: 32,
+    cost: 60_000,
+    upkeep: 1_500,
+    requires: 'militaryhq',
+    max: 3,
+    military: { jobs: 50, power: 60, lab: { points: 4 } },
+    landValue: { radius: 120, value: -0.02 },
+    blurb:
+      'Engineers in white coats and safety goggles: weapons research, faster with a research park in town. A city runs three at most.',
+    unlockPopulation: 5_000,
+    model: 'militarylab',
+  },
+  {
+    id: 'spyagency',
+    name: 'Spy agency',
+    category: 'military',
+    dept: 'defence',
+    w: 24,
+    d: 24,
+    cost: 50_000,
+    upkeep: 900,
+    unique: true,
+    requires: 'militaryhq',
+    military: { jobs: 30, power: 20, agency: { agents: 2 } },
+    blurb:
+      'The dullest office in town, with a ramp down to a garage nobody uses. Agents look round rivals’ towns, sabotage them or steal their research, and catch their spies.',
+    unlockPopulation: 5_000,
+    model: 'spyagency',
+  },
+  {
+    id: 'interceptor',
+    name: 'Interceptor battery',
+    category: 'military',
+    dept: 'defence',
+    w: 24,
+    d: 24,
+    cost: 30_000,
+    upkeep: 500,
+    requires: 'militaryhq',
+    military: {
+      jobs: 12,
+      power: 30,
+      defends: { against: ['air'], strength: 3, range: 360 },
+      intercept: { range: 450, chance: 0.5, cooldown: 8 },
+      noise: { level: 0.4, reach: 60 },
+      safety: { radius: 160, value: 0.012 },
+    },
+    blurb:
+      'Racks of little rockets that knock shells and bombs out of the air before they land on the city’s buildings, and shoot at aircraft.',
+    unlockPopulation: 10_000,
+    model: 'interceptor',
+  },
+  {
+    id: 'shieldgen',
+    name: 'Shield generator',
+    category: 'military',
+    dept: 'defence',
+    w: 24,
+    d: 24,
+    cost: 80_000,
+    upkeep: 1_800,
+    requires: 'militaryhq',
+    military: {
+      jobs: 20,
+      power: 200,
+      shield: { radius: 300, factor: 2 },
+      safety: { radius: 300, value: 0.02 },
+    },
+    blurb:
+      'A humming coil under a glass globe: in a battle, buildings within 300 m stand twice as much. Hungry for power.',
+    unlockPopulation: 10_000,
+    model: 'shieldgen',
+  },
+  {
+    id: 'domeshield',
+    name: 'Dome shield',
+    category: 'military',
+    dept: 'defence',
+    w: 40,
+    d: 40,
+    cost: 0,
+    upkeep: 6_000,
+    unique: true,
+    requires: 'militaryhq',
+    military: { jobs: 60, power: 600, superweapon: 'dome' },
+    blurb:
+      'A spire that raises a shield over the whole city: it soaks one battle’s blows, then is down for ten days while it charges.',
+    unlockPopulation: 20_000,
+    model: 'domeshield',
+    project: {
+      stages: [
+        { name: 'Foundations', months: 3, cost: 500_000 },
+        { name: 'Conduits and spire', months: 4, cost: 900_000 },
+        { name: 'Emitter and test', months: 3, cost: 600_000 },
+      ],
+      requires: [{ kind: 'research', key: 'defence4', label: 'Dome shield' }],
+      perk: 'Charged, the dome rises over the city when a battle comes and soaks its blows until it pops; then it charges again for ten days.',
+    },
+  },
+  {
+    id: 'blackouttower',
+    name: 'Blackout tower',
+    category: 'military',
+    dept: 'defence',
+    w: 24,
+    d: 24,
+    cost: 0,
+    upkeep: 6_000,
+    unique: true,
+    requires: 'militaryhq',
+    military: { jobs: 50, power: 500, superweapon: 'tower' },
+    landValue: { radius: 160, value: -0.05 },
+    blurb:
+      'A lattice tower crowned with dishes: aimed at a rival, it cuts its power, radar and maps for half a day, then charges for ten.',
+    unlockPopulation: 20_000,
+    model: 'blackouttower',
+    project: {
+      stages: [
+        { name: 'Base', months: 3, cost: 400_000 },
+        { name: 'Tower', months: 4, cost: 700_000 },
+        { name: 'Dishes and test', months: 3, cost: 500_000 },
+      ],
+      requires: [{ kind: 'research', key: 'intel4', label: 'Blackout tower' }],
+      perk: 'Black out a rival for 12 hours: its power plants falter, its radar goes quiet and its maps go dark.',
+    },
+  },
+  {
+    id: 'expressgate',
+    name: 'Express gate',
+    category: 'military',
+    dept: 'defence',
+    w: 48,
+    d: 32,
+    cost: 0,
+    upkeep: 6_000,
+    unique: true,
+    requires: 'militaryhq',
+    military: { jobs: 60, power: 800, superweapon: 'gate', noise: { level: 0.5, reach: 120 } },
+    blurb:
+      'A great ring on a platform: a force that steps through arrives anywhere in the region within the hour. It charges for five days after.',
+    unlockPopulation: 20_000,
+    model: 'expressgate',
+    project: {
+      stages: [
+        { name: 'Platform', months: 3, cost: 500_000 },
+        { name: 'Ring', months: 4, cost: 900_000 },
+        { name: 'First jump', months: 3, cost: 600_000 },
+      ],
+      requires: [{ kind: 'research', key: 'logistics4', label: 'Express gate' }],
+      perk: 'Send a land or air force through the gate: it arrives in an hour, wherever it is going.',
+    },
   },
 ];
 
@@ -842,21 +1142,29 @@ export const WAR_SCALE_NAMES: Record<WarScale, string> = {
   total: 'Total war allowed',
 };
 
-/** A shared region's rules for war (M34), set by its host: is war on, and how far may it go. */
+/**
+ * A shared region's rules for war (M34), set by its host: is war on, how far may it go, and (M37)
+ * are superweapons allowed (stored only when they are: absent means off, so older regions keep
+ * their meaning).
+ */
 export interface RegionWarRules {
   war: boolean;
   scale: WarScale;
+  supers?: true;
 }
 export const PEACE_RULES: RegionWarRules = { war: false, scale: 'skirmish' };
 
 /** The rules in a sentence, for notices and refusals ("Your region's rules allow skirmishes only"). */
 export function warRulesText(r: RegionWarRules): string {
   if (!r.war) return 'war is off';
-  return r.scale === 'skirmish'
-    ? 'skirmishes only'
-    : r.scale === 'war'
-      ? 'war, but not total war'
-      : 'total war';
+  const scale =
+    r.scale === 'skirmish' ? 'skirmishes only' : r.scale === 'war' ? 'war, but not total war' : 'total war';
+  return r.supers ? `${scale}, superweapons allowed` : scale;
+}
+
+/** Are two sets of rules the same? */
+export function sameWarRules(a: RegionWarRules, b: RegionWarRules): boolean {
+  return a.war === b.war && a.scale === b.scale && !!a.supers === !!b.supers;
 }
 
 /** A clean copy of rules from outside (a region's message), or null if they don't make sense. */
@@ -864,7 +1172,7 @@ export function cleanWarRules(raw: unknown): RegionWarRules | null {
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== 'object' || typeof r.war !== 'boolean') return null;
   if (!WAR_SCALES.includes(r.scale as WarScale)) return null;
-  return { war: r.war, scale: r.scale as WarScale };
+  return { war: r.war, scale: r.scale as WarScale, ...(r.supers === true ? { supers: true as const } : {}) };
 }
 
 /** A computer neighbour's character in war (SPEC-5): how it arms, fights, trades and keeps its word. */

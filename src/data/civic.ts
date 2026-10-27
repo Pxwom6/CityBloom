@@ -114,6 +114,8 @@ export interface CivicDef {
   research?: { perJob: number };
   /** Only one can be built (landmarks). */
   unique?: boolean;
+  /** At most this many can be built (M37: the weapons lab). */
+  max?: number;
   /** Another civic building the city must have first. */
   requires?: string;
   /** Model family for the renderer. */

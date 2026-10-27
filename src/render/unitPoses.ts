@@ -64,6 +64,8 @@ interface Slot {
   band?: boolean;
   /** Depot: at the back (beside the test pad) rather than in the forecourt. */
   back?: boolean;
+  /** Kept for a superweapon (M37): the robot's bay, the fortress's mast. */
+  super?: boolean;
 }
 
 /** Points of a route in world space, each with the speed (m per tick) on the leg leaving it. */
@@ -225,6 +227,8 @@ const MARCH = { x0: -6.6, x1: 6.6, z0: -9.5, z1: 6.6, r: 2.4 };
 const DEPOT_SLOTS: Slot[] = [
   ...[-21, -16.6, -12.2, -7.8, -3.4, 1].map((x) => ({ x, z: -14.6, h: 0, fits: 9.5 })),
   ...[-1.1, 2.9, 6.9, 10.9, 14.9, 18.9].map((x) => ({ x, z: 15.8, h: 0, fits: 9.5, back: true })),
+  // The giant wind-up robot's bay (M37), at the forecourt's far end.
+  { x: 14.5, z: -11.5, h: 0, fits: 15, super: true },
 ];
 /** The test pad's loop under the gantry crane at the back. */
 const PAD = { x0: -17.5, x1: -10.5, z0: 14, z1: 17.6, r: 1.8 };
@@ -234,6 +238,8 @@ const AIRFIELD_SLOTS: Slot[] = [
   ...[-86, -61, -36, -11, 14].map((x) => ({ x, z: 2.5, h: Math.PI, fits: 28 })),
   ...[60, 82, 38].map((x) => ({ x, z: 2, h: Math.PI, fits: 16 })),
   ...[-5, -1, 3, 7].flatMap((z) => [92, 96].map((x) => ({ x, z, h: Math.PI, fits: 4 }))),
+  // The sky fortress's mooring mast (M37), between the apron and the road, along the field.
+  { x: -40, z: -25, h: Math.PI / 2, fits: 82, super: true },
 ];
 /** The runway's centre line (local z) and the taxiway's. */
 const RUNWAY_Z = 31;
@@ -605,7 +611,9 @@ function depotPoses(
   const tanky = (k: UnitKind) => k === 'tank' || k === 'heavytank';
   const slots = cache.slotsFor(`${key}|slots|${units.map((u) => `${u.id}${u.kind}`).join(',')}`, () =>
     // Tanks take the bays by the test pad first; the others the forecourt by the road.
-    assignSlots(units, DEPOT_SLOTS, (k, s) => (tanky(k) === !!s.back ? 0 : 1)),
+    assignSlots(units, DEPOT_SLOTS, (k, s) =>
+      UNIT.get(k)?.super ? (s.super ? 0 : 9) : s.super ? 9 : tanky(k) === !!s.back ? 0 : 1,
+    ),
   );
   // Drills: one or two tanks from the back bays circle the test pad.
   const period = 900;
@@ -677,6 +685,8 @@ function airfieldPoses(
   const key = site.key();
   const slots = cache.slotsFor(`${key}|slots|${units.map((u) => `${u.id}${u.kind}`).join(',')}`, () =>
     assignSlots(units, AIRFIELD_SLOTS, (k, s) => {
+      if (UNIT.get(k)?.super) return s.super ? 0 : 9;
+      if (s.super) return 9;
       if (k === 'drone') return s.fits <= 4 ? 0 : s.fits <= 16 ? 1 : 2;
       if (k === 'helicopter') return s.fits === 16 ? 0 : 1;
       return s.fits >= 28 ? 0 : 1;

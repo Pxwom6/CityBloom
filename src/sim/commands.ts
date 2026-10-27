@@ -1,5 +1,6 @@
 import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { DealDirection, DealResource } from '../data/region';
+import type { TierKey } from '../data/research';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -190,7 +191,10 @@ export type Command =
   | { type: 'withdrawProposal'; proposal: number }
   | { type: 'endPact'; pact: number; breakPact?: boolean }
   | { type: 'buyBack'; pact: number }
-  | { type: 'setNeutral'; on: boolean };
+  | { type: 'setNeutral'; on: boolean }
+  /** Weapons research (M37): put a tier in the labs' queue, or take it out. */
+  | { type: 'queueResearch'; key: TierKey }
+  | { type: 'unqueueResearch'; key: TierKey };
 
 export type CommandType = Command['type'];
 
@@ -256,6 +260,8 @@ const COMMAND_KINDS = {
   endPact: true,
   buyBack: true,
   setNeutral: true,
+  queueResearch: true,
+  unqueueResearch: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

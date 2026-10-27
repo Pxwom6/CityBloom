@@ -73,6 +73,10 @@ const MOVE = {
   hatch: 8,
   ramp: 9,
   dish: 10,
+  /** The robot's arms and legs (M37): swing back and forth as it walks, left and right in turn. */
+  limb: 11,
+  /** The whale's tail (M37): sweeps from side to side. */
+  sweep: 12,
 };
 
 /** Roles the shader treats apart: painted body, painted body_alt, glowing light. */
@@ -99,7 +103,9 @@ mat3 unitMotion(float kind, float rate) {
   if (kind < 7.5) return mat3(1.0);
   if (kind < 8.5) return unitRotX(iPose.w * 1.7);
   if (kind < 9.5) return unitRotX(-iPose.w * 1.45);
-  return unitRotY(uSlow * rate);
+  if (kind < 10.5) return unitRotY(uSlow * rate);
+  if (kind < 11.5) return unitRotX(sin(iPose.z * 0.35) * 0.45 * rate);
+  return unitRotY(sin(uSlow * 0.8) * 0.35 * rate);
 }
 vec3 unitShift(float kind) {
   // Tracks jiggle as they run rather than turn.
@@ -177,9 +183,23 @@ function motionOf(
   name: string,
   pivot: [number, number, number],
   thin: 0 | 1 | 2,
+  axle: 0 | 1 | 2 = thin,
 ): { kind: number; rate: number } {
   const spin = [MOVE.spinX, MOVE.spinY, MOVE.spinZ][thin]!;
   switch (name) {
+    // Superweapons' parts (M37).
+    case 'windup_key':
+      return { kind: [MOVE.spinX, MOVE.spinY, MOVE.spinZ][axle]!, rate: 0.5 };
+    case 'arm_left':
+    case 'leg_right':
+      return { kind: MOVE.limb, rate: -1 };
+    case 'arm_right':
+    case 'leg_left':
+      return { kind: MOVE.limb, rate: 1 };
+    case 'tail':
+      return { kind: MOVE.sweep, rate: 1 };
+    case 'jaw':
+      return { kind: MOVE.hatch, rate: 1 };
     case 'turret':
       return { kind: MOVE.turret, rate: 1 };
     case 'barrel':
@@ -232,7 +252,10 @@ export function unitGeometry(u: BakedUnit, far: boolean): BufferGeometry {
   const motions = u.parts.map((part, k) => {
     const ext = [0, 1, 2].map((a) => hi[k]![a]! - lo[k]![a]!);
     const thin = ext.indexOf(Math.min(...ext)) as 0 | 1 | 2;
-    return motionOf(part.name, part.pivot, thin);
+    // The way the part stands out from its pivot: a wind-up key's axle.
+    const out = [0, 1, 2].map((a) => Math.abs((lo[k]![a]! + hi[k]![a]!) / 2 - part.pivot[a]!));
+    const axle = out.indexOf(Math.max(...out)) as 0 | 1 | 2;
+    return motionOf(part.name, part.pivot, thin, axle);
   });
   /** The nearest two moving parts up the chain from part p (1-based; 0 = the body). */
   const chain = (p: number) => {

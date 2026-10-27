@@ -14,7 +14,7 @@ import { rivalAllies } from './systems/war';
 import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 29;
+export const SAVE_VERSION = 30;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -276,6 +276,9 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
     );
     return { ...s, region: { ...region, neighbours } };
   },
+  // v29 → v30 (M37): weapons research and intelligence. A city saved before them has done none (its
+  // research and intelligence appear when first used), so nothing changes but the version.
+  29: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

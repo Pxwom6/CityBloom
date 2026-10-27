@@ -1,5 +1,6 @@
 import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
+import { queueResearch, unqueueResearch } from './systems/research';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
@@ -324,6 +325,11 @@ export type SimEvent = {
     | 'unitLost'
     | 'forceArrived'
     | 'forceHome'
+    | 'researchDone'
+    | 'researchWaiting'
+    | 'spinoff'
+    | 'trialRun'
+    | 'trialPassed'
     | 'expeditionReport'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
@@ -1407,6 +1413,10 @@ export class Sim {
         return buyBack(this, cmd.pact, dryRun);
       case 'setNeutral':
         return setNeutral(this, cmd.on, dryRun);
+      case 'queueResearch':
+        return queueResearch(this, cmd.key, dryRun);
+      case 'unqueueResearch':
+        return unqueueResearch(this, cmd.key, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

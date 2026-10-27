@@ -15,7 +15,7 @@
  */
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
-import { PEACE_RULES, cleanWarRules, warRulesText, type RegionWarRules } from '../src/data/war';
+import { PEACE_RULES, cleanWarRules, sameWarRules, warRulesText, type RegionWarRules } from '../src/data/war';
 import {
   MAX_SNAPSHOT_PARTS,
   PLAYER_COLORS,
@@ -823,7 +823,7 @@ export class RegionRoom {
         // Only the host sets the rules; the change goes to everyone and is written at its pace.
         if (slot !== (this.meta.host ?? 1)) return;
         const was = this.meta.rules ?? PEACE_RULES;
-        if (was.war === m.rules.war && was.scale === m.rules.scale) return;
+        if (sameWarRules(was, m.rules)) return;
         this.meta.rules = m.rules;
         for (const c of this.conns.keys())
           c.send({ t: 'notice', text: `${city.name} set the region's rules: ${warRulesText(m.rules)}` });

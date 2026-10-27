@@ -40,7 +40,7 @@ const at = (sim: Sim): Vec2 => {
   return { x: n.x, z: n.z };
 };
 
-function placeAlong(sim: Sim, issue: Issue, def: string, segs: number[]): number | null {
+export function placeAlong(sim: Sim, issue: Issue, def: string, segs: number[]): number | null {
   const d = CIVIC.get(def)!;
   for (const seg of segs) {
     if (!sim.state.net.segments.has(seg)) continue;
@@ -58,7 +58,7 @@ function placeAlong(sim: Sim, issue: Issue, def: string, segs: number[]): number
   return null;
 }
 
-function roadIds(sim: Sim, type?: string): number[] {
+export function roadIds(sim: Sim, type?: string): number[] {
   return [...sim.state.net.segments.values()]
     .filter((s) =>
       type ? s.type === type : s.type !== 'highway' && s.type !== 'rail' && s.type !== 'mainline',

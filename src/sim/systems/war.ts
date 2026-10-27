@@ -26,6 +26,7 @@ import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic'
 import type { Origin } from './commute';
 import type { BattleReport, HostedBattle, Raid } from './raids';
 import type { Expedition } from './expeditions';
+import { researchHour, researchSummary, unitLock, type Research, type ResearchSummary } from './research';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
@@ -133,6 +134,8 @@ export interface WarState {
   diplomacy?: Diplomacy;
   /** Test mode (M36): friends may raid it though it's a newcomer (e2e and relay tests). */
   unshielded?: true;
+  /** Weapons research, prototypes and their trials (M37); absent until the first research is queued. */
+  research?: Research;
 }
 
 export function initialWar(seed: string): WarState {
@@ -359,6 +362,8 @@ export function readinessTarget(sim: Sim): number {
   let hq = false;
   let drills = 0;
   for (const c of militaryCivics(sim)) {
+    // A building still going up (a superweapon's project, M37) isn't yet one the forces miss.
+    if (c.build) continue;
     const m = militaryOf(c)!;
     const online = civicOnline(c);
     jobs += m.jobs;
@@ -404,6 +409,8 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
       sim.warChanged();
     }
   }
+  // Weapons research (M37).
+  researchHour(sim);
   // Readiness.
   const target = readinessTarget(sim);
   const d = WAR.readinessPerDay / HOURS_PER_DAY;
@@ -465,7 +472,8 @@ export function trainUnit(sim: Sim, baseId: number, kind: UnitKind, dryRun: bool
   const name = CIVIC.get(c.def)!.name;
   if (!m.trains?.includes(kind))
     return fail(`The ${lowerName(name)} doesn't train ${def.plural.toLowerCase()}`);
-  if (def.research) return fail(`${def.plural} need weapons research first`);
+  const lock = unitLock(sim, kind);
+  if (lock) return fail(lock);
   const down = standDownReason(sim, c.x, c.z);
   if (down) return fail(down);
   if (s.economy.bankrupt) return fail('The city is bankrupt');
@@ -787,6 +795,8 @@ export interface WarSummary {
   routes: { rail: boolean; sea: boolean };
   /** Wars, treaties, pacts and the neighbours' standing (M36). */
   diplomacy: DiplomacySummary | null;
+  /** Weapons research, prototypes and trials (M37). */
+  research: ResearchSummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -898,6 +908,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
       sea: [...w.units.values()].some((u) => UNIT.get(u.kind)?.domain === 'sea'),
     },
     diplomacy: diplomacySummary(sim),
+    research: researchSummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,
@@ -987,8 +998,8 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
     const bill = unitBill(sim, kind);
     const why = !w
       ? 'War is off in this city'
-      : def.research
-        ? `${def.plural} need weapons research first`
+      : unitLock(sim, kind)
+        ? unitLock(sim, kind)
         : down
           ? down
           : full

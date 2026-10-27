@@ -107,6 +107,8 @@ const SAMPLES: Record<CommandType, Command> = {
   endPact: { type: 'endPact', pact: 5 },
   buyBack: { type: 'buyBack', pact: 5 },
   setNeutral: { type: 'setNeutral', on: true },
+  queueResearch: { type: 'queueResearch', key: 'land1' },
+  unqueueResearch: { type: 'unqueueResearch', key: 'land1' },
 };
 
 /** Values a field might carry instead of what it should. */

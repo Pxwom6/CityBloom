@@ -1,5 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Cities made here carry the M36 tip's save version (29), so their hashes, which include it, can be
+// compared with that tip's: the version is the one thing a later milestone may move.
+vi.mock('../../src/sim/save', async (original) => ({
+  ...(await original<typeof import('../../src/sim/save')>()),
+  SAVE_VERSION: 29,
+}));
 import { decodeSave } from '../../src/client/saves';
 import { SCENARIO } from '../../src/data/scenarios';
 import { runDeterminism } from '../lockstep/determinism';

@@ -251,6 +251,21 @@ half damage while away (protocol 4), save v29; the war room's Diplomacy tab, not
 fallen city's card. Three adversarial reviews (32, 11 and 4 findings, all fixed) and a completeness
 check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REVIEW "M36".
 
+**M37 Weapon development and intelligence** is under way (plan `docs/plans/M37-design.md`):
+- Step 0 done: goldens at the M36 tip (`tests/war/m36Golden.test.ts`: the cross-browser script's war
+  town, battles and diplomacy with save version pinned to 29, and a v29 war save played on;
+  `tests/battle/v2replay.test.ts`: two kept version-2 battles).
+- Steps 1–2 done (tests `tests/war/research.test.ts`): `src/data/research.ts` (24 tiers, effects,
+  battle mods, spin-offs), `src/data/intel.ts` (`spyOdds`), the three superweapon units (generated
+  looks with limb, sweep, jaw and key motions; parking at a depot bay and an airfield mast), seven
+  military buildings (weapons lab, spy agency, interceptor, shield generator, and the dome, tower and
+  gate as projects), `src/sim/systems/research.ts` (the queue on the war clock, lab points with the
+  research park, money at start, `unitLock`, `civicLock`), commands `queueResearch`/`unqueueResearch`,
+  `RegionWarRules.supers`, save v30.
+- Next: steps 3–4 (trials at the proving ground, the effects and spin-offs read where they apply),
+  then battle v3 (step 5), superweapons (6–7), intelligence (8), friends and the fair clock (9–10),
+  rendering and the UI (11–12), wrap-up (13).
+
 ## Next tasks
 1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by
    research labs and the research park, prototypes tried at the proving ground, civilian spin-offs,

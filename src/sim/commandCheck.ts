@@ -10,6 +10,7 @@
  * host's browser). Single player never goes through it.
  */
 import type { Command, CommandType } from './commands';
+import { TIER, type TierKey } from '../data/research';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
@@ -377,6 +378,14 @@ const CHECKS: Record<CommandType, Check> = {
       : BAD,
   buyBack: (c) => (isInt(c.pact) ? { type: 'buyBack', pact: c.pact } : BAD),
   setNeutral: (c) => (typeof c.on === 'boolean' ? { type: 'setNeutral', on: c.on } : BAD),
+  queueResearch: (c) =>
+    typeof c.key === 'string' && TIER.has(c.key as TierKey)
+      ? { type: 'queueResearch', key: c.key as TierKey }
+      : BAD,
+  unqueueResearch: (c) =>
+    typeof c.key === 'string' && TIER.has(c.key as TierKey)
+      ? { type: 'unqueueResearch', key: c.key as TierKey }
+      : BAD,
 };
 
 /**

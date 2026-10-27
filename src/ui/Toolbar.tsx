@@ -1,4 +1,5 @@
 import { requirementStatus, type RequirementContext } from '../data/projects';
+import type { TierKey } from '../data/research';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
@@ -1064,6 +1065,7 @@ function ProjectButton({ def }: { def: CivicDef }) {
     education: st.eduWorkforce,
     visitors: st.visitors,
     runs: (id) => civics.some((c) => c.def === id && c.stage === undefined),
+    researched: (key) => !!st.war?.research?.done.includes(key as TierKey),
   };
   const reqs = p.requires.map((r) => requirementStatus(r, ctx));
   const built = civics.find((c) => c.def === def.id);

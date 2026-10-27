@@ -9,7 +9,7 @@ import type { SaveFile } from '../../src/sim/save';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { checkInvariants } from '../../src/sim/invariants';
 import { mapFromGenerator } from '../../src/sim/terrain/customMap';
-import { editorScript, growTown } from './scriptedTown';
+import { editorScript, growTown, placeAlong, roadIds } from './scriptedTown';
 import { growRivalTown } from '../../src/sim/ai/town';
 import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
@@ -29,6 +29,8 @@ export interface DeterminismResult {
   battle: { home: string[]; homeEnd: string; town: string; away: string };
   /** The war town's diplomacy after its scripted declarations and treaties (M36). */
   diplomacy: string;
+  /** Weapons research (M37), in a war town of its own: its hash each game day while its lab works. */
+  research: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -186,6 +188,30 @@ export function runDeterminism(
   warSim.advance(2 * TICKS_PER_MONTH);
   const diplomacy = JSON.stringify([warSim.hash(), warSim.state.war!.diplomacy]);
 
+  // Weapons research (M37), in a war town of its own so the sections above stay as at the M36 tip:
+  // a lab, tiers queued and one taken back, and the labs' days.
+  const research: string[] = [];
+  const { sim: labSim } = growTown(
+    Math.min(months, 6),
+    (s) => checkInvariants(s),
+    (s, cmd) => note(cmd, s.dispatch(cmd)),
+    false,
+    true,
+  );
+  const lab = (cmd: Command) => note(cmd, labSim.dispatch(cmd));
+  labSim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 3_000_000 });
+  labSim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+  placeAlong(labSim, lab, 'militarylab', roadIds(labSim).reverse());
+  lab({ type: 'queueResearch', key: 'logistics1' });
+  lab({ type: 'queueResearch', key: 'land1' });
+  lab({ type: 'queueResearch', key: 'land2' });
+  lab({ type: 'unqueueResearch', key: 'land2' });
+  for (let d = 0; d < 6; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    research.push(labSim.hash());
+  }
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -207,6 +233,7 @@ export function runDeterminism(
     war: warHashes,
     battle: { home, homeEnd, town: town.hash(), away },
     diplomacy,
+    research,
     used: [...used].sort(),
     refused,
   };

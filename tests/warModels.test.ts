@@ -67,11 +67,18 @@ describe('war sites and budgets', () => {
     // In the game (M34): its own site; military; smoke only where the data says.
     expect(targetOf('barracks')).toMatchObject({ kind: 'civic', w: 40, d: 32, war: true, smokes: false });
     expect(targetOf('armsfactory')).toMatchObject({ war: true, smokes: true });
-    // Not in the game yet: only with the prompts' sites, and never smoking (a cooling stack is a vent).
-    expect(targetOf('interceptor')).toBeNull();
-    expect(targetOf('interceptor', sites)).toMatchObject({ kind: 'civic', def: 'interceptor', w: 24, d: 24 });
+    // In the game since M37 (research's buildings): their own sites too.
+    expect(targetOf('interceptor')).toMatchObject({
+      kind: 'civic',
+      def: 'interceptor',
+      w: 24,
+      d: 24,
+      war: true,
+    });
+    expect(targetOf('domeshield')).toMatchObject({ war: true, smokes: false });
+    // Not in the game yet (M40): only with the prompts' sites, and never smoking (a cooling stack is a vent).
+    expect(targetOf('enrichment')).toBeNull();
     expect(targetOf('enrichment', sites)).toMatchObject({ war: true, smokes: false });
-    expect(targetOf('domeshield', sites)).toMatchObject({ war: true, smokes: false });
     // Everything else as before.
     expect(targetOf('firestation', sites)).not.toHaveProperty('war');
     expect(targetOf('R103', sites)).toMatchObject({ kind: 'zoned' });
@@ -254,7 +261,8 @@ describe('units (unit spec v1)', () => {
     expect(b.unitReports).toHaveLength(18);
     for (const r of b.unitReports) expect(r.errors, r.id).toEqual([]);
     const later = b.unitReports.filter((r) => !r.known).map((r) => r.kind);
-    expect(later.sort()).toEqual(['atombomb', 'clockworkwhale', 'skyfortress', 'windupbot']);
+    // The superweapons came into the game in M37; the atom bomb waits for M40.
+    expect(later.sort()).toEqual(['atombomb']);
     expect(b.units.map((u) => u.kind)).toContain('windupbot');
   });
 

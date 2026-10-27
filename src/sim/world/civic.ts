@@ -13,6 +13,7 @@ import { planPad, reshapeGround, type EarthPlan } from './earthworks';
 import { RAIL } from '../../data/balance';
 import { DMath, formatInt } from '../dmath';
 import { standsDown } from '../systems/diplomacy';
+import { civicLock } from '../systems/research';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -265,6 +266,11 @@ export function checkPlacement(
   if (def.military && !sim.state.war)
     return { ...res, reason: 'Military buildings need war on: found a city with rival neighbours' };
   if (![x, z, angle].every(Number.isFinite)) return { ...res, reason: 'Invalid position' };
+  // Research (M37): the buildings it unlocks, superweapons the region's rules allow, the labs' limit.
+  if (def.military && !ignoreCivic) {
+    const lock = civicLock(sim, def.id);
+    if (lock) return { ...res, reason: lock };
+  }
   // A treaty's demilitarised zone (M36) keeps military buildings back from that border.
   if (def.military && standsDown(sim, x, z))
     return { ...res, reason: 'A treaty keeps military buildings out of the zone by that border' };

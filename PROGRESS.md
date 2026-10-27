@@ -250,15 +250,15 @@ region's three raids a day per city and half damage while away (protocol 4), sav
 room's Diplomacy tab, notices, tips and the fallen city's card. Calls: DECISIONS "M36"; design:
 DESIGN §3.30; SPEC_REVIEW "M36".
 
-An adversarial review of M36 confirmed 32 findings, all fixed (1d07bdf the rules; the next
-commit friends' raids, now decided by the region room so both cities agree, and the page). A
-second review of those fixes is running.
+An adversarial review of M36 confirmed 32 findings, all fixed (1d07bdf the rules; ab6839d
+friends' raids, now decided by the region room so both cities agree, and the page). A review of
+those fixes confirmed 11 more, fixed in be8abd7 (a force pinned while the region decides, every
+battle answered, battles known by sender; contact, risings, the page). A third look, at be8abd7,
+is running, with the unit suite and the M36, M35 battle and friends e2e after it.
 
 Left for M36:
-1. The fixes' review and anything it finds; the full unit suite.
-2. The e2e again (`e2e/m36-diplomacy.spec.ts` with the fallen card, `m35-friends` alone,
-   `m35-battle`), screenshots reviewed.
-3. Bench, the cross-browser run on the PR, PROGRESS numbers, `M36 complete:`, PR #23.
+1. The third look and anything it finds; the unit suite and the three e2e, screenshots reviewed.
+2. Bench, the cross-browser run on the PR, PROGRESS numbers, `M36 complete:`, PR #23.
 
 ## Next tasks
 1. Finish M36 (above).

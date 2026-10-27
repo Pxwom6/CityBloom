@@ -387,3 +387,143 @@ export function researchHour(sim: Sim): void {
     sim.warChanged();
   }
 }
+
+// ------------------------------------------------------------------ trials
+
+/** Is this a proving ground? */
+const isGround = (c: Civic | undefined) => !!c && c.def === 'provingground';
+
+/** A proving ground's trial pace a war-clock hour (0 while it's offline, unpowered or short of staff). */
+export function trialRate(sim: Sim, c: Civic): number {
+  if (!civicOnline(c)) return 0;
+  const staff = c.staff ?? 0;
+  if (staff < WAR.minStaffed) return 0;
+  return Math.min(1, staff) * (c.powered ?? 0) * Math.min(RESEARCH.fundingMax, sim.fundingEff('defence'));
+}
+
+/** Why a prototype's trial can't start at this ground now, or null. */
+function trialRefusal(sim: Sim, groundId: number, kind: UnitKind): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  const ground = s.civics.get(groundId);
+  if (!isGround(ground)) return 'Prototypes are tested at a proving ground';
+  const def = UNIT.get(kind);
+  if (!def) return 'Unknown unit';
+  const r = s.war.research;
+  if (r?.proven.includes(kind)) return `${def.plural} have passed their trial already`;
+  if (!r?.prototypes.includes(kind)) return unitLock(sim, kind) ?? `${def.plural} need no trial`;
+  if (def.super && !superweaponsAllowed(sim)) return 'Your region’s rules turn superweapons off';
+  const busy = r.trials.find((t) => t.ground === groundId);
+  if (busy) return `The proving ground is busy with the ${UNIT.get(busy.kind)!.name.toLowerCase()}’s trial`;
+  if (r.trials.some((t) => t.kind === kind)) return `The ${def.name.toLowerCase()} is on trial already`;
+  if (def.domain === 'sea' && !militaryCivics(sim).some((c) => c.def === 'navalyard' && civicOnline(c)))
+    return 'Sea trials need a naval yard';
+  if (!civicOnline(ground!)) return 'The proving ground is closed';
+  const { cost } = trialTerms(kind);
+  if (!s.options.sandbox && s.treasury < cost) return `Not enough money: $${formatInt(cost)}`;
+  return null;
+}
+
+/** Put a prototype on trial at a proving ground (M37): paid now, passed after its hours. */
+export function startTrial(sim: Sim, groundId: number, kind: UnitKind, dryRun: boolean): CommandResult {
+  const why = trialRefusal(sim, groundId, kind);
+  if (why) return fail(why);
+  const { hours, cost } = trialTerms(kind);
+  if (dryRun) return ok(cost);
+  const r = research(sim);
+  r.trials.push({ ground: groundId, kind, done: 0, hours, paid: cost, runs: 0 });
+  sim.spend(cost, 'trials');
+  sim.warChanged();
+  return ok(cost);
+}
+
+/** Call a trial off: the money for the part not run comes back. */
+export function stopTrial(sim: Sim, groundId: number, dryRun: boolean): CommandResult {
+  const r = sim.state.war?.research;
+  const t = r?.trials.find((x) => x.ground === groundId);
+  if (!r || !t) return fail('Nothing is on trial there');
+  const back = Math.round(t.paid * Math.max(0, 1 - t.done / t.hours));
+  if (dryRun) return ok(-back);
+  r.trials = r.trials.filter((x) => x !== t);
+  if (back > 0) sim.earn(back, 'trials');
+  sim.warChanged();
+  return ok(-back);
+}
+
+/**
+ * Trials' war-clock hour (M37): each runs at its ground's pace, a notice at each of its runs; a
+ * passed trial makes the kind one the city can train. A trial whose ground is gone is dropped.
+ */
+export function trialsHour(sim: Sim): void {
+  const r = sim.state.war?.research;
+  if (!r?.trials.length) return;
+  for (const t of [...r.trials]) {
+    const ground = sim.state.civics.get(t.ground);
+    if (!isGround(ground)) {
+      r.trials = r.trials.filter((x) => x !== t);
+      sim.warChanged();
+      continue;
+    }
+    const rate = trialRate(sim, ground!);
+    if (rate <= 0) continue;
+    t.done = Math.round((t.done + rate) * 1000) / 1000;
+    const name = UNIT.get(t.kind)!.name;
+    if (t.done + 1e-9 >= t.hours) {
+      r.trials = r.trials.filter((x) => x !== t);
+      r.prototypes = r.prototypes.filter((k) => k !== t.kind);
+      if (!r.proven.includes(t.kind)) r.proven.push(t.kind);
+      sim.events.push({ kind: 'trialPassed', id: t.ground, info: { unit: t.kind, name } });
+    } else {
+      // A notice at each of the trial's runs but the last (its pass says that one).
+      const run = Math.floor((t.done / t.hours) * TRIAL.runs);
+      if (run > t.runs) {
+        t.runs = run;
+        sim.events.push({ kind: 'trialRun', id: t.ground, info: { unit: t.kind, name, run } });
+      }
+    }
+    sim.warChanged();
+  }
+}
+
+// ------------------------------------------------------------------ test mode
+
+/**
+ * Test mode: points poured into the queue in its order (each tier still paid for as it starts),
+ * as if the labs had worked that long. Every tier was still queued by a command.
+ */
+export function researchPointsCheat(sim: Sim, points: number, dryRun: boolean): CommandResult {
+  const r = sim.state.war?.research;
+  if (!r?.queue.length) return fail('Nothing is queued');
+  if (!Number.isFinite(points) || points <= 0) return fail('Invalid points');
+  if (dryRun) return ok(0);
+  let left = points;
+  while (left > 0 && r.queue.length) {
+    const key = r.queue[0]!;
+    const t = TIER.get(key)!;
+    if (!r.paid.includes(key)) {
+      if (!sim.state.options.sandbox && sim.state.treasury < t.cost) break;
+      r.paid.push(key);
+      accrue(sim, 'weaponsResearch', -t.cost);
+    }
+    const need = t.points - (r.points[key] ?? 0);
+    if (left >= need) {
+      left -= need;
+      finish(sim, r, key);
+    } else {
+      r.points[key] = (r.points[key] ?? 0) + left;
+      left = 0;
+    }
+  }
+  sim.warChanged();
+  return ok(0);
+}
+
+/** Test mode (scripted tests): these tiers done at once, in order, unpaid. */
+export function researchCheat(sim: Sim, tiers: TierKey[], dryRun: boolean): CommandResult {
+  if (!sim.state.war) return fail('War is off in this city');
+  if (!tiers.every((k) => TIER.has(k))) return fail('No such research');
+  if (dryRun) return ok(0);
+  const r = research(sim);
+  for (const k of tiers) if (!r.done.includes(k)) finish(sim, r, k);
+  return ok(0);
+}

@@ -397,6 +397,8 @@ export interface ForceData {
   units: { id: number; kind: UnitKind; base: number; hp: number; away?: number }[];
   /** Training at each base, oldest first: hours done of `hours`, and hours gained an hour now. */
   orders: { id: number; kind: UnitKind; base: number; done: number; hours: number; rate: number }[];
+  /** Prototypes on trial at proving grounds (M37): hours done of `hours`. */
+  trials: { ground: number; kind: UnitKind; done: number; hours: number }[];
 }
 
 export interface CivicData {

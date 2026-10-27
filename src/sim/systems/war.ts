@@ -26,7 +26,14 @@ import { civicOnline, civicUpkeep, lowerName, type Civic } from '../world/civic'
 import type { Origin } from './commute';
 import type { BattleReport, HostedBattle, Raid } from './raids';
 import type { Expedition } from './expeditions';
-import { researchHour, researchSummary, unitLock, type Research, type ResearchSummary } from './research';
+import {
+  researchHour,
+  researchSummary,
+  trialsHour,
+  unitLock,
+  type Research,
+  type ResearchSummary,
+} from './research';
 import { accrue, book, fundingPct } from './economy';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
@@ -409,8 +416,9 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
       sim.warChanged();
     }
   }
-  // Weapons research (M37).
+  // Weapons research and prototypes' trials (M37).
   researchHour(sim);
+  trialsHour(sim);
   // Readiness.
   const target = readinessTarget(sim);
   const d = WAR.readinessPerDay / HOURS_PER_DAY;
@@ -681,8 +689,11 @@ export function militaryStaffing(
   if (!sim.state.war) return out;
   const { g, costs, flows, origins, car } = r;
   // The forces may take a share of the city's workers at most. The HQ is staffed first, then bases
-  // training units (oldest order first), each in full while the share lasts; then the rest, in
-  // build order.
+  // training units (oldest order first), each in full while the share lasts; then (M37) proving
+  // grounds with a prototype on trial and labs with research queued; then the rest, in build order.
+  const work = sim.state.war.research;
+  const trying = new Set((work?.trials ?? []).map((t) => t.ground));
+  const researching = !!work?.queue.length;
   const first = new Map<number, number>();
   for (const o of [...sim.state.war.orders.values()].sort((a, b) => a.id - b.id))
     if (!first.has(o.base)) first.set(o.base, o.id);
@@ -695,7 +706,15 @@ export function militaryStaffing(
     if (node === undefined || m.jobs <= 0 || standsDown(sim, c.x, c.z)) continue;
     bases.push({ c, m, node });
   }
-  const rank = (c: Civic) => (militaryOf(c)!.hq ? -1 : (first.get(c.id) ?? Number.MAX_SAFE_INTEGER));
+  const rank = (c: Civic) =>
+    militaryOf(c)!.hq
+      ? -1
+      : (first.get(c.id) ??
+        (trying.has(c.id)
+          ? Number.MAX_SAFE_INTEGER - 2
+          : researching && militaryOf(c)!.lab
+            ? Number.MAX_SAFE_INTEGER - 1
+            : Number.MAX_SAFE_INTEGER));
   bases.sort((a, b) => rank(a.c) - rank(b.c) || a.c.id - b.c.id);
   let workforce = 0;
   for (const o of origins.values()) for (const e of o.list) workforce += e.workers;
@@ -964,6 +983,13 @@ export function forceData(sim: Sim): ForceData | null {
         rate: head && c ? Math.round(trainingRate(sim, c, o.kind) * 1000) / 1000 : 0,
       };
     }),
+    // Prototypes on trial at the proving grounds (M37), for the page to show them on the track.
+    trials: (w.research?.trials ?? []).map((t) => ({
+      ground: t.ground,
+      kind: t.kind,
+      done: t.done,
+      hours: t.hours,
+    })),
   };
 }
 

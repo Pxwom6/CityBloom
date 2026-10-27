@@ -206,11 +206,27 @@ export function runDeterminism(
   lab({ type: 'queueResearch', key: 'land1' });
   lab({ type: 'queueResearch', key: 'land2' });
   lab({ type: 'unqueueResearch', key: 'land2' });
-  for (let d = 0; d < 6; d++) {
+  for (let d = 0; d < 3; d++) {
     labSim.advance(TICKS_PER_MONTH);
     checkInvariants(labSim);
     research.push(labSim.hash());
   }
+  // Heavy armour done (points poured in), and its prototype on trial at a proving ground: started,
+  // called off, started again and run to its end.
+  lab({ type: 'queueResearch', key: 'land2' });
+  labSim.dispatch({ type: 'cheat', cheat: 'researchPoints', points: 2_000 });
+  const ground = placeAlong(labSim, lab, 'provingground', roadIds(labSim).reverse()) ?? -1;
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'startTrial', ground, kind: 'heavytank' });
+  labSim.advance(3 * TICKS_PER_HOUR);
+  lab({ type: 'stopTrial', ground });
+  lab({ type: 'startTrial', ground, kind: 'heavytank' });
+  for (let d = 0; d < 3; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    research.push(labSim.hash());
+  }
+  research.push(JSON.stringify(labSim.state.war!.research));
 
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));

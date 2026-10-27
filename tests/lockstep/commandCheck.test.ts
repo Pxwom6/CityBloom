@@ -109,6 +109,8 @@ const SAMPLES: Record<CommandType, Command> = {
   setNeutral: { type: 'setNeutral', on: true },
   queueResearch: { type: 'queueResearch', key: 'land1' },
   unqueueResearch: { type: 'unqueueResearch', key: 'land1' },
+  startTrial: { type: 'startTrial', ground: 6, kind: 'heavytank' },
+  stopTrial: { type: 'stopTrial', ground: 6 },
 };
 
 /** Values a field might carry instead of what it should. */

@@ -217,7 +217,7 @@ describe('unit poses (M34)', () => {
         for (let k = 0; k < (kind === 'infantry' ? n : def === 'airfield' && kind === 'drone' ? 3 : n); k++)
           roster.push({ id: id++, kind, base: bases[def]!, hp: 1 });
     }
-    world.forces = { units: roster, orders: [] };
+    world.forces = { units: roster, orders: [], trials: [] };
   }, 120_000);
 
   const LIM = { drill: 8, patrol: 3, fly: 4 };

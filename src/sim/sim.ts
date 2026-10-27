@@ -1,6 +1,13 @@
 import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
-import { queueResearch, unqueueResearch } from './systems/research';
+import {
+  queueResearch,
+  researchCheat,
+  researchPointsCheat,
+  startTrial,
+  stopTrial,
+  unqueueResearch,
+} from './systems/research';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
@@ -1232,6 +1239,14 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'researchPoints') {
+          if (!this.testMode) return fail('Test mode only');
+          return researchPointsCheat(this, cmd.points, dryRun);
+        }
+        if (cmd.cheat === 'research') {
+          if (!this.testMode) return fail('Test mode only');
+          return researchCheat(this, cmd.tiers, dryRun);
+        }
         if (cmd.cheat === 'unshield') {
           if (!this.testMode) return fail('Test mode only');
           if (!this.state.war) return fail('War is off in this city');
@@ -1417,6 +1432,10 @@ export class Sim {
         return queueResearch(this, cmd.key, dryRun);
       case 'unqueueResearch':
         return unqueueResearch(this, cmd.key, dryRun);
+      case 'startTrial':
+        return startTrial(this, cmd.ground, cmd.kind, dryRun);
+      case 'stopTrial':
+        return stopTrial(this, cmd.ground, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

@@ -75,6 +75,9 @@ export type Command =
   | { type: 'cheat'; cheat: 'fall'; neighbour: number }
   /** Test mode (M36): friends may raid the city though it's a newcomer. */
   | { type: 'cheat'; cheat: 'unshield' }
+  /** Test mode (M37): research points poured into the queue, or tiers done at once (scripted tests). */
+  | { type: 'cheat'; cheat: 'researchPoints'; points: number }
+  | { type: 'cheat'; cheat: 'research'; tiers: TierKey[] }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -194,7 +197,10 @@ export type Command =
   | { type: 'setNeutral'; on: boolean }
   /** Weapons research (M37): put a tier in the labs' queue, or take it out. */
   | { type: 'queueResearch'; key: TierKey }
-  | { type: 'unqueueResearch'; key: TierKey };
+  | { type: 'unqueueResearch'; key: TierKey }
+  /** A prototype's trial at a proving ground (M37), or calling it off. */
+  | { type: 'startTrial'; ground: number; kind: UnitKind }
+  | { type: 'stopTrial'; ground: number };
 
 export type CommandType = Command['type'];
 
@@ -262,6 +268,8 @@ const COMMAND_KINDS = {
   setNeutral: true,
   queueResearch: true,
   unqueueResearch: true,
+  startTrial: true,
+  stopTrial: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

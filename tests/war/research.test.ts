@@ -19,6 +19,7 @@ import {
   researchRate,
   researched,
   unitLock,
+  trialTerms,
   type Research,
 } from '../../src/sim/systems/research';
 import { militaryCivics } from '../../src/sim/systems/war';
@@ -282,5 +283,66 @@ describe('M37 research in the city', () => {
     sim.advance(M);
     expect(sim.state.war).toBeUndefined();
     expect(refusal(sim, { type: 'queueResearch', key: 'land1' })).toBe('War is off in this city');
+  });
+});
+
+describe('M37 prototypes on trial', () => {
+  it('a prototype is trained only after its trial at the proving ground, one trial a ground at a time', () => {
+    const { sim, place } = labTown(1);
+    const depot = place('vehicledepot');
+    const ground = place('provingground');
+    ok(sim, { type: 'queueResearch', key: 'land1' });
+    ok(sim, { type: 'queueResearch', key: 'land2' });
+    ok(sim, { type: 'cheat', cheat: 'researchPoints', points: 1_000 });
+    expect(res(sim).done).toEqual(['land1', 'land2']);
+    expect(res(sim).prototypes).toEqual(['heavytank']);
+    expect(refusal(sim, { type: 'trainUnit', base: depot, kind: 'heavytank' })).toBe(
+      'Heavy tanks need a trial at the proving ground first',
+    );
+    expect(refusal(sim, { type: 'startTrial', ground: depot, kind: 'heavytank' })).toBe(
+      'Prototypes are tested at a proving ground',
+    );
+    sim.advance(M);
+    const spent = -(sim.state.economy.month.trials ?? 0);
+    ok(sim, { type: 'startTrial', ground, kind: 'heavytank' });
+    expect(-(sim.state.economy.month.trials ?? 0) - spent).toBe(trialTerms('heavytank').cost);
+    expect(trialTerms('heavytank')).toEqual({ hours: 36, cost: 7_500 });
+    // One at a time: a second prototype waits for the ground.
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['logistics1', 'logistics2'] });
+    expect(refusal(sim, { type: 'startTrial', ground, kind: 'repair' })).toBe(
+      'The proving ground is busy with the heavy tank’s trial',
+    );
+    // It runs its hours, a notice at each run, and passes.
+    for (let h = 0; h < 24 * 6 && res(sim).trials.length; h++) sim.advance(H);
+    expect(res(sim).trials).toEqual([]);
+    expect(res(sim).proven).toEqual(['heavytank']);
+    expect(res(sim).prototypes).toEqual(['repair']);
+    expect(refusal(sim, { type: 'startTrial', ground, kind: 'heavytank' })).toBe(
+      'Heavy tanks have passed their trial already',
+    );
+    ok(sim, { type: 'trainUnit', base: depot, kind: 'heavytank' });
+  });
+
+  it('a trial called off gives back what wasn’t run; sea trials need a naval yard', () => {
+    const { sim, place } = labTown(1);
+    const ground = place('provingground');
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['sea1', 'sea2'] });
+    expect(refusal(sim, { type: 'startTrial', ground, kind: 'gunboat' })).toBe(
+      'Sea trials need a naval yard',
+    );
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['land1', 'land2'] });
+    sim.advance(M);
+    ok(sim, { type: 'startTrial', ground, kind: 'heavytank' });
+    sim.advance(6 * H);
+    const t = res(sim).trials[0]!;
+    expect(t.done).toBeGreaterThan(0);
+    const back = Math.round(t.paid * (1 - t.done / t.hours));
+    const before = sim.state.economy.month.trials ?? 0;
+    ok(sim, { type: 'stopTrial', ground });
+    expect((sim.state.economy.month.trials ?? 0) - before).toBe(back);
+    expect(res(sim).trials).toEqual([]);
+    // Still a prototype (beside the sea tiers' boats), waiting for another trial.
+    expect(res(sim).prototypes).toEqual(['gunboat', 'landingcraft', 'heavytank']);
+    expect(res(sim).proven).toEqual([]);
   });
 });

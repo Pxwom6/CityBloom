@@ -23,7 +23,7 @@ import { DEAL_RESOURCES } from '../data/region';
 import { TERRAFORM, TERRAFORM_MODES } from '../data/terraform';
 import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
-import { UNIT, WAR } from '../data/war';
+import { UNIT, WAR, type UnitKind } from '../data/war';
 import { cleanTerm, DIPLOMACY, type Term } from '../data/diplomacy';
 import { MAP_SIZE } from '../data/world';
 
@@ -382,6 +382,11 @@ const CHECKS: Record<CommandType, Check> = {
     typeof c.key === 'string' && TIER.has(c.key as TierKey)
       ? { type: 'queueResearch', key: c.key as TierKey }
       : BAD,
+  startTrial: (c) =>
+    isInt(c.ground) && typeof c.kind === 'string' && UNIT.has(c.kind as UnitKind)
+      ? { type: 'startTrial', ground: c.ground, kind: c.kind as UnitKind }
+      : BAD,
+  stopTrial: (c) => (isInt(c.ground) ? { type: 'stopTrial', ground: c.ground } : BAD),
   unqueueResearch: (c) =>
     typeof c.key === 'string' && TIER.has(c.key as TierKey)
       ? { type: 'unqueueResearch', key: c.key as TierKey }

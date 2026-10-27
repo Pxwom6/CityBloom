@@ -8,11 +8,21 @@ import type { Command, CommandResult } from '../sim/commands';
 import type { RaidVerdict, RegionReport, RegionUpdate } from '../sim/systems/region';
 import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
-import type { RegionClientMsg, RegionRoomMsg, RegionView } from '../../relay/region';
+import {
+  FAIR,
+  type OpOutcome,
+  type RegionClientMsg,
+  type RegionOp,
+  type RegionRoomMsg,
+  type RegionView,
+} from '../../relay/region';
 import type { Link } from './link';
-import type { RegionWarRules } from '../data/war';
+import type { RegionWarRules, UnitKind } from '../data/war';
+import type { SabotageTarget } from '../data/intel';
+import type { Branch, TierKey } from '../data/research';
 import { decodeBattle, decodeSnapshot, encodeBattle, encodeSnapshot } from './snapshot';
 import type { BattleInput } from '../sim/battle/types';
+import { battleHasSuper } from '../sim/systems/regionOps';
 
 /** What a region link needs from the city: its own commands and queries, and a save. */
 export interface CityPort {
@@ -28,7 +38,37 @@ export interface CityPort {
    * now (it's offered again); `refused`: never (unreadable, or not from a city of the region).
    */
   battle?(input: BattleInput, meta: BattleMeta): Promise<BattleAnswer>;
+  /**
+   * An operation another city of the region made against this one (M37), as the region decided it:
+   * `taken` (or `refused`, never to be taken) and the region forgets it; `later`: offered again.
+   */
+  op?(o: OpOn): Promise<BattleAnswer>;
 }
+
+/** An operation against this city, as the region passes it on (M37). */
+export interface OpOn {
+  from: number;
+  id: string;
+  op: RegionOp;
+  outcome: OpOutcome;
+  target?: SabotageTarget;
+  late: boolean;
+}
+
+/** An operation this city sends the region (M37). */
+export interface OpOut {
+  to: number;
+  id: string;
+  op: RegionOp;
+  target?: SabotageTarget;
+  branch?: Branch;
+}
+
+/** What the region answered about an operation: kept (its outcome), turned away, or no word. */
+export type OpSent =
+  | { kept: true; outcome: OpOutcome; stole?: TierKey }
+  | { kept: false; reason: string; later?: number }
+  | null;
 
 export type BattleAnswer = 'taken' | 'later' | 'refused';
 
@@ -39,6 +79,8 @@ export interface BattleMeta {
   id: string;
   late: boolean;
   away?: boolean;
+  /** It brings a superweapon, and the region counted it so (M37). */
+  super?: boolean;
 }
 
 /**
@@ -81,6 +123,10 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
       online: c.online,
       // War (M36): whether the region would let this city raid it now, as the region decides.
       ...(view.rules?.war ? { raid: raidVerdict(view, slot, c) } : {}),
+      // War (M37): a coast to sail to, its research tiers and its counter-intelligence.
+      ...(view.rules?.war && c.report!.coast ? { coast: true as const } : {}),
+      ...(view.rules?.war && c.report!.tiers ? { tiers: [...c.report!.tiers] } : {}),
+      ...(view.rules?.war && c.report!.counter !== undefined ? { counter: c.report!.counter } : {}),
     })),
     // The others' deals with this city, from this city's side.
     contracts: others.flatMap((c) =>
@@ -106,6 +152,17 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
   };
 }
 
+/**
+ * The cap the region's fair clock puts on this city's war clock (M37, design call 15): the hours the
+ * region has seen it play at 1×, and a bank of two game days; none where war is off or before the
+ * region has heard the city's clock.
+ */
+export function fairCap(view: RegionView, slot: number): number | null {
+  if (!view.rules?.war) return null;
+  const fair = view.cities.find((c) => c.slot === slot)?.fair;
+  return fair === undefined ? null : Math.floor(fair) + FAIR.bank;
+}
+
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
@@ -119,6 +176,11 @@ export interface RegionLinkOptions {
    * its host's browser is gone while the host isn't playing.
    */
   giveUpAfter?: number;
+  /**
+   * The region's fair clock caps the city's war clock (M37): on unless a test that fast-forwards its
+   * cities far past the region's 1× pace turns it off.
+   */
+  fairClock?: boolean;
 }
 
 export class RegionLink {
@@ -142,7 +204,16 @@ export class RegionLink {
   onBattleKept: ((id: string) => void) | null = null;
   /** The region turned a battle away (M36: its target has taken the day's raids). */
   onBattleRefused: ((id: string, reason: string) => void) | null = null;
-  onIncoming: ((m: { from: number; units: number; hours: number }) => void) | null = null;
+  onIncoming:
+    ((m: { from: number; units: number; hours: number; super?: UnitKind; gate?: boolean }) => void) | null =
+    null;
+  /** Operations against this city taken already and acknowledged, by `sender:id` (M37). */
+  private opsDone = new Set<string>();
+  private opsTaking = new Set<string>();
+  /** Operations sent, waiting for the region's answer, by id (M37). */
+  private opWaits = new Map<string, (a: OpSent) => void>();
+  /** The war-clock cap last given the city (M37): undefined until the region first says. */
+  private cap: number | null | undefined = undefined;
   /**
    * Battles coming in, in parts, and those taken already (M35); all by `sender:id` (M36: two
    * cities' battles may share an id).
@@ -154,7 +225,7 @@ export class RegionLink {
   /** Battles the city couldn't take yet (one was on already): tried again with each report. */
   private battlesWaiting = new Map<
     string,
-    { id: string; input: BattleInput; from: number; late: boolean; away?: boolean }
+    { id: string; input: BattleInput; from: number; late: boolean; away?: boolean; super?: boolean }
   >();
   sent = { messages: 0, bytes: 0 };
 
@@ -293,9 +364,33 @@ export class RegionLink {
           from: m.from,
           late: m.late,
           ...(m.away ? { away: true } : {}),
+          ...(m.super ? { super: true } : {}),
         });
         return;
       }
+      case 'opKept':
+        this.opAnswered(m.id, {
+          kept: true,
+          outcome: m.outcome,
+          ...(m.stole ? { stole: m.stole } : {}),
+        });
+        return;
+      case 'opRefused':
+        this.opAnswered(m.id, {
+          kept: false,
+          reason: m.reason,
+          ...(typeof m.later === 'number' ? { later: m.later } : {}),
+        });
+        return;
+      case 'opOn':
+        return this.takeOp({
+          from: m.from,
+          id: m.id,
+          op: m.op,
+          outcome: m.outcome,
+          ...(m.target ? { target: m.target } : {}),
+          late: m.late,
+        });
       case 'battleKept':
         this.answered(m.id, { kept: true });
         this.onBattleKept?.(m.id);
@@ -310,9 +405,72 @@ export class RegionLink {
         this.onBattleRefused?.(m.id, m.reason);
         return;
       case 'incoming':
-        this.onIncoming?.({ from: m.from, units: m.units, hours: m.hours });
+        this.onIncoming?.({
+          from: m.from,
+          units: m.units,
+          hours: m.hours,
+          ...(m.super ? { super: m.super } : {}),
+          ...(m.gate ? { gate: true } : {}),
+        });
         return;
     }
+  }
+
+  /**
+   * An operation against this city (M37): its own sim takes it once; then the region can forget it.
+   * Offered again (the word was lost), it's only acknowledged.
+   */
+  private async takeOp(o: OpOn): Promise<void> {
+    const key = `${o.from}:${o.id}`;
+    if (this.opsDone.has(key)) return this.send({ t: 'opSeen', id: o.id, from: o.from });
+    if (this.opsTaking.has(key)) return;
+    this.opsTaking.add(key);
+    try {
+      const answer = (await this.city.op?.(o)) ?? 'later';
+      if (answer === 'later') return;
+      this.opsDone.add(key);
+      this.send({ t: 'opSeen', id: o.id, from: o.from });
+    } finally {
+      this.opsTaking.delete(key);
+    }
+  }
+
+  /**
+   * Put an operation to the region (M37): its spy's verdict, or the blackout tower's. The promise is
+   * the region's answer, or null when none came within `wait` ms (the link is down: ask again later
+   * with the same id, and the region gives the same answer).
+   */
+  sendOp(op: OpOut, wait = 30_000): Promise<OpSent> {
+    const answer = new Promise<OpSent>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.opWaits.get(op.id) === settle) this.opWaits.delete(op.id);
+        resolve(null);
+      }, wait);
+      const settle = (a: OpSent) => {
+        clearTimeout(timer);
+        resolve(a);
+      };
+      this.opWaits.get(op.id)?.(null);
+      this.opWaits.set(op.id, settle);
+    });
+    if (!this.link) this.opAnswered(op.id, null);
+    else
+      this.send({
+        t: 'op',
+        to: op.to,
+        id: op.id,
+        op: op.op,
+        ...(op.target ? { target: op.target } : {}),
+        ...(op.branch ? { branch: op.branch } : {}),
+      });
+    return answer;
+  }
+
+  private opAnswered(id: string, a: OpSent): void {
+    const w = this.opWaits.get(id);
+    if (!w) return;
+    this.opWaits.delete(id);
+    w(a);
   }
 
   /** Hand a whole battle to the city; once it has it, the region can forget it. */
@@ -322,6 +480,7 @@ export class RegionLink {
     from: number;
     late: boolean;
     away?: boolean;
+    super?: boolean;
   }): Promise<void> {
     const key = `${b.from}:${b.id}`;
     if (this.battlesTaken.has(key)) return;
@@ -333,6 +492,7 @@ export class RegionLink {
         id: b.id,
         late: b.late,
         ...(b.away ? { away: true } : {}),
+        ...(b.super ? { super: true } : {}),
       })) ?? 'later';
     if (answer !== 'later') {
       this.battlesDone.add(key);
@@ -343,9 +503,19 @@ export class RegionLink {
     }
   }
 
-  /** A force of this city's has set off against another city of the region (M35): it's told. */
-  forceOut(to: number, units: number, hours: number): void {
-    this.send({ t: 'forceOut', to, units, hours });
+  /**
+   * A force of this city's has set off against another city of the region (M35): it's told, with
+   * the superweapon it brings and whether it comes through the express gate (M37).
+   */
+  forceOut(to: number, units: number, hours: number, extra: { super?: UnitKind; gate?: boolean } = {}): void {
+    this.send({
+      t: 'forceOut',
+      to,
+      units,
+      hours,
+      ...(extra.super ? { super: extra.super } : {}),
+      ...(extra.gate ? { gate: true as const } : {}),
+    });
   }
 
   /** The id the room knows a battle by. */
@@ -361,6 +531,9 @@ export class RegionLink {
   sendBattle(to: number, input: BattleInput, away = false, wait = 30_000): Promise<BattleSent> {
     const id = RegionLink.battleId(input);
     const parts = encodeBattle(input);
+    // A battle bringing a superweapon says so (M37): the region counts it, and the target's sim
+    // takes nothing from one it didn't.
+    const sup = battleHasSuper(input);
     const answer = new Promise<BattleSent>((resolve) => {
       const timer = setTimeout(() => {
         if (this.battleWaits.get(id) === settle) this.battleWaits.delete(id);
@@ -376,7 +549,16 @@ export class RegionLink {
     if (!this.link) this.answered(id, null);
     else
       parts.forEach((data, part) =>
-        this.send({ t: 'battle', to, id, part, parts: parts.length, data, ...(away ? { away: true } : {}) }),
+        this.send({
+          t: 'battle',
+          to,
+          id,
+          part,
+          parts: parts.length,
+          data,
+          ...(away ? { away: true } : {}),
+          ...(sup ? { super: true as const } : {}),
+        }),
       );
     return answer;
   }
@@ -398,8 +580,21 @@ export class RegionLink {
   /** The region's news into this city's sim. */
   private async take(view: RegionView): Promise<void> {
     this.view = view;
-    if (this.slot)
-      await this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
+    if (this.slot) {
+      const update = this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
+      // The fair clock (M37): the city's war clock may run this far, told again once it moves by an
+      // hour or more (or comes off, where war is off).
+      const cap = this.opts.fairClock === false ? null : fairCap(view, this.slot);
+      const moved =
+        cap === null
+          ? this.cap !== undefined && this.cap !== null
+          : this.cap == null || cap - this.cap >= 1 || cap < this.cap;
+      if (moved) {
+        this.cap = cap;
+        void this.city.command({ type: 'warClock', cap });
+      }
+      await update;
+    }
     this.onChange?.();
   }
 

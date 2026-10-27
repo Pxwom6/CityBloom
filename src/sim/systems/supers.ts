@@ -12,14 +12,23 @@ import { civicOnline, type Civic } from '../world/civic';
 import { incident, strikeBreaks, strikeRefusal } from './diplomacy';
 import type { Neighbour } from './region';
 import { superweaponsAllowed } from './research';
+import { friendBlackout, friendTowerHour } from './regionOps';
 
 export type SuperBuilding = 'dome' | 'tower' | 'gate';
 
 export interface Supers {
   /** The dome: hours charged (of `DOME.chargeHours`), its mode, hours left on its reserve in a blackout, raised now. */
   dome?: { hours: number; mode: DomeMode; reserve?: number; raised?: true };
-  /** The tower: the war-clock hour it can fire again, and the neighbour it's charging at (and when it fires). */
-  tower?: { ready: number; charging?: { to: number; at: number } };
+  /**
+   * The tower: the war-clock hour it can fire again, and the neighbour it's charging at (and when it
+   * fires). At a friend's city (step 9): its place in the region and the operation's number the
+   * region knows it by, pinned while the region decides, and `kept` once it has (the recharge then
+   * starts).
+   */
+  tower?: {
+    ready: number;
+    charging?: { to: number; at: number; slot?: number; op?: number; settling?: true; kept?: true };
+  };
   /** The gate: the war-clock hour it can send a force again. */
   gate?: { ready: number };
 }
@@ -72,6 +81,11 @@ export function domeCharge(sim: Sim): number {
 export function supersHour(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
+  // The city's own blackout over (a friend's tower, step 9), whatever the city has built.
+  if (w.blackout && w.clock >= w.blackout.until) {
+    delete w.blackout;
+    sim.warChanged();
+  }
   // State for each building finished (made once, kept if it's knocked down: a rebuilt one carries on).
   for (const kind of ['dome', 'tower', 'gate'] as const) {
     if (!superBuilding(sim, kind)) continue;
@@ -105,7 +119,9 @@ export function supersHour(sim: Sim): void {
     }
   }
   const t = s.tower;
-  if (t?.charging && w.clock >= t.charging.at) {
+  // Aimed at a friend's city (step 9): fired once the region keeps it, else it waits for the region.
+  if (t?.charging?.slot !== undefined) friendTowerHour(sim);
+  else if (t?.charging && w.clock >= t.charging.at) {
     const n = sim.state.region.neighbours.find((x) => x.id === t.charging!.to);
     delete t.charging;
     if (n?.rival && !n.player) {
@@ -123,7 +139,7 @@ export function supersHour(sim: Sim): void {
     }
     sim.warChanged();
   }
-  // Blackouts over.
+  // Blackouts over (computer neighbours').
   for (const n of sim.state.region.neighbours)
     if (n.rival?.blackout && w.clock >= n.rival.blackout.until) {
       delete n.rival.blackout;
@@ -198,12 +214,13 @@ export function useBlackout(sim: Sim, to: number, breakPact: boolean, dryRun: bo
   const w = sim.state.war!;
   const n = sim.state.region.neighbours.find((x) => x.id === to);
   if (!n) return fail('No such neighbour');
-  if (n.player) return fail('Blacking out a friend’s city goes through the region');
-  if (!n.rival) return fail(`${n.name} isn’t a rival`);
+  if (!n.player && !n.rival) return fail(`${n.name} isn’t a rival`);
   const t = w.supers?.tower;
   if (t?.charging) return fail('The blackout tower is already charging');
   const wait = superWait(sim, 'tower');
   if (wait > 0) return fail(`The blackout tower is charging: ready in ${formatInt(wait)} hours`);
+  // A friend's city (step 9): the region decides, and the recharge starts once it keeps it.
+  if (n.player) return friendBlackout(sim, n, breakPact, dryRun);
   if (rivalBlackedOut(sim, n)) return fail(`${n.name} is blacked out already`);
   const strike = strikeRefusal(sim, to, 'power', breakPact);
   if (strike) return strike;

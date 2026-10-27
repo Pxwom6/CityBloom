@@ -282,16 +282,34 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
 - Adversarial review of the M37 sim: 13 findings confirmed and fixed (DECISIONS "M37", review), bar
   two in the battle's robot pathing handed to the balance helper.
 - E2e: `e2e/m37-research.spec.ts` passes (7.9 min: all six branches through the tab, nine prototypes
-  tried, each trainable at its base; screenshots reviewed); `e2e/m37-super.spec.ts` (the robot tried,
-  trained, sent once, home and winding up; the blackout tower used and recharging) being run.
-- Running in helpers' worktrees: superweapon battle balance (the fortress's bomb drones, the whale's
-  coastal targets, the robot's time, the robot's pathing) and steps 9–10 (friends' ops through the
-  region room, protocol 5, and the fair clock).
-- Left: merge both helpers' branches; banners and sirens for friends' superweapon raids, the
-  friends' e2e; `supershot.mjs` screenshots reviewed; the frame budget in the heaviest battle
+  tried, each trainable at its base; screenshots reviewed). **`e2e/m37-super.spec.ts`'s robot test
+  timed out at 40 min** in the VM (where it got stuck isn't known yet: rerun it alone with a trace;
+  likely the robot's training/staffing or the report poll). The blackout-tower test hasn't run yet.
+- **Steps 9–10 merged** (friends' spies, blackouts and superweapon battles through the region room,
+  protocol 5; the fair clock), from a helper's branch; the merge's conflicts are resolved and `tsc`
+  and lint are clean, and the helper's own run passed (286 unit + 17 live tests), **but the suites
+  haven't been rerun on the merged tree**: first thing next session, run
+  `npx vitest run --project unit tests/war tests/battle tests/lockstep relay/tests tests/region
+  tests/projects tests/utilities tests/shell.test.ts tests/legacy` and `npx vitest run --project live
+  relay/tests`.
+- Wired after the merge: notices for `spyArrived`, `blackoutWarning` (siren), `blackoutRefused`,
+  `clockHeld`, a friend's blackout; `forceOut` names a superweapon or the gate; the incoming siren
+  says whether the dome will rise; the Intelligence tab shows a friend's odds (as the room rolls
+  them), agents waiting for the region's word, and friends' dossiers (`intel-seen`).
+- **Paused at the owner's request** (usage). Stopped mid-way: an adversarial review of steps 9–10
+  (restart it: five lenses, room abuse, sim, fair clock, page, brief; each finding checked by two
+  skeptics) and the superweapon balance helper. Its six commits (the fortress's bomb drones, the
+  whale's torpedo pods at a town's seafront, a superweapon force pulling out once the caps hold,
+  faster target searches, the robot keeping to the road over water and walking to its next
+  objective) are saved, unmerged and unverified, in `docs/plans/M37-balance-wip.patch`: apply with
+  `git am docs/plans/M37-balance-wip.patch` (made from a0376298), then check v2 replays and the M36
+  golden still match (`tests/battle/v2replay.test.ts`, `tests/war/m36Golden.test.ts`), the battle
+  suites, and `battlebench.ts --super robot|fortress|whale`.
+- Left: the above; region map tier dots per friend; the friends' e2e (`m37-friends`: two players, a
+  spy and a blackout); `supershot.mjs` screenshots reviewed; the frame budget in the heaviest battle
   (`battlebench.ts bench-results/city.gz --guards --dome --save bench-results/war.gz`, then
-  `framebench.mjs bench-results/war.gz --views battle` with `--vm` here, real frame times on the Mac);
-  wrap-up (step 13: full tests, e2e, balance, bench, battlebench, cross-browser, docs,
+  `framebench.mjs bench-results/war.gz --views battle --vm` here, real frame times on the Mac);
+  wrap-up (step 13: full tests, e2e, balance, bench, battlebench, cross-browser, netbudget, docs,
   `M37 complete:`).
 
 ## Next tasks

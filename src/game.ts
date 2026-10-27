@@ -50,6 +50,7 @@ import {
   raidVerdict,
   type BattleAnswer,
   type BattleMeta,
+  type OpOn,
   type CityPort,
   type RegionLinkOptions,
 } from './net/regionLink';
@@ -58,6 +59,9 @@ import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
+import { RegionOps } from './client/ops';
+import { OP_TAKEN } from './sim/systems/regionOps';
+import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -281,6 +285,9 @@ export class Game {
       const exps = diff.stats.war?.expeditions;
       if (exps?.length && !this.inMenu() && !this.readOnly && (!this.net || this.net.session.isHost))
         this.away.check(exps);
+      // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
+      const ops = diff.stats.war?.intel?.regionOps;
+      if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -534,6 +541,20 @@ export class Game {
     },
     settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
   });
+  /**
+   * Operations against friends' cities (M37): put to the region by this page, their verdicts handed
+   * to the city. Out of touch, they wait; in no region at all, they're turned back (and refunded).
+   */
+  readonly ops = new RegionOps({
+    command: (cmd) => this.dispatch(cmd),
+    post: (op) =>
+      this.region
+        ? this.region.sendOp(op)
+        : Promise.resolve(this.boundRegion ? null : { kept: false, reason: 'the city is in no region now' }),
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    changed: () => this.notify(),
+  });
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
@@ -550,7 +571,29 @@ export class Game {
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
       battle: (input, meta) => this.takeBattle(input, meta),
+      op: (o) => this.takeOp(o),
     };
+  }
+
+  /**
+   * An operation a friend's city made against this one, as the region decided it (M37): the city's
+   * own sim takes it once (choosing what a saboteur closes), and the city is saved before the region
+   * is told, so closing the page never loses one.
+   */
+  private async takeOp(o: OpOn): Promise<BattleAnswer> {
+    if (this.readOnly) return 'later';
+    if (!this.region?.view?.cities.some((c) => c.slot === o.from)) return 'refused';
+    const r = await this.client.command({
+      type: 'opResolve',
+      from: o.from,
+      id: o.id,
+      op: o.op,
+      outcome: o.outcome,
+      ...(o.target ? { target: o.target } : {}),
+      late: o.late,
+    });
+    if (!r.ok && r.reason !== OP_TAKEN) return 'refused';
+    return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
   }
 
   /**
@@ -578,6 +621,8 @@ export class Game {
       replay: id,
       from: meta.from,
       ...(meta.away ? { away: true } : {}),
+      // Counted by the region as bringing a superweapon (M37): the city takes nothing from one not.
+      ...(meta.super ? { super: true } : {}),
     } as const;
     const pre = await this.client.preview(cmd);
     if (!pre.ok) {
@@ -724,6 +769,9 @@ export class Game {
     const link = new RegionLink(this.cityPort(), connect, {
       mayor: profile.name,
       color: profile.color,
+      // The region's fair clock caps the war clock (M37); a test build's spec that fast-forwards its
+      // cities far past the region's 1× pace may turn it off (localStorage `citybloom.fairClock`).
+      ...(IS_TEST_BUILD && fairClockOff() ? { fairClock: false } : {}),
       ...extra,
     });
     this.region = link;
@@ -737,11 +785,29 @@ export class Game {
     // its page's to settle (forgotten, fought again, or asked again later).
     link.onBattleRefused = (id) =>
       void loadBattle(id).then((r) => (r && r.expedition === undefined ? battlePosted(id) : undefined));
-    link.onIncoming = ({ from, units, hours }) => {
+    link.onIncoming = ({ from, units, hours, super: sup, gate }) => {
       const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
+      // With a superweapon, or through the express gate (M37), the siren says so.
+      const name = (UNIT.get(sup!)?.name ?? 'superweapon').toLowerCase();
+      const what = sup
+        ? `a ${name}${units > 1 ? ` and ${units - 1} more unit${units === 2 ? '' : 's'}` : ''}`
+        : `${units} unit${units === 1 ? '' : 's'}`;
+      // A superweapon coming: whether the city's dome will rise over the battle.
+      const dome = this.world.stats.war?.supers?.dome;
+      const shield =
+        !sup || !dome
+          ? ''
+          : dome.mode !== 'off' && dome.charge >= 1
+            ? ' The dome shield will rise over the battle.'
+            : dome.mode === 'off'
+              ? ' The dome shield is switched off.'
+              : ` The dome shield is only ${Math.floor(dome.charge * 100)} % charged: it won’t rise.`;
       this.notice(
         `incoming:${from}`,
-        `Sirens! ${who} is sending ${units} units against the city: about ${hours} hours of their time away.`,
+        (gate
+          ? `Sirens! A gate swirls open on the border: ${who} is sending ${what} through it.`
+          : `Sirens! ${who} is sending ${what} against the city: about ${hours} hours of their time away.`) +
+          shield,
         'bad',
       );
       this.audio?.play('raid');
@@ -783,6 +849,8 @@ export class Game {
     const code = bound ? parseInvite(bound.invite)?.code : null;
     if (bound && code) forgetRegionSecret(code, bound.slot);
     this.boundRegion = null;
+    // A city of its own again: the region's fair clock no longer caps its war clock (M37).
+    if (this.world.stats.war) void this.dispatch({ type: 'warClock', cap: null });
   }
 
   leaveRegion(say = true): void {
@@ -1347,10 +1415,43 @@ export class Game {
         this.audio?.play('powerDown');
         this.notice(
           `blackout:${e.id}`,
-          `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: no raids or spies from it, and its guns are half-blind.`,
+          e.info?.friend
+            ? `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: its power plants falter and its radars give it no warning.`
+            : `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: no raids or spies from it, and its guns are half-blind.`,
           'ok',
         );
-      } else if (e.kind === 'intel') {
+      } else if (e.kind === 'blackoutRefused')
+        this.notice(
+          `blackout:${e.id}`,
+          `The region turned the blackout at ${String(e.info?.to)} away${e.info?.reason ? `: ${String(e.info.reason)}` : ''}. The tower stands ready.`,
+          'bad',
+        );
+      // A friend's blackout tower aimed at the city (M37, step 9): an hour's warning.
+      else if (e.kind === 'blackoutWarning') {
+        if (e.info?.late)
+          this.notice(
+            `blackoutWarning:${e.id}`,
+            `${String(e.info?.by)} aimed a blackout tower at the city while you were away: it has passed.`,
+            'info',
+          );
+        else {
+          this.audio?.play('siren');
+          this.notice(
+            `blackoutWarning:${e.id}`,
+            `${String(e.info?.by)} is charging a blackout tower at the city! In ${String(e.info?.in)} hour${e.info?.in === 1 ? '' : 's'} its power plants falter for ${String(e.info?.hours)} hours, and the radars go dark.`,
+            'bad',
+          );
+        }
+      } else if (e.kind === 'spyArrived')
+        this.notice(
+          `spy:${e.id}`,
+          `Our agent is in ${String(e.info?.to)}: the region decides how it goes.`,
+          'info',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'clockHeld') this.notice('clockHeld', String(e.info?.text), 'info');
+      else if (e.kind === 'intel') {
         const tone = e.info?.tone;
         this.notice(
           `intel:${String(e.info?.text)}`,
@@ -2132,5 +2233,14 @@ export class Game {
     const work = performance.now() - t0;
     this.frameMs = this.frameMs * 0.9 + work * 0.1;
     if (this.frameSamples && interval > 0) this.frameSamples.push(interval, work);
+  }
+}
+
+/** A test build's spec may turn the region's fair clock off (M37): it fast-forwards its cities. */
+function fairClockOff(): boolean {
+  try {
+    return localStorage.getItem('citybloom.fairClock') === 'off';
+  } catch {
+    return false;
   }
 }

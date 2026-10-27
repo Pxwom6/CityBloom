@@ -295,13 +295,21 @@ export function SendForce() {
     if (r.ok) setPicked({});
     // M37: the gate opens, and a superweapon sets off with its own sound.
     if (r.ok && cmd.gate) game.audio?.play('gate');
-    const sup = r.ok ? picks.find((p) => UNIT.get(p.kind)?.super)?.kind : undefined;
+    const sup = r.ok
+      ? cmd.units
+          .map((id) => game.world.forces?.units.find((u) => u.id === id)?.kind)
+          .find((k) => k !== undefined && UNIT.get(k)?.super)
+      : undefined;
     if (sup)
       game.audio?.play(
         sup === 'windupbot' ? 'superRobot' : sup === 'skyfortress' ? 'superFortress' : 'superWhale',
       );
-    // A friend hears of it, if they're playing.
-    if (r.ok && slot !== null) game.region?.forceOut(slot, cmd.units.length, time);
+    // A friend hears of it, if they're playing: a superweapon or the gate named.
+    if (r.ok && slot !== null)
+      game.region?.forceOut(slot, cmd.units.length, time, {
+        ...(sup ? { super: sup } : {}),
+        ...(cmd.gate ? { gate: true } : {}),
+      });
   };
   return (
     <div class="war-send" data-testid="war-send-form">

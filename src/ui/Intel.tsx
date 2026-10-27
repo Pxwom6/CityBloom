@@ -5,8 +5,10 @@
  * the odds shown are its own (`IntelSummary.rivals`).
  */
 import { useState } from 'preact/hooks';
-import { INTEL, SPY_OP, SPY_OPS, type SabotageTarget, type SpyOp } from '../data/intel';
+import { INTEL, SPY_OP, SPY_OPS, spyOdds, type SabotageTarget, type SpyOp } from '../data/intel';
 import { BRANCHES, type Branch } from '../data/research';
+import { CIVIC } from '../data/civic';
+import { UNIT, type UnitKind } from '../data/war';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { warHours } from './Research';
 
@@ -21,6 +23,16 @@ export function inWords(permille: number): string {
     if (n > 0 && Math.abs(n / d - permille / 1000) < 0.04) return `about ${n} in ${d}`;
   }
   return `about ${Math.round(permille / 10)} in 100`;
+}
+
+/** A superweapon in a dossier: a unit's kind, or one of the three buildings. */
+const SUPER_BUILDING: Record<string, string> = {
+  dome: 'dome shield',
+  tower: 'blackout tower',
+  gate: 'express gate',
+};
+function superName(k: string): string {
+  return SUPER_BUILDING[k] ?? UNIT.get(k as UnitKind)?.name.toLowerCase() ?? k;
 }
 
 /** Counter-intelligence in a word. */
@@ -52,7 +64,16 @@ export function Intelligence() {
   }
   const n = rivals.find((x) => x.id === to) ?? rivals[0];
   const form = JSON.stringify([n?.id, op, target, branch]);
-  const odds = n ? i.rivals[n.id]?.odds[op] : undefined;
+  // A friend's odds as the region room works them out (M37, step 9): the city's Intelligence tiers
+  // against the counter-intelligence in the friend's last report.
+  const intelTier = (w.research?.done ?? []).filter((k) => k.startsWith('intel')).length;
+  const friend = n?.player;
+  const odds = n
+    ? friend
+      ? spyOdds(op, intelTier, friend.counter ?? 0, false, intelTier >= 3)
+      : i.rivals[n.id]?.odds[op]
+    : undefined;
+  const counter = friend ? (friend.counter ?? 0) : n ? i.rivals[n.id]?.counter : undefined;
   const def = SPY_OP[op];
   const send = async (asked?: NonNullable<typeof breaks>) => {
     if (!n) return;
@@ -158,8 +179,8 @@ export function Intelligence() {
           )}
           <p class="muted" data-testid="intel-odds">
             {formatMoney(def.cost)} · {warHours(def.hours)} there and back.{' '}
-            {odds
-              ? `${inWords(odds.success)[0]!.toUpperCase()}${inWords(odds.success).slice(1)} to succeed (${odds.success} ‰), ${inWords(odds.caught)} to be caught (${odds.caught} ‰): ${n.name}’s counter-intelligence is ${counterWord(i.rivals[n.id]!.counter)}.`
+            {odds && counter !== undefined
+              ? `${inWords(odds.success)[0]!.toUpperCase()}${inWords(odds.success).slice(1)} to succeed (${odds.success} ‰), ${inWords(odds.caught)} to be caught (${odds.caught} ‰): ${n.name}’s counter-intelligence is ${counterWord(counter)}.${friend ? ' The region rolls the dice when the agent gets there.' : ''}`
               : 'The region decides how a mission to a friend’s city goes.'}
           </p>
           {why && (
@@ -202,7 +223,9 @@ export function Intelligence() {
               <span class="muted">
                 {m.state === 'out'
                   ? `arrives in ${warHours(m.arrive - i.clock)}`
-                  : `${m.outcome === 'success' ? 'done' : 'came away empty'}, home in ${warHours(m.home - i.clock)}`}
+                  : m.state === 'arrived'
+                    ? 'there, waiting for the region’s word'
+                    : `${m.outcome === 'success' ? 'done' : 'came away empty'}, home in ${warHours(m.home - i.clock)}`}
               </span>
             </p>
           ))}
@@ -228,6 +251,45 @@ export function Intelligence() {
                     {r.tech ?? 0} of 4. Forces there fight readier, and its raids are seen sooner.
                   </p>
                 )}
+              </div>
+            );
+          })}
+        </section>
+      )}
+      {Object.keys(i.seen ?? {}).length > 0 && (
+        <section data-testid="intel-seen">
+          <h4>Friends looked round</h4>
+          {Object.entries(i.seen).map(([slot, d]) => {
+            const units = Object.entries(d.forces).filter(([, k]) => (k ?? 0) > 0);
+            const defences = Object.entries(d.defences).filter(([, k]) => k > 0);
+            return (
+              <div key={slot} class="dip-neighbour" data-testid={`seen-${slot}`}>
+                <p>
+                  <strong>
+                    {game.world.stats.region.neighbours.find((x) => x.player?.slot === Number(slot))?.name ??
+                      'A friend'}
+                  </strong>{' '}
+                  <small class="muted">good for {warHours(d.until - i.clock)} more</small>
+                </p>
+                <p class="muted">
+                  Forces:{' '}
+                  {units.length
+                    ? units
+                        .map(([k, v]) => `${v} ${UNIT.get(k as UnitKind)?.name.toLowerCase() ?? k}`)
+                        .join(', ')
+                    : 'none'}
+                  . Defences:{' '}
+                  {defences.length
+                    ? defences.map(([k, v]) => `${v} ${CIVIC.get(k)?.name.toLowerCase() ?? k}`).join(', ')
+                    : 'none'}
+                  .
+                </p>
+                <p class="muted">
+                  Research:{' '}
+                  {BRANCHES.map((b, k) => `${b.name.toLowerCase()} ${d.tiers[k] ?? 0}/4`).join(' · ')}
+                  {d.supers.length ? ` · superweapons: ${d.supers.map(superName).join(', ')}` : ''}
+                  {d.dome !== undefined ? ` · dome ${Math.floor(d.dome * 100)} % charged` : ''}
+                </p>
               </div>
             );
           })}

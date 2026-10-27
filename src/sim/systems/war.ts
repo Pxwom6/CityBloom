@@ -38,6 +38,7 @@ import {
 import { accrue, book, fundingPct } from './economy';
 import { supersHour, supersSummary, type Supers, type SupersSummary } from './supers';
 import { depotSabotaged, intelHour, intelSummary, type Intel, type IntelSummary } from './intel';
+import { clockHeld } from './regionOps';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
   diplomacySummary,
@@ -154,6 +155,13 @@ export interface WarState {
   blackout?: { by: number; from: number; until: number };
   /** Spies (M37): the city's missions and what they found, and spies of theirs; absent until the first. */
   intel?: Intel;
+  /**
+   * The fair clock (M37, design call 15): in a city bound to a region with war on, the war clock
+   * holds at this hour (the region's fair clock and a bank of two game days); absent in a city of
+   * its own. `heldNote`: the tick the city was last told it's ahead.
+   */
+  clockCap?: number;
+  heldNote?: number;
 }
 
 export function initialWar(seed: string): WarState {
@@ -437,8 +445,16 @@ export function readinessTarget(sim: Sim): number {
  * target and the stores fill from the city's own industry, mines and wells.
  */
 export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
-  const w = sim.state.war;
-  if (!w) return;
+  if (!sim.state.war) return;
+  // The fair clock (M37): a city ahead of its region's holds its war clock, and everything that runs
+  // on it, at the cap; readiness, the stores and upkeep go on.
+  if (!clockHeld(sim)) warClockHour(sim);
+  warSupplyHour(sim, extraction);
+}
+
+/** The war clock's hour: training, research and trials, superweapons, spies, cooldowns. */
+function warClockHour(sim: Sim): void {
+  const w = sim.state.war!;
   const step = 1;
   w.clock += step;
   // Training: each base works on its oldest order.
@@ -475,6 +491,11 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
       sim.events.push({ kind: 'superReady', id: u.id, info: { kind: u.kind } });
       sim.warChanged();
     }
+}
+
+/** Readiness and the stores, every hour whatever the war clock does. */
+function warSupplyHour(sim: Sim, extraction: (c: Civic) => number): void {
+  const w = sim.state.war!;
   // Readiness.
   const target = readinessTarget(sim);
   const d = WAR.readinessPerDay / HOURS_PER_DAY;

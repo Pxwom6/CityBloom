@@ -115,6 +115,19 @@ const SAMPLES: Record<CommandType, Command> = {
   setDome: { type: 'setDome', mode: 'super' },
   useBlackout: { type: 'useBlackout', neighbour: 2, breakPact: true },
   spyMission: { type: 'spyMission', neighbour: 2, op: 'steal', branch: 'air', breakPact: true },
+  // M37, between friends (page only).
+  spySettling: { type: 'spySettling', mission: 9, on: true },
+  missionResult: { type: 'missionResult', mission: 9, outcome: 'success', stole: 'air2' },
+  opResolve: {
+    type: 'opResolve',
+    from: 2,
+    id: 'op-1a2b3c4d-9',
+    op: 'sabotage',
+    outcome: 'success',
+    target: 'power',
+    late: false,
+  },
+  warClock: { type: 'warClock', cap: 120 },
 };
 
 /** Values a field might carry instead of what it should. */

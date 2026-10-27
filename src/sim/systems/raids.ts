@@ -44,7 +44,8 @@ import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
 import { researchEffect, researchMods } from './research';
-import { lowerDome, raiseDome, rivalBlackedOut } from './supers';
+import { blackedOut, lowerDome, raiseDome, rivalBlackedOut } from './supers';
+import { SUPER_UNCOUNTED, battleHasSuper } from './regionOps';
 import { powerSabotaged, revealed, rivalKnows } from './intel';
 import { INTEL } from '../../data/intel';
 import { RESEARCH } from '../../data/research';
@@ -152,6 +153,8 @@ export function cityStrength(sim: Sim): number {
  * (M37) makes each radar's warning and the most they give longer.
  */
 export function warningHours(sim: Sim): number {
+  // Blacked out by a friend's tower (M37): the radars are dark.
+  if (blackedOut(sim)) return WARNING.base;
   let radars = 0;
   for (const c of militaryCivics(sim))
     if (militaryOf(c)!.radar && civicOnline(c) && (c.staff ?? 0) >= 0.25 && (c.powered ?? 0) >= 0.5) radars++;
@@ -439,6 +442,8 @@ export function resolveBattle(
   replay?: string,
   from?: number,
   away = false,
+  /** The region flagged it as bringing a superweapon, and counted it so (M37). */
+  counted = false,
 ): CommandResult {
   const s = sim.state;
   const w = s.war;
@@ -453,6 +458,9 @@ export function resolveBattle(
   // (shields, the day's raids) the region room has decided already, as both cities' pages heard.
   const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
   if (from !== undefined && !friend) return fail('That raid came from a city this one doesn’t know');
+  // A friend's battle bringing a superweapon counts only as the region counted it (M37): one it
+  // didn't flag takes nothing here (a forged page could otherwise dodge the day's superweapon).
+  if (from !== undefined && !counted && battleHasSuper(input)) return fail(SUPER_UNCOUNTED);
   if (dryRun) return ok(0);
   // Only what really stands here, at home, takes the battle's damage; the caps are this city's, and
   // half them for a raid that came while the player was away.
@@ -515,7 +523,7 @@ export function resolveBattle(
 export const BATTLE_BUSY = 'A battle is on in the city already';
 /** Why a battle from outside is turned away for good: the city took it already. */
 export const BATTLE_TAKEN = 'The city has taken that battle already';
-const BATTLE_TAKEN_KEEP = 32;
+export const BATTLE_TAKEN_KEEP = 32;
 
 /**
  * A battle fought on a picture of this city made elsewhere (a friend's page, from the region's save

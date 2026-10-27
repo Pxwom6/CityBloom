@@ -15,7 +15,17 @@
  */
 import type { RegionReport } from '../src/sim/systems/region';
 import { DEAL_RESOURCES, NEIGHBOUR_KINDS } from '../src/data/region';
-import { PEACE_RULES, cleanWarRules, sameWarRules, warRulesText, type RegionWarRules } from '../src/data/war';
+import {
+  PEACE_RULES,
+  UNIT,
+  cleanWarRules,
+  sameWarRules,
+  warRulesText,
+  type RegionWarRules,
+  type UnitKind,
+} from '../src/data/war';
+import { SPY_OPS, spyOdds, spyOutcome, type SabotageTarget, type SpyOp } from '../src/data/intel';
+import { BRANCHES, BRANCH_IDS, cleanTiers, type Branch, type TierKey } from '../src/data/research';
 import {
   MAX_SNAPSHOT_PARTS,
   PLAYER_COLORS,
@@ -24,6 +34,7 @@ import {
   cleanCityName,
   cleanName,
   makeSecret,
+  secureIndex,
 } from './protocol';
 import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from './limits';
 import type { RoomEnv } from './room';
@@ -36,6 +47,21 @@ const SEEN_KEEP = 24;
 /** Battles kept for a city at most (M35), and the parts one may come in. */
 export const MAX_PENDING_BATTLES = 8;
 const MAX_BATTLE_PARTS = 8;
+/** Operations kept for a city at most (M37), apart from its battles, and verdicts a sender's kept. */
+export const MAX_PENDING_OPS = 8;
+const VERDICTS_KEEP = 24;
+/**
+ * The fair clock (M37, design call 15): a city's war clock may run at most this far ahead of the
+ * hours the region has seen it play at 1× (a game hour is 7.5 s), and a report adds at most two
+ * minutes' worth however long since the last.
+ */
+export const FAIR = { msPerHour: 7_500, gapMax: 120_000, bank: 48 };
+
+/** What a friend's spy or the blackout tower does in another city of the region (M37). */
+export type RegionOp = SpyOp | 'blackout';
+export const REGION_OPS: readonly RegionOp[] = [...SPY_OPS, 'blackout'];
+export type OpOutcome = 'success' | 'failed' | 'caught';
+
 /** The region project: what it costs all told, and the power it gives its contributors (MW). */
 export const REGION_PROJECT = { name: 'Sunfield Commons', goal: 600_000, power: 1_600 };
 /** The biggest small picture of a city we keep (characters of a data URL). */
@@ -57,6 +83,14 @@ export interface RegionCityView {
   raidsLeft?: number;
   /** Cities that raided it lately (M36): it may answer them even as a newcomer. */
   raidedBy?: number[];
+  /**
+   * Where war is allowed (M37): spies it may still take today (UTC), and superweapons (a blackout or
+   * a superweapon's battle; each is also one of its raids).
+   */
+  opsLeft?: number;
+  supersLeft?: number;
+  /** Its fair clock (M37): the war-clock hours the region has seen it play at 1×. */
+  fair?: number;
 }
 
 export interface RegionProjectView {
@@ -116,11 +150,25 @@ export type RegionClientMsg =
       data: string;
       /** Fought at half strength, as against a player who isn't here (M36). */
       away?: boolean;
+      /**
+       * It brings a superweapon (M37): set by the sender's page from the battle itself, counted in
+       * the target's day and passed on (a target's sim takes nothing from an unflagged one).
+       */
+      super?: true;
     }
   /** `from`: the battle's sender (M36: two cities' battles may share an id). */
   | { t: 'battleSeen'; id: string; from?: number }
-  /** A force set off against another city of the region (M35): it's told, if its player is here. */
-  | { t: 'forceOut'; to: number; units: number; hours: number };
+  /**
+   * A force set off against another city of the region (M35): it's told, if its player is here; what
+   * superweapon it brings, and whether it comes through the express gate (M37).
+   */
+  | { t: 'forceOut'; to: number; units: number; hours: number; super?: UnitKind; gate?: true }
+  /**
+   * An operation against another city of the region (M37): a spy's look, sabotage or theft, or the
+   * blackout tower. The region decides it, and keeps it for its target until seen.
+   */
+  | { t: 'op'; to: number; id: string; op: RegionOp; target?: SabotageTarget; branch?: Branch }
+  | { t: 'opSeen'; id: string; from: number };
 
 export type RegionRoomMsg =
   | { t: 'rwelcome'; slot: number; secret: string; region: RegionView }
@@ -139,6 +187,8 @@ export type RegionRoomMsg =
       data: string;
       late: boolean;
       away?: boolean;
+      /** It brings a superweapon, and the region counted it so (M37). */
+      super?: true;
     }
   /** The region keeps the battle a city sent until its target has seen it (M35). */
   | { t: 'battleKept'; id: string }
@@ -150,7 +200,26 @@ export type RegionRoomMsg =
    */
   | { t: 'battleRefused'; id: string; reason: string; again?: boolean; later?: number }
   /** Another city's force is on its way to this one (M35): `hours` of the sender's game time. */
-  | { t: 'incoming'; from: number; units: number; hours: number }
+  | { t: 'incoming'; from: number; units: number; hours: number; super?: UnitKind; gate?: true }
+  /**
+   * The region's verdict on an operation this city sent (M37): kept (its outcome, and the tier whose
+   * points a theft took), or turned away (`later`: not now, the region's pace; ask again then).
+   */
+  | { t: 'opKept'; id: string; outcome: OpOutcome; stole?: TierKey }
+  | { t: 'opRefused'; id: string; reason: string; later?: number }
+  /**
+   * An operation against this city (M37), as the region decided it; `late`: kept while its player
+   * was away (or left before seeing it): it brings only a notice.
+   */
+  | {
+      t: 'opOn';
+      from: number;
+      id: string;
+      op: RegionOp;
+      outcome: OpOutcome;
+      target?: SabotageTarget;
+      late: boolean;
+    }
   | { t: 'notice'; text: string }
   | {
       t: 'error';
@@ -159,6 +228,14 @@ export type RegionRoomMsg =
         'version' | 'no-region' | 'full' | 'exists' | 'bad-message' | 'no-save' | 'rate' | 'limit' | 'closed';
       text: string;
     };
+
+/**
+ * A region's surroundings: a room's clock and timers, and (M37) the dice it rolls friends' spies
+ * with, a whole number in [0, 1000): `crypto.getRandomValues` unless a test fixes it.
+ */
+export interface RegionEnv extends RoomEnv {
+  roll?(): number;
+}
 
 export interface RegionConn {
   send(m: RegionRoomMsg): void;
@@ -185,13 +262,25 @@ interface City {
    * Battles fought against it that it hasn't seen yet (M35): id, attacker, when, store row, and
    * whether its player was away when it came (M36).
    */
-  pending?: { id: string; from: number; at: number; k: number; away?: boolean }[];
+  pending?: { id: string; from: number; at: number; k: number; away?: boolean; super?: true }[];
   /** Raids it took on a UTC day (M36): the day's number and how many. */
   raids?: { day: number; n: number };
   /** When each other city last raided it (ms, M36): a newcomer may answer those. */
   raidedBy?: Record<number, number>;
   /** Battles it has seen lately (M36, `sender slot:id`): one sent again isn't counted again. */
   seen?: string[];
+  /**
+   * Operations against it it hasn't seen yet (M37), kept in the region's record (no rows of their
+   * own): the sender, what, the region's verdict, and when.
+   */
+  ops?: { id: string; from: number; op: RegionOp; outcome: OpOutcome; target?: SabotageTarget; at: number }[];
+  /** Spies it took on a UTC day (saboteurs among them), and superweapons (M37). */
+  spied?: { day: number; n: number; sabotage: number };
+  supers?: { day: number; n: number };
+  /** The region's verdicts on its own last operations (M37): one sent again gets the same answer. */
+  verdicts?: { id: string; to: number; op: RegionOp; outcome: OpOutcome; stole?: TierKey }[];
+  /** Its fair clock (M37): war-clock hours at 1× while its player is here, and when last moved (ms). */
+  fair?: { hours: number; at: number };
 }
 
 export interface RegionMeta {
@@ -282,6 +371,16 @@ export interface RegionLimits {
   battleBurst: number;
   /** Raids a city may take in a UTC day, from all the others together (M36). */
   raidsPerDay: number;
+  /**
+   * M37: spies a city may take in a UTC day (saboteurs among them), and superweapons (blackouts and
+   * superweapons' battles, each one of its raids too); each sender's operations, one every so often
+   * (ms) with a few at once.
+   */
+  opsPerDay: number;
+  sabotagePerDay: number;
+  supersPerDay: number;
+  opEvery: number;
+  opBurst: number;
   /** Rows the region may write in a UTC day. */
   dailyRows: number;
   /** How long a region nobody comes back to is kept (ms). */
@@ -302,6 +401,11 @@ export const REGION_LIMITS: RegionLimits = {
   battleEvery: 5 * 60_000,
   battleBurst: 3,
   raidsPerDay: 3,
+  opsPerDay: 4,
+  sabotagePerDay: 1,
+  supersPerDay: 1,
+  opEvery: 2 * 60_000,
+  opBurst: 3,
   dailyRows: 3000,
   ttl: 60 * DAY_MS,
   maxConns: 16,
@@ -323,8 +427,14 @@ interface ConnState {
   lastUsed?: boolean;
 }
 
+/** A small count in words, as the region's refusals say it. */
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const count = (n: number) => WORDS[n] ?? String(n);
+
 const finite = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+const wholeIn = (v: unknown, lo: number, hi: number): v is number => finite(v, lo, hi) && Number.isInteger(v);
+const ID = /^[\w-]{1,40}$/;
 
 /** A city's report, checked for shape and bounds (the cities are friends', but a bug shouldn't spread). */
 function cleanReport(r: unknown): RegionReport | null {
@@ -345,6 +455,11 @@ function cleanReport(r: unknown): RegionReport | null {
       !finite(d.amount, 0, 1e7)
     )
       return null;
+  // War (M37): optional, but checked when there.
+  if (o.tiers !== undefined && !cleanTiers(o.tiers)) return null;
+  if (o.counter !== undefined && !wholeIn(o.counter, 0, 1000)) return null;
+  if (o.coast !== undefined && o.coast !== true) return null;
+  if (o.clock !== undefined && !wholeIn(o.clock, 0, 1e9)) return null;
   return {
     population: o.population as number,
     kind: o.kind as RegionReport['kind'],
@@ -358,6 +473,11 @@ function cleanReport(r: unknown): RegionReport | null {
     deals: (o.deals as RegionReport['deals']).map((d) => ({ ...d })),
     projectBuilt: o.projectBuilt === true,
     ...(o.shield === 'new' || o.shield === 'neutral' ? { shield: o.shield } : {}),
+    // War (M37): research tiers, counter-intelligence, a coast, the war clock.
+    ...(o.tiers !== undefined ? { tiers: [...(o.tiers as number[])] } : {}),
+    ...(o.counter !== undefined ? { counter: o.counter as number } : {}),
+    ...(o.coast === true ? { coast: true as const } : {}),
+    ...(o.clock !== undefined ? { clock: o.clock as number } : {}),
   };
 }
 
@@ -454,19 +574,44 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         parts: m.parts as number,
         data: m.data,
         ...(m.away === true ? { away: true } : {}),
+        ...(m.super === true ? { super: true as const } : {}),
       };
     case 'battleSeen':
       return typeof m.id === 'string' && /^[\w-]{1,40}$/.test(m.id)
         ? { t: 'battleSeen', id: m.id, ...(finite(m.from, 1, 64) ? { from: m.from as number } : {}) }
         : null;
     case 'forceOut':
+      if (m.super !== undefined && !UNIT.get(m.super as UnitKind)?.super) return null;
       return finite(m.to, 1, 64) && finite(m.units, 1, 24) && finite(m.hours, 0, 72)
         ? {
             t: 'forceOut',
             to: m.to as number,
             units: Math.round(m.units as number),
             hours: m.hours as number,
+            ...(m.super !== undefined ? { super: m.super as UnitKind } : {}),
+            ...(m.gate === true ? { gate: true as const } : {}),
           }
+        : null;
+    case 'op': {
+      if (!wholeIn(m.to, 1, 64) || typeof m.id !== 'string' || !ID.test(m.id)) return null;
+      if (!REGION_OPS.includes(m.op as RegionOp)) return null;
+      const op = m.op as RegionOp;
+      // A saboteur's target, and a thief's branch: each only with its operation.
+      if (op === 'sabotage' ? m.target !== 'power' && m.target !== 'depot' : m.target !== undefined)
+        return null;
+      if (op === 'steal' ? !BRANCH_IDS.includes(m.branch as Branch) : m.branch !== undefined) return null;
+      return {
+        t: 'op',
+        to: m.to,
+        id: m.id,
+        op,
+        ...(op === 'sabotage' ? { target: m.target as SabotageTarget } : {}),
+        ...(op === 'steal' ? { branch: m.branch as Branch } : {}),
+      };
+    }
+    case 'opSeen':
+      return typeof m.id === 'string' && ID.test(m.id) && wholeIn(m.from, 1, 64)
+        ? { t: 'opSeen', id: m.id, from: m.from }
         : null;
     default:
       return null;
@@ -484,6 +629,8 @@ export class RegionRoom {
   /** Each city's allowance of writes, and of battles sent (M35). */
   private writes = new Map<number, TokenBucket>();
   private battles = new Map<number, TokenBucket>();
+  /** Each city's allowance of operations sent (M37). */
+  private opsSent = new Map<number, TokenBucket>();
   /** Changes not yet written, and the timer that will write them. */
   private dirty = false;
   private saveTimer: (() => void) | null = null;
@@ -497,7 +644,7 @@ export class RegionRoom {
     readonly code: string,
     readonly kind: RegionView['kind'],
     private readonly store: RegionStore,
-    private readonly env: RoomEnv,
+    private readonly env: RegionEnv,
     limits: Partial<RegionLimits> = {},
   ) {
     this.limits = { ...REGION_LIMITS, ...limits };
@@ -614,6 +761,22 @@ export class RegionRoom {
     return b;
   }
 
+  private opsOf(slot: number): TokenBucket {
+    let b = this.opsSent.get(slot);
+    if (!b)
+      this.opsSent.set(
+        slot,
+        (b = new TokenBucket(1000 / this.limits.opEvery, this.limits.opBurst, this.env.now())),
+      );
+    return b;
+  }
+
+  /** The region's dice for a friend's spy (M37): 0–999, from the platform's cryptographic source. */
+  private roll(): number {
+    const r = this.env.roll?.() ?? secureIndex(1000);
+    return Math.max(0, Math.min(999, Math.floor(r)));
+  }
+
   private writesOf(slot: number): TokenBucket {
     let b = this.writes.get(slot);
     if (!b)
@@ -664,7 +827,15 @@ export class RegionRoom {
         thumb: c.thumb,
         quietFor: Math.max(0, now - c.heard),
         visitable: !!c.saved,
-        ...(m.rules?.war ? { raidsLeft: this.raidsLeft(c, now), raidedBy: this.raidedBy(c, now) } : {}),
+        ...(m.rules?.war
+          ? {
+              raidsLeft: this.raidsLeft(c, now),
+              raidedBy: this.raidedBy(c, now),
+              opsLeft: this.opsLeft(c, now),
+              supersLeft: this.supersLeft(c, now),
+            }
+          : {}),
+        ...(c.fair ? { fair: c.fair.hours } : {}),
       })),
       project: {
         name: REGION_PROJECT.name,
@@ -713,6 +884,91 @@ export class RegionRoom {
   private raidsLeft(c: City, now: number): number {
     const day = Math.floor(now / DAY_MS);
     return Math.max(0, this.limits.raidsPerDay - (c.raids?.day === day ? c.raids.n : 0));
+  }
+
+  /** Spies a city may still take today (UTC; M37). */
+  private opsLeft(c: City, now: number): number {
+    const day = Math.floor(now / DAY_MS);
+    return Math.max(0, this.limits.opsPerDay - (c.spied?.day === day ? c.spied.n : 0));
+  }
+
+  /** Superweapons a city may still take today (UTC; M37): blackouts and superweapons' battles. */
+  private supersLeft(c: City, now: number): number {
+    const day = Math.floor(now / DAY_MS);
+    return Math.max(0, this.limits.supersPerDay - (c.supers?.day === day ? c.supers.n : 0));
+  }
+
+  /** A superweapon taken (M37): counted in the city's day. */
+  private countSuper(c: City, now: number): void {
+    const day = Math.floor(now / DAY_MS);
+    c.supers = { day, n: (c.supers?.day === day ? c.supers.n : 0) + 1 };
+  }
+
+  /**
+   * Why a battle bringing a superweapon may not stand now (M37), beyond a raid's own checks: the
+   * region's rules, its target's player here (with no half-strength fight again: superweapons wait
+   * for them), and the target's superweapon for the day.
+   */
+  private superRefusal(target: City, now: number): string | null {
+    if (!this.meta?.rules?.supers) return 'The region’s rules turn superweapons off';
+    if (!this.online(target.slot)) return `${target.name}’s player isn’t here: superweapons wait for them`;
+    if (this.supersLeft(target, now) <= 0)
+      return `${target.name} has taken a superweapon today: no more until midnight (UTC)`;
+    return null;
+  }
+
+  /**
+   * Why an operation may not stand now (M37, design call 14), in plain words: war on (and
+   * superweapons for a blackout); a neutral sender or target only looks; a newcomer target takes
+   * looks and thefts only, unless it struck the sender first; saboteurs and blackouts need the
+   * target's player here; the day's spies, saboteur, superweapon and raids; operations waiting; a
+   * theft needs a target further on in that branch.
+   */
+  private opRefusal(
+    from: City,
+    target: City | undefined,
+    m: Extract<RegionClientMsg, { t: 'op' }>,
+    now: number,
+  ): string | null {
+    const rules = this.meta?.rules;
+    if (!rules?.war) return 'War is off in this region';
+    if (!target || target.slot === from.slot) return 'That city isn’t in the region';
+    if (m.op === 'blackout' && !rules.supers) return 'The region’s rules turn superweapons off';
+    if (!from.report?.tiers || !target.report?.tiers) return `${target.name} isn’t in the region’s war yet`;
+    if (m.op !== 'reveal' && from.report.shield === 'neutral')
+      return `${from.name} is neutral: its spies only look`;
+    if (m.op !== 'reveal' && target.report.shield === 'neutral')
+      return `${target.name} is neutral: spies may only look there`;
+    const harm = m.op === 'sabotage' || m.op === 'blackout';
+    if (harm && target.report.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
+      return `${target.name} is too young or small for that, unless it strikes first`;
+    if (harm && !this.online(target.slot))
+      return m.op === 'blackout'
+        ? `${target.name}’s player isn’t here: superweapons wait for them`
+        : `${target.name}’s player isn’t here: saboteurs wait for them`;
+    if ((target.ops?.length ?? 0) >= MAX_PENDING_OPS)
+      return `${target.name} has ${MAX_PENDING_OPS} operations waiting for its player: no more until it takes them`;
+    if (m.op === 'steal') {
+      const b = BRANCH_IDS.indexOf(m.branch!);
+      if (!(target.report.tiers[b]! > from.report.tiers[b]!))
+        return `${target.name} is no further than you in ${BRANCHES[b]!.name} research`;
+    }
+    if (m.op === 'blackout') {
+      if (this.supersLeft(target, now) <= 0)
+        return `${target.name} has taken a superweapon today: no more until midnight (UTC)`;
+      if (this.raidsLeft(target, now) <= 0)
+        return `${target.name} has been raided ${this.limits.raidsPerDay} times today: the region allows no more until midnight (UTC)`;
+      return null;
+    }
+    if (this.opsLeft(target, now) <= 0)
+      return `${target.name} has had ${count(this.limits.opsPerDay)} spies today: no more until midnight (UTC)`;
+    const day = Math.floor(now / DAY_MS);
+    if (
+      m.op === 'sabotage' &&
+      (target.spied?.day === day ? target.spied.sabotage : 0) >= this.limits.sabotagePerDay
+    )
+      return `${target.name} has had a saboteur today: no more until midnight (UTC)`;
+    return null;
   }
 
   private broadcast(): void {
@@ -781,17 +1037,29 @@ export class RegionRoom {
             c.report?.projectBuilt,
             c.report?.shield,
           ]);
-        const before = JSON.stringify([city.report, city.thumb]);
+        // The fair clock (M37) is kept with the rest of what changes now and then.
+        const kept = () => JSON.stringify([city.report, city.thumb, city.fair?.hours]);
+        const before = kept();
         const was = matters(city);
         city.name = m.city;
         city.report = m.report;
+        // The fair clock (M37): started at the city's war clock, then moved on at 1× for the time
+        // since the last report (two minutes at most: a city away isn't playing here), written with
+        // the rest now and then.
+        if (m.report.clock !== undefined) {
+          if (!city.fair) city.fair = { hours: m.report.clock, at: now };
+          else {
+            const gain = Math.min(Math.max(0, now - city.fair.at), FAIR.gapMax) / FAIR.msPerHour;
+            city.fair = { hours: Math.round((city.fair.hours + gain) * 1000) / 1000, at: now };
+          }
+        }
         if (m.thumb) city.thumb = m.thumb;
         const p = this.meta.project;
         const built = m.report.projectBuilt && p.host === slot && !p.built;
         if (built) p.built = true;
         this.broadcast();
         if (built || matters(city) !== was) this.changed(slot);
-        else if (JSON.stringify([city.report, city.thumb]) !== before) {
+        else if (kept() !== before) {
           this.dirty = true;
           if (now - this.lastSaved >= this.limits.keepEvery) this.save();
         }
@@ -868,8 +1136,10 @@ export class RegionRoom {
         this.battleIn.delete(key);
         // The region decides whether it stands (M36): the target's shield, the sender's right to
         // answer a newcomer that raided it, and the day's raids. The sender's city hasn't taken the
-        // result yet, so a refusal leaves both cities as they were.
-        const why = this.raidRefusal(city, target, now);
+        // result yet, so a refusal leaves both cities as they were. One bringing a superweapon (M37)
+        // needs the region's rules, its target's player here (no half-strength fight again) and the
+        // target's superweapon for the day.
+        const why = this.raidRefusal(city, target, now) ?? (m.super ? this.superRefusal(target, now) : null);
         if (why) return conn.send({ t: 'battleRefused', id: m.id, reason: why });
         // Fought as against a player who is here, but the player has gone: fought again at half.
         const away = !this.online(target.slot);
@@ -893,6 +1163,9 @@ export class RegionRoom {
         const day = Math.floor(now / DAY_MS);
         target.raids = { day, n: (target.raids?.day === day ? target.raids.n : 0) + 1 };
         target.raidedBy = { ...(target.raidedBy ?? {}), [slot]: now };
+        // A superweapon's battle is also the target's superweapon for the day (M37).
+        const sup = m.super === true;
+        if (sup) this.countSuper(target, now);
         // Eight at most (more are turned away above, so every battle kept is one its target takes).
         const pending = (target.pending ??= []);
         let k = 0;
@@ -901,7 +1174,14 @@ export class RegionRoom {
         this.store.saveBattle(target.slot, k, parts);
         // As the sender fought it: at half strength when it said so (always when the player is away).
         const half = m.away === true;
-        pending.push({ id: m.id, from: slot, at: now, k, ...(half ? { away: true } : {}) });
+        pending.push({
+          id: m.id,
+          from: slot,
+          at: now,
+          k,
+          ...(half ? { away: true } : {}),
+          ...(sup ? { super: true as const } : {}),
+        });
         this.save();
         conn.send({ t: 'battleKept', id: m.id });
         this.broadcast();
@@ -918,6 +1198,7 @@ export class RegionRoom {
                 data,
                 late: false,
                 away: half,
+                ...(sup ? { super: true as const } : {}),
               }),
             );
         return;
@@ -936,10 +1217,31 @@ export class RegionRoom {
         return;
       }
       case 'forceOut': {
-        // Its target's player hears of it, if they're here (where war is allowed).
+        // Its target's player hears of it, if they're here (where war is allowed): with the
+        // superweapon it brings and whether it comes through the gate (M37).
         if (!this.meta.rules?.war || m.to === slot) return;
         for (const [c, s] of this.conns)
-          if (s.slot === m.to) c.send({ t: 'incoming', from: slot, units: m.units, hours: m.hours });
+          if (s.slot === m.to)
+            c.send({
+              t: 'incoming',
+              from: slot,
+              units: m.units,
+              hours: m.hours,
+              ...(m.super ? { super: m.super } : {}),
+              ...(m.gate ? { gate: true as const } : {}),
+            });
+        return;
+      }
+      case 'op':
+        return this.op(conn, city, m, now);
+      case 'opSeen': {
+        const ops = city.ops;
+        const i = ops?.findIndex((o) => o.id === m.id && o.from === m.from) ?? -1;
+        if (i < 0) return;
+        ops!.splice(i, 1);
+        if (!ops!.length) delete city.ops;
+        // Put together with what follows: an operation offered again is known to the city already.
+        this.changed(slot);
         return;
       }
       case 'save': {
@@ -1037,6 +1339,8 @@ export class RegionRoom {
     if (write === 'new') this.save();
     else if (write === 'changed') this.changed(city.slot);
     conn.send({ t: 'rwelcome', slot: city.slot, secret: city.secret, region: this.view() });
+    // Its fair clock carries on from now (M37): the time away isn't play.
+    if (city.fair) city.fair = { ...city.fair, at: now };
     // Battles fought against it while it was away (M35), oldest first.
     for (const p of city.pending ?? []) {
       const parts = this.store.loadBattle(city.slot, p.k);
@@ -1051,9 +1355,110 @@ export class RegionRoom {
             data,
             late: true,
             away: p.away === true,
+            ...(p.super ? { super: true as const } : {}),
           }),
         );
     }
+    // Operations against it it hasn't seen (M37): late, so they bring only a notice.
+    for (const o of city.ops ?? []) conn.send(opOn(o, true));
     this.broadcast();
   }
+
+  /**
+   * An operation against another city of the region (M37): the region decides whether it stands,
+   * rolls its outcome with its own dice, remembers its verdict (an operation sent again gets the
+   * same answer), counts it in the target's day and keeps it for the target until seen.
+   */
+  private op(conn: RegionConn, from: City, m: Extract<RegionClientMsg, { t: 'op' }>, now: number): void {
+    const meta = this.meta!;
+    // Sent again (its answer was lost): the same answer, whatever has changed since.
+    const known = from.verdicts?.find((v) => v.id === m.id);
+    if (known) {
+      if (known.to !== m.to || known.op !== m.op)
+        return conn.send({ t: 'opRefused', id: m.id, reason: 'The region decided that operation already' });
+      return conn.send({
+        t: 'opKept',
+        id: m.id,
+        outcome: known.outcome,
+        ...(known.stole ? { stole: known.stole } : {}),
+      });
+    }
+    const target = meta.cities.find((c) => c.slot === m.to);
+    const why = this.opRefusal(from, target, m, now);
+    if (why) return conn.send({ t: 'opRefused', id: m.id, reason: why });
+    if (this.budget.over(now))
+      return conn.send({ t: 'opRefused', id: m.id, reason: dailyLimitText('region') });
+    // A few at once, then one every couple of minutes (asked again later).
+    if (!this.opsOf(from.slot).take(now))
+      return conn.send({
+        t: 'opRefused',
+        id: m.id,
+        reason: 'The region takes a few operations at a time',
+        later: this.limits.opEvery,
+      });
+    const to = target!;
+    const tiers = from.report!.tiers!;
+    // The verdict: a spy rolled against the target's counter-intelligence, as the sim does a
+    // computer neighbour's (the same whole-number odds); a blackout always lands.
+    let outcome: OpOutcome = 'success';
+    let stole: TierKey | undefined;
+    if (m.op !== 'blackout') {
+      const intel = tiers[BRANCH_IDS.indexOf('intel')]!;
+      outcome = spyOutcome(this.roll(), spyOdds(m.op, intel, to.report!.counter ?? 0, false, intel >= 3));
+      if (outcome === 'success' && m.op === 'steal') {
+        const b = BRANCH_IDS.indexOf(m.branch!);
+        stole = `${m.branch!}${Math.min(4, tiers[b]! + 1)}` as TierKey;
+      }
+    }
+    // Counted in the target's day: spies (saboteurs among them), or a superweapon and a raid.
+    const day = Math.floor(now / DAY_MS);
+    if (m.op === 'blackout') {
+      this.countSuper(to, now);
+      to.raids = { day, n: (to.raids?.day === day ? to.raids.n : 0) + 1 };
+    } else {
+      const was = to.spied?.day === day ? to.spied : { day, n: 0, sabotage: 0 };
+      to.spied = { day, n: was.n + 1, sabotage: was.sabotage + (m.op === 'sabotage' ? 1 : 0) };
+    }
+    // A strike the target knows of (a spy caught, a saboteur's work, a blackout) lets it answer.
+    if (outcome === 'caught' || (outcome === 'success' && (m.op === 'sabotage' || m.op === 'blackout')))
+      to.raidedBy = { ...(to.raidedBy ?? {}), [from.slot]: now };
+    from.verdicts = [
+      ...(from.verdicts ?? []),
+      { id: m.id, to: to.slot, op: m.op, outcome, ...(stole ? { stole } : {}) },
+    ].slice(-VERDICTS_KEEP);
+    // Kept for the target only when it does something there (a quiet failure leaves no trace).
+    const kept =
+      outcome === 'failed'
+        ? null
+        : {
+            id: m.id,
+            from: from.slot,
+            op: m.op,
+            outcome,
+            ...(m.op === 'sabotage' ? { target: m.target! } : {}),
+            at: now,
+          };
+    if (kept) (to.ops ??= []).push(kept);
+    this.save();
+    conn.send({ t: 'opKept', id: m.id, outcome, ...(stole ? { stole } : {}) });
+    if (outcome === 'caught')
+      for (const c of this.conns.keys())
+        c.send({ t: 'notice', text: `A spy from ${from.name} was caught in ${to.name}` });
+    this.broadcast();
+    // The target playing now hears of it at once (kept until it says it has seen it).
+    if (kept) for (const [c, st] of this.conns) if (st.slot === to.slot) c.send(opOn(kept, false));
+  }
+}
+
+/** An operation as its target hears of it (M37). */
+function opOn(o: NonNullable<City['ops']>[number], late: boolean): RegionRoomMsg {
+  return {
+    t: 'opOn',
+    from: o.from,
+    id: o.id,
+    op: o.op,
+    outcome: o.outcome,
+    ...(o.target ? { target: o.target } : {}),
+    late,
+  };
 }

@@ -1,5 +1,6 @@
 import { CIVIC, UTILITIES, UTILITY_USE, type Utility } from '../../data/civic';
 import { CLIMATES, WEATHER } from '../../data/climate';
+import { BLACKOUT } from '../../data/research';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { ZONE_C, ZONE_R } from '../../data/zones';
 import type { Sim } from '../sim';
@@ -67,7 +68,19 @@ export function civicOutput(sim: Sim, c: Civic, u: Utility, sky?: PowerSky): num
     out *= sky ? sky.solar : solarShare(sim.state.weather, sim.state.tick);
   if (u === 'power' && def.id === 'wind' && (sky ? sky.storm : sim.state.weather.kind === 'storm'))
     out *= WEATHER.windStorm;
+  // Blacked out by a friend's tower (M37): the city's plants falter today (a forecast counts on none).
+  if (u === 'power' && !sky) out *= blackoutFactor(sim);
   return out * sim.fundingEff(def.dept);
+}
+
+/**
+ * What a friend's blackout (M37) leaves of the city's power plants' output: `BLACKOUT.plants` while
+ * the city's war clock is within it, else 1.
+ */
+export function blackoutFactor(sim: Sim): number {
+  const w = sim.state.war;
+  const b = w?.blackout;
+  return b && w.clock >= b.from && w.clock < b.until ? BLACKOUT.plants : 1;
 }
 
 /**

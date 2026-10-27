@@ -15,9 +15,10 @@ import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules
 /**
  * 2: war (M34): a region's war rules, and the war commands a shared city may carry. 3: battles
  * between friends (M35). 4: the region's daily raid limit, raids on absent players, diplomacy's
- * commands in a shared city (M36).
+ * commands in a shared city (M36). 5: spies and blackouts between friends decided by the region,
+ * superweapon battles flagged and counted, research tiers and the fair clock in reports (M37).
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

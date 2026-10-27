@@ -889,8 +889,8 @@ export class Battle {
       consider(o.i, this.canHit(o.targets, u) && o.attack > 0 ? 0 : 3, d);
     }
     if (u.side === 0 && u.siege > 0 && (u.targets & DOMAIN_BIT.land) !== 0) {
-      // Defences, then the objectives.
-      for (const k of this.nearStructs(u.x, u.z, u.range + 40)) {
+      // Defences, then the objectives (in any order: the best is the same whatever the order).
+      for (const k of this.structsNear(u.x, u.z, u.range + 40)) {
         if (this.state[k] === 2) continue;
         const gun = this.sv(k, S.gun) > 0 && this.sv(k, S.manned) > 0;
         const obj = this.objectives.includes(k);
@@ -929,30 +929,37 @@ export class Battle {
       if (d > u.range) continue;
       consider(o.i, this.canHit(o.targets, u) && o.attack > 0 ? 0 : 3, d);
     }
-    // Every structure in the cells within reach (any order: the best is the same whatever the order).
-    const c = BATTLE.unitCell;
-    const r = reach + 40;
-    for (let i = Math.floor((u.x - r) / c); i <= Math.floor((u.x + r) / c); i++)
-      for (let j = Math.floor((u.z - r) / c); j <= Math.floor((u.z + r) / c); j++) {
-        const l = this.sgrid.get(i * 4096 + j);
-        if (!l) continue;
-        for (const k of l) {
-          if (this.state[k] === 2) continue;
-          const d = Math.max(0, DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn));
-          // A gun that can fire on it is fought with its own guns; anything else the pods reach.
-          const gun =
-            this.sv(k, S.gun) > 0 &&
-            this.sv(k, S.manned) > 0 &&
-            (this.sv(k, S.against) & DOMAIN_BIT[u.domain]) !== 0;
-          if (d > (gun ? u.range : reach)) continue;
-          consider(-(k + 1), gun ? 1 : this.objectives.includes(k) ? 2 : 4, d);
-        }
-      }
+    // Every structure within reach (in any order: the best is the same whatever the order).
+    for (const k of this.structsNear(u.x, u.z, reach + 40)) {
+      if (this.state[k] === 2) continue;
+      const d = Math.max(0, DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn));
+      // A gun that can fire on it is fought with its own guns; anything else the pods reach.
+      const gun =
+        this.sv(k, S.gun) > 0 &&
+        this.sv(k, S.manned) > 0 &&
+        (this.sv(k, S.against) & DOMAIN_BIT[u.domain]) !== 0;
+      if (d > (gun ? u.range : reach)) continue;
+      consider(-(k + 1), gun ? 1 : this.objectives.includes(k) ? 2 : 4, d);
+    }
     u.target = best;
   }
 
+  /** The structures in the grid's cells within `r` of a spot, in index order. */
   private nearStructs(x: number, z: number, r: number): number[] {
-    const out: number[] = [];
+    return [...this.structsNear(x, z, r)].sort((a, b) => a - b);
+  }
+
+  /** A list reused by `structsNear`. */
+  private near: number[] = [];
+
+  /**
+   * The structures in the grid's cells within `r` of a spot, in no set order, in a list reused by
+   * the next call: only for searches whose answer doesn't hang on the order, and that don't call it
+   * again while going through it.
+   */
+  private structsNear(x: number, z: number, r: number): number[] {
+    const out = this.near;
+    out.length = 0;
     const c = BATTLE.unitCell;
     const i0 = Math.floor((x - r) / c);
     const i1 = Math.floor((x + r) / c);
@@ -963,7 +970,7 @@ export class Battle {
         const l = this.sgrid.get(i * 4096 + j);
         if (l) for (const k of l) out.push(k);
       }
-    return out.sort((a, b) => a - b);
+    return out;
   }
 
   private accuracy(side: Side, domain: UnitDomain | 'defence'): number {
@@ -976,7 +983,8 @@ export class Battle {
     if (t.domain !== 'land') return 0;
     const vx = fx - t.x;
     const vz = fz - t.z;
-    for (const k of this.nearStructs(t.x, t.z, BATTLE.coverRange + 30)) {
+    // Any building that gives cover gives the same: the order doesn't matter.
+    for (const k of this.structsNear(t.x, t.z, BATTLE.coverRange + 30)) {
       if (this.state[k] === 2) continue;
       const dx = this.sx(k) - t.x;
       const dz = this.sz(k) - t.z;

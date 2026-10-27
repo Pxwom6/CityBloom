@@ -176,10 +176,11 @@ export const BATTLE_MOD = {
 /**
  * Superweapons in battle (M37). A superweapon battle in a computer neighbour's town may knock down
  * more than a skirmish (`caps`; only the score and its forces carry over to the city); against a
- * friend the skirmish caps stand. The robot leaves the road this close to its objective (m, in a
- * straight line) and walks there; the sky fortress launches what it carries this close to its
- * objective; a battle takes this many carried units at most, beyond `BATTLE.maxAttackers`, with ids
- * −(`carriedId` + k).
+ * friend the skirmish caps stand. Either way, once the caps leave none of its objectives able to
+ * fall, a force that brought a superweapon pulls out. The robot leaves the road this close to its
+ * objective (m, in a straight line) and walks there; the sky fortress launches what it carries this
+ * close to its objective; a battle takes this many carried units at most, beyond
+ * `BATTLE.maxAttackers`, with ids −(`carriedId` + k).
  */
 export const SUPER = {
   caps: { maxCollapse: 24, maxWreck: 5 },

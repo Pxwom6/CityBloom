@@ -146,6 +146,11 @@ export interface TestApi {
   getResearch(): ResearchSummary | null;
   /** Spies (M37): agents, counter-intelligence, missions and results; null with war off. */
   getIntel(): IntelSummary | null;
+  /**
+   * The heaviest battle the city can stage (M37, for the frame budget): 24 raiders of every kind at
+   * once (`max`), or with the giant robot among them (`robot`). Null when it started, else why not.
+   */
+  stageBattle(kind: 'max' | 'robot'): Promise<string | null>;
   /** The superweapon buildings (M37), what the effects draw, and the superweapon units. */
   getSupers(): {
     buildings: SupersSummary | null;
@@ -734,6 +739,37 @@ export function installTestApi(game: Game): TestApi {
     }),
     getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
     getResearch: () => game.world.stats.war?.research ?? null,
+    stageBattle: async (kind) => {
+      const mix: UnitKind[] = [
+        'tank',
+        'tank',
+        'tank',
+        'heavytank',
+        'heavytank',
+        'artillery',
+        'artillery',
+        'artillery',
+        'infantry',
+        'infantry',
+        'transport',
+        'bomber',
+        'bomber',
+        'fighter',
+        'fighter',
+        'helicopter',
+        'helicopter',
+        'helicopter',
+        'drone',
+        'drone',
+        'drone',
+        'drone',
+        'tank',
+        'artillery',
+      ];
+      const units = kind === 'robot' ? (['windupbot', ...mix.slice(1)] as UnitKind[]) : mix;
+      const r = await game.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0, units });
+      return r.ok ? null : r.reason;
+    },
     getIntel: () => game.world.stats.war?.intel ?? null,
     getSupers: () => ({
       buildings: game.world.stats.war?.supers ?? null,

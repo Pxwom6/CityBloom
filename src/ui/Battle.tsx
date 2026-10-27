@@ -293,6 +293,13 @@ export function SendForce() {
     setBreaks(null);
     setWhy(r.ok ? null : r.reason);
     if (r.ok) setPicked({});
+    // M37: the gate opens, and a superweapon sets off with its own sound.
+    if (r.ok && cmd.gate) game.audio?.play('gate');
+    const sup = r.ok ? picks.find((p) => UNIT.get(p.kind)?.super)?.kind : undefined;
+    if (sup)
+      game.audio?.play(
+        sup === 'windupbot' ? 'superRobot' : sup === 'skyfortress' ? 'superFortress' : 'superWhale',
+      );
     // A friend hears of it, if they're playing.
     if (r.ok && slot !== null) game.region?.forceOut(slot, cmd.units.length, time);
   };
@@ -559,6 +566,21 @@ export function RegionMap() {
                   front
                 </text>
               )}
+              {/* M37: an eye on a neighbour the city's spies looked round lately; one it blacked out, dark. */}
+              {w.supers?.darkened.some((d) => d.id === n.id) && (
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={n.rival ? 16 : 13}
+                  class="war-map-dark"
+                  data-testid={`map-dark-${n.id}`}
+                />
+              )}
+              {w.intel?.revealed.includes(n.id) && (
+                <text x={p.x + 15} y={p.y - 10} class="war-map-eye" data-testid={`map-eye-${n.id}`}>
+                  ◉
+                </text>
+              )}
             </g>
           );
         })}
@@ -580,9 +602,45 @@ export function RegionMap() {
                     Math.max(0, (tick - (e.home - (e.arrive - e.depart))) / Math.max(1, e.arrive - e.depart)),
                   );
           const q = lerp(me, p, t);
+          // A superweapon (M37) has its own token: the robot striding, the fortress drifting, the
+          // whale under the water; a force through the gate leaps along a sparkling arc.
+          const stride = Math.floor(tick / 20) % 2 ? 2 : -2;
           return (
             <g key={e.id} data-testid={`token-${e.id}`}>
-              <rect x={q.x - 7} y={q.y - 7} width="14" height="14" rx="3" class="war-map-token ours" />
+              {e.gate && (
+                <path
+                  d={`M ${me.x} ${me.y} Q ${(me.x + p.x) / 2} ${Math.min(me.y, p.y) - 60} ${p.x} ${p.y}`}
+                  class="war-map-gate"
+                  data-testid={`gate-arc-${e.id}`}
+                />
+              )}
+              {e.super === 'windupbot' ? (
+                <g class="war-map-super robot" data-testid={`super-token-${e.id}`}>
+                  <rect x={q.x - 6} y={q.y - 12} width="12" height="14" rx="2" />
+                  <line x1={q.x - 3} y1={q.y + 2} x2={q.x - 3 + stride} y2={q.y + 9} />
+                  <line x1={q.x + 3} y1={q.y + 2} x2={q.x + 3 - stride} y2={q.y + 9} />
+                </g>
+              ) : e.super === 'skyfortress' ? (
+                <ellipse
+                  cx={q.x}
+                  cy={q.y - 10 + Math.sin(tick / 30) * 2}
+                  rx="14"
+                  ry="6"
+                  class="war-map-super fortress"
+                  data-testid={`super-token-${e.id}`}
+                />
+              ) : e.super === 'clockworkwhale' ? (
+                <ellipse
+                  cx={q.x}
+                  cy={q.y}
+                  rx="13"
+                  ry="5"
+                  class="war-map-super whale"
+                  data-testid={`super-token-${e.id}`}
+                />
+              ) : (
+                <rect x={q.x - 7} y={q.y - 7} width="14" height="14" rx="3" class="war-map-token ours" />
+              )}
               <text x={q.x + 10} y={q.y + 4} class="war-map-note">
                 {e.units}
               </text>

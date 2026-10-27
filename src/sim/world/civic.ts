@@ -1,3 +1,4 @@
+import { baseKeepsSuper } from '../systems/war';
 import { scenarioForbids } from '../systems/scenario';
 import { placementPrice, projectBlocked, type ProjectBuild } from '../systems/projects';
 import { MODULE } from '../../data/modules';
@@ -512,6 +513,9 @@ export function bulldozeCivic(
   const c = sim.state.civics.get(id);
   if (!c) return fail('Nothing to bulldoze');
   if (civicDef(c).railLink) return fail('The regional rail link stays: it belongs to the regional railway');
+  // A base keeping a superweapon (M37): never lost, so it's stood down first.
+  const keeps = baseKeepsSuper(sim, id);
+  if (keeps) return fail(keeps);
   const refund = Math.round(c.cost * refundShare);
   if (dryRun) return ok(-refund, { info: { refund, buildings: [] } });
   sim.removeCivic(id);

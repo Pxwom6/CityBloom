@@ -598,9 +598,10 @@ const rows = (L: BattleLayout) =>
 describe('battles version 3 in a city', () => {
   let town: Sim;
   const spec = { target: 'military' as const, from: 'west' as const };
+  // Growing the town takes several seconds, more on a loaded machine.
   beforeAll(() => {
     town = warTown().sim;
-  });
+  }, 120_000);
 
   it('a city that hasn’t researched fights its battles as on M36 (version 2)', () => {
     const sim = town;

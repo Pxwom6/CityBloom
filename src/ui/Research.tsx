@@ -5,7 +5,16 @@
  */
 import { CIVIC } from '../data/civic';
 import { SPY_OP } from '../data/intel';
-import { BRANCHES, RESEARCH, SPINOFFS, TIERS, type TierDef, type TierKey } from '../data/research';
+import { useState } from 'preact/hooks';
+import {
+  BRANCHES,
+  RESEARCH,
+  SPINOFFS,
+  TIERS,
+  type Branch,
+  type TierDef,
+  type TierKey,
+} from '../data/research';
 import { UNIT, type UnitKind } from '../data/war';
 import type { ResearchSummary } from '../sim/systems/research';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
@@ -107,6 +116,7 @@ function Tier({
 
 export function Research() {
   const game = useGameUpdates(500);
+  const [branch, setBranch] = useState<Branch>('land');
   const r = game.world.stats.war?.research ?? null;
   const labs = [...game.world.civics.values()].filter((c) => CIVIC.get(c.def)?.military?.lab);
   const grounds = [...game.world.civics.values()]
@@ -172,18 +182,21 @@ export function Research() {
       {(r.prototypes.length > 0 || r.trials.length > 0) && (
         <section class="research-protos" data-testid="research-prototypes">
           <h4>Prototypes</h4>
+          <p class="muted">Each is tried at a proving ground before it can be built.</p>
           {r.trials.map((t) => {
             const g = game.world.civics.get(t.ground);
             return (
-              <div key={t.ground} class="war-row" data-testid={`trial-${t.kind}`}>
-                <span>{UNIT.get(t.kind)?.name} on trial</span>
+              <div key={t.ground} class="research-proto" data-testid={`trial-${t.kind}`}>
+                <span>
+                  <strong>{UNIT.get(t.kind)?.name}</strong> on trial{' '}
+                  <span class="muted">
+                    {'●'.repeat(t.runs)}
+                    {'○'.repeat(Math.max(0, 3 - t.runs))} · {warHours(t.hours - t.done)} left
+                  </span>
+                </span>
                 <div class="war-bar good">
                   <span style={{ width: `${Math.min(100, (t.done / t.hours) * 100)}%` }} />
                 </div>
-                <span class="muted">
-                  {'●'.repeat(t.runs)}
-                  {'○'.repeat(Math.max(0, 3 - t.runs))} · {warHours(t.hours - t.done)} left
-                </span>
                 {g && (
                   <button
                     class="btn small"
@@ -202,9 +215,8 @@ export function Research() {
               const terms = r.terms[k];
               const ground = free[0];
               return (
-                <div key={k} class="war-row" data-testid={`prototype-${k}`}>
-                  <span>{UNIT.get(k)?.name}</span>
-                  <span class="muted">a prototype: it’s tried at a proving ground before it’s built</span>
+                <div key={k} class="research-proto" data-testid={`prototype-${k}`}>
+                  <strong>{UNIT.get(k)?.name}</strong>
                   <button
                     class="btn small"
                     data-testid={`trial-start-${k}`}
@@ -228,16 +240,31 @@ export function Research() {
             })}
         </section>
       )}
-      <div class="research-grid" data-testid="research-grid">
-        {BRANCHES.map((b) => (
-          <section key={b.id} class="research-branch" data-testid={`research-branch-${b.id}`}>
-            <h4 title={b.blurb}>{b.name}</h4>
-            {TIERS.filter((t) => t.branch === b.id).map((t) => (
-              <Tier key={t.key} t={t} r={r} act={toggle} busy={game.readOnly} />
-            ))}
-          </section>
-        ))}
+      {/* The six branches as chips (how far each has got), the chosen one's four tiers below. */}
+      <div class="research-branches" role="tablist" data-testid="research-grid">
+        {BRANCHES.map((b) => {
+          const n = r.done.filter((k) => k.startsWith(b.id)).length;
+          return (
+            <button
+              key={b.id}
+              role="tab"
+              aria-selected={branch === b.id}
+              class={`research-branch-chip ${branch === b.id ? 'active' : ''}`}
+              data-testid={`research-branch-${b.id}`}
+              title={b.blurb}
+              onClick={() => setBranch(b.id)}
+            >
+              {b.name} <small>{n}/4</small>
+            </button>
+          );
+        })}
       </div>
+      <section class="research-branch" data-testid={`research-tiers-${branch}`}>
+        <p class="muted">{BRANCHES.find((b) => b.id === branch)!.blurb}</p>
+        {TIERS.filter((t) => t.branch === branch).map((t) => (
+          <Tier key={t.key} t={t} r={r} act={toggle} busy={game.readOnly} />
+        ))}
+      </section>
       {head === undefined && r.done.length === 0 && (
         <p class="muted">
           Each tier needs the one before it. The money is paid when the labs start on it; points are kept if

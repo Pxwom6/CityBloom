@@ -43,7 +43,7 @@ import { civicOnline } from '../world/civic';
 import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
-import { researchEffect } from './research';
+import { researchEffect, researchMods } from './research';
 import { lowerDome, raiseDome, rivalBlackedOut } from './supers';
 import { powerSabotaged, revealed, rivalKnows } from './intel';
 import { INTEL } from '../../data/intel';
@@ -547,6 +547,21 @@ export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleI
       seen.against === row(S.against);
     if (!same) structs[k * S.stride + S.id] = -(k + 1);
   }
+  // The defenders' research (M37) as this city has it: in a domain where the battle's picture is
+  // weaker (a save from before the research, or left out), those defenders fight as strangers, so
+  // their losses never reach the city.
+  const own = researchMods(sim);
+  const weak = new Set<string>();
+  for (const [d, m] of Object.entries(own)) {
+    const p = L.mods?.[d as keyof typeof own] ?? {};
+    if (
+      (p.hp ?? 1) < (m.hp ?? 1) - 1e-9 ||
+      (p.attack ?? 1) < (m.attack ?? 1) - 1e-9 ||
+      (p.armour ?? 0) < (m.armour ?? 0) - 1e-9 ||
+      (p.evade ?? 0) < (m.evade ?? 0) - 1e-9
+    )
+      weak.add(d);
+  }
   const defenders = L.defenders.map((u, k) => {
     // One of this city's units at home, of that kind, at its base, and no weaker than it is.
     const mine = w?.units.get(u.id);
@@ -559,7 +574,8 @@ export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleI
       !!base &&
       Math.abs(base.x - u.x) <= 2 &&
       Math.abs(base.z - u.z) <= 2 &&
-      (u.base < 0 || structs[u.base * S.stride + S.id] === mine.base);
+      (u.base < 0 || structs[u.base * S.stride + S.id] === mine.base) &&
+      !weak.has(UNIT.get(u.kind)?.domain ?? 'land');
     return same ? u : { ...u, id: -(k + 1) };
   });
   return {

@@ -1344,6 +1344,7 @@ export class Game {
           'info',
         );
       else if (e.kind === 'blackout') {
+        this.audio?.play('powerDown');
         this.notice(
           `blackout:${e.id}`,
           `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: no raids or spies from it, and its guns are half-blind.`,

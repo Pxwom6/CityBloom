@@ -69,7 +69,15 @@ export type Command =
    * Test mode only (M35): a computer neighbour (the first rival, or `neighbour`) sets off to raid the
    * city now, arriving in `hours` (0: the battle begins at once).
    */
-  | { type: 'cheat'; cheat: 'raidIn'; hours: number; neighbour?: number; seat?: boolean }
+  | {
+      type: 'cheat';
+      cheat: 'raidIn';
+      hours: number;
+      neighbour?: number;
+      seat?: boolean;
+      /** M37: the raiders themselves (a heavy battle staged for measuring), 24 at most. */
+      units?: UnitKind[];
+    }
   /** Test mode (M36): a computer neighbour puts these terms to the city. */
   | { type: 'cheat'; cheat: 'proposal'; neighbour: number; terms: Term[] }
   /** Test mode (M36): the city falls to a computer neighbour at once. */

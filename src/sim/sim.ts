@@ -1,3 +1,4 @@
+import { UNIT } from '../data/war';
 import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
 import {
@@ -1328,6 +1329,12 @@ export class Sim {
             const rng = new Rng(w.rng);
             const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)), !!cmd.seat);
             w.rng = rng.getState();
+            // M37: a force of the test's own choosing (the heaviest battle, measured).
+            if (cmd.units?.length)
+              raid.units = cmd.units
+                .filter((k) => UNIT.has(k))
+                .slice(0, 24)
+                .map((kind) => ({ kind, hp: 1 }));
             if (cmd.hours === 0) {
               w.incoming = w.incoming!.filter((r) => r !== raid);
               if (!w.incoming.length) delete w.incoming;

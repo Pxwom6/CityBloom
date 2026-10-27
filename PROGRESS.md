@@ -264,15 +264,28 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
   `RegionWarRules.supers`, save v30.
 - Step 3 done: prototypes' trials at the proving ground (`startTrial`/`stopTrial`, `trialsHour`,
   ledger `trials`; trial grounds and working labs staffed after training bases).
-- Step 4 done: each effect and spin-off read in one place, exactly 1 without research (training by
-  what's trained, an airfield's places `holdsOf`, stores, radar warning, travel, mending and repair
-  trucks `repairBoost`, war-damage repair hours, readiness away; constructions, fire spread and
-  putting out, planes' noise, sea trade, licence fees). Tests in `tests/war/research.test.ts`.
-- Step 5 (battle v3) is being built in a worktree branch by a helper agent, to be merged and
-  reviewed here; step 6 (superweapons in forces) is next in the main checkout. Then superweapon
-  buildings (7), intelligence (8), friends and the fair clock (9–10), rendering and the UI (11–12),
-  wrap-up (13). To remember for the UI: the war room's base list reads `def.military.holds`
-  (`Military.tsx`), which should read the forces' `holds` (an airfield keeps 18 after Swarm control).
+- Step 4 done: each effect and spin-off read in one place, exactly 1 without research.
+- Step 5 done (merged from a helper's branch): battle version 3 (mods with evasion, hardened and
+  shield factors, interceptors, the dome's pool, stomp, carried drones, dives, `SUPER.caps`); a battle
+  using nothing new stays version 2.
+- Step 6 done: superweapons in forces (one a force, their routes, robot and fortress ×2 travel, never
+  lost, cooldowns 240/480 h, by sea only to a coast, no home defence). `tests/war/superweapons.test.ts`.
+- Step 7 done: the dome, blackout tower and express gate (`src/sim/systems/supers.ts`).
+- Step 8 done: spies and counter-intelligence against computer neighbours, incidents, computer
+  neighbours' tech (`src/sim/systems/intel.ts`, `src/sim/ai/tech.ts`). `tests/war/intel.test.ts`.
+- Step 11 in part: trial poses, `src/render/shields.ts` (dome, bubbles, gate swirl, tower ring),
+  battle effects (intercepts, launches, stomp dust, dived whale), quality switches, windows dark in a
+  blackout. Test API `getResearch`, `getIntel`, `getSupers`, `stageBattle`.
+- Step 12 in part: Research and Intelligence tabs, superweapons strip, inspectors, Send tab (gate,
+  superweapons, travel), notices and tips. E2e `e2e/m37-research.spec.ts`, `e2e/m37-super.spec.ts`
+  (being run).
+- Running in helpers' worktrees: superweapon battle balance (the fortress's bomb drones, the whale's
+  coastal targets, the robot's time) and steps 9–10 (friends' ops through the region room, protocol
+  5, and the fair clock). An adversarial review of the M37 sim is running too; its findings get fixed
+  before wrap-up.
+- Left: merge both helpers' branches; the region map's superweapon tokens, banners and sirens for
+  superweapon raids, the friends' e2e; screenshots reviewed (`supershot.mjs`); wrap-up (step 13: full
+  tests, e2e, balance, bench, battlebench, cross-browser, docs, `M37 complete:`).
 
 ## Next tasks
 1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by

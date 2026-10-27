@@ -208,7 +208,8 @@ export function endPactsWith(sim: Sim, n: Neighbour, kinds: TermKind[], text: st
 
 /** Spies in a declared war (M37): a sabotage that worked, or a spy caught, moves the score. */
 export function scoreIntel(sim: Sim, withId: number, delta: number): void {
-  const war = warWith(sim, withId);
+  // Only while the two are fighting: a ceasefire holds the score.
+  const war = fightingWith(sim, withId);
   if (!war || sim.state.tick < war.opens || war.capitulated) return;
   war.score = clamp(round1(war.score + delta), -100, 100);
   checkCapitulation(sim, war);

@@ -10,6 +10,9 @@ import { S } from '../../src/sim/battle/types';
 import { DOME, type TierKey } from '../../src/data/research';
 import { blackedOut, domeCharge, rivalBlackedOut, superBuilding } from '../../src/sim/systems/supers';
 import { labTown, ok, refusal } from './researchTown';
+import { trainingRate, vehicleSpeedup, warSummary } from '../../src/sim/systems/war';
+import { adoptBattle } from '../../src/sim/systems/raids';
+import type { BattleInput } from '../../src/sim/battle/types';
 
 /** M37: superweapons (docs/plans/M37-design.md, key calls 7–9; steps 6–7). */
 
@@ -365,5 +368,74 @@ describe('M37 superweapon buildings', () => {
     expect(city.neighbour.manning).toBe(0.3);
     const after = manned(awayInput(city, town));
     expect(after).toEqual(before.map((m) => Math.round(m * 0.3 * 1000) / 1000));
+  });
+});
+
+describe('M37 review fixes: superweapons and research in battles', () => {
+  it('a base keeping a superweapon can’t be bulldozed (no cooldown dodged, no second one made)', () => {
+    const { sim, add, depot } = supersTown();
+    const robot = add('windupbot');
+    expect(refusal(sim, { type: 'bulldoze', target: { kind: 'civic', id: depot } })).toBe(
+      'The vehicle depot keeps the giant wind-up robot: stand it down first',
+    );
+    ok(sim, { type: 'disbandUnit', unit: robot });
+    expect(refusal(sim, { type: 'bulldoze', target: { kind: 'civic', id: depot } })).toBeNull();
+  });
+
+  it('an arms factory speeds up vehicles, not the robot', () => {
+    const { sim, place, depot } = supersTown(true);
+    place('armsfactory');
+    sim.advance(M);
+    const c = sim.state.civics.get(depot)!;
+    const speedup = vehicleSpeedup(sim);
+    expect(speedup).toBeGreaterThan(0);
+    const tank = trainingRate(sim, c, 'tank');
+    expect(trainingRate(sim, c, 'windupbot')).toBeCloseTo(tank * (1 - speedup), 12);
+  });
+
+  it('a superweapon building going up has no posts in the war room’s staff count', () => {
+    const { sim, place } = supersTown(true);
+    const before = warSummary(sim, () => 0)!.staff.jobs;
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['defence1', 'defence2', 'defence3', 'defence4'] });
+    const dome = place('domeshield');
+    expect(sim.state.civics.get(dome)!.build).toBeDefined();
+    expect(warSummary(sim, () => 0)!.staff.jobs).toBe(before);
+  });
+
+  it('a friend’s battle picturing the city’s defenders without their research fights them as strangers', () => {
+    const { sim, add } = supersTown();
+    const tank = add('tank');
+    const plane = add('patrolboat');
+    // The battle's picture: drawn before Composite armour (no land mods).
+    const layout = battleLayout(sim, { target: 'military' });
+    expect(layout.mods).toBeUndefined();
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['land1', 'land2', 'land3'] });
+    const input = {
+      v: 3,
+      id: 'stale',
+      seed: 'x',
+      scale: 'skirmish',
+      layout,
+      attacker: {
+        name: 'A',
+        color: 1,
+        units: [],
+        route: 'highway',
+        target: 'military',
+        stance: 'bold',
+        readiness: 1,
+      },
+      defender: { name: 'B', color: 2 },
+      orders: [],
+      caps: { maxCollapse: 12, maxWreck: 3 },
+    } as unknown as BattleInput;
+    const adopted = adoptBattle(sim, input);
+    const ids = adopted.layout.defenders.map((u) => u.id);
+    // The tank (land, now stronger than pictured) is a stranger; the boat (sea, unchanged) is the city's.
+    expect(ids).not.toContain(tank);
+    expect(ids).toContain(plane);
+    // A picture with the research in it keeps the tank.
+    const fresh = adoptBattle(sim, { ...input, layout: battleLayout(sim, { target: 'military' }) });
+    expect(fresh.layout.defenders.map((u) => u.id)).toContain(tank);
   });
 });

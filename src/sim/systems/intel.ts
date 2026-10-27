@@ -29,7 +29,6 @@ import {
   endPactsWith,
   fightingWith,
   incident,
-  pactsWith,
   reputationChange,
   scoreIntel,
   strikeBreaks,
@@ -326,6 +325,13 @@ function resolveMission(sim: Sim, m: Mission): void {
     return;
   }
   const r = n.rival;
+  // A sabotage is a strike: checked again as the agent lands (a pact signed, neutrality, a
+  // ceasefire or a conquest since it left), and called off quietly if it may no longer be done.
+  if (m.op === 'sabotage' && strikeRefusal(sim, n.id, 'power', false)) {
+    m.outcome = 'failed';
+    result(sim, n.id, `Agent ${m.agent} stood down in ${n.name}: the sabotage may no longer be done`);
+    return;
+  }
   const odds = spyOdds(
     m.op,
     intelTier(sim),
@@ -399,14 +405,17 @@ function resolveMission(sim: Sim, m: Mission): void {
     scoreIntel(sim, n.id, INTEL.score);
   } else {
     const next = m.branch ? nextTier(sim, m.branch) : null;
-    if (next && (r.tech ?? 0) > tierCounts(sim)[m.branch!] && !ri.stolen?.includes(next)) {
-      const pts = Math.floor(TIER.get(next)!.points * INTEL.stealShare);
-      bankPoints(sim, next, pts);
+    // Banked only where it adds points (a tier nearly done takes less, and none uses up the theft).
+    const pts =
+      next && (r.tech ?? 0) > tierCounts(sim)[m.branch!] && !ri.stolen?.includes(next)
+        ? bankPoints(sim, next, Math.floor(TIER.get(next)!.points * INTEL.stealShare))
+        : 0;
+    if (next && pts > 0) {
       ri.stolen = [...(ri.stolen ?? []), next];
       result(
         sim,
         n.id,
-        `${agent} stole ${formatInt(pts)} points of ${TIER.get(next)!.name} from ${n.name}`,
+        `${agent} stole ${formatInt(Math.floor(pts))} points of ${TIER.get(next)!.name} from ${n.name}`,
         'good',
       );
     } else {
@@ -437,6 +446,12 @@ function resolveTheirs(sim: Sim, spy: TheirSpy): void {
   }
   if (outcome === 'failed') return;
   const ri = rivalIntel(r);
+  // Sabotage only while they still fight the city: peace, a ceasefire or a conquest since it set
+  // out turns it into a quiet look round.
+  if (spy.op === 'sabotage' && (!fightingWith(sim, n.id) || r.vassal)) {
+    ri.knows = now + INTEL.revealHours;
+    return;
+  }
   if (spy.op === 'sabotage') {
     const c = sabotageTarget(sim, spy.target ?? 'power');
     if (c) {
@@ -557,7 +572,7 @@ export function intelMonth(sim: Sim): void {
     let chance = eager ? rs.eager : rs.chance;
     const war = !!fightingWith(sim, n.id);
     if (war) chance *= rs.atWar;
-    if (pactsWith(sim, n.id).length && r.personality !== 'treacherous') chance *= rs.pact;
+    if (bindingPacts(sim, n.id).length && r.personality !== 'treacherous') chance *= rs.pact;
     if (neutral) chance *= rs.neutral;
     if (roll >= chance) continue;
     const op: SpyOp = war ? 'sabotage' : best > (r.tech ?? 0) ? 'steal' : 'reveal';

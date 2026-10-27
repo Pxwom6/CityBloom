@@ -5,6 +5,7 @@ import type { Sim } from '../../src/sim/sim';
 import { awayCity } from '../../src/sim/battle/away';
 import { rivalMix, rivalMods } from '../../src/sim/ai/tech';
 import { RIVAL_MIX } from '../../src/data/battle';
+import { DIPLOMACY } from '../../src/data/diplomacy';
 import {
   agentsFree,
   agentsKept,
@@ -20,6 +21,7 @@ import {
 import { rivalsMonth } from '../../src/sim/systems/war';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { labTown, ok, refusal } from './researchTown';
+import { bankPoints } from '../../src/sim/systems/research';
 
 /** M37: spies and counter-intelligence (docs/plans/M37-design.md, key calls 11–12; step 8). */
 
@@ -182,6 +184,9 @@ describe('M37 intelligence', () => {
   it('a saboteur who gets through closes the city’s biggest power plant for a day', () => {
     const { sim, rival } = agencyTown();
     const w = sim.state.war!;
+    // A neighbour sabotages only a city it's fighting (otherwise its agent only looks round).
+    ok(sim, { type: 'declareWar', neighbour: rival.id, scale: 'war', reason: 'Saboteurs' });
+    sim.advance((DIPLOMACY.warningHours + 1) * H);
     let closed = false;
     for (let k = 0; k < 40 && !closed; k++) {
       ok(sim, { type: 'cheat', cheat: 'spyIn', neighbour: rival.id, op: 'sabotage', target: 'power' });
@@ -219,5 +224,47 @@ describe('M37 intelligence', () => {
     for (let k = 0; k < 40; k++) intelMonth(sim);
     expect(sim.state.region.neighbours.every((n) => !n.rival?.tech)).toBe(true);
     expect(w.intel).toBeUndefined();
+  });
+});
+
+describe('M37 review fixes: intelligence', () => {
+  it('a theft never lowers a tier’s points, and one that adds nothing isn’t used up', () => {
+    const { sim } = agencyTown();
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: [] });
+    sim.state.war!.research!.points.air1 = TIER.get('air1')!.points - 0.5;
+    expect(bankPoints(sim, 'air1', 75)).toBe(0);
+    expect(sim.state.war!.research!.points.air1).toBe(TIER.get('air1')!.points - 0.5);
+    sim.state.war!.research!.points.air1 = 100;
+    expect(bankPoints(sim, 'air1', 75)).toBe(75);
+  });
+
+  it('a sabotage is checked again as the agent lands: a pact signed since stands it down', () => {
+    const { sim, rival } = agencyTown();
+    const w = sim.state.war!;
+    const id = ok(sim, { type: 'spyMission', neighbour: rival.id, op: 'sabotage', target: 'power' })
+      .created![0]!;
+    // A non-aggression pact signed while the agent is on its way.
+    w.diplomacy!.pacts.push({
+      id: 999,
+      with: rival.id,
+      term: { k: 'nonAggression', months: 24 },
+      since: sim.state.tick,
+    } as never);
+    const m = () => w.intel!.missions.find((x) => x.id === id);
+    const arrive = m()!.arrive;
+    while (w.clock < arrive) sim.advance(H);
+    expect(m()?.outcome).toBe('failed');
+    expect(w.intel!.results.at(-1)!.text).toMatch(/stood down/);
+    expect(powerSabotaged(sim, rival)).toBe(false);
+  });
+
+  it('a computer saboteur that arrives after peace only looks round', () => {
+    const { sim, rival } = agencyTown();
+    const w = sim.state.war!;
+    // Not at war: whatever the dice, nothing of the city's is closed.
+    for (let k = 0; k < 30; k++)
+      ok(sim, { type: 'cheat', cheat: 'spyIn', neighbour: rival.id, op: 'sabotage', target: 'power' });
+    expect([...sim.state.civics.values()].every((c) => c.damage <= 0)).toBe(true);
+    expect(w.intel!.results.some((r) => r.text.startsWith('Saboteurs from'))).toBe(false);
   });
 });

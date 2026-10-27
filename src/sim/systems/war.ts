@@ -299,7 +299,7 @@ export function militaryPowerNeed(sim: Sim, c: Civic): number {
 }
 
 /** Is a working arms factory speeding up vehicles (land units other than infantry)? */
-function vehicleSpeedup(sim: Sim): number {
+export function vehicleSpeedup(sim: Sim): number {
   let best = 0;
   for (const c of sim.state.civics.values()) {
     const a = militaryOf(c)?.arms;
@@ -316,7 +316,8 @@ export function trainingRate(sim: Sim, c: Civic, kind: UnitKind): number {
   const powered = c.powered ?? 0;
   let rate = Math.min(1, staff) * powered * Math.min(1.25, sim.fundingEff('defence'));
   const def = UNIT.get(kind);
-  if (def?.domain === 'land' && def.id !== 'infantry') rate /= 1 - vehicleSpeedup(sim);
+  // An arms factory speeds vehicles up (M34); a superweapon keeps its own long build (M37).
+  if (def?.domain === 'land' && def.id !== 'infantry' && !def.super) rate /= 1 - vehicleSpeedup(sim);
   return rate * trainingFactor(sim, kind);
 }
 
@@ -585,6 +586,24 @@ export function disbandUnit(sim: Sim, unitId: number, dryRun: boolean): CommandR
 }
 
 /** A base is gone (bulldozed, destroyed): its units are stood down and its training called off. */
+/**
+ * Why a military base can't be knocked down now (M37), or null: it keeps a superweapon (at home,
+ * away with a force, or being trained). Superweapons are never lost: stand it down first.
+ */
+export function baseKeepsSuper(sim: Sim, base: number): string | null {
+  const w = sim.state.war;
+  if (!w) return null;
+  const c = sim.state.civics.get(base);
+  const name = c ? lowerName(CIVIC.get(c.def)?.name ?? 'base') : 'base';
+  for (const u of w.units.values())
+    if (u.base === base && UNIT.get(u.kind)?.super)
+      return `The ${name} keeps the ${UNIT.get(u.kind)!.name.toLowerCase()}: stand it down first`;
+  for (const o of w.orders.values())
+    if (o.base === base && UNIT.get(o.kind)?.super)
+      return `The ${name} is building a ${UNIT.get(o.kind)!.name.toLowerCase()}: call it off first`;
+  return null;
+}
+
 export function baseRemoved(sim: Sim, base: number): void {
   const w = sim.state.war;
   if (!w) return;
@@ -892,6 +911,9 @@ export interface WarSummary {
     depart: number;
     arrive: number;
     home: number;
+    /** M37: the superweapon with it, and whether it went through the express gate. */
+    super?: UnitKind;
+    gate?: boolean;
   }[];
 }
 
@@ -933,6 +955,8 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
   const bases = militaryCivics(sim);
   for (const c of bases) {
     const m = militaryOf(c)!;
+    // A building still going up (M37's superweapon projects) has no posts yet.
+    if (c.build) continue;
     jobs += m.jobs;
     filled += Math.round(m.jobs * Math.min(1, c.staff ?? 0));
     const p = militaryPowerNeed(sim, c);
@@ -1004,8 +1028,19 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
       depart: e.depart,
       arrive: e.arrive,
       home: e.home,
+      ...superOf(w, e.units),
+      ...(e.gate ? { gate: true } : {}),
     })),
   };
+}
+
+/** The superweapon in a force, if any (M37). */
+function superOf(w: WarState, units: number[]): { super?: UnitKind } {
+  for (const id of units) {
+    const u = w.units.get(id);
+    if (u && UNIT.get(u.kind)?.super) return { super: u.kind };
+  }
+  return {};
 }
 
 function incomingSummary(w: WarState): WarSummary['incoming'] {

@@ -3782,10 +3782,36 @@ body {
   font-size: var(--font-size-sm);
   margin: var(--space-1) 0 var(--space-2);
 }
-.research-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-2);
+.research-branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 var(--space-1);
+}
+.research-branch-chip {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.research-branch-chip.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.research-proto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.research-proto .war-bar {
+  flex: 1 1 6rem;
 }
 .research-branch h4 {
   margin: var(--space-1) 0;
@@ -3838,12 +3864,6 @@ body {
 }
 .research-tier .btn {
   align-self: flex-start;
-}
-#ui[data-width='s'] .research-grid {
-  grid-template-columns: repeat(2, 1fr);
-}
-#ui[data-width='xs'] .research-grid {
-  grid-template-columns: 1fr;
 }
 .supers-strip {
   display: grid;
@@ -4086,6 +4106,37 @@ body {
 }
 .war-map-token.theirs {
   fill: var(--color-negative);
+}
+/* M37: superweapons on the map, a gate jump, a revealed neighbour, a blacked-out one. */
+.war-map-super {
+  fill: var(--color-accent);
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+.war-map-super.robot line {
+  stroke: var(--color-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.war-map-super.whale {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-dasharray: 3 3;
+}
+.war-map-gate {
+  fill: none;
+  stroke: #8fd7ff;
+  stroke-width: 2;
+  stroke-dasharray: 1 5;
+  stroke-linecap: round;
+}
+.war-map-eye {
+  fill: var(--color-accent);
+  font-size: 11px;
+}
+.war-map-dark {
+  fill: rgba(20, 20, 30, 0.55);
+  stroke: rgba(20, 20, 30, 0.8);
 }
 .viewer-bar {
   position: fixed;

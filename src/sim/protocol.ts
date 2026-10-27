@@ -393,8 +393,8 @@ export interface Snapshot {
 
 /** The city's units and the training under way (M34), sent whenever they change. */
 export interface ForceData {
-  /** `away`: on an expedition (M35), so not at its base. */
-  units: { id: number; kind: UnitKind; base: number; hp: number; away?: number }[];
+  /** `away`: on an expedition (M35), so not at its base; `ready`: a superweapon's hours of winding up left (M37). */
+  units: { id: number; kind: UnitKind; base: number; hp: number; away?: number; ready?: number }[];
   /** Training at each base, oldest first: hours done of `hours`, and hours gained an hour now. */
   orders: { id: number; kind: UnitKind; base: number; done: number; hours: number; rate: number }[];
   /** Prototypes on trial at proving grounds (M37): hours done of `hours`. */

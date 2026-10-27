@@ -24,7 +24,9 @@ import { civicOnline } from '../world/civic';
 import type { Outcome } from '../battle/types';
 import { travelHours, type BattleReport } from './raids';
 import { militaryCivics, militaryOf } from './war';
-import { researchEffect } from './research';
+import { researchEffect, superweaponsAllowed } from './research';
+import { formatInt } from '../dmath';
+import type { Neighbour } from './region';
 import { RESEARCH } from '../../data/research';
 import { scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
 
@@ -49,6 +51,13 @@ export interface Expedition {
    * for the region's answer (the page reports the battle once the region keeps it).
    */
   settling?: true;
+  /**
+   * Its battle was fought and reported, for a force with a superweapon (M37): the superweapon winds
+   * up again once home, for twice as long when it was knocked out (`downed`). A force called back or
+   * turned away spends none.
+   */
+  fought?: true;
+  downed?: number[];
 }
 
 /** What the page hands back after fighting an expedition's battle. */
@@ -75,6 +84,41 @@ const ROUTE_DOMAINS: Record<BattleRoute, readonly string[]> = {
   sea: ['sea', 'air'],
   air: ['air'],
 };
+
+const BY_ROUTE: Record<BattleRoute, string> = {
+  highway: 'by road',
+  rail: 'by rail',
+  sea: 'by sea',
+  air: 'by air',
+};
+
+/**
+ * Whether a force can come from the sea (M37): a computer neighbour's resort grows on the coast; a
+ * friend's city says so in its report.
+ */
+export function hasCoast(n: Neighbour): boolean {
+  return n.player ? n.player.coast === true : n.kind === 'resort';
+}
+
+/** Why a force's superweapon (M37) can't go, or null: one a force, its own route, wound up, the rules. */
+function superRefusal(sim: Sim, units: number[], n: Neighbour, route: BattleRoute): string | null {
+  const w = sim.state.war!;
+  const supers = units.flatMap((id) => {
+    const u = w.units.get(id)!;
+    const d = UNIT.get(u.kind)!;
+    return d.super ? [{ u, d }] : [];
+  });
+  if (!supers.length) return null;
+  if (!superweaponsAllowed(sim)) return 'Your region’s rules turn superweapons off';
+  if (supers.length > 1) return 'A force takes one superweapon';
+  const { u, d } = supers[0]!;
+  const name = d.name.toLowerCase();
+  if (!d.super!.routes.includes(route)) return `The ${name} goes only ${BY_ROUTE[d.super!.routes[0]!]}`;
+  if (u.ready !== undefined && u.ready > w.clock)
+    return `The ${name} is winding up again: ready in ${formatInt(u.ready - w.clock)} hours`;
+  if (n.player && !n.player.online) return `${n.name}’s player isn’t here: superweapons wait for them`;
+  return null;
+}
 
 /** Why a force can't go, or null. */
 export function sendRefusal(
@@ -133,6 +177,13 @@ function forceRefusal(
   }
   if (units.every((x) => UNIT.get(w.units.get(x)!.kind)!.stats.attack <= 0))
     return 'A force needs units that fight';
+  const sup = superRefusal(sim, units, n, route);
+  if (sup) return sup;
+  // By sea only to a town with a coast (M37; M35 let boats sail to any).
+  if (route === 'sea' && !hasCoast(n))
+    return units.some((id) => w.units.get(id)!.kind === 'clockworkwhale')
+      ? `The clockwork whale needs a coast: ${n.name} has none it can reach`
+      : `${n.name} has no coast to come from`;
   if (route === 'rail' && !s.railway) return 'The city has no rail link';
   if (w.expeditions?.some((e) => e.to === to && e.state !== 'back'))
     return `A force is already on its way to ${n.name}`;
@@ -157,7 +208,9 @@ export function sendForce(
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === to)!;
   const kinds = units.map((id) => ({ kind: w.units.get(id)!.kind }));
-  const hours = travelHours(route, n.side, kinds, researchEffect(sim, 'travel'));
+  // Superweapons walk and fly slowly (M37): the robot and the fortress take twice as long.
+  const slow = Math.max(1, ...kinds.map((k) => UNIT.get(k.kind)!.super?.travel ?? 1));
+  const hours = travelHours(route, n.side, kinds, researchEffect(sim, 'travel') * slow);
   const e: Expedition = {
     id: s.nextId++,
     units: [...units],
@@ -252,6 +305,9 @@ export function expeditionsTick(sim: Sim): void {
         if (!u) continue;
         delete u.away;
         if (mend > 0 && u.hp < 1) u.hp = Math.min(1, Math.round((u.hp + mend) * 1000) / 1000);
+        // A superweapon home from a battle winds up again (M37): twice as long if it was knocked out.
+        const sup = UNIT.get(u.kind)?.super;
+        if (sup && e.fought) u.ready = w.clock + sup.cooldown * (e.downed?.includes(id) ? 2 : 1);
       }
       if (e.units.some((id) => w.units.has(id)))
         sim.events.push({ kind: 'forceHome', id: e.id, info: { from: e.name } });
@@ -281,7 +337,12 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
     if (!e.units.includes(u.id)) continue;
     const unit = w.units.get(u.id);
     if (!unit) continue;
-    if (u.out) {
+    if (u.out && UNIT.get(unit.kind)?.super) {
+      // Superweapons are never lost (M37): knocked out, one is wound down and towed home.
+      unit.hp = 0.05;
+      (e.downed ??= []).push(u.id);
+      sim.events.push({ kind: 'superTowed', id: u.id, info: { kind: unit.kind } });
+    } else if (u.out) {
       lost[unit.kind] = (lost[unit.kind] ?? 0) + 1;
       w.units.delete(u.id);
       sim.events.push({ kind: 'unitLost', id: u.id, info: { kind: unit.kind } });
@@ -321,6 +382,8 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
   w.reports = [...(w.reports ?? []), report].slice(-12);
   // In a declared war the battle moves the score, and may take the seat of power (M36).
   scoreAwayBattle(sim, e.to, report, sent, hurt);
+  // A superweapon's cooldown counts from a battle fought (only such a force keeps the mark).
+  if (e.units.some((id) => UNIT.get(w.units.get(id)!.kind)?.super)) e.fought = true;
   e.state = 'back';
   delete e.settling;
   e.home = s.tick + Math.max(TICKS_PER_HOUR, e.arrive - e.depart);

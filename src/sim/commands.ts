@@ -78,6 +78,8 @@ export type Command =
   /** Test mode (M37): research points poured into the queue, or tiers done at once (scripted tests). */
   | { type: 'cheat'; cheat: 'researchPoints'; points: number }
   | { type: 'cheat'; cheat: 'research'; tiers: TierKey[] }
+  /** Test mode (M37): every superweapon wound up at once. */
+  | { type: 'cheat'; cheat: 'superReady' }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */

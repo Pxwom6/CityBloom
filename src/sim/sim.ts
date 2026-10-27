@@ -223,6 +223,7 @@ import {
   repayBond,
   rivalsMonth,
   startWar,
+  superReadyCheat,
   trainUnit,
   warHour,
   warSummary,
@@ -330,6 +331,8 @@ export type SimEvent = {
     | 'battleStarted'
     | 'battleEnded'
     | 'unitLost'
+    | 'superTowed'
+    | 'superReady'
     | 'forceArrived'
     | 'forceHome'
     | 'researchDone'
@@ -1246,6 +1249,10 @@ export class Sim {
         if (cmd.cheat === 'research') {
           if (!this.testMode) return fail('Test mode only');
           return researchCheat(this, cmd.tiers, dryRun);
+        }
+        if (cmd.cheat === 'superReady') {
+          if (!this.testMode) return fail('Test mode only');
+          return superReadyCheat(this, dryRun);
         }
         if (cmd.cheat === 'unshield') {
           if (!this.testMode) return fail('Test mode only');

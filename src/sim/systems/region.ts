@@ -44,6 +44,8 @@ export interface PlayerNeighbour {
   shoppers: number;
   /** Playing now (an offline city's last offer stands). */
   online: boolean;
+  /** Its map has a coast a force can come from by sea (M37, from its report). */
+  coast?: boolean;
   /**
    * In a region at war (M36): whether the region would let this city raid it now, as the region
    * room decides (`open`), or why not: a newcomer that hasn't raided this city lately, neutral, or

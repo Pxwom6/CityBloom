@@ -412,8 +412,8 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
     const index = new Map(structsIn.map((c, i) => [c.id, i]));
     for (const u of [...war.units.values()].sort((a, b) => a.id - b.id)) {
       if (defenders.length >= BATTLE.maxDefenders) break;
-      // Units away raiding another town aren't here to defend.
-      if (!UNIT.get(u.kind) || u.away) continue;
+      // Units away raiding another town aren't here to defend, and superweapons (M37) never do.
+      if (!UNIT.get(u.kind) || u.away || UNIT.get(u.kind)!.super) continue;
       const base = s.civics.get(u.base);
       if (!base) continue;
       const i = index.get(base.id);

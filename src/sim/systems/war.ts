@@ -67,6 +67,8 @@ export interface Unit {
   born: number;
   /** Away on an expedition (its id, M35); absent at home. */
   away?: number;
+  /** A superweapon winding up again after a battle (M37): the war-clock hour it's ready; absent when ready. */
+  ready?: number;
 }
 
 /** A unit being trained at a base. Each base trains its orders one at a time, oldest first. */
@@ -321,6 +323,16 @@ export function trainingFactor(sim: Sim, kind: UnitKind): number {
   return kind === 'infantry' ? 1 : researchEffect(sim, 'vehicleTraining');
 }
 
+/** Test mode (M37): every superweapon wound up at once. */
+export function superReadyCheat(sim: Sim, dryRun: boolean): CommandResult {
+  const w = sim.state.war;
+  if (!w) return fail('War is off in this city');
+  if (dryRun) return ok(0);
+  for (const u of w.units.values()) delete u.ready;
+  sim.warChanged();
+  return ok(0);
+}
+
 /** Units a base keeps: its own number, or an airfield's after Swarm control (M37). */
 export function holdsOf(sim: Sim, c: Civic): number {
   const m = militaryOf(c);
@@ -442,6 +454,13 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
   // Weapons research and prototypes' trials (M37).
   researchHour(sim);
   trialsHour(sim);
+  // Superweapons wound up again (M37).
+  for (const u of w.units.values())
+    if (u.ready !== undefined && u.ready <= w.clock) {
+      delete u.ready;
+      sim.events.push({ kind: 'superReady', id: u.id, info: { kind: u.kind } });
+      sim.warChanged();
+    }
   // Readiness.
   const target = readinessTarget(sim);
   const d = WAR.readinessPerDay / HOURS_PER_DAY;
@@ -990,11 +1009,14 @@ export function forceData(sim: Sim): ForceData | null {
   return {
     units: [...w.units.values()]
       .sort((a, b) => a.id - b.id)
-      .map((u) =>
-        u.away
-          ? { id: u.id, kind: u.kind, base: u.base, hp: u.hp, away: u.away }
-          : { id: u.id, kind: u.kind, base: u.base, hp: u.hp },
-      ),
+      .map((u) => ({
+        id: u.id,
+        kind: u.kind,
+        base: u.base,
+        hp: u.hp,
+        ...(u.away ? { away: u.away } : {}),
+        ...(u.ready !== undefined && u.ready > w.clock ? { ready: u.ready - w.clock } : {}),
+      })),
     orders: orders.map((o) => {
       const c = sim.state.civics.get(o.base);
       const head = c && trainingAt(sim, c.id)?.id === o.id;

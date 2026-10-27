@@ -871,6 +871,7 @@ export class Battle {
   }
 
   private choose(u: Unit): void {
+    if (u.dives) return this.chooseFromSea(u);
     let best = NONE;
     let bestScore = Infinity;
     const consider = (target: number, rank: number, d: number) => {
@@ -900,6 +901,53 @@ export class Battle {
         consider(-(k + 1), u.carrier >= 0 ? (obj ? 1 : 2) : gun ? 1 : 2, d);
       }
     }
+    u.target = best;
+  }
+
+  /**
+   * The whale, surfaced (version 3), picks what to fire at. Within its guns' `range`: units (those
+   * that can hit back first) and manned guns that can fire on it, so a coastal gun further off than
+   * that outranges it. Beyond, its torpedo pods reach buildings within `dives.reach` (a computer
+   * town's seafront stands 500–850 m from where it surfaces): the force's objectives first, then
+   * whatever stands nearest. Nearest first in each rank, ties to the lower index: no dice.
+   */
+  private chooseFromSea(u: Unit): void {
+    const reach = Math.max(u.range, u.dives!.reach ?? 0);
+    let best = NONE;
+    let bestScore = Infinity;
+    const consider = (target: number, rank: number, d: number) => {
+      const score = rank * 100_000 + d;
+      if (score < bestScore || (score === bestScore && target < best)) {
+        bestScore = score;
+        best = target;
+      }
+    };
+    for (const o of this.units) {
+      if (o.side === u.side || !this.alive(o) || o.mode === Mode.Wait || o.dived) continue;
+      if (!this.canHit(u.targets, o)) continue;
+      const d = DMath.hypot(o.x - u.x, o.z - u.z);
+      if (d > u.range) continue;
+      consider(o.i, this.canHit(o.targets, u) && o.attack > 0 ? 0 : 3, d);
+    }
+    // Every structure in the cells within reach (any order: the best is the same whatever the order).
+    const c = BATTLE.unitCell;
+    const r = reach + 40;
+    for (let i = Math.floor((u.x - r) / c); i <= Math.floor((u.x + r) / c); i++)
+      for (let j = Math.floor((u.z - r) / c); j <= Math.floor((u.z + r) / c); j++) {
+        const l = this.sgrid.get(i * 4096 + j);
+        if (!l) continue;
+        for (const k of l) {
+          if (this.state[k] === 2) continue;
+          const d = Math.max(0, DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn));
+          // A gun that can fire on it is fought with its own guns; anything else the pods reach.
+          const gun =
+            this.sv(k, S.gun) > 0 &&
+            this.sv(k, S.manned) > 0 &&
+            (this.sv(k, S.against) & DOMAIN_BIT[u.domain]) !== 0;
+          if (d > (gun ? u.range : reach)) continue;
+          consider(-(k + 1), gun ? 1 : this.objectives.includes(k) ? 2 : 4, d);
+        }
+      }
     u.target = best;
   }
 

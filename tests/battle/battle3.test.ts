@@ -593,14 +593,16 @@ describe('battles version 3: superweapons', () => {
   });
 
   it('the whale can’t be hit while it swims; it surfaces off the shore, fires a while, then dives', () => {
-    // Deep water from z = 832 m, its shore 300 m south of the depot; a coastal gun on the shore.
+    // Deep water from z = 832 m, its shore 300 m south of the depot; a coastal gun on the shore,
+    // built to take a few of the whale's pods (one would knock an ordinary one down), so the two
+    // trade shots for a while.
     const gun: StructSpec = {
       id: 45,
       tags: TAG.civic | TAG.military | TAG.defence,
       x: 900,
       z: 800,
       r: 8,
-      hp: 600,
+      hp: 5_000,
       gun: 6,
       range: 480,
       against: ['sea'],
@@ -633,6 +635,55 @@ describe('battles version 3: superweapons', () => {
     expect(after.length).toBeGreaterThan(0);
     expect(after.every((v) => v.state === 3 || v.state === 2)).toBe(true);
     expect(a.b.result().damaged.length + a.b.result().destroyed.length).toBeGreaterThan(0);
+  });
+
+  it('the whale’s pods reach far inland; a coastal gun beyond its guns’ range outranges it', () => {
+    // Deep water from z = 832 m; the whale lies off the shore at (688, 848), the water nearest its
+    // first objective (the bunker). A coastal gun inland of it, `off` metres from there.
+    const at = { x: 688, z: 848 };
+    const make = (off: number) => {
+      const coastal: StructSpec = {
+        id: 45,
+        tags: TAG.civic | TAG.military | TAG.defence,
+        x: at.x,
+        z: at.z - off,
+        r: 8,
+        hp: 600,
+        gun: 6,
+        range: 480,
+        against: ['sea'],
+      };
+      const L = lineLayout([...TOWN, coastal]);
+      const n = L.grid.nx;
+      L.grid.cells = L.grid.cells.map((c, k) => (Math.floor(k / n) * BATTLE.cell > 800 ? CELL_DEEP : c));
+      const i = input(L, [one('clockworkwhale', 7)], { stance: 'bold', route: 'sea' });
+      i.seed = 'whale-reach';
+      return stampBattle(i);
+    };
+    // 470 m off: the gun reaches the whale (480 m) and the whale's guns (450 m to its wall) don't
+    // reach the gun, which its pods leave alone.
+    const far = play(make(470));
+    expect(far.b.result()).toEqual(play(make(470)).b.result());
+    const r = far.b.result();
+    const whale = (x: typeof far) =>
+      x.frames.flatMap((f) => f.units.filter((u) => u.kind === 'clockworkwhale'));
+    // The closest it came: within the gun's 480 m, never within its own 450 m of the gun's wall.
+    const closest = Math.min(...whale(far).map((u) => Math.hypot(u.x - at.x, u.z - (at.z - 470))));
+    expect(closest).toBeGreaterThan(UNIT.get('clockworkwhale')!.stats.range + 8);
+    expect(closest).toBeLessThanOrEqual(480);
+    expect(r.destroyed).not.toContain(45);
+    expect(r.damaged).not.toContain(45);
+    expect(r.units.find((u) => u.id === 7)!.hp).toBeLessThan(1);
+    // Its pods (heavy shots: only the whale fires those here) flew further than its guns reach.
+    const pods = far.frames.flatMap((f) => f.shots.filter((s) => s.kind === 1));
+    expect(pods.length).toBeGreaterThan(0);
+    expect(Math.max(...pods.map((s) => Math.hypot(s.x1 - s.x0, s.z1 - s.z0)))).toBeGreaterThan(
+      UNIT.get('clockworkwhale')!.stats.range + 200,
+    );
+    // And the bunker and depot, both objectives, fell to them.
+    expect(r.destroyed).toEqual(expect.arrayContaining([10, 11]));
+    // 400 m off, the gun is within its guns' range: it fights the gun, and the gun falls.
+    expect(play(make(400)).b.result().destroyed).toContain(45);
   });
 });
 
@@ -1026,5 +1077,34 @@ describe('superweapons in a grown computer town', () => {
     const m = Battle.run(structuredClone(manned)).result();
     expect(downed(m)).toBe(16);
     expect(m.objectives.down).toBeLessThan(r.objectives.down);
+  });
+
+  it('the whale surfaces off the coast and its pods knock the seafront down, within the caps', () => {
+    const i = resort.strike('clockworkwhale', 'sea');
+    const a = play(i);
+    const r = a.b.result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    const views = a.frames.flatMap((f) => f.units.filter((u) => u.kind === 'clockworkwhale'));
+    const up = views.filter((v) => v.state !== 3);
+    expect(up.length).toBeGreaterThan(0);
+    // Nothing of the town stands within its guns' 450 m of the water where it surfaced: whatever
+    // it hit, its pods hit.
+    const L = i.layout;
+    const nearest = Math.min(
+      ...up.flatMap((v) =>
+        rows(L).map((s) => Math.hypot(s.x - v.x, s.z - v.z) - L.structs[s.k * S.stride + S.rIn]!),
+      ),
+    );
+    expect(nearest).toBeGreaterThan(UNIT.get('clockworkwhale')!.stats.range);
+    expect(a.frames.some((f) => f.shots.some((s) => s.kind === 1))).toBe(true);
+    // Real damage, within the superweapon caps.
+    const f = fallen(i, r);
+    expect(f.collapsed + f.wrecked).toBeGreaterThanOrEqual(10);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    // Then it dived and went home, before the clock ran out.
+    expect(views.at(-1)!.state).toBe(3);
+    expect(r.units.find((u) => u.id === 1)!.out).toBe(false);
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
   });
 });

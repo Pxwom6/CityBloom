@@ -41,6 +41,15 @@ export const BRANCHES: { id: Branch; name: string; blurb: string }[] = [
 ];
 export const BRANCH_IDS: readonly Branch[] = BRANCHES.map((b) => b.id);
 
+/** Six research tier counts (0–4, `BRANCHES` order), as a region report carries them (M37), or false. */
+export function cleanTiers(t: unknown): t is number[] {
+  return (
+    Array.isArray(t) &&
+    t.length === BRANCH_IDS.length &&
+    t.every((x) => typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 4)
+  );
+}
+
 /** Numbers research changes, each read in one place in the sim (1, or 0 for the additive ones, without it). */
 export type EffectKey =
   /** Training speed by what is trained (multiplied). */

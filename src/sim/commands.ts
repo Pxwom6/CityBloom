@@ -16,6 +16,7 @@ import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
 import type { AwayResult } from './systems/expeditions';
 import type { BattleInput } from './battle/types';
 import type { RegionUpdate } from './systems/region';
+import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
 import type { UnitKind } from '../data/war';
 import type { DeclaredScale, Term } from '../data/diplomacy';
 
@@ -188,6 +189,8 @@ export type Command =
       /** A friend's city that fought it (its place in the region), and whether the player was away (M36). */
       from?: number;
       away?: boolean;
+      /** The region flagged it as bringing a superweapon, and counted it so (M37). */
+      super?: boolean;
     }
   | { type: 'cancelTraining'; order: number }
   | { type: 'disbandUnit'; unit: number }
@@ -222,7 +225,22 @@ export type Command =
       target?: SabotageTarget;
       branch?: Branch;
       breakPact?: boolean;
-    };
+    }
+  /**
+   * Operations between friends (M37, page only): an operation of the city's pinned while the region
+   * decides on it, the region's verdict on it, and an operation against the city as the region
+   * decided it.
+   */
+  | { type: 'spySettling'; mission: number; on: boolean }
+  | {
+      type: 'missionResult';
+      mission: number;
+      outcome: MissionOutcome;
+      stole?: TierKey;
+      dossier?: Dossier;
+      reason?: string;
+    }
+  | ({ type: 'opResolve' } & OpInput);
 
 export type CommandType = Command['type'];
 
@@ -295,6 +313,9 @@ const COMMAND_KINDS = {
   setDome: true,
   useBlackout: true,
   spyMission: true,
+  spySettling: true,
+  missionResult: true,
+  opResolve: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

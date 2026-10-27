@@ -14,11 +14,16 @@ import {
 import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import type { RegionFlows } from './regionFlows';
-import { civicDef, civicOnline } from '../world/civic';
+import { BERTH_DEPTH, civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
 import { embargoed, forgetNeighbour } from './diplomacy';
+import { BRANCH_IDS, cleanTiers } from '../../data/research';
+import { BATTLE } from '../../data/battle';
+import { MAP_SIZE } from '../../data/world';
+import { tierCounts } from './research';
+import { counterIntel } from './intel';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -48,6 +53,13 @@ export interface PlayerNeighbour {
   online: boolean;
   /** Its map has a coast a force can come from by sea (M37, from its report). */
   coast?: boolean;
+  /**
+   * In a region at war (M37, from its report): its research tiers per branch (`BRANCHES` order), so
+   * a theft is refused before an agent leaves, and its counter-intelligence (‰, the war term left
+   * out), for the odds the region rolls a spy against.
+   */
+  tiers?: number[];
+  counter?: number;
   /**
    * In a region at war (M36): whether the region would let this city raid it now, as the region
    * room decides (`open`), or why not: a newcomer that hasn't raided this city lately, neutral, or
@@ -424,6 +436,10 @@ export interface RegionCity {
   online: boolean;
   /** In a region at war (M36): the region's verdict on this city raiding it now. */
   raid?: RaidVerdict;
+  /** In a region at war (M37): whether its map has a coast, its research tiers, its counter-intelligence. */
+  coast?: true;
+  tiers?: number[];
+  counter?: number;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -475,6 +491,12 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       c.raid === 'absent'
         ? { raid: c.raid }
         : {}),
+      // War (M37): a coast to sail to, its tiers (a theft needs one further on) and its guard.
+      ...(c.coast === true ? { coast: true } : {}),
+      ...(cleanTiers(c.tiers) ? { tiers: [...c.tiers!] } : {}),
+      ...(typeof c.counter === 'number' && Number.isInteger(c.counter) && c.counter >= 0 && c.counter <= 1000
+        ? { counter: c.counter }
+        : {}),
     };
   }
   // The other cities' deals with this one: replaced as a whole with each update.
@@ -521,6 +543,35 @@ export interface RegionReport {
   projectBuilt: boolean;
   /** War (M36): why friends can't raid it, if they can't. */
   shield?: Shield;
+  /**
+   * War (M37), in a city at war only: its research tiers per branch (six, `BRANCHES` order), its
+   * counter-intelligence (‰, without the war term: the region rolls friends' spies against it),
+   * whether its map has a sea entry a force can come from, and its war clock (hours: the region
+   * starts the city's fair clock from it).
+   */
+  tiers?: number[];
+  counter?: number;
+  coast?: true;
+  clock?: number;
+}
+
+/** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */
+const coastCache = new WeakMap<Sim, { edits: number; coast: boolean }>();
+
+/**
+ * Does the city's map have a sea entry a force can come from (M37): deep water in an edge cell of
+ * the battles' terrain grid, as `battleLayout` finds one. Worked out again only after earthworks.
+ */
+export function mapHasCoast(sim: Sim): boolean {
+  const hit = coastCache.get(sim);
+  if (hit && hit.edits === sim.terrainEdits) return hit.coast;
+  const c = BATTLE.cell;
+  const n = Math.ceil(MAP_SIZE / c);
+  const deep = (i: number, j: number) => sim.terrain.heightAt((i + 0.5) * c, (j + 0.5) * c) < BERTH_DEPTH / 2;
+  let coast = false;
+  for (let k = 0; k < n && !coast; k++) coast = deep(k, 0) || deep(k, n - 1) || deep(0, k) || deep(n - 1, k);
+  coastCache.set(sim, { edits: sim.terrainEdits, coast });
+  return coast;
 }
 
 export function regionReport(sim: Sim): RegionReport {
@@ -567,6 +618,15 @@ export function regionReport(sim: Sim): RegionReport {
         : !raidThreat(sim).open && !s.war.unshielded
           ? { shield: 'new' as const }
           : {}
+      : {}),
+    // War (M37): research, counter-intelligence, a coast and the war clock, for the region's room.
+    ...(s.war
+      ? {
+          tiers: BRANCH_IDS.map((b) => tierCounts(sim)[b]),
+          counter: counterIntel(sim),
+          ...(mapHasCoast(sim) ? { coast: true as const } : {}),
+          clock: s.war.clock,
+        }
       : {}),
   };
 }

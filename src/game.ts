@@ -1,4 +1,4 @@
-import type { RegionWarRules } from './data/war';
+import { UNIT, type RegionWarRules } from './data/war';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -50,6 +50,7 @@ import {
   raidVerdict,
   type BattleAnswer,
   type BattleMeta,
+  type OpOn,
   type CityPort,
   type RegionLinkOptions,
 } from './net/regionLink';
@@ -58,6 +59,8 @@ import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
+import { RegionOps } from './client/ops';
+import { OP_TAKEN } from './sim/systems/regionOps';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -281,6 +284,9 @@ export class Game {
       const exps = diff.stats.war?.expeditions;
       if (exps?.length && !this.inMenu() && !this.readOnly && (!this.net || this.net.session.isHost))
         this.away.check(exps);
+      // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
+      const ops = diff.stats.war?.intel?.regionOps;
+      if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -534,6 +540,20 @@ export class Game {
     },
     settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
   });
+  /**
+   * Operations against friends' cities (M37): put to the region by this page, their verdicts handed
+   * to the city. Out of touch, they wait; in no region at all, they're turned back (and refunded).
+   */
+  readonly ops = new RegionOps({
+    command: (cmd) => this.dispatch(cmd),
+    post: (op) =>
+      this.region
+        ? this.region.sendOp(op)
+        : Promise.resolve(this.boundRegion ? null : { kept: false, reason: 'the city is in no region now' }),
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    changed: () => this.notify(),
+  });
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
@@ -550,7 +570,29 @@ export class Game {
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
       battle: (input, meta) => this.takeBattle(input, meta),
+      op: (o) => this.takeOp(o),
     };
+  }
+
+  /**
+   * An operation a friend's city made against this one, as the region decided it (M37): the city's
+   * own sim takes it once (choosing what a saboteur closes), and the city is saved before the region
+   * is told, so closing the page never loses one.
+   */
+  private async takeOp(o: OpOn): Promise<BattleAnswer> {
+    if (this.readOnly) return 'later';
+    if (!this.region?.view?.cities.some((c) => c.slot === o.from)) return 'refused';
+    const r = await this.client.command({
+      type: 'opResolve',
+      from: o.from,
+      id: o.id,
+      op: o.op,
+      outcome: o.outcome,
+      ...(o.target ? { target: o.target } : {}),
+      late: o.late,
+    });
+    if (!r.ok && r.reason !== OP_TAKEN) return 'refused';
+    return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
   }
 
   /**
@@ -578,6 +620,8 @@ export class Game {
       replay: id,
       from: meta.from,
       ...(meta.away ? { away: true } : {}),
+      // Counted by the region as bringing a superweapon (M37): the city takes nothing from one not.
+      ...(meta.super ? { super: true } : {}),
     } as const;
     const pre = await this.client.preview(cmd);
     if (!pre.ok) {
@@ -737,11 +781,17 @@ export class Game {
     // its page's to settle (forgotten, fought again, or asked again later).
     link.onBattleRefused = (id) =>
       void loadBattle(id).then((r) => (r && r.expedition === undefined ? battlePosted(id) : undefined));
-    link.onIncoming = ({ from, units, hours }) => {
+    link.onIncoming = ({ from, units, hours, super: sup, gate }) => {
       const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
+      // With a superweapon, or through the express gate (M37), the siren says so.
+      const what = sup
+        ? `a ${(UNIT.get(sup)?.name ?? 'superweapon').toLowerCase()} and ${units - 1} more units`
+        : `${units} units`;
       this.notice(
         `incoming:${from}`,
-        `Sirens! ${who} is sending ${units} units against the city: about ${hours} hours of their time away.`,
+        gate
+          ? `Sirens! A gate swirls open on the border: ${who} is sending ${what} through it.`
+          : `Sirens! ${who} is sending ${what} against the city: about ${hours} hours of their time away.`,
         'bad',
       );
       this.audio?.play('raid');

@@ -214,6 +214,7 @@ import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/po
 import { healthHour } from './systems/health';
 import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
 import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
+import { missionResult, opResolve, spySettling } from './systems/regionOps';
 import {
   baseRemoved,
   bondsHour,
@@ -349,6 +350,10 @@ export type SimEvent = {
     | 'rivalTech'
     | 'forceArrived'
     | 'forceHome'
+    // Operations between friends (M37).
+    | 'spyArrived'
+    | 'blackoutWarning'
+    | 'blackoutRefused'
     | 'researchDone'
     | 'researchWaiting'
     | 'spinoff'
@@ -1458,7 +1463,16 @@ export class Sim {
       case 'battleSettling':
         return battleSettling(this, cmd.expedition, cmd.on, dryRun);
       case 'battleResolve':
-        return resolveBattle(this, cmd.input, cmd.mode, dryRun, cmd.replay, cmd.from, !!cmd.away);
+        return resolveBattle(
+          this,
+          cmd.input,
+          cmd.mode,
+          dryRun,
+          cmd.replay,
+          cmd.from,
+          !!cmd.away,
+          !!cmd.super,
+        );
       case 'cancelTraining':
         return cancelTraining(this, cmd.order, dryRun);
       case 'disbandUnit':
@@ -1493,6 +1507,27 @@ export class Sim {
         return useBlackout(this, cmd.neighbour, !!cmd.breakPact, dryRun);
       case 'spyMission':
         return spyMission(this, cmd.neighbour, cmd.op, cmd.target, cmd.branch, !!cmd.breakPact, dryRun);
+      case 'spySettling':
+        return spySettling(this, cmd.mission, cmd.on, dryRun);
+      case 'missionResult':
+        return missionResult(this, cmd.mission, cmd.outcome, dryRun, {
+          ...(cmd.stole !== undefined ? { stole: cmd.stole } : {}),
+          ...(cmd.dossier !== undefined ? { dossier: cmd.dossier } : {}),
+          ...(typeof cmd.reason === 'string' ? { reason: cmd.reason } : {}),
+        });
+      case 'opResolve':
+        return opResolve(
+          this,
+          {
+            from: cmd.from,
+            id: cmd.id,
+            op: cmd.op,
+            outcome: cmd.outcome,
+            ...(cmd.target !== undefined ? { target: cmd.target } : {}),
+            late: cmd.late,
+          },
+          dryRun,
+        );
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -2475,7 +2510,11 @@ export class Sim {
   /** Terrain samples changed by earthworks, for the client (M13). */
   markTerrainDirty(idx: number): void {
     this.dirtyTerrain.add(idx);
+    this.terrainEdits++;
   }
+
+  /** Earthworks this sim has seen, so what's worked out from the ground can be kept until it moves (M37). */
+  terrainEdits = 0;
 
   /**
    * The ground moved inside `box` (earthworks, M13): buildings and civic buildings settle onto it

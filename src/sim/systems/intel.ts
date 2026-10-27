@@ -40,11 +40,21 @@ import type { Neighbour, RivalNeighbour } from './region';
 import { bankPoints, researched, tierCounts } from './research';
 import { militaryCivics, militaryOf } from './war';
 import { rivalBlackedOut } from './supers';
+import {
+  friendArrived,
+  friendMissionHour,
+  friendOpsWaiting,
+  friendSpyRefusal,
+  friendTier,
+  stolenFrom,
+  type Dossier,
+  type FriendOpWaiting,
+} from './regionOps';
 
 /** A mission of one of the city's agents. */
 export interface Mission {
   id: number;
-  /** The neighbour it goes to, its name, and a friend's place in the region (step 9). */
+  /** The neighbour it goes to, its name, and a friend's place in the region (M37, step 9). */
   to: number;
   name: string;
   slot?: number;
@@ -56,7 +66,12 @@ export interface Mission {
   depart: number;
   arrive: number;
   home: number;
-  state: 'out' | 'back';
+  /**
+   * `arrived`: at a friend's city, waiting for the region's verdict (step 9: `regionOps.ts`), pinned
+   * (`settling`) once the page has put it to the region.
+   */
+  state: 'out' | 'arrived' | 'back';
+  settling?: true;
   outcome?: 'success' | 'failed' | 'caught';
   paid: number;
 }
@@ -83,6 +98,10 @@ export interface Intel {
   incidents?: Record<number, number>;
   /** A spy of theirs was caught here (war-clock hour, by neighbour): war on them costs no reputation. */
   grievance?: Record<number, number>;
+  /** Friends' cities looked round (step 9), by their place in the region: the dossier, fresh until then. */
+  seen?: Record<number, Dossier & { until: number }>;
+  /** Tiers whose points the city's agents stole from friends (once each), by their place in the region. */
+  stolen?: Record<number, TierKey[]>;
 }
 
 /** What the city knows of a computer neighbour from its spies, and what its spies did there. */
@@ -110,7 +129,7 @@ function clock(sim: Sim): number {
   return sim.state.war?.clock ?? 0;
 }
 
-function intel(sim: Sim): Intel {
+export function intel(sim: Sim): Intel {
   return (sim.state.war!.intel ??= { missions: [], results: [] });
 }
 
@@ -118,7 +137,7 @@ function rivalIntel(r: RivalNeighbour): RivalIntel {
   return (r.intel ??= {});
 }
 
-function result(sim: Sim, withId: number, text: string, tone?: 'good' | 'bad'): void {
+export function result(sim: Sim, withId: number, text: string, tone?: 'good' | 'bad'): void {
   const i = intel(sim);
   i.results.push({ at: clock(sim), with: withId, text, ...(tone ? { tone } : {}) });
   if (i.results.length > 12) i.results.splice(0, i.results.length - 12);
@@ -245,8 +264,11 @@ function missionRefusal(
   if (!researched(sim, def.research)) return `${def.name} needs ${TIER.get(def.research)!.name} research`;
   const n = s.region.neighbours.find((x) => x.id === to);
   if (!n) return 'No such neighbour';
-  if (n.player) return 'Spies against a friend’s city go through the region';
-  if (!n.rival) return `${n.name} isn’t a rival`;
+  // A friend's city (step 9): the region decides; these are the checks the city can make itself.
+  if (n.player) {
+    const why = friendSpyRefusal(sim, n, op);
+    if (why) return why;
+  } else if (!n.rival) return `${n.name} isn’t a rival`;
   if (s.war?.diplomacy?.neutral && op !== 'reveal') return 'A neutral city only sends spies to look';
   if (op === 'sabotage' && target !== 'power' && target !== 'depot')
     return 'Choose what to sabotage: its power or its depot';
@@ -254,9 +276,12 @@ function missionRefusal(
     if (!branch || !BRANCH_NAME.has(branch)) return 'Choose the research to steal';
     const next = nextTier(sim, branch);
     if (!next) return `The city has all of ${BRANCH_NAME.get(branch)} research`;
-    if ((n.rival.tech ?? 0) <= tierCounts(sim)[branch])
+    // A friend's tiers as its last report said (step 9); a computer neighbour's tech.
+    const theirs = n.player ? friendTier(n, branch) : (n.rival!.tech ?? 0);
+    if (theirs <= tierCounts(sim)[branch])
       return `${n.name} is no further than you in ${BRANCH_NAME.get(branch)} research`;
-    if (n.rival.intel?.stolen?.includes(next))
+    const stolen = n.player ? stolenFrom(sim, n.player.slot) : n.rival!.intel?.stolen;
+    if (stolen?.includes(next))
       return `Your agents have taken all they can of ${TIER.get(next)!.name} from ${n.name}`;
   }
   if (agentsFree(sim) <= 0) return 'Every agent is out';
@@ -278,15 +303,16 @@ export function spyMission(
 ): CommandResult {
   const why = missionRefusal(sim, to, op, target, branch);
   if (why) return fail(why);
-  // Sabotage is a strike (M36's refusals: pacts asked about first, vassals, wars not yet open).
-  if (op === 'sabotage') {
+  const s = sim.state;
+  const n = s.region.neighbours.find((x) => x.id === to)!;
+  // Sabotage is a strike (M36's refusals: pacts asked about first, vassals, wars not yet open); at a
+  // friend's city the region decides (step 9).
+  if (op === 'sabotage' && !n.player) {
     const strike = strikeRefusal(sim, to, 'power', breakPact);
     if (strike) return strike;
   }
   if (dryRun) return ok(0);
-  if (op === 'sabotage') strikeBreaks(sim, to);
-  const s = sim.state;
-  const n = s.region.neighbours.find((x) => x.id === to)!;
+  if (op === 'sabotage' && !n.player) strikeBreaks(sim, to);
   const def = SPY_OP[op];
   const id = s.nextId++;
   const now = clock(sim);
@@ -296,6 +322,7 @@ export function spyMission(
     id,
     to,
     name: n.name,
+    ...(n.player ? { slot: n.player.slot } : {}),
     op,
     ...(op === 'sabotage' ? { target } : {}),
     ...(op === 'steal' ? { branch } : {}),
@@ -465,7 +492,7 @@ function resolveTheirs(sim: Sim, spy: TheirSpy): void {
 }
 
 /** What a saboteur goes for: the largest working power plant, or the vehicle depot. */
-function sabotageTarget(sim: Sim, target: SabotageTarget): Civic | undefined {
+export function sabotageTarget(sim: Sim, target: SabotageTarget): Civic | undefined {
   const s = sim.state;
   let best: Civic | undefined;
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
@@ -488,7 +515,10 @@ export function intelHour(sim: Sim): void {
   if (!w || !i) return;
   const now = w.clock;
   for (const m of [...i.missions]) {
-    if (m.state === 'out' && now >= m.arrive) {
+    // At a friend's city (step 9): the agent waits for the region's verdict, which the page asks for.
+    if (m.state === 'out' && now >= m.arrive && m.slot !== undefined) friendArrived(sim, m);
+    else if (m.state === 'arrived') friendMissionHour(sim, m);
+    else if (m.state === 'out' && now >= m.arrive) {
       resolveMission(sim, m);
       if (m.outcome === 'caught') i.missions = i.missions.filter((x) => x !== m);
       else m.state = 'back';
@@ -635,6 +665,10 @@ export interface IntelSummary {
   results: Intel['results'];
   /** Neighbours the city's agents have a fresh look at (ids). */
   revealed: number[];
+  /** Operations waiting for the region's verdict (step 9): the page puts them to it. */
+  regionOps: FriendOpWaiting[];
+  /** Friends' cities looked round, by their place in the region, while fresh (step 9). */
+  seen: Record<number, Dossier & { until: number }>;
 }
 
 export function intelSummary(sim: Sim): IntelSummary | null {
@@ -649,5 +683,9 @@ export function intelSummary(sim: Sim): IntelSummary | null {
     missions: i ? i.missions.map((m) => ({ ...m })) : [],
     results: i ? i.results.map((r) => ({ ...r })) : [],
     revealed: sim.state.region.neighbours.filter((n) => revealed(sim, n)).map((n) => n.id),
+    regionOps: friendOpsWaiting(sim),
+    seen: Object.fromEntries(
+      Object.entries(i?.seen ?? {}).filter(([, d]) => w.clock < d.until),
+    ) as IntelSummary['seen'],
   };
 }

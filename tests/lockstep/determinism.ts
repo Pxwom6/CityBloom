@@ -261,6 +261,54 @@ export function runDeterminism(
   lab({ type: 'spyMission', neighbour: target, op: 'reveal' });
   for (let h = 0; h < 10; h++) labSim.advance(TICKS_PER_HOUR);
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
+  // Between friends (M37, step 9): a friend's city takes a neighbour's place in a region at war. An
+  // agent waits there for the region's word (pinned, then turned back and refunded), the city takes
+  // a friend's saboteur once.
+  const none = { power: 0, water: 0, garbage: 0 };
+  lab({
+    type: 'regionUpdate',
+    update: {
+      cities: [
+        {
+          slot: 2,
+          name: 'Brookside',
+          mayor: 'Sam',
+          color: 1,
+          population: 4_000,
+          kind: 'suburb',
+          offers: { buy: { ...none }, sell: { ...none } },
+          workers: 0,
+          jobs: 0,
+          shoppers: 0,
+          online: true,
+          raid: 'open',
+          tiers: [0, 1, 0, 0, 1, 0],
+          counter: 200,
+        },
+      ],
+      contracts: [],
+      project: null,
+      rules: { war: true, scale: 'skirmish', supers: true },
+    },
+  });
+  const friend = labSim.state.region.neighbours.find((n) => n.player?.slot === 2)?.id ?? -1;
+  lab({ type: 'spyMission', neighbour: friend, op: 'reveal' });
+  const agent = () => labSim.state.war!.intel?.missions.find((m) => m.slot === 2);
+  for (let h = 0; h < 8 && agent()?.state === 'out'; h++) labSim.advance(TICKS_PER_HOUR);
+  const waiting = agent()?.id ?? -1;
+  lab({ type: 'spySettling', mission: waiting, on: true });
+  lab({ type: 'missionResult', mission: waiting, outcome: 'refused', reason: 'Not now' });
+  lab({
+    type: 'opResolve',
+    from: 2,
+    id: 'op-00000000-1',
+    op: 'sabotage',
+    outcome: 'success',
+    target: 'power',
+    late: false,
+  });
+  labSim.advance(TICKS_PER_MONTH);
+  research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));

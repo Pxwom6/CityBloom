@@ -3657,7 +3657,8 @@ body {
 }
 .war-room .tabs {
   flex-shrink: 0;
-  overflow-x: auto;
+  /* Eight tabs don't fit the panel's width: a second row rather than tabs scrolled out of sight. */
+  flex-wrap: wrap;
 }
 .war-room .tab-body {
   flex: 1;

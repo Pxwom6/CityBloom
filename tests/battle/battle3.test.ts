@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { BATTLE, SUPER } from '../../src/data/battle';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { BATTLE, SKIRMISH, SUPER } from '../../src/data/battle';
+import type { TierKey } from '../../src/data/research';
 import type { UnitKind } from '../../src/data/war';
+import { awayInput, type AwayCity } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { checkBattleInput } from '../../src/sim/battle/check';
+import { battleLayout, strengthFactors, structureAsSeen } from '../../src/sim/battle/layout';
 import {
   BATTLE_VERSION,
   CELL_DEEP,
@@ -12,9 +15,15 @@ import {
   type BattleEvent,
   type BattleFrame,
   type BattleInput,
+  type BattleLayout,
   type BattleUnitIn,
 } from '../../src/sim/battle/types';
 import { battleVersionOf, stampBattle } from '../../src/sim/battle/version';
+import { Sim } from '../../src/sim/sim';
+import { adoptBattle, coverWithDome, resolveBattle } from '../../src/sim/systems/raids';
+import { TICKS_PER_MONTH } from '../../src/sim/time';
+import { BState } from '../../src/sim/world/buildings';
+import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
 import { input, lineLayout, TOWN, type StructSpec } from './handmade';
 
 /**
@@ -24,15 +33,25 @@ import { input, lineLayout, TOWN, type StructSpec } from './handmade';
  */
 
 /** Every event and frame of a battle, ticked to its end. */
-function play(i: BattleInput): { b: Battle; events: BattleEvent[]; frames: BattleFrame[] } {
+function play(i: BattleInput): {
+  b: Battle;
+  events: BattleEvent[];
+  frames: BattleFrame[];
+  /** Each event's tick (its index in `frames`). */
+  at: number[];
+} {
   const b = new Battle(structuredClone(i));
   const events: BattleEvent[] = [];
   const frames: BattleFrame[] = [];
+  const at: number[] = [];
   while (!b.outcome) {
-    events.push(...b.tick());
+    for (const e of b.tick()) {
+      events.push(e);
+      at.push(frames.length);
+    }
     frames.push(b.frame());
   }
-  return { b, events, frames };
+  return { b, events, frames, at };
 }
 
 const one = (kind: UnitKind, id: number, over: Partial<BattleUnitIn> = {}): BattleUnitIn => ({
@@ -310,15 +329,19 @@ describe('battles version 3: interceptors', () => {
   });
 
   it('shots from close by (tanks at a wall) aren’t stopped', () => {
+    // Heavy tanks reach 140 m: at the 40 m depot's wall that's up to 160 m from its middle, but
+    // what counts is how far the shell flies, to the wall.
     const near = interceptor(50, 1000, 700);
-    const tanks = (s: StructSpec) => {
-      const i = input(lineLayout([...TOWN, s]), force(['tank', 6]), { stance: 'bold' });
-      i.seed = 'close';
-      return stampBattle(i);
-    };
-    const withIt = play(tanks(near));
-    expect(stopped(withIt.frames)).toEqual([]);
-    expect(withIt.b.result()).toEqual(play(tanks(plainGun(near))).b.result());
+    for (const kind of ['tank', 'heavytank'] as const) {
+      const tanks = (s: StructSpec) => {
+        const i = input(lineLayout([...TOWN, s]), force([kind, 6]), { stance: 'bold' });
+        i.seed = 'close';
+        return stampBattle(i);
+      };
+      const withIt = play(tanks(near));
+      expect(stopped(withIt.frames), kind).toEqual([]);
+      expect(withIt.b.result()).toEqual(play(tanks(plainGun(near))).b.result());
+    }
   });
 });
 
@@ -435,7 +458,14 @@ describe('battles version 3: superweapons', () => {
       range: 320,
       against: ['air'],
     }));
-    const i = input(lineLayout([...TOWN, ...flak]), fortress(0.05), { stance: 'bold' });
+    // Tanks along by road (the anti-air can't touch them), so the force fights on without it.
+    const i = input(
+      lineLayout([...TOWN, ...flak]),
+      [...fortress(0.05), ...units('tank', 8, undefined, -1, 600)],
+      {
+        stance: 'bold',
+      },
+    );
     i.seed = 'fortress-down';
     const a = play(stampBattle(i));
     const r = a.b.result();
@@ -443,12 +473,20 @@ describe('battles version 3: superweapons', () => {
     const launched = new Set<number>();
     for (const f of a.frames) for (const u of f.units) if (u.kind === 'drone') launched.add(u.id);
     expect(launched.size).toBeLessThan(16);
-    const left = new Set(a.events.flatMap((e) => (e.k === 'left' ? [e.unit] : [])));
+    // The rest leave as it falls, in the same tick.
+    const down = a.at[a.events.findIndex((e) => e.k === 'out' && e.unit === 500)]!;
+    const left = new Map<number, number>();
+    a.events.forEach((e, k) => e.k === 'left' && left.set(e.unit, a.at[k]!));
     for (let k = 0; k < 16; k++) {
       const id = -(SUPER.carriedId + k);
-      expect(launched.has(id) || left.has(id), `drone ${id}`).toBe(true);
-      if (!launched.has(id)) expect(left.has(id)).toBe(true);
+      if (!launched.has(id)) expect(left.get(id), `drone ${id}`).toBe(down);
     }
+    // The tanks fought on after it.
+    expect(
+      a.frames
+        .slice(down + 1)
+        .some((f) => f.units.some((u) => u.kind === 'tank' && u.side === 0 && u.state === 1)),
+    ).toBe(true);
   });
 
   it('the whale can’t be hit while it swims; it surfaces off the shore, fires a while, then dives', () => {
@@ -494,3 +532,290 @@ describe('battles version 3: superweapons', () => {
     expect(a.b.result().damaged.length + a.b.result().destroyed.length).toBeGreaterThan(0);
   });
 });
+
+/** A war town: an HQ, barracks and a bunker by the town, three squads at home. */
+function warTown(): { sim: Sim; place: (def: string) => number } {
+  const sim = newSim({ rivals: true, disasters: false });
+  const { streets } = buildTown(sim);
+  serveTown(sim);
+  sim.advance(2 * TICKS_PER_MONTH);
+  sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
+  const place = (def: string) => {
+    for (const seg of [...streets].reverse())
+      try {
+        return placeAlong(sim, def, seg);
+      } catch {
+        /* the next street */
+      }
+    throw new Error(`no room for ${def}`);
+  };
+  place('militaryhq');
+  const barracks = place('barracks');
+  place('bunker');
+  for (let k = 0; k < 3; k++) sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+  sim.advance(2 * TICKS_PER_MONTH);
+  return { sim, place };
+}
+
+/** Research done, as the labs would leave it (no cheat for it yet). */
+function researched(sim: Sim, done: TierKey[]): void {
+  sim.state.war!.research = { done, queue: [], points: {}, paid: [], prototypes: [], proven: [], trials: [] };
+}
+
+/** A friend's page's raid on the town as its own picture shows it: 24 tanks by road at its military. */
+function raidOn(layout: BattleLayout, id = 'exp-test-1'): BattleInput {
+  return stampBattle({
+    v: BATTLE_VERSION,
+    id,
+    seed: `seed-${id}`,
+    scale: 'skirmish',
+    layout,
+    attacker: {
+      name: 'Raiders',
+      color: 0xd04040,
+      units: Array.from({ length: 24 }, (_, k) => one('tank', 90_000 + k)),
+      route: 'highway',
+      target: 'military',
+      stance: 'bold',
+      readiness: 1,
+    },
+    defender: { name: 'Town', color: 0x4060d0 },
+    orders: [],
+    caps: { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
+  });
+}
+
+const rows = (L: BattleLayout) =>
+  Array.from({ length: L.structs.length / S.stride }, (_, k) => ({
+    k,
+    id: L.structs[k * S.stride + S.id]!,
+    tags: L.structs[k * S.stride + S.tags]!,
+    x: L.structs[k * S.stride + S.x]!,
+    z: L.structs[k * S.stride + S.z]!,
+    hp: L.structs[k * S.stride + S.hp]!,
+  }));
+
+describe('battles version 3 in a city', () => {
+  let town: Sim;
+  const spec = { target: 'military' as const, from: 'west' as const };
+  beforeAll(() => {
+    town = warTown().sim;
+  });
+
+  it('a city that hasn’t researched fights its battles as on M36 (version 2)', () => {
+    const sim = town;
+    const L = battleLayout(sim, spec);
+    expect(L.mods).toBeUndefined();
+    expect(battleVersionOf(raidOn(L))).toBe(2);
+    expect(strengthFactors(sim)).toEqual({ hard: { civic: 1, other: 1 }, shields: [] });
+  });
+
+  it('hardened buildings stand more, and a battle from outside still matches them', () => {
+    const { sim } = { sim: town };
+    const before = battleLayout(sim, spec);
+    researched(sim, ['defence1']);
+    try {
+      const hard = battleLayout(sim, spec);
+      const was = rows(before);
+      const now = rows(hard);
+      expect(now.map((r) => r.id)).toEqual(was.map((r) => r.id));
+      for (const [k, r] of now.entries()) {
+        const f = r.tags & TAG.civic ? 1.3 : 1.15;
+        expect(Math.abs(r.hp - was[k]!.hp * f), `structure ${r.id}`).toBeLessThanOrEqual(f);
+        // The city sees each the same way.
+        const seen = structureAsSeen(sim, r.id)!;
+        expect([seen.tags, seen.x, seen.z, seen.hp]).toEqual([r.tags, r.x, r.z, r.hp]);
+      }
+      // Strength alone is no version 3 field: the battle is version 2 still.
+      expect(battleVersionOf(raidOn(hard))).toBe(2);
+      // Made on the city as it is, every structure is the city's own.
+      const adopted = adoptBattle(sim, raidOn(hard));
+      expect(rows(adopted.layout).map((r) => r.id)).toEqual(now.map((r) => r.id));
+      // Made on a save from before the research, each looks weaker than it is: none is touched.
+      const stale = adoptBattle(sim, raidOn(before));
+      expect(rows(stale.layout).every((r) => r.id < 0)).toBe(true);
+    } finally {
+      delete sim.state.war!.research;
+    }
+  });
+
+  it('a working shield generator doubles what stands in its reach; a stale picture spares it', () => {
+    const { sim, place } = warTown();
+    researched(sim, ['defence1', 'defence2', 'defence3']);
+    const gen = place('shieldgen');
+    const battery = place('interceptor');
+    sim.advance(TICKS_PER_MONTH);
+    const g = sim.state.civics.get(gen)!;
+    expect(strengthFactors(sim).shields).toEqual([{ x: g.x, z: g.z, radius: 300, factor: 2 }]);
+    const shielded = battleLayout(sim, spec);
+    // A picture made while the generator stood idle: what the attacker's page might have.
+    const staff = g.staff;
+    g.staff = 0;
+    const idle = battleLayout(sim, spec);
+    expect(strengthFactors(sim).shields).toEqual([]);
+    g.staff = staff;
+    const inReach = (r: { x: number; z: number }) => Math.hypot(r.x - g.x, r.z - g.z) <= 300;
+    const was = new Map(rows(idle).map((r) => [r.id, r]));
+    let covered = 0;
+    for (const r of rows(shielded)) {
+      const before = was.get(r.id)!;
+      if (inReach(r)) {
+        covered++;
+        expect(Math.abs(r.hp - before.hp * 2)).toBeLessThanOrEqual(2);
+      } else expect(r.hp).toBe(before.hp);
+      expect(structureAsSeen(sim, r.id)!.hp).toBe(r.hp);
+    }
+    expect(covered).toBeGreaterThan(3);
+    // The battery is an interceptor to the battle: that's version 3.
+    const b = rows(shielded).find((r) => r.id === battery)!;
+    expect(b.tags & TAG.intercept).toBe(TAG.intercept);
+    expect(raidOn(shielded).v).toBe(BATTLE_VERSION);
+    expect(checkBattleInput(raidOn(shielded))).toBeNull();
+    // Matched as it is: every structure the city's own.
+    expect(rows(adoptBattle(sim, raidOn(shielded)).layout).every((r) => r.id >= 0)).toBe(true);
+    // Matched on the idle picture: what the shield covers is a stranger (it takes nothing), the rest
+    // is the city's own.
+    for (const r of rows(adoptBattle(sim, raidOn(idle)).layout)) {
+      const orig = rows(idle)[r.k]!;
+      expect(r.id < 0, `structure ${orig.id}`).toBe(inReach(orig));
+    }
+  });
+
+  it('the city’s own dome covers what a battle made without it would hit', () => {
+    const fight = (pool: number | null) => {
+      const copy = cloneSim(town);
+      const r = resolveBattle(copy, raidOn(battleLayout(copy, spec), 'dome-test'), 'watch', false);
+      expect(r.ok).toBe(true);
+      const hb = copy.state.war!.battle!;
+      if (pool !== null) coverWithDome(hb, pool);
+      while (copy.state.war!.battle) copy.step();
+      const rep = copy.state.war!.reports!.at(-1)!;
+      return { rep, cover: hb.cover, copy };
+    };
+    const open = fight(null);
+    expect(open.rep.collapsed.length + open.rep.burning.length + open.rep.civics.length).toBeGreaterThan(0);
+    const domed = fight(1e9);
+    expect(domed.rep.collapsed).toEqual([]);
+    expect(domed.rep.burning).toEqual([]);
+    expect(domed.rep.civics).toEqual([]);
+    expect(domed.cover!.ids.length).toBeGreaterThan(0);
+    expect(domed.cover!.pool).toBeLessThan(1e9);
+    // A pool no bigger than the battle's own adds nothing.
+    const hb = { input: { layout: { dome: 500 } } } as Parameters<typeof coverWithDome>[0];
+    coverWithDome(hb, 400);
+    expect(hb.cover).toBeUndefined();
+    coverWithDome(hb, 900);
+    expect(hb.cover).toEqual({ pool: 400, ids: [] });
+  });
+
+  it('a superweapon in a computer neighbour’s town brings its own caps; a fortress its drones', () => {
+    const sim = town;
+    const rival = sim.state.region.neighbours.find((n) => n.rival && !n.player)!;
+    const city = (units: AwayCity['units'], friend = false): AwayCity => ({
+      seed: 'ashford',
+      cityName: 'Ashford',
+      readiness: 1,
+      expedition: { id: 7, route: 'air', target: 'military', stance: 'bold' },
+      units,
+      neighbour: {
+        id: rival.id,
+        name: rival.name,
+        side: rival.side,
+        kind: rival.kind,
+        population: rival.population,
+        rival: friend ? null : { ...rival.rival! },
+        slot: friend ? 2 : null,
+        colour: 0xd04040,
+      },
+    });
+    const sky = awayInput(city([{ id: 1, kind: 'skyfortress', hp: 1 }]), sim);
+    expect(sky.caps).toEqual(SUPER.caps);
+    expect(sky.v).toBe(BATTLE_VERSION);
+    expect(checkBattleInput(sky)).toBeNull();
+    const drones = sky.attacker.units.filter((u) => u.from !== undefined);
+    expect(drones.map((u) => u.id)).toEqual(Array.from({ length: 16 }, (_, k) => -(SUPER.carriedId + k)));
+    expect(drones.every((u) => u.from === 1 && u.kind === 'drone')).toBe(true);
+    // A friend keeps a skirmish's caps, superweapon or not.
+    expect(awayInput(city([{ id: 1, kind: 'skyfortress', hp: 1 }], true), sim).caps).toEqual({
+      maxCollapse: SKIRMISH.maxCollapse,
+      maxWreck: SKIRMISH.maxWreck,
+    });
+    // No superweapon: a skirmish, and version 2.
+    const plain = awayInput(city([{ id: 1, kind: 'tank', hp: 1 }]), sim);
+    expect(plain.caps).toEqual({ maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck });
+    expect(plain.v).toBe(2);
+    // The city's research goes with its force.
+    const modded = awayInput(
+      { ...city([{ id: 1, kind: 'tank', hp: 1 }]), mods: { land: { hp: 1.25 } } },
+      sim,
+    );
+    expect(modded.attacker.mods).toEqual({ land: { hp: 1.25 } });
+    expect(modded.v).toBe(BATTLE_VERSION);
+    // The fortress fights the same twice.
+    expect(Battle.run(structuredClone(sky)).result()).toEqual(Battle.run(structuredClone(sky)).result());
+  });
+
+  it('the robot stomps through a real town, within the superweapon caps', () => {
+    const sim = town;
+    const rival = sim.state.region.neighbours.find((n) => n.rival && !n.player)!;
+    const city: AwayCity = {
+      seed: 'ashford',
+      cityName: 'Ashford',
+      readiness: 1,
+      expedition: { id: 8, route: 'highway', target: 'military', stance: 'bold' },
+      units: [{ id: 1, kind: 'windupbot', hp: 1 }],
+      neighbour: {
+        id: rival.id,
+        name: rival.name,
+        side: rival.side,
+        kind: rival.kind,
+        population: rival.population,
+        rival: { ...rival.rival!, forces: 0, defences: 0 },
+        slot: null,
+        colour: 0xd04040,
+      },
+    };
+    const i = awayInput(city, sim);
+    const a = Battle.run(structuredClone(i)).result();
+    expect(a).toEqual(Battle.run(structuredClone(i)).result());
+    expect(a.outcome).toBe('raided');
+    expect(a.objectives.down).toBeGreaterThan(0);
+    const civics = new Set(
+      rows(i.layout)
+        .filter((r) => r.tags & TAG.civic)
+        .map((r) => r.id),
+    );
+    expect(a.destroyed.filter((id) => !civics.has(id)).length).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    expect(a.destroyed.filter((id) => civics.has(id)).length).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+  });
+
+  it('a raid on a city with research carries its modifiers; one without stays version 2', () => {
+    const plain = cloneSim(town);
+    expect(plain.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0 }).ok).toBe(true);
+    const hb = plain.state.war!.battle!;
+    expect([hb.input.v, hb.input.layout.v]).toEqual([2, 2]);
+    const armoured = cloneSim(town);
+    researched(armoured, ['land1', 'land2', 'land3']);
+    expect(armoured.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0 }).ok).toBe(true);
+    const hb3 = armoured.state.war!.battle!;
+    expect(hb3.input.layout.mods).toEqual({ land: { hp: 1.25, armour: 0.05 } });
+    expect([hb3.input.v, hb3.input.layout.v]).toEqual([BATTLE_VERSION, BATTLE_VERSION]);
+    // It plays out, and the same after a save and load mid-battle.
+    armoured.advance(60);
+    const copy = cloneSim(armoured);
+    while (armoured.state.war!.battle) armoured.step();
+    while (copy.state.war!.battle) copy.step();
+    expect(copy.hash()).toBe(armoured.hash());
+    expect(rubble(copy)).toBe(rubble(armoured));
+  });
+});
+
+/** A copy of a city, in test mode (for the cheats). */
+function cloneSim(sim: Sim): Sim {
+  const copy = Sim.fromSave(sim.save());
+  copy.testMode = true;
+  return copy;
+}
+
+const rubble = (sim: Sim) =>
+  [...sim.state.buildings.values()].filter((b) => b.state === BState.Rubble).length;

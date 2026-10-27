@@ -130,6 +130,7 @@ function modOf(
   const [lo, hi] = BATTLE_MOD[k];
   return Math.min(hi, Math.max(lo, v));
 }
+
 const TAU = Math.PI * 2;
 const TRUCK_SPEED = 11;
 
@@ -965,13 +966,15 @@ export class Battle {
     u.aim = DMath.atan2(-(tx - u.x), -(tz - u.z)) - u.yaw;
     if (u.cool > 0) return;
     u.cool = u.reload;
-    // Interceptors (version 3): a shell fired from afar, or a bomb, aimed at a building may be stopped
-    // in the air by a battery in reach of it. One draw, only when there's a battery to make it.
+    // Interceptors (version 3): a shell fired from afar (to the building's wall, as reach is
+    // measured), or a bomb, aimed at a building may be stopped in the air by a battery in reach of
+    // it. One draw, only when there's a battery to make it.
     if (
       u.target < 0 &&
       u.siege >= 1 &&
       this.interceptors.length &&
-      (u.domain === 'air' || DMath.hypot(tx - u.x, tz - u.z) >= INTERCEPT.from)
+      (u.domain === 'air' ||
+        DMath.hypot(tx - u.x, tz - u.z) - this.sv(-u.target - 1, S.rIn) >= INTERCEPT.from)
     ) {
       const ic = this.interceptorFor(tx, tz);
       if (ic >= 0) {
@@ -1018,6 +1021,7 @@ export class Battle {
     t.target = NONE;
     t.firing = false;
     this.events.push({ k: 'out', side: t.side, unit: t.id, kind: t.kind });
+    if (t.carries) this.dropCarried(t);
   }
 
   /** A shot that missed lands nearby: what stands within a few metres takes some of it. */

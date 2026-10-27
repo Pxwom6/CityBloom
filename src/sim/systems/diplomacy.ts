@@ -9,6 +9,7 @@
  * reputation. Everything here lives in `WarState.diplomacy`, which appears with the first
  * declaration, proposal or stance: peace, and a war city that never uses it, are unchanged.
  */
+import { freshIncident, grieved } from './intel';
 import {
   cleanTerm,
   DIPLOMACY,
@@ -186,6 +187,34 @@ export function incident(
   note(sim, n.id, what, text, tone);
 }
 
+/** The city's reputation moves (M37: a spy of the city's caught). */
+export function reputationChange(sim: Sim, delta: number): void {
+  const d = dip(sim);
+  d.reputation = clamp(d.reputation + delta, 0, 100);
+  sim.warChanged();
+}
+
+/**
+ * A computer neighbour ends its pacts of these kinds with the city (M37: honourable and cautious
+ * ones, over a spy caught): not a breach of the city's, so its word counts as before.
+ */
+export function endPactsWith(sim: Sim, n: Neighbour, kinds: TermKind[], text: string): void {
+  const d = dip(sim);
+  const had = d.pacts.filter((p) => p.with === n.id && kinds.includes(p.term.k));
+  if (!had.length) return;
+  d.pacts = d.pacts.filter((p) => !had.includes(p));
+  note(sim, n.id, 'pactsEnded', text, 'bad');
+}
+
+/** Spies in a declared war (M37): a sabotage that worked, or a spy caught, moves the score. */
+export function scoreIntel(sim: Sim, withId: number, delta: number): void {
+  const war = warWith(sim, withId);
+  if (!war || sim.state.tick < war.opens || war.capitulated) return;
+  war.score = clamp(round1(war.score + delta), -100, 100);
+  checkCapitulation(sim, war);
+  sim.warChanged();
+}
+
 export function warWith(sim: Sim, id: number): War | undefined {
   return sim.state.war?.diplomacy?.wars.find((x) => x.with === id);
 }
@@ -314,7 +343,9 @@ function startWarWith(
   const d = dip(sim);
   const r = n.rival!;
   if (by === 'us') {
-    const struckUs = s.tick - (s.war!.raided?.by[n.id] ?? -Infinity) < RAIDS.retaliate * M;
+    // Struck first by its raid, or (M37) its spy caught here lately: a declaration costs no reputation.
+    const struckUs =
+      s.tick - (s.war!.raided?.by[n.id] ?? -Infinity) < RAIDS.retaliate * M || grieved(sim, n.id);
     if (!struckUs && !rebellion) d.reputation = clamp(d.reputation + DIPLOMACY.reputation.declare, 0, 100);
     r.relation = clamp(r.relation + DIPLOMACY.declareRelation, -100, 100);
     for (const a of alliesOf(sim, n))
@@ -1465,12 +1496,15 @@ function computerMoves(sim: Sim): void {
     // Aggressive and treacherous neighbours declare war on a city they outgun and dislike.
     if (declared || neutral || !allowed || allowed === 'skirmish' || !threat.open || w.diplomacy?.vassal)
       continue;
-    if (p.aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < 1.5 * strength) continue;
+    // A spy of the city's caught there within a day (M37): it declares at even strength, twice as likely.
+    const caught = freshIncident(sim, n.id);
+    if (p.aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength)
+      continue;
     const ended = w.diplomacy?.ended?.[n.id];
     if (ended !== undefined && s.tick - ended < DIPLOMACY.cooldownMonths * M) continue;
     const bound = bindingPacts(sim, n.id);
     if (bound.length && !(r.personality === 'treacherous' && rng.chance((1 - p.keepsPacts) * 0.3))) continue;
-    if (!rng.chance(p.aggression * 0.15)) continue;
+    if (!rng.chance(p.aggression * 0.15 * (caught ? 2 : 1))) continue;
     if (bound.length) {
       const dd = dip(sim);
       dd.pacts = dd.pacts.filter((x) => !bound.includes(x));
@@ -1478,7 +1512,8 @@ function computerMoves(sim: Sim): void {
     }
     const reasons = WAR_REASONS[r.personality];
     const scale: DeclaredScale = allowed === 'total' && r.forces >= 2.5 * strength ? 'total' : 'war';
-    startWarWith(sim, n, scale, 'them', reasons[rng.int(reasons.length)]!);
+    const reason = reasons[rng.int(reasons.length)]!;
+    startWarWith(sim, n, scale, 'them', caught ? 'We caught your spies in our town' : reason);
     declared = true;
   }
   dip(sim).rng = rng.getState();

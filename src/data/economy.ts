@@ -171,6 +171,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   // Research (M37).
   weaponsResearch: 'Weapons research',
   trials: 'Prototype trials',
+  spies: 'Spy missions',
 };
 
 export function ledgerLabel(key: string): string {

@@ -251,6 +251,16 @@ export function runDeterminism(
     research.push(labSim.hash());
   }
   research.push(JSON.stringify([labSim.state.war!.supers ?? null, labSim.state.region.neighbours]));
+  // Spies (M37): the superweapon buildings knocked down (their posts to an agency), and an agent
+  // sent to look round a computer neighbour (its own dice).
+  for (const c of [...labSim.state.civics.values()].sort((a, b) => a.id - b.id))
+    if (c.def === 'blackouttower' || c.def === 'domeshield')
+      lab({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+  placeAlong(labSim, lab, 'spyagency', roadIds(labSim).reverse());
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'spyMission', neighbour: target, op: 'reveal' });
+  for (let h = 0; h < 10; h++) labSim.advance(TICKS_PER_HOUR);
+  research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));

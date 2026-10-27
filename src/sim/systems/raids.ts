@@ -8,7 +8,6 @@
  */
 import {
   RAIDS,
-  RIVAL_MIX,
   RIVAL_TARGET,
   ROUTES,
   SKIRMISH,
@@ -33,7 +32,7 @@ import {
   type Outcome,
 } from '../battle/types';
 import { stampBattle } from '../battle/version';
-import { rivalMods } from '../ai/tech';
+import { rivalMix, rivalMods } from '../ai/tech';
 import { DMath } from '../dmath';
 import { fail, ok, type CommandResult } from '../commands';
 import { Rng } from '../rng';
@@ -46,6 +45,8 @@ import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
 import { researchEffect } from './research';
 import { lowerDome, raiseDome, rivalBlackedOut } from './supers';
+import { powerSabotaged, revealed, rivalKnows } from './intel';
+import { INTEL } from '../../data/intel';
 import { RESEARCH } from '../../data/research';
 import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
 import { DIPLOMACY } from '../../data/diplomacy';
@@ -183,7 +184,8 @@ export function travelHours(
 
 /** A computer neighbour's raiding force: its strength's share in units, mixed by its character. */
 export function rivalForce(r: RivalNeighbour, share: number, rng: Rng): { kind: UnitKind; hp: number }[] {
-  const mix = RIVAL_MIX[r.personality] ?? RIVAL_MIX.honourable!;
+  // Its character's mix, heavier once its tech allows (M37).
+  const mix = rivalMix(r);
   const kinds = (Object.keys(mix) as UnitKind[]).sort();
   const total = kinds.reduce((a, k) => a + mix[k]!, 0);
   let budget = r.forces * share;
@@ -256,8 +258,8 @@ export function raidsHour(sim: Sim): void {
     if (!threat.open && !answering && !stance.war) continue;
     if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < stance.gapEach * TICKS_PER_MONTH) continue;
     if (r.forces < 1) continue;
-    // Blacked out by the city's tower (M37): no raids meanwhile.
-    if (rivalBlackedOut(sim, n)) continue;
+    // Blacked out by the city's tower, or its power sabotaged by the city's spies (M37): no raids meanwhile.
+    if (rivalBlackedOut(sim, n) || powerSabotaged(sim, n)) continue;
     const p = PERSONALITY[r.personality];
     let chance = (p.aggression * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
     if (r.relation <= RAIDS.hostile) chance *= 2;
@@ -289,7 +291,8 @@ export function planRaid(
   const allAir = units.every((u) => UNIT.get(u.kind)!.domain === 'air');
   const route: BattleRoute = allAir ? 'air' : 'highway';
   const travel = hours ?? travelHours(route, n.side, units);
-  const lead = Math.min(travel, warningHours(sim));
+  // A neighbour the city's spies have looked round lately gives itself away sooner (M37).
+  const lead = Math.min(travel, warningHours(sim) + (revealed(sim, n) ? INTEL.revealWarning : 0));
   const raid: Raid = {
     id: s.nextId++,
     from: n.id,
@@ -298,7 +301,8 @@ export function planRaid(
     target: raidTarget(sim, seat ? 'cityhall' : (RIVAL_TARGET[r.personality] ?? 'military')),
     route,
     stance: r.personality === 'cautious' || r.personality === 'mercantile' ? 'cautious' : 'bold',
-    readiness: 0.8,
+    // Its own spies have looked round the city lately (M37): it comes readier.
+    readiness: rivalKnows(sim, n) ? 0.8 + INTEL.revealReadiness : 0.8,
     warn: s.tick + (travel - lead) * TICKS_PER_HOUR,
     arrive: s.tick + travel * TICKS_PER_HOUR,
   };
@@ -729,7 +733,7 @@ export function applyWarDamage(
 }
 
 /** A city building hit in a battle closes for repairs; knocked out, it's a wreck until repaired. */
-function damageCivic(sim: Sim, id: number, hours: number, wreck: boolean): void {
+export function damageCivic(sim: Sim, id: number, hours: number, wreck: boolean): void {
   const c = sim.state.civics.get(id);
   if (!c) return;
   const was = c.damage;

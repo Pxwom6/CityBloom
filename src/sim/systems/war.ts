@@ -37,6 +37,7 @@ import {
 } from './research';
 import { accrue, book, fundingPct } from './economy';
 import { supersHour, type Supers } from './supers';
+import { depotSabotaged, intelHour, intelSummary, type Intel, type IntelSummary } from './intel';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
   diplomacySummary,
@@ -151,6 +152,8 @@ export interface WarState {
   supers?: Supers;
   /** Blacked out by a friend's tower (M37, war-clock hours): power plants falter, radar and maps go out. */
   blackout?: { by: number; from: number; until: number };
+  /** Spies (M37): the city's missions and what they found, and spies of theirs; absent until the first. */
+  intel?: Intel;
 }
 
 export function initialWar(seed: string): WarState {
@@ -244,7 +247,9 @@ export function rivalsMonth(sim: Sim): void {
     const keep = theirDmz(sim, n.id) ? 0.5 : 1;
     // A vassal of the city (M36) rebuilds its forces only so far.
     const allowed = r.vassal ? DIPLOMACY.vassal.forcesLeft : 1;
-    r.forces = Math.round((r.forces + (k * p.forces * allowed - r.forces) * step) * 10) / 10;
+    // Its depot sabotaged by the city's spies (M37): it arms no more for a while.
+    if (!depotSabotaged(sim, n))
+      r.forces = Math.round((r.forces + (k * p.forces * allowed - r.forces) * step) * 10) / 10;
     r.defences = Math.round((r.defences + (k * p.defences * keep - r.defences) * step) * 10) / 10;
   }
   w.rng = rng.getState();
@@ -459,8 +464,9 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
   // Weapons research and prototypes' trials (M37).
   researchHour(sim);
   trialsHour(sim);
-  // The superweapon buildings (M37): the dome charges, the tower fires.
+  // The superweapon buildings (M37): the dome charges, the tower fires; spies arrive and come home.
   supersHour(sim);
+  intelHour(sim);
   // Superweapons wound up again (M37).
   for (const u of w.units.values())
     if (u.ready !== undefined && u.ready <= w.clock) {
@@ -740,8 +746,9 @@ export function militaryStaffing(
   const { g, costs, flows, origins, car } = r;
   // The forces may take a share of the city's workers at most. The HQ is staffed first, then bases
   // training units (oldest order first), each in full while the share lasts; then (M37) proving
-  // grounds with a prototype on trial, labs with research queued and the superweapon buildings
-  // (always at work: charging, or ready); then the rest, in build order.
+  // grounds with a prototype on trial, labs with research queued, the superweapon buildings and the
+  // spy agency (always at work: charging or ready, and counter-intelligence); then the rest, in
+  // build order.
   const work = sim.state.war.research;
   const trying = new Set((work?.trials ?? []).map((t) => t.ground));
   const researching = !!work?.queue.length;
@@ -763,7 +770,7 @@ export function militaryStaffing(
       : (first.get(c.id) ??
         (trying.has(c.id)
           ? Number.MAX_SAFE_INTEGER - 2
-          : (researching && militaryOf(c)!.lab) || militaryOf(c)!.superweapon
+          : (researching && militaryOf(c)!.lab) || militaryOf(c)!.superweapon || militaryOf(c)!.agency
             ? Number.MAX_SAFE_INTEGER - 1
             : Number.MAX_SAFE_INTEGER));
   bases.sort((a, b) => rank(a.c) - rank(b.c) || a.c.id - b.c.id);
@@ -867,6 +874,8 @@ export interface WarSummary {
   diplomacy: DiplomacySummary | null;
   /** Weapons research, prototypes and trials (M37). */
   research: ResearchSummary | null;
+  /** Spies (M37): agents, counter-intelligence, missions and what they found, neighbours revealed. */
+  intel: IntelSummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -979,6 +988,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     },
     diplomacy: diplomacySummary(sim),
     research: researchSummary(sim),
+    intel: intelSummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

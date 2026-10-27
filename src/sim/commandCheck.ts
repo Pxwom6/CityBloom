@@ -10,7 +10,8 @@
  * host's browser). Single player never goes through it.
  */
 import type { Command, CommandType } from './commands';
-import { DOME_MODES, TIER, type TierKey } from '../data/research';
+import { BRANCH_IDS, DOME_MODES, TIER, type TierKey } from '../data/research';
+import { SPY_OPS } from '../data/intel';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
@@ -389,6 +390,20 @@ const CHECKS: Record<CommandType, Check> = {
       : BAD,
   stopTrial: (c) => (isInt(c.ground) ? { type: 'stopTrial', ground: c.ground } : BAD),
   setDome: (c) => (oneOf(c.mode, DOME_MODES) ? { type: 'setDome', mode: c.mode } : BAD),
+  spyMission: (c) =>
+    isInt(c.neighbour) &&
+    oneOf(c.op, SPY_OPS) &&
+    (c.target === undefined || oneOf(c.target, ['power', 'depot'] as const)) &&
+    (c.branch === undefined || oneOf(c.branch, BRANCH_IDS))
+      ? {
+          type: 'spyMission',
+          neighbour: c.neighbour,
+          op: c.op,
+          ...(c.target !== undefined ? { target: c.target } : {}),
+          ...(c.branch !== undefined ? { branch: c.branch } : {}),
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
   useBlackout: (c) =>
     isInt(c.neighbour)
       ? {

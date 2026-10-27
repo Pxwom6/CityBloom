@@ -1,6 +1,7 @@
 import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { DealDirection, DealResource } from '../data/region';
-import type { DomeMode, TierKey } from '../data/research';
+import type { Branch, DomeMode, TierKey } from '../data/research';
+import type { SabotageTarget, SpyOp } from '../data/intel';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -82,6 +83,9 @@ export type Command =
   | { type: 'cheat'; cheat: 'superReady' }
   /** Test mode (M37): a project building's stages done at once. */
   | { type: 'cheat'; cheat: 'finishStages'; civic: number }
+  /** Test mode (M37): a computer neighbour's spy arrives now; a computer neighbour's tech set. */
+  | { type: 'cheat'; cheat: 'spyIn'; neighbour: number; op: SpyOp; target?: SabotageTarget }
+  | { type: 'cheat'; cheat: 'rivalTech'; neighbour: number; tech: number }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -209,7 +213,16 @@ export type Command =
   | { type: 'stopTrial'; ground: number }
   /** The superweapon buildings (M37): the dome's mode, and the blackout tower aimed at a rival. */
   | { type: 'setDome'; mode: DomeMode }
-  | { type: 'useBlackout'; neighbour: number; breakPact?: boolean };
+  | { type: 'useBlackout'; neighbour: number; breakPact?: boolean }
+  /** Send an agent (M37): look round a rival, sabotage its power or depot, or steal its research. */
+  | {
+      type: 'spyMission';
+      neighbour: number;
+      op: SpyOp;
+      target?: SabotageTarget;
+      branch?: Branch;
+      breakPact?: boolean;
+    };
 
 export type CommandType = Command['type'];
 
@@ -281,6 +294,7 @@ const COMMAND_KINDS = {
   stopTrial: true,
   setDome: true,
   useBlackout: true,
+  spyMission: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

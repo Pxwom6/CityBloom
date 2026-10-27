@@ -7,13 +7,15 @@
 import { SKIRMISH, SUPER } from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
 import type { NeighbourKind, NeighbourSide } from '../../data/region';
-import { rivalMods } from '../ai/tech';
+import { rivalHardened, rivalMods } from '../ai/tech';
 import { rivalDefence } from '../ai/town';
 import type { Sim } from '../sim';
 import type { AwayResult, Expedition } from '../systems/expeditions';
 import { neighbourColour } from '../systems/raids';
 import { researchEffect, researchMods } from '../systems/research';
 import { rivalBlackedOut } from '../systems/supers';
+import { powerSabotaged, revealed } from '../systems/intel';
+import { INTEL } from '../../data/intel';
 import { BLACKOUT } from '../../data/research';
 import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
@@ -57,13 +59,19 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === e.to)!;
   const mods = researchMods(city);
-  // A town blacked out by the city's tower mans its guns at a third (M37).
-  const manning = n.rival && !n.player && rivalBlackedOut(city, n) ? BLACKOUT.manning : 1;
+  // A town blacked out by the city's tower mans its guns at a third, one whose power the city's
+  // spies sabotaged at half (M37).
+  const computer = !!n.rival && !n.player;
+  const manning =
+    (computer && rivalBlackedOut(city, n) ? BLACKOUT.manning : 1) *
+    (computer && powerSabotaged(city, n) ? INTEL.sabotageManning : 1);
+  // A town the city's spies looked round lately: the force knows its way (+0.1 readiness).
+  const known = computer && revealed(city, n) ? INTEL.revealReadiness : 0;
   return {
     seed: s.options.seed,
     cityName: s.options.cityName,
     // Forward supply (M37) keeps a force away readier.
-    readiness: Math.min(1, w.readiness + researchEffect(city, 'forwardReadiness')),
+    readiness: Math.min(1, w.readiness + researchEffect(city, 'forwardReadiness') + known),
     expedition: { id: e.id, route: e.route, target: e.target, stance: e.stance },
     units: e.units.flatMap((id) => {
       const u = w.units.get(id);
@@ -98,6 +106,8 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
   const layout = battleLayout(town, { target: e.target, from: OPPOSITE[n.side] });
   if (n.rival) {
     rivalDefence(layout, n.rival, seed);
+    // From tech 3 its buildings are hardened (M37).
+    rivalHardened(layout, n.rival);
     const man = n.manning;
     if (man !== undefined && man < 1)
       for (let k = 0; k < layout.structs.length / S.stride; k++) {

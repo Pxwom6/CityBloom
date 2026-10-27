@@ -114,6 +114,7 @@ const SAMPLES: Record<CommandType, Command> = {
   stopTrial: { type: 'stopTrial', ground: 6 },
   setDome: { type: 'setDome', mode: 'super' },
   useBlackout: { type: 'useBlackout', neighbour: 2, breakPact: true },
+  spyMission: { type: 'spyMission', neighbour: 2, op: 'steal', branch: 'air', breakPact: true },
 };
 
 /** Values a field might carry instead of what it should. */

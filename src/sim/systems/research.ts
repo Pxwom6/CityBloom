@@ -491,6 +491,16 @@ export function trialsHour(sim: Sim): void {
  * Test mode: points poured into the queue in its order (each tier still paid for as it starts),
  * as if the labs had worked that long. Every tier was still queued by a command.
  */
+/** Points banked in a tier without its money (M37: stolen by the city's agents). */
+export function bankPoints(sim: Sim, key: TierKey, points: number): void {
+  const r = research(sim);
+  if (r.done.includes(key)) return;
+  const t = TIER.get(key)!;
+  // Never the whole tier: it still needs the labs to finish it, and its money when it starts.
+  r.points[key] = Math.min(t.points - 1, (r.points[key] ?? 0) + points);
+  sim.warChanged();
+}
+
 export function researchPointsCheat(sim: Sim, points: number, dryRun: boolean): CommandResult {
   const r = sim.state.war?.research;
   if (!r?.queue.length) return fail('Nothing is queued');

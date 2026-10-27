@@ -1,4 +1,5 @@
 import type { RivalBlackout } from './supers';
+import type { RivalIntel } from './intel';
 import { WEATHER } from '../../data/climate';
 import {
   DEAL_RESOURCES,
@@ -94,6 +95,11 @@ export interface RivalNeighbour {
   vassal?: { since: number };
   /** Blacked out by the city's tower (M37): no raids or spies from it meanwhile. */
   blackout?: RivalBlackout;
+  /** Its weapons tech, 0–4 (M37), and the war-clock hour before which it takes no further step. */
+  tech?: number;
+  techAt?: number;
+  /** What the city's spies know and did there, and what its own spies know of the city (M37). */
+  intel?: RivalIntel;
 }
 
 export interface Deal {

@@ -52,6 +52,7 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   startTrial: 'spend',
   stopTrial: 'spend',
   useBlackout: 'spend',
+  spyMission: 'spend',
   setDome: 'policies',
   propose: 'policies',
   answerProposal: 'policies',

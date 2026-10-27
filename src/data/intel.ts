@@ -53,6 +53,8 @@ export const INTEL = {
   sabotageClosed: 24,
   /** Stealing banks this share of a tier's points (once per neighbour and tier). */
   stealShare: 0.25,
+  /** A computer neighbour's spy that steals from the city brings its next tech step this many war hours sooner. */
+  theirStealSooner: 6 * 24,
   /**
    * Counter-intelligence (‰): the city's from its agency and research, a computer neighbour's from
    * its character, at war, after catching a spy, and its tech.

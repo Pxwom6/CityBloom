@@ -213,6 +213,7 @@ import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
 import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
+import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
 import {
   baseRemoved,
   bondsHour,
@@ -340,6 +341,12 @@ export type SimEvent = {
     | 'domePopped'
     | 'blackoutCharging'
     | 'blackout'
+    | 'intel'
+    | 'spyLeft'
+    | 'spyHome'
+    | 'enemySpyCaught'
+    | 'sabotaged'
+    | 'rivalTech'
     | 'forceArrived'
     | 'forceHome'
     | 'researchDone'
@@ -1257,6 +1264,14 @@ export class Sim {
           if (!this.testMode) return fail('Test mode only');
           return researchCheat(this, cmd.tiers, dryRun);
         }
+        if (cmd.cheat === 'spyIn') {
+          if (!this.testMode) return fail('Test mode only');
+          return spyInCheat(this, cmd.neighbour, cmd.op, cmd.target, dryRun);
+        }
+        if (cmd.cheat === 'rivalTech') {
+          if (!this.testMode) return fail('Test mode only');
+          return rivalTechCheat(this, cmd.neighbour, cmd.tech, dryRun);
+        }
         if (cmd.cheat === 'finishStages') {
           if (!this.testMode) return fail('Test mode only');
           const c = this.state.civics.get(cmd.civic);
@@ -1476,6 +1491,8 @@ export class Sim {
         return setDome(this, cmd.mode, dryRun);
       case 'useBlackout':
         return useBlackout(this, cmd.neighbour, !!cmd.breakPact, dryRun);
+      case 'spyMission':
+        return spyMission(this, cmd.neighbour, cmd.op, cmd.target, cmd.branch, !!cmd.breakPact, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -1852,6 +1869,8 @@ export class Sim {
           rivalsMonth(this);
           // Diplomacy (M36): tribute counted, computer neighbours' proposals and declarations.
           diplomacyMonth(this);
+          // Intelligence (M37): computer neighbours' tech, and their spies.
+          intelMonth(this);
         }
         scenarioMonth(this);
         for (const c of s.civics.values()) {

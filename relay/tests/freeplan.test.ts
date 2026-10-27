@@ -663,6 +663,9 @@ describe('F8: a region keeps within the free plan', () => {
       t: 'battleRefused',
       reason: expect.stringContaining('War is off'),
     });
+    // But a battle the region already holds, sent again (its word lost), is still answered kept:
+    // its target takes it, so its sender must too.
+    expect(raid(ada, 2, kept.at(-1)!, 10 * 60_000, true)).toMatchObject({ t: 'battleKept' });
     for (const c of [ada, back, cleo]) region.closed(c.conn);
   });
 

@@ -240,7 +240,8 @@ export class AwayBattles {
     for (const [exp, rec] of [...this.pinned])
       if (!expeditions.some((e) => e.id === exp && e.state === 'fighting')) {
         this.pinned.delete(exp);
-        void forgetBattle(rec);
+        // (One the region kept after all, and that was reported, stays to watch again.)
+        void loadBattle(rec).then((r) => (r && !r.posted ? forgetBattle(rec) : undefined));
       }
     for (const e of expeditions)
       if (
@@ -297,10 +298,18 @@ export class AwayBattles {
           };
           await keepBattle(rec);
         }
+        // Kept after a wait ran out (its word came late): nothing pinned any more.
+        if (rec.posted) this.pinned.delete(expedition);
         if (!rec.posted) {
           // Pinned while the region decides: a force called back (or given up) in the meantime has
           // no battle to put to it, and once put, it can't be called back until the region answers.
           if (this.host.settle && !(await this.host.settle(expedition, true))) {
+            // Called back or given up: its battle goes. Still fighting (the city can't act now, say
+            // bankrupt): kept, and tried again in a while.
+            if (await this.host.query<AwayCity | null>({ type: 'awayCity', expedition })) {
+              this.waitUntil.set(expedition, performance.now() + 60_000);
+              return;
+            }
             await forgetBattle(rec.id);
             return;
           }

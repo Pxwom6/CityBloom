@@ -505,8 +505,13 @@ export class Game {
     changed: () => this.notify(),
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    // Out of touch: waits (its region may come back); in no region at all now: nothing will answer.
     postBattle: (slot, input, away) =>
-      this.region ? this.region.sendBattle(slot, input, away) : Promise.resolve(null),
+      this.region
+        ? this.region.sendBattle(slot, input, away)
+        : Promise.resolve(
+            this.boundRegion ? null : { kept: false, reason: 'the city is in no region now', again: false },
+          ),
     // As the region room would decide it (it has the last word, before the city takes anything).
     mayStrike: (slot) => {
       const link = this.region;

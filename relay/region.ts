@@ -835,6 +835,17 @@ export class RegionRoom {
         // Only where war is allowed, against another city of the region (M35); every battle is
         // answered (M36), so its sender's force never waits on nothing.
         const target = this.meta.cities.find((c) => c.slot === m.to);
+        // Sent again (its acknowledgement was lost): kept already, or seen already (known by its
+        // sender too: two cities' battles may share an id). Answered so first, whatever has changed
+        // since (war turned off, the day's raids), as its target has it or will.
+        if (
+          target &&
+          (target.pending?.some((p) => p.id === m.id && p.from === slot) ||
+            target.seen?.includes(`${slot}:${m.id}`))
+        ) {
+          if (m.part === 0) conn.send({ t: 'battleKept', id: m.id });
+          return;
+        }
         if (!this.meta.rules?.war || m.to === slot || !target) {
           if (m.part === 0)
             conn.send({
@@ -855,13 +866,6 @@ export class RegionRoom {
         inc.parts[m.part] = m.data;
         if (inc.got < inc.parts.length) return;
         this.battleIn.delete(key);
-        // Sent again (its acknowledgement was lost): kept already, or seen already (by its sender
-        // too: two cities' battles may share an id).
-        if (
-          target.pending?.some((p) => p.id === m.id && p.from === slot) ||
-          target.seen?.includes(`${slot}:${m.id}`)
-        )
-          return conn.send({ t: 'battleKept', id: m.id });
         // The region decides whether it stands (M36): the target's shield, the sender's right to
         // answer a newcomer that raided it, and the day's raids. The sender's city hasn't taken the
         // result yet, so a refusal leaves both cities as they were.

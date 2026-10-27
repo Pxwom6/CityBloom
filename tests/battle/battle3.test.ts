@@ -470,6 +470,58 @@ describe('battles version 3: superweapons', () => {
     expect(capped.destroyed.filter((id) => id >= 20 && id < 70).length).toBe(2);
   });
 
+  it('the robot keeps to the road over a bridged river, and leaves it once its way is dry', () => {
+    // A river of deep water from x = 576 to 672 m, the map's whole height, that the road bridges:
+    // between the way in and the bunker (700, 520) and depot (900, 540).
+    const make = (force: BattleUnitIn[]) => {
+      const L = lineLayout(TOWN);
+      const n = L.grid.nx;
+      L.grid.cells = L.grid.cells.map((c, k) => {
+        const x = (k % n) * BATTLE.cell;
+        return x >= 576 && x < 672 ? CELL_DEEP : c;
+      });
+      const i = input(L, force, { stance: 'bold' });
+      i.seed = 'river';
+      return stampBattle(i);
+    };
+    // A tank by road gets there.
+    expect(play(make(units('tank', 1, undefined, -1, 300))).b.result().destroyed).toContain(10);
+    // So does the robot: it doesn't leave the road 500 m out and stop at the bank.
+    const a = play(make([one('windupbot', 1)]));
+    const r = a.b.result();
+    expect(r).toEqual(play(make([one('windupbot', 1)])).b.result());
+    expect(r.objectives).toEqual({ aimed: 2, down: 2 });
+    expect(r.outcome).toBe('raided');
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+    // Over the river it was always on the bridge (the road, z = 500), and it did get off the road.
+    const robot = a.frames.flatMap((f) => f.units.filter((u) => u.kind === 'windupbot'));
+    for (const u of robot)
+      if (u.x >= 576 && u.x < 672) expect(Math.abs(u.z - 500), `at x ${u.x}`).toBeLessThan(1);
+    expect(robot.some((u) => Math.abs(u.z - 500) > 15)).toBe(true);
+  });
+
+  it('the robot walks on to its next objective, or back to the road: it never jumps', () => {
+    // Two depots: one 300 m off the road, the next 600 m on from it, by the road's far end.
+    const depots: StructSpec[] = [
+      { id: 30, tags: TAG.civic | TAG.military | TAG.base, x: 600, z: 800, r: 20, hp: 900 },
+      { id: 31, tags: TAG.civic | TAG.military | TAG.base, x: 1150, z: 540, r: 20, hp: 900 },
+    ];
+    const make = () => {
+      const i = input(lineLayout(depots), [one('windupbot', 1)], { stance: 'bold' });
+      i.seed = 'robot-walks';
+      return stampBattle(i);
+    };
+    const a = play(make());
+    expect(a.b.result()).toEqual(play(make()).b.result());
+    expect(a.b.result().objectives).toEqual({ aimed: 2, down: 2 });
+    // Tick to tick it moves no more than it walks: 4 m/s × 0.5 s × 2 steps (positions to 0.1 m).
+    const at = a.frames.map((f) => f.units.find((u) => u.kind === 'windupbot')).filter((u) => !!u);
+    let jump = 0;
+    for (let k = 1; k < at.length; k++)
+      jump = Math.max(jump, Math.hypot(at[k]!.x - at[k - 1]!.x, at[k]!.z - at[k - 1]!.z));
+    expect(jump).toBeLessThanOrEqual(4.2);
+  });
+
   it('with the caps spent on its objectives, a superweapon’s force pulls out; one without waits for the clock', () => {
     // Two military objectives (the depot and the bunker), and room to wreck only one of them.
     const make = (force: BattleUnitIn[]) => {
@@ -1036,9 +1088,10 @@ function fallen(i: BattleInput, r: ReturnType<Battle['result']>): { collapsed: n
 
 describe('superweapons in a grown computer town', () => {
   let resort: ReturnType<typeof resortTown>;
+  // Growing the town takes a few seconds, more on a busy machine.
   beforeAll(() => {
     resort = resortTown();
-  });
+  }, 60_000);
 
   it('the robot raids what the caps allow and is done within its time', () => {
     const i = resort.strike('windupbot', 'highway');

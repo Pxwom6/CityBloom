@@ -108,6 +108,12 @@ interface Unit {
   /** A diving unit: under water (nothing can target it), and the step it surfaced. */
   dived: boolean;
   surfaced: number;
+  /**
+   * The robot: walking back to a road (to `backEdge`, `backAt`) to drive on; and the objective it
+   * found water on its way to, which it then reaches by road (−1 for none).
+   */
+  rejoin: boolean;
+  wet: number;
 }
 
 const NONE = 0x7fffffff;
@@ -345,6 +351,8 @@ export class Battle {
       aboard: false,
       dived: attacker && !!def.stats.dives,
       surfaced: -1,
+      rejoin: false,
+      wet: -1,
     };
     this.units.push(unit);
     return unit;
@@ -648,6 +656,8 @@ export class Battle {
           u.mode = Mode.Road;
           u.edge = u.backEdge;
           u.at = u.backAt;
+          // The robot (version 3) turns the way out along the road it walked back to.
+          if (u.stomp) this.face(u, this.exitField());
         }
         return;
       }
@@ -658,8 +668,14 @@ export class Battle {
       const k = u.objective;
       if (k < 0) return;
       if (u.mode === Mode.Road) {
-        if (u.stomp && DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) <= SUPER.free) {
-          // The robot leaves the road near its objective and walks straight there, stamping.
+        if (
+          u.stomp &&
+          k !== u.wet &&
+          DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) <= SUPER.free &&
+          this.dryLine(u.x, u.z, this.sx(k), this.sz(k))
+        ) {
+          // The robot leaves the road near its objective and walks straight there, stamping, when
+          // no water lies between (a river the road bridges, it crosses by the bridge).
           u.mode = Mode.Free;
           u.backEdge = u.edge;
           u.backAt = u.at;
@@ -673,6 +689,14 @@ export class Battle {
         }
       }
       if (u.mode === Mode.Free) {
+        if (u.rejoin) {
+          // The robot (version 3) walks back to a road, then drives on.
+          const p = this.roadPoint(u.backEdge, u.backAt);
+          u.gx = p.x;
+          u.gz = p.z;
+          if (this.walk(u, speed * dt * offRoad)) this.onRoadAgain(u);
+          return;
+        }
         u.gx = this.sx(k);
         u.gz = this.sz(k);
         // The robot walks right up to it; anything else stops within its reach.
@@ -681,7 +705,13 @@ export class Battle {
           : u.range > 0
             ? this.sv(k, S.rIn) + u.range * 0.8
             : BATTLE.dismount;
-        if (this.walk(u, speed * dt * offRoad, reach)) u.mode = Mode.Hold;
+        if (this.walk(u, speed * dt * offRoad, reach)) {
+          if (u.stomp && k !== u.wet && DMath.hypot(u.gx - u.x, u.gz - u.z) > reach + 0.5) {
+            // Water in the robot's way after all: back to the road, and there by road.
+            u.wet = k;
+            this.rejoinRoad(u, this.objectiveField(k));
+          } else u.mode = Mode.Hold;
+        }
       }
       return;
     }
@@ -853,6 +883,95 @@ export class Battle {
       if (DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn) > st.radius) continue;
       this.damage(k, st.damage);
     }
+  }
+
+  /**
+   * No water on the straight line between two spots, sampled every 2 m (as finely as the robot
+   * walks it): a land unit could walk it.
+   */
+  private dryLine(x0: number, z0: number, x1: number, z1: number): boolean {
+    const n = Math.ceil(DMath.hypot(x1 - x0, z1 - z0) / 2);
+    for (let s = 0; s <= n; s++) {
+      const t = n > 0 ? s / n : 0;
+      if (this.cellAt(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t) >= CELL_SHALLOW) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The road point nearest the robot that it can walk to in a straight line over dry ground, on a
+   * road that leads where `f` goes (in road order, ties to the first); the way it came off the road
+   * when there's none.
+   */
+  private nearestRoad(u: Unit, f: Field): { edge: number; at: number } {
+    const L = this.input.layout;
+    let edge = u.backEdge;
+    let at = u.backAt;
+    let best = Infinity;
+    for (let e = 0; e < L.edges.length / E.stride; e++) {
+      const a = L.edges[e * E.stride + E.a]!;
+      const b = L.edges[e * E.stride + E.b]!;
+      if (e !== f.edge && f.dist[a] === Infinity && f.dist[b] === Infinity) continue;
+      const p0 = L.edges[e * E.stride + E.pt]!;
+      const n = L.edges[e * E.stride + E.n]!;
+      const len = L.edges[e * E.stride + E.len]!;
+      for (let q = 0; q < n; q++) {
+        const x = L.pts[(p0 + q) * 2]!;
+        const z = L.pts[(p0 + q) * 2 + 1]!;
+        const d = DMath.hypot(x - u.x, z - u.z);
+        if (d >= best || !this.dryLine(u.x, u.z, x, z)) continue;
+        best = d;
+        edge = e;
+        at = n > 1 ? (len * q) / (n - 1) : 0;
+      }
+    }
+    return { edge, at };
+  }
+
+  /** The robot sets off on foot for the nearest road it can reach, to drive on by `f`. */
+  private rejoinRoad(u: Unit, f: Field): void {
+    const r = this.nearestRoad(u, f);
+    u.backEdge = r.edge;
+    u.backAt = r.at;
+    u.mode = Mode.Free;
+    u.rejoin = true;
+  }
+
+  /** The robot is back on the road it walked to, facing the way to its objective. */
+  private onRoadAgain(u: Unit): void {
+    u.rejoin = false;
+    u.mode = Mode.Road;
+    u.edge = u.backEdge;
+    u.at = u.backAt;
+    u.backEdge = -1;
+    this.face(u, this.objectiveField(u.objective));
+  }
+
+  /** A unit on a road turns the way along it that's shorter to the goal of `f`. */
+  private face(u: Unit, f: Field): void {
+    const L = this.input.layout;
+    const a = L.edges[u.edge * E.stride + E.a]!;
+    const b = L.edges[u.edge * E.stride + E.b]!;
+    const len = this.edgeLen(u.edge);
+    u.dir = f.dist[b]! + (len - u.at) <= f.dist[a]! + u.at ? 1 : -1;
+    this.placeOnRoad(u, u.dir);
+  }
+
+  /**
+   * The robot, off the road, has a new objective: within `SUPER.free` over dry ground it walks
+   * straight there; otherwise it walks to the nearest road and drives (never put back on the road
+   * it left, which may lie hundreds of metres behind).
+   */
+  private robotOn(u: Unit): void {
+    const k = u.objective;
+    if (
+      k !== u.wet &&
+      DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) <= SUPER.free &&
+      this.dryLine(u.x, u.z, this.sx(k), this.sz(k))
+    ) {
+      u.mode = Mode.Free;
+      u.rejoin = false;
+    } else this.rejoinRoad(u, this.objectiveField(k));
   }
 
   /** The first interceptor battery (lowest index) in reach of a spot, manned and ready, or −1. */
@@ -1228,7 +1347,14 @@ export class Battle {
       u.path = null;
       if (u.dives) u.dived = true;
       if (u.mode === Mode.Wait) this.leave(u);
-      else if (u.mode === Mode.Hold)
+      else if (u.stomp && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
+        // The robot (version 3) walks to the nearest road it can reach, then drives out.
+        const r = this.nearestRoad(u, this.exitField());
+        u.backEdge = r.edge;
+        u.backAt = r.at;
+        u.rejoin = false;
+        u.mode = Mode.Free;
+      } else if (u.mode === Mode.Hold)
         u.mode = u.domain === 'land' ? (u.backEdge >= 0 ? Mode.Free : Mode.Road) : u.mode;
     }
   }
@@ -1243,7 +1369,12 @@ export class Battle {
       u.objective = next;
       u.path = null;
       if (u.domain === 'land' && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
-        // Back to the road it left, then on.
+        // The robot (version 3) walks on, or to a road; it may be far from where it left one.
+        if (u.stomp) {
+          this.robotOn(u);
+          continue;
+        }
+        // Back to the road it left (a few metres off), then on.
         u.mode = Mode.Road;
         u.edge = u.backEdge;
         u.at = u.backAt;

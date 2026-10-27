@@ -56,13 +56,13 @@ without it.
 - [x] M33 Ready for friends
 - [x] M34 Armed forces
 - [x] M35 Into battle
-- [ ] M36 Diplomacy and the stakes of war
+- [x] M36 Diplomacy and the stakes of war
 - [ ] M37 Weapon development and intelligence
 - [ ] M38 Investments and the war economy
 - [ ] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 and M35 are complete, M36 in progress.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34, M35 and M36 are complete; M37 is next.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,39 +230,34 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces and M35 Into battle are complete**, in pull request #23 ("M34 complete: Armed
-forces; M35 complete: Into battle"). **M36 Diplomacy and the stakes of war** is in progress on
-the same branch (it joins #23 while that is open). Plan: `docs/plans/M36-design.md`.
+**M34 Armed forces, M35 Into battle and M36 Diplomacy and the stakes of war are complete**, in
+pull request #23 ("M34 complete: Armed forces; M35 complete: Into battle; M36 complete: Diplomacy
+and the stakes of war"). **M37 Weapon development and intelligence** is next, on the same branch
+(it joins #23 while that is open).
 
 M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
 their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
-balance mayor, battles between friends' cities through the region room (a raid on an absent friend
-kept for them, taken by their own sim on their return, with a report and a replay), the battle
-viewer, the war room's Send / Map / Reports, effects, notices and sirens. An adversarial review
-confirmed 39 findings, all fixed. Calls: DECISIONS "M35"; design: DESIGN §3.29; SPEC_REVIEW "M35".
+balance mayor, battles between friends' cities through the region room, the battle viewer, the war
+room's Send / Map / Reports, effects, notices and sirens. Calls: DECISIONS "M35"; design: DESIGN
+§3.29; SPEC_REVIEW "M35".
 
-Done for M36, tested (`tests/war/diplomacy.test.ts`, 16; `relay/tests/freeplan.test.ts`, raided
-all night; the cross-browser script now uses every diplomacy command): declarations with a warning
-and a reason, the war score and capitulation, treaties (proposals, counters, the computer's answers
-by character), tribute and occupations in the ledger, pacts and breaking them (allies turn), total
-war, conquest, vassals and risings both ways, neutrality, newcomer protection, cooldowns, the
-region's three raids a day per city and half damage while away (protocol 4), save v29; the war
-room's Diplomacy tab, notices, tips and the fallen city's card. Calls: DECISIONS "M36"; design:
-DESIGN §3.30; SPEC_REVIEW "M36".
-
-An adversarial review of M36 confirmed 32 findings, all fixed (1d07bdf the rules; ab6839d
-friends' raids, now decided by the region room so both cities agree, and the page). A review of
-those fixes confirmed 11 more, fixed in be8abd7 (a force pinned while the region decides, every
-battle answered, battles known by sender; contact, risings, the page). A third look, at be8abd7,
-is running, with the unit suite and the M36, M35 battle and friends e2e after it.
-
-Left for M36:
-1. The third look and anything it finds; the unit suite and the three e2e, screenshots reviewed.
-2. Bench, the cross-browser run on the PR, PROGRESS numbers, `M36 complete:`, PR #23.
+M36 in short: declarations with a warning and a reason, the war score and capitulation, treaties
+(proposals, counters, the computer's answers by character and the city's reputation), tribute and
+occupations in the ledger, pacts and breaking them (allies turn), total war with the military HQ as
+the seat of power, conquest, vassals and risings both ways, neutrality, newcomer protection,
+cooldowns; friends' raids decided by the region room (three a UTC day, shields, eight waiting at
+most; the attacker's sim takes a battle only once the room keeps it, its force pinned meanwhile),
+half damage while away (protocol 4), save v29; the war room's Diplomacy tab, notices, tips and the
+fallen city's card. Three adversarial reviews (32, 11 and 4 findings, all fixed) and a completeness
+check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REVIEW "M36".
 
 ## Next tasks
-1. Finish M36 (above).
-2. M37–M40 in order.
+1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by
+   research labs and the research park, prototypes tried at the proving ground, civilian spin-offs,
+   spies and counter-intelligence (a caught spy is a diplomatic incident: M36's `note` and
+   reputation), and a superweapon at the end of each branch (the region's rules can turn them off).
+   Start with a design note (`docs/plans/M37-design.md`) as for M36.
+2. M38–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Performance (M36)
@@ -272,7 +267,16 @@ Left for M36:
   with the determinism script's new diplomacy section (every diplomacy command: a proposal taken
   back, neutrality on and off, a declared war, a treaty with tribute and an occupied district, a
   pact broken, a district bought back).
-- **E2e**: `e2e/m36-diplomacy.spec.ts` passed (3.3 min) through the war room's Diplomacy tab.
+- **E2e** (after the reviews' fixes): `e2e/m36-diplomacy.spec.ts` (3.1 min: proposals, a declared war,
+  a treaty with tribute, neutrality, a fall and play on as a vassal), `m35-battle` (2, 4.1 min) and
+  `m35-friends` (two players, 20.9 min) pass; screenshots reviewed.
+- **Unit**: 817 tests in 110 files pass (`tests/war/diplomacy.test.ts` 32, the relay's free-plan
+  tests 32 with the room answering every battle).
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM): the same city as M35 (110,174 residents,
+  2,158 buildings at month 6); tick avg months 4–6 0.87 / 0.87 / 0.80 ms, p99 7–8 ms, worst 56 ms
+  (month 1's first ticks). Peaceful cities run no diplomacy.
+- **Balance** rerun after the reviews: still line for line the same as `main`.
+- **Cross-browser**: green again on 367687c and 21ee89a, with `battleSettling` in the script.
 
 ## Performance (M35)
 - **Balance** (`npx tsx scripts/balance.ts 20`, branch and `main` back to back): careful, greedy and

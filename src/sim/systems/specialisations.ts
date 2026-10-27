@@ -1,3 +1,4 @@
+import { spinoff } from './research';
 import { CIVIC, SPECIALISATION } from '../../data/civic';
 import { POLICY_EFFECTS } from '../../data/policies';
 import { ZONE_I } from '../../data/zones';
@@ -157,12 +158,19 @@ export function specialisationIncome(sim: Sim): Record<string, number> {
   }
   // A seaport (M23) ships goods by sea: trade income from every industrial job.
   const port = working(sim, (c) => !!civicDef(c).seaport)[0];
-  if (port) out.trade = (out.trade ?? 0) + industrialJobs(sim) * civicDef(port).seaport!.tradePerJob * eff;
+  // Better hulls (M37's Hull design) make the sea trade pay more.
+  if (port)
+    out.trade =
+      (out.trade ?? 0) +
+      industrialJobs(sim) * civicDef(port).seaport!.tradePerJob * eff * spinoff(sim, 'hulls');
   const parks = working(sim, (c) => !!civicDef(c).research);
   // The launch complex (M17) makes research worth half as much again.
   const boost = openProject(sim, 'launchsite')
     ? (CIVIC.get('launchsite')?.project?.research?.income ?? 1)
     : 1;
-  if (parks.length) out.technology = highTechJobs(sim) * civicDef(parks[0]!).research!.perJob * eff * boost;
+  // Signal processing (M37's Long-range radar) sells: the licence fees go up.
+  if (parks.length)
+    out.technology =
+      highTechJobs(sim) * civicDef(parks[0]!).research!.perJob * eff * boost * spinoff(sim, 'signals');
   return out;
 }

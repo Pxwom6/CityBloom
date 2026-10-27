@@ -1316,6 +1316,40 @@ reasons: DECISIONS "M36".
   propose), the Send tab's seat-of-power target and pact question, notices (`diplomacy` events), and
   the fallen city's card (`FallenCard`).
 
+### 3.31 Weapon development and intelligence (phase 5, M37)
+
+`WarState.research` (`src/sim/systems/research.ts`, numbers in `src/data/research.ts`) appears when
+a city first queues research, so peace and M34–M36 war cities are unchanged. Plan:
+`docs/plans/M37-design.md`; calls and their reasons: DECISIONS "M37".
+
+- **The tree**: six branches (land, air, sea, defence, intel, logistics) of four tiers (`TIERS`, in
+  that order everywhere), each needing the one before; a tier's points and money from `PRICE`
+  (300/$40k up to 6,000/$400k); tier 4 is the branch's superweapon and is worked on only while a
+  research park is in service. A tier unlocks units (prototypes), buildings (`civicLock`, the
+  placement check) and spy operations, and carries effects, battle mods by domain, hardened
+  buildings and a civilian spin-off.
+- **The labs**: weapons labs (`militarylab`, three at most, `CivicDef.max`) make 4 points a war hour
+  each × staff × power × funding (up to 1.25), ×1.5 with a research park and ×1.75 with the launch
+  complex (`researchRate`). `researchHour` (in `warHour`, after training) pours them into the head
+  of a queue of four (`queueResearch`/`unqueueResearch`); a tier's money is paid when it reaches the
+  head (ledger `weaponsResearch`), or the labs wait with a notice (`waiting`); points are kept per
+  tier, so a tier taken out and queued again loses nothing.
+- **Prototypes and trials**: a unit a tier unlocks is a prototype (`unitLock`: "…need a trial at the
+  proving ground first") until a proving ground runs its trial (`startTrial`: half its money, 10 %
+  for a superweapon, ledger `trials`; `max(12, ⌈hours/2⌉)` war hours, 72 for superweapons; sea
+  trials need a naval yard; one a ground at a time); `trialsHour` advances it by the ground's staff
+  and power and moves it to `proven`; `stopTrial` refunds the share not run. Trial grounds and
+  working labs are staffed after training bases (`militaryStaffing`).
+- **Effects** are read in one place each and are 1 (or 0 when added) without research
+  (`researchEffect`, `spinoff`): training by what's trained (`trainingFactor`), an airfield's places
+  (`holdsOf`), the stores, the radars' warning, the way out (`travelHours`' factor), mending (land
+  units, and repair trucks at home through `repairBoost`), war-damage repair hours, readiness away
+  (`awayCity`); spin-offs scale constructions (`maxConstructions`), fire spread and putting out
+  (`incidents.ts`), planes' noise reach (`noise.ts`), sea trade and licence fees
+  (`specialisationIncome`).
+- **Superweapons** may be had where `superweaponsAllowed`: a region's rules (`RegionWarRules.supers`,
+  ticked by the host) or, in a city of its own, rivals. Tier-4 research stays open when they're off.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

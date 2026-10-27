@@ -323,6 +323,8 @@ export const RESEARCH = {
   queueMax: 4,
   /** Repair trucks at home add at most this to mending (with `repairMend` each). */
   repairMax: 3,
+  /** With Repair crews, a repair truck in a force mends the survivors this much on the way home. */
+  awayMend: 0.1,
 };
 
 /** Trials of prototypes at the proving ground (M37). */

@@ -22,7 +22,25 @@ import {
   trialTerms,
   type Research,
 } from '../../src/sim/systems/research';
-import { militaryCivics } from '../../src/sim/systems/war';
+import {
+  holdsOf,
+  militaryCivics,
+  storeCapacity,
+  trainingFactor,
+  trainingRate,
+} from '../../src/sim/systems/war';
+import { mendUnits, repairBoost, travelHours, warningHours } from '../../src/sim/systems/raids';
+import { maxConstructions } from '../../src/sim/systems/growth';
+import { researchEffect, spinoff } from '../../src/sim/systems/research';
+import { awayCity } from '../../src/sim/battle/away';
+import { SPINOFFS, type SpinoffId } from '../../src/data/research';
+import { SERVICES } from '../../src/data/civic';
+import { civicOnline, type Civic } from '../../src/sim/world/civic';
+import { computeNoise } from '../../src/sim/systems/noise';
+import { specialisationIncome } from '../../src/sim/systems/specialisations';
+import { BState } from '../../src/sim/world/buildings';
+import { ZONE_I } from '../../src/data/zones';
+import { GRID_CELL, GRID_RES } from '../../src/data/world';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { readWarSites } from '../../scripts/lib/modelPipeline';
 import { buildTown, connectPoint, newSim, placeAlong, road, serveTown } from '../helpers';
@@ -344,5 +362,175 @@ describe('M37 prototypes on trial', () => {
     // Still a prototype (beside the sea tiers' boats), waiting for another trial.
     expect(res(sim).prototypes).toEqual(['gunboat', 'landingcraft', 'heavytank']);
     expect(res(sim).proven).toEqual([]);
+  });
+});
+
+describe('M37 upgrades and spin-offs', () => {
+  it('each factor is exactly 1 without research and exactly its value with it', () => {
+    const { sim, place } = labTown(0);
+    const depot = place('vehicledepot');
+    place('radar');
+    sim.advance(M);
+    const s = sim.state;
+    const w = s.war!;
+    const civ = (id: number) => s.civics.get(id)!;
+    // An airfield's places come from its own data: a stand-in civic is enough to read them.
+    const airfield = { ...civ(depot), def: 'airfield' } as Civic;
+    const read = () => ({
+      tank: trainingRate(sim, civ(depot), 'tank'),
+      kinds: Object.fromEntries(
+        (['infantry', 'tank', 'fighter', 'drone', 'patrolboat', 'windupbot'] as const).map((k) => [
+          k,
+          trainingFactor(sim, k),
+        ]),
+      ),
+      holds: [holdsOf(sim, civ(depot)), holdsOf(sim, airfield)],
+      stores: storeCapacity(sim),
+      warning: warningHours(sim),
+      travel: researchEffect(sim, 'travel'),
+      constructions: maxConstructions(sim),
+      repair: repairBoost(sim),
+      sooner: researchEffect(sim, 'repairSooner'),
+      forward: researchEffect(sim, 'forwardReadiness'),
+      spinoffs: Object.fromEntries(
+        (Object.keys(SPINOFFS) as SpinoffId[]).map((id) => [id, spinoff(sim, id)]),
+      ),
+    });
+    const before = read();
+    expect(before.tank).toBeGreaterThan(0);
+    expect(before.kinds).toEqual({ infantry: 1, tank: 1, fighter: 1, drone: 1, patrolboat: 1, windupbot: 1 });
+    expect(before.holds).toEqual([12, 12]);
+    expect(before.stores).toEqual({ goods: 200, ore: 150, oil: 150, munitions: 100 });
+    // One working radar: an hour's warning and three more.
+    expect(before.warning).toBe(4);
+    expect([before.travel, before.repair, before.sooner, before.forward]).toEqual([1, 1, 0, 0]);
+    expect(Object.values(before.spinoffs).every((v) => v === 1)).toBe(true);
+
+    // Two repair trucks at home, and every tier with an effect or a spin-off.
+    for (const k of [0, 1]) {
+      const id = s.nextId++;
+      w.units.set(id, { id, kind: 'repair', base: depot, hp: 1, born: s.tick + k });
+    }
+    expect(repairBoost(sim)).toBe(1);
+    ok(sim, {
+      type: 'cheat',
+      cheat: 'research',
+      tiers: [
+        'land1',
+        'air1',
+        'air3',
+        'sea1',
+        'defence1',
+        'intel1',
+        'logistics1',
+        'logistics2',
+        'logistics3',
+      ],
+    });
+    const after = read();
+    expect(after.tank / before.tank).toBeCloseTo(1.25, 12);
+    expect(after.kinds).toEqual({
+      infantry: 1,
+      tank: 1.25,
+      fighter: 1.25,
+      drone: 2,
+      patrolboat: 1.25,
+      windupbot: 1,
+    });
+    expect(after.holds).toEqual([12, 18]);
+    expect(after.stores).toEqual({ goods: 300, ore: 225, oil: 225, munitions: 150 });
+    expect(after.warning).toBe(6);
+    expect(after.travel).toBe(0.75);
+    expect(after.constructions).toBe(Math.floor(before.constructions * 1.3));
+    expect(after.repair).toBe(2);
+    expect(after.sooner).toBe(0.25);
+    expect(after.forward).toBe(0.1);
+    for (const [id, v] of Object.entries(after.spinoffs))
+      expect(v, id).toBe(SPINOFFS[id as SpinoffId].factor);
+    // A force's way: three quarters of the hours, to the half hour.
+    expect(travelHours('highway', 'west', [{ kind: 'tank' }])).toBe(6);
+    expect(travelHours('highway', 'west', [{ kind: 'tank' }], after.travel)).toBe(4.5);
+    expect(travelHours('air', 'west', [{ kind: 'fighter' }], after.travel)).toBe(1.5);
+  });
+
+  it('units mend faster, damaged buildings reopen sooner, and forces away fight readier', () => {
+    const { sim, place } = labTown(0);
+    const depot = place('vehicledepot');
+    sim.advance(M);
+    const s = sim.state;
+    const w = s.war!;
+    const tank = s.nextId++;
+    w.units.set(tank, { id: tank, kind: 'tank', base: depot, hp: 0.5, born: s.tick });
+    const c = s.civics.get(depot)!;
+    const step = 0.05 * Math.min(1, c.staff ?? 0) * (c.powered ?? 0);
+    expect(step).toBeGreaterThan(0);
+    mendUnits(sim);
+    expect(w.units.get(tank)!.hp).toBe(Math.round((0.5 + step) * 1000) / 1000);
+    // Field workshops: land units mend twice as fast; a repair truck at home half as fast again.
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['land1', 'logistics2'] });
+    const truck = s.nextId++;
+    w.units.set(truck, { id: truck, kind: 'repair', base: depot, hp: 1, born: s.tick });
+    w.units.get(tank)!.hp = 0.5;
+    mendUnits(sim);
+    expect(w.units.get(tank)!.hp).toBe(Math.round((0.5 + step * 2 * 1.5) * 1000) / 1000);
+    // Readiness away: Forward supply adds a tenth, never past 1.
+    const e = {
+      id: 1,
+      to: s.region.neighbours[0]!.id,
+      route: 'highway',
+      target: 'military',
+      stance: 'balanced',
+      units: [tank],
+    } as unknown as Parameters<typeof awayCity>[1];
+    w.readiness = 0.5;
+    expect(awayCity(sim, e).readiness).toBe(0.5);
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['logistics3'] });
+    expect(awayCity(sim, e).readiness).toBe(0.6);
+    w.readiness = 0.95;
+    expect(awayCity(sim, e).readiness).toBe(1);
+  });
+
+  it('fires: the spin-offs scale spreading and putting out, from the services’ own numbers', () => {
+    const { sim } = labTown(0);
+    expect(SERVICES.fireSpreadChance * spinoff(sim, 'firesafe')).toBe(SERVICES.fireSpreadChance);
+    expect(SERVICES.extinguishRate * spinoff(sim, 'fireengines')).toBe(SERVICES.extinguishRate);
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['defence1', 'logistics1'] });
+    expect(spinoff(sim, 'firesafe')).toBe(0.6);
+    expect(spinoff(sim, 'fireengines')).toBe(1.3);
+  });
+
+  it('noise reach, sea trade and licence fees take their spin-offs', () => {
+    const { sim } = labTown(0);
+    const s = sim.state;
+    // Stand-ins for an airport, a seaport and a research park: clones of a working civic (the
+    // spin-offs read only their data, place and service).
+    const like = [...s.civics.values()].find(
+      (c) => civicOnline(c) && !!c.access && sim.isSegmentConnected(c.access.seg),
+    )!;
+    const stand = (def: string): Civic => {
+      const c = { ...like, id: s.nextId++, def, angle: 0 };
+      s.civics.set(c.id, c);
+      return c;
+    };
+    const air = stand('airport');
+    stand('seaport');
+    stand('techpark');
+    const works = [...s.buildings.values()].find((b) => b.zone === ZONE_I && b.state === BState.Active)!;
+    works.wealth = 2;
+    // A point on the runway's line, 0.8 of the noise's reach from its end, towards the map's middle.
+    const dir = air.x < (GRID_RES * GRID_CELL) / 2 ? 1 : -1;
+    const at = (x: number, z: number) => Math.floor(z / GRID_CELL) * GRID_RES + Math.floor(x / GRID_CELL);
+    const cell = at(air.x + dir * (CIVIC.get('airport')!.w / 2 + 0.8 * 700), air.z);
+    const noise = computeNoise(sim)[cell]!;
+    const income = specialisationIncome(sim);
+    expect(noise).toBeGreaterThan(0.08);
+    expect(income.trade).toBeGreaterThan(0);
+    expect(income.technology).toBeGreaterThan(0);
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['air1', 'sea1', 'intel1'] });
+    // Quiet jets: the airport's reach is 525 m now, so the point is past it.
+    expect(computeNoise(sim)[cell]!).toBeLessThan(noise);
+    const after = specialisationIncome(sim);
+    expect(after.trade! / income.trade!).toBeCloseTo(1.15, 12);
+    expect(after.technology! / income.technology!).toBeCloseTo(1.15, 12);
   });
 });

@@ -24,6 +24,8 @@ import { civicOnline } from '../world/civic';
 import type { Outcome } from '../battle/types';
 import { travelHours, type BattleReport } from './raids';
 import { militaryCivics, militaryOf } from './war';
+import { researchEffect } from './research';
+import { RESEARCH } from '../../data/research';
 import { scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
 
 /** A force away from the city. */
@@ -155,7 +157,7 @@ export function sendForce(
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === to)!;
   const kinds = units.map((id) => ({ kind: w.units.get(id)!.kind }));
-  const hours = travelHours(route, n.side, kinds);
+  const hours = travelHours(route, n.side, kinds, researchEffect(sim, 'travel'));
   const e: Expedition = {
     id: s.nextId++,
     units: [...units],
@@ -242,9 +244,14 @@ export function expeditionsTick(sim: Sim): void {
       });
       sim.warChanged();
     } else if (e.state === 'back' && s.tick >= e.home) {
+      // With Repair crews (M37), a repair truck in the force mends the rest on the way home.
+      const truck = e.units.some((id) => w.units.get(id)?.kind === 'repair');
+      const mend = truck && researchEffect(sim, 'repairMend') > 0 ? RESEARCH.awayMend : 0;
       for (const id of e.units) {
         const u = w.units.get(id);
-        if (u) delete u.away;
+        if (!u) continue;
+        delete u.away;
+        if (mend > 0 && u.hp < 1) u.hp = Math.min(1, Math.round((u.hp + mend) * 1000) / 1000);
       }
       if (e.units.some((id) => w.units.has(id)))
         sim.events.push({ kind: 'forceHome', id: e.id, info: { from: e.name } });

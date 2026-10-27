@@ -11,6 +11,7 @@ import { rivalDefence } from '../ai/town';
 import type { Sim } from '../sim';
 import type { AwayResult, Expedition } from '../systems/expeditions';
 import { neighbourColour } from '../systems/raids';
+import { researchEffect } from '../systems/research';
 import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
 import { battleLayout } from './layout';
@@ -50,7 +51,8 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
   return {
     seed: s.options.seed,
     cityName: s.options.cityName,
-    readiness: w.readiness,
+    // Forward supply (M37) keeps a force away readier.
+    readiness: Math.min(1, w.readiness + researchEffect(city, 'forwardReadiness')),
     expedition: { id: e.id, route: e.route, target: e.target, stance: e.stance },
     units: e.units.flatMap((id) => {
       const u = w.units.get(id);

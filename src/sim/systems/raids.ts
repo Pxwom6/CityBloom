@@ -42,6 +42,8 @@ import { civicOnline } from '../world/civic';
 import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
+import { researchEffect } from './research';
+import { RESEARCH } from '../../data/research';
 import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
 import { DIPLOMACY } from '../../data/diplomacy';
 import { CIVIC } from '../../data/civic';
@@ -130,16 +132,29 @@ export function cityStrength(sim: Sim): number {
   return s;
 }
 
-/** Working radars give earlier warning: hours of warning a force on its way gives. */
+/**
+ * Working radars give earlier warning: hours of warning a force on its way gives. Long-range radar
+ * (M37) makes each radar's warning and the most they give longer.
+ */
 export function warningHours(sim: Sim): number {
   let radars = 0;
   for (const c of militaryCivics(sim))
     if (militaryOf(c)!.radar && civicOnline(c) && (c.staff ?? 0) >= 0.25 && (c.powered ?? 0) >= 0.5) radars++;
-  return Math.min(WARNING.max, WARNING.base + WARNING.perRadar * radars);
+  const per = researchEffect(sim, 'radarWarning', WARNING.perRadar);
+  const max = researchEffect(sim, 'radarWarningMax', WARNING.max);
+  return Math.min(max, WARNING.base + per * radars);
 }
 
-/** Hours a force takes to come by a route, from a neighbour on one side. */
-export function travelHours(route: BattleRoute, side: string, units: { kind: UnitKind }[]): number {
+/**
+ * Hours a force takes to come by a route, from a neighbour on one side; `factor` is the sender's
+ * Supply lines (M37), 1 for everyone else.
+ */
+export function travelHours(
+  route: BattleRoute,
+  side: string,
+  units: { kind: UnitKind }[],
+  factor = 1,
+): number {
   let h = ROUTES[route].hours;
   if (side === 'north' || side === 'south') h *= TRAVEL.northSouth;
   if (route === 'highway' || route === 'rail') {
@@ -149,7 +164,7 @@ export function travelHours(route: BattleRoute, side: string, units: { kind: Uni
     else if (squads && trucks * 4 >= squads) h *= TRAVEL.riding;
   }
   // To the half hour: air's hour and a half stays one, and riding saves time on rail too.
-  return Math.max(1, Math.ceil(h * 2) / 2);
+  return Math.max(1, Math.ceil(h * factor * 2) / 2);
 }
 
 /** A computer neighbour's raiding force: its strength's share in units, mixed by its character. */
@@ -641,7 +656,8 @@ function damageCivic(sim: Sim, id: number, hours: number, wreck: boolean): void 
   const c = sim.state.civics.get(id);
   if (!c) return;
   const was = c.damage;
-  c.damage = Math.max(c.damage, Math.round(hours));
+  // Repair crews (M37) put war-damaged buildings back sooner.
+  c.damage = Math.max(c.damage, Math.round(hours * (1 - researchEffect(sim, 'repairSooner'))));
   if (wreck) c.wrecked = true;
   if (!was || wreck) {
     sim.civicStatusChanged(c.id);
@@ -712,19 +728,35 @@ export function raidMood(sim: Sim): number {
   return -0.04 * (1 - r.sheltered / r.near) * (1 - age / span);
 }
 
-/** Units at a staffed, powered base mend a little each hour (M35). */
+/**
+ * Units at a staffed, powered base mend a little each hour (M35): land units faster after Field
+ * workshops, and every unit faster for each repair truck at home after Repair crews (M37).
+ */
 export function mendUnits(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
+  const trucks = repairBoost(sim);
+  const land = researchEffect(sim, 'landMend');
   for (const u of [...w.units.values()].sort((a, b) => a.id - b.id)) {
     if (u.hp >= 1 || u.away) continue;
     const c = sim.state.civics.get(u.base);
     if (!c || !civicOnline(c)) continue;
-    const rate = 0.05 * Math.min(1, c.staff ?? 0) * (c.powered ?? 0);
+    let rate = 0.05 * Math.min(1, c.staff ?? 0) * (c.powered ?? 0) * trucks;
+    if (UNIT.get(u.kind)?.domain === 'land') rate *= land;
     if (rate <= 0) continue;
     u.hp = Math.min(1, Math.round((u.hp + rate) * 1000) / 1000);
     sim.warChanged();
   }
+}
+
+/** Mending's boost from repair trucks at home (M37): 1, and up to `RESEARCH.repairMax` with Repair crews. */
+export function repairBoost(sim: Sim): number {
+  const each = researchEffect(sim, 'repairMend');
+  const w = sim.state.war;
+  if (!each || !w) return 1;
+  let trucks = 0;
+  for (const u of w.units.values()) if (u.kind === 'repair' && !u.away) trucks++;
+  return Math.min(RESEARCH.repairMax, 1 + each * trucks);
 }
 
 /** The battle frame for the page while a battle is on (null otherwise). */

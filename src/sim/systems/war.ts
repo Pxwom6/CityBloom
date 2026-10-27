@@ -27,6 +27,7 @@ import type { Origin } from './commute';
 import type { BattleReport, HostedBattle, Raid } from './raids';
 import type { Expedition } from './expeditions';
 import {
+  researchEffect,
   researchHour,
   researchSummary,
   trialsHour,
@@ -304,7 +305,27 @@ export function trainingRate(sim: Sim, c: Civic, kind: UnitKind): number {
   let rate = Math.min(1, staff) * powered * Math.min(1.25, sim.fundingEff('defence'));
   const def = UNIT.get(kind);
   if (def?.domain === 'land' && def.id !== 'infantry') rate /= 1 - vehicleSpeedup(sim);
-  return rate;
+  return rate * trainingFactor(sim, kind);
+}
+
+/**
+ * Research's training speed (M37) by what is trained: vehicles, aircraft, drones and boats (1
+ * without it). Superweapons keep their own long build.
+ */
+export function trainingFactor(sim: Sim, kind: UnitKind): number {
+  const def = UNIT.get(kind);
+  if (!def || def.group === 'superweapons') return 1;
+  if (kind === 'drone') return researchEffect(sim, 'droneTraining');
+  if (def.domain === 'air') return researchEffect(sim, 'aircraftTraining');
+  if (def.domain === 'sea') return researchEffect(sim, 'boatTraining');
+  return kind === 'infantry' ? 1 : researchEffect(sim, 'vehicleTraining');
+}
+
+/** Units a base keeps: its own number, or an airfield's after Swarm control (M37). */
+export function holdsOf(sim: Sim, c: Civic): number {
+  const m = militaryOf(c);
+  if (!m?.holds) return 0;
+  return m.runway ? researchEffect(sim, 'airfieldHolds', m.holds) : m.holds;
 }
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -322,11 +343,13 @@ export function storeCapacity(sim: Sim): WarStock {
   }
   // No stores until the city has a military building to keep them.
   if (!any) return { goods: 0, ore: 0, oil: 0, munitions: 0 };
+  // Forward supply (M37) makes room for half as much again.
+  const f = researchEffect(sim, 'storeCapacity');
   return {
-    goods: base.goods + extra,
-    ore: base.ore + extra,
-    oil: base.oil + extra,
-    munitions: base.munitions + extra,
+    goods: Math.round((base.goods + extra) * f),
+    ore: Math.round((base.ore + extra) * f),
+    oil: Math.round((base.oil + extra) * f),
+    munitions: Math.round((base.munitions + extra) * f),
   };
 }
 
@@ -486,8 +509,9 @@ export function trainUnit(sim: Sim, baseId: number, kind: UnitKind, dryRun: bool
   if (down) return fail(down);
   if (s.economy.bankrupt) return fail('The city is bankrupt');
   const load = baseLoad(sim, baseId);
-  if (load.units + load.orders >= (m.holds ?? 0))
-    return fail(`The ${lowerName(name)} is full: it keeps ${m.holds ?? 0} units`);
+  const holds = holdsOf(sim, c);
+  if (load.units + load.orders >= holds)
+    return fail(`The ${lowerName(name)} is full: it keeps ${holds} units`);
   const bill = unitBill(sim, kind);
   const total = bill.money + bill.imports;
   if (!s.options.sandbox && s.treasury < total)
@@ -999,7 +1023,8 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
   const w = sim.state.war;
   const name = lowerName(CIVIC.get(c.def)!.name);
   const load = baseLoad(sim, c.id);
-  const full = load.units + load.orders >= (m.holds ?? 0);
+  const holds = holdsOf(sim, c);
+  const full = load.units + load.orders >= holds;
   const units = w
     ? [...w.units.values()]
         .filter((u) => u.base === c.id)
@@ -1029,7 +1054,7 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
         : down
           ? down
           : full
-            ? `The ${name} is full: it keeps ${m.holds ?? 0} units`
+            ? `The ${name} is full: it keeps ${holds} units`
             : !sim.state.options.sandbox && sim.state.treasury < bill.money + bill.imports
               ? 'Not enough money'
               : null;
@@ -1058,7 +1083,7 @@ export function militaryDetails(sim: Sim, c: Civic): MilitaryDetails {
     staffed: Math.round(m.jobs * Math.min(1, staff)),
     power: Math.round(militaryPowerNeed(sim, c)),
     powered,
-    holds: m.holds ?? 0,
+    holds,
     units,
     training,
     trains,

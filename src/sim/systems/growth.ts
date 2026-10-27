@@ -1,3 +1,4 @@
+import { spinoff } from './research';
 import { EDUCATION, GROWTH } from '../../data/balance';
 import {
   DENSITY_UNLOCK_POPULATION,
@@ -106,10 +107,11 @@ function spawnDemand(sim: Sim, zone: ZoneCode, wealth: Wealth): number {
   return base - 0.04 * (tax - 9) + 0.04 * (sim.avgTax(ZONE_KEY[zone]!) - 9);
 }
 
-function maxConstructions(sim: Sim): number {
-  return (
-    GROWTH.baseConstructions + Math.ceil(sim.state.totals.population * GROWTH.constructionsPerPopulation)
-  );
+export function maxConstructions(sim: Sim): number {
+  const n =
+    GROWTH.baseConstructions + Math.ceil(sim.state.totals.population * GROWTH.constructionsPerPopulation);
+  // Prefab panels (M37's Field workshops) put more up at once.
+  return Math.floor(n * spinoff(sim, 'prefab'));
 }
 
 export function createBuilding(sim: Sim, block: ZoneBlock, col: number, def: ZonedDef): Building {

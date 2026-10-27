@@ -262,9 +262,17 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
   gate as projects), `src/sim/systems/research.ts` (the queue on the war clock, lab points with the
   research park, money at start, `unitLock`, `civicLock`), commands `queueResearch`/`unqueueResearch`,
   `RegionWarRules.supers`, save v30.
-- Next: steps 3–4 (trials at the proving ground, the effects and spin-offs read where they apply),
-  then battle v3 (step 5), superweapons (6–7), intelligence (8), friends and the fair clock (9–10),
-  rendering and the UI (11–12), wrap-up (13).
+- Step 3 done: prototypes' trials at the proving ground (`startTrial`/`stopTrial`, `trialsHour`,
+  ledger `trials`; trial grounds and working labs staffed after training bases).
+- Step 4 done: each effect and spin-off read in one place, exactly 1 without research (training by
+  what's trained, an airfield's places `holdsOf`, stores, radar warning, travel, mending and repair
+  trucks `repairBoost`, war-damage repair hours, readiness away; constructions, fire spread and
+  putting out, planes' noise, sea trade, licence fees). Tests in `tests/war/research.test.ts`.
+- Step 5 (battle v3) is being built in a worktree branch by a helper agent, to be merged and
+  reviewed here; step 6 (superweapons in forces) is next in the main checkout. Then superweapon
+  buildings (7), intelligence (8), friends and the fair clock (9–10), rendering and the UI (11–12),
+  wrap-up (13). To remember for the UI: the war room's base list reads `def.military.holds`
+  (`Military.tsx`), which should read the forces' `holds` (an airfield keeps 18 after Swarm control).
 
 ## Next tasks
 1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by

@@ -22,7 +22,7 @@ import {
 import { PERSONALITY, UNIT, type UnitKind } from '../../data/war';
 import { Battle } from '../battle/battle';
 import { checkBattleInput } from '../battle/check';
-import { battleLayout, objectiveSpots, structureAsSeen } from '../battle/layout';
+import { battleLayout, objectiveSpots, strengthFactors, structureAsSeen } from '../battle/layout';
 import {
   BATTLE_VERSION,
   S,
@@ -32,6 +32,8 @@ import {
   type BattleUnitIn,
   type Outcome,
 } from '../battle/types';
+import { stampBattle } from '../battle/version';
+import { rivalMods } from '../ai/tech';
 import { DMath } from '../dmath';
 import { fail, ok, type CommandResult } from '../commands';
 import { Rng } from '../rng';
@@ -109,6 +111,17 @@ export interface HostedBattle {
   start: number;
   raid: Raid;
   report: BattleReport;
+  /**
+   * The city's own dome over a battle made elsewhere that knew of less of it (M37): what's left of
+   * the difference, and the structures it has covered (their hits never reach the city).
+   */
+  cover?: DomeCover;
+}
+
+/** A dome's pool beyond a battle's own (M37), spent on structures' whole strength, each once. */
+export interface DomeCover {
+  pool: number;
+  ids: number[];
 }
 
 /** Colours for computer neighbours' forces, by their place in the region. */
@@ -367,6 +380,8 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
   if (!r.warned) warnRaid(sim, r);
   const n = s.region.neighbours.find((x) => x.id === r.from);
   const layout = battleLayout(sim, { target: r.target, from: n?.side ?? 'west' });
+  const pool = raisedDomePool(sim);
+  if (pool > 0) layout.dome = pool;
   const units: BattleUnitIn[] = r.units.map((u, k) => ({
     id: -(k + 1),
     kind: u.kind,
@@ -375,7 +390,9 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
     z: 0,
     base: -1,
   }));
-  const input: BattleInput = {
+  // The raiders' research, from the neighbour's tech (M37: none until its tech arrives).
+  const mods = n?.rival ? rivalMods(n.rival) : undefined;
+  const input: BattleInput = stampBattle({
     v: BATTLE_VERSION,
     id: `raid-${r.id}`,
     seed: `${s.options.seed}:battle:${r.id}`,
@@ -389,11 +406,12 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
       target: r.target,
       stance: r.stance,
       readiness: r.readiness,
+      ...(mods ? { mods } : {}),
     },
     defender: { name: s.options.cityName, color: 0x3a78c8 },
     orders: [],
     caps: { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
-  };
+  });
   w.battle = { id: r.id, input, step: 0, start: s.tick, raid: r, report: emptyReport(r, s.tick) };
   sim.battleRun = null;
   sim.events.push({ kind: 'battleStarted', id: r.id, info: { from: r.name, target: r.target } });
@@ -457,6 +475,8 @@ export function resolveBattle(
   w.battle = { id: raid.id, input: adopted, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
   if (replay) w.battle.report.replay = replay.slice(0, 60);
   if (away) w.battle.report.absent = true;
+  // The city's own dome is the authority (M37): a stale picture of it never makes it weaker.
+  coverWithDome(w.battle, raisedDomePool(sim));
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), takenKey].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;
@@ -465,7 +485,7 @@ export function resolveBattle(
   sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
   if (mode === 'instant') {
     try {
-      while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick());
+      while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick(), w.battle.cover);
       w.battle.step = run.step;
       sim.battleFrame = run.frame();
       endHomeBattle(sim, run);
@@ -496,10 +516,12 @@ export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleI
   const L = input.layout;
   const structs = L.structs.slice();
   const n = structs.length / S.stride;
+  // Strength as this city's own picture has it (M37: hardened buildings, working shields).
+  const factors = strengthFactors(sim);
   for (let k = 0; k < n; k++) {
     const row = (f: number) => structs[k * S.stride + f]!;
     // As this city's own picture has it: in its place, the same kind of thing, no weaker.
-    const seen = structureAsSeen(sim, row(S.id));
+    const seen = structureAsSeen(sim, row(S.id), factors);
     const same =
       !!seen &&
       Math.abs(seen.x - row(S.x)) <= 2 &&
@@ -580,7 +602,7 @@ export function battleTick(sim: Sim): void {
       sim.battleRun = run;
     }
     const events = run.tick();
-    applyWarDamage(sim, hb.report, events);
+    applyWarDamage(sim, hb.report, events, hb.cover);
     hb.step = run.step;
     sim.battleFrame = run.frame();
     if (run.outcome) endHomeBattle(sim, run);
@@ -590,11 +612,54 @@ export function battleTick(sim: Sim): void {
   }
 }
 
-/** The single way a battle's damage reaches the city. */
-export function applyWarDamage(sim: Sim, report: BattleReport, events: BattleEvent[]): void {
+/**
+ * The pool of the city's own dome, raised for a battle (M37). The dome's charge and modes come in a
+ * later step (design call 9), which fills this in; until then no city has a dome raised.
+ */
+export function raisedDomePool(_sim: Sim): number {
+  return 0;
+}
+
+/**
+ * The city's own dome over a battle made elsewhere (M37, design call 9): when its raised pool is
+ * larger than the one the battle knew of (a friend's page works from the city's last save), the
+ * difference covers structures here, whatever the battle says (`applyWarDamage`).
+ */
+export function coverWithDome(hb: HostedBattle, ownPool: number): void {
+  const extra = ownPool - (hb.input.layout.dome ?? 0);
+  if (extra > 0) hb.cover = { pool: extra, ids: [] };
+  else delete hb.cover;
+}
+
+/**
+ * Does the dome's extra pool keep this structure's hits off the city? It covers a structure once,
+ * for its whole strength (as this city sees it), while the pool lasts; one it can't cover pops it.
+ */
+function domeCovers(sim: Sim, cover: DomeCover, id: number): boolean {
+  if (cover.ids.includes(id)) return true;
+  if (cover.pool <= 0) return false;
+  const seen = structureAsSeen(sim, id);
+  if (!seen) return false;
+  if (seen.hp > cover.pool) {
+    cover.pool = 0;
+    return false;
+  }
+  cover.pool -= seen.hp;
+  cover.ids.push(id);
+  return true;
+}
+
+/** The single way a battle's damage reaches the city (`cover`: the city's own dome, M37). */
+export function applyWarDamage(
+  sim: Sim,
+  report: BattleReport,
+  events: BattleEvent[],
+  cover?: DomeCover,
+): void {
   const s = sim.state;
   const w = s.war;
   for (const e of events) {
+    if ((e.k === 'damaged' || e.k === 'destroyed') && cover && domeCovers(sim, cover, e.s)) continue;
     if (e.k === 'damaged') {
       const b = s.buildings.get(e.s);
       if (b) {

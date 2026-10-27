@@ -4,19 +4,22 @@
  * the town; then, once it's been fought, what goes back to the city as `battleReport`. Pure and
  * deterministic, so every machine that fights the same expedition gets the same result.
  */
-import { SKIRMISH } from '../../data/battle';
+import { SKIRMISH, SUPER } from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
 import type { NeighbourKind, NeighbourSide } from '../../data/region';
+import { rivalMods } from '../ai/tech';
 import { rivalDefence } from '../ai/town';
 import type { Sim } from '../sim';
 import type { AwayResult, Expedition } from '../systems/expeditions';
+import { researchMods } from '../systems/research';
 import { neighbourColour } from '../systems/raids';
 import { researchEffect } from '../systems/research';
 import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
 import { battleLayout } from './layout';
 import { fnv1a } from '../hash';
-import { BATTLE_VERSION, S, type BattleInput, type BattleUnitIn } from './types';
+import { BATTLE_VERSION, S, type BattleInput, type BattleMods, type BattleUnitIn } from './types';
+import { stampBattle } from './version';
 
 /** From the town's side, where the city's force comes from. */
 const OPPOSITE: Record<NeighbourSide, NeighbourSide> = { north: 'south', south: 'north', west: 'west' };
@@ -28,6 +31,8 @@ export interface AwayCity {
   readiness: number;
   expedition: Pick<Expedition, 'id' | 'route' | 'target' | 'stance'>;
   units: { id: number; kind: UnitKind; hp: number }[];
+  /** Its research's battle modifiers (M37), when it has any. */
+  mods?: BattleMods;
   neighbour: {
     id: number;
     name: string;
@@ -48,6 +53,7 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
   const s = city.state;
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === e.to)!;
+  const mods = researchMods(city);
   return {
     seed: s.options.seed,
     cityName: s.options.cityName,
@@ -58,6 +64,7 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
       const u = w.units.get(id);
       return u ? [{ id, kind: u.kind, hp: u.hp }] : [];
     }),
+    ...(Object.keys(mods).length ? { mods } : {}),
     neighbour: {
       id: n.id,
       name: n.name,
@@ -83,7 +90,13 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
   const n = city.neighbour;
   const seed = `${city.seed}:battle:${e.id}`;
   const layout = battleLayout(town, { target: e.target, from: OPPOSITE[n.side] });
-  if (n.rival) rivalDefence(layout, n.rival, seed);
+  if (n.rival) {
+    rivalDefence(layout, n.rival, seed);
+    // A computer neighbour's defenders fight with its tech (M37: none until its tech arrives).
+    const theirs = rivalMods(n.rival);
+    if (theirs) layout.mods = theirs;
+    else delete layout.mods;
+  }
   const units: BattleUnitIn[] = city.units.map((u) => ({
     id: u.id,
     kind: u.kind,
@@ -92,7 +105,16 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
     z: 0,
     base: -1,
   }));
-  return {
+  // A sky fortress brings what it carries (M37), launched over the town: ids −(1000 + k).
+  let carried = 0;
+  for (const u of city.units) {
+    const c = UNIT.get(u.kind)?.stats.carries;
+    for (let k = 0; c && k < c.n && carried < SUPER.maxCarried; k++, carried++)
+      units.push({ id: -(SUPER.carriedId + carried), kind: c.kind, hp: 1, x: 0, z: 0, base: -1, from: u.id });
+  }
+  // A superweapon in a computer neighbour's town may knock down more; a friend keeps a skirmish's caps.
+  const superweapon = city.units.some((u) => !!UNIT.get(u.kind)?.super);
+  return stampBattle({
     v: BATTLE_VERSION,
     // Unique across the cities of a region: the city's seed, hashed, and the expedition.
     id: awayBattleId(city.seed, e.id),
@@ -107,14 +129,17 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
       target: e.target,
       stance: e.stance,
       readiness: city.readiness,
+      ...(city.mods ? { mods: city.mods } : {}),
     },
     defender: { name: n.name, color: n.colour },
     orders: [],
     // A friend away when the raid comes takes half the damage (M36), as its own sim will hold it to.
     caps: n.absent
       ? { maxCollapse: SKIRMISH.awayCollapse, maxWreck: SKIRMISH.awayWreck }
-      : { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
-  };
+      : superweapon && n.slot === null
+        ? { ...SUPER.caps }
+        : { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
+  });
 }
 
 /** What the city hears of a fought expedition. */

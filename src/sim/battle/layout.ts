@@ -7,7 +7,7 @@
 import { BATTLE, SKIRMISH, type BattleTarget } from '../../data/battle';
 import { CIVIC } from '../../data/civic';
 import { isRail } from '../../data/roads';
-import { UNIT } from '../../data/war';
+import { UNIT, WAR } from '../../data/war';
 import { MAP_SIZE, SHORE_HEIGHT } from '../../data/world';
 import { CELL, ZONE_I, ZONE_R } from '../../data/zones';
 import { DMath } from '../dmath';
@@ -15,6 +15,7 @@ import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import { BERTH_DEPTH, civicOnline, type Civic } from '../world/civic';
 import type { NeighbourSide } from '../../data/region';
+import { hardened, researchMods } from '../systems/research';
 import {
   BATTLE_VERSION,
   CELL_DEEP,
@@ -132,8 +133,38 @@ export function objectiveSpots(sim: Sim, target: BattleTarget): { x: number; z: 
   return out;
 }
 
+/**
+ * How much more the city's structures stand in battle (M37), read from the city alone: Hardened
+ * buildings (city and military buildings, and homes and businesses), and working shield generators,
+ * each lifting what stands within its reach. Without research or shields both are 1.
+ */
+export interface StrengthFactors {
+  hard: { civic: number; other: number };
+  shields: { x: number; z: number; radius: number; factor: number }[];
+}
+
+export function strengthFactors(sim: Sim): StrengthFactors {
+  const shields: StrengthFactors['shields'] = [];
+  if (sim.state.war)
+    for (const c of [...sim.state.civics.values()].sort((a, b) => a.id - b.id)) {
+      const sh = CIVIC.get(c.def)?.military?.shield;
+      // Working: online, staffed at least `WAR.minStaffed`, and powered at least half.
+      if (!sh || !civicOnline(c) || (c.staff ?? 0) < WAR.minStaffed || (c.powered ?? 0) < 0.5) continue;
+      shields.push({ x: c.x, z: c.z, radius: sh.radius, factor: sh.factor });
+    }
+  return { hard: hardened(sim), shields };
+}
+
+/** The shield's lift at a spot: the strongest working shield generator in reach, or 1. */
+function shieldAt(f: StrengthFactors, x: number, z: number): number {
+  let best = 1;
+  for (const s of f.shields)
+    if (s.factor > best && DMath.hypot(x - s.x, z - s.z) <= s.radius) best = s.factor;
+  return best;
+}
+
 /** A city building as a battle sees it. */
-function civicCand(c: Civic): Cand | null {
+function civicCand(c: Civic, f: StrengthFactors): Cand | null {
   const def = CIVIC.get(c.def);
   if (!def) return null;
   const m = def.military;
@@ -146,10 +177,14 @@ function civicCand(c: Civic): Cand | null {
   if (m?.hq) tags |= TAG.hq;
   if (m?.trains?.length) tags |= TAG.base;
   if (m?.jobs) tags |= TAG.job;
+  if (m?.intercept) tags |= TAG.intercept;
   const area = def.w * def.d;
-  const hp = m?.defends
-    ? BATTLE.defence.hp
-    : Math.max(BATTLE.hpMin, area * BATTLE.hpPerM2) * (m ? BATTLE.military : BATTLE.civic);
+  const hp =
+    (m?.defends
+      ? BATTLE.defence.hp
+      : Math.max(BATTLE.hpMin, area * BATTLE.hpPerM2) * (m ? BATTLE.military : BATTLE.civic)) *
+    f.hard.civic *
+    shieldAt(f, c.x, c.z);
   let against = 0;
   for (const d of m?.defends?.against ?? []) against |= DOMAIN_BIT[d];
   return {
@@ -170,7 +205,7 @@ function civicCand(c: Civic): Cand | null {
 }
 
 /** A home or business as a battle sees it (none for rubble). */
-function buildingCand(b: Building): Cand | null {
+function buildingCand(b: Building, f: StrengthFactors): Cand | null {
   if (b.state === BState.Rubble) return null;
   let tags = b.zone === ZONE_R ? TAG.home : TAG.job;
   if (b.zone === ZONE_I) tags |= TAG.industry;
@@ -183,7 +218,10 @@ function buildingCand(b: Building): Cand | null {
     z: b.z,
     r: Math.max(w, d) / 2,
     rIn: Math.min(w, d) / 2,
-    hp: Math.max(BATTLE.hpMin, w * d * BATTLE.hpPerM2 * (1 + b.level * 0.5)),
+    hp:
+      Math.max(BATTLE.hpMin, w * d * BATTLE.hpPerM2 * (1 + b.level * 0.5)) *
+      f.hard.other *
+      shieldAt(f, b.x, b.z),
     gun: 0,
     range: 0,
     against: 0,
@@ -201,15 +239,17 @@ function nearBorder(sim: Sim, x: number, z: number): boolean {
 
 /**
  * A structure of this city as its own battle picture would have it (packed as `battleLayout` packs
- * it), or null when nothing stands under that id: a battle made elsewhere is checked against it.
+ * it, its strength with the same factors), or null when nothing stands under that id: a battle made
+ * elsewhere is checked against it. `f` is `strengthFactors(sim)`, worked out once for many.
  */
 export function structureAsSeen(
   sim: Sim,
   id: number,
+  f: StrengthFactors = strengthFactors(sim),
 ): { tags: number; x: number; z: number; hp: number; gun: number; range: number; against: number } | null {
   const c = sim.state.civics.get(id);
   const b = c ? undefined : sim.state.buildings.get(id);
-  const cand = c ? civicCand(c) : b ? buildingCand(b) : null;
+  const cand = c ? civicCand(c, f) : b ? buildingCand(b, f) : null;
   if (!cand) return null;
   return {
     tags: nearBorder(sim, cand.x, cand.z) ? cand.tags : cand.tags & ~(TAG.industry | TAG.power),
@@ -234,13 +274,14 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
   const entryPt = { x: outside.x, z: outside.z };
   const side = spec.from ?? 'west';
   // --- Structures: every candidate, ranked. ---
+  const factors = strengthFactors(sim);
   const cands: Cand[] = [];
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
-    const cand = civicCand(c);
+    const cand = civicCand(c, factors);
     if (cand) cands.push(cand);
   }
   for (const b of [...s.buildings.values()].sort((a, b) => a.id - b.id)) {
-    const cand = buildingCand(b);
+    const cand = buildingCand(b, factors);
     if (cand) cands.push(cand);
   }
   // What matters: military and defences anywhere; the target kind's candidates near the border
@@ -427,6 +468,8 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
       });
     }
   }
+  // The defenders' research (M37), only once the city has some.
+  const mods = researchMods(sim);
   return {
     v: BATTLE_VERSION,
     city: s.options.cityName,
@@ -441,6 +484,7 @@ export function battleLayout(sim: Sim, spec: LayoutSpec): BattleLayout {
     entries,
     defenders,
     readiness: Math.round(readiness * 1000) / 1000,
+    ...(Object.keys(mods).length ? { mods } : {}),
   };
 }
 

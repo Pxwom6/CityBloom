@@ -4,10 +4,10 @@
  * finite and in range, every index pointing inside its array, so a malformed or crafted battle is
  * turned away without touching the city, and a well-formed one can't run for ever or fill memory.
  */
-import { BATTLE, ROUTES, type BattleTarget, type Stance } from '../../data/battle';
+import { BATTLE, BATTLE_MOD, ROUTES, SUPER, type BattleTarget, type Stance } from '../../data/battle';
 import { MAP_SIZE } from '../../data/world';
 import { UNIT } from '../../data/war';
-import { BATTLE_VERSION, CELL_DEEP, E, S } from './types';
+import { BATTLE_V2, BATTLE_VERSION, CELL_DEEP, E, S, TAGS_V2, TAGS_V3 } from './types';
 
 /** How big a battle's picture of a city may be. */
 export const BATTLE_LIMITS = {
@@ -33,13 +33,56 @@ const text = (v: unknown, max: number = BATTLE_LIMITS.text): v is string =>
 const numbers = (v: unknown, max: number): v is number[] =>
   Array.isArray(v) && v.length <= max && v.every((x) => typeof x === 'number' && Number.isFinite(x));
 
-function unitIn(v: unknown, structs: number): string | null {
+/**
+ * A unit as it goes in. Superweapons and carried units (version 3) come only with the attackers: a
+ * superweapon never defends its city, and nothing carries a defender in.
+ */
+function unitIn(v: unknown, structs: number, v3: boolean, attacker: boolean): string | null {
   if (!isObj(v)) return 'a unit';
   if (!int(v.id, -0x7fff_ffff, 0x7fff_ffff)) return 'a unit’s id';
-  if (typeof v.kind !== 'string' || !UNIT.get(v.kind as never)) return 'a unit’s kind';
+  const def = typeof v.kind === 'string' ? UNIT.get(v.kind as never) : undefined;
+  if (!def || (def.super && !(v3 && attacker))) return 'a unit’s kind';
   if (!num(v.hp, 0, 1)) return 'a unit’s health';
   if (!num(v.x, -MAP_SIZE, 2 * MAP_SIZE) || !num(v.z, -MAP_SIZE, 2 * MAP_SIZE)) return 'a unit’s place';
   if (!int(v.base, -1, structs - 1)) return 'a unit’s base';
+  if (v.from !== undefined && !(v3 && attacker && int(v.from, -0x7fff_ffff, 0x7fff_ffff)))
+    return 'a unit’s carrier';
+  return null;
+}
+
+/** Research's modifiers (version 3): by domain, each number within `BATTLE_MOD`'s bounds. */
+function modsIn(v: unknown): boolean {
+  if (!isObj(v)) return false;
+  for (const [d, m] of Object.entries(v)) {
+    if ((d !== 'land' && d !== 'air' && d !== 'sea') || !isObj(m)) return false;
+    for (const [k, x] of Object.entries(m)) {
+      if (k !== 'hp' && k !== 'attack' && k !== 'armour' && k !== 'evade') return false;
+      const [lo, hi] = BATTLE_MOD[k];
+      if (!num(x, lo, hi)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The attackers (version 3 may bring units carried in): at most `BATTLE.maxAttackers` of their own
+ * and `SUPER.maxCarried` carried, each carried one of the kind its carrier carries, no more than it
+ * holds, its carrier one of the force's own units.
+ */
+function forceIn(units: Obj[]): string | null {
+  const own = units.filter((u) => u.from === undefined);
+  const carried = units.filter((u) => u.from !== undefined);
+  if (!own.length || own.length > BATTLE.maxAttackers || carried.length > SUPER.maxCarried)
+    return 'the attackers';
+  const aboard = new Map<number, number>();
+  for (const u of carried) {
+    const carrier = own.find((c) => c.id === u.from);
+    const holds = carrier ? UNIT.get(carrier.kind as never)?.stats.carries : undefined;
+    if (!holds || u.kind !== holds.kind) return 'a unit’s carrier';
+    const n = (aboard.get(u.from as number) ?? 0) + 1;
+    if (n > holds.n) return 'a unit’s carrier';
+    aboard.set(u.from as number, n);
+  }
   return null;
 }
 
@@ -47,14 +90,25 @@ function unitIn(v: unknown, structs: number): string | null {
 export function checkBattleInput(input: unknown): string | null {
   const bad = (what: string) => `That battle could not be read (${what})`;
   if (!isObj(input)) return bad('not a battle');
-  if (input.v !== BATTLE_VERSION) return 'That battle was fought by another version of the game';
+  if (input.v !== BATTLE_VERSION && input.v !== BATTLE_V2)
+    return 'That battle was fought by another version of the game';
+  // Version 3's fields come only in a version 3 battle (a version 2 one plays exactly as on M36).
+  const v3 = input.v === BATTLE_VERSION;
   if (typeof input.id !== 'string' || !/^[\w:.-]{1,60}$/.test(input.id)) return bad('its name');
   if (!text(input.seed, 120)) return bad('its seed');
   if (input.scale !== 'skirmish') return bad('its scale');
   const L = input.layout;
   if (!isObj(L)) return bad('the city');
-  if (L.v !== BATTLE_VERSION || !text(L.city) || !int(L.tick, 0, 0x7fff_ffff) || !num(L.readiness, 0, 1))
+  if (
+    (L.v !== BATTLE_V2 && L.v !== input.v) ||
+    !text(L.city) ||
+    !int(L.tick, 0, 0x7fff_ffff) ||
+    !num(L.readiness, 0, 1)
+  )
     return bad('the city');
+  const layoutV3 = L.v === BATTLE_VERSION;
+  if (L.mods !== undefined && !(layoutV3 && modsIn(L.mods))) return bad('the defenders’ research');
+  if (L.dome !== undefined && !(layoutV3 && num(L.dome, 0, 1e7))) return bad('the dome');
   if (!numbers(L.box, 4) || L.box.length !== 4) return bad('the city’s box');
   if (!numbers(L.nodes, BATTLE_LIMITS.nodes * 2) || L.nodes.length % 2) return bad('the roads');
   if (!numbers(L.pts, BATTLE_LIMITS.points * 2) || L.pts.length % 2) return bad('the roads');
@@ -76,7 +130,8 @@ export function checkBattleInput(input: unknown): string | null {
   const structs = rows.length / S.stride;
   for (let k = 0; k < structs; k++) {
     const r = (f: number) => rows[k * S.stride + f]!;
-    if (!int(r(S.id), -0x7fff_ffff, 0x7fff_ffff) || !int(r(S.tags), 0, 1023)) return bad('a building');
+    if (!int(r(S.id), -0x7fff_ffff, 0x7fff_ffff) || !int(r(S.tags), 0, layoutV3 ? TAGS_V3 : TAGS_V2))
+      return bad('a building');
     if (!num(r(S.x), -MAP_SIZE, 2 * MAP_SIZE) || !num(r(S.z), -MAP_SIZE, 2 * MAP_SIZE))
       return bad('a building’s place');
     if (!num(r(S.r), 0, 1000) || !num(r(S.rIn), 0, 1000) || !num(r(S.hp), 0.001, 1e7))
@@ -104,7 +159,7 @@ export function checkBattleInput(input: unknown): string | null {
   }
   if (!Array.isArray(L.defenders) || L.defenders.length > BATTLE.maxDefenders) return bad('the defenders');
   for (const u of L.defenders) {
-    const why = unitIn(u, structs);
+    const why = unitIn(u, structs, layoutV3, false);
     if (why) return bad(why);
   }
   const a = input.attacker;
@@ -113,12 +168,15 @@ export function checkBattleInput(input: unknown): string | null {
   if (!TARGETS.includes(a.target as BattleTarget) || !STANCES.includes(a.stance as Stance))
     return bad('the attackers’ orders');
   if (!num(a.readiness, 0, 1)) return bad('the attackers’ readiness');
-  if (!Array.isArray(a.units) || !a.units.length || a.units.length > BATTLE.maxAttackers)
+  if (a.mods !== undefined && !(v3 && modsIn(a.mods))) return bad('the attackers’ research');
+  if (!Array.isArray(a.units) || !a.units.length || a.units.length > BATTLE.maxAttackers + SUPER.maxCarried)
     return bad('the attackers');
   for (const u of a.units) {
-    const why = unitIn(u, structs);
+    const why = unitIn(u, structs, v3, true);
     if (why) return bad(why);
   }
+  const force = forceIn(a.units as Obj[]);
+  if (force) return bad(force);
   const d = input.defender;
   if (!isObj(d) || !text(d.name) || !int(d.color, 0, 0xff_ffff)) return bad('the defenders');
   if (!Array.isArray(input.orders) || input.orders.length > BATTLE_LIMITS.orders) return bad('the orders');

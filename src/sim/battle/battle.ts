@@ -6,8 +6,8 @@
  * shoots on its reload. Deterministic: units in a fixed order, the battle's own dice, DMath.
  * Events (damage, wrecks, craters, units out) are what the defending city applies. DESIGN §3.29.
  */
-import { BATTLE } from '../../data/battle';
-import { UNIT, type UnitDomain, type UnitKind } from '../../data/war';
+import { BATTLE, BATTLE_MOD, INTERCEPT, SUPER } from '../../data/battle';
+import { MILITARY_DEFS, UNIT, type UnitDomain, type UnitKind, type UnitStats } from '../../data/war';
 import { DMath } from '../dmath';
 import { Rng } from '../rng';
 import { Mixer } from '../sync';
@@ -24,6 +24,7 @@ import {
   type BattleFrame,
   type BattleInput,
   type BattleResult,
+  type BattleMods,
   type BattleShot,
   type BattleUnitIn,
   type Outcome,
@@ -93,9 +94,43 @@ interface Unit {
   riding: boolean;
   /** Base structure (defenders), −1. */
   base: number;
+  /** Share of hits that miss it (version 3: research's evasion; 0 without). */
+  evade: number;
+  /** Version 3, attackers only: the robot's stamp, the units the fortress carries, the whale's dives. */
+  stomp: UnitStats['stomp'] | null;
+  carries: UnitStats['carries'] | null;
+  dives: UnitStats['dives'] | null;
+  /** A carrier: the step it launches the next unit it carries. */
+  launchAt: number;
+  /** A carried unit: its carrier's index (−1 for none), and whether it's still aboard. */
+  carrier: number;
+  aboard: boolean;
+  /** A diving unit: under water (nothing can target it), and the step it surfaced. */
+  dived: boolean;
+  surfaced: number;
 }
 
 const NONE = 0x7fffffff;
+
+/** The interceptor battery's reach (m), chance when fully manned, and cooldown (steps), M37. */
+const INTERCEPTOR = MILITARY_DEFS.find((d) => d.military.intercept)?.military.intercept ?? {
+  range: 450,
+  chance: 0.5,
+  cooldown: 8,
+};
+
+/** A research modifier, within the bounds a battle accepts (`fallback` when it's absent or no number). */
+function modOf(
+  m: { hp?: number; attack?: number; armour?: number; evade?: number } | undefined,
+  k: 'hp' | 'attack' | 'armour' | 'evade',
+  fallback: number,
+): number {
+  const v = m?.[k];
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+  const [lo, hi] = BATTLE_MOD[k];
+  return Math.min(hi, Math.max(lo, v));
+}
+
 const TAU = Math.PI * 2;
 const TRUCK_SPEED = 11;
 
@@ -134,6 +169,12 @@ export class Battle {
   private seaPaths = new Map<number, number[] | null>();
   private startStrength = 0;
   private nStruct: number;
+  /** Version 3: interceptor batteries (structure indices, in order) and the step each is ready again. */
+  private interceptors: number[] = [];
+  private interceptReady: Int32Array;
+  /** Version 3: the dome's pool, at the start and left (0 for no dome). */
+  private domeMax: number;
+  private domeLeft: number;
 
   constructor(input: BattleInput) {
     this.input = input;
@@ -146,9 +187,13 @@ export class Battle {
     this.state = new Uint8Array(n);
     this.gunCool = new Float64Array(n);
     this.gunTarget = new Int32Array(n).fill(NONE);
+    this.interceptReady = new Int32Array(n);
+    this.domeMax = typeof L.dome === 'number' && L.dome > 0 ? L.dome : 0;
+    this.domeLeft = this.domeMax;
     for (let k = 0; k < n; k++) {
       this.hp[k] = L.structs[k * S.stride + S.hp]!;
       this.maxHp[k] = this.hp[k]!;
+      if ((L.structs[k * S.stride + S.tags]! & TAG.intercept) !== 0) this.interceptors.push(k);
       const x = this.sx(k);
       const z = this.sz(k);
       const key = this.cellKey(x, z);
@@ -176,8 +221,13 @@ export class Battle {
     }
     objs.sort((a, b) => a.d - b.d || a.k - b.k);
     for (const o of objs.slice(0, BATTLE.maxTargets)) this.objectives.push(o.k);
-    // Units: the attackers in their order, then the defenders.
-    input.attacker.units.slice(0, BATTLE.maxAttackers).forEach((u, k) => this.addAttacker(u, k));
+    // Units: the attackers in their order, then those they carry in (version 3), then the defenders.
+    const force = input.attacker.units;
+    force
+      .filter((u) => u.from === undefined)
+      .slice(0, BATTLE.maxAttackers)
+      .forEach((u, k) => this.addAttacker(u, k));
+    for (const u of force.filter((x) => x.from !== undefined).slice(0, SUPER.maxCarried)) this.addCarried(u);
     for (const u of L.defenders.slice(0, BATTLE.maxDefenders)) this.addDefender(u);
     for (const u of this.units) if (u.side === 0) this.startStrength += this.strength(u);
     if (!this.objectives.length) this.finish('withdrew');
@@ -236,19 +286,28 @@ export class Battle {
     if (!def) return null;
     let targets = 0;
     for (const d of def.stats.targets) targets |= DOMAIN_BIT[d];
+    // Research's modifiers for its side and domain (version 3): none, and every number is as it was.
+    const mods: BattleMods | undefined = side === 0 ? this.input.attacker.mods : this.input.layout.mods;
+    const mod = mods?.[def.domain];
+    const max = def.stats.hp * modOf(mod, 'hp', 1);
+    const armour = def.stats.armour;
+    const attacker = side === 0;
     const unit: Unit = {
       i: this.units.length,
       id: u.id,
       kind: u.kind,
       side,
       domain: def.domain,
-      max: def.stats.hp,
-      hp: def.stats.hp * Math.max(0.05, Math.min(1, u.hp)),
-      attack: def.stats.attack,
+      max,
+      hp: max * Math.max(0.05, Math.min(1, u.hp)),
+      attack: def.stats.attack * modOf(mod, 'attack', 1),
       reload: def.stats.reload,
       range: def.stats.range,
       speed: def.stats.speed,
-      armour: def.stats.armour,
+      armour:
+        mod?.armour === undefined
+          ? armour
+          : Math.min(Math.max(armour, BATTLE_MOD.armourMax), armour + modOf(mod, 'armour', 0)),
       siege: def.stats.siege,
       targets,
       x: u.x,
@@ -274,6 +333,15 @@ export class Battle {
       firing: false,
       riding: false,
       base: u.base,
+      evade: modOf(mod, 'evade', 0),
+      stomp: (attacker && def.stats.stomp) || null,
+      carries: (attacker && def.stats.carries) || null,
+      dives: (attacker && def.stats.dives) || null,
+      launchAt: 0,
+      carrier: -1,
+      aboard: false,
+      dived: attacker && !!def.stats.dives,
+      surfaced: -1,
     };
     this.units.push(unit);
     return unit;
@@ -296,6 +364,27 @@ export class Battle {
       const squads = this.input.attacker.units.filter((x) => x.kind === 'infantry').length;
       unit.riding = u.kind === 'infantry' && trucks * BATTLE.squadsPerTruck >= squads && trucks > 0;
     }
+    if (unit.domain === 'air') unit.y = BATTLE.flyHeight;
+  }
+
+  /**
+   * A unit carried in (version 3: the sky fortress's drones): aboard its carrier until the carrier
+   * nears its objective, then launched one at a time. One whose carrier isn't in the force, or is
+   * full, or carries another kind, doesn't come.
+   */
+  private addCarried(u: BattleUnitIn): void {
+    const carrier = this.units.find((c) => c.side === 0 && c.id === u.from && c.carries && c.carrier < 0);
+    if (!carrier?.carries || carrier.carries.kind !== u.kind) return;
+    let aboard = 0;
+    for (const o of this.units) if (o.carrier === carrier.i) aboard++;
+    if (aboard >= carrier.carries.n) return;
+    const unit = this.makeUnit(u, 0);
+    if (!unit) return;
+    unit.carrier = carrier.i;
+    unit.aboard = true;
+    unit.x = carrier.x;
+    unit.z = carrier.z;
+    unit.objective = carrier.objective;
     if (unit.domain === 'air') unit.y = BATTLE.flyHeight;
   }
 
@@ -517,16 +606,28 @@ export class Battle {
   }
 
   private move(u: Unit): void {
+    if (u.aboard) return; // carried in, not launched yet
     if (u.wait > 0) {
       u.wait--;
       return;
     }
     if (u.mode === Mode.Wait) this.setOff(u);
-    if (u.firing && u.domain === 'land') return; // standing to fire
+    // Standing to fire; the robot walks on as it fires.
+    if (u.firing && u.domain === 'land' && !u.stomp) return;
     const dt = BATTLE.dt;
     const speed = u.riding ? TRUCK_SPEED : u.speed;
-    if (u.domain === 'air') return this.fly(u, speed * dt);
-    if (u.domain === 'sea') return this.sail(u, speed * dt);
+    // The robot strides over open ground as fast as it walks a road.
+    const offRoad = u.stomp ? 1 : BATTLE.offRoad;
+    if (u.domain === 'air') {
+      this.fly(u, speed * dt);
+      if (u.carries) this.launch(u);
+      return;
+    }
+    if (u.domain === 'sea') {
+      this.sail(u, speed * dt);
+      if (u.dives) this.surfaceOrDive(u);
+      return;
+    }
     if (u.mode === Mode.Hold) {
       // Defenders on the move again when the attackers have moved on.
       if (u.side === 1 && u.plan === Plan.Intercept && u.edge >= 0 && this.step % 10 === u.i % 10)
@@ -537,7 +638,7 @@ export class Battle {
       if (u.mode === Mode.Free) {
         u.gx = u.backEdge >= 0 ? this.roadPoint(u.backEdge, u.backAt).x : u.x;
         u.gz = u.backEdge >= 0 ? this.roadPoint(u.backEdge, u.backAt).z : u.z;
-        if (this.walk(u, speed * dt * BATTLE.offRoad)) {
+        if (this.walk(u, speed * dt * offRoad)) {
           if (u.backEdge < 0) return this.leave(u);
           u.mode = Mode.Road;
           u.edge = u.backEdge;
@@ -552,18 +653,30 @@ export class Battle {
       const k = u.objective;
       if (k < 0) return;
       if (u.mode === Mode.Road) {
-        if (this.drive(u, this.objectiveField(k), speed * dt)) {
+        if (u.stomp && DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) <= SUPER.free) {
+          // The robot leaves the road near its objective and walks straight there, stamping.
           u.mode = Mode.Free;
           u.backEdge = u.edge;
           u.backAt = u.at;
+        } else {
+          if (this.drive(u, this.objectiveField(k), speed * dt)) {
+            u.mode = Mode.Free;
+            u.backEdge = u.edge;
+            u.backAt = u.at;
+          }
+          return;
         }
-        return;
       }
       if (u.mode === Mode.Free) {
         u.gx = this.sx(k);
         u.gz = this.sz(k);
-        const reach = u.range > 0 ? this.sv(k, S.rIn) + u.range * 0.8 : BATTLE.dismount;
-        if (this.walk(u, speed * dt * BATTLE.offRoad, reach)) u.mode = Mode.Hold;
+        // The robot walks right up to it; anything else stops within its reach.
+        const reach = u.stomp
+          ? this.sv(k, S.rIn)
+          : u.range > 0
+            ? this.sv(k, S.rIn) + u.range * 0.8
+            : BATTLE.dismount;
+        if (this.walk(u, speed * dt * offRoad, reach)) u.mode = Mode.Hold;
       }
       return;
     }
@@ -605,7 +718,7 @@ export class Battle {
       cx = u.x;
       cz = u.z;
       for (const o of this.units) {
-        if (o.side === u.side || !this.alive(o) || o.mode === Mode.Wait) continue;
+        if (o.side === u.side || !this.alive(o) || o.mode === Mode.Wait || o.dived) continue;
         if ((u.targets & DOMAIN_BIT[o.domain]) === 0) continue;
         const d = DMath.hypot(o.x - u.x, o.z - u.z);
         if (d < best) {
@@ -672,7 +785,78 @@ export class Battle {
   private leave(u: Unit): void {
     u.mode = Mode.Left;
     u.target = NONE;
+    u.aboard = false;
     this.events.push({ k: 'left', side: u.side, unit: u.id });
+    if (u.carries) this.dropCarried(u);
+  }
+
+  // --- Superweapons (version 3). ---
+
+  /** The fortress near its objective launches what it carries, one every `carries.every` steps. */
+  private launch(c: Unit): void {
+    if (c.plan !== Plan.Attack || c.objective < 0 || this.step < c.launchAt) return;
+    if (DMath.hypot(this.sx(c.objective) - c.x, this.sz(c.objective) - c.z) > SUPER.launch) return;
+    const d = this.units.find((o) => o.carrier === c.i && o.aboard);
+    if (!d) return;
+    d.aboard = false;
+    d.x = c.x;
+    d.z = c.z;
+    d.y = c.y;
+    d.yaw = c.yaw;
+    d.objective = c.objective;
+    c.launchAt = this.step + c.carries!.every;
+  }
+
+  /** A carrier knocked out or gone: what it still carries goes home with it. */
+  private dropCarried(c: Unit): void {
+    for (const o of this.units) if (o.carrier === c.i && o.aboard && this.alive(o)) this.leave(o);
+  }
+
+  /**
+   * The whale swims under water (nothing can target it), surfaces within `dives.surface` m of its
+   * objective's shore (its way's end), fires for `dives.fire` steps at most, then dives and leaves.
+   */
+  private surfaceOrDive(u: Unit): void {
+    const d = u.dives!;
+    if (u.plan !== Plan.Attack) {
+      u.dived = true;
+      return;
+    }
+    if (u.dived) {
+      const p = u.path;
+      if (!p || u.surfaced >= 0) return;
+      if (DMath.hypot(u.x - p[p.length - 2]!, u.z - p[p.length - 1]!) <= d.surface) {
+        u.dived = false;
+        u.surfaced = this.step;
+      }
+      return;
+    }
+    if (this.step - u.surfaced >= d.fire) {
+      u.dived = true;
+      u.plan = Plan.Exit;
+      u.path = null;
+      u.target = NONE;
+      u.firing = false;
+    }
+  }
+
+  /** The robot stamps on what stands within its reach. No dice: the battle's caps still bound it. */
+  private stompAt(u: Unit): void {
+    const st = u.stomp!;
+    for (const k of this.nearStructs(u.x, u.z, st.radius + 64)) {
+      if (this.state[k] === 2) continue;
+      if (DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn) > st.radius) continue;
+      this.damage(k, st.damage);
+    }
+  }
+
+  /** The first interceptor battery (lowest index) in reach of a spot, manned and ready, or −1. */
+  private interceptorFor(x: number, z: number): number {
+    for (const k of this.interceptors) {
+      if (this.state[k] === 2 || this.interceptReady[k]! > this.step || this.sv(k, S.manned) <= 0) continue;
+      if (DMath.hypot(this.sx(k) - x, this.sz(k) - z) <= INTERCEPTOR.range) return k;
+    }
+    return -1;
   }
 
   // --- Fighting. ---
@@ -692,7 +876,7 @@ export class Battle {
       }
     };
     for (const o of this.units) {
-      if (o.side === u.side || !this.alive(o) || o.mode === Mode.Wait) continue;
+      if (o.side === u.side || !this.alive(o) || o.mode === Mode.Wait || o.dived) continue;
       if (!this.canHit(u.targets, o)) continue;
       const d = DMath.hypot(o.x - u.x, o.z - u.z);
       if (d > u.range) continue;
@@ -760,7 +944,7 @@ export class Battle {
     let ty = 0;
     if (u.target >= 0) {
       const t = this.units[u.target]!;
-      if (!this.alive(t) || DMath.hypot(t.x - u.x, t.z - u.z) > u.range) {
+      if (!this.alive(t) || t.dived || DMath.hypot(t.x - u.x, t.z - u.z) > u.range) {
         u.target = NONE;
         u.firing = false;
         return;
@@ -782,7 +966,28 @@ export class Battle {
     u.aim = DMath.atan2(-(tx - u.x), -(tz - u.z)) - u.yaw;
     if (u.cool > 0) return;
     u.cool = u.reload;
-    const hit = this.rng.next() < this.accuracy(u.side, u.domain);
+    // Interceptors (version 3): a shell fired from afar (to the building's wall, as reach is
+    // measured), or a bomb, aimed at a building may be stopped in the air by a battery in reach of
+    // it. One draw, only when there's a battery to make it.
+    if (
+      u.target < 0 &&
+      u.siege >= 1 &&
+      this.interceptors.length &&
+      (u.domain === 'air' ||
+        DMath.hypot(tx - u.x, tz - u.z) - this.sv(-u.target - 1, S.rIn) >= INTERCEPT.from)
+    ) {
+      const ic = this.interceptorFor(tx, tz);
+      if (ic >= 0) {
+        this.interceptReady[ic] = this.step + INTERCEPTOR.cooldown;
+        if (this.rng.next() < INTERCEPTOR.chance * this.sv(ic, S.manned)) {
+          this.shot(u.x, u.z, u.y + 2, tx + (u.x - tx) * 0.15, tz + (u.z - tz) * 0.15, 40, 3, false);
+          return;
+        }
+      }
+    }
+    // Evasion (version 3) folds into the one draw: no evasion, the same chance as ever.
+    const evade = u.target >= 0 ? this.units[u.target]!.evade : 0;
+    const hit = this.rng.next() < this.accuracy(u.side, u.domain) * (1 - evade);
     this.shot(u.x, u.z, u.y + 2, tx, tz, ty, u.siege >= 1 ? 1 : 0, hit);
     if (u.target >= 0) {
       if (hit) this.hurt(this.units[u.target]!, u.attack, u.x, u.z);
@@ -801,7 +1006,7 @@ export class Battle {
     x1: number,
     z1: number,
     y1: number,
-    kind: 0 | 1 | 2,
+    kind: 0 | 1 | 2 | 3,
     hit: boolean,
   ) {
     if (this.shots.length < 64) this.shots.push({ x0, z0, y0, x1, z1, y1, kind, hit });
@@ -816,6 +1021,7 @@ export class Battle {
     t.target = NONE;
     t.firing = false;
     this.events.push({ k: 'out', side: t.side, unit: t.id, kind: t.kind });
+    if (t.carries) this.dropCarried(t);
   }
 
   /** A shot that missed lands nearby: what stands within a few metres takes some of it. */
@@ -860,6 +1066,17 @@ export class Battle {
 
   private damage(k: number, dmg: number): void {
     if (this.state[k] === 2 || dmg <= 0) return;
+    // A raised dome (version 3) takes every blow on a building while its pool lasts, then pops.
+    if (this.domeLeft > 0) {
+      const soak = Math.min(this.domeLeft, dmg);
+      this.domeLeft -= soak;
+      dmg -= soak;
+      if (this.domeLeft <= 0) {
+        this.domeLeft = 0;
+        this.events.push({ k: 'dome', left: 0 });
+      }
+      if (dmg <= 0) return;
+    }
     const tags = this.sv(k, S.tags);
     const civic = (tags & TAG.civic) !== 0;
     const capped = civic
@@ -901,7 +1118,7 @@ export class Battle {
         let best = NONE;
         let bestD = Infinity;
         for (const o of this.units) {
-          if (o.side !== 0 || !this.alive(o) || o.mode === Mode.Wait) continue;
+          if (o.side !== 0 || !this.alive(o) || o.mode === Mode.Wait || o.dived) continue;
           if ((against & DOMAIN_BIT[o.domain]) === 0) continue;
           const d = DMath.hypot(o.x - x, o.z - z);
           if (d <= range && d < bestD) {
@@ -914,12 +1131,12 @@ export class Battle {
       const t = this.gunTarget[k]!;
       if (t === NONE || this.gunCool[k]! > 0) continue;
       const o = this.units[t]!;
-      if (!this.alive(o) || DMath.hypot(o.x - x, o.z - z) > range) {
+      if (!this.alive(o) || o.dived || DMath.hypot(o.x - x, o.z - z) > range) {
         this.gunTarget[k] = NONE;
         continue;
       }
       this.gunCool[k] = BATTLE.defence.reload;
-      const hit = this.rng.next() < this.accuracy(1, 'defence');
+      const hit = this.rng.next() < this.accuracy(1, 'defence') * (1 - o.evade);
       this.shot(x, z, 4, o.x, o.z, o.y, o.domain === 'air' ? 2 : 0, hit);
       if (hit) this.hurt(o, gun * BATTLE.defence.attackPer * manned, x, z);
     }
@@ -947,6 +1164,7 @@ export class Battle {
       u.target = NONE;
       u.firing = false;
       u.path = null;
+      if (u.dives) u.dived = true;
       if (u.mode === Mode.Wait) this.leave(u);
       else if (u.mode === Mode.Hold)
         u.mode = u.domain === 'land' ? (u.backEdge >= 0 ? Mode.Free : Mode.Road) : u.mode;
@@ -1012,8 +1230,17 @@ export class Battle {
     for (const u of this.units) {
       // Units pulling out don't stop to shoot back.
       if (!this.alive(u) || u.plan === Plan.Exit) continue;
+      // A dived whale (version 3) neither aims nor fires.
+      if (u.dived) continue;
       if (u.wait <= 0 && u.mode !== Mode.Wait && (u.i + this.step) % BATTLE.targetEvery === 0) this.choose(u);
       if (u.mode !== Mode.Wait) this.fire(u);
+      // The robot (version 3) stamps once it has left the road.
+      if (
+        u.stomp &&
+        (u.mode === Mode.Free || u.mode === Mode.Hold) &&
+        (this.step + u.i) % u.stomp.every === 0
+      )
+        this.stompAt(u);
     }
     this.guns();
     for (const u of this.units) if (this.alive(u)) this.move(u);
@@ -1054,8 +1281,10 @@ export class Battle {
       m.num(u.hp);
       m.num(u.x);
       m.num(u.z);
+      if (u.dives) m.int(u.dived ? 1 : 0);
     }
     for (let k = 0; k < this.nStruct; k++) m.num(this.hp[k]!);
+    if (this.domeMax > 0) m.num(this.domeLeft);
     return m.hex();
   }
 
@@ -1109,7 +1338,7 @@ export class Battle {
           yaw: Math.round(u.yaw * 1000) / 1000,
           aim: Math.round(u.aim * 1000) / 1000,
           hp: Math.round((u.hp / u.max) * 100) / 100,
-          state: u.mode === Mode.Out ? 2 : u.firing || u.mode === Mode.Hold ? 1 : 0,
+          state: u.mode === Mode.Out ? 2 : u.dived ? 3 : u.firing || u.mode === Mode.Hold ? 1 : 0,
         })),
       shots: [...this.shots],
       sides,
@@ -1120,6 +1349,7 @@ export class Battle {
         hp: Math.round((this.hp[k]! / this.maxHp[k]!) * 100) / 100,
       })),
       outcome: this.outcome,
+      ...(this.domeMax > 0 ? { dome: Math.round((this.domeLeft / this.domeMax) * 1000) / 1000 } : {}),
     };
   }
 }

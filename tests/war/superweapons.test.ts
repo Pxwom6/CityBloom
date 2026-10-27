@@ -4,6 +4,11 @@ import type { Sim } from '../../src/sim/sim';
 import type { AwayResult } from '../../src/sim/systems/expeditions';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { battleLayout } from '../../src/sim/battle/layout';
+import { awayCity, awayInput } from '../../src/sim/battle/away';
+import { growRivalTown } from '../../src/sim/ai/town';
+import { S } from '../../src/sim/battle/types';
+import { DOME, type TierKey } from '../../src/data/research';
+import { blackedOut, domeCharge, rivalBlackedOut, superBuilding } from '../../src/sim/systems/supers';
 import { labTown, ok, refusal } from './researchTown';
 
 /** M37: superweapons (docs/plans/M37-design.md, key calls 7–9; steps 6–7). */
@@ -11,9 +16,12 @@ import { labTown, ok, refusal } from './researchTown';
 const H = TICKS_PER_HOUR;
 const M = TICKS_PER_MONTH;
 
-/** A war town with a vehicle depot, and a way to put units in it. */
-function supersTown() {
-  const { sim, place } = labTown(0);
+/**
+ * A war town with a vehicle depot, and a way to put units in it; `big` grows one large enough to
+ * staff a superweapon building (about 2,600 people).
+ */
+function supersTown(big = false) {
+  const { sim, place } = labTown(0, big ? { length: 800, streets: 7 } : {});
   const depot = place('vehicledepot');
   sim.advance(M);
   const s = sim.state;
@@ -151,5 +159,211 @@ describe('M37 superweapons in forces', () => {
     w.units.get(robot)!.ready = w.clock + 100;
     ok(sim, { type: 'cheat', cheat: 'superReady' });
     expect(w.units.get(robot)!.ready).toBeUndefined();
+  });
+});
+
+/** A war town with a superweapon building finished (its research done, its stages cheated) and staffed. */
+function withBuilding(def: string, tiers: TierKey[]) {
+  const t = supersTown(true);
+  ok(t.sim, { type: 'cheat', cheat: 'research', tiers });
+  const civic = t.place(def);
+  expect(t.sim.state.civics.get(civic)!.build).toBeDefined();
+  ok(t.sim, { type: 'cheat', cheat: 'finishStages', civic });
+  t.sim.advance(M);
+  const c = t.sim.state.civics.get(civic)!;
+  expect(c.staff ?? 0).toBeGreaterThanOrEqual(0.25);
+  expect(c.powered ?? 0).toBeGreaterThanOrEqual(0.5);
+  return { ...t, civic };
+}
+
+describe('M37 superweapon buildings', () => {
+  it('the dome charges for ten days while it works, takes a mode, and holds four hours in a blackout', () => {
+    const { sim } = withBuilding('domeshield', ['defence1', 'defence2', 'defence3', 'defence4']);
+    const w = sim.state.war!;
+    expect(superBuilding(sim, 'dome')).toBeDefined();
+    const dome = w.supers!.dome!;
+    expect(dome.mode).toBe('all');
+    // A month (a game day) of charging so far.
+    expect(dome.hours).toBeGreaterThan(0);
+    expect(dome.hours).toBeLessThanOrEqual(24);
+    // An hour's charge for every hour it works: full within the ten days and a little.
+    for (let h = 0; h < DOME.chargeHours + 60 && domeCharge(sim) < 1; h++) sim.advance(H);
+    expect(domeCharge(sim)).toBe(1);
+    expect(refusal(sim, { type: 'setDome', mode: 'bogus' as never })).toBe('No such mode');
+    ok(sim, { type: 'setDome', mode: 'super' });
+    expect(w.supers!.dome!.mode).toBe('super');
+    // Blacked out: no charging, and a full dome falls after its reserve.
+    w.blackout = { by: 1, from: w.clock, until: w.clock + 12 };
+    expect(blackedOut(sim)).toBe(true);
+    sim.advance(3 * H);
+    expect(domeCharge(sim)).toBe(1);
+    sim.advance(2 * H);
+    expect(domeCharge(sim)).toBe(0);
+    sim.advance(8 * H);
+    // The blackout over, it charges again.
+    expect(blackedOut(sim)).toBe(false);
+    sim.advance(3 * H);
+    expect(w.supers!.dome!.hours).toBeGreaterThan(0);
+  });
+
+  it('the blackout tower darkens a computer neighbour after an hour: no raids from it, and it minds', () => {
+    const { sim, rival } = withBuilding('blackouttower', ['intel1', 'intel2', 'intel3', 'intel4']);
+    const w = sim.state.war!;
+    const friend = sim.state.region.neighbours.find((n) => !n.rival);
+    if (friend)
+      expect(refusal(sim, { type: 'useBlackout', neighbour: friend.id })).toBe(
+        `${friend.name} isn’t a rival`,
+      );
+    sim.state.region.rules = { war: true, scale: 'skirmish' };
+    expect(refusal(sim, { type: 'useBlackout', neighbour: rival.id })).toBe(
+      'Your region’s rules turn superweapons off',
+    );
+    delete sim.state.region.rules;
+    const before = rival.rival!.relation;
+    ok(sim, { type: 'useBlackout', neighbour: rival.id });
+    expect(refusal(sim, { type: 'useBlackout', neighbour: rival.id })).toBe(
+      'The blackout tower is already charging',
+    );
+    expect(rivalBlackedOut(sim, rival)).toBe(false);
+    sim.advance(H);
+    expect(rivalBlackedOut(sim, rival)).toBe(true);
+    expect(rival.rival!.relation).toBe(Math.max(-100, before - 15));
+    expect(refusal(sim, { type: 'useBlackout', neighbour: rival.id })).toMatch(
+      /^The blackout tower is charging: ready in \d+ hours$/,
+    );
+    sim.advance(12 * H);
+    expect(rivalBlackedOut(sim, rival)).toBe(false);
+    expect(rival.rival!.blackout).toBeUndefined();
+    // Ten days from use, it may fire again.
+    sim.advance(240 * H);
+    expect(refusal(sim, { type: 'useBlackout', neighbour: rival.id })).toBeNull();
+    void w;
+  });
+
+  it('a blacked-out neighbour sends no raids, even at war with a city it outguns', () => {
+    const raidsFrom = (blackout: boolean) => {
+      const { sim, rival } = supersTown();
+      const w = sim.state.war!;
+      ok(sim, { type: 'cheat', cheat: 'rival', neighbour: rival.id, forces: 200, defences: 10 });
+      rival.rival!.relation = -100;
+      // At war, a town raids however young the city is.
+      ok(sim, { type: 'declareWar', neighbour: rival.id, scale: 'war', reason: 'Our border' });
+      if (blackout) rival.rival!.blackout = { from: w.clock, until: w.clock + 10_000 };
+      let seen = 0;
+      for (let h = 0; h < 30 * 24; h++) {
+        sim.advance(H);
+        if (w.incoming?.some((r) => r.from === rival.id) || w.battle?.raid.from === rival.id) seen++;
+        if (seen) break;
+      }
+      return seen;
+    };
+    expect(raidsFrom(false)).toBeGreaterThan(0);
+    expect(raidsFrom(true)).toBe(0);
+  });
+
+  it('the express gate takes a land or air force there in an hour, then charges for five days', () => {
+    const { sim, add, rival } = withBuilding('expressgate', [
+      'logistics1',
+      'logistics2',
+      'logistics3',
+      'logistics4',
+    ]);
+    const w = sim.state.war!;
+    const tank = add('tank');
+    const boat = add('patrolboat');
+    rival.kind = 'resort';
+    expect(refusal(sim, { ...sendCmd([boat], rival.id, 'sea'), gate: true })).toBe(
+      'Ships can’t go through the gate',
+    );
+    const id = ok(sim, { ...sendCmd([tank], rival.id), gate: true }).created![0]!;
+    const e = w.expeditions!.find((x) => x.id === id)!;
+    expect(e.arrive - e.depart).toBe(H);
+    expect(e.gate).toBe(true);
+    expect(w.supers!.gate!.ready).toBe(w.clock + 120);
+    const tank2 = add('tank');
+    const other = sim.state.region.neighbours.find((n) => n.rival && n.id !== rival.id);
+    if (other)
+      expect(refusal(sim, { ...sendCmd([tank2], other.id), gate: true })).toBe(
+        'The express gate is charging: ready in 120 hours',
+      );
+    arrive(sim, id);
+    ok(sim, { type: 'battleReport', expedition: id, result: report([tank]) });
+    expect((e.home - sim.state.tick) / H).toBe(1);
+    home(sim);
+  });
+
+  it('a charged dome rises over a battle at home, soaks it, and is down afterwards', () => {
+    const { sim, rival } = withBuilding('domeshield', ['defence1', 'defence2', 'defence3', 'defence4']);
+    const w = sim.state.war!;
+    ok(sim, { type: 'cheat', cheat: 'rival', neighbour: rival.id, forces: 60, defences: 10 });
+    const raid = (mode: 'all' | 'super' | 'off') => {
+      ok(sim, { type: 'setDome', mode });
+      ok(sim, { type: 'cheat', cheat: 'superReady' });
+      expect(domeCharge(sim)).toBe(1);
+      sim.events.length = 0;
+      ok(sim, { type: 'cheat', cheat: 'raidIn', hours: 0, neighbour: rival.id });
+      for (let t = 0; t < M && !w.battle; t++) sim.step();
+      expect(w.battle).toBeDefined();
+      const pool = w.battle!.input.layout.dome;
+      const raised = !!w.supers!.dome!.raised;
+      const events: string[] = [];
+      for (let t = 0; t < M && w.battle; t++) {
+        sim.step();
+        events.push(...sim.events.map((e) => e.kind));
+      }
+      expect(w.battle).toBeUndefined();
+      return { pool, raised, events, charge: domeCharge(sim) };
+    };
+    // Kept down, or kept for superweapons (computer raids bring none): the battle meets no dome.
+    for (const mode of ['off', 'super'] as const) {
+      const r = raid(mode);
+      expect(r.pool, mode).toBeUndefined();
+      expect(r.raised, mode).toBe(false);
+      expect(r.charge, mode).toBe(1);
+    }
+    // Raised for every battle: its pool is in the battle, and it's spent once the battle is over.
+    const r = raid('all');
+    expect(r.pool).toBe(DOME.pool);
+    expect(r.raised).toBe(true);
+    expect(r.charge).toBe(0);
+    expect(w.supers!.dome!.raised).toBeUndefined();
+    // Nothing of the city fell while the dome held, unless it popped.
+    const last = w.reports!.at(-1)!;
+    if (!r.events.includes('domePopped')) {
+      expect(last.collapsed).toEqual([]);
+      expect(last.civics).toEqual([]);
+    }
+  });
+
+  it('in a blacked-out town the guns are manned at a third', () => {
+    const { sim, add, rival } = supersTown();
+    const w = sim.state.war!;
+    const tank = add('tank');
+    const id = ok(sim, sendCmd([tank], rival.id)).created![0]!;
+    const e = w.expeditions!.find((x) => x.id === id)!;
+    const town = growRivalTown({
+      citySeed: sim.state.options.seed,
+      neighbour: rival.id,
+      name: rival.name,
+      kind: rival.kind,
+      personality: rival.rival!.personality,
+      population: rival.population,
+      cap: 1_500,
+    });
+    const manned = (input: ReturnType<typeof awayInput>) => {
+      const out: number[] = [];
+      for (let k = 0; k < input.layout.structs.length / S.stride; k++)
+        if (input.layout.structs[k * S.stride + S.gun]! > 0)
+          out.push(input.layout.structs[k * S.stride + S.manned]!);
+      return out;
+    };
+    const before = manned(awayInput(awayCity(sim, e), town));
+    expect(before.some((m) => m > 0)).toBe(true);
+    expect(awayCity(sim, e).neighbour.manning).toBeUndefined();
+    rival.rival!.blackout = { from: w.clock, until: w.clock + 12 };
+    const city = awayCity(sim, e);
+    expect(city.neighbour.manning).toBe(0.3);
+    const after = manned(awayInput(city, town));
+    expect(after).toEqual(before.map((m) => Math.round(m * 0.3 * 1000) / 1000));
   });
 });

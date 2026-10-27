@@ -36,6 +36,7 @@ import {
   type ResearchSummary,
 } from './research';
 import { accrue, book, fundingPct } from './economy';
+import { supersHour, type Supers } from './supers';
 import { Dijkstra, type RoadGraph } from './graph';
 import {
   diplomacySummary,
@@ -146,6 +147,10 @@ export interface WarState {
   unshielded?: true;
   /** Weapons research, prototypes and their trials (M37); absent until the first research is queued. */
   research?: Research;
+  /** The superweapon buildings (M37): absent until the first is finished. */
+  supers?: Supers;
+  /** Blacked out by a friend's tower (M37, war-clock hours): power plants falter, radar and maps go out. */
+  blackout?: { by: number; from: number; until: number };
 }
 
 export function initialWar(seed: string): WarState {
@@ -454,6 +459,8 @@ export function warHour(sim: Sim, extraction: (c: Civic) => number): void {
   // Weapons research and prototypes' trials (M37).
   researchHour(sim);
   trialsHour(sim);
+  // The superweapon buildings (M37): the dome charges, the tower fires.
+  supersHour(sim);
   // Superweapons wound up again (M37).
   for (const u of w.units.values())
     if (u.ready !== undefined && u.ready <= w.clock) {
@@ -733,7 +740,8 @@ export function militaryStaffing(
   const { g, costs, flows, origins, car } = r;
   // The forces may take a share of the city's workers at most. The HQ is staffed first, then bases
   // training units (oldest order first), each in full while the share lasts; then (M37) proving
-  // grounds with a prototype on trial and labs with research queued; then the rest, in build order.
+  // grounds with a prototype on trial, labs with research queued and the superweapon buildings
+  // (always at work: charging, or ready); then the rest, in build order.
   const work = sim.state.war.research;
   const trying = new Set((work?.trials ?? []).map((t) => t.ground));
   const researching = !!work?.queue.length;
@@ -755,7 +763,7 @@ export function militaryStaffing(
       : (first.get(c.id) ??
         (trying.has(c.id)
           ? Number.MAX_SAFE_INTEGER - 2
-          : researching && militaryOf(c)!.lab
+          : (researching && militaryOf(c)!.lab) || militaryOf(c)!.superweapon
             ? Number.MAX_SAFE_INTEGER - 1
             : Number.MAX_SAFE_INTEGER));
   bases.sort((a, b) => rank(a.c) - rank(b.c) || a.c.id - b.c.id);

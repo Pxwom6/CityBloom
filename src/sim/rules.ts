@@ -51,6 +51,8 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   unqueueResearch: 'spend',
   startTrial: 'spend',
   stopTrial: 'spend',
+  useBlackout: 'spend',
+  setDome: 'policies',
   propose: 'policies',
   answerProposal: 'policies',
   withdrawProposal: 'policies',

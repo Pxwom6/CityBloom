@@ -1,3 +1,4 @@
+import type { RivalBlackout } from './supers';
 import { WEATHER } from '../../data/climate';
 import {
   DEAL_RESOURCES,
@@ -91,6 +92,8 @@ export interface RivalNeighbour {
   allies?: number[];
   /** Conquered by the city (M36): it pays a fifth of its taxes, and may rise again. */
   vassal?: { since: number };
+  /** Blacked out by the city's tower (M37): no raids or spies from it meanwhile. */
+  blackout?: RivalBlackout;
 }
 
 export interface Deal {

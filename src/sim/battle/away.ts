@@ -11,9 +11,10 @@ import { rivalMods } from '../ai/tech';
 import { rivalDefence } from '../ai/town';
 import type { Sim } from '../sim';
 import type { AwayResult, Expedition } from '../systems/expeditions';
-import { researchMods } from '../systems/research';
 import { neighbourColour } from '../systems/raids';
-import { researchEffect } from '../systems/research';
+import { researchEffect, researchMods } from '../systems/research';
+import { rivalBlackedOut } from '../systems/supers';
+import { BLACKOUT } from '../../data/research';
 import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
 import { battleLayout } from './layout';
@@ -45,6 +46,8 @@ export interface AwayCity {
     colour: number;
     /** A friend whose player isn't here (M36): the raid does half the damage. */
     absent?: boolean;
+    /** A computer neighbour's posts manned this much (M37: blacked out by the city's tower). */
+    manning?: number;
   };
 }
 
@@ -54,6 +57,8 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
   const w = s.war!;
   const n = s.region.neighbours.find((x) => x.id === e.to)!;
   const mods = researchMods(city);
+  // A town blacked out by the city's tower mans its guns at a third (M37).
+  const manning = n.rival && !n.player && rivalBlackedOut(city, n) ? BLACKOUT.manning : 1;
   return {
     seed: s.options.seed,
     cityName: s.options.cityName,
@@ -75,6 +80,7 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
       slot: n.player?.slot ?? null,
       colour: n.player?.color ?? neighbourColour(city, n.id),
       ...(n.player && !n.player.online ? { absent: true } : {}),
+      ...(manning < 1 ? { manning } : {}),
     },
   };
 }
@@ -92,6 +98,12 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
   const layout = battleLayout(town, { target: e.target, from: OPPOSITE[n.side] });
   if (n.rival) {
     rivalDefence(layout, n.rival, seed);
+    const man = n.manning;
+    if (man !== undefined && man < 1)
+      for (let k = 0; k < layout.structs.length / S.stride; k++) {
+        const i = k * S.stride + S.manned;
+        layout.structs[i] = Math.round(layout.structs[i]! * man * 1000) / 1000;
+      }
     // A computer neighbour's defenders fight with its tech (M37: none until its tech arrives).
     const theirs = rivalMods(n.rival);
     if (theirs) layout.mods = theirs;

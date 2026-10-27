@@ -227,6 +227,30 @@ export function runDeterminism(
     research.push(labSim.hash());
   }
   research.push(JSON.stringify(labSim.state.war!.research));
+  // The superweapon buildings (M37): a blackout tower and a dome, their stages cheated done; the
+  // dome's mode, and the tower aimed at a computer neighbour.
+  labSim.dispatch({
+    type: 'cheat',
+    cheat: 'research',
+    tiers: ['defence1', 'defence2', 'defence3', 'defence4'],
+  });
+  labSim.dispatch({ type: 'cheat', cheat: 'research', tiers: ['intel1', 'intel2', 'intel3', 'intel4'] });
+  for (const def of ['blackouttower', 'domeshield']) {
+    const c = placeAlong(labSim, lab, def, roadIds(labSim).reverse());
+    if (c !== null) labSim.dispatch({ type: 'cheat', cheat: 'finishStages', civic: c });
+  }
+  // Training called off, so the few workers this small town spares for its forces go to the tower.
+  for (const o of [...labSim.state.war!.orders.values()].sort((x, y) => x.id - y.id))
+    lab({ type: 'cancelTraining', order: o.id });
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'setDome', mode: 'super' });
+  const target = labSim.state.region.neighbours.find((n) => n.rival)?.id ?? -1;
+  lab({ type: 'useBlackout', neighbour: target, breakPact: true });
+  for (let h = 0; h < 3; h++) {
+    labSim.advance(TICKS_PER_HOUR);
+    research.push(labSim.hash());
+  }
+  research.push(JSON.stringify([labSim.state.war!.supers ?? null, labSim.state.region.neighbours]));
 
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));

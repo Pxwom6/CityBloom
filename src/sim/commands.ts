@@ -1,6 +1,6 @@
 import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { DealDirection, DealResource } from '../data/region';
-import type { TierKey } from '../data/research';
+import type { DomeMode, TierKey } from '../data/research';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -78,8 +78,10 @@ export type Command =
   /** Test mode (M37): research points poured into the queue, or tiers done at once (scripted tests). */
   | { type: 'cheat'; cheat: 'researchPoints'; points: number }
   | { type: 'cheat'; cheat: 'research'; tiers: TierKey[] }
-  /** Test mode (M37): every superweapon wound up at once. */
+  /** Test mode (M37): every superweapon wound up at once, and the superweapon buildings charged. */
   | { type: 'cheat'; cheat: 'superReady' }
+  /** Test mode (M37): a project building's stages done at once. */
+  | { type: 'cheat'; cheat: 'finishStages'; civic: number }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -165,6 +167,8 @@ export type Command =
       stance: Stance;
       /** Send it even though it breaks a pact (M36; the page asks first). */
       breakPact?: boolean;
+      /** Through the express gate (M37): there in an hour. */
+      gate?: boolean;
     }
   | { type: 'recallForce'; expedition: number }
   /** The page's account of an expedition's battle, fought in the other town (page only). */
@@ -202,7 +206,10 @@ export type Command =
   | { type: 'unqueueResearch'; key: TierKey }
   /** A prototype's trial at a proving ground (M37), or calling it off. */
   | { type: 'startTrial'; ground: number; kind: UnitKind }
-  | { type: 'stopTrial'; ground: number };
+  | { type: 'stopTrial'; ground: number }
+  /** The superweapon buildings (M37): the dome's mode, and the blackout tower aimed at a rival. */
+  | { type: 'setDome'; mode: DomeMode }
+  | { type: 'useBlackout'; neighbour: number; breakPact?: boolean };
 
 export type CommandType = Command['type'];
 
@@ -272,6 +279,8 @@ const COMMAND_KINDS = {
   unqueueResearch: true,
   startTrial: true,
   stopTrial: true,
+  setDome: true,
+  useBlackout: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

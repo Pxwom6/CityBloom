@@ -338,3 +338,41 @@ export const TRIAL = {
   /** Shown as this many runs, a notice at each. */
   runs: 3,
 };
+
+/** The dome shield's modes: raised for every battle, only for one bringing a superweapon, or never. */
+export type DomeMode = 'all' | 'super' | 'off';
+export const DOME_MODES: readonly DomeMode[] = ['all', 'super', 'off'];
+
+/** The superweapon buildings' running numbers (M37). Logged in DECISIONS, "M37". */
+export const DOME = {
+  /** War hours to charge from empty, while it works (staff ≥ 0.25, power ≥ 0.5) and the city isn't blacked out. */
+  chargeHours: 240,
+  /** Its pool when raised for a battle: about a hundred houses' strength. */
+  pool: 40_000,
+  /** A full dome holds this long in a blackout, then falls empty. */
+  reserveHours: 4,
+  /** Kept for M40: the charge after stopping a bomb. */
+  bombRecharge: 1_440,
+};
+
+export const BLACKOUT = {
+  /** The tower charges at its target this long (the target is warned), then the blackout lasts `lasts`. */
+  chargeHours: 1,
+  lasts: 12,
+  /** Hours from use until it can fire again. */
+  recharge: 240,
+  /** A blacked-out town's guns are manned this much in battles there; a friend's power plants give `plants`. */
+  manning: 0.3,
+  plants: 0.4,
+  /** Its feelings towards the city. */
+  relation: -15,
+};
+
+export const GATE = {
+  /** A force through the gate arrives in this many hours, whatever its way; the gate charges `recharge` from departure. */
+  hours: 1,
+  recharge: 120,
+};
+
+/** A superweapon's strike on a computer neighbour: its feelings (a raid's are −20) and its allies'. */
+export const SUPER_STRIKE = { relation: -40, allies: -10 };

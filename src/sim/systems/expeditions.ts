@@ -27,8 +27,9 @@ import { militaryCivics, militaryOf } from './war';
 import { researchEffect, superweaponsAllowed } from './research';
 import { formatInt } from '../dmath';
 import type { Neighbour } from './region';
-import { RESEARCH } from '../../data/research';
-import { scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
+import { GATE, RESEARCH, SUPER_STRIKE } from '../../data/research';
+import { gateRefusal, useGate } from './supers';
+import { incident, scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
 
 /** A force away from the city. */
 export interface Expedition {
@@ -58,6 +59,8 @@ export interface Expedition {
    */
   fought?: true;
   downed?: number[];
+  /** Sent through the express gate (M37): an hour each way. */
+  gate?: true;
 }
 
 /** What the page hands back after fighting an expedition's battle. */
@@ -128,8 +131,9 @@ export function sendRefusal(
   route: BattleRoute,
   target: BattleTarget,
   breakPact = false,
+  gate = false,
 ): CommandErr | null {
-  const why = forceRefusal(sim, units, to, route, target);
+  const why = forceRefusal(sim, units, to, route, target, gate);
   if (why) return fail(why);
   // Diplomacy (M36): neutrality, vassals, wars not yet open, the seat of power, pacts in the way.
   return strikeRefusal(sim, to, target, breakPact);
@@ -141,6 +145,7 @@ function forceRefusal(
   to: number,
   route: BattleRoute,
   target: BattleTarget,
+  gate: boolean,
 ): string | null {
   const s = sim.state;
   const w = s.war;
@@ -179,6 +184,12 @@ function forceRefusal(
     return 'A force needs units that fight';
   const sup = superRefusal(sim, units, n, route);
   if (sup) return sup;
+  // Through the express gate (M37): land and air forces only, and a friend must be here.
+  if (gate) {
+    const sea = units.some((id) => UNIT.get(w.units.get(id)!.kind)!.domain === 'sea');
+    const g = gateRefusal(sim, n, sea);
+    if (g) return g;
+  }
   // By sea only to a town with a coast (M37; M35 let boats sail to any).
   if (route === 'sea' && !hasCoast(n))
     return units.some((id) => w.units.get(id)!.kind === 'clockworkwhale')
@@ -199,8 +210,9 @@ export function sendForce(
   stance: Stance,
   breakPact: boolean,
   dryRun: boolean,
+  gate = false,
 ): CommandResult {
-  const why = sendRefusal(sim, units, to, route, target, breakPact);
+  const why = sendRefusal(sim, units, to, route, target, breakPact, gate);
   if (why) return why;
   if (dryRun) return ok(0);
   strikeBreaks(sim, to);
@@ -210,7 +222,9 @@ export function sendForce(
   const kinds = units.map((id) => ({ kind: w.units.get(id)!.kind }));
   // Superweapons walk and fly slowly (M37): the robot and the fortress take twice as long.
   const slow = Math.max(1, ...kinds.map((k) => UNIT.get(k.kind)!.super?.travel ?? 1));
-  const hours = travelHours(route, n.side, kinds, researchEffect(sim, 'travel') * slow);
+  // Through the gate, an hour whatever the way (and it charges again from now).
+  const hours = gate ? GATE.hours : travelHours(route, n.side, kinds, researchEffect(sim, 'travel') * slow);
+  if (gate) useGate(sim);
   const e: Expedition = {
     id: s.nextId++,
     units: [...units],
@@ -224,6 +238,7 @@ export function sendForce(
     arrive: s.tick + hours * TICKS_PER_HOUR,
     home: 0,
     state: 'out',
+    ...(gate ? { gate: true as const } : {}),
   };
   for (const id of units) w.units.get(id)!.away = e.id;
   (w.expeditions ??= []).push(e);
@@ -319,6 +334,18 @@ export function expeditionsTick(sim: Sim): void {
   if (!w.expeditions.length) delete w.expeditions;
 }
 
+/** A superweapon struck a computer neighbour (M37): it and its allies take it hard. */
+function superStruck(sim: Sim, n: Neighbour): void {
+  incident(
+    sim,
+    n,
+    SUPER_STRIKE.relation,
+    SUPER_STRIKE.allies,
+    'superStrike',
+    `${n.name} and its allies won’t soon forget the superweapon that struck it`,
+  );
+}
+
 /** The page's account of an expedition's battle: losses, the neighbour's, and the way home. */
 export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolean): CommandResult {
   const w = sim.state.war;
@@ -351,10 +378,13 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
   const sent = e.units.length;
   e.units = e.units.filter((u) => w.units.has(u));
   const n = s.region.neighbours.find((x) => x.id === e.to);
+  // A superweapon's strike (M37) hurts feelings more, its allies' too.
+  const superStrike = e.units.some((id) => UNIT.get(w.units.get(id)!.kind)?.super);
   if (n?.rival) {
     n.rival.forces = Math.max(0, Math.round((n.rival.forces - r.theirLost) * 10) / 10);
     n.rival.defences = Math.max(0, Math.round((n.rival.defences - r.defencesLost * 3) * 10) / 10);
-    n.rival.relation = Math.max(-100, n.rival.relation - RAIDS.relationHit);
+    if (superStrike) superStruck(sim, n);
+    else n.rival.relation = Math.max(-100, n.rival.relation - RAIDS.relationHit);
   }
   // Struck: a computer neighbour may answer, and a friend's city may answer even as a newcomer.
   if (n) w.struck = { ...(w.struck ?? {}), [n.id]: s.tick };
@@ -383,7 +413,7 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
   // In a declared war the battle moves the score, and may take the seat of power (M36).
   scoreAwayBattle(sim, e.to, report, sent, hurt);
   // A superweapon's cooldown counts from a battle fought (only such a force keeps the mark).
-  if (e.units.some((id) => UNIT.get(w.units.get(id)!.kind)?.super)) e.fought = true;
+  if (superStrike) e.fought = true;
   e.state = 'back';
   delete e.settling;
   e.home = s.tick + Math.max(TICKS_PER_HOUR, e.arrive - e.depart);

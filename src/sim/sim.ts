@@ -212,6 +212,7 @@ import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
+import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
 import {
   baseRemoved,
   bondsHour,
@@ -333,6 +334,12 @@ export type SimEvent = {
     | 'unitLost'
     | 'superTowed'
     | 'superReady'
+    | 'domeCharged'
+    | 'domeFell'
+    | 'domeRaised'
+    | 'domePopped'
+    | 'blackoutCharging'
+    | 'blackout'
     | 'forceArrived'
     | 'forceHome'
     | 'researchDone'
@@ -1250,9 +1257,21 @@ export class Sim {
           if (!this.testMode) return fail('Test mode only');
           return researchCheat(this, cmd.tiers, dryRun);
         }
+        if (cmd.cheat === 'finishStages') {
+          if (!this.testMode) return fail('Test mode only');
+          const c = this.state.civics.get(cmd.civic);
+          if (!c?.build) return fail('That isn’t being built');
+          if (dryRun) return ok(0);
+          delete c.build;
+          this.civicStatusChanged(c.id);
+          this.events.push({ kind: 'projectDone', id: c.id });
+          return ok(0);
+        }
         if (cmd.cheat === 'superReady') {
           if (!this.testMode) return fail('Test mode only');
-          return superReadyCheat(this, dryRun);
+          const r = superReadyCheat(this, dryRun);
+          if (r.ok && !dryRun) superBuildingsReady(this);
+          return r;
         }
         if (cmd.cheat === 'unshield') {
           if (!this.testMode) return fail('Test mode only');
@@ -1406,7 +1425,17 @@ export class Sim {
       case 'trainUnit':
         return trainUnit(this, cmd.base, cmd.kind, dryRun);
       case 'sendForce':
-        return sendForce(this, cmd.units, cmd.to, cmd.route, cmd.target, cmd.stance, !!cmd.breakPact, dryRun);
+        return sendForce(
+          this,
+          cmd.units,
+          cmd.to,
+          cmd.route,
+          cmd.target,
+          cmd.stance,
+          !!cmd.breakPact,
+          dryRun,
+          !!cmd.gate,
+        );
       case 'recallForce':
         return recallForce(this, cmd.expedition, dryRun);
       case 'battleReport':
@@ -1443,6 +1472,10 @@ export class Sim {
         return startTrial(this, cmd.ground, cmd.kind, dryRun);
       case 'stopTrial':
         return stopTrial(this, cmd.ground, dryRun);
+      case 'setDome':
+        return setDome(this, cmd.mode, dryRun);
+      case 'useBlackout':
+        return useBlackout(this, cmd.neighbour, !!cmd.breakPact, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

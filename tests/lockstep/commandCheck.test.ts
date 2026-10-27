@@ -77,6 +77,7 @@ const SAMPLES: Record<CommandType, Command> = {
     route: 'highway',
     target: 'military',
     stance: 'bold',
+    gate: true,
   },
   recallForce: { type: 'recallForce', expedition: 6 },
   battleResolve: { type: 'battleResolve', input: {} as never, mode: 'watch' },
@@ -111,6 +112,8 @@ const SAMPLES: Record<CommandType, Command> = {
   unqueueResearch: { type: 'unqueueResearch', key: 'land1' },
   startTrial: { type: 'startTrial', ground: 6, kind: 'heavytank' },
   stopTrial: { type: 'stopTrial', ground: 6 },
+  setDome: { type: 'setDome', mode: 'super' },
+  useBlackout: { type: 'useBlackout', neighbour: 2, breakPact: true },
 };
 
 /** Values a field might carry instead of what it should. */

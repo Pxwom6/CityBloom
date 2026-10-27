@@ -45,6 +45,7 @@ import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
 import { researchEffect } from './research';
+import { lowerDome, raiseDome, rivalBlackedOut } from './supers';
 import { RESEARCH } from '../../data/research';
 import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
 import { DIPLOMACY } from '../../data/diplomacy';
@@ -255,6 +256,8 @@ export function raidsHour(sim: Sim): void {
     if (!threat.open && !answering && !stance.war) continue;
     if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < stance.gapEach * TICKS_PER_MONTH) continue;
     if (r.forces < 1) continue;
+    // Blacked out by the city's tower (M37): no raids meanwhile.
+    if (rivalBlackedOut(sim, n)) continue;
     const p = PERSONALITY[r.personality];
     let chance = (p.aggression * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
     if (r.relation <= RAIDS.hostile) chance *= 2;
@@ -380,7 +383,8 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
   if (!r.warned) warnRaid(sim, r);
   const n = s.region.neighbours.find((x) => x.id === r.from);
   const layout = battleLayout(sim, { target: r.target, from: n?.side ?? 'west' });
-  const pool = raisedDomePool(sim);
+  // Computer neighbours bring no superweapons (M37).
+  const pool = raisedDomePool(sim, false);
   if (pool > 0) layout.dome = pool;
   const units: BattleUnitIn[] = r.units.map((u, k) => ({
     id: -(k + 1),
@@ -476,7 +480,13 @@ export function resolveBattle(
   if (replay) w.battle.report.replay = replay.slice(0, 60);
   if (away) w.battle.report.absent = true;
   // The city's own dome is the authority (M37): a stale picture of it never makes it weaker.
-  coverWithDome(w.battle, raisedDomePool(sim));
+  coverWithDome(
+    w.battle,
+    raisedDomePool(
+      sim,
+      a.units.some((u) => !!UNIT.get(u.kind)?.super),
+    ),
+  );
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), takenKey].slice(-BATTLE_TAKEN_KEEP);
   sim.battleRun = run;
@@ -584,6 +594,7 @@ function abandonBattle(sim: Sim): void {
   delete w.battle;
   sim.battleRun = null;
   sim.battleFrame = null;
+  lowerDome(sim);
   sim.warChanged();
 }
 
@@ -613,11 +624,11 @@ export function battleTick(sim: Sim): void {
 }
 
 /**
- * The pool of the city's own dome, raised for a battle (M37). The dome's charge and modes come in a
- * later step (design call 9), which fills this in; until then no city has a dome raised.
+ * The pool of the city's own dome, raised for a battle (M37, design call 9): a charged dome in the
+ * right mode rises when a battle starts here (`super` mode only for one that brings a superweapon).
  */
-export function raisedDomePool(_sim: Sim): number {
-  return 0;
+export function raisedDomePool(sim: Sim, bringsSuper: boolean): number {
+  return raiseDome(sim, bringsSuper);
 }
 
 /**
@@ -712,7 +723,8 @@ export function applyWarDamage(
           sim.warChanged();
         }
       } else report.theirLost++;
-    } else if (e.k === 'end') report.outcome = e.outcome;
+    } else if (e.k === 'dome') sim.events.push({ kind: 'domePopped', id: 0 });
+    else if (e.k === 'end') report.outcome = e.outcome;
   }
 }
 
@@ -758,6 +770,8 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   w.reports = [...(w.reports ?? []), report].slice(-12);
   delete w.battle;
   sim.battleRun = null;
+  // A dome raised for it is down now, whatever was left of its pool (M37).
+  lowerDome(sim);
   // In a declared war the battle moves the score, and may take or free the seat of power (M36).
   // Whether any unit of either side was hurt (a raid beaten off by wounds alone is still a battle).
   const before = new Map<string, number>([

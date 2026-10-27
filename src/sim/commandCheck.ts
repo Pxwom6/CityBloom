@@ -10,7 +10,7 @@
  * host's browser). Single player never goes through it.
  */
 import type { Command, CommandType } from './commands';
-import { TIER, type TierKey } from '../data/research';
+import { DOME_MODES, TIER, type TierKey } from '../data/research';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
@@ -333,6 +333,7 @@ const CHECKS: Record<CommandType, Check> = {
           target: c.target,
           stance: c.stance,
           ...(c.breakPact === true ? { breakPact: true } : {}),
+          ...(c.gate === true ? { gate: true } : {}),
         }
       : BAD,
   recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
@@ -387,6 +388,15 @@ const CHECKS: Record<CommandType, Check> = {
       ? { type: 'startTrial', ground: c.ground, kind: c.kind as UnitKind }
       : BAD,
   stopTrial: (c) => (isInt(c.ground) ? { type: 'stopTrial', ground: c.ground } : BAD),
+  setDome: (c) => (oneOf(c.mode, DOME_MODES) ? { type: 'setDome', mode: c.mode } : BAD),
+  useBlackout: (c) =>
+    isInt(c.neighbour)
+      ? {
+          type: 'useBlackout',
+          neighbour: c.neighbour,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
   unqueueResearch: (c) =>
     typeof c.key === 'string' && TIER.has(c.key as TierKey)
       ? { type: 'unqueueResearch', key: c.key as TierKey }

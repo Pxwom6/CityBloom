@@ -167,6 +167,25 @@ function note(sim: Sim, withId: number, what: string, text: string, tone?: 'good
   sim.warChanged();
 }
 
+/**
+ * An incident with a computer neighbour (M37: a blackout, a spy caught): its feelings and its allies'
+ * change, and the log and a notice say what happened.
+ */
+export function incident(
+  sim: Sim,
+  n: Neighbour,
+  relation: number,
+  allies: number,
+  what: string,
+  text: string,
+  tone?: 'good' | 'bad',
+): void {
+  if (n.rival) n.rival.relation = clamp(n.rival.relation + relation, -100, 100);
+  if (allies)
+    for (const a of alliesOf(sim, n)) a.rival!.relation = clamp(a.rival!.relation + allies, -100, 100);
+  note(sim, n.id, what, text, tone);
+}
+
 export function warWith(sim: Sim, id: number): War | undefined {
   return sim.state.war?.diplomacy?.wars.find((x) => x.with === id);
 }

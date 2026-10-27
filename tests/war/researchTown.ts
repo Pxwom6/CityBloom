@@ -6,9 +6,12 @@ import { buildTown, connectPoint, newSim, placeAlong, road, serveTown } from '..
  * M37's test town: a served town at war with computer rivals (too weak to raid), money, a military
  * HQ and `labs` weapons labs, and `place(def)` to put a building on the first street with room.
  */
-export function labTown(labs = 1): { sim: Sim; place: (def: string) => number } {
+export function labTown(
+  labs = 1,
+  town: Parameters<typeof buildTown>[1] = {},
+): { sim: Sim; place: (def: string) => number } {
   const sim = newSim({ rivals: true, disasters: false });
-  const { streets } = buildTown(sim);
+  const { streets } = buildTown(sim, town);
   serveTown(sim);
   sim.advance(2 * TICKS_PER_MONTH);
   sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
@@ -25,9 +28,10 @@ export function labTown(labs = 1): { sim: Sim; place: (def: string) => number } 
   };
   // A street on past the avenue's end, with room for a research park.
   const c = connectPoint(sim);
+  const end = town.length ?? 480;
   const east = road(sim, [
-    { x: c.x + 480, z: c.z },
-    { x: c.x + 800, z: c.z },
+    { x: c.x + end, z: c.z },
+    { x: c.x + end + 320, z: c.z },
   ]).created!;
   segs.push(...east);
   place('militaryhq');

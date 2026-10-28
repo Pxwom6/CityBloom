@@ -281,30 +281,30 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
   superweapon tokens, gate arc, revealed and darkened towns, notices, sounds and tips.
 - Adversarial review of the M37 sim: 13 findings confirmed and fixed (DECISIONS "M37", review), bar
   two in the battle's robot pathing handed to the balance helper.
-- E2e: `e2e/m37-research.spec.ts` passes (7.9 min: all six branches through the tab, nine prototypes
-  tried, each trainable at its base; screenshots reviewed). `e2e/m37-super.spec.ts`'s robot test
-  timed out at 40 min: it waited on a trial button the Research tab hid without a lab (fixed; the
-  M37 specs now fail a missing button in a minute). Being rerun with the blackout-tower test.
+- E2e, all passing with screenshots reviewed: `e2e/m37-research.spec.ts` (7.9 min: all six branches
+  through the Research tab, nine prototypes tried, each trainable at its base), `e2e/m37-super.spec.ts`
+  (the robot tried, trained, sent once, home and winding up, 2.2 min; the blackout tower used once
+  from its inspector and recharging, 1.4 min), `e2e/m37-friends.spec.ts` (two players, 9.6 min: a
+  spy decided by the region, a blackout with Sam warned an hour ahead and Samford's plants down).
 - **Steps 9–10 merged** (friends' spies, blackouts and superweapon battles through the region room,
-  protocol 5; the fair clock); on the merged tree 469 unit tests (war, battle, lockstep, relay,
-  region, projects, utilities, shell, legacy) and 17 live relay tests pass.
+  protocol 5; the fair clock): 469 unit tests on the merged tree and 17 live relay tests pass.
 - **Superweapon battle balance merged** (the fortress's bomb drones, the whale's torpedo pods to
   1,000 m, a superweapon force pulling out once the caps hold, the robot keeping to the road over
-  water, faster target searches; DECISIONS "M37"): 249 battle, war and lockstep tests pass, v2
-  replays and the M36 golden unchanged.
-- Wired after the merge: notices for `spyArrived`, `blackoutWarning` (siren), `blackoutRefused`,
-  `clockHeld`, a friend's blackout; `forceOut` names a superweapon or the gate; the incoming siren
-  says whether the dome will rise; the Intelligence tab shows a friend's odds (as the room rolls
-  them), agents waiting for the region's word, and friends' dossiers; friends' research as a bar
-  per branch on the region map. The Research tab now shows prototypes and trials without a lab
-  (the superweapon e2e hung on that).
-- An independent review of steps 9–10 is running (one agent: room abuse, sim, fair clock, page).
-- Left: the review's findings; rerun `e2e/m37-super.spec.ts`; the friends' e2e (`m37-friends`: two players, a
-  spy and a blackout); `supershot.mjs` screenshots reviewed; the frame budget in the heaviest battle
-  (`battlebench.ts bench-results/city.gz --guards --dome --save bench-results/war.gz`, then
-  `framebench.mjs bench-results/war.gz --views battle --vm` here, real frame times on the Mac);
-  wrap-up (step 13: full tests, e2e, balance, bench, battlebench, cross-browser, netbudget, docs,
-  `M37 complete:`).
+  water, faster target searches): 249 battle, war and lockstep tests pass, v2 replays and the M36
+  golden unchanged.
+- An independent review of steps 9–10 found three defects, all fixed with tests (a stale war-clock
+  cap, credit on a war project's stage while held, friends' places outliving the region); the
+  friends' e2e found a fourth (no control to allow superweapons in a region: the Region panel has
+  one now). DECISIONS "M37".
+- The Research tab shows prototypes and trials without a lab; the Intelligence tab shows a friend's
+  odds, waiting agents and dossiers; notices and sirens for friends' agents and blackouts; friends'
+  research on the region map.
+- **Wrap-up running** (a helper, one job at a time): the full unit suite, the war e2e (M34–M37 specs
+  and `m35-friends`), bench, battlebench (and `--super robot|fortress|whale`), balance against
+  `main`, the frame budget in the heaviest battle (`battlebench.ts … --guards --dome --super robot
+  --save bench-results/war.gz`, then `framebench.mjs bench-results/war.gz --vm --views battle`;
+  real frame times wait for the Mac), the superweapon scene's screenshots, netbudget. Then the
+  `M37 complete:` commit and PR #23's title and description.
 
 ## Next tasks
 1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by

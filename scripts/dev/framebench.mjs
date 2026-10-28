@@ -224,7 +224,8 @@ try {
             };
             if (heavy) await tornado();
             await g.waitFrames(20);
-            g.setSpeed(3);
+            // A battle is watched at 1× (at 3× a raid is over in seconds); everything else at 3×.
+            g.setSpeed(battle ? 1 : 3);
             await new Promise((res) => setTimeout(res, warmMs));
             funnels.length = 0;
           },
@@ -239,6 +240,9 @@ try {
         }
         const r = await page.evaluate(async (ms) => {
           const g = window.__game;
+          // The battle as recording starts (it may end during the recording).
+          const b0 = g.getBattle().frame;
+          const start = b0 ? { step: b0.step, units: b0.units } : null;
           const f = await g.recordFrames(ms);
           const { funnels, timers } = window.__bench;
           timers.forEach(clearInterval);
@@ -252,8 +256,13 @@ try {
             night: st.renderStats.night,
             battle: (() => {
               const b = g.getBattle();
-              if (!b.frame) return null;
-              return { step: b.frame.step, units: b.frame.units, ...b.effects, shown: g.getSupers().shown };
+              if (!start && !b.frame) return null;
+              return {
+                start,
+                end: b.frame ? { step: b.frame.step, units: b.frame.units } : 'over',
+                ...b.effects,
+                shown: g.getSupers().shown,
+              };
             })(),
           };
         }, seconds * 1000);
@@ -279,7 +288,7 @@ try {
           battle: r.battle,
         });
         console.log(
-          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}${r.battle ? ` | battle step ${r.battle.step}, ${r.battle.units} units, ${r.battle.tracers} tracers, ${r.battle.puffs} puffs, shown ${JSON.stringify(r.battle.shown)}` : ''}`,
+          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}${r.battle ? ` | battle from ${JSON.stringify(r.battle.start)} to ${JSON.stringify(r.battle.end)}, ${r.battle.tracers} tracers, ${r.battle.puffs} puffs, shown ${JSON.stringify(r.battle.shown)}` : ''}`,
         );
       }
     } finally {

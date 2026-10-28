@@ -182,7 +182,7 @@ test('M37: a spy and a blackout between friends, decided by the region, through 
   // --- A spy, sent from the Intelligence tab: a look round Samford. ---
   await ada.keyboard.press('Shift+KeyM');
   await ada.getByTestId('war-tab-intel').click();
-  await expect(ada.getByTestId('intel-agents')).toContainText('2 of 2 free');
+  await expect(ada.getByTestId('intel-agents')).toContainText('3 of 3 free'); // Stealth brings a third agent
   await ada.getByTestId('intel-to').selectOption(String(target.id));
   await ada.getByTestId('intel-op-reveal').click();
   // The odds as the region will roll them, from Samford's reported counter-intelligence.

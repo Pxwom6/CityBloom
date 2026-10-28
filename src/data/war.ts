@@ -75,10 +75,17 @@ export interface UnitStats {
   siege: number;
   /** The robot (M37): near its objective it walks straight there, stamping on what's within `radius` every `every` steps. */
   stomp?: { radius: number; damage: number; every: number };
-  /** The sky fortress (M37): carries `n` units of `kind`, launched one every `every` steps near its objective. */
-  carries?: { kind: UnitKind; n: number; every: number };
-  /** The whale (M37): can't be hit while it swims; it surfaces within `surface` m of its objective and fires for `fire` steps. */
-  dives?: { surface: number; fire: number };
+  /**
+   * The sky fortress (M37): carries `n` units of `kind`, launched one every `every` steps near its
+   * objective; what it carries are bomb drones, with `siege` against buildings in place of their own.
+   */
+  carries?: { kind: UnitKind; n: number; every: number; siege?: number };
+  /**
+   * The whale (M37): can't be hit while it swims; it surfaces within `surface` m of its objective and
+   * fires for `fire` steps. Up, its torpedo pods reach buildings `reach` m off (guns that can fire
+   * on it only within its `range`), the force's objectives first, else the nearest.
+   */
+  dives?: { surface: number; fire: number; reach?: number };
 }
 
 /** A superweapon (M37): one of each per city, one per force; war-clock hours it winds up again after use. */
@@ -594,7 +601,7 @@ export const UNIT_DEFS: UnitDef[] = [
       armour: 0.4,
       targets: ['air'],
       siege: 0,
-      carries: { kind: 'drone', n: 16, every: 20 },
+      carries: { kind: 'drone', n: 16, every: 20, siege: 15 },
     },
     strength: 55,
     research: 'air4',
@@ -627,7 +634,7 @@ export const UNIT_DEFS: UnitDef[] = [
       armour: 0.55,
       targets: ['sea', 'land'],
       siege: 3,
-      dives: { surface: 600, fire: 600 },
+      dives: { surface: 600, fire: 600, reach: 1_000 },
     },
     strength: 60,
     research: 'sea4',

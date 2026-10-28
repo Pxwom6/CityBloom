@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { BATTLE, SKIRMISH, SUPER } from '../../src/data/battle';
+import { BATTLE, SKIRMISH, SUPER, TOWN as TOWNS } from '../../src/data/battle';
 import type { TierKey } from '../../src/data/research';
-import type { UnitKind } from '../../src/data/war';
+import { UNIT, type UnitKind } from '../../src/data/war';
+import { growRivalTown } from '../../src/sim/ai/town';
 import { awayInput, type AwayCity } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { checkBattleInput } from '../../src/sim/battle/check';
@@ -131,6 +132,60 @@ describe('battles version 3: what stays as it was', () => {
     expect(same((i) => (i.attacker.mods = { land: {}, air: {} }))).toEqual(kept[0]!.result);
     expect(same((i) => (i.layout.mods = { land: {} }))).toEqual(kept[0]!.result);
     expect(same((i) => (i.layout.dome = 0))).toEqual(kept[0]!.result);
+  });
+
+  it('battles without a superweapon play as before the superweapons were tuned', () => {
+    // Drones, helicopters and tanks against anti-air, a capped drone raid, and a version 3 battle
+    // with research and a dome: hashes taken on a037629 (M37 step 7), before bomb drones, the whale's
+    // reach and the caps' early pull-out, which only a superweapon's battle may change.
+    const aa: StructSpec[] = [0, 1].map((k) => ({
+      id: 40 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 800 + k * 100,
+      z: 440,
+      r: 6,
+      hp: 600,
+      gun: 5,
+      range: 320,
+      against: ['air'],
+    }));
+    const air = { stance: 'bold', route: 'air' } as const;
+    const capped = input(lineLayout(TOWN), units('drone', 12), air);
+    capped.caps = { maxCollapse: 12, maxWreck: 1 };
+    const modded = input(
+      lineLayout([...TOWN, ...aa]),
+      [...units('drone', 6), ...units('tank', 4, undefined, -1, 30)],
+      {
+        stance: 'bold',
+      },
+    );
+    modded.attacker.mods = { air: { hp: 1.5, evade: 0.2 } };
+    modded.layout.dome = 500;
+    const cases: [string, BattleInput, number, string][] = [
+      ['drones', input(lineLayout([...TOWN, ...aa]), units('drone', 8), air), 2, 'c9ed84bb36842f9d'],
+      ['dronesCapped', capped, 2, 'fda6b586a11de360'],
+      [
+        'mixed',
+        input(
+          lineLayout([...TOWN, ...aa]),
+          [
+            ...units('drone', 6),
+            ...units('helicopter', 3, undefined, -1, 20),
+            ...units('tank', 4, undefined, -1, 30),
+          ],
+          { stance: 'cautious' },
+        ),
+        2,
+        'd0574a75d07b5424',
+      ],
+      ['modded', modded, BATTLE_VERSION, '935a0572f151a570'],
+    ];
+    for (const [name, i, v, hash] of cases) {
+      i.seed = `golden-${name}`;
+      const s = stampBattle(i);
+      expect(s.v, name).toBe(v);
+      expect(Battle.run(structuredClone(s)).result().hash, name).toBe(hash);
+    }
   });
 
   it('a version 2 battle can’t carry anything of version 3', () => {
@@ -415,9 +470,86 @@ describe('battles version 3: superweapons', () => {
     expect(capped.destroyed.filter((id) => id >= 20 && id < 70).length).toBe(2);
   });
 
+  it('the robot keeps to the road over a bridged river, and leaves it once its way is dry', () => {
+    // A river of deep water from x = 576 to 672 m, the map's whole height, that the road bridges:
+    // between the way in and the bunker (700, 520) and depot (900, 540).
+    const make = (force: BattleUnitIn[]) => {
+      const L = lineLayout(TOWN);
+      const n = L.grid.nx;
+      L.grid.cells = L.grid.cells.map((c, k) => {
+        const x = (k % n) * BATTLE.cell;
+        return x >= 576 && x < 672 ? CELL_DEEP : c;
+      });
+      const i = input(L, force, { stance: 'bold' });
+      i.seed = 'river';
+      return stampBattle(i);
+    };
+    // A tank by road gets there.
+    expect(play(make(units('tank', 1, undefined, -1, 300))).b.result().destroyed).toContain(10);
+    // So does the robot: it doesn't leave the road 500 m out and stop at the bank.
+    const a = play(make([one('windupbot', 1)]));
+    const r = a.b.result();
+    expect(r).toEqual(play(make([one('windupbot', 1)])).b.result());
+    expect(r.objectives).toEqual({ aimed: 2, down: 2 });
+    expect(r.outcome).toBe('raided');
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+    // Over the river it was always on the bridge (the road, z = 500), and it did get off the road.
+    const robot = a.frames.flatMap((f) => f.units.filter((u) => u.kind === 'windupbot'));
+    for (const u of robot)
+      if (u.x >= 576 && u.x < 672) expect(Math.abs(u.z - 500), `at x ${u.x}`).toBeLessThan(1);
+    expect(robot.some((u) => Math.abs(u.z - 500) > 15)).toBe(true);
+  });
+
+  it('the robot walks on to its next objective, or back to the road: it never jumps', () => {
+    // Two depots: one 300 m off the road, the next 600 m on from it, by the road's far end.
+    const depots: StructSpec[] = [
+      { id: 30, tags: TAG.civic | TAG.military | TAG.base, x: 600, z: 800, r: 20, hp: 900 },
+      { id: 31, tags: TAG.civic | TAG.military | TAG.base, x: 1150, z: 540, r: 20, hp: 900 },
+    ];
+    const make = () => {
+      const i = input(lineLayout(depots), [one('windupbot', 1)], { stance: 'bold' });
+      i.seed = 'robot-walks';
+      return stampBattle(i);
+    };
+    const a = play(make());
+    expect(a.b.result()).toEqual(play(make()).b.result());
+    expect(a.b.result().objectives).toEqual({ aimed: 2, down: 2 });
+    // Tick to tick it moves no more than it walks: 4 m/s × 0.5 s × 2 steps (positions to 0.1 m).
+    const at = a.frames.map((f) => f.units.find((u) => u.kind === 'windupbot')).filter((u) => !!u);
+    let jump = 0;
+    for (let k = 1; k < at.length; k++)
+      jump = Math.max(jump, Math.hypot(at[k]!.x - at[k - 1]!.x, at[k]!.z - at[k - 1]!.z));
+    expect(jump).toBeLessThanOrEqual(4.2);
+  });
+
+  it('with the caps spent on its objectives, a superweapon’s force pulls out; one without waits for the clock', () => {
+    // Two military objectives (the depot and the bunker), and room to wreck only one of them.
+    const make = (force: BattleUnitIn[]) => {
+      const i = input(lineLayout(TOWN), force, { stance: 'bold' });
+      i.seed = 'caps-spent';
+      i.caps = { maxCollapse: 12, maxWreck: 1 };
+      return stampBattle(i);
+    };
+    const robot = play(make([one('windupbot', 1)])).b.result();
+    expect(robot.objectives).toEqual({ aimed: 2, down: 1 });
+    expect(robot.outcome).toBe('raided');
+    // It pulled out once the one wreck it may make was made, long before the clock ran out.
+    expect(robot.steps).toBeLessThan(BATTLE.maxSteps);
+    // The same with tanks alone: the battle is as it was (version 2), held on the capped bunker
+    // until the clock pulls them out.
+    const tanks = make(units('tank', 6, undefined, -1, 100));
+    expect(tanks.v).toBe(2);
+    const plain = play(tanks).b.result();
+    expect(plain.objectives).toEqual({ aimed: 2, down: 1 });
+    expect(plain.steps).toBeGreaterThanOrEqual(BATTLE.maxSteps);
+  });
+
   it('the sky fortress launches its 16 drones near its objective, one at a time', () => {
+    // Military buildings too strong to fall, so the force stays to launch them all (its drones are
+    // bomb drones: the town's own depot and bunker would fall to the first five).
+    const sturdy = TOWN.map((s) => (s.tags & TAG.military ? { ...s, hp: 1e6 } : s));
     const make = (hp = 1, extra: StructSpec[] = []) => {
-      const i = input(lineLayout([...TOWN, ...extra]), fortress(hp), { stance: 'bold' });
+      const i = input(lineLayout([...sturdy, ...extra]), fortress(hp), { stance: 'bold' });
       i.seed = 'fortress';
       return stampBattle(i);
     };
@@ -443,6 +575,29 @@ describe('battles version 3: superweapons', () => {
     ).toBeGreaterThan(SUPER.launch - 30);
     // Drones are shown only once launched: none before.
     expect(a.frames.slice(0, ticks[0]!).some((f) => f.units.some((u) => u.kind === 'drone'))).toBe(false);
+  });
+
+  it('what a fortress carries are bomb drones; drones of its own aren’t', () => {
+    const drone = UNIT.get('drone')!.stats;
+    const carries = UNIT.get('skyfortress')!.stats.carries!;
+    expect(carries.siege).toBeGreaterThan(1);
+    // A fortress, its sixteen, and four drones flown in alongside: only the sixteen carry bombs.
+    const i = stampBattle(
+      input(lineLayout(TOWN), [...fortress(), ...units('drone', 4, undefined, -1, 700)], { stance: 'bold' }),
+    );
+    const b = new Battle(structuredClone(i));
+    const sieges = (carried: boolean) =>
+      b.units.filter((u) => u.kind === 'drone' && u.carrier >= 0 === carried).map((u) => u.siege);
+    expect(sieges(true)).toEqual(Array<number>(16).fill(carries.siege!));
+    expect(sieges(false)).toEqual(Array<number>(4).fill(drone.siege));
+    // A drone raid without a fortress uses nothing of version 3, and plays as it did.
+    const plain = stampBattle(
+      input(lineLayout(TOWN), units('drone', 6, undefined, -1, 800), { stance: 'bold' }),
+    );
+    expect(plain.v).toBe(2);
+    expect(
+      new Battle(structuredClone(plain)).units.every((u) => u.side === 1 || u.siege === drone.siege),
+    ).toBe(true);
   });
 
   it('a fortress knocked out before it has launched them all takes the rest home', () => {
@@ -490,14 +645,16 @@ describe('battles version 3: superweapons', () => {
   });
 
   it('the whale can’t be hit while it swims; it surfaces off the shore, fires a while, then dives', () => {
-    // Deep water from z = 832 m, its shore 300 m south of the depot; a coastal gun on the shore.
+    // Deep water from z = 832 m, its shore 300 m south of the depot; a coastal gun on the shore,
+    // built to take a few of the whale's pods (one would knock an ordinary one down), so the two
+    // trade shots for a while.
     const gun: StructSpec = {
       id: 45,
       tags: TAG.civic | TAG.military | TAG.defence,
       x: 900,
       z: 800,
       r: 8,
-      hp: 600,
+      hp: 5_000,
       gun: 6,
       range: 480,
       against: ['sea'],
@@ -530,6 +687,55 @@ describe('battles version 3: superweapons', () => {
     expect(after.length).toBeGreaterThan(0);
     expect(after.every((v) => v.state === 3 || v.state === 2)).toBe(true);
     expect(a.b.result().damaged.length + a.b.result().destroyed.length).toBeGreaterThan(0);
+  });
+
+  it('the whale’s pods reach far inland; a coastal gun beyond its guns’ range outranges it', () => {
+    // Deep water from z = 832 m; the whale lies off the shore at (688, 848), the water nearest its
+    // first objective (the bunker). A coastal gun inland of it, `off` metres from there.
+    const at = { x: 688, z: 848 };
+    const make = (off: number) => {
+      const coastal: StructSpec = {
+        id: 45,
+        tags: TAG.civic | TAG.military | TAG.defence,
+        x: at.x,
+        z: at.z - off,
+        r: 8,
+        hp: 600,
+        gun: 6,
+        range: 480,
+        against: ['sea'],
+      };
+      const L = lineLayout([...TOWN, coastal]);
+      const n = L.grid.nx;
+      L.grid.cells = L.grid.cells.map((c, k) => (Math.floor(k / n) * BATTLE.cell > 800 ? CELL_DEEP : c));
+      const i = input(L, [one('clockworkwhale', 7)], { stance: 'bold', route: 'sea' });
+      i.seed = 'whale-reach';
+      return stampBattle(i);
+    };
+    // 470 m off: the gun reaches the whale (480 m) and the whale's guns (450 m to its wall) don't
+    // reach the gun, which its pods leave alone.
+    const far = play(make(470));
+    expect(far.b.result()).toEqual(play(make(470)).b.result());
+    const r = far.b.result();
+    const whale = (x: typeof far) =>
+      x.frames.flatMap((f) => f.units.filter((u) => u.kind === 'clockworkwhale'));
+    // The closest it came: within the gun's 480 m, never within its own 450 m of the gun's wall.
+    const closest = Math.min(...whale(far).map((u) => Math.hypot(u.x - at.x, u.z - (at.z - 470))));
+    expect(closest).toBeGreaterThan(UNIT.get('clockworkwhale')!.stats.range + 8);
+    expect(closest).toBeLessThanOrEqual(480);
+    expect(r.destroyed).not.toContain(45);
+    expect(r.damaged).not.toContain(45);
+    expect(r.units.find((u) => u.id === 7)!.hp).toBeLessThan(1);
+    // Its pods (heavy shots: only the whale fires those here) flew further than its guns reach.
+    const pods = far.frames.flatMap((f) => f.shots.filter((s) => s.kind === 1));
+    expect(pods.length).toBeGreaterThan(0);
+    expect(Math.max(...pods.map((s) => Math.hypot(s.x1 - s.x0, s.z1 - s.z0)))).toBeGreaterThan(
+      UNIT.get('clockworkwhale')!.stats.range + 200,
+    );
+    // And the bunker and depot, both objectives, fell to them.
+    expect(r.destroyed).toEqual(expect.arrayContaining([10, 11]));
+    // 400 m off, the gun is within its guns' range: it fights the gun, and the gun falls.
+    expect(play(make(400)).b.result().destroyed).toContain(45);
   });
 });
 
@@ -820,3 +1026,139 @@ function cloneSim(sim: Sim): Sim {
 
 const rubble = (sim: Sim) =>
   [...sim.state.buildings.values()].filter((b) => b.state === BState.Rubble).length;
+
+/**
+ * A computer neighbour's town as the page's battle worker grows it (the test size): the test city's
+ * coastal resort, Calhaven. Its military stands about a kilometre in from the sea.
+ */
+function resortTown() {
+  const city = newSim({ rivals: true, disasters: false });
+  const n = city.state.region.neighbours.find((x) => x.rival && x.kind === 'resort')!;
+  const town = growRivalTown({
+    citySeed: city.state.options.seed,
+    neighbour: n.id,
+    name: n.name,
+    kind: n.kind,
+    personality: n.rival!.personality,
+    population: n.population,
+    cap: TOWNS.testCap,
+  });
+  /**
+   * A strike on the town by one unit of `kind` (and an escort), as an expedition from the city;
+   * `defences` mans the town's guns as a neighbour with that many defence points would.
+   */
+  const strike = (
+    kind: UnitKind,
+    route: 'highway' | 'air' | 'sea',
+    escort: UnitKind[] = [],
+    defences = n.rival!.defences,
+  ) =>
+    awayInput(
+      {
+        seed: city.state.options.seed,
+        cityName: city.state.options.cityName,
+        readiness: 1,
+        expedition: { id: 3, route, target: 'military', stance: 'bold' },
+        units: [kind, ...escort].map((k, i) => ({ id: i + 1, kind: k, hp: 1 })),
+        neighbour: {
+          id: n.id,
+          name: n.name,
+          side: n.side,
+          kind: n.kind,
+          population: n.population,
+          rival: { ...n.rival!, defences },
+          slot: null,
+          colour: 0xd04040,
+        },
+      },
+      town,
+    );
+  return { city, n, town, strike };
+}
+
+/** What a battle knocked down: buildings collapsed and city buildings wrecked. */
+function fallen(i: BattleInput, r: ReturnType<Battle['result']>): { collapsed: number; wrecked: number } {
+  const civics = new Set(
+    rows(i.layout)
+      .filter((x) => x.tags & TAG.civic)
+      .map((x) => x.id),
+  );
+  const wrecked = r.destroyed.filter((id) => civics.has(id)).length;
+  return { collapsed: r.destroyed.length - wrecked, wrecked };
+}
+
+describe('superweapons in a grown computer town', () => {
+  let resort: ReturnType<typeof resortTown>;
+  // Growing the town takes a few seconds, more on a busy machine.
+  beforeAll(() => {
+    resort = resortTown();
+  }, 60_000);
+
+  it('the robot raids what the caps allow and is done within its time', () => {
+    const i = resort.strike('windupbot', 'highway');
+    expect(i.caps).toEqual(SUPER.caps);
+    const r = Battle.run(structuredClone(i)).result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    expect(r.outcome).toBe('raided');
+    const f = fallen(i, r);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    // Every objective it could knock down is down: what stands, the caps hold up.
+    expect(r.objectives.aimed).toBe(BATTLE.maxTargets);
+    expect(r.objectives.down).toBeGreaterThanOrEqual(SUPER.caps.maxWreck);
+    if (r.objectives.down < r.objectives.aimed) expect(f.wrecked).toBe(SUPER.caps.maxWreck);
+    // And it was out of the town again (raid and walk back) before the clock ran out.
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+  });
+
+  it('the sky fortress’s bomb drones knock down as much as the robot; anti-air shoots them down', () => {
+    const robot = Battle.run(structuredClone(resort.strike('windupbot', 'highway'))).result();
+    const i = resort.strike('skyfortress', 'air');
+    const r = Battle.run(structuredClone(i)).result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    expect(r.outcome).toBe('raided');
+    const f = fallen(i, r);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    // As many of its objectives down as the robot's, and as many city buildings wrecked.
+    expect(r.objectives.down).toBeGreaterThanOrEqual(robot.objectives.down);
+    expect(f.wrecked).toBeGreaterThanOrEqual(fallen(i, robot).wrecked);
+    // The town's anti-air still brought drones down.
+    const downed = (x: typeof r) => x.units.filter((u) => u.id <= -SUPER.carriedId && u.out).length;
+    expect(downed(r)).toBeGreaterThan(0);
+    // With every post manned, it shoots down all sixteen and the town keeps more standing.
+    const manned = resort.strike('skyfortress', 'air', [], 40);
+    const m = Battle.run(structuredClone(manned)).result();
+    expect(downed(m)).toBe(16);
+    expect(m.objectives.down).toBeLessThan(r.objectives.down);
+  });
+
+  it('the whale surfaces off the coast and its pods knock the seafront down, within the caps', () => {
+    const i = resort.strike('clockworkwhale', 'sea');
+    const a = play(i);
+    const r = a.b.result();
+    expect(r).toEqual(Battle.run(structuredClone(i)).result());
+    const views = a.frames.flatMap((f) => f.units.filter((u) => u.kind === 'clockworkwhale'));
+    const up = views.filter((v) => v.state !== 3);
+    expect(up.length).toBeGreaterThan(0);
+    // Nothing of the town stands within its guns' 450 m of the water where it surfaced: whatever
+    // it hit, its pods hit.
+    const L = i.layout;
+    const nearest = Math.min(
+      ...up.flatMap((v) =>
+        rows(L).map((s) => Math.hypot(s.x - v.x, s.z - v.z) - L.structs[s.k * S.stride + S.rIn]!),
+      ),
+    );
+    expect(nearest).toBeGreaterThan(UNIT.get('clockworkwhale')!.stats.range);
+    expect(a.frames.some((f) => f.shots.some((s) => s.kind === 1))).toBe(true);
+    // Real damage, within the superweapon caps.
+    const f = fallen(i, r);
+    expect(f.collapsed + f.wrecked).toBeGreaterThanOrEqual(10);
+    expect(f.collapsed).toBeLessThanOrEqual(SUPER.caps.maxCollapse);
+    expect(f.wrecked).toBeLessThanOrEqual(SUPER.caps.maxWreck);
+    // Then it dived and went home, before the clock ran out.
+    expect(views.at(-1)!.state).toBe(3);
+    expect(r.units.find((u) => u.id === 1)!.out).toBe(false);
+    expect(r.steps).toBeLessThan(BATTLE.maxSteps);
+  });
+});

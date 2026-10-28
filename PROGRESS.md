@@ -282,30 +282,24 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
 - Adversarial review of the M37 sim: 13 findings confirmed and fixed (DECISIONS "M37", review), bar
   two in the battle's robot pathing handed to the balance helper.
 - E2e: `e2e/m37-research.spec.ts` passes (7.9 min: all six branches through the tab, nine prototypes
-  tried, each trainable at its base; screenshots reviewed). **`e2e/m37-super.spec.ts`'s robot test
-  timed out at 40 min** in the VM (where it got stuck isn't known yet: rerun it alone with a trace;
-  likely the robot's training/staffing or the report poll). The blackout-tower test hasn't run yet.
+  tried, each trainable at its base; screenshots reviewed). `e2e/m37-super.spec.ts`'s robot test
+  timed out at 40 min: it waited on a trial button the Research tab hid without a lab (fixed; the
+  M37 specs now fail a missing button in a minute). Being rerun with the blackout-tower test.
 - **Steps 9–10 merged** (friends' spies, blackouts and superweapon battles through the region room,
-  protocol 5; the fair clock), from a helper's branch; the merge's conflicts are resolved and `tsc`
-  and lint are clean, and the helper's own run passed (286 unit + 17 live tests), **but the suites
-  haven't been rerun on the merged tree**: first thing next session, run
-  `npx vitest run --project unit tests/war tests/battle tests/lockstep relay/tests tests/region
-  tests/projects tests/utilities tests/shell.test.ts tests/legacy` and `npx vitest run --project live
-  relay/tests`.
+  protocol 5; the fair clock); on the merged tree 469 unit tests (war, battle, lockstep, relay,
+  region, projects, utilities, shell, legacy) and 17 live relay tests pass.
+- **Superweapon battle balance merged** (the fortress's bomb drones, the whale's torpedo pods to
+  1,000 m, a superweapon force pulling out once the caps hold, the robot keeping to the road over
+  water, faster target searches; DECISIONS "M37"): 249 battle, war and lockstep tests pass, v2
+  replays and the M36 golden unchanged.
 - Wired after the merge: notices for `spyArrived`, `blackoutWarning` (siren), `blackoutRefused`,
   `clockHeld`, a friend's blackout; `forceOut` names a superweapon or the gate; the incoming siren
   says whether the dome will rise; the Intelligence tab shows a friend's odds (as the room rolls
-  them), agents waiting for the region's word, and friends' dossiers (`intel-seen`).
-- **Paused at the owner's request** (usage). Stopped mid-way: an adversarial review of steps 9–10
-  (restart it: five lenses, room abuse, sim, fair clock, page, brief; each finding checked by two
-  skeptics) and the superweapon balance helper. Its six commits (the fortress's bomb drones, the
-  whale's torpedo pods at a town's seafront, a superweapon force pulling out once the caps hold,
-  faster target searches, the robot keeping to the road over water and walking to its next
-  objective) are saved, unmerged and unverified, in `docs/plans/M37-balance-wip.patch`: apply with
-  `git am docs/plans/M37-balance-wip.patch` (made from a0376298), then check v2 replays and the M36
-  golden still match (`tests/battle/v2replay.test.ts`, `tests/war/m36Golden.test.ts`), the battle
-  suites, and `battlebench.ts --super robot|fortress|whale`.
-- Left: the above; region map tier dots per friend; the friends' e2e (`m37-friends`: two players, a
+  them), agents waiting for the region's word, and friends' dossiers; friends' research as a bar
+  per branch on the region map. The Research tab now shows prototypes and trials without a lab
+  (the superweapon e2e hung on that).
+- An independent review of steps 9–10 is running (one agent: room abuse, sim, fair clock, page).
+- Left: the review's findings; rerun `e2e/m37-super.spec.ts`; the friends' e2e (`m37-friends`: two players, a
   spy and a blackout); `supershot.mjs` screenshots reviewed; the frame budget in the heaviest battle
   (`battlebench.ts bench-results/city.gz --guards --dome --save bench-results/war.gz`, then
   `framebench.mjs bench-results/war.gz --views battle --vm` here, real frame times on the Mac);

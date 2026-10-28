@@ -6,12 +6,13 @@
  * (avg/p99/max, and the battle's own share), the whole battle run at once as the page's battle
  * worker would (an expedition against this city), and the battle's size as friends send it.
  * Usage: npx tsx scripts/dev/battlebench.ts bench-results/city.gz [--super robot|fortress|whale]
- *   [--dome] [--guards]
+ *   [--dome] [--guards] [--dump input.json]
  * M37 (battles version 3): `--super` makes the raid a superweapon's (the robot and 23 heavy tanks by
  * road; the sky fortress, its 16 drones, 12 bombers and 11 fighters by air; the whale and 23
  * gunboats by sea), `--dome` raises a dome's pool of 40,000 over the city, and `--guards` gives the
  * city Hardened buildings, four interceptor batteries and two shield generators. The whole battle at
- * once is then fought with the superweapon caps, and its superweapon moments are counted.
+ * once is then fought with the superweapon caps, and its superweapon moments are counted. `--dump`
+ * writes that battle's input (JSON) for a closer look at it alone.
  * `--save out.gz` keeps the war city as it stands before the raid (with `--dome`, a charged dome
  * shield too) for `framebench.mjs out.gz --views battle`, the frame budget in the heaviest battle.
  */
@@ -38,8 +39,13 @@ if (args.includes('--super') && !['robot', 'fortress', 'whale'].includes(superKi
   throw new Error('--super robot|fortress|whale');
 const saveTo = args.includes('--save') ? args[args.indexOf('--save') + 1] : undefined;
 const file =
-  args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--super' && args[k - 1] !== '--save') ??
-  'bench-results/city.gz';
+  args.find(
+    (a, k) =>
+      !a.startsWith('--') &&
+      args[k - 1] !== '--super' &&
+      args[k - 1] !== '--save' &&
+      args[k - 1] !== '--dump',
+  ) ?? 'bench-results/city.gz';
 const sim = Sim.fromSave(JSON.parse(strFromU8(gunzipSync(readFileSync(file)))));
 sim.testMode = true;
 const s = sim.state;
@@ -206,6 +212,7 @@ if (flag('dome')) input.layout.dome = 40_000;
 // In a computer neighbour's town a superweapon's battle has its own, bigger caps.
 if (superweapon) input.caps = { ...SUPER.caps };
 stampBattle(input);
+if (flag('dump')) writeFileSync(args[args.indexOf('--dump') + 1]!, JSON.stringify(input));
 const t0 = performance.now();
 const b = Battle.run(structuredClone(input));
 const res = b.result();

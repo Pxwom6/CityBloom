@@ -98,6 +98,10 @@ test('M37: a spy and a blackout between friends, decided by the region, through 
   await expect.poll(async () => (await region(ada))?.state, { timeout: 120_000 }).toBe('in');
   await ada.getByTestId('region-war-on').check();
   await expect.poll(async () => (await region(ada))?.rules.war, { timeout: 15_000 }).toBe(true);
+  // Superweapons are the region's to allow (its host ticks them): the blackout tower is one.
+  await ada.getByTestId('region-war-supers').check();
+  await expect.poll(async () => (await region(ada))?.rules.supers, { timeout: 15_000 }).toBe(true);
+  await shot(ada, 'm37-friends-rules');
   const code = (await region(ada))!.code;
   await sam.bringToFront();
   await sam.keyboard.press('Shift+N');

@@ -574,6 +574,25 @@ function RegionWar({ link }: { link: RegionLink }) {
               onChange={(scale) => link.setRules({ ...rules, scale })}
             />
           )}
+          {rules.war && (
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!rules.supers}
+                data-testid="region-war-supers"
+                onChange={(e) => {
+                  const { supers: _, ...rest } = rules;
+                  link.setRules((e.target as HTMLInputElement).checked ? { ...rest, supers: true } : rest);
+                }}
+              />
+              <span>
+                Superweapons{' '}
+                <small class="muted">
+                  the robot, sky fortress and clockwork whale, the dome, blackout tower and express gate
+                </small>
+              </span>
+            </label>
+          )}
         </>
       ) : (
         <p class="muted" data-testid="region-war-rules">

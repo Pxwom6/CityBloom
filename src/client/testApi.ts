@@ -91,7 +91,7 @@ export interface TestApi {
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
     project: { total: number; goal: number; funded: boolean; host: number; built: boolean } | null;
     /** War in the region (M34): its rules, and whether this city is its host. */
-    rules: { war: boolean; scale: string };
+    rules: { war: boolean; scale: string; supers?: true };
     host: boolean;
   } | null;
   /** The city's forces (M34): every unit and the training at each base; null with war off. */

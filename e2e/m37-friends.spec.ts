@@ -139,7 +139,7 @@ test('M37: a spy and a blackout between friends, decided by the region, through 
           const id = await g.placeCivic(def, p);
           if (id !== null) return id;
         }
-        throw new Error(`no room for ${def}`);
+        throw new Error(`no room for ${def} (the page's console says why)`);
       };
       await put('spyagency');
       const tower = await put('blackouttower');

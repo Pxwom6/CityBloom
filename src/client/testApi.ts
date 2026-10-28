@@ -856,6 +856,8 @@ export function installTestApi(game: Game): TestApi {
             ? Math.hypot(a.mid.x - near.x, a.mid.z - near.z) - Math.hypot(b.mid.x - near.x, b.mid.z - near.z)
             : a.s.id - b.s.id,
         );
+      // Why each try was refused, told once all fail (a spec's console shows it).
+      const why = new Map<string, number>();
       for (const { s } of segs) {
         const len = net.curve(s.id).length;
         for (let at = d.w / 2 + 10; at < len - d.w / 2 - 10; at += 8) {
@@ -863,9 +865,13 @@ export function installTestApi(game: Game): TestApi {
             const pose = roadsidePose(net, s.id, at, side, d.d);
             const r = await game.dispatch({ type: 'placeBuilding', def, ...pose });
             if (r.ok) return r.created![0]!;
+            why.set(r.reason, (why.get(r.reason) ?? 0) + 1);
           }
         }
       }
+      console.warn(
+        `placeCivic ${def}: no room. ${[...why].map(([r, n]) => `${r} (×${n})`).join('; ') || 'No road to stand by'}`,
+      );
       return null;
     },
     heightAt: (x, z) => game.world.heightAt(x, z),

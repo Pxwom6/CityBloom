@@ -44,7 +44,7 @@ export function RaidChip() {
     <button
       class="btn raid-chip"
       data-testid="raid-chip"
-      title={`${r.from} is sending ${r.units} units against ${TARGETS[r.target] ?? r.target}`}
+      title={`${r.from} is sending ${r.units} unit${r.units === 1 ? '' : 's'} against ${TARGETS[r.target] ?? r.target}`}
       onClick={() => game.openPanel('war')}
     >
       Raid from {r.from} in{' '}
@@ -428,7 +428,7 @@ export function SendForce() {
       )}
       <p class="muted">
         {chosen.length
-          ? `${chosen.length} units, ${hours} hours to get there; they come back the same way.`
+          ? `${chosen.length} unit${chosen.length === 1 ? '' : 's'}, ${hours} hours to get there; ${chosen.length === 1 ? 'it comes' : 'they come'} back the same way.`
           : 'Choose the units to send.'}
       </p>
       {why && (
@@ -466,7 +466,7 @@ export function SendForce() {
             );
             return (
               <li key={e.id} data-testid={`expedition-${e.id}`}>
-                {e.units} units{' '}
+                {e.units} unit{e.units === 1 ? '' : 's'}{' '}
                 {e.state === 'out'
                   ? `on the way to ${e.name}: ${left.toFixed(1)} h`
                   : e.state === 'fighting'

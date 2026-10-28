@@ -394,7 +394,7 @@ export function WarRoomPanel() {
       <header>
         <h2>War room</h2>
         <span class="war-head muted" data-testid="war-summary">
-          {formatNumber(w.units)} units · readiness {pct(w.readiness)}
+          {formatNumber(w.units)} unit{w.units === 1 ? '' : 's'} · readiness {pct(w.readiness)}
         </span>
         <button class="btn icon" aria-label="Close" onClick={() => game.openPanel('war')}>
           ×
@@ -532,7 +532,8 @@ function Forces({ w }: { w: WarSummary }) {
       <p data-testid="war-strength">
         {w.units ? (
           <>
-            {formatNumber(w.units)} units, fighting strength {formatNumber(w.strength)}
+            {formatNumber(w.units)} unit{w.units === 1 ? '' : 's'}, fighting strength{' '}
+            {formatNumber(w.strength)}
             {w.training ? `, ${w.training} in training` : ''}.
           </>
         ) : w.training ? (

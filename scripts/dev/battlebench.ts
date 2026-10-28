@@ -50,6 +50,8 @@ const sim = Sim.fromSave(JSON.parse(strFromU8(gunzipSync(readFileSync(file)))));
 sim.testMode = true;
 const s = sim.state;
 console.log(`city: ${s.cityName}, ${s.totals.population} residents, ${s.buildings.size} buildings`);
+// A city with rival neighbours, as a new city founded with them (superweapons are its to have).
+s.options.rivals = true;
 startWar(sim);
 sim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
 sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 50_000_000 });

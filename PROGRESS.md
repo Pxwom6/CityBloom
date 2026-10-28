@@ -316,6 +316,35 @@ check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REV
 2. M38–M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
+## Performance (M37)
+- **Balance** (`npx tsx scripts/balance.ts 20`, this branch and `main` 6883790 back to back):
+  careful, greedy and neglectful byte for byte the same CSVs (year 20: careful 67,373 residents,
+  73 %; greedy 420; neglectful 354). Peaceful cities run none of M37.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, three pairs with `main` back to back): the same
+  city (110,174 residents, 2,158 buildings at month 6); whole runs 5.3–6.0 s on the branch and
+  5.3–5.7 s on `main`, months 4–6 tick avg 0.89–1.18 ms on both, p99 7–11 ms: no difference
+  beyond this VM's noise.
+- **Battles on the 100k city** (`battlebench.ts bench-results/city.gz`): a plain 24-unit raid's day
+  avg 3.3 ms a tick, p99 23 ms, of which the battle avg 0.16 ms (worst 4.2); the whole battle at
+  once 53 ms. Superweapon raids: the robot's battle avg 0.41 ms (worst 3.2), the fortress's 0.32
+  (3.4), the whale's 0.53 (3.2); each fought whole in 5–17 ms. The heaviest (`--guards --dome
+  --super robot`: four interceptors, two shield generators, a charged dome, 356 structures) avg
+  0.28 ms, worst 3.2 ms, whole 22 ms. A battle's message to a friend 10.4–11.6 KB, one part.
+- **Frame budget in the heaviest battle** (`framebench.mjs bench-results/war.gz --vm --views
+  battle`, the battle watched at 1×; SwiftShader, so only draw calls and triangles count): the
+  robot's raid under the dome Low 70 calls 0.70M triangles, Medium 118 / 1.09M, High 125 /
+  1.24M; 24 of the heaviest units (`--battle max`) Low 69 / 0.71M, Medium 115 / 1.10M, High 125
+  / 1.25M; the dome adds 0–3 calls. Below the city view at every quality (High 246 calls, 2.9M
+  triangles), so within the phase-3 frame budget. Real frame times: **to check on the Mac**.
+- **Network** (`netbudget.ts`, four players): 185 messages a minute sent by the host, 64 by
+  guests; an hour of it a day is 1.1 % of the free plan's requests, 3.5 % of its duration and 0.2 %
+  of its rows. Friends' operations are a few small messages each.
+- **Tests**: the unit suite, 934 tests in 122 files (917 unit, 17 live), passes. E2e: M34–M37's
+  war specs (10 tests, 31 min) and `m35-friends` (22.7 min) pass, screenshots reviewed.
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every push,
+  with the determinism script's M37 sections (research, trials, superweapons, spies, the friends'
+  page-only commands).
+
 ## Performance (M36)
 - **Balance** (`npx tsx scripts/balance.ts 20` on `main` and this branch back to back): careful, greedy
   and neglectful line for line the same as `main` (only the run times differ).

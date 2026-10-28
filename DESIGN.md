@@ -1392,6 +1392,28 @@ a city first queues research, so peace and M34–M36 war cities are unchanged. P
   a 6 % chance a month by character and town size, at least 12 days apart; tech 1 and 3 bring the
   battle modifiers of tiers 1 and 3, tech 2 heavier units in its raids (`RIVAL_MIX_TECH`), and each
   step +50 to its counter-intelligence.
+- **Between friends** (`src/sim/systems/regionOps.ts`, the room's `RegionRoom.op`, the page's
+  `src/client/ops.ts`; protocol 5): a friend's city is decided by the region room, as M36's raids
+  are. An agent sent to a friend arrives and waits (`arrived`); the page puts the operation to the
+  room (`op`, an id made like a battle's), pinned meanwhile (`spySettling`); the room checks the
+  rules (war, neutral, newcomers, the target here for sabotage and blackouts), the target's day (four
+  spies, one saboteur, one superweapon, which also counts as a raid) and the sender's rate, rolls the
+  dice with the same `spyOdds` from the two cities' reports (`env.roll`), remembers each sender's
+  last 24 verdicts in its record (a resent id gets the same answer), and answers (`opKept` with the
+  outcome, or `opRefused`); the sender's sim takes it once (`missionResult`: a dossier made by the
+  page from the friend's region save, a quarter of a tier stolen once per friend and tier); the
+  target's sim takes what the room passes on once (`opResolve`, `opOn`/`opSeen`), choosing itself
+  what a saboteur closes, or blacking itself out an hour on for 12 hours (power plants at 0.4, no
+  radar warning). One that came while its player was away brings only a notice. A superweapon's
+  battle against a friend is flagged `super` and counted by the room; an unflagged one is refused by
+  the target's sim. Leaving a region (`warClock` with `left`) forgets friends by their places.
+- **The fair clock** (step 10): the room starts each war city's fair clock at the war clock in its
+  first report and moves it at 1× (`FAIR`: a game hour every 7.5 s) for the time between its reports,
+  two minutes at most, only while it's connected; the page caps the city's war clock 48 hours beyond
+  it (`fairCap` → `warClock`, always told as a link's first word). At the cap the war clock holds:
+  training, research, trials, cooldowns, missions and war projects' stages wait (`clockHeld`, said
+  at most once a game day), while readiness and the stores go on. A city of its own, or one shared in
+  a room, never waits; a loaded city that won't rejoin its region drops a cap it saved.
 - **Rendering and UI**: trials run on the proving ground's track (`unitPoses` 'trial'); the dome,
   the tower's beam, the gate's ring and interceptor flashes are `src/render/shields.ts`
   (`SuperEffects`, with a cost switch per quality: `units.shields`, `units.dust`). The war room has

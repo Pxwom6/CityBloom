@@ -7,6 +7,7 @@ import { CIVIC } from '../data/civic';
 import { RAIDS, type BattleRoute, type BattleTarget, type Stance } from '../data/battle';
 import { travelHours } from '../sim/systems/raids';
 import { UNIT, type UnitKind } from '../data/war';
+import { BRANCHES } from '../data/research';
 import type { BattleReport } from '../sim/systems/raids';
 import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
@@ -573,6 +574,35 @@ export function RegionMap() {
                 <text x={mid.x - nx * 14} y={mid.y - ny * 14 + 3} class="war-map-front">
                   front
                 </text>
+              )}
+              {/* M37: a friend's research, from its last report: a bar per branch, a step per tier. */}
+              {n.player?.tiers && (
+                <g class="war-map-tiers" data-testid={`map-tiers-${n.id}`}>
+                  <title>
+                    Research:{' '}
+                    {BRANCHES.map((b, k) => `${b.name.toLowerCase()} ${n.player!.tiers![k] ?? 0}/4`).join(
+                      ', ',
+                    )}
+                  </title>
+                  {BRANCHES.map((b, k) => (
+                    <g key={b.id}>
+                      <rect
+                        x={p.x - 13 + k * 4.5}
+                        y={p.y + 30}
+                        width={3}
+                        height={10}
+                        class="war-map-tier-bg"
+                      />
+                      <rect
+                        x={p.x - 13 + k * 4.5}
+                        y={p.y + 40 - 2.5 * (n.player!.tiers![k] ?? 0)}
+                        width={3}
+                        height={2.5 * (n.player!.tiers![k] ?? 0)}
+                        class="war-map-tier"
+                      />
+                    </g>
+                  ))}
+                </g>
               )}
               {/* M37: an eye on a neighbour the city's spies looked round lately; one it blacked out, dark. */}
               {w.supers?.darkened.some((d) => d.id === n.id) && (

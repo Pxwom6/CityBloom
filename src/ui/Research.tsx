@@ -129,15 +129,16 @@ export function Research() {
         if (ok) game.toast(ok, 'ok', 2500);
       } else game.toast(res.reason, 'bad');
     });
-  if (!labs.length || !r) {
-    return (
-      <p data-testid="research-none">
-        Weapons research needs a weapons lab (Military, from{' '}
-        {formatNumber(CIVIC.get('militarylab')?.unlockPopulation ?? 0)} residents). Up to {RESEARCH.maxLabs}{' '}
-        labs work together, and a research park speeds them up.
-      </p>
-    );
-  }
+  const needLab = (
+    <p data-testid="research-none">
+      Weapons research needs a weapons lab (Military, from{' '}
+      {formatNumber(CIVIC.get('militarylab')?.unlockPopulation ?? 0)} residents). Up to {RESEARCH.maxLabs}{' '}
+      labs work together, and a research park speeds them up.
+    </p>
+  );
+  // No research yet: only how to start. Research done and the labs gone since: what's done stays,
+  // and its prototypes can still be tried at a proving ground.
+  if (!r) return needLab;
   const head = r.queue[0];
   const queueLeft = r.queue.reduce(
     (a, k) => a + Math.max(0, TIERS.find((t) => t.key === k)!.points - (r.points[k] ?? 0)),
@@ -150,10 +151,14 @@ export function Research() {
   const free = grounds.filter((g) => !r.trials.some((t) => t.ground === g.id));
   return (
     <>
-      <p data-testid="research-head">
-        {r.labs} lab{r.labs === 1 ? '' : 's'} · {formatNumber(r.rate)} points an hour
-        {r.park > 1 ? ` · research park ×${r.park}` : ''}
-      </p>
+      {labs.length ? (
+        <p data-testid="research-head">
+          {r.labs} lab{r.labs === 1 ? '' : 's'} · {formatNumber(r.rate)} points an hour
+          {r.park > 1 ? ` · research park ×${r.park}` : ''}
+        </p>
+      ) : (
+        needLab
+      )}
       {r.waiting && (
         <p class="war-warn" data-testid="research-waiting">
           {r.waiting}

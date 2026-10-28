@@ -9,6 +9,9 @@ import { servedTown } from './war';
  * at the proving ground from the tab, and then every one of them can be trained at its base.
  */
 
+// A button that never turns up fails in a minute, not at the test's timeout.
+test.use({ actionTimeout: 60_000 });
+
 const civics = (page: Page, def: string) =>
   page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def), def);
 

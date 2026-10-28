@@ -9,6 +9,9 @@ import { servedTown } from './war';
  * winding up; and the blackout tower used once from its inspector, then recharging.
  */
 
+// A button that never turns up fails in a minute, not at the test's timeout.
+test.use({ actionTimeout: 60_000 });
+
 const civics = (page: Page, def: string) =>
   page.evaluate((def) => window.__game!.getCivics().filter((c) => c.def === def), def);
 

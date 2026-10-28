@@ -4138,6 +4138,12 @@ body {
   fill: rgba(20, 20, 30, 0.55);
   stroke: rgba(20, 20, 30, 0.8);
 }
+.war-map-tier-bg {
+  fill: var(--color-border-strong);
+}
+.war-map-tier {
+  fill: var(--color-accent);
+}
 .viewer-bar {
   position: fixed;
   bottom: 1rem;

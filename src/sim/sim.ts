@@ -1336,11 +1336,15 @@ export class Sim {
             const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)), !!cmd.seat);
             w.rng = rng.getState();
             // M37: a force of the test's own choosing (the heaviest battle, measured).
-            if (cmd.units?.length)
+            if (cmd.units?.length) {
               raid.units = cmd.units
                 .filter((k) => UNIT.has(k))
                 .slice(0, 24)
                 .map((kind) => ({ kind, hp: 1 }));
+              // Its warning (already given) counts the force it brings now.
+              for (const e of this.events)
+                if (e.kind === 'raidWarning' && e.id === raid.id && e.info) e.info.units = raid.units.length;
+            }
             if (cmd.hours === 0) {
               w.incoming = w.incoming!.filter((r) => r !== raid);
               if (!w.incoming.length) delete w.incoming;

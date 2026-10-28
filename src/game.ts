@@ -1304,7 +1304,7 @@ export class Game {
           : '';
         this.notice(
           `raid:${e.id}`,
-          `Sirens! ${String(i.from)} is sending ${String(i.units)} units against the city: they arrive in ${String(i.hours)} hours.${shelter}`,
+          `Sirens! ${String(i.from)} is sending ${String(i.units)} unit${i.units === 1 ? '' : 's'} against the city: they arrive in ${String(i.hours)} hour${i.hours === 1 ? '' : 's'}.${shelter}`,
           'bad',
         );
         this.audio?.play('raid');

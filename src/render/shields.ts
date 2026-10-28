@@ -112,6 +112,8 @@ export class SuperEffects {
   private popAt = -10;
   private lastDome: number | null = null;
   private domeAt: { x: number; y: number; z: number; r: number; key: string } | null = null;
+  /** The dome's spot the Low ring was last laid over the ground for. */
+  private ringFor: string | null = null;
   /** What was drawn last update (tests and stats). */
   shown = { dome: false, bubbles: 0, swirl: false, tower: false };
 
@@ -170,6 +172,22 @@ export class SuperEffects {
     return this.domeAt;
   }
 
+  /**
+   * The Low dome's ring, laid over the ground around the city (a flat ring at the dome's own height
+   * floated above valleys as a bright band): rebuilt when the dome's spot moves.
+   */
+  private drapeRing(spot: NonNullable<SuperEffects['domeAt']>): void {
+    if (this.ringFor === spot.key) return;
+    this.ringFor = spot.key;
+    const g = new RingGeometry(0.97 * spot.r, spot.r, 192).rotateX(-Math.PI / 2);
+    const p = g.attributes.position!;
+    for (let i = 0; i < p.count; i++)
+      p.setY(i, this.world.heightAt(spot.x + p.getX(i), spot.z + p.getZ(i)) - spot.y + 1.5);
+    p.needsUpdate = true;
+    this.domeRing.geometry.dispose();
+    this.domeRing.geometry = g;
+  }
+
   update(now: number): void {
     const w = this.world;
     const sup = w.stats.war?.supers ?? null;
@@ -191,8 +209,9 @@ export class SuperEffects {
       const fade = popping ? 1 - k : 1;
       const flash = Math.max(0, 1 - (now - this.flashAt) / FLASH);
       if (this.quality === 0) {
-        this.domeRing.position.set(spot.x, spot.y + 0.5, spot.z);
-        this.domeRing.scale.setScalar(scale);
+        this.drapeRing(spot);
+        this.domeRing.position.set(spot.x, spot.y, spot.z);
+        this.domeRing.scale.set(scale / spot.r, 1, scale / spot.r);
         const u = (this.domeRing.material as ShaderMaterial).uniforms;
         u.uFade!.value = fade;
         u.uFlash!.value = flash;

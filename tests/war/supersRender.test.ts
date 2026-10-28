@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Mesh, RingGeometry } from 'three';
 import type { ClientWorld } from '../../src/client/world';
 import { SuperEffects } from '../../src/render/shields';
 import type { SupersSummary } from '../../src/sim/systems/supers';
@@ -31,6 +32,8 @@ function world(supers: Partial<SupersSummary>, battle: { dome?: number } | null)
     civics,
     buildings: new Map([[9, { id: 9, x: 0, z: -900 }]]),
     battle,
+    // Ground that falls away to the east.
+    heightAt: (x: number) => 2 - x / 50,
     stats: {
       war: {
         supers: {
@@ -77,6 +80,15 @@ describe('M37 superweapon effects', () => {
     low.update(0);
     expect(low.shown.dome).toBe(true);
     expect(low.shown.bubbles).toBe(1);
+    // The ring lies on the ground all round, not at the dome's own height over a valley.
+    const ring = low.group.children.find(
+      (m) => m.visible && (m as Mesh).geometry instanceof RingGeometry,
+    ) as Mesh;
+    const p = ring.geometry.attributes.position!;
+    for (let i = 0; i < p.count; i += 17) {
+      const x = ring.position.x + p.getX(i) * ring.scale.x;
+      expect(ring.position.y + p.getY(i)).toBeCloseTo(2 - x / 50 + 1.5, 3);
+    }
   });
 
   it('shield bubbles in a battle, the gate swirls for the hour of a jump, the tower glows while charging', () => {

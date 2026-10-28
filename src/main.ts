@@ -427,6 +427,9 @@ async function boot(): Promise<void> {
       );
     else if (regionCode) void game.joinRegion(regionCode, regionRejoin(meta, regionCode)?.rejoin ?? null);
     else if (mine) void game.joinRegion(mine.invite, mine.rejoin);
+    // A loaded city that won't stand in a region now (M37): the region's fair-clock cap it saved, and
+    // what it knew of friends there by their places, no longer apply (quietly nothing without war).
+    else if (loadSlot && save) void game.dispatch({ type: 'warClock', cap: null, left: true });
   }
   // A first launch picks graphics to suit the device from its first few seconds: on the main menu, and
   // in a room or a visit an invite link opened straight into (F12).

@@ -249,7 +249,7 @@ export type Command =
       reason?: string;
     }
   | ({ type: 'opResolve' } & OpInput)
-  | { type: 'warClock'; cap: number | null };
+  | { type: 'warClock'; cap: number | null; left?: true };
 
 export type CommandType = Command['type'];
 

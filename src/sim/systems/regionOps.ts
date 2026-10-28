@@ -590,15 +590,38 @@ const HOUR_MS = 7_500;
  * The region's fair clock caps the city's war clock (M37, design call 15, page only): `null` lifts
  * it (the city left its region). A city of its own never has one.
  */
-export function warClock(sim: Sim, cap: number | null, dryRun: boolean): CommandResult {
+export function warClock(sim: Sim, cap: number | null, dryRun: boolean, left = false): CommandResult {
   const w = sim.state.war;
   if (!w) return fail('War is off in this city');
   if (cap !== null && !isInt(cap, 0, 1e9)) return fail('No such clock');
+  if (left && cap !== null) return fail('No such clock');
   if (dryRun) return ok(0);
   if (cap === null) delete w.clockCap;
   else w.clockCap = cap;
+  if (left) leaveFriends(sim);
   sim.warChanged();
   return ok(0);
+}
+
+/**
+ * The city left its region (M37, `left`): what it knew of friends there by their places in it is
+ * forgotten (another region's city may stand in the same place), agents on their way to one come
+ * home with their missions refunded, and a tower aimed at one the region hasn't kept stands ready.
+ */
+function leaveFriends(sim: Sim): void {
+  const w = sim.state.war!;
+  const i = w.intel;
+  if (i) {
+    delete i.stolen;
+    delete i.seen;
+    for (const m of i.missions)
+      if (m.slot !== undefined && (m.state === 'out' || m.state === 'arrived')) {
+        accrue(sim, 'spies', m.paid);
+        goHome(sim, m);
+      }
+  }
+  const t = w.supers?.tower;
+  if (t?.charging?.slot !== undefined && !t.charging.kept) delete t.charging;
 }
 
 /**

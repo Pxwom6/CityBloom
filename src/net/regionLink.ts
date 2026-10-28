@@ -191,6 +191,8 @@ export class RegionLink {
   error: string | null = null;
   /** The region shut for good (its host's browser left it, F10): the city's place there is gone. */
   gone = false;
+  /** No region has this code (any more): a city bound to it should let it go (M37). */
+  missing = false;
   private link: Link | null = null;
   private misses = 0;
   private timers: ReturnType<typeof setInterval>[] = [];
@@ -334,6 +336,8 @@ export class RegionLink {
         return;
       case 'error':
         if (m.code === 'closed') this.gone = true;
+        // No region by that code (it expired): a city bound to it is in it no more (M37).
+        if (m.code === 'no-region') this.missing = true;
         this.fail(m.text);
         this.link?.close();
         return;
@@ -583,12 +587,12 @@ export class RegionLink {
     if (this.slot) {
       const update = this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
       // The fair clock (M37): the city's war clock may run this far, told again once it moves by an
-      // hour or more (or comes off, where war is off).
+      // hour or more (or comes off, where war is off). The first word on a link is always told: a cap
+      // the city saved from before (war turned off meanwhile) mustn't hold it for good.
       const cap = this.opts.fairClock === false ? null : fairCap(view, this.slot);
       const moved =
-        cap === null
-          ? this.cap !== undefined && this.cap !== null
-          : this.cap == null || cap - this.cap >= 1 || cap < this.cap;
+        this.cap === undefined ||
+        (cap === null ? this.cap !== null : this.cap === null || cap - this.cap >= 1 || cap < this.cap);
       if (moved) {
         this.cap = cap;
         void this.city.command({ type: 'warClock', cap });

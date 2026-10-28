@@ -255,6 +255,36 @@ function towerTown() {
   return { sim, friend };
 }
 
+describe('M37 operations between friends: leaving the region', () => {
+  it('forgets friends’ places, brings agents home refunded, and stands the tower down', () => {
+    const { sim, friend, place } = friendTown(['intel1', 'intel2', 'intel3', 'intel4']);
+    const w = sim.state.war!;
+    // A dossier and a theft from Brookside, the city's friend in slot 2.
+    const look = arrive(sim, { type: 'spyMission', neighbour: friend.id, op: 'reveal' });
+    const dossier = dossierOf(labTown(0).sim.state)!;
+    ok(sim, { type: 'missionResult', mission: look.id, outcome: 'success', dossier });
+    expect(w.intel!.seen![2]).toBeDefined();
+    w.intel!.stolen = { 2: ['air3'] };
+    // An agent waiting there for the region, and the tower charging at it.
+    const waiting = arrive(sim, { type: 'spyMission', neighbour: friend.id, op: 'steal', branch: 'air' });
+    const tower = place('blackouttower');
+    ok(sim, { type: 'cheat', cheat: 'finishStages', civic: tower });
+    ok(sim, { type: 'cheat', cheat: 'superReady' });
+    sim.advance(M);
+    ok(sim, { type: 'useBlackout', neighbour: friend.id });
+    expect(w.supers!.tower!.charging!.slot).toBe(2);
+    const before = sim.state.treasury;
+    // The city leaves: another region's slot 2 is another city.
+    ok(sim, { type: 'warClock', cap: null, left: true });
+    expect(w.intel!.seen).toBeUndefined();
+    expect(w.intel!.stolen).toBeUndefined();
+    expect(waiting.m()!.state).toBe('back');
+    expect(sim.state.treasury - before).toBe(SPY_OP.steal.cost);
+    expect(w.supers!.tower!.charging).toBeUndefined();
+    expect(intelSummary(sim)!.regionOps).toEqual([]);
+  });
+});
+
 describe('M37 operations between friends: the blackout tower', () => {
   it('charges at a friend, and starts its recharge only once the region keeps the blackout', () => {
     const { sim, friend } = towerTown();

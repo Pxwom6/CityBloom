@@ -1537,7 +1537,7 @@ export class Sim {
           dryRun,
         );
       case 'warClock':
-        return warClock(this, cmd.cap, dryRun);
+        return warClock(this, cmd.cap, dryRun, !!cmd.left);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

@@ -122,19 +122,34 @@ test('M37: a spy and a blackout between friends, decided by the region, through 
       if (!r.ok) throw new Error(r.reason);
     }
   });
-  await armTown(ada, ['militaryhq', 'spyagency', 'blackouttower']);
-  await ada.evaluate(async () => {
-    const g = window.__game!;
-    const tower = g.getCivics().find((c) => c.def === 'blackouttower')!;
-    for (const cmd of [
-      { type: 'cheat', cheat: 'finishStages', civic: tower.id },
-      { type: 'cheat', cheat: 'superReady' },
-    ] as const) {
-      const r = await g.dispatch(cmd);
-      if (!r.ok) throw new Error(r.reason);
-    }
-    await g.advance(60 * 6);
-  });
+  await armTown(ada, ['militaryhq']);
+  const hz = (await ada.evaluate(() => window.__game!.getState())).highwayZ;
+  await ada.evaluate(
+    async ([hz]) => {
+      const g = window.__game!;
+      // The agency and the tower where there's room for them (the tower is big; Adaville has a river).
+      const at = (dx: number, dz: number) => ({ x: 24 + dx, z: hz! + dz });
+      const spots = [at(200, 160), at(380, -160), at(100, -160), at(440, 160), at(240, -280), at(60, 160)];
+      const put = async (def: string): Promise<number> => {
+        for (const p of spots) {
+          const id = await g.placeCivic(def, p);
+          if (id !== null) return id;
+        }
+        throw new Error(`no room for ${def}`);
+      };
+      await put('spyagency');
+      const tower = await put('blackouttower');
+      for (const cmd of [
+        { type: 'cheat', cheat: 'finishStages', civic: tower },
+        { type: 'cheat', cheat: 'superReady' },
+      ] as const) {
+        const r = await g.dispatch(cmd);
+        if (!r.ok) throw new Error(r.reason);
+      }
+      await g.advance(60 * 6);
+    },
+    [hz] as const,
+  );
   await sam.bringToFront();
   await armTown(sam, ['militaryhq']);
   await sam.evaluate(async () => {

@@ -130,4 +130,30 @@ describe('M37 the fair clock in the sim', () => {
     for (let k = 0; k < 6 && held.c().build!.stage === 0; k++) held.sim.advance(M);
     expect(held.c().build!.stage).toBe(1);
   });
+
+  it('a war project placed while the clock is held gets no credit for hours the war clock didn’t run', () => {
+    const { sim, place } = town();
+    const w = sim.state.war!;
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: ['defence1', 'defence2', 'defence3', 'defence4'] });
+    // Held at the cap since the month began, then placed 18 game hours in: the war clock stood still.
+    ok(sim, { type: 'warClock', cap: w.clock });
+    sim.advance(18 * H);
+    const id = place('domeshield');
+    expect(sim.state.civics.get(id)!.build!.clock).toBe(w.clock);
+    // A city of its own still counts its month from the month's start.
+    ok(sim, { type: 'warClock', cap: null });
+    expect(stageClock(sim)).toBeLessThan(w.clock);
+  });
+
+  it('a city that leaves its region is free of its cap, and only `cap: null` may say it left', () => {
+    const { sim } = town();
+    const w = sim.state.war!;
+    ok(sim, { type: 'warClock', cap: w.clock });
+    expect(refusal(sim, { type: 'warClock', cap: w.clock + 5, left: true })).toBe('No such clock');
+    ok(sim, { type: 'warClock', cap: null, left: true });
+    expect(w.clockCap).toBeUndefined();
+    const before = w.clock;
+    sim.advance(5 * H);
+    expect(w.clock).toBeGreaterThan(before);
+  });
 });

@@ -213,4 +213,27 @@ describe('M37 the fair clock on a city’s page', () => {
     expect(w.clock).toBe(c0 + FAIR.bank + 40);
     expect(w.research!.done.includes('land1') || (w.research!.points.land1 ?? 0) > held.points).toBe(true);
   }, 120_000);
+
+  it('a cap the city saved from before is lifted where the region it joins has no war', async () => {
+    const clock = new FakeClock();
+    const room = new RegionRoom('7FAIRP', 'local', new MemoryRegionStore(), clock);
+    const { sim } = labTown(1);
+    const w = sim.state.war!;
+    // Saved under a war region's cap; that region turned to peace (or this is another) meanwhile.
+    expect(sim.dispatch({ type: 'warClock', cap: w.clock }).ok).toBe(true);
+    const link = new RegionLink(port(sim), loopTo(room), {
+      mayor: 'Ada',
+      color: 0,
+      saveEvery: 0,
+      create: { name: 'Calm', rules: { war: false, scale: 'skirmish' } },
+    });
+    links.push(link);
+    await link.start();
+    await flush();
+    // The first word on a new link is always told: no cap, so the war clock runs again.
+    expect(w.clockCap).toBeUndefined();
+    const before = w.clock;
+    sim.advance(5 * TICKS_PER_HOUR);
+    expect(w.clock).toBeGreaterThan(before);
+  }, 120_000);
 });

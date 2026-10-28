@@ -832,8 +832,14 @@ export class Game {
       } else if (link.state !== 'in') welcomed = false;
       if (link.state === 'closed' && this.region === link) {
         if (link.error && started) this.toast(link.error, 'bad', 8000);
-        // The region shut for good (its host left it): the city's saves no longer name it (F10).
-        if (link.gone) this.forgetRegion();
+        // The region shut for good (its host left it): the city's saves no longer name it (F10). One
+        // that no longer exists is let go too, if it's the one the city is bound to (M37: its fair
+        // clock would otherwise hold the city's war clock for good).
+        if (
+          link.gone ||
+          (link.missing && this.boundRegion && parseInvite(this.boundRegion.invite)?.code === code)
+        )
+          this.forgetRegion();
         this.leaveRegion(false);
       }
       this.notify();
@@ -849,8 +855,9 @@ export class Game {
     const code = bound ? parseInvite(bound.invite)?.code : null;
     if (bound && code) forgetRegionSecret(code, bound.slot);
     this.boundRegion = null;
-    // A city of its own again: the region's fair clock no longer caps its war clock (M37).
-    if (this.world.stats.war) void this.dispatch({ type: 'warClock', cap: null });
+    // A city of its own again: the region's fair clock no longer caps its war clock, and what it
+    // knew of friends there by their places is forgotten (M37).
+    if (this.world.stats.war) void this.dispatch({ type: 'warClock', cap: null, left: true });
   }
 
   leaveRegion(say = true): void {

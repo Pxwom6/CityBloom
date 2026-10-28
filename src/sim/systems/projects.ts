@@ -32,12 +32,14 @@ export interface ProjectBuild {
  * The war clock a war project's stage counts from when it starts (M37): the war hours since the
  * month began are taken off, as the stage's months count from the month's start. In a city of its
  * own the war clock runs an hour a game hour (the economy's minute of each), so the stage ends at
- * the month close it always did.
+ * the month close it always did. Under a region's fair clock it counts from now.
  */
 export function stageClock(sim: Sim): number {
   const s = sim.state;
   const w = s.war;
   if (!w) return 0;
+  // Under a region's cap the war clock may not have run the month's hours so far: count from now.
+  if (w.clockCap !== undefined) return w.clock;
   const intoMonth = (s.tick + START_TICK_OFFSET) % TICKS_PER_MONTH;
   const start = s.tick - intoMonth;
   // War hours run at the economy's minute of each hour after the month's start, up to now.

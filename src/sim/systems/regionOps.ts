@@ -344,7 +344,7 @@ export function missionResult(
       intelResult(
         sim,
         m.to,
-        `${agent} looked round ${m.name}: ${formatInt(units)} units, ${formatInt(guns)} defences, research ${dossier.tiers.join('/')}`,
+        `${agent} looked round ${m.name}: ${formatInt(units)} unit${units === 1 ? '' : 's'}, ${formatInt(guns)} defence${guns === 1 ? '' : 's'}, ${researchWords(dossier.tiers)}`,
         'good',
       );
     } else intelResult(sim, m.to, `${agent} looked round ${m.name}, but brought nothing back`);
@@ -374,6 +374,14 @@ export function missionResult(
     }
   }
   return ok(0);
+}
+
+/** A friend's research in a dossier, in words: "no weapons research", or "research: land 2, air 1". */
+function researchWords(tiers: number[]): string {
+  const done = BRANCH_IDS.map((b, k) => [b, tiers[k] ?? 0] as const).filter(([, t]) => t > 0);
+  return done.length
+    ? `research: ${done.map(([b, t]) => `${b === 'intel' ? 'intelligence' : b} ${formatInt(t)}`).join(', ')}`
+    : 'no weapons research';
 }
 
 /** A refusal's words as the region sent them, bounded. */

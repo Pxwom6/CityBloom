@@ -200,7 +200,7 @@ test('M37: a spy and a blackout between friends, decided by the region, through 
     })
     .toBe(true);
   const verdict = (await intel(ada))!.results.find((r) => r.text.includes('Samford'))!.text;
-  expect(verdict).toMatch(/looked round Samford: \d+ units|came away from Samford|was caught in Samford/);
+  expect(verdict).toMatch(/looked round Samford: \d+ units?|came away from Samford|was caught in Samford/);
   if (verdict.includes('looked round')) {
     // The dossier, from the region's save of Samford: its HQ among the defences shown.
     await expect(ada.getByTestId(`seen-${target.slot}`)).toContainText('Samford');

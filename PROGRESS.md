@@ -300,7 +300,11 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
   first, every check passed up to Sam's warning, then a screenshot of Sam's page timed out at 60 s
   (two SwiftShader pages on this VM).
 - **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every M38
-  push, with the determinism script's M38 section (every new command, the offer cheat).
+  push, with the determinism script's M38 section (every new command, the offer cheat). Found while
+  mapping M39: the browsers ran the diplomacy (M36), research (M37) and war economy (M38) sections
+  but the spec never compared their hashes with Node's (only the commands used, the war town and the
+  battles); it does now (`e2e-xb/determinism.spec.ts`), green in Chromium here, WebKit and Firefox
+  on GitHub.
 - **Goldens**: the peace golden and the v2 battle replays never moved; the M36 golden was rewritten
   twice (weariness, then offers; DECISIONS "M38").
 

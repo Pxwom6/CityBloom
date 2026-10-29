@@ -1473,6 +1473,21 @@ treaties. Every rate is a monthly ledger line accrued by the hour (`warEconomyRa
   lender's rate (`offerRate`: mercantile cheapest; ledger `lenderLoan`, `lenderInterest`,
   `lenderRepaid`). Open three days, answered with `answerOffer`; ids come from the economy's own
   counter, so a lapsing offer never moves a battle's seed.
+- **Difficulty with rivals** (`WAR_DIFFICULTY`, read by `warDifficulty()`): Normal multiplies by 1 and
+  adds 0 in the old order, so it is M37's war to the bit. Easy: rivals keep 0.7× the forces and
+  defences their character calls for, raid 0.6× as often (`raidChance` and the waits between raids),
+  demand 0.7× the tribute (`tributeDemand`) and tire the city 0.7× as fast; Hard 1.3×, 1.4×,
+  aggression +0.1 (raids, declarations, what a neighbour will sign), tribute 1.4×, weariness 1.3×.
+  The forces' upkeep already follows `DIFFICULTY.upkeep` (`upkeepScale`).
+- **The balance mayor at war** (`src/sim/ai/warMayor.ts`, `WarPlan`, played only with war on, so a
+  peaceful city plays exactly as before): from 2,500 residents an HQ, a barracks and defences to 1.2×
+  the biggest raid a neighbour could mount, within 12 % of its taxes; new power plants beyond a
+  skirmish's reach of the highway; peace or a ceasefire taken when a war goes against it or past 0.4
+  weariness; an ally's arms offer taken when the stores hold the crates, a loan only while its
+  instalments stay within a fifth of the taxes, an investment only when overdrawn; a surplus beyond
+  the smaller of two years' spending and $1M into 5 % stakes in neighbours wary or better.
+  `balance.ts --rivals` founds each city with rivals and prints the war's lines (raids, wars,
+  weariness, stakes and dividends, the military's share of spending); `docs/plans/M38-balance.md`.
 - **UI**: the war room's Trade tab (`src/ui/Trade.tsx`): the monthly lines, then offers, investors and
   debts, then a card per neighbour (its industry, the stake, loan, aid, munitions and sanction, each
   with the sim's reason when it can't be used), and a unit sale. Weariness shows in the Diplomacy

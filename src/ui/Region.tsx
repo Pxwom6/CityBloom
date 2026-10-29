@@ -382,6 +382,9 @@ export function RegionPanel() {
               the highway; what's sold only ever comes from what you make yourself, once your own homes and
               businesses are served, never from what you buy.
               {t.utilities.power.unserved > 0 ? ' Short of power? A neighbour may sell you some.' : ''}
+              {t.war?.economy
+                ? ' Munitions, units and stakes in a rival’s industry are traded from the war room’s Trade tab.'
+                : ''}
             </p>
             {r.neighbours.map((n) => (
               <NeighbourCard key={n.id} n={n} />

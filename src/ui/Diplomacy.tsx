@@ -17,6 +17,7 @@ import {
   type TermKind,
 } from '../data/diplomacy';
 import { PERSONALITY, type Personality } from '../data/war';
+import { WEARINESS } from '../data/warEconomy';
 import type { Command } from '../sim/commands';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
@@ -39,6 +40,47 @@ function ScoreBar({ score, id }: { score: number; id: number }) {
         style={score >= 0 ? { left: '50%', width: `${w}%` } : { left: `${50 - w}%`, width: `${w}%` }}
       />
     </span>
+  );
+}
+
+/**
+ * War weariness (M38): how tired of war the city is, what it costs, which way it's going, and the
+ * lift peace gives. Shown only once a war has worn on the city.
+ */
+function Weariness({ now }: { now: number }) {
+  const game = useGameUpdates(400);
+  const w = game.world.stats.war?.economy?.weariness;
+  if (!w || (w.value <= 0 && !w.recovery)) return null;
+  const pts = (v: number) => Math.round(Math.abs(v) * 100);
+  const tone = w.value >= WEARINESS.growthFrom ? 'bad' : w.value >= 0.25 ? 'warn' : '';
+  const days = w.recovery ? Math.max(1, Math.ceil((w.recovery.until - now) / (TICKS_PER_HOUR * 24))) : 0;
+  return (
+    <>
+      <p class="war-row" data-testid="dip-weariness">
+        <span>
+          War weariness <strong data-testid="dip-weariness-value">{pts(w.value)} %</strong>
+        </span>
+        <span class={`war-bar ${tone}`} title="How tired of war the city’s people are">
+          <span style={{ width: `${Math.min(100, w.value * 100)}%` }} />
+        </span>
+      </p>
+      <p class="muted" data-testid="dip-weariness-note">
+        {w.value > 0 && <>Approval {w.cheer < 0 ? `−${pts(w.cheer)}` : '−0'} points. </>}
+        {w.growth < 0 && <>Homes are tired of war and grow less happily. </>}
+        {w.perDay > 0
+          ? `Rising about ${(w.perDay * 100).toFixed(1)} a day while a war goes on.`
+          : w.perDay < 0
+            ? `Fading about ${(-w.perDay * 100).toFixed(1)} a day in peace.`
+            : ''}
+        {w.recovery && (
+          <span class="dip-good" data-testid="dip-recovery">
+            {' '}
+            Peace: approval +{pts(w.recovery.cheer)} points, easing away over {days} day
+            {days === 1 ? '' : 's'}.
+          </span>
+        )}
+      </p>
+    </>
   );
 }
 
@@ -152,6 +194,7 @@ export function Diplomacy() {
             <span style={{ width: `${d.reputation}%` }} />
           </span>
         </p>
+        <Weariness now={now} />
         {d.vassal && (
           <p class="dip-vassal" data-testid="dip-vassal">
             The city is {d.vassal.name}’s vassal: a fifth of its taxes go to {d.vassal.name}, and it may go to

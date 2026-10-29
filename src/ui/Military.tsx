@@ -406,6 +406,7 @@ export function WarRoomPanel() {
         <h2>War room</h2>
         <span class="war-head muted" data-testid="war-summary">
           {formatNumber(w.units)} unit{w.units === 1 ? '' : 's'} · readiness {pct(w.readiness)}
+          {(w.economy?.weariness.value ?? 0) >= 0.01 && <> · weary {pct(w.economy!.weariness.value)}</>}
         </span>
         <button class="btn icon" aria-label="Close" onClick={() => game.openPanel('war')}>
           ×
@@ -425,7 +426,8 @@ export function WarRoomPanel() {
           </button>
         ))}
       </nav>
-      <div class="tab-body advisors-list" data-testid={`war-${tab}`}>
+      {/* Keyed by tab: each tab opens at its top, not where the last one was scrolled to. */}
+      <div key={tab} class="tab-body advisors-list" data-testid={`war-${tab}`}>
         {tab === 'forces' && <Forces w={w} />}
         {tab === 'economy' && <Economy w={w} />}
         {tab === 'readiness' && <Readiness w={w} />}

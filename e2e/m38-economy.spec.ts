@@ -106,6 +106,12 @@ test('M38: stakes, an ally’s loan, munitions and a unit, a war that freezes a 
   expect(stakes.find((n) => n.id === a!.id)!.dividend).toBeGreaterThan(0);
   await page.getByTestId(`trade-${b!.id}`).scrollIntoViewIfNeeded();
   await shot(page, 'm38-trade-frozen');
+  // The war wears on the city: the Diplomacy tab says how much, and what it costs.
+  await page.getByTestId('war-tab-diplomacy').click();
+  await expect(page.getByTestId('dip-weariness')).toBeVisible();
+  await expect(page.getByTestId('dip-weariness-note')).toContainText('Rising about');
+  await shot(page, 'm38-weariness');
+  await page.getByTestId('war-tab-trade').click();
 
   // --- A sanction on C: the city's stake there freezes too, and C minds. ---
   await page.getByTestId(`trade-buy-${c!.id}`).click();

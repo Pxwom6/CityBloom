@@ -53,6 +53,7 @@ import { SANCTION, WAR_AID } from '../../data/warEconomy';
 import {
   aidEffect,
   citySanctions,
+  warDifficulty,
   warEconomySummary,
   type WarEconomy,
   type WarEconomySummary,
@@ -202,6 +203,8 @@ export function startWar(sim: Sim): void {
 export function markRivals(sim: Sim): void {
   const rng = Rng.fromSeed(`${sim.state.options.seed}:rivals`);
   const left = [...PERSONALITY_IDS];
+  // The difficulty's say in how large a force they start with (Normal 1).
+  const arming = warDifficulty(sim).arming;
   for (const n of sim.state.region.neighbours) {
     if (n.player || n.rival) continue;
     // Different characters while they last, so a city's rivals aren't three of a kind.
@@ -210,8 +213,8 @@ export function markRivals(sim: Sim): void {
     const k = n.population / 1000;
     n.rival = {
       personality: pick,
-      forces: Math.round(k * p.forces * rng.range(0.5, 0.8) * 10) / 10,
-      defences: Math.round(k * p.defences * rng.range(0.5, 0.8) * 10) / 10,
+      forces: Math.round(k * p.forces * rng.range(0.5, 0.8) * arming * 10) / 10,
+      defences: Math.round(k * p.defences * rng.range(0.5, 0.8) * arming * 10) / 10,
       relation: Math.round(p.relation + rng.range(-10, 10)),
     };
   }
@@ -255,6 +258,8 @@ export function rivalsMonth(sim: Sim): void {
   const w = sim.state.war;
   if (!w) return;
   const rng = new Rng(w.rng);
+  // The difficulty's say in the strength they keep (M38; Normal 1): Easy 0.7, Hard 1.3.
+  const arming = warDifficulty(sim).arming;
   for (const n of sim.state.region.neighbours) {
     const r = n.rival;
     if (!r || n.player) continue;
@@ -272,9 +277,10 @@ export function rivalsMonth(sim: Sim): void {
     // Its depot sabotaged by the city's spies (M37): it arms no more for a while.
     if (!depotSabotaged(sim, n)) {
       const forcesStep = (aid ? step * (1 + (WAR_AID.armsFactor - 1) * aid) : step) * slow;
-      r.forces = Math.round((r.forces + (k * p.forces * allowed - r.forces) * forcesStep) * 10) / 10;
+      r.forces = Math.round((r.forces + (k * p.forces * allowed * arming - r.forces) * forcesStep) * 10) / 10;
     }
-    r.defences = Math.round((r.defences + (k * p.defences * keep - r.defences) * step * slow) * 10) / 10;
+    r.defences =
+      Math.round((r.defences + (k * p.defences * keep * arming - r.defences) * step * slow) * 10) / 10;
   }
   w.rng = rng.getState();
 }

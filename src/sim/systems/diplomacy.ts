@@ -39,7 +39,15 @@ import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
-import { aidEffect, endArmsDeals, forgetEconomy, sanctionsOnBreak, seizeStakes } from './warEconomy';
+import {
+  aggressionOf,
+  aidEffect,
+  endArmsDeals,
+  forgetEconomy,
+  sanctionsOnBreak,
+  seizeStakes,
+  warDifficulty,
+} from './warEconomy';
 import { peaceCame } from './weariness';
 import type { Outcome } from '../battle/types';
 
@@ -264,6 +272,14 @@ export function monthlyTaxes(sim: Sim): number {
   let t = 0;
   for (const [k, v] of Object.entries(lines)) if (k.startsWith('tax')) t += v;
   return Math.max(0, Math.round(t));
+}
+
+/**
+ * The tribute a computer neighbour asks of the city for `share` of its monthly taxes, to the hundred
+ * and at least $500; the difficulty scales it (M38: Easy 0.7, Hard 1.4, Normal 1).
+ */
+export function tributeDemand(sim: Sim, share: number): number {
+  return Math.max(500, Math.round((monthlyTaxes(sim) * share * warDifficulty(sim).terms) / 100) * 100);
 }
 
 /** Computer neighbours allied with this one. */
@@ -629,9 +645,8 @@ function imposedTerms(sim: Sim, n: Neighbour): Term[] {
   const s = sim.state;
   const r = n.rival!;
   const D = DIPLOMACY.defaults;
-  const taxes = monthlyTaxes(sim);
   const terms: Term[] = [{ k: 'peace' }];
-  const amount = Math.max(500, Math.round((taxes * D.tributeShare) / 100) * 100);
+  const amount = tributeDemand(sim, D.tributeShare);
   terms.push({ k: 'tribute', payer: 'us', amount, months: D.tributeMonths });
   if ((r.personality === 'aggressive' || r.personality === 'treacherous') && s.districts.size) {
     const taken = new Set(
@@ -1133,7 +1148,8 @@ export function helpers(sim: Sim): { ally: Neighbour; war: War }[] {
 /** How much a computer neighbour likes these terms (from its side; 0 or more, it would sign). */
 export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
   const r = n.rival!;
-  const p = PERSONALITY[r.personality];
+  // Its aggression, with the difficulty's added (Hard's neighbours want peace a little less).
+  const aggression = aggressionOf(sim, r.personality);
   const dp = DIPLOMATS[r.personality];
   const d = sim.state.war?.diplomacy;
   const war = warWith(sim, n.id);
@@ -1144,10 +1160,10 @@ export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
   for (const t of terms) {
     switch (t.k) {
       case 'peace':
-        v += (score / 2) * dp.peace + (1 - p.aggression) * 10 - 5;
+        v += (score / 2) * dp.peace + (1 - aggression) * 10 - 5;
         break;
       case 'ceasefire':
-        v += (score / 4) * dp.peace + (1 - p.aggression) * 6;
+        v += (score / 4) * dp.peace + (1 - aggression) * 6;
         break;
       case 'reparations':
         v += (t.payer === 'us' ? 1 : -1.5) * dp.money * worth(t.amount);
@@ -1159,13 +1175,13 @@ export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
         v += t.side === 'them' ? -15 * dp.pride : 10;
         break;
       case 'occupy':
-        v += t.side === 'them' ? -40 * dp.pride : 20 + 15 * p.aggression;
+        v += t.side === 'them' ? -40 * dp.pride : 20 + 15 * aggression;
         break;
       case 'release':
         v += t.side === 'them' ? 30 : -25 * dp.pride;
         break;
       case 'nonAggression':
-        v += r.relation / 5 + 10 * dp.pacts - 15 * p.aggression;
+        v += r.relation / 5 + 10 * dp.pacts - 15 * aggression;
         break;
       case 'alliance':
         v += r.relation >= 40 ? (r.relation - 40) / 2 + 10 * dp.allies : -60;
@@ -1220,7 +1236,7 @@ function counterTerms(sim: Sim, n: Neighbour, terms: Term[]): Term[] | null {
     if (worst >= 0) tries.push(terms.filter((_, k) => k !== worst));
   }
   if (!terms.some((t) => t.k === 'tribute') && warWith(sim, n.id)) {
-    const amount = Math.max(500, Math.round((monthlyTaxes(sim) * 0.1) / 100) * 100);
+    const amount = tributeDemand(sim, 0.1);
     tries.push([...terms, { k: 'tribute', payer: 'us', amount, months: 12 }]);
   }
   for (const t of tries) if (!termsRefusal(sim, n.id, t) && weigh(sim, n, t) >= 0) return t;
@@ -1486,7 +1502,6 @@ function computerMoves(sim: Sim): void {
     }
     if (war) {
       if (pending || s.tick < war.opens || war.capitulated) continue;
-      const ours = monthlyTaxes(sim);
       // A rising wants its freedom: winning, it offers peace with independence, and nothing less.
       if (r.vassal) {
         if (war.score <= -30 && rng.chance(0.4)) putToCity(sim, n, [{ k: 'peace' }, { k: 'independence' }]);
@@ -1500,7 +1515,7 @@ function computerMoves(sim: Sim): void {
           amount > 0 ? [{ k: 'peace' }, { k: 'reparations', payer: 'them', amount }] : [{ k: 'peace' }],
         );
       } else if (war.score <= -30 && rng.chance(0.4)) {
-        const amount = Math.max(500, Math.round((ours * 0.1) / 100) * 100);
+        const amount = tributeDemand(sim, 0.1);
         putToCity(sim, n, [{ k: 'peace' }, { k: 'tribute', payer: 'us', amount, months: 24 }]);
       } else if (war.score >= 15 && rng.chance(0.25)) putToCity(sim, n, [{ k: 'ceasefire', hours: 72 }]);
       continue;
@@ -1531,13 +1546,13 @@ function computerMoves(sim: Sim): void {
       continue;
     // A spy of the city's caught there within a day (M37): it declares at even strength, twice as likely.
     const caught = freshIncident(sim, n.id);
-    if (p.aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength)
-      continue;
+    const aggression = aggressionOf(sim, r.personality);
+    if (aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength) continue;
     const ended = w.diplomacy?.ended?.[n.id];
     if (ended !== undefined && s.tick - ended < DIPLOMACY.cooldownMonths * M) continue;
     const bound = bindingPacts(sim, n.id);
     if (bound.length && !(r.personality === 'treacherous' && rng.chance((1 - p.keepsPacts) * 0.3))) continue;
-    if (!rng.chance(p.aggression * 0.15 * (caught ? 2 : 1))) continue;
+    if (!rng.chance(aggression * 0.15 * (caught ? 2 : 1))) continue;
     if (bound.length) {
       const dd = dip(sim);
       dd.pacts = dd.pacts.filter((x) => !bound.includes(x));

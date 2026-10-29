@@ -20,7 +20,7 @@
  * (`warEconomyRates`).
  */
 import { annuity } from '../../data/economy';
-import { UNIT, type UnitDef } from '../../data/war';
+import { PERSONALITY, UNIT, type Personality, type UnitDef } from '../../data/war';
 import { ARMS, INVEST, LENDING, SANCTION, WAR_AID, WAR_DIFFICULTY, lendingRate } from '../../data/warEconomy';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
@@ -153,6 +153,11 @@ export function economy(sim: Sim): WarEconomy {
 /** What the difficulty does to this city's war (`WAR_DIFFICULTY`; Normal changes nothing). */
 export function warDifficulty(sim: Sim): (typeof WAR_DIFFICULTY)['normal'] {
   return WAR_DIFFICULTY[sim.state.options.difficulty] ?? WAR_DIFFICULTY.normal;
+}
+
+/** How readily a character goes to war, raids and wants no peace: its own figure, and the difficulty's added (Hard +0.1). */
+export function aggressionOf(sim: Sim, personality: Personality): number {
+  return PERSONALITY[personality].aggression + warDifficulty(sim).aggression;
 }
 
 /** A computer neighbour by id (friends' cities are not invested in until M39). */

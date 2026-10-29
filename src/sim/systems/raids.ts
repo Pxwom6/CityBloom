@@ -18,7 +18,7 @@ import {
   type BattleTarget,
   type Stance,
 } from '../../data/battle';
-import { PERSONALITY, UNIT, type UnitKind } from '../../data/war';
+import { UNIT, type UnitKind } from '../../data/war';
 import { Battle } from '../battle/battle';
 import { checkBattleInput } from '../battle/check';
 import { battleLayout, objectiveSpots, strengthFactors, structureAsSeen } from '../battle/layout';
@@ -51,6 +51,7 @@ import { INTEL } from '../../data/intel';
 import { RESEARCH } from '../../data/research';
 import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
 import { wearinessRaid } from './weariness';
+import { aggressionOf, warDifficulty } from './warEconomy';
 import { DIPLOMACY } from '../../data/diplomacy';
 import { CIVIC } from '../../data/civic';
 import type { Neighbour, RivalNeighbour } from './region';
@@ -233,6 +234,28 @@ export function raidsTick(sim: Sim): void {
   }
 }
 
+/**
+ * A neighbour's chance of setting off to raid the city in an hour: its aggression (with the
+ * difficulty's, M38) times the ratio of its forces to the city's strength (capped), cooler or hotter by
+ * its feelings, quadrupled when the city struck it lately, scaled by the stance (a war's) and by the
+ * difficulty's raids lever. At Normal the levers are 0 and 1 and this is the M35 formula exactly.
+ */
+export function raidChance(
+  sim: Sim,
+  r: RivalNeighbour,
+  strength: number,
+  answering: boolean,
+  stanceFactor: number,
+): number {
+  let chance =
+    (aggressionOf(sim, r.personality) * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
+  if (r.relation <= RAIDS.hostile) chance *= 2;
+  else if (r.relation >= RAIDS.friendly) chance *= 0.25;
+  if (answering) chance *= 4;
+  chance *= stanceFactor;
+  return chance * warDifficulty(sim).raids;
+}
+
 /** Each hour, in the war hour: the neighbours decide whether to raid. */
 export function raidsHour(sim: Sim): void {
   const w = sim.state.war;
@@ -249,7 +272,10 @@ export function raidsHour(sim: Sim): void {
   // In a declared war (M36) raids come closer together, and a city at war is raided however young.
   const atWar = anyWarOpen(sim);
   const last = w.raided?.any ?? -Infinity;
-  if (s.tick - last < (atWar ? DIPLOMACY.war.gapAnyMonths : RAIDS.gapAny) * TICKS_PER_MONTH) return;
+  // The difficulty's raids lever (M38) stretches or shortens the waits too: in a war the gaps are
+  // what bind, so a chance alone would hardly show (Normal divides by 1).
+  const often = warDifficulty(sim).raids;
+  if (s.tick - last < ((atWar ? DIPLOMACY.war.gapAnyMonths : RAIDS.gapAny) * TICKS_PER_MONTH) / often) return;
   if (!threat.open && !threat.answering.length && !atWar) return;
   const rng = new Rng(w.rng);
   const strength = Math.max(1, cityStrength(sim));
@@ -260,17 +286,11 @@ export function raidsHour(sim: Sim): void {
     if (!stance) continue;
     const answering = threat.answering.includes(n.id);
     if (!threat.open && !answering && !stance.war) continue;
-    if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < stance.gapEach * TICKS_PER_MONTH) continue;
+    if (s.tick - (w.raided?.by[n.id] ?? -Infinity) < (stance.gapEach * TICKS_PER_MONTH) / often) continue;
     if (r.forces < 1) continue;
     // Blacked out by the city's tower, or its power sabotaged by the city's spies (M37): no raids meanwhile.
     if (rivalBlackedOut(sim, n) || powerSabotaged(sim, n)) continue;
-    const p = PERSONALITY[r.personality];
-    let chance = (p.aggression * Math.min(RAIDS.ratioCap, r.forces / strength)) / RAIDS.perHour;
-    if (r.relation <= RAIDS.hostile) chance *= 2;
-    else if (r.relation >= RAIDS.friendly) chance *= 0.25;
-    if (answering) chance *= 4;
-    chance *= stance.factor;
-    if (!rng.chance(chance)) continue;
+    if (!rng.chance(raidChance(sim, r, strength, answering, stance.factor))) continue;
     w.rng = rng.getState();
     // In a total war a neighbour that clearly outguns the city goes for its seat of power.
     planRaid(sim, n, r, rng, undefined, stance.seat && r.forces >= 1.2 * strength);

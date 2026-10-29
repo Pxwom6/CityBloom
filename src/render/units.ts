@@ -576,8 +576,8 @@ export class UnitRenderer {
     this.shown.length = 0;
     const units = w.forces?.units;
     const battle = w.battle;
-    if (!units?.length && !battle) {
-      // War off, or no units yet: nothing drawn (and nothing made until there is).
+    if (!units?.length && !w.forces?.trials?.length && !battle) {
+      // War off, or no units (or prototypes on trial) yet: nothing drawn, nothing made until there is.
       for (const k of this.kinds.values()) for (const mesh of [k.near, k.far]) if (mesh) mesh.count = 0;
       this.dots?.geometry.setDrawRange(0, 0);
       this.counts = { near: 0, far: 0, dots: 0 };

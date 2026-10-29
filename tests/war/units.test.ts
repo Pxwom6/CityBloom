@@ -1,5 +1,5 @@
 import { ShaderLib, Vector3, type Material, type WebGLProgramParametersWithUniforms } from 'three';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ClientWorld } from '../../src/client/world';
 import { QUALITY_PARAMS } from '../../src/client/settings';
 import { CIVIC } from '../../src/data/civic';
@@ -10,6 +10,7 @@ import { buildMilitaryModel, MILITARY_SITES } from '../../src/render/assets/mili
 import { ModelBuilder, modelRng } from '../../src/render/assets/builder';
 import { unitDepthMaterial, unitGeometry, unitMaterial, UnitRenderer } from '../../src/render/units';
 import { PoseCache, Site, trialId, unitPoses, type UnitPose } from '../../src/render/unitPoses';
+import { handmade } from '../../src/render/assets/handmade';
 import { newSim } from '../helpers';
 import { kindsAt, unitTown } from './unitTown';
 
@@ -373,6 +374,37 @@ describe('unit poses (M34)', () => {
     const boat = trialAt('gunboat', 100);
     expect(boat.y).toBe(0);
     expect(world.heightAt(boat.x, boat.z)).toBeLessThan(0);
+    // With the hand-made model, round its own ring: never in the middle, where its hangar stands
+    // (the generated look's loop came within a few metres of it).
+    const middle = (from: number) => {
+      let near = Infinity;
+      for (let t = 0; t < 600; t += 7) {
+        const p = trialAt('heavytank', t);
+        near = Math.min(near, Math.hypot(p.x - c.x, p.z - c.z));
+      }
+      return near + from;
+    };
+    expect(middle(0)).toBeLessThan(15);
+    const spy = vi.spyOn(handmade, 'civic').mockReturnValue({} as never);
+    try {
+      expect(middle(0)).toBeGreaterThan(18);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('draws a prototype on trial though no unit has been trained yet', () => {
+    const ground = bases.vehicledepot!;
+    const was = world.forces!;
+    world.forces = { ...was, units: [], trials: [{ ground, kind: 'heavytank', done: 3, hours: 36 }] };
+    try {
+      const r = new UnitRenderer(world);
+      const c = world.civics.get(ground)!;
+      r.update(100, new Vector3(c.x, c.y + 60, c.z + 60), 0);
+      expect(r.shown.map((p) => p.id)).toEqual([trialId(ground)]);
+    } finally {
+      world.forces = was;
+    }
   });
 
   it('fewer units leave their slots at a lower quality', () => {

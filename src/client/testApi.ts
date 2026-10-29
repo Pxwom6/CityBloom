@@ -98,6 +98,8 @@ export interface TestApi {
   getForces(): {
     units: { id: number; kind: string; base: number; hp: number }[];
     orders: { id: number; kind: string; base: number; done: number; hours: number; rate: number }[];
+    /** Prototypes on trial at proving grounds (M37). */
+    trials: { ground: number; kind: string; done: number; hours: number }[];
   } | null;
   /**
    * A battle in the city (M35): who's fighting, units on screen and wrecks, shots and puffs drawn
@@ -692,7 +694,13 @@ export function installTestApi(game: Game): TestApi {
     },
     getForces: () => {
       const f = game.world.forces;
-      return f ? { units: f.units.map((u) => ({ ...u })), orders: f.orders.map((o) => ({ ...o })) } : null;
+      return f
+        ? {
+            units: f.units.map((u) => ({ ...u })),
+            orders: f.orders.map((o) => ({ ...o })),
+            trials: (f.trials ?? []).map((t) => ({ ...t })),
+          }
+        : null;
     },
     getBattle: () => {
       const f = game.world.battle;

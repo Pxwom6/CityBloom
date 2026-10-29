@@ -3,6 +3,7 @@ import { CIVIC } from '../data/civic';
 import { ROAD_TYPES } from '../data/roads';
 import { UNIT, type UnitKind } from '../data/war';
 import type { CivicData } from '../sim/protocol';
+import { handmade } from './assets/handmade';
 import { buildingYaw } from './buildings';
 
 /**
@@ -850,8 +851,13 @@ function navalPoses(
 
 // ------------------------------------------------------------------ trials (M37)
 
-/** The proving ground's test track: the generated look's loop (the hand-made one follows its prompt). */
+/** The proving ground's test track: the generated look's loop. */
 const TRACK = { cx: -4, cz: 2, ax: 20, az: 13 };
+/**
+ * The hand-made model's track (`provingground.glb`'s `track`: a 6 m ring with its outer edge at
+ * x ±30, z ±22, the splash pool on its west straight, the hangar inside): its centreline.
+ */
+const HAND_TRACK = { x0: -27, x1: 27, z0: -19, z1: 19, r: 6 };
 
 /** A prototype on trial's stand-in id: never a real unit's (those are positive). */
 export const trialId = (ground: number): number => -(900_000 + ground);
@@ -887,9 +893,16 @@ function trialPose(
   if (def.domain === 'land') {
     // The robot strides; vehicles run the loop at a trial's pace.
     const v = def.super ? 0.35 : t.kind === 'infantry' ? 0.5 : 1.3;
+    // The hand-made model's ring once the war models are in, else the generated look's loop.
+    const hand = !!handmade.civic(c.def, c.variant ?? 0);
     const loop = cache.loop(
-      `${key}|track|${v}`,
-      () => new Loop(site, ellipse(TRACK.cx, TRACK.cz, TRACK.ax, TRACK.az, 32), v),
+      `${key}|track|${v}|${hand ? 'hand' : 'made'}`,
+      () =>
+        new Loop(
+          site,
+          hand ? roundedRect(HAND_TRACK, 2) : ellipse(TRACK.cx, TRACK.cz, TRACK.ax, TRACK.az, 32),
+          v,
+        ),
     );
     const p = loop.at(v * tick + idHash(c.id, 21) * loop.route.length);
     const pose = moving(u, p, 'trial');

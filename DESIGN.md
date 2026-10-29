@@ -1421,6 +1421,64 @@ a city first queues research, so peace and M34–M36 war cities are unchanged. P
   (`src/ui/Research.tsx`, `Intel.tsx`), a superweapons strip on Forces, and the region map shows
   superweapons on the move, the gate's arc, revealed and blacked-out towns.
 
+### 3.32 Investments and the war economy (phase 5, M38)
+
+`WarState.economy` (`src/sim/systems/warEconomy.ts`, numbers in `src/data/warEconomy.ts`) appears
+the first time the city buys a stake, lends, funds, trades arms, sanctions, grows weary or is made an
+offer, so peace and M34–M37 war cities are unchanged; save v31. Plan: `docs/plans/M38-design.md`;
+calls and their reasons: DECISIONS "M38". Computer neighbours only: friends trade through M39's
+treaties. Every rate is a monthly ledger line accrued by the hour (`warEconomyRates`, `offerRates`).
+
+- **Stakes** (`stakes` by neighbour): a town's industry is worth its population × `INVEST.perResident`
+  by kind and earns 1.2 % of that a month, +5 % a tech step, −25 % while blacked out or its power is
+  sabotaged (`industryValue`, `industryEarnings`). The city buys 5 % at a time up to 25 % at the
+  value plus a premium of 0–20 % by relation (−25 to 60), from any neighbour not hostile, at war with
+  it or sanctioning it, and sells back at 90 % (`buyStake`, `sellStake`). Dividends (ledger
+  `dividends`) stop while the city fights the town or sanctions stand between them (`frozenReason`),
+  and resume at peace. A stake is **seized** when the city capitulates to the town or falls to it,
+  or when a treacherous town declares war (`INVEST.seizes`); one in a town the city conquers is kept.
+- **Loans to allies** (`lendAlly`; an alliance or a defensive pact): $50k, $150k or $400k, one per
+  ally, repaid by the hour over 24 months at 4–9 % by the ally's care for money (`lendingRate`;
+  ledger `allyInterest`, `allyRepaid`); frozen like stakes, written off if the pact ends or the ally
+  falls to the city (`loanVoid`).
+- **War aid** (`fundAlly`): an ally fighting at the city's side can be paid $10k–$100k a month
+  (ledger `warAid`); at full funding it closes the gap to its character's forces twice as fast and
+  its daily share of the war score counts double (`aidEffect`). Stopping is free.
+- **Arms trade** (kept apart from M23's deals): an ally buys munitions from the war stores at $38 a
+  crate in deals of 10-crate steps up to its demand (crates per 1,000 residents by character, at
+  most 300 a month), delivered by the hour (`setArmsDeal`, `armsHour`; ledger `armsSales`), and
+  units outright at 60 % of their price by health (`sellUnit`, ledger `unitsSold`: the unit leaves,
+  the ally's forces rise by its strength). An embargo or a sanction ends the deals; M36's embargo is
+  now also checked at each hour's delivery (`armsVoid`).
+- **Sanctions both ways** (`sanctioned`, `sanctionedBy`): the city's sanction (`setSanction`) ends its
+  deals with the town, freezes its stake and loan there, slows the town's growth (−0.5 % a month) and
+  arming (×0.8), and costs relation 15. Computer neighbours sanction the city (`sanctionsMonth`,
+  `sanctionsOnBreak`) when it breaks a pact (honourable and cautious ones, for 30 days), while it
+  fights their ally (until peace), or while its reputation is below 25; a cause that has passed
+  leaves it 30 more days. A town imposes one only on a city it does business with, but refuses new
+  dealings while the cause holds.
+- **War weariness** (`src/sim/systems/weariness.ts`; `weariness` 0–1): +0.0005 an hour while a war is
+  open with the city (`fightingWith`: a ceasefire or a capitulation pauses it), ×1.5 in a total war,
+  ×1.5 at a score of −15 or less, +0.02 for each raid that reaches the city; −0.0015 an hour in
+  peace. It costs approval through the city-wide cheer (−0.12 at full) and, past half, growth
+  through the home happiness factor "Tired of war" (−0.05 at full). A war's end (peace, conquest,
+  terms after a capitulation) with the city at least 0.1 weary and fighting no other war starts ten
+  days of +0.05 cheer easing away (`recoveryUntil`); fighting again or a raid ends it.
+- **Offers** (`src/sim/systems/offers.ts`; `offers`, `investors`, `debts`): at each month's start at
+  most one neighbour makes one, on dice of their own (`${seed}:econ:${month}`), each candidate
+  rolling 0.3 × its character's `trade` a kind: an ally to buy munitions (an arms deal), a
+  mercantile or cautious town a lump sum for 10–20 % of the city's industrial taxes for 24 months
+  (never while the city is at war; ledger `investment`, then `investorShare` by the hour; 30 % sold
+  at most), or a loan to a city short of cash (under three months' spending and $50k) at the
+  lender's rate (`offerRate`: mercantile cheapest; ledger `lenderLoan`, `lenderInterest`,
+  `lenderRepaid`). Open three days, answered with `answerOffer`; ids come from the economy's own
+  counter, so a lapsing offer never moves a battle's seed.
+- **UI**: the war room's Trade tab (`src/ui/Trade.tsx`): the monthly lines, then offers, investors and
+  debts, then a card per neighbour (its industry, the stake, loan, aid, munitions and sanction, each
+  with the sim's reason when it can't be used), and a unit sale. Weariness shows in the Diplomacy
+  tab (bar, cost, trend, the recovery) and the war room's head; tips for trade, weariness and
+  sanctions.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

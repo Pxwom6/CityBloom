@@ -243,6 +243,37 @@ export const TIPS: Tip[] = [
       'one of theirs caught here lets you declare war on them without losing face for a few days.',
     when: (g) => (g.world.stats.war?.intel?.results ?? []).some((r) => /caught/.test(r.text)),
   },
+  // Investments and the war economy (M38).
+  {
+    id: 'trade',
+    text:
+      'Money to spare? The war room’s Trade tab buys stakes in a neighbour’s industry, paying a dividend ' +
+      'every month (frozen while you fight it). Allies borrow from you, buy munitions from your stores and ' +
+      'units outright, and an ally fighting at your side can be paid to fight harder.',
+    when: (g) => {
+      const e = g.world.stats.war?.economy;
+      return (
+        !!e &&
+        !!g.world.stats.war?.hq &&
+        (g.world.stats.treasury > 250_000 || e.neighbours.some((n) => n.allied))
+      );
+    },
+  },
+  {
+    id: 'weariness',
+    text:
+      'A long war wears your people down: war weariness costs approval, and past half, homes grow less ' +
+      'happily. Losing a war or being raided tires them faster. Peace lets it fade, and a war ended well ' +
+      'brings a few days of good cheer (the Diplomacy tab shows it).',
+    when: (g) => (g.world.stats.war?.economy?.weariness.value ?? 0) >= 0.25,
+  },
+  {
+    id: 'sanctioned',
+    text:
+      'A neighbour sanctions the city: no trade with it, and your stake there is frozen until it lifts them. ' +
+      'Broken pacts, a war on its ally or a poor reputation bring sanctions; the Trade tab says why.',
+    when: (g) => (g.world.stats.war?.economy?.neighbours ?? []).some((n) => n.sanctionedBy !== null),
+  },
   {
     id: 'noPower',
     text: 'Some buildings have no power (the lightning icon). Build a power plant beside a connected road.',

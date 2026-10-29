@@ -15,6 +15,7 @@ import { Diplomacy } from './Diplomacy';
 import { Research, warHours } from './Research';
 import { TIERS, type TierKey } from '../data/research';
 import { Intelligence } from './Intel';
+import { Trade } from './Trade';
 
 /** Training time in the game's own terms: hours, or months for longer (a month is a day and night). */
 export function trainingTime(hours: number): string {
@@ -370,7 +371,16 @@ function NewBuildings({ civicId }: { civicId: number }) {
 }
 
 type Tab =
-  'forces' | 'send' | 'map' | 'research' | 'intel' | 'diplomacy' | 'economy' | 'readiness' | 'reports';
+  | 'forces'
+  | 'send'
+  | 'map'
+  | 'research'
+  | 'intel'
+  | 'diplomacy'
+  | 'trade'
+  | 'economy'
+  | 'readiness'
+  | 'reports';
 const TABS: { id: Tab; name: string }[] = [
   { id: 'forces', name: 'Forces' },
   { id: 'send', name: 'Send' },
@@ -378,6 +388,7 @@ const TABS: { id: Tab; name: string }[] = [
   { id: 'research', name: 'Research' },
   { id: 'intel', name: 'Intelligence' },
   { id: 'diplomacy', name: 'Diplomacy' },
+  { id: 'trade', name: 'Trade' },
   { id: 'economy', name: 'Upkeep' },
   { id: 'readiness', name: 'Readiness' },
   { id: 'reports', name: 'Reports' },
@@ -424,6 +435,7 @@ export function WarRoomPanel() {
         {tab === 'diplomacy' && <Diplomacy />}
         {tab === 'research' && <Research />}
         {tab === 'intel' && <Intelligence />}
+        {tab === 'trade' && <Trade />}
       </div>
     </aside>
   );

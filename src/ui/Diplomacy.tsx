@@ -25,7 +25,7 @@ import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 type Neighbour = DiplomacySummary['neighbours'][number];
 
 const hoursLeft = (until: number, now: number) => Math.max(0, Math.ceil((until - now) / TICKS_PER_HOUR));
-const relationWord = (r: number) =>
+export const relationWord = (r: number) =>
   r >= 50 ? 'friendly' : r >= 20 ? 'warm' : r > -20 ? 'wary' : r > -50 ? 'cold' : 'hostile';
 
 /** A score from −100 to 100 as a bar that fills left (losing) or right (winning). */

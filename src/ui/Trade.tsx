@@ -11,6 +11,7 @@ import { PERSONALITY, type Personality } from '../data/war';
 import type { Command } from '../sim/commands';
 import type { WarEconomySummary } from '../sim/systems/warEconomy';
 import { relationWord } from './Diplomacy';
+import { TICKS_PER_MONTH } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 
 type Row = WarEconomySummary['neighbours'][number];
@@ -82,6 +83,21 @@ export function Trade() {
         <dd>
           <strong data-testid="trade-net">{perMonth(income + r.warAid)}</strong>
         </dd>
+        {e.offers.investors.length > 0 && (
+          <>
+            <dt>Investors’ share</dt>
+            <dd data-testid="trade-investors-share">
+              {perMonth(-e.offers.investors.reduce((a, i) => a + i.perMonth, 0))} ({e.offers.sold} % of
+              industrial taxes)
+            </dd>
+          </>
+        )}
+        {e.offers.debts.length > 0 && (
+          <>
+            <dt>Owed to neighbours</dt>
+            <dd data-testid="trade-debts-owed">{formatMoney(e.offers.owed)}</dd>
+          </>
+        )}
         <dt>Stakes worth</dt>
         <dd data-testid="trade-worth">{formatMoney(e.worth)}</dd>
         <dt>Allies owe</dt>
@@ -96,6 +112,7 @@ export function Trade() {
         dividend; a war or sanctions between you freeze it. Allies borrow, buy munitions and units, and an
         ally fighting at your side can be paid to fight harder.
       </p>
+      <Offers o={e.offers} run={run} feedback={feedback} />
       {e.neighbours.length === 0 && (
         <p data-testid="trade-none">The city has no computer neighbours to trade with.</p>
       )}
@@ -169,6 +186,104 @@ export function Trade() {
         {feedback('units')}
       </section>
     </div>
+  );
+}
+
+/** Days (game months) left until a tick, at least 1. */
+const daysTo = (tick: number, now: number) => Math.max(1, Math.ceil((tick - now) / TICKS_PER_MONTH));
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+
+/**
+ * Computer neighbours' offers to the city (M38): to buy munitions, to invest in it for a share of its
+ * industrial taxes, or to lend it money. Each is open a few days; the sim says why one can't be taken.
+ * Below them, what the city has taken: investors' shares and loans from neighbours.
+ */
+function Offers({
+  o,
+  run,
+  feedback,
+}: {
+  o: WarEconomySummary['offers'];
+  run: (cmd: Command, at: string, done: string) => Promise<void>;
+  feedback: (at: string) => JSX.Element | null;
+}) {
+  const game = useGameUpdates(400);
+  const now = game.world.displayTick;
+  if (!o.offers.length && !o.investors.length && !o.debts.length) return null;
+  return (
+    <>
+      {o.offers.length > 0 && (
+        <section data-testid="trade-offers">
+          <h4>Offers</h4>
+          {o.offers.map((x) => (
+            <div key={x.id} class="dip-proposal" data-testid={`offer-${x.id}`}>
+              <p>{x.text}.</p>
+              <p class="muted">Open {days(daysTo(x.expires, now))} more.</p>
+              <div class="dip-actions">
+                <button
+                  class="btn primary"
+                  data-testid={`offer-accept-${x.id}`}
+                  disabled={!!x.why}
+                  title={x.why ?? undefined}
+                  onClick={() =>
+                    void run(
+                      { type: 'answerOffer', offer: x.id, accept: true },
+                      `offer${x.id}`,
+                      `${x.name}’s offer taken`,
+                    )
+                  }
+                >
+                  Accept
+                </button>
+                <button
+                  class="btn"
+                  data-testid={`offer-decline-${x.id}`}
+                  onClick={() =>
+                    void run(
+                      { type: 'answerOffer', offer: x.id, accept: false },
+                      `offer${x.id}`,
+                      `${x.name}’s offer turned down`,
+                    )
+                  }
+                >
+                  Turn down
+                </button>
+              </div>
+              <Why text={x.why} id={`offer-why-${x.id}`} />
+              {feedback(`offer${x.id}`)}
+            </div>
+          ))}
+        </section>
+      )}
+      {o.investors.length > 0 && (
+        <section data-testid="trade-investors">
+          <h4>Investors in the city</h4>
+          {o.investors.map((i) => (
+            <p key={i.id} class="war-row" data-testid={`investor-${i.id}`}>
+              <span>{i.name}</span>
+              <span class="muted">
+                paid {formatMoney(i.amount)} for {i.share} % of industrial taxes: {formatMoney(i.perMonth)} a
+                month now, for {days(daysTo(i.until, now))} more
+              </span>
+            </p>
+          ))}
+        </section>
+      )}
+      {o.debts.length > 0 && (
+        <section data-testid="trade-debts">
+          <h4>Loans from neighbours</h4>
+          {o.debts.map((d) => (
+            <p key={d.id} class="war-row" data-testid={`debt-${d.id}`}>
+              <span>{d.name}</span>
+              <span class="muted">
+                {formatMoney(d.balance)} of {formatMoney(d.principal)} owed at {pct(d.annualRate)}:{' '}
+                {formatMoney(d.payment)} a month, {d.monthsLeft} months left
+              </span>
+            </p>
+          ))}
+        </section>
+      )}
+    </>
   );
 }
 

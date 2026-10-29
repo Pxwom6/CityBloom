@@ -74,7 +74,18 @@ test('M38: stakes, an ally’s loan, munitions and a unit, a war that freezes a 
   await page.getByTestId(`trade-lend-amount-${a!.id}`).selectOption('150000');
   await page.getByTestId(`trade-lend-${a!.id}`).click();
   await expect(page.getByTestId(`trade-loan-${a!.id}`)).toContainText('Owes $150,000');
+  // The ally offers to buy munitions: the offer is taken in the Trade tab, then the deal cut to 10 crates.
+  await page.evaluate(
+    (id) => window.__game!.dispatch({ type: 'cheat', cheat: 'offer', neighbour: id, offer: 'arms' }),
+    a!.id,
+  );
+  await expect(page.getByTestId('trade-offers')).toContainText(`${a!.name} offers to buy`);
+  await shot(page, 'm38-trade-offer');
+  await page.locator('[data-testid^="offer-accept-"]').first().click();
+  await expect(page.getByTestId('trade-offers')).toHaveCount(0);
+  await expect(page.getByTestId(`trade-arms-${a!.id}`)).not.toHaveValue('0');
   await page.getByTestId(`trade-arms-${a!.id}`).selectOption('10');
+  await expect(page.getByTestId(`trade-arms-${a!.id}`)).toHaveValue('10');
   await expect(page.getByTestId(`trade-arms-sold-${a!.id}`)).toBeVisible();
   await page.evaluate(() => window.__game!.advance(60 * 12));
   await expect

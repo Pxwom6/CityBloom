@@ -52,7 +52,9 @@ function Weariness({ now }: { now: number }) {
   const w = game.world.stats.war?.economy?.weariness;
   if (!w || (w.value <= 0 && !w.recovery)) return null;
   const pts = (v: number) => Math.round(Math.abs(v) * 100);
-  const tone = w.value >= WEARINESS.growthFrom ? 'bad' : w.value >= 0.25 ? 'warn' : '';
+  /** Approval points, to a tenth below one. */
+  const points = (v: number) => (Math.abs(v) < 0.01 ? (Math.abs(v) * 100).toFixed(1) : String(pts(v)));
+  const tone = w.value >= WEARINESS.growthFrom ? 'bad' : 'warn';
   const days = w.recovery ? Math.max(1, Math.ceil((w.recovery.until - now) / (TICKS_PER_HOUR * 24))) : 0;
   return (
     <>
@@ -65,7 +67,7 @@ function Weariness({ now }: { now: number }) {
         </span>
       </p>
       <p class="muted" data-testid="dip-weariness-note">
-        {w.value > 0 && <>Approval {w.cheer < 0 ? `−${pts(w.cheer)}` : '−0'} points. </>}
+        {w.cheer < 0 && <>Approval −{points(w.cheer)} points. </>}
         {w.growth < 0 && <>Homes are tired of war and grow less happily. </>}
         {w.perDay > 0
           ? `Rising about ${(w.perDay * 100).toFixed(1)} a day while a war goes on.`
@@ -75,7 +77,7 @@ function Weariness({ now }: { now: number }) {
         {w.recovery && (
           <span class="dip-good" data-testid="dip-recovery">
             {' '}
-            Peace: approval +{pts(w.recovery.cheer)} points, easing away over {days} day
+            Peace: approval +{points(w.recovery.cheer)} points, easing away over {days} day
             {days === 1 ? '' : 's'}.
           </span>
         )}

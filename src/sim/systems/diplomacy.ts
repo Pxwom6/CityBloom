@@ -39,7 +39,7 @@ import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
-import { aidEffect, forgetEconomy, seizeStakes } from './warEconomy';
+import { aidEffect, endArmsDeals, forgetEconomy, seizeStakes } from './warEconomy';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -821,6 +821,7 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
       case 'embargo':
         pact(t);
         s.region.deals = s.region.deals.filter((x) => x.neighbour !== n.id);
+        endArmsDeals(sim, n, 'an embargo is signed');
         break;
       case 'trade':
         d.pacts = d.pacts.filter((p) => !(p.with === n.id && p.term.k === 'embargo'));

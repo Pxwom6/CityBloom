@@ -320,8 +320,8 @@ export function runDeterminism(
 
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
   // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
-  // aid for the war it fights at the city's side, a stake frozen by that war, and a capitulation
-  // that seizes one.
+  // munitions and a tank sold to it, aid for the war it fights at the city's side, a stake frozen by
+  // that war, and a capitulation that seizes one.
   const economy: string[] = [];
   const bank = newTown(false, true);
   const eco = (cmd: Command) => note(cmd, bank.dispatch(cmd));
@@ -351,6 +351,13 @@ export function runDeterminism(
   const treaty = bank.state.war!.diplomacy?.proposals.find((p) => p.from === 'them' && p.with === partner.id);
   if (treaty) eco({ type: 'answerProposal', proposal: treaty.id, accept: true });
   eco({ type: 'lendAlly', neighbour: partner.id, amount: 150_000 });
+  // Arms trade: munitions in the stores sold to the ally by the month (any town takes ten crates), and a
+  // tank (planted: the town has no base) sold to it outright.
+  bank.state.war!.stock.munitions = 300;
+  eco({ type: 'setArmsDeal', neighbour: partner.id, crates: 10 });
+  const tank = bank.state.nextId++;
+  bank.state.war!.units.set(tank, { id: tank, kind: 'tank', base: 0, hp: 1, born: bank.state.tick });
+  eco({ type: 'sellUnit', unit: tank, neighbour: partner.id });
   bank.advance(TICKS_PER_MONTH);
   economy.push(bank.hash());
   // The war with the enemy: its stake freezes when the war opens, and the ally fights at the city's side.

@@ -264,14 +264,16 @@ export function economyHour(sim: Sim): void {
   if (e.bankrupt) return;
   const rates = monthlyRates(sim);
   for (const k of Object.keys(rates).sort()) {
-    // Loan and bond instalments are booked by their own hour (they depend on the balance), allies' too.
+    // Loan and bond instalments are booked by their own hour (they depend on the balance), allies' too,
+    // and so are the munitions sold (the stores have what they have).
     if (
       k === 'loanPrincipal' ||
       k === 'loanInterest' ||
       k === 'bondPrincipal' ||
       k === 'bondInterest' ||
       k === 'allyInterest' ||
-      k === 'allyRepaid'
+      k === 'allyRepaid' ||
+      k === 'armsSales'
     )
       continue;
     accrue(sim, k, rates[k]! / HOURS_PER_DAY);

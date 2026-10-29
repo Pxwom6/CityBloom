@@ -4,8 +4,7 @@
  * with what it means; docs/plans/M38-design.md has the calls behind them and docs/DECISIONS.md "M38"
  * the choices made while building. A "month" is a game day, a "year" twelve of them.
  *
- * Later steps add their numbers beside these: `ARMS` (munitions deals, unit sales), `SANCTION`,
- * `WEARINESS` and `WAR_DIFFICULTY`.
+ * Later steps add their numbers beside these: `WEARINESS` and `WAR_DIFFICULTY`.
  */
 import { DIPLOMATS } from './diplomacy';
 import type { NeighbourKind } from './region';
@@ -90,4 +89,38 @@ export const WAR_AID = {
    */
   armsFactor: 2,
   scoreFactor: 2,
+} as const;
+
+/**
+ * Arms trade with allies (M38 step 4): munitions sold from the war stores, and units sold outright.
+ * Only computer neighbours the city has an alliance or a defensive pact with buy (M36's `trade` term
+ * only lifts an embargo and leaves no pact behind, so there is no trade pact to sell under until
+ * friends can sign treaties in M39). An embargo or a sanction on either side ends it.
+ */
+export const ARMS = {
+  /** Dollars an ally pays for a crate of munitions: about twice their local value ($20 in the stores). */
+  price: 38,
+  /** A deal is made in steps of this many crates a month, up to what the buyer takes. */
+  step: 10,
+  /** No deal is bigger than this many crates a month, whatever the town's size. */
+  max: 300,
+  /**
+   * What a buyer takes a month, in crates per 1,000 residents, by character: warlike towns want the
+   * most, careful and honourable ones the least. Deals go in steps of `step`, so the smallest towns
+   * (2,000 residents) take none from the less warlike characters.
+   */
+  demand: {
+    aggressive: 6,
+    treacherous: 5,
+    mercantile: 4,
+    cautious: 3,
+    honourable: 3,
+  } as Record<Personality, number>,
+  /**
+   * An ally pays this share of a unit's price (its money cost, not its materials) for a unit at
+   * full health, less for a hurt one; the unit leaves the city and the ally's forces rise by the
+   * unit's strength (also by its health). The ally's forces then settle back towards what its
+   * character keeps, as they do after any gift (`rivalsMonth`).
+   */
+  unitShare: 0.6,
 } as const;

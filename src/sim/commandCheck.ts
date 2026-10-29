@@ -26,7 +26,7 @@ import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
 import { UNIT, WAR, type UnitKind } from '../data/war';
 import { cleanTerm, DIPLOMACY, type Term } from '../data/diplomacy';
-import { INVEST, LENDING, WAR_AID } from '../data/warEconomy';
+import { ARMS, INVEST, LENDING, WAR_AID } from '../data/warEconomy';
 import { MAP_SIZE } from '../data/world';
 
 /**
@@ -439,6 +439,12 @@ const CHECKS: Record<CommandType, Check> = {
     isInt(c.neighbour) && isInt(c.perMonth, 0, WAR_AID.max)
       ? { type: 'fundAlly', neighbour: c.neighbour, perMonth: c.perMonth }
       : BAD,
+  setArmsDeal: (c) =>
+    isInt(c.neighbour) && isInt(c.crates, 0, ARMS.max)
+      ? { type: 'setArmsDeal', neighbour: c.neighbour, crates: c.crates }
+      : BAD,
+  sellUnit: (c) =>
+    isInt(c.unit) && isInt(c.neighbour) ? { type: 'sellUnit', unit: c.unit, neighbour: c.neighbour } : BAD,
 };
 
 /**

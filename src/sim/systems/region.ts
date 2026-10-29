@@ -19,6 +19,7 @@ import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
 import { embargoed, forgetNeighbour } from './diplomacy';
+import { sanctionsBetween } from './warEconomy';
 import { BRANCH_IDS, cleanTiers } from '../../data/research';
 import { BATTLE } from '../../data/battle';
 import { MAP_SIZE } from '../../data/world';
@@ -228,6 +229,16 @@ export function neighbour(sim: Sim, id: number): Neighbour | undefined {
   return sim.state.region.neighbours.find((n) => n.id === id);
 }
 
+/**
+ * Deals with a neighbour can't run while it is under embargo (M36) or sanctions stand between it and
+ * the city (M38): the checks that end them (signing the embargo, putting the sanction on) and
+ * refuse new ones are one thing, and this is the other, so a deal that somehow survives them
+ * delivers nothing and earns nothing.
+ */
+function dealStopped(sim: Sim, neighbourId: number): boolean {
+  return embargoed(sim, neighbourId) || sanctionsBetween(sim, neighbourId);
+}
+
 /** Power or water coming in under deals now (what the neighbours can actually send). */
 export function regionImport(sim: Sim, u: 'power' | 'water' | 'sewage'): number {
   if (u === 'sewage') return 0;
@@ -236,7 +247,7 @@ export function regionImport(sim: Sim, u: 'power' | 'water' | 'sewage'): number 
   for (const d of sim.state.region.deals) {
     if (d.resource !== u || d.direction !== 'buy') continue;
     const n = neighbour(sim, d.neighbour);
-    d.delivered = n ? Math.min(d.amount, capacity(sim, n, u, 'buy')) : 0;
+    d.delivered = n && !dealStopped(sim, d.neighbour) ? Math.min(d.amount, capacity(sim, n, u, 'buy')) : 0;
     total += d.delivered;
   }
   return total;
@@ -253,9 +264,10 @@ export function regionExport(sim: Sim, u: 'power' | 'water' | 'sewage', spare: n
   if (!sales.length) return 0;
   const want = sales.map((d) => {
     const n = neighbour(sim, d.neighbour);
+    if (!n || dealStopped(sim, d.neighbour)) return 0;
     // Another player's city signed for it against this city's offer: it takes what it signed for.
-    if (d.remote) return n ? d.amount : 0;
-    return n ? Math.min(d.amount, capacity(sim, n, u, 'sell')) : 0;
+    if (d.remote) return d.amount;
+    return Math.min(d.amount, capacity(sim, n, u, 'sell'));
   });
   const total = want.reduce((a, b) => a + b, 0);
   const k = total > 0 ? Math.min(1, Math.max(0, spare) / total) : 0;
@@ -278,7 +290,10 @@ export function garbageDealsHour(sim: Sim): void {
   const civics = [...s.civics.values()].sort((a, b) => a.id - b.id);
   for (const d of deals) {
     const n = neighbour(sim, d.neighbour);
-    const hourly = n ? Math.min(d.amount, capacity(sim, n, 'garbage', d.direction)) / 24 : 0;
+    const hourly =
+      n && !dealStopped(sim, d.neighbour)
+        ? Math.min(d.amount, capacity(sim, n, 'garbage', d.direction)) / 24
+        : 0;
     let moved = 0;
     if (d.direction === 'buy') {
       // They collect from the landfills at the edge of town: fullest first.
@@ -369,6 +384,9 @@ export function setDeal(
   }
   // An embargo (M36) stops trade with that neighbour until a treaty resumes it.
   if (embargoed(sim, n.id)) return { ok: false, reason: `Trade with ${n.name} is under embargo` };
+  // Sanctions (M38) stand in the way of new deals too, from either side.
+  if (sanctionsBetween(sim, n.id))
+    return { ok: false, reason: `Sanctions between the city and ${n.name} stand in the way` };
   if (cap <= 0)
     return {
       ok: false,

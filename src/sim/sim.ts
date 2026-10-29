@@ -261,6 +261,8 @@ import {
   fundAlly,
   lendAlly,
   sellStake,
+  sellUnit,
+  setArmsDeal,
   warEconomyHour,
   warEconomyMonth,
 } from './systems/warEconomy';
@@ -1558,6 +1560,10 @@ export class Sim {
         return lendAlly(this, cmd.neighbour, cmd.amount, dryRun);
       case 'fundAlly':
         return fundAlly(this, cmd.neighbour, cmd.perMonth, dryRun);
+      case 'setArmsDeal':
+        return setArmsDeal(this, cmd.neighbour, cmd.crates, dryRun);
+      case 'sellUnit':
+        return sellUnit(this, cmd.unit, cmd.neighbour, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

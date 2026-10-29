@@ -8,20 +8,23 @@
  *  - loans to an ally (a neighbour it has an alliance or a defensive pact with), repaid with
  *    interest;
  *  - aid to an ally fighting at the city's side, which arms faster and counts for more in the war
- *    score.
+ *    score;
+ *  - arms trade with allies (step 4): munitions sold by the month from the war stores, units sold
+ *    outright; an embargo or a sanction on either side cuts it;
  *
- * Everything lives in `WarState.economy`, which appears with the first stake, loan or aid: a
- * peaceful city, and a war city that never uses it, are unchanged. Money goes through `book` and
- * `accrue` like every other line; the rates are in `monthlyRates` (`warEconomyRates`).
+ * Everything lives in `WarState.economy`, which appears with the first stake, loan, aid or arms deal: a peaceful city, and a war city that never uses it, are unchanged. Money goes
+ * through `book` and `accrue` like every other line; the rates are in `monthlyRates`
+ * (`warEconomyRates`).
  */
 import { annuity } from '../../data/economy';
-import { INVEST, LENDING, WAR_AID, lendingRate } from '../../data/warEconomy';
+import { UNIT, type UnitDef } from '../../data/war';
+import { ARMS, INVEST, LENDING, WAR_AID, lendingRate } from '../../data/warEconomy';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
 import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
 import { accrue, book } from './economy';
-import { anyWarOpen, fightingWith, helpers, note, pactsWith, warWith } from './diplomacy';
+import { anyWarOpen, embargoed, fightingWith, helpers, note, pactsWith, warWith } from './diplomacy';
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
@@ -61,17 +64,38 @@ export interface Aid {
   effect: number;
 }
 
+/**
+ * Munitions sold to an ally (step 4): crates a month, delivered by the hour from the war stores.
+ * One deal to a neighbour; it ends with the pact, or an embargo or sanctions on either side.
+ */
+export interface ArmsDeal {
+  /** The buying neighbour. */
+  neighbour: number;
+  /** Crates a month (a game day). */
+  amount: number;
+  /** Crates delivered this month so far, and in the month before. */
+  sold: number;
+  last: number;
+  /** The share of last hour's crates the stores could spare, 0 to 1 (the ledger's projection). */
+  fill: number;
+  /** Tick it was made. */
+  since: number;
+}
+
 export interface WarEconomy {
   /** By neighbour id. */
   stakes: Record<number, Stake>;
   loans: AllyLoan[];
   /** By neighbour id. */
   aid: Record<number, Aid>;
+  /** Arms deals by buying neighbour (step 4); absent until the first. */
+  arms?: Record<number, ArmsDeal>;
 }
 
 const money = (v: number) => `$${formatInt(Math.round(v))}`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const ids = (o: Record<number, unknown>): number[] => Object.keys(o).map(Number);
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
 /** The war economy, made on first use (never in a dry run). */
 function economy(sim: Sim): WarEconomy {
@@ -121,8 +145,8 @@ export function stakeSale(n: Neighbour, share: number): number {
 
 /**
  * Do sanctions stand between the city and this neighbour, from either side? The hook M38's
- * sanctions (step 5) fill in: stakes and loans freeze, and nothing new is bought or lent, while it
- * is true. There are none yet.
+ * sanctions (step 5) fill in: stakes and loans freeze, and nothing new is bought, lent, sold or
+ * dealt, while it is true. There are none yet.
  */
 export function sanctionsBetween(_sim: Sim, _id: number): boolean {
   return false;
@@ -252,6 +276,8 @@ export function forgetEconomy(sim: Sim, id: number): void {
     book(sim, 'allyRepaid', Math.round(loan.balance));
   }
   delete e.aid[id];
+  // The arms deals were with the town that is gone.
+  if (e.arms) delete e.arms[id];
   sim.warChanged();
 }
 
@@ -364,6 +390,167 @@ export function aidEffect(sim: Sim, id: number): number {
   return sim.state.war?.economy?.aid[id]?.effect ?? 0;
 }
 
+// ----- Arms trade (step 4) -----
+
+/** Why trade with this neighbour is stopped (an embargo, or sanctions), or null. */
+export function tradeStopped(sim: Sim, id: number): string | null {
+  const name = sim.state.region.neighbours.find((x) => x.id === id)?.name ?? 'that neighbour';
+  if (embargoed(sim, id)) return `Trade with ${name} is under embargo`;
+  if (sanctionsBetween(sim, id)) return `Sanctions between the city and ${name} stand in the way`;
+  return null;
+}
+
+/** The crates a month this town will buy at most: its size times its character's appetite, in whole steps. */
+export function armsCapacity(n: Neighbour): number {
+  const crates = (ARMS.demand[n.rival!.personality] * n.population) / 1000;
+  return Math.min(ARMS.max, Math.floor(crates / ARMS.step) * ARMS.step);
+}
+
+/** Why the city can't sell this neighbour arms (munitions or units) now, or null: it must be an ally and trade must be open. */
+export function armsBuyerRefusal(sim: Sim, id: number): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  const n = s.region.neighbours.find((x) => x.id === id);
+  if (!n) return 'No such neighbour';
+  if (n.player) return 'Arms for a friend come with treaties among friends (M39)';
+  if (!n.rival) return `${n.name} isn’t a rival`;
+  if (n.rival.vassal) return `${n.name} is the city’s vassal`;
+  if (!allied(sim, id))
+    return `${n.name} isn’t the city’s ally: arms go to a neighbour it has an alliance or a defensive pact with`;
+  return tradeStopped(sim, id);
+}
+
+/** The arms deal of `crates` a month can't be made now, and why; null when it can (0 ends one). */
+export function armsDealRefusal(sim: Sim, id: number, crates: number): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  const n = s.region.neighbours.find((x) => x.id === id);
+  if (!n) return 'No such neighbour';
+  if (crates === 0) return s.war.economy?.arms?.[id] ? null : `The city has no arms deal with ${n.name}`;
+  if (!Number.isInteger(crates) || crates < ARMS.step || crates % ARMS.step !== 0 || crates > ARMS.max)
+    return `Munitions are sold in steps of ${ARMS.step} crates a month, up to ${ARMS.max}`;
+  const why = armsBuyerRefusal(sim, id);
+  if (why) return why;
+  const cap = armsCapacity(n);
+  if (cap < ARMS.step) return `${n.name} is too small to buy munitions`;
+  if (crates > cap) return `${n.name} takes ${cap} crates a month at most`;
+  return null;
+}
+
+/**
+ * Sell an ally munitions from the war stores (M38 call 6): `crates` a month, delivered by the hour at
+ * `ARMS.price` as long as the stores have them. 0 ends the deal; a deal that stands can be changed.
+ */
+export function setArmsDeal(sim: Sim, id: number, crates: number, dryRun: boolean): CommandResult {
+  const why = armsDealRefusal(sim, id, crates);
+  if (why) return fail(why);
+  if (dryRun) return ok(0, { info: { price: ARMS.price } });
+  const had = sim.state.war!.economy?.arms?.[id];
+  if (crates === 0) {
+    delete sim.state.war!.economy!.arms![id];
+  } else {
+    const e = economy(sim);
+    (e.arms ??= {})[id] = {
+      neighbour: id,
+      amount: crates,
+      sold: had?.sold ?? 0,
+      last: had?.last ?? 0,
+      fill: had?.fill ?? 1,
+      since: had?.since ?? sim.state.tick,
+    };
+  }
+  sim.warChanged();
+  return ok(0, { info: { price: ARMS.price } });
+}
+
+/** An arms deal that can no longer run, and why (in words that follow "ends:"), or null. */
+function armsVoid(sim: Sim, deal: ArmsDeal): string | null {
+  const n = computerNeighbour(sim, deal.neighbour);
+  if (!n) return 'the town is gone';
+  if (n.rival!.vassal) return `${n.name} has fallen to the city`;
+  if (!allied(sim, n.id)) return `its pact with ${n.name} is over`;
+  if (embargoed(sim, n.id)) return `an embargo stops trade with ${n.name}`;
+  if (sanctionsBetween(sim, n.id)) return `sanctions stand between the city and ${n.name}`;
+  return null;
+}
+
+/** End the arms deals with a neighbour, with a notice (an embargo has just been signed). */
+export function endArmsDeals(sim: Sim, n: Neighbour, why: string): void {
+  const e = sim.state.war?.economy;
+  if (!e?.arms?.[n.id]) return;
+  delete e.arms[n.id];
+  note(sim, n.id, 'armsEnded', `The arms deal with ${n.name} ends: ${why}`, 'bad');
+}
+
+/** What a unit would fetch from an ally now, and how much its forces would rise: both by the unit's health. */
+export function unitSale(def: UnitDef, hp: number): { price: number; strength: number } {
+  return { price: Math.round(def.cost * ARMS.unitShare * hp), strength: def.strength * hp };
+}
+
+/** Why this unit can't be sold to anyone now (it is away, a superweapon, a battle or raid is on), or null. */
+export function unitBlock(sim: Sim, unitId: number): string | null {
+  const w = sim.state.war;
+  if (!w) return 'War is off in this city';
+  const unit = w.units.get(unitId);
+  const def = unit && UNIT.get(unit.kind);
+  if (!unit || !def) return 'No such unit';
+  const name = def.name.toLowerCase();
+  if (def.super) return `The ${name} is never sold`;
+  if (unit.away !== undefined) return `The ${name} is away with a force`;
+  // A battle's picture of the city is fixed when it starts, and a unit sold in a raid's warning
+  // would be one the battle never costs the city: no sales while either is on.
+  if (w.battle) return 'A battle is being fought: no unit changes hands now';
+  if (w.incoming?.length) return 'A raid is on its way: the forces stay to meet it';
+  return null;
+}
+
+/** The unit can't be sold to this neighbour now, and why; null when it can. */
+export function unitSaleRefusal(sim: Sim, unitId: number, id: number): string | null {
+  return unitBlock(sim, unitId) ?? armsBuyerRefusal(sim, id);
+}
+
+/**
+ * Sell a unit to an ally (M38 call 6): it pays `ARMS.unitShare` of the unit's price (less if the unit
+ * is hurt), the unit leaves the city, and the ally's forces rise by the unit's strength.
+ */
+export function sellUnit(sim: Sim, unitId: number, id: number, dryRun: boolean): CommandResult {
+  const why = unitSaleRefusal(sim, unitId, id);
+  if (why) return fail(why);
+  const w = sim.state.war!;
+  const unit = w.units.get(unitId)!;
+  const { price, strength } = unitSale(UNIT.get(unit.kind)!, unit.hp);
+  if (dryRun) return ok(-price, { info: { price, strength } });
+  const r = computerNeighbour(sim, id)!.rival!;
+  w.units.delete(unitId);
+  r.forces = Math.round((r.forces + strength) * 10) / 10;
+  book(sim, 'unitsSold', price);
+  sim.warChanged();
+  return ok(-price, { info: { price, strength } });
+}
+
+/** Deliver this hour's munitions from the stores to each buyer (the stores have what they have). */
+function armsHour(sim: Sim, e: WarEconomy): void {
+  const w = sim.state.war!;
+  for (const id of ids(e.arms ?? {})) {
+    const deal = e.arms![id]!;
+    const gone = armsVoid(sim, deal);
+    if (gone) {
+      const n = computerNeighbour(sim, id);
+      delete e.arms![id];
+      note(sim, id, 'armsEnded', `The arms deal with ${n?.name ?? 'a lost ally'} ends: ${gone}`, 'bad');
+      continue;
+    }
+    const want = deal.amount / HOURS_PER_DAY;
+    const give = round3(Math.min(want, w.stock.munitions));
+    deal.fill = round3(give / want);
+    if (give <= 0) continue;
+    w.stock.munitions = round3(w.stock.munitions - give);
+    deal.sold = round3(deal.sold + give);
+    accrue(sim, 'armsSales', give * ARMS.price);
+    sim.warChanged();
+  }
+}
+
 // ----- Each hour and each month -----
 
 /** Why a loan can no longer run, or null: the pact is over, or the borrower is the city's own now. */
@@ -375,7 +562,7 @@ function loanVoid(sim: Sim, loan: AllyLoan): string | null {
   return null;
 }
 
-/** Monthly ledger lines from stakes, loans to allies and aid, at current conditions (for `monthlyRates`). */
+/** Monthly ledger lines from stakes, loans to allies, aid and munitions sold, at current conditions (for `monthlyRates`). */
 export function warEconomyRates(sim: Sim): Record<string, number> {
   const e = sim.state.war?.economy;
   const out: Record<string, number> = {};
@@ -396,13 +583,19 @@ export function warEconomyRates(sim: Sim): Record<string, number> {
   }
   for (const id of ids(e.aid))
     if (e.aid[id]!.perMonth > 0 && helping(sim, id)) add('warAid', -e.aid[id]!.perMonth);
+  // Munitions sold: what last hour's stores could spare of each contract (booked by the hour).
+  for (const id of ids(e.arms ?? {})) {
+    const deal = e.arms![id]!;
+    if (!armsVoid(sim, deal)) add('armsSales', deal.amount * deal.fill * ARMS.price);
+  }
   return out;
 }
 
 /**
  * The war economy's hour, in the war hour after the money of the hour: allies' instalments (interest
  * first, then principal, like a loan) unless frozen, loans written off when the pact ends, aid
- * counted while the ally fights at the city's side.
+ * counted while the ally fights at the city's side, munitions delivered to buyers (the deals that
+ * can't run any more are ended first).
  */
 export function warEconomyHour(sim: Sim): void {
   const e = sim.state.war?.economy;
@@ -447,6 +640,8 @@ export function warEconomyHour(sim: Sim): void {
     if (aid.perMonth > 0 && helping(sim, id))
       aid.funded = Math.min(1, aid.funded + aid.perMonth / WAR_AID.max / HOURS_PER_DAY);
   }
+  // Munitions out of the stores, to buyers whose pact, trade and standing allow it.
+  armsHour(sim, e);
 }
 
 /**
@@ -463,18 +658,38 @@ export function warEconomyMonth(sim: Sim): void {
     aid.funded = 0;
     if (aid.perMonth === 0 && aid.effect === 0) delete e.aid[id];
   }
+  // A month's munitions sold is told on the page as this month and last.
+  for (const id of ids(e.arms ?? {})) {
+    const deal = e.arms![id]!;
+    deal.last = deal.sold;
+    deal.sold = 0;
+  }
   // Stakes follow the towns' growth: the page's figures change.
-  if (ids(e.stakes).length || e.loans.length || ids(e.aid).length) sim.warChanged();
+  if (ids(e.stakes).length || e.loans.length || ids(e.aid).length || ids(e.arms ?? {}).length)
+    sim.warChanged();
 }
 
 // ----- For the war room -----
 
 export interface WarEconomySummary {
-  /** Monthly lines at current conditions: dividends, allies' interest and repayments, aid sent (negative). */
-  rates: { dividends: number; allyInterest: number; allyRepaid: number; warAid: number };
+  /** Monthly lines at current conditions: dividends, allies' interest and repayments, aid sent (negative), munitions sold. */
+  rates: { dividends: number; allyInterest: number; allyRepaid: number; warAid: number; armsSales: number };
   /** What the city's stakes are worth now, and what its allies owe it. */
   worth: number;
   owed: number;
+  /** Crates of munitions in the war stores, and what a crate fetches from an ally. */
+  munitions: number;
+  cratePrice: number;
+  /** Each unit the city keeps: what an ally would pay, how much its forces would rise, why it can't be sold to anyone now. */
+  units: {
+    id: number;
+    kind: string;
+    name: string;
+    hp: number;
+    price: number;
+    strength: number;
+    why: string | null;
+  }[];
   /** One row for each computer neighbour. */
   neighbours: {
     id: number;
@@ -515,6 +730,14 @@ export interface WarEconomySummary {
     aid: number;
     effect: number;
     fund: string | null;
+    /** Trade with it is stopped by an embargo or sanctions, and why. */
+    stopped: string | null;
+    /** Crates a month it takes at most; the arms deal made with it (null if none); why the smallest can't be made. */
+    armsMax: number;
+    arms: { amount: number; sold: number; last: number; fill: number } | null;
+    armsBuy: string | null;
+    /** Why no unit can be sold to it (units apart), or null. */
+    sellUnits: string | null;
   }[];
 }
 
@@ -526,12 +749,29 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
   const months = (tick: number) => Math.floor((s.tick - tick) / TICKS_PER_MONTH);
   let worth = 0;
   let owed = 0;
+  const units = [...s.war.units.values()]
+    .sort((a, b) => a.id - b.id)
+    .flatMap((u) => {
+      const def = UNIT.get(u.kind);
+      if (!def) return [];
+      return [
+        {
+          id: u.id,
+          kind: u.kind,
+          name: def.name,
+          hp: u.hp,
+          ...unitSale(def, u.hp),
+          why: unitBlock(sim, u.id),
+        },
+      ];
+    });
   const neighbours = s.region.neighbours
     .filter((n) => n.rival && !n.player)
     .map((n) => {
       const stake = e?.stakes[n.id];
       const loan = e?.loans.find((l) => l.with === n.id);
       const aid = e?.aid[n.id];
+      const deal = e?.arms?.[n.id];
       const w = stake ? stakeWorth(n, stake.share) : 0;
       worth += w;
       owed += loan ? loan.balance : 0;
@@ -571,6 +811,11 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
         aid: aid?.perMonth ?? 0,
         effect: aid?.effect ?? 0,
         fund: fundRefusal(sim, n.id, WAR_AID.step),
+        stopped: tradeStopped(sim, n.id),
+        armsMax: armsCapacity(n),
+        arms: deal ? { amount: deal.amount, sold: deal.sold, last: deal.last, fill: deal.fill } : null,
+        armsBuy: armsDealRefusal(sim, n.id, ARMS.step),
+        sellUnits: armsBuyerRefusal(sim, n.id),
       };
     });
   return {
@@ -579,9 +824,13 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
       allyInterest: Math.round(rates.allyInterest ?? 0),
       allyRepaid: Math.round(rates.allyRepaid ?? 0),
       warAid: Math.round(rates.warAid ?? 0),
+      armsSales: Math.round(rates.armsSales ?? 0),
     },
     worth,
     owed: Math.round(owed),
+    munitions: Math.floor(s.war.stock.munitions),
+    cratePrice: ARMS.price,
+    units,
     neighbours,
   };
 }

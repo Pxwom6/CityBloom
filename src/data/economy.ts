@@ -180,6 +180,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   allyInterest: 'Interest from allies',
   allyRepaid: 'Loans repaid by allies',
   warAid: 'Aid to allies at war',
+  armsSales: 'Munitions sold to allies',
+  unitsSold: 'Units sold to allies',
 };
 
 export function ledgerLabel(key: string): string {

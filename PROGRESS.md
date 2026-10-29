@@ -232,7 +232,9 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 ## In progress
 **M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war, M37 Weapon development
 and intelligence and M38 Investments and the war economy are complete**, in pull request #23 (its
-title names all five). **M39 War with friends** is next, on the same branch.
+title names all five). **M39 War with friends** is under way on the same branch: plan
+`docs/plans/M39-design.md` (calls 1–15, steps 0–12; step 0 done), code map `docs/plans/M39-codemap.md`,
+calls in DECISIONS "M39". Next: step 1, battle version 4 (orders while a battle runs, allies' helpers).
 
 M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
 their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a
@@ -269,9 +271,10 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M39 War with friends (SPEC-5.md): start with a plan in `docs/plans/M39-design.md` and a code map,
-   as M37 and M38 did. M38 left friends' trade, stakes and loans to M39's treaties between friends
-   (DECISIONS "M38", call 1).
+1. M39 War with friends (SPEC-5.md), by the steps of `docs/plans/M39-design.md`: battle version 4,
+   the room's live battles, the pages' side, the battle map, wars and treaties between friends, allies'
+   help, the region's war history and replays, co-op roles, three scenarios, the region soak,
+   cross-browser and polish, wrap-up.
 2. M40.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 

@@ -1016,3 +1016,28 @@ Plan: `docs/plans/M38-design.md` (eleven calls, steps 0–11).
   - **Proposals**: peace or a ceasefire when the war's score is 0 or less, or weariness is past 0.4, or the neighbour pays; non-aggression and trade always; tribute only up to an eighth of its taxes a month (and half the bank over its term), reparations up to a quarter of the bank; never land, a demilitarised side, an embargo or an alliance. It sues for peace itself when a war's score is −20 or less (or weariness 0.5), a peace first and then with a little tribute.
   - **Stakes**: when the bank holds the smaller of two years of spending and a million (`SURPLUS_CAP`; the careful mayor's goals keep a big city's bank near one or two million while its spending runs to hundreds of thousands a month, so two years alone never came), a step of 5 % at a time, up to six a round, in any neighbour it is not at war with and that is not sanctioning it (or being sanctioned by it) whose feelings are 0 or more, the friendliest first, to the 25 % most. This replaced a first rule of "feelings 20 or more": a careful mayor's neighbours sit at 3 to 14 and only signed treaties raise them, so the first three runs bought no stake at all and the war economy's income side never showed in the balance numbers. With 0 or more, stakes begin at year 9 on Easy and year 13 on Normal (none on Hard before the bank piles up), and the rule is the plan's "lend and invest where it is safe", not a chase for dividends: nothing is bought in a neighbour that is at war with the city, in one that has sanctioned it, or in one it has sanctioned. The $1 million cap is kept (a literal two years of spending never occurs).
   - **The balance tool** prints, with rivals on, the war by year (raids, wars on the city, peace made, wars open, weariness, stakes' worth, dividends, the military's share of spending) and a summary; the numbers and what was tuned are in `docs/plans/M38-balance.md`.
+
+### M39 War with friends
+
+Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
+- **A live battle is an ordinary battle whose orders arrive while it runs** (battle version 4 when orders
+  or helpers are used; `stampBattle` keeps v2 and v3 battles as they were). Its final input, every order
+  in it, is the record the defender's sim resolves, the attacker's report comes from, replays re-run and the
+  cross-browser test checks. Why: one model for live, late and replayed battles; M35's async path stays the
+  fallback for an absent defender, and a live battle that loses a player carries on with fewer orders.
+- **The region room orders live battles in memory, paced by the players' progress, with no timers**: it
+  needs none in a Durable Object or a peer-to-peer host, writes no rows while a battle runs, and notices a
+  silent player on the next message from anyone (10 s: a handover to that side's defences).
+- **The defender hosts, the attacker runs a copy in its battle worker; each city's own run is its truth**
+  (as M35), with the hashes compared at the end and a mismatch recorded: a battle never waits on agreement
+  to change a city.
+- **Commanding is a tactical battle map**, not the 3D view of a friend's town: the attacker's page never has
+  to swap scenes (the viewer's reload was M35's way), spectators use the same map, and it works by touch.
+- **Wars and treaties between friends are kept by the room** (score, capitulation, vassals), each city
+  applying its own side once with a page-only command, as friends' spies and blackouts are (M37).
+- **M38's money with friends (stakes, loans, arms deals) stays with computer neighbours**: the money terms
+  of a treaty (reparations, tribute) are the trade between friends in M39. M38's call 1 had them arrive with
+  M39's treaties; the brief's M39 doesn't ask for them, and they would need a second two-sided ledger
+  beside the treaties'. Left for later, in "Ideas for what's next".
+- **A co-op city still can't stand in a region** (DECISIONS "M37"): roles in a shared city at war cover its
+  wars with computer neighbours (new permissions `war`, `treaties`, `defence`; absent reads as allowed).

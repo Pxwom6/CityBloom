@@ -15,6 +15,7 @@ import type { BattleInput } from '../sim/battle/types';
 import type { SaveFile } from '../sim/save';
 import { IS_TEST_BUILD } from '../config';
 import type { BattleJob, BattleJobReply } from './battleWorker';
+import type { LiveAttack, LiveRunnerHandlers, LiveRunnerPort } from './liveBattles';
 import { decodeSave, encodeSave } from './saves';
 
 /**
@@ -171,6 +172,11 @@ export interface AwayHost {
    * force isn't fighting any more (called back, or it gave up waiting).
    */
   settle?(expedition: number, on: boolean): Promise<boolean>;
+  /**
+   * A force arrived at a friend's city (M39): fight it live, with the friend's player, if the region
+   * and the friend's page allow it (the attacker's side of a live battle).
+   */
+  live?(city: AwayCity, expedition: number): Promise<LiveAttack>;
 }
 
 /** How long a battle job may take before it's given up (growing a big town on a slow phone). */
@@ -229,6 +235,61 @@ export class AwayBattles {
     });
   }
 
+  /**
+   * Live battles are run in a worker of their own (M39): a computer town being grown for another
+   * force would keep one waiting, and a live battle can't wait.
+   */
+  private liveWorker: Worker | null = null;
+  private streams = new Map<number, LiveRunnerHandlers>();
+
+  /** Run a live battle's input in the live worker, fed the room's orders and frontier as they come. */
+  liveRunner(input: BattleInput, on: LiveRunnerHandlers): LiveRunnerPort {
+    if (!this.liveWorker) {
+      const w = (this.liveWorker = new Worker(new URL('./battleWorker.ts', import.meta.url), {
+        type: 'module',
+      }));
+      w.onmessage = (ev: MessageEvent<BattleJobReply>) => {
+        const m = ev.data;
+        if (m.type === 'liveFrame') this.streams.get(m.id)?.frame(m.step, m.frame);
+        else if (m.type === 'liveDone') {
+          const h = this.streams.get(m.id);
+          this.streams.delete(m.id);
+          h?.done(m.end);
+        } else if (m.type === 'error') {
+          const h = this.streams.get(m.id);
+          this.streams.delete(m.id);
+          h?.error(m.message);
+        }
+      };
+      w.onerror = () => {
+        for (const [id, h] of [...this.streams]) {
+          this.streams.delete(id);
+          h.error('The battle worker stopped');
+        }
+        w.terminate();
+        if (this.liveWorker === w) this.liveWorker = null;
+      };
+    }
+    const w = this.liveWorker;
+    const id = this.seq++;
+    this.streams.set(id, on);
+    w.postMessage({ type: 'live', id, input } satisfies BattleJob);
+    return {
+      feed: (orders, allow, rush) =>
+        w.postMessage({
+          type: 'liveFeed',
+          id,
+          orders: [...orders],
+          allow,
+          ...(rush ? { rush: true } : {}),
+        } satisfies BattleJob),
+      stop: () => {
+        this.streams.delete(id);
+        w.postMessage({ type: 'liveStop', id } satisfies BattleJob);
+      },
+    };
+  }
+
   /** Forces pinned while the region decides on their battle, and that battle's record. */
   private pinned = new Map<number, string>();
 
@@ -276,6 +337,24 @@ export class AwayBattles {
           if (why) {
             await this.host.recall?.(expedition, why);
             return;
+          }
+          // M39: a friend whose player is here and whose page can fight live fights it live; any
+          // other answer, and it goes the old way below.
+          const live = await this.host.live?.(city, expedition);
+          if (live) {
+            if (live.kind === 'done') {
+              if (!live.ok) this.failed.set(expedition, (this.failed.get(expedition) ?? 0) + 1);
+              return;
+            }
+            if (live.kind === 'wait') {
+              this.waitUntil.set(expedition, performance.now() + live.ms);
+              return;
+            }
+            if (live.kind === 'refused') {
+              if (live.later !== undefined) this.waitUntil.set(expedition, performance.now() + live.later);
+              else await this.host.recall?.(expedition, live.reason);
+              return;
+            }
           }
           const save = await this.host.fetchSave(n.slot);
           const reply = await this.run({ type: 'awayCity', id, city, save });
@@ -380,5 +459,8 @@ export class AwayBattles {
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
+    this.liveWorker?.terminate();
+    this.liveWorker = null;
+    this.streams.clear();
   }
 }

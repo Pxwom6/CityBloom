@@ -10,6 +10,7 @@ import type { SaveFile } from '../sim/save';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
 import {
   FAIR,
+  type LiveRecord,
   type OpOutcome,
   type RegionClientMsg,
   type RegionOp,
@@ -21,6 +22,7 @@ import type { RegionWarRules, UnitKind } from '../data/war';
 import type { SabotageTarget } from '../data/intel';
 import type { Branch, TierKey } from '../data/research';
 import { decodeBattle, decodeSnapshot, encodeBattle, encodeSnapshot } from './snapshot';
+import { inputOfRecord } from './liveRecord';
 import type { BattleInput } from '../sim/battle/types';
 import { battleHasSuper } from '../sim/systems/regionOps';
 
@@ -163,6 +165,16 @@ export function fairCap(view: RegionView, slot: number): number | null {
   return fair === undefined ? null : Math.floor(fair) + FAIR.bank;
 }
 
+/**
+ * What takes the region's live-battle messages (M39, `src/client/liveBattles.ts`): every one of the
+ * room's `bcall`, `bliveoff`, `bstart`, `ballow`, `bend`, `blivenow` and `breplaydata`, and the
+ * moment the link is in the region (again), when a battle in progress is taken up afresh.
+ */
+export interface LiveSink {
+  message(m: RegionRoomMsg): void;
+  welcome(): void;
+}
+
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
@@ -202,6 +214,8 @@ export class RegionLink {
   private lastThumb = 0;
   onChange: (() => void) | null = null;
   onNotice: ((text: string) => void) | null = null;
+  /** Live battles with friends (M39): who takes the room's messages about them. */
+  live: LiveSink | null = null;
   /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
   onBattleKept: ((id: string) => void) | null = null;
   /** The region turned a battle away (M36: its target has taken the day's raids). */
@@ -247,6 +261,11 @@ export class RegionLink {
     void this.open();
     this.timers.push(setInterval(() => void this.reportNow(), this.opts.reportEvery ?? 30_000));
     return p;
+  }
+
+  /** A live battle's message to the region (M39): dropped while the link is down (the page asks again on its return). */
+  sendLive(m: RegionClientMsg): void {
+    if (this.state === 'in') this.send(m);
   }
 
   private send(m: RegionClientMsg): void {
@@ -327,6 +346,7 @@ export class RegionLink {
         await this.reportNow(true);
         this.started?.resolve();
         this.started = null;
+        this.live?.welcome();
         return;
       case 'region':
         await this.take(m.region);
@@ -356,7 +376,11 @@ export class RegionLink {
         if (this.battlesTaken.has(key)) return;
         let input: BattleInput;
         try {
-          input = decodeBattle(list as string[]);
+          // A live battle this city's player wasn't here to see the end of (M39): the room's record,
+          // the input and the orders stamped in it; the city takes it as any late battle.
+          input = m.live
+            ? inputOfRecord(JSON.parse((list as string[]).join('')) as LiveRecord)
+            : decodeBattle(list as string[]);
         } catch {
           // Unreadable: it never will be, so the region needn't keep offering it.
           this.send({ t: 'battleSeen', id: m.id, from: m.from });
@@ -407,6 +431,15 @@ export class RegionLink {
           ...(typeof m.later === 'number' ? { later: m.later } : {}),
         });
         this.onBattleRefused?.(m.id, m.reason);
+        return;
+      case 'bcall':
+      case 'bliveoff':
+      case 'bstart':
+      case 'ballow':
+      case 'bend':
+      case 'blivenow':
+      case 'breplaydata':
+        this.live?.message(m);
         return;
       case 'incoming':
         this.onIncoming?.({

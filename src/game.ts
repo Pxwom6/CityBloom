@@ -33,6 +33,7 @@ import {
   unpostedBattles,
   type BattleRecord,
 } from './client/battles';
+import { LiveBattles } from './client/liveBattles';
 import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
@@ -279,6 +280,8 @@ export class Game {
       setExtraTools(war ? 1 : 0);
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
+      // A live battle with a friend (M39): this page tells the region how far the battle has got.
+      if (!this.inMenu() && !this.readOnly) this.live.frame(diff.stats.war ?? null, diff.events);
       if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
       // Forces arrived at a neighbour's town (M35): this page fights their battles. In a shared city
       // only the host's page does (a second report would be turned away anyway).
@@ -323,6 +326,9 @@ export class Game {
       void this.refreshAdvice();
       this.checkGuidance();
     }, 2000);
+    // (Frames carry the live battle's reports while the page is in front; this keeps them coming in
+    // a page whose frames the browser slows.)
+    setInterval(() => this.live.pump(), 250);
   }
 
   subscribe(l: Listener): () => void {
@@ -540,6 +546,33 @@ export class Game {
       this.notice(`recalled:${expedition}`, `The force turns for home: ${why}.`, 'info');
     },
     settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
+    live: (city, expedition) => this.live.attack(city, expedition),
+  });
+  /**
+   * Live battles with friends (M39): this page's part in a battle the region room orders between two
+   * players' cities, as the defender hosting it in the city's sim or the attacker running it in a worker.
+   */
+  readonly live: LiveBattles = new LiveBattles({
+    now: () => performance.now(),
+    city: {
+      query: (q) => this.client.query(q),
+      preview: (cmd) => this.client.preview(cmd),
+      command: (cmd) => this.client.command(cmd),
+      save: () => this.client.save(),
+      autosave: () => this.saveTo('auto', 'Autosave', true),
+      cityName: () => this.world.stats.cityName,
+      tick: () => this.world.stats.tick,
+      speed: () => this.speed,
+      setSpeed: (speed) => this.setSpeed(speed),
+      notice: (key, text, tone) => this.notice(key, text, tone),
+    },
+    store: { keepTown, keepBattle },
+    runner: (input, on) => this.away.liveRunner(input, on),
+    report: async (expedition, result) =>
+      (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
+    settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
   });
   /**
    * Operations against friends' cities (M37): put to the region by this page, their verdicts handed
@@ -777,6 +810,7 @@ export class Game {
     this.region = link;
     this.regionCode = code;
     this.regionKey = key;
+    this.live.attach(link);
     link.onNotice = (t) => this.toast(t, 'info', 4500);
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
@@ -865,6 +899,7 @@ export class Game {
     this.region = null;
     this.regionCode = null;
     this.regionKey = null;
+    this.live.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(

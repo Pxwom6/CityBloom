@@ -45,6 +45,8 @@ import type { UnitShown } from '../render/units';
 import { MILITARY_SITES } from '../render/assets/militaryModels';
 import { buildCivicModel } from '../render/assets/civicModels';
 import { UNIT, type UnitKind } from '../data/war';
+import type { LiveState } from './liveBattles';
+import type { OrderRequest } from '../sim/battle/live';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -551,6 +553,14 @@ export interface TestApi {
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
   /** Look at the battle in the city, as its button does (M35). */
   followBattle(): void;
+  /**
+   * The live battle this page is in with a friend (M39): its id and role, the room's frontier, the
+   * step this page has run to, whether its side is handed over, orders and the hashes that end it
+   * (its own, and the room's). The last battle's, once it is over; null before the first.
+   */
+  getLive(): LiveState | null;
+  /** Give an order to this page's side of the live battle (it goes to the room with the next report). */
+  liveOrder(order: OrderRequest): boolean;
   /** Open (or close) a panel by name, as its button does. */
   openPanel(name: string): void;
   /** Change photo mode's settings directly (dev scenes). */
@@ -1339,6 +1349,8 @@ export function installTestApi(game: Game): TestApi {
     },
     followNearest: (kinds) => game.followNearest(kinds),
     followBattle: () => game.followBattle(),
+    getLive: () => game.live.state(),
+    liveOrder: (order) => game.live.order(order),
     openPanel: (name) => game.openPanel(name as Parameters<Game['openPanel']>[0]),
     setPhoto: (patch) => game.setPhoto(patch),
     setWeatherLook: (look) => {

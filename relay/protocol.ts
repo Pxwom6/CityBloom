@@ -17,8 +17,16 @@ import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules
  * between friends (M35). 4: the region's daily raid limit, raids on absent players, diplomacy's
  * commands in a shared city (M36). 5: spies and blackouts between friends decided by the region,
  * superweapon battles flagged and counted, research tiers and the fair clock in reports (M37).
+ * 6: live battles between friends, ordered by the region room (M39): `blive`, `bcall`, `binput`,
+ * `bstart`, `bstep`, `ballow`, `bend`, watching and replays. A region accepts protocol 5 pages as
+ * well (`MIN_REGION_PROTOCOL`): they never get a live message, and a live battle against one falls
+ * back to the old way. A room (a shared city) is stricter: every player runs the same sim.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
+/** The oldest page a region still serves (no live battles for it). */
+export const MIN_REGION_PROTOCOL = 5;
+/** The first protocol with live battles. */
+export const LIVE_PROTOCOL = 6;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -34,6 +42,41 @@ export const SNAPSHOT_PART = 200_000;
 export const MAX_SNAPSHOT_PARTS = 40;
 export const MAX_NAME = 20;
 export const MAX_CHAT = 280;
+
+/**
+ * Live battles (M39, design call 3): what the region room asks of a battle between two players'
+ * cities. The room orders it as a room orders a city: each combatant's page says how far it has run,
+ * and the room lets every page run `lead` steps past the slowest (the frontier, `allow`); an order
+ * is stamped at the frontier and sent to every page. All times are the room's own clock, noticed
+ * when a message reaches it (no timers).
+ */
+export const LIVE = {
+  /** Steps (half a second of battle each) the frontier runs ahead of the slowest combatant: 2 s of play. */
+  lead: 32,
+  /** A combatant silent this long (ms) is handed over to the battle's own judgement. */
+  silent: 10_000,
+  /** A battle nobody has spoken in for this long (ms) ends abandoned. */
+  abandon: 60_000,
+  /** A defender has this long (ms) to answer a call, and the attacker's force falls back to the old way. */
+  call: 20_000,
+  /** Live battles in a region at once, calling or running. */
+  sessions: 2,
+  /** Orders a battle's log keeps, with `reserve` of them kept for handovers (the sim takes 256). */
+  maxOrders: 256,
+  reserve: 16,
+  /** Orders in a message, a side's orders at one step, and units an order may name. */
+  perMessage: 4,
+  perStep: 4,
+  units: 64,
+  /** The biggest force a call carries (characters of JSON). */
+  forceChars: 40_000,
+  /** Parts a battle's input may come in (200 KB each; a normal one is one part of about 10 KB). */
+  inputParts: 3,
+  /** Finished battles the region keeps for replays. */
+  replays: 20,
+  /** Watchers (connections) of one battle. */
+  watchers: 8,
+} as const;
 /** Player colours (an index into this list travels). */
 export const PLAYER_COLORS = [
   '#e4572e',

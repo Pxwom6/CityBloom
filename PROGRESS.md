@@ -57,12 +57,12 @@ without it.
 - [x] M34 Armed forces
 - [x] M35 Into battle
 - [x] M36 Diplomacy and the stakes of war
-- [ ] M37 Weapon development and intelligence
+- [x] M37 Weapon development and intelligence
 - [ ] M38 Investments and the war economy
 - [ ] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34, M35 and M36 are complete; M37 is next.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M37 are complete; M38 is next.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,10 +230,10 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces, M35 Into battle and M36 Diplomacy and the stakes of war are complete**, in
-pull request #23 ("M34 complete: Armed forces; M35 complete: Into battle; M36 complete: Diplomacy
-and the stakes of war"). **M37 Weapon development and intelligence** is next, on the same branch
-(it joins #23 while that is open).
+**M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war and M37 Weapon
+development and intelligence are complete**, in pull request #23 (its title names all four).
+**M38 Investments and the war economy** is next, on the same branch (it joins #23 while that is
+open): plan `docs/plans/M38-design.md`, calls in DECISIONS "M38".
 
 M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
 their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
@@ -245,75 +245,26 @@ M36 in short: declarations with a warning and a reason, the war score and capitu
 (proposals, counters, the computer's answers by character and the city's reputation), tribute and
 occupations in the ledger, pacts and breaking them (allies turn), total war with the military HQ as
 the seat of power, conquest, vassals and risings both ways, neutrality, newcomer protection,
-cooldowns; friends' raids decided by the region room (three a UTC day, shields, eight waiting at
-most; the attacker's sim takes a battle only once the room keeps it, its force pinned meanwhile),
-half damage while away (protocol 4), save v29; the war room's Diplomacy tab, notices, tips and the
-fallen city's card. Three adversarial reviews (32, 11 and 4 findings, all fixed) and a completeness
-check against the brief. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REVIEW "M36".
+cooldowns; friends' raids decided by the region room, half damage while away (protocol 4), save
+v29; the war room's Diplomacy tab. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REVIEW "M36".
 
-**M37 Weapon development and intelligence** is under way (plan `docs/plans/M37-design.md`):
-- Step 0 done: goldens at the M36 tip (`tests/war/m36Golden.test.ts`: the cross-browser script's war
-  town, battles and diplomacy with save version pinned to 29, and a v29 war save played on;
-  `tests/battle/v2replay.test.ts`: two kept version-2 battles).
-- Steps 1–2 done (tests `tests/war/research.test.ts`): `src/data/research.ts` (24 tiers, effects,
-  battle mods, spin-offs), `src/data/intel.ts` (`spyOdds`), the three superweapon units (generated
-  looks with limb, sweep, jaw and key motions; parking at a depot bay and an airfield mast), seven
-  military buildings (weapons lab, spy agency, interceptor, shield generator, and the dome, tower and
-  gate as projects), `src/sim/systems/research.ts` (the queue on the war clock, lab points with the
-  research park, money at start, `unitLock`, `civicLock`), commands `queueResearch`/`unqueueResearch`,
-  `RegionWarRules.supers`, save v30.
-- Step 3 done: prototypes' trials at the proving ground (`startTrial`/`stopTrial`, `trialsHour`,
-  ledger `trials`; trial grounds and working labs staffed after training bases).
-- Step 4 done: each effect and spin-off read in one place, exactly 1 without research.
-- Step 5 done (merged from a helper's branch): battle version 3 (mods with evasion, hardened and
-  shield factors, interceptors, the dome's pool, stomp, carried drones, dives, `SUPER.caps`); a battle
-  using nothing new stays version 2.
-- Step 6 done: superweapons in forces (one a force, their routes, robot and fortress ×2 travel, never
-  lost, cooldowns 240/480 h, by sea only to a coast, no home defence). `tests/war/superweapons.test.ts`.
-- Step 7 done: the dome, blackout tower and express gate (`src/sim/systems/supers.ts`).
-- Step 8 done: spies and counter-intelligence against computer neighbours, incidents, computer
-  neighbours' tech (`src/sim/systems/intel.ts`, `src/sim/ai/tech.ts`). `tests/war/intel.test.ts`.
-- Step 11 in part: trial poses, `src/render/shields.ts` (dome, bubbles, gate swirl, tower ring),
-  battle effects (intercepts, launches, stomp dust, dived whale), quality switches, windows dark in a
-  blackout. Test API `getResearch`, `getIntel`, `getSupers`, `stageBattle`.
-- Step 12 in part: Research (branch chips, the chosen branch's tiers, prototypes) and Intelligence
-  tabs, superweapons strip, inspectors, Send tab (gate, superweapons, travel), the region map's
-  superweapon tokens, gate arc, revealed and darkened towns, notices, sounds and tips.
-- Adversarial review of the M37 sim: 13 findings confirmed and fixed (DECISIONS "M37", review), bar
-  two in the battle's robot pathing handed to the balance helper.
-- E2e, all passing with screenshots reviewed: `e2e/m37-research.spec.ts` (7.9 min: all six branches
-  through the Research tab, nine prototypes tried, each trainable at its base), `e2e/m37-super.spec.ts`
-  (the robot tried, trained, sent once, home and winding up, 2.2 min; the blackout tower used once
-  from its inspector and recharging, 1.4 min), `e2e/m37-friends.spec.ts` (two players, 9.6 min: a
-  spy decided by the region, a blackout with Sam warned an hour ahead and Samford's plants down).
-- **Steps 9–10 merged** (friends' spies, blackouts and superweapon battles through the region room,
-  protocol 5; the fair clock): 469 unit tests on the merged tree and 17 live relay tests pass.
-- **Superweapon battle balance merged** (the fortress's bomb drones, the whale's torpedo pods to
-  1,000 m, a superweapon force pulling out once the caps hold, the robot keeping to the road over
-  water, faster target searches): 249 battle, war and lockstep tests pass, v2 replays and the M36
-  golden unchanged.
-- An independent review of steps 9–10 found three defects, all fixed with tests (a stale war-clock
-  cap, credit on a war project's stage while held, friends' places outliving the region); the
-  friends' e2e found a fourth (no control to allow superweapons in a region: the Region panel has
-  one now). DECISIONS "M37".
-- The Research tab shows prototypes and trials without a lab; the Intelligence tab shows a friend's
-  odds, waiting agents and dossiers; notices and sirens for friends' agents and blackouts; friends'
-  research on the region map.
-- **Wrap-up running** (a helper, one job at a time): the full unit suite, the war e2e (M34–M37 specs
-  and `m35-friends`), bench, battlebench (and `--super robot|fortress|whale`), balance against
-  `main`, the frame budget in the heaviest battle (`battlebench.ts … --guards --dome --super robot
-  --save bench-results/war.gz`, then `framebench.mjs bench-results/war.gz --vm --views battle`;
-  real frame times wait for the Mac), the superweapon scene's screenshots, netbudget. Then the
-  `M37 complete:` commit and PR #23's title and description.
+M37 in short: weapons research (labs and the research park, six branches of four tiers, a queue on
+the war clock, civilian spin-offs), prototypes tried at the proving ground, battles version 3
+(research's modifiers, interceptors, the dome's pool; older battles stay version 2), superweapons
+(the robot, sky fortress and clockwork whale as units; the dome, blackout tower and express gate as
+projects; a region's host allows them), spies and counter-intelligence against computer neighbours
+and, through the region room, friends (protocol 5), computer neighbours' own tech and spies, the
+fair clock, save v30; the war room's Research and Intelligence tabs, superweapon effects with a
+cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds, all fixed.
+Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M37 Weapon development and intelligence (SPEC-5.md): a research tree in six branches funded by
-   research labs and the research park, prototypes tried at the proving ground, civilian spin-offs,
-   spies and counter-intelligence (a caught spy is a diplomatic incident: M36's `note` and
-   reputation), and a superweapon at the end of each branch (the region's rules can turn them off).
-   Plan: `docs/plans/M37-design.md` (three independent designs judged, then one synthesis; steps 0–13
-   there, starting with goldens at the M36 tip).
-2. M38–M40 in order.
+1. M38 Investments and the war economy (SPEC-5.md): arms trade with allies through the deals,
+   stakes in neighbours' industries (dividends frozen or seized by war), loans to allies, funding an
+   ally's war, sanctions both ways, war weariness and the peace recovery, computer neighbours that
+   trade, invest and lend by character, difficulty with rivals on, and the balance mayor at war.
+   Plan: `docs/plans/M38-design.md` (steps 0–11; step 0 done).
+2. M39 and M40 in order.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Performance (M37)
@@ -1056,6 +1007,11 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M37): frame times in the heaviest battle (`npx tsx scripts/dev/battlebench.ts
+  bench-results/city.gz --guards --dome --super robot --save bench-results/war.gz`, then
+  `framebench.mjs bench-results/war.gz --views battle` and `--battle max`, at each quality); the
+  dome, shield bubbles, the gate's swirl and the tower's ring by day and night in a real window
+  (`scripts/dev/supershot.mjs` shows each); the superweapons' and blackout's sounds.
 - Phase 5 (M34): the war models in a real Chrome window (the HQ, depot, airfield and naval yard
   close up, by day and night, and the generated looks with `showWarModels`); units parked, drilling,
   patrolling and flying at High; frame times with a war city's units on screen (`framebench.mjs` on

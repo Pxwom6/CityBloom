@@ -7,6 +7,7 @@ import { objectiveSpots } from '../../src/sim/battle/layout';
 import { DMath } from '../../src/sim/dmath';
 import { Sim } from '../../src/sim/sim';
 import { cityStrength } from '../../src/sim/systems/raids';
+import { stakePremium } from '../../src/sim/systems/warEconomy';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { buildTown, connectPoint, newSim, road } from '../helpers';
 import { dip, eco, ofKind, ok, rivals, setTreasury, stockUp, treaty, warCity } from './economyHelpers';
@@ -223,12 +224,12 @@ describe('M38: the careful mayor does not borrow more than it can carry', () => 
 });
 
 describe('M38: the careful mayor invests a surplus', () => {
-  it('buys stakes in friendly neighbours once the bank holds two years of spending, up to the most', () => {
+  it('buys stakes in any neighbour feeling wary or better once the bank holds two years of spending, up to the most', () => {
     const { p, sim } = mayor(50_000, 20_000);
     const [a, b, c] = rivals(sim);
     a!.rival!.relation = 60;
-    b!.rival!.relation = 25;
-    c!.rival!.relation = 10; // not friendly enough
+    b!.rival!.relation = 0; // wary: still sells, at a dearer price
+    c!.rival!.relation = -1; // cool: no
     setTreasury(sim, 400_000); // under 24 × $20,000
     p.warPlan.play();
     expect(sim.state.war!.economy?.stakes ?? {}).toEqual({});
@@ -242,6 +243,17 @@ describe('M38: the careful mayor invests a surplus', () => {
     expect(stakes[a!.id]?.share).toBe(INVEST.maxShare);
     expect(stakes[b!.id]?.share).toBe(INVEST.maxShare);
     expect(stakes[c!.id]).toBeUndefined();
+    // The wary neighbour's price is dearer than the friendly one's.
+    expect(stakePremium(b!)).toBeGreaterThan(stakePremium(a!));
+    // Not in one that sanctions the city, or that the city sanctions.
+    const { p: r, sim: sanc } = mayor(50_000, 20_000);
+    const [x, y, z] = rivals(sanc);
+    for (const t of [x!, y!, z!]) t.rival!.relation = 40;
+    ok(sanc, { type: 'setSanction', neighbour: x!.id, on: true });
+    setTreasury(sanc, 50_000_000);
+    r.warPlan.play();
+    expect(sanc.state.war!.economy?.stakes[x!.id]).toBeUndefined();
+    expect(sanc.state.war!.economy?.stakes[y!.id]).toBeDefined();
     // Not in a neighbour it is at war with.
     const { p: q, sim: war } = mayor(50_000, 20_000);
     const foe = rivals(war)[0]!;

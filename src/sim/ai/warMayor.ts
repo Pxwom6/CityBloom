@@ -22,7 +22,7 @@ import { rivalMix } from './tech';
 import { anyWarOpen, fightingWith, monthlyTaxes, warWith } from '../systems/diplomacy';
 import { monthlyRates } from '../systems/economy';
 import { cashFloor, monthlySpending, type Offer } from '../systems/offers';
-import { stakeWorth } from '../systems/warEconomy';
+import { sanctionsBetween, stakeWorth } from '../systems/warEconomy';
 import { weariness } from '../systems/weariness';
 import type { Neighbour } from '../systems/region';
 import type { Player } from './mayor';
@@ -486,7 +486,11 @@ export class WarPlan {
     }
   }
 
-  /** Money piled up (over two years of spending in the bank) goes into friendly neighbours' industry. */
+  /**
+   * Money piled up (see `SURPLUS_MONTHS`) goes into neighbours' industry: any neighbour it is not at
+   * war with, that is not sanctioning it (nor it the neighbour) and that feels no worse than wary
+   * about it (feelings 0 or more; a cool one asks a dearer price, which is the price of it).
+   */
   private invest(): void {
     const sim = this.sim;
     const s = sim.state;
@@ -495,13 +499,17 @@ export class WarPlan {
     const surplus = Math.min(SURPLUS_MONTHS * spend, SURPLUS_CAP);
     if (spend <= 0 || s.treasury < surplus) return;
     const w = s.war!;
-    const friends = this.rivals()
-      .filter((n) => n.rival!.relation >= 20 && !warWith(sim, n.id))
+    const buyers = this.rivals()
+      .filter((n) => n.rival!.relation >= 0 && !warWith(sim, n.id) && !sanctionsBetween(sim, n.id))
       .sort((a, b) => b.rival!.relation - a.rival!.relation || a.id - b.id);
-    // As much as the surplus allows, a step at a time (a few a round).
+    // As much as the surplus allows, a step at a time (a few a round), in the friendliest first.
     for (let bought = 0; bought < 6 && s.treasury >= surplus;) {
-      const n = friends.find((x) => (w.economy?.stakes[x.id]?.share ?? 0) < INVEST.maxShare);
-      if (!n || !sim.dispatch({ type: 'buyStake', neighbour: n.id, share: INVEST.step }).ok) return;
+      const n = buyers.find(
+        (x) =>
+          (w.economy?.stakes[x.id]?.share ?? 0) < INVEST.maxShare &&
+          sim.dispatch({ type: 'buyStake', neighbour: x.id, share: INVEST.step }).ok,
+      );
+      if (!n) return;
       bought++;
       this.p.log.push(`m${this.p.month()}: stake in ${n.name}`);
     }

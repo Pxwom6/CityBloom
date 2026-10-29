@@ -12,10 +12,28 @@ import type { UnitDomain, UnitKind } from '../../data/war';
  * modifiers, interceptors, the dome's pool and the superweapons, every one an optional field whose
  * code runs only when it's there; version 2 (M35–M36) is still read, and a battle using nothing of
  * version 3 is stamped 2 (`stampBattle`), so it plays and saves exactly as it did.
+ *
+ * `BATTLE_VERSION` stays the version 3 of M37: every builder starts its input there and
+ * `stampBattle` settles the version the input needs (2, 3 or 4). The newest this build reads is
+ * `BATTLE_V4`.
  */
 export const BATTLE_VERSION = 3;
 /** The oldest version still read. */
 export const BATTLE_V2 = 2;
+/**
+ * Version 4 (M39, war with friends): orders given while a battle runs (focus, guard, hold, free and
+ * a withdrawal by units) and helpers (allied forces that join at a step, each with its owner). An
+ * input is stamped 4 only when it uses one of them; whatever doesn't plays and hashes as ever.
+ */
+export const BATTLE_V4 = 4;
+
+/**
+ * Who a unit belongs to (version 4): the force in `attacker` is owner 0, the defender's own units
+ * (`layout.defenders`) owner −1, and each helper brings its own owner (1–255: the caller picks, say
+ * the helper city's place in the region plus one).
+ */
+export const OWNER_ATTACKER = 0;
+export const OWNER_DEFENDER = -1;
 
 /** Research's battle modifiers by domain (M37). */
 export type BattleMods = Partial<Record<UnitDomain, BattleMod>>;
@@ -140,11 +158,52 @@ export interface ForceIn {
   mods?: BattleMods;
 }
 
-/** An order given during a battle (M39 adds live orders; M35 has none). */
+/** What an order may say (version 4 adds all but the first). */
+export type OrderKind = 'withdraw' | 'focus' | 'guard' | 'hold' | 'free';
+
+/**
+ * An order given during a battle: it applies at the start of `step`, in input order. M35's is
+ * `{step, side: 0, kind: 'withdraw'}` (the whole attacking side pulls out). Version 4 (M39):
+ * `units` are the battle's own unit ids on that side (none: every unit of the side; a unit that's
+ * dead or gone is skipped), and `target` is a structure's index in the layout (`focus` by the
+ * attackers, `guard`) or an attacking unit's id (`focus` by the defenders). An order whose units
+ * are gone or whose target has fallen does nothing. `focus` (side 0: the next objective of those
+ * units; side 1: the defending units and every gun prefer that attacker when they choose),
+ * `guard` (side 1: the units go to that structure and stay near it), `hold` (stop moving, only
+ * fire), `free` (back to the battle's own judgement), `withdraw` (side 0: those units pull out;
+ * with no `units`, all of them).
+ */
 export interface BattleOrder {
   step: number;
   side: Side;
-  kind: 'withdraw';
+  kind: OrderKind;
+  units?: number[];
+  target?: number;
+}
+
+/**
+ * An allied force that joins a battle (version 4). On side 0 its units come in at `arrive` (a
+ * step) by `route` (the attacking force's own when absent) like the attackers and fight as
+ * attackers under their stance; on side 1 they come in at `arrive` at the city's way in nearest
+ * `route` (the layout's first when absent) and fight as defenders. Its units' ids must not repeat
+ * on their side's (the main force's, or `layout.defenders`'): a builder might use
+ * `owner * 10_000 + k`, keeping them under 1,000,000 where the region room carries them in orders.
+ * No superweapons and nothing carried; `base` −1. A helper's units count with their side's
+ * strength: an attacking helper's with the force's (the army withdraws as one, at the stance's
+ * share lost, and a unit sent home by `withdraw` isn't counted lost); a defending one's with the
+ * defence, which never withdraws.
+ */
+export interface BattleHelper {
+  /** 1–255, and not another helper's (0 is the attacking force, −1 the defender's own units). */
+  owner: number;
+  name: string;
+  color: number;
+  side: Side;
+  units: BattleUnitIn[];
+  arrive: number;
+  route?: BattleRoute;
+  /** Its own research's modifiers (the main force's don't pass to it). */
+  mods?: BattleMods;
 }
 
 export interface BattleInput {
@@ -156,6 +215,8 @@ export interface BattleInput {
   attacker: ForceIn;
   defender: { name: string; color: number };
   orders: BattleOrder[];
+  /** Version 4: allied forces that join while the battle runs (at most three). */
+  helpers?: BattleHelper[];
   caps: { maxCollapse: number; maxWreck: number };
 }
 
@@ -180,8 +241,12 @@ export interface BattleResult {
   outcome: Outcome;
   steps: number;
   hash: string;
-  /** Every unit that went in: its health after (0 when knocked out), and whether it's out. */
-  units: { side: Side; id: number; kind: UnitKind; hp: number; out: boolean }[];
+  /**
+   * Every unit that went in: its health after (0 when knocked out), and whether it's out. A
+   * version 4 battle adds each unit's `owner` (`OWNER_ATTACKER`, `OWNER_DEFENDER` or a helper's),
+   * so each owner's losses can be counted; a unit with no `owner` is its side's own (0 and −1).
+   */
+  units: { side: Side; id: number; kind: UnitKind; hp: number; out: boolean; owner?: number }[];
   damaged: number[];
   destroyed: number[];
   craters: number[];
@@ -204,6 +269,8 @@ export interface BattleUnitView {
   /** 0 moving, 1 firing or holding, 2 knocked out (a wreck where it stopped), 3 dived (the whale,
    * under water: it can't be hit). */
   state: 0 | 1 | 2 | 3;
+  /** Version 4: whose it is (as in `BattleResult.units`). */
+  owner?: number;
 }
 
 /**
@@ -234,4 +301,14 @@ export interface BattleFrame {
   outcome: Outcome | null;
   /** Version 3: the dome's pool left (0–1), in a battle under a dome. */
   dome?: number;
+  /** Version 4: the helpers, and how many of their units are still in it (on the way or fighting). */
+  helpers?: {
+    owner: number;
+    name: string;
+    color: number;
+    side: Side;
+    arrive: number;
+    alive: number;
+    total: number;
+  }[];
 }

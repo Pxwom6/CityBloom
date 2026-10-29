@@ -181,7 +181,10 @@ export function awayResult(input: BattleInput, b: Battle): AwayResult {
     if (L.structs[k * S.stride + S.gun]! > 0) guns.add(L.structs[k * S.stride + S.id]!);
   return {
     outcome: r.outcome,
-    units: r.units.filter((u) => u.side === 0).map((u) => ({ id: u.id, hp: u.hp, out: u.out })),
+    // The city's own force: a version 4 battle's helpers (owners above 0) report to their own cities.
+    units: r.units
+      .filter((u) => u.side === 0 && (u.owner ?? 0) === 0)
+      .map((u) => ({ id: u.id, hp: u.hp, out: u.out })),
     theirLost,
     theirStrength,
     defencesLost: r.destroyed.filter((id) => guns.has(id)).length,

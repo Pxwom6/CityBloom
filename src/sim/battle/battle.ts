@@ -14,15 +14,20 @@ import { Mixer } from '../sync';
 import { MinHeap } from '../systems/graph';
 import { isObjective } from './layout';
 import {
+  BATTLE_V4,
   CELL_SHALLOW,
   CELL_STEEP,
   DOMAIN_BIT,
   E,
+  OWNER_ATTACKER,
+  OWNER_DEFENDER,
   S,
   TAG,
   type BattleEvent,
   type BattleFrame,
+  type BattleHelper,
   type BattleInput,
+  type BattleOrder,
   type BattleResult,
   type BattleMods,
   type BattleShot,
@@ -114,9 +119,29 @@ interface Unit {
    */
   rejoin: boolean;
   wet: number;
+  /** Version 4: whose it is (`OWNER_ATTACKER`, `OWNER_DEFENDER`, or a helper's owner). */
+  owner: number;
+  /** Version 4: ordered to hold (it doesn't move, it fires). */
+  held: boolean;
+  /**
+   * Version 4: what it was ordered to concentrate on: an attacker's structure index (a structure it
+   * fires at before guns and objectives), or a defender's attacking unit's index (fired at first
+   * when in reach); NONE for nothing.
+   */
+  focus: number;
+  /** Version 4, defenders: the structure it was sent to guard (−1 for none), and whether it's there. */
+  guard: number;
+  posted: boolean;
+  /** Its strength as it went in (what a withdrawal by units takes off the force's starting strength). */
+  s0: number;
 }
 
 const NONE = 0x7fffffff;
+
+/** Version 4: a guard stops this far (m) outside the structure's walls when it has to cross open ground. */
+const GUARD_NEAR = 15;
+/** Version 4: sea paths made for a focus order get keys from here, one per unit and structure. */
+const FOCUS_SEA_KEY = 1_000_000;
 
 /** The interceptor battery's reach (m), chance when fully manned, and cooldown (steps), M37. */
 const INTERCEPTOR = MILITARY_DEFS.find((d) => d.military.intercept)?.military.intercept ?? {
@@ -183,9 +208,16 @@ export class Battle {
   private domeLeft: number;
   /** Version 3: the force brought a superweapon (what only such a battle does is gated on it). */
   private superweapon = false;
+  /** Version 4 (the input's stamp): what the hash and the views add for orders and helpers. */
+  private readonly v4: boolean;
+  /** Version 4: the attacker a defence order told every gun to prefer (a unit's index), or NONE. */
+  private gunFocus = NONE;
+  /** Version 4: an attackers' focus order was given, so a fallen focus sends them on to an objective. */
+  private refocus = false;
 
   constructor(input: BattleInput) {
     this.input = input;
+    this.v4 = input.v >= BATTLE_V4;
     const L = input.layout;
     this.rng = Rng.fromSeed(`${input.seed}:battle`);
     this.nStruct = L.structs.length / S.stride;
@@ -237,6 +269,10 @@ export class Battle {
       .forEach((u, k) => this.addAttacker(u, k));
     for (const u of force.filter((x) => x.from !== undefined).slice(0, SUPER.maxCarried)) this.addCarried(u);
     for (const u of L.defenders.slice(0, BATTLE.maxDefenders)) this.addDefender(u);
+    // Version 4: helpers after everyone else, so no unit's index moves for a battle without them.
+    for (const h of input.helpers ?? []) this.addHelper(h);
+    // The attacking side's strength, helpers' units included: the army that came pulls out together
+    // when it has lost the stance's share, whoever's units were lost.
     for (const u of this.units) if (u.side === 0) this.startStrength += this.strength(u);
     this.superweapon = this.units.some((u) => u.side === 0 && !!UNIT.get(u.kind)?.super);
     if (!this.objectives.length) this.finish('withdrew');
@@ -290,13 +326,15 @@ export class Battle {
     return g.cells[j * g.nx + i]!;
   }
 
-  private makeUnit(u: BattleUnitIn, side: Side): Unit | null {
+  private makeUnit(u: BattleUnitIn, side: Side, owner: number, own: BattleMods | null = null): Unit | null {
     const def = UNIT.get(u.kind);
     if (!def) return null;
     let targets = 0;
     for (const d of def.stats.targets) targets |= DOMAIN_BIT[d];
     // Research's modifiers for its side and domain (version 3): none, and every number is as it was.
-    const mods: BattleMods | undefined = side === 0 ? this.input.attacker.mods : this.input.layout.mods;
+    // A helper (version 4) fights with its own research, not its side's.
+    const mods: BattleMods | undefined =
+      owner > 0 ? (own ?? undefined) : side === 0 ? this.input.attacker.mods : this.input.layout.mods;
     const mod = mods?.[def.domain];
     const max = def.stats.hp * modOf(mod, 'hp', 1);
     const armour = def.stats.armour;
@@ -353,13 +391,19 @@ export class Battle {
       surfaced: -1,
       rejoin: false,
       wet: -1,
+      owner,
+      held: false,
+      focus: NONE,
+      guard: -1,
+      posted: false,
+      s0: def.strength * Math.max(0.05, Math.min(1, u.hp)),
     };
     this.units.push(unit);
     return unit;
   }
 
   private addAttacker(u: BattleUnitIn, k: number): void {
-    const unit = this.makeUnit(u, 0);
+    const unit = this.makeUnit(u, 0, OWNER_ATTACKER);
     if (!unit) return;
     const route = this.input.attacker.route;
     const entry = this.entry(unit.domain === 'air' ? 'air' : unit.domain === 'sea' ? 'sea' : route);
@@ -389,7 +433,7 @@ export class Battle {
     let aboard = 0;
     for (const o of this.units) if (o.carrier === carrier.i) aboard++;
     if (aboard >= carrier.carries.n) return;
-    const unit = this.makeUnit(u, 0);
+    const unit = this.makeUnit(u, 0, OWNER_ATTACKER);
     if (!unit) return;
     unit.carrier = carrier.i;
     unit.aboard = true;
@@ -402,7 +446,7 @@ export class Battle {
   }
 
   private addDefender(u: BattleUnitIn): void {
-    const unit = this.makeUnit(u, 1);
+    const unit = this.makeUnit(u, 1, OWNER_DEFENDER);
     if (!unit) return;
     const L = this.input.layout;
     const ready = L.readiness;
@@ -415,6 +459,61 @@ export class Battle {
       }
     }
     if (unit.domain === 'sea') unit.plan = Plan.Guard;
+  }
+
+  /**
+   * An allied force (version 4). Its units wait out `arrive` steps (a step apart from each other as
+   * the attackers are), then come in: an attacking helper by its route (the force's own without
+   * one), objective and stance as the attackers'; a defending helper at the city's way in nearest
+   * its route, as a defender with no reaction delay. Units the battle can't take (a superweapon,
+   * one carried, an unknown kind) don't come; the unit cap is the attackers'.
+   */
+  private addHelper(h: BattleHelper): void {
+    if (!h || (h.side !== 0 && h.side !== 1) || !Array.isArray(h.units)) return;
+    const arrive = Number.isFinite(h.arrive) ? Math.max(0, Math.floor(h.arrive)) : 0;
+    const L = this.input.layout;
+    const crew = h.units
+      .filter((u) => u.from === undefined && !UNIT.get(u.kind)?.super)
+      .slice(0, BATTLE.maxAttackers);
+    const trucks = crew.filter((x) => x.kind === 'transport').length;
+    const squads = crew.filter((x) => x.kind === 'infantry').length;
+    crew.forEach((u, k) => {
+      const unit = this.makeUnit({ ...u, base: -1 }, h.side, h.owner, h.mods ?? null);
+      if (!unit) return;
+      if (h.side === 0) {
+        const route = h.route ?? this.input.attacker.route;
+        const entry = this.entry(unit.domain === 'air' ? 'air' : unit.domain === 'sea' ? 'sea' : route);
+        unit.x = entry.x;
+        unit.z = entry.z;
+        unit.wait = arrive + k * 4;
+        unit.objective = this.objectives[0] ?? -1;
+        if (unit.domain === 'land') {
+          unit.edge = entry.edge;
+          unit.at = entry.at;
+          unit.dir = entry.at > 0 ? -1 : 1;
+          unit.riding = u.kind === 'infantry' && trucks * BATTLE.squadsPerTruck >= squads && trucks > 0;
+        }
+      } else {
+        const ways = L.entries;
+        const entry = (unit.domain === 'air'
+          ? ways.find((e) => e.route === 'air')
+          : unit.domain === 'sea'
+            ? ways.find((e) => e.route === 'sea')
+            : ((h.route ? ways.find((e) => e.route === h.route && e.edge >= 0) : undefined) ??
+              ways.find((e) => e.edge >= 0))) ??
+          ways[0] ?? { x: 0, z: 0, edge: -1, at: 0 };
+        unit.x = entry.x;
+        unit.z = entry.z;
+        unit.wait = arrive + (k % 8) * 2;
+        if (unit.domain === 'land') {
+          unit.edge = entry.edge;
+          unit.at = entry.at;
+          unit.dir = entry.at > 0 ? -1 : 1;
+        }
+        if (unit.domain === 'sea') unit.plan = Plan.Guard;
+      }
+      if (unit.domain === 'air') unit.y = BATTLE.flyHeight;
+    });
   }
 
   private strength(u: Unit): number {
@@ -625,6 +724,8 @@ export class Battle {
       return;
     }
     if (u.mode === Mode.Wait) this.setOff(u);
+    // Version 4: ordered to hold, it stays where it is and only fires.
+    if (u.held) return;
     // Standing to fire; the robot walks on as it fires.
     if (u.firing && u.domain === 'land' && !u.stomp) return;
     const dt = BATTLE.dt;
@@ -641,6 +742,8 @@ export class Battle {
       if (u.dives) this.surfaceOrDive(u);
       return;
     }
+    // Version 4: a defender sent to guard a structure goes there and stays near it.
+    if (u.plan === Plan.Guard && u.guard >= 0) return this.moveGuard(u);
     if (u.mode === Mode.Hold) {
       // Defenders on the move again when the attackers have moved on.
       if (u.side === 1 && u.plan === Plan.Intercept && u.edge >= 0 && this.step % 10 === u.i % 10)
@@ -733,6 +836,40 @@ export class Battle {
     } else u.mode = Mode.Hold;
   }
 
+  /**
+   * Version 4: a defender ordered to guard a structure drives the roads to the point beside it (or
+   * crosses open ground when it has no road), then holds there. When the structure falls it goes
+   * back to the battle's own judgement (`release`, from `damage`).
+   */
+  private moveGuard(u: Unit): void {
+    const k = u.guard;
+    if (u.posted) return;
+    const d = u.speed * BATTLE.dt;
+    if (u.edge >= 0 && this.sv(k, S.edge) >= 0) {
+      u.mode = Mode.Road;
+      if (this.drive(u, this.objectiveField(k), d)) {
+        u.mode = Mode.Hold;
+        u.posted = true;
+      }
+      return;
+    }
+    u.gx = this.sx(k);
+    u.gz = this.sz(k);
+    u.mode = Mode.Free;
+    if (this.walk(u, d * BATTLE.offRoad, this.sv(k, S.rIn) + GUARD_NEAR)) {
+      u.mode = Mode.Hold;
+      u.posted = true;
+    }
+  }
+
+  /** A defender's guard duty ends: its plan as the battle would have it. */
+  private release(u: Unit): void {
+    u.plan = u.domain === 'sea' ? Plan.Guard : Plan.Intercept;
+    u.guard = -1;
+    u.posted = false;
+    if (u.mode === Mode.Free) u.mode = Mode.Hold;
+  }
+
   private fly(u: Unit, dist: number): void {
     let cx: number;
     let cz: number;
@@ -747,6 +884,10 @@ export class Battle {
       if (u.objective < 0) return;
       cx = this.sx(u.objective);
       cz = this.sz(u.objective);
+    } else if (u.plan === Plan.Guard && u.guard >= 0) {
+      // Version 4: a defending aircraft sent to guard a structure circles it.
+      cx = this.sx(u.guard);
+      cz = this.sz(u.guard);
     } else {
       // Defending aircraft go for the nearest attacker they can hit.
       let best = Infinity;
@@ -1005,19 +1146,26 @@ export class Battle {
       if (!this.canHit(u.targets, o)) continue;
       const d = DMath.hypot(o.x - u.x, o.z - u.z);
       if (d > u.range) continue;
-      consider(o.i, this.canHit(o.targets, u) && o.attack > 0 ? 0 : 3, d);
+      // Version 4: a defender told to focus on an attacker fires on it first whenever it's in reach.
+      consider(
+        o.i,
+        u.side === 1 && o.i === u.focus ? -1 : this.canHit(o.targets, u) && o.attack > 0 ? 0 : 3,
+        d,
+      );
     }
     if (u.side === 0 && u.siege > 0 && (u.targets & DOMAIN_BIT.land) !== 0) {
       // Defences, then the objectives (in any order: the best is the same whatever the order).
       for (const k of this.structsNear(u.x, u.z, u.range + 40)) {
         if (this.state[k] === 2) continue;
         const gun = this.sv(k, S.gun) > 0 && this.sv(k, S.manned) > 0;
-        const obj = this.objectives.includes(k);
+        // Version 4: the structure the attackers were told to focus on counts as an objective (its
+        // `focus` is NONE in a battle without such an order), and is fired on before guns.
+        const obj = this.objectives.includes(k) || k === u.focus;
         if (!gun && !obj) continue;
         const d = Math.max(0, DMath.hypot(this.sx(k) - u.x, this.sz(k) - u.z) - this.sv(k, S.rIn));
         if (d > u.range) continue;
         // Bomb drones (version 3: what a carrier brings) dive on the objectives first, then the guns.
-        consider(-(k + 1), u.carrier >= 0 ? (obj ? 1 : 2) : gun ? 1 : 2, d);
+        consider(-(k + 1), k === u.focus ? 0.5 : u.carrier >= 0 ? (obj ? 1 : 2) : gun ? 1 : 2, d);
       }
     }
     u.target = best;
@@ -1277,7 +1425,11 @@ export class Battle {
       else this.collapsed++;
       this.allEvents.destroyed.push(this.sv(k, S.id));
       this.events.push({ k: 'destroyed', s: this.sv(k, S.id) });
-      for (const u of this.units) if (u.target === -(k + 1)) u.target = NONE;
+      for (const u of this.units) {
+        if (u.target === -(k + 1)) u.target = NONE;
+        // Version 4: what a defender was sent to guard has fallen: it's back to the battle's judgement.
+        if (u.guard === k) this.release(u);
+      }
     }
   }
 
@@ -1307,6 +1459,18 @@ export class Battle {
             best = o.i;
           }
         }
+        // Version 4: a focus ordered for the defence is taken whenever it's in this gun's reach.
+        if (this.gunFocus !== NONE) {
+          const o = this.units[this.gunFocus]!;
+          if (
+            this.alive(o) &&
+            o.mode !== Mode.Wait &&
+            !o.dived &&
+            (against & DOMAIN_BIT[o.domain]) !== 0 &&
+            DMath.hypot(o.x - x, o.z - z) <= range
+          )
+            best = o.i;
+        }
         this.gunTarget[k] = best;
       }
       const t = this.gunTarget[k]!;
@@ -1331,9 +1495,97 @@ export class Battle {
     this.events.push({ k: 'end', outcome });
   }
 
+  /** Orders that apply at this step, in input order (a live battle's list may grow as it runs). */
   private orders(): void {
-    for (const o of this.input.orders)
-      if (o.step === this.step && o.side === 0 && o.kind === 'withdraw') this.withdraw();
+    for (const o of this.input.orders) if (o.step === this.step) this.order(o);
+  }
+
+  /** The units of an order's side that it names (all of them without `units`) and that are still in. */
+  private pick(o: BattleOrder): Unit[] {
+    const want = o.units === undefined ? null : new Set(Array.isArray(o.units) ? o.units : []);
+    return this.units.filter((u) => u.side === o.side && this.alive(u) && (!want || want.has(u.id)));
+  }
+
+  /** A structure index from an order, or −1 for anything that isn't one still standing. */
+  private standing(t: unknown): number {
+    return typeof t === 'number' && Number.isInteger(t) && t >= 0 && t < this.nStruct && this.state[t] !== 2
+      ? t
+      : -1;
+  }
+
+  /**
+   * One order (version 4 adds all but the whole side's withdrawal). Whatever names units that are
+   * gone, or a target that has fallen or never was, does nothing: no order can break a battle.
+   */
+  private order(o: BattleOrder): void {
+    if (o.side !== 0 && o.side !== 1) return;
+    if (o.kind === 'withdraw') {
+      if (o.side !== 0) return;
+      if (o.units === undefined) this.withdraw();
+      else
+        for (const u of this.pick(o)) {
+          if (u.plan === Plan.Exit) continue;
+          // A unit sent home counts as no loss: the force's strength to go by is what stays.
+          if (!this.withdrawing) this.startStrength -= u.s0;
+          this.pullOut(u);
+        }
+      return;
+    }
+    // Units already pulling out take no more orders; naming units that are all gone does nothing.
+    const who = this.pick(o).filter((u) => u.plan !== Plan.Exit);
+    if (o.units !== undefined && !who.length) return;
+    switch (o.kind) {
+      case 'focus': {
+        if (o.side === 0) {
+          const k = this.standing(o.target);
+          if (k < 0) return;
+          this.refocus = true;
+          for (const u of who) {
+            if (u.aboard) continue;
+            u.focus = k;
+            this.aim(u, k, true);
+          }
+        } else {
+          const t =
+            typeof o.target === 'number'
+              ? this.units.findIndex((u) => u.side === 0 && u.id === o.target)
+              : -1;
+          if (t < 0 || !this.alive(this.units[t]!)) return;
+          this.gunFocus = t;
+          for (const u of who) u.focus = t;
+        }
+        return;
+      }
+      case 'guard': {
+        const k = this.standing(o.target);
+        if (o.side !== 1 || k < 0) return;
+        const road = this.sv(k, S.edge) >= 0;
+        for (const u of who) {
+          // Boats stay where they guard; on a road, a structure with no road to it can't be reached.
+          if (u.domain === 'sea' || (u.domain === 'land' && u.edge >= 0 && !road)) continue;
+          u.plan = Plan.Guard;
+          u.guard = k;
+          u.posted = false;
+          u.held = false;
+        }
+        return;
+      }
+      case 'hold':
+        for (const u of who) u.held = true;
+        return;
+      case 'free':
+        for (const u of who) {
+          u.held = false;
+          u.focus = NONE;
+          if (o.side === 1) this.release(u);
+          else if (!u.aboard) {
+            const next = this.objectives.find((k) => this.state[k] !== 2);
+            if (next !== undefined && u.objective !== next) this.aim(u, next, true);
+          }
+        }
+        if (o.side === 1 && o.units === undefined) this.gunFocus = NONE;
+        return;
+    }
   }
 
   private withdraw(): void {
@@ -1341,21 +1593,61 @@ export class Battle {
     this.withdrawing = true;
     for (const u of this.units) {
       if (u.side !== 0 || !this.alive(u)) continue;
-      u.plan = Plan.Exit;
-      u.target = NONE;
-      u.firing = false;
-      u.path = null;
-      if (u.dives) u.dived = true;
-      if (u.mode === Mode.Wait) this.leave(u);
-      else if (u.stomp && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
-        // The robot (version 3) walks to the nearest road it can reach, then drives out.
-        const r = this.nearestRoad(u, this.exitField());
-        u.backEdge = r.edge;
-        u.backAt = r.at;
-        u.rejoin = false;
-        u.mode = Mode.Free;
-      } else if (u.mode === Mode.Hold)
-        u.mode = u.domain === 'land' ? (u.backEdge >= 0 ? Mode.Free : Mode.Road) : u.mode;
+      this.pullOut(u);
+    }
+  }
+
+  /** One attacker pulls out: off by the way it came, no more shooting (a pending one never comes). */
+  private pullOut(u: Unit): void {
+    u.plan = Plan.Exit;
+    u.target = NONE;
+    u.firing = false;
+    u.path = null;
+    u.held = false;
+    u.focus = NONE;
+    if (u.dives) u.dived = true;
+    if (u.mode === Mode.Wait) this.leave(u);
+    else if (u.stomp && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
+      // The robot (version 3) walks to the nearest road it can reach, then drives out.
+      const r = this.nearestRoad(u, this.exitField());
+      u.backEdge = r.edge;
+      u.backAt = r.at;
+      u.rejoin = false;
+      u.mode = Mode.Free;
+    } else if (u.mode === Mode.Hold)
+      u.mode = u.domain === 'land' ? (u.backEdge >= 0 ? Mode.Free : Mode.Road) : u.mode;
+  }
+
+  /**
+   * An attacker's new objective, and how it sets off for it from where it stands. `turn` (version
+   * 4, an order rather than the battle's own judgement): a land unit on a road turns the shorter
+   * way round, and a boat plans its own way.
+   */
+  private aim(u: Unit, k: number, turn = false): void {
+    u.objective = k;
+    u.path = null;
+    if (u.domain === 'land' && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
+      // The robot (version 3) walks on, or to a road; it may be far from where it left one.
+      if (u.stomp) {
+        this.robotOn(u);
+        return;
+      }
+      // Back to the road it left (a few metres off), then on.
+      u.mode = Mode.Road;
+      u.edge = u.backEdge;
+      u.at = u.backAt;
+      u.backEdge = -1;
+    } else if (
+      turn &&
+      u.domain === 'land' &&
+      u.mode === Mode.Road &&
+      u.edge >= 0 &&
+      this.sv(k, S.edge) >= 0
+    ) {
+      this.face(u, this.objectiveField(k));
+    } else if (turn && u.domain === 'sea' && u.mode === Mode.Sea) {
+      u.path = this.seaPath(u, FOCUS_SEA_KEY + u.i * 4096 + k, this.sx(k), this.sz(k));
+      u.pi = 0;
     }
   }
 
@@ -1366,20 +1658,7 @@ export class Battle {
     for (const u of this.units) {
       if (u.side !== 0 || !this.alive(u) || u.plan !== Plan.Attack) continue;
       if (u.objective >= 0 && this.state[u.objective] !== 2) continue;
-      u.objective = next;
-      u.path = null;
-      if (u.domain === 'land' && (u.mode === Mode.Free || u.mode === Mode.Hold) && u.backEdge >= 0) {
-        // The robot (version 3) walks on, or to a road; it may be far from where it left one.
-        if (u.stomp) {
-          this.robotOn(u);
-          continue;
-        }
-        // Back to the road it left (a few metres off), then on.
-        u.mode = Mode.Road;
-        u.edge = u.backEdge;
-        u.at = u.backAt;
-        u.backEdge = -1;
-      }
+      this.aim(u, next);
     }
   }
 
@@ -1411,7 +1690,7 @@ export class Battle {
       (this.superweapon && this.capsHold())
     )
       this.withdraw();
-    else if (down > 0) this.retarget();
+    else if (down > 0 || this.refocus) this.retarget();
   }
 
   /**
@@ -1494,6 +1773,20 @@ export class Battle {
     }
     for (let k = 0; k < this.nStruct; k++) m.num(this.hp[k]!);
     if (this.domeMax > 0) m.num(this.domeLeft);
+    // Version 4: what orders and helpers set (a battle stamped below it hashes exactly as it did).
+    if (this.v4) {
+      m.int(this.gunFocus);
+      for (const u of this.units) {
+        m.int(u.owner);
+        m.int(u.plan);
+        m.int(u.held ? 1 : 0);
+        m.int(u.objective);
+        m.int(u.focus);
+        m.int(u.guard);
+        m.int(u.posted ? 1 : 0);
+        m.int(u.wait);
+      }
+    }
     return m.hex();
   }
 
@@ -1508,6 +1801,7 @@ export class Battle {
         kind: u.kind,
         hp: Math.round((u.hp / u.max) * 1000) / 1000,
         out: u.mode === Mode.Out,
+        ...(this.v4 ? { owner: u.owner } : {}),
       })),
       damaged: [...this.allEvents.damaged],
       destroyed: [...this.allEvents.destroyed],
@@ -1547,7 +1841,8 @@ export class Battle {
           yaw: Math.round(u.yaw * 1000) / 1000,
           aim: Math.round(u.aim * 1000) / 1000,
           hp: Math.round((u.hp / u.max) * 100) / 100,
-          state: u.mode === Mode.Out ? 2 : u.dived ? 3 : u.firing || u.mode === Mode.Hold ? 1 : 0,
+          state: u.mode === Mode.Out ? 2 : u.dived ? 3 : u.firing || u.mode === Mode.Hold || u.held ? 1 : 0,
+          ...(this.v4 ? { owner: u.owner } : {}),
         })),
       shots: [...this.shots],
       sides,
@@ -1559,6 +1854,22 @@ export class Battle {
       })),
       outcome: this.outcome,
       ...(this.domeMax > 0 ? { dome: Math.round((this.domeLeft / this.domeMax) * 1000) / 1000 } : {}),
+      ...(this.v4 && this.input.helpers?.length
+        ? {
+            helpers: this.input.helpers.map((h) => {
+              const list = this.units.filter((u) => u.owner === h.owner);
+              return {
+                owner: h.owner,
+                name: h.name,
+                color: h.color,
+                side: h.side,
+                arrive: h.arrive,
+                alive: list.filter((u) => this.alive(u)).length,
+                total: list.length,
+              };
+            }),
+          }
+        : {}),
     };
   }
 }

@@ -49,6 +49,7 @@ import {
   type DiplomacySummary,
 } from './diplomacy';
 import { DIPLOMACY, DIPLOMATS } from '../../data/diplomacy';
+import type { WarEconomy } from './warEconomy';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -162,6 +163,8 @@ export interface WarState {
    */
   clockCap?: number;
   heldNote?: number;
+  /** Stakes in neighbours' industries, loans to allies and aid to their wars (M38); absent until first used. */
+  economy?: WarEconomy;
 }
 
 export function initialWar(seed: string): WarState {

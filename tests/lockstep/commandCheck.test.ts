@@ -131,6 +131,8 @@ const SAMPLES: Record<CommandType, Command> = {
   // M38: the war economy.
   buyStake: { type: 'buyStake', neighbour: 2, share: 10 },
   sellStake: { type: 'sellStake', neighbour: 2 },
+  lendAlly: { type: 'lendAlly', neighbour: 2, amount: 150_000 },
+  fundAlly: { type: 'fundAlly', neighbour: 2, perMonth: 40_000 },
 };
 
 /** Values a field might carry instead of what it should. */

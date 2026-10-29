@@ -1,21 +1,27 @@
 /**
- * The war economy (phase 5, M38), docs/plans/M38-design.md calls 2 and 3. A city at war with rivals
+ * The war economy (phase 5, M38), docs/plans/M38-design.md calls 2 to 5. A city at war with rivals
  * can put its money to work with the computer neighbours:
  *
  *  - stakes in a neighbour's industry, bought in steps and paying dividends every month, frozen
  *    while the city fights that neighbour (or either side sanctions the other) and seized when the
  *    city capitulates to it or a treacherous neighbour declares war;
+ *  - loans to an ally (a neighbour it has an alliance or a defensive pact with), repaid with
+ *    interest;
+ *  - aid to an ally fighting at the city's side, which arms faster and counts for more in the war
+ *    score.
  *
  * Everything lives in `WarState.economy`, which appears with the first stake, loan or aid: a
  * peaceful city, and a war city that never uses it, are unchanged. Money goes through `book` and
  * `accrue` like every other line; the rates are in `monthlyRates` (`warEconomyRates`).
  */
-import { INVEST } from '../../data/warEconomy';
+import { annuity } from '../../data/economy';
+import { INVEST, LENDING, WAR_AID, lendingRate } from '../../data/warEconomy';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
-import { book } from './economy';
-import { fightingWith, note, warWith } from './diplomacy';
+import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
+import { accrue, book } from './economy';
+import { anyWarOpen, fightingWith, helpers, note, pactsWith, warWith } from './diplomacy';
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
@@ -231,50 +237,244 @@ export function seizeStakes(sim: Sim, n: Neighbour, when: string): void {
 
 /**
  * A computer neighbour is replaced by a friend's city in a shared region: whatever the city had in
- * it ends. A stake is paid back what was paid for it.
+ * it ends. Stakes are paid back what was paid for them, loans what is still owed, aid stops.
  */
 export function forgetEconomy(sim: Sim, id: number): void {
   const e = sim.state.war?.economy;
-  const stake = e?.stakes[id];
-  if (!e || !stake) return;
-  delete e.stakes[id];
-  book(sim, 'stakeSold', stake.paid);
+  if (!e) return;
+  const stake = e.stakes[id];
+  if (stake) {
+    delete e.stakes[id];
+    book(sim, 'stakeSold', stake.paid);
+  }
+  for (const loan of e.loans.filter((l) => l.with === id)) {
+    e.loans = e.loans.filter((l) => l !== loan);
+    book(sim, 'allyRepaid', Math.round(loan.balance));
+  }
+  delete e.aid[id];
   sim.warChanged();
 }
 
-// ----- Each month -----
+// ----- Allies: loans and aid -----
 
-/** Monthly ledger lines from stakes at current conditions (for `monthlyRates`). */
+/** A neighbour the city has an alliance or a defensive pact with (the pact stands). */
+export function allied(sim: Sim, id: number): boolean {
+  return pactsWith(sim, id, 'alliance').length > 0 || pactsWith(sim, id, 'defensivePact').length > 0;
+}
+
+/** Is this ally fighting at the city's side in a war now? */
+export function helping(sim: Sim, id: number): boolean {
+  return helpers(sim).some((h) => h.ally.id === id);
+}
+
+/** What the loan to this ally charges a year (by its character). */
+export function loanRate(n: Neighbour): number {
+  return lendingRate(n.rival!.personality);
+}
+
+/** The city can't lend this amount to this neighbour now, and why; null when it can. */
+export function lendRefusal(sim: Sim, id: number, amount: number): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  if (!LENDING.amounts.includes(amount)) return 'No such loan';
+  const n = s.region.neighbours.find((x) => x.id === id);
+  if (!n) return 'No such neighbour';
+  if (n.player) return 'Loans to a friend come with treaties among friends (M39)';
+  if (!n.rival) return `${n.name} isn’t a rival`;
+  if (!allied(sim, id))
+    return `${n.name} isn’t the city’s ally: loans go to a neighbour it has an alliance or a defensive pact with`;
+  if (n.rival.vassal) return `${n.name} is the city’s vassal`;
+  const frozen = frozenReason(sim, id, n.name, 'loan');
+  if (frozen) return frozen;
+  const owed = s.war.economy?.loans.find((l) => l.with === id);
+  if (owed) return `${n.name} still owes the city ${money(owed.balance)}`;
+  if (!s.options.sandbox && s.treasury < amount)
+    return `Lending ${money(amount)} needs that much in the bank`;
+  return null;
+}
+
+/** Lend an ally money, repaid with interest over two years (M38 call 4). */
+export function lendAlly(sim: Sim, id: number, amount: number, dryRun: boolean): CommandResult {
+  const why = lendRefusal(sim, id, amount);
+  if (why) return fail(why);
+  const n = computerNeighbour(sim, id)!;
+  const rate = loanRate(n);
+  const payment = annuity(amount, rate, LENDING.months);
+  if (dryRun) return ok(amount, { info: { payment: Math.round(payment), rate } });
+  const loan: AllyLoan = {
+    id: sim.state.nextId++,
+    with: id,
+    principal: amount,
+    annualRate: rate,
+    months: LENDING.months,
+    payment,
+    balance: amount,
+    takenTick: sim.state.tick,
+  };
+  economy(sim).loans.push(loan);
+  book(sim, 'allyLent', -amount);
+  sim.warChanged();
+  return ok(amount, { created: [loan.id], info: { payment: Math.round(payment), rate } });
+}
+
+/** The city can't fund this ally's war at this sum now, and why; null when it can (0 stops). */
+export function fundRefusal(sim: Sim, id: number, perMonth: number): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  const n = s.region.neighbours.find((x) => x.id === id);
+  if (!n) return 'No such neighbour';
+  const aid = s.war.economy?.aid[id];
+  if (perMonth === 0) return aid && aid.perMonth > 0 ? null : `The city isn’t funding ${n.name}’s war`;
+  if (
+    !Number.isInteger(perMonth) ||
+    perMonth < WAR_AID.step ||
+    perMonth > WAR_AID.max ||
+    perMonth % WAR_AID.step !== 0
+  )
+    return `Aid is ${money(WAR_AID.step)} to ${money(WAR_AID.max)} a month, in steps of ${money(WAR_AID.step)}`;
+  if (n.player) return 'Aid to a friend’s war comes with treaties among friends (M39)';
+  if (!n.rival) return `${n.name} isn’t a rival`;
+  if (!allied(sim, id))
+    return `${n.name} isn’t the city’s ally: aid goes to a neighbour it has an alliance or a defensive pact with`;
+  if (!anyWarOpen(sim)) return 'The city isn’t at war: there is no war to fund';
+  if (!helping(sim, id)) return `${n.name} isn’t fighting at the city’s side in any war`;
+  if (sanctionsBetween(sim, id)) return `Sanctions between the city and ${n.name} stand in the way`;
+  return null;
+}
+
+/**
+ * Fund an ally's war (M38 call 5): `perMonth` dollars a month for as long as it fights at the city's
+ * side. It arms faster and counts for more in the war score; 0 stops the aid, which costs nothing.
+ */
+export function fundAlly(sim: Sim, id: number, perMonth: number, dryRun: boolean): CommandResult {
+  const why = fundRefusal(sim, id, perMonth);
+  if (why) return fail(why);
+  if (dryRun) return ok(0);
+  const e = economy(sim);
+  const had = e.aid[id];
+  // A stopped order stays until the month's lift is counted (the money paid so far still counts).
+  if (had) had.perMonth = perMonth;
+  else e.aid[id] = { perMonth, funded: 0, effect: 0 };
+  sim.warChanged();
+  return ok(0);
+}
+
+/** How much the aid sent to this neighbour last month lifted it, 0 to 1 (0 with none). */
+export function aidEffect(sim: Sim, id: number): number {
+  return sim.state.war?.economy?.aid[id]?.effect ?? 0;
+}
+
+// ----- Each hour and each month -----
+
+/** Why a loan can no longer run, or null: the pact is over, or the borrower is the city's own now. */
+function loanVoid(sim: Sim, loan: AllyLoan): string | null {
+  const n = computerNeighbour(sim, loan.with);
+  if (!n) return 'the town is gone';
+  if (n.rival!.vassal) return `${n.name} has fallen to the city, so it is the city’s own`;
+  if (!allied(sim, loan.with)) return `its pact with ${n.name} is over`;
+  return null;
+}
+
+/** Monthly ledger lines from stakes, loans to allies and aid, at current conditions (for `monthlyRates`). */
 export function warEconomyRates(sim: Sim): Record<string, number> {
   const e = sim.state.war?.economy;
   const out: Record<string, number> = {};
   if (!e) return out;
+  const add = (k: string, v: number) => {
+    if (v) out[k] = (out[k] ?? 0) + v;
+  };
   for (const id of ids(e.stakes)) {
     const n = computerNeighbour(sim, id);
-    if (n) {
-      const v = stakeDividend(sim, n, e.stakes[id]!);
-      if (v) out.dividends = (out.dividends ?? 0) + v;
-    }
+    if (n) add('dividends', stakeDividend(sim, n, e.stakes[id]!));
   }
+  for (const loan of e.loans) {
+    const n = computerNeighbour(sim, loan.with);
+    if (!n || loanVoid(sim, loan) || frozenReason(sim, loan.with, n.name, 'loan')) continue;
+    const interest = Math.min(loan.balance * (loan.annualRate / 12), loan.payment);
+    add('allyInterest', interest);
+    add('allyRepaid', Math.min(loan.balance, loan.payment - interest));
+  }
+  for (const id of ids(e.aid))
+    if (e.aid[id]!.perMonth > 0 && helping(sim, id)) add('warAid', -e.aid[id]!.perMonth);
   return out;
 }
 
 /**
- * At the month's start: the neighbours' towns have grown or shrunk, so the stakes' worth and the page's
- * figures change.
+ * The war economy's hour, in the war hour after the money of the hour: allies' instalments (interest
+ * first, then principal, like a loan) unless frozen, loans written off when the pact ends, aid
+ * counted while the ally fights at the city's side.
+ */
+export function warEconomyHour(sim: Sim): void {
+  const e = sim.state.war?.economy;
+  if (!e) return;
+  for (const loan of [...e.loans]) {
+    const gone = loanVoid(sim, loan);
+    const n = computerNeighbour(sim, loan.with);
+    if (gone || !n) {
+      e.loans = e.loans.filter((l) => l !== loan);
+      note(
+        sim,
+        loan.with,
+        'writtenOff',
+        `The city writes off the ${money(loan.balance)} still owed by ${n?.name ?? 'a lost ally'}: ${gone ?? 'the town is gone'}`,
+        'bad',
+      );
+      continue;
+    }
+    if (frozenReason(sim, loan.with, n.name, 'loan')) continue;
+    const interest = (loan.balance * (loan.annualRate / 12)) / HOURS_PER_DAY;
+    const pay = Math.min(loan.payment / HOURS_PER_DAY, loan.balance + interest);
+    const principal = pay - interest;
+    accrue(sim, 'allyInterest', interest);
+    accrue(sim, 'allyRepaid', principal);
+    loan.balance -= principal;
+    if (loan.balance <= 0.5) {
+      // Settle the last cents exactly so nothing is lost or created.
+      accrue(sim, 'allyRepaid', loan.balance);
+      e.loans = e.loans.filter((l) => l !== loan);
+      note(sim, loan.with, 'loanRepaid', `${n.name} has repaid the city’s loan in full`, 'good');
+    }
+  }
+  for (const id of ids(e.aid)) {
+    const aid = e.aid[id]!;
+    const n = computerNeighbour(sim, id);
+    if (!n || n.rival!.vassal || !allied(sim, id)) {
+      delete e.aid[id];
+      if (n) note(sim, id, 'aidEnded', `The city’s aid to ${n.name} ends with their pact`);
+      continue;
+    }
+    // Paid by the hour (the ledger's `warAid`), and counted as funding for the month's lift.
+    if (aid.perMonth > 0 && helping(sim, id))
+      aid.funded = Math.min(1, aid.funded + aid.perMonth / WAR_AID.max / HOURS_PER_DAY);
+  }
+}
+
+/**
+ * At the month's start, before the neighbours arm and the war score moves: last month's funding
+ * becomes this month's lift. An order that was stopped stays one more month so its lift is read,
+ * and goes at the next start (when it earned nothing).
  */
 export function warEconomyMonth(sim: Sim): void {
   const e = sim.state.war?.economy;
-  if (e && ids(e.stakes).length) sim.warChanged();
+  if (!e) return;
+  for (const id of ids(e.aid)) {
+    const aid = e.aid[id]!;
+    aid.effect = Math.round(clamp(aid.funded, 0, 1) * 1000) / 1000;
+    aid.funded = 0;
+    if (aid.perMonth === 0 && aid.effect === 0) delete e.aid[id];
+  }
+  // Stakes follow the towns' growth: the page's figures change.
+  if (ids(e.stakes).length || e.loans.length || ids(e.aid).length) sim.warChanged();
 }
 
 // ----- For the war room -----
 
 export interface WarEconomySummary {
-  /** Monthly lines at current conditions: dividends from the stakes. */
-  rates: { dividends: number };
-  /** What the city's stakes are worth now. */
+  /** Monthly lines at current conditions: dividends, allies' interest and repayments, aid sent (negative). */
+  rates: { dividends: number; allyInterest: number; allyRepaid: number; warAid: number };
+  /** What the city's stakes are worth now, and what its allies owe it. */
   worth: number;
+  owed: number;
   /** One row for each computer neighbour. */
   neighbours: {
     id: number;
@@ -297,6 +497,24 @@ export interface WarEconomySummary {
     buy: string | null;
     sale: number;
     sell: string | null;
+    /** An alliance or a defensive pact stands; why the smallest loan can't be made; the loan outstanding. */
+    allied: boolean;
+    rate: number;
+    lend: string | null;
+    loan: {
+      id: number;
+      principal: number;
+      balance: number;
+      payment: number;
+      annualRate: number;
+      monthsLeft: number;
+      frozen: boolean;
+    } | null;
+    /** Fighting at the city's side now; aid sent a month (0 when none); the lift last month's gave; why aid can't be sent. */
+    helping: boolean;
+    aid: number;
+    effect: number;
+    fund: string | null;
   }[];
 }
 
@@ -305,13 +523,18 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
   if (!s.war) return null;
   const e = s.war.economy;
   const rates = warEconomyRates(sim);
+  const months = (tick: number) => Math.floor((s.tick - tick) / TICKS_PER_MONTH);
   let worth = 0;
+  let owed = 0;
   const neighbours = s.region.neighbours
     .filter((n) => n.rival && !n.player)
     .map((n) => {
       const stake = e?.stakes[n.id];
+      const loan = e?.loans.find((l) => l.with === n.id);
+      const aid = e?.aid[n.id];
       const w = stake ? stakeWorth(n, stake.share) : 0;
       worth += w;
+      owed += loan ? loan.balance : 0;
       return {
         id: n.id,
         name: n.name,
@@ -330,7 +553,35 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
         buy: buyRefusal(sim, n.id, INVEST.step),
         sale: stake ? stakeSale(n, stake.share) : 0,
         sell: stake ? sellRefusal(sim, n.id) : null,
+        allied: allied(sim, n.id),
+        rate: loanRate(n),
+        lend: lendRefusal(sim, n.id, LENDING.amounts[0]!),
+        loan: loan
+          ? {
+              id: loan.id,
+              principal: loan.principal,
+              balance: Math.round(loan.balance),
+              payment: Math.round(loan.payment),
+              annualRate: loan.annualRate,
+              monthsLeft: Math.max(0, loan.months - months(loan.takenTick)),
+              frozen: !!frozenReason(sim, n.id, n.name, 'loan'),
+            }
+          : null,
+        helping: helping(sim, n.id),
+        aid: aid?.perMonth ?? 0,
+        effect: aid?.effect ?? 0,
+        fund: fundRefusal(sim, n.id, WAR_AID.step),
       };
     });
-  return { rates: { dividends: Math.round(rates.dividends ?? 0) }, worth, neighbours };
+  return {
+    rates: {
+      dividends: Math.round(rates.dividends ?? 0),
+      allyInterest: Math.round(rates.allyInterest ?? 0),
+      allyRepaid: Math.round(rates.allyRepaid ?? 0),
+      warAid: Math.round(rates.warAid ?? 0),
+    },
+    worth,
+    owed: Math.round(owed),
+    neighbours,
+  };
 }

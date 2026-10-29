@@ -251,7 +251,7 @@ export function monthlyRates(sim: Sim): Record<string, number> {
       for (const [k, v] of Object.entries(out)) if (k.startsWith('tax')) taxes += v;
       for (const [k, v] of Object.entries(diplomacyRates(sim, taxes))) add(k, v);
     }
-    // The war economy (M38): dividends from stakes.
+    // The war economy (M38): dividends from stakes, allies' loan instalments and aid sent.
     if (s.war.economy) for (const [k, v] of Object.entries(warEconomyRates(sim))) add(k, v);
   }
   return out;
@@ -264,7 +264,15 @@ export function economyHour(sim: Sim): void {
   if (e.bankrupt) return;
   const rates = monthlyRates(sim);
   for (const k of Object.keys(rates).sort()) {
-    if (k === 'loanPrincipal' || k === 'loanInterest' || k === 'bondPrincipal' || k === 'bondInterest')
+    // Loan and bond instalments are booked by their own hour (they depend on the balance), allies' too.
+    if (
+      k === 'loanPrincipal' ||
+      k === 'loanInterest' ||
+      k === 'bondPrincipal' ||
+      k === 'bondInterest' ||
+      k === 'allyInterest' ||
+      k === 'allyRepaid'
+    )
       continue;
     accrue(sim, k, rates[k]! / HOURS_PER_DAY);
   }

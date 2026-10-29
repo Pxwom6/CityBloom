@@ -31,7 +31,7 @@ export interface DeterminismResult {
   diplomacy: string;
   /** Weapons research (M37), in a war town of its own: its hash each game day while its lab works. */
   research: string[];
-  /** The war economy (M38), in a war town of its own: stakes, and what a war does to them. */
+  /** The war economy (M38), in a war town of its own: stakes, loans, aid, and what a war does to them. */
   economy: string[];
   used: CommandType[];
   refused: string[];
@@ -319,8 +319,9 @@ export function runDeterminism(
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
-  // as they were: stakes bought, sold and bought again, dividends, a stake frozen by a war, and a
-  // capitulation that seizes one.
+  // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
+  // aid for the war it fights at the city's side, a stake frozen by that war, and a capitulation
+  // that seizes one.
   const economy: string[] = [];
   const bank = newTown(false, true);
   const eco = (cmd: Command) => note(cmd, bank.dispatch(cmd));
@@ -341,14 +342,27 @@ export function runDeterminism(
     checkInvariants(bank);
     economy.push(bank.hash());
   }
-  // The war with the enemy: its stake freezes when the war opens.
+  bank.dispatch({
+    type: 'cheat',
+    cheat: 'proposal',
+    neighbour: partner.id,
+    terms: [{ k: 'alliance' }],
+  });
+  const treaty = bank.state.war!.diplomacy?.proposals.find((p) => p.from === 'them' && p.with === partner.id);
+  if (treaty) eco({ type: 'answerProposal', proposal: treaty.id, accept: true });
+  eco({ type: 'lendAlly', neighbour: partner.id, amount: 150_000 });
+  bank.advance(TICKS_PER_MONTH);
+  economy.push(bank.hash());
+  // The war with the enemy: its stake freezes when the war opens, and the ally fights at the city's side.
   eco({ type: 'declareWar', neighbour: enemy.id, scale: 'war', reason: 'Our border' });
   bank.advance(13 * TICKS_PER_HOUR);
+  eco({ type: 'fundAlly', neighbour: partner.id, perMonth: 50_000 });
   for (let d = 0; d < 3; d++) {
     bank.advance(TICKS_PER_MONTH);
     checkInvariants(bank);
     economy.push(bank.hash());
   }
+  eco({ type: 'fundAlly', neighbour: partner.id, perMonth: 0 });
   // The war goes against the city until it capitulates: the enemy keeps the stake it holds in its industry.
   const war = bank.state.war!.diplomacy!.wars.find((w) => w.with === enemy.id);
   if (war) war.score = -70;

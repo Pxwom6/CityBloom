@@ -256,7 +256,14 @@ import {
   setNeutral,
   withdrawProposal,
 } from './systems/diplomacy';
-import { buyStake, sellStake, warEconomyMonth } from './systems/warEconomy';
+import {
+  buyStake,
+  fundAlly,
+  lendAlly,
+  sellStake,
+  warEconomyHour,
+  warEconomyMonth,
+} from './systems/warEconomy';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -1547,6 +1554,10 @@ export class Sim {
         return buyStake(this, cmd.neighbour, cmd.share, dryRun);
       case 'sellStake':
         return sellStake(this, cmd.neighbour, dryRun);
+      case 'lendAlly':
+        return lendAlly(this, cmd.neighbour, cmd.amount, dryRun);
+      case 'fundAlly':
+        return fundAlly(this, cmd.neighbour, cmd.perMonth, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -1920,7 +1931,7 @@ export class Sim {
         regionMonth(this);
         // Computer neighbours arm (M34), only where war is on.
         if (s.war) {
-          // The war economy (M38): the stakes' figures follow the neighbours' towns.
+          // The war economy (M38): last month's aid becomes this month's lift, before neighbours arm.
           warEconomyMonth(this);
           rivalsMonth(this);
           // Diplomacy (M36): tribute counted, computer neighbours' proposals and declarations.
@@ -2015,6 +2026,8 @@ export class Sim {
           run('war', () => {
             warHour(this, (c) => extractionPerDay(this, c));
             bondsHour(this);
+            // The war economy (M38): allies' loan instalments, aid counted.
+            warEconomyHour(this);
             // Raids (M35): the neighbours' decisions; units mend at their bases.
             raidsHour(this);
             mendUnits(this);

@@ -83,13 +83,20 @@ export function monthFigures(sim: Sim): number[] {
     }
   }
   // The month's ledger: income leaves out borrowing (loans taken, war bonds sold), capital coming
-  // back (stakes sold; M38) and cheats.
+  // back (allies repaying, stakes sold; M38) and cheats.
   let income = 0;
   let spending = 0;
   const month = s.economy.history[s.economy.history.length - 1];
   for (const [line, v] of Object.entries(month?.lines ?? {})) {
     if (v < 0) spending -= v;
-    else if (line !== 'loans' && line !== 'bonds' && line !== 'cheats' && line !== 'stakeSold') income += v;
+    else if (
+      line !== 'loans' &&
+      line !== 'bonds' &&
+      line !== 'cheats' &&
+      line !== 'allyRepaid' &&
+      line !== 'stakeSold'
+    )
+      income += v;
   }
   const figures: Record<SeriesKey, number> = {
     population: t.population,

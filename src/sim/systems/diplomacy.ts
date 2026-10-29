@@ -25,7 +25,7 @@ import {
   type TermKind,
 } from '../../data/diplomacy';
 import { RAIDS } from '../../data/battle';
-import { INVEST } from '../../data/warEconomy';
+import { INVEST, WAR_AID } from '../../data/warEconomy';
 import { PERSONALITY, type WarScale } from '../../data/war';
 import { CIVIC } from '../../data/civic';
 import { MAP_SIZE } from '../../data/world';
@@ -39,7 +39,7 @@ import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
-import { forgetEconomy, seizeStakes } from './warEconomy';
+import { aidEffect, forgetEconomy, seizeStakes } from './warEconomy';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -1093,7 +1093,7 @@ export function setNeutral(sim: Sim, on: boolean, dryRun: boolean): CommandResul
 }
 
 /** Neighbours fighting on the city's side in its wars: allies, and defensive partners against an aggressor. */
-function helpers(sim: Sim): { ally: Neighbour; war: War }[] {
+export function helpers(sim: Sim): { ally: Neighbour; war: War }[] {
   const d = sim.state.war?.diplomacy;
   if (!d) return [];
   const out: { ally: Neighbour; war: War }[] = [];
@@ -1415,9 +1415,14 @@ export function diplomacyMonth(sim: Sim): void {
     if (d.reputation < DIPLOMACY.reputation.start)
       d.reputation = Math.min(DIPLOMACY.reputation.start, d.reputation + DIPLOMACY.reputation.mendPerMonth);
     // Each ally fighting at the city's side wears the enemy down.
-    for (const { war } of helpers(sim)) {
+    for (const { ally, war } of helpers(sim)) {
       if (!d.wars.includes(war)) continue;
-      war.score = clamp(round1(war.score + DIPLOMACY.score.allyPerDay), -100, 100);
+      // An ally the city funded last month (M38) counts for up to twice as much.
+      const lift = aidEffect(sim, ally.id);
+      const gain = lift
+        ? DIPLOMACY.score.allyPerDay * (1 + (WAR_AID.scoreFactor - 1) * lift)
+        : DIPLOMACY.score.allyPerDay;
+      war.score = clamp(round1(war.score + gain), -100, 100);
       const enemy = neighbourOf(sim, war.with);
       if (enemy?.rival) enemy.rival.forces = round1(enemy.rival.forces * 0.97);
       checkCapitulation(sim, war);

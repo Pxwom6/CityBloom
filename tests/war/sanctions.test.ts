@@ -371,22 +371,29 @@ describe('M38: sanctions on the city', () => {
     const t0 = sim.state.tick;
     ok(sim, { type: 'endPact', pact: pact.id, breakPact: true });
     expect(dip(sim).reputation).toBe(DIPLOMACY.reputation.start + DIPLOMACY.reputation.breakPact);
-    // The honourable town sanctions the city on the spot for its word, and ends its deal; the aggressive
-    // one has the low reputation the break cost to go by, and does the same.
+    // The honourable town sanctions the city on the spot for its word, and ends its deal. One breach
+    // leaves the reputation above the bar every neighbour goes by, so the aggressive town trades on.
     expect(eco(sim).sanctionedBy![n.id]).toMatchObject({ cause: 'broke', since: t0, last: t0 });
-    expect(eco(sim).sanctionedBy![r.id]).toMatchObject({ cause: 'reputation', since: t0, last: t0 });
+    expect(dip(sim).reputation).toBeGreaterThanOrEqual(SANCTION.reputation);
+    expect(eco(sim).sanctionedBy![r.id]).toBeUndefined();
     expect(deal(sim, n.id, 'power')).toBeUndefined();
-    expect(deal(sim, r.id, 'water')).toBeUndefined();
+    expect(deal(sim, r.id, 'water')).toBeDefined();
     // The suburb, whose pact it was, has nothing to cut.
     expect(eco(sim).sanctionedBy![x.id]).toBeUndefined();
     const notices = told(sim, 'sanctionedUs');
-    expect(notices).toHaveLength(2);
-    expect(String(notices.find((e) => e.id === n.id)!.info!.text)).toMatch(
-      /sanctions the city for breaking its word/,
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.info!.text)).toMatch(/sanctions the city for breaking its word/);
+    // A pattern (a second breach takes the reputation under the bar): every neighbour it deals with.
+    dip(sim).reputation = SANCTION.reputation - 5;
+    toMonthStart(sim);
+    const t1 = eco(sim).sanctionedBy![r.id]?.since;
+    expect(eco(sim).sanctionedBy![r.id]).toMatchObject({ cause: 'reputation' });
+    expect(deal(sim, r.id, 'water')).toBeUndefined();
+    expect(String(told(sim, 'sanctionedUs').find((e) => e.id === r.id)!.info!.text)).toMatch(
+      /its word counts for too little/,
     );
-    expect(String(notices.find((e) => e.id === r.id)!.info!.text)).toMatch(/its word counts for too little/);
-    // The word broken is what the honourable town remembers, whatever the reputation does: thirty days on
-    // it is lifted. (Here the reputation mends at once, which is what leaves the days to count.)
+    // The word broken is what the honourable town remembers, whatever the reputation does: thirty days
+    // on it is lifted. (Here the reputation mends at once, which is what leaves the days to count.)
     dip(sim).reputation = 60;
     let days = 0;
     while (eco(sim).sanctionedBy![n.id] && days < 40) {
@@ -397,8 +404,10 @@ describe('M38: sanctions on the city', () => {
     const lifted = sim.state.tick - t0;
     expect(lifted).toBeGreaterThanOrEqual(SANCTION.lapseDays * M);
     expect(lifted).toBeLessThan((SANCTION.lapseDays + 1) * M);
-    // The aggressive town's, counted from the same day, goes the same day.
+    // The aggressive town's lingers thirty days after its cause last held, then goes too.
+    for (let k = 0; k < 3 && eco(sim).sanctionedBy![r.id]; k++) toMonthStart(sim);
     expect(eco(sim).sanctionedBy![r.id]).toBeUndefined();
+    expect(sim.state.tick - t1!).toBeGreaterThanOrEqual(SANCTION.lapseDays * M);
   });
 
   it('are not made by a neighbour that fell to the city, or a friend’s city', () => {

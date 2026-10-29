@@ -149,7 +149,9 @@ export const SANCTION = {
    * nothing with it (no regional deal, arms deal, stake, loan or aid) has nothing to cut, but is
    * still refused new dealings while the cause holds.
    */
-  reputation: 35,
+  // Below a single broken pact (60 − 30): one breach angers the honourable and cautious, a pattern
+  // (a second breach, or a breach and a declared war) every neighbour.
+  reputation: 25,
   lapseDays: 30,
   punishesBreaking: {
     aggressive: false,

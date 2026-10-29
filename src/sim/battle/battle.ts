@@ -1736,10 +1736,13 @@ export class Battle {
     if (this.step % 10 === 0 || this.events.length > before) this.check();
   }
 
-  /** Steps for one city tick; returns the events since the last call. */
-  tick(): BattleEvent[] {
+  /**
+   * Steps for one city tick; returns the events since the last call. A live battle (M39) is given
+   * the step it may not reach (`upTo`: the room's frontier), so it stops short of it.
+   */
+  tick(upTo = Infinity): BattleEvent[] {
     this.shots = [];
-    for (let k = 0; k < BATTLE.stepsPerTick && !this.outcome; k++) this.stepOnce();
+    for (let k = 0; k < BATTLE.stepsPerTick && !this.outcome && this.step < upTo; k++) this.stepOnce();
     return this.drain();
   }
 

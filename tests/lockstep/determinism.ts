@@ -33,6 +33,11 @@ export interface DeterminismResult {
   research: string[];
   /** The war economy (M38), in a war town of its own: stakes, loans, aid, and what a war does to them. */
   economy: string[];
+  /**
+   * A live battle with a friend (M39), hosted in the lab town: its picture, the town's hash as the
+   * room's frontier lets it run and as the room's orders arrive, and how it ends.
+   */
+  live: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -318,6 +323,69 @@ export function runDeterminism(
   labSim.advance(TICKS_PER_MONTH);
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 
+  // A live battle with the friend (M39), in the same town: the friend's force asks, the town makes the
+  // battle of its own picture, hosts it up to the frontier the room gives it as the room's orders
+  // arrive (each side's, a handover among them), and the battle's end is compared in every browser.
+  const liveLog: string[] = [];
+  const unit = (id: number, kind: 'infantry' | 'tank' | 'artillery') => ({
+    id,
+    kind,
+    hp: 1,
+    x: 0,
+    z: 0,
+    base: -1,
+  });
+  const asked = labSim.query({
+    type: 'liveBattle',
+    call: {
+      id: 'exp-00000000-7',
+      from: 2,
+      force: {
+        name: 'Brookside',
+        color: 0x3a78c8,
+        units: [unit(11, 'tank'), unit(12, 'tank'), unit(13, 'infantry'), unit(14, 'artillery')],
+        route: 'highway',
+        target: 'military',
+        stance: 'bold',
+        readiness: 0.8,
+      },
+    },
+  }) as { input?: import('../../src/sim/battle/types').BattleInput; refused?: string };
+  if (asked.input) {
+    const input = asked.input;
+    const defenders = input.layout.defenders.map((u) => u.id);
+    liveLog.push(JSON.stringify([input.id, input.layout.structs.length, defenders.length]));
+    lab({ type: 'battleResolve', input: structuredClone(input), mode: 'live', from: 2 });
+    // As the room stamps them: at the frontier of the moment.
+    const log = [
+      { seq: 1, step: 32, side: 0 as const, kind: 'hold', units: [11] },
+      { seq: 2, step: 64, side: 1 as const, kind: 'guard', units: defenders.slice(0, 2), target: 0 },
+      { seq: 3, step: 96, side: 0 as const, kind: 'focus', target: 0 },
+      { seq: 4, step: 96, side: 1 as const, kind: 'focus', target: 12 },
+      { seq: 5, step: 160, side: 1 as const, kind: 'free' },
+      { seq: 6, step: 224, side: 0 as const, kind: 'withdraw' },
+    ];
+    let allow = 0;
+    for (let t = 0; t < 700 && labSim.state.war!.battle; t++) {
+      const step = labSim.state.war!.battle!.step;
+      if (step + 32 > allow) {
+        allow = step + 32;
+        lab({
+          type: 'battleLive',
+          id: input.id,
+          allow,
+          orders: log.filter((o) => o.step <= allow),
+        });
+      }
+      labSim.step();
+      if (t % 20 === 0) liveLog.push(`${step}:${labSim.hash()}`);
+    }
+    const ended = labSim.events.filter((e) => e.kind === 'battleEnded').at(-1);
+    liveLog.push(
+      JSON.stringify([ended?.info ?? null, labSim.state.war!.reports?.at(-1) ?? null, labSim.hash()]),
+    );
+  }
+
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
   // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
   // munitions and a tank sold to it, sanctions put on a town and lifted, aid for the war it fights at
@@ -431,6 +499,7 @@ export function runDeterminism(
     diplomacy,
     research,
     economy,
+    live: liveLog,
     used: [...used].sort(),
     refused,
   };

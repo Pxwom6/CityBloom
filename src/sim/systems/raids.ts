@@ -7,10 +7,12 @@
  * is kept for the war room. Everything here exists only in a city with war on.
  */
 import {
+  BATTLE,
   RAIDS,
   RIVAL_TARGET,
   ROUTES,
   SKIRMISH,
+  SUPER,
   TRAVEL,
   WAR_DAMAGE,
   WARNING,
@@ -21,14 +23,17 @@ import {
 import { UNIT, type UnitKind } from '../../data/war';
 import { Battle } from '../battle/battle';
 import { checkBattleInput } from '../battle/check';
+import { appendOrders, stampLive, type StampedOrder } from '../battle/live';
 import { battleLayout, objectiveSpots, strengthFactors, structureAsSeen } from '../battle/layout';
 import {
+  BATTLE_V4,
   BATTLE_VERSION,
   S,
   type BattleEvent,
   type BattleFrame,
   type BattleInput,
   type BattleUnitIn,
+  type ForceIn,
   type Outcome,
 } from '../battle/types';
 import { stampBattle } from '../battle/version';
@@ -44,7 +49,7 @@ import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
 import { researchEffect, researchMods } from './research';
-import { blackedOut, lowerDome, raiseDome, rivalBlackedOut } from './supers';
+import { blackedOut, domePool, lowerDome, raiseDome, rivalBlackedOut } from './supers';
 import { SUPER_UNCOUNTED, battleHasSuper } from './regionOps';
 import { powerSabotaged, revealed, rivalKnows } from './intel';
 import { INTEL } from '../../data/intel';
@@ -121,6 +126,22 @@ export interface HostedBattle {
    * the difference, and the structures it has covered (their hits never reach the city).
    */
   cover?: DomeCover;
+  /**
+   * M39: a battle fought live with a friend, as the region room orders it. The battle never runs to
+   * `allow` or past it (the room's frontier, raised by `battleLive`); `seq` is the last of the room's
+   * stamped orders taken into `input.orders`. Optional, so a save without it is a battle as ever.
+   */
+  live?: LiveHosting;
+}
+
+/** The live battle this city hosts (M39): the room's id for it, the attacker's place, how far it may run. */
+export interface LiveHosting {
+  id: string;
+  from: number;
+  allow: number;
+  seq: number;
+  /** It has begun (the room's first word), and the city has felt it. */
+  begun?: true;
 }
 
 /** A dome's pool beyond a battle's own (M37), spent on structures' whole strength, each once. */
@@ -455,12 +476,15 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
 /**
  * A battle fought elsewhere, hosted here (M35): `watch` plays it out a tick at a time (a replay, or
  * the view of a neighbour's town), `instant` plays it to its end at once (a city whose player was
- * away). Its damage reaches the city as any battle's does.
+ * away). Its damage reaches the city as any battle's does. `live` (M39) hosts a battle this city's
+ * own sim made the picture of (`liveBattleInput`) for a friend's force and that the region room
+ * orders: it takes the input as it is (the other page runs the same one), plays only as far as the
+ * room lets it (`battleLive`), and its orders arrive while it runs.
  */
 export function resolveBattle(
   sim: Sim,
   input: BattleInput,
-  mode: 'watch' | 'instant',
+  mode: 'watch' | 'instant' | 'live',
   dryRun: boolean,
   replay?: string,
   from?: number,
@@ -473,10 +497,16 @@ export function resolveBattle(
   if (!w) return fail('War is off in this city');
   const why = checkBattleInput(input);
   if (why) return fail(why);
-  if (w.battle) return fail(BATTLE_BUSY);
+  const live = mode === 'live';
+  if (live && (from === undefined || input.v !== BATTLE_V4))
+    return fail('A live battle is a friend’s, and a version 4 one');
+  // The record of a live battle this very city hosts (it was reloaded, or its page lost the room): it
+  // stands in for the hosted one, which was only a part of the same battle.
+  const standsIn = mode === 'instant' && from !== undefined && w.battle?.live?.id === input.id;
+  if (w.battle && !standsIn) return fail(BATTLE_BUSY);
   // A friend's battle is known by its sender too (M36: two cities' battles may share an id).
   const takenKey = from === undefined ? input.id : `${from}:${input.id}`;
-  if (w.taken?.includes(takenKey) || w.taken?.includes(input.id)) return fail(BATTLE_TAKEN);
+  if (!standsIn && (w.taken?.includes(takenKey) || w.taken?.includes(input.id))) return fail(BATTLE_TAKEN);
   // A friend's raid (M36): from a city of the region this one knows. Whether it may raid at all
   // (shields, the day's raids) the region room has decided already, as both cities' pages heard.
   const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
@@ -485,9 +515,17 @@ export function resolveBattle(
   // didn't flag takes nothing here (a forged page could otherwise dodge the day's superweapon).
   if (from !== undefined && !counted && battleHasSuper(input)) return fail(SUPER_UNCOUNTED);
   if (dryRun) return ok(0);
+  if (standsIn) {
+    delete w.battle;
+    sim.battleRun = null;
+    sim.battleFrame = null;
+    lowerDome(sim);
+  }
   // Only what really stands here, at home, takes the battle's damage; the caps are this city's, and
   // half them for a raid that came while the player was away.
-  const adopted = adoptBattle(sim, input, away);
+  // (A live battle's picture is this city's own, made a moment ago and run by the friend's page too:
+  // it is taken as it is, so both pages fight the same battle.)
+  const adopted = live ? input : adoptBattle(sim, input, away);
   let run: Battle;
   try {
     run = new Battle(adopted);
@@ -514,6 +552,7 @@ export function resolveBattle(
   w.battle = { id: raid.id, input: adopted, step: 0, start: s.tick, raid, report: emptyReport(raid, s.tick) };
   if (replay) w.battle.report.replay = replay.slice(0, 60);
   if (away) w.battle.report.absent = true;
+  if (live) w.battle.live = { id: input.id, from: from!, allow: 0, seq: 0 };
   // The city's own dome is the authority (M37): a stale picture of it never makes it weaker.
   coverWithDome(
     w.battle,
@@ -524,12 +563,14 @@ export function resolveBattle(
   );
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), takenKey].slice(-BATTLE_TAKEN_KEEP);
-  // A friend's raid weighs on the people as a neighbour's does (M38).
-  if (friend) wearinessRaid(sim);
+  // A friend's raid weighs on the people as a neighbour's does (M38); a live battle's does once the
+  // room lets it begin (it may still come to nothing).
+  if (friend && !live) wearinessRaid(sim);
   sim.battleRun = run;
   // Its opening picture at once: a battle being watched shows before its first tick.
   sim.battleFrame = run.frame();
-  sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
+  if (!live)
+    sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
   if (mode === 'instant') {
     try {
       while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick(), w.battle.cover);
@@ -543,6 +584,137 @@ export function resolveBattle(
   sim.warChanged();
   return ok(0, { created: [raid.id] });
 }
+
+/**
+ * A friend's force asking for a live battle (M39): the region room's call, as the page passes it on.
+ * `force` is the attacker's side as its own page made it (`awayForce`), `super` the region's flag
+ * that it brings a superweapon.
+ */
+export interface LiveCall {
+  id: string;
+  /** The friend's place in the region. */
+  from: number;
+  force: ForceIn;
+  super?: boolean;
+}
+
+const LIVE_TARGETS: readonly string[] = ['military', 'industry', 'power', 'cityhall'];
+
+/**
+ * The battle a friend's force fights in this city, live (M39, design call 4): the picture is the
+ * city's own as it stands now (`battleLayout`, as for a computer raid), so every id is one of this
+ * city's and the friend's page can run the very same input; the force is the friend's, as it asked.
+ * Nothing in the city changes (a query); the page sends the input to the room, and hosts it with
+ * `battleResolve` in `live` mode. Returns the input, or why this city can't take it now.
+ */
+export function liveBattleInput(sim: Sim, call: LiveCall): { input: BattleInput } | { refused: string } {
+  const s = sim.state;
+  const w = s.war;
+  if (!w) return { refused: 'War is off in this city' };
+  if (w.battle) return { refused: BATTLE_BUSY };
+  if (w.taken?.includes(`${call.from}:${call.id}`)) return { refused: BATTLE_TAKEN };
+  const n = s.region.neighbours.find((x) => x.player?.slot === call.from);
+  if (!n) return { refused: 'That raid came from a city this one doesn’t know' };
+  const f = call.force;
+  if (
+    !f ||
+    !Array.isArray(f.units) ||
+    f.units.length > BATTLE.maxAttackers + SUPER.maxCarried ||
+    !f.units.every((u) => !!u && typeof u === 'object') ||
+    !LIVE_TARGETS.includes(f.target)
+  )
+    return { refused: 'That force could not be read' };
+  const layout = battleLayout(sim, { target: f.target, from: n.side });
+  // The city's own dome over it, if it would rise (not raised yet: that's `battleResolve`'s).
+  const pool = domePool(
+    sim,
+    f.units.some((u) => !!UNIT.get(u?.kind)?.super),
+  );
+  if (pool > 0) layout.dome = pool;
+  const input = stampBattle({
+    v: BATTLE_VERSION,
+    id: call.id,
+    seed: `${s.options.seed}:live:${call.from}:${call.id}`,
+    scale: 'skirmish',
+    layout,
+    attacker: {
+      name: n.name,
+      color: neighbourColour(sim, n.id),
+      units: f.units.map((u) => ({
+        id: u.id,
+        kind: u.kind,
+        hp: u.hp,
+        x: 0,
+        z: 0,
+        base: -1,
+        ...(u.from !== undefined ? { from: u.from } : {}),
+      })),
+      route: f.route,
+      target: f.target,
+      stance: f.stance,
+      readiness: f.readiness,
+      ...(f.mods ? { mods: f.mods } : {}),
+    },
+    defender: { name: s.options.cityName, color: 0x3a78c8 },
+    orders: [],
+    caps: { maxCollapse: SKIRMISH.maxCollapse, maxWreck: SKIRMISH.maxWreck },
+  });
+  stampLive(input);
+  const why = checkBattleInput(input);
+  return why ? { refused: why } : { input };
+}
+
+/**
+ * The room's word on a live battle this city hosts (M39): the stamped orders it has not taken yet
+ * (by their numbers, so a log sent again changes nothing), and how far the battle may now run (never
+ * back). The first time it may run, the battle has begun for the city: its people feel it and the
+ * notice goes out. `abort` drops a battle that never began (the room turned the call down after the
+ * city had set it up), as if it had not been offered.
+ */
+export function battleLive(
+  sim: Sim,
+  id: string,
+  allow: number,
+  orders: readonly StampedOrder[],
+  abort: boolean,
+  dryRun: boolean,
+): CommandResult {
+  const w = sim.state.war;
+  const hb = w?.battle;
+  const live = hb?.live;
+  if (!w || !hb || !live || live.id !== id) return fail('No such live battle');
+  if (!Number.isInteger(allow) || allow < 0 || allow > LIVE_ALLOW_MAX) return fail('Not a step');
+  if (!Array.isArray(orders) || orders.length > 512) return fail('Too many orders');
+  if (abort && live.begun) return fail('That battle has begun');
+  if (dryRun) return ok(0);
+  if (abort) {
+    // As if it had not been offered: the offer may be taken again, the dome stays down.
+    w.taken = (w.taken ?? []).filter((k) => k !== `${live.from}:${live.id}`);
+    delete w.battle;
+    sim.battleRun = null;
+    sim.battleFrame = null;
+    lowerDome(sim);
+    sim.warChanged();
+    return ok(0);
+  }
+  live.seq = appendOrders(hb.input, live.seq, orders);
+  if (allow > live.allow) live.allow = allow;
+  if (live.allow > 0 && !live.begun) {
+    live.begun = true;
+    // A friend's raid weighs on the people as a neighbour's does (M38).
+    wearinessRaid(sim);
+    sim.events.push({
+      kind: 'battleStarted',
+      id: hb.id,
+      info: { from: hb.input.attacker.name, target: hb.input.attacker.target },
+    });
+  }
+  sim.warChanged();
+  return ok(0);
+}
+
+/** The most steps a live battle may be allowed: the longest a battle can run, and a good deal more. */
+export const LIVE_ALLOW_MAX = 100_000;
 
 /** Why a battle from outside waits: one is on in the city already (it's offered again later). */
 export const BATTLE_BUSY = 'A battle is on in the city already';
@@ -665,10 +837,13 @@ export function battleTick(sim: Sim): void {
       run.drain();
       sim.battleRun = run;
     }
-    const events = run.tick();
+    // A live battle (M39) plays only up to the room's frontier: where the room has not let it run, nothing
+    // moves, and the picture stays as it was.
+    const before = run.step;
+    const events = run.tick(hb.live ? hb.live.allow : Infinity);
     applyWarDamage(sim, hb.report, events, hb.cover);
     hb.step = run.step;
-    sim.battleFrame = run.frame();
+    if (run.step !== before || !sim.battleFrame) sim.battleFrame = run.frame();
     if (run.outcome) endHomeBattle(sim, run);
   } catch {
     // A city is never left stuck on a battle it can't play (one kept from an older, broken save).
@@ -843,6 +1018,10 @@ function endHomeBattle(sim: Sim, run: Battle): void {
       civics: report.civics.length,
       lost: Object.values(report.lost).reduce((a, v) => a + (v ?? 0), 0),
       theirLost: report.theirLost,
+      // How it ended: the step and `hash()` (a live battle's page tells the room, M39).
+      step: result.steps,
+      hash: result.hash,
+      ...(hb.live ? { live: hb.live.id } : {}),
     },
   });
   sim.warChanged();

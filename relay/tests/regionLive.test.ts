@@ -178,6 +178,18 @@ describe('M39: the region room’s live battles', () => {
           { kind: 'hold', units: [1, 2] },
         ],
       },
+      // A unit's id may be negative (M39 step 3): the defender's `focus` on a drone a sky fortress
+      // carries (the drones are −1000, −1001…), and orders naming such units.
+      {
+        t: 'bstep',
+        id: 'exp-1',
+        step: 12,
+        orders: [
+          { kind: 'focus', target: -1000 },
+          { kind: 'hold', units: [-1001, 3, -1e6] },
+          { kind: 'focus', target: 1e6 },
+        ],
+      },
       { t: 'bdone', id: 'exp-1', step: 700, hash: '0123456789abcdef' },
       { t: 'bjoin', id: 'exp-1' },
       { t: 'bwatch', id: 'exp-1' },
@@ -225,7 +237,9 @@ describe('M39: the region room’s live battles', () => {
         orders: Array.from({ length: LIVE.perMessage + 1 }, () => ({ kind: 'hold' })),
       },
       { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'Focus' }] },
-      { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'focus', target: -1 }] },
+      { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'focus', target: -1e6 - 1 }] },
+      { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'focus', target: 1e6 + 1 }] },
+      { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'hold', units: [-1e6 - 1] }] },
       { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'focus', target: 1.5 }] },
       { t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'hold', units: [1, 'a'] }] },
       {

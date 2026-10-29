@@ -15,6 +15,7 @@ import type { ClimateId } from '../data/climate';
 import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
 import type { AwayResult } from './systems/expeditions';
 import type { BattleInput } from './battle/types';
+import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
 import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
 import type { UnitKind } from '../data/war';
@@ -194,7 +195,7 @@ export type Command =
   | {
       type: 'battleResolve';
       input: BattleInput;
-      mode: 'watch' | 'instant';
+      mode: 'watch' | 'instant' | 'live';
       replay?: string;
       /** A friend's city that fought it (its place in the region), and whether the player was away (M36). */
       from?: number;
@@ -202,6 +203,11 @@ export type Command =
       /** The region flagged it as bringing a superweapon, and counted it so (M37). */
       super?: boolean;
     }
+  /**
+   * The region room's word on a live battle this city hosts (M39, page only): its stamped orders not
+   * taken yet, how far the battle may now run, or (`abort`) that it never began.
+   */
+  | { type: 'battleLive'; id: string; allow: number; orders: StampedOrder[]; abort?: boolean }
   | { type: 'cancelTraining'; order: number }
   | { type: 'disbandUnit'; unit: number }
   /** War bonds (M34): borrow from the residents, or pay one off early. */
@@ -323,6 +329,7 @@ const COMMAND_KINDS = {
   battleReport: true,
   battleSettling: true,
   battleResolve: true,
+  battleLive: true,
   cancelTraining: true,
   disbandUnit: true,
   issueBond: true,

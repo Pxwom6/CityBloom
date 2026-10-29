@@ -45,6 +45,7 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'battleReport',
   'battleSettling',
   'battleResolve',
+  'battleLive',
   // Operations between friends (M37): the region decides them, each city's own page passes it on.
   'spySettling',
   'missionResult',
@@ -347,6 +348,7 @@ const CHECKS: Record<CommandType, Check> = {
   battleReport: () => 'Only your own game reports its battles',
   battleSettling: () => 'Only your own game reports its battles',
   battleResolve: () => 'Only your own game hosts its battles',
+  battleLive: () => 'Only your own game hosts its battles',
   spySettling: () => 'Only your own game hears from the region',
   missionResult: () => 'Only your own game hears from the region',
   opResolve: () => 'Only your own game hears from the region',

@@ -152,14 +152,24 @@ export function supersHour(sim: Sim): void {
  * pool), or nothing (0). `bringsSuper`: the battle brings a superweapon (for the `super` mode).
  */
 export function raiseDome(sim: Sim, bringsSuper: boolean): number {
+  const pool = domePool(sim, bringsSuper);
+  if (pool <= 0) return 0;
+  sim.state.war!.supers!.dome!.raised = true;
+  sim.events.push({ kind: 'domeRaised', id: 0 });
+  sim.warChanged();
+  return pool;
+}
+
+/**
+ * The pool `raiseDome` would raise over a battle that starts now, without raising it (M39: a live
+ * battle's picture is made before the battle begins, and a picture changes nothing).
+ */
+export function domePool(sim: Sim, bringsSuper: boolean): number {
   const d = sim.state.war?.supers?.dome;
   if (!d || d.raised || d.hours < DOME.chargeHours) return 0;
   if (d.mode === 'off' || (d.mode === 'super' && !bringsSuper)) return 0;
   // Built while they were allowed, it stands idle where the region's rules turn superweapons off.
   if (!superweaponsAllowed(sim) || !superWorking(superBuilding(sim, 'dome'))) return 0;
-  d.raised = true;
-  sim.events.push({ kind: 'domeRaised', id: 0 });
-  sim.warChanged();
   return DOME.pool;
 }
 

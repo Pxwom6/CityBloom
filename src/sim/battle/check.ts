@@ -148,6 +148,11 @@ function ordersIn(v: unknown, v4: boolean, structs: number): string | null {
   return null;
 }
 
+/** Is this list of orders sound in a version 4 battle whose picture has `structs` structures? (Live battles, M39.) */
+export function orderListProblem(orders: unknown, structs: number): string | null {
+  return ordersIn(orders, true, structs);
+}
+
 /**
  * Allied helpers (version 4): at most `BATTLE_LIMITS.helpers`, each with its own owner (1–255), a
  * side, an arrival step within the battle, a route, research, and one to the attackers' unit cap of

@@ -234,7 +234,9 @@ import {
   type WarSummary,
 } from './systems/war';
 import {
+  battleLive,
   battleTick,
+  liveBattleInput,
   mendUnits,
   planRaid,
   raidsHour,
@@ -1501,6 +1503,8 @@ export class Sim {
           !!cmd.away,
           !!cmd.super,
         );
+      case 'battleLive':
+        return battleLive(this, cmd.id, cmd.allow, cmd.orders, !!cmd.abort, dryRun);
       case 'cancelTraining':
         return cancelTraining(this, cmd.order, dryRun);
       case 'disbandUnit':
@@ -2623,6 +2627,8 @@ export class Sim {
         return districtReports(this);
       case 'exportMap':
         return exportMap(this);
+      case 'liveBattle':
+        return liveBattleInput(this, q.call);
       case 'awayCity': {
         const e = this.state.war?.expeditions?.find((x) => x.id === q.expedition);
         return e && e.state === 'fighting' ? awayCity(this, e) : null;

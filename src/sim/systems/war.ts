@@ -926,7 +926,13 @@ export interface WarSummary {
     near: number;
     sheltered: number;
   } | null;
-  battle: { id: number; from: string; start: number } | null;
+  battle: {
+    id: number;
+    from: string;
+    start: number;
+    /** A battle fought live with a friend (M39): the room's id for it, its step and how far it may run. */
+    live?: { id: string; step: number; allow: number };
+  } | null;
   reports: BattleReport[];
   /** Whether neighbours may raid yet, and those that may answer a raid of the city's own. */
   threat: { open: boolean; answering: number[] };
@@ -1050,7 +1056,16 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     hq,
     bases: bases.length,
     incoming: incomingSummary(w),
-    battle: w.battle ? { id: w.battle.id, from: w.battle.raid.name, start: w.battle.start } : null,
+    battle: w.battle
+      ? {
+          id: w.battle.id,
+          from: w.battle.raid.name,
+          start: w.battle.start,
+          ...(w.battle.live
+            ? { live: { id: w.battle.live.id, step: w.battle.step, allow: w.battle.live.allow } }
+            : {}),
+        }
+      : null,
     reports: [...(w.reports ?? [])].reverse(),
     threat: raidThreat(sim),
     routes: {

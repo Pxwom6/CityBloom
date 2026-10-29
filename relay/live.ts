@@ -65,7 +65,10 @@ const KIND = /^[a-z]{2,16}$/;
 const whole = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 
-/** An order's shape, or null: a kind in lower case, whole-number units and target. Other keys are dropped. */
+/**
+ * An order's shape, or null: a kind in lower case, whole-number units and target (a unit's id may be
+ * negative: the defender's `focus` on a drone a sky fortress carries). Other keys are dropped.
+ */
 export function cleanLiveOrder(o: unknown): LiveOrderIn | null {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
   const r = o as Record<string, unknown>;
@@ -73,11 +76,11 @@ export function cleanLiveOrder(o: unknown): LiveOrderIn | null {
   const out: LiveOrderIn = { kind: r.kind };
   if (r.units !== undefined) {
     if (!Array.isArray(r.units) || r.units.length > LIVE.units) return null;
-    for (const u of r.units) if (!whole(u, 0, 1e6)) return null;
+    for (const u of r.units) if (!whole(u, -1e6, 1e6)) return null;
     out.units = [...(r.units as number[])];
   }
   if (r.target !== undefined) {
-    if (!whole(r.target, 0, 1e6)) return null;
+    if (!whole(r.target, -1e6, 1e6)) return null;
     out.target = r.target;
   }
   return out;

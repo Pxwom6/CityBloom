@@ -24,6 +24,7 @@ import type { TripSample } from './systems/traffic';
 import type { BusStop } from './systems/transit';
 import type { Leg } from './systems/graph';
 import type { ServiceKind } from '../data/civic';
+import type { LiveCall } from './systems/raids';
 
 export interface CityStats {
   tick: number;
@@ -548,6 +549,8 @@ export type Query =
   | { type: 'exportMap' }
   /** An expedition fighting (M35): what its battle needs of the city, or null. */
   | { type: 'awayCity'; expedition: number }
+  /** The battle a friend's force fights in this city, live (M39): its input, or why not (read only). */
+  | { type: 'liveBattle'; call: LiveCall }
   /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
   | { type: 'builtBy'; id: number }
   /** What this city tells a shared region about itself (M32). */

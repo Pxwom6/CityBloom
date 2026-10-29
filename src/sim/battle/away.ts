@@ -21,7 +21,14 @@ import type { RivalNeighbour } from '../systems/region';
 import type { Battle } from './battle';
 import { battleLayout } from './layout';
 import { fnv1a } from '../hash';
-import { BATTLE_VERSION, S, type BattleInput, type BattleMods, type BattleUnitIn } from './types';
+import {
+  BATTLE_VERSION,
+  S,
+  type BattleInput,
+  type BattleMods,
+  type BattleUnitIn,
+  type ForceIn,
+} from './types';
 import { stampBattle } from './version';
 
 /** From the town's side, where the city's force comes from. */
@@ -98,6 +105,39 @@ export function awayBattleId(seed: string, expedition: number): string {
   return `exp-${fnv1a(seed).slice(0, 8)}-${expedition}`;
 }
 
+/**
+ * The city's force as a battle takes it: its units (a sky fortress brings what it carries, M37,
+ * launched over the town: ids −(1000 + k)), the way it goes in and what it's after. A live battle
+ * (M39) is asked for with this, and the defender's city builds its picture round it.
+ */
+export function awayForce(city: AwayCity): ForceIn {
+  const e = city.expedition;
+  const units: BattleUnitIn[] = city.units.map((u) => ({
+    id: u.id,
+    kind: u.kind,
+    hp: u.hp,
+    x: 0,
+    z: 0,
+    base: -1,
+  }));
+  let carried = 0;
+  for (const u of city.units) {
+    const c = UNIT.get(u.kind)?.stats.carries;
+    for (let k = 0; c && k < c.n && carried < SUPER.maxCarried; k++, carried++)
+      units.push({ id: -(SUPER.carriedId + carried), kind: c.kind, hp: 1, x: 0, z: 0, base: -1, from: u.id });
+  }
+  return {
+    name: city.cityName,
+    color: 0x3a78c8,
+    units,
+    route: e.route,
+    target: e.target,
+    stance: e.stance,
+    readiness: city.readiness,
+    ...(city.mods ? { mods: city.mods } : {}),
+  };
+}
+
 /** The battle an expedition fights in the town it raids. */
 export function awayInput(city: AwayCity, town: Sim): BattleInput {
   const e = city.expedition;
@@ -119,21 +159,6 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
     if (theirs) layout.mods = theirs;
     else delete layout.mods;
   }
-  const units: BattleUnitIn[] = city.units.map((u) => ({
-    id: u.id,
-    kind: u.kind,
-    hp: u.hp,
-    x: 0,
-    z: 0,
-    base: -1,
-  }));
-  // A sky fortress brings what it carries (M37), launched over the town: ids −(1000 + k).
-  let carried = 0;
-  for (const u of city.units) {
-    const c = UNIT.get(u.kind)?.stats.carries;
-    for (let k = 0; c && k < c.n && carried < SUPER.maxCarried; k++, carried++)
-      units.push({ id: -(SUPER.carriedId + carried), kind: c.kind, hp: 1, x: 0, z: 0, base: -1, from: u.id });
-  }
   // A superweapon in a computer neighbour's town may knock down more; a friend keeps a skirmish's caps.
   const superweapon = city.units.some((u) => !!UNIT.get(u.kind)?.super);
   return stampBattle({
@@ -143,16 +168,7 @@ export function awayInput(city: AwayCity, town: Sim): BattleInput {
     seed,
     scale: 'skirmish',
     layout,
-    attacker: {
-      name: city.cityName,
-      color: 0x3a78c8,
-      units,
-      route: e.route,
-      target: e.target,
-      stance: e.stance,
-      readiness: city.readiness,
-      ...(city.mods ? { mods: city.mods } : {}),
-    },
+    attacker: awayForce(city),
     defender: { name: n.name, color: n.colour },
     orders: [],
     // A friend away when the raid comes takes half the damage (M36), as its own sim will hold it to.

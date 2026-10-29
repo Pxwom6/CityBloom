@@ -14,7 +14,9 @@
 //    gate and tower shots come before any battle: a raid closes the buildings it damages (the HQ,
 //    the gate) and kills homes.
 //  - A real tank is trained first: the proving ground's stand-in is only drawn when the city has
-//    at least one unit (src/render/units.ts update(); see the note in the trial shot).
+//    at least one unit (src/render/units.ts update(); see the note in the trial shot). The test
+//    API's getForces() leaves the trials out: read them from getResearch().trials and getUnits()
+//    (doing: 'trial').
 //  - The superweapons are shown on the page only (training one takes fifteen days), and each idles
 //    (patrols, flies, sails) on a cycle set by its id: a shot of one parked at its base tries ids
 //    until it is home at the hour, invisible padding units (base 0) moving the id along.
@@ -245,26 +247,37 @@ try {
   // A prototype on trial at the proving ground, running its track.
   const ground = civ('provingground');
   if (want('trial') && ground) {
-    const trial = await page.evaluate(async (id) => {
+    const trial = await page.evaluate(async (at) => {
       const g = window.__game;
-      const r = await g.dispatch({ type: 'startTrial', ground: id, kind: 'heavytank' });
+      const r = await g.dispatch({ type: 'startTrial', ground: at.id, kind: 'heavytank' });
       await g.advance(90);
       await g.waitFrames(3);
       const research = await g.getResearch();
-      const stand = g.getUnits().find((u) => u.doing === 'trial');
+      const stand = () => g.getUnits().find((u) => u.doing === 'trial') ?? null;
+      const first = stand();
+      // BUG (src/render/unitPoses.ts, TRACK): the stand-in runs the generated model's loop, an ellipse
+      // through the hand-made model's pool and hangar (its track is a ring round the site's edge).
+      // Its south run is the stretch beside the ring, so wait for the tank to get there.
+      let tank = first;
+      for (let k = 0; k < 40; k++) {
+        if (tank && tank.z - at.z >= 12 && Math.abs(tank.x - at.x + 4) < 10) break;
+        await g.advance(3);
+        await g.waitFrames(1);
+        tank = stand() ?? tank;
+      }
       return {
         started: r.ok ? 'ok' : r.reason,
         trials: research?.trials ?? null,
         units: (await g.getForces())?.units.length ?? null,
-        standIn: stand ?? null,
+        standIn: tank,
       };
-    }, ground.id);
+    }, ground);
     log('trial', JSON.stringify(trial));
     // BUG (src/render/units.ts, update(), "War off, or no units yet"): with no unit on the roster the
     // renderer returns before it poses the prototype on trial, so a city that has researched and
     // started a trial but trained nothing sees an empty track. This town has a tank.
     const at = trial.standIn ?? { x: ground.x, z: ground.z };
-    await snap('trial', { x: at.x, z: at.z, distance: 55, yaw: 0.7, tilt: 0.1 }, 4);
+    await snap('trial', { x: at.x, z: at.z, distance: 48, yaw: 0.7, tilt: 0.1 }, 4);
   }
 
   // The gate: a tank sent through it, the swirl while it goes (the hour after, it has faded).
@@ -338,7 +351,7 @@ try {
     if (fortress)
       await snap('parked-fortress', { x: fortress.x, z: fortress.z, distance: 190, yaw: 0.4, tilt: 0.1 });
     const whale = civ('navalyard') && (await parkAt('clockworkwhale', 'navalyard'));
-    if (whale) await snap('parked-whale', { x: whale.x, z: whale.z, distance: 170, yaw: 1.4, tilt: 0.12 });
+    if (whale) await snap('parked-whale', { x: whale.x, z: whale.z, distance: 140, yaw: 1.4, tilt: 0.12 });
   }
 
   const hq = civ('militaryhq');

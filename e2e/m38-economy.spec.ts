@@ -76,18 +76,19 @@ test('M38: stakes, an ally’s loan, munitions and a unit, a war that freezes a 
   await expect(page.getByTestId(`trade-loan-${a!.id}`)).toContainText('Owes $150,000');
   await page.getByTestId(`trade-arms-${a!.id}`).selectOption('10');
   await expect(page.getByTestId(`trade-arms-sold-${a!.id}`)).toBeVisible();
-  const before = (await trade(page))!.munitions;
   await page.evaluate(() => window.__game!.advance(60 * 12));
   await expect
     .poll(async () => (await trade(page))!.neighbours.find((n) => n.id === a!.id)!.arms!.sold)
     .toBeGreaterThan(0);
-  expect((await trade(page))!.munitions).toBeLessThan(before + 1);
+  // Paid for: the ledger books the sales (the stores also refill from the arms factory each day).
+  expect((await ledger(page)).month.armsSales ?? 0).toBeGreaterThan(0);
   // The unit: an infantry company to the ally.
   await expect(page.getByTestId('trade-unit-to')).toHaveValue(String(a!.id));
   await page.getByTestId('trade-unit-sell').click();
   await expect
     .poll(async () => (await page.evaluate(() => window.__game!.getForces()))!.units.length)
     .toBe(0);
+  await page.getByTestId(`trade-${a!.id}`).scrollIntoViewIfNeeded();
   await shot(page, 'm38-trade-ally');
 
   // --- War with B (declared, open after its warning): the stake there freezes. ---
@@ -103,15 +104,17 @@ test('M38: stakes, an ally’s loan, munitions and a unit, a war that freezes a 
   const stakes = (await trade(page))!.neighbours;
   expect(stakes.find((n) => n.id === b!.id)!.dividend).toBe(0);
   expect(stakes.find((n) => n.id === a!.id)!.dividend).toBeGreaterThan(0);
+  await page.getByTestId(`trade-${b!.id}`).scrollIntoViewIfNeeded();
   await shot(page, 'm38-trade-frozen');
 
   // --- A sanction on C: the city's stake there freezes too, and C minds. ---
   await page.getByTestId(`trade-buy-${c!.id}`).click();
   await expect(page.getByTestId(`trade-stake-${c!.id}`)).toContainText('You hold 5 %');
   await page.getByTestId(`trade-sanction-${c!.id}`).click();
-  await expect(page.getByTestId(`trade-${c!.id}`)).toContainText('you sanction it');
-  await expect(page.getByTestId(`trade-stake-${c!.id}`)).toContainText('frozen');
+  await expect(page.getByTestId(`trade-${c!.id}`)).toContainText(`You sanction ${c!.name}`);
+  await expect(page.getByTestId(`trade-stake-${c!.id}`)).toContainText('Sanctions between the city and');
   await expect(page.getByTestId(`trade-sanction-${c!.id}`)).toHaveText('Lift the sanctions');
+  await page.getByTestId(`trade-${c!.id}`).scrollIntoViewIfNeeded();
   await shot(page, 'm38-trade-sanction');
   errs.check();
 });

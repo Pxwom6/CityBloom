@@ -190,7 +190,6 @@ function Neighbour({
   const status: string[] = [];
   if (n.allied) status.push('Ally');
   if (n.helping) status.push('fighting at your side');
-  if (n.sanctioning) status.push('you sanction it');
   return (
     <section class="dip-neighbour" data-testid={`trade-${n.id}`}>
       <p>
@@ -206,7 +205,12 @@ function Neighbour({
           {n.sanctionedBy.text}
         </p>
       )}
-      {n.stopped && !n.sanctionedBy && (
+      {n.sanctioning && (
+        <p class="dip-bad" data-testid={`trade-sanctioning-${n.id}`}>
+          You sanction {n.name}: no trade between you, and it grows and arms more slowly.
+        </p>
+      )}
+      {n.stopped && !n.sanctionedBy && !n.sanctioning && (
         <p class="dip-bad" data-testid={`trade-stopped-${n.id}`}>
           {n.stopped}
         </p>
@@ -260,8 +264,10 @@ function Neighbour({
           </button>
         )}
       </div>
-      <Why text={n.buy} id={`trade-buy-why-${n.id}`} />
-      {n.held > 0 && n.sell !== n.buy && <Why text={n.sell} id={`trade-sell-why-${n.id}`} />}
+      {n.buy !== n.stopped && <Why text={n.buy} id={`trade-buy-why-${n.id}`} />}
+      {n.held > 0 && n.sell !== n.buy && n.sell !== n.frozen && (
+        <Why text={n.sell} id={`trade-sell-why-${n.id}`} />
+      )}
 
       {(n.allied || n.loan) && (
         <>
@@ -384,7 +390,7 @@ function Neighbour({
 
       <div class="dip-actions">
         <button
-          class={`btn ${n.sanctioning ? '' : 'danger'}`}
+          class="btn"
           data-testid={`trade-sanction-${n.id}`}
           disabled={!!n.sanction}
           title={n.sanction ?? undefined}

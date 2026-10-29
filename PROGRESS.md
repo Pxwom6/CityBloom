@@ -232,8 +232,19 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 ## In progress
 **M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war and M37 Weapon
 development and intelligence are complete**, in pull request #23 (its title names all four).
-**M38 Investments and the war economy** is next, on the same branch (it joins #23 while that is
-open): plan `docs/plans/M38-design.md`, calls in DECISIONS "M38".
+**M38 Investments and the war economy** is under way on the same branch (it joins #23 while that
+is open): plan `docs/plans/M38-design.md`, code map `docs/plans/M38-codemap.md`, calls in
+DECISIONS "M38".
+- Steps 0–3 done: `src/data/warEconomy.ts`, `src/sim/systems/warEconomy.ts` (`WarState.economy`,
+  save v31): stakes in computer neighbours' industries (`buyStake`/`sellStake`, dividends frozen
+  while fighting, seized on capitulation or a treacherous declaration), loans to allies
+  (`lendAlly`), funding an ally's war (`fundAlly`); `tests/war/warEconomy.test.ts` (29),
+  `tests/war/saveV31.test.ts`.
+- Steps 4–5 in progress (a helper): arms trade (munitions deals, unit sales), embargoes enforced in
+  deals' hourly delivery, sanctions both ways.
+- Then: war weariness and the peace recovery (the M36 golden rewritten once), computer offers,
+  difficulty levers, the balance mayor at war (`balance.ts --rivals`), the Trade tab and e2e,
+  wrap-up.
 
 M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
 their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the

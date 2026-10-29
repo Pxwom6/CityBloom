@@ -781,6 +781,8 @@ describe('M38: the war economy in a saved city', () => {
     // (The fixture's war is with Wilholm, who joined Calhaven's side: a neighbour at peace sells.)
     const n = rivals(sim).find((x) => !dip(sim).wars.some((w) => w.with === x.id))!;
     n.rival!.relation = 60;
+    // (Allied to the city's enemy it would sanction the city, step 5: this one stands apart.)
+    n.rival!.allies = [];
     ok(sim, { type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
     ok(sim, { type: 'buyStake', neighbour: n.id, share: 15 });
     sim.advance(M);

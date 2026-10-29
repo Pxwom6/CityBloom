@@ -124,3 +124,38 @@ export const ARMS = {
    */
   unitShare: 0.6,
 } as const;
+
+/**
+ * Sanctions both ways (M38 step 5). A sanction ends the regional and arms deals between the two
+ * and freezes the city's stakes and loans there (nothing new is bought, lent, sold or dealt either).
+ * A "day" is a game month (24 game hours), as everywhere in the war rules.
+ */
+export const SANCTION = {
+  /**
+   * The city sanctions a neighbour (its choice, lifted when it likes): the neighbour's town grows
+   * this much slower each month (added to its monthly growth) and arms at this share of its usual
+   * pace, and it minds: its feelings towards the city fall by `relation` when the sanction begins.
+   */
+  growth: -0.005,
+  arming: 0.8,
+  relation: -15,
+  /**
+   * Computer neighbours sanction the city for these causes, each held as long as it is true:
+   *  - it broke a pact with anyone (honourable and cautious ones only), for `lapseDays` days;
+   *  - the neighbour is allied to one the city is at war with, until the war is over;
+   *  - the city's reputation is below `reputation`.
+   * A cause that has passed leaves the sanction standing `lapseDays` more days (the war's: none, it
+   * is lifted at peace). A neighbour imposes one only on a city it does business with: one that has
+   * nothing with it (no regional deal, arms deal, stake, loan or aid) has nothing to cut, but is
+   * still refused new dealings while the cause holds.
+   */
+  reputation: 35,
+  lapseDays: 30,
+  punishesBreaking: {
+    aggressive: false,
+    cautious: true,
+    mercantile: false,
+    honourable: true,
+    treacherous: false,
+  } as Record<Personality, boolean>,
+} as const;

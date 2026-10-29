@@ -263,6 +263,7 @@ import {
   sellStake,
   sellUnit,
   setArmsDeal,
+  setSanction,
   warEconomyHour,
   warEconomyMonth,
 } from './systems/warEconomy';
@@ -1564,6 +1565,8 @@ export class Sim {
         return setArmsDeal(this, cmd.neighbour, cmd.crates, dryRun);
       case 'sellUnit':
         return sellUnit(this, cmd.unit, cmd.neighbour, dryRun);
+      case 'setSanction':
+        return setSanction(this, cmd.neighbour, cmd.on, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

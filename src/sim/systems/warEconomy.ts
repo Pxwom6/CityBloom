@@ -11,14 +11,17 @@
  *    score;
  *  - arms trade with allies (step 4): munitions sold by the month from the war stores, units sold
  *    outright; an embargo or a sanction on either side cuts it;
+ *  - sanctions both ways (step 5): the city sanctions a neighbour, and computer neighbours sanction
+ *    the city.
  *
- * Everything lives in `WarState.economy`, which appears with the first stake, loan, aid or arms deal: a peaceful city, and a war city that never uses it, are unchanged. Money goes
+ * Everything lives in `WarState.economy`, which appears with the first stake, loan, aid, arms deal
+ * or sanction: a peaceful city, and a war city that never uses it, are unchanged. Money goes
  * through `book` and `accrue` like every other line; the rates are in `monthlyRates`
  * (`warEconomyRates`).
  */
 import { annuity } from '../../data/economy';
 import { UNIT, type UnitDef } from '../../data/war';
-import { ARMS, INVEST, LENDING, WAR_AID, lendingRate } from '../../data/warEconomy';
+import { ARMS, INVEST, LENDING, SANCTION, WAR_AID, lendingRate } from '../../data/warEconomy';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
@@ -66,7 +69,7 @@ export interface Aid {
 
 /**
  * Munitions sold to an ally (step 4): crates a month, delivered by the hour from the war stores.
- * One deal to a neighbour; it ends with the pact, or an embargo or sanctions on either side.
+ * One deal to a neighbour; it ends with the pact, an embargo or a sanction on either side.
  */
 export interface ArmsDeal {
   /** The buying neighbour. */
@@ -82,6 +85,22 @@ export interface ArmsDeal {
   since: number;
 }
 
+/** The city's sanction on a neighbour (its choice): since when. */
+export interface Sanction {
+  since: number;
+}
+
+/** Why a computer neighbour sanctions the city (`SANCTION`). */
+export type SanctionCause = 'broke' | 'ally' | 'reputation';
+
+/** A computer neighbour's sanction on the city. */
+export interface SanctionOnCity {
+  since: number;
+  cause: SanctionCause;
+  /** The last pass that found the cause holding (a sanction lingers `SANCTION.lapseDays` days from there). */
+  last: number;
+}
+
 export interface WarEconomy {
   /** By neighbour id. */
   stakes: Record<number, Stake>;
@@ -90,6 +109,10 @@ export interface WarEconomy {
   aid: Record<number, Aid>;
   /** Arms deals by buying neighbour (step 4); absent until the first. */
   arms?: Record<number, ArmsDeal>;
+  /** Sanctions the city has put on a neighbour, by neighbour id (step 5). */
+  sanctioned?: Record<number, Sanction>;
+  /** Sanctions computer neighbours have put on the city, by neighbour id (step 5). */
+  sanctionedBy?: Record<number, SanctionOnCity>;
 }
 
 const money = (v: number) => `$${formatInt(Math.round(v))}`;
@@ -144,12 +167,19 @@ export function stakeSale(n: Neighbour, share: number): number {
 }
 
 /**
- * Do sanctions stand between the city and this neighbour, from either side? The hook M38's
- * sanctions (step 5) fill in: stakes and loans freeze, and nothing new is bought, lent, sold or
- * dealt, while it is true. There are none yet.
+ * Do sanctions stand between the city and this neighbour, from either side? Stakes and loans freeze,
+ * regional and arms deals end, and nothing new is bought, lent, sold or dealt, while it is true. It
+ * is: a sanction the city put on the neighbour, one the neighbour put on the city, or a cause that
+ * holds now (so a neighbour that would sanction the city refuses new dealings at once, before the
+ * month's pass makes it official).
  */
-export function sanctionsBetween(_sim: Sim, _id: number): boolean {
-  return false;
+export function sanctionsBetween(sim: Sim, id: number): boolean {
+  const w = sim.state.war;
+  if (!w) return false;
+  const e = w.economy;
+  if (e?.sanctioned?.[id] || e?.sanctionedBy?.[id]) return true;
+  const n = computerNeighbour(sim, id);
+  return !!n && sanctionCause(sim, n) !== null;
 }
 
 /**
@@ -276,8 +306,10 @@ export function forgetEconomy(sim: Sim, id: number): void {
     book(sim, 'allyRepaid', Math.round(loan.balance));
   }
   delete e.aid[id];
-  // The arms deals were with the town that is gone.
+  // The arms deals and sanctions were with the town that is gone.
   if (e.arms) delete e.arms[id];
+  if (e.sanctioned) delete e.sanctioned[id];
+  if (e.sanctionedBy) delete e.sanctionedBy[id];
   sim.warChanged();
 }
 
@@ -474,12 +506,13 @@ function armsVoid(sim: Sim, deal: ArmsDeal): string | null {
   return null;
 }
 
-/** End the arms deals with a neighbour, with a notice (an embargo has just been signed). */
-export function endArmsDeals(sim: Sim, n: Neighbour, why: string): void {
+/** End the arms deals with a neighbour, with a notice unless `quiet` (an embargo has just been signed; a sanction says so itself). */
+export function endArmsDeals(sim: Sim, n: Neighbour, why: string, quiet = false): void {
   const e = sim.state.war?.economy;
   if (!e?.arms?.[n.id]) return;
   delete e.arms[n.id];
-  note(sim, n.id, 'armsEnded', `The arms deal with ${n.name} ends: ${why}`, 'bad');
+  if (quiet) sim.warChanged();
+  else note(sim, n.id, 'armsEnded', `The arms deal with ${n.name} ends: ${why}`, 'bad');
 }
 
 /** What a unit would fetch from an ally now, and how much its forces would rise: both by the unit's health. */
@@ -549,6 +582,168 @@ function armsHour(sim: Sim, e: WarEconomy): void {
     accrue(sim, 'armsSales', give * ARMS.price);
     sim.warChanged();
   }
+}
+
+// ----- Sanctions (step 5) -----
+
+/** Has the city anything with this neighbour that a sanction would cut: a regional or arms deal, a stake, a loan, aid? */
+function hasTies(sim: Sim, id: number): boolean {
+  if (sim.state.region.deals.some((d) => d.neighbour === id)) return true;
+  const e = sim.state.war?.economy;
+  return !!e && (!!e.stakes[id] || e.loans.some((l) => l.with === id) || !!e.aid[id] || !!e.arms?.[id]);
+}
+
+/**
+ * Why a computer neighbour sanctions the city now, or null (`SANCTION`): it is allied to one the city
+ * is at war with (until the war is over), or the city's reputation is low. (A pact broken is
+ * remembered by the sanction it brings at once, `sanctionsOnBreak`, not read from the state.) Read
+ * from the state, so a neighbour that would sanction the city refuses new dealings from the moment
+ * the cause holds.
+ */
+export function sanctionCause(sim: Sim, n: Neighbour): SanctionCause | null {
+  const w = sim.state.war;
+  const r = n.rival;
+  if (!w || !r || n.player || r.vassal) return null;
+  const d = w.diplomacy;
+  if (d?.wars.some((x) => x.with !== n.id && r.allies?.includes(x.with))) return 'ally';
+  if (d && d.reputation < SANCTION.reputation) return 'reputation';
+  return null;
+}
+
+/** Does the city sanction this neighbour? */
+export function citySanctions(sim: Sim, id: number): boolean {
+  return !!sim.state.war?.economy?.sanctioned?.[id];
+}
+
+/** What the city's sanction does to a neighbour's town each month (added to its growth), or 0. */
+export function sanctionDrag(sim: Sim, id: number): number {
+  return citySanctions(sim, id) ? SANCTION.growth : 0;
+}
+
+/** The regional and arms deals with a neighbour end (a sanction is put on); stakes and loans freeze of themselves. */
+function cutTrade(sim: Sim, n: Neighbour, why: string): void {
+  const s = sim.state;
+  if (s.region.deals.some((d) => d.neighbour === n.id))
+    s.region.deals = s.region.deals.filter((d) => d.neighbour !== n.id);
+  endArmsDeals(sim, n, why, true);
+}
+
+/** The sanction can't be put on (or lifted from) this neighbour now, and why; null when it can. */
+export function sanctionRefusal(sim: Sim, id: number, on: boolean): string | null {
+  const s = sim.state;
+  if (!s.war) return 'War is off in this city';
+  const n = s.region.neighbours.find((x) => x.id === id);
+  if (!n) return 'No such neighbour';
+  if (n.player) return 'Sanctions on a friend’s city come with treaties among friends (M39)';
+  if (!n.rival) return `${n.name} isn’t a rival`;
+  const had = s.war.economy?.sanctioned?.[id];
+  if (!on) return had ? null : `The city isn’t sanctioning ${n.name}`;
+  if (had) return `The city sanctions ${n.name} already`;
+  if (n.rival.vassal) return `${n.name} is the city’s vassal`;
+  return null;
+}
+
+/**
+ * The city sanctions a neighbour, or lifts its sanction (M38 call 8): unilateral, unlike the embargo
+ * term. Deals with it end, the city's stakes and loans there freeze, the neighbour's town grows and
+ * arms more slowly and it minds.
+ */
+export function setSanction(sim: Sim, id: number, on: boolean, dryRun: boolean): CommandResult {
+  const why = sanctionRefusal(sim, id, on);
+  if (why) return fail(why);
+  if (dryRun) return ok(0);
+  const n = computerNeighbour(sim, id)!;
+  if (on) {
+    const e = economy(sim);
+    (e.sanctioned ??= {})[id] = { since: sim.state.tick };
+    n.rival!.relation = clamp(n.rival!.relation + SANCTION.relation, -100, 100);
+    cutTrade(sim, n, `the city sanctions ${n.name}`);
+    note(
+      sim,
+      id,
+      'sanctionsOn',
+      `The city sanctions ${n.name}: trade ends, its stakes and loans there freeze, and ${n.name} grows and arms more slowly`,
+    );
+  } else {
+    delete sim.state.war!.economy!.sanctioned![id];
+    note(sim, id, 'sanctionsOff', `The city lifts its sanctions on ${n.name}`, 'good');
+  }
+  return ok(0);
+}
+
+/** The enemy of the city's that this neighbour is allied to, for the notice. */
+function alliedEnemy(sim: Sim, n: Neighbour): Neighbour | undefined {
+  const d = sim.state.war?.diplomacy;
+  const war = d?.wars.find((x) => x.with !== n.id && n.rival?.allies?.includes(x.with));
+  return war && sim.state.region.neighbours.find((x) => x.id === war.with);
+}
+
+/** A sanction in words: what a computer neighbour has against the city. */
+export function sanctionText(sim: Sim, n: Neighbour, cause: SanctionCause): string {
+  switch (cause) {
+    case 'broke':
+      return `${n.name} sanctions the city for breaking its word`;
+    case 'ally':
+      return `${n.name} sanctions the city for its war on ${alliedEnemy(sim, n)?.name ?? 'its ally'}, ${n.name}’s ally`;
+    case 'reputation':
+      return `${n.name} sanctions the city: its word counts for too little`;
+  }
+}
+
+/**
+ * Computer neighbours impose, keep or lift their sanctions on the city. `broke`: the city has just
+ * broken a pact, and the honourable and cautious neighbours it does business with sanction it at once
+ * (the others have the low reputation it costs to go by).
+ */
+function sanctionsPass(sim: Sim, broke: boolean): void {
+  const s = sim.state;
+  const lapse = SANCTION.lapseDays * TICKS_PER_MONTH;
+  for (const n of s.region.neighbours) {
+    if (!n.rival || n.player) continue;
+    const e = s.war?.economy;
+    // A town that has fallen to the city is no longer sanctioned by it.
+    if (n.rival.vassal && e?.sanctioned?.[n.id]) {
+      delete e.sanctioned[n.id];
+      sim.warChanged();
+    }
+    const cause: SanctionCause | null =
+      broke && SANCTION.punishesBreaking[n.rival.personality] ? 'broke' : sanctionCause(sim, n);
+    const rec = e?.sanctionedBy?.[n.id];
+    if (cause) {
+      if (rec) {
+        rec.cause = cause;
+        rec.last = s.tick;
+      } else if (hasTies(sim, n.id)) {
+        (economy(sim).sanctionedBy ??= {})[n.id] = { since: s.tick, cause, last: s.tick };
+        cutTrade(sim, n, `${n.name} sanctions the city`);
+        note(
+          sim,
+          n.id,
+          'sanctionedUs',
+          `${sanctionText(sim, n, cause)}: their trade ends, and nothing new is agreed`,
+          'bad',
+          { cause },
+        );
+      }
+    } else if (rec && !broke && (rec.cause === 'ally' || s.tick - rec.last >= lapse)) {
+      // A war's sanction is lifted at peace; a pact broken or a low reputation is forgiven
+      // `lapseDays` days after the cause has passed.
+      delete e!.sanctionedBy![n.id];
+      note(sim, n.id, 'sanctionLifted', `${n.name} lifts its sanctions on the city`, 'good', {
+        cause: rec.cause,
+      });
+    }
+  }
+}
+
+/** Each month, before anything else: a cause that has come up since last month, or one that has gone. */
+export function sanctionsMonth(sim: Sim): void {
+  sanctionsPass(sim, false);
+}
+
+/** The city has broken a pact (M38 call 8): honourable and cautious neighbours it deals with sanction it at once. */
+export function sanctionsOnBreak(sim: Sim): void {
+  sanctionsPass(sim, true);
 }
 
 // ----- Each hour and each month -----
@@ -650,6 +845,9 @@ export function warEconomyHour(sim: Sim): void {
  * and goes at the next start (when it earned nothing).
  */
 export function warEconomyMonth(sim: Sim): void {
+  // Computer neighbours' sanctions are weighed first: a cause that has come up since last month, or
+  // one that has gone.
+  sanctionsMonth(sim);
   const e = sim.state.war?.economy;
   if (!e) return;
   for (const id of ids(e.aid)) {
@@ -738,6 +936,10 @@ export interface WarEconomySummary {
     armsBuy: string | null;
     /** Why no unit can be sold to it (units apart), or null. */
     sellUnits: string | null;
+    /** The city sanctions it; it sanctions the city (since when and why); why the city's sanction can't be changed. */
+    sanctioning: boolean;
+    sanctionedBy: { since: number; cause: SanctionCause; text: string } | null;
+    sanction: string | null;
   }[];
 }
 
@@ -772,6 +974,7 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
       const loan = e?.loans.find((l) => l.with === n.id);
       const aid = e?.aid[n.id];
       const deal = e?.arms?.[n.id];
+      const theirs = e?.sanctionedBy?.[n.id];
       const w = stake ? stakeWorth(n, stake.share) : 0;
       worth += w;
       owed += loan ? loan.balance : 0;
@@ -816,6 +1019,11 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
         arms: deal ? { amount: deal.amount, sold: deal.sold, last: deal.last, fill: deal.fill } : null,
         armsBuy: armsDealRefusal(sim, n.id, ARMS.step),
         sellUnits: armsBuyerRefusal(sim, n.id),
+        sanctioning: citySanctions(sim, n.id),
+        sanctionedBy: theirs
+          ? { since: theirs.since, cause: theirs.cause, text: sanctionText(sim, n, theirs.cause) }
+          : null,
+        sanction: sanctionRefusal(sim, n.id, !citySanctions(sim, n.id)),
       };
     });
   return {

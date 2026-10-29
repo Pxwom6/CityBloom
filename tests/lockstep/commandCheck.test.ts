@@ -133,9 +133,10 @@ const SAMPLES: Record<CommandType, Command> = {
   sellStake: { type: 'sellStake', neighbour: 2 },
   lendAlly: { type: 'lendAlly', neighbour: 2, amount: 150_000 },
   fundAlly: { type: 'fundAlly', neighbour: 2, perMonth: 40_000 },
-  // M38 step 4: arms trade.
+  // M38 steps 4 and 5: arms trade and sanctions.
   setArmsDeal: { type: 'setArmsDeal', neighbour: 2, crates: 40 },
   sellUnit: { type: 'sellUnit', unit: 7, neighbour: 2 },
+  setSanction: { type: 'setSanction', neighbour: 2, on: true },
 };
 
 /** Values a field might carry instead of what it should. */

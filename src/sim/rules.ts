@@ -65,9 +65,10 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   sellStake: 'money',
   lendAlly: 'money',
   fundAlly: 'money',
-  // Arms trade (M38): selling munitions and units is the city's money.
+  // Arms trade (M38): selling munitions and units is the city's money; sanctions are diplomacy.
   setArmsDeal: 'money',
   sellUnit: 'money',
+  setSanction: 'policies',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',

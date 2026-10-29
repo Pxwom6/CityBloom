@@ -49,8 +49,14 @@ import {
   type DiplomacySummary,
 } from './diplomacy';
 import { DIPLOMACY, DIPLOMATS } from '../../data/diplomacy';
-import { WAR_AID } from '../../data/warEconomy';
-import { aidEffect, warEconomySummary, type WarEconomy, type WarEconomySummary } from './warEconomy';
+import { SANCTION, WAR_AID } from '../../data/warEconomy';
+import {
+  aidEffect,
+  citySanctions,
+  warEconomySummary,
+  type WarEconomy,
+  type WarEconomySummary,
+} from './warEconomy';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -261,12 +267,14 @@ export function rivalsMonth(sim: Sim): void {
     const keep = theirDmz(sim, n.id) ? 0.5 : 1;
     // A vassal of the city (M36) rebuilds its forces only so far.
     const allowed = r.vassal ? DIPLOMACY.vassal.forcesLeft : 1;
+    // A town the city sanctions (M38) arms more slowly.
+    const slow = citySanctions(sim, n.id) ? SANCTION.arming : 1;
     // Its depot sabotaged by the city's spies (M37): it arms no more for a while.
     if (!depotSabotaged(sim, n)) {
-      const forcesStep = aid ? step * (1 + (WAR_AID.armsFactor - 1) * aid) : step;
+      const forcesStep = (aid ? step * (1 + (WAR_AID.armsFactor - 1) * aid) : step) * slow;
       r.forces = Math.round((r.forces + (k * p.forces * allowed - r.forces) * forcesStep) * 10) / 10;
     }
-    r.defences = Math.round((r.defences + (k * p.defences * keep - r.defences) * step) * 10) / 10;
+    r.defences = Math.round((r.defences + (k * p.defences * keep - r.defences) * step * slow) * 10) / 10;
   }
   w.rng = rng.getState();
 }

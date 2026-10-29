@@ -320,8 +320,8 @@ export function runDeterminism(
 
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
   // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
-  // munitions and a tank sold to it, aid for the war it fights at the city's side, a stake frozen by
-  // that war, and a capitulation that seizes one.
+  // munitions and a tank sold to it, sanctions put on a town and lifted, aid for the war it fights at
+  // the city's side, a stake frozen by that war, a capitulation that seizes one, and sanctions on the city.
   const economy: string[] = [];
   const bank = newTown(false, true);
   const eco = (cmd: Command) => note(cmd, bank.dispatch(cmd));
@@ -342,6 +342,11 @@ export function runDeterminism(
     checkInvariants(bank);
     economy.push(bank.hash());
   }
+  // Sanctions: the city sanctions the third town (its stake freezes; it grows and arms more slowly) and lifts them.
+  eco({ type: 'setSanction', neighbour: third.id, on: true });
+  bank.advance(TICKS_PER_MONTH);
+  economy.push(bank.hash());
+  eco({ type: 'setSanction', neighbour: third.id, on: false });
   bank.dispatch({
     type: 'cheat',
     cheat: 'proposal',
@@ -375,6 +380,10 @@ export function runDeterminism(
   if (war) war.score = -70;
   bank.advance(3 * TICKS_PER_HOUR);
   bank.advance(2 * TICKS_PER_MONTH);
+  checkInvariants(bank);
+  // The city's word is worth little by now: the towns it has stakes in and an arms deal with sanction it.
+  bank.state.war!.diplomacy!.reputation = 20;
+  bank.advance(TICKS_PER_MONTH);
   checkInvariants(bank);
   economy.push(bank.hash(), JSON.stringify([bank.state.war!.economy, bank.state.economy.history.at(-1)]));
 

@@ -88,6 +88,7 @@ describe('M38: arms deals', () => {
     const peace = newSim({ disasters: false });
     expect(why(peace, { type: 'setArmsDeal', neighbour: 1, crates: 10 })).toBe('War is off in this city');
     expect(why(peace, { type: 'sellUnit', unit: 1, neighbour: 1 })).toBe('War is off in this city');
+    expect(why(peace, { type: 'setSanction', neighbour: 1, on: true })).toBe('War is off in this city');
   });
 
   it('sell munitions out of the stores by the hour, at the crate price, as a ledger line', () => {

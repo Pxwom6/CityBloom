@@ -39,7 +39,7 @@ import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
-import { aidEffect, endArmsDeals, forgetEconomy, seizeStakes } from './warEconomy';
+import { aidEffect, endArmsDeals, forgetEconomy, sanctionsOnBreak, seizeStakes } from './warEconomy';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -162,11 +162,22 @@ function dip(sim: Sim): Diplomacy {
 }
 
 /** Something happened: logged, and a notice (`tone` good or bad for the city, else news). */
-export function note(sim: Sim, withId: number, what: string, text: string, tone?: 'good' | 'bad'): void {
+export function note(
+  sim: Sim,
+  withId: number,
+  what: string,
+  text: string,
+  tone?: 'good' | 'bad',
+  extra?: Record<string, number | string>,
+): void {
   const d = dip(sim);
   d.log.push({ tick: sim.state.tick, with: withId, text });
   if (d.log.length > LOG_KEEP) d.log.splice(0, d.log.length - LOG_KEEP);
-  sim.events.push({ kind: 'diplomacy', id: withId, info: { what, text, ...(tone ? { tone } : {}) } });
+  sim.events.push({
+    kind: 'diplomacy',
+    id: withId,
+    info: { what, text, ...(tone ? { tone } : {}), ...(extra ?? {}) },
+  });
   sim.warChanged();
 }
 
@@ -430,6 +441,8 @@ function breakPacts(sim: Sim, n: Neighbour, pacts: Pact[]): void {
     }
     if (PERSONALITY[a.rival!.personality].keepsPacts >= 0.5) joinAgainst(sim, a, n);
   }
+  // Honourable and cautious neighbours the city does business with sanction it at once (M38).
+  sanctionsOnBreak(sim);
 }
 
 // ----- The war score -----

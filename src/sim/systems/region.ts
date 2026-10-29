@@ -19,7 +19,7 @@ import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
 import { embargoed, forgetNeighbour } from './diplomacy';
-import { sanctionsBetween } from './warEconomy';
+import { sanctionDrag, sanctionsBetween } from './warEconomy';
 import { BRANCH_IDS, cleanTiers } from '../../data/research';
 import { BATTLE } from '../../data/battle';
 import { MAP_SIZE } from '../../data/world';
@@ -342,7 +342,12 @@ export function regionMonth(sim: Sim): void {
     }
     const def = NEIGHBOUR_KIND[n.kind];
     n.trend = Math.max(def.trend[0], Math.min(def.trend[1], n.trend + rng.range(-1, 1) * REGION.trendStep));
-    n.population = Math.max(REGION.minPopulation, Math.round(n.population * (1 + n.trend)));
+    // A town the city sanctions (M38) grows more slowly.
+    const drag = sanctionDrag(sim, n.id);
+    n.population = Math.max(
+      REGION.minPopulation,
+      Math.round(n.population * (drag ? 1 + n.trend + drag : 1 + n.trend)),
+    );
     n.history.push(n.population);
     if (n.history.length > 24) n.history.shift();
   }

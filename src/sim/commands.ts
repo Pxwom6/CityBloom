@@ -260,10 +260,11 @@ export type Command =
   | { type: 'fundAlly'; neighbour: number; perMonth: number }
   /**
    * Arms trade (M38): sell an ally `crates` of munitions a month from the war stores (0 ends the
-   * deal), or one of the city's units outright.
+   * deal), or one of the city's units outright. Sanctions: put them on a neighbour or lift them.
    */
   | { type: 'setArmsDeal'; neighbour: number; crates: number }
-  | { type: 'sellUnit'; unit: number; neighbour: number };
+  | { type: 'sellUnit'; unit: number; neighbour: number }
+  | { type: 'setSanction'; neighbour: number; on: boolean };
 
 export type CommandType = Command['type'];
 
@@ -346,6 +347,7 @@ const COMMAND_KINDS = {
   fundAlly: true,
   setArmsDeal: true,
   sellUnit: true,
+  setSanction: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

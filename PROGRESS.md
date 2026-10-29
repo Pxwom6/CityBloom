@@ -234,7 +234,11 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 and intelligence and M38 Investments and the war economy are complete**, in pull request #23 (its
 title names all five). **M39 War with friends** is under way on the same branch: plan
 `docs/plans/M39-design.md` (calls 1–15, steps 0–12; step 0 done), code map `docs/plans/M39-codemap.md`,
-calls in DECISIONS "M39". Next: step 1, battle version 4 (orders while a battle runs, allies' helpers).
+calls in DECISIONS "M39". Step 2 done (305b54d): the region room's live battles, protocol 6
+(`relay/live.ts`: calls, pacing by the players' progress, orders stamped at the frontier, handovers,
+rejoins, watching, the final record kept for an absent player and as a replay; `relay/tests/regionLive.test.ts`,
+34 tests). Step 1 (battle version 4: orders while a battle runs, allies' helpers) in progress. Then
+step 3, the pages' side.
 
 M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
 their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a

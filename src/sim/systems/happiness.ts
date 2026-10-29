@@ -9,6 +9,7 @@ import { landValueAt } from './landValue';
 import { fieldAt } from './pollution';
 import { parkShare } from './weather';
 import { safetyAt } from './war';
+import { tiredOfWar } from './weariness';
 
 const ZONE_LETTER = ['R', 'R', 'C', 'I'] as const;
 
@@ -116,6 +117,9 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
     // Military buildings nearby (M34): some residents sleep easier for them.
     const safe = safetyAt(sim, b);
     if (safe >= 0.005) f.push({ label: 'Feels safe (defences nearby)', value: safe });
+    // A long war wears people down (M38): past half weariness, homes grow less happy.
+    const tired = tiredOfWar(sim);
+    if (tired <= -0.001) f.push({ label: 'Tired of war', value: tired });
   }
   if (b.zone === ZONE_R && b.pop > 0 && b.sick > 0.05) {
     const untreated = (b.sick * (1 - b.treated)) / b.pop;

@@ -300,8 +300,14 @@ describe('M38: sanctions on the city', () => {
     declare(sim, e.id);
     toMonthStart(sim);
     toMonthStart(sim);
-    // No deal, no stake, no loan, no aid: no sanction is made, and the economy is not either.
-    expect(sim.state.war!.economy).toBeUndefined();
+    // No deal, no stake, no loan, no aid: no sanction is made, and the war economy holds nothing but
+    // the weariness (M38 step 6) of the war that is open.
+    expect({ ...sim.state.war!.economy, weariness: undefined }).toEqual({
+      stakes: {},
+      loans: [],
+      aid: {},
+      weariness: undefined,
+    });
     expect(told(sim, 'sanctionedUs')).toHaveLength(0);
     expect(sanctionsBetween(sim, n.id)).toBe(true);
     expect(

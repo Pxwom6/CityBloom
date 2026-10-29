@@ -12,8 +12,8 @@
   "highway": "af3afa03",
   "railway": "79eee0b0",
   "buildings": "25d8f252",
-  "totals": "06977144",
-  "demand": "8e9bdb20",
+  "totals": "189a8870",
+  "demand": "a818ad75",
   "landValue": "527fa591",
   "cursors": "4ebe1477",
   "economy": "eae15f44",
@@ -35,7 +35,7 @@
   "progress": "89d7813e",
   "policies": "741638a5",
   "tourism": "0f51bf10",
-  "chronicle": "36a002a7",
+  "chronicle": "e9113250",
   "matchDay": "77074ba4",
   "election": "285c9a55",
   "scenario": "77074ba4",
@@ -45,5 +45,5 @@
   "region": "078ca4c5",
   "map": "77074ba4",
   "builtBy": "1e783bf6",
-  "war": "8290ba56"
+  "war": "661d4ed1"
 }

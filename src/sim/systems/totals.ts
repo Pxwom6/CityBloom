@@ -7,6 +7,7 @@ import { launchCheer, matchDayNow } from './projects';
 import { honeymoon } from './elections';
 import { bondMood } from './war';
 import { raidMood } from './raids';
+import { warCheer } from './weariness';
 
 /** City-wide totals, recomputed each hour and saved (they feed demand and the UI). */
 export interface CityTotals {
@@ -104,8 +105,9 @@ export function computeTotals(sim: Sim): CityTotals {
   // A match day at the stadium cheers the whole city (M17).
   // So does a won election, for a year.
   const md = matchDayNow(sim);
-  // War bonds (M34) weigh on it while they're owed.
-  const cheer = (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim) + bondMood(sim) + raidMood(sim);
+  // War bonds (M34) weigh on it while they're owed, and so does being tired of war (M38).
+  const cheer =
+    (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim) + bondMood(sim) + raidMood(sim) + warCheer(sim);
   if (cheer && resW > 0) t.approval = Math.max(0, Math.min(1, t.approval + cheer));
   t.highwayConnected = sim.highwayConnectedBlocks() > 0;
   const [e1, e2] = workforceEducation(sim);

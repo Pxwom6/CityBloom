@@ -21,7 +21,7 @@
  */
 import { annuity } from '../../data/economy';
 import { UNIT, type UnitDef } from '../../data/war';
-import { ARMS, INVEST, LENDING, SANCTION, WAR_AID, lendingRate } from '../../data/warEconomy';
+import { ARMS, INVEST, LENDING, SANCTION, WAR_AID, WAR_DIFFICULTY, lendingRate } from '../../data/warEconomy';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
@@ -31,6 +31,7 @@ import { anyWarOpen, embargoed, fightingWith, helpers, note, pactsWith, warWith 
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
+import { wearinessHour, wearinessSummary, type WearinessSummary } from './weariness';
 
 /** The city's stake in a computer neighbour's industry. */
 export interface Stake {
@@ -113,6 +114,10 @@ export interface WarEconomy {
   sanctioned?: Record<number, Sanction>;
   /** Sanctions computer neighbours have put on the city, by neighbour id (step 5). */
   sanctionedBy?: Record<number, SanctionOnCity>;
+  /** War weariness, 0 to 1 (step 6); absent until a war or a raid, and again once it has worn off. */
+  weariness?: number;
+  /** Peace after a weary war: the tick the recovery's cheer runs out (step 6). */
+  recoveryUntil?: number;
 }
 
 const money = (v: number) => `$${formatInt(Math.round(v))}`;
@@ -121,8 +126,13 @@ const ids = (o: Record<number, unknown>): number[] => Object.keys(o).map(Number)
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
 /** The war economy, made on first use (never in a dry run). */
-function economy(sim: Sim): WarEconomy {
+export function economy(sim: Sim): WarEconomy {
   return (sim.state.war!.economy ??= { stakes: {}, loans: [], aid: {} });
+}
+
+/** What the difficulty does to this city's war (`WAR_DIFFICULTY`; Normal changes nothing). */
+export function warDifficulty(sim: Sim): (typeof WAR_DIFFICULTY)['normal'] {
+  return WAR_DIFFICULTY[sim.state.options.difficulty] ?? WAR_DIFFICULTY.normal;
 }
 
 /** A computer neighbour by id (friends' cities are not invested in until M39). */
@@ -793,6 +803,8 @@ export function warEconomyRates(sim: Sim): Record<string, number> {
  * can't run any more are ended first).
  */
 export function warEconomyHour(sim: Sim): void {
+  // War weariness first (step 6): it may make the war economy.
+  wearinessHour(sim);
   const e = sim.state.war?.economy;
   if (!e) return;
   for (const loan of [...e.loans]) {
@@ -888,6 +900,8 @@ export interface WarEconomySummary {
     strength: number;
     why: string | null;
   }[];
+  /** War weariness and the recovery from it (step 6). */
+  weariness: WearinessSummary;
   /** One row for each computer neighbour. */
   neighbours: {
     id: number;
@@ -1039,6 +1053,7 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
     munitions: Math.floor(s.war.stock.munitions),
     cratePrice: ARMS.price,
     units,
+    weariness: wearinessSummary(sim),
     neighbours,
   };
 }

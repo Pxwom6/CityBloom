@@ -40,6 +40,7 @@ import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
 import { aidEffect, endArmsDeals, forgetEconomy, sanctionsOnBreak, seizeStakes } from './warEconomy';
+import { peaceCame } from './weariness';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -870,6 +871,8 @@ function endWar(sim: Sim, id: number): void {
   d.pacts = d.pacts.filter((p) => !(p.with === id && p.term.k === 'ceasefire'));
   d.ended = { ...(d.ended ?? {}), [id]: sim.state.tick };
   stopFighting(sim, id);
+  // The end of a war that wore the city out: a recovery (M38).
+  peaceCame(sim);
 }
 
 /** A computer neighbour's quarter (1–3) by name. */
@@ -1371,6 +1374,8 @@ function conquer(sim: Sim, war: War): void {
     n.rival.forces = round1(n.rival.forces * DIPLOMACY.vassal.forcesLeft);
     if (d.vassal?.overlord === n.id) delete d.vassal;
     delete d.fell;
+    // A war won: the people breathe again (M38).
+    peaceCame(sim);
     note(
       sim,
       n.id,

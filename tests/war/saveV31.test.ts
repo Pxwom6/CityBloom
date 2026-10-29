@@ -11,6 +11,10 @@ import { newSim } from '../helpers';
  * M38, save v31: the war economy appears when it is first used, so a v30 war city loads as it was and
  * plays on exactly as it did. The fixture is a war city saved at the M37 tip (v30): a weapons lab
  * with a tier researched and one queued, and a treaty paying tribute after a war.
+ *
+ * Its war with a neighbour is still open, so from step 6 on it grows weary and its approval (and what
+ * hangs on it: demand, the chronicle) moves: the golden below was rewritten once for that, and only
+ * those parts and the war's own (the weariness it now keeps) differ.
  */
 const V30 = 'tests/fixtures/war/v30-war.citybloom';
 /** What that save plays on to: the parts of its state after two months, but the version. `GOLDEN=write` rewrites it. */
@@ -45,10 +49,13 @@ describe('M38: save v31', () => {
     const now = v30Parts();
     if (process.env.GOLDEN === 'write') writeFileSync(GOLDEN, `${JSON.stringify(now, null, 1)}\n`);
     expect(now).toEqual(JSON.parse(readFileSync(GOLDEN, 'utf8')));
-    // Nothing in play makes the economy on its own.
+    // Nothing in play makes a stake, a loan, aid, an arms deal or a sanction on its own: the one thing
+    // that appears is war weariness (M38 step 6), because this city's war is open and wears on it.
     const again = Sim.fromSave(save);
     again.advance(2 * M);
-    expect(again.state.war!.economy).toBeUndefined();
+    const e = again.state.war!.economy!;
+    expect({ ...e, weariness: undefined }).toEqual({ stakes: {}, loans: [], aid: {}, weariness: undefined });
+    expect(e.weariness).toBeGreaterThan(0);
   });
 
   it('a save relabelled as v30 loads the same', () => {

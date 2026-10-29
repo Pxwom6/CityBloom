@@ -50,6 +50,7 @@ import { powerSabotaged, revealed, rivalKnows } from './intel';
 import { INTEL } from '../../data/intel';
 import { RESEARCH } from '../../data/research';
 import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
+import { wearinessRaid } from './weariness';
 import { DIPLOMACY } from '../../data/diplomacy';
 import { CIVIC } from '../../data/civic';
 import type { Neighbour, RivalNeighbour } from './region';
@@ -425,6 +426,8 @@ export function startHomeBattle(sim: Sim, r: Raid): void {
   });
   w.battle = { id: r.id, input, step: 0, start: s.tick, raid: r, report: emptyReport(r, s.tick) };
   sim.battleRun = null;
+  // The people mind a raid on their city (M38).
+  wearinessRaid(sim);
   sim.events.push({ kind: 'battleStarted', id: r.id, info: { from: r.name, target: r.target } });
   sim.warChanged();
 }
@@ -501,6 +504,8 @@ export function resolveBattle(
   );
   // Each battle from outside is taken once, however often it's offered (a lost acknowledgement).
   w.taken = [...(w.taken ?? []), takenKey].slice(-BATTLE_TAKEN_KEEP);
+  // A friend's raid weighs on the people as a neighbour's does (M38).
+  if (friend) wearinessRaid(sim);
   sim.battleRun = run;
   // Its opening picture at once: a battle being watched shows before its first tick.
   sim.battleFrame = run.frame();

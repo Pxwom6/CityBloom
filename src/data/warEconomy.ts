@@ -4,11 +4,12 @@
  * with what it means; docs/plans/M38-design.md has the calls behind them and docs/DECISIONS.md "M38"
  * the choices made while building. A "month" is a game day, a "year" twelve of them.
  *
- * Later steps add their numbers beside these: `WEARINESS` and `WAR_DIFFICULTY`.
+ * Steps 6 to 8 add `WEARINESS`, `OFFERS` and `WAR_DIFFICULTY` at the end.
  */
 import { DIPLOMATS } from './diplomacy';
+import type { Difficulty } from './economy';
 import type { NeighbourKind } from './region';
-import type { Personality } from './war';
+import { PERSONALITY, type Personality } from './war';
 
 /** Stakes in a computer neighbour's industry. */
 export const INVEST = {
@@ -161,3 +162,122 @@ export const SANCTION = {
     treacherous: false,
   } as Record<Personality, boolean>,
 } as const;
+
+/**
+ * War weariness (M38 step 6): the longer the city is at war the more tired its people are. It grows
+ * each hour a war is open with the city (fighting, not paused by a ceasefire), faster in a total war
+ * and when the war is going badly, and each raid on the city adds to it. It costs approval, and past
+ * `growthFrom` it costs growth. After peace it falls, and the end of a war that tired the city gives a
+ * short recovery. Hours are game hours and a "day" is a game month, as everywhere in the war rules;
+ * the difficulty scales every rise (`WAR_DIFFICULTY.weariness`).
+ */
+export const WEARINESS = {
+  /**
+   * Added each hour of an open war, out of 1: about 0.012 a day, so a plain war of twenty days leaves
+   * the city a quarter weary before its raids (at a month a game day, about an hour of play at 1×).
+   */
+  perHour: 0.0005,
+  /** A total war counts this many times as much; so does a war being lost (below `losingBelow`). */
+  total: 1.5,
+  losing: 1.5,
+  /** The war score (−100 to 100) at or below which the city counts as losing a war. */
+  losingBelow: -15,
+  /** Each raid on the city (a computer neighbour's or a friend's, once it arrives) adds this. */
+  perRaid: 0.02,
+  /** Falls this much each hour when no war is open: about 0.036 a day, from half to nothing in 14 days. */
+  fallPerHour: 0.0015,
+  /** Approval at full weariness (added to the city's cheer, in proportion). */
+  approval: -0.12,
+  /** Past this weariness homes grow less happy ("Tired of war"), by `growth` at full weariness. */
+  growthFrom: 0.5,
+  growth: -0.05,
+  /**
+   * Peace, or a war's end, with the city at least `minimum` weary: for `days` days it cheers by
+   * `cheer`, easing back in a straight line. A city a war barely touched has nothing to recover from.
+   */
+  recovery: { days: 10, cheer: 0.05, minimum: 0.1 },
+} as const;
+
+/**
+ * What the difficulty changes in a war (M38 step 8) with rivals on. Normal is exactly the war as
+ * milestones 34 to 37 made it: every figure here is 1 (or 0) there, so it leaves the numbers alone.
+ * (The forces' own upkeep already follows the difficulty through `DIFFICULTY.upkeep`, which
+ * `upkeepScale` applies to roads, services and forces alike: nothing is added to it here.)
+ */
+export const WAR_DIFFICULTY: Record<
+  Difficulty,
+  {
+    /** Rivals keep this share of the forces and defences their character calls for. */
+    arming: number;
+    /** Rivals' raids come this much as often. */
+    raids: number;
+    /** Added to every character's aggression (how readily it raids and declares, how little it wants peace). */
+    aggression: number;
+    /** What computer neighbours demand of the city in money (tribute) is multiplied by this. */
+    terms: number;
+    /** Weariness rises this much as fast. */
+    weariness: number;
+  }
+> = {
+  easy: { arming: 0.7, raids: 0.6, aggression: 0, terms: 0.7, weariness: 0.7 },
+  normal: { arming: 1, raids: 1, aggression: 0, terms: 1, weariness: 1 },
+  hard: { arming: 1.3, raids: 1.4, aggression: 0.1, terms: 1.4, weariness: 1.3 },
+};
+
+/**
+ * Computer neighbours' offers to the city (M38 step 7): at most one a month, each candidate making
+ * one with a chance of `chance` times its character's `PERSONALITY.trade`, from dice of their own
+ * (`${seed}:econ:${month}`). Each stays open `openDays` days. The terms are reckoned from what the
+ * sim knows of the neighbour and the city, and the offer can be taken or turned down.
+ */
+export const OFFERS = {
+  chance: 0.3,
+  openDays: 3,
+  /** A neighbour that feels no better than this about the city offers nothing (as it sells no stake). */
+  minRelation: INVEST.minRelation,
+  /** An ally offers to buy munitions: this share of what its town takes (`armsCapacity`), by dice. */
+  arms: { shares: [0.5, 0.75, 1] as readonly number[], minStock: 20 },
+  /**
+   * Investing in the city: a lump sum now for a share (percent) of its industrial tax for `months`
+   * months. Only characters that `pays` (the share of the tax it will get in all that it pays now: it
+   * wants a profit); never while the city is at war or the neighbour is at war with it. The city never
+   * sells more than `maxShare` percent of its industrial tax in all, and nothing under `minTax` a month
+   * is worth the trouble. The sum is never more than `meansMonths` months of the neighbour's own taxes.
+   */
+  invest: {
+    shares: [10, 15, 20] as readonly number[],
+    months: 24,
+    pays: { aggressive: 0, cautious: 0.65, mercantile: 0.75, honourable: 0, treacherous: 0 } as Record<
+      Personality,
+      number
+    >,
+    maxShare: 30,
+    minTax: 1_500,
+    meansMonths: 12,
+  },
+  /**
+   * Lending to the city when it's short of cash: the bank holds under `shortMonths` months of last
+   * month's spending (and under `floor`). Repaid over `months` months like a bank loan, at a yearly
+   * rate from the lender's character: `base` less `perTrade` for each point of its trade weight, plus
+   * `perMoney` for each point its money weight is over 1 (the mercantile are cheapest). Never in
+   * sandbox, where money isn't short. Never more than `meansMonths` months of the neighbour's taxes.
+   */
+  loan: {
+    amounts: [50_000, 100_000, 250_000] as readonly number[],
+    months: 24,
+    shortMonths: 3,
+    floor: 50_000,
+    base: 0.1,
+    perTrade: 0.05,
+    perMoney: 0.02,
+    meansMonths: 12,
+  },
+} as const;
+
+/** The yearly interest a neighbour of this character charges the city on a loan (to a tenth of a percent). */
+export function offerRate(personality: Personality): number {
+  const l = OFFERS.loan;
+  const r =
+    l.base - l.perTrade * PERSONALITY[personality].trade + l.perMoney * (DIPLOMATS[personality].money - 1);
+  return Math.round(r * 1000) / 1000;
+}

@@ -5,6 +5,7 @@ import { Sim } from '../../src/sim/sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { DIPLOMACY, termProblem, type Term } from '../../src/data/diplomacy';
 import { FIGHT_TIMEOUT_HOURS, SKIRMISH } from '../../src/data/battle';
+import { WEARINESS } from '../../src/data/warEconomy';
 import { MAP_SIZE } from '../../src/data/world';
 import { CIVIC } from '../../src/data/civic';
 import { battleLayout } from '../../src/sim/battle/layout';
@@ -554,6 +555,8 @@ describe('M36: friends’ raids', () => {
     expect(report.absent).toBe(true);
     expect(report.collapsed.length).toBeLessThanOrEqual(SKIRMISH.awayCollapse);
     expect(report.civics.filter((c) => c.wrecked).length).toBeLessThanOrEqual(SKIRMISH.awayWreck);
+    // The people mind a friend's raid as they mind a neighbour's (M38): the refused one above didn't count.
+    expect(sim.state.war!.economy!.weariness).toBeGreaterThanOrEqual(WEARINESS.perRaid - 0.0001);
   });
 
   it('a city reports its shield to the region: new, neutral, or none once past the bar (or in tests, unshielded)', () => {

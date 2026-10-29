@@ -27,7 +27,7 @@ import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
 import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
 import { accrue, book } from './economy';
-import { anyWarOpen, embargoed, fightingWith, helpers, note, pactsWith, warWith } from './diplomacy';
+import { anyWarOpen, embargoed, fightingWith, heldBy, helpers, note, pactsWith, warWith } from './diplomacy';
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
@@ -246,6 +246,8 @@ export function buyRefusal(sim: Sim, id: number, share: number): string | null {
   if (n.player) return 'Stakes in a friend’s city come with treaties among friends (M39)';
   if (!n.rival) return `${n.name} isn’t a rival`;
   if (warWith(sim, id)) return `The city is at war with ${n.name}: it sells no stakes in its industry`;
+  const holder = heldBy(sim, id);
+  if (holder) return `${n.name} is held by ${holder.name} and sells no stakes`;
   if (sanctionsBetween(sim, id)) return `Sanctions between the city and ${n.name} stand in the way`;
   if (n.rival.relation <= INVEST.minRelation)
     return `${n.name} won’t sell a stake to a city it distrusts: its feelings must be above ${INVEST.minRelation}`;
@@ -464,6 +466,8 @@ export function aidEffect(sim: Sim, id: number): number {
 /** Why trade with this neighbour is stopped (an embargo, or sanctions), or null. */
 export function tradeStopped(sim: Sim, id: number): string | null {
   const name = sim.state.region.neighbours.find((x) => x.id === id)?.name ?? 'that neighbour';
+  const holder = heldBy(sim, id);
+  if (holder) return `${name} is held by ${holder.name} and can’t trade`;
   if (embargoed(sim, id)) return `Trade with ${name} is under embargo`;
   if (sanctionsBetween(sim, id)) return `Sanctions between the city and ${name} stand in the way`;
   return null;

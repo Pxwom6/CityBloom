@@ -18,7 +18,7 @@ import { BERTH_DEPTH, civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
-import { embargoed, forgetNeighbour } from './diplomacy';
+import { embargoed, forgetNeighbour, heldBy } from './diplomacy';
 import { sanctionDrag, sanctionsBetween } from './warEconomy';
 import { BRANCH_IDS, cleanTiers } from '../../data/research';
 import { BATTLE } from '../../data/battle';
@@ -106,6 +106,11 @@ export interface RivalNeighbour {
   allies?: number[];
   /** Conquered by the city (M36): it pays a fifth of its taxes, and may rise again. */
   vassal?: { since: number };
+  /**
+   * Held as a subject by this other computer neighbour (M39, scenarios only): it trades with nobody
+   * and helps no one until it is freed (`liberate`, or its overlord's fall).
+   */
+  subjectOf?: number;
   /** Blacked out by the city's tower (M37): no raids or spies from it meanwhile. */
   blackout?: RivalBlackout;
   /** Its weapons tech, 0–4 (M37), and the war-clock hour before which it takes no further step. */
@@ -216,6 +221,8 @@ export function capacity(
       0,
       Math.floor(direction === 'buy' ? n.player.offers.sell[resource] : n.player.offers.buy[resource]),
     );
+  // A town held by another (M39, scenarios) has nothing to trade with the city.
+  if (n.rival?.subjectOf !== undefined && heldBy(sim, n.id)) return 0;
   const per = NEIGHBOUR_KIND[n.kind].per;
   const rate = direction === 'buy' ? per.sell[resource] : per.buy[resource];
   let cap = (rate * n.population) / 1000;
@@ -236,7 +243,9 @@ export function neighbour(sim: Sim, id: number): Neighbour | undefined {
  * delivers nothing and earns nothing.
  */
 function dealStopped(sim: Sim, neighbourId: number): boolean {
-  return embargoed(sim, neighbourId) || sanctionsBetween(sim, neighbourId);
+  return (
+    embargoed(sim, neighbourId) || sanctionsBetween(sim, neighbourId) || heldBy(sim, neighbourId) !== null
+  );
 }
 
 /** Power or water coming in under deals now (what the neighbours can actually send). */
@@ -387,6 +396,9 @@ export function setDeal(
     if (i >= 0 && apply) deals.splice(i, 1);
     return { ok: true };
   }
+  // A town held by another (M39, scenarios) trades with nobody until it is freed.
+  const holder = heldBy(sim, n.id);
+  if (holder) return { ok: false, reason: `${n.name} is held by ${holder.name} and can’t trade` };
   // An embargo (M36) stops trade with that neighbour until a treaty resumes it.
   if (embargoed(sim, n.id)) return { ok: false, reason: `Trade with ${n.name} is under embargo` };
   // Sanctions (M38) stand in the way of new deals too, from either side.

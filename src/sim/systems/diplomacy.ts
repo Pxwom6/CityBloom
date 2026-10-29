@@ -49,6 +49,7 @@ import {
   warDifficulty,
 } from './warEconomy';
 import { peaceCame } from './weariness';
+import { scenarioFact, scriptedInvasion } from './scenario';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -293,6 +294,33 @@ function rivalStrength(n: Neighbour): number {
   return (n.rival?.forces ?? 0) + (n.rival?.defences ?? 0);
 }
 
+/** The computer neighbour that holds this one as its subject (M39, scenarios only), or null. */
+export function heldBy(sim: Sim, id: number): Neighbour | null {
+  const by = neighbourOf(sim, id)?.rival?.subjectOf;
+  return by === undefined ? null : (neighbourOf(sim, by) ?? null);
+}
+
+/**
+ * A subject town goes free of its overlord (M39): its feelings for the city soar, and it offers an
+ * alliance. Told to the scenario, which may count it.
+ */
+function freeTown(sim: Sim, town: Neighbour, overlord: Neighbour): void {
+  const r = town.rival;
+  if (!r || r.subjectOf !== overlord.id) return;
+  delete r.subjectOf;
+  r.relation = clamp(r.relation + DIPLOMACY.liberateRelation, -100, 100);
+  scenarioFact(sim, 'liberated');
+  note(
+    sim,
+    town.id,
+    'liberated',
+    `${town.name} is free of ${overlord.name}: it thanks the city and offers an alliance`,
+    'good',
+  );
+  const terms: Term[] = [{ k: 'alliance' }];
+  if (!termsRefusal(sim, town.id, terms)) putToCity(sim, town, terms);
+}
+
 // ----- Declaring war -----
 
 /** Why the city can't declare war on this neighbour (a refusal that says when a pact is in the way). */
@@ -314,6 +342,8 @@ export function declareRefusal(
   if (!n) return fail('No such neighbour');
   if (n.player) return fail('War with a friend is declared in a shared region at war (M39)');
   if (!n.rival) return fail(`${n.name} isn’t a rival`);
+  const holder = heldBy(sim, to);
+  if (holder) return fail(`${n.name} is held by ${holder.name}: free it by beating ${holder.name}`);
   const d = s.war.diplomacy;
   if (d?.wars.some((x) => x.with === to)) return fail(`The city is at war with ${n.name} already`);
   if (n.rival.vassal) return fail(`${n.name} is your vassal`);
@@ -435,6 +465,8 @@ function startWarWith(
 /** A computer neighbour comes into a war against the city on another's side. */
 function joinAgainst(sim: Sim, a: Neighbour, friend: Neighbour): void {
   if (warWith(sim, a.id) || a.rival?.vassal || sim.state.war?.diplomacy?.vassal?.overlord === a.id) return;
+  // A town held as a subject (M39) can't come to anyone's side.
+  if (a.rival?.subjectOf !== undefined) return;
   // True to its word to both sides: a neighbour with a pact with the city stays out.
   if (bindingPacts(sim, a.id).length) return;
   if (!warScaleAllowed(sim) || warScaleAllowed(sim) === 'skirmish') return;
@@ -619,7 +651,8 @@ function capitulate(sim: Sim, war: War, by: Party): void {
     // The winner keeps the city's stake in its industry (M38).
     seizeStakes(sim, n, 'when the city capitulates');
     sign(sim, n, imposedTerms(sim, n), true);
-  } else
+  } else {
+    scenarioFact(sim, 'warWon');
     note(
       sim,
       n.id,
@@ -627,6 +660,7 @@ function capitulate(sim: Sim, war: War, by: Party): void {
       `${n.name} capitulates: set your terms within ${DIPLOMACY.termsDays} days, or the usual terms stand`,
       'good',
     );
+  }
 }
 
 /** Raids from this neighbour turn back, and the city's forces on their way there come home. */
@@ -669,6 +703,9 @@ function defaultTerms(sim: Sim, n: Neighbour, war: War): Term[] {
   const terms: Term[] = [{ k: 'peace' }];
   const amount = Math.round((neighbourTaxes(n) * DIPLOMACY.defaults.reparationsMonths) / 100) * 100;
   if (amount > 0) terms.push({ k: 'reparations', payer: 'them', amount });
+  // A beaten overlord lets its subject towns go (M39, scenarios).
+  for (const town of sim.state.region.neighbours)
+    if (town.rival?.subjectOf === n.id) terms.push({ k: 'liberate', town: town.id });
   // Only the city's own rising, won, sets it free; a vassal's beaten rising leaves it a vassal.
   if (war.rebellion && sim.state.war?.diplomacy?.vassal?.overlord === n.id) terms.push({ k: 'independence' });
   return terms;
@@ -692,13 +729,15 @@ export function termsRefusal(sim: Sim, to: number, terms: Term[]): string | null
   if (!n) return 'No such neighbour';
   if (n.player) return 'Treaties with friends come with war among friends (M39)';
   if (!n.rival) return `${n.name} isn’t a rival`;
+  const holder = heldBy(sim, to);
+  if (holder) return `${n.name} is held by ${holder.name} and signs nothing until it is free`;
   if (!terms.length) return 'A treaty needs terms';
   if (terms.length > DIPLOMACY.maxTerms) return `A treaty has ${DIPLOMACY.maxTerms} terms at most`;
   const d = s.war.diplomacy;
   const war = warWith(sim, to);
   const kinds = terms.map((t) => t.k);
   for (const k of TERM_KINDS)
-    if (k !== 'occupy' && k !== 'release' && kinds.filter((x) => x === k).length > 1)
+    if (k !== 'occupy' && k !== 'release' && k !== 'liberate' && kinds.filter((x) => x === k).length > 1)
       return `${TERM_NAMES[k]} is listed twice`;
   const has = (k: TermKind) => pactsWith(sim, to, k);
   const theirTaxes = neighbourTaxes(n);
@@ -766,6 +805,14 @@ export function termsRefusal(sim: Sim, to: number, terms: Term[]): string | null
       case 'independence':
         if (d?.vassal?.overlord !== to && !n.rival.vassal) return 'Neither city is the other’s vassal';
         break;
+      case 'liberate': {
+        const town = neighbourOf(sim, t.town);
+        if (!town?.rival || town.player || town.rival.subjectOf !== to) return `${n.name} holds no such town`;
+        if (!war) return `${town.name} is freed in a war with ${n.name}`;
+        if (terms.some((x) => x !== t && x.k === 'liberate' && x.town === t.town))
+          return `${town.name} is listed twice`;
+        break;
+      }
     }
   }
   return null;
@@ -823,6 +870,7 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
         break;
       case 'occupy': {
         if (t.side === 'us') {
+          scenarioFact(sim, 'districtsLost');
           const rep = districtReports(sim).find((x) => x.id === t.district);
           pact(t, {
             since: nextMonth,
@@ -862,6 +910,11 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
         }
         if (n.rival?.vassal) delete n.rival.vassal;
         break;
+      case 'liberate': {
+        const town = neighbourOf(sim, t.town);
+        if (town) freeTown(sim, town, n);
+        break;
+      }
     }
   }
   d.proposals = d.proposals.filter((p) => p.with !== n.id);
@@ -931,6 +984,8 @@ export function termText(sim: Sim, n: Neighbour, t: Term): string {
       return sim.state.war?.diplomacy?.vassal?.overlord === n.id
         ? 'the city goes free'
         : `${n.name} goes free`;
+    case 'liberate':
+      return `${neighbourOf(sim, t.town)?.name ?? 'a subject town'} goes free of ${n.name}`;
   }
 }
 
@@ -1137,6 +1192,8 @@ export function helpers(sim: Sim): { ally: Neighbour; war: War }[] {
       if (p.term.k !== 'alliance' && !(p.term.k === 'defensivePact' && war.by === 'them')) continue;
       const ally = neighbourOf(sim, p.with);
       if (!ally?.rival || warWith(sim, ally.id) || (enemy && ally.rival.allies?.includes(enemy.id))) continue;
+      // A town held as a subject (M39) helps no one.
+      if (ally.rival.subjectOf !== undefined) continue;
       if (!out.some((x) => x.ally === ally && x.war === war)) out.push({ ally, war });
     }
   }
@@ -1200,6 +1257,10 @@ export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
           d?.vassal?.overlord === n.id
             ? -50 * dp.pride + (cityStrength(sim) >= rivalStrength(n) ? 30 : 0)
             : 60;
+        break;
+      case 'liberate':
+        // Letting a subject town go is for an overlord that is losing badly.
+        v += -40 * dp.pride + 1.3 * Math.max(0, score);
         break;
     }
   }
@@ -1390,6 +1451,7 @@ function conquer(sim: Sim, war: War): void {
     n.rival.forces = round1(n.rival.forces * DIPLOMACY.vassal.forcesLeft);
     if (d.vassal?.overlord === n.id) delete d.vassal;
     delete d.fell;
+    scenarioFact(sim, 'warWon');
     // A war won: the people breathe again (M38).
     peaceCame(sim);
     note(
@@ -1399,6 +1461,8 @@ function conquer(sim: Sim, war: War): void {
       `${n.name} falls to the city: it is the city’s vassal now and pays a fifth of its taxes`,
       'good',
     );
+    // The towns it held go free (M39, scenarios).
+    for (const town of s.region.neighbours) if (town.rival?.subjectOf === n.id) freeTown(sim, town, n);
   } else {
     d.vassal = { overlord: n.id, since: s.tick };
     d.fell = { by: n.id, name: n.name, at: s.tick };
@@ -1481,6 +1545,8 @@ function computerMoves(sim: Sim): void {
   for (const n of s.region.neighbours) {
     const r = n.rival;
     if (!r || n.player) continue;
+    // A town held as a subject (M39, scenarios) proposes and declares nothing.
+    if (r.subjectOf !== undefined && heldBy(sim, n.id)) continue;
     const p = PERSONALITY[r.personality];
     const d = w.diplomacy;
     const war = warWith(sim, n.id);
@@ -1509,11 +1575,12 @@ function computerMoves(sim: Sim): void {
       }
       if (war.score >= 30 && rng.chance(0.5)) {
         const amount = Math.round((neighbourTaxes(n) * Math.min(6, war.score / 15)) / 100) * 100;
-        putToCity(
-          sim,
-          n,
-          amount > 0 ? [{ k: 'peace' }, { k: 'reparations', payer: 'them', amount }] : [{ k: 'peace' }],
-        );
+        const terms: Term[] =
+          amount > 0 ? [{ k: 'peace' }, { k: 'reparations', payer: 'them', amount }] : [{ k: 'peace' }];
+        // Beaten badly, an overlord offers to let its subject towns go (M39, scenarios).
+        for (const town of s.region.neighbours)
+          if (town.rival?.subjectOf === n.id) terms.push({ k: 'liberate', town: town.id });
+        putToCity(sim, n, terms);
       } else if (war.score <= -30 && rng.chance(0.4)) {
         const amount = tributeDemand(sim, 0.1);
         putToCity(sim, n, [{ k: 'peace' }, { k: 'tribute', payer: 'us', amount, months: 24 }]);
@@ -1544,6 +1611,8 @@ function computerMoves(sim: Sim): void {
     // Aggressive and treacherous neighbours declare war on a city they outgun and dislike.
     if (declared || neutral || !allowed || allowed === 'skirmish' || !threat.open || w.diplomacy?.vassal)
       continue;
+    // A scenario that scripts its invasion (M39) lets the neighbours do only what the script says.
+    if (scriptedInvasion(sim)) continue;
     // A spy of the city's caught there within a day (M37): it declares at even strength, twice as likely.
     const caught = freshIncident(sim, n.id);
     const aggression = aggressionOf(sim, r.personality);
@@ -1610,6 +1679,10 @@ export function raidStance(
 ): { factor: number; gapEach: number; seat: boolean; war: boolean } | null {
   const d = sim.state.war?.diplomacy;
   const each = { factor: 1, gapEach: RAIDS.gapEach, seat: false, war: false };
+  // A town held as a subject (M39) raids nobody; and in a scenario that scripts its invasion the
+  // neighbours raid as the script says, apart from a war the city is in.
+  if (n.rival?.subjectOf !== undefined && heldBy(sim, n.id)) return null;
+  if (scriptedInvasion(sim) && !warWith(sim, n.id)) return null;
   if (!d) return each;
   // A war (a rising among them) comes first; otherwise vassals and overlords keep the peace.
   const war = warWith(sim, n.id);
@@ -1799,6 +1872,8 @@ export interface DiplomacySummary {
     declare: string | null;
     /** It may be declared on only by breaking a pact. */
     breaks: boolean;
+    /** The neighbour holding it as a subject (M39, scenarios), or null. */
+    subjectOf: number | null;
   }[];
   log: DiplomacyEntry[];
   /** The city's taxes a month (money terms are measured against them). */
@@ -1897,6 +1972,7 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
           taxes: neighbourTaxes(n),
           declare: why?.reason ?? null,
           breaks: !!why?.info?.breaks,
+          subjectOf: heldBy(sim, n.id)?.id ?? null,
         };
       }),
     log: [...(d?.log ?? [])].reverse(),

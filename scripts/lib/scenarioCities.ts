@@ -9,6 +9,9 @@ import { twoDistricts } from '../../tests/trafficTown';
 import { crossroadsTown } from '../../tests/junctionTown';
 import { RIDGE, ridgeMap } from './ridgeMap';
 import { placeAlong } from '../../tests/helpers';
+import { militaryCivics, startWar } from '../../src/sim/systems/war';
+import { objectiveSpots } from '../../src/sim/battle/layout';
+import type { Personality, UnitKind } from '../../src/data/war';
 
 /** Let a mayor run the city for some months (four decisions a month, as the balance tool). */
 export function govern(p: Player, months: number): void {
@@ -17,6 +20,53 @@ export function govern(p: Player, months: number): void {
       p.play();
       p.sim.advance(TICKS_PER_HOUR * 6);
     }
+}
+
+/** Run on to 07:00 of the next morning, where the day starts. */
+export function toMorning(sim: Sim): void {
+  const left = TICKS_PER_MONTH - (sim.state.tick % TICKS_PER_MONTH);
+  if (left < TICKS_PER_MONTH) sim.advance(left);
+}
+
+/**
+ * A town for a war scenario (M39): grown by the careful mayor in peace (no raids meanwhile) to
+ * `pop` residents, then given rivals: war comes to it as to a city founded with rivals, and its
+ * neighbours get the characters, forces and feelings the scenario says (by their place among the
+ * computer neighbours).
+ */
+export function warScenarioTown(
+  seed: string,
+  cityName: string,
+  pop: number,
+  rivals: { personality: Personality; forces: number; defences: number; relation: number }[],
+): Player {
+  const p = new Player('careful', { seed, preset: 'river', cityName });
+  const sim = p.sim;
+  while (sim.state.totals.population < pop) {
+    p.play();
+    sim.advance(TICKS_PER_HOUR * 6);
+  }
+  sim.state.options.rivals = true;
+  startWar(sim);
+  sim.state.region.neighbours
+    .filter((n) => n.rival && !n.player)
+    .forEach((n, k) => {
+      const r = rivals[k];
+      if (r) Object.assign(n.rival!, r);
+      n.rival!.allies = [];
+    });
+  return p;
+}
+
+/** Train these units at the bases of the kinds that keep them, and wait for them (the forces first). */
+export function trainForces(sim: Sim, units: UnitKind[]): void {
+  for (const kind of units) {
+    const base = militaryCivics(sim).find(
+      (c) => c.def === (kind === 'infantry' ? 'barracks' : 'vehicledepot'),
+    );
+    if (base) sim.dispatch({ type: 'trainUnit', base: base.id, kind });
+  }
+  for (let m = 0; m < 12 && sim.state.war!.orders.size > 0; m++) sim.advance(TICKS_PER_MONTH);
 }
 
 /** Each scenario's starting city. */
@@ -419,6 +469,38 @@ export const RECIPES: Record<string, () => Sim> = {
     zone('R', { x: p.c.x + 2 * DW + 20, z: z - 60 }, { x: end.x - 20, z: z - 60 }, 50);
     zone('R', { x: end.x - 40, z: z - 190 }, { x: end.x - 40, z: z + 190 }, 36);
     govern(p, 3);
+    return sim;
+  },
+  // Stonegate (M39): a compact town by the highway with a small garrison, and three neighbours that
+  // mean it harm. The invasion is scripted (src/data/scenarios.ts): three waves at the factories
+  // by the highway, growing.
+  holdline: () => {
+    const p = warScenarioTown('bastion', 'Stonegate', 2_300, [
+      { personality: 'aggressive', forces: 30, defences: 8, relation: -45 },
+      { personality: 'treacherous', forces: 14, defences: 5, relation: -20 },
+      { personality: 'honourable', forces: 10, defences: 8, relation: 10 },
+    ]);
+    const sim = p.sim;
+    sim.earn(200_000, 'grants');
+    for (const def of ['militaryhq', 'barracks', 'shelter'])
+      if (!p.place(def, 'industry')) throw new Error(`no room for the ${def}`);
+    // Three bunkers beside the factories by the highway, where the raiders will go.
+    const factories = objectiveSpots(sim, 'industry');
+    const heart = factories[Math.floor(factories.length / 2)] ?? p.c;
+    for (let k = 0; k < 3; k++)
+      if (!p.placeNear('bunker', heart, 400)) throw new Error('no room for the bunkers');
+    // The garrison drills for a few days while the town keeps its lights on and its taps running.
+    for (const kind of ['infantry', 'infantry', 'infantry', 'infantry'] as const) {
+      const barracks = militaryCivics(sim).find((c) => c.def === 'barracks')!;
+      sim.dispatch({ type: 'trainUnit', base: barracks.id, kind });
+    }
+    for (let m = 0; m < 3; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    toMorning(sim);
     return sim;
   },
 };

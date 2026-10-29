@@ -41,7 +41,12 @@ export type Term =
   /** An embargo ends. */
   | { k: 'trade' }
   /** A vassal goes free. */
-  | { k: 'independence' };
+  | { k: 'independence' }
+  /**
+   * A town held by the other side as its subject goes free (M39, scenarios): `town` is the freed
+   * neighbour's id. Only a neighbour that holds a subject town can be asked for it.
+   */
+  | { k: 'liberate'; town: number };
 
 export type TermKind = Term['k'];
 
@@ -59,6 +64,7 @@ export const TERM_KINDS: readonly TermKind[] = [
   'embargo',
   'trade',
   'independence',
+  'liberate',
 ];
 
 export const TERM_NAMES: Record<TermKind, string> = {
@@ -75,6 +81,7 @@ export const TERM_NAMES: Record<TermKind, string> = {
   embargo: 'Embargo',
   trade: 'Trade resumes',
   independence: 'Independence',
+  liberate: 'Liberation',
 };
 
 export const DIPLOMACY = {
@@ -140,6 +147,8 @@ export const DIPLOMACY = {
   buyBackMonths: 24,
   /** A broken pact: the victim's allies like the city this much less. */
   alliesRelation: -40,
+  /** A subject town set free (M39): its feelings towards the city rise this much, and it offers an alliance. */
+  liberateRelation: 50,
   /** A declaration: the target's relation drops this much, its allies' this much. */
   declareRelation: -30,
   allyDeclareRelation: -15,
@@ -225,6 +234,8 @@ export function cleanTerm(raw: unknown): Term | null {
         : null;
     case 'nonAggression':
       return isInt(t.months, L.months[0], L.months[1]) ? { k: 'nonAggression', months: t.months } : null;
+    case 'liberate':
+      return isInt(t.town, 1, 255) ? { k: 'liberate', town: t.town } : null;
   }
   return null;
 }
@@ -256,6 +267,8 @@ export function termProblem(raw: unknown): string | null {
     case 'occupy':
     case 'release':
       return `${name}: pick a district`;
+    case 'liberate':
+      return `${name}: pick the town to free`;
     default:
       return `${name} doesn’t make sense`;
   }

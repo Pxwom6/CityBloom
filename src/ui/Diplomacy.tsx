@@ -579,7 +579,7 @@ function NeighbourRow({
 }
 
 /** The fields a term kind starts with (money measured against the payer's taxes). */
-function blankTerm(k: TermKind, theirTaxes: number, district: number | undefined): Term {
+function blankTerm(k: TermKind, theirTaxes: number, district: number | undefined, town?: number): Term {
   const amount = Math.max(500, Math.round((theirTaxes * 0.1) / 100) * 100);
   switch (k) {
     case 'ceasefire':
@@ -595,6 +595,8 @@ function blankTerm(k: TermKind, theirTaxes: number, district: number | undefined
       return { k, side: 'them', district: district ?? 1 };
     case 'nonAggression':
       return { k, months: 24 };
+    case 'liberate':
+      return { k, town: town ?? 0 };
     default:
       return { k } as Term;
   }
@@ -636,6 +638,8 @@ function TermsBuilder({
   if (!d) return null;
   const theirs = d.neighbours.find((n) => n.id === to);
   const districts = [...game.world.districts.values()];
+  /** The towns this neighbour holds as its subjects (a scenario's): the ones a Liberation term can free. */
+  const subjects = d.neighbours.filter((x) => x.subjectOf === to);
   /** The districts a term may name: free ones to occupy, occupied ones to hand back. */
   const choices = (k: 'occupy' | 'release', side: 'us' | 'them'): { id: number; label: string }[] => {
     const held = d.pacts
@@ -754,6 +758,22 @@ function TermsBuilder({
             </>
           )}
           {t.k === 'nonAggression' && field(k, t, 'months', 'months')}
+          {t.k === 'liberate' &&
+            (subjects.length ? (
+              <select
+                data-testid={`dip-term-${k}-town`}
+                value={t.town}
+                onChange={(e) => set(k, { ...t, town: Number((e.target as HTMLSelectElement).value) })}
+              >
+                {subjects.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <small class="muted">no town to free</small>
+            ))}
           <button
             class="btn icon"
             aria-label="Remove"
@@ -791,6 +811,7 @@ function TermsBuilder({
                 kind,
                 theirs?.taxes ?? d.taxes,
                 kind === 'occupy' || kind === 'release' ? choices(kind, 'them')[0]?.id : undefined,
+                subjects[0]?.id,
               ),
             ])
           }

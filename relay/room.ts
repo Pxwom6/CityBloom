@@ -27,7 +27,7 @@ import {
   type AdminAction,
   type Speed,
 } from './protocol';
-import { may, roomRefusal, type SharedRules } from '../src/sim/rules';
+import { may, roomRefusal, setPerms, type SharedRules } from '../src/sim/rules';
 import { checkCommand } from '../src/sim/commandCheck';
 import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from './limits';
 
@@ -686,7 +686,8 @@ export class Room {
         }
         const r = this.info.rules;
         const before = JSON.stringify(r);
-        if (m.player !== undefined && m.perms) r.perms[m.player] = m.perms;
+        // Lists set before the roles of war (M39) keep the roles they were read as allowing.
+        if (m.player !== undefined && m.perms) setPerms(r, m.player, m.perms);
         if (m.spendLimit !== undefined) r.spendLimit = m.spendLimit;
         if (JSON.stringify(r) === before) return;
         // Every game applies the same rules at the same tick: the sim checks what the room can't.

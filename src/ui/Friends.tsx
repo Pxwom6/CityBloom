@@ -19,7 +19,7 @@ import {
   type PlayerInfo,
 } from '../../relay/protocol';
 import type { Game } from '../game';
-import { DEFAULT_PERMS, PERMISSIONS, type Permission } from '../sim/rules';
+import { PERMISSIONS, permsOf, type Permission } from '../sim/rules';
 
 function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
   const { profile, onChange } = props;
@@ -392,7 +392,7 @@ export function RoomPanel() {
               {s.isHost && !p.host && open === p.id && room && (
                 <PlayerRules
                   player={p}
-                  perms={room.rules.perms[p.id] ?? DEFAULT_PERMS}
+                  perms={permsOf(room.rules, p.id)}
                   muted={room.muted.includes(p.id)}
                   onPerms={(perms) => s.setPermissions(p.id, perms)}
                   onMute={(m) => s.admin(m ? 'mute' : 'unmute', p.id)}

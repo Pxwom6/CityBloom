@@ -497,10 +497,10 @@ describe('M38: sanction commands from other players', () => {
     expect(bad({ type: 'setSanction', on: true })).toBe(true);
   });
 
-  it('are policy: a player without the host’s say-so on policies can’t sanction', () => {
-    const rules: SharedRules = { perms: { 2: ['speed'] }, host: 1, spendLimit: null };
+  it('are a treaty matter (M39 roles): a player the host keeps from treaties can’t sanction', () => {
+    const rules: SharedRules = { perms: { 2: ['speed'] }, host: 1, spendLimit: null, roles: true };
     const cmd = { type: 'setSanction', neighbour: 1, on: true } as const;
-    expect(roomRefusal(rules, 2, cmd)).toMatch(/change policies/);
+    expect(roomRefusal(rules, 2, cmd)).toMatch(/make or answer treaties/);
     expect(roomRefusal(rules, 1, cmd)).toBeNull();
   });
 });

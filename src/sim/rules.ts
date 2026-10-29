@@ -7,7 +7,14 @@ import type { Command } from './commands';
 import { CIVIC } from '../data/civic';
 import { formatInt } from './dmath';
 
-export type Permission = 'bulldoze' | 'money' | 'policies' | 'projects' | 'spend' | 'speed';
+export type Permission =
+  'bulldoze' | 'money' | 'policies' | 'projects' | 'spend' | 'speed' | 'war' | 'treaties' | 'defence';
+
+/**
+ * The roles of a city at war (M39): who may wage war, who may make treaties and who may spend on
+ * defence. Rules set before they existed name none of them, and read as allowing all three.
+ */
+export const ROLES: readonly Permission[] = ['war', 'treaties', 'defence'];
 
 export const PERMISSIONS: readonly { id: Permission; label: string; blurb: string }[] = [
   { id: 'bulldoze', label: 'Bulldoze others’ work', blurb: 'roads, buildings and stops someone else built' },
@@ -16,6 +23,17 @@ export const PERMISSIONS: readonly { id: Permission; label: string; blurb: strin
   { id: 'projects', label: 'Big projects', blurb: 'start a stadium, an expo and the like' },
   { id: 'spend', label: 'Spend above the limit', blurb: 'anything costing more than the limit at once' },
   { id: 'speed', label: 'Pause and speed', blurb: 'pause the city or change its speed' },
+  { id: 'war', label: 'Wage war', blurb: 'declare war, send and recall forces, spies and superweapons' },
+  {
+    id: 'treaties',
+    label: 'Treaties',
+    blurb: 'propose and answer treaties, end pacts, neutrality, sanctions',
+  },
+  {
+    id: 'defence',
+    label: 'Defence spending',
+    blurb: 'military buildings, training units, research and trials, defence funding',
+  },
 ];
 
 export interface SharedRules {
@@ -24,6 +42,11 @@ export interface SharedRules {
   host: number;
   /** The most a player without `spend` may spend on one action (null: no limit). */
   spendLimit: number | null;
+  /**
+   * Set once the host has set anyone's permissions on a page that knows the roles of war (M39):
+   * from then on every list is read as it stands. Before, a list naming no role allows them all.
+   */
+  roles?: true;
 }
 
 /** New players' permissions: friends trust each other until the host says otherwise (DECISIONS). */
@@ -34,30 +57,36 @@ export const DEFAULT_PERMS: readonly Permission[] = [
   'projects',
   'spend',
   'speed',
+  'war',
+  'treaties',
+  'defence',
 ];
 
 const NEED: Partial<Record<Command['type'], Permission>> = {
+  trainUnit: 'defence',
+  cancelTraining: 'defence',
+  disbandUnit: 'defence',
   setTax: 'money',
   setFunding: 'money',
   takeLoan: 'money',
   repayLoan: 'money',
   issueBond: 'money',
-  sendForce: 'spend',
-  recallForce: 'spend',
+  sendForce: 'war',
+  recallForce: 'war',
   // Diplomacy (M36): war needs the spending permission, treaties the policies one (M39 brings roles).
-  declareWar: 'spend',
-  setNeutral: 'policies',
-  queueResearch: 'spend',
-  unqueueResearch: 'spend',
-  startTrial: 'spend',
-  stopTrial: 'spend',
-  useBlackout: 'spend',
-  spyMission: 'spend',
-  setDome: 'policies',
-  propose: 'policies',
-  answerProposal: 'policies',
-  withdrawProposal: 'policies',
-  endPact: 'policies',
+  declareWar: 'war',
+  setNeutral: 'treaties',
+  queueResearch: 'defence',
+  unqueueResearch: 'defence',
+  startTrial: 'defence',
+  stopTrial: 'defence',
+  useBlackout: 'war',
+  spyMission: 'war',
+  setDome: 'defence',
+  propose: 'treaties',
+  answerProposal: 'treaties',
+  withdrawProposal: 'treaties',
+  endPact: 'treaties',
   buyBack: 'money',
   repayBond: 'money',
   // The war economy (M38): investing and lending are the city's money.
@@ -68,7 +97,7 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   // Arms trade (M38): selling munitions and units is the city's money; sanctions are diplomacy.
   setArmsDeal: 'money',
   sellUnit: 'money',
-  setSanction: 'policies',
+  setSanction: 'treaties',
   // An offer from a neighbour (M38) is a loan, an investment or an arms deal: the city's money.
   answerOffer: 'money',
   setPolicy: 'policies',
@@ -83,16 +112,50 @@ const WORDS: Record<Permission, string> = {
   projects: 'start big projects',
   spend: `spend that much at once`,
   speed: 'pause or change the speed',
+  war: 'wage war',
+  treaties: 'make or answer treaties',
+  defence: 'spend on defence',
 };
+
+/**
+ * A player's permissions as they stand: the defaults if the host never set them, and the roles of
+ * war added to a list set before the roles existed (it names none of them).
+ */
+export function permsOf(rules: SharedRules, player: number): readonly Permission[] {
+  const list = rules.perms[player];
+  if (!list) return DEFAULT_PERMS;
+  if (!rules.roles && !list.some((p) => ROLES.includes(p))) return [...list, ...ROLES];
+  return list;
+}
+
+/**
+ * The host sets a player's permissions (the room does this). A host on a page that knows the roles of
+ * war sets lists in full, so lists set before the roles existed first get the roles they were read
+ * as allowing: nobody loses one unasked.
+ */
+export function setPerms(rules: SharedRules, player: number, perms: Permission[]): void {
+  if (!rules.roles) {
+    for (const k of Object.keys(rules.perms)) rules.perms[Number(k)] = [...permsOf(rules, Number(k))];
+    rules.roles = true;
+  }
+  rules.perms[player] = perms;
+}
 
 export function may(rules: SharedRules | null, player: number, p: Permission): boolean {
   if (!rules || !player || player === rules.host) return true;
-  return (rules.perms[player] ?? DEFAULT_PERMS).includes(p);
+  return permsOf(rules, player).includes(p);
+}
+
+/** What a command needs beyond `NEED`: defence funding is defence, and so is a military building. */
+function needOf(cmd: Command): Permission | undefined {
+  if (cmd.type === 'setFunding' && cmd.dept === 'defence') return 'defence';
+  if (cmd.type === 'placeBuilding' && CIVIC.get(cmd.def)?.category === 'military') return 'defence';
+  return NEED[cmd.type];
 }
 
 /** Why the room should turn this command away before ordering it, or null. */
 export function roomRefusal(rules: SharedRules | null, player: number, cmd: Command): string | null {
-  const need = NEED[cmd.type];
+  const need = needOf(cmd);
   if (need && !may(rules, player, need)) return `The host hasn't let you ${WORDS[need]}`;
   if (cmd.type === 'placeBuilding' && CIVIC.get(cmd.def)?.project && !may(rules, player, 'projects'))
     return `The host hasn't let you ${WORDS.projects}`;

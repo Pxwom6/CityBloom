@@ -58,11 +58,11 @@ without it.
 - [x] M35 Into battle
 - [x] M36 Diplomacy and the stakes of war
 - [x] M37 Weapon development and intelligence
-- [ ] M38 Investments and the war economy
+- [x] M38 Investments and the war economy
 - [ ] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M37 are complete; M38 is next.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M38 are complete; M39 is next.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,21 +230,20 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war and M37 Weapon
-development and intelligence are complete**, in pull request #23 (its title names all four).
-**M38 Investments and the war economy** is under way on the same branch (it joins #23 while that
-is open): plan `docs/plans/M38-design.md`, code map `docs/plans/M38-codemap.md`, calls in
-DECISIONS "M38".
-- Steps 0–3 done: `src/data/warEconomy.ts`, `src/sim/systems/warEconomy.ts` (`WarState.economy`,
-  save v31): stakes in computer neighbours' industries (`buyStake`/`sellStake`, dividends frozen
-  while fighting, seized on capitulation or a treacherous declaration), loans to allies
-  (`lendAlly`), funding an ally's war (`fundAlly`); `tests/war/warEconomy.test.ts` (29),
-  `tests/war/saveV31.test.ts`.
-- Steps 4–5 in progress (a helper): arms trade (munitions deals, unit sales), embargoes enforced in
-  deals' hourly delivery, sanctions both ways.
-- Then: war weariness and the peace recovery (the M36 golden rewritten once), computer offers,
-  difficulty levers, the balance mayor at war (`balance.ts --rivals`), the Trade tab and e2e,
-  wrap-up.
+**M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war, M37 Weapon development
+and intelligence and M38 Investments and the war economy are complete**, in pull request #23 (its
+title names all five). **M39 War with friends** is next, on the same branch.
+
+M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
+their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a
+capitulation, a fall or a treacherous declaration), loans to allies, money for an ally's war,
+munitions and units sold to allies (kept apart from M23's deals; M36's embargo now also checked at
+each hour's delivery), sanctions both ways, war weariness (approval, then growth) and the peace
+recovery, computer neighbours' offers by character (munitions, investment, loans), difficulty
+levers with rivals on (Normal is M37's war to the bit), and the balance mayor at war
+(`src/sim/ai/warMayor.ts`, `balance.ts --rivals`). The war room's Trade tab, weariness in the
+Diplomacy tab, tips. Calls: DECISIONS "M38"; design: DESIGN §3.32 (plan `docs/plans/M38-design.md`,
+balance `docs/plans/M38-balance.md`); SPEC_REVIEW "M38". Numbers: "Performance (M38)".
 
 M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
 their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
@@ -270,13 +269,40 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M38 Investments and the war economy (SPEC-5.md): arms trade with allies through the deals,
-   stakes in neighbours' industries (dividends frozen or seized by war), loans to allies, funding an
-   ally's war, sanctions both ways, war weariness and the peace recovery, computer neighbours that
-   trade, invest and lend by character, difficulty with rivals on, and the balance mayor at war.
-   Plan: `docs/plans/M38-design.md` (steps 0–11; step 0 done).
-2. M39 and M40 in order.
+1. M39 War with friends (SPEC-5.md): start with a plan in `docs/plans/M39-design.md` and a code map,
+   as M37 and M38 did. M38 left friends' trade, stakes and loans to M39's treaties between friends
+   (DECISIONS "M38", call 1).
+2. M40.
 3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+
+## Performance (M38)
+- **Balance** with rivals (`npx tsx scripts/balance.ts 20 careful --rivals --difficulty …`, the
+  mayor at war; `docs/plans/M38-balance.md`): Easy 83,179 residents, $1.30M, 75 % at year 20 (16
+  raids, 2 buildings lost); Normal 65,786, $1.71M, 70 % (30 raids); Hard held back three years by
+  the raids (8,647 residents at year 6 against 28,229 with rivals off), never bankrupt, 75,239,
+  $1.64M, 65 % (35 raids, a dip to 55 % in year 13). The military takes 2.2 / 3.3 / 4.1 % of
+  spending; stakes worth $2.39M by year 20, paying $336k a year. No neighbour declared war on the
+  careful mayor in any run (peak weariness 0.02), so weariness and treaties show in the tests only.
+  Peace (`balance.ts 20 careful`, rivals off): identical to the step 8 tip, line for line.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, the same 110,174-resident city): against the M37
+  tip back to back, whole runs 7.9 / 8.2 s against 8.1 / 8.4 s (no cost from M38: a peaceful city
+  reads two properties for it); against `main` three pairs 8.2–9.0 s against 7.2–8.7 s, months 4–6
+  tick avg 1.3–1.7 ms on both, within this VM's spread between runs (`main` alone 7.2–8.7 s): **an
+  A/B on the Mac** would settle it.
+- **Network** (`netbudget.ts`, four players): unchanged, 185 messages a minute from the host and 64
+  from guests, 1.1 % of the free plan's requests for an hour a day. M38 sends nothing between
+  friends beyond its commands.
+- **Tests**: the unit suite, 1,058 tests in 130 files, passes (M38's war economy 29, arms trade 17,
+  sanctions 15, weariness 14, offers 24, difficulty 9, the mayor at war 12, save v31). E2e: M34–M38's
+  single-player war specs (10 tests, 34 min) pass, `m38-economy` included (stakes, an ally's loan,
+  an offer taken, munitions and a unit sold, a war freezing a stake, weariness, a sanction;
+  screenshots reviewed). Two players: `m37-friends` passed (12.4 min) on its second run; on the
+  first, every check passed up to Sam's warning, then a screenshot of Sam's page timed out at 60 s
+  (two SwiftShader pages on this VM).
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every M38
+  push, with the determinism script's M38 section (every new command, the offer cheat).
+- **Goldens**: the peace golden and the v2 battle replays never moved; the M36 golden was rewritten
+  twice (weariness, then offers; DECISIONS "M38").
 
 ## Performance (M37)
 - **Balance** (`npx tsx scripts/balance.ts 20`, this branch and `main` 6883790 back to back):
@@ -1020,6 +1046,9 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M38): the bench against `main` (`npx tsx scripts/bench.ts 6 --big`, branch and `main`
+  back to back, a few pairs): in the VM the branch ran within the noise of `main` but on its slow
+  side, and no slower than the M37 tip. The Trade tab and weariness in a real window.
 - Phase 5 (M37): frame times in the heaviest battle (`npx tsx scripts/dev/battlebench.ts
   bench-results/city.gz --guards --dome --super robot --save bench-results/war.gz`, then
   `framebench.mjs bench-results/war.gz --views battle` and `--battle max`, at each quality); the

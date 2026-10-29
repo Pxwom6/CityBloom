@@ -31,6 +31,18 @@ import { anyWarOpen, embargoed, fightingWith, helpers, note, pactsWith, warWith 
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
+import {
+  forgetOffers,
+  industrialTaxes,
+  offerRates,
+  offersHour,
+  offersMonth,
+  offersSummary,
+  type Debt,
+  type Investment,
+  type Offer,
+  type OffersSummary,
+} from './offers';
 import { wearinessHour, wearinessSummary, type WearinessSummary } from './weariness';
 
 /** The city's stake in a computer neighbour's industry. */
@@ -114,6 +126,14 @@ export interface WarEconomy {
   sanctioned?: Record<number, Sanction>;
   /** Sanctions computer neighbours have put on the city, by neighbour id (step 5). */
   sanctionedBy?: Record<number, SanctionOnCity>;
+  /** Offers from computer neighbours waiting for the city's answer (step 7). */
+  offers?: Offer[];
+  /** Ids given to offers, investments and loans from neighbours so far (step 7). */
+  seq?: number;
+  /** Neighbours' investments in the city: shares of its industrial taxes (step 7). */
+  investors?: Investment[];
+  /** Loans from neighbours to the city (step 7). */
+  debts?: Debt[];
   /** War weariness, 0 to 1 (step 6); absent until a war or a raid, and again once it has worn off. */
   weariness?: number;
   /** Peace after a weary war: the tick the recovery's cheer runs out (step 6). */
@@ -320,6 +340,8 @@ export function forgetEconomy(sim: Sim, id: number): void {
   if (e.arms) delete e.arms[id];
   if (e.sanctioned) delete e.sanctioned[id];
   if (e.sanctionedBy) delete e.sanctionedBy[id];
+  // Its offers go with it; what was agreed (an investment, a loan from it) runs its course.
+  forgetOffers(sim, id);
   sim.warChanged();
 }
 
@@ -487,6 +509,12 @@ export function setArmsDeal(sim: Sim, id: number, crates: number, dryRun: boolea
   const why = armsDealRefusal(sim, id, crates);
   if (why) return fail(why);
   if (dryRun) return ok(0, { info: { price: ARMS.price } });
+  makeArmsDeal(sim, id, crates);
+  return ok(0, { info: { price: ARMS.price } });
+}
+
+/** The deal itself, once it is allowed (the city's command, or an ally's offer taken): made, changed (its record kept) or ended (0 crates). */
+export function makeArmsDeal(sim: Sim, id: number, crates: number): void {
   const had = sim.state.war!.economy?.arms?.[id];
   if (crates === 0) {
     delete sim.state.war!.economy!.arms![id];
@@ -502,7 +530,6 @@ export function setArmsDeal(sim: Sim, id: number, crates: number, dryRun: boolea
     };
   }
   sim.warChanged();
-  return ok(0, { info: { price: ARMS.price } });
 }
 
 /** An arms deal that can no longer run, and why (in words that follow "ends:"), or null. */
@@ -768,7 +795,7 @@ function loanVoid(sim: Sim, loan: AllyLoan): string | null {
 }
 
 /** Monthly ledger lines from stakes, loans to allies, aid and munitions sold, at current conditions (for `monthlyRates`). */
-export function warEconomyRates(sim: Sim): Record<string, number> {
+export function warEconomyRates(sim: Sim, ledger: Record<string, number> = {}): Record<string, number> {
   const e = sim.state.war?.economy;
   const out: Record<string, number> = {};
   if (!e) return out;
@@ -793,6 +820,10 @@ export function warEconomyRates(sim: Sim): Record<string, number> {
     const deal = e.arms![id]!;
     if (!armsVoid(sim, deal)) add('armsSales', deal.amount * deal.fill * ARMS.price);
   }
+  // Neighbours' loans to the city and their shares of its industrial taxes (this month's, at current conditions).
+  let industrial = 0;
+  for (const [k, v] of Object.entries(ledger)) if (k.startsWith('taxI')) industrial += v;
+  for (const [k, v] of Object.entries(offerRates(sim, industrial))) add(k, v);
   return out;
 }
 
@@ -849,6 +880,8 @@ export function warEconomyHour(sim: Sim): void {
   }
   // Munitions out of the stores, to buyers whose pact, trade and standing allow it.
   armsHour(sim, e);
+  // Offers lapse, investments end, instalments on neighbours' loans are paid (step 7).
+  offersHour(sim);
 }
 
 /**
@@ -860,6 +893,8 @@ export function warEconomyMonth(sim: Sim): void {
   // Computer neighbours' sanctions are weighed first: a cause that has come up since last month, or
   // one that has gone.
   sanctionsMonth(sim);
+  // Perhaps a neighbour makes the city an offer (step 7).
+  offersMonth(sim);
   const e = sim.state.war?.economy;
   if (!e) return;
   for (const id of ids(e.aid)) {
@@ -875,7 +910,14 @@ export function warEconomyMonth(sim: Sim): void {
     deal.sold = 0;
   }
   // Stakes follow the towns' growth: the page's figures change.
-  if (ids(e.stakes).length || e.loans.length || ids(e.aid).length || ids(e.arms ?? {}).length)
+  if (
+    ids(e.stakes).length ||
+    e.loans.length ||
+    ids(e.aid).length ||
+    ids(e.arms ?? {}).length ||
+    e.debts?.length ||
+    e.investors?.length
+  )
     sim.warChanged();
 }
 
@@ -883,7 +925,17 @@ export function warEconomyMonth(sim: Sim): void {
 
 export interface WarEconomySummary {
   /** Monthly lines at current conditions: dividends, allies' interest and repayments, aid sent (negative), munitions sold. */
-  rates: { dividends: number; allyInterest: number; allyRepaid: number; warAid: number; armsSales: number };
+  rates: {
+    dividends: number;
+    allyInterest: number;
+    allyRepaid: number;
+    warAid: number;
+    armsSales: number;
+    /** Instalments to neighbours' loans and the investors' share of the industrial taxes (all negative). */
+    lenderInterest: number;
+    lenderRepaid: number;
+    investorShare: number;
+  };
   /** What the city's stakes are worth now, and what its allies owe it. */
   worth: number;
   owed: number;
@@ -902,6 +954,8 @@ export interface WarEconomySummary {
   }[];
   /** War weariness and the recovery from it (step 6). */
   weariness: WearinessSummary;
+  /** Offers to the city, investments in it and loans to it (step 7). */
+  offers: OffersSummary;
   /** One row for each computer neighbour. */
   neighbours: {
     id: number;
@@ -961,7 +1015,8 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
   const s = sim.state;
   if (!s.war) return null;
   const e = s.war.economy;
-  const rates = warEconomyRates(sim);
+  // (The investors' share is reckoned on last month's industrial taxes here; the ledger uses this month's.)
+  const rates = warEconomyRates(sim, { taxI: industrialTaxes(sim) });
   const months = (tick: number) => Math.floor((s.tick - tick) / TICKS_PER_MONTH);
   let worth = 0;
   let owed = 0;
@@ -1047,6 +1102,9 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
       allyRepaid: Math.round(rates.allyRepaid ?? 0),
       warAid: Math.round(rates.warAid ?? 0),
       armsSales: Math.round(rates.armsSales ?? 0),
+      lenderInterest: Math.round(rates.lenderInterest ?? 0),
+      lenderRepaid: Math.round(rates.lenderRepaid ?? 0),
+      investorShare: Math.round(rates.investorShare ?? 0),
     },
     worth,
     owed: Math.round(owed),
@@ -1054,6 +1112,7 @@ export function warEconomySummary(sim: Sim): WarEconomySummary | null {
     cratePrice: ARMS.price,
     units,
     weariness: wearinessSummary(sim),
+    offers: offersSummary(sim),
     neighbours,
   };
 }

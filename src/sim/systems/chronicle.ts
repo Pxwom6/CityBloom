@@ -83,7 +83,7 @@ export function monthFigures(sim: Sim): number[] {
     }
   }
   // The month's ledger: income leaves out borrowing (loans taken, war bonds sold), capital coming
-  // back (allies repaying, stakes sold; M38) and cheats.
+  // back (allies repaying, stakes sold, a neighbour's loan or investment; M38) and cheats.
   let income = 0;
   let spending = 0;
   const month = s.economy.history[s.economy.history.length - 1];
@@ -94,7 +94,9 @@ export function monthFigures(sim: Sim): number[] {
       line !== 'bonds' &&
       line !== 'cheats' &&
       line !== 'allyRepaid' &&
-      line !== 'stakeSold'
+      line !== 'stakeSold' &&
+      line !== 'lenderLoan' &&
+      line !== 'investment'
     )
       income += v;
   }

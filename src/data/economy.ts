@@ -182,6 +182,11 @@ export const LEDGER_LABELS: Record<string, string> = {
   warAid: 'Aid to allies at war',
   armsSales: 'Munitions sold to allies',
   unitsSold: 'Units sold to allies',
+  lenderLoan: 'Loans from neighbours',
+  lenderInterest: 'Interest to neighbours',
+  lenderRepaid: 'Neighbours’ loans repaid',
+  investment: 'Neighbours’ investment in the city',
+  investorShare: 'Investors’ share of industrial taxes',
 };
 
 export function ledgerLabel(key: string): string {

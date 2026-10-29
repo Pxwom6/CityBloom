@@ -137,6 +137,8 @@ const SAMPLES: Record<CommandType, Command> = {
   setArmsDeal: { type: 'setArmsDeal', neighbour: 2, crates: 40 },
   sellUnit: { type: 'sellUnit', unit: 7, neighbour: 2 },
   setSanction: { type: 'setSanction', neighbour: 2, on: true },
+  // M38 step 7: a neighbour's offer.
+  answerOffer: { type: 'answerOffer', offer: 7, accept: true },
 };
 
 /** Values a field might carry instead of what it should. */

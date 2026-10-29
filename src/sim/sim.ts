@@ -267,6 +267,7 @@ import {
   warEconomyHour,
   warEconomyMonth,
 } from './systems/warEconomy';
+import { answerOffer, offerCheat } from './systems/offers';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -1290,6 +1291,10 @@ export class Sim {
           if (!this.testMode) return fail('Test mode only');
           return rivalTechCheat(this, cmd.neighbour, cmd.tech, dryRun);
         }
+        if (cmd.cheat === 'offer') {
+          if (!this.testMode) return fail('Test mode only');
+          return offerCheat(this, cmd.neighbour, cmd.offer, dryRun);
+        }
         if (cmd.cheat === 'finishStages') {
           if (!this.testMode) return fail('Test mode only');
           const c = this.state.civics.get(cmd.civic);
@@ -1567,6 +1572,8 @@ export class Sim {
         return sellUnit(this, cmd.unit, cmd.neighbour, dryRun);
       case 'setSanction':
         return setSanction(this, cmd.neighbour, cmd.on, dryRun);
+      case 'answerOffer':
+        return answerOffer(this, cmd.offer, cmd.accept, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

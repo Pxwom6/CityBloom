@@ -95,6 +95,8 @@ export type Command =
   /** Test mode (M37): a computer neighbour's spy arrives now; a computer neighbour's tech set. */
   | { type: 'cheat'; cheat: 'spyIn'; neighbour: number; op: SpyOp; target?: SabotageTarget }
   | { type: 'cheat'; cheat: 'rivalTech'; neighbour: number; tech: number }
+  /** Test mode (M38): a computer neighbour makes the city an offer of this kind now. */
+  | { type: 'cheat'; cheat: 'offer'; neighbour: number; offer: 'arms' | 'invest' | 'loan' }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -264,7 +266,9 @@ export type Command =
    */
   | { type: 'setArmsDeal'; neighbour: number; crates: number }
   | { type: 'sellUnit'; unit: number; neighbour: number }
-  | { type: 'setSanction'; neighbour: number; on: boolean };
+  | { type: 'setSanction'; neighbour: number; on: boolean }
+  /** Answer a computer neighbour's offer (M38): take it up (`accept`) or turn it down. */
+  | { type: 'answerOffer'; offer: number; accept: boolean };
 
 export type CommandType = Command['type'];
 
@@ -348,6 +352,7 @@ const COMMAND_KINDS = {
   setArmsDeal: true,
   sellUnit: true,
   setSanction: true,
+  answerOffer: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

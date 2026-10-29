@@ -69,6 +69,8 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   setArmsDeal: 'money',
   sellUnit: 'money',
   setSanction: 'policies',
+  // An offer from a neighbour (M38) is a loan, an investment or an arms deal: the city's money.
+  answerOffer: 'money',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',

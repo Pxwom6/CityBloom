@@ -447,6 +447,8 @@ const CHECKS: Record<CommandType, Check> = {
     isInt(c.unit) && isInt(c.neighbour) ? { type: 'sellUnit', unit: c.unit, neighbour: c.neighbour } : BAD,
   setSanction: (c) =>
     isInt(c.neighbour) && isBool(c.on) ? { type: 'setSanction', neighbour: c.neighbour, on: c.on } : BAD,
+  answerOffer: (c) =>
+    isInt(c.offer) && isBool(c.accept) ? { type: 'answerOffer', offer: c.offer, accept: c.accept } : BAD,
 };
 
 /**

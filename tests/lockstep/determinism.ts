@@ -365,6 +365,27 @@ export function runDeterminism(
   eco({ type: 'sellUnit', unit: tank, neighbour: partner.id });
   bank.advance(TICKS_PER_MONTH);
   economy.push(bank.hash());
+  // Offers from computer neighbours (M38 step 7), made by the test cheat: the ally offers to buy
+  // munitions (the city ends its small deal first and takes the offer up), a mercantile town offers to
+  // invest (turned down, then taken), and a lender offers when the city is short of cash (taken).
+  eco({ type: 'setArmsDeal', neighbour: partner.id, crates: 0 });
+  const offerOf = (neighbour: number, offer: 'arms' | 'invest' | 'loan') => {
+    eco({ type: 'cheat', cheat: 'offer', neighbour, offer });
+    return bank.state.war!.economy!.offers!.at(-1)!;
+  };
+  eco({ type: 'answerOffer', offer: offerOf(partner.id, 'arms').id, accept: true });
+  third.rival!.personality = 'mercantile';
+  bank.state.economy.history.push({ month: 0, lines: { taxI1: 8_000 }, treasury: bank.state.treasury });
+  eco({ type: 'answerOffer', offer: offerOf(third.id, 'invest').id, accept: false });
+  eco({ type: 'answerOffer', offer: offerOf(third.id, 'invest').id, accept: true });
+  // (The treasury is set the way the tests do, with the month's start moving with it.)
+  bank.state.economy.monthStartTreasury += 10_000 - bank.state.treasury;
+  bank.state.treasury = 10_000;
+  eco({ type: 'answerOffer', offer: offerOf(partner.id, 'loan').id, accept: true });
+  bank.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
+  bank.advance(TICKS_PER_MONTH);
+  checkInvariants(bank);
+  economy.push(bank.hash());
   // The war with the enemy: its stake freezes when the war opens, and the ally fights at the city's side.
   eco({ type: 'declareWar', neighbour: enemy.id, scale: 'war', reason: 'Our border' });
   bank.advance(13 * TICKS_PER_HOUR);

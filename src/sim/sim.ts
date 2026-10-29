@@ -256,6 +256,7 @@ import {
   setNeutral,
   withdrawProposal,
 } from './systems/diplomacy';
+import { buyStake, sellStake, warEconomyMonth } from './systems/warEconomy';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -1542,6 +1543,10 @@ export class Sim {
         );
       case 'warClock':
         return warClock(this, cmd.cap, dryRun, !!cmd.left);
+      case 'buyStake':
+        return buyStake(this, cmd.neighbour, cmd.share, dryRun);
+      case 'sellStake':
+        return sellStake(this, cmd.neighbour, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -1915,6 +1920,8 @@ export class Sim {
         regionMonth(this);
         // Computer neighbours arm (M34), only where war is on.
         if (s.war) {
+          // The war economy (M38): the stakes' figures follow the neighbours' towns.
+          warEconomyMonth(this);
           rivalsMonth(this);
           // Diplomacy (M36): tribute counted, computer neighbours' proposals and declarations.
           diplomacyMonth(this);

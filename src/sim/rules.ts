@@ -60,6 +60,9 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   endPact: 'policies',
   buyBack: 'money',
   repayBond: 'money',
+  // The war economy (M38): investing is the city's money.
+  buyStake: 'money',
+  sellStake: 'money',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',

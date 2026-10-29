@@ -31,6 +31,7 @@ import type { DistrictReport } from '../protocol';
 import { formatInt } from '../dmath';
 import { bondRates, forcesUpkeep } from './war';
 import { diplomacyRates } from './diplomacy';
+import { warEconomyRates } from './warEconomy';
 
 export interface Loan {
   id: number;
@@ -250,6 +251,8 @@ export function monthlyRates(sim: Sim): Record<string, number> {
       for (const [k, v] of Object.entries(out)) if (k.startsWith('tax')) taxes += v;
       for (const [k, v] of Object.entries(diplomacyRates(sim, taxes))) add(k, v);
     }
+    // The war economy (M38): dividends from stakes.
+    if (s.war.economy) for (const [k, v] of Object.entries(warEconomyRates(sim))) add(k, v);
   }
   return out;
 }

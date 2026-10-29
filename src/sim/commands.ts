@@ -249,7 +249,10 @@ export type Command =
       reason?: string;
     }
   | ({ type: 'opResolve' } & OpInput)
-  | { type: 'warClock'; cap: number | null; left?: true };
+  | { type: 'warClock'; cap: number | null; left?: true }
+  /** The war economy (M38): buy `share` percent (a multiple of 5) of a computer neighbour's industry, or sell the whole stake. */
+  | { type: 'buyStake'; neighbour: number; share: number }
+  | { type: 'sellStake'; neighbour: number };
 
 export type CommandType = Command['type'];
 
@@ -326,6 +329,8 @@ const COMMAND_KINDS = {
   missionResult: true,
   opResolve: true,
   warClock: true,
+  buyStake: true,
+  sellStake: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

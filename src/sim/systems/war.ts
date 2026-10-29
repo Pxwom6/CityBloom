@@ -49,7 +49,7 @@ import {
   type DiplomacySummary,
 } from './diplomacy';
 import { DIPLOMACY, DIPLOMATS } from '../../data/diplomacy';
-import type { WarEconomy } from './warEconomy';
+import { warEconomySummary, type WarEconomy, type WarEconomySummary } from './warEconomy';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -919,6 +919,8 @@ export interface WarSummary {
   research: ResearchSummary | null;
   /** Spies (M37): agents, counter-intelligence, missions and what they found, neighbours revealed. */
   intel: IntelSummary | null;
+  /** Stakes in neighbours' industries (M38). */
+  economy: WarEconomySummary | null;
   /** The superweapon buildings (M37): the dome, the tower and the gate, and blackouts. */
   supers: SupersSummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
@@ -1039,6 +1041,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     diplomacy: diplomacySummary(sim),
     research: researchSummary(sim),
     intel: intelSummary(sim),
+    economy: warEconomySummary(sim),
     supers: supersSummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,

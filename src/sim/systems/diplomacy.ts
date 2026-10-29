@@ -25,6 +25,7 @@ import {
   type TermKind,
 } from '../../data/diplomacy';
 import { RAIDS } from '../../data/battle';
+import { INVEST } from '../../data/warEconomy';
 import { PERSONALITY, type WarScale } from '../../data/war';
 import { CIVIC } from '../../data/civic';
 import { MAP_SIZE } from '../../data/world';
@@ -38,6 +39,7 @@ import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
 import { raidThreat } from './war';
+import { forgetEconomy, seizeStakes } from './warEconomy';
 import type { Outcome } from '../battle/types';
 
 /** A declared war with one neighbour. */
@@ -160,7 +162,7 @@ function dip(sim: Sim): Diplomacy {
 }
 
 /** Something happened: logged, and a notice (`tone` good or bad for the city, else news). */
-function note(sim: Sim, withId: number, what: string, text: string, tone?: 'good' | 'bad'): void {
+export function note(sim: Sim, withId: number, what: string, text: string, tone?: 'good' | 'bad'): void {
   const d = dip(sim);
   d.log.push({ tick: sim.state.tick, with: withId, text });
   if (d.log.length > LOG_KEEP) d.log.splice(0, d.log.length - LOG_KEEP);
@@ -386,6 +388,8 @@ function startWarWith(
       `${n.name} declares ${what} on the city: “${war.reason}”. It opens in ${DIPLOMACY.warningHours} hours`,
       'bad',
     );
+    // A treacherous neighbour strikes first and keeps the city's stake in its industry (M38).
+    if (INVEST.seizes[r.personality]) seizeStakes(sim, n, 'as it declares war on the city');
     // Attacked, a neutral city is neutral no more: it may answer at once.
     if (d.neutral || d.leaving !== undefined) {
       delete d.neutral;
@@ -582,6 +586,8 @@ function capitulate(sim: Sim, war: War, by: Party): void {
   stopFighting(sim, n.id);
   if (by === 'us') {
     note(sim, n.id, 'capitulated', `The city capitulates to ${n.name}`, 'bad');
+    // The winner keeps the city's stake in its industry (M38).
+    seizeStakes(sim, n, 'when the city capitulates');
     sign(sim, n, imposedTerms(sim, n), true);
   } else
     note(
@@ -1361,6 +1367,8 @@ function conquer(sim: Sim, war: War): void {
   } else {
     d.vassal = { overlord: n.id, since: s.tick };
     d.fell = { by: n.id, name: n.name, at: s.tick };
+    // The city's stake in the conqueror's industry is the conqueror's now (M38).
+    seizeStakes(sim, n, 'as the city falls');
     delete n.rival.vassal;
     delete d.neutral;
     delete d.leaving;
@@ -1635,6 +1643,7 @@ export function strikeBreaks(sim: Sim, to: number): void {
  */
 export function forgetNeighbour(sim: Sim, id: number): void {
   const s = sim.state;
+  forgetEconomy(sim, id);
   for (const n of s.region.neighbours)
     if (n.rival?.allies?.includes(id)) n.rival.allies = n.rival.allies.filter((x) => x !== id);
   const d = s.war?.diplomacy;

@@ -9,7 +9,7 @@ import type { SaveFile } from '../../src/sim/save';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { checkInvariants } from '../../src/sim/invariants';
 import { mapFromGenerator } from '../../src/sim/terrain/customMap';
-import { editorScript, growTown, placeAlong, roadIds } from './scriptedTown';
+import { editorScript, growTown, newTown, placeAlong, roadIds } from './scriptedTown';
 import { growRivalTown } from '../../src/sim/ai/town';
 import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
@@ -31,6 +31,8 @@ export interface DeterminismResult {
   diplomacy: string;
   /** Weapons research (M37), in a war town of its own: its hash each game day while its lab works. */
   research: string[];
+  /** The war economy (M38), in a war town of its own: stakes, and what a war does to them. */
+  economy: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -316,6 +318,45 @@ export function runDeterminism(
   labSim.advance(TICKS_PER_MONTH);
   research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
 
+  // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
+  // as they were: stakes bought, sold and bought again, dividends, a stake frozen by a war, and a
+  // capitulation that seizes one.
+  const economy: string[] = [];
+  const bank = newTown(false, true);
+  const eco = (cmd: Command) => note(cmd, bank.dispatch(cmd));
+  bank.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
+  const towns = bank.state.region.neighbours.filter((n) => n.rival && !n.player);
+  for (const n of towns) {
+    n.rival!.relation = 60;
+    n.rival!.allies = [];
+  }
+  const [partner, enemy, third] = [towns[0]!, towns[1] ?? towns[0]!, towns[2] ?? towns[0]!];
+  eco({ type: 'buyStake', neighbour: partner.id, share: 10 });
+  eco({ type: 'buyStake', neighbour: enemy.id, share: 15 });
+  eco({ type: 'buyStake', neighbour: third.id, share: 5 });
+  eco({ type: 'sellStake', neighbour: third.id });
+  eco({ type: 'buyStake', neighbour: third.id, share: 5 });
+  for (let d = 0; d < 2; d++) {
+    bank.advance(TICKS_PER_MONTH);
+    checkInvariants(bank);
+    economy.push(bank.hash());
+  }
+  // The war with the enemy: its stake freezes when the war opens.
+  eco({ type: 'declareWar', neighbour: enemy.id, scale: 'war', reason: 'Our border' });
+  bank.advance(13 * TICKS_PER_HOUR);
+  for (let d = 0; d < 3; d++) {
+    bank.advance(TICKS_PER_MONTH);
+    checkInvariants(bank);
+    economy.push(bank.hash());
+  }
+  // The war goes against the city until it capitulates: the enemy keeps the stake it holds in its industry.
+  const war = bank.state.war!.diplomacy!.wars.find((w) => w.with === enemy.id);
+  if (war) war.score = -70;
+  bank.advance(3 * TICKS_PER_HOUR);
+  bank.advance(2 * TICKS_PER_MONTH);
+  checkInvariants(bank);
+  economy.push(bank.hash(), JSON.stringify([bank.state.war!.economy, bank.state.economy.history.at(-1)]));
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -338,6 +379,7 @@ export function runDeterminism(
     battle: { home, homeEnd, town: town.hash(), away },
     diplomacy,
     research,
+    economy,
     used: [...used].sort(),
     refused,
   };

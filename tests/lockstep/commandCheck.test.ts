@@ -128,6 +128,9 @@ const SAMPLES: Record<CommandType, Command> = {
     late: false,
   },
   warClock: { type: 'warClock', cap: 120 },
+  // M38: the war economy.
+  buyStake: { type: 'buyStake', neighbour: 2, share: 10 },
+  sellStake: { type: 'sellStake', neighbour: 2 },
 };
 
 /** Values a field might carry instead of what it should. */

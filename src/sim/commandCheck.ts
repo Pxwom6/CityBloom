@@ -26,6 +26,7 @@ import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
 import { UNIT, WAR, type UnitKind } from '../data/war';
 import { cleanTerm, DIPLOMACY, type Term } from '../data/diplomacy';
+import { INVEST } from '../data/warEconomy';
 import { MAP_SIZE } from '../data/world';
 
 /**
@@ -425,6 +426,11 @@ const CHECKS: Record<CommandType, Check> = {
     typeof c.key === 'string' && TIER.has(c.key as TierKey)
       ? { type: 'unqueueResearch', key: c.key as TierKey }
       : BAD,
+  buyStake: (c) =>
+    isInt(c.neighbour) && isInt(c.share, INVEST.step, INVEST.maxShare)
+      ? { type: 'buyStake', neighbour: c.neighbour, share: c.share }
+      : BAD,
+  sellStake: (c) => (isInt(c.neighbour) ? { type: 'sellStake', neighbour: c.neighbour } : BAD),
 };
 
 /**

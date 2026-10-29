@@ -290,8 +290,10 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 - **Network** (`netbudget.ts`, four players): 185 messages a minute sent by the host, 64 by
   guests; an hour of it a day is 1.1 % of the free plan's requests, 3.5 % of its duration and 0.2 %
   of its rows. Friends' operations are a few small messages each.
-- **Tests**: the unit suite, 934 tests in 122 files (917 unit, 17 live), passes. E2e: M34–M37's
-  war specs (10 tests, 31 min) and `m35-friends` (22.7 min) pass, screenshots reviewed.
+- **Tests**: the unit suite, 934 tests in 122 files (917 unit, 17 live), passes; after the last
+  fixes the war, battle, lockstep and relay suites again (311 tests in 35 files). E2e: M34–M37's
+  war specs (10 tests, 31 min) and `m35-friends` (22.7 min) pass, screenshots reviewed; the
+  superweapon scene's eleven shots reviewed (`docs/screenshots/m37-scene-*.png`).
 - **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every push,
   with the determinism script's M37 sections (research, trials, superweapons, spies, the friends'
   page-only commands).

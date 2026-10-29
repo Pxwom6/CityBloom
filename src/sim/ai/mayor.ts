@@ -19,6 +19,7 @@ import { trucksFor } from '../systems/garbage';
 import { campaignOpen } from '../systems/elections';
 import { projectBlocked, projectCost } from '../systems/projects';
 import { scenarioForbids } from '../systems/scenario';
+import { WarPlan, type WarSample } from './warMayor';
 
 export type Vec2 = { x: number; z: number };
 export type StrategyId = 'careful' | 'greedy' | 'neglectful';
@@ -92,6 +93,8 @@ export interface Sample {
   civics: number;
   /** Spent this month on goals (landmarks, projects, the university...). */
   goals: number;
+  /** The war so far (M38), in a city with war on. */
+  war?: WarSample;
 }
 
 export class Player {
@@ -113,11 +116,23 @@ export class Player {
   /** Goals reached (def → month), elections held, and money spent on goals this month. */
   goalsMet = new Map<string, number>();
   goalSpend = 0;
+  /** The careful mayor's play at war (M38): idle in a city with war off. */
+  readonly warPlan = new WarPlan(this);
+  /** Money the war plan is saving for the seat of its forces: districts and goals wait (0 in peace). */
+  holdBack = 0;
+  /**
+   * With war on (M38) a power plant is put this far (m) from the highway's way in when a road there
+   * has room: raids go for power plants near the border, and a city with its power knocked out falls
+   * apart in days. 0 in peace, where plants go where they always did.
+   */
+  awayFromEntry = 0;
 
   /** A mayor for a new city on the river map, or for a city that's already running. */
   constructor(
     readonly strategy: StrategyId,
-    city: Sim | { seed: string; preset?: MapPreset; difficulty?: Difficulty; cityName?: string },
+    city:
+      | Sim
+      | { seed: string; preset?: MapPreset; difficulty?: Difficulty; cityName?: string; rivals?: boolean },
   ) {
     this.sim =
       city instanceof Sim
@@ -127,6 +142,8 @@ export class Player {
             preset: city.preset ?? 'river',
             cityName: city.cityName ?? strategy,
             difficulty: city.difficulty ?? 'normal',
+            // (Rival neighbours, M38: only when asked, so a city without them is made as it always was.)
+            ...(city.rivals ? { rivals: true } : {}),
           });
     const hw = this.sim.state.net.nodes.get(this.sim.state.highway.connect)!;
     this.c = { x: hw.x, z: hw.z };
@@ -238,7 +255,7 @@ export class Player {
     if (this.strategy === 'careful' && this.sim.reached(8_000) && !this.districts.some((d) => d.quarter))
       quarter = true;
     const next = this.nextSlot();
-    if (!next || this.sim.state.treasury < this.districtCost() + 2_000) return false;
+    if (!next || this.sim.state.treasury < this.districtCost() + 2_000 + this.holdBack) return false;
     while (DISTRICT_ORDER[this.districts.length] !== next) {
       const [si, sj] = DISTRICT_ORDER[this.districts.length]!;
       this.districts.push({ i: si, j: sj, segs: [], dead: true });
@@ -363,18 +380,50 @@ export class Player {
       return (id * 2654435761) % 997;
     };
     segs.sort((a, b) => score(a.id) - score(b.id));
+    // Power plants first out of the raiders' reach, then (never leave the city dark) anywhere.
+    if (this.awayFromEntry > 0 && d.category === 'power') {
+      if (this.placeOn(def, d, segs, this.awayFromEntry)) return true;
+      if (this.strictAway) return false;
+    }
+    if (this.placeOn(def, d, segs)) return true;
+    return near === 'homes' && this.makeRoom(def);
+  }
+
+  private strictAway = false;
+
+  /** A power plant only where the raiders' reach doesn't (the war plan's insurance), or not at all. */
+  placeAway(def: string): boolean {
+    this.strictAway = true;
+    try {
+      return this.place(def, 'industry');
+    } finally {
+      this.strictAway = false;
+    }
+  }
+
+  /**
+   * Try a civic building on each of these roads in turn, along their length and on both sides, no
+   * closer than `minAway` m to the highway's way in.
+   */
+  private placeOn(
+    def: string,
+    d: NonNullable<ReturnType<typeof CIVIC.get>>,
+    segs: { id: number }[],
+    minAway = 0,
+  ): boolean {
     for (const s of segs) {
       const len = this.sim.net.curve(s.id).length;
       for (let at = d.w / 2 + 12; at < len - d.w / 2 - 12; at += 10)
         for (const side of [1, -1] as const) {
           const pose = roadsidePose(this.sim.net, s.id, at, side, d.d);
+          if (minAway > 0 && DMath.hypot(pose.x - this.c.x, pose.z - this.c.z) < minAway) continue;
           if (this.sim.dispatch({ type: 'placeBuilding', def, ...pose }).ok) {
             this.log.push(`m${this.month()}: ${def}`);
             return true;
           }
         }
     }
-    return near === 'homes' && this.makeRoom(def);
+    return false;
   }
 
   /** Place a civic building on the connected road nearest a point (scenario recipes and scripts). */
@@ -584,6 +633,9 @@ export class Player {
     const e = this.sim.state.economy;
     const growRoom = this.wantsRoom();
     if (this.strategy === 'careful') {
+      // With war on (rival neighbours, M38) the mayor sees to defence, treaties and offers first: the
+      // seat of the forces has to be paid for before the next district is.
+      if (this.sim.state.war) this.warPlan.play();
       this.utilities(false);
       // Services once there's a town to serve.
       if (s.population >= 250) this.followAdvice();
@@ -769,7 +821,7 @@ export class Player {
   reserve(): number {
     const r = this.sim.projectedNet();
     const upkeep = Object.values(this.sim.state.economy.month).reduce((a, v) => a + Math.min(0, v), 0);
-    return Math.max(100_000, -upkeep * 3 - Math.min(0, r) * 6);
+    return Math.max(100_000, -upkeep * 3 - Math.min(0, r) * 6) + this.holdBack;
   }
 
   /**
@@ -872,7 +924,7 @@ export class Player {
         this.ledgerSeen = m.month;
       }
     const s = this.stats();
-    return {
+    const sample: Sample = {
       month: this.month(),
       population: s.population,
       treasury: s.treasury,
@@ -886,5 +938,7 @@ export class Player {
       civics: this.sim.state.civics.size,
       goals: this.goalSpend,
     };
+    if (this.sim.state.war) sample.war = this.warPlan.snapshot();
+    return sample;
   }
 }

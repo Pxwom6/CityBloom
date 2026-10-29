@@ -260,10 +260,12 @@ export const OFFERS = {
    * month's spending (and under `floor`). Repaid over `months` months like a bank loan, at a yearly
    * rate from the lender's character: `base` less `perTrade` for each point of its trade weight, plus
    * `perMoney` for each point its money weight is over 1 (the mercantile are cheapest). Never in
-   * sandbox, where money isn't short. Never more than `meansMonths` months of the neighbour's taxes.
+   * sandbox, where money isn't short. Never more than `meansMonths` months of the neighbour's taxes,
+   * nor more than `taxMonths` months of the city's own (a lender lends against the borrower's means:
+   * without it a town of a few hundred could borrow a quarter of a million in its first month).
    */
   loan: {
-    amounts: [50_000, 100_000, 250_000] as readonly number[],
+    amounts: [25_000, 50_000, 100_000, 250_000] as readonly number[],
     months: 24,
     shortMonths: 3,
     floor: 50_000,
@@ -271,6 +273,7 @@ export const OFFERS = {
     perTrade: 0.05,
     perMoney: 0.02,
     meansMonths: 12,
+    taxMonths: 10,
   },
 } as const;
 

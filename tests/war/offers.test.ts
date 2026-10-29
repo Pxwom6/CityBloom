@@ -9,7 +9,7 @@ import { Sim } from '../../src/sim/sim';
 import { industrialTaxes, offersMonth, type Offer } from '../../src/sim/systems/offers';
 import { warSummary } from '../../src/sim/systems/war';
 import { armsCapacity, warEconomySummary } from '../../src/sim/systems/warEconomy';
-import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH, isMonthStart } from '../../src/sim/time';
 import { buildTown, newSim, serveTown } from '../helpers';
 import {
   clone,
@@ -59,6 +59,21 @@ function withIndustry(sim: Sim, tax = 6_000): void {
     lines: { taxI1: tax, taxR1: 4_000 },
     treasury: sim.state.treasury,
   });
+}
+
+/**
+ * Step to the next month's start with the books showing industrial and home taxes earned in the month
+ * just ended (the money comes with them) and the bank low: what a small, short-of-cash city has when
+ * the month's dice are rolled.
+ */
+function monthStartWithTaxes(sim: Sim, tax = 6_000): void {
+  while (!isMonthStart(sim.state.tick + 1)) sim.step();
+  const e = sim.state.economy;
+  e.month.taxI1 = (e.month.taxI1 ?? 0) + tax;
+  e.month.taxR1 = (e.month.taxR1 ?? 0) + tax;
+  sim.state.treasury += 2 * tax;
+  setTreasury(sim, 5_000);
+  sim.step();
 }
 
 describe('M38: an ally’s offer to buy munitions', () => {
@@ -303,19 +318,42 @@ describe('M38: a neighbour’s offer to lend to the city', () => {
     n.rival!.personality = 'mercantile';
     n.population = 20_000;
     setTreasury(sim, 10_000);
+    withIndustry(sim);
     return { sim, n };
   }
 
   it('comes when the city is short of cash, and not when it isn’t or in a sandbox', () => {
     const sim = warCity();
     const n = ofKind(sim, 'industrial');
+    withIndustry(sim);
     expect(offer(sim, n.id, 'loan')).toMatch(/isn’t short of cash/);
     setTreasury(sim, 10_000);
     expect(offer(sim, n.id, 'loan')).toBeNull();
     const free = warCity();
     free.state.options.sandbox = true;
     setTreasury(free, 10_000);
+    withIndustry(free);
     expect(offer(free, ofKind(free, 'industrial').id, 'loan')).toMatch(/sandbox/);
+  });
+
+  it('is lent against the city’s means: ten months of its taxes at most, and nothing to a town with no income', () => {
+    const none = warCity();
+    setTreasury(none, 10_000);
+    const n = ofKind(none, 'industrial');
+    expect(offer(none, n.id, 'loan')).toMatch(/taxes are too small for anyone to lend against/);
+    // Taxes of $4,000 a month: $40,000 at most, so the $25,000 loan and not the $50,000 one.
+    const sim = warCity();
+    setTreasury(sim, 10_000);
+    sim.state.economy.history.push({ month: 0, lines: { taxR1: 4_000 }, treasury: 10_000 });
+    ok(sim, { type: 'cheat', cheat: 'offer', neighbour: ofKind(sim, 'industrial').id, offer: 'loan' });
+    const o = latest(sim);
+    expect(o.kind === 'loan' && o.amount).toBe(25_000);
+    // Taxes of $30,000: the whole range is open, and the loan is the smallest that covers the gap.
+    const rich = warCity();
+    setTreasury(rich, 10_000);
+    rich.state.economy.history.push({ month: 0, lines: { taxR1: 30_000 }, treasury: 10_000 });
+    ok(rich, { type: 'cheat', cheat: 'offer', neighbour: ofKind(rich, 'industrial').id, offer: 'loan' });
+    expect(latest(rich).kind === 'loan' && (latest(rich) as { amount: number }).amount).toBe(50_000);
   });
 
   it('lends at the neighbour’s rate, repaid like a bank loan with its own lines in the ledger', () => {
@@ -424,7 +462,7 @@ describe('M38: offers come by the month, by character, one at most', () => {
     for (let month = 0; month < 36; month++) {
       sim.events = [];
       const before = new Set(offers(sim).map((o) => o.id));
-      toMonthStart(sim);
+      monthStartWithTaxes(sim);
       const fresh = offers(sim).filter((o) => !before.has(o.id));
       expect(fresh.length).toBeLessThanOrEqual(1);
       expect(told(sim, 'offer').length).toBeLessThanOrEqual(1);
@@ -442,8 +480,8 @@ describe('M38: offers come by the month, by character, one at most', () => {
     const copy = clone(sim);
     let made = false;
     for (let month = 0; month < 20 && !made; month++) {
-      sim.advance(M);
-      copy.advance(M);
+      monthStartWithTaxes(sim);
+      monthStartWithTaxes(copy);
       made = offers(sim).length > 0;
     }
     expect(made).toBe(true);
@@ -476,6 +514,7 @@ describe('M38: offers come by the month, by character, one at most', () => {
     for (let k = 0; k < 40; k++) {
       const sim = warCity();
       setTreasury(sim, 5_000);
+      withIndustry(sim);
       const [a, b] = rivals(sim);
       a!.rival!.personality = 'mercantile';
       b!.rival!.personality = 'aggressive';
@@ -517,6 +556,7 @@ describe('M38: offers and the rest of the game', () => {
     const sim = warCity();
     const n = ofKind(sim, 'industrial');
     setTreasury(sim, 10_000);
+    withIndustry(sim);
     ok(sim, { type: 'cheat', cheat: 'offer', neighbour: n.id, offer: 'loan' });
     const s = warSummary(sim, () => 0)!.economy!.offers;
     expect(s.offers).toHaveLength(1);
@@ -531,6 +571,7 @@ describe('M38: offers and the rest of the game', () => {
     const sim = warCity();
     const n = ofKind(sim, 'industrial');
     setTreasury(sim, 10_000);
+    withIndustry(sim);
     expect(answer(sim, 12345, true)).toBe('That offer is gone');
     ok(sim, { type: 'cheat', cheat: 'offer', neighbour: n.id, offer: 'loan' });
     const id = latest(sim).id;

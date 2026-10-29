@@ -20,7 +20,7 @@ import { formatInt } from '../dmath';
 import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import { HOURS_PER_DAY, TICKS_PER_MONTH, dateOf } from '../time';
-import { anyWarOpen, neighbourTaxes, note, warWith } from './diplomacy';
+import { anyWarOpen, monthlyTaxes, neighbourTaxes, note, warWith } from './diplomacy';
 import { accrue, book } from './economy';
 import type { Neighbour } from './region';
 import {
@@ -183,9 +183,13 @@ export function offerTerms(
   if (e?.debts?.some((d) => d.from === n.id)) return `The city still owes ${n.name}`;
   const need = cashFloor(sim);
   if (s.treasury >= need) return 'The city isn’t short of cash';
-  const means = neighbourTaxes(n) * L.meansMonths;
-  const fits = L.amounts.filter((a) => a <= means);
-  if (!fits.length) return `${n.name} is too small to lend the city anything`;
+  const theirs = neighbourTaxes(n) * L.meansMonths;
+  const ours = monthlyTaxes(sim) * L.taxMonths;
+  const fits = L.amounts.filter((a) => a <= Math.min(theirs, ours));
+  if (!fits.length)
+    return ours < L.amounts[0]!
+      ? 'The city’s taxes are too small for anyone to lend against'
+      : `${n.name} is too small to lend the city anything`;
   const amount = fits.find((a) => a >= need - s.treasury) ?? fits[fits.length - 1]!;
   return { kind, amount, rate: offerRate(r.personality), months: L.months };
 }

@@ -298,6 +298,11 @@ export interface BattleFrame {
   sides: { name: string; color: number; alive: number; total: number }[];
   /** Structures aimed at, with their health (0–1). */
   targets: { id: number; x: number; z: number; hp: number }[];
+  /**
+   * Every structure of the layout, one digit each in layout order (M39, for the battle map): 0
+   * standing, 1 damaged (on fire, or closed for repairs), 2 fallen.
+   */
+  structs?: string;
   outcome: Outcome | null;
   /** Version 3: the dome's pool left (0–1), in a battle under a dome. */
   dome?: number;

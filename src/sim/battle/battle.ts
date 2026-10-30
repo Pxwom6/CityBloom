@@ -183,6 +183,9 @@ export class Battle {
   readonly hp: Float64Array;
   readonly maxHp: Float64Array;
   readonly state: Uint8Array;
+  /** The structures' states as the frame shows them, rebuilt only when one changes. */
+  private statesCache = '';
+  private statesDirty = true;
   private gunCool: Float64Array;
   private gunTarget: Int32Array;
   readonly objectives: number[] = [];
@@ -1416,11 +1419,13 @@ export class Battle {
     this.hp[k] = Math.max(0, hp);
     if (this.state[k] === 0 && this.hp[k]! < this.maxHp[k]! * BATTLE.fireBelow) {
       this.state[k] = 1;
+      this.statesDirty = true;
       this.allEvents.damaged.push(this.sv(k, S.id));
       this.events.push({ k: 'damaged', s: this.sv(k, S.id) });
     }
     if (this.hp[k]! <= 0) {
       this.state[k] = 2;
+      this.statesDirty = true;
       if (civic) this.wrecked++;
       else this.collapsed++;
       this.allEvents.destroyed.push(this.sv(k, S.id));
@@ -1816,6 +1821,16 @@ export class Battle {
     };
   }
 
+  private statesText(): string {
+    if (this.statesDirty) {
+      let t = '';
+      for (let k = 0; k < this.nStruct; k++) t += this.state[k];
+      this.statesCache = t;
+      this.statesDirty = false;
+    }
+    return this.statesCache;
+  }
+
   /** The battle as drawn this tick. */
   frame(): BattleFrame {
     const sides = [0, 1].map((side) => {
@@ -1855,6 +1870,7 @@ export class Battle {
         z: this.sz(k),
         hp: Math.round((this.hp[k]! / this.maxHp[k]!) * 100) / 100,
       })),
+      structs: this.statesText(),
       outcome: this.outcome,
       ...(this.domeMax > 0 ? { dome: Math.round((this.domeLeft / this.domeMax) * 1000) / 1000 } : {}),
       ...(this.v4 && this.input.helpers?.length

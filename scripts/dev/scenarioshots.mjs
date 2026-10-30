@@ -13,6 +13,8 @@ const hour = Number(process.argv[3] ?? 15.5);
 // Views that need more than the town's middle: the resort looks out to sea.
 const LOOK = {
   winter: { season: [0, 0, 0, 1], kind: 'snow', strength: 0.6, snow: 0.75, wet: 0.2 },
+  // The war scenarios play without seasons (late spring): a city saved in winter still has its snow.
+  liberation: { season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 },
 };
 const VIEW = {
   resort: { x: 1150, yaw: 5.2, distance: 900 },
@@ -22,6 +24,10 @@ const VIEW = {
   terraces: { x: 640, z: 1024, yaw: 1.2, distance: 1000, tilt: -0.05 },
   // Market Town: the old market on the avenue in front, the works and estates behind it.
   market: { x: 330, z: 905, yaw: 0.55, distance: 460, tilt: 0.22 },
+  // The war scenarios (M39): the town with its garrison in view.
+  holdline: { x: 600, z: 1190, yaw: 0.55, distance: 640, tilt: 0.25 },
+  cleanwar: { x: 345, z: 1190, yaw: 0.6, distance: 430, tilt: 0.3 },
+  liberation: { x: 300, z: 1360, yaw: 0.6, distance: 430, tilt: 0.3 },
 };
 const dist = process.env.DIST ?? 'dist-test';
 const port = process.env.PORT ?? '4197';
@@ -62,7 +68,7 @@ try {
     await page.evaluate(() => window.__game.waitFrames(3));
     await page
       .locator('#scene')
-      .screenshot({ path: `public/scenarios/${id}.jpg`, type: 'jpeg', quality: 72 });
+      .screenshot({ path: `public/scenarios/${id}.jpg`, type: 'jpeg', quality: 72, timeout: 240000 });
     console.log(id, JSON.stringify(pose));
     await page.close();
   }

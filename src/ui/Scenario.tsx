@@ -56,6 +56,17 @@ export function goalValueText(measure: GoalMeasure, v: number): string {
     case 'project':
     case 'election':
       return v >= 1 ? 'Done' : 'Not yet';
+    // The war scenarios (M39).
+    case 'standing':
+      return `${Math.round(v)} %`;
+    case 'waves':
+      return `${Math.round(v)} fought off`;
+    case 'warWon':
+      return v >= 1 ? 'Won' : 'Not yet';
+    case 'liberated':
+      return v >= 1 ? 'Freed' : 'Not yet';
+    case 'districtsLost':
+      return v >= 1 ? `${Math.round(v)} occupied` : 'None';
     default:
       return Math.round(v).toLocaleString('en-US');
   }

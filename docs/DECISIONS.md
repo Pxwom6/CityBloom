@@ -1041,3 +1041,15 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   beside the treaties'. Left for later, in "Ideas for what's next".
 - **A co-op city still can't stand in a region** (DECISIONS "M37"): roles in a shared city at war cover its
   wars with computer neighbours (new permissions `war`, `treaties`, `defence`; absent reads as allowed).
+- **Hold the Line counts the factories, not every building** (90 % of the starting factories standing): a
+  battle aims at six objectives at most, so three waves cost about eighteen buildings, and with 335 in town
+  a goal over all of them could never be lost. The raids aim at the factories by the highway.
+- **A scenario with scripted waves keeps its neighbours from raiding or declaring on their own** (except in
+  a war the city is in): the waves are the test, and dice-driven raids on top would make it a lottery.
+- **"Liberate an occupied neighbour" is a subject town** (`RivalNeighbour.subjectOf`, set only by a
+  scenario's save) **freed by a `liberate` term** its overlord signs when losing badly (about +40), offers
+  from +30, or must accept on capitulation; it never appears without a subject town, so other cities and the
+  goldens are untouched. Freed, the town warms by 50 and offers an alliance.
+- **Scenario outcomes depend on the war's dice**: the shipped starts were calibrated so armed play won and
+  idle play lost in every probe (Clean War: 3 of 3 and 2 of 2), but earlier variants lost up to 60 % of armed
+  runs, so real players will see some spread.

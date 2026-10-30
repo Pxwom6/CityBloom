@@ -20,6 +20,7 @@ import type { RegionUpdate } from './systems/region';
 import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
 import type { UnitKind } from '../data/war';
 import type { DeclaredScale, Term } from '../data/diplomacy';
+import type { FriendPactsIn, FriendTreatyIn, FriendWarFacts } from './systems/friendsWar';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -259,6 +260,14 @@ export type Command =
   | ({ type: 'opResolve' } & OpInput)
   | { type: 'warClock'; cap: number | null; left?: true }
   /**
+   * Wars and treaties between friends (M39, page only): the region's state of a war with a friend's
+   * city (applied again with every word about it), a treaty it signed (applied once), and the pacts
+   * and vassals it keeps for this city (the mirror holds what the region lists).
+   */
+  | ({ type: 'friendWar' } & FriendWarFacts)
+  | ({ type: 'friendTreaty' } & FriendTreatyIn)
+  | ({ type: 'friendPacts' } & FriendPactsIn)
+  /**
    * The war economy (M38): buy `share` percent (a multiple of 5) of a computer neighbour's industry
    * or sell the whole stake; lend an ally money; fund an ally's war `perMonth` dollars (0 stops).
    */
@@ -352,6 +361,9 @@ const COMMAND_KINDS = {
   missionResult: true,
   opResolve: true,
   warClock: true,
+  friendWar: true,
+  friendTreaty: true,
+  friendPacts: true,
   buyStake: true,
   sellStake: true,
   lendAlly: true,

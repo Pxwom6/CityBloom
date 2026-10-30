@@ -554,7 +554,12 @@ export type Query =
   /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
   | { type: 'builtBy'; id: number }
   /** What this city tells a shared region about itself (M32). */
-  | { type: 'regionReport' };
+  | { type: 'regionReport' }
+  /**
+   * Why terms can't be put to (or accepted from) a friend's city now (M39): the region's rules as far
+   * as this city can tell, and its own money limits. `null` when they can. Terms are as the proposer reads them.
+   */
+  | { type: 'friendTerms'; slot: number; terms: unknown[]; imposed?: boolean; side?: 'a' | 'b' };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {

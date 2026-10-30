@@ -38,6 +38,8 @@ export interface DeterminismResult {
    * room's frontier lets it run and as the room's orders arrive, and how it ends.
    */
   live: string[];
+  /** Wars and treaties with a friend (M39), mirrored in the lab town after its live battle. */
+  friends: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -386,6 +388,82 @@ export function runDeterminism(
     );
   }
 
+  // Wars and treaties with a friend (M39), in the same town after its live battle: the region's words
+  // as the page passes them on. A war declared on the city and opened (the same word twice changes
+  // nothing), its score and a seat of power held, a ceasefire from the region's list, the city's
+  // capitulation and the terms imposed (peace, reparations, tribute, vassalage), the dues of a vassal,
+  // and its freedom. Every step's hash is compared.
+  const friends: string[] = [];
+  const fr = (cmd: Command) => {
+    lab(cmd);
+    friends.push(labSim.hash());
+  };
+  const fwar = {
+    type: 'friendWar' as const,
+    room: 1,
+    slot: 2,
+    by: 'them' as const,
+    scale: 'total' as const,
+    reason: 'Your border',
+    score: 0,
+    battles: 0,
+  };
+  fr({ ...fwar, state: 'declared', opensIn: 120_000 });
+  fr({ ...fwar, state: 'declared', opensIn: 100_000 });
+  fr({ ...fwar, state: 'open', score: -22.5, battles: 2 });
+  for (let h = 0; h < 6; h++) labSim.advance(TICKS_PER_HOUR);
+  friends.push(labSim.hash());
+  fr({ ...fwar, state: 'open', score: -35, battles: 3, hold: 'them' });
+  fr({
+    type: 'friendPacts',
+    me: 1,
+    pacts: [{ room: 5, slot: 2, kind: 'nonAggression', months: 6 }],
+    vassals: [],
+    wars: [1],
+  });
+  fr({ ...fwar, state: 'capitulated', score: -62, battles: 4, capitulated: 'us' });
+  fr({
+    type: 'friendTreaty',
+    id: 'w1-t1',
+    slot: 2,
+    side: 'b',
+    terms: [
+      { k: 'peace' },
+      { k: 'reparations', payer: 'them', amount: 8_000 },
+      { k: 'tribute', payer: 'them', amount: 1_500, months: 3 },
+      { k: 'vassal' },
+    ],
+    imposed: true,
+  });
+  // (Applied again, as the region sends it until it hears it was seen: refused, nothing changes.)
+  fr({
+    type: 'friendTreaty',
+    id: 'w1-t1',
+    slot: 2,
+    side: 'b',
+    terms: [{ k: 'peace' }, { k: 'reparations', payer: 'them', amount: 8_000 }],
+    imposed: true,
+  });
+  fr({ ...fwar, state: 'ended', score: -62, battles: 4 });
+  fr({
+    type: 'friendPacts',
+    me: 1,
+    pacts: [],
+    vassals: [{ vassal: 1, overlord: 2 }],
+    wars: [],
+  });
+  for (let d = 0; d < 4; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    friends.push(labSim.hash());
+  }
+  // The city rises, wins and goes free; the region lists no vassal any more.
+  fr({ ...fwar, room: 2, by: 'us', state: 'declared', rebellion: true, opensIn: 120_000 });
+  fr({ ...fwar, room: 2, by: 'us', state: 'open', rebellion: true, score: 31, battles: 2 });
+  fr({ type: 'friendPacts', me: 1, pacts: [], vassals: [], wars: [] });
+  labSim.advance(TICKS_PER_MONTH);
+  friends.push(labSim.hash(), JSON.stringify(labSim.state.war!.diplomacy ?? null));
+
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
   // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
   // munitions and a tank sold to it, sanctions put on a town and lifted, aid for the war it fights at
@@ -500,6 +578,7 @@ export function runDeterminism(
     research,
     economy,
     live: liveLog,
+    friends,
     used: [...used].sort(),
     refused,
   };

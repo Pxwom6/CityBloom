@@ -216,6 +216,7 @@ import { healthHour } from './systems/health';
 import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
 import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
 import { missionResult, opResolve, spySettling, warClock } from './systems/regionOps';
+import { friendPacts, friendTermsQuery, friendTreaty, friendWar } from './systems/friendsWar';
 import {
   baseRemoved,
   bondsHour,
@@ -1562,6 +1563,12 @@ export class Sim {
         );
       case 'warClock':
         return warClock(this, cmd.cap, dryRun, !!cmd.left);
+      case 'friendWar':
+        return friendWar(this, cmd, dryRun);
+      case 'friendTreaty':
+        return friendTreaty(this, cmd, dryRun);
+      case 'friendPacts':
+        return friendPacts(this, cmd, dryRun);
       case 'buyStake':
         return buyStake(this, cmd.neighbour, cmd.share, dryRun);
       case 'sellStake':
@@ -2609,6 +2616,8 @@ export class Sim {
         return this.state.builtBy.get(q.id) ?? null;
       case 'regionReport':
         return regionReport(this);
+      case 'friendTerms':
+        return friendTermsQuery(this, q.slot, q.terms, !!q.imposed, q.side ?? 'a');
       case 'hash':
         return this.hash();
       case 'summary':

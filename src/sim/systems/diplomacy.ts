@@ -49,6 +49,7 @@ import {
   warDifficulty,
 } from './warEconomy';
 import { peaceCame } from './weariness';
+import { friendsSummary, type FriendSummary } from './friendsWar';
 import { scenarioFact, scriptedInvasion } from './scenario';
 import type { Outcome } from '../battle/types';
 
@@ -57,7 +58,7 @@ export interface War {
   id: number;
   with: number;
   name: string;
-  scale: DeclaredScale;
+  scale: DeclaredScale | 'skirmish';
   /** Who declared it. */
   by: Party;
   reason: string;
@@ -75,6 +76,12 @@ export interface War {
   capitulated?: { by: Party; until: number };
   /** A vassal's rising against its overlord. */
   rebellion?: true;
+  /**
+   * A war with a friend's city (M39): the region room keeps its truth (the score, when it opens, who
+   * capitulated, the hold on a seat of power), and the city mirrors it here (`friendWar`). `opens` is
+   * then the tick the page saw it open; while it hasn't, the war is `declared` and nothing is fought.
+   */
+  friend?: { room: number; slot: number; state: 'declared' | 'open' | 'ceasefire' | 'capitulated' };
 }
 
 /** A term in force, from a signed treaty. */
@@ -93,6 +100,8 @@ export interface Pact {
   amount?: number;
   label?: string;
   imposed?: true;
+  /** A pact with a friend's city (M39): the region's number for it, which the region's list keeps true. */
+  room?: number;
 }
 
 export interface Proposal {
@@ -124,6 +133,8 @@ export interface Diplomacy {
   log: DiplomacyEntry[];
   /** The city is a vassal of this neighbour (it fell, or it hasn't yet won its freedom). */
   vassal?: { overlord: number; since: number };
+  /** Friends' cities that are this city's vassals (M39): neighbour ids, as the region's list has them. */
+  subjects?: { with: number; since: number }[];
   /** The city fell, for the page's choice (play on as a vassal, or start again). */
   fell?: { by: number; name: string; at: number };
   /** A neutral stance, and the tick leaving it counts from. */
@@ -145,7 +156,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const round1 = (v: number) => Math.round(v * 10) / 10;
 const money = (v: number) => `$${formatInt(Math.round(v))}`;
 
-function neighbourOf(sim: Sim, id: number): Neighbour | undefined {
+export function neighbourOf(sim: Sim, id: number): Neighbour | undefined {
   return sim.state.region.neighbours.find((n) => n.id === id);
 }
 
@@ -159,7 +170,7 @@ export function warScaleAllowed(sim: Sim): WarScale | null {
 }
 
 /** The city's diplomacy, made on first use (never in a dry run). */
-function dip(sim: Sim): Diplomacy {
+export function dip(sim: Sim): Diplomacy {
   const w = sim.state.war!;
   return (w.diplomacy ??= {
     reputation: DIPLOMACY.reputation.start,
@@ -233,7 +244,8 @@ export function endPactsWith(sim: Sim, n: Neighbour, kinds: TermKind[], text: st
 export function scoreIntel(sim: Sim, withId: number, delta: number): void {
   // Only while the two are fighting: a ceasefire holds the score.
   const war = fightingWith(sim, withId);
-  if (!war || sim.state.tick < war.opens || war.capitulated) return;
+  // (A war with a friend's city is scored by the region: its spies move nothing here, M39.)
+  if (!war || war.friend || sim.state.tick < war.opens || war.capitulated) return;
   war.score = clamp(round1(war.score + delta), -100, 100);
   checkCapitulation(sim, war);
   sim.warChanged();
@@ -258,6 +270,8 @@ export function bindingPacts(sim: Sim, id: number): Pact[] {
 export function fightingWith(sim: Sim, id: number): War | undefined {
   const war = warWith(sim, id);
   if (!war || sim.state.tick < war.opens || war.capitulated) return undefined;
+  // A war with a friend's city fights while the region says it is open (M39).
+  if (war.friend) return war.friend.state === 'open' ? war : undefined;
   return pactsWith(sim, id, 'ceasefire').length ? undefined : war;
 }
 
@@ -340,7 +354,8 @@ export function declareRefusal(
   if (reason.length > DIPLOMACY.reasonMax) return fail('That reason is too long');
   const n = neighbourOf(sim, to);
   if (!n) return fail('No such neighbour');
-  if (n.player) return fail('War with a friend is declared in a shared region at war (M39)');
+  // (A friend's war is declared through the region room: the Friends list in the Diplomacy tab, M39.)
+  if (n.player) return fail(`War with ${n.name} is declared through the region: use the Friends list`);
   if (!n.rival) return fail(`${n.name} isn’t a rival`);
   const holder = heldBy(sim, to);
   if (holder) return fail(`${n.name} is held by ${holder.name}: free it by beating ${holder.name}`);
@@ -474,7 +489,7 @@ function joinAgainst(sim: Sim, a: Neighbour, friend: Neighbour): void {
 }
 
 /** The city breaks pacts: its reputation, the victim's feelings and its allies'. */
-function breakPacts(sim: Sim, n: Neighbour, pacts: Pact[]): void {
+export function breakPacts(sim: Sim, n: Neighbour, pacts: Pact[]): void {
   const d = dip(sim);
   d.reputation = clamp(d.reputation + DIPLOMACY.reputation.breakPact, 0, 100);
   d.pacts = d.pacts.filter((p) => !pacts.includes(p));
@@ -560,18 +575,17 @@ export function scoreBattle(
   sim.warChanged();
 }
 
-/** What a home battle's report means for the score. */
-export function scoreHomeBattle(
-  sim: Sim,
-  from: number,
+/**
+ * What a home battle's report means for the war score, or null when there was no battle to score:
+ * nothing to strike (the target wasn't there), or no contact at all (no unit of either side hurt,
+ * nothing hit). A friend's raid is scored by the region from the same facts (M39).
+ */
+export function homeBattleFacts(
   report: BattleReport,
   aimed: number,
   down: number,
   hurt = false,
-): void {
-  if (!warWith(sim, from)) return;
-  // Nothing to strike (the target wasn't there), or no contact at all (no unit of either side
-  // hurt, nothing hit): no battle to score.
+): { outcome: Outcome | null; decisive: number; worth: number; seatDown: boolean } | null {
   const contact =
     hurt ||
     report.theirLost > 0 ||
@@ -579,7 +593,7 @@ export function scoreHomeBattle(
     (report.worth ?? 0) > 0 ||
     report.burning.length > 0 ||
     report.civics.length > 0;
-  if (aimed === 0 || (report.outcome === 'withdrew' && !contact)) return;
+  if (aimed === 0 || (report.outcome === 'withdrew' && !contact)) return null;
   const won = report.outcome !== 'raided';
   const decisive = won
     ? report.theirTotal
@@ -590,13 +604,28 @@ export function scoreHomeBattle(
       : 0;
   const seatDown =
     report.target === 'cityhall' && report.civics.some((c) => c.wrecked && !!CIVIC.get(c.def)?.military?.hq);
+  return { outcome: report.outcome, decisive, worth: report.worth ?? 0, seatDown };
+}
+
+/** What a home battle's report means for the score. */
+export function scoreHomeBattle(
+  sim: Sim,
+  from: number,
+  report: BattleReport,
+  aimed: number,
+  down: number,
+  hurt = false,
+): void {
+  if (!warWith(sim, from)) return;
+  const f = homeBattleFacts(report, aimed, down, hurt);
+  if (!f) return;
   scoreBattle(sim, from, {
     ours: false,
-    outcome: report.outcome,
-    decisive,
+    outcome: f.outcome,
+    decisive: f.decisive,
     theirWorth: 0,
-    ourWorth: report.worth ?? 0,
-    seatDown,
+    ourWorth: f.worth,
+    seatDown: f.seatDown,
   });
 }
 
@@ -664,7 +693,7 @@ function capitulate(sim: Sim, war: War, by: Party): void {
 }
 
 /** Raids from this neighbour turn back, and the city's forces on their way there come home. */
-function stopFighting(sim: Sim, id: number): void {
+export function stopFighting(sim: Sim, id: number): void {
   const w = sim.state.war!;
   if (w.incoming) {
     w.incoming = w.incoming.filter((r) => r.from !== id);
@@ -727,7 +756,8 @@ export function termsRefusal(sim: Sim, to: number, terms: Term[]): string | null
   if (!s.war) return 'War is off in this city';
   const n = neighbourOf(sim, to);
   if (!n) return 'No such neighbour';
-  if (n.player) return 'Treaties with friends come with war among friends (M39)';
+  // (A friend's treaty goes through the region room: the Friends list in the Diplomacy tab, M39.)
+  if (n.player) return `Treaties with ${n.name} go through the region: use the Friends list`;
   if (!n.rival) return `${n.name} isn’t a rival`;
   const holder = heldBy(sim, to);
   if (holder) return `${n.name} is held by ${holder.name} and signs nothing until it is free`;
@@ -932,7 +962,7 @@ function sign(sim: Sim, n: Neighbour, terms: Term[], imposed: boolean): void {
 }
 
 /** A war ends: the cooldown starts, and pacts that were its pauses go. */
-function endWar(sim: Sim, id: number): void {
+export function endWar(sim: Sim, id: number): void {
   const d = dip(sim);
   if (!d.wars.some((x) => x.with === id)) return;
   d.wars = d.wars.filter((x) => x.with !== id);
@@ -1118,7 +1148,21 @@ export function endPact(sim: Sim, id: number, breakPact: boolean, dryRun: boolea
     return fail(`Ending the ${TERM_NAMES[p.term.k].toLowerCase()} breaks the city’s word to ${n.name}`, {
       info: { breaks: true },
     });
-  if (dryRun) return ok(0);
+  if (dryRun) return ok(0, p.room !== undefined ? { info: { room: p.room } } : undefined);
+  // A pact with a friend (M39) ends when the region says so: the city's word is spent now, the page
+  // asks the region to end it (`info.room`), and the region's list takes it away.
+  if (p.room !== undefined) {
+    if (breaks) {
+      reputationChange(sim, DIPLOMACY.reputation.breakPact);
+      note(
+        sim,
+        n.id,
+        'broken',
+        `The city ends its ${TERM_NAMES[p.term.k].toLowerCase()} with ${n.name}: its word counts for less`,
+      );
+    }
+    return ok(0, { info: { room: p.room } });
+  }
   if (breaks) breakPacts(sim, n, [p]);
   else {
     d.pacts = d.pacts.filter((x) => x !== p);
@@ -1384,6 +1428,8 @@ export function diplomacyHour(sim: Sim): void {
   for (const war of [...d.wars]) {
     // Ended earlier in this pass (a fall ends every other war): nothing more to do with it.
     if (!d.wars.includes(war)) continue;
+    // A war with a friend's city opens, holds and ends as the region says (M39).
+    if (war.friend) continue;
     if (!war.opened && s.tick >= war.opens) {
       war.opened = true;
       note(sim, war.with, 'opened', `The war with ${war.name} has begun`);
@@ -1665,6 +1711,12 @@ export function diplomacyRates(sim: Sim, taxes: number): Record<string, number> 
   for (const n of s.region.neighbours)
     if (n.rival?.vassal && !n.player && !d?.wars.some((w) => w.with === n.id))
       add('vassals', neighbourTaxes(n) * DIPLOMACY.vassal.taxShare);
+  // A friend's city that is this city's vassal (M39) pays what its own report says it pays, until it
+  // rises (a war between them) or goes free.
+  for (const sub of d?.subjects ?? []) {
+    const n = neighbourOf(sim, sub.with);
+    if (n?.player && !d!.wars.some((w) => w.with === n.id)) add('vassals', n.player.dues ?? 0);
+  }
   return out;
 }
 
@@ -1703,8 +1755,14 @@ export function raidStance(
 }
 
 /** Any declared war open now (raids come closer together). */
-export function anyWarOpen(sim: Sim): boolean {
-  return !!sim.state.war?.diplomacy?.wars.some((x) => sim.state.tick >= x.opens && !x.capitulated);
+export function anyWarOpen(sim: Sim, computerOnly = false): boolean {
+  return !!sim.state.war?.diplomacy?.wars.some(
+    (x) =>
+      sim.state.tick >= x.opens &&
+      !x.capitulated &&
+      // A war with a friend (M39) is open when the region says so, and doesn't stir computer neighbours.
+      (x.friend ? !computerOnly && x.friend.state === 'open' : true),
+  );
 }
 
 /** Why the city can't strike this neighbour now (diplomacy's part of sending a force), or null. */
@@ -1725,16 +1783,25 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
   if (d?.leaving !== undefined && s.tick < d.leaving)
     return fail(`Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / H)} hours`);
   const war = warWith(sim, to);
-  if (n.rival?.vassal && !war) return fail(`${n.name} is your vassal`);
+  if ((n.rival?.vassal || d?.subjects?.some((x) => x.with === to)) && !war)
+    return fail(`${n.name} is your vassal`);
   // A vassal fights only in its rising (against its overlord, and those who came to its side).
   if (d?.vassal && !war) return fail('A vassal sends no forces, except to rise against its overlord');
+  if (war?.friend?.state === 'declared')
+    return fail(`The war with ${n.name} hasn’t opened yet: the warning is still running`);
   if (war && s.tick < war.opens)
     return fail(`The war with ${n.name} opens in ${Math.ceil((war.opens - s.tick) / H)} hours`);
   if (war?.capitulated?.by === 'them') return fail(`${n.name} has capitulated: set your terms`);
   if (war?.capitulated?.by === 'us') return fail(`The city capitulated to ${n.name}`);
+  if (war?.friend?.state === 'ceasefire') return fail(`There is a ceasefire with ${n.name}`);
   if (target === 'cityhall' && !(war && fightingWith(sim, to)))
     return fail('A skirmish can’t strike the seat of power: that takes a declared war');
   const bound = bindingPacts(sim, to);
+  // A pact with a friend is ended through the region, in the Diplomacy tab: no breaking it here (M39).
+  if (bound.length && n.player)
+    return fail(
+      `That breaks your ${TERM_NAMES[bound[0]!.term.k].toLowerCase()} with ${n.name}: end it first`,
+    );
   if (bound.length && !breakPact)
     return fail(`That breaks your ${TERM_NAMES[bound[0]!.term.k].toLowerCase()} with ${n.name}`, {
       info: { breaks: true },
@@ -1746,7 +1813,7 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
 export function strikeBreaks(sim: Sim, to: number): void {
   const bound = bindingPacts(sim, to);
   const n = neighbourOf(sim, to);
-  if (bound.length && n) breakPacts(sim, n, bound);
+  if (bound.length && n && !n.player) breakPacts(sim, n, bound);
 }
 
 /**
@@ -1812,13 +1879,25 @@ export interface DiplomacySummary {
   neutral: boolean;
   /** Tick leaving neutrality counts from, while it's pending. */
   leaving: number | null;
-  vassal: { overlord: number; name: string; since: number; need: number; strength: number } | null;
+  vassal: {
+    overlord: number;
+    name: string;
+    since: number;
+    need: number;
+    strength: number;
+    /** The overlord is a friend's city (M39): it can be risen against at once, by a declaration. */
+    friend: boolean;
+  } | null;
+  /** Friends' cities that are this city's vassals (M39), and what they pay a month. */
+  subjects: { with: number; name: string; since: number; dues: number }[];
+  /** Friends' cities in the region (M39), for declaring war on and signing treaties with. */
+  friends: FriendSummary[];
   fell: { by: number; name: string; at: number } | null;
   wars: {
     id: number;
     with: number;
     name: string;
-    scale: DeclaredScale;
+    scale: DeclaredScale | 'skirmish';
     by: Party;
     reason: string;
     declared: number;
@@ -1830,6 +1909,8 @@ export interface DiplomacySummary {
     rebellion: boolean;
     ceasefire: number | null;
     helpers: string[];
+    /** A war with a friend's city (M39): the region's number for it, the friend's place, and its state. */
+    friend: { room: number; slot: number; state: 'declared' | 'open' | 'ceasefire' | 'capitulated' } | null;
   }[];
   pacts: {
     id: number;
@@ -1846,6 +1927,8 @@ export interface DiplomacySummary {
     breaks: boolean;
     buyBack: number | null;
     imposed: boolean;
+    /** A pact with a friend's city (M39): the region's number for it. */
+    room: number | null;
   }[];
   proposals: {
     id: number;
@@ -1902,8 +1985,16 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
           since: d.vassal.since,
           need: Math.ceil((overlord ? rivalStrength(overlord) : 0) * DIPLOMACY.vassal.rebelRatio),
           strength,
+          friend: !!overlord?.player,
         }
       : null,
+    subjects: (d?.subjects ?? []).map((x) => ({
+      with: x.with,
+      name: name(x.with),
+      since: x.since,
+      dues: neighbourOf(sim, x.with)?.player?.dues ?? 0,
+    })),
+    friends: friendsSummary(sim),
     fell: d?.fell ? { ...d.fell } : null,
     wars: (d?.wars ?? []).map((w) => ({
       id: w.id,
@@ -1921,6 +2012,7 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
       rebellion: !!w.rebellion,
       ceasefire: pactsWith(sim, w.with, 'ceasefire')[0]?.until ?? null,
       helpers: help.filter((h) => h.war === w).map((h) => h.ally.name),
+      friend: w.friend ? { ...w.friend } : null,
     })),
     pacts: (d?.pacts ?? []).map((p) => {
       const n = neighbourOf(sim, p.with);
@@ -1940,6 +2032,7 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
         buyBack:
           p.term.k === 'occupy' && p.term.side === 'us' ? (p.amount ?? 0) * DIPLOMACY.buyBackMonths : null,
         imposed: !!p.imposed,
+        room: p.room ?? null,
       };
     }),
     proposals: (d?.proposals ?? []).map((p) => {

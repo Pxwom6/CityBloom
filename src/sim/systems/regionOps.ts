@@ -34,6 +34,7 @@ import { counterIntel, intel as intelOf, result as intelResult, sabotageTarget, 
 import { BATTLE_TAKEN_KEEP, damageCivic } from './raids';
 import type { Neighbour } from './region';
 import { bankPoints, tierCounts } from './research';
+import { forgetFriends } from './friendsWar';
 
 /** An operation between friends (the region room's word for it). */
 export type FriendOp = SpyOp | 'blackout';
@@ -630,6 +631,8 @@ function leaveFriends(sim: Sim): void {
   }
   const t = w.supers?.tower;
   if (t?.charging?.slot !== undefined && !t.charging.kept) delete t.charging;
+  // Wars, pacts and vassalage with friends there are over (M39).
+  forgetFriends(sim);
 }
 
 /**

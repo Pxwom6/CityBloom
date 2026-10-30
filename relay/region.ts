@@ -621,6 +621,13 @@ function cleanReport(r: unknown): RegionReport | null {
   if (o.counter !== undefined && !wholeIn(o.counter, 0, 1000)) return null;
   if (o.coast !== undefined && o.coast !== true) return null;
   if (o.clock !== undefined && !wholeIn(o.clock, 0, 1e9)) return null;
+  // War (M39): a friend's vassal says whom it pays and how much a month.
+  const dues = o.dues as Record<string, unknown> | undefined;
+  if (
+    dues !== undefined &&
+    !(dues && typeof dues === 'object' && wholeIn(dues.slot, 1, 64) && finite(dues.amount, 0, 1e9))
+  )
+    return null;
   return {
     population: o.population as number,
     kind: o.kind as RegionReport['kind'],
@@ -639,6 +646,7 @@ function cleanReport(r: unknown): RegionReport | null {
     ...(o.counter !== undefined ? { counter: o.counter as number } : {}),
     ...(o.coast === true ? { coast: true as const } : {}),
     ...(o.clock !== undefined ? { clock: o.clock as number } : {}),
+    ...(dues ? { dues: { slot: dues.slot as number, amount: Math.round(dues.amount as number) } } : {}),
   };
 }
 

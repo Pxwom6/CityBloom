@@ -18,7 +18,8 @@ import { BERTH_DEPTH, civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
-import { embargoed, forgetNeighbour, heldBy } from './diplomacy';
+import { embargoed, forgetNeighbour, heldBy, monthlyTaxes } from './diplomacy';
+import { DIPLOMACY } from '../../data/diplomacy';
 import { sanctionDrag, sanctionsBetween } from './warEconomy';
 import { BRANCH_IDS, cleanTiers } from '../../data/research';
 import { BATTLE } from '../../data/battle';
@@ -67,6 +68,11 @@ export interface PlayerNeighbour {
    * raided out for the day.
    */
   raid?: RaidVerdict;
+  /**
+   * What this friend pays the city each month as its vassal (M39), as its own report says; the city
+   * counts it only from a friend the region lists as its vassal.
+   */
+  dues?: number;
 }
 
 /** Why a friend's city can't be raided (M36): its own report says so. */
@@ -475,6 +481,8 @@ export interface RegionCity {
   coast?: true;
   tiers?: number[];
   counter?: number;
+  /** What this city pays the one it reports to as its vassal each month (M39): the region passes it to its overlord. */
+  dues?: number;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -532,6 +540,15 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       ...(typeof c.counter === 'number' && Number.isInteger(c.counter) && c.counter >= 0 && c.counter <= 1000
         ? { counter: c.counter }
         : {}),
+      // Vassalage (M39): what this friend says it pays the city, within what its people could pay.
+      ...(typeof c.dues === 'number' && c.dues > 0 && Number.isFinite(c.dues)
+        ? {
+            dues: Math.min(
+              Math.round(c.dues),
+              Math.round(n.population * DIPLOMACY.neighbourTaxPerResident * DIPLOMACY.vassal.taxShare * 3),
+            ),
+          }
+        : {}),
     };
   }
   // The other cities' deals with this one: replaced as a whole with each update.
@@ -588,6 +605,11 @@ export interface RegionReport {
   counter?: number;
   coast?: true;
   clock?: number;
+  /**
+   * War (M39), a city that is a friend's vassal: what it pays that friend a month (a fifth of its
+   * taxes) and who it pays, so the region can tell the overlord's city what its income is.
+   */
+  dues?: { slot: number; amount: number };
 }
 
 /** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */
@@ -663,5 +685,13 @@ export function regionReport(sim: Sim): RegionReport {
           clock: s.war.clock,
         }
       : {}),
+    // War (M39): a friend's vassal says what it pays its overlord (not while it rises against it).
+    ...(() => {
+      const d = s.war?.diplomacy;
+      const over = d?.vassal && s.region.neighbours.find((n) => n.id === d.vassal!.overlord);
+      if (!over?.player || d!.wars.some((w) => w.with === over.id)) return {};
+      const amount = Math.round(monthlyTaxes(sim) * DIPLOMACY.vassal.taxShare);
+      return amount > 0 ? { dues: { slot: over.player.slot, amount } } : {};
+    })(),
   };
 }

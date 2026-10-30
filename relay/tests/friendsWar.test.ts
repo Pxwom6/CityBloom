@@ -1621,3 +1621,21 @@ describe('the module alone', () => {
     expect(REGION_LIMITS.dailyRows).toBe(3000);
   });
 });
+
+describe('a vassal’s dues', () => {
+  it('are in the vassal’s report and reach its overlord’s city in the region view, if they are sensible', () => {
+    const w = world();
+    const dues = () => last(w.ada, 'region')!.region.cities.find((c) => c.slot === SLOT.Sam)!.report!.dues;
+    w.clock.advance(60_000);
+    w.sam.say(report('Samton', { dues: { slot: SLOT.Ada, amount: 1_234.4 } }));
+    expect(dues()).toEqual({ slot: SLOT.Ada, amount: 1_234 });
+    // Reporting no dues any more (it is free) clears them.
+    w.clock.advance(60_000);
+    w.sam.say(report('Samton'));
+    expect(dues()).toBeUndefined();
+    // A report that says it pays no city, or something that is no sum, is a message the region can't read.
+    w.sam.say(report('Samton', { dues: { slot: 99, amount: 5 } }));
+    expect(w.sam.closed).toBe('bad-message');
+    expect(dues()).toBeUndefined();
+  });
+});

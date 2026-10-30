@@ -54,7 +54,7 @@ import { SUPER_UNCOUNTED, battleHasSuper } from './regionOps';
 import { powerSabotaged, revealed, rivalKnows } from './intel';
 import { INTEL } from '../../data/intel';
 import { RESEARCH } from '../../data/research';
-import { anyWarOpen, raidStance, scoreHomeBattle } from './diplomacy';
+import { anyWarOpen, homeBattleFacts, raidStance, scoreHomeBattle } from './diplomacy';
 import { wearinessRaid } from './weariness';
 import { aggressionOf, warDifficulty } from './warEconomy';
 import { DIPLOMACY } from '../../data/diplomacy';
@@ -291,7 +291,7 @@ export function raidsHour(sim: Sim): void {
   }
   if (w.incoming?.length || w.battle) return;
   // In a declared war (M36) raids come closer together, and a city at war is raided however young.
-  const atWar = anyWarOpen(sim);
+  const atWar = anyWarOpen(sim, true);
   const last = w.raided?.any ?? -Infinity;
   // The difficulty's raids lever (M38) stretches or shortens the waits too: in a war the gaps are
   // what bind, so a chance alone would hardly show (Normal divides by 1).
@@ -1008,6 +1008,11 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   ]);
   const hurt = result.units.some((u) => u.out || u.hp < (before.get(`${u.side}:${u.id}`) ?? u.hp));
   scoreHomeBattle(sim, hb.raid.from, report, result.objectives.aimed, result.objectives.down, hurt);
+  // A friend's raid is scored by the region, from what this end of it knows (M39): the page passes it on.
+  const raider = s.region.neighbours.find((x) => x.id === hb.raid.from);
+  const facts = raider?.player
+    ? homeBattleFacts(report, result.objectives.aimed, result.objectives.down, hurt)
+    : null;
   sim.events.push({
     kind: 'battleEnded',
     id: report.id,
@@ -1022,6 +1027,19 @@ function endHomeBattle(sim: Sim, run: Battle): void {
       step: result.steps,
       hash: result.hash,
       ...(hb.live ? { live: hb.live.id } : {}),
+      // A friend's raid (M39): the region's id for the battle and who raided, and (when there was
+      // contact, `friendScored`) what the war score takes from it; flags are 0 or 1.
+      ...(raider?.player
+        ? {
+            friendSlot: raider.player.slot,
+            friendBattle: hb.live?.id ?? hb.input.id,
+            friendScored: facts ? 1 : 0,
+            friendDecisive: facts?.decisive ?? 0,
+            friendWorth: Math.round(facts?.worth ?? 0),
+            friendSeatDown: facts?.seatDown ? 1 : 0,
+            friendAway: report.absent ? 1 : 0,
+          }
+        : {}),
     },
   });
   sim.warChanged();

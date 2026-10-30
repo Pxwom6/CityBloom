@@ -243,6 +243,21 @@ export function cleanTerm(raw: unknown): Term | null {
 /** A computer neighbour's three quarters, by number (an occupied "district" of a town). */
 export const QUARTERS = ['', 'north', 'middle', 'south'];
 
+/** Why a command about a friend's city turns away when the city isn't a neighbour yet (the page tries again). */
+export const UNKNOWN_FRIEND = 'That city isn’t one of this city’s neighbours yet';
+/** Why a treaty is turned away: this city has applied it already (the page then only acknowledges it). */
+export const TREATY_TAKEN = 'The city has applied that treaty already';
+
+/** A time from the region's clock (ms) in words: "90 seconds", "2 minutes", "3 hours". */
+export function timeWords(ms: number): string {
+  const s = Math.max(1, Math.ceil(ms / 1000));
+  if (s < 120) return s === 1 ? '1 second' : `${s} seconds`;
+  const m = Math.ceil(s / 60);
+  if (m < 120) return `${m} minutes`;
+  const h = Math.ceil(m / 60);
+  return h < 48 ? `${h} hours` : `${Math.ceil(h / 24)} days`;
+}
+
 /** Money terms start at this (dollars). */
 export const MIN_MONEY = 100;
 

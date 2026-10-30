@@ -7,7 +7,7 @@
 import type { Command, CommandResult } from '../sim/commands';
 import type { RaidVerdict, RegionReport, RegionUpdate } from '../sim/systems/region';
 import type { SaveFile } from '../sim/save';
-import { PROTOCOL_VERSION } from '../../relay/protocol';
+import { PROTOCOL_VERSION, type FriendsClientMsg, type FriendsWelcome } from '../../relay/protocol';
 import {
   FAIR,
   type LiveRecord,
@@ -89,10 +89,16 @@ export interface BattleMeta {
  * Whether the region would let the city in `slot` raid city `c` now (M36), as the room decides it:
  * not a neutral city, not a newcomer that hasn't raided it lately, not one raided out for the day.
  */
-export function raidVerdict(view: RegionView, slot: number, c: RegionView['cities'][number]): RaidVerdict {
+export function raidVerdict(
+  view: RegionView,
+  slot: number,
+  c: RegionView['cities'][number],
+  /** A war between the two is open (M39): the newcomer shield doesn't stand between cities at war. */
+  atWar = false,
+): RaidVerdict {
   const me = view.cities.find((x) => x.slot === slot);
   if (c.report?.shield === 'neutral') return 'neutral';
-  if (c.report?.shield === 'new' && !(me?.raidedBy ?? []).includes(c.slot)) return 'new';
+  if (c.report?.shield === 'new' && !atWar && !(me?.raidedBy ?? []).includes(c.slot)) return 'new';
   if (c.raidsLeft === 0) return 'spent';
   if (view.kind === 'p2p' && !c.online) return 'absent';
   return 'open';
@@ -106,7 +112,12 @@ export type BattleSent =
   | null;
 
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
-export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
+export function regionUpdateFor(
+  view: RegionView,
+  slot: number,
+  /** The places of the cities this one has an open war with (M39). */
+  atWar: ReadonlySet<number> = new Set(),
+): RegionUpdate {
   const others = view.cities.filter((c) => c.slot !== slot && c.report);
   const p = view.project;
   const mine = p.by[slot] ?? 0;
@@ -124,11 +135,13 @@ export function regionUpdateFor(view: RegionView, slot: number): RegionUpdate {
       shoppers: c.report!.shoppers,
       online: c.online,
       // War (M36): whether the region would let this city raid it now, as the region decides.
-      ...(view.rules?.war ? { raid: raidVerdict(view, slot, c) } : {}),
+      ...(view.rules?.war ? { raid: raidVerdict(view, slot, c, atWar.has(c.slot)) } : {}),
       // War (M37): a coast to sail to, its research tiers and its counter-intelligence.
       ...(view.rules?.war && c.report!.coast ? { coast: true as const } : {}),
       ...(view.rules?.war && c.report!.tiers ? { tiers: [...c.report!.tiers] } : {}),
       ...(view.rules?.war && c.report!.counter !== undefined ? { counter: c.report!.counter } : {}),
+      // War (M39): what this city says it pays this one as its vassal.
+      ...(view.rules?.war && c.report!.dues?.slot === slot ? { dues: c.report!.dues.amount } : {}),
     })),
     // The others' deals with this city, from this city's side.
     contracts: others.flatMap((c) =>
@@ -175,6 +188,27 @@ export interface LiveSink {
   welcome(): void;
 }
 
+/**
+ * What takes the region's messages about wars and treaties between friends (M39,
+ * `src/client/friendsWar.ts`): the room's `war`, `wrefused`, `tprop`, `tsign`, `trefused`, `pacts` and
+ * `history`, what the room says about them on joining (`welcome`), and the moment the region's view of
+ * the cities changes (`viewChanged`: a friend that wasn't a neighbour yet may be one now).
+ */
+export interface FriendsSink {
+  message(m: RegionRoomMsg): void;
+  welcome(info: FriendsWelcome | undefined): void;
+  viewChanged(): void;
+}
+
+/** The id the room knows a battle by: its own id, cut down to what the room keeps. */
+export function roomBattleId(id: string): string {
+  return (
+    String(id)
+      .replace(/[^\w-]/g, '')
+      .slice(0, 40) || 'battle'
+  );
+}
+
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
@@ -216,6 +250,10 @@ export class RegionLink {
   onNotice: ((text: string) => void) | null = null;
   /** Live battles with friends (M39): who takes the room's messages about them. */
   live: LiveSink | null = null;
+  /** Wars and treaties with friends (M39): who takes the room's messages about them. */
+  friends: FriendsSink | null = null;
+  /** The places of the cities this one has an open war with (M39): set by `friends`, read when the region's news is taken. */
+  atWar: ReadonlySet<number> = new Set();
   /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
   onBattleKept: ((id: string) => void) | null = null;
   /** The region turned a battle away (M36: its target has taken the day's raids). */
@@ -266,6 +304,18 @@ export class RegionLink {
   /** A live battle's message to the region (M39): dropped while the link is down (the page asks again on its return). */
   sendLive(m: RegionClientMsg): void {
     if (this.state === 'in') this.send(m);
+  }
+
+  /** A word about a war or a treaty to the region (M39): dropped while the link is down. Whether it went. */
+  sendFriends(m: FriendsClientMsg): boolean {
+    if (this.state !== 'in' || !this.link) return false;
+    this.send(m);
+    return true;
+  }
+
+  /** The region's latest news into this city's sim again: something this page knows has changed what it says (a war opened). */
+  refresh(): void {
+    if (this.view && this.state === 'in') void this.take(this.view);
   }
 
   private send(m: RegionClientMsg): void {
@@ -347,6 +397,7 @@ export class RegionLink {
         this.started?.resolve();
         this.started = null;
         this.live?.welcome();
+        this.friends?.welcome(m.friends);
         return;
       case 'region':
         await this.take(m.region);
@@ -431,6 +482,15 @@ export class RegionLink {
           ...(typeof m.later === 'number' ? { later: m.later } : {}),
         });
         this.onBattleRefused?.(m.id, m.reason);
+        return;
+      case 'war':
+      case 'wrefused':
+      case 'tprop':
+      case 'tsign':
+      case 'trefused':
+      case 'pacts':
+      case 'history':
+        this.friends?.message(m);
         return;
       case 'bcall':
       case 'bliveoff':
@@ -557,7 +617,7 @@ export class RegionLink {
 
   /** The id the room knows a battle by. */
   static battleId(input: BattleInput): string {
-    return input.id.replace(/[^\w-]/g, '').slice(0, 40) || 'battle';
+    return roomBattleId(input.id);
   }
 
   /**
@@ -618,7 +678,10 @@ export class RegionLink {
   private async take(view: RegionView): Promise<void> {
     this.view = view;
     if (this.slot) {
-      const update = this.city.command({ type: 'regionUpdate', update: regionUpdateFor(view, this.slot) });
+      const update = this.city.command({
+        type: 'regionUpdate',
+        update: regionUpdateFor(view, this.slot, this.atWar),
+      });
       // The fair clock (M37): the city's war clock may run this far, told again once it moves by an
       // hour or more (or comes off, where war is off). The first word on a link is always told: a cap
       // the city saved from before (war turned off meanwhile) mustn't hold it for good.
@@ -631,6 +694,8 @@ export class RegionLink {
         void this.city.command({ type: 'warClock', cap });
       }
       await update;
+      // A friend that wasn't a neighbour yet may be one now: what the region said of it is applied.
+      this.friends?.viewChanged();
     }
     this.onChange?.();
   }

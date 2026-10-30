@@ -62,6 +62,7 @@ import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps } from './client/ops';
+import { FriendsWarClient } from './client/friendsWar';
 import { OP_TAKEN } from './sim/systems/regionOps';
 import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
@@ -287,6 +288,8 @@ export class Game {
       // A live battle with a friend (M39): this page tells the region how far the battle has got.
       if (!this.inMenu() && !this.readOnly)
         this.live.frame(diff.stats.war ?? null, diff.events, this.world.battle);
+      // A friend's raid on the city that ended (M39): the page tells the region how it went.
+      if (diff.events && !this.inMenu() && !this.readOnly) this.friends.events(diff.events);
       if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
       // Forces arrived at a neighbour's town (M35): this page fights their battles. In a shared city
       // only the host's page does (a second report would be turned away anyway).
@@ -334,6 +337,7 @@ export class Game {
     // (Frames carry the live battle's reports while the page is in front; this keeps them coming in
     // a page whose frames the browser slows.)
     setInterval(() => this.live.pump(), 250);
+    setInterval(() => this.friends.pump(), 1000);
   }
 
   subscribe(l: Listener): () => void {
@@ -535,7 +539,7 @@ export class Game {
       const link = this.region;
       const c = link?.view?.cities.find((x) => x.slot === slot);
       if (!link?.view || !c) return null;
-      const v = raidVerdict(link.view, link.slot, c);
+      const v = raidVerdict(link.view, link.slot, c, link.atWar.has(c.slot));
       return v === 'neutral'
         ? `${c.name} is neutral`
         : v === 'new'
@@ -593,6 +597,18 @@ export class Game {
         : Promise.resolve(this.boundRegion ? null : { kept: false, reason: 'the city is in no region now' }),
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    changed: () => this.notify(),
+  });
+  /**
+   * Wars and treaties with friends (M39): this page asks the region for them, mirrors what it says in
+   * the city's sim, and tells it how the city's end of a friend's raid went.
+   */
+  readonly friends: FriendsWarClient = new FriendsWarClient({
+    command: (cmd) => this.client.command(cmd),
+    query: (q) => this.client.query(q),
+    keep: async () => !!(await this.saveTo('auto', 'Autosave', true)),
+    notice: (key, text, tone) => this.notice(key, text, tone),
+    now: () => performance.now(),
     changed: () => this.notify(),
   });
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
@@ -852,6 +868,7 @@ export class Game {
     this.regionCode = code;
     this.regionKey = key;
     this.live.attach(link);
+    this.friends.attach(link);
     link.onNotice = (t) => this.toast(t, 'info', 4500);
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
@@ -941,6 +958,7 @@ export class Game {
     this.regionCode = null;
     this.regionKey = null;
     this.live.detach();
+    this.friends.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(

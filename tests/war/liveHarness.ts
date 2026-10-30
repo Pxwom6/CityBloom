@@ -88,6 +88,8 @@ export async function openPage(o: {
   color: number;
   create?: { name: string; rules: { war: boolean; scale: 'skirmish'; supers?: true } };
   rejoin?: { slot: number; secret: string };
+  /** A page's own parts that must be on the link before it says hello (M39 step 5b: wars between friends). */
+  beforeStart?: (link: RegionLink) => void;
 }): Promise<Page> {
   const { sim, clock } = o;
   const taken: Page['taken'] = [];
@@ -201,6 +203,7 @@ export async function openPage(o: {
     },
   };
   links.push(link);
+  o.beforeStart?.(link);
   await link.start();
   await flush();
   return page;

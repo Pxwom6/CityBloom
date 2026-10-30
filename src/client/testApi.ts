@@ -1,4 +1,5 @@
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
+import type { FriendsWarClient } from './friendsWar';
 import type { ResearchSummary } from '../sim/systems/research';
 import type { IntelSummary } from '../sim/systems/intel';
 import type { SupersSummary } from '../sim/systems/supers';
@@ -197,6 +198,11 @@ export interface TestApi {
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
   /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
   getDiplomacy(): DiplomacySummary | null;
+  /**
+   * Wars and treaties with friends (M39), as this page knows them from the region: the wars, pacts,
+   * vassals, proposals each way, the war history and the room's last refusals; none outside a region.
+   */
+  getFriendsWar(): ReturnType<FriendsWarClient['snapshot']>;
   /** Weapons research (M37): the labs, the queue, tiers done, prototypes and trials; null without. */
   getResearch(): ResearchSummary | null;
   /** Spies (M37): agents, counter-intelligence, missions and results; null with war off. */
@@ -835,6 +841,7 @@ export function installTestApi(game: Game): TestApi {
       viewing: game.viewing?.record.id ?? null,
     }),
     getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
+    getFriendsWar: () => game.friends.snapshot(),
     getResearch: () => game.world.stats.war?.research ?? null,
     stageBattle: async (kind) => {
       const mix: UnitKind[] = [

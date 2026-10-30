@@ -1053,3 +1053,19 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
 - **Scenario outcomes depend on the war's dice**: the shipped starts were calibrated so armed play won and
   idle play lost in every probe (Clean War: 3 of 3 and 2 of 2), but earlier variants lost up to 60 % of armed
   runs, so real players will see some spread.
+- **Friends' wars run on real time at the fair clock's pace** (a game hour 7.5 s at 1×): the war's warning 2
+  minutes, the cooldown after a war 9 minutes (M36's three game months), a seat of power held 48 game hours
+  (6 minutes); but a proposal stays open 24 hours and a winner has 24 hours to set terms (then plain peace),
+  because a friend may be away from the computer and M36's game-time numbers would be minutes.
+- **The defender's page reports each battle's result to the room** (`battleResult`), not `battleSeen`: a
+  watched battle is seen before it ends, and a live defender never sends `battleSeen`. Only the defender of
+  a battle the room kept or ran live may report it.
+- **The room can't check money terms against taxes** (reports carry none): the payer's sim refuses
+  reparations or tribute over M36's caps when proposing and accepting. A vassal's share is M36's fifth of its
+  taxes (`DIPLOMACY.vassal.taxShare`), not the tenth the plan said, so one rule holds for every vassal.
+- **Independence may be agreed between an overlord and its vassal by treaty**, beside a rising at +30.
+- **Declared wars at skirmish scale** are allowed where a region's rules stop at skirmishes; alliances and
+  defensive pacts with a neutral city are refused; turning war off ends every war in plain peace.
+- **Only declarations, treaties signed, scores and pacts ending are written at once**; proposals, declines and
+  history lines wait for the record's 5-minute pace: 1,800 proposals cycled in 2.5 hours wrote 30 rows, and an
+  evening of war between four cities 38 more rows than the same evening in peace (2.4 % of a day's 3,000).

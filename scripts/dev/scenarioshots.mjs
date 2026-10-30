@@ -1,6 +1,7 @@
 // Scenario previews (M18): opens each scenario's starting city in the test build, frames the town,
 // and saves the 3D view (no interface) as public/scenarios/<id>.jpg for the scenario screen.
 // Usage: npm run build:test && node scripts/dev/scenarioshots.mjs [id,id...] [hour]
+// (DIST=dir PORT=n use another build and port; PW_CHROMIUM=path launches that browser.)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -22,12 +23,15 @@ const VIEW = {
   // Market Town: the old market on the avenue in front, the works and estates behind it.
   market: { x: 330, z: 905, yaw: 0.55, distance: 460, tilt: 0.22 },
 };
-const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4197', '--strictPort'], {
+const dist = process.env.DIST ?? 'dist-test';
+const port = process.env.PORT ?? '4197';
+const server = spawn('npx', ['vite', 'preview', '--outDir', dist, '--port', port, '--strictPort'], {
   stdio: 'ignore',
   detached: true,
 });
 await new Promise((r) => setTimeout(r, 2000));
 const browser = await chromium.launch({
+  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
 });
 try {
@@ -36,7 +40,7 @@ try {
     await page.addInitScript(() =>
       localStorage.setItem('citybloom.settings', JSON.stringify({ graphicsChecked: true, tips: false })),
     );
-    await page.goto(`http://localhost:4197/?scenario=${id}`);
+    await page.goto(`http://localhost:${port}/?scenario=${id}`);
     await page.waitForFunction(() => window.__game?.ready, null, { timeout: 120000 });
     await page.addStyleTag({ content: '#ui { display: none !important; }' });
     // Frame the town: the middle of its buildings, far enough back to see most of them.

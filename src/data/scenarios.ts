@@ -600,6 +600,37 @@ export const SCENARIOS: ScenarioDef[] = [
       'Waves come at the start of months 2, 4 and 6, with an hour’s warning (a radar gives more once the town is big enough). Fire engines keep a hit factory from burning down.',
     ],
   },
+  {
+    id: 'cleanwar',
+    name: 'A Clean War',
+    blurb: 'Win a war with a hostile neighbour without losing a single district.',
+    brief:
+      'Norcombe has the bigger army, a long list of grievances and a way of taking what it wants. ' +
+      'Sooner or later it will go to war with Westmarch, and a city that loses takes the terms: ' +
+      'tribute, and the best of its districts in Norcombe’s hands. Arm the city, and win the war ' +
+      '(a score of +60, or Norcombe’s surrender) without a single district occupied.',
+    save: 'cleanwar.citybloom',
+    months: 40,
+    stars: [
+      { months: 24, label: 'Within 24 months' },
+      { months: 16, label: 'Within 16 months' },
+    ],
+    goals: [
+      { measure: 'warWon', min: 1, label: 'Win a war with Norcombe (a score of +60, or its surrender)' },
+      { measure: 'districtsLost', max: 0, label: 'No district of the city occupied' },
+      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    region: true,
+    weather: { seasons: false, intensity: 2 },
+    hints: [
+      'A war is won on the score: each raid beaten off and each strike that lands moves it, and at +60 the other side gives up. Bunkers near the way in and a full garrison win the raids.',
+      'Declare the war yourself (the war room, Shift+M, Diplomacy) once the forces are ready, or wait for Norcombe to; either way the score counts.',
+      'A city that loses the score capitulates and the winner takes its best district. Peace made early, with a ceasefire or a treaty, keeps what you have.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

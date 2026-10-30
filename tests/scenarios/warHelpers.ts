@@ -35,3 +35,26 @@ export function months(sim: Sim, n: number): void {
 }
 
 export { objectiveSpots, Player };
+
+/**
+ * A player who arms: bunkers round the military buildings (where a raid goes), a barracks kept full,
+ * tanks at the depot, and the lights kept on. Returns the decision to make every few hours.
+ */
+export function armUp(sim: Sim, o: { bunkers: number; tanks?: number }): () => void {
+  const p = new Player('careful', sim);
+  p.holdTaxes = true;
+  return () => {
+    const spots = objectiveSpots(sim, 'military');
+    const heart = spots[Math.floor(spots.length / 2)] ?? p.c;
+    while (p.count('bunker') < o.bunkers) if (!p.placeNear('bunker', heart, 300)) break;
+    for (const b of militaryCivics(sim)) {
+      const load = baseLoad(sim, b.id);
+      if (load.orders >= 2) continue;
+      if (b.def === 'barracks' && load.units + load.orders < 12)
+        sim.dispatch({ type: 'trainUnit', base: b.id, kind: 'infantry' });
+      if (b.def === 'vehicledepot' && load.units + load.orders < (o.tanks ?? 0))
+        sim.dispatch({ type: 'trainUnit', base: b.id, kind: 'tank' });
+    }
+    p.utilities(false);
+  };
+}

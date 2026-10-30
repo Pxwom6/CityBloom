@@ -22,7 +22,7 @@ import { UNIT } from '../data/war';
 import { awayBattleId, awayForce, type AwayCity } from '../sim/battle/away';
 import { checkBattleInput } from '../sim/battle/check';
 import { recordInput, type OrderRequest, type StampedOrder } from '../sim/battle/live';
-import type { BattleFrame, BattleInput, ForceIn } from '../sim/battle/types';
+import type { BattleFrame, BattleInput, ForceIn, OrderKind } from '../sim/battle/types';
 import type { Command, CommandResult } from '../sim/commands';
 import { canonicalStringify } from '../sim/serialize';
 import type { SaveFile } from '../sim/save';
@@ -126,7 +126,74 @@ export interface LiveState {
   desync: boolean;
 }
 
+/** A live battle somewhere in the region that this page is not in: it may be watched. */
+export interface LiveRunning {
+  id: string;
+  from: number;
+  to: number;
+}
+
+/** An order this page's player gave, as the battle map lists it: sent, and then stamped by the room. */
+export interface OrderLogEntry {
+  n: number;
+  kind: OrderKind;
+  /** How many units it names, or 'all' (the whole side). */
+  units: number | 'all';
+  target?: number;
+  sentAt: number;
+  /** The room's number for it and the step it applies at, once it has stamped it. */
+  seq?: number;
+  step?: number;
+  /** `unheard`: sent a while ago and the room never stamped it (it was refused, or lost). */
+  state: 'queued' | 'sent' | 'stamped' | 'unheard';
+}
+
+/**
+ * The battle as the battle map sees it, whatever this page's part in it (M39, design call 6): its
+ * input, the picture of it now (this page's own run; a defender's is its city's, passed in with the
+ * frames), how far it has got, and how it ended once it has.
+ */
+export interface LiveView {
+  role: 'attacker' | 'defender' | 'watcher';
+  id: string;
+  /** The attacker's and the defender's places in the region. */
+  attacker: number;
+  defender: number;
+  input: BattleInput;
+  frame: BattleFrame | null;
+  step: number;
+  allow: number;
+  /** This page's side is handed over (never for a watcher). */
+  handed: boolean;
+  /** The battle is over, or this page's run of it is. */
+  over: boolean;
+  /** The room's word on the end. */
+  end: End | null;
+  /** Where this page's run of the battle ended, once it has. */
+  run: { step: number; hash: string } | null;
+  /** Orders stamped so far. */
+  orders: number;
+}
+
 type End = Extract<RegionRoomMsg, { t: 'bend' }>;
+
+/** A battle this page is watching: its input once the room has sent it, and the run being drawn. */
+interface Watch {
+  id: string;
+  from: number | undefined;
+  asked: number;
+  attacker: number;
+  defender: number;
+  input: BattleInput | null;
+  orders: StampedOrder[];
+  allow: number;
+  step: number;
+  frame: BattleFrame | null;
+  runner?: LiveRunnerPort;
+  /** The page's run reached the battle's end. */
+  run?: LiveEnd;
+  end: End | null;
+}
 
 interface Session {
   id: string;
@@ -143,7 +210,9 @@ interface Session {
   rejoins: number;
   /** Own `free` orders sent and not seen come back yet (an unasked one is a handover). */
   frees: number;
-  queued: OrderRequest[];
+  queued: { o: OrderRequest; e: OrderLogEntry }[];
+  /** The orders this page's player gave, newest last (the battle map lists them). */
+  log: OrderLogEntry[];
   sentAt: number;
   sentStep: number;
   /** When the page last looked after this battle (a long gap and the room has handed it over). */
@@ -187,6 +256,11 @@ type First =
 /** How often a page tells the room how far it has got (ms), and at the least. */
 const SEND_EVERY = 500;
 const KEEPALIVE = 3_000;
+/** An order sent and not stamped by now is shown as unheard (ms), and the log keeps this many. */
+const UNHEARD = 8_000;
+const LOG_KEEP = 12;
+/** A watch the room never starts is given up after this long (ms). */
+const WATCH_WAIT = 10_000;
 /** A finished page waits this long for the room's word on the end (ms), then keeps what it has. */
 const END_WAIT = 120_000;
 /** A hosted battle the page can't find a session for is let go after this long (ms). */
@@ -232,8 +306,16 @@ export class LiveBattles implements LiveSink {
   /** The battle that ended last (what a panel shows after it). */
   private last: LiveState | null = null;
   private orphan: { id: string; since: number; asked: boolean } | null = null;
+  /** Battles on in the region that this page is not in (from the room's `blivenow`), by id. */
+  private readonly running = new Map<string, LiveRunning>();
+  private watching: Watch | null = null;
+  /** The battle that ended last, as the map shows it afterwards. */
+  private lastView: LiveView | null = null;
+  private logSeq = 0;
   /** Called when something a panel shows has changed. */
   onChange: (() => void) | null = null;
+  /** Called when a battle between two other cities begins in the region (a chance to watch it). */
+  onSpectacle: ((b: LiveRunning) => void) | null = null;
 
   constructor(private readonly env: LiveEnv) {}
 
@@ -252,6 +334,9 @@ export class LiveBattles implements LiveSink {
     this.link = null;
     for (const s of [...this.sessions.values()]) this.release(s);
     for (const c of [...this.calls.values()]) this.endCall(c, { kind: 'wait', ms: 20_000 });
+    this.stopWatching();
+    this.running.clear();
+    this.onChange?.();
   }
 
   private send(m: RegionClientMsg): void {
@@ -311,7 +396,71 @@ export class LiveBattles implements LiveSink {
 
   /** The battle on now, as the last frame drew it (the attacker's picture of it). */
   picture(): BattleFrame | null {
-    return this.active?.frame ?? null;
+    return this.active?.frame ?? this.watching?.frame ?? null;
+  }
+
+  /**
+   * The battle the map shows: the one this page fights, else the one it watches, else the one that
+   * ended last (until another begins). Null when there is none, or a watch the room hasn't started.
+   */
+  view(): LiveView | null {
+    const s = this.active;
+    if (s) return this.viewOf(s);
+    const w = this.watching;
+    if (w) return w.input ? this.watchView(w) : null;
+    return this.lastView;
+  }
+
+  private viewOf(s: Session): LiveView {
+    return {
+      role: s.role,
+      id: s.id,
+      attacker: s.from,
+      defender: s.to,
+      input: s.input,
+      frame: s.frame,
+      step: this.stepOf(s),
+      allow: s.allow,
+      handed: s.handed,
+      over: !!s.mine || s.finalized,
+      end: s.room,
+      run: s.mine ? { ...s.mine } : null,
+      orders: s.orders.length,
+    };
+  }
+
+  private watchView(w: Watch): LiveView {
+    return {
+      role: 'watcher',
+      id: w.id,
+      attacker: w.attacker,
+      defender: w.defender,
+      input: w.input!,
+      frame: w.frame,
+      step: w.run?.step ?? w.step,
+      allow: w.allow,
+      handed: false,
+      over: !!w.run,
+      end: w.end,
+      run: w.run ? { step: w.run.step, hash: w.run.hash } : null,
+      orders: w.orders.length,
+    };
+  }
+
+  /** What this page's player ordered in the battle on now (or the last), newest last. */
+  orderLog(): readonly OrderLogEntry[] {
+    return this.active?.log ?? this.lastLog ?? [];
+  }
+  private lastLog: OrderLogEntry[] | null = null;
+
+  /** Battles on in the region that this page is not in (it may watch them). */
+  runningBattles(): LiveRunning[] {
+    return [...this.running.values()];
+  }
+
+  /** The battle this page is watching, if it is. */
+  watchingId(): string | null {
+    return this.watching?.id ?? null;
   }
 
   /**
@@ -324,8 +473,19 @@ export class LiveBattles implements LiveSink {
     const o: OrderRequest = { kind: req.kind };
     if (req.units !== undefined) o.units = req.units.slice(0, LIVE.units);
     if (req.target !== undefined) o.target = req.target;
-    s.queued.push(o);
+    const e: OrderLogEntry = {
+      n: ++this.logSeq,
+      kind: o.kind,
+      units: o.units ? o.units.length : 'all',
+      ...(o.target !== undefined ? { target: o.target } : {}),
+      sentAt: this.now,
+      state: 'queued',
+    };
+    s.log.push(e);
+    if (s.log.length > LOG_KEEP) s.log.splice(0, s.log.length - LOG_KEEP);
+    s.queued.push({ o, e });
     if (o.kind === 'free') s.frees++;
+    this.onChange?.();
     this.pump();
     return true;
   }
@@ -342,8 +502,12 @@ export class LiveBattles implements LiveSink {
   frame(
     war: WarSummary | null,
     events?: readonly { kind: string; id: number; info?: Record<string, number | string> }[],
+    picture?: BattleFrame | null,
   ): void {
     this.war = war;
+    // The battle the city's own sim hosts is drawn from its frames.
+    const own = picture ? this.sessions.get(picture.id) : undefined;
+    if (own && own.role === 'defender') own.frame = picture!;
     for (const e of events ?? [])
       if (e.kind === 'battleEnded' && typeof e.info?.live === 'string')
         this.hostedEnd(e.info.live, Number(e.info.step), String(e.info.hash));
@@ -398,7 +562,18 @@ export class LiveBattles implements LiveSink {
   /** The page's turn: tell the room how far each battle has got, with the orders given since. */
   pump(): void {
     const t = this.now;
+    const w = this.watching;
+    if (w && !w.input && t - w.asked >= WATCH_WAIT) {
+      this.env.city.notice(
+        'live-watch',
+        'That battle could not be watched: the region did not start it.',
+        'bad',
+      );
+      this.stopWatching();
+      this.onChange?.();
+    }
     for (const s of [...this.sessions.values()]) {
+      for (const e of s.log) if (e.state === 'sent' && t - e.sentAt >= UNHEARD) e.state = 'unheard';
       if (s.finalized || !s.started) continue;
       const gap = t - s.seenAt;
       s.seenAt = t;
@@ -424,7 +599,12 @@ export class LiveBattles implements LiveSink {
         s.rejoins++;
         this.send({ t: 'bjoin', id: s.id });
       }
-      const out: LiveOrderIn[] = s.queued.splice(0, LIVE.perMessage);
+      const sent = s.queued.splice(0, LIVE.perMessage);
+      for (const q of sent) {
+        q.e.state = 'sent';
+        q.e.sentAt = t;
+      }
+      const out: LiveOrderIn[] = sent.map((q) => q.o);
       this.send({ t: 'bstep', id: s.id, step, ...(out.length ? { orders: out } : {}) });
       s.sentAt = t;
       s.sentStep = step;
@@ -456,7 +636,12 @@ export class LiveBattles implements LiveSink {
         this.onAllow(m);
         return;
       case 'bend':
+        this.running.delete(m.id);
         this.onEnd(m);
+        this.onChange?.();
+        return;
+      case 'blivenow':
+        this.onNow(m);
         return;
       case 'breplaydata':
         this.onRecord(m.id, m.record);
@@ -468,6 +653,13 @@ export class LiveBattles implements LiveSink {
 
   /** The link is in the region (again): a battle in progress is taken up afresh. */
   welcome(): void {
+    // (The room names the battles on now again, and a battle watched is asked for again.)
+    this.running.clear();
+    const w = this.watching;
+    if (w) {
+      w.asked = this.now;
+      this.send({ t: 'bwatch', id: w.id, ...(w.from !== undefined ? { from: w.from } : {}) });
+    }
     for (const s of this.sessions.values())
       if (!s.finalized && !s.mine) {
         s.seenAt = this.now;
@@ -557,6 +749,7 @@ export class LiveBattles implements LiveSink {
       rejoins: 0,
       frees: 0,
       queued: [],
+      log: [],
       sentAt: t,
       sentStep: -1,
       seenAt: t,
@@ -581,7 +774,7 @@ export class LiveBattles implements LiveSink {
 
   /** The room's word that the battle begins (or that this page is back in it). */
   private async onStart(m: Extract<RegionRoomMsg, { t: 'bstart' }>): Promise<void> {
-    if (m.role === 'watcher') return;
+    if (m.role === 'watcher') return this.onWatchStart(m);
     let s = this.sessions.get(m.id);
     const start = { handed: m.handed };
     if (m.role === 'defender') {
@@ -622,18 +815,23 @@ export class LiveBattles implements LiveSink {
     const mine = this.session('attacker', input, m.attacker, m.defender);
     mine.call = call;
     this.sessions.set(mine.id, mine);
-    mine.runner = this.env.runner(structuredClone(input), {
+    this.run(mine);
+    this.take(mine, m.orders, m.allow, start);
+    call.first({ kind: 'start' });
+  }
+
+  /** The attacker's run of its battle, in the worker (or whatever the page runs it in). */
+  private run(s: Session): void {
+    s.runner = this.env.runner(structuredClone(s.input), {
       frame: (step, frame) => {
-        mine.step = step;
-        mine.frame = frame;
+        s.step = step;
+        s.frame = frame;
         this.onChange?.();
         this.pump();
       },
-      done: (end) => this.runDone(mine, end),
-      error: () => this.giveUp(mine),
+      done: (end) => this.runDone(s, end),
+      error: () => this.giveUp(s),
     });
-    this.take(mine, m.orders, m.allow, start);
-    call.first({ kind: 'start' });
   }
 
   /**
@@ -654,6 +852,16 @@ export class LiveBattles implements LiveSink {
     if (allow > s.allow) s.allow = allow;
     const side = sideOf(s);
     if (start) s.handed = start.handed.includes(side);
+    // The room's stamp on an order this page's player gave: the map's list shows it as heard.
+    for (const o of fresh) {
+      if (o.side !== side) continue;
+      const e = s.log.find((x) => x.state === 'sent' && x.kind === o.kind);
+      if (e) {
+        e.state = 'stamped';
+        e.seq = o.seq;
+        e.step = o.step;
+      }
+    }
     // A `free` for this side that its player didn't ask for is the room handing it over (as it
     // happens; at a start the room says which sides are handed over).
     if (!start)
@@ -685,6 +893,7 @@ export class LiveBattles implements LiveSink {
   private onAllow(m: Extract<RegionRoomMsg, { t: 'ballow' }>): void {
     const s = this.sessions.get(m.id);
     if (s && !s.finalized) this.take(s, m.ords ?? [], m.allow);
+    else if (this.watching?.id === m.id) this.takeWatch(this.watching, m.ords ?? [], m.allow);
   }
 
   /** The room turned a call off, or says it has no such battle. */
@@ -729,6 +938,12 @@ export class LiveBattles implements LiveSink {
 
   /** The room ends the battle. */
   private onEnd(m: End): void {
+    const w = this.watching;
+    if (w && w.id === m.id) {
+      w.end = m;
+      // Run out to the end at once: the room's frontier has nothing more to say.
+      w.runner?.feed([], LIVE_ALLOW_MAX, true);
+    }
     const s = this.sessions.get(m.id);
     if (s) {
       s.room = m;
@@ -911,6 +1126,131 @@ export class LiveBattles implements LiveSink {
     c.done(a);
   }
 
+  // ------------------------------------------------------------------ the others' battles
+
+  /** The room names a battle on now: a chance to watch it, unless this page is in it. */
+  private onNow(m: Extract<RegionRoomMsg, { t: 'blivenow' }>): void {
+    const mine = this.link?.slot ?? 0;
+    if (m.from === mine || m.to === mine || this.running.has(m.id)) return;
+    const b: LiveRunning = { id: m.id, from: m.from, to: m.to };
+    this.running.set(b.id, b);
+    this.onSpectacle?.(b);
+    this.onChange?.();
+  }
+
+  /**
+   * Watch a battle between two other cities (M39, design call 8): the room sends its input, the orders so
+   * far and then what follows, and this page runs it (the same runner as an attacker's) to draw it. False
+   * when there is nothing to watch it with: no region, a battle of this page's own on, or an unknown id.
+   */
+  watch(id: string): boolean {
+    const link = this.link;
+    if (!link || link.state !== 'in' || this.active) return false;
+    const b = this.running.get(id);
+    if (!b) return false;
+    if (this.watching?.id === id) return true;
+    this.stopWatching();
+    this.watching = {
+      id,
+      from: b.from,
+      asked: this.now,
+      attacker: b.from,
+      defender: b.to,
+      input: null,
+      orders: [],
+      allow: 0,
+      step: 0,
+      frame: null,
+      end: null,
+    };
+    this.send({ t: 'bwatch', id, from: b.from });
+    this.onChange?.();
+    return true;
+  }
+
+  /** Stop watching: the room is told, and the run stops. */
+  unwatch(): void {
+    const w = this.watching;
+    if (!w) return;
+    this.send({ t: 'bunwatch', id: w.id, ...(w.from !== undefined ? { from: w.from } : {}) });
+    this.stopWatching();
+    this.onChange?.();
+  }
+
+  private stopWatching(): void {
+    this.watching?.runner?.stop();
+    this.watching = null;
+  }
+
+  /** The room starts the battle this page asked to watch. */
+  private onWatchStart(m: Extract<RegionRoomMsg, { t: 'bstart' }>): void {
+    const w = this.watching;
+    if (!w || w.id !== m.id) {
+      // Not (or no longer) watched: the room is told to stop sending it.
+      this.send({ t: 'bunwatch', id: m.id });
+      return;
+    }
+    if (!w.runner) {
+      let input: BattleInput;
+      try {
+        input = decodeBattle(m.input);
+      } catch {
+        input = null as never;
+      }
+      if (!input || input.id !== m.id || checkBattleInput(input)) {
+        this.env.city.notice('live-watch', 'That battle could not be read, so it is not watched.', 'bad');
+        this.unwatch();
+        return;
+      }
+      w.input = input;
+      w.attacker = m.attacker;
+      w.defender = m.defender;
+      w.runner = this.env.runner(structuredClone(input), {
+        frame: (step, frame) => {
+          w.step = step;
+          w.frame = frame;
+          this.onChange?.();
+        },
+        done: (end) => {
+          w.run = end;
+          w.runner?.stop();
+          this.onChange?.();
+        },
+        error: () => {
+          this.env.city.notice('live-watch', 'Watching that battle stopped: the run failed.', 'bad');
+          if (this.watching === w) this.unwatch();
+        },
+      });
+    }
+    this.takeWatch(w, m.orders, m.allow);
+  }
+
+  /** Orders and the frontier for the battle being watched. */
+  private takeWatch(w: Watch, orders: readonly StampedOrder[], allow: number): void {
+    const known = new Set(w.orders.map((o) => o.seq));
+    const fresh = orders.filter((o) => !known.has(o.seq));
+    w.orders.push(...fresh);
+    w.orders.sort((a, b) => a.seq - b.seq);
+    if (allow > w.allow) w.allow = allow;
+    w.runner?.feed(fresh, w.allow, w.end !== null);
+    this.onChange?.();
+  }
+
+  // ------------------------------------------------------------------ a stand-in for tests
+
+  /**
+   * This page's side of a battle with no call or expedition behind it (the test stand-in,
+   * `liveStage.ts`): the attacker's run of `input`, started like any other once the stand-in's room
+   * sends its `bstart`. Nothing is reported to a force.
+   */
+  stage(input: BattleInput, from: number, to: number): void {
+    const s = this.session('attacker', input, from, to);
+    this.sessions.set(s.id, s);
+    this.lastView = null;
+    this.run(s);
+    this.onChange?.();
+  }
+
   // ------------------------------------------------------------------ the end
 
   /** Both the room and this page have the battle's end: keep it, and give the force (or city) its due. */
@@ -918,6 +1258,8 @@ export class LiveBattles implements LiveSink {
     if (s.finalized) return;
     s.finalized = true;
     this.last = this.stateOf(s);
+    this.lastView = { ...this.viewOf(s), over: true };
+    this.lastLog = s.log;
     const input = recordInput(s.input, s.orders);
     if (s.role === 'defender') {
       await this.env.store

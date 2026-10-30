@@ -34,6 +34,7 @@ import {
   type BattleRecord,
 } from './client/battles';
 import { LiveBattles } from './client/liveBattles';
+import { BattleMapState } from './client/battleMapState';
 import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
@@ -200,6 +201,8 @@ export class Game {
     | 'editorCheck'
     /** The war room (M34), with a military HQ. */
     | 'war'
+    /** The battle map (M39): commanding a live battle with a friend, or watching one. */
+    | 'battleMap'
     | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
@@ -273,6 +276,7 @@ export class Game {
     readonly install: AppInstall,
   ) {
     install.onChange = () => this.notify();
+    this.wireLive();
     client.onFrame((diff, perf, speed) => {
       this.world.applyFrame(diff);
       // A city with war on (M34) has the Military category in its toolbar, and the war models.
@@ -281,7 +285,8 @@ export class Game {
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
       // A live battle with a friend (M39): this page tells the region how far the battle has got.
-      if (!this.inMenu() && !this.readOnly) this.live.frame(diff.stats.war ?? null, diff.events);
+      if (!this.inMenu() && !this.readOnly)
+        this.live.frame(diff.stats.war ?? null, diff.events, this.world.battle);
       if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
       // Forces arrived at a neighbour's town (M35): this page fights their battles. In a shared city
       // only the host's page does (a second report would be turned away anyway).
@@ -548,6 +553,8 @@ export class Game {
     settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
     live: (city, expedition) => this.live.attack(city, expedition),
   });
+  /** The battle map's state (M39): units chosen, the order waiting for its target, the zoom. */
+  readonly battleMap = new BattleMapState();
   /**
    * Live battles with friends (M39): this page's part in a battle the region room orders between two
    * players' cities, as the defender hosting it in the city's sim or the attacker running it in a worker.
@@ -594,6 +601,40 @@ export class Game {
   viewing: { record: BattleRecord; back: string | null } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
   boundRegion: RegionBinding | null = null;
+
+  /** What the page does when a live battle (M39) changes: the panels redraw, and the player is told of a battle. */
+  private wireLive(): void {
+    this.live.onChange = () => {
+      // The map closes with the battle it showed when there is nothing left to show.
+      if (this.panel === 'battleMap' && !this.live.view() && !this.live.watchingId()) this.panel = null;
+      this.notify();
+    };
+    this.live.onBegin = (v) => {
+      this.battleMap.forBattle(v.id);
+      const other = v.role === 'attacker' ? v.input.defender.name : v.input.attacker.name;
+      if (v.role === 'attacker')
+        this.notice(
+          `live-begin:${v.id}`,
+          `Your force is fighting in ${other}: a live battle. Command it from the battle map (O).`,
+          'info',
+        );
+      else
+        this.notice(
+          `live-begin:${v.id}`,
+          `${other}’s force is attacking: a live battle. Command your defences from the battle map (O).`,
+          'bad',
+        );
+    };
+    this.live.onSpectacle = (b) => {
+      const name = (slot: number) =>
+        this.region?.view?.cities.find((c) => c.slot === slot)?.name ?? 'A neighbour';
+      this.notice(
+        `live-spectacle:${b.id}`,
+        `${name(b.from)} and ${name(b.to)} are fighting a live battle: you can watch it.`,
+        'info',
+      );
+    };
+  }
 
   /** What a region link needs from this city. */
   private cityPort(): CityPort {
@@ -1040,8 +1081,42 @@ export class Game {
   }
 
   openPanel(p: Game['panel']): void {
-    this.panel = this.panel === p ? null : p;
+    const was = this.panel;
+    this.panel = was === p ? null : p;
+    // Watching a friend's battle lasts as long as its map is open.
+    if (was === 'battleMap' && this.panel !== 'battleMap') this.live.unwatch();
     this.notify();
+  }
+
+  /**
+   * Open the battle map (M39) on the live battle this page fights, or watches, or fought last: false
+   * when there is none. A narrow window's inspector steps aside for it, as for the war room.
+   */
+  openBattleMap(): boolean {
+    const v = this.live.view();
+    const id = v?.id ?? this.live.watchingId();
+    if (!id) return false;
+    this.battleMap.forBattle(id);
+    if (this.panel !== 'battleMap') {
+      this.openPanel('battleMap');
+      const w = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
+      if (w === 'xs' || w === 's') this.select(null);
+    }
+    return true;
+  }
+
+  /** The battle map's key and buttons: open it, or close it if it is open. */
+  toggleBattleMap(): void {
+    if (this.panel === 'battleMap') this.openPanel('battleMap');
+    else this.openBattleMap();
+  }
+
+  /** Watch a battle between two other cities, from the region (M39): the map opens when the room starts it. */
+  watchLive(id: string): boolean {
+    if (!this.live.watch(id)) return false;
+    this.battleMap.forBattle(id);
+    if (this.panel !== 'battleMap') this.openBattleMap();
+    return true;
   }
 
   /**

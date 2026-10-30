@@ -59,7 +59,9 @@ export function RaidChip() {
 export function BattleBar() {
   const game = useGameUpdates(250);
   const f = game.world.battle;
-  if (!f || game.inMenu()) return null;
+  // (The battle map has the same facts, and covers the same part of the screen.)
+  if (!f || game.inMenu() || game.panel === 'battleMap') return null;
+  const live = game.live.view();
   const [them, us] = f.sides;
   const colour = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
   return (
@@ -93,6 +95,70 @@ export function BattleBar() {
       <div class="battle-actions">
         <button class="btn" data-testid="battle-follow" onClick={() => game.followBattle()}>
           Follow the fighting
+        </button>
+        {live?.role === 'defender' && !live.over && (
+          <button
+            class="btn primary"
+            data-testid="battle-command"
+            title="Command your defences on the battle map (O)"
+            onClick={() => game.openBattleMap()}
+          >
+            Command
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A live battle with a friend (M39) on a page with no battle bar of its own: the attacker's, which
+ * fights in a friend's town and sees it only on the map, and anyone's chance to watch two other cities
+ * fight. The defender's way in is the battle bar's Command button.
+ */
+export function LiveBar() {
+  const game = useGameUpdates(300);
+  const [hidden, setHidden] = useState<string[]>([]);
+  if (game.inMenu() || game.panel === 'battleMap') return null;
+  const v = game.live.view();
+  if (v && v.role === 'attacker' && !v.over)
+    return (
+      <div class="battle-bar live-bar panel" data-testid="live-bar" role="status" aria-live="polite">
+        <div class="battle-sides">
+          <span>
+            Your force is fighting in <strong>{v.input.defender.name}</strong>: a live battle.
+          </span>
+        </div>
+        <div class="battle-actions">
+          <button
+            class="btn primary"
+            data-testid="live-command"
+            title="Command your force on the battle map (O)"
+            onClick={() => game.openBattleMap()}
+          >
+            Command
+          </button>
+        </div>
+      </div>
+    );
+  if (v) return null;
+  const b = game.live.runningBattles().find((x) => !hidden.includes(x.id));
+  if (!b || game.live.watchingId()) return null;
+  const name = (slot: number) =>
+    game.region?.view?.cities.find((c) => c.slot === slot)?.name ?? 'A neighbour';
+  return (
+    <div class="battle-bar live-bar panel" data-testid="live-spectacle" role="status" aria-live="polite">
+      <div class="battle-sides">
+        <span>
+          <strong>{name(b.from)}</strong> and <strong>{name(b.to)}</strong> are fighting a live battle.
+        </span>
+      </div>
+      <div class="battle-actions">
+        <button class="btn primary" data-testid="live-watch" onClick={() => game.watchLive(b.id)}>
+          Watch
+        </button>
+        <button class="btn" data-testid="live-dismiss" onClick={() => setHidden([...hidden, b.id])}>
+          Not now
         </button>
       </div>
     </div>

@@ -316,6 +316,8 @@ export class LiveBattles implements LiveSink {
   onChange: (() => void) | null = null;
   /** Called when a battle between two other cities begins in the region (a chance to watch it). */
   onSpectacle: ((b: LiveRunning) => void) | null = null;
+  /** Called when this page's own battle begins, with the battle as the map would show it. */
+  onBegin: ((v: LiveView) => void) | null = null;
 
   constructor(private readonly env: LiveEnv) {}
 
@@ -844,6 +846,7 @@ export class LiveBattles implements LiveSink {
     allow: number,
     start?: { handed: readonly number[] },
   ): void {
+    const began = !!start && !s.started;
     if (start) s.started = true;
     const known = new Set(s.orders.map((o) => o.seq));
     const fresh = orders.filter((o) => !known.has(o.seq));
@@ -873,6 +876,7 @@ export class LiveBattles implements LiveSink {
     if (s.role === 'attacker') s.runner?.feed(fresh, s.allow);
     else void this.command(s, { type: 'battleLive', id: s.id, allow: s.allow, orders: fresh });
     this.onChange?.();
+    if (began) this.onBegin?.(this.viewOf(s));
   }
 
   /** The room handed this page's side over (it had been quiet): it takes command again at once, a few times. */

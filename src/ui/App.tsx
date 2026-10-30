@@ -23,7 +23,8 @@ import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
 import { WarRoomPanel } from './Military';
 import { FallenCard } from './Diplomacy';
-import { BattleBar, ViewerBar } from './Battle';
+import { BattleBar, LiveBar, ViewerBar } from './Battle';
+import { BattleMapPanel } from './BattleMap';
 import { EditorApp } from './Editor';
 import { typingIn } from '../client/keys';
 
@@ -49,6 +50,10 @@ function Shortcuts({ game }: { game: Game }) {
       } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
       else if (e.code === 'KeyN' && e.shiftKey && !e.ctrlKey && !e.metaKey) game.openPanel('region');
+      // The battle map (M39), with a live battle to command or watch; O is also the road tool's one-way
+      // toggle, which has first claim on it.
+      else if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey)
+        game.toggleBattleMap();
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
@@ -117,6 +122,8 @@ export function App({ game }: { game: Game }) {
       <WarRoomPanel />
       <FallenCard />
       <BattleBar />
+      <LiveBar />
+      <BattleMapPanel />
       <ViewerBar />
       <RoomPanel />
       <MilestoneBanner />

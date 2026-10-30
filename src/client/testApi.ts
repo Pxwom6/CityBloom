@@ -45,8 +45,18 @@ import type { UnitShown } from '../render/units';
 import { MILITARY_SITES } from '../render/assets/militaryModels';
 import { buildCivicModel } from '../render/assets/civicModels';
 import { UNIT, type UnitKind } from '../data/war';
-import type { LiveState } from './liveBattles';
+import type { LiveRunning, LiveState, OrderLogEntry } from './liveBattles';
 import type { OrderRequest } from '../sim/battle/live';
+import { stageLive, stageNow, type StageRole } from './liveStage';
+import {
+  fitView,
+  mapBounds,
+  pictureOf,
+  sideOfView,
+  structStates,
+  structsOf,
+  toScreen,
+} from '../ui/battleMapView';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -55,6 +65,45 @@ export interface Box {
   w: number;
   d: number;
   h: number;
+}
+
+/** What the battle map shows and has been told (test API `battleMap`). */
+export interface BattleMapReport {
+  open: boolean;
+  role: 'attacker' | 'defender' | 'watcher' | null;
+  side: 0 | 1 | null;
+  watching: string | null;
+  battle: string | null;
+  selected: number[];
+  armed: string | null;
+  note: string | null;
+  zoom: number;
+  canvas: { w: number; h: number };
+  step: number;
+  allow: number;
+  handed: boolean;
+  over: boolean;
+  outcome: string | null;
+  units: { own: number; enemy: number };
+  structs: { total: number; damaged: number; fallen: number };
+  log: OrderLogEntry[];
+  /** The stand-in's stamped orders so far (empty with a real room). */
+  stamped: number;
+}
+
+export interface BattleMapPoints {
+  own: { id: number; kind: string; x: number; y: number; visible: boolean }[];
+  enemy: { id: number; kind: string; x: number; y: number; visible: boolean }[];
+  structs: {
+    k: number;
+    kind: string;
+    state: number;
+    objective: boolean;
+    x: number;
+    y: number;
+    visible: boolean;
+  }[];
+  canvas: { x: number; y: number; w: number; h: number };
 }
 
 export interface TestApi {
@@ -561,6 +610,29 @@ export interface TestApi {
   getLive(): LiveState | null;
   /** Give an order to this page's side of the live battle (it goes to the room with the next report). */
   liveOrder(order: OrderRequest): boolean;
+  /**
+   * Stage a live battle in this page with no second player (M39 step 4): as the defender (the city's
+   * sim hosts it, a stand-in plays the room), the attacker, or a spectator of two other cities. Null when
+   * it started, else why not. The city needs war on.
+   */
+  stageLive(role: 'attacker' | 'defender' | 'watcher', units?: UnitKind[]): Promise<string | null>;
+  /** The stand-in room hands this page's side over (it stays handed over until the player takes command). */
+  liveHandOver(ignoreJoins?: number): boolean;
+  /** The stand-in's other combatant (side 0 attackers, 1 defenders) gives an order. */
+  liveSay(side: 0 | 1, order: OrderRequest): boolean;
+  /** Battles on in the region that this page could watch. */
+  getLiveRunning(): LiveRunning[];
+  /** Watch one of them, as the Watch buttons do (the map opens). */
+  watchLive(id?: string): boolean;
+  /** Open the battle map, as its key does: false when there is no live battle to show. */
+  openBattleMap(): boolean;
+  /** The battle map as it stands: what is chosen and armed, what it last said, the battle's strength. */
+  battleMap(): BattleMapReport;
+  /**
+   * Where things are on the battle map, as page coordinates to click: this side's units, the other
+   * side's, and the buildings (with their state, and whether they are what the attackers aim at).
+   */
+  battleMapPoints(): BattleMapPoints | null;
   /** Open (or close) a panel by name, as its button does. */
   openPanel(name: string): void;
   /** Change photo mode's settings directly (dev scenes). */
@@ -1351,6 +1423,91 @@ export function installTestApi(game: Game): TestApi {
     followBattle: () => game.followBattle(),
     getLive: () => game.live.state(),
     liveOrder: (order) => game.live.order(order),
+    stageLive: (role: StageRole, units) => stageLive(game, role, units),
+    liveHandOver: (ignore) => stageNow()?.handOver(ignore) ?? false,
+    liveSay: (side, order) => stageNow()?.say(side, order) ?? false,
+    getLiveRunning: () => game.live.runningBattles(),
+    watchLive: (id) => {
+      const target = id ?? game.live.runningBattles()[0]?.id;
+      return target ? game.watchLive(target) : false;
+    },
+    openBattleMap: () => game.openBattleMap(),
+    battleMap: () => {
+      const m = game.battleMap;
+      const v = game.live.view();
+      const side = sideOfView(v);
+      const frame = v ? pictureOf(game, v) : null;
+      const states = v ? structStates(frame, structsOf(v.input.layout).length) : [];
+      const log = game.live.orderLog();
+      return {
+        open: game.panel === 'battleMap',
+        role: v?.role ?? null,
+        side,
+        watching: game.live.watchingId(),
+        battle: v?.id ?? null,
+        selected: [...m.selected],
+        armed: m.armed,
+        note: m.note,
+        zoom: m.zoom,
+        canvas: { ...m.canvas },
+        step: frame?.step ?? v?.step ?? 0,
+        allow: v?.allow ?? 0,
+        handed: v?.handed ?? false,
+        over: v?.over ?? false,
+        outcome: frame?.outcome ?? null,
+        units: {
+          own:
+            side === null ? 0 : (frame?.units ?? []).filter((u) => u.side === side && u.state !== 2).length,
+          enemy:
+            side === null ? 0 : (frame?.units ?? []).filter((u) => u.side !== side && u.state !== 2).length,
+        },
+        structs: {
+          total: states.length,
+          damaged: states.filter((x) => x === 1).length,
+          fallen: states.filter((x) => x === 2).length,
+        },
+        log: log.map((e) => ({ ...e })),
+        stamped: stageNow()?.stamped.length ?? 0,
+      };
+    },
+    battleMapPoints: () => {
+      const v = game.live.view();
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="map-canvas"]');
+      if (!v || !canvas) return null;
+      const m = game.battleMap;
+      const mv = fitView(mapBounds(v.input.layout), m.canvas.w, m.canvas.h, m.zoom, m.centre);
+      const r = canvas.getBoundingClientRect();
+      const frame = pictureOf(game, v);
+      const side = sideOfView(v);
+      const at = (x: number, z: number) => {
+        const p = toScreen(mv, x, z);
+        return {
+          x: Math.round((r.left + p.x) * 10) / 10,
+          y: Math.round((r.top + p.y) * 10) / 10,
+          visible: p.x >= 0 && p.y >= 0 && p.x <= mv.w && p.y <= mv.h,
+        };
+      };
+      const list = (mine: boolean) =>
+        (frame?.units ?? [])
+          .filter(
+            (u) => u.state !== 2 && (side === null ? (u.side === 0) === mine : (u.side === side) === mine),
+          )
+          .map((u) => ({ id: u.id, kind: u.kind, ...at(u.x, u.z) }));
+      const states = structStates(frame, structsOf(v.input.layout).length);
+      const aimed = new Set((frame?.targets ?? []).map((t) => t.id));
+      return {
+        own: list(true),
+        enemy: list(false),
+        structs: structsOf(v.input.layout).map((s) => ({
+          k: s.k,
+          kind: s.kind,
+          state: states[s.k] ?? 0,
+          objective: aimed.has(s.id),
+          ...at(s.x, s.z),
+        })),
+        canvas: { x: r.left, y: r.top, w: r.width, h: r.height },
+      };
+    },
     openPanel: (name) => game.openPanel(name as Parameters<Game['openPanel']>[0]),
     setPhoto: (patch) => game.setPhoto(patch),
     setWeatherLook: (look) => {

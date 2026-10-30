@@ -250,6 +250,41 @@ function RivalLine({ rival, id }: { rival: RivalNeighbour; id: number }) {
   );
 }
 
+/**
+ * A friend's city in a live battle (M39): the way into the battle map, as a commander if it is this
+ * city's own battle with them, or as a spectator if it is theirs with someone else.
+ */
+function LiveWithFriend({ slot, name }: { slot: number; name: string }) {
+  const game = useGameUpdates(500);
+  const mine = game.live.view();
+  if (mine && mine.role !== 'watcher' && !mine.over && (mine.attacker === slot || mine.defender === slot))
+    return (
+      <p class="region-live" data-testid={`live-with-${slot}`}>
+        Fighting {name} in a live battle.{' '}
+        <button class="btn small" data-testid={`command-live-${slot}`} onClick={() => game.openBattleMap()}>
+          Command
+        </button>
+      </p>
+    );
+  const b = game.live.runningBattles().find((x) => x.from === slot || x.to === slot);
+  if (!b || (mine && !mine.over)) return null;
+  const other = b.from === slot ? b.to : b.from;
+  const who = game.region?.view?.cities.find((c) => c.slot === other)?.name ?? 'someone';
+  return (
+    <p class="region-live" data-testid={`live-at-${slot}`}>
+      Fighting {who} in a live battle.{' '}
+      <button
+        class="btn small"
+        data-testid={`watch-live-${slot}`}
+        title="Watch it on the battle map: you can't give orders"
+        onClick={() => game.watchLive(b.id)}
+      >
+        Watch
+      </button>
+    </p>
+  );
+}
+
 function NeighbourCard({ n }: { n: N }) {
   const game = useGameUpdates(500);
   const flows = game.world.stats.region.flows;
@@ -276,6 +311,7 @@ function NeighbourCard({ n }: { n: N }) {
             Played by {pl.mayor}.{' '}
             {(view?.online ?? pl.online) ? 'Playing now.' : 'Away: its last offers stand.'}
           </p>
+          <LiveWithFriend slot={pl.slot} name={n.name} />
           {view?.visitable && game.regionInvite && (
             <a
               class="btn small"

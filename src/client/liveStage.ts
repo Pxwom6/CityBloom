@@ -13,10 +13,13 @@
 import { LiveSession, cleanLiveOrder, type LiveOrder, type LiveSide } from '../../relay/live';
 import { LIVE } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg } from '../../relay/region';
+import type { UnitKind } from '../data/war';
+import type { Game } from '../game';
 import type { LiveSink } from '../net/regionLink';
-import { decodeBattle, encodeBattle } from '../net/snapshot';
+import { encodeBattle } from '../net/snapshot';
 import type { OrderRequest } from '../sim/battle/live';
-import type { BattleInput } from '../sim/battle/types';
+import type { BattleInput, ForceIn } from '../sim/battle/types';
+import type { RegionUpdate } from '../sim/systems/region';
 import type { LiveLink } from './liveBattles';
 import { LiveRunner } from './liveRunner';
 
@@ -232,5 +235,115 @@ export class LiveStage implements LiveLink {
   }
 }
 
-/** The input a staged battle was made from, as the page would get it from the room (for tests). */
-export const stagedInput = (parts: string[]): BattleInput => decodeBattle(parts);
+/** A force of every sort a battle can show, for a staged battle. */
+export const STAGE_FORCE: UnitKind[] = [
+  'tank',
+  'tank',
+  'tank',
+  'heavytank',
+  'artillery',
+  'artillery',
+  'infantry',
+  'infantry',
+  'infantry',
+  'transport',
+  'helicopter',
+  'helicopter',
+  'fighter',
+  'bomber',
+];
+
+/** The stand-in being played with now (a page has at most one). */
+let current: LiveStage | null = null;
+let serial = 0;
+
+export const stageNow = (): LiveStage | null => current;
+
+/**
+ * Stage a live battle in this page with no second player (test builds only; `stageLive` in the test
+ * API). The page needs war on; a friend's city (Samford, place 2) is made up in its region so the
+ * city's own sim can host the battle. As the defender the real path runs: the sim hosts, the stand-in
+ * plays the room. As the attacker or a watcher the battle is a picture of this city's own, run in the
+ * battle worker. Null when it started, else why not.
+ */
+export async function stageLive(
+  game: Game,
+  role: StageRole,
+  units: UnitKind[] = STAGE_FORCE,
+): Promise<string | null> {
+  if (!game.world.stats.war) return 'War is off in this city';
+  const was = game.live.view();
+  if (was && !was.over && was.role !== 'watcher') return 'A live battle is on';
+  current?.stop();
+  game.live.detach();
+  // A friend: the first town that is not a player's becomes Samford, the neighbour of a region.
+  const none = { power: 0, water: 0, garbage: 0 };
+  const update: RegionUpdate = {
+    cities: [
+      {
+        slot: 2,
+        name: 'Samford',
+        mayor: 'Sam',
+        color: 1,
+        population: 4_000,
+        kind: 'suburb',
+        offers: { buy: { ...none }, sell: { ...none } },
+        workers: 0,
+        jobs: 0,
+        shoppers: 0,
+        online: true,
+        raid: 'open',
+      },
+    ],
+    contracts: [],
+    project: null,
+  };
+  const r = await game.dispatch({ type: 'regionUpdate', update });
+  if (!r.ok) return r.reason;
+  const id = `stage-${++serial}`;
+  const force: ForceIn = {
+    name: 'Samford',
+    color: 0x2e86de,
+    units: units.map((kind, k) => ({ id: k + 1, kind, hp: 1, x: 0, z: 0, base: -1 })),
+    route: 'highway',
+    target: 'military',
+    stance: 'bold',
+    readiness: 1,
+  };
+  if (role === 'defender') {
+    const stage = new LiveStage('defender', 1, 2, 1);
+    current = stage;
+    game.live.attach(stage);
+    // The real call, as the room would pass it on.
+    game.live.message({ t: 'bcall', id, from: 2, force });
+    return null;
+  }
+  // A picture of this city's own, which the page runs (the attacker's way, or a spectator's).
+  const made = await game.client.query<{ input: BattleInput } | { refused: string }>({
+    type: 'liveBattle',
+    call: { id, from: 2, force },
+  });
+  if ('refused' in made) return made.refused;
+  const input = made.input;
+  const here = game.world.stats.cityName;
+  if (role === 'attacker') {
+    input.attacker.name = here;
+    input.attacker.color = 0x3a78c8;
+    input.defender.name = 'Samford';
+    input.defender.color = 0x2e86de;
+    const stage = new LiveStage('attacker', 1, 1, 2);
+    current = stage;
+    game.live.attach(stage);
+    game.live.stage(input, 1, 2);
+    stage.beginAttacker(input);
+    return null;
+  }
+  input.attacker.name = 'Samford';
+  input.defender.name = 'Riverton';
+  input.defender.color = 0x5aa05a;
+  const stage = new LiveStage('watcher', 3, 2, 4);
+  current = stage;
+  game.live.attach(stage);
+  stage.beginWatched(input);
+  return null;
+}

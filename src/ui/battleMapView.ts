@@ -5,6 +5,8 @@
  * `BattleMap.tsx` is the panel round it.
  */
 import { BATTLE } from '../data/battle';
+import type { Game } from '../game';
+import type { LiveView } from '../client/liveBattles';
 import type { OrderRequest } from '../sim/battle/live';
 import {
   E,
@@ -416,4 +418,17 @@ export const battleSeconds = (step: number): number => step * BATTLE.dt;
 export function battleClock(step: number): string {
   const s = Math.floor(battleSeconds(step));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// ----------------------------------------------------------------------------- the battle shown
+
+/** The side this page commands in a battle: null for a watcher. */
+export const sideOfView = (v: LiveView | null): Side | null =>
+  v?.role === 'attacker' ? 0 : v?.role === 'defender' ? 1 : null;
+
+/** The picture of the battle the map draws: the page's own run, or the city's frames for a defender. */
+export function pictureOf(game: Game, v: LiveView | null): BattleFrame | null {
+  const f = v?.frame ?? (v?.role === 'defender' && game.world.battle?.id === v.id ? game.world.battle : null);
+  if (f) game.battleMap.lastFrame = f;
+  return f ?? game.battleMap.lastFrame;
 }

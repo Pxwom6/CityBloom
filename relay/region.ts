@@ -27,6 +27,7 @@ import {
 import { SPY_OPS, spyOdds, spyOutcome, type SabotageTarget, type SpyOp } from '../src/data/intel';
 import { BRANCHES, BRANCH_IDS, cleanTiers, type Branch, type TierKey } from '../src/data/research';
 import {
+  FRIENDS,
   LIVE,
   LIVE_PROTOCOL,
   MAX_SNAPSHOT_PARTS,
@@ -34,11 +35,20 @@ import {
   PLAYER_COLORS,
   PROTOCOL_VERSION,
   SNAPSHOT_PART,
+  boundedJson,
+  cleanChat,
   cleanCityName,
   cleanName,
   makeSecret,
   secureIndex,
+  type BattleOutcome,
+  type FriendScale,
+  type FriendsClientMsg,
+  type FriendsRoomMsg,
+  type FriendsWelcome,
+  type WarEvent,
 } from './protocol';
+import { FriendsWar, type FriendsState, type FwContext, type FwOut } from './friendsWar';
 import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from './limits';
 import {
   LiveSession,
@@ -53,6 +63,7 @@ import {
 import type { RoomEnv } from './room';
 
 export type { LiveEnd, LiveOrder, LiveOrderIn, LiveRecord, LiveSide } from './live';
+export type { FriendsClientMsg, FriendsRoomMsg, FriendsWelcome } from './protocol';
 
 export const MAX_CITIES = 4;
 /** A newcomer may answer a city that raided it for this long (ms, M36), and battles seen are
@@ -206,7 +217,12 @@ export type RegionClientMsg =
   | { t: 'bwatch'; id: string; from?: number }
   | { t: 'bunwatch'; id: string; from?: number }
   /** Any city: a finished battle the region keeps, to watch again. */
-  | { t: 'breplay'; id: string; from?: number };
+  | { t: 'breplay'; id: string; from?: number }
+  /**
+   * Wars and treaties between friends (M39, protocol 6; design calls 9 and 10): declaring, proposing,
+   * answering, ending a pact early, acknowledging a treaty, and how a battle ended. See `FriendsClientMsg`.
+   */
+  | FriendsClientMsg;
 
 export type RegionRoomMsg =
   | {
@@ -216,6 +232,12 @@ export type RegionRoomMsg =
       region: RegionView;
       /** Protocol 6: the finished live battles the region keeps (oldest first). */
       replays?: LiveReplay[];
+      /**
+       * Protocol 6: the wars, pacts and vassals between friends, this city's own proposals waiting,
+       * and the war history (M39). Treaties it hasn't applied and proposals for it follow as `tsign`
+       * and `tprop` messages.
+       */
+      friends?: FriendsWelcome;
     }
   | { t: 'region'; region: RegionView }
   | { t: 'citysave'; slot: number; part: number; parts: number; data: string }
@@ -320,6 +342,8 @@ export type RegionRoomMsg =
   /** A finished battle's record, asked for (`breplay`) or owed to a combatant who wasn't here at its end. */
   | { t: 'breplaydata'; id: string; from: number; to: number; record: LiveRecord }
   | { t: 'notice'; text: string }
+  /** Wars and treaties between friends (M39, protocol 6): see `FriendsRoomMsg`. */
+  | Exclude<FriendsRoomMsg, { t: 'notice' }>
   | {
       t: 'error';
       /** `closed`: the region shut for good (a peer-to-peer host's browser left, F10). */
@@ -392,6 +416,8 @@ interface City {
   fair?: { hours: number; at: number };
   /** Live battles it attacked in that ended while it wasn't here (M39): their ends are owed to it. */
   liveOwed?: string[];
+  /** The protocol its page last said (M39): a war with a friend needs two pages that speak it. */
+  v?: number;
 }
 
 /** A finished live battle the region keeps (M39): who fought, how it ended, and where its record is. */
@@ -421,6 +447,10 @@ export interface RegionMeta {
   rules?: RegionWarRules;
   /** Finished live battles, oldest first (M39): their records are rows of the region's own. */
   replays?: LiveReplay[];
+  /** Wars, pacts, proposals and vassals between friends, and the treaties each city hasn't applied (M39). */
+  friends?: FriendsState;
+  /** The last 100 war events, oldest first (M39, design call 10). */
+  history?: WarEvent[];
   /** When the record was last saved (ms): the region expires a while after (F8). */
   lastActive?: number;
   /** Rows written today (F8). */
@@ -564,6 +594,8 @@ const finite = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 const wholeIn = (v: unknown, lo: number, hi: number): v is number => finite(v, lo, hi) && Number.isInteger(v);
 const ID = /^[\w-]{1,40}$/;
+const FRIEND_SCALES: readonly FriendScale[] = ['skirmish', 'war', 'total'];
+const BATTLE_OUTCOMES: readonly BattleOutcome[] = ['raided', 'repelled', 'withdrew'];
 
 /** A city's report, checked for shape and bounds (the cities are friends', but a bug shouldn't spread). */
 function cleanReport(r: unknown): RegionReport | null {
@@ -799,6 +831,71 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         /^[\w-]{1,64}$/.test(m.hash)
         ? { t: 'bdone', id: m.id, step: m.step, hash: m.hash }
         : null;
+    // Wars and treaties between friends (M39): the room reads their shape, and the module what they mean.
+    case 'wdeclare':
+      if (
+        !wholeIn(m.to, 1, 64) ||
+        !FRIEND_SCALES.includes(m.scale as FriendScale) ||
+        typeof m.reason !== 'string' ||
+        m.reason.length > 400
+      )
+        return null;
+      return {
+        t: 'wdeclare',
+        to: m.to,
+        scale: m.scale as FriendScale,
+        reason: cleanChat(m.reason) ?? '',
+        ...(m.breakPact === true ? { breakPact: true as const } : {}),
+      };
+    case 'tprop':
+      if (
+        !wholeIn(m.to, 1, 64) ||
+        typeof m.id !== 'string' ||
+        !ID.test(m.id) ||
+        !Array.isArray(m.terms) ||
+        m.terms.length < 1 ||
+        m.terms.length > 2 * FRIENDS.maxTerms ||
+        !m.terms.every((x) => x && typeof x === 'object' && !Array.isArray(x) && boundedJson(x)) ||
+        JSON.stringify(m.terms).length > 4_000
+      )
+        return null;
+      return {
+        t: 'tprop',
+        id: m.id,
+        to: m.to,
+        terms: m.terms as unknown[],
+        ...(m.imposed === true ? { imposed: true as const } : {}),
+      };
+    case 'tans':
+      return typeof m.id === 'string' && ID.test(m.id) && typeof m.accept === 'boolean'
+        ? { t: 'tans', id: m.id, accept: m.accept }
+        : null;
+    case 'tbreak':
+      return wholeIn(m.pact, 1, 1e9) ? { t: 'tbreak', pact: m.pact } : null;
+    case 'tseen':
+      return typeof m.id === 'string' && ID.test(m.id) ? { t: 'tseen', id: m.id } : null;
+    case 'battleResult':
+      if (
+        typeof m.id !== 'string' ||
+        !ID.test(m.id) ||
+        !wholeIn(m.from, 1, 64) ||
+        !wholeIn(m.to, 1, 64) ||
+        !BATTLE_OUTCOMES.includes(m.outcome as BattleOutcome) ||
+        (m.decisive !== undefined && !finite(m.decisive, 0, 1)) ||
+        (m.worth !== undefined && !finite(m.worth, 0, 1e9))
+      )
+        return null;
+      return {
+        t: 'battleResult',
+        id: m.id,
+        from: m.from,
+        to: m.to,
+        outcome: m.outcome as BattleOutcome,
+        ...(m.decisive !== undefined ? { decisive: Math.round((m.decisive as number) * 100) / 100 } : {}),
+        ...(m.worth !== undefined ? { worth: Math.round(m.worth as number) } : {}),
+        ...(m.seatDown === true ? { seatDown: true as const } : {}),
+        ...(m.away === true ? { away: true as const } : {}),
+      };
     default:
       return null;
   }
@@ -822,6 +919,9 @@ const LIVE_MESSAGES = new Set<string>([
   'bunwatch',
   'breplay',
 ]);
+
+/** What a page says about wars and treaties with friends (M39): only pages that speak protocol 6 are heard. */
+const FRIEND_MESSAGES = new Set<string>(['wdeclare', 'tprop', 'tans', 'tbreak', 'tseen', 'battleResult']);
 
 /** A live battle is known by its attacker and its id (two cities' battles may share an id). */
 const liveKey = (from: number, id: string) => `${from}:${id}`;
@@ -860,6 +960,8 @@ export class RegionRoom {
   private opened = 0;
   /** Live battles calling or running (M39), in memory only, by `attacker slot:id`. */
   private lives = new Map<string, LiveRun>();
+  /** Each city's allowance of diplomatic moves: declarations, proposals, ended pacts (M39). */
+  private acts = new Map<number, TokenBucket>();
 
   constructor(
     readonly code: string,
@@ -1110,13 +1212,22 @@ export class RegionRoom {
     if (!from.report || !target.report) return `${target.name} isn’t in the region’s war yet`;
     if (from.report.shield === 'neutral') return `${from.name} is neutral: it raids no one`;
     if (target.report.shield === 'neutral') return `${target.name} is neutral`;
+    // Friends' diplomacy (M39): a war that hasn't opened, a ceasefire, a capitulation, a pact, a vassal.
+    const fw = this.meta?.friends ? new FriendsWar(this.meta, this.fwContext()) : null;
+    const stop = fw?.raidBlock(from.slot, target.slot);
+    if (stop) return stop;
     // A region on one player's computer ends with its host: a raid there needs its target's player.
     if (this.kind === 'p2p' && !this.online(target.slot))
       return `${target.name}’s player isn’t here, and this region keeps nothing for them`;
     // A live battle against it (M39) may end with it away, and is then kept as one more: a place for it.
     if ((target.pending?.length ?? 0) + this.liveAgainst(target.slot, except) >= MAX_PENDING_BATTLES)
       return `${target.name} has ${MAX_PENDING_BATTLES} raids waiting for its player: no more until it takes them`;
-    if (target.report.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
+    // A newcomer at war with the sender is raided like any other: the war's warning covered it (M39).
+    if (
+      target.report.shield === 'new' &&
+      !this.raidedBy(from, now).includes(target.slot) &&
+      !fw?.atWar(from.slot, target.slot)
+    )
       return `${target.name} is too young or small to raid, unless it strikes first`;
     if (this.raidsLeft(target, now) <= 0)
       return `${target.name} has been raided ${this.limits.raidsPerDay} times today: the region allows no more until midnight (UTC)`;
@@ -1289,6 +1400,8 @@ export class RegionRoom {
     // Live battles are for pages that speak them: an older page sending one is ignored (a call is
     // told it can't, so the sender's force goes the old way).
     if (st.v < LIVE_PROTOCOL && LIVE_MESSAGES.has(m.t) && m.t !== 'blive') return;
+    // Likewise wars and treaties with friends: a protocol-5 page doesn't know them.
+    if (st.v < LIVE_PROTOCOL && FRIEND_MESSAGES.has(m.t)) return;
     switch (m.t) {
       case 'report': {
         // Every report goes to the others at once; only offers, deals and the like are written
@@ -1358,6 +1471,8 @@ export class RegionRoom {
         const was = this.meta.rules ?? PEACE_RULES;
         if (sameWarRules(was, m.rules)) return;
         this.meta.rules = m.rules;
+        // War turned off: every war between friends ends in plain peace.
+        if (was.war && !m.rules.war) this.fwRun(slot, (fw) => fw.warOff());
         for (const c of this.conns.keys())
           c.send({ t: 'notice', text: `${city.name} set the region's rules: ${warRulesText(m.rules)}` });
         this.broadcast();
@@ -1449,6 +1564,8 @@ export class RegionRoom {
           ...(half ? { away: true } : {}),
           ...(sup ? { super: true as const } : {}),
         });
+        // One line of the region's war history, written with the battle.
+        this.fwRun(slot, (fw) => fw.battle(slot, target.slot, m.id), false);
         this.save();
         conn.send({ t: 'battleKept', id: m.id });
         this.broadcast();
@@ -1511,6 +1628,46 @@ export class RegionRoom {
         this.changed(slot);
         return;
       }
+      case 'wdeclare':
+      case 'tprop':
+      case 'tbreak': {
+        // A city's diplomatic moves are paced, and none starts past the day's rows (they are kept).
+        const slow = !this.actsOf(slot).take(now)
+          ? 'The region takes a few diplomatic moves at a time'
+          : this.budget.over(now)
+            ? dailyLimitText('region')
+            : null;
+        if (slow) {
+          if (m.t === 'wdeclare') conn.send({ t: 'wrefused', to: m.to, why: slow });
+          else conn.send({ t: 'trefused', id: m.t === 'tprop' ? m.id : String(m.pact), why: slow });
+          return;
+        }
+        if (m.t === 'wdeclare')
+          return this.fwRun(slot, (fw) =>
+            fw.declare(slot, {
+              to: m.to,
+              scale: m.scale,
+              reason: m.reason,
+              ...(m.breakPact ? { breakPact: true as const } : {}),
+            }),
+          );
+        if (m.t === 'tprop')
+          return this.fwRun(slot, (fw) =>
+            fw.propose(slot, {
+              id: m.id,
+              to: m.to,
+              terms: m.terms,
+              ...(m.imposed ? { imposed: true as const } : {}),
+            }),
+          );
+        return this.fwRun(slot, (fw) => fw.breakPact(slot, { pact: m.pact }));
+      }
+      case 'tans':
+        return this.fwRun(slot, (fw) => fw.answer(slot, m));
+      case 'tseen':
+        return this.fwRun(slot, (fw) => fw.seen(slot, m.id));
+      case 'battleResult':
+        return this.fwRun(slot, (fw) => fw.result(slot, m));
       case 'blive':
         return this.blive(conn, st, city, m, now);
       case 'binput':
@@ -1619,21 +1776,29 @@ export class RegionRoom {
       };
       this.meta.cities.push(city);
       for (const c of this.conns.keys()) c.send({ t: 'notice', text: `${m.city} joined the region` });
-    } else if (city.mayor !== m.mayor || city.color !== m.color) write = 'changed';
+    } else if (city.mayor !== m.mayor || city.color !== m.color || (city.v ?? 0) !== m.v) write = 'changed';
     city.mayor = m.mayor;
     city.color = m.color;
+    city.v = m.v;
     city.heard = now;
     st.slot = city.slot;
     conn.bind?.(city.slot, m.v);
     // A new city is written at once (four at most, ever); a change at the city's pace.
     if (write === 'new') this.save();
     else if (write === 'changed') this.changed(city.slot);
+    // Protocol 6: the wars and pacts between friends as they stand (time brought up to date first).
+    let friends: ReturnType<FriendsWar['welcome']> | null = null;
+    if (m.v >= LIVE_PROTOCOL) {
+      if (this.meta.friends) this.fwRun(city.slot, (fw) => fw.tick());
+      friends = new FriendsWar(this.meta, this.fwContext()).welcome(city.slot);
+    }
     conn.send({
       t: 'rwelcome',
       slot: city.slot,
       secret: city.secret,
       region: this.view(),
       ...(m.v >= LIVE_PROTOCOL ? { replays: (this.meta.replays ?? []).map((r) => ({ ...r })) } : {}),
+      ...(m.v >= LIVE_PROTOCOL ? { friends: friends!.info } : {}),
     });
     // Its fair clock carries on from now (M37): the time away isn't play.
     if (city.fair) city.fair = { ...city.fair, at: now };
@@ -1661,7 +1826,87 @@ export class RegionRoom {
     // Operations against it it hasn't seen (M37): late, so they bring only a notice.
     for (const o of city.ops ?? []) conn.send(opOn(o, true));
     if (m.v >= LIVE_PROTOCOL) this.liveWelcome(conn, city);
+    // Proposals for it to answer and treaties it hasn't applied, oldest first.
+    for (const msg of friends?.after ?? []) conn.send(msg);
     this.broadcast();
+  }
+
+  // ---- Wars and treaties between friends (M39, design calls 9 and 10) --------------------------
+  // The module `FriendsWar` keeps the record (in `meta.friends` and `meta.history`) and says what to
+  // send; the room gives it the clock and what it knows of the cities, sends, and writes at its pace.
+
+  private actsOf(slot: number): TokenBucket {
+    let b = this.acts.get(slot);
+    if (!b)
+      this.acts.set(slot, (b = new TokenBucket(1000 / FRIENDS.actEvery, FRIENDS.actBurst, this.env.now())));
+    return b;
+  }
+
+  /** The protocol a city's pages speak: the best of those here, else the last it said. */
+  private protoOf(c: City): number {
+    let v = 0;
+    for (const s of this.conns.values()) if (s.slot === c.slot) v = Math.max(v, s.v);
+    return v || (c.v ?? PROTOCOL_VERSION);
+  }
+
+  private fwContext(): FwContext {
+    const meta = this.meta!;
+    const now = this.env.now();
+    const cityOf = (slot: number) => meta.cities.find((c) => c.slot === slot);
+    return {
+      now,
+      rules: meta.rules ?? PEACE_RULES,
+      city: (slot) => {
+        const c = cityOf(slot);
+        return c
+          ? {
+              slot,
+              name: c.name,
+              ...(c.report?.shield ? { shield: c.report.shield } : {}),
+              reported: !!c.report,
+              proto: this.protoOf(c),
+            }
+          : undefined;
+      },
+      struck: (slot, by) => {
+        const c = cityOf(slot);
+        return !!c && this.raidedBy(c, now).includes(by);
+      },
+      battleKnown: (from, to, id) => {
+        const t = cityOf(to);
+        if (t?.seen?.includes(`${from}:${id}`) || t?.pending?.some((p) => p.id === id && p.from === from))
+          return true;
+        if (this.lives.get(liveKey(from, id))?.s.to === to) return true;
+        return this.replayOf(id, from)?.to === to;
+      },
+    };
+  }
+
+  /**
+   * Run the module on the record and send what it says to the cities that are here (those that speak
+   * protocol 6). What it changed is written at `slot`'s pace, unless the caller writes it (`save` false).
+   */
+  private fwRun(slot: number, fn: (fw: FriendsWar) => void, save = true): void {
+    if (!this.meta) return;
+    const fw = new FriendsWar(this.meta, this.fwContext());
+    fn(fw);
+    for (const o of fw.out) this.fwSend(o);
+    if (fw.dirty && save) this.changed(slot);
+    else if (fw.dirty || fw.quiet) {
+      // What must be kept is written at the city's pace; what could be worked out again waits for the
+      // region's slower one (or for a city to leave), as the numbers in a report do.
+      this.dirty = true;
+      if (!save) return;
+      if (this.env.now() - this.lastSaved >= this.limits.keepEvery) this.save();
+    }
+  }
+
+  private fwSend(o: FwOut): void {
+    for (const [c, s] of this.conns) {
+      if (s.slot <= 0 || s.v < LIVE_PROTOCOL) continue;
+      if (o.to === 'all' ? o.except?.includes(s.slot) : !o.to.includes(s.slot)) continue;
+      c.send(o.msg);
+    }
   }
 
   // ---- Live battles (M39, design call 3) -------------------------------------------------------
@@ -1747,6 +1992,8 @@ export class RegionRoom {
    * both of whose pages have finished, and one nobody has spoken in for a minute.
    */
   private sweep(now: number, speaker = 0): void {
+    // Wars open, ceasefires and proposals run out: noticed now, with the rest (M39).
+    if (this.meta?.friends) this.fwRun(speaker, (fw) => fw.tick());
     if (!this.lives.size) return;
     for (const r of [...this.lives.values()]) {
       const s = r.s;
@@ -2086,6 +2333,17 @@ export class RegionRoom {
     }
     if (!this.liveConns(attacker.slot).length && kept)
       attacker.liveOwed = [...(attacker.liveOwed ?? []), s.id].slice(-4);
+    // One line of the region's war history, written with the battle's record.
+    this.fwRun(
+      0,
+      (fw) =>
+        fw.battle(s.from, s.to, s.id, {
+          live: true,
+          agree: end.agree,
+          ...(end.abandoned ? { abandoned: true as const } : {}),
+        }),
+      false,
+    );
     // To every city's page that speaks live battles, the watchers (cities all) among them.
     this.toLive(endMsg(rep));
     this.save();

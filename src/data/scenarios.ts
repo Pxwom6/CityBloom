@@ -631,6 +631,37 @@ export const SCENARIOS: ScenarioDef[] = [
       'A city that loses the score capitulates and the winner takes its best district. Peace made early, with a ceasefire or a treaty, keeps what you have.',
     ],
   },
+  {
+    id: 'liberation',
+    name: 'Liberation',
+    blurb: 'An old friend is held by a bully. Beat the bully and make it let go.',
+    brief:
+      'Lark Spa, the little resort on Coldharbour’s western border, has been Dunford’s subject since ' +
+      'last spring: Dunford’s garrison sits in its town hall, it can’t trade with Coldharbour, sign ' +
+      'anything with it or come to its side, and its people are asking for help. Dunford is bigger, ' +
+      'angrier and well armed. Beat it in a war, and make it sign Lark Spa’s freedom in the peace. ' +
+      'Honourable Norcombe, to the south, would stand by a city that asked it.',
+    save: 'liberation.citybloom',
+    months: 40,
+    stars: [
+      { months: 22, label: 'Within 22 months' },
+      { months: 14, label: 'Within 14 months' },
+    ],
+    goals: [
+      { measure: 'liberated', min: 1, label: 'Lark Spa free of Dunford' },
+      { measure: 'population', min: 5_000, label: '5,000 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    region: true,
+    weather: { seasons: false, intensity: 2 },
+    hints: [
+      'Lark Spa is Dunford’s subject, so a war on Lark Spa goes nowhere: the war room (Shift+M, Diplomacy) lets you declare on Dunford, and a treaty with a beaten Dunford can include Liberation.',
+      'A war is won on the score: each raid beaten off and each strike that lands moves it. At +60 Dunford gives up and you set the terms; at +40 or so it may offer peace itself, with Lark Spa thrown in.',
+      'An ally fighting at your side adds to the score every day and wears the enemy down: ask Norcombe for an alliance before you declare.',
+    ],
+  },
 ];
 
 export const SCENARIO = new Map(SCENARIOS.map((s) => [s.id, s]));

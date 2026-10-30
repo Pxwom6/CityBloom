@@ -601,4 +601,26 @@ export const RECIPES: Record<string, () => Sim> = {
     toMorning(sim);
     return sim;
   },
+  // Coldharbour (M39): a town of about 5,000 with a small garrison. Its old friend Lark Spa, to the
+  // west, is held as a subject by Dunford, an aggressive neighbour with the bigger army; honourable
+  // Norcombe, to the south, is a friend who might stand by the city in a war.
+  liberation: () => {
+    const p = warScenarioTown('tidewater', 'Coldharbour', 5_200);
+    const sim = p.sim;
+    sim.earn(240_000, 'grants');
+    garrison(p, { depot: true, bunkers: 3, infantry: 6, tanks: 1 });
+    setRivals(sim, [
+      {
+        personality: 'aggressive',
+        forces: 44,
+        defences: 12,
+        relation: -50,
+        population: 18_000,
+      },
+      { personality: 'honourable', forces: 10, defences: 12, relation: 45 },
+      { personality: 'honourable', forces: 6, defences: 8, relation: 50, subjectOf: 0 },
+    ]);
+    toMorning(sim);
+    return sim;
+  },
 };

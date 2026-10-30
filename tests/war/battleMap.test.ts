@@ -10,6 +10,7 @@ import {
   edgeMark,
   fitView,
   mapBounds,
+  mapUnits,
   needsTarget,
   ordersFor,
   ownUnits,
@@ -64,9 +65,13 @@ describe('M39 battle map: the view', () => {
   it('fits the battle area into the canvas, the same both ways', () => {
     const l = layout();
     const b = mapBounds(l);
-    // The box (and a little margin), nothing smaller.
-    expect(b.x0).toBeLessThan(l.box[0] + 1);
-    expect(b.x1).toBeGreaterThan(l.box[2] - 1);
+    // The structures (x 600–700, z 480–540) are inside it, with room round them; the box's empty
+    // ground out to the road's way in is not what is fitted.
+    expect(b.x0).toBeLessThan(600 - 100);
+    expect(b.x1).toBeGreaterThan(700 + 100);
+    expect(b.z0).toBeLessThan(480 - 100);
+    expect(b.z1).toBeGreaterThan(540 + 100);
+    expect(b.x0).toBeGreaterThan(l.box[0] + 300);
     const v = fitView(b, 800, 500);
     // The whole area is on the canvas, touching one pair of its sides.
     const a = toScreen(v, b.x0, b.z0);
@@ -106,16 +111,17 @@ describe('M39 battle map: the view', () => {
     expect(fitView(b, 800, 500, 99).scale).toBeCloseTo(one.scale * ZOOM.max, 6);
   });
 
-  it('brings a way in just outside the box into view and marks a far one at the edge', () => {
+  it('brings a way in just outside the structures into view and marks a far one at the edge', () => {
     const l = layout();
-    // (The air way in is 100 m outside the box's west side... the test layout's entries.)
-    const near = { ...l, entries: [{ route: 'air' as const, x: l.box[0] - 100, z: 500, edge: -1, at: 0 }] };
-    expect(mapBounds(near).x0).toBeLessThan(l.box[0] - 100);
-    const far = { ...l, entries: [{ route: 'sea' as const, x: 600, z: l.box[3] + 3_000, edge: -1, at: 0 }] };
+    const base = mapBounds({ ...l, entries: [] });
+    // An air way in 150 m outside the area is brought in; one the road comes in by, far off, is not.
+    const near = { ...l, entries: [{ route: 'air' as const, x: base.x0 - 150, z: 500, edge: -1, at: 0 }] };
+    expect(mapBounds(near).x0).toBeCloseTo(base.x0 - 150, 6);
+    const far = { ...l, entries: [{ route: 'sea' as const, x: 600, z: base.z1 + 3_000, edge: -1, at: 0 }] };
     const b = mapBounds(far);
-    expect(b.z1).toBeLessThan(l.box[3] + 200);
+    expect(b.z1).toBeCloseTo(base.z1, 6);
     const v = fitView(b, 800, 500);
-    const m = edgeMark(v, 600, l.box[3] + 3_000)!;
+    const m = edgeMark(v, 600, base.z1 + 3_000)!;
     expect(m.y).toBeGreaterThan(400);
     expect(m.y).toBeLessThanOrEqual(500);
     expect(m.angle).toBeCloseTo(Math.PI / 2, 1);
@@ -221,6 +227,13 @@ describe('M39 battle map: orders', () => {
     expect('orders' in buildOrders('focus', 0, [1], own, 0)).toBe(true);
   });
 
+  it('sends one order for the whole side when everyone is chosen, units on the map or not', () => {
+    expect(buildOrders('hold', 0, [], [], undefined, true)).toEqual({ orders: [{ kind: 'hold' }] });
+    expect(buildOrders('focus', 0, [2], own, 4, true)).toEqual({ orders: [{ kind: 'focus', target: 4 }] });
+    // Without "everyone", an empty choice is still no choice.
+    expect(buildOrders('hold', 0, [], own)).toEqual({ problem: 'Choose some units first' });
+  });
+
   it('refuses what a side cannot do', () => {
     expect(buildOrders('withdraw', 1, [1], own)).toEqual({ problem: 'Only attackers can withdraw' });
     expect(buildOrders('guard', 0, [1], own, 3)).toEqual({ problem: 'Only defenders can guard a building' });
@@ -239,6 +252,31 @@ describe('M39 battle map: orders', () => {
     expect(battleClock(0)).toBe('0:00');
     expect(battleClock(130)).toBe('1:05');
     expect(battleClock(1_440)).toBe('12:00');
+  });
+});
+
+describe('M39 battle map: defenders still at their bases', () => {
+  it('are in the frame’s waiting list and on the map, ordered like the rest, and gone from it once they set off', () => {
+    const l = layout();
+    const defenders = units('tank', 3, { x: 650, z: 500 }, -1);
+    const b = new Battle(input({ ...l, defenders }, units('tank', 2, { x: 0, z: 500 })));
+    const first = b.frame();
+    // A defender is mobilising for a while: it is at its base, not in the field.
+    expect(first.units.filter((u) => u.side === 1)).toHaveLength(0);
+    expect(first.waiting?.map((u) => u.id)).toEqual(defenders.map((d) => d.id));
+    expect(first.waiting![0]).toMatchObject({ side: 1, x: 650, z: 500, state: 0 });
+    // The map counts them among the side's units (to choose and to order), and not the attackers'.
+    expect(ownUnits(first, 1).map((u) => u.id)).toEqual(defenders.map((d) => d.id));
+    expect(mapUnits(first).filter((u) => u.waiting)).toHaveLength(3);
+    expect(ownUnits(first, 0)).toHaveLength(0);
+    // Later they are on the road, and no longer waiting.
+    let last = first;
+    for (let k = 0; k < 600 && !b.outcome; k++) {
+      b.stepOnce();
+      if (k % 20 === 0) last = b.frame();
+    }
+    expect(last.units.some((u) => u.side === 1)).toBe(true);
+    expect((last.waiting ?? []).length).toBeLessThan(3);
   });
 });
 

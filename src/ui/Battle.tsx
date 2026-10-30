@@ -141,7 +141,8 @@ export function LiveBar() {
         </div>
       </div>
     );
-  if (v) return null;
+  // (A battle this page has finished is no reason not to offer another.)
+  if (v && !v.over) return null;
   const b = game.live.runningBattles().find((x) => !hidden.includes(x.id));
   if (!b || game.live.watchingId()) return null;
   const name = (slot: number) =>

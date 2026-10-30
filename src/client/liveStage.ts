@@ -41,6 +41,10 @@ export class LiveStage implements LiveLink {
   private ghost: LiveRunner | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private ended = false;
+  /** The frontier is kept from passing this step (a battle held still for a picture), until released. */
+  hold: number | null = null;
+  /** The page's last report of its step. */
+  private lastStep = 0;
   /** Orders the stand-in stamped, as the page's test API reports them. */
   readonly stamped: LiveOrder[] = [];
 
@@ -150,6 +154,7 @@ export class LiveStage implements LiveLink {
     const s = this.session;
     if (!s || s.id !== m.id || this.side === null || this.ended) return;
     const t = this.now();
+    this.lastStep = m.step;
     s.report(this.side, m.step, t);
     for (const v of this.virtual) s.report(v, m.step, t);
     let ords: LiveOrder[] = [];
@@ -161,9 +166,28 @@ export class LiveStage implements LiveLink {
       ords = s.stamp(this.side, list.slice(0, LIVE.perMessage)).stamped;
     }
     this.stamped.push(...ords);
-    const moved = s.pace(t);
+    const moved = this.pace(s, t);
     if (moved || ords.length)
       this.tell({ t: 'ballow', id: s.id, allow: s.allow, ...(ords.length ? { ords } : {}) });
+  }
+
+  /** The room's pacing, but never past a hold. */
+  private pace(s: LiveSession, t: number): boolean {
+    const before = s.allow;
+    s.pace(t);
+    if (this.hold !== null && s.allow > this.hold) s.allow = Math.max(before, Math.min(s.allow, this.hold));
+    return s.allow > before;
+  }
+
+  /** Let a held battle go on (the frontier moves on from where the page is). */
+  release(): void {
+    this.hold = null;
+    const s = this.session;
+    if (!s || this.ended) return;
+    const t = this.now();
+    if (this.side !== null) s.report(this.side, this.lastStep, t);
+    for (const v of this.virtual) s.report(v, this.ghost ? this.ghost.step : this.lastStep, t);
+    if (this.pace(s, t)) this.tell({ t: 'ballow', id: s.id, allow: s.allow });
   }
 
   private onDone(m: Extract<RegionClientMsg, { t: 'bdone' }>): void {
@@ -217,7 +241,7 @@ export class LiveStage implements LiveLink {
    * The clock of a watched battle: the hidden run follows the frontier at the battle's pace, the two
    * virtual combatants report its step, and the frontier follows them.
    */
-  private tick(): void {
+  tick(): void {
     const s = this.session;
     const g = this.ghost;
     if (!s || !g || this.ended) return;
@@ -226,7 +250,7 @@ export class LiveStage implements LiveLink {
     g.pump();
     // The virtual combatants are with it, step for step.
     for (const i of this.virtual) s.report(i, g.step, t);
-    if (s.pace(t)) this.tell({ t: 'ballow', id: s.id, allow: s.allow });
+    if (this.pace(s, t)) this.tell({ t: 'ballow', id: s.id, allow: s.allow });
     const end = g.end();
     if (end) {
       for (const i of this.virtual) s.finish(i, end.step, end.hash, t);
@@ -269,8 +293,9 @@ export const stageNow = (): LiveStage | null => current;
 export async function stageLive(
   game: Game,
   role: StageRole,
-  units: UnitKind[] = STAGE_FORCE,
+  opts: { units?: UnitKind[]; hold?: number } = {},
 ): Promise<string | null> {
+  const units = opts.units ?? STAGE_FORCE;
   if (!game.world.stats.war) return 'War is off in this city';
   const was = game.live.view();
   if (was && !was.over && was.role !== 'watcher') return 'A live battle is on';
@@ -312,6 +337,7 @@ export async function stageLive(
   };
   if (role === 'defender') {
     const stage = new LiveStage('defender', 1, 2, 1);
+    stage.hold = opts.hold ?? null;
     current = stage;
     game.live.attach(stage);
     // The real call, as the room would pass it on.
@@ -332,6 +358,7 @@ export async function stageLive(
     input.defender.name = 'Samford';
     input.defender.color = 0x2e86de;
     const stage = new LiveStage('attacker', 1, 1, 2);
+    stage.hold = opts.hold ?? null;
     current = stage;
     game.live.attach(stage);
     game.live.stage(input, 1, 2);
@@ -342,6 +369,7 @@ export async function stageLive(
   input.defender.name = 'Riverton';
   input.defender.color = 0x5aa05a;
   const stage = new LiveStage('watcher', 3, 2, 4);
+  stage.hold = opts.hold ?? null;
   current = stage;
   game.live.attach(stage);
   stage.beginWatched(input);

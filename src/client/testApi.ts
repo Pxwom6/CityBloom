@@ -56,6 +56,7 @@ import {
   structStates,
   structsOf,
   toScreen,
+  mapUnits,
 } from '../ui/battleMapView';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
@@ -78,6 +79,7 @@ export interface BattleMapReport {
   armed: string | null;
   note: string | null;
   zoom: number;
+  centre: { x: number; z: number } | null;
   canvas: { w: number; h: number };
   step: number;
   allow: number;
@@ -615,7 +617,12 @@ export interface TestApi {
    * sim hosts it, a stand-in plays the room), the attacker, or a spectator of two other cities. Null when
    * it started, else why not. The city needs war on.
    */
-  stageLive(role: 'attacker' | 'defender' | 'watcher', units?: UnitKind[]): Promise<string | null>;
+  stageLive(
+    role: 'attacker' | 'defender' | 'watcher',
+    opts?: { units?: UnitKind[]; hold?: number },
+  ): Promise<string | null>;
+  /** The stand-in lets a held battle (`stageLive` with `hold`) go on, or holds it at a step from now. */
+  liveRelease(hold?: number): void;
   /** The stand-in room hands this page's side over (it stays handed over until the player takes command). */
   liveHandOver(ignoreJoins?: number): boolean;
   /** The stand-in's other combatant (side 0 attackers, 1 defenders) gives an order. */
@@ -1423,7 +1430,13 @@ export function installTestApi(game: Game): TestApi {
     followBattle: () => game.followBattle(),
     getLive: () => game.live.state(),
     liveOrder: (order) => game.live.order(order),
-    stageLive: (role: StageRole, units) => stageLive(game, role, units),
+    stageLive: (role: StageRole, opts) => stageLive(game, role, opts),
+    liveRelease: (hold) => {
+      const st = stageNow();
+      if (!st) return;
+      if (hold === undefined) st.release();
+      else st.hold = hold;
+    },
     liveHandOver: (ignore) => stageNow()?.handOver(ignore) ?? false,
     liveSay: (side, order) => stageNow()?.say(side, order) ?? false,
     getLiveRunning: () => game.live.runningBattles(),
@@ -1449,6 +1462,7 @@ export function installTestApi(game: Game): TestApi {
         armed: m.armed,
         note: m.note,
         zoom: m.zoom,
+        centre: m.centre ? { ...m.centre } : null,
         canvas: { ...m.canvas },
         step: frame?.step ?? v?.step ?? 0,
         allow: v?.allow ?? 0,
@@ -1456,10 +1470,8 @@ export function installTestApi(game: Game): TestApi {
         over: v?.over ?? false,
         outcome: frame?.outcome ?? null,
         units: {
-          own:
-            side === null ? 0 : (frame?.units ?? []).filter((u) => u.side === side && u.state !== 2).length,
-          enemy:
-            side === null ? 0 : (frame?.units ?? []).filter((u) => u.side !== side && u.state !== 2).length,
+          own: side === null ? 0 : mapUnits(frame).filter((u) => u.side === side && u.state !== 2).length,
+          enemy: side === null ? 0 : mapUnits(frame).filter((u) => u.side !== side && u.state !== 2).length,
         },
         structs: {
           total: states.length,
@@ -1488,7 +1500,7 @@ export function installTestApi(game: Game): TestApi {
         };
       };
       const list = (mine: boolean) =>
-        (frame?.units ?? [])
+        mapUnits(frame)
           .filter(
             (u) => u.state !== 2 && (side === null ? (u.side === 0) === mine : (u.side === side) === mine),
           )

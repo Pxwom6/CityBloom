@@ -10,6 +10,8 @@ export class BattleMapState {
   /** The battle these belong to (a new battle starts afresh). */
   battleId: string | null = null;
   selected: number[] = [];
+  /** The whole side is chosen (the All button), including units not on the map yet. */
+  all = false;
   armed: OrderChoice | null = null;
   zoom = 1;
   centre: { x: number; z: number } | null = null;
@@ -27,6 +29,7 @@ export class BattleMapState {
     if (this.battleId === id) return;
     this.battleId = id;
     this.selected = [];
+    this.all = false;
     this.armed = null;
     this.zoom = 1;
     this.centre = null;

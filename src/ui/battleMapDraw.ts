@@ -17,6 +17,7 @@ import {
 } from '../sim/battle/types';
 import {
   edgeMark,
+  mapUnits,
   roadLines,
   structRadiusPx,
   structsOf,
@@ -246,9 +247,10 @@ function drawWaysIn(g: CanvasRenderingContext2D, m: DrawModel, p: Palette): void
     g.stroke();
     g.fill();
     g.restore();
-    // The route's name beside it, on the picture's inner side.
-    const tx = Math.min(m.view.w - 4, Math.max(4, q.x + Math.cos(angle) * 20));
-    const ty = Math.min(m.view.h - 8, Math.max(8, q.y + Math.sin(angle) * 20));
+    // The route's name beside it, on the picture's inner side, kept on the canvas.
+    const half = g.measureText(label).width / 2;
+    const tx = Math.min(m.view.w - half - 4, Math.max(half + 4, q.x + Math.cos(angle) * 22));
+    const ty = Math.min(m.view.h - 8, Math.max(8, q.y + Math.sin(angle) * 22));
     g.textAlign = 'center';
     g.lineWidth = 3;
     g.strokeStyle = p.halo;
@@ -268,6 +270,7 @@ function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawMod
   const order = [...cache.structs].sort(
     (a, b) => (m.states[b.k] === 2 ? 1 : 0) - (m.states[a.k] === 2 ? 1 : 0),
   );
+  const labels: { text: string; x: number; y: number; r: number }[] = [];
   for (const s of order) {
     const q = toScreen(v, s.x, s.z);
     if (q.x < -20 || q.y < -20 || q.x > v.w + 20 || q.y > v.h + 20) continue;
@@ -326,7 +329,7 @@ function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawMod
       g.fillStyle = hp > 0.5 ? '#4caf7d' : hp > 0.25 ? p.damaged : p.objective;
       g.fillRect(q.x - w / 2, q.y + r + 8, w * Math.max(0, Math.min(1, hp)), 4);
       const name = cache.names.get(s.id);
-      if (name) label(g, name, q.x, q.y - r - 11, p);
+      if (name) labels.push({ text: name, x: q.x, y: q.y, r });
     }
     if (m.hover?.kind === 'structure' && m.hover.k === s.k) {
       g.strokeStyle = p.select;
@@ -334,6 +337,38 @@ function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawMod
       g.beginPath();
       g.arc(q.x, q.y, r + 4, 0, Math.PI * 2);
       g.stroke();
+    }
+  }
+  drawLabels(g, labels, v, p);
+}
+
+/**
+ * The names of what is aimed at, each beside its building: above it, else below its health bar, else to
+ * one side, whichever place is free (none: it is left out rather than written over another).
+ */
+function drawLabels(
+  g: CanvasRenderingContext2D,
+  labels: { text: string; x: number; y: number; r: number }[],
+  v: MapView,
+  p: Palette,
+): void {
+  g.font = `600 10px ${p.font}`;
+  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  for (const l of [...labels].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const w = g.measureText(l.text).width + 4;
+    const spots = [
+      { x: l.x, y: l.y - l.r - 11 },
+      { x: l.x, y: l.y + l.r + 20 },
+      { x: l.x + l.r + 8 + w / 2, y: l.y },
+      { x: l.x - l.r - 8 - w / 2, y: l.y },
+    ];
+    for (const at of spots) {
+      const box = { x0: at.x - w / 2, y0: at.y - 6, x1: at.x + w / 2, y1: at.y + 6 };
+      if (box.x0 < 2 || box.y0 < 2 || box.x1 > v.w - 2 || box.y1 > v.h - 2) continue;
+      if (taken.some((t) => box.x0 < t.x1 && box.x1 > t.x0 && box.y0 < t.y1 && box.y1 > t.y0)) continue;
+      taken.push(box);
+      label(g, l.text, at.x, at.y, p);
+      break;
     }
   }
 }
@@ -413,12 +448,15 @@ function shape(
 // ----------------------------------------------------------------------------- shots and units
 
 function drawShots(g: CanvasRenderingContext2D, m: DrawModel, p: Palette): void {
-  const shots = m.frame?.shots;
+  // (Over, the last frame's shots are not in the air any more.)
+  const shots = m.frame && !m.frame.outcome ? m.frame.shots : null;
   if (!shots?.length) return;
   g.lineWidth = 1.2;
   for (const s of shots) {
-    const a = toScreen(m.view, s.x0, s.z0);
+    // A shell or a burst is drawn as it nears its mark: the last of its line.
+    const q0 = toScreen(m.view, s.x0, s.z0);
     const b = toScreen(m.view, s.x1, s.z1);
+    const a = { x: q0.x + (b.x - q0.x) * 0.6, y: q0.y + (b.y - q0.y) * 0.6 };
     g.strokeStyle = s.kind === 3 ? p.defender : s.hit ? p.objective : p.fallen;
     g.globalAlpha = 0.8;
     g.beginPath();
@@ -442,7 +480,7 @@ function drawUnits(g: CanvasRenderingContext2D, m: DrawModel, p: Palette): void 
   // Wrecks first, then the ground, then the air above it.
   const rank = (u: BattleUnitView) =>
     u.state === 2 ? 0 : (UNIT.get(u.kind)?.domain ?? 'land') === 'air' ? 2 : 1;
-  const list = [...frame.units].sort((a, b) => rank(a) - rank(b));
+  const list = [...mapUnits(frame)].sort((a, b) => rank(a) - rank(b));
   for (const u of list) {
     const q = toScreen(m.view, u.x, u.z);
     if (q.x < -12 || q.y < -12 || q.x > m.view.w + 12 || q.y > m.view.h + 12) continue;
@@ -481,6 +519,23 @@ function drawUnits(g: CanvasRenderingContext2D, m: DrawModel, p: Palette): void 
       g.beginPath();
       g.arc(q.x, q.y - lift, r + 4, 0, Math.PI * 2);
       g.stroke();
+    }
+    if (u.waiting) {
+      // Still mobilising at its base: a hollow square.
+      g.save();
+      g.translate(q.x, q.y);
+      g.fillStyle = fill;
+      g.strokeStyle = dark;
+      g.lineWidth = 1.4;
+      g.setLineDash([2.5, 2]);
+      g.beginPath();
+      g.roundRect(-r * 0.9, -r * 0.9, r * 1.8, r * 1.8, 2);
+      g.globalAlpha = 0.25;
+      g.fill();
+      g.globalAlpha = 1;
+      g.stroke();
+      g.restore();
+      continue;
     }
     g.save();
     g.translate(q.x, q.y - lift);

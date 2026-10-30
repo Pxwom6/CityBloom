@@ -8,7 +8,8 @@
  */
 import { useEffect, useRef } from 'preact/hooks';
 import type { Game } from '../game';
-import type { LiveView } from '../client/liveBattles';
+import type { LiveView, OrderLogEntry } from '../client/liveBattles';
+import { UNIT } from '../data/war';
 import type { BattleFrame, Side } from '../sim/battle/types';
 import { MapCache, drawBattleMap, readPalette, type DrawModel } from './battleMapDraw';
 import {
@@ -22,13 +23,16 @@ import {
   needsTarget,
   orderHelp,
   ordersFor,
+  mapUnits,
   ownUnits,
   pictureOf,
   pruneSelection,
   sideOfView,
   standingUnit,
+  STRUCT_WORDS,
   structAt,
   structStates,
+  structsOf,
   targetOf,
   unitAt,
   unitsInBox,
@@ -60,7 +64,9 @@ function BattleMap({ game }: { game: Game }) {
   const side = sideOfView(view);
   const own = ownUnits(frame, side ?? 0);
   const ownIds = side === null ? [] : own.map((u) => u.id);
-  if (side !== null) m.selected = pruneSelection(m.selected, frame, side);
+  if (side !== null) m.selected = m.all ? [...ownIds] : pruneSelection(m.selected, frame, side);
+  const alive = side === null ? 0 : (frame?.sides[side]?.alive ?? 0);
+  const chosen = m.all || m.selected.length > 0;
   const stepNow = frame?.step ?? view?.step ?? 0;
   const held = m.heldSince !== null && performance.now() - m.heldSince >= 1500;
   const locked =
@@ -79,7 +85,7 @@ function BattleMap({ game }: { game: Game }) {
 
   const press = (choice: OrderChoice) => {
     if (locked || side === null) return;
-    if (!m.selected.length) {
+    if (!chosen) {
       m.note = 'Choose some units first';
       return refresh();
     }
@@ -144,9 +150,10 @@ function BattleMap({ game }: { game: Game }) {
                   <button
                     class="btn small"
                     data-testid="map-select-all"
-                    disabled={!!view.over || !ownIds.length}
+                    disabled={!!view.over || !alive}
                     onClick={() => {
                       m.selected = [...ownIds];
+                      m.all = true;
                       m.armed = null;
                       m.note = null;
                       refresh();
@@ -157,9 +164,10 @@ function BattleMap({ game }: { game: Game }) {
                   <button
                     class="btn small"
                     data-testid="map-select-none"
-                    disabled={!m.selected.length}
+                    disabled={!chosen}
                     onClick={() => {
                       m.selected = [];
+                      m.all = false;
                       m.armed = null;
                       m.note = null;
                       refresh();
@@ -168,7 +176,9 @@ function BattleMap({ game }: { game: Game }) {
                     None
                   </button>
                   <span class="muted" data-testid="map-selected">
-                    {m.selected.length} of {ownIds.length} selected
+                    {m.all
+                      ? `All ${alive} unit${alive === 1 ? '' : 's'} selected`
+                      : `${m.selected.length} of ${ownIds.length} selected`}
                   </span>
                 </div>
                 <div class="battle-map-buttons" role="group" aria-label="Orders">
@@ -177,10 +187,8 @@ function BattleMap({ game }: { game: Game }) {
                       key={choice}
                       class={`btn ${m.armed === choice ? 'active' : ''}`}
                       data-testid={`map-order-${choice}`}
-                      disabled={!!locked || !m.selected.length}
-                      title={
-                        locked ?? (m.selected.length ? orderHelp(choice, side) : 'Choose some units first')
-                      }
+                      disabled={!!locked || !chosen}
+                      title={locked ?? (chosen ? orderHelp(choice, side) : 'Choose some units first')}
                       onClick={() => press(choice)}
                     >
                       {ORDER_NAMES[choice]}
@@ -209,18 +217,13 @@ function BattleMap({ game }: { game: Game }) {
                 </button>
               </div>
             )}
-            {log.length > 0 && (
+            {side !== null && (
               <ul class="battle-map-log" data-testid="map-log">
                 {log.map((e) => (
                   <li key={e.n} data-testid={`map-log-${e.n}`} data-state={e.state}>
                     <strong>{ORDER_NAMES[e.kind as OrderChoice] ?? e.kind}</strong>{' '}
                     {e.units === 'all' ? 'all units' : `${e.units} unit${e.units === 1 ? '' : 's'}`}
-                    {e.target !== undefined && e.kind === 'focus' && side === 1
-                      ? ` on attacker ${e.target}`
-                      : ''}
-                    {e.target !== undefined && !(e.kind === 'focus' && side === 1)
-                      ? ` at building ${e.target}`
-                      : ''}
+                    {targetText(view, frame, side, e)}
                     {' · '}
                     <span class="battle-map-ack">
                       {e.state === 'stamped'
@@ -242,10 +245,23 @@ function BattleMap({ game }: { game: Game }) {
   );
 }
 
+/** Where an order in the list was aimed, in words: a building by its name, an attacker by its sort. */
+function targetText(view: LiveView, frame: BattleFrame | null, side: Side | null, e: OrderLogEntry): string {
+  if (e.target === undefined) return '';
+  if (e.kind === 'focus' && side === 1) {
+    const u = mapUnits(frame ?? null).find((x) => x.id === e.target);
+    return ` on ${u ? (UNIT.get(u.kind)?.name ?? u.kind).toLowerCase() : 'an attacker'}`;
+  }
+  const s = structsOf(view.input.layout)[e.target];
+  if (!s) return ' at a building';
+  const name = view.input.layout.names.find(([id]) => id === s.id)?.[1];
+  return ` at ${name ?? STRUCT_WORDS[s.kind]}`;
+}
+
 /** Send the orders a button means for the chosen units, and say what happened. */
 function sendOrder(game: Game, choice: OrderChoice, side: Side, ownIds: number[], target?: number): void {
   const m = game.battleMap;
-  const r = buildOrders(choice, side, m.selected, ownIds, target);
+  const r = buildOrders(choice, side, m.selected, ownIds, target, m.all);
   if ('problem' in r) {
     m.note = r.problem;
     return game.notify();
@@ -255,7 +271,7 @@ function sendOrder(game: Game, choice: OrderChoice, side: Side, ownIds: number[]
   m.armed = null;
   const n = m.selected.length;
   m.note = sent
-    ? `${ORDER_NAMES[choice]} sent to ${n === ownIds.length ? 'all' : n} unit${n === 1 ? '' : 's'}.`
+    ? `${ORDER_NAMES[choice]} sent to ${m.all || n === ownIds.length ? 'all' : n} unit${n === 1 && !m.all ? '' : 's'}.`
     : 'The battle is over: no more orders.';
   game.notify();
 }
@@ -295,29 +311,29 @@ function Status(p: {
         ))}
       </div>
       <div class="battle-map-detail muted" data-testid="map-detail">
-        step {frame?.step ?? view.step} · the room lets it run to {view.allow} · {view.orders} order
-        {view.orders === 1 ? '' : 's'} so far
+        <span title="The step this page has run to, and the step the room lets both pages run to">
+          step {frame?.step ?? view.step} · frontier {view.allow}
+        </span>{' '}
+        · {view.orders} order{view.orders === 1 ? '' : 's'} so far
       </div>
-      {view.over || p.outcome ? (
-        <p class="battle-map-flag over" data-testid="map-over" role="status">
-          The battle is over:{' '}
-          {p.outcome === 'raided'
-            ? 'the attackers hit their targets.'
-            : p.outcome === 'repelled'
-              ? 'the defenders held.'
-              : p.outcome === 'withdrew'
-                ? 'the attackers pulled out.'
-                : 'it ended.'}
-        </p>
-      ) : (
-        p.held &&
-        side !== null &&
-        !view.handed && (
+      <div class="battle-map-flagrow">
+        {view.over || p.outcome ? (
+          <p class="battle-map-flag over" data-testid="map-over" role="status">
+            The battle is over:{' '}
+            {p.outcome === 'raided'
+              ? 'the attackers hit their targets.'
+              : p.outcome === 'repelled'
+                ? 'the defenders held.'
+                : p.outcome === 'withdrew'
+                  ? 'the attackers pulled out.'
+                  : 'it ended.'}
+          </p>
+        ) : p.held && side !== null && !view.handed ? (
           <p class="battle-map-flag" data-testid="map-waiting" role="status">
             Waiting for {p.them}’s page to catch up…
           </p>
-        )
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -392,7 +408,8 @@ function Stage({ game }: { game: Game }) {
         waiting = nowWaiting;
         game.notify();
       }
-      if (side !== null) m.selected = pruneSelection(m.selected, frame, side);
+      if (side !== null)
+        m.selected = m.all ? ownUnits(frame, side).map((u) => u.id) : pruneSelection(m.selected, frame, side);
       const layout = v.input.layout;
       const states = structStates(frame, cache.current.structs.length);
       const hover = hoverOf(c, ui.current.hover);
@@ -420,7 +437,7 @@ function Stage({ game }: { game: Game }) {
         const s = structAt(c.mv, cache.current.structs, states, at.x, at.y, 4, true);
         return s ? ({ kind: 'structure', k: s.k } as const) : null;
       }
-      const u = unitAt(c.mv, c.frame?.units ?? [], at.x, at.y, (x) => x.side === 0 && standingUnit(x));
+      const u = unitAt(c.mv, mapUnits(c.frame), at.x, at.y, (x) => x.side === 0 && standingUnit(x));
       return u ? ({ kind: 'unit', id: u.id } as const) : null;
     };
     raf = requestAnimationFrame(loop);
@@ -429,8 +446,10 @@ function Stage({ game }: { game: Game }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Escape') return;
       if (m.armed) m.armed = null;
-      else if (m.selected.length) m.selected = [];
-      else return;
+      else if (m.selected.length || m.all) {
+        m.selected = [];
+        m.all = false;
+      } else return;
       m.note = null;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -498,7 +517,7 @@ function Stage({ game }: { game: Game }) {
       if (d.mode === 'box' && side !== null && !v.over && !v.handed) {
         const picked = unitsInBox(
           mv,
-          frame?.units ?? [],
+          mapUnits(frame),
           d.x0,
           d.y0,
           d.x,
@@ -507,6 +526,7 @@ function Stage({ game }: { game: Game }) {
         );
         const ids = picked.map((u) => u.id);
         m.selected = d.shift ? [...new Set([...m.selected, ...ids])] : ids;
+        m.all = false;
         m.note = ids.length ? null : 'No units in that box';
         game.notify();
       }
@@ -534,7 +554,7 @@ function Stage({ game }: { game: Game }) {
       }
       const u = unitAt(
         mv,
-        frame?.units ?? [],
+        mapUnits(frame),
         d.x,
         d.y,
         (x) => x.side === 0 && standingUnit(x),
@@ -549,13 +569,14 @@ function Stage({ game }: { game: Game }) {
     }
     const u = unitAt(
       mv,
-      frame?.units ?? [],
+      mapUnits(frame),
       d.x,
       d.y,
       (x) => x.side === side && standingUnit(x),
       UNIT_PX,
       touch ? 14 : 5,
     );
+    m.all = false;
     if (u) m.selected = clickSelect(m.selected, u.id, d.shift || touch);
     else if (!touch) m.selected = [];
     m.note = null;
@@ -575,7 +596,7 @@ function Stage({ game }: { game: Game }) {
     m.zoom = zoomBy(m.zoom, dir);
     // Zooming in goes to what is chosen, if anything is; out comes back to the whole.
     const c = current(Math.round(canvas.clientWidth), Math.round(canvas.clientHeight));
-    const chosen = (c?.frame?.units ?? []).filter((u) => m.selected.includes(u.id));
+    const chosen = mapUnits(c?.frame ?? null).filter((u) => m.selected.includes(u.id));
     if (dir > 0 && chosen.length)
       m.centre = {
         x: chosen.reduce((a, u) => a + u.x, 0) / chosen.length,
@@ -624,8 +645,7 @@ function Stage({ game }: { game: Game }) {
         </button>
       </div>
       <p class="battle-map-legend muted" data-testid="map-legend">
-        Red arrows are attackers, blue squares defenders; a ring on a building marks what the attackers are
-        after. Ways in are shown where they cross the edge.
+        Red arrows: attackers · blue squares: defenders · a ring: what the attackers are after
       </p>
     </div>
   );

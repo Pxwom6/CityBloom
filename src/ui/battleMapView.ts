@@ -41,18 +41,43 @@ export const ZOOM = { min: 1, max: 6, step: 1.5 } as const;
 /** Most unit ids an order names (the region room's limit, `LIVE.units`). */
 export const ORDER_UNITS = 64;
 
-/** The battle's area: the layout's box, and a way in just outside it, with a margin. */
+/**
+ * The battle's area: where its structures stand, with a margin, inside the layout's box. A way in just
+ * outside it (an aircraft's, a ship's) is brought in; one far off is shown at the canvas's edge instead
+ * (`edgeMark`). The box itself reaches out to the highway's way in and a wide margin round what
+ * matters, mostly empty ground, so it is not what is fitted.
+ */
 export function mapBounds(layout: BattleLayout): Bounds {
   const [bx0, bz0, bx1, bz1] = layout.box;
-  let x0 = bx0;
-  let z0 = bz0;
-  let x1 = bx1;
-  let z1 = bz1;
-  // A way in a little outside the box (an aircraft's, a ship's) is brought in; one far off is shown
-  // at the edge instead (`edgeMark`).
-  const reach = 160;
+  let x0 = Infinity;
+  let z0 = Infinity;
+  let x1 = -Infinity;
+  let z1 = -Infinity;
+  const n = Math.floor(layout.structs.length / S.stride);
+  for (let k = 0; k < n; k++) {
+    const x = layout.structs[k * S.stride + S.x]!;
+    const z = layout.structs[k * S.stride + S.z]!;
+    x0 = Math.min(x0, x);
+    z0 = Math.min(z0, z);
+    x1 = Math.max(x1, x);
+    z1 = Math.max(z1, z);
+  }
+  if (n === 0) {
+    x0 = bx0;
+    z0 = bz0;
+    x1 = bx1;
+    z1 = bz1;
+  }
+  const margin = 110;
+  x0 -= margin;
+  z0 -= margin;
+  x1 += margin;
+  z1 += margin;
+  const reach = 200;
+  const area = { x0, z0, x1, z1 };
   for (const e of layout.entries) {
-    if (e.x < bx0 - reach || e.x > bx1 + reach || e.z < bz0 - reach || e.z > bz1 + reach) continue;
+    if (e.x < area.x0 - reach || e.x > area.x1 + reach || e.z < area.z0 - reach || e.z > area.z1 + reach)
+      continue;
     x0 = Math.min(x0, e.x);
     z0 = Math.min(z0, e.z);
     x1 = Math.max(x1, e.x);
@@ -70,10 +95,7 @@ export function mapBounds(layout: BattleLayout): Bounds {
     z0 = c - min / 2;
     z1 = c + min / 2;
   }
-  const pad = 0.04;
-  const px = (x1 - x0) * pad;
-  const pz = (z1 - z0) * pad;
-  return { x0: x0 - px, z0: z0 - pz, x1: x1 + px, z1: z1 + pz };
+  return { x0, z0, x1, z1 };
 }
 
 /** The view that shows `b` whole in a canvas of `w` × `h` pixels, zoomed `zoom` times about `centre`. */
@@ -162,6 +184,20 @@ export function structKind(tags: number): StructKind {
   if (tags & TAG.job) return 'job';
   return 'home';
 }
+
+/** What a structure is called when the city has no name for it. */
+export const STRUCT_WORDS: Record<StructKind, string> = {
+  hq: 'the HQ',
+  base: 'a military base',
+  defence: 'a gun position',
+  intercept: 'an interceptor battery',
+  power: 'a power plant',
+  industry: 'a factory',
+  civic: 'a city building',
+  shelter: 'a shelter',
+  job: 'a business',
+  home: 'a home',
+};
 
 /** A structure of the layout, unpacked (the index is the one orders name). */
 export interface MapStruct {
@@ -263,6 +299,18 @@ export function structAt(
 /** A unit's mark is this many pixels across at least (a tap lands on it). */
 export const UNIT_PX = 9;
 
+/** A unit on the map: one in the field, or a defender still mobilising at its base (`waiting`). */
+export type MapUnit = BattleUnitView & { waiting?: true };
+
+/** Every unit the map shows: those in the field, and the defenders still at their bases. */
+export function mapUnits(frame: BattleFrame | null): MapUnit[] {
+  if (!frame) return [];
+  const out: MapUnit[] = frame.units;
+  return frame.waiting?.length
+    ? [...out, ...frame.waiting.map((u) => ({ ...u, waiting: true as const }))]
+    : out;
+}
+
 /** Units in a frame that are still fighting (not knocked out). */
 export const standingUnit = (u: BattleUnitView): boolean => u.state !== 2;
 
@@ -312,8 +360,8 @@ export function unitsInBox(
 }
 
 /** The units a player may order: their side's, still fighting. */
-export const ownUnits = (frame: BattleFrame | null, side: Side): BattleUnitView[] =>
-  (frame?.units ?? []).filter((u) => u.side === side && standingUnit(u));
+export const ownUnits = (frame: BattleFrame | null, side: Side): MapUnit[] =>
+  mapUnits(frame).filter((u) => u.side === side && standingUnit(u));
 
 /** A selection after the battle moved on: the ids still among a side's fighting units. */
 export function pruneSelection(selected: Iterable<number>, frame: BattleFrame | null, side: Side): number[] {
@@ -390,14 +438,16 @@ export function buildOrders(
   selected: readonly number[],
   own: readonly number[],
   target?: number,
+  /** The whole side is chosen (the All button), whether or not every unit is on the map yet. */
+  everyone = false,
 ): { orders: OrderRequest[] } | { problem: string } {
   if (side === 1 && choice === 'withdraw') return { problem: 'Only attackers can withdraw' };
   if (side === 0 && choice === 'guard') return { problem: 'Only defenders can guard a building' };
   const ids = selected.filter((id) => own.includes(id));
-  if (!ids.length) return { problem: 'Choose some units first' };
+  if (!ids.length && !everyone) return { problem: 'Choose some units first' };
   if (needsTarget(choice) && target === undefined)
     return { problem: targetOf(choice, side) === 'attacker' ? 'Click an attacker' : 'Click a building' };
-  const all = own.length > 0 && own.every((id) => ids.includes(id));
+  const all = everyone || (own.length > 0 && own.every((id) => ids.includes(id)));
   const base: Pick<OrderRequest, 'kind' | 'target'> = {
     kind: choice,
     ...(needsTarget(choice) ? { target } : {}),

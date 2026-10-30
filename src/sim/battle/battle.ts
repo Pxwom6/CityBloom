@@ -32,6 +32,7 @@ import {
   type BattleMods,
   type BattleShot,
   type BattleUnitIn,
+  type BattleUnitView,
   type Outcome,
   type Side,
 } from './types';
@@ -1821,6 +1822,27 @@ export class Battle {
     };
   }
 
+  /** The defenders still at their bases (the map shows them; the city's scene does not). */
+  private waitingView(): { waiting?: BattleUnitView[] } {
+    const list = this.units.filter((u) => u.side === 1 && u.mode === Mode.Wait && this.alive(u));
+    if (!list.length) return {};
+    return {
+      waiting: list.map((u) => ({
+        id: u.id,
+        kind: u.kind,
+        side: u.side,
+        x: Math.round(u.x * 10) / 10,
+        z: Math.round(u.z * 10) / 10,
+        y: 0,
+        yaw: 0,
+        aim: 0,
+        hp: Math.round((u.hp / u.max) * 100) / 100,
+        state: 0 as const,
+        ...(this.v4 ? { owner: u.owner } : {}),
+      })),
+    };
+  }
+
   private statesText(): string {
     if (this.statesDirty) {
       let t = '';
@@ -1863,6 +1885,7 @@ export class Battle {
           ...(this.v4 ? { owner: u.owner } : {}),
         })),
       shots: [...this.shots],
+      ...this.waitingView(),
       sides,
       targets: this.objectives.map((k) => ({
         id: this.sv(k, S.id),

@@ -294,6 +294,11 @@ export interface BattleFrame {
   step: number;
   maxSteps: number;
   units: BattleUnitView[];
+  /**
+   * Version 4 (for the battle map): the defending units still mobilising at their bases (not in
+   * `units` until they set off), so they can be ordered before they are on the road.
+   */
+  waiting?: BattleUnitView[];
   shots: BattleShot[];
   sides: { name: string; color: number; alive: number; total: number }[];
   /** Structures aimed at, with their health (0–1). */

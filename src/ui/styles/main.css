@@ -4370,14 +4370,22 @@ body {
   background: var(--color-accent-soft);
   font-weight: var(--font-weight-medium);
 }
-.battle-map-stage {
+.battle-map > * {
+  flex: none;
+}
+/* The picture takes what the rest leaves (at least a small one), whatever the window's height. */
+.battle-map .battle-map-stage {
   position: relative;
+  flex: 1 1 24rem;
+  min-height: 11rem;
   margin: 0 var(--space-3);
 }
 .battle-map-canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: clamp(15rem, 44vh, 28rem);
+  height: calc(100% - 2.1rem);
   background: var(--map-ground);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
@@ -4402,8 +4410,19 @@ body {
   height: 1.9rem;
 }
 .battle-map-legend {
-  margin: var(--space-1) 0 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding-top: var(--space-1);
   font-size: var(--font-size-xs);
+}
+.battle-map-flagrow {
+  min-height: 1.9rem;
+}
+.battle-map.watching .battle-map-flagrow {
+  min-height: 0;
 }
 .battle-map-orders {
   display: flex;
@@ -4444,6 +4463,7 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
+  min-height: 3.6em;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
@@ -4474,8 +4494,8 @@ body {
   max-height: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-#ui:is([data-width='s'], [data-width='xs']) .battle-map-canvas {
-  height: clamp(12rem, 38vh, 22rem);
+#ui:is([data-width='s'], [data-width='xs']) .battle-map .battle-map-stage {
+  flex-basis: 20rem;
 }
 #ui:is([data-width='s'], [data-width='xs']) .battle-map-buttons .btn {
   flex: 1;

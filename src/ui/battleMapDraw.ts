@@ -204,9 +204,11 @@ export function drawBattleMap(g: CanvasRenderingContext2D, cache: MapCache, m: D
   g.drawImage(cache.ground(m, p), 0, 0);
   g.setTransform(m.dpr, 0, 0, m.dpr, 0, 0);
   drawWaysIn(g, m, p);
-  drawStructures(g, cache, m, p);
+  const labels = drawStructures(g, cache, m, p);
   drawShots(g, m, p);
   drawUnits(g, m, p);
+  // The names last, over the units: what is aimed at is named where it can be read.
+  drawLabels(g, labels, m.view, p);
   if (m.box) {
     const b = m.box;
     g.fillStyle = 'rgba(255, 176, 0, 0.14)';
@@ -262,7 +264,9 @@ function drawWaysIn(g: CanvasRenderingContext2D, m: DrawModel, p: Palette): void
 
 // ----------------------------------------------------------------------------- structures
 
-function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawModel, p: Palette): void {
+type Label = { text: string; x: number; y: number; r: number };
+
+function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawModel, p: Palette): Label[] {
   const v = m.view;
   const targets = new Map((m.frame?.targets ?? []).map((t) => [t.id, t.hp]));
   const pulse = 0.5 + 0.5 * Math.sin(m.time * 4);
@@ -270,7 +274,7 @@ function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawMod
   const order = [...cache.structs].sort(
     (a, b) => (m.states[b.k] === 2 ? 1 : 0) - (m.states[a.k] === 2 ? 1 : 0),
   );
-  const labels: { text: string; x: number; y: number; r: number }[] = [];
+  const labels: Label[] = [];
   for (const s of order) {
     const q = toScreen(v, s.x, s.z);
     if (q.x < -20 || q.y < -20 || q.x > v.w + 20 || q.y > v.h + 20) continue;
@@ -339,19 +343,14 @@ function drawStructures(g: CanvasRenderingContext2D, cache: MapCache, m: DrawMod
       g.stroke();
     }
   }
-  drawLabels(g, labels, v, p);
+  return labels;
 }
 
 /**
  * The names of what is aimed at, each beside its building: above it, else below its health bar, else to
  * one side, whichever place is free (none: it is left out rather than written over another).
  */
-function drawLabels(
-  g: CanvasRenderingContext2D,
-  labels: { text: string; x: number; y: number; r: number }[],
-  v: MapView,
-  p: Palette,
-): void {
+function drawLabels(g: CanvasRenderingContext2D, labels: Label[], v: MapView, p: Palette): void {
   g.font = `600 10px ${p.font}`;
   const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const l of [...labels].sort((a, b) => a.y - b.y || a.x - b.x)) {

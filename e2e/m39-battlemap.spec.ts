@@ -45,6 +45,15 @@ async function reach(page: Page, step: number) {
     .toBeGreaterThanOrEqual(step);
 }
 
+/** The buildings still standing within `r` pixels of a point (where a click there may have landed). */
+function standingNear(
+  pts: { structs: { k: number; x: number; y: number; state: number }[] },
+  at: { x: number; y: number },
+  r: number,
+): number[] {
+  return pts.structs.filter((s) => s.state !== 2 && Math.hypot(s.x - at.x, s.y - at.y) <= r).map((s) => s.k);
+}
+
 /** The newest order in the map's list has the room's stamp on it. */
 async function stamped(page: Page, kind: string) {
   await expect
@@ -125,14 +134,19 @@ test('M39: commanding a live battle on the map: choose, focus, hold and free, th
   await page.mouse.click(alone[1]!.x, alone[1]!.y);
   await page.keyboard.up('Shift');
   expect((await map(page)).selected.sort()).toEqual([alone[0]!.id, alone[1]!.id].sort());
-  // A box from corner to corner of the picture chooses every unit on it.
+  // A box nearly from corner to corner of the picture (inside its rounded corners) chooses every unit in it.
   const c = pts.canvas;
-  await page.mouse.move(c.x + 0.5, c.y + 0.5);
+  const edge = 8;
+  const inside = pts.own.filter(
+    (u) => u.x >= c.x + edge && u.x <= c.x + c.w - edge && u.y >= c.y + edge && u.y <= c.y + c.h - edge,
+  );
+  await page.mouse.move(c.x + edge, c.y + edge);
   await page.mouse.down();
-  await page.mouse.move(c.x + c.w - 0.5, c.y + c.h - 0.5, { steps: 8 });
+  await page.mouse.move(c.x + c.w - edge, c.y + c.h - edge, { steps: 8 });
   await page.mouse.up();
   const boxed = (await map(page)).selected;
-  expect(boxed.length).toBe(pts.own.filter((u) => u.visible).length);
+  expect(inside.length).toBeGreaterThan(3);
+  expect(boxed.sort()).toEqual(inside.map((u) => u.id).sort());
   // Empty ground clears the choice.
   await page.mouse.click(c.x + 4, c.y + c.h - 4);
   expect((await map(page)).selected).toEqual([]);
@@ -155,7 +169,8 @@ test('M39: commanding a live battle on the map: choose, focus, hold and free, th
     pts.structs.find((s) => s.visible && s.state !== 2)!;
   await page.mouse.click(goal.x, goal.y);
   const focus = await stamped(page, 'focus');
-  expect(focus).toMatchObject({ units: 'all', target: goal.k });
+  expect(focus.units).toBe('all');
+  expect(standingNear(pts, goal, 6)).toContain(focus.target);
   expect(focus.seq).toBeGreaterThan(0);
   expect(focus.step).toBeGreaterThanOrEqual(138);
   expect((await map(page)).armed).toBeNull();
@@ -190,11 +205,13 @@ test('M39: commanding a live battle on the map: choose, focus, hold and free, th
   expect((await map(page)).handed).toBe(false);
 
   // --- Withdraw everyone, let the battle go on: it ends, and both runs agree. ---
+  // (The room takes four orders a side at a step, and the held battle has used them all at step 140.)
+  await page.evaluate(() => window.__game!.liveRelease());
+  await expect.poll(async () => (await map(page)).allow, { timeout: 60_000 }).toBeGreaterThan(150);
   await page.getByTestId('map-select-all').click();
   await page.getByTestId('map-order-withdraw').click();
   const out = await stamped(page, 'withdraw');
   expect(out.units).toBe('all');
-  await page.evaluate(() => window.__game!.liveRelease());
   await expect(page.getByTestId('map-over')).toBeVisible({ timeout: 300_000 });
   await expect(page.getByTestId('map-order-hold')).toBeDisabled();
   const end = await page.evaluate(() => window.__game!.getLive());
@@ -236,7 +253,9 @@ test('M39: as the defender the city’s own sim hosts the battle; a friend’s b
   const hq =
     pts.structs.find((s) => s.objective && s.visible && s.state !== 2) ?? pts.structs.find((s) => s.visible)!;
   await page.mouse.click(hq.x, hq.y);
-  expect(await stamped(page, 'guard')).toMatchObject({ units: 'all', target: hq.k });
+  const guard = await stamped(page, 'guard');
+  expect(guard.units).toBe('all');
+  expect(standingNear(pts, hq, 6)).toContain(guard.target);
   // Focus is on an attacker: a click on a building is not one.
   await page.getByTestId('map-order-focus').click();
   await expect(page.getByTestId('map-hint')).toContainText('click an attacker');
@@ -313,6 +332,8 @@ test.describe('on a phone', () => {
     expect(box.x).toBeLessThanOrEqual(1);
     expect(box.width).toBeGreaterThanOrEqual(388);
     await reach(page, 138);
+    // (A notice toast over the sheet's corner would cover a button for a few seconds.)
+    await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 30_000 });
     expect(await unreachable(page, 'battle-map')).toEqual([]);
     const m0 = await map(page);
     expect(m0.canvas.w).toBeGreaterThan(300);
@@ -344,7 +365,8 @@ test.describe('on a phone', () => {
       pts.structs.find((s) => s.objective && s.visible && s.state !== 2) ??
       pts.structs.find((s) => s.visible && s.state !== 2)!;
     await page.touchscreen.tap(goal.x, goal.y);
-    expect(await stamped(page, 'focus')).toMatchObject({ target: goal.k });
+    // The finger lands on whichever standing building is nearest (guns first, where marks overlap).
+    expect(standingNear(pts, goal, 14)).toContain((await stamped(page, 'focus')).target);
 
     // Zoom in, then a finger drags the picture to look elsewhere (it doesn't choose or order anything).
     await page.getByTestId('map-zoom-in').tap();

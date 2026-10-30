@@ -79,7 +79,13 @@ function BattleMap({ game }: { game: Game }) {
           : null;
   const log = game.live.orderLog().slice(-3);
   const them = view ? (view.role === 'attacker' ? view.input.defender.name : view.input.attacker.name) : '';
-  const outcome = frame?.outcome ?? null;
+  // How it ended: the last picture says so; for the city that hosted it, so does its report of the battle.
+  const reported = view
+    ? game.world.stats.war?.reports.find(
+        (r) => r.replay === view.id || r.replay === `def-${view.id}`.slice(0, 60),
+      )?.outcome
+    : undefined;
+  const outcome = frame?.outcome ?? reported ?? null;
 
   const refresh = () => game.notify();
 
@@ -406,6 +412,13 @@ function Stage({ game }: { game: Game }) {
       const nowWaiting = m.heldSince !== null && performance.now() - m.heldSince >= 1500;
       if (nowWaiting !== waiting) {
         waiting = nowWaiting;
+        game.notify();
+      }
+      // Over: nobody is left to order, and the rings come off.
+      if (v.over && (m.selected.length || m.all || m.armed)) {
+        m.selected = [];
+        m.all = false;
+        m.armed = null;
         game.notify();
       }
       if (side !== null)

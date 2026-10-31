@@ -1084,3 +1084,22 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
 - **The UI asks the sim before sending a friend's terms** (`friendTerms` query): the money caps and the
   room's rules show beside the control; the sim's own `declareWar` and `propose` point friends to the
   Friends list. Leaving the region ends friends' wars, pacts and vassal mirrors; money already booked stays.
+- **Allies' help joins a live battle at the step the room stamped it** (`BattleHelper.at`), its units waiting
+  at the way in until they arrive (30 s of battle by road, rail or air, 45 s by sea, from the frontier):
+  created at that step rather than at arrival, so a pending helper keeps the battle alive, orders can name it
+  and a withdrawal sends it home, as for one given up front. An alliance helps either side, a defensive pact
+  only the defender, pacts with both sides neither; one force per city per battle, three per battle, 24
+  units. The room names and colours the helper (not the page), and helpers' unit ids are
+  `helpUnitId(slot, k)` from 0x4000_0000, a range no city's own ids reach. Helpers fight on their own
+  judgement: their owner watches but doesn't command them in M39.
+- **A helper's losses are booked only from a run that matches the room's end** (step and hash); otherwise,
+  or if the link was lost, the page reloaded or the battle ended before it arrived, the force comes home
+  untouched and the panel says why. A followed battle the room is silent about for five minutes frees it.
+- **The region's war history is its own real-time list** ("Region at war" in the City history panel, shown
+  only where war is on); the city's own chronicle doesn't change (it's in a war city's state hash). Any city
+  may watch any battle the room keeps (20); the browser keeps six region replays apart from the city's own
+  24 battles. A replay plays the battle as fought (`asFought`: every unit id and the caps as recorded) in
+  whatever town it's shown, and the viewer says whether it ended exactly as the room's record did.
+- **The room's friend messages wait for the page's welcome** (`RegionLink.friendsHeld`) and the history is
+  merged, not replaced: a proposal waiting for a returning city was otherwise lost. A browser-hosted region's
+  clock is whole milliseconds (`wallClock()`).

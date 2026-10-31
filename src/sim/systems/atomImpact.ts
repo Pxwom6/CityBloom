@@ -23,6 +23,8 @@ import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import type { Building } from '../world/buildings';
+import { civicDef, civicRect } from '../world/civic';
+import type { Civic } from '../world/civic';
 import type { Atom } from './atom';
 import { buildingsNear, clearTrees, segmentsNear } from './disasters';
 import { ignite, toRubble } from './incidents';
@@ -112,41 +114,95 @@ export function impactSlice(sim: Sim, im: Impact): boolean {
     if (b.zone === ZONE_R) im.fled += b.pop;
     toRubble(sim, b, 'collapsed');
   }
+  forgetIncidents(sim, new Set(batch.map((x) => x.b.id)));
   im.levelled = (im.levelled ?? 0) + batch.length;
   im.done++;
   sim.warChanged();
   return standing.length <= L.slice;
 }
 
-/** Civic buildings out to 1.5 times the blast close for a while (the war's own damage, so Repair crews shorten it). */
+/**
+ * Calls for help at buildings that have just fallen are called off: an emergency or a crime open on
+ * a home the blast levelled would otherwise run out its clock on the rubble and write a patient lost
+ * (`incidentsTick` does not look at what stands), or have an ambulance arrive and save one. The
+ * blast has no patients; the vehicles on their way are let go (as a missed call lets them).
+ */
+function forgetIncidents(sim: Sim, levelled: Set<number>): void {
+  const s = sim.state;
+  if (!s.incidents.size) return;
+  for (const inc of [...s.incidents.values()]) {
+    if (!levelled.has(inc.building)) continue;
+    s.incidents.delete(inc.id);
+    const v = inc.responder ? s.vehicles.get(inc.responder) : undefined;
+    if (v && v.ref === inc.id) v.ref = 0;
+  }
+}
+
+/**
+ * Civic buildings the blast closes but does not take: the regional rail link's junction (a
+ * bulldozer is refused it, and the city could never put it back: the rail link is placed once) and
+ * Sunfield Commons (the region's great work, built once for good; a city that loses it still gets its
+ * share). They stand, closed for as long as the roads inside the blast are.
+ */
+function endures(c: Civic): boolean {
+  const def = civicDef(c);
+  return !!(def.railLink || def.regionProject);
+}
+
+/**
+ * Civic buildings out to 1.5 times the blast close for a while (the war's own damage, so Repair
+ * crews shorten it), and those inside it that the blast leaves standing (`endures`) close like the
+ * roads there.
+ */
 function closeCivics(sim: Sim, im: Impact): void {
   const L = ATOM.impact;
   for (const c of [...sim.state.civics.values()].sort((a, b) => a.id - b.id)) {
     const d = DMath.hypot(c.x - im.x, c.z - im.z);
     if (d > L.level && d <= L.level * L.civicReach) damageCivic(sim, c.id, L.civicClosed, false);
+    else if (d <= L.level && endures(c)) damageCivic(sim, c.id, L.roadClosed, false);
   }
 }
 
 /**
+ * The lots round a civic building that taking it away re-checks (`Sim.removeCivic`'s box), counted:
+ * what the work costs, near enough, whatever the building is. Deterministic and cheap (a hash query).
+ */
+function civicWork(sim: Sim, c: Civic): number {
+  const r = civicRect(c);
+  const pad = DMath.hypot(r.hw, r.hd) + 40;
+  return sim.net.cellHash.query({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad })
+    .length;
+}
+
+/**
  * Civic buildings inside the blast are gone (`removeCivic`: a base's units and orders go with it, a
- * plant or silo lose what they hold), the nearest `ATOM.impact.civicsPerTick` a tick from the
- * landing, because taking one away re-checks the lots round it. Says whether none is left inside.
- * What is left is read from the city each time, so it resumes from a save and is idempotent.
+ * plant or silo lose what they hold), the nearest first and a few a tick from the landing: at most
+ * `ATOM.impact.civicsPerTick`, and no more once the lots round those taken come to
+ * `ATOM.impact.civicCells` (a nuclear plant alone is about that), because taking one away re-checks
+ * the lots round it and some cost many times another. At least one a tick. The rail link and the
+ * region's great work are left (`endures`). Says whether none is left inside. What is left is read
+ * from the city each time, so it resumes from a save and is idempotent.
  */
 export function impactCivics(sim: Sim, im: Impact): boolean {
   const L = ATOM.impact;
-  const inside: { id: number; d: number }[] = [];
+  const inside: { c: Civic; d: number }[] = [];
   for (const c of sim.state.civics.values()) {
     const d = DMath.hypot(c.x - im.x, c.z - im.z);
-    if (d <= L.level) inside.push({ id: c.id, d });
+    if (d <= L.level && !endures(c)) inside.push({ c, d });
   }
-  inside.sort((a, b) => a.d - b.d || a.id - b.id);
-  for (const { id } of inside.slice(0, L.civicsPerTick)) {
-    const c = sim.state.civics.get(id)!;
-    sim.events.push({ kind: 'civicDestroyed', id, info: { def: c.def, x: c.x, z: c.z } });
-    sim.removeCivic(id);
+  inside.sort((a, b) => a.d - b.d || a.c.id - b.c.id);
+  let work = 0;
+  let taken = 0;
+  for (const { c } of inside) {
+    if (taken >= L.civicsPerTick) break;
+    const cost = civicWork(sim, c);
+    if (taken > 0 && work + cost > L.civicCells) break;
+    work += cost;
+    taken++;
+    sim.events.push({ kind: 'civicDestroyed', id: c.id, info: { def: c.def, x: c.x, z: c.z } });
+    sim.removeCivic(c.id);
   }
-  return inside.length <= L.civicsPerTick;
+  return inside.length <= taken;
 }
 
 /** Roads inside the blast close for a long while (the regional highway stays open: the city's lifeline). */
@@ -163,12 +219,15 @@ function blastRoads(sim: Sim, im: Impact): void {
 }
 
 /**
- * Fires round the edge of the blast, nearest first and at most `ATOM.impact.fires`: each building
+ * Fires round the edge of the blast, nearest first, at most `ATOM.impact.fires` in all and
+ * `ATOM.impact.firesPerTick` on each tick (the rest on the next ones, from where the last stopped:
+ * `im.fireAfter`, so a building put out or burnt down in between is not lit again): each building
  * between the blast and the fire reach a chance that falls to nothing at the reach, rolled on a die of
  * its own (the seed and its id), so the order they are met in changes nothing and no shared stream
- * moves. Idempotent: a building already burning is left alone. (Set on the tick after the landing.)
+ * moves. A building already burning is left alone. Set from the tick after the landing. Says whether
+ * the last of them is set.
  */
-export function impactFires(sim: Sim, im: Impact): void {
+export function impactFires(sim: Sim, im: Impact): boolean {
   const L = ATOM.impact;
   const span = L.level * (L.fireReach - 1);
   const rim: Near[] = [];
@@ -176,15 +235,23 @@ export function impactFires(sim: Sim, im: Impact): void {
     const d = DMath.hypot(b.x - im.x, b.z - im.z);
     if (b.state !== BState.Rubble && d > L.level) rim.push({ b, d });
   }
+  rim.sort(byDistance);
+  const from = im.fireAfter;
   let lit = 0;
-  for (const { b, d } of rim.sort(byDistance)) {
-    if (lit >= L.fires) break;
+  for (const { b, d } of rim) {
+    // (Past the last one reached: nearer, or as near and with a lower id, is behind us.)
+    if (from && (d < from.d || (d === from.d && b.id <= from.id))) continue;
+    if ((im.lit ?? 0) >= L.fires) break;
+    if (lit >= L.firesPerTick) return false;
+    im.fireAfter = { d, id: b.id };
     if (b.fire > 0 || b.state === BState.Construction) continue;
     const chance = L.fireChance * (1 - (d - L.level) / span);
     if (!Rng.fromSeed(`${sim.state.options.seed}:atom:${b.id}`).chance(chance)) continue;
     ignite(sim, b);
     lit++;
+    im.lit = (im.lit ?? 0) + 1;
   }
+  return true;
 }
 
 /** The blast is over: the bomb is counted, the city told, and what follows it begins. */

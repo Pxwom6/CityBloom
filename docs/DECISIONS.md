@@ -1481,3 +1481,41 @@ these are its calls and the reasons, with where they overturned the first draft.
     multi-slice behaviour by lowering `ATOM.impact.slice` for a test; `atombench.ts` is the 400 on the
     110k city. Mutations checked: no distance order, no cap, fires from a shared stream, charging while
     down and ignoring a blackout each fail a test.
+- **Step 3 review fixes (seven findings).**
+  - *Calls for help at fallen buildings are called off.* `impactSlice` deletes the open incidents (an
+    emergency or a crime) of the buildings it levels and lets their responders go (`ref = 0`), as a missed
+    call does; `incidentsTick` itself is untouched (a house burnt down by a fire keeps its old behaviour,
+    and the peace golden with it). Before, each open call ran out its clock over the rubble and wrote a
+    `death` ("An ambulance could not reach a patient in time"), a `crime`, or an ambulance arrived and
+    wrote `patientSaved`, for ten game hours after the landing.
+  - *The rail link and the region's great work stand.* The blast leaves the regional rail link's junction
+    and Sunfield Commons alone (`endures`: `railLink` or `regionProject` civic defs), closed for the
+    roads' 240 hours instead of taken: a bulldozer is refused the one and the city can never place a
+    second link, and the room latches the other as built for good, so a lost one could not be put back
+    and its power share would still be paid. A meteor can still take them (as before); the bomb is not
+    a disaster and must not leave a half-state on purpose.
+  - *The blast is bounded by cost as well as by count.* Fires are set `firesPerTick` (120) a tick from the
+    tick after the landing, nearest first, with the place reached kept in `Impact.fireAfter` (distance and
+    building id) and the number lit in `Impact.lit`, so the next tick carries on, a fire put out in
+    between is not lit again, and the total is still `fires` (400); `Impact.fires` is set when the last
+    is done. Civic buildings come down at most `civicsPerTick` (3) a tick and no more once the lots round
+    those taken (the cells in `removeCivic`'s re-check box, a hash query: deterministic, about 1 ms to
+    100 cells on the 110k city) come to `civicCells` (500; a nuclear plant alone is about that), and
+    always at least one, so a big one is never put off. atombench: the landing 7.1 ms, the fires 11.1 ms,
+    the civic ticks 3 to 8 ms each (before: up to 24 ms), the worst atom tick 11.1 ms.
+  - *Slices count hours.* The next slice needs a later *hour* than the landing's, not a later tick, so a
+    landing on the top of an hour deals its next slice at the next hour's minute 1 and never on the tick
+    that sets the fires. And a flight (hours > 0) never lands on minute 0 of an hour: `atomInbound`
+    makes it a minute longer when it would (that tick is the day's heaviest: a month closes and the
+    utilities run; a bomb a computer neighbour fires at a month close always lands there). A bomb due
+    at once (`hours: 0`, the cheat) is not moved.
+  - *The `atom` cheat's `spent` is spent.* Stage 8 sets `fired.landed`, so the next tick does not strike
+    the neighbour it names (a stage meant for checking gates and cards was cutting a rival's people by
+    60 % and swinging an open war).
+  - *The dome inspector says it is down.* `domeStatus` (`src/ui/warView.ts`, pure, tested against the
+    summary) reads "Down for 50 days more" while `dome.down` counts, then Charging, Charged or Raised;
+    the blurb says what a bomb costs it, and the pre-battle notice says it is down rather than "0 %
+    charged". (`warHours` moved to the same file; `Research.tsx` still exports it.)
+  - *Tests for what the blast does to a base, a plant and a silo* go through the real `removeCivic`
+    (a bare delete fails them): units and orders gone and the books straight for days after; a silo in
+    the blast loses the bomb, the build and the preparation; a plant halves the fuel.

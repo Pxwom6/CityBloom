@@ -1,14 +1,18 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ATOM } from '../../src/data/atom';
+import { SERVICES } from '../../src/data/civic';
 import { GRID_CELL, GRID_RES, MAP_SIZE } from '../../src/data/world';
 import { ZONE_R } from '../../src/data/zones';
+import { DMath } from '../../src/sim/dmath';
 import type { Sim } from '../../src/sim/sim';
 import { partHashes } from '../../src/sim/sync';
-import { atomTick, bombMood } from '../../src/sim/systems/atom';
+import { atomInbound, atomTick, bombMood } from '../../src/sim/systems/atom';
 import { groundZero, impactSlice } from '../../src/sim/systems/atomImpact';
+import { dispatch } from '../../src/sim/systems/incidents';
 import { raidMood } from '../../src/sim/systems/raids';
-import { TICKS_PER_HOUR } from '../../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { BState, type Building } from '../../src/sim/world/buildings';
+import { civicRect, type Civic } from '../../src/sim/world/civic';
 import { clone, rivals } from './economyHelpers';
 import { labTown, ok } from './researchTown';
 
@@ -22,6 +26,11 @@ import { labTown, ok } from './researchTown';
 
 const H = TICKS_PER_HOUR;
 const L = ATOM.impact;
+/** The blast's limits as the game has them: a test that changes one gets it back, pass or fail. */
+const LIMITS = { ...L };
+afterEach(() => {
+  Object.assign(L, LIMITS);
+});
 
 /** The west end of the scripted town: buildings inside the blast, in the ring round it, and far beyond. */
 const WEST = { x: 48, z: 600 };
@@ -48,8 +57,10 @@ const dist = (b: { x: number; z: number }, at: { x: number; z: number }) =>
  * A copy of the town with a bomb about to land on `at` (ground zero set by hand), after a battle
  * begun in the city if asked (no raid begins once a bomb is in the air).
  */
-function aimed(at: { x: number; z: number }, hours = 0, battle = false): Sim {
+function aimed(at: { x: number; z: number }, hours = 0, battle = false, minute?: number): Sim {
   const sim = clone(base);
+  // (Moved on to a minute of the hour, for a test where it matters.)
+  if (minute !== undefined) sim.state.tick += (minute - (sim.state.tick % H) + H) % H;
   if (battle) ok(sim, { type: 'cheat', cheat: 'raidIn', hours: 0, neighbour: rivals(sim)[0]!.id });
   ok(sim, { type: 'cheat', cheat: 'bombIn', hours });
   const hit = atom(sim).inbound!;
@@ -93,16 +104,19 @@ function streams(sim: Sim): string {
   return JSON.stringify(out);
 }
 
-/** Run `fn` with the slice limit lowered (the scripted town has fewer than 400 buildings inside), then restore it. */
-function withSlice<T>(slice: number, fn: () => T): T {
-  const was = L.slice;
-  L.slice = slice;
+/** Run `fn` with some of the blast's limits changed, then put them back. */
+function withImpact<T>(patch: Partial<typeof L>, fn: () => T): T {
+  const was = { ...L };
+  Object.assign(L, patch);
   try {
     return fn();
   } finally {
-    L.slice = was;
+    Object.assign(L, was);
   }
 }
+
+/** Run `fn` with the slice limit lowered (the scripted town has fewer than 400 buildings inside), then restore it. */
+const withSlice = <T>(slice: number, fn: () => T): T => withImpact({ slice }, fn);
 
 describe('M40: the blast', () => {
   it('levels everything within the radius, leaves everything beyond the fire reach as it was, and sets fires between', () => {
@@ -116,7 +130,8 @@ describe('M40: the blast', () => {
     const homesPop = homes.reduce((n, b) => n + b.pop, 0);
     expect(homesPop).toBeGreaterThan(0);
     const burningBefore = new Set(sim.state.burning);
-    const incidents = sim.state.incidents.size;
+    const incidents = [...sim.state.incidents.values()];
+    const levelledIds = new Set(before.inside.map((b) => b.id));
 
     atomTick(sim);
     blast(sim);
@@ -162,7 +177,8 @@ describe('M40: the blast', () => {
     ]);
     // Not a disaster, no ambulance, no incident, no one named a casualty.
     expect(sim.state.disasters).toHaveLength(0);
-    expect(sim.state.incidents.size).toBe(incidents);
+    // (Calls for help at buildings that fell are called off; nothing else is opened or closed.)
+    expect(sim.state.incidents.size).toBe(incidents.filter((i) => !levelledIds.has(i.building)).length);
     expect([...sim.state.vehicles.values()].filter((v) => v.kind === 'ambulance')).toHaveLength(0);
     expect(events(sim, 'disaster')).toHaveLength(0);
     expect(events(sim, 'disasterOver')).toHaveLength(0);
@@ -201,6 +217,8 @@ describe('M40: the blast', () => {
       ).toBeLessThan(L.level * L.treeReach);
     const treesFar = s.trees[outTree];
 
+    // (The cell budget, tried on its own below, is off here: this is the count limit, three a tick.)
+    L.civicCells = Infinity;
     atomTick(sim);
     const landed = s.tick;
     // The ring's civics close at once; the civic buildings inside come down a few a tick, nearest
@@ -442,7 +460,7 @@ describe('M40: the blast', () => {
     const full = -ATOM.warning.mood * (1 - (hit.sheltered ?? 0) / hit.near!);
     expect(bombMood(sim)).toBeCloseTo(full, 8);
     expect(raidMood(sim)).toBeCloseTo(full, 8);
-    sim.advance(10 * H);
+    sim.advance(atom(sim).inbound!.arrive - sim.state.tick);
     expect(atom(sim).impact).toBeDefined();
     const landed = atom(sim).impact!.at!;
     expect(bombMood(sim)).toBeLessThan(0);
@@ -452,6 +470,284 @@ describe('M40: the blast', () => {
     expect(bombMood(sim)).toBeCloseTo(full / 2, 8);
     sim.state.tick = landed + span;
     expect(bombMood(sim)).toBe(0);
+  });
+});
+
+describe('M40: the blast and what stands in it', () => {
+  it('calls off the calls for help at the buildings it levels: no patient lost, none saved, no crime', () => {
+    const sim = aimed(WEST);
+    const s = sim.state;
+    const { inside, far } = sets(sim, WEST);
+    const homes = inside.filter((b) => b.zone === ZONE_R && b.pop > 0);
+    const shop = inside.find((b) => b.zone !== ZONE_R)!;
+    const safe = far.find((b) => b.zone === ZONE_R && b.pop > 0)!;
+    expect(homes.length).toBeGreaterThan(3);
+    const open = (b: Building, kind: 'emergency' | 'crime', window: number) => {
+      const inc = { id: s.nextId++, kind, building: b.id, deadline: s.tick + window, responder: 0 };
+      s.incidents.set(inc.id, inc);
+      return inc;
+    };
+    const calls = [
+      open(homes[0]!, 'emergency', SERVICES.emergencyWindow),
+      open(homes[1]!, 'emergency', SERVICES.emergencyWindow),
+      open(shop, 'crime', SERVICES.crimeWindow),
+    ];
+    const kept = open(safe, 'emergency', SERVICES.emergencyWindow);
+    // An ambulance already on its way to another.
+    const way = open(homes[2]!, 'emergency', SERVICES.emergencyWindow);
+    const v = dispatch(sim, 'health', 'ambulance', homes[2]!.id, way.id);
+    expect(v, 'an ambulance was sent').not.toBeNull();
+    way.responder = v!.id;
+    calls.push(way);
+
+    atomTick(sim);
+    // At once: every call at a building that fell is gone, the one elsewhere stands, the ambulance is let go.
+    for (const inc of calls) expect(s.incidents.has(inc.id), `${inc.kind} at ${inc.building}`).toBe(false);
+    expect(s.incidents.has(kept.id)).toBe(true);
+    expect(s.vehicles.get(v!.id)!.ref).toBe(0);
+    // Past every deadline, and the ambulance's arrival: nothing is written over the rubble.
+    sim.advance(SERVICES.emergencyWindow + 100);
+    const fell = new Set(inside.map((b) => b.id));
+    for (const kind of ['death', 'crime', 'patientSaved', 'crimeStopped'])
+      expect(
+        events(sim, kind).filter((e) => fell.has(e.id)),
+        kind,
+      ).toHaveLength(0);
+    expect(JSON.stringify(sim.events)).not.toMatch(/casualt|killed|dead|victim/i);
+  });
+
+  it('takes a base’s units and training orders with it, and leaves the books straight', () => {
+    const { sim, place } = labTown(0, { length: 800, streets: 7 });
+    for (const n of rivals(sim)) n.rival!.blackout = { from: 0, until: 1e9 };
+    const barracks = place('barracks');
+    for (let k = 0; k < 3; k++) ok(sim, { type: 'trainUnit', base: barracks, kind: 'infantry' });
+    sim.advance(2 * TICKS_PER_MONTH);
+    const w = sim.state.war!;
+    expect([...w.units.values()].filter((u) => u.base === barracks)).toHaveLength(3);
+    for (let k = 0; k < 2; k++) ok(sim, { type: 'trainUnit', base: barracks, kind: 'infantry' });
+    expect([...w.orders.values()].filter((o) => o.base === barracks).length).toBeGreaterThan(0);
+
+    const c = sim.state.civics.get(barracks)!;
+    ok(sim, { type: 'cheat', cheat: 'bombIn', hours: 0 });
+    Object.assign(sim.state.war!.atom!.inbound!, { x: c.x, z: c.z });
+    atomTick(sim);
+    blast(sim);
+    // The base is gone and nothing of its is left standing in the war's books.
+    expect(sim.state.civics.has(barracks)).toBe(false);
+    expect([...w.units.values()].filter((u) => u.base === barracks)).toHaveLength(0);
+    expect([...w.orders.values()].filter((o) => o.base === barracks)).toHaveLength(0);
+    // The invariants (checked on each step in test mode) hold for days after.
+    sim.advance(5 * TICKS_PER_MONTH);
+    expect([...w.units.values()].filter((u) => !sim.state.civics.has(u.base) && u.base !== 0)).toHaveLength(
+      0,
+    );
+  }, 60_000);
+
+  it('closes the regional rail link and the region’s great work but does not take them: neither can be put back', () => {
+    const sim = clone(base);
+    ok(sim, { type: 'cheat', cheat: 'removeRailLink' });
+    ok(sim, { type: 'buildRailLink', z: 300 });
+    const s = sim.state;
+    const link = [...s.civics.values()].find((c) => c.def === 'raillink')!;
+    expect(link).toBeDefined();
+    // The blast is centred between the link and a civic building, which stands in for the commons.
+    const at = { x: 250, z: 400 };
+    expect(dist(link, at)).toBeLessThan(L.level);
+    const stand = [...s.civics.values()]
+      .filter((c) => c !== link && dist(c, at) < L.level)
+      .sort((a, b) => dist(a, at) - dist(b, at) || a.id - b.id)[0]!;
+    expect(stand, 'a civic building inside the blast').toBeDefined();
+    stand.def = 'sunfield';
+    const others = [...s.civics.values()].filter((c) => c !== link && c !== stand && dist(c, at) <= L.level);
+    expect(others.length).toBeGreaterThan(1);
+    const refused = sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: link.id } });
+    expect(refused.ok).toBe(false);
+
+    ok(sim, { type: 'cheat', cheat: 'bombIn', hours: 0 });
+    Object.assign(s.war!.atom!.inbound!, at);
+    atomTick(sim);
+    blast(sim);
+    // They stand, closed for as long as the roads there; everything else inside is gone.
+    expect(s.civics.has(link.id)).toBe(true);
+    expect(s.civics.has(stand.id)).toBe(true);
+    expect(s.civics.get(link.id)!.damage).toBeGreaterThan(L.civicClosed);
+    expect(s.civics.get(stand.id)!.damage).toBeGreaterThan(L.civicClosed);
+    expect(s.civics.get(link.id)!.damage).toBeLessThanOrEqual(L.roadClosed);
+    for (const c of others) expect(s.civics.has(c.id), `${c.def}`).toBe(false);
+    const destroyed = events(sim, 'civicDestroyed').map((e) => e.id);
+    expect(destroyed).not.toContain(link.id);
+    expect(destroyed).not.toContain(stand.id);
+    expect(destroyed.sort((a, b) => a - b)).toEqual(others.map((c) => c.id).sort((a, b) => a - b));
+    // The railway is still joined to the city, and no second link can be laid.
+    expect(s.railway).toBeTruthy();
+    expect(sim.preview({ type: 'buildRailLink', z: 300 }).ok).toBe(false);
+  });
+
+  /** Civic work as the blast counts it: the lots `removeCivic` re-checks round it. */
+  const work = (sim: Sim, c: Civic): number => {
+    const r = civicRect(c);
+    const pad = DMath.hypot(r.hw, r.hd) + 40;
+    return sim.net.cellHash.query({ minX: c.x - pad, minZ: c.z - pad, maxX: c.x + pad, maxZ: c.z + pad })
+      .length;
+  };
+
+  /**
+   * Ticks of the real blast with the civic buildings inside coming down: for each tick that took any,
+   * who went, who was left in order, and what they cost.
+   */
+  function civicTicks(sim: Sim, inside: Civic[]) {
+    const s = sim.state;
+    const out: { took: Civic[]; left: Civic[]; cost: number[] }[] = [];
+    atomTick(sim);
+    for (let n = 0; n < 500 && !atom(sim).impact!.over; n++) {
+      const left = inside.filter((c) => s.civics.has(c.id));
+      const cost = left.map((c) => work(sim, c));
+      const fires = atom(sim).impact!.fires;
+      s.tick++;
+      atomTick(sim);
+      if (!fires) continue;
+      const took = left.filter((c) => !s.civics.has(c.id));
+      if (took.length) out.push({ took, left, cost });
+    }
+    expect(atom(sim).impact!.over).toBe(true);
+    return out;
+  }
+
+  it('takes the civic buildings a few a tick, nearest first, none past the cell budget but one, and always one', () => {
+    const sim = aimed(MID);
+    const inside = [...sim.state.civics.values()]
+      .filter((c) => dist(c, MID) <= L.level)
+      .sort((a, b) => dist(a, MID) - dist(b, MID) || a.id - b.id);
+    expect(inside.length).toBeGreaterThan(6);
+    const ticks = civicTicks(sim, inside);
+    let split = 0;
+    for (const { took, left, cost } of ticks) {
+      expect(took.length).toBeLessThanOrEqual(L.civicsPerTick);
+      expect(took.map((c) => c.id)).toEqual(left.slice(0, took.length).map((c) => c.id));
+      const spent = cost.slice(0, took.length).reduce((n, x) => n + x, 0);
+      if (took.length > 1) expect(spent).toBeLessThanOrEqual(L.civicCells);
+      // It stops short only for the count or for the budget.
+      if (took.length < L.civicsPerTick && left.length > took.length) {
+        expect(spent + cost[took.length]!).toBeGreaterThan(L.civicCells);
+        split++;
+      }
+    }
+    // (In this town the lots round a civic building come to about two hundred cells: the budget bites.)
+    expect(split, 'a tick the budget cut short').toBeGreaterThan(0);
+    expect(ticks.flatMap((t) => t.took)).toHaveLength(inside.length);
+    expect(sim.state.war!.atom!.impact!.over).toBe(true);
+  });
+
+  it('takes one a tick when each costs more than the whole budget, so a big one cannot be put off for ever', () => {
+    withImpact({ civicCells: 1 }, () => {
+      const sim = aimed(MID);
+      const inside = [...sim.state.civics.values()].filter((c) => dist(c, MID) <= L.level);
+      const ticks = civicTicks(sim, inside);
+      expect(ticks).toHaveLength(inside.length);
+      for (const t of ticks) expect(t.took).toHaveLength(1);
+    });
+  });
+
+  it('sets the fires a hundred or so a tick from where the last tick stopped, and never lights a fire put out in between again', () => {
+    const burning = (sim: Sim) => [...sim.state.burning].sort((a, b) => a - b);
+    const whole = aimed(WEST);
+    atomTick(whole);
+    blast(whole);
+    const all = burning(whole);
+    expect(all.length).toBeGreaterThan(30);
+
+    withImpact({ firesPerTick: 10 }, () => {
+      const sim = aimed(WEST);
+      const before = new Set(sim.state.burning);
+      atomTick(sim);
+      const im = atom(sim).impact!;
+      expect(im.fires).toBeUndefined();
+      const lit = () => sim.state.burning.filter((id) => !before.has(id));
+      let was = 0;
+      let putOut = 0;
+      let copy: Sim | null = null;
+      let ticks = 0;
+      while (!im.fires && ticks++ < 100) {
+        sim.state.tick++;
+        atomTick(sim);
+        const now = lit().length;
+        expect(now - was, `tick ${ticks}`).toBeLessThanOrEqual(10);
+        if (ticks === 1) {
+          expect(now).toBe(10);
+          // The first fire is put out by the fire engines: it must not come back.
+          putOut = lit()[0]!;
+          const b = sim.state.buildings.get(putOut)!;
+          b.fire = 0;
+          b.burn = 0;
+          sim.state.burning = sim.state.burning.filter((id) => id !== putOut);
+          was = now - 1;
+          continue;
+        }
+        if (ticks === 3) copy = clone(sim);
+        was = now;
+      }
+      expect(im.fires).toBe(true);
+      expect(ticks).toBeGreaterThan(all.length / 10 - 1);
+      expect(sim.state.buildings.get(putOut)!.fire).toBe(0);
+      // The same fires as one big go, less the one put out.
+      expect(burning(sim)).toEqual(all.filter((id) => id !== putOut));
+      // A save in the middle of it carries on to the same end.
+      blast(sim);
+      let more = 0;
+      while (!atom(copy!).impact!.over && more++ < 2_000) {
+        copy!.state.tick++;
+        atomTick(copy!);
+      }
+      expect(partHashes(copy!)).toEqual(partHashes(sim));
+    });
+  });
+
+  it('puts no more than the total limit of fires out, spread over the ticks', () => {
+    withImpact({ firesPerTick: 7, fires: 20 }, () => {
+      const sim = aimed(WEST);
+      const before = new Set(sim.state.burning);
+      atomTick(sim);
+      blast(sim);
+      expect(sim.state.burning.filter((id) => !before.has(id))).toHaveLength(20);
+    });
+  });
+});
+
+describe('M40: when the bomb comes down', () => {
+  it('deals the next slice in the next hour, not on the tick after a landing on the top of an hour', () => {
+    withSlice(40, () => {
+      const sim = aimed(MID, 0, false, 0);
+      const T = sim.state.tick;
+      expect(T % H).toBe(0);
+      atomTick(sim);
+      const im = atom(sim).impact!;
+      expect(im.done).toBe(1);
+      let second = 0;
+      for (let k = 1; k <= 2 * H && !second; k++) {
+        sim.state.tick = T + k;
+        atomTick(sim);
+        if (im.done === 2) second = k;
+        // (The fires are set on the tick after the landing: nothing else heavy shares it.)
+        if (k === 1) expect(im.done).toBe(1);
+      }
+      expect(second).toBe(H + 1);
+    });
+  });
+
+  it('does not let a flight land on the top of an hour, but a bomb due at once still does', () => {
+    for (const minute of [0, 1, 17, 59]) {
+      const sim = clone(base);
+      sim.state.tick += (minute - (sim.state.tick % H) + H) % H;
+      const t = sim.state.tick;
+      expect(atomInbound(sim, { id: 1, name: 'Rival' }, ATOM.flight.hours)).toBeNull();
+      const arrive = atom(sim).inbound!.arrive;
+      expect(arrive % H, `accepted at minute ${minute}`).not.toBe(0);
+      expect(arrive - t, `accepted at minute ${minute}`).toBe(ATOM.flight.hours * H + (minute === 0 ? 1 : 0));
+    }
+    const sim = clone(base);
+    sim.state.tick += (0 - (sim.state.tick % H) + H) % H;
+    expect(atomInbound(sim, { id: 1, name: 'Rival' }, 0)).toBeNull();
+    expect(atom(sim).inbound!.arrive).toBe(sim.state.tick);
   });
 });
 

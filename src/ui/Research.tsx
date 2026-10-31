@@ -18,13 +18,9 @@ import {
 import { UNIT, type UnitKind } from '../data/war';
 import type { ResearchSummary } from '../sim/systems/research';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
+import { warHours } from './warView';
 
-/** Hours as the war room says them: hours under a day, else days (a game month is a day). */
-export function warHours(h: number): string {
-  if (h < 24) return `${Math.max(1, Math.round(h))} h`;
-  const d = Math.round((h / 24) * 10) / 10;
-  return `${d} day${d === 1 ? '' : 's'}`;
-}
+export { warHours };
 
 /** What a tier gives, in chips: units (each a prototype first), buildings, spy missions, a spin-off. */
 function chips(t: TierDef): string[] {

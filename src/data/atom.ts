@@ -106,17 +106,26 @@ export const ATOM = {
     treeReach: 1.6,
     fireReach: 1.5,
     fires: 400,
+    /**
+     * Fires are set at most this many a tick, nearest first, from the tick after the landing on
+     * (lighting one dispatches a fire engine and costs about 0.08 ms on the 100k city, so the whole
+     * ring's worth at once would take 30 to 40 ms): the rest follow on the next ticks.
+     */
+    firesPerTick: 120,
     crater: 90,
     battleWait: 12,
     /** The chance a building at the blast's edge catches fire, falling to nothing at the fire reach. */
     fireChance: 0.7,
     /**
-     * Civic buildings inside the blast come down this many a tick, nearest first, from the second tick
-     * after the landing on (taking one away re-checks the lots round it: 4 ms each on the 100k city, so
-     * all at once would blow the tick), not in the hourly slices. The first tick after the landing sets
-     * the fires, which cost as much as a few of them.
+     * Civic buildings inside the blast come down at most this many a tick, nearest first, once the
+     * fires are set (taking one away re-checks the lots round it: 4 ms each on the 100k city, so all
+     * at once would blow the tick), not in the hourly slices; and, because a big one costs several
+     * small ones, a tick stops taking more once the lots round the ones it has taken (the cells of
+     * the box `removeCivic` re-checks) come to `civicCells`. Always at least one a tick. About 1 ms
+     * to 100 cells on the 100k city, so a tick's civic work stays under about 10 ms whatever stands.
      */
     civicsPerTick: 3,
+    civicCells: 500,
   },
   /**
    * What a bomb that lands on a computer neighbour does to its record (call 10): the share of its

@@ -917,7 +917,9 @@ export class Game {
             ? ' The dome shield will rise over the battle.'
             : dome.mode === 'off'
               ? ' The dome shield is switched off.'
-              : ` The dome shield is only ${Math.floor(dome.charge * 100)} % charged: it won’t rise.`;
+              : dome.down > 0
+                ? ` The dome shield is down for ${Math.ceil(dome.down / 24)} more day${Math.ceil(dome.down / 24) === 1 ? '' : 's'} after stopping a bomb: it won’t rise.`
+                : ` The dome shield is only ${Math.floor(dome.charge * 100)} % charged: it won’t rise.`;
       this.notice(
         `incoming:${from}`,
         (gate

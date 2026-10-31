@@ -117,6 +117,8 @@ export function checksum(sim: Sim): string {
       if (a.impact) {
         m.int(a.impact.done);
         m.num(a.impact.fled);
+        // (How far the fires round the edge have been set, a few every tick.)
+        m.int(a.impact.lit ?? 0);
       }
       m.int(a.boom);
       m.int(a.stopped);

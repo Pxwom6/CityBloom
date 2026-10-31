@@ -19,9 +19,11 @@ import { bombStopped, lowerDome, supersHour } from '../../src/sim/systems/supers
 import { warSummary } from '../../src/sim/systems/war';
 import { isMonthStart, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { BState } from '../../src/sim/world/buildings';
+import type { Civic } from '../../src/sim/world/civic';
 import { groundZero } from '../../src/sim/systems/atomImpact';
 import { clone, dip, rivals, treaty, why } from './economyHelpers';
 import { labTown, ok } from './researchTown';
+import { domeStatus } from '../../src/ui/warView';
 
 /**
  * M40, step 3, the strike (docs/plans/M40-design.md, calls 8 to 10): a bomb on its way to the city,
@@ -555,5 +557,104 @@ describe('M40: a bomb on its way to the city', () => {
     copy.advance(8 * H);
     expect(atom(sim).boom).toBe(1);
     expect(partHashes(copy)).toEqual(partHashes(sim));
+  });
+});
+
+describe('M40: what the blast takes from the race', () => {
+  /** The blast on a civic building of the base town, the dome out of the way, the bomb ready and the fuel full. */
+  function strike(def: string): { sim: Sim; at: Civic; plant: Civic; silo: Civic } {
+    const sim = clone(base);
+    dome(sim).mode = 'off';
+    ok(sim, { type: 'cheat', cheat: 'atom', stage: 'preparing', to: ids.rival });
+    const plant = civic(sim, PLANT);
+    const silo = civic(sim, SILO);
+    expect(atom(sim)).toMatchObject({ fuel: ATOM.fuel.hours, have: true });
+    expect(atom(sim).prep).toBeDefined();
+    const at = civic(sim, def);
+    bombIn(sim);
+    Object.assign(atom(sim).inbound!, { x: at.x, z: at.z });
+    atomTick(sim);
+    blast(sim);
+    return { sim, at, plant, silo };
+  }
+  const inBlast = (a: Civic, b: Civic) => Math.hypot(a.x - b.x, a.z - b.z) <= ATOM.impact.level;
+
+  it('a silo in the blast loses its bomb, its build and its preparation, as any lost silo does', () => {
+    const { sim, at, plant } = strike(SILO);
+    expect(sim.state.civics.has(at.id)).toBe(false);
+    const a = atom(sim);
+    expect(a.have).toBeUndefined();
+    expect(a.prep).toBeUndefined();
+    expect(a.bomb).toBeUndefined();
+    expect(events(sim, 'atomLost').filter((e) => e.info?.what === 'bomb')).toHaveLength(1);
+    expect(atomStage(sim)).not.toBe('ready');
+    expect(atomStage(sim)).not.toBe('preparing');
+    // The plant stands or falls with where it is.
+    expect(sim.state.civics.has(plant.id)).toBe(!inBlast(plant, at));
+    expect(a.fuel).toBe(inBlast(plant, at) ? ATOM.fuel.hours / 2 : ATOM.fuel.hours);
+  });
+
+  it('a plant in the blast halves the fuel', () => {
+    const { sim, at, silo } = strike(PLANT);
+    expect(sim.state.civics.has(at.id)).toBe(false);
+    expect(atom(sim).fuel).toBe(ATOM.fuel.hours / 2);
+    expect(events(sim, 'atomLost').filter((e) => e.info?.what === 'fuel')).toHaveLength(1);
+    // The bomb goes with the silo if it stood in the blast too.
+    expect(sim.state.civics.has(silo.id)).toBe(!inBlast(silo, at));
+    expect(atom(sim).have).toBe(inBlast(silo, at) ? undefined : true);
+  });
+});
+
+describe('M40: the test cheat for a used bomb', () => {
+  it('sets a bomb that has already landed: the neighbour it was aimed at is not hit again', () => {
+    const sim = clone(base);
+    const n = rivals(sim).find((x) => x.id === ids.rival)!;
+    const before = {
+      population: n.population,
+      relation: n.rival!.relation,
+      forces: n.rival!.forces,
+      defences: n.rival!.defences,
+      fallout: n.rival!.fallout,
+    };
+    const score0 = warWith(sim, ids.rival)?.score;
+    ok(sim, { type: 'cheat', cheat: 'atom', stage: 'spent', to: ids.rival });
+    expect(atomStage(sim)).toBe('spent');
+    expect(atom(sim).fired).toMatchObject({ to: ids.rival, landed: true });
+    atomTick(sim);
+    sim.step();
+    expect(atomStage(sim)).toBe('spent');
+    expect(n.population).toBe(before.population);
+    expect(n.rival!.relation).toBe(before.relation);
+    expect(n.rival!.forces).toBe(before.forces);
+    expect(n.rival!.defences).toBe(before.defences);
+    expect(n.rival!.fallout).toBe(before.fallout);
+    expect(warWith(sim, ids.rival)?.score).toBe(score0);
+    expect(events(sim, 'atomImpact')).toHaveLength(0);
+    // (A bomb in the air is another stage: it does land.)
+    const air = clone(base);
+    ok(air, { type: 'cheat', cheat: 'atom', stage: 'flying', to: ids.rival });
+    expect(atom(air).fired!.landed).toBeUndefined();
+  });
+});
+
+describe('M40: the dome inspector’s words', () => {
+  it('says down for the wait after it stops a bomb, then charging, then charged, and raised over a battle', () => {
+    const sim = town();
+    const summary = () => warSummary(sim, () => 0)!.supers!.dome!;
+    expect(domeStatus(summary())).toBe('Charged');
+    bombIn(sim);
+    atomTick(sim);
+    // Down: how long, not "Charging" with an empty bar.
+    expect(summary()).toMatchObject({ charge: 0, down: ATOM.dome.down });
+    expect(domeStatus(summary())).toBe('Down for 50 days more');
+    civic(sim, DOME_DEF).staff = 1;
+    civic(sim, DOME_DEF).powered = 1;
+    domeHours(sim, ATOM.dome.down - 12);
+    expect(domeStatus(summary())).toBe('Down for 12 h more');
+    domeHours(sim, 12);
+    expect(domeStatus(summary())).toBe('Charging');
+    domeHours(sim, DOME.chargeHours);
+    expect(domeStatus(summary())).toBe('Charged');
+    expect(domeStatus({ raised: true, down: 300, charge: 0 })).toBe('Raised');
   });
 });

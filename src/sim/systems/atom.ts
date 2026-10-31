@@ -78,8 +78,10 @@ export interface Atom {
    * The landing in hand (`atomImpact.ts`): hourly slices done, residents who have left the city so
    * far, ground zero. Also the tick of the first slice (the landing), the buildings levelled so far,
    * the residents near and the shelter places (from the warning), `fires` once the fires round the
-   * edge are set (the tick after the landing), `razed` once every building inside is levelled, and
-   * `over` once the civic buildings inside are gone too: the record of the last bomb that landed here.
+   * edge are all set (from the tick after the landing, `ATOM.impact.firesPerTick` a tick: how many
+   * so far in `lit`, and the last place reached, `fireAfter`, by distance and building id), `razed`
+   * once every building inside is levelled, and `over` once the civic buildings inside are gone too:
+   * the record of the last bomb that landed here.
    */
   impact?: {
     done: number;
@@ -90,6 +92,8 @@ export interface Atom {
     levelled?: number;
     near?: number;
     sheltered?: number;
+    lit?: number;
+    fireAfter?: { d: number; id: number };
     fires?: true;
     razed?: true;
     over?: true;
@@ -775,12 +779,16 @@ export function atomInbound(sim: Sim, from: BombSender, hours: number = ATOM.fli
   if (a.inbound) return 'A bomb is already on its way to the city';
   const at = groundZero(sim);
   const tick = sim.state.tick;
+  let arrive = tick + Math.max(0, Math.round(hours * TICKS_PER_HOUR));
+  // A flight never lands on the top of an hour (hours 0 lands at once): that tick is the day's heaviest
+  // (a month closes and the utilities run) and the blast's first slice would be added to it.
+  if (hours > 0 && arrive % TICKS_PER_HOUR === 0) arrive++;
   a.inbound = {
     from: from.id,
     name: from.name,
     ...(from.slot !== undefined ? { slot: from.slot } : {}),
     warn: tick,
-    arrive: tick + Math.max(0, Math.round(hours * TICKS_PER_HOUR)),
+    arrive,
     x: at.x,
     z: at.z,
   };
@@ -825,14 +833,15 @@ export function atomTick(sim: Sim): void {
   if (im && !im.over) {
     // The hourly slices level the buildings; the civic buildings inside come down a few every tick.
     const t = sim.state.tick;
-    const later = t > (im.at ?? -1);
-    if (!im.razed && t % TICKS_PER_HOUR === SLICE_MINUTE && later && impactSlice(sim, im)) im.razed = true;
-    // One heavy thing a tick after the landing: the fires first, then the civic buildings a few at a time.
+    const at = im.at ?? -1;
+    // (A later *hour*, not a later tick: a bomb landing on the top of an hour has its next slice in the
+    // next hour's quiet minute, not on the tick after, where the fires are.)
+    const nextHour = Math.floor(t / TICKS_PER_HOUR) > Math.floor(at / TICKS_PER_HOUR);
+    if (!im.razed && t % TICKS_PER_HOUR === SLICE_MINUTE && nextHour && impactSlice(sim, im)) im.razed = true;
+    // One heavy thing a tick after the landing: the fires first (a hundred or so a tick), then the
+    // civic buildings a few at a time.
     if (!im.fires) {
-      if (later) {
-        impactFires(sim, im);
-        im.fires = true;
-      }
+      if (t > at && impactFires(sim, im)) im.fires = true;
     } else if (impactCivics(sim, im) && im.razed) impactOver(sim, a, im);
   }
   const f = a.fired;
@@ -1080,8 +1089,14 @@ export function atomCheat(
   if (no === 5 || no === 6) a.have = true;
   if (no === 6) a.prep = { done: ATOM.launch.prepHours / 2, to: aim!.id };
   if (no >= 7) {
+    // (Used, a day ago: it has landed already, and the neighbour was not hit by this cheat.)
     const ago = no === 8 ? ATOM.flight.hours * TICKS_PER_HOUR : 0;
-    a.fired = { tick: sim.state.tick - ago, to: aim!.id, name: aim!.name };
+    a.fired = {
+      tick: sim.state.tick - ago,
+      to: aim!.id,
+      name: aim!.name,
+      ...(no === 8 ? { landed: true } : {}),
+    };
   }
   sim.warChanged();
   return ok(0);

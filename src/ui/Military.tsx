@@ -4,6 +4,7 @@
  * readiness and research), opened from the military HQ, the top bar or Shift+M.
  */
 import { useState } from 'preact/hooks';
+import { ATOM } from '../data/atom';
 import { CIVIC } from '../data/civic';
 import { PERSONALITY, UNIT, UNIT_CLASSES, WAR, type UnitKind } from '../data/war';
 import type { MilitaryDetails } from '../sim/protocol';
@@ -12,6 +13,7 @@ import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconWarRoom } from './icons';
 import { RegionMap, Reports, SendForce } from './Battle';
 import { Diplomacy } from './Diplomacy';
+import { domeStatus } from './warView';
 import { Research, warHours } from './Research';
 import { TIERS, type TierKey } from '../data/research';
 import { Intelligence } from './Intel';
@@ -294,11 +296,12 @@ function NewBuildings({ civicId }: { civicId: number }) {
       <div class="war-train" data-testid="dome">
         <h3>Dome</h3>
         <div class="war-row">
-          <span>{d.raised ? 'Raised' : d.charge >= 1 ? 'Charged' : 'Charging'}</span>
+          <span data-testid="dome-status">{domeStatus(d)}</span>
           <Bar value={d.charge} tone={d.charge >= 1 ? 'good' : 'warn'} />
         </div>
         <p class="muted">
-          Holds about a hundred houses’ worth of hits in one battle, then charges for ten days.
+          Holds about a hundred houses’ worth of hits in one battle, then charges for ten days. It stops an
+          atom bomb whole, then stays down for {warHours(ATOM.dome.down)} before it charges again.
         </p>
         <div class="segmented" role="radiogroup">
           {(['all', 'super', 'off'] as const).map((mode) => (

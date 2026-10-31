@@ -180,7 +180,7 @@ export function fairCap(view: RegionView, slot: number): number | null {
 
 /**
  * What takes the region's live-battle messages (M39, `src/client/liveBattles.ts`): every one of the
- * room's `bcall`, `bliveoff`, `bstart`, `ballow`, `bend`, `blivenow` and `breplaydata`, and the
+ * room's `bcall`, `bliveoff`, `bstart`, `ballow`, `bend`, `blivenow`, `breplaydata` and `bhelpoff`, and the
  * moment the link is in the region (again), when a battle in progress is taken up afresh.
  */
 export interface LiveSink {

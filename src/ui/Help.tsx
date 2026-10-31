@@ -82,8 +82,8 @@ export function helpLine(h: HelpView, side: string): string {
       return h.late
         ? 'The battle ended before your force could get there: it is on its way home.'
         : h.lost
-          ? `Your force has done: ${h.lost} of its ${h.units} units were knocked out, and the rest are on their way home.`
-          : 'Your force has done, unharmed, and is on its way home.';
+          ? `The battle is over: ${h.lost} of your ${h.units} units were knocked out, and the rest are on their way home.`
+          : 'The battle is over: your force came through unharmed and is on its way home.';
     case 'refused':
       return `${h.reason ?? 'The help was turned down'}. Your force is home.`;
   }

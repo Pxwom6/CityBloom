@@ -19,7 +19,8 @@ import type { Term } from '../src/data/diplomacy';
  * commands in a shared city (M36). 5: spies and blackouts between friends decided by the region,
  * superweapon battles flagged and counted, research tiers and the fair clock in reports (M37).
  * 6: live battles between friends, ordered by the region room (M39): `blive`, `bcall`, `binput`,
- * `bstart`, `bstep`, `ballow`, `bend`, watching and replays; wars and treaties between friends,
+ * `bstart`, `bstep`, `ballow`, `bend`, watching, replays and allies' help (`bhelp`: stamped into the
+ * battle's log like an order; `bhelpoff` turns it down); wars and treaties between friends,
  * kept by the region (M39, design calls 9 and 10): `wdeclare`, `tprop`, `tans`, `tbreak`, `tseen`,
  * `battleResult` and the room's `war`, `tsign`, `pacts`, `history` (see `FriendsClientMsg`). A region
  * accepts protocol 5 pages as well (`MIN_REGION_PROTOCOL`): they never get a live or a friends'

@@ -87,8 +87,10 @@ Code map: `docs/plans/M39-codemap.md`. Calls and their reasons as they're made: 
      ceasefire, peace, pacts and an embargo bind both sims and the money terms are booked on each side
      (reparations at once: one pays, the other receives; tribute monthly on each city's own clock);
    - **conquest between friends**: a city that capitulates in a total war becomes the winner's vassal
-     (a tenth of its taxes to the winner monthly, as M36's vassals, until it rises: a won battle against
-     its overlord with a score of +30 frees it). The room keeps who is whose vassal;
+     (a fifth of its taxes to the winner monthly, as M36's vassals, until it rises: a won battle against
+     its overlord with a score of +30 frees it). The room keeps who is whose vassal (this plan first said a
+     tenth; it is a fifth, `DIPLOMACY.vassal.taxShare`, so one rule holds for every vassal: see DECISIONS
+     "M39", the entry on money terms);
    - M38's money with friends (stakes, loans, arms deals) stays with computer neighbours in M39: the
      treaty's money terms are the trade between friends (DECISIONS).
 10. **A region-wide war history**: the room keeps the last 100 war events (declarations, battles with

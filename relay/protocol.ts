@@ -56,7 +56,13 @@ export const MAX_CHAT = 280;
  * when a message reaches it (no timers).
  */
 export const LIVE = {
-  /** Steps (half a second of battle each) the frontier runs ahead of the slowest combatant: 2 s of play. */
+  /**
+   * Steps the frontier runs ahead of the slowest combatant. A step stands for half a game second
+   * (`BATTLE.dt`) and a page runs 16 of them a second at 1× (8 city ticks of 2 steps), so 32 steps are
+   * 2 s of real time at 1× (16 s of game time): a combatant is never held up by the room's reply
+   * unless it takes longer than that, and an order lands about that far ahead of the step both pages
+   * are on.
+   */
   lead: 32,
   /** A combatant silent this long (ms) is handed over to the battle's own judgement. */
   silent: 10_000,

@@ -422,6 +422,14 @@ export function SendForce() {
           ))}
         </select>
       </label>
+      {n.player && (
+        // What a raid on a friend's city will be, so the battle map doesn't come as a surprise (M39).
+        <p class="muted" data-testid="send-live">
+          {n.player.online
+            ? `${n.name}’s player is here, so the battle is live: you both command it on the battle map (the O key) as it is fought.`
+            : `${n.name}’s player is away: the battle is fought against their city as the region last saw it, with at most half the usual damage, and waits for them.`}
+        </p>
+      )}
       <label>
         Strike{' '}
         <select

@@ -1534,6 +1534,20 @@ body {
 #ui[data-bars='compact'] .topbar-panels.open {
   display: flex;
 }
+/*
+ * On a phone the bar wraps into rows and the More button sits at the left of the last one: a menu
+ * hung from its right edge ran off the window's left side, with the Region and history buttons out
+ * of reach (M39's narrow check). Under the whole bar instead, centred.
+ */
+#ui[data-bars='compact'] .topbar.rows .topbar-more {
+  position: static;
+}
+#ui[data-bars='compact'] .topbar.rows .topbar-panels {
+  left: var(--space-2);
+  right: var(--space-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
 /* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
 #ui[data-bars='compact'] .more-toggle:has(~ .topbar-panels .badge)::after {
   content: '';
@@ -3637,6 +3651,8 @@ body {
 .friends-help summary {
   cursor: pointer;
   color: var(--color-accent-strong);
+  /* A finger's target: at least 24 px tall (M39's narrow check); the disclosure marker stays. */
+  padding: 0.3rem 0;
 }
 .friends-help ul {
   margin: 0.4rem 0 0;
@@ -3764,6 +3780,13 @@ body {
 }
 .new-region-war .segmented {
   margin: var(--space-1) 0 var(--space-2) var(--space-5);
+  /* Inside the card, as wide as it leaves room for (the three scales wrap on a phone). */
+  display: flex;
+  max-width: calc(100% - var(--space-5));
+}
+.new-region-war .segmented button {
+  flex: 1 1 0;
+  min-width: 0;
 }
 #ui[data-width='xs'] .war-room .tab,
 #ui[data-width='s'] .war-room .tab {
@@ -3771,6 +3794,26 @@ body {
 }
 #ui[data-width='xs'] .war-groups {
   grid-template-columns: repeat(2, 1fr);
+}
+
+/*
+ * Touch targets (M39's narrow check): on a phone's or a tablet's width a small button, a drop-down, a
+ * text or number field, a slider and the top bar's date and weather are at least 24 px to tap (a finger lands on the button
+ * itself, not its text; the figures stay as they were).
+ */
+#ui[data-width='xs'] .btn.small {
+  min-height: 1.6rem;
+}
+#ui[data-width='xs'] select,
+#ui[data-width='xs'] input[type='text'],
+#ui[data-width='xs'] input[type='number'] {
+  min-height: 1.6rem;
+}
+#ui[data-width='xs'] input[type='range'] {
+  min-height: 1.6rem;
+}
+#ui[data-width='xs'] .topbar .stat-btn {
+  min-height: 1.6rem;
 }
 
 /* Research and intelligence (M37): the branch grid, tiers, chips, prototypes. */

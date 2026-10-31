@@ -338,7 +338,7 @@ In a region where war is on, the other players' cities are in the Send tab and t
   battle runs at the pace of the slower page; if a page stops answering for ten seconds its units fight on
   their own until the player presses **Take command again**. Each city runs the battle and the two compare
   the result at the end. If the defender isn't there, the battle is fought against the region's saved copy
-  of their city (with the damage it can do capped at half, if they have left) and waits for them: they take it, and it shows in
+  of their city (with at most half the usual damage, if they have left) and waits for them: they take it, and it shows in
   their Reports, when they come back.
 - **Allies' help.** A friend with an alliance with one of the fighters, or a defensive pact with the city
   being attacked, can send a force into a live battle (**Send help** in the bar or the battle map while

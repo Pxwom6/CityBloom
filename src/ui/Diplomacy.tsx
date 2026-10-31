@@ -22,6 +22,7 @@ import type { Command } from '../sim/commands';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
+import { FriendsDiplomacy } from './DiplomacyFriends';
 
 type Neighbour = DiplomacySummary['neighbours'][number];
 
@@ -30,7 +31,7 @@ export const relationWord = (r: number) =>
   r >= 50 ? 'friendly' : r >= 20 ? 'warm' : r > -20 ? 'wary' : r > -50 ? 'cold' : 'hostile';
 
 /** A score from −100 to 100 as a bar that fills left (losing) or right (winning). */
-function ScoreBar({ score, id }: { score: number; id: number }) {
+export function ScoreBar({ score, id }: { score: number; id: number }) {
   const w = Math.min(50, Math.abs(score) / 2);
   return (
     <span class="dip-score" data-testid={`dip-score-${id}`} title={`War score ${Math.round(score)}`}>
@@ -92,7 +93,7 @@ type BuilderMode = 'propose' | 'counter' | 'offer' | 'impose';
 let openings = 0;
 
 /** A question or a refusal, shown where the control that caused it is (`at`). */
-interface Asked {
+export interface Asked {
   at: string;
   text: string;
   yes?: string;
@@ -100,7 +101,7 @@ interface Asked {
 }
 
 /** The answer to a control, beside it, scrolled into view when it appears. */
-function Feedback({ at, asked, onClose }: { at: string; asked: Asked | null; onClose: () => void }) {
+export function Feedback({ at, asked, onClose }: { at: string; asked: Asked | null; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const mine = asked?.at === at ? asked : null;
   const text = mine?.text ?? '';
@@ -197,7 +198,7 @@ export function Diplomacy() {
           </span>
         </p>
         <Weariness now={now} />
-        {d.vassal && (
+        {d.vassal && !d.vassal.friend && (
           <p class="dip-vassal" data-testid="dip-vassal">
             The city is {d.vassal.name}’s vassal: a fifth of its taxes go to {d.vassal.name}, and it may go to
             war only to rise against it. Strength {formatNumber(d.vassal.strength)} of the{' '}
@@ -225,60 +226,64 @@ export function Diplomacy() {
         {feedback('standing')}
       </section>
 
-      {d.wars.length > 0 && (
+      <FriendsDiplomacy d={d} />
+
+      {d.wars.some((w) => !w.friend) && (
         <section data-testid="dip-wars">
           <h4>Wars</h4>
-          {d.wars.map((w) => (
-            <div key={w.id} class="dip-war" data-testid={`dip-war-${w.with}`}>
-              <p class="war-row">
-                <strong>
-                  {w.rebellion ? 'Rising against' : w.scale === 'total' ? 'Total war with' : 'War with'}{' '}
-                  {w.name}
-                </strong>
-                <ScoreBar score={w.score} id={w.with} />
-              </p>
-              <p class="muted">
-                {w.by === 'us' ? 'Declared by the city' : `Declared by ${w.name}`}: “{w.reason}”.{' '}
-                {now < w.opens
-                  ? `It opens in ${hoursLeft(w.opens, now)} hours.`
-                  : `Score ${Math.round(w.score)} after ${w.battles} battle${w.battles === 1 ? '' : 's'}.`}
-                {w.ceasefire !== null && ` Ceasefire for ${hoursLeft(w.ceasefire, now)} more hours.`}
-                {w.helpers.length > 0 &&
-                  ` ${w.helpers.join(' and ')} fight${w.helpers.length === 1 ? 's' : ''} at the city’s side.`}
-              </p>
-              {w.hold && (
-                <p class={w.hold.by === 'us' ? 'dip-good' : 'dip-bad'} data-testid={`dip-hold-${w.with}`}>
-                  {w.hold.by === 'us'
-                    ? `The city holds ${w.name}’s seat of power: it falls in ${hoursLeft(w.hold.falls, now)} hours.`
-                    : `${w.name} holds the city’s HQ: win a battle within ${hoursLeft(w.hold.falls, now)} hours or the city falls.`}
+          {d.wars
+            .filter((w) => !w.friend)
+            .map((w) => (
+              <div key={w.id} class="dip-war" data-testid={`dip-war-${w.with}`}>
+                <p class="war-row">
+                  <strong>
+                    {w.rebellion ? 'Rising against' : w.scale === 'total' ? 'Total war with' : 'War with'}{' '}
+                    {w.name}
+                  </strong>
+                  <ScoreBar score={w.score} id={w.with} />
                 </p>
-              )}
-              {w.capitulated?.by === 'them' && (
-                <p class="dip-good">
-                  {w.name} has capitulated. Set the terms within {hoursLeft(w.capitulated.until, now)} hours,
-                  or peace with reparations stands.{' '}
-                  <button
-                    class="btn primary"
-                    data-testid={`dip-impose-${w.with}`}
-                    onClick={() => open(w.with, [{ k: 'peace' }], 'impose')}
-                  >
-                    Set terms
-                  </button>
+                <p class="muted">
+                  {w.by === 'us' ? 'Declared by the city' : `Declared by ${w.name}`}: “{w.reason}”.{' '}
+                  {now < w.opens
+                    ? `It opens in ${hoursLeft(w.opens, now)} hours.`
+                    : `Score ${Math.round(w.score)} after ${w.battles} battle${w.battles === 1 ? '' : 's'}.`}
+                  {w.ceasefire !== null && ` Ceasefire for ${hoursLeft(w.ceasefire, now)} more hours.`}
+                  {w.helpers.length > 0 &&
+                    ` ${w.helpers.join(' and ')} fight${w.helpers.length === 1 ? 's' : ''} at the city’s side.`}
                 </p>
-              )}
-              {!w.capitulated && now >= w.opens && (
-                <div class="dip-actions">
-                  <button
-                    class="btn"
-                    data-testid={`dip-peace-${w.with}`}
-                    onClick={() => open(w.with, [{ k: 'peace' }], 'offer')}
-                  >
-                    Offer terms
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                {w.hold && (
+                  <p class={w.hold.by === 'us' ? 'dip-good' : 'dip-bad'} data-testid={`dip-hold-${w.with}`}>
+                    {w.hold.by === 'us'
+                      ? `The city holds ${w.name}’s seat of power: it falls in ${hoursLeft(w.hold.falls, now)} hours.`
+                      : `${w.name} holds the city’s HQ: win a battle within ${hoursLeft(w.hold.falls, now)} hours or the city falls.`}
+                  </p>
+                )}
+                {w.capitulated?.by === 'them' && (
+                  <p class="dip-good">
+                    {w.name} has capitulated. Set the terms within {hoursLeft(w.capitulated.until, now)}{' '}
+                    hours, or peace with reparations stands.{' '}
+                    <button
+                      class="btn primary"
+                      data-testid={`dip-impose-${w.with}`}
+                      onClick={() => open(w.with, [{ k: 'peace' }], 'impose')}
+                    >
+                      Set terms
+                    </button>
+                  </p>
+                )}
+                {!w.capitulated && now >= w.opens && (
+                  <div class="dip-actions">
+                    <button
+                      class="btn"
+                      data-testid={`dip-peace-${w.with}`}
+                      onClick={() => open(w.with, [{ k: 'peace' }], 'offer')}
+                    >
+                      Offer terms
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
         </section>
       )}
 
@@ -391,41 +396,43 @@ export function Diplomacy() {
         />
       )}
 
-      {d.pacts.length > 0 && (
+      {d.pacts.some((p) => p.room === null) && (
         <section data-testid="dip-pacts">
           <h4>Treaties in force</h4>
-          {d.pacts.map((p) => (
-            <div key={p.id} class="war-row dip-pact" data-testid={`dip-pact-${p.id}`}>
-              <span>
-                <strong>{p.name}</strong>: {p.text}
-                <small class="muted">
-                  {p.left !== null && ` · ${p.left} months to go, ${p.paid ?? 0} paid`}
-                  {p.until !== null && ` · ${hoursLeft(p.until, now)} hours left`}
-                  {p.amount !== null && p.term.k === 'occupy' && ` · ${formatMoney(p.amount)} a month`}
-                  {p.imposed && ' · imposed'}
-                </small>
-              </span>
-              {p.buyBack !== null ? (
-                <button
-                  class="btn"
-                  data-testid={`dip-buyback-${p.id}`}
-                  onClick={() => void run({ type: 'buyBack', pact: p.id }, `pact-${p.id}`)}
-                >
-                  Buy back · {formatMoney(p.buyBack)}
-                </button>
-              ) : (
-                <button
-                  class="btn"
-                  data-testid={`dip-end-${p.id}`}
-                  title={p.breaks ? 'Ending it breaks the city’s word' : 'End it'}
-                  onClick={() => void run({ type: 'endPact', pact: p.id }, `pact-${p.id}`)}
-                >
-                  End
-                </button>
-              )}
-              {feedback(`pact-${p.id}`)}
-            </div>
-          ))}
+          {d.pacts
+            .filter((p) => p.room === null)
+            .map((p) => (
+              <div key={p.id} class="war-row dip-pact" data-testid={`dip-pact-${p.id}`}>
+                <span>
+                  <strong>{p.name}</strong>: {p.text}
+                  <small class="muted">
+                    {p.left !== null && ` · ${p.left} months to go, ${p.paid ?? 0} paid`}
+                    {p.until !== null && ` · ${hoursLeft(p.until, now)} hours left`}
+                    {p.amount !== null && p.term.k === 'occupy' && ` · ${formatMoney(p.amount)} a month`}
+                    {p.imposed && ' · imposed'}
+                  </small>
+                </span>
+                {p.buyBack !== null ? (
+                  <button
+                    class="btn"
+                    data-testid={`dip-buyback-${p.id}`}
+                    onClick={() => void run({ type: 'buyBack', pact: p.id }, `pact-${p.id}`)}
+                  >
+                    Buy back · {formatMoney(p.buyBack)}
+                  </button>
+                ) : (
+                  <button
+                    class="btn"
+                    data-testid={`dip-end-${p.id}`}
+                    title={p.breaks ? 'Ending it breaks the city’s word' : 'End it'}
+                    onClick={() => void run({ type: 'endPact', pact: p.id }, `pact-${p.id}`)}
+                  >
+                    End
+                  </button>
+                )}
+                {feedback(`pact-${p.id}`)}
+              </div>
+            ))}
         </section>
       )}
 

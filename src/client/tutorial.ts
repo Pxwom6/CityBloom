@@ -174,6 +174,37 @@ export const TIPS: Tip[] = [
       return !!d && (d.wars.length > 0 || d.proposals.some((p) => p.from === 'them'));
     },
   },
+  // Wars and treaties with friends (M39).
+  {
+    id: 'friendWar',
+    text:
+      'You are at war with a friend’s city. It runs on the region’s time: the war opens two minutes after ' +
+      'it is declared, every battle between your cities moves the score, and a side that falls to −60 ' +
+      'gives up and the winner sets the terms. Offer peace from the Diplomacy tab; your friend answers ' +
+      'when they are here.',
+    when: (g) => !!g.world.stats.war?.diplomacy?.wars.some((w) => w.friend),
+  },
+  {
+    id: 'friendTreaty',
+    text:
+      'A treaty with a friend waits for their answer for up to a day, even if they are away. Once signed, ' +
+      'both cities apply it: reparations are paid at once, tribute every month on each city’s own clock, ' +
+      'and pacts end by the region’s clock. Ending a pact early breaks your word and costs reputation.',
+    when: (g) =>
+      !!g.world.stats.war?.diplomacy?.pacts.some((p) => p.room !== null) ||
+      (g.friends?.view().incoming.length ?? 0) > 0,
+  },
+  {
+    id: 'friendVassal',
+    text:
+      'A city that falls in a total war becomes its conqueror’s vassal and pays a fifth of its taxes every ' +
+      'month. A vassal goes to war only to rise against its overlord, and is free once it wins battles ' +
+      'against it, or when the overlord agrees by treaty.',
+    when: (g) => {
+      const d = g.world.stats.war?.diplomacy;
+      return !!d && (!!d.vassal?.friend || d.subjects.length > 0);
+    },
+  },
   // Weapon development and intelligence (M37).
   {
     id: 'research',

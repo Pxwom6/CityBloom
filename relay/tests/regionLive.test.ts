@@ -982,9 +982,15 @@ describe('M39: the region room’s live battles', () => {
     kit!.say({ t: 'bwatch', id: 'L1' });
     expect(all(kit!, 'bend')).toHaveLength(2);
     expect(last(kit!, 'breplaydata')!.record.orders).toHaveLength(1);
-    // A watch for no battle is a notice.
+    // A watch for no battle is answered as a live battle that isn't there (a page following one, say with
+    // a force of its own in it, lets go).
     kit!.say({ t: 'bwatch', id: 'nope' });
-    expect(notices(kit!).at(-1)).toBe('That battle isn’t on any more');
+    expect(last(kit!, 'bliveoff')).toEqual({
+      t: 'bliveoff',
+      id: 'nope',
+      why: 'That battle isn’t on any more',
+      gone: true,
+    });
     // A visitor (no city) can't watch.
     const visitor = raw(w.room);
     visitor.say({ ...hello('Vic'), visitor: true });

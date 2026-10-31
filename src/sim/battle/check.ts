@@ -180,7 +180,7 @@ function helpersIn(v: unknown, structs: number): string | null {
     // Added while the battle ran (the step it was stamped at): never arriving before it was added.
     if (h.at !== undefined && !(int(h.at, 0, BATTLE.maxSteps) && h.at <= h.arrive))
       return 'a helper’s arrival';
-    if (h.route !== undefined && !(typeof h.route === 'string' && h.route in ROUTES))
+    if (h.route !== undefined && !(typeof h.route === 'string' && Object.hasOwn(ROUTES, h.route)))
       return 'a helper’s route';
     if (h.mods !== undefined && !modsIn(h.mods)) return 'a helper’s research';
     if (!Array.isArray(h.units) || !h.units.length || h.units.length > BATTLE.maxAttackers)
@@ -296,7 +296,7 @@ export function checkBattleInput(input: unknown): string | null {
   if (!g.cells.every((c) => Number.isInteger(c) && c >= 0 && c <= CELL_DEEP)) return bad('the ground');
   if (!Array.isArray(L.entries) || L.entries.length > BATTLE_LIMITS.entries) return bad('the ways in');
   for (const e of L.entries) {
-    if (!isObj(e) || !(typeof e.route === 'string' && e.route in ROUTES)) return bad('a way in');
+    if (!isObj(e) || !(typeof e.route === 'string' && Object.hasOwn(ROUTES, e.route))) return bad('a way in');
     if (!num(e.x, -MAP_SIZE, 2 * MAP_SIZE) || !num(e.z, -MAP_SIZE, 2 * MAP_SIZE)) return bad('a way in');
     if (!int(e.edge, -1, edges - 1) || !num(e.at, 0, 2 * MAP_SIZE)) return bad('a way in');
   }
@@ -307,7 +307,7 @@ export function checkBattleInput(input: unknown): string | null {
   }
   const a = input.attacker;
   if (!isObj(a) || !text(a.name) || !int(a.color, 0, 0xff_ffff)) return bad('the attackers');
-  if (!(typeof a.route === 'string' && a.route in ROUTES)) return bad('the attackers’ route');
+  if (!(typeof a.route === 'string' && Object.hasOwn(ROUTES, a.route))) return bad('the attackers’ route');
   if (!TARGETS.includes(a.target as BattleTarget) || !STANCES.includes(a.stance as Stance))
     return bad('the attackers’ orders');
   if (!num(a.readiness, 0, 1)) return bad('the attackers’ readiness');

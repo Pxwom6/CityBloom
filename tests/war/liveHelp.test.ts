@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { helpUnitId } from '../../relay/protocol';
 import { Battle } from '../../src/sim/battle/battle';
-import { checkBattleInput } from '../../src/sim/battle/check';
+import { checkBattleInput, helperListProblem } from '../../src/sim/battle/check';
+import { helpLine } from '../../src/ui/helpView';
 import type { SaveFile } from '../../src/sim/save';
 import { Sim } from '../../src/sim/sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
-import { Clock, closePages, driveUntil, flush, openRoom, type Page } from './liveHarness';
+import { Clock, closePages, drive, driveUntil, flush, openRoom, type Page } from './liveHarness';
 import { armAda, armSam, liveTown, sendAgainst, type LiveTown } from './liveTown';
 import { friendOf, friendsPage, settle, type FwPage } from './friendsHarness';
 
@@ -198,15 +200,17 @@ describe('M39 step 6: allies send help into a live battle', () => {
     expect(owned).toHaveLength(n);
     // Kit's page watched the same battle: its losses are the record's, and booked in its city once.
     const lost = owned.filter((u) => u.out).length;
-    expect(kit.live.helping()).toMatchObject({ state: 'done', lost });
+    // (All of them were knocked out here; those that come through hurt are counted in the next test.)
+    expect(kit.live.helping()).toMatchObject({ state: 'done', lost, hurt: 0 });
     // (Worn tanks: some did not come back.)
     expect(lost).toBeGreaterThan(0);
     const back = kit.sim.state.war!.expeditions?.find((e) => e.help);
-    // A force with nothing left of it is gone at once; the rest are on their way home.
+    // A force with nothing left of it has no one to bring home (it is struck off at the next tick, below);
+    // the rest are on their way home.
     if (lost < n) {
       expect(back!.state).toBe('back');
       expect(back!.units).toHaveLength(n - lost);
-    } else expect(back).toBeUndefined();
+    } else expect(back?.units ?? []).toHaveLength(0);
     expect(kit.sim.state.war!.reports!.at(-1)).toMatchObject({ help: true, ours: true, other: 'Samford' });
     expect(Object.values(kit.sim.state.war!.reports!.at(-1)!.lost).reduce((n, v) => n + (v ?? 0), 0)).toBe(
       lost,
@@ -219,7 +223,7 @@ describe('M39 step 6: allies send help into a live battle', () => {
     ).toBe(false);
     expect(kit.sim.state.war!.units.size).toBe(unitsNow);
     for (const u of owned) {
-      const simId = sentUnits[u.id - kit.link.slot * 10_000]!.id;
+      const simId = sentUnits[u.id - helpUnitId(kit.link.slot, 0)]!.id;
       if (u.out) expect(kit.sim.state.war!.units.has(simId)).toBe(false);
       else expect(kit.sim.state.war!.units.get(simId)!.hp).toBeLessThanOrEqual(1);
     }
@@ -290,6 +294,298 @@ describe('M39 step 6: allies send help into a live battle', () => {
     expect(kit.sim.state.war!.expeditions).toBeUndefined();
     for (const u of sent) expect(kit.sim.state.war!.units.get(u.id)!.away).toBeUndefined();
     expect(sam.live.input()!.helpers ?? []).toHaveLength(0);
+  }, 240_000);
+
+  it('survivors that came through hurt are counted and said to need repairs, not called unharmed', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { expedition } = attack(w);
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    // Ada holds her force at the way in, then lets it go at step 470: the battle is over shortly after
+    // Kit's tanks (fresh, whole) have come in at 552, with a fight behind them.
+    let held = false;
+    let freed = false;
+    const hold = () => {
+      const st = ada.live.state()?.step ?? 0;
+      if (!held && st >= 8) held = ada.live.order({ kind: 'hold' });
+      if (held && !freed && st >= 470) freed = ada.live.order({ kind: 'free' });
+    };
+    expect(
+      await driveUntil([ada, sam, kit], clock, () => (sam.live.state()?.step ?? 0) >= 40, 3_000, hold),
+    ).toBe(true);
+    const battle = ada.live.state()!.id;
+    const sent = tanks(kit, 3);
+    expect(await kit.live.sendHelp(battle, friendOf(kit, sam.link.slot).id, sent)).toBeNull();
+    expect(
+      await driveUntil(
+        [ada, sam, kit],
+        clock,
+        () => over && kit.live.helping()?.state === 'done',
+        6_000,
+        hold,
+      ),
+    ).toBe(true);
+    const record = sam.kept.battles.find((b) => b.id === `def-${battle}`)!.input;
+    const owned = Battle.run(structuredClone(record))
+      .result()
+      .units.filter((u) => u.owner === kit.link.slot);
+    // Every one of them came through, and none came through whole.
+    expect(owned).toHaveLength(sent.length);
+    expect(owned.every((u) => !u.out && u.hp < 0.99)).toBe(true);
+    const h = kit.live.helping()!;
+    expect(h).toMatchObject({ state: 'done', lost: 0, hurt: owned.length, alive: owned.length });
+    // The sim took the wear: their health is the battle's.
+    for (const u of owned) {
+      const simId = sent[u.id - helpUnitId(kit.link.slot, 0)]!.id;
+      expect(kit.sim.state.war!.units.get(simId)!.hp).toBeCloseTo(u.hp, 3);
+    }
+    // And the panel does not say what isn't so.
+    const line = helpLine(h, 'Samford');
+    expect(line).toMatch(
+      new RegExp(`none of your ${owned.length} units were knocked out, but ${owned.length} need`),
+    );
+    expect(line).not.toMatch(/unharmed/);
+  }, 240_000);
+
+  it('a helper whose link dropped across an order and the battle’s end runs the room’s whole log and books what the record says', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { expedition } = attack(w);
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    // Ada holds, then withdraws at step 120: the battle is over by about 190, long before the tanks (552).
+    let held = false;
+    let pulled = false;
+    const orders = () => {
+      const st = ada.live.state()?.step ?? 0;
+      if (!held && st >= 8) held = ada.live.order({ kind: 'hold' });
+      if (held && !pulled && st >= 120) pulled = ada.live.order({ kind: 'withdraw' });
+    };
+    expect(
+      await driveUntil([ada, sam, kit], clock, () => (sam.live.state()?.step ?? 0) >= 40, 3_000, orders),
+    ).toBe(true);
+    const battle = ada.live.state()!.id;
+    const sent = tanks(kit, 3);
+    expect(await kit.live.sendHelp(battle, friendOf(kit, sam.link.slot).id, sent)).toBeNull();
+    await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'on', 200, orders);
+    // Kit's link goes down before the order, and comes back after the battle has ended.
+    kit.link.live = null;
+    expect(await driveUntil([ada, sam, kit], clock, () => over, 6_000, orders)).toBe(true);
+    expect(pulled).toBe(true);
+    expect(kit.live.helping()!.state).toBe('on');
+    const ended = ada.live.state()!.hashes.room!;
+    expect(ended.step).toBeLessThan(kit.live.helping()!.arrive!);
+    kit.link.live = kit.live;
+    kit.live.welcome();
+    expect(await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'done', 2_000)).toBe(
+      true,
+    );
+    // What the record says: the battle was over before the force could come in, so nothing was lost.
+    const record = sam.kept.battles.find((b) => b.id === `def-${battle}`)!.input;
+    const again = Battle.run(structuredClone(record));
+    expect(again.result().steps).toBe(ended.step);
+    expect(
+      again
+        .result()
+        .units.filter((u) => u.owner === kit.link.slot)
+        .every((u) => !u.out),
+    ).toBe(true);
+    expect(kit.live.helping()).toMatchObject({ state: 'done', late: true, lost: 0, hurt: 0 });
+    for (const u of sent) expect(kit.sim.state.war!.units.has(u.id)).toBe(true);
+    const back = kit.sim.state.war!.expeditions!.find((e) => e.help)!;
+    expect(back.state).toBe('back');
+    expect(back.units).toHaveLength(sent.length);
+    expect(kit.sim.state.war!.reports?.some((r) => r.help)).toBeFalsy();
+  }, 240_000);
+
+  it('a run that does not match the room’s end books nothing: the force comes home untouched', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { expedition } = attack(w);
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    let held = false;
+    let pulled = false;
+    const orders = () => {
+      const st = ada.live.state()?.step ?? 0;
+      if (!held && st >= 8) held = ada.live.order({ kind: 'hold' });
+      if (held && !pulled && st >= 120) pulled = ada.live.order({ kind: 'withdraw' });
+    };
+    expect(
+      await driveUntil([ada, sam, kit], clock, () => (sam.live.state()?.step ?? 0) >= 40, 3_000, orders),
+    ).toBe(true);
+    const battle = ada.live.state()!.id;
+    const sent = tanks(kit, 3);
+    expect(await kit.live.sendHelp(battle, friendOf(kit, sam.link.slot).id, sent)).toBeNull();
+    await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'on', 200, orders);
+    // The page misses the withdrawal (any divergence would do: a skewed version, a lost entry), then hears
+    // how the battle ended. Run out on its own, the tanks come in and fight to the 1,440th step.
+    kit.link.live = null;
+    expect(await driveUntil([ada, sam, kit], clock, () => over, 6_000, orders)).toBe(true);
+    const ended = ada.live.state()!.hashes.room!;
+    kit.link.live = kit.live;
+    kit.live.message({
+      t: 'bend',
+      id: battle,
+      from: ada.link.slot,
+      to: sam.link.slot,
+      step: ended.step,
+      hash: ended.hash,
+      agree: true,
+    });
+    expect(await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'done', 2_000)).toBe(
+      true,
+    );
+    expect(kit.live.helping()).toMatchObject({ state: 'done', lost: 0, hurt: 0 });
+    expect(kit.live.helping()!.reason).toMatch(/could not confirm/);
+    expect(helpLine(kit.live.helping()!, 'Samford')).toMatch(/could not confirm.*on its way home/);
+    // Nothing the diverged run said was booked: every unit is there, as it went, and no report was made.
+    for (const u of sent) expect(kit.sim.state.war!.units.get(u.id)!.hp).toBe(1);
+    const back = kit.sim.state.war!.expeditions!.find((e) => e.help)!;
+    expect(back.state).toBe('back');
+    expect(back.units).toHaveLength(sent.length);
+    expect(kit.sim.state.war!.reports?.some((r) => r.help)).toBeFalsy();
+  }, 240_000);
+
+  /** Kit's tanks sent and on their way into a battle Ada holds (nothing ends it for a while). */
+  async function onTheWay(w: World) {
+    const { clock, ada, sam, kit } = w;
+    const { expedition } = attack(w);
+    void ada.away.fight(expedition);
+    expect(
+      await driveUntil(
+        [ada, sam, kit],
+        clock,
+        () => (sam.live.state()?.step ?? 0) >= 40,
+        3_000,
+        holdAll(ada),
+      ),
+    ).toBe(true);
+    const battle = ada.live.state()!.id;
+    const sent = tanks(kit, 3);
+    expect(await kit.live.sendHelp(battle, friendOf(kit, sam.link.slot).id, sent)).toBeNull();
+    await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'on', 200, holdAll(ada));
+    expect(kit.live.helping()!.state).toBe('on');
+    return { battle, sent };
+  }
+
+  /** The force is home as it went, in the sim, and the page is free to send another. */
+  const comeHome = (kit: Page, sent: { id: number }[]) => {
+    const back = kit.sim.state.war!.expeditions!.find((e) => e.help)!;
+    expect(back.state).toBe('back');
+    expect(back.units).toHaveLength(sent.length);
+    for (const u of sent) expect(kit.sim.state.war!.units.get(u.id)!.hp).toBe(1);
+    expect(kit.sim.state.war!.reports?.some((r) => r.help)).toBeFalsy();
+  };
+
+  it('the raid machinery leaves a force sent to help alone: it is no raid, and nothing there may turn it round', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { sent } = await onTheWay(w);
+    // The game looks over every force away with each frame (`AwayBattles.check`), this one among them.
+    for (let k = 0; k < 40; k++) {
+      await drive([ada, sam, kit], 1, clock);
+      kit.away.check(kit.sim.stats().war!.expeditions);
+    }
+    const e = kit.sim.state.war!.expeditions!.find((x) => x.help)!;
+    expect(e).toMatchObject({ state: 'fighting', settling: true });
+    expect(e.units).toEqual(sent.map((u) => u.id));
+    expect(kit.live.helping()!.state).toBe('on');
+    // It was never put to the region as a raid on the friend it helps.
+    expect(kit.kept.battles).toHaveLength(0);
+    expect(kit.taken).toHaveLength(0);
+  }, 240_000);
+
+  it('a region that no longer has the battle (it restarted) frees the force when the page asks again', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { sent } = await onTheWay(w);
+    // The link drops, and the room comes back with no battles (they are kept in memory only).
+    kit.link.live = null;
+    (w.room as unknown as { lives: Map<string, unknown> }).lives.clear();
+    kit.link.live = kit.live;
+    kit.live.welcome();
+    expect(await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'done', 500)).toBe(
+      true,
+    );
+    expect(kit.live.helping()!.reason).toMatch(/isn’t on any more/);
+    comeHome(kit, sent);
+  }, 240_000);
+
+  it('a watch that fails (the run errors) frees the force', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { sent } = await onTheWay(w);
+    // The page's run of the battle breaks.
+    kit.runs.at(-1)!.on.error('boom');
+    expect(await driveUntil([ada, sam, kit], clock, () => kit.live.helping()?.state === 'done', 500)).toBe(
+      true,
+    );
+    expect(kit.live.helping()!.reason).toMatch(/could not be followed/);
+    comeHome(kit, sent);
+  }, 240_000);
+
+  it('a battle the room says nothing of for minutes frees the force', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { sent } = await onTheWay(w);
+    // Quiet, but not for long: the force is still out.
+    kit.link.live = null;
+    await drive([ada, sam, kit], 4, clock, undefined, 60_000);
+    expect(kit.live.helping()!.state).toBe('on');
+    // Five minutes on, with no word, it comes home as it went.
+    await drive([ada, sam, kit], 2, clock, undefined, 60_000);
+    expect(kit.live.helping()!.state).toBe('done');
+    expect(kit.live.helping()!.reason).toMatch(/gone quiet/);
+    comeHome(kit, sent);
+  }, 240_000);
+
+  it('gives a helper’s units ids no combatant’s unit could have, even a grown city’s', async () => {
+    const w = await setup();
+    const { clock, ada, sam, kit } = w;
+    const { expedition } = attack(w);
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    expect(
+      await driveUntil(
+        [ada, sam, kit],
+        clock,
+        () => (sam.live.state()?.step ?? 0) >= 40,
+        3_000,
+        holdAll(ada),
+      ),
+    ).toBe(true);
+    const battle = ada.live.state()!.id;
+    expect(await kit.live.sendHelp(battle, friendOf(kit, sam.link.slot).id, tanks(kit, 3))).toBeNull();
+    expect(
+      await driveUntil(
+        [ada, sam, kit],
+        clock,
+        () => over && kit.live.helping()?.state === 'done',
+        6_000,
+        holdAll(ada),
+      ),
+    ).toBe(true);
+    const input = sam.kept.battles.find((b) => b.id === `def-${battle}`)!.input;
+    const helper = input.helpers![0]!;
+    // Above a million, where a city's own counter does not reach.
+    expect(helper.units.map((u) => u.id)).toEqual(helper.units.map((_, k) => helpUnitId(kit.link.slot, k)));
+    expect(helper.units.every((u) => u.id > 1_000_000)).toBe(true);
+    const others = new Set([
+      ...input.attacker.units.map((u) => u.id),
+      ...input.layout.defenders.map((u) => u.id),
+    ]);
+    for (const u of helper.units) expect(others.has(u.id)).toBe(false);
+    // The old numbering could repeat a combatant's id: a defender whose id is Kit's first tank's under
+    // `slot × 10,000 + k` leaves the help refused ("two units with one id"), which the room never knows.
+    const grown = structuredClone(input);
+    grown.helpers = [];
+    grown.layout.defenders[0]!.id = kit.link.slot * 10_000;
+    const oldWay = structuredClone(helper);
+    oldWay.units = oldWay.units.map((u, k) => ({ ...u, id: kit.link.slot * 10_000 + k }));
+    expect(helperListProblem(grown, [oldWay])).toBe('two units with one id');
+    expect(helperListProblem(grown, [helper])).toBeNull();
   }, 240_000);
 
   it('a force the page lost track of (the page was reloaded) is called home by the next frame', async () => {

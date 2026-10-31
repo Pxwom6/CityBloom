@@ -12,7 +12,7 @@
  *
  * The room never reads a battle: the input is opaque, and an order is only checked for shape.
  */
-import { LIVE } from './protocol';
+import { LIVE, helpUnitId } from './protocol';
 
 /** The battle's own numbering of its sides: the attacker is 0, the defender 1. */
 export type LiveSide = 0 | 1;
@@ -88,8 +88,15 @@ const whole = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 
 /**
- * An order's shape, or null: a kind in lower case, whole-number units and target (a unit's id may be
- * negative: the defender's `focus` on a drone a sky fortress carries). Other keys are dropped.
+ * A unit id an order may name: one of a city's own (a sim id; it may be negative, the defender's `focus`
+ * on a drone a sky fortress carries) or an ally's helping unit (`helpUnitId`, a range of its own).
+ */
+const unitId = (v: unknown): v is number =>
+  whole(v, -1e6, 1e6) || whole(v, helpUnitId(1, 0), helpUnitId(64, LIVE.helpIds - 1));
+
+/**
+ * An order's shape, or null: a kind in lower case, whole-number units and target (see `unitId`).
+ * Other keys are dropped.
  */
 export function cleanLiveOrder(o: unknown): LiveOrderIn | null {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
@@ -98,11 +105,11 @@ export function cleanLiveOrder(o: unknown): LiveOrderIn | null {
   const out: LiveOrderIn = { kind: r.kind };
   if (r.units !== undefined) {
     if (!Array.isArray(r.units) || r.units.length > LIVE.units) return null;
-    for (const u of r.units) if (!whole(u, -1e6, 1e6)) return null;
+    for (const u of r.units) if (!unitId(u)) return null;
     out.units = [...(r.units as number[])];
   }
   if (r.target !== undefined) {
-    if (!whole(r.target, -1e6, 1e6)) return null;
+    if (!unitId(r.target)) return null;
     out.target = r.target;
   }
   return out;
@@ -247,6 +254,8 @@ export class LiveSession {
     if (there.some((o) => o.helper!.owner === from.slot))
       return no('Your force is helping in that battle already');
     if (this.orders.length >= LIVE.maxOrders - LIVE.reserve) return no('This battle takes no more orders');
+    // (`travel` is a table's number of steps: anything else is no arrival.)
+    if (!Number.isInteger(travel) || travel < 0) return no('That way in could not be read');
     const arrive = this.allow + travel;
     if (arrive > LIVE.lastStep)
       return no('The battle will be over before help could get there: send it earlier');

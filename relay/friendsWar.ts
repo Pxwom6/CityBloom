@@ -33,6 +33,7 @@ import type { RegionWarRules } from '../src/data/war';
 import {
   FRIENDS,
   PACT_NAMES,
+  BINDING_PACTS,
   type BattleOutcome,
   type FriendPact,
   type FriendProposal,
@@ -101,7 +102,7 @@ export interface FwOut {
 }
 
 /** Pacts that stand in the way of a war or a raid (a ceasefire, and M36's `BINDING`). */
-const BINDING: readonly PactKind[] = ['ceasefire', 'nonAggression', 'alliance', 'defensivePact'];
+const BINDING: readonly PactKind[] = BINDING_PACTS;
 /** The terms friends may sign: M36's less a computer town's (districts, a demilitarised zone), plus vassalage. */
 export const FRIEND_TERM_KINDS: readonly string[] = [
   'ceasefire',

@@ -11,7 +11,7 @@
  * the room's messages is the real one. Nothing here reaches the network.
  */
 import { LiveSession, cleanLiveOrder, type LiveOrder, type LiveSide } from '../../relay/live';
-import { LIVE } from '../../relay/protocol';
+import { LIVE, helpTravelOf, helpUnitId } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg } from '../../relay/region';
 import type { UnitKind } from '../data/war';
 import type { Game } from '../game';
@@ -168,7 +168,7 @@ export class LiveStage implements LiveLink {
       this.helpSide,
       { slot: this.slot, name: this.cityName, color: 0x3a78c8 },
       { units: m.units, route, ...(m.mods ? { mods: m.mods } : {}) },
-      this.helpTravel ?? LIVE.helpTravel[route as keyof typeof LIVE.helpTravel],
+      this.helpTravel ?? helpTravelOf(route) ?? Number.NaN,
     );
     if (!put.entry) return this.tell({ t: 'bhelpoff', id: s.id, why: put.refused });
     this.stamped.push(put.entry);
@@ -194,7 +194,7 @@ export class LiveStage implements LiveLink {
       opts.side,
       { slot: opts.owner, name: opts.name, color: opts.color },
       {
-        units: opts.units.map((kind, k) => ({ id: opts.owner * LIVE.helpIds + k, kind, hp: 1 })),
+        units: opts.units.map((kind, k) => ({ id: helpUnitId(opts.owner, k), kind, hp: 1 })),
         route: 'highway',
       },
       opts.travel ?? this.helpTravel ?? LIVE.helpTravel.highway,

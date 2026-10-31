@@ -186,8 +186,8 @@ export interface BattleOrder {
  * step) by `route` (the attacking force's own when absent) like the attackers and fight as
  * attackers under their stance; on side 1 they come in at `arrive` at the city's way in nearest
  * `route` (the layout's first when absent) and fight as defenders. Its units' ids must not repeat
- * on their side's (the main force's, or `layout.defenders`'): a builder might use
- * `owner * 10_000 + k`, keeping them under 1,000,000 where the region room carries them in orders.
+ * on their side's (the main force's, or `layout.defenders`'): the region room numbers them in a range
+ * above any id a city's sim mints (`helpUnitId`, relay/protocol.ts), where it carries them in orders too.
  * No superweapons and nothing carried; `base` −1. A helper's units count with their side's
  * strength: an attacking helper's with the force's (the army withdraws as one, at the stance's
  * share lost, and a unit sent home by `withdraw` isn't counted lost); a defending one's with the

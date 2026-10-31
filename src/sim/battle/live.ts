@@ -23,9 +23,10 @@ import {
 /**
  * An allied force as the region room stamped it into the battle's log (M39 step 6): who it is (the
  * helper city's place in the region is its owner), the side it fights on, the units it sends
- * (`owner * 10_000 + k` for ids, which keeps them clear of both cities' own), the step it arrives at
- * and the way it comes. The page that sent it is trusted for nothing but its units: the battle checks
- * them (`helperListProblem`) as it takes the entry, the same way on every page.
+ * (`helpUnitId(owner, k)` for ids: a range above any id a city's sim mints, so none repeats a
+ * combatant's), the step it arrives at and the way it comes. The page that sent it is trusted for
+ * nothing but its units: the battle checks them (`helperListProblem`) as it takes the entry, the same
+ * way on every page.
  */
 export interface StampedHelper {
   owner: number;

@@ -16,7 +16,7 @@
  * The page keeps the clock it is given and the city, store and runner it is handed, so tests run two
  * pages against a real room without a browser.
  */
-import { LIVE } from '../../relay/protocol';
+import { LIVE, helpUnitId } from '../../relay/protocol';
 import type { LiveOrderIn, LiveRecord, RegionClientMsg, RegionRoomMsg } from '../../relay/region';
 import { UNIT, type UnitKind } from '../data/war';
 import { awayBattleId, awayForce, type AwayCity } from '../sim/battle/away';
@@ -146,6 +146,8 @@ export interface HelpView {
   units: number;
   alive: number | null;
   lost: number | null;
+  /** When it's over: how many of those that came through are worse for it (they need repairs). */
+  hurt: number | null;
   /** The side it fights for (0 attacker, 1 defender) and the step it arrives at, once the room has said. */
   side: 0 | 1 | null;
   arrive: number | null;
@@ -163,12 +165,15 @@ interface Help {
   expedition: number;
   /** The battle's ids for its units, back to the sim's. */
   ids: Map<number, number>;
+  /** Each unit's health when it was sent, by the battle's id: what it is compared with after. */
+  hp: Map<number, number>;
   units: number;
   state: HelpView['state'];
   side: 0 | 1 | null;
   arrive: number | null;
   reason?: string;
   lost: number | null;
+  hurt: number | null;
   /** Its end has been given to the city. */
   ended: boolean;
   /** When it was put to the room (ms): an answer that never comes is taken for a refusal. */
@@ -237,6 +242,10 @@ interface Watch {
   /** The page's run reached the battle's end. */
   run?: LiveEnd;
   end: End | null;
+  /** When the room last said anything about this battle (ms): one that goes quiet lets a force of this page's go. */
+  heard: number;
+  /** The link dropped since the room last gave this page the whole battle: its log may lack what was said meanwhile. */
+  stale?: boolean;
 }
 
 interface Session {
@@ -307,6 +316,13 @@ const LOG_KEEP = 12;
 const WATCH_WAIT = 10_000;
 /** A force sent to help that the room never answers comes home after this long (ms). */
 const HELP_WAIT = 20_000;
+/**
+ * A battle this page follows for its force, about which the room says nothing for this long (ms), is given
+ * up: the force comes home as it went. (A running battle is heard from every half second.)
+ */
+const FOLLOW_WAIT = 300_000;
+/** A unit that came out of a battle this much (of its health) worse than it went in is hurt. */
+const HURT = 0.005;
 /** A finished page waits this long for the room's word on the end (ms), then keeps what it has. */
 const END_WAIT = 120_000;
 /** A hosted battle the page can't find a session for is let go after this long (ms). */
@@ -632,8 +648,14 @@ export class LiveBattles implements LiveSink {
         'That battle could not be watched: the region did not start it.',
         'bad',
       );
+      // (A force of this page's that was to be in it comes home as it went: nothing else would free it.)
+      if (this.helpFollowing(w.id))
+        void this.helpOver(null, undefined, 'The region did not start that battle.');
       this.stopWatching();
       this.onChange?.();
+    } else if (w && this.helpFollowing(w.id) && t - w.heard >= FOLLOW_WAIT) {
+      // The room has said nothing of a battle this page's force is in for minutes (it has forgotten it).
+      void this.helpOver(null, undefined, 'The region has gone quiet about that battle.');
     }
     // A force put to the room that it never answered (an older room, a lost message) comes home.
     const h = this.help;
@@ -728,6 +750,10 @@ export class LiveBattles implements LiveSink {
     const w = this.watching;
     if (w) {
       w.asked = this.now;
+      w.heard = this.now;
+      // (What the room said while the link was down is not in the log: its `bstart` gives it again, or, if
+      // the battle ended meanwhile, its record does.)
+      if (w.input) w.stale = true;
       this.send({ t: 'bwatch', id: w.id, ...(w.from !== undefined ? { from: w.from } : {}) });
     }
     for (const s of this.sessions.values())
@@ -970,6 +996,8 @@ export class LiveBattles implements LiveSink {
 
   /** The room turned a call off, or says it has no such battle. */
   private onOff(m: Extract<RegionRoomMsg, { t: 'bliveoff' }>): void {
+    const w = this.watching;
+    if (w && w.id === m.id && !this.sessions.has(m.id)) return this.onWatchOff(w, m);
     const call = this.calls.get(m.id);
     if (call && !call.started) {
       call.first({
@@ -996,6 +1024,18 @@ export class LiveBattles implements LiveSink {
     if (m.gone && this.war?.battle?.live?.id === m.id) void this.free(m.id);
   }
 
+  /**
+   * The room won't give the battle this page asked to watch (it isn't on and isn't kept, or it has all the
+   * watchers it takes): it stops watching, and a force of this page's that was in it comes home as it went.
+   */
+  private onWatchOff(w: Watch, m: Extract<RegionRoomMsg, { t: 'bliveoff' }>): void {
+    this.env.city.notice('live-watch', `${m.why}.`, 'bad');
+    if (m.gone) this.running.delete(w.id);
+    if (this.helpFollowing(w.id)) void this.helpOver(null, undefined, `${m.why}.`);
+    this.stopWatching();
+    this.onChange?.();
+  }
+
   /** The hosted battle in this city's sim has ended: its step and hash go to the room. */
   private hostedEnd(id: string, step: number, hash: string): void {
     const s = this.sessions.get(id);
@@ -1013,10 +1053,13 @@ export class LiveBattles implements LiveSink {
     const w = this.watching;
     if (w && w.id === m.id) {
       w.end = m;
-      // Run out to the end at once: the room's frontier has nothing more to say.
-      w.runner?.feed([], LIVE_ALLOW_MAX, true);
+      w.heard = this.now;
+      // Run out to the end at once: the room's frontier has nothing more to say. (A page that was away
+      // while the battle ended waits for the record's orders, which follow the end: its log has gaps.)
+      if (!w.stale || m.kept === false) w.runner?.feed([], LIVE_ALLOW_MAX, true);
       // (A force sent to help, with no run of the battle to hear its end from, comes home as it went.)
       if (!w.runner) void this.helpOver(null);
+      else this.helpSettle(w);
     } else if (this.help?.battle === m.id) void this.helpOver(null);
     const s = this.sessions.get(m.id);
     if (s) {
@@ -1058,6 +1101,16 @@ export class LiveBattles implements LiveSink {
 
   /** The room's record of a battle that is over: run to the end here, and reported. */
   private onRecord(id: string, record: LiveRecord): void {
+    // The record of a battle this page watches, sent when it came back to a battle that ended while it
+    // was away: the whole log, which its run needs before it runs out (a missed order would change the end).
+    const w = this.watching;
+    if (w && w.id === id && w.runner) {
+      w.stale = false;
+      w.heard = this.now;
+      this.takeWatch(w, record.orders, LIVE_ALLOW_MAX);
+      w.runner.feed([], LIVE_ALLOW_MAX, true);
+      return;
+    }
     const call = this.calls.get(id);
     if (!call && this.war?.battle?.live?.id === id && !this.sessions.has(id)) return this.takeRecord(record);
     if (!call || call.started) return;
@@ -1219,7 +1272,15 @@ export class LiveBattles implements LiveSink {
    */
   watch(id: string): boolean {
     const link = this.link;
-    if (!link || link.state !== 'in' || this.active) return false;
+    if (!link || link.state !== 'in') return false;
+    if (this.active) {
+      this.env.city.notice(
+        'live-watch',
+        'Your city is in a battle of its own: it can’t watch another.',
+        'info',
+      );
+      return false;
+    }
     const b = this.running.get(id);
     if (!b) return false;
     if (this.watching?.id === id) {
@@ -1227,12 +1288,20 @@ export class LiveBattles implements LiveSink {
       return true;
     }
     // (A page whose force is helping in a battle keeps following that one until it is over.)
-    if (this.helpFollowing() && this.help?.battle !== id) return false;
+    if (this.helpFollowing() && this.help?.battle !== id) {
+      this.env.city.notice(
+        'live-watch',
+        'Your force is helping in another battle: this page follows that one until it is over.',
+        'info',
+      );
+      return false;
+    }
     this.stopWatching();
     this.watching = {
       id,
       from: b.from,
       asked: this.now,
+      heard: this.now,
       attacker: b.from,
       defender: b.to,
       input: null,
@@ -1285,7 +1354,7 @@ export class LiveBattles implements LiveSink {
       }
       if (!input || input.id !== m.id || checkBattleInput(input)) {
         this.env.city.notice('live-watch', 'That battle could not be read, so it is not watched.', 'bad');
-        this.unwatch();
+        this.watchFailed(w);
         return;
       }
       w.input = input;
@@ -1300,20 +1369,35 @@ export class LiveBattles implements LiveSink {
         done: (end) => {
           w.run = end;
           w.runner?.stop();
-          void this.helpOver(end, w.id);
+          // (A force of this page's takes its fate from the run only once it matches the room's word.)
+          this.helpSettle(w);
           this.onChange?.();
         },
         error: () => {
           this.env.city.notice('live-watch', 'Watching that battle stopped: the run failed.', 'bad');
-          if (this.watching === w) this.unwatch();
+          this.watchFailed(w);
         },
       });
     }
+    // The whole battle, as the room has it: nothing was missed while the link was down.
+    w.stale = false;
+    w.heard = this.now;
     this.takeWatch(w, m.orders, m.allow);
+  }
+
+  /**
+   * The watch of a battle can't go on (it can't be read, or its run failed). A force of this page's that is
+   * in it can't be followed to the end either, so it comes home as it went (`unwatch` would leave a watch
+   * kept for it standing, and with it the force).
+   */
+  private watchFailed(w: Watch): void {
+    if (this.helpFollowing(w.id)) void this.helpOver(null, undefined, 'That battle could not be followed.');
+    if (this.watching === w) this.unwatch();
   }
 
   /** Orders and the frontier for the battle being watched. */
   private takeWatch(w: Watch, orders: readonly StampedOrder[], allow: number): void {
+    w.heard = this.now;
     const known = new Set(w.orders.map((o) => o.seq));
     const fresh = orders.filter((o) => !known.has(o.seq));
     w.orders.push(...fresh);
@@ -1349,6 +1433,7 @@ export class LiveBattles implements LiveSink {
       units: h.units,
       alive: state === 'fighting' || state === 'done' ? (mine?.alive ?? null) : null,
       lost: h.lost,
+      hurt: h.hurt,
       side: h.side,
       arrive: h.arrive,
       step,
@@ -1386,11 +1471,13 @@ export class LiveBattles implements LiveSink {
       battle,
       expedition: 0,
       ids: new Map(),
+      hp: new Map(),
       units: units.length,
       state: 'asked',
       side: null,
       arrive: null,
       lost: null,
+      hurt: null,
       ended: false,
     };
     // (Set before the sim answers, so a frame in between doesn't take the force for one this page lost.)
@@ -1421,8 +1508,9 @@ export class LiveBattles implements LiveSink {
       return fail('That battle could not be watched');
     }
     const slot = link.slot;
-    const wire = city.units.map((u, k) => ({ id: slot * LIVE.helpIds + k, kind: u.kind, hp: u.hp }));
+    const wire = city.units.map((u, k) => ({ id: helpUnitId(slot, k), kind: u.kind, hp: u.hp }));
     mine.ids = new Map(wire.map((u, k) => [u.id, city.units[k]!.id] as const));
+    mine.hp = new Map(wire.map((u) => [u.id, u.hp] as const));
     mine.units = wire.length;
     mine.askedAt = this.now;
     this.send({
@@ -1449,11 +1537,35 @@ export class LiveBattles implements LiveSink {
   }
 
   /**
-   * The force's battle is over (the watched run reached its end), or it can no longer be followed
-   * (`end` null): its units' fate comes from the battle's own result, by their owner, and the city
-   * applies it once. A unit the battle never met came home untouched.
+   * The followed battle is over for this page when its own run has reached the end and the room has said
+   * how it ended. The force's fate is taken from the run only if the two agree (the same step and hash):
+   * a run that missed something the room said, or came from another version of the game, would book
+   * losses that did not happen. A force the battle's record does not vouch for comes home untouched.
    */
-  private async helpOver(end: LiveEnd | null, battle?: string): Promise<void> {
+  private helpSettle(w: Watch): void {
+    const h = this.help;
+    if (!h || h.ended || h.battle !== w.id || !w.run || !w.end) return;
+    const room = w.end;
+    if (!room.abandoned && room.step === w.run.step && room.hash === w.run.hash)
+      return void this.helpOver(w.run, w.id);
+    console.warn(`[live] ${w.id}: this page’s run of the battle does not match the room’s end`, {
+      run: { step: w.run.step, hash: w.run.hash },
+      room: { step: room.step, hash: room.hash, abandoned: room.abandoned },
+    });
+    void this.helpOver(
+      null,
+      undefined,
+      room.abandoned ? 'That battle was called off.' : 'This page could not confirm how that battle ended.',
+    );
+  }
+
+  /**
+   * The force's battle is over (the watched run reached its end, and matches the room's word on it), or it
+   * can no longer be followed (`end` null, and `note` says why): its units' fate comes from the battle's
+   * own result, by their owner, and the city applies it once. A unit the battle never met, or a force
+   * whose battle can't be vouched for, came home untouched.
+   */
+  private async helpOver(end: LiveEnd | null, battle?: string, note?: string): Promise<void> {
     const h = this.help;
     if (!h || h.ended || h.expedition === 0) return;
     if (end && battle !== h.battle) return;
@@ -1463,9 +1575,13 @@ export class LiveBattles implements LiveSink {
     const arrived = !!end && h.arrive !== null && end.step >= h.arrive;
     const fought = arrived ? end.helpers?.[slot] : undefined;
     h.late = !!end && !fought;
+    // Those that came through, and how many are worse for it (not knocked out, but hurt).
+    let hurt = 0;
     const units = (fought ?? []).flatMap((u) => {
       const sim = h.ids.get(u.id);
-      return sim === undefined ? [] : [{ id: sim, hp: u.hp, out: u.out }];
+      if (sim === undefined) return [];
+      if (!u.out && u.hp < (h.hp.get(u.id) ?? 1) - HURT) hurt++;
+      return [{ id: sim, hp: u.hp, out: u.out }];
     });
     const lost = units.filter((u) => u.out).length;
     const r = await this.env.city.command({
@@ -1474,17 +1590,25 @@ export class LiveBattles implements LiveSink {
       ...(end && fought ? { result: { outcome: end.result.outcome, units } } : {}),
     });
     h.lost = lost;
+    h.hurt = hurt;
+    if (!end && note && h.state !== 'refused') h.reason = note;
     if (h.state !== 'refused') h.state = 'done';
-    if (r.ok && end)
+    if (r.ok && (end || note)) {
+      const were = (n: number) => `${n} ${n === 1 ? 'needs' : 'need'} repairs`;
       this.env.city.notice(
         `help-done:${h.battle}`,
-        !fought
-          ? 'The battle ended before your force could get there. It is on its way home.'
-          : lost
-            ? `Your force came through the battle, but ${lost} of its ${h.units} units were knocked out. The rest are on their way home.`
-            : 'Your force came through the battle unharmed and is on its way home.',
-        lost ? 'info' : 'ok',
+        !end
+          ? `${note} Your force is on its way home.`
+          : !fought
+            ? 'The battle ended before your force could get there. It is on its way home.'
+            : lost
+              ? `Your force came through the battle, but ${lost} of its ${h.units} units were knocked out${hurt ? ` and ${were(hurt)}` : ''}. The rest are on their way home.`
+              : hurt
+                ? `Your force came through the battle with none of its ${h.units} units knocked out, but ${were(hurt)}. They are on their way home.`
+                : 'Your force came through the battle unharmed and is on its way home.',
+        !end || lost || hurt ? 'info' : 'ok',
       );
+    }
     // Followed out of sight until now: no more need of the battle.
     if (!this.watchShown && this.watching?.id === h.battle) {
       this.send({ t: 'bunwatch', id: h.battle });

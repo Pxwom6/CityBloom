@@ -12,6 +12,7 @@ import type { BattleReport } from '../sim/systems/raids';
 import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
 import { HelpButton } from './Help';
+import { helpForceLine } from './helpView';
 import { formatNumber, useGameUpdates } from './hooks';
 
 const TARGETS: Record<string, string> = {
@@ -551,14 +552,17 @@ export function SendForce() {
             return (
               <li key={e.id} data-testid={`expedition-${e.id}`}>
                 {e.units} unit{e.units === 1 ? '' : 's'}{' '}
-                {e.state === 'out'
-                  ? `on the way to ${e.name}: ${left.toFixed(1)} h`
-                  : e.state === 'fighting'
-                    ? e.settling
-                      ? `fought in ${e.name}: waiting for the region to take the battle`
-                      : `fighting in ${e.name}`
-                    : `coming home from ${e.name}: ${left.toFixed(1)} h`}
-                {e.state !== 'back' && !e.settling && (
+                {e.help
+                  ? // A force that went to help a friend is not a raid: the page knows how it is getting on.
+                    helpForceLine(e, game.live.helping(), left)
+                  : e.state === 'out'
+                    ? `on the way to ${e.name}: ${left.toFixed(1)} h`
+                    : e.state === 'fighting'
+                      ? e.settling
+                        ? `fought in ${e.name}: waiting for the region to take the battle`
+                        : `fighting in ${e.name}`
+                      : `coming home from ${e.name}: ${left.toFixed(1)} h`}
+                {e.state !== 'back' && !e.settling && !e.help && (
                   <button
                     class="btn"
                     data-testid={`recall-${e.id}`}
@@ -597,7 +601,10 @@ export function RegionMap() {
   for (const [side, list] of Object.entries(sides))
     list.forEach((n, k) => (at[n.id] = place(side, k, list.length)));
   const me = { x: 210, y: 140 };
-  const recent = new Set(w.reports.filter((r) => tick - r.end < 3 * TICKS_PER_MONTH).map((r) => r.other));
+  // (Help given to a friend is no fight with it: its report makes no front on the road between the two.)
+  const recent = new Set(
+    w.reports.filter((r) => !r.help && tick - r.end < 3 * TICKS_PER_MONTH).map((r) => r.other),
+  );
   const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
     x: a.x + (b.x - a.x) * t,
     y: a.y + (b.y - a.y) * t,

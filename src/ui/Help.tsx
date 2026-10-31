@@ -8,45 +8,25 @@
 import { useState } from 'preact/hooks';
 import { LIVE } from '../../relay/protocol';
 import type { Game } from '../game';
-import type { HelpView, LiveRunning } from '../client/liveBattles';
+import type { LiveRunning } from '../client/liveBattles';
 import { UNIT } from '../data/war';
 import { useGameUpdates } from './hooks';
+import { helpAlliesOf, helpLine, pickUnits, seconds, type HelpAlly } from './helpView';
+
+export type { HelpAlly } from './helpView';
 
 /** Which battle's picker is open on the map (the buttons elsewhere open the map and set this). */
 export const helpUi: { open: string | null } = { open: null };
 
-/** Seconds of play a battle step takes at the room's pace: 16 steps a second. */
-const STEPS_PER_SECOND = 16;
-
-/** A combatant this city could send help to. */
-export interface HelpAlly {
-  /** The neighbour in the city's own list, its place in the region, its name, and the side it fights on. */
-  id: number;
-  slot: number;
-  name: string;
-  side: 0 | 1;
-}
-
-/**
- * The combatant of a live battle this city has a pact of aid with, as its own mirror of the region's pacts
- * has it: an alliance with either, a defensive pact with the one attacked. None when it has pacts with both
- * (it can't take sides) or with neither; the room has the last word.
- */
+/** The combatant of a live battle this city has a pact of aid with (the room has the last word). */
 export function helpAllies(game: Game, b: { from: number; to: number }): HelpAlly[] {
-  const w = game.world.stats.war;
-  const pacts = (w?.diplomacy?.pacts ?? []).filter((p) => p.room !== null);
-  const out: HelpAlly[] = [];
-  for (const [slot, side] of [
-    [b.from, 0],
-    [b.to, 1],
-  ] as const) {
-    const n = game.world.stats.region.neighbours.find((x) => x.player?.slot === slot);
-    if (!n) continue;
-    const kinds = pacts.filter((p) => p.with === n.id).map((p) => p.term.k);
-    if (kinds.includes('alliance') || (side === 1 && kinds.includes('defensivePact')))
-      out.push({ id: n.id, slot, name: n.name, side });
-  }
-  return out.length === 1 ? out : [];
+  return helpAlliesOf(
+    {
+      pacts: game.world.stats.war?.diplomacy?.pacts ?? [],
+      neighbours: game.world.stats.region.neighbours,
+    },
+    b,
+  );
 }
 
 /** Units fit to go: at home, mended, not a superweapon, on the ground or in the air. */
@@ -63,31 +43,6 @@ const unitName = (kind: string, n: number) => {
   const d = UNIT.get(kind as never);
   return d ? (n === 1 ? d.name : d.plural) : kind;
 };
-
-/** "30 seconds" and the like, from steps of battle. */
-const seconds = (steps: number) => Math.max(1, Math.ceil(steps / STEPS_PER_SECOND));
-
-/** The force's progress, in words (or null when there is nothing to say). */
-export function helpLine(h: HelpView, side: string): string {
-  switch (h.state) {
-    case 'asked':
-      return `Asking the region to let your ${h.units} unit${h.units === 1 ? '' : 's'} in…`;
-    case 'on':
-      return `Your ${h.units} unit${h.units === 1 ? ' is' : 's are'} on the way to help ${side}${
-        h.arrive !== null ? `: ${seconds(h.arrive - h.step)} seconds to go` : ''
-      }.`;
-    case 'fighting':
-      return `Your force is fighting for ${side}${h.alive !== null ? `: ${h.alive} of ${h.units} standing` : ''}.`;
-    case 'done':
-      return h.late
-        ? 'The battle ended before your force could get there: it is on its way home.'
-        : h.lost
-          ? `The battle is over: ${h.lost} of your ${h.units} units were knocked out, and the rest are on their way home.`
-          : 'The battle is over: your force came through unharmed and is on its way home.';
-    case 'refused':
-      return `${h.reason ?? 'The help was turned down'}. Your force is home.`;
-  }
-}
 
 /** The line about the force this city sent, in the map or beside the button. */
 export function HelpStatus({ battle }: { battle?: string }) {
@@ -124,16 +79,17 @@ export function HelpPicker({
   const [busy, setBusy] = useState(false);
   const home = ready(game);
   const kinds = [...new Set(home.map((u) => u.kind))];
-  const chosen = kinds.flatMap((k) =>
-    home
-      .filter((u) => u.kind === k)
-      .slice(0, Math.min(picked[k] ?? 0, LIVE.helpUnits))
-      .map((u) => ({ id: u.id, kind: u.kind })),
-  );
+  // (A force takes at most `LIVE.helpUnits` in all: what is shown, labelled and sent is the same list.)
+  const { chosen, taken } = pickUnits(home, picked);
+  const left = LIVE.helpUnits - chosen.length;
   const send = async () => {
     if (busy || !chosen.length) return;
     setBusy(true);
-    const bad = await game.live.sendHelp(battle, ally.id, chosen.slice(0, LIVE.helpUnits));
+    const bad = await game.live.sendHelp(
+      battle,
+      ally.id,
+      chosen.map((u) => ({ id: u.id, kind: u.kind })),
+    );
     setBusy(false);
     setWhy(bad);
     if (bad === null) {
@@ -155,6 +111,9 @@ export function HelpPicker({
         {kinds.length ? (
           kinds.map((k) => {
             const have = home.filter((u) => u.kind === k).length;
+            const mine = taken[k] ?? 0;
+            // (What the others take is not available here: up to the force's cap in all.)
+            const most = Math.min(have, mine + left);
             return (
               <label key={k} class="help-unit">
                 <span>
@@ -163,13 +122,16 @@ export function HelpPicker({
                 <input
                   type="number"
                   min={0}
-                  max={have}
-                  value={Math.min(picked[k] ?? 0, have)}
+                  max={most}
+                  value={mine}
                   data-testid={`help-${k}`}
                   onInput={(e) =>
                     setPicked({
                       ...picked,
-                      [k]: Math.max(0, Math.min(have, Number((e.target as HTMLInputElement).value) || 0)),
+                      [k]: Math.max(
+                        0,
+                        Math.min(most, Math.floor(Number((e.target as HTMLInputElement).value) || 0)),
+                      ),
                     })
                   }
                 />
@@ -182,6 +144,11 @@ export function HelpPicker({
           </p>
         )}
       </div>
+      {kinds.length > 0 && (
+        <p class="muted" data-testid="help-count" data-full={left === 0}>
+          {chosen.length} of at most {LIVE.helpUnits} units
+        </p>
+      )}
       {why && (
         <p class="war-warn" data-testid="help-why">
           {why}

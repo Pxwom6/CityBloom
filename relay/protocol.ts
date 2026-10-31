@@ -83,18 +83,62 @@ export const LIVE = {
   watchers: 8,
   /**
    * Allied help (step 6): the forces that may join one battle (the battle takes three), the most units
-   * one sends (a force's cap), the ids its units are numbered in (`owner × helpIds + k`, which keeps
-   * them clear of both cities' own and under the 1,000,000 an order may name), and the steps from the
-   * frontier it was stamped at to its arrival by each route: 30 s of play (480 steps at 16 a second)
-   * by road, rail or air, 45 s by sea. A force that could not arrive before the battle's last step
-   * (`lastStep`, the battle's own `maxSteps`) is refused.
+   * one sends (a force's cap), the ids its units are numbered in (`helpUnitId`: `helpBase + owner ×
+   * helpIds + k`, a range above any id a city's sim mints, so a helper's unit never shares an id with a
+   * combatant's: the cities' ids are one counter that a grown city takes well past 10,000), and the steps
+   * from the frontier it was stamped at to its arrival by each route: 30 s of play (480 steps at 16 a
+   * second) by road, rail or air, 45 s by sea. A force that could not arrive before the battle's last
+   * step (`lastStep`, the battle's own `maxSteps`) is refused.
    */
   helpers: 3,
   helpUnits: 24,
+  helpBase: 0x4000_0000,
   helpIds: 10_000,
   helpTravel: { highway: 480, rail: 480, air: 480, sea: 720 },
   lastStep: 1_440,
 } as const;
+
+/** The id the city at `slot` gives its `k`th helping unit in a battle (see `LIVE.helpBase`). */
+export const helpUnitId = (slot: number, k: number): number => LIVE.helpBase + slot * LIVE.helpIds + k;
+
+/** Is `id` one the city at `slot` may give a helping unit? */
+export function isHelpUnitId(slot: number, id: unknown): id is number {
+  const lo = helpUnitId(slot, 0);
+  return typeof id === 'number' && Number.isInteger(id) && id >= lo && id < lo + LIVE.helpIds;
+}
+
+/**
+ * Steps from the frontier to a force's arrival by `route`, or null for anything but one of the routes
+ * (an own property: `constructor` or `__proto__` are names an object answers to, not routes).
+ */
+export function helpTravelOf(route: unknown): number | null {
+  return typeof route === 'string' && Object.hasOwn(LIVE.helpTravel, route)
+    ? LIVE.helpTravel[route as keyof typeof LIVE.helpTravel]
+    : null;
+}
+
+/** The pact of mutual aid a city keeps with a friend: an alliance, else a defensive pact, else none. */
+export type AidPact = 'alliance' | 'defensivePact' | null;
+
+/**
+ * Which combatant of a live battle an ally's help fights for, from the pacts it keeps with the attacker
+ * and with the defender (M39 step 6, design call 7): an alliance with either, a defensive pact with the
+ * one attacked. The room decides with it, and the page uses the same rule to know when to offer the
+ * button. `none` says why not: `both` (pacts on both sides: it can't take sides), `attacking` (only a
+ * defensive pact with the attacker, which is for a friend who is attacked) or `nopact`.
+ */
+export function helpSideOf(
+  withAttacker: AidPact,
+  withDefender: AidPact,
+): { side: 0 | 1 } | { none: 'both' | 'attacking' | 'nopact' } {
+  const forAttacker = withAttacker === 'alliance';
+  const forDefender = withDefender !== null;
+  if (forAttacker && forDefender) return { none: 'both' };
+  if (forDefender) return { side: 1 };
+  if (forAttacker) return { side: 0 };
+  return { none: withAttacker === 'defensivePact' ? 'attacking' : 'nopact' };
+}
+
 /** Player colours (an index into this list travels). */
 export const PLAYER_COLORS = [
   '#e4572e',
@@ -735,6 +779,8 @@ export const PACT_KINDS: readonly PactKind[] = [
   'embargo',
   'trade',
 ];
+/** Pacts that stand in the way of a war or a raid against the friend they are held with (and of help sent against it). */
+export const BINDING_PACTS: readonly PactKind[] = ['ceasefire', 'nonAggression', 'alliance', 'defensivePact'];
 export const PACT_NAMES: Record<PactKind, string> = {
   ceasefire: 'ceasefire',
   nonAggression: 'non-aggression pact',

@@ -332,8 +332,12 @@ export class AwayBattles {
   /** Forces pinned while the region decides on their battle, and that battle's record. */
   private pinned = new Map<number, string>();
 
-  /** Fight every arrived expedition not fought yet (call with the war summary's expeditions). */
-  check(expeditions: { id: number; state: string }[]): void {
+  /**
+   * Fight every arrived expedition not fought yet (call with the war summary's expeditions). A force that went
+   * to help a friend in a live battle (`help`) is no raid and has no town to strike: its battle is the friend's,
+   * and the live battles' page sees to it (looking at it here would turn it round at the first refusal).
+   */
+  check(expeditions: { id: number; state: string; help?: string }[]): void {
     const now = performance.now();
     // A pinned force that stopped fighting (it waited the longest the region may take): its battle
     // won't be reported now, so its record and its copy of the friend's city go.
@@ -346,6 +350,7 @@ export class AwayBattles {
     for (const e of expeditions)
       if (
         e.state === 'fighting' &&
+        !e.help &&
         !this.busy.has(e.id) &&
         (this.failed.get(e.id) ?? 0) < 3 &&
         now >= (this.waitUntil.get(e.id) ?? 0)

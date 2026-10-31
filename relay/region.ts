@@ -39,6 +39,10 @@ import {
   cleanChat,
   cleanCityName,
   cleanName,
+  helpSideOf,
+  helpTravelOf,
+  helpUnitId,
+  isHelpUnitId,
   makeSecret,
   secureIndex,
   type BattleOutcome,
@@ -220,7 +224,7 @@ export type RegionClientMsg =
   | { t: 'breplay'; id: string; from?: number }
   /**
    * An ally sends a force into a live battle on its friend's side (M39 step 6): the battle (`from`: its
-   * attacker, if two share an id), the units (their ids are `slot × LIVE.helpIds + k`), the way they
+   * attacker, if two share an id), the units (their ids are `helpUnitId(slot, k)`), the way they
    * come and the research they fight with. The room decides which side (from the pacts it keeps), when
    * they arrive and under what name; a city's own name and colour are the room's, whatever a page says.
    */
@@ -315,7 +319,8 @@ export type RegionRoomMsg =
    * The live call is off: for the attacker, fight the old way (a `battle`), unless `refused`: the
    * region won't take this battle at all (`later`: ask again after this many ms); `gone`: the battle
    * you speak of isn't one the region has (it ended, or the room restarted): carry on with what you
-   * have. For a defender, forget the call.
+   * have. For a defender, forget the call. To a page that asked to watch (`bwatch`): `gone`, the
+   * battle isn't on and isn't kept; `refused`, it has all the watchers it takes.
    */
   | { t: 'bliveoff'; id: string; why: string; refused?: true; later?: number; gone?: true }
   /**
@@ -613,6 +618,8 @@ const count = (n: number) => WORDS[n] ?? String(n);
 const finite = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 const wholeIn = (v: unknown, lo: number, hi: number): v is number => finite(v, lo, hi) && Number.isInteger(v);
+/** A helping unit's id as `bhelp` carries it (the handler checks it is in the sender's own range). */
+const helpIdIn = (v: unknown): v is number => wholeIn(v, helpUnitId(1, 0), helpUnitId(64, LIVE.helpIds - 1));
 const ID = /^[\w-]{1,40}$/;
 const FRIEND_SCALES: readonly FriendScale[] = ['skirmish', 'war', 'total'];
 const BATTLE_OUTCOMES: readonly BattleOutcome[] = ['raided', 'repelled', 'withdrew'];
@@ -859,13 +866,14 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       for (const u of m.units) {
         if (!u || typeof u !== 'object' || Array.isArray(u)) return null;
         const { id, kind, hp } = u as Record<string, unknown>;
-        // (Ids are `slot × helpIds + k`: the handler checks the slot; superweapons never go.)
-        if (!wholeIn(id, 1, 1e6) || typeof kind !== 'string' || !finite(hp, 0, 1)) return null;
+        // (Ids are `helpUnitId(slot, k)`, above any a city's sim mints: the handler checks the slot;
+        // superweapons never go.)
+        if (!helpIdIn(id) || typeof kind !== 'string' || !finite(hp, 0, 1)) return null;
         const def = UNIT.get(kind as UnitKind);
         if (!def || def.super) return null;
         units.push({ id, kind, hp: Math.round(hp * 1000) / 1000 });
       }
-      if (m.route !== undefined && !(typeof m.route === 'string' && m.route in LIVE.helpTravel)) return null;
+      if (m.route !== undefined && helpTravelOf(m.route) === null) return null;
       if (m.mods !== undefined) {
         if (!m.mods || typeof m.mods !== 'object' || Array.isArray(m.mods) || !withinDepth(m.mods, 4))
           return null;
@@ -2285,14 +2293,22 @@ export class RegionRoom {
       if (x.s.state === 'running' && x.s.id === m.id && (m.from === undefined || x.s.from === m.from)) r = x;
     if (!r) {
       // Over, or not a battle: a finished one is shown from its record.
+      // (Said as a `bliveoff`, so a page that was following it, say with a force of its own in it, can let go.)
       const over = this.replayOf(m.id, m.from);
       return void (over
         ? this.sendEnd(conn, over)
-        : conn.send({ t: 'notice', text: 'That battle isn’t on any more' }));
+        : conn.send({ t: 'bliveoff', id: m.id, why: 'That battle isn’t on any more', gone: true }));
     }
     if (r.s.sideOf(city.slot) >= 0) return this.bjoin(conn, city, m, now);
-    if (r.watchers.size >= LIVE.watchers && !r.watchers.has(conn))
-      return void conn.send({ t: 'notice', text: 'That battle has all the watchers it takes' });
+    // (A city with a force in the battle always may watch it, as `bhelp` made it a watcher with no count.)
+    const helping = r.s.helpers().some((o) => o.helper!.owner === city.slot);
+    if (r.watchers.size >= LIVE.watchers && !r.watchers.has(conn) && !helping)
+      return void conn.send({
+        t: 'bliveoff',
+        id: m.id,
+        why: 'That battle has all the watchers it takes',
+        refused: true,
+      });
     r.watchers.add(conn);
     conn.send(this.bstart(r, 'watcher'));
   }
@@ -2323,8 +2339,7 @@ export class RegionRoom {
       if (x.s.helpers().some((o) => o.helper!.owner === city.slot))
         return off('Your force is helping in another battle already');
     if (city.report?.shield === 'neutral') return off('A neutral city sends no forces');
-    if (!m.units.every((u) => u.id >= city.slot * LIVE.helpIds && u.id < (city.slot + 1) * LIVE.helpIds))
-      return off('Those units could not be read');
+    if (!m.units.every((u) => isHelpUnitId(city.slot, u.id))) return off('Those units could not be read');
     if (new Set(m.units.map((u) => u.id)).size !== m.units.length)
       return off('Those units could not be read');
     // Which side: the pacts it keeps with the two cities.
@@ -2333,28 +2348,30 @@ export class RegionRoom {
     const d = this.cityName(s.to);
     const withAttacker = fw.aidPact(city.slot, s.from);
     const withDefender = fw.aidPact(city.slot, s.to);
-    // (A defensive pact is for helping a partner who is attacked: not one who attacks.)
-    const forAttacker = withAttacker === 'alliance';
-    const forDefender = withDefender !== null;
-    if (forAttacker && forDefender)
-      return off(`You have pacts with both ${a} and ${d}: you can’t take sides`);
-    if (!forAttacker && !forDefender)
+    // (The rule is shared with the page, which uses it to offer the button: `helpSideOf`.)
+    const aid = helpSideOf(withAttacker, withDefender);
+    if ('none' in aid)
       return off(
-        withAttacker === 'defensivePact'
-          ? `A defensive pact is for a friend who is attacked: ${a} is the one attacking`
-          : `Only an ally can send help: you have no alliance or defensive pact with ${a} or ${d}`,
+        aid.none === 'both'
+          ? `You have pacts with both ${a} and ${d}: you can’t take sides`
+          : aid.none === 'attacking'
+            ? `A defensive pact is for a friend who is attacked: ${a} is the one attacking`
+            : `Only an ally can send help: you have no alliance or defensive pact with ${a} or ${d}`,
       );
-    const side: LiveSide = forDefender ? 1 : 0;
+    const side: LiveSide = aid.side;
     const enemy = side === 0 ? s.to : s.from;
     const blocked = fw.raidBlock(city.slot, enemy);
     if (blocked) return off(blocked);
     const route = m.route ?? 'highway';
+    // (A route is one of the table's own names; the arrival is a whole number of steps.)
+    const travel = helpTravelOf(route);
+    if (travel === null || !Number.isInteger(travel)) return off('That way in could not be read');
     const hex = PLAYER_COLORS[city.color]?.slice(1) ?? '888888';
     const put = s.help(
       side,
       { slot: city.slot, name: city.name, color: Number.parseInt(hex, 16) || 0x888888 },
       { units: m.units, route, ...(m.mods ? { mods: m.mods } : {}) },
-      LIVE.helpTravel[route as keyof typeof LIVE.helpTravel],
+      travel,
     );
     if (!put.entry) return off(put.refused);
     // The helper's page watches the battle, to see its force fight: sent the battle as it stands

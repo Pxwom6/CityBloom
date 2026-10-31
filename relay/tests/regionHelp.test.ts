@@ -7,9 +7,19 @@ import {
   type RegionLimits,
   type RegionRoomMsg,
 } from '../region';
-import { FRIENDS, LIVE, PLAYER_COLORS, PROTOCOL_VERSION } from '../protocol';
+import {
+  FRIENDS,
+  LIVE,
+  PLAYER_COLORS,
+  PROTOCOL_VERSION,
+  helpSideOf,
+  helpTravelOf,
+  helpUnitId,
+  isHelpUnitId,
+} from '../protocol';
 import { DAY_MS } from '../limits';
 import { LiveSession } from '../live';
+import { helpAlliesOf } from '../../src/ui/helpView';
 import { BATTLE } from '../../src/data/battle';
 import { FakeClock } from './harness';
 
@@ -151,9 +161,9 @@ function runTo(w: World, id: string, k: number): void {
   for (let guard = 0; guard < 400 && frontier(w) < k + LIVE.lead; guard++) reach(w, id, k);
 }
 
-/** An ally's units: ids `slot × LIVE.helpIds + k`. */
+/** An ally's units: ids `helpUnitId(slot, k)`. */
 const units = (slot: number, count = 3, kind = 'tank') =>
-  Array.from({ length: count }, (_, k) => ({ id: slot * LIVE.helpIds + k, kind, hp: 1 }));
+  Array.from({ length: count }, (_, k) => ({ id: helpUnitId(slot, k), kind, hp: 1 }));
 const help = (slot: number, id = 'L1', extra: Record<string, unknown> = {}) => ({
   t: 'bhelp',
   id,
@@ -176,9 +186,13 @@ describe('M39 step 6: allies sending help into a live battle', () => {
     // Health is kept to three places.
     expect(
       parseRegionMsg(
-        JSON.stringify({ t: 'bhelp', id: 'L1', units: [{ id: 30_000, kind: 'tank', hp: 0.123456 }] }),
+        JSON.stringify({
+          t: 'bhelp',
+          id: 'L1',
+          units: [{ id: helpUnitId(3, 0), kind: 'tank', hp: 0.123456 }],
+        }),
       ),
-    ).toMatchObject({ units: [{ id: 30_000, kind: 'tank', hp: 0.123 }] });
+    ).toMatchObject({ units: [{ id: helpUnitId(3, 0), kind: 'tank', hp: 0.123 }] });
     const u = units(3, 1);
     const bad: object[] = [
       { t: 'bhelp', id: 'has spaces', units: u },
@@ -187,13 +201,23 @@ describe('M39 step 6: allies sending help into a live battle', () => {
       { t: 'bhelp', id: 'L1', units: 'tank' },
       { t: 'bhelp', id: 'L1', units: units(3, LIVE.helpUnits + 1) },
       { t: 'bhelp', id: 'L1', from: 0, units: u },
-      { t: 'bhelp', id: 'L1', units: [{ id: 30_000, kind: 'dragon', hp: 1 }] },
+      { t: 'bhelp', id: 'L1', units: [{ id: helpUnitId(3, 0), kind: 'dragon', hp: 1 }] },
       // A superweapon never goes.
-      { t: 'bhelp', id: 'L1', units: [{ id: 30_000, kind: 'skyfortress', hp: 1 }] },
-      { t: 'bhelp', id: 'L1', units: [{ id: 30_000, kind: 'tank', hp: 1.5 }] },
+      { t: 'bhelp', id: 'L1', units: [{ id: helpUnitId(3, 0), kind: 'skyfortress', hp: 1 }] },
+      { t: 'bhelp', id: 'L1', units: [{ id: helpUnitId(3, 0), kind: 'tank', hp: 1.5 }] },
       { t: 'bhelp', id: 'L1', units: [{ id: 0.5, kind: 'tank', hp: 1 }] },
       { t: 'bhelp', id: 'L1', units: [{ id: 2e6, kind: 'tank', hp: 1 }] },
-      { t: 'bhelp', id: 'L1', units: [{ id: 30_000, hp: 1 }] },
+      // The old numbering (`slot × 10,000 + k`) is a city's own range now: a helper's ids are above any it mints.
+      { t: 'bhelp', id: 'L1', units: [{ id: 30_000, kind: 'tank', hp: 1 }] },
+      { t: 'bhelp', id: 'L1', units: [{ id: helpUnitId(65, 0), kind: 'tank', hp: 1 }] },
+      // A route is one of the table's own names, not whatever an object answers to.
+      ...['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'].map((route) => ({
+        t: 'bhelp',
+        id: 'L1',
+        units: u,
+        route,
+      })),
+      { t: 'bhelp', id: 'L1', units: [{ id: helpUnitId(3, 0), hp: 1 }] },
       { t: 'bhelp', id: 'L1', units: [7] },
       { t: 'bhelp', id: 'L1', units: u, route: 'teleport' },
       { t: 'bhelp', id: 'L1', units: u, mods: [] },
@@ -429,6 +453,176 @@ describe('M39 step 6: allies sending help into a live battle', () => {
   });
 });
 
+describe('M39 step 6 review: ids, routes, watching', () => {
+  it('numbers a helper’s units above any id a city’s sim mints, so none repeats a combatant’s', () => {
+    // A city's units, buildings and the rest share one counter: a grown town has passed 10,000 many times
+    // over (the menu's demo town stands at 10,658), so the old `slot × 10,000 + k` could be a combatant's.
+    expect(helpUnitId(3, 0)).toBeGreaterThan(1_000_000);
+    expect(helpUnitId(64, LIVE.helpIds - 1)).toBeLessThan(0x7fff_ffff);
+    expect(helpUnitId(2, 23)).toBe(LIVE.helpBase + 2 * LIVE.helpIds + 23);
+    for (const old of [10_000, 20_000, 30_003, 650_000]) expect(isHelpUnitId(3, old)).toBe(false);
+    // Each city has a window of its own, and only whole numbers are in it.
+    expect(isHelpUnitId(3, helpUnitId(3, 23))).toBe(true);
+    expect(isHelpUnitId(3, helpUnitId(3, 0) - 1)).toBe(false);
+    expect(isHelpUnitId(3, helpUnitId(4, 0))).toBe(false);
+    expect(isHelpUnitId(3, helpUnitId(3, 0) + 0.5)).toBe(false);
+    expect(isHelpUnitId(3, '1073741824')).toBe(false);
+  });
+
+  it('an order may name a helping unit, and still not any number', () => {
+    const named = (units: number[]) =>
+      parseRegionMsg(JSON.stringify({ t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'hold', units }] }));
+    expect(named([5, helpUnitId(3, 0), helpUnitId(4, 2)])).not.toBeNull();
+    expect(named([helpUnitId(65, 0)])).toBeNull();
+    expect(named([2e6])).toBeNull();
+    expect(named([helpUnitId(3, 0) + 0.5])).toBeNull();
+    // A defender may focus an attacking helper.
+    const focus = parseRegionMsg(
+      JSON.stringify({ t: 'bstep', id: 'x', step: 1, orders: [{ kind: 'focus', target: helpUnitId(3, 1) }] }),
+    );
+    expect(focus).toMatchObject({ orders: [{ kind: 'focus', target: helpUnitId(3, 1) }] });
+  });
+
+  it('reads a route as one of the table’s own names, never what an object answers to', () => {
+    for (const route of ['highway', 'rail', 'air', 'sea'])
+      expect(helpTravelOf(route)).toBe(LIVE.helpTravel[route as 'sea']);
+    for (const route of [
+      'constructor',
+      '__proto__',
+      'toString',
+      'hasOwnProperty',
+      'valueOf',
+      'teleport',
+      '',
+      3,
+      null,
+      {},
+    ])
+      expect(helpTravelOf(route), String(route)).toBeNull();
+  });
+
+  it('stamps no arrival that is not a whole number of steps', () => {
+    const s = new LiveSession('L1', 1, 2, {}, false, 0);
+    s.start(['x'], 0);
+    const from = { slot: 3, name: 'Kitton', color: 3 };
+    const force = { units: [{ id: helpUnitId(3, 0), kind: 'tank', hp: 1 }] };
+    for (const travel of [Number.NaN, 480.5, -1, Number.POSITIVE_INFINITY]) {
+      const put = s.help(1, from, force, travel);
+      expect(put.entry, String(travel)).toBeNull();
+      expect(put.refused).toBe('That way in could not be read');
+    }
+    expect(s.helpers()).toHaveLength(0);
+    expect(s.help(1, from, force, 480).entry).not.toBeNull();
+  });
+
+  it('decides which side help fights for by one rule, shared with the page that offers the button', () => {
+    const none = (n: 'both' | 'attacking' | 'nopact') => ({ none: n });
+    const cases: [Parameters<typeof helpSideOf>, ReturnType<typeof helpSideOf>][] = [
+      [['alliance', null], { side: 0 }],
+      [[null, 'alliance'], { side: 1 }],
+      [[null, 'defensivePact'], { side: 1 }],
+      [['defensivePact', null], none('attacking')],
+      [[null, null], none('nopact')],
+      [['alliance', 'alliance'], none('both')],
+      [['alliance', 'defensivePact'], none('both')],
+      // A defensive pact with the attacker doesn't take it, so the one with the defender stands.
+      [['defensivePact', 'defensivePact'], { side: 1 }],
+      [['defensivePact', 'alliance'], { side: 1 }],
+    ];
+    for (const [args, want] of cases) expect(helpSideOf(...args), JSON.stringify(args)).toEqual(want);
+  });
+
+  it('offers help in exactly the cases the room takes it: the page’s rule and the room’s agree on every pair of pacts', () => {
+    const kinds = [null, 'alliance', 'defensivePact'] as const;
+    for (const withAttacker of kinds)
+      for (const withDefender of kinds) {
+        const w = world();
+        const pacts: { room: number; with: number; term: { k: string } }[] = [];
+        if (withAttacker) {
+          sign(w, w.kit, w.ada, SLOT.Ada, [{ k: withAttacker }]);
+          pacts.push({ room: pacts.length + 1, with: 11, term: { k: withAttacker } });
+        }
+        if (withDefender) {
+          sign(w, w.kit, w.sam, SLOT.Sam, [{ k: withDefender }]);
+          pacts.push({ room: pacts.length + 1, with: 12, term: { k: withDefender } });
+        }
+        fight(w);
+        w.kit.say(help(SLOT.Kit));
+        const took = all(w.sam, 'ballow')
+          .flatMap((b) => b.ords ?? [])
+          .find((o) => o.kind === 'help');
+        const page = helpAlliesOf(
+          {
+            pacts,
+            neighbours: [
+              { id: 11, name: 'Adaton', player: { slot: SLOT.Ada } },
+              { id: 12, name: 'Samton', player: { slot: SLOT.Sam } },
+            ],
+          },
+          { from: SLOT.Ada, to: SLOT.Sam },
+        );
+        const label = `${withAttacker} with the attacker, ${withDefender} with the defender`;
+        if (took) {
+          expect(all(w.kit, 'bhelpoff'), label).toHaveLength(0);
+          expect(
+            page.map((a) => a.side),
+            label,
+          ).toEqual([took.side]);
+        } else {
+          expect(all(w.kit, 'bhelpoff'), label).toHaveLength(1);
+          expect(page, label).toEqual([]);
+        }
+      }
+  });
+
+  it('answers a watch for a battle it does not have with a bliveoff, so a page following it can let go', () => {
+    const w = world();
+    sign(w, w.sam, w.kit, SLOT.Kit, [{ k: 'alliance' }]);
+    fight(w);
+    w.kit.say({ t: 'bwatch', id: 'L-nope' });
+    expect(last(w.kit, 'bliveoff')).toEqual({
+      t: 'bliveoff',
+      id: 'L-nope',
+      why: 'That battle isn’t on any more',
+      gone: true,
+    });
+    expect(notices(w.kit)).not.toContain('That battle isn’t on any more');
+  });
+
+  it('keeps a city with a force in the battle among its watchers, whoever else has crowded them', () => {
+    const w = world();
+    sign(w, w.sam, w.kit, SLOT.Kit, [{ k: 'alliance' }]);
+    fight(w);
+    w.kit.say(help(SLOT.Kit));
+    expect(all(w.kit, 'bhelpoff')).toHaveLength(0);
+    // Lou's pages fill the battle's watchers (Kit's own page is one of the eight).
+    const secret = last(w.lou, 'rwelcome')!.secret;
+    const crowd: Raw[] = [];
+    for (let k = 0; k < LIVE.watchers; k++) {
+      const c = raw(w.room);
+      c.say(hello('Lou', { rejoin: { slot: SLOT.Lou, secret } }));
+      c.say({ t: 'bwatch', id: 'L1' });
+      crowd.push(c);
+    }
+    const seated = crowd.filter((c) => all(c, 'bstart').length > 0);
+    expect(seated).toHaveLength(LIVE.watchers - 1);
+    const turned = crowd.find((c) => all(c, 'bstart').length === 0)!;
+    expect(last(turned, 'bliveoff')).toEqual({
+      t: 'bliveoff',
+      id: 'L1',
+      why: 'That battle has all the watchers it takes',
+      refused: true,
+    });
+    // Kit's page comes back after a dropped link: its force is in the battle, so the room seats it.
+    const back = raw(w.room);
+    back.say(hello('Kit', { rejoin: { slot: SLOT.Kit, secret: last(w.kit, 'rwelcome')!.secret } }));
+    back.say({ t: 'bwatch', id: 'L1' });
+    expect(all(back, 'bstart')).toHaveLength(1);
+    expect(all(back, 'bliveoff')).toHaveLength(0);
+    expect(last(back, 'bstart')!.orders.map((o) => o.kind)).toEqual(['help']);
+  });
+});
+
 describe('M39 step 6: the session’s own rules for help', () => {
   const session = () => {
     const s = new LiveSession('L1', 1, 2, {}, false, 0);
@@ -436,7 +630,7 @@ describe('M39 step 6: the session’s own rules for help', () => {
     return s;
   };
   const from = (slot: number) => ({ slot, name: `City ${slot}`, color: slot });
-  const force = (slot: number) => ({ units: [{ id: slot * LIVE.helpIds, kind: 'tank', hp: 1 }] });
+  const force = (slot: number) => ({ units: [{ id: helpUnitId(slot, 0), kind: 'tank', hp: 1 }] });
 
   it('takes three forces at most, one from a city, and numbers them with the orders', () => {
     const s = session();

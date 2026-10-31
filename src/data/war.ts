@@ -1264,6 +1264,28 @@ export function cleanWarRules(raw: unknown): RegionWarRules | null {
   };
 }
 
+/**
+ * The rules a region is founded with at a scale (the new-city screen's choice, M40): war on, and with
+ * total war the superweapons and the atom bomb allowed along with it, as the Region panel's Total war
+ * segment ticks them (`rulesForScale`); the host may untick either later.
+ */
+export function foundingRules(scale: WarScale): RegionWarRules {
+  return scale === 'total' ? { war: true, scale, supers: true, bomb: true } : { war: true, scale };
+}
+
+/**
+ * The rules after the host picks a scale in the Region panel, or null when it is the scale they
+ * already have: nothing changes then, so a host who unticked the bomb or the superweapons is not
+ * undone by clicking the active segment again. Total war brings the superweapons and the bomb with
+ * it, ticked to be unticked; a smaller war drops the bomb, which can only stand with total war, and
+ * keeps the rest.
+ */
+export function rulesForScale(rules: RegionWarRules, scale: WarScale): RegionWarRules | null {
+  if (rules.scale === scale) return null;
+  const { bomb: _, ...rest } = rules;
+  return scale === 'total' ? { ...rest, scale, supers: true, bomb: true } : { ...rest, scale };
+}
+
 /** A computer neighbour's character in war (SPEC-5): how it arms, fights, trades and keeps its word. */
 export type Personality = 'aggressive' | 'cautious' | 'mercantile' | 'honourable' | 'treacherous';
 export const PERSONALITY_IDS: readonly Personality[] = [

@@ -145,8 +145,8 @@ export interface TestApi {
     state: string;
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
     project: { total: number; goal: number; funded: boolean; host: number; built: boolean } | null;
-    /** War in the region (M34): its rules, and whether this city is its host. */
-    rules: { war: boolean; scale: string; supers?: true };
+    /** War in the region (M34): its rules (superweapons M37, the atom bomb M40), and whether this city hosts it. */
+    rules: { war: boolean; scale: string; supers?: true; bomb?: true };
     host: boolean;
   } | null;
   /** The city's forces (M34): every unit and the training at each base; null with war off. */

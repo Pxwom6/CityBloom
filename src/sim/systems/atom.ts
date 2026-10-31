@@ -9,6 +9,7 @@
 import { ATOM, type AtomStage } from '../../data/atom';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
+import { WAR } from '../../data/war';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
 import { civicOnline, type Civic } from '../world/civic';
@@ -166,4 +167,37 @@ export function atomSummary(sim: Sim): AtomSummary | null {
     plant: civicRunning(sim, 'enrichment'),
     fuel: Math.round(Math.min(1, (w.atom?.fuel ?? 0) / ATOM.fuel.hours) * 1000) / 1000,
   };
+}
+
+/**
+ * What the race costs from the first stone, from the data alone (no city): the money for each step
+ * and the war hours it takes, the sums that matter (the silo and the bomb; the whole race, with and
+ * without the two buildings' upkeep) and the critical path. The price probe (`atomprice.ts`) prints
+ * it against a city's taxes; a test holds it in the band `ATOM.priceCity` was sized for.
+ */
+export function atomPrices() {
+  const stages = (id: string) => CIVIC.get(id)!.project!.stages;
+  const money = (id: string) => stages(id).reduce((a, s) => a + s.cost, 0);
+  // A stage month is a game day: 24 war hours.
+  const hours = (id: string) => stages(id).reduce((a, s) => a + s.months, 0) * 24;
+  const instalments = ATOM.bomb.hours / ATOM.bomb.every;
+  const mat = WAR.materials.importPrice;
+  const inst = ATOM.bomb.instalment;
+  const plant = { price: money('enrichment'), hours: hours('enrichment') };
+  const fuel = { price: ATOM.fuel.hours * ATOM.fuel.cost, hours: ATOM.fuel.hours };
+  const silo = { price: money('atomsilo'), hours: hours('atomsilo') };
+  const bomb = { price: instalments * inst.money, hours: ATOM.bomb.hours };
+  // The materials bought outright at the import price (the war stores, mines and wells cover part).
+  const materials = instalments * (inst.goods * mat.goods + inst.ore * mat.ore + inst.oil * mat.oil);
+  const launch = { price: ATOM.launch.cost, hours: ATOM.launch.prepHours };
+  const siloBomb = silo.price + bomb.price;
+  const race = plant.price + fuel.price + silo.price + bomb.price + materials + launch.price;
+  // Upkeep while it is built: the plant from its completion to the launch, the silo from its own.
+  const plantDone = plant.hours;
+  const siloDone = plantDone + silo.hours;
+  const end = plantDone + fuel.hours + bomb.hours + launch.hours;
+  const upkeep =
+    (CIVIC.get('enrichment')!.upkeep * (end - plantDone)) / 24 +
+    (CIVIC.get('atomsilo')!.upkeep * (end - siloDone)) / 24;
+  return { plant, fuel, silo, bomb, materials, launch, siloBomb, race, upkeep, plantDone, siloDone, end };
 }

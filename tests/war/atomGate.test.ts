@@ -1,9 +1,19 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import type { TestApi } from '../../src/client/testApi';
 import { ATOM } from '../../src/data/atom';
 import { CIVIC } from '../../src/data/civic';
 import { ROAD_RULES } from '../../src/data/roads';
 import { TIER, TIER_KEYS, type TierKey } from '../../src/data/research';
-import { cleanWarRules, sameWarRules, warRulesText, type RegionWarRules } from '../../src/data/war';
+import {
+  WAR_SCALES,
+  cleanWarRules,
+  foundingRules,
+  rulesForScale,
+  sameWarRules,
+  warRulesText,
+  type RegionWarRules,
+} from '../../src/data/war';
 import type { Sim } from '../../src/sim/sim';
 import { atomOf, atomLock, bombAllowed, nuclearRunning } from '../../src/sim/systems/atom';
 import { warProject } from '../../src/sim/systems/projects';
@@ -259,6 +269,31 @@ describe('M40: the atom bomb’s two buildings', () => {
     expect(other.sim.state.treasury - t0).toBe(Math.round(cost * ROAD_RULES.bulldozeRefund));
     expect(ROAD_RULES.bulldozeRefund).toBeGreaterThan(0);
   });
+
+  it('tell the inspector the refund the bulldozer pays: none, where an ordinary building gets its share', () => {
+    // The inspector reads `civicDetails().refund` for its Bulldoze button and the confirmation
+    // ("The city gets $N back"); a promise of money the command doesn't pay would be a lie in the
+    // most expensive buildings of the game. All three agree: the page's offer, the dry run, the pay.
+    const { sim, place } = gateTown();
+    everyTier(sim);
+    const plant = place(PLANT);
+    const wind = place('wind');
+    for (const id of [plant, wind]) {
+      const c = sim.state.civics.get(id)!;
+      const share = CIVIC.get(c.def)!.refundShare ?? ROAD_RULES.bulldozeRefund;
+      const offered = sim.civicDetails(id)!.refund;
+      const dry = sim.preview({ type: 'bulldoze', target: { kind: 'civic', id } } as never);
+      expect(dry.ok, c.def).toBe(true);
+      expect(offered, c.def).toBe(Math.round(c.cost * share));
+      expect(dry.ok && dry.info?.refund, c.def).toBe(offered);
+    }
+    expect(sim.civicDetails(plant)!.refund).toBe(0);
+    expect(sim.civicDetails(wind)!.refund).toBeGreaterThan(0);
+    // Paid for real, the plant's refund is what the inspector said.
+    const t0 = sim.state.treasury;
+    expect(sim.dispatch({ type: 'bulldoze', target: { kind: 'civic', id: plant } } as never).ok).toBe(true);
+    expect(sim.state.treasury - t0).toBe(0);
+  });
 });
 
 describe('M40: the region’s bomb rule', () => {
@@ -293,6 +328,57 @@ describe('M40: the region’s bomb rule', () => {
     expect(sameWarRules(base, { ...base })).toBe(true);
     expect(sameWarRules(base, { ...base, bomb: true })).toBe(false);
     expect(sameWarRules({ ...base, bomb: true }, { ...base, bomb: true })).toBe(true);
+  });
+
+  it('follows the host’s choice of scale: total war ticks the bomb along, and choosing the same scale again changes nothing', () => {
+    // The Region panel's Total war segment calls `onChange` on every click, the active one too. A host
+    // who has unticked the bomb (or the superweapons) must not have them put back by a second click.
+    const war: RegionWarRules = { war: true, scale: 'war' };
+    const total = rulesForScale(war, 'total')!;
+    expect(total).toEqual({ war: true, scale: 'total', supers: true, bomb: true });
+    expect(cleanWarRules(total)).toEqual(total);
+    expect(sameWarRules(total, foundingRules('total'))).toBe(true);
+    // Unticked by the host, the choice is kept when the same segment is clicked again.
+    const noBomb: RegionWarRules = { war: true, scale: 'total', supers: true };
+    expect(rulesForScale(noBomb, 'total')).toBeNull();
+    expect(rulesForScale({ war: true, scale: 'total' }, 'total')).toBeNull();
+    expect(rulesForScale(total, 'total')).toBeNull();
+    expect(rulesForScale(war, 'war')).toBeNull();
+    // Moving to a smaller war drops the bomb (it can only stand with total war) and keeps the rest.
+    expect(rulesForScale(total, 'war')).toEqual({ war: true, scale: 'war', supers: true });
+    expect(rulesForScale(noBomb, 'skirmish')).toEqual({ war: true, scale: 'skirmish', supers: true });
+    // No stray keys: an absent flag is absent, not undefined.
+    expect(Object.keys(rulesForScale(war, 'skirmish')!)).toEqual(['war', 'scale']);
+    // Founding a region at a scale (the new-city screen) gives what choosing it later would.
+    expect(foundingRules('skirmish')).toEqual({ war: true, scale: 'skirmish' });
+    expect(foundingRules('war')).toEqual({ war: true, scale: 'war' });
+    expect(foundingRules('total')).toEqual(total);
+    for (const s of WAR_SCALES) expect(cleanWarRules(foundingRules(s)), s).toEqual(foundingRules(s));
+  });
+
+  it('is chosen through those two functions in the panel and the founding, not by hand', () => {
+    // The panel and main.ts hold no component or page test; the one place they can drift from the
+    // functions above is their source, so the source is what is asked.
+    const panel = readFileSync('src/ui/Region.tsx', 'utf8');
+    expect(panel).toContain('rulesForScale(rules, scale)');
+    expect(panel).not.toMatch(/scale === 'total'\s*\?/);
+    const main = readFileSync('src/main.ts', 'utf8');
+    expect(main).toContain('foundingRules(');
+    expect(main).not.toMatch(/war: true,\s*\n\s*scale: \(WAR_SCALES/);
+  });
+
+  it('is typed in the test API a spec reads the region’s rules through', () => {
+    // `getRegion()` hands back the rules as the page holds them, the bomb among them; if its type
+    // forgot the flag, a spec reading `rules.bomb` would not compile.
+    const rules: NonNullable<ReturnType<TestApi['getRegion']>>['rules'] = {
+      war: true,
+      scale: 'total',
+      supers: true,
+      bomb: true,
+    };
+    expect(rules.bomb).toBe(true);
+    const asRules: RegionWarRules = { ...rules, scale: 'total' };
+    expect(asRules.bomb).toBe(true);
   });
 
   it('reads off in the old regions that never had it', () => {

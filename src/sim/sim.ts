@@ -144,6 +144,7 @@ import {
   civicCapacity,
   civicDef,
   civicRect,
+  civicRefund,
   civicUpkeep,
   civicVehicles,
   findAccess,
@@ -2717,7 +2718,7 @@ export class Sim {
               loads: this.railFreight.get(c.id) ?? 0,
             }
           : null,
-      refund: Math.round(c.cost * 0.25),
+      refund: civicRefund(c),
       special: d.resource
         ? {
             kind: 'resource',

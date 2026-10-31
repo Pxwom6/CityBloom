@@ -5,9 +5,11 @@ import { SAVE_VERSION, encodeState, migrations } from '../../src/sim/save';
 import { Sim } from '../../src/sim/sim';
 import { checksum, partHashes } from '../../src/sim/sync';
 import { checkInvariants, InvariantError } from '../../src/sim/invariants';
-import { atomOf } from '../../src/sim/systems/atom';
+import { atomOf, atomStage } from '../../src/sim/systems/atom';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
+import { TIER_KEYS } from '../../src/data/research';
 import { newSim } from '../helpers';
+import { labTown, ok } from './researchTown';
 
 /**
  * M40, save v32: the atom bomb's state appears when first used (`WarState.atom`, and with later steps
@@ -188,5 +190,94 @@ describe('M40: the race in the saved state', () => {
     a.inbound = { from: 4, name: 'Brookline', warn: 5, arrive: 1445, x: 10, z: 20 };
     a.impact = { done: 3, fled: 1200, x: 10, z: 20 };
     checkInvariants(sim);
+  });
+});
+
+describe('M40: a save at each state of the race so far', () => {
+  it('loads as it was and plays a day on identically, from nothing to a bomb used', () => {
+    // One town carried through every state the race can be in at this step (the plant going up,
+    // enriching, the silo going up, the bomb being built, ready, a launch prepared, in flight, mid-
+    // impact, used), saved and loaded at each: the same parts, the same facts, the same stage, and
+    // a game day on the same again. The later steps add fuel, a flight and an impact that move.
+    const { sim, place } = labTown(0, { length: 800, streets: 7 });
+    place('nuclear');
+    sim.advance(M);
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: [...TIER_KEYS] });
+    const neighbour = sim.state.region.neighbours.find((n) => n.rival)!;
+
+    const seen: string[] = [];
+    const roundTrip = (name: string, stage: string) => {
+      expect(atomStage(sim), name).toBe(stage);
+      checkInvariants(sim);
+      const loaded = Sim.fromSave(sim.save('2026-10-31') as never);
+      expect(partHashes(loaded), `${name}, loaded`).toEqual(partHashes(sim));
+      expect(loaded.state.war!.atom, `${name}, facts`).toEqual(sim.state.war!.atom);
+      expect(atomStage(loaded), `${name}, stage`).toBe(stage);
+      checkInvariants(loaded);
+      sim.advance(M);
+      loaded.advance(M);
+      expect(partHashes(loaded), `${name}, a day on`).toEqual(partHashes(sim));
+      expect(loaded.state.war!.atom, `${name}, facts a day on`).toEqual(sim.state.war!.atom);
+      expect(atomStage(loaded), `${name}, stage a day on`).toBe(atomStage(sim));
+      checkInvariants(sim);
+      seen.push(name);
+    };
+
+    // Nothing started: no race at all, and the save carries none.
+    expect(sim.state.war!.atom).toBeUndefined();
+    roundTrip('nothing started', 'none');
+    expect(sim.state.war!.atom).toBeUndefined();
+
+    // The plant going up, then finished and making fuel.
+    const plant = place('enrichment');
+    roundTrip('plant going up', 'plant');
+    ok(sim, { type: 'cheat', cheat: 'finishStages', civic: plant });
+    const a = atomOf(sim);
+    a.fuel = 300.5;
+    roundTrip('enriching', 'enriching');
+
+    // The silo going up (finishing it before a bomb is built is the next step's).
+    const silo = place('atomsilo');
+    roundTrip('silo going up', 'silo');
+    ok(sim, { type: 'cheat', cheat: 'finishStages', civic: silo });
+
+    // The bomb being built, then ready, then a launch prepared.
+    a.fuel = 1_152;
+    a.bomb = { done: 360.25, paid: 6 };
+    roundTrip('bomb', 'bomb');
+    delete a.bomb;
+    a.have = true;
+    roundTrip('ready', 'ready');
+    a.prep = { done: 100 };
+    roundTrip('preparing', 'preparing');
+
+    // In flight: fired just now at a neighbour, with the landing fixed; then the landing in hand.
+    delete a.have;
+    delete a.prep;
+    a.fired = { tick: sim.state.tick, to: neighbour.id, name: neighbour.name };
+    a.inbound = {
+      from: neighbour.id,
+      name: neighbour.name,
+      warn: sim.state.tick,
+      arrive: sim.state.tick + 4 * M,
+      x: 120.5,
+      z: -80.25,
+    };
+    roundTrip('flying', 'flying');
+    // (A game day passed in the round trip, which is the whole flight: it left again just now.)
+    a.fired.tick = sim.state.tick;
+    a.inbound.arrive = sim.state.tick + M;
+    a.impact = { done: 3, fled: 1_200, x: 120.5, z: -80.25 };
+    roundTrip('mid-impact', 'flying');
+
+    // Used: a day and more since it left; it landed here and its dome stopped one.
+    a.fired.tick = sim.state.tick - 3 * M;
+    a.boom = 1;
+    a.stopped = 1;
+    a.first = true;
+    delete a.inbound;
+    roundTrip('used', 'spent');
+
+    expect(seen).toHaveLength(10);
   });
 });

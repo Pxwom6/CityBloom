@@ -1299,9 +1299,26 @@ these are its calls and the reasons, with where they overturned the first draft.
     plant"); `WarSummary.atom` (allowed, stage, the tree, the nuclear and enrichment plants, fuel) is
     what the build menu reads; `warModels.test.ts` no longer treats `enrichment` as "not in the game
     yet" (the fallback for a building the game lacks is tried with a stand-in).
-  - *Prices left as the plan has them.* `scripts/dev/atomprice.ts` on the bench city (110,174 residents,
-    $618,257 a month in taxes, $7.4M a year): the silo and bomb are $10.9M, 1.47 game years of taxes
-    (the plan said about 3), the whole race $18.2M, 2.46 years ($19.9M with upkeep, 2.69; the plan said 3 to
-    6). The plan's figures came from a 57,000-resident city's $3.6M a year; the 100k city makes twice that.
-    Not retuned in this step: the lever is `ATOM.bomb.instalment.money` (at $1.6M the silo and bomb read
-    about 3 years and the whole race about 4), to be settled before the balance step.
+  - *Prices left as the plan has them, and held in its band.* The plan sized them on the 57,000-resident
+    careful city of the balance runs (`ATOM.priceCity`, $3.6M of taxes a year): the silo and bomb
+    ($10.9M) come to 3.0 years of its taxes, the whole race ($18.2M, $19.9M with the two buildings'
+    upkeep) to 5.1 (5.5): "several years of a big city's entire income", and the plan's 3 and 3 to 6.
+    `scripts/dev/atomprice.ts` on the sandbox bench city (110,174 residents, $618,257 a month, $7.4M a
+    year, twice the taxes) reads 1.47 and 2.46 years, which step 1's report took for half the target:
+    the script's "plan: about 3 years" labels were set against the wrong city. They now name the
+    reference city, and the script prints its years in a column beside the city read. A test holds the
+    prices in the band against the reference city's taxes (`atomState.test.ts`, with the sums in
+    `atomPrices`, which the script shares). Not retuned. If the balance step finds the race too quick or
+    too slow on the real careful cities, the lever is `ATOM.bomb.instalment.money`, with `priceCity`
+    and the test's band moved with it.
+- **Step 1 review fixes** (six findings). The inspector's Bulldoze button and its confirmation read the
+  refund from `civicDetails`, which still said a quarter of the cost for the plant and silo while the
+  command paid nothing: `civicRefund` (`world/civic.ts`) is now the one place the share is chosen, read by
+  the bulldozer, its preview and the inspector. The Region panel's scale segment calls `onChange` on the
+  active option too, so a host who unticked the bomb was put back by a second click on Total war:
+  `rulesForScale` returns nothing for the scale already set, and `foundingRules` gives the new-city
+  screen's region the same ticks (`main.ts`; the screen says so beside the choice). The staffing test
+  now builds the case where the forces' share of the workers runs short, so the plant and silo's rank
+  decides who is staffed (it fails without the rank clause), and the save test round-trips every state
+  the race has so far (plant going up, enriching, silo going up, bomb, ready, preparing, flying,
+  mid-impact, used). The test API types the region's `bomb` rule.

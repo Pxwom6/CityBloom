@@ -236,7 +236,12 @@ title names all five). **M39 War with friends** has met its done criteria in tes
 virtual soaks on its final code (a19ae2b); the last check, the real two-hour soak on that code, is
 running (`bench-results/regionsoak-m39.log`), then `M39 complete:`. **M40 The final race: the atom
 bomb** has begun: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b82d790), code map
-`docs/plans/M40-codemap.md` (aeef8e3).
+`docs/plans/M40-codemap.md` (aeef8e3). Steps 0 and 1 are done and reviewed: the data (`src/data/atom.ts`),
+the `bomb` rule, `WarState.atom` with the derived stage, the gate (`atomLock`, hard: sandbox cannot
+skip it), the enrichment plant and atom silo (no refund) and save v32; the prices are the plan's, held
+in its band against the 57,000-resident reference city (`atomprice.ts`, DECISIONS "M40" step 1). Tests:
+`tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Not yet run for step 1:
+e2e, builds, balance, bench, soak (run at step 13).
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -291,11 +296,13 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 ## Next tasks
 1. M39's close: the real two-hour soak on the final code, then PROGRESS's tick, the `M39 complete:`
    commit and pull request #23's title and description.
-2. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`: step 0's
-   rest (DECISIONS "M40", the v31 war fixture, golden and balance baselines, `atomprice.ts`); data,
-   gates and state (save v32); fuel, bomb and preparation; flight, dome and impact; fallout; the
+2. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
+   and 1 are done. Next: step 2, fuel, bomb and preparation (`atomHour`, `materialBill`, the
+   instalments, `buildBomb`/`cancelBomb`/`launchBomb`/`cancelLaunch`, the loss rules, the bulldoze
+   guard, host-only launch, the `atom {stage}` cheat); then flight, dome and impact; fallout; the
    nuclear winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
-   7); pages; UI and effects; e2e; wrap-up.
+   7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
+   may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 3. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real
    UI, a race for the bomb, and fixes for whatever feels off.

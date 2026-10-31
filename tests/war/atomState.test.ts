@@ -5,9 +5,16 @@ import { CIVIC } from '../../src/data/civic';
 import { requirementStatus } from '../../src/data/projects';
 import { TIER_KEYS, treeProgress } from '../../src/data/research';
 import { unlocksAt } from '../../src/data/unlocks';
-import { MILITARY_DEFS } from '../../src/data/war';
+import { MILITARY_DEFS, WAR } from '../../src/data/war';
 import type { Sim } from '../../src/sim/sim';
-import { atomOf, atomStage, atomSummary, civicRunning, nuclearRunning } from '../../src/sim/systems/atom';
+import {
+  atomOf,
+  atomPrices,
+  atomStage,
+  atomSummary,
+  civicRunning,
+  nuclearRunning,
+} from '../../src/sim/systems/atom';
 import { projectRequirements, requirementContext } from '../../src/sim/systems/projects';
 import { researchTree } from '../../src/sim/systems/research';
 import { warSummary } from '../../src/sim/systems/war';
@@ -77,6 +84,27 @@ describe('M40: the numbers', () => {
     // Staff and power are the buildings’ own and the plant is the bigger: it feeds the silo.
     expect(CIVIC.get('enrichment')!.military!.jobs).toBeGreaterThan(CIVIC.get('atomsilo')!.military!.jobs);
     expect(CIVIC.get('enrichment')!.military!.power).toBeGreaterThan(CIVIC.get('atomsilo')!.military!.power);
+  });
+
+  it('keep the prices in the band they were sized for: years of the reference city’s taxes', () => {
+    // "On the order of several years of a big city's entire income" (SPEC-5): sized on the 57,000-
+    // resident careful city, $3.6M of taxes a year, the silo and bomb about three years of it and the
+    // whole race, with the two buildings' upkeep, five to six. The 110,000-resident bench city has twice
+    // the taxes and reads about half (atomprice.ts prints both); it is the reference that is held.
+    const P = atomPrices();
+    const year = ATOM.priceCity.taxesPerYear;
+    expect(ATOM.priceCity.residents).toBeGreaterThan(50_000);
+    expect(P.siloBomb / year).toBeGreaterThan(2.5);
+    expect(P.siloBomb / year).toBeLessThan(3.5);
+    expect((P.race + P.upkeep) / year).toBeGreaterThan(4.5);
+    expect((P.race + P.upkeep) / year).toBeLessThan(6);
+    // The sums are the steps': the silo and bomb inside the race, the race inside the race with upkeep.
+    expect(P.race).toBeGreaterThan(P.siloBomb);
+    expect(P.upkeep).toBeGreaterThan(0);
+    expect(P.siloBomb).toBe(P.silo.price + P.bomb.price);
+    // The critical path: the silo is built beside the fuel, so it is not on it.
+    expect(P.end).toBe(P.plant.hours + P.fuel.hours + P.bomb.hours + P.launch.hours);
+    expect(P.siloDone).toBeLessThan(P.plantDone + P.fuel.hours);
   });
 
   it('say nothing of anyone hurt, in the numbers’ file or the buildings’ words', () => {
@@ -230,5 +258,34 @@ describe('M40: staffing', () => {
       const c = sim.state.civics.get(id)!;
       expect(c.staff ?? 0, c.def).toBeGreaterThan(0);
     }
+  });
+
+  it('posts them before an idle base built earlier, when the forces’ share of the workers runs short', () => {
+    // Staffing only has an order when the share binds: the plant and silo rank with the superweapon
+    // buildings, ahead of the bases in build order. An idle arms factory is built first, so by id it
+    // would take its 200 posts before them; the town can't staff all four, so who is short shows the rank.
+    const { sim, place } = labTown(0, { length: 800, streets: 7 });
+    place('nuclear');
+    sim.advance(M);
+    ok(sim, { type: 'cheat', cheat: 'research', tiers: [...TIER_KEYS] });
+    const factory = place('armsfactory');
+    const plant = place('enrichment');
+    ok(sim, { type: 'cheat', cheat: 'finishStages', civic: plant });
+    const silo = place('atomsilo');
+    ok(sim, { type: 'cheat', cheat: 'finishStages', civic: silo });
+    expect(factory).toBeLessThan(plant);
+    sim.advance(2 * M);
+    const posts = (id: number) => CIVIC.get(sim.state.civics.get(id)!.def)!.military!.jobs;
+    const staff = (id: number) => sim.state.civics.get(id)!.staff ?? 0;
+    const hq = [...sim.state.civics.values()].find((c) => c.def === 'militaryhq')!.id;
+    const spare = sim.state.totals.workers * WAR.enlistShare;
+    const all = [hq, factory, plant, silo];
+    // The share binds: there are more posts than the forces may fill.
+    expect(all.reduce((a, id) => a + posts(id), 0)).toBeGreaterThan(spare);
+    expect(all.reduce((a, id) => a + staff(id) * posts(id), 0)).toBeLessThanOrEqual(spare * 1.05);
+    // The headquarters, the plant and the silo are whole; the factory is what is short.
+    for (const id of [hq, plant, silo])
+      expect(staff(id), sim.state.civics.get(id)!.def).toBeGreaterThan(0.99);
+    expect(staff(factory)).toBeLessThan(0.9);
   });
 });

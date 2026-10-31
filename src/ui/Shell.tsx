@@ -451,6 +451,12 @@ function NewGame() {
                   onChange={setRegionScale}
                 />
               )}
+              {regionWar && regionScale === 'total' && (
+                <p class="muted" data-testid="new-region-total-note">
+                  Total war brings the superweapons and the atom bomb with it; untick either in the Region
+                  panel.
+                </p>
+              )}
             </div>
           ) : (
             <label

@@ -519,6 +519,15 @@ export function moveCivic(
   return ok(total, { info });
 }
 
+/**
+ * What bulldozing a civic building pays back: a share of what it cost, the road rules' unless the
+ * building says otherwise (M40: the atom bomb's two buildings pay nothing). The one place the share
+ * is chosen, so the bulldozer, its preview and the inspector's button and confirmation all agree.
+ */
+export function civicRefund(c: Civic, refundShare?: number): number {
+  return Math.round(c.cost * (refundShare ?? civicDef(c).refundShare ?? ROAD_RULES.bulldozeRefund));
+}
+
 export function bulldozeCivic(sim: Sim, id: number, dryRun: boolean, refundShare?: number): CommandResult {
   const c = sim.state.civics.get(id);
   if (!c) return fail('Nothing to bulldoze');
@@ -526,8 +535,7 @@ export function bulldozeCivic(sim: Sim, id: number, dryRun: boolean, refundShare
   // A base keeping a superweapon (M37): never lost, so it's stood down first.
   const keeps = baseKeepsSuper(sim, id);
   if (keeps) return fail(keeps);
-  // What comes back is a share of what it cost: the road rules' unless the building says otherwise (M40).
-  const refund = Math.round(c.cost * (refundShare ?? civicDef(c).refundShare ?? ROAD_RULES.bulldozeRefund));
+  const refund = civicRefund(c, refundShare);
   if (dryRun) return ok(-refund, { info: { refund, buildings: [] } });
   sim.removeCivic(id);
   sim.earn(refund, 'refunds');

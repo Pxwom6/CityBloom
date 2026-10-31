@@ -9,7 +9,14 @@ import {
 } from '../data/region';
 import type { RegionSummary, RivalNeighbour } from '../sim/systems/region';
 import type { RegionLink } from '../net/regionLink';
-import { PEACE_RULES, PERSONALITY, WAR_SCALES, WAR_SCALE_NAMES, warRulesText } from '../data/war';
+import {
+  PEACE_RULES,
+  PERSONALITY,
+  WAR_SCALES,
+  WAR_SCALE_NAMES,
+  rulesForScale,
+  warRulesText,
+} from '../data/war';
 import { HelpButton } from './Help';
 import { Segmented } from './Shell';
 import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
@@ -613,12 +620,11 @@ function RegionWar({ link }: { link: RegionLink }) {
               label={(s) => WAR_SCALE_NAMES[s]}
               testid="region-war-scale"
               onChange={(scale) => {
-                const { bomb: _, ...rest } = rules;
-                // Total war brings the superweapons and the atom bomb with it, ticked to be unticked (M40);
-                // a smaller war leaves the bomb out, which can only stand with total war.
-                link.setRules(
-                  scale === 'total' ? { ...rest, scale, supers: true, bomb: true } : { ...rest, scale },
-                );
+                // Total war brings the superweapons and the atom bomb with it, ticked to be unticked
+                // (M40); nothing when the scale is the one already set, or a click on the active segment
+                // would tick them again.
+                const next = rulesForScale(rules, scale);
+                if (next) link.setRules(next);
               }}
             />
           )}

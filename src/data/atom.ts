@@ -72,6 +72,14 @@ export const ATOM = {
    */
   launch: { cost: 1_200_000, prepHours: 288, refund: 0.5 },
   /**
+   * What the prices (these and the two buildings') were sized against: the 57,000-resident careful
+   * city of the balance runs, taking about this much in taxes a year. The silo and the bomb come to
+   * about three years of it and the whole race to five or six, "several years of a big city's entire
+   * income". A 110,000-resident city, with twice the taxes, reads about half of that
+   * (`scripts/dev/atomprice.ts` prints both). `atomPrices` is the sum, and its test the band.
+   */
+  priceCity: { residents: 57_000, taxesPerYear: 3_600_000 },
+  /**
    * The flight (call 8): game hours on the target city's own clock between the warning and the
    * landing, and, on the display clock, the seconds between the siren's two-tone calls and the
    * last seconds that tick.

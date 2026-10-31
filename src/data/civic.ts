@@ -118,6 +118,11 @@ export interface CivicDef {
   max?: number;
   /** Another civic building the city must have first. */
   requires?: string;
+  /**
+   * The share of what it cost that bulldozing it pays back (M40): the road rules' share when absent.
+   * The atom bomb's buildings pay none: a quarter of millions would make a bank of the race.
+   */
+  refundShare?: number;
   /** Model family for the renderer. */
   model: string;
   /** Big projects (M17): built in stages with requirements and a perk; see src/data/projects.ts. */

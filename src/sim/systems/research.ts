@@ -10,10 +10,12 @@ import {
   RESEARCH,
   SPINOFFS,
   TIER,
+  TIER_KEYS,
   TIERS,
   TRIAL,
   UNIT_TIER,
   prerequisite,
+  treeProgress,
   type BattleMod,
   type Branch,
   type EffectKey,
@@ -27,6 +29,7 @@ import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
 import { civicOnline, type Civic } from '../world/civic';
 import { accrue } from './economy';
+import { atomLock } from './atom';
 import { openProject } from './projects';
 import { hasResearchPark } from './specialisations';
 import { militaryCivics, militaryOf } from './war';
@@ -122,6 +125,20 @@ export function researchOf(sim: Sim): Research | undefined {
 /** Has the city done this tier? */
 export function researched(sim: Sim, key: TierKey | string): boolean {
   return !!sim.state.war?.research?.done.includes(key as TierKey);
+}
+
+/**
+ * Has the city done every tier of the tree, all 24 (M40)? Counted tier by tier, never by `tierCounts`:
+ * the test-mode `research` cheat can give a branch its top tier without the ones below it.
+ */
+export function allTiersDone(sim: Sim): boolean {
+  return TIER_KEYS.every((k) => researched(sim, k));
+}
+
+/** How far through the whole tree the city is (M40): for the requirement the atom bomb's buildings share. */
+export function researchTree(sim: Sim): { done: number; total: number; next?: string } {
+  const p = treeProgress(sim.state.war?.research?.done ?? []);
+  return { done: p.done, total: p.total, ...(p.next ? { next: TIER.get(p.next)!.name } : {}) };
 }
 
 /** Tiers done in each branch (0–4), in the branches' order. */
@@ -272,6 +289,9 @@ export function civicLock(sim: Sim, defId: string): string | null {
   const def = CIVIC.get(defId);
   if (def?.military?.superweapon && !superweaponsAllowed(sim))
     return 'Your region’s rules turn superweapons off';
+  // The atom bomb's buildings (M40): a gate sandbox cannot skip.
+  const atom = atomLock(sim, defId);
+  if (atom) return atom;
   if (def?.max !== undefined) {
     let n = 0;
     for (const c of sim.state.civics.values()) if (c.def === defId) n++;

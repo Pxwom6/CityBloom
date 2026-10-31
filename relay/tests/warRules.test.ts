@@ -4,6 +4,7 @@ import { loopbackPair, type Link } from '../../src/net/link';
 import { RegionLink, regionUpdateFor, type CityPort } from '../../src/net/regionLink';
 import { Sim } from '../../src/sim/sim';
 import { regionReport, type RegionReport } from '../../src/sim/systems/region';
+import { bombAllowed } from '../../src/sim/systems/atom';
 import { PERSONALITY_IDS } from '../../src/data/war';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
 
@@ -98,6 +99,78 @@ describe('war rules in a shared region (M34)', () => {
     });
     for (const bad of [{ war: 'yes', scale: 'war' }, { war: true, scale: 'nuclear' }, null, { war: true }])
       expect(parseRegionMsg(JSON.stringify({ t: 'rrules', rules: bad }))).toBeNull();
+  });
+
+  it('the bomb rule rides the rules (M40): read with total war and superweapons only, then in every city', async () => {
+    // The room reads it in both messages that carry rules, and keeps it only where it can stand.
+    const total = { war: true, scale: 'total', supers: true } as const;
+    expect(parseRegionMsg(JSON.stringify({ t: 'rrules', rules: { ...total, bomb: true } }))).toEqual({
+      t: 'rrules',
+      rules: { ...total, bomb: true },
+    });
+    for (const rules of [
+      { ...total, bomb: 'yes' },
+      { ...total, scale: 'war', bomb: true },
+      { war: true, scale: 'total', bomb: true },
+    ])
+      expect(parseRegionMsg(JSON.stringify({ t: 'rrules', rules }))).toEqual({
+        t: 'rrules',
+        rules: expect.not.objectContaining({ bomb: expect.anything() }),
+      });
+    const hello = parseRegionMsg(
+      JSON.stringify({
+        t: 'rhello',
+        v: 5,
+        mayor: 'Ada',
+        color: 0,
+        city: 'Adaville',
+        create: { name: 'Two Rivers', rules: { ...total, bomb: true } },
+      }),
+    );
+    expect(hello).toMatchObject({ t: 'rhello', create: { rules: { ...total, bomb: true } } });
+
+    // The host sets it; it reaches the room's view, the other city's state and the sentence told to all.
+    const room = regionRoom('BOMBRU');
+    const ada = Sim.create({ seed: 'ada', cityName: 'Adaville' });
+    const sam = Sim.create({ seed: 'sam', cityName: 'Samford' });
+    const join = async (sim: Sim, mayor: string, color: number, create = false) => {
+      const l = new RegionLink(cityPort(sim), loopTo(room), {
+        mayor,
+        color,
+        ...(create ? { create: { name: 'Two Rivers' } } : {}),
+      });
+      links.push(l);
+      await l.start();
+      return l;
+    };
+    const la = await join(ada, 'Ada', 0, true);
+    const ls = await join(sam, 'Sam', 1);
+    const told: string[] = [];
+    ls.onNotice = (text) => told.push(text);
+    for (const l of [la, ls]) await l.reportNow(true);
+    await flush();
+    ls.setRules({ ...total, bomb: true });
+    await flush();
+    expect(ls.view!.rules.war).toBe(false);
+    la.setRules({ ...total, bomb: true });
+    await flush();
+    expect(ls.view!.rules).toEqual({ ...total, bomb: true });
+    for (const sim of [ada, sam]) {
+      expect(sim.state.region.rules).toEqual({ ...total, bomb: true });
+      expect(bombAllowed(sim)).toBe(true);
+    }
+    expect(told.at(-1)).toContain('superweapons and the atom bomb allowed');
+    // Total war and superweapons alone: the bomb is off.
+    la.setRules(total);
+    await flush();
+    expect(ada.state.region.rules).toEqual(total);
+    expect(bombAllowed(ada)).toBe(false);
+    expect(bombAllowed(sam)).toBe(false);
+    // Whatever a host sends, a bomb with a smaller war doesn't stand.
+    la.setRules({ war: true, scale: 'war', supers: true, bomb: true } as never);
+    await flush();
+    expect(ls.view!.rules).toEqual({ war: true, scale: 'war', supers: true });
+    expect(bombAllowed(sam)).toBe(false);
   });
 
   it('an older region (no rules in its view) means peace', () => {

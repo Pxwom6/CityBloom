@@ -58,6 +58,7 @@ import {
   type WarEconomy,
   type WarEconomySummary,
 } from './warEconomy';
+import { atomSummary, type Atom, type AtomSummary } from './atom';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -173,6 +174,8 @@ export interface WarState {
   heldNote?: number;
   /** Stakes in neighbours' industries, loans to allies and aid to their wars (M38); absent until first used. */
   economy?: WarEconomy;
+  /** The race for the atom bomb (M40); absent until the first fact is set. */
+  atom?: Atom;
 }
 
 export function initialWar(seed: string): WarState {
@@ -808,9 +811,9 @@ export function militaryStaffing(
   const { g, costs, flows, origins, car } = r;
   // The forces may take a share of the city's workers at most. The HQ is staffed first, then bases
   // training units (oldest order first), each in full while the share lasts; then (M37) proving
-  // grounds with a prototype on trial, labs with research queued, the superweapon buildings and the
-  // spy agency (always at work: charging or ready, and counter-intelligence); then the rest, in
-  // build order.
+  // grounds with a prototype on trial, labs with research queued, the superweapon buildings, the
+  // atom bomb's plant and silo (M40) and the spy agency (always at work: charging or ready, and
+  // counter-intelligence); then the rest, in build order.
   const work = sim.state.war.research;
   const trying = new Set((work?.trials ?? []).map((t) => t.ground));
   const researching = !!work?.queue.length;
@@ -832,7 +835,10 @@ export function militaryStaffing(
       : (first.get(c.id) ??
         (trying.has(c.id)
           ? Number.MAX_SAFE_INTEGER - 2
-          : (researching && militaryOf(c)!.lab) || militaryOf(c)!.superweapon || militaryOf(c)!.agency
+          : (researching && militaryOf(c)!.lab) ||
+              militaryOf(c)!.superweapon ||
+              militaryOf(c)!.atom ||
+              militaryOf(c)!.agency
             ? Number.MAX_SAFE_INTEGER - 1
             : Number.MAX_SAFE_INTEGER));
   bases.sort((a, b) => rank(a.c) - rank(b.c) || a.c.id - b.c.id);
@@ -948,6 +954,8 @@ export interface WarSummary {
   economy: WarEconomySummary | null;
   /** The superweapon buildings (M37): the dome, the tower and the gate, and blackouts. */
   supers: SupersSummary | null;
+  /** The race for the atom bomb (M40): whether it is allowed here, and where the city stands. */
+  atom: AtomSummary | null;
   /** Forces away (M35): where to, how many, and when they arrive or are home. */
   expeditions: {
     id: number;
@@ -1079,6 +1087,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
     intel: intelSummary(sim),
     economy: warEconomySummary(sim),
     supers: supersSummary(sim),
+    atom: atomSummary(sim),
     expeditions: (w.expeditions ?? []).map((e) => ({
       id: e.id,
       to: e.to,

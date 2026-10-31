@@ -1,5 +1,5 @@
 import { requirementStatus, type RequirementContext } from '../data/projects';
-import type { TierKey } from '../data/research';
+import { treeProgress, type TierKey } from '../data/research';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
@@ -400,7 +400,9 @@ export function Toolbar() {
             (d) =>
               d.category === (active === 'stop' ? 'transit' : tools.place.category) &&
               // The regional rail link only while the city has none (Phase 2 review).
-              (!d.railLink || game.world.stats.railLinkOffered),
+              (!d.railLink || game.world.stats.railLinkOffered) &&
+              // The atom bomb's buildings only where the rules allow the bomb (M40).
+              (!d.military?.atom || game.world.stats.war?.atom?.allowed),
           ).map((d) => {
             if (d.project) return <ProjectButton key={d.id} def={d} />;
             const locked = pop < d.unlockPopulation;
@@ -1066,10 +1068,20 @@ function ProjectButton({ def }: { def: CivicDef }) {
     visitors: st.visitors,
     runs: (id) => civics.some((c) => c.def === id && c.stage === undefined),
     researched: (key) => !!st.war?.research?.done.includes(key as TierKey),
+    // The atom bomb's buildings (M40): the same two facts the sim's gate reads.
+    tree: {
+      ...treeProgress(st.war?.research?.done ?? []),
+      next: st.war?.atom?.research.next ?? undefined,
+    },
+    online: (id) =>
+      id === 'nuclear'
+        ? !!st.war?.atom?.nuclear
+        : civics.some((c) => c.def === id && c.stage === undefined && c.damage <= 0 && !c.flooded),
   };
   const reqs = p.requires.map((r) => requirementStatus(r, ctx));
   const built = civics.find((c) => c.def === def.id);
-  const blocked = !sandbox && reqs.some((r) => !r.met);
+  // Sandbox lifts a project's requirements, but not the atom bomb's (M40): the sim refuses those anyway.
+  const blocked = (!sandbox || !!def.military?.atom) && reqs.some((r) => !r.met);
   const total = p.stages.reduce((a, s) => a + s.cost, 0);
   const months = p.stages.reduce((a, s) => a + s.months, 0);
   return (

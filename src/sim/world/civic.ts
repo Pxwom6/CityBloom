@@ -325,7 +325,10 @@ export function checkPlacement(
   if (def.unique)
     for (const o of sim.state.civics.values())
       if (o.def === def.id && o.id !== ignoreCivic)
-        return { ...res, reason: `The city already has a ${def.name.toLowerCase()}` };
+        return {
+          ...res,
+          reason: `The city already has ${/^[aeiou]/i.test(def.name) ? 'an' : 'a'} ${def.name.toLowerCase()}`,
+        };
   if (def.requires && ![...sim.state.civics.values()].some((o) => o.def === def.requires))
     return { ...res, reason: `Needs a ${lowerName(CIVIC.get(def.requires)?.name ?? def.requires)} first` };
   if (def.resource && resourceRichness(sim, def.resource.kind, rect) < SPECIALISATION.minRichness)
@@ -516,19 +519,15 @@ export function moveCivic(
   return ok(total, { info });
 }
 
-export function bulldozeCivic(
-  sim: Sim,
-  id: number,
-  dryRun: boolean,
-  refundShare = ROAD_RULES.bulldozeRefund,
-): CommandResult {
+export function bulldozeCivic(sim: Sim, id: number, dryRun: boolean, refundShare?: number): CommandResult {
   const c = sim.state.civics.get(id);
   if (!c) return fail('Nothing to bulldoze');
   if (civicDef(c).railLink) return fail('The regional rail link stays: it belongs to the regional railway');
   // A base keeping a superweapon (M37): never lost, so it's stood down first.
   const keeps = baseKeepsSuper(sim, id);
   if (keeps) return fail(keeps);
-  const refund = Math.round(c.cost * refundShare);
+  // What comes back is a share of what it cost: the road rules' unless the building says otherwise (M40).
+  const refund = Math.round(c.cost * (refundShare ?? civicDef(c).refundShare ?? ROAD_RULES.bulldozeRefund));
   if (dryRun) return ok(-refund, { info: { refund, buildings: [] } });
   sim.removeCivic(id);
   sim.earn(refund, 'refunds');

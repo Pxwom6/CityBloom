@@ -1,4 +1,5 @@
 import type { Sim } from './sim';
+import { ATOM } from '../data/atom';
 import { MAP_SIZE } from '../data/world';
 import { buildingCapacity } from './world/buildings';
 
@@ -76,4 +77,34 @@ export function checkInvariants(sim: Sim): void {
     const v = s.demand[k];
     if (!Number.isFinite(v) || v < -1 || v > 1) throw new InvariantError(`demand ${k} = ${v}`);
   }
+  checkAtom(sim);
+}
+
+/** The race for the atom bomb (M40): finite facts in range, one bomb, a flight with somewhere to go. */
+function checkAtom(sim: Sim): void {
+  const a = sim.state.war?.atom;
+  if (!a) return;
+  const within = (what: string, v: number, max: number) => {
+    if (!Number.isFinite(v) || v < 0 || v > max) throw new InvariantError(`atom ${what} = ${v}`);
+  };
+  within('fuel', a.fuel, ATOM.fuel.hours);
+  within('boom', a.boom, Infinity);
+  within('stopped', a.stopped, Infinity);
+  if (a.bomb) {
+    within('bomb done', a.bomb.done, ATOM.bomb.hours);
+    within('bomb paid', a.bomb.paid, ATOM.bomb.hours / ATOM.bomb.every);
+  }
+  if (a.prep) within('prep done', a.prep.done, ATOM.launch.prepHours);
+  // One bomb: being built, or finished and then prepared, or gone; never two of these at once.
+  if (a.bomb && (a.have || a.prep || a.fired)) throw new InvariantError('atom bomb built twice');
+  if (a.prep && !a.have) throw new InvariantError('atom launch prepared without a bomb');
+  if (a.fired && (a.have || a.prep)) throw new InvariantError('atom bomb fired and still held');
+  if (a.fired && !(Number.isFinite(a.fired.tick) && Number.isFinite(a.fired.to) && a.fired.name))
+    throw new InvariantError('atom flight without a target');
+  const hit = a.inbound;
+  if (hit && ![hit.warn, hit.arrive, hit.x, hit.z].every(Number.isFinite))
+    throw new InvariantError('atom flight without a landing');
+  const im = a.impact;
+  if (im && ![im.done, im.fled, im.x, im.z].every(Number.isFinite))
+    throw new InvariantError('atom impact is not finite');
 }

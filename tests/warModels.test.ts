@@ -2,6 +2,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CIVIC } from '../src/data/civic';
 import { bakeModel, pitsOf, TRI_NEAR, type BakedModel } from '../src/models/bake';
 import { UNIT_ROLES, type BakedUnit } from '../src/models/baked';
 import {
@@ -76,9 +77,31 @@ describe('war sites and budgets', () => {
       war: true,
     });
     expect(targetOf('domeshield')).toMatchObject({ war: true, smokes: false });
-    // Not in the game yet (M40): only with the prompts' sites, and never smoking (a cooling stack is a vent).
-    expect(targetOf('enrichment')).toBeNull();
-    expect(targetOf('enrichment', sites)).toMatchObject({ war: true, smokes: false });
+    // In the game since M40 (the atom bomb's buildings): on their own sites, which are their prompts' too,
+    // and never smoking (a cooling stack is a vent).
+    expect(targetOf('enrichment')).toMatchObject({
+      kind: 'civic',
+      def: 'enrichment',
+      w: 48,
+      d: 40,
+      war: true,
+    });
+    expect(targetOf('atomsilo')).toMatchObject({ kind: 'civic', def: 'atomsilo', w: 40, d: 40, war: true });
+    expect(targetOf('enrichment')).toHaveProperty('smokes', false);
+    for (const id of ['enrichment', 'atomsilo']) {
+      expect([CIVIC.get(id)!.w, CIVIC.get(id)!.d], id).toEqual([sites.get(id)!.w, sites.get(id)!.d]);
+      expect(targetOf(id, sites), id).toEqual(targetOf(id));
+    }
+    // A war building the game doesn't have yet is still checked on its prompt's site, never smoking.
+    const later = new Map([['futurelab', { name: 'Future lab', w: 30, d: 20 }]]);
+    expect(targetOf('futurelab')).toBeNull();
+    expect(targetOf('futurelab', later)).toMatchObject({
+      kind: 'civic',
+      w: 30,
+      d: 20,
+      war: true,
+      smokes: false,
+    });
     // Everything else as before.
     expect(targetOf('firestation', sites)).not.toHaveProperty('war');
     expect(targetOf('R103', sites)).toMatchObject({ kind: 'zoned' });
@@ -403,6 +426,11 @@ describe('the war models file', () => {
       for (let k = 0; k < u.positions.length; k++)
         worst = Math.max(worst, Math.abs(v.positions[k]! - u.positions[k]!));
       expect(worst, u.id).toBeLessThan(0.002);
+    }
+    // The atom bomb's two buildings are in the game (M40) and the file builds both from their sites.
+    for (const id of ['enrichment', 'atomsilo']) {
+      const m = back.models.find((x) => x.id === id)!;
+      expect([m.kind, m.w, m.d], id).toEqual(['civic', CIVIC.get(id)!.w, CIVIC.get(id)!.d]);
     }
     const yard = back.models.find((m) => m.id === 'navalyard')!;
     expect(yard.pits).toEqual(b.models.find((m) => m.id === 'navalyard')!.pits);

@@ -687,6 +687,12 @@ export interface MilitaryInfo {
   shield?: { radius: number; factor: number };
   /** The superweapon buildings (M37): the dome shield, the blackout tower and the express gate. */
   superweapon?: 'dome' | 'tower' | 'gate';
+  /**
+   * The atom bomb's buildings (M40): the enrichment plant and the silo. A field of their own, not a
+   * fourth superweapon: they are staffed like one and built on the war clock, but nothing about the
+   * dome, the tower or the gate applies to them.
+   */
+  atom?: 'plant' | 'silo';
 }
 
 /** Military buildings (M34), all in the Military category and the defence department. */
@@ -1090,6 +1096,69 @@ export const MILITARY_DEFS: (CivicDef & { military: MilitaryInfo })[] = [
       perk: 'Send a land or air force through the gate: it arrives in an hour, wherever it is going.',
     },
   },
+  // The atom bomb (M40): a plant that makes its fuel, and a silo that builds, keeps and launches it.
+  // Both are war projects with prices in millions and no refund, behind every research branch.
+  {
+    id: 'enrichment',
+    name: 'Enrichment plant',
+    category: 'military',
+    dept: 'defence',
+    w: 48,
+    d: 40,
+    cost: 0,
+    upkeep: 12_000,
+    unique: true,
+    requires: 'militaryhq',
+    refundShare: 0,
+    military: { jobs: 120, power: 1_500, atom: 'plant' },
+    landValue: { radius: 200, value: -0.08 },
+    blurb:
+      'Two long halls, rows of round vents and a tall striped stack, walled in and guarded: it turns a nuclear plant’s power into fuel for the atom bomb, slowly, and the whole region can see it.',
+    unlockPopulation: 40_000,
+    model: 'enrichment',
+    project: {
+      stages: [
+        { name: 'Blast walls and halls', months: 5, cost: 1_100_000 },
+        { name: 'Vents and stack', months: 6, cost: 1_500_000 },
+        { name: 'Guard house and test', months: 4, cost: 1_000_000 },
+      ],
+      requires: [
+        { kind: 'researchAll' },
+        { kind: 'civicOnline', def: 'nuclear', label: 'a nuclear power plant running' },
+      ],
+      perk: 'Makes fuel for the atom bomb, about four game years of it, at $2,000 an hour. Every city in the region sees it go up.',
+    },
+  },
+  {
+    id: 'atomsilo',
+    name: 'Atom silo',
+    category: 'military',
+    dept: 'defence',
+    w: 40,
+    d: 40,
+    cost: 0,
+    upkeep: 8_000,
+    unique: true,
+    requires: 'militaryhq',
+    refundShare: 0,
+    military: { jobs: 80, power: 500, atom: 'silo' },
+    blurb:
+      'A grassy hill with a huge round hatch in two sliding halves: where the atom bomb is built, kept and launched from.',
+    unlockPopulation: 40_000,
+    model: 'atomsilo',
+    project: {
+      stages: [
+        { name: 'Hill and shaft', months: 4, cost: 900_000 },
+        { name: 'Hatch and bunker', months: 5, cost: 1_300_000 },
+        { name: 'Searchlights and test', months: 3, cost: 900_000 },
+      ],
+      requires: [
+        { kind: 'researchAll' },
+        { kind: 'civicOnline', def: 'enrichment', label: 'the enrichment plant online' },
+      ],
+      perk: 'Builds the atom bomb from the plant’s fuel, keeps it, and launches it in a total war. There is only ever one.',
+    },
+  },
 ];
 
 /** The war economy and the forces' running numbers (M34). Logged in DECISIONS, "Phase 5". */
@@ -1151,13 +1220,15 @@ export const WAR_SCALE_NAMES: Record<WarScale, string> = {
 
 /**
  * A shared region's rules for war (M34), set by its host: is war on, how far may it go, and (M37)
- * are superweapons allowed (stored only when they are: absent means off, so older regions keep
- * their meaning).
+ * are superweapons allowed, and (M40) the atom bomb (each stored only when allowed: absent means
+ * off, so older regions keep their meaning). The bomb stands only with total war and superweapons:
+ * the dome is the one thing that can stop it.
  */
 export interface RegionWarRules {
   war: boolean;
   scale: WarScale;
   supers?: true;
+  bomb?: true;
 }
 export const PEACE_RULES: RegionWarRules = { war: false, scale: 'skirmish' };
 
@@ -1166,20 +1237,31 @@ export function warRulesText(r: RegionWarRules): string {
   if (!r.war) return 'war is off';
   const scale =
     r.scale === 'skirmish' ? 'skirmishes only' : r.scale === 'war' ? 'war, but not total war' : 'total war';
-  return r.supers ? `${scale}, superweapons allowed` : scale;
+  if (!r.supers) return scale;
+  return r.bomb ? `${scale}, superweapons and the atom bomb allowed` : `${scale}, superweapons allowed`;
 }
 
 /** Are two sets of rules the same? */
 export function sameWarRules(a: RegionWarRules, b: RegionWarRules): boolean {
-  return a.war === b.war && a.scale === b.scale && !!a.supers === !!b.supers;
+  return a.war === b.war && a.scale === b.scale && !!a.supers === !!b.supers && !!a.bomb === !!b.bomb;
 }
 
-/** A clean copy of rules from outside (a region's message), or null if they don't make sense. */
+/**
+ * A clean copy of rules from outside (a region's message), or null if they don't make sense. The
+ * bomb is kept only where it can stand: with total war and superweapons (M40).
+ */
 export function cleanWarRules(raw: unknown): RegionWarRules | null {
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== 'object' || typeof r.war !== 'boolean') return null;
   if (!WAR_SCALES.includes(r.scale as WarScale)) return null;
-  return { war: r.war, scale: r.scale as WarScale, ...(r.supers === true ? { supers: true as const } : {}) };
+  const supers = r.supers === true;
+  const bomb = supers && r.bomb === true && r.scale === 'total';
+  return {
+    war: r.war,
+    scale: r.scale as WarScale,
+    ...(supers ? { supers: true as const } : {}),
+    ...(bomb ? { bomb: true as const } : {}),
+  };
 }
 
 /** A computer neighbour's character in war (SPEC-5): how it arms, fights, trades and keeps its word. */

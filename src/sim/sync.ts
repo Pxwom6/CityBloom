@@ -107,6 +107,16 @@ export function checksum(sim: Sim): string {
     }
     if (w.incoming) m.int(w.incoming.length);
     if (w.reports) m.int(w.reports.length);
+    // The race for the atom bomb (M40), only once it has begun.
+    const a = w.atom;
+    if (a) {
+      m.num(a.fuel);
+      m.num(a.bomb?.done ?? -1);
+      m.num(a.prep?.done ?? -1);
+      m.int((a.have ? 1 : 0) + (a.fired ? 2 : 0) + (a.inbound ? 4 : 0) + (a.impact ? 8 : 0));
+      m.int(a.boom);
+      m.int(a.stopped);
+    }
   }
   return m.hex();
 }

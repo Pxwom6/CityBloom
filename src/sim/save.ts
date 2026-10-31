@@ -14,7 +14,7 @@ import { rivalAllies } from './systems/war';
 import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 31;
+export const SAVE_VERSION = 32;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -282,6 +282,10 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // v30 → v31 (M38): the war economy. A city saved before it holds no stakes, has lent nothing and
   // funds no ally (`WarState.economy` appears when first used), so nothing changes but the version.
   30: (s) => s,
+  // v31 → v32 (M40): the atom bomb. A city saved before it has made no fuel and built nothing for it
+  // (`WarState.atom`, and with later steps the fallout, the nuclear winters, a pariah's mark and a
+  // computer neighbour's race, appear when first used), so nothing changes but the version.
+  31: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

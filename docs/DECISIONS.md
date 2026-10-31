@@ -1268,3 +1268,40 @@ these are its calls and the reasons, with where they overturned the first draft.
   queued, a war ended by a treaty paying tribute, a neighbour's ally still at war with it (so a stake
   there is refused, and none is held), war weariness and a sanction. M40's save test loads it and asks
   that it plays on to the same parts.
+- **Step 1 (data, gates, state): calls the plan left open.**
+  - *The gate's words and order.* `atomLock` says the first missing step: the research tree, then the
+    rules, no scenario, the bomb not already used, and last the building's own requirement (a running
+    nuclear plant for the plant, the plant online for the silo). The research line names the first tier
+    still to do in tree order, which is always one that can be queued ("Needs every research branch maxed
+    (21 of 24 done; Dome shield is next)"). The two requirement lines are the buildings' own
+    (`ProjectRequirement` kinds `researchAll` and `civicOnline`), so the build menu's tooltip and the gate
+    read the same data through `requirementStatus`. The sim's test of "all 24" is `allTiersDone`, not the
+    lines' counts.
+  - *Sandbox.* The gate sits in `civicLock`, which sandbox never skips; the Toolbar disables the two
+    buttons in sandbox too (every other project's button opens there), so the player isn't offered a
+    click the sim will refuse. The Military menu shows them only when `bombAllowed`.
+  - *The rule is cleaned where it is read.* `cleanWarRules` keeps `bomb` only with total war and
+    superweapons, so no message can store a bomb that cannot stand (and `bombAllowed` checks the same
+    three things in the state, for rules that arrive by other ways). The host's Region panel follows the
+    plan: choosing total war ticks superweapons and the bomb together, either can be unticked, a smaller
+    scale or unticking superweapons drops the bomb, and the checkbox shows only with both.
+  - *The stage is derived, and "making fuel" doesn't flicker.* `enriching` is a finished plant with fuel
+    above 0, whether or not damage has closed it this hour (the plan's "plant online" would have the stage
+    drop and rise, and the room announce it each time). `flying` is the firing city's own picture: a game
+    day from `fired.tick`, then `spent`; the target's clock decides the real landing.
+  - *Facts' meanings.* `bomb.paid` counts instalments paid (of twelve); `boom` counts bombs that have
+    landed in this city, `stopped` those its dome stopped; `first` is the achievement's fact. The
+    invariants (test mode) hold the plan's contract: facts finite and in range, a bomb being built never
+    beside a finished, prepared or fired one, a preparation needs a bomb, a fired bomb has a target.
+  - *No announcement by size.* `unlocksAt` skips the two buildings: they open with research, not with
+    40,000 residents, which the city panel would otherwise announce.
+  - *Small things on the way.* The unique-building refusal now says "an" before a vowel ("an enrichment
+    plant"); `WarSummary.atom` (allowed, stage, the tree, the nuclear and enrichment plants, fuel) is
+    what the build menu reads; `warModels.test.ts` no longer treats `enrichment` as "not in the game
+    yet" (the fallback for a building the game lacks is tried with a stand-in).
+  - *Prices left as the plan has them.* `scripts/dev/atomprice.ts` on the bench city (110,174 residents,
+    $618,257 a month in taxes, $7.4M a year): the silo and bomb are $10.9M, 1.47 game years of taxes
+    (the plan said about 3), the whole race $18.2M, 2.46 years ($19.9M with upkeep, 2.69; the plan said 3 to
+    6). The plan's figures came from a 57,000-resident city's $3.6M a year; the 100k city makes twice that.
+    Not retuned in this step: the lever is `ATOM.bomb.instalment.money` (at $1.6M the silo and bomb read
+    about 3 years and the whole race about 4), to be settled before the balance step.

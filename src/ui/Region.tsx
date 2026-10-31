@@ -612,7 +612,14 @@ function RegionWar({ link }: { link: RegionLink }) {
               options={WAR_SCALES}
               label={(s) => WAR_SCALE_NAMES[s]}
               testid="region-war-scale"
-              onChange={(scale) => link.setRules({ ...rules, scale })}
+              onChange={(scale) => {
+                const { bomb: _, ...rest } = rules;
+                // Total war brings the superweapons and the atom bomb with it, ticked to be unticked (M40);
+                // a smaller war leaves the bomb out, which can only stand with total war.
+                link.setRules(
+                  scale === 'total' ? { ...rest, scale, supers: true, bomb: true } : { ...rest, scale },
+                );
+              }}
             />
           )}
           {rules.war && (
@@ -622,7 +629,7 @@ function RegionWar({ link }: { link: RegionLink }) {
                 checked={!!rules.supers}
                 data-testid="region-war-supers"
                 onChange={(e) => {
-                  const { supers: _, ...rest } = rules;
+                  const { supers: _, bomb: __, ...rest } = rules;
                   link.setRules((e.target as HTMLInputElement).checked ? { ...rest, supers: true } : rest);
                 }}
               />
@@ -630,6 +637,26 @@ function RegionWar({ link }: { link: RegionLink }) {
                 Superweapons{' '}
                 <small class="muted">
                   the robot, sky fortress and clockwork whale, the dome, blackout tower and express gate
+                </small>
+              </span>
+            </label>
+          )}
+          {rules.war && rules.scale === 'total' && rules.supers && (
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!rules.bomb}
+                data-testid="region-war-bomb"
+                onChange={(e) => {
+                  const { bomb: _, ...rest } = rules;
+                  link.setRules((e.target as HTMLInputElement).checked ? { ...rest, bomb: true } : rest);
+                }}
+              />
+              <span>
+                The atom bomb{' '}
+                <small class="muted">
+                  the last prize: every research branch, a nuclear plant, years of fuel; the dome can stop
+                  one, and nothing undoes one
                 </small>
               </span>
             </label>

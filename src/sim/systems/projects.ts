@@ -5,7 +5,8 @@ import type { Civic } from '../world/civic';
 import { dateOf, HOURLY_AT, START_TICK_OFFSET, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { civicOnline } from '../world/civic';
 import { chronicleEvent } from './chronicle';
-import { researched } from './research';
+import { researched, researchTree } from './research';
+import { civicRunning } from './atom';
 
 /**
  * Big projects (M17): civic buildings raised in stages over months. Placing one pays for its first
@@ -47,22 +48,32 @@ export function stageClock(sim: Sim): number {
   return w.clock - (hours(s.tick) - hours(start));
 }
 
-/** Is this a war project (M37): a superweapon building, built on the war clock as well as by months? */
+/**
+ * Is this a war project (M37): a superweapon building or (M40) one of the atom bomb's, built on the
+ * war clock as well as by months?
+ */
 export function warProject(def: CivicDef): boolean {
-  return !!def.project && !!def.military?.superweapon;
+  return !!def.project && (!!def.military?.superweapon || !!def.military?.atom);
 }
 
-/** Every requirement of a project and whether the city meets it. */
-export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[] {
+/** What a project's requirements are checked against in this city. */
+export function requirementContext(sim: Sim): RequirementContext {
   const s = sim.state;
-  const ctx: RequirementContext = {
+  return {
     // Unlock-all lifts the population bars, as it does every other unlock.
     population: s.unlockAll ? Infinity : Math.max(s.progress.peak, s.totals.population),
     education: s.totals.eduWorkforce,
     visitors: s.tourism.visitors,
     runs: (id) => [...s.civics.values()].some((c) => c.def === id && !c.build),
     researched: (key) => researched(sim, key),
+    tree: researchTree(sim),
+    online: (id) => civicRunning(sim, id),
   };
+}
+
+/** Every requirement of a project and whether the city meets it. */
+export function projectRequirements(sim: Sim, def: CivicDef): RequirementStatus[] {
+  const ctx = requirementContext(sim);
   return (def.project?.requires ?? []).map((r) => requirementStatus(r, ctx));
 }
 

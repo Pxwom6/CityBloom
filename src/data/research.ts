@@ -318,6 +318,20 @@ export function prerequisite(key: TierKey): TierKey | null {
   return t.tier === 1 ? null : (`${t.branch}${t.tier - 1}` as TierKey);
 }
 
+/**
+ * How far through the whole tree a list of finished tiers is (M40: the atom bomb asks for all 24):
+ * tiers done, tiers in all, and the first still to do in tree order (a tier's own prerequisite
+ * always comes before it, so it is one that can be queued).
+ */
+export function treeProgress(done: readonly string[]): { done: number; total: number; next?: TierKey } {
+  const next = TIER_KEYS.find((k) => !done.includes(k));
+  return {
+    done: TIER_KEYS.filter((k) => done.includes(k)).length,
+    total: TIER_KEYS.length,
+    ...(next ? { next } : {}),
+  };
+}
+
 /** Research's running numbers (M37). Logged in DECISIONS, "M37". */
 export const RESEARCH = {
   /** Points a weapons lab makes a war-clock hour at full staff, power and funding (funding counts up to 1.25). */

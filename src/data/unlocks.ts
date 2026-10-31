@@ -17,7 +17,14 @@ export function unlocksAt(population: number, war = false): string[] {
   for (const r of Object.values(ROAD_TYPES))
     if (r.buildable && r.unlockPopulation === population && population > 0) out.push(r.name);
   for (const d of CIVIC_DEFS)
-    if (d.unlockPopulation === population && population > 0 && (war || !d.military)) out.push(d.name);
+    if (
+      d.unlockPopulation === population &&
+      population > 0 &&
+      (war || !d.military) &&
+      // The atom bomb's buildings (M40) open with research, not with a size: no announcement.
+      !d.military?.atom
+    )
+      out.push(d.name);
   for (const m of MODULES) if (m.unlockPopulation === population) out.push(`${m.name} (module)`);
   for (const p of POLICIES) if (p.unlockPopulation === population) out.push(`${p.name} (policy)`);
   for (const l of LOAN_OPTIONS)

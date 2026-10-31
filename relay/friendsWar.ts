@@ -1015,6 +1015,12 @@ export class FriendsWar {
     return !!w && w.state === 'open' && this.now >= w.opens;
   }
 
+  /** The pact of mutual aid two cities have, if any (M39 step 6, allies sending help): an alliance, else a defensive pact. */
+  aidPact(p: number, q: number): 'alliance' | 'defensivePact' | null {
+    const kinds = this.pactsOf(p, q).map((x) => x.kind);
+    return kinds.includes('alliance') ? 'alliance' : kinds.includes('defensivePact') ? 'defensivePact' : null;
+  }
+
   /**
    * Why `from` may not raid `target` for friends' diplomacy, or null: a war that hasn't opened, a
    * ceasefire, a capitulation, a pact that binds, a vassal's duty.

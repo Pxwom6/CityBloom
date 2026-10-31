@@ -26,11 +26,33 @@ export interface LiveOrderIn {
   target?: number;
 }
 
-/** An order as stamped: its place in the session's log, the step it applies at, and whose it is. */
+/**
+ * An allied force as the room stamps it into the log (step 6). `owner` is the helper city's slot,
+ * `name` and `color` (0xRRGGBB) are the room's own word for it, `side` is the combatant it fights for,
+ * `arrive` the battle step it comes in at; the units are the page's (the battle checks them: the room
+ * reads only their shape).
+ */
+export interface LiveHelp {
+  owner: number;
+  name: string;
+  color: number;
+  side: LiveSide;
+  arrive: number;
+  route?: string;
+  units: { id: number; kind: string; hp: number }[];
+  mods?: object;
+}
+
+/**
+ * An order as stamped: its place in the session's log, the step it applies at, and whose it is. An
+ * entry of kind `help` is an allied force (`helper`) joining the side `side`, stamped at the frontier
+ * like an order (the battle takes it up there) and numbered with them, so every page sees the log alike.
+ */
 export interface LiveOrder extends LiveOrderIn {
   seq: number;
   step: number;
   side: LiveSide;
+  helper?: LiveHelp;
 }
 
 /**
@@ -179,8 +201,68 @@ export class LiveSession {
 
   private at(step: number, side: LiveSide): number {
     let n = 0;
-    for (const o of this.orders) if (o.step === step && o.side === side) n++;
+    for (const o of this.orders) if (o.step === step && o.side === side && o.kind !== 'help') n++;
     return n;
+  }
+
+  /** The allied forces stamped into the log, in the order they were. */
+  helpers(): LiveOrder[] {
+    return this.orders.filter((o) => o.kind === 'help' && o.helper);
+  }
+
+  /** Helper forces whose arrival step every page still racing has reached, each told once. */
+  private told = new Set<number>();
+  arrived(now: number): LiveOrder[] {
+    const racing = this.sides.filter((s) => this.pacing(s, now));
+    if (!racing.length) return [];
+    const at = Math.min(...racing.map((s) => s.step));
+    const out: LiveOrder[] = [];
+    for (const o of this.helpers())
+      if (o.helper!.arrive <= at && !this.told.has(o.seq)) {
+        this.told.add(o.seq);
+        out.push(o);
+      }
+    return out;
+  }
+
+  /**
+   * Stamp an allied force into the log at the frontier (step 6): `side` is the combatant it helps.
+   * It arrives `travel` steps on from the frontier, so every page has the entry well before its
+   * arrival; nothing here reads the units. Refused (and the reason said) when the battle isn't
+   * running or its side's page is done, three forces are in it already, this city's is, the log is
+   * full, or the force couldn't arrive before the battle's last step.
+   */
+  help(
+    side: LiveSide,
+    from: { slot: number; name: string; color: number },
+    force: { units: LiveHelp['units']; route?: string; mods?: object },
+    travel: number,
+  ): { entry: LiveOrder; refused: null } | { entry: null; refused: string } {
+    const no = (refused: string) => ({ entry: null, refused });
+    if (this.state !== 'running') return no('That battle hasn’t started');
+    if (this.sides[0].done || this.sides[1].done) return no('That battle is over');
+    const there = this.helpers();
+    if (there.length >= LIVE.helpers)
+      return no(`That battle has all the help it takes (${LIVE.helpers} forces)`);
+    if (there.some((o) => o.helper!.owner === from.slot))
+      return no('Your force is helping in that battle already');
+    if (this.orders.length >= LIVE.maxOrders - LIVE.reserve) return no('This battle takes no more orders');
+    const arrive = this.allow + travel;
+    if (arrive > LIVE.lastStep)
+      return no('The battle will be over before help could get there: send it earlier');
+    const helper: LiveHelp = {
+      owner: from.slot,
+      name: from.name,
+      color: from.color,
+      side,
+      arrive,
+      units: force.units.map((u) => ({ ...u })),
+      ...(force.route ? { route: force.route } : {}),
+      ...(force.mods ? { mods: structuredClone(force.mods) } : {}),
+    };
+    const entry: LiveOrder = { kind: 'help', seq: this.orders.length + 1, step: this.allow, side, helper };
+    this.orders.push(entry);
+    return { entry, refused: null };
   }
 
   /**

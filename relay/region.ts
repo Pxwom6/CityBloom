@@ -219,6 +219,20 @@ export type RegionClientMsg =
   /** Any city: a finished battle the region keeps, to watch again. */
   | { t: 'breplay'; id: string; from?: number }
   /**
+   * An ally sends a force into a live battle on its friend's side (M39 step 6): the battle (`from`: its
+   * attacker, if two share an id), the units (their ids are `slot × LIVE.helpIds + k`), the way they
+   * come and the research they fight with. The room decides which side (from the pacts it keeps), when
+   * they arrive and under what name; a city's own name and colour are the room's, whatever a page says.
+   */
+  | {
+      t: 'bhelp';
+      id: string;
+      from?: number;
+      units: { id: number; kind: string; hp: number }[];
+      route?: string;
+      mods?: object;
+    }
+  /**
    * Wars and treaties between friends (M39, protocol 6; design calls 9 and 10): declaring, proposing,
    * answering, ending a pact early, acknowledging a treaty, and how a battle ended. See `FriendsClientMsg`.
    */
@@ -341,6 +355,8 @@ export type RegionRoomMsg =
   | { t: 'blivenow'; id: string; from: number; to: number }
   /** A finished battle's record, asked for (`breplay`) or owed to a combatant who wasn't here at its end. */
   | { t: 'breplaydata'; id: string; from: number; to: number; record: LiveRecord }
+  /** The room turned an ally's help down (M39 step 6), and says why. */
+  | { t: 'bhelpoff'; id: string; why: string }
   | { t: 'notice'; text: string }
   /** Wars and treaties between friends (M39, protocol 6): see `FriendsRoomMsg`. */
   | Exclude<FriendsRoomMsg, { t: 'notice' }>
@@ -831,6 +847,35 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       }
       return out;
     }
+    case 'bhelp': {
+      if (typeof m.id !== 'string' || !ID.test(m.id)) return null;
+      if (m.from !== undefined && !wholeIn(m.from, 1, 64)) return null;
+      if (!Array.isArray(m.units) || m.units.length < 1 || m.units.length > LIVE.helpUnits) return null;
+      const units: { id: number; kind: string; hp: number }[] = [];
+      for (const u of m.units) {
+        if (!u || typeof u !== 'object' || Array.isArray(u)) return null;
+        const { id, kind, hp } = u as Record<string, unknown>;
+        // (Ids are `slot × helpIds + k`: the handler checks the slot; superweapons never go.)
+        if (!wholeIn(id, 1, 1e6) || typeof kind !== 'string' || !finite(hp, 0, 1)) return null;
+        const def = UNIT.get(kind as UnitKind);
+        if (!def || def.super) return null;
+        units.push({ id, kind, hp: Math.round(hp * 1000) / 1000 });
+      }
+      if (m.route !== undefined && !(typeof m.route === 'string' && m.route in LIVE.helpTravel)) return null;
+      if (m.mods !== undefined) {
+        if (!m.mods || typeof m.mods !== 'object' || Array.isArray(m.mods) || !withinDepth(m.mods, 4))
+          return null;
+        if (JSON.stringify(m.mods).length > 1_000) return null;
+      }
+      return {
+        t: 'bhelp',
+        id: m.id,
+        ...(m.from !== undefined ? { from: m.from as number } : {}),
+        units,
+        ...(m.route !== undefined ? { route: m.route as string } : {}),
+        ...(m.mods !== undefined ? { mods: m.mods as object } : {}),
+      };
+    }
     case 'bdone':
       return typeof m.id === 'string' &&
         ID.test(m.id) &&
@@ -926,6 +971,7 @@ const LIVE_MESSAGES = new Set<string>([
   'bwatch',
   'bunwatch',
   'breplay',
+  'bhelp',
 ]);
 
 /** What a page says about wars and treaties with friends (M39): only pages that speak protocol 6 are heard. */
@@ -1696,6 +1742,8 @@ export class RegionRoom {
         return;
       case 'breplay':
         return this.breplay(conn, m);
+      case 'bhelp':
+        return this.bhelp(conn, city, m);
       case 'save': {
         // Kept at most every so often; parts in between are ignored before they take memory. The
         // save a city sends as its player leaves is kept whatever the pace, once a connection: in a
@@ -2037,6 +2085,12 @@ export class RegionRoom {
     const moved = s.pace(now);
     if (moved || ords.length)
       this.toRun(r, { t: 'ballow', id: s.id, allow: s.allow, ...(ords.length ? { ords } : {}) });
+    // An ally's force has reached the battle (every page that is racing has got to its step).
+    for (const o of s.arrived(now))
+      this.toRun(r, {
+        t: 'notice',
+        text: `${o.helper!.name}’s force has arrived to fight for ${this.cityName(s.sides[o.side].slot)}`,
+      });
     const end = s.ending(now);
     if (end) return this.endRun(r, end, now);
     if (!speaking && s.abandoned(now))
@@ -2237,6 +2291,82 @@ export class RegionRoom {
       return void conn.send({ t: 'notice', text: 'That battle has all the watchers it takes' });
     r.watchers.add(conn);
     conn.send(this.bstart(r, 'watcher'));
+  }
+
+  /**
+   * An ally sends a force into a live battle (M39 step 6, design call 7). It fights on the side of the
+   * combatant it has a pact of aid with (an alliance with either, a defensive pact with the one
+   * attacked), unless a pact with the other combatant, a ceasefire, or the vassal's duty stands in the
+   * way. The room stamps it into the battle's log at the frontier as it stamps an order, with an
+   * arrival `LIVE.helpTravel` steps on, and sends it to every page in the battle; the helper's own page
+   * is made a watcher, to see its force fight. Nothing is written: like the battle, it is in memory.
+   */
+  private bhelp(conn: RegionConn, city: City, m: Extract<RegionClientMsg, { t: 'bhelp' }>): void {
+    const meta = this.meta!;
+    const off = (why: string) => conn.send({ t: 'bhelpoff', id: m.id, why });
+    if (!meta.rules?.war) return off('War is off in this region');
+    let r: LiveRun | undefined;
+    for (const x of this.lives.values())
+      if (x.s.id === m.id && (m.from === undefined || x.s.from === m.from)) r = x;
+    if (!r) return off('That battle isn’t on any more');
+    const s = r.s;
+    if (s.state !== 'running') return off('That battle hasn’t started yet');
+    if (s.sideOf(city.slot) >= 0) return off('Your own forces are in that battle: they can’t help it');
+    if (this.runOf(city.slot)) return off(`${city.name} is in a live battle already`);
+    if (s.helpers().some((o) => o.helper!.owner === city.slot))
+      return off('Your force is helping in that battle already');
+    for (const x of this.lives.values())
+      if (x.s.helpers().some((o) => o.helper!.owner === city.slot))
+        return off('Your force is helping in another battle already');
+    if (city.report?.shield === 'neutral') return off('A neutral city sends no forces');
+    if (!m.units.every((u) => u.id >= city.slot * LIVE.helpIds && u.id < (city.slot + 1) * LIVE.helpIds))
+      return off('Those units could not be read');
+    if (new Set(m.units.map((u) => u.id)).size !== m.units.length)
+      return off('Those units could not be read');
+    // Which side: the pacts it keeps with the two cities.
+    const fw = new FriendsWar(meta, this.fwContext());
+    const a = this.cityName(s.from);
+    const d = this.cityName(s.to);
+    const withAttacker = fw.aidPact(city.slot, s.from);
+    const withDefender = fw.aidPact(city.slot, s.to);
+    // (A defensive pact is for helping a partner who is attacked: not one who attacks.)
+    const forAttacker = withAttacker === 'alliance';
+    const forDefender = withDefender !== null;
+    if (forAttacker && forDefender)
+      return off(`You have pacts with both ${a} and ${d}: you can’t take sides`);
+    if (!forAttacker && !forDefender)
+      return off(
+        withAttacker === 'defensivePact'
+          ? `A defensive pact is for a friend who is attacked: ${a} is the one attacking`
+          : `Only an ally can send help: you have no alliance or defensive pact with ${a} or ${d}`,
+      );
+    const side: LiveSide = forDefender ? 1 : 0;
+    const enemy = side === 0 ? s.to : s.from;
+    const blocked = fw.raidBlock(city.slot, enemy);
+    if (blocked) return off(blocked);
+    const route = m.route ?? 'highway';
+    const hex = PLAYER_COLORS[city.color]?.slice(1) ?? '888888';
+    const put = s.help(
+      side,
+      { slot: city.slot, name: city.name, color: Number.parseInt(hex, 16) || 0x888888 },
+      { units: m.units, route, ...(m.mods ? { mods: m.mods } : {}) },
+      LIVE.helpTravel[route as keyof typeof LIVE.helpTravel],
+    );
+    if (!put.entry) return off(put.refused);
+    // The helper's page watches the battle, to see its force fight: sent the battle as it stands
+    // (with this entry in its log) if it wasn't watching already.
+    for (const c of this.liveConns(city.slot)) {
+      if (r.watchers.has(c)) continue;
+      r.watchers.add(c);
+      c.send(this.bstart(r, 'watcher'));
+    }
+    const o = put.entry;
+    this.toRun(r, { t: 'ballow', id: s.id, allow: s.allow, ords: [o] });
+    const secs = Math.round((o.helper!.arrive - s.allow) / 16);
+    this.toRun(r, {
+      t: 'notice',
+      text: `${city.name} sends ${m.units.length} ${m.units.length === 1 ? 'unit' : 'units'} to help ${side === 0 ? a : d}: they arrive in about ${secs} seconds`,
+    });
   }
 
   /** A finished battle the region keeps, as the record it's run again from. */

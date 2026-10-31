@@ -80,6 +80,19 @@ export const LIVE = {
   replays: 20,
   /** Watchers (connections) of one battle. */
   watchers: 8,
+  /**
+   * Allied help (step 6): the forces that may join one battle (the battle takes three), the most units
+   * one sends (a force's cap), the ids its units are numbered in (`owner × helpIds + k`, which keeps
+   * them clear of both cities' own and under the 1,000,000 an order may name), and the steps from the
+   * frontier it was stamped at to its arrival by each route: 30 s of play (480 steps at 16 a second)
+   * by road, rail or air, 45 s by sea. A force that could not arrive before the battle's last step
+   * (`lastStep`, the battle's own `maxSteps`) is refused.
+   */
+  helpers: 3,
+  helpUnits: 24,
+  helpIds: 10_000,
+  helpTravel: { highway: 480, rail: 480, air: 480, sea: 720 },
+  lastStep: 1_440,
 } as const;
 /** Player colours (an index into this list travels). */
 export const PLAYER_COLORS = [

@@ -32,10 +32,11 @@ export interface StampedHelper {
   name: string;
   color: number;
   side: Side;
-  units: { id: number; kind: UnitKind; hp: number }[];
+  /** (Wire data: the battle's checks say whether the kinds, route and research are ones it knows.) */
+  units: { id: number; kind: string; hp: number }[];
   arrive: number;
-  route?: BattleRoute;
-  mods?: BattleMods;
+  route?: string;
+  mods?: object;
 }
 
 /**
@@ -89,7 +90,7 @@ export function battleHelperOf(o: StampedOrder): BattleHelper | null {
   const units: BattleUnitIn[] = [];
   for (const u of h.units) {
     if (!u || typeof u !== 'object') return null;
-    units.push({ id: u.id, kind: u.kind, hp: u.hp, x: 0, z: 0, base: -1 });
+    units.push({ id: u.id, kind: u.kind as UnitKind, hp: u.hp, x: 0, z: 0, base: -1 });
   }
   const out: BattleHelper = {
     owner: h.owner,
@@ -100,8 +101,8 @@ export function battleHelperOf(o: StampedOrder): BattleHelper | null {
     arrive: h.arrive,
     at: o.step,
   };
-  if (h.route !== undefined) out.route = h.route;
-  if (h.mods !== undefined) out.mods = structuredClone(h.mods);
+  if (h.route !== undefined) out.route = h.route as BattleRoute;
+  if (h.mods !== undefined) out.mods = structuredClone(h.mods) as BattleMods;
   return out;
 }
 

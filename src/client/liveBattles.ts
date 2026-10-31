@@ -1261,7 +1261,17 @@ export class LiveBattles implements LiveSink {
         replay: replayId(record.id),
         from: record.from,
       })
-      .then((r) => (r.ok ? undefined : this.free(record.id)));
+      .then((r) => {
+        if (!r.ok) return this.free(record.id);
+        // (The hosted battle goes on with what it lacks of the record when it can; when the record is not
+        // the same battle it takes its place, as it used to, and says why.)
+        if (r.info?.standIn === 'replaced')
+          console.warn(
+            `[live] ${record.id}: the room’s record took the place of the hosted battle`,
+            r.info.why,
+          );
+        return undefined;
+      });
   }
 
   // ------------------------------------------------------------------ the attacker

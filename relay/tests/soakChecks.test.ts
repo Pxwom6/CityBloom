@@ -182,11 +182,84 @@ describe('M39 step 10 review: a battle or a report taken twice', () => {
     // The hosted part had brought down buildings 7 and 8 and wrecked civic structure 3; the record
     // (the battle's report in the city now) brings down 8 again and wrecks 3 again.
     sam.sim.state.war.reports.push({ collapsed: [8, 9], civics: [{ id: 3, wrecked: true }] });
-    const was: Before = { lines: {}, pacts: 0, hosted: { id: 'exp-a-5', collapsed: [7, 8], wrecked: [3] } };
+    const was: Before = {
+      lines: {},
+      pacts: 0,
+      hosted: { id: 'exp-a-5', collapsed: [7, 8], wrecked: [3], clocks: { 3: 90 } },
+    };
     at(40_000);
     checks.applied(sam as never, 1, resolve('exp-a-5', 'instant'), OK, 'exp-a-5', was);
     expect(fails.map((f) => f.kind)).toEqual(['damage-doubled']);
     expect(checks.standInDamage[0]).toMatchObject({ buildings: 1, wrecked: 1 });
+    // It was the fallback (the sim said nothing, as an older one): counted as the record taking its place.
+    expect(checks.standInsReplaced).toHaveLength(1);
+    expect(checks.standInsContinued).toBe(0);
+  });
+
+  describe('a record that finishes the hosted battle (the sim says so)', () => {
+    const continued = { ok: true, cost: 0, info: { standIn: 'continued', orders: 2, helpers: 0 } } as never;
+    const setup = () => {
+      const w = world();
+      const sam = player('Sam', 2);
+      const log = {
+        id: 'exp-a-5',
+        attacker: 1,
+        defender: 2,
+        disturbed: [{ name: 'Sam', what: 'reloads the page', at: 1 }],
+        views: new Map(),
+      } as unknown as BattleLog;
+      w.checks.battles.set(log.id, log);
+      w.at(1_000);
+      w.checks.applied(sam as never, 1, resolve('exp-a-5'), OK);
+      w.at(40_000);
+      return { ...w, sam };
+    };
+    const was = (clock: number): Before => ({
+      lines: {},
+      pacts: 0,
+      hosted: { id: 'exp-a-5', collapsed: [7], wrecked: [3], clocks: { 3: clock } },
+    });
+
+    it('is counted, and what the hosted part took is not taken twice: its report is the battle’s whole', () => {
+      const { checks, fails, sam } = setup();
+      // The report the finished battle ends with holds the hosted part's entries (it is the same report).
+      sam.sim.state.war.reports.push({ collapsed: [7, 9], civics: [{ id: 3, wrecked: true }] });
+      (sam.sim.state as unknown as { civics: Map<number, { damage: number }> }).civics = new Map([
+        [3, { damage: 88 }],
+      ]);
+      checks.applied(sam as never, 1, resolve('exp-a-5', 'instant'), continued, 'exp-a-5', was(90));
+      expect(fails).toEqual([]);
+      expect(checks.standIns).toBe(1);
+      expect(checks.standInsContinued).toBe(1);
+      expect(checks.standInsReplaced).toEqual([]);
+      expect(checks.standInDamage[0]).toMatchObject({ buildings: 0, wrecked: 0 });
+    });
+
+    it('fails when a structure the hosted part wrecked has its repair clock begun again', () => {
+      const { checks, fails, sam } = setup();
+      sam.sim.state.war.reports.push({ collapsed: [7], civics: [{ id: 3, wrecked: true }] });
+      (sam.sim.state as unknown as { civics: Map<number, { damage: number }> }).civics = new Map([
+        [3, { damage: 96 }],
+      ]);
+      checks.applied(sam as never, 1, resolve('exp-a-5', 'instant'), continued, 'exp-a-5', was(90));
+      expect(fails.map((f) => f.kind)).toEqual(['damage-doubled']);
+    });
+
+    it('counts a record that was not the same battle as the fallback, with the sim’s reason', () => {
+      const { checks, fails, notes, sam } = setup();
+      sam.sim.state.war.reports.push({ collapsed: [], civics: [] });
+      const replaced = {
+        ok: true,
+        cost: 0,
+        info: { standIn: 'replaced', why: 'it is not the battle the city hosts' },
+      } as never;
+      checks.applied(sam as never, 1, resolve('exp-a-5', 'instant'), replaced, 'exp-a-5');
+      expect(fails).toEqual([]);
+      expect(checks.standInsReplaced).toEqual([
+        { id: 'exp-a-5', player: 'Sam', why: 'it is not the battle the city hosts' },
+      ]);
+      expect(notes.some((n) => /not the battle the city hosts/.test(n))).toBe(true);
+    });
   });
 });
 

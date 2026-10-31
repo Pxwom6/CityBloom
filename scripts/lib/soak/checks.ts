@@ -22,13 +22,17 @@ export interface Before {
   lines: Record<string, number>;
   /** Pacts the city's diplomacy held. */
   pacts: number;
-  /** The live battle the city was hosting, and what it had already taken (buildings that fell, civic buildings wrecked). */
-  hosted?: { id: string; collapsed: number[]; wrecked: number[] };
+  /**
+   * The live battle the city was hosting, and what it had already taken (buildings that fell, civic buildings
+   * wrecked, and how many hours of repair each of those still had to go).
+   */
+  hosted?: { id: string; collapsed: number[]; wrecked: number[]; clocks: Record<number, number> };
 }
 
 export function before(sim: Sim): Before {
   const w = sim.state.war;
   const hb = w?.battle;
+  const wrecked = hb?.report.civics.filter((c) => c.wrecked).map((c) => c.id) ?? [];
   return {
     lines: { ...sim.state.economy.month },
     pacts: w?.diplomacy?.pacts.length ?? 0,
@@ -37,7 +41,8 @@ export function before(sim: Sim): Before {
           hosted: {
             id: hb.live.id,
             collapsed: [...hb.report.collapsed],
-            wrecked: hb.report.civics.filter((c) => c.wrecked).map((c) => c.id),
+            wrecked,
+            clocks: Object.fromEntries(wrecked.map((id) => [id, sim.state.civics.get(id)?.damage ?? 0])),
           },
         }
       : {}),
@@ -107,8 +112,14 @@ export class Checks {
   private warOpened = new Set<number>();
   /** Messages the room refused for the rate (the page's link saw the connection closed). */
   closedByRoom = 0;
-  /** Records of live battles that stood in for the one the city was hosting, and what each took on top of the hosted part. */
+  /**
+   * Records of live battles that stood in for the one the city was hosting: those that finished the hosted battle
+   * with the orders and helpers it lacked (`continued`), and those that were not the same battle and took its place
+   * (`replaced`, the fallback, each with its reason); and what each took on top of the hosted part.
+   */
   standIns = 0;
+  standInsContinued = 0;
+  readonly standInsReplaced: { id: string; player: string; why: string }[] = [];
   readonly standInDamage: { id: string; player: string; buildings: number; wrecked: number }[] = [];
 
   constructor(private readonly w: Soak) {}
@@ -209,7 +220,7 @@ export class Checks {
       // battle, or whose player had a bad moment in it; anyone else taking a battle it is hosting has been
       // handed it twice.
       const standsIn = n > 1 && cmd.mode === 'instant' && hosted === id;
-      if (standsIn) this.standIn(p, id, prev, was, sim);
+      if (standsIn) this.standIn(p, id, prev, was, sim, r);
       else if (cmd.mode !== 'live') this.w.covered('oldBattles');
       if (n > 1 && !standsIn) {
         if (prev !== undefined && this.rewoundSince(p, prev)) {
@@ -255,7 +266,14 @@ export class Checks {
    * A record standing in for the hosted part of a live battle: allowed for a player who was disturbed in it or
    * whose city was loaded again since it began hosting it; what it took is measured.
    */
-  private standIn(p: Player, id: string, prev: number | undefined, was: Before | undefined, sim: Sim): void {
+  private standIn(
+    p: Player,
+    id: string,
+    prev: number | undefined,
+    was: Before | undefined,
+    sim: Sim,
+    r: CommandResult,
+  ): void {
     const disturbed = this.battles.get(id)?.disturbed.some((d) => d.name === p.name);
     const loadedAgain = prev !== undefined && p.restores.some((r) => r.n > prev);
     if (!disturbed && !loadedAgain) {
@@ -266,10 +284,35 @@ export class Checks {
       return;
     }
     this.standIns++;
-    // What the record took on top of the hosted part: a building or civic structure the hosted part had
-    // already taken must not be taken again, and the battle's own report says which fell.
     const done = sim.state.war?.reports?.at(-1);
     const hosted = was?.hosted?.id === id ? was.hosted : undefined;
+    const info = r.ok ? r.info : undefined;
+    // The sim says how it took the record: it finished the hosted battle (the report it ends with is the hosted
+    // part's and the rest of the same battle), or it was not the same battle and took its place, as it used to.
+    if (info?.standIn === 'continued') {
+      this.standInsContinued++;
+      // What the hosted part had wrecked is wrecked once: no repair clock begins again.
+      const restarted = hosted
+        ? hosted.wrecked.filter((x) => (sim.state.civics.get(x)?.damage ?? 0) > (hosted.clocks[x] ?? 0))
+        : [];
+      this.standInDamage.push({ id, player: p.name, buildings: 0, wrecked: restarted.length });
+      this.w.note(
+        `${p.name}'s city finishes the battle ${id} it was hosting with the record's ${String(info.orders)} orders and ${String(info.helpers)} helpers it lacked` +
+          (hosted
+            ? ` (the hosted part had taken ${hosted.collapsed.length} buildings and wrecked ${hosted.wrecked.length}; the battle ended with ${done?.collapsed.length ?? '?'} and ${done?.civics.filter((c) => c.wrecked).length ?? '?'})`
+            : ''),
+      );
+      if (restarted.length)
+        this.w.fail(
+          'damage-doubled',
+          `${p.name}'s city began the repair clock of ${restarted.length} civic structures again that the hosted part of ${id} had wrecked, when the record finished the battle`,
+        );
+      return;
+    }
+    // What the record took on top of the hosted part: a building or civic structure the hosted part had
+    // already taken must not be taken again, and the battle's own report says which fell.
+    const why = typeof info?.why === 'string' ? info.why : 'the sim did not say';
+    this.standInsReplaced.push({ id, player: p.name, why });
     const again =
       hosted && done
         ? {
@@ -279,7 +322,7 @@ export class Checks {
         : { buildings: 0, wrecked: 0 };
     this.standInDamage.push({ id, player: p.name, ...again });
     this.w.note(
-      `${p.name}'s city takes the record of ${id} in place of the battle it was hosting` +
+      `${p.name}'s city takes the record of ${id} in place of the battle it was hosting (${why})` +
         (hosted
           ? ` (the hosted part had taken ${hosted.collapsed.length} buildings and wrecked ${hosted.wrecked.length}; the record took ${done?.collapsed.length ?? '?'} and wrecked ${done?.civics.filter((c) => c.wrecked).length ?? '?'}, ${again.buildings + again.wrecked} of them the same ones)`
           : ''),

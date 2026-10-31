@@ -757,6 +757,10 @@ export class Game {
     }
     const r = await this.client.command(cmd);
     if (!r.ok) return r.reason === BATTLE_BUSY ? 'later' : 'refused';
+    // A live battle's record for a battle this city hosts finishes the hosted one; when it is not the same
+    // battle it takes its place, and says why (M39).
+    if (r.info?.standIn === 'replaced')
+      console.warn(`[live] ${input.id}: the room’s record took the place of the hosted battle`, r.info.why);
     if (meta.late)
       this.notice(
         `late:${id}`,

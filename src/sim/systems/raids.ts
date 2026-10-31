@@ -23,7 +23,7 @@ import {
 import { UNIT, type UnitKind } from '../../data/war';
 import { Battle } from '../battle/battle';
 import { checkBattleInput } from '../battle/check';
-import { appendOrders, stampLive, type StampedOrder } from '../battle/live';
+import { appendOrders, continuation, stampLive, type Remaining, type StampedOrder } from '../battle/live';
 import { battleLayout, objectiveSpots, strengthFactors, structureAsSeen } from '../battle/layout';
 import {
   BATTLE_V4,
@@ -520,10 +520,27 @@ export function resolveBattle(
   // (shields, the day's raids) the region room has decided already, as both cities' pages heard.
   const friend = from === undefined ? undefined : s.region.neighbours.find((n) => n.player?.slot === from);
   if (from !== undefined && !friend) return fail('That raid came from a city this one doesn’t know');
+  // The record of a battle this city is hosting finishes the hosted battle when it can (below); it
+  // brings nothing the city did not count when it began to host it.
+  const plan = standsIn ? continuation(w.battle!.input, input, w.battle!.step) : null;
+  const rest = plan && !('problem' in plan) ? plan : null;
   // A friend's battle bringing a superweapon counts only as the region counted it (M37): one it
   // didn't flag takes nothing here (a forged page could otherwise dodge the day's superweapon).
-  if (from !== undefined && !counted && battleHasSuper(input)) return fail(SUPER_UNCOUNTED);
+  const uncounted = from !== undefined && !counted && battleHasSuper(input);
+  if (uncounted && !rest) return fail(SUPER_UNCOUNTED);
   if (dryRun) return ok(0);
+  // The hosted part has taken its damage already: the battle goes on from where it stands, with the
+  // orders and helpers the record has and the city lacks, rather than being fought again over the
+  // damage (a structure wrecked in the hosted part would be wrecked twice, its repair clock begun
+  // again, and the hosted part's report lost).
+  let problem = plan && 'problem' in plan ? plan.problem : undefined;
+  if (rest) {
+    const done = finishHosted(sim, rest, replay);
+    if (typeof done !== 'string') return done;
+    // (The hosted battle could not be played again: the record takes its place, as any other would.)
+    if (uncounted) return fail(SUPER_UNCOUNTED);
+    problem = done;
+  }
   if (standsIn || aside) {
     delete w.battle;
     sim.battleRun = null;
@@ -580,18 +597,87 @@ export function resolveBattle(
   sim.battleFrame = run.frame();
   if (!live)
     sim.events.push({ kind: 'battleStarted', id: raid.id, info: { from: a.name, target: a.target } });
-  if (mode === 'instant') {
-    try {
-      while (!run.outcome) applyWarDamage(sim, w.battle.report, run.tick(), w.battle.cover);
-      w.battle.step = run.step;
-      sim.battleFrame = run.frame();
-      endHomeBattle(sim, run);
-    } catch {
-      abandonBattle(sim);
-    }
-  }
+  if (mode === 'instant') playOut(sim, run);
   sim.warChanged();
-  return ok(0, { created: [raid.id] });
+  // A record that could not finish the hosted battle took its place, and says why (the page logs it).
+  const replaced = problem === undefined ? {} : { info: { standIn: 'replaced', why: problem } };
+  return ok(0, { created: [raid.id], ...replaced });
+}
+
+/** A battle played to its end at once, its damage reaching the city as it goes. */
+function playOut(sim: Sim, run: Battle): void {
+  const hb = sim.state.war!.battle!;
+  try {
+    while (!run.outcome) applyWarDamage(sim, hb.report, run.tick(), hb.cover);
+    hb.step = run.step;
+    sim.battleFrame = run.frame();
+    endHomeBattle(sim, run);
+  } catch {
+    abandonBattle(sim);
+  }
+}
+
+/**
+ * The room's record of the live battle this city hosts, and the hosted battle can go on as it
+ * (`continuation`): the city keeps the battle, takes the orders and helpers it lacks, may run to the
+ * end, and plays it out. It ends exactly as the record does, with the damage the hosted part did
+ * already counted once and its report kept. A reason (a string) when it cannot be done.
+ */
+function finishHosted(sim: Sim, plan: Remaining, replay?: string): CommandResult | string {
+  const hb = sim.state.war!.battle!;
+  const live = hb.live!;
+  let run: Battle;
+  try {
+    run = hostedRun(sim, hb);
+  } catch {
+    // (Nothing has changed: the hosted battle's picture would not play again, as after a load.)
+    sim.battleRun = null;
+    return 'the hosted battle could not be played again';
+  }
+  hb.input.orders.push(...plan.orders);
+  if (plan.helpers.length) (hb.input.helpers ??= []).push(...plan.helpers);
+  live.allow = LIVE_ALLOW_MAX;
+  beginLive(sim, hb);
+  if (replay && !hb.report.replay) hb.report.replay = replay.slice(0, 60);
+  const id = hb.raid.id;
+  playOut(sim, run);
+  sim.warChanged();
+  return ok(0, {
+    created: [id],
+    info: { standIn: 'continued', orders: plan.orders.length, helpers: plan.helpers.length },
+  });
+}
+
+/**
+ * The run of the hosted battle at the step the city has reached: the one the sim keeps, or, after a
+ * load (or the first tick), the battle played again up to there, its damage long done.
+ */
+function hostedRun(sim: Sim, hb: HostedBattle): Battle {
+  let run = sim.battleRun;
+  if (!run || run.input !== hb.input) {
+    run = new Battle(hb.input);
+    while (run.step < hb.step && !run.outcome) run.stepOnce();
+    run.drain();
+    sim.battleRun = run;
+  }
+  return run;
+}
+
+/**
+ * The first time a live battle may run it has begun for the city: its people feel it and the notice
+ * goes out (the room's first word, or the record of a battle that never got one).
+ */
+function beginLive(sim: Sim, hb: HostedBattle): void {
+  const live = hb.live;
+  if (!live || live.begun || live.allow <= 0) return;
+  live.begun = true;
+  // A friend's raid weighs on the people as a neighbour's does (M38).
+  wearinessRaid(sim);
+  sim.events.push({
+    kind: 'battleStarted',
+    id: hb.id,
+    info: { from: hb.input.attacker.name, target: hb.input.attacker.target },
+  });
 }
 
 /**
@@ -708,16 +794,7 @@ export function battleLive(
   }
   live.seq = appendOrders(hb.input, live.seq, orders);
   if (allow > live.allow) live.allow = allow;
-  if (live.allow > 0 && !live.begun) {
-    live.begun = true;
-    // A friend's raid weighs on the people as a neighbour's does (M38).
-    wearinessRaid(sim);
-    sim.events.push({
-      kind: 'battleStarted',
-      id: hb.id,
-      info: { from: hb.input.attacker.name, target: hb.input.attacker.target },
-    });
-  }
+  beginLive(sim, hb);
   sim.warChanged();
   return ok(0);
 }
@@ -842,15 +919,9 @@ export function battleTick(sim: Sim): void {
   const w = sim.state.war;
   const hb = w?.battle;
   if (!w || !hb) return;
-  let run = sim.battleRun;
   try {
-    if (!run || run.input !== hb.input) {
-      // After a load (or the first tick): play the battle up to where it was, its damage long done.
-      run = new Battle(hb.input);
-      while (run.step < hb.step && !run.outcome) run.stepOnce();
-      run.drain();
-      sim.battleRun = run;
-    }
+    // (After a load, or the first tick, the battle is played up to where it was, its damage long done.)
+    const run = hostedRun(sim, hb);
     // A live battle (M39) plays only up to the room's frontier: where the room has not let it run, nothing
     // moves, and the picture stays as it was.
     const before = run.step;

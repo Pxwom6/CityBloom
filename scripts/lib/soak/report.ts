@@ -36,6 +36,9 @@ export interface SoakResult {
     liveTakenByDefender: number;
     reported: number;
     standIns: number;
+    /** Of those, the records that finished the hosted battle with what it lacked, and those that took its place (with why). */
+    standInsContinued: number;
+    standInsReplaced: { id: string; player: string; why: string }[];
     /** Takes and reports a restore from an older save lost, or a battle nobody finished, said in the log. */
     excused: number;
     /** Live battles whose attacker's force was called home, the region having turned its battle away (it left in the middle). */
@@ -106,6 +109,8 @@ export function result(w: Soak, final = true): SoakResult {
     },
     applications: {
       standIns: c.standIns,
+      standInsContinued: c.standInsContinued,
+      standInsReplaced: c.standInsReplaced,
       excused: c.excused.length,
       rewinds: c.rewinds,
       recalled: battles.filter((b) =>
@@ -148,7 +153,7 @@ export function lines(r: SoakResult, w: Soak): string[] {
   if (r.coverageMissing.length) out.push(`NOT COVERED: ${r.coverageMissing.join('; ')}`);
   const b = r.battles;
   out.push(
-    `live battles: ${b.live} (${b.agreed} agreed, ${b.explained} explained, ${b.failed} failed, ${b.unfinished} not judged); taken once by their defenders ${r.applications.liveTakenByDefender}, reported by their attackers ${r.applications.reported} (${r.applications.recalled} called home instead); ${r.applications.standIns} records stood in for a battle the city was hosting (${r.applications.standInDamaged} buildings or structures taken twice); ${r.applications.rewinds} applications made again after a restore from an older save; ${r.applications.excused} excused`,
+    `live battles: ${b.live} (${b.agreed} agreed, ${b.explained} explained, ${b.failed} failed, ${b.unfinished} not judged); taken once by their defenders ${r.applications.liveTakenByDefender}, reported by their attackers ${r.applications.reported} (${r.applications.recalled} called home instead); ${r.applications.standIns} records stood in for a battle the city was hosting (${r.applications.standInsContinued} finished the hosted battle, ${r.applications.standInsReplaced.length} took its place${r.applications.standInsReplaced.length ? `: ${r.applications.standInsReplaced.map((x) => `${x.id} ${x.player}: ${x.why}`).join('; ')}` : ''}; ${r.applications.standInDamaged} buildings or structures taken twice); ${r.applications.rewinds} applications made again after a restore from an older save; ${r.applications.excused} excused`,
   );
   for (const x of b.list)
     out.push(

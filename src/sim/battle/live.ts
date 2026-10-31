@@ -150,3 +150,78 @@ export function recordInput(input: BattleInput, orders: readonly StampedOrder[])
   appendOrders(out, 0, orders);
   return stampLive(out);
 }
+
+/**
+ * A value as a string that two equal values share whatever order their keys came in (a key with no
+ * value is none): what two copies of one battle's picture are compared by. Plain JSON for a list of
+ * numbers, which a picture is mostly made of.
+ */
+function canon(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) {
+    if (v.length && typeof v[0] === 'number' && v.every((x) => typeof x === 'number'))
+      return JSON.stringify(v);
+    return `[${v.map(canon).join(',')}]`;
+  }
+  const o = v as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const k of Object.keys(o).sort())
+    if (o[k] !== undefined) parts.push(`${JSON.stringify(k)}:${canon(o[k])}`);
+  return `{${parts.join(',')}}`;
+}
+
+/** The battle without the parts that grow while it is fought (its orders and helpers) and the sides' names (only shown). */
+function without(i: BattleInput): string {
+  const { orders: _o, helpers: _h, ...rest } = i;
+  return canon({
+    ...rest,
+    attacker: { ...rest.attacker, name: '' },
+    defender: { ...rest.defender, name: '' },
+  });
+}
+
+/** What a hosted live battle lacks of the room's record of the same battle, or why it cannot be finished with it. */
+export interface Remaining {
+  orders: BattleOrder[];
+  helpers: BattleHelper[];
+}
+export type Continuation = Remaining | { problem: string };
+
+/**
+ * Can the live battle a city hosts, now at `step`, go on to the end as the room's record of it
+ * (M39)? The record is the same battle with the orders and helpers the room stamped in all; the
+ * hosted battle has the first of them (those its page took before it was lost), so it needs only the
+ * rest, and fought on with them it ends exactly as the record does, provided
+ *  - the two are one battle apart from their orders, helpers and the names shown (the picture, the
+ *    force, the seed, the caps),
+ *  - what the city took are the first orders and the first helpers of the record, each as it was, and
+ *  - what it lacks is stamped at a step the battle has not played (an order at `step` is still to be
+ *    applied; one before it is not, nor a helper joining before it). A page stalls at the frontier it
+ *    last heard of and the room stamps at its frontier or beyond, so that is so for a page that was lost.
+ * Otherwise the problem says what differs, and the record cannot finish the hosted battle.
+ */
+export function continuation(hosted: BattleInput, record: BattleInput, step: number): Continuation {
+  if (without(hosted) !== without(record))
+    return { problem: 'it is not the battle the city hosts (its picture, force or seed differ)' };
+  const mine = hosted.orders;
+  const all = record.orders;
+  if (all.length < mine.length || mine.some((o, k) => canon(o) !== canon(all[k])))
+    return { problem: 'the orders the city took are not the first of the record’s' };
+  const myHelpers = hosted.helpers ?? [];
+  const allHelpers = record.helpers ?? [];
+  if (allHelpers.length < myHelpers.length || myHelpers.some((h, k) => canon(h) !== canon(allHelpers[k])))
+    return { problem: 'the helpers the city took are not the first of the record’s' };
+  const orders = all.slice(mine.length);
+  const helpers = allHelpers.slice(myHelpers.length);
+  const gone = orders.find((o) => o.step < step);
+  if (gone)
+    return {
+      problem: `an order the city lacks was stamped at step ${gone.step}, which the battle has passed (it stands at ${step})`,
+    };
+  const late = helpers.find((h) => (h.at ?? 0) < step);
+  if (late)
+    return {
+      problem: `a helper the city lacks joins at step ${late.at ?? 0}, which the battle has passed (it stands at ${step})`,
+    };
+  return { orders: structuredClone(orders), helpers: structuredClone(helpers) };
+}

@@ -1154,16 +1154,37 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   `npx tsx scripts/dev/regionsoak.ts 120 --virtual --crash --seed s6` on the client before the fix (`d5cd6cc`)
   with this judge fails `exp-995ec388-821` (Ada, away when the room ended it solo, ran out alone to step 509;
   the room's verdict and Sam's run are step 441); with the fix both pages end at 441 and the run has no failures.
-  Open, found by the same virtual soaks and **older than the late-return fix** (the commit before it fails the
-  same way at the same minute with seed `m39final`, battle 810): a record that stands in for a hosted battle
-  (`resolveBattle`, `instant`, `standsIn`) re-runs the whole battle on a city whose hosted part has already
-  applied damage, so a civic structure the hosted part wrecked is wrecked again (`damageCivic` keeps the larger
-  repair clock, so the repair hours start over), and the report the battle ends with is the record's alone (the
-  hosted part's is dropped with it). Not a double loss of buildings or units (those are gone from the city, so
-  the record takes them as strangers). It shows when the hosted part had progressed before the page was lost: a bad moment
-  late in the battle (seed `m39final`, battle 810, minute 5) or a restore from an autosave made mid-battle (battle
-  2418, minute 101). The soak's `damage-doubled` check catches it; earlier runs passed because their hosted parts had
-  not yet wrecked anything. The way out is the sim's: a stand-in takes the hosted part's wrecked and damaged
-  structures as strangers (`adoptBattle`) and carries the hosted report's collapsed, civic, burning, lost, homeless
-  and worth entries into the report it ends with; or the page, which still has its session, gives the hosted
-  part the record's orders (`battleLive`) and lets it finish instead of replacing it. Left for a decision.
+  **Fixed: a record of a live battle the city still hosts finishes the hosted battle instead of re-running it**
+  (found by the same virtual soaks, older than the late-return fix: the commit before it failed the same way at
+  the same minute with seed `m39final`, battle 810, and a restore from an autosave made mid-battle did it at
+  battle 2418). `resolveBattle`'s stand-in (`instant`, from a friend, the record's id the one the city hosts) used
+  to replace the hosted battle and fight the whole record over a city that had taken the hosted part's damage: a
+  civic structure wrecked in the hosted part was wrecked again (`damageCivic` kept the larger repair clock, so its
+  repair hours began again and it was announced twice), and the hosted part's report (its losses, worth, collapsed
+  and burning lists) was dropped with it. The hosted battle and the record are the same battle: the record's input
+  is the hosted one apart from the orders and helpers, of which the hosted battle has the first (a page takes the
+  room's log in `seq` order and filters it the same way everywhere). So the city keeps the battle it has
+  (`continuation` in `src/sim/battle/live.ts`, `finishHosted` in `raids.ts`): it takes the orders and helpers it
+  lacks from the record, raises its allow to the end, and plays it out at once; it ends exactly as the record does
+  and as a city that hosted it all would, with its own report. Why this is sound: a page stalls at the last
+  frontier it heard of, the room stamps every order at its frontier or beyond, and the Battle applies an order when
+  its step is reached, so what the city lacks lies at steps it has not played. The sim checks rather than trusts:
+  it compares the two inputs (canonically, so key order cannot matter; the sides' shown names are left out, since
+  `Game.takeBattle` puts the region's name for the sender in), that the city's orders and helpers are a prefix of
+  the record's, each as it was, and that each one it lacks lies at a step the battle has not passed (an order at
+  the step the battle stands at is still to be applied). If any of that fails (a different picture, force, seed or
+  caps, orders that are not a prefix, an order or helper at a step already played, a hosted battle that will not
+  play again) it falls back to the old stand-in, which is no worse than before: the command's result carries
+  `info: { standIn: 'continued' | 'replaced', why? }`, the pages log a replacement with its reason
+  (`LiveBattles.takeRecord`, `Game.takeBattle`), and the soak counts both kinds and lists each fallback with its
+  reason. The command needs no seq, so no page-side change was needed beyond that log: the filtered orders are
+  compared as lists, and the battle ends in the same command, so the hosted `live.seq` is not read again. Two
+  consequences: a stand-in that continues counts the people's weariness once (the old path counted it twice) and
+  the battle's end event carries `live` as any hosted battle's does; a superweapon battle's record (no `super`
+  flag from `takeRecord`) can now continue the hosted battle, which the room counted when it began, instead of being
+  refused and left to run out alone (by reading the code; no test brings a superweapon to it). The soak's `damage-doubled` check stays for the fallback and, for a
+  continuation, asks that no structure the hosted part wrecked has its repair clock raised
+  (`Before.hosted.clocks`). Tests: `tests/war/liveStandIn.test.ts` (the sim that hosted it, the same city saved and
+  loaded, a crash restored from an older autosave, help joining in the missing part, five fallbacks, no hosted
+  battle); the first three fail on the old code (repair clock 93 against 88, the wreck announced twice, the
+  report's worth 0 against 18000, a lost tank dropped, the battle taken twice) and pass now.

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { BattleMapPoints } from '../src/client/testApi';
 import { openGame, watchErrors } from './helpers';
 import { settings } from './ui';
 import { armTown, servedTown } from './war';
@@ -23,7 +24,37 @@ async function warTown(page: Page): Promise<void> {
 }
 
 const map = (page: Page) => page.evaluate(() => window.__game!.battleMap());
-const points = async (page: Page) => (await page.evaluate(() => window.__game!.battleMapPoints()))!;
+
+/**
+ * The map's points as they are once `ready` holds. The picture is laid out (its size measured, the battle's
+ * layout drawn) a moment after the panel opens or the battle's first frames arrive, and a point is "visible"
+ * only inside a measured picture: points read before that hold no building to click, so every read that
+ * feeds a click or a count waits for what it needs rather than hoping it is there.
+ */
+async function pointsWhen(
+  page: Page,
+  what: string,
+  ready: (p: BattleMapPoints) => boolean,
+): Promise<BattleMapPoints> {
+  let last: BattleMapPoints | null = null;
+  await expect
+    .poll(
+      async () => {
+        last = await page.evaluate(() => window.__game!.battleMapPoints());
+        return last !== null && ready(last);
+      },
+      { message: `the map shows ${what}`, timeout: 60_000, intervals: [250] },
+    )
+    .toBe(true);
+  return last!;
+}
+
+/** A building that still stands and is on the picture (the battle's target if it has one on show). */
+const standing = (p: BattleMapPoints) => p.structs.some((s) => s.visible && s.state !== 2);
+/** The same, picked: an objective first. */
+const pickStanding = (p: BattleMapPoints) =>
+  p.structs.find((s) => s.objective && s.visible && s.state !== 2) ??
+  p.structs.find((s) => s.visible && s.state !== 2)!;
 
 async function stage(
   page: Page,
@@ -123,7 +154,11 @@ test('M39: commanding a live battle on the map: choose, focus, hold and free, th
   await expect(page.getByTestId('map-order-hold')).toBeEnabled();
   await page.getByTestId('map-select-none').click();
   expect((await map(page)).selected).toEqual([]);
-  let pts = await points(page);
+  let pts = await pointsWhen(
+    page,
+    'units of its own and a building',
+    (p) => p.own.some((u) => u.visible) && standing(p),
+  );
   const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
   const alone = pts.own.filter((u) => u.visible && pts.own.every((o) => o.id === u.id || near(o, u) > 3));
   expect(alone.length).toBeGreaterThan(1);
@@ -163,10 +198,8 @@ test('M39: commanding a live battle on the map: choose, focus, hold and free, th
   expect(await map(page)).toMatchObject({ armed: null });
   expect((await map(page)).selected.length).toBeGreaterThan(0);
   await page.getByTestId('map-order-focus').click();
-  pts = await points(page);
-  const goal =
-    pts.structs.find((s) => s.objective && s.visible && s.state !== 2) ??
-    pts.structs.find((s) => s.visible && s.state !== 2)!;
+  pts = await pointsWhen(page, 'a building that still stands', standing);
+  const goal = pickStanding(pts);
   await page.mouse.click(goal.x, goal.y);
   const focus = await stamped(page, 'focus');
   expect(focus.units).toBe('all');
@@ -243,15 +276,15 @@ test('M39: as the defender the city’s own sim hosts the battle; a friend’s b
   expect(hosted).not.toBeNull();
   expect(Math.abs(hosted!.step - (await map(page)).step)).toBeLessThan(40);
   // The defenders are still mobilising at their bases: they are on the map, and can be ordered.
-  let pts = await points(page);
-  expect(pts.own.length).toBeGreaterThan(0);
+  let pts = await pointsWhen(page, 'the defenders', (p) => p.own.length > 0);
   await page.getByTestId('map-select-all').click();
   expect((await map(page)).selected.length).toBe(pts.own.length);
   // Guard a building: the click on it is the order.
   await page.getByTestId('map-order-guard').click();
   expect((await map(page)).armed).toBe('guard');
-  const hq =
-    pts.structs.find((s) => s.objective && s.visible && s.state !== 2) ?? pts.structs.find((s) => s.visible)!;
+  // (Read now, not before: the picture may have been laid out since, and the choice is of what stands.)
+  pts = await pointsWhen(page, 'a building that still stands', standing);
+  const hq = pickStanding(pts);
   await page.mouse.click(hq.x, hq.y);
   const guard = await stamped(page, 'guard');
   expect(guard.units).toBe('all');
@@ -261,11 +294,10 @@ test('M39: as the defender the city’s own sim hosts the battle; a friend’s b
   await expect(page.getByTestId('map-hint')).toContainText('click an attacker');
   await page.mouse.click(hq.x, hq.y);
   expect((await map(page)).note).toBe('Click an attacker');
-  pts = await points(page);
-  const raider = pts.enemy.find((u) => u.visible);
-  expect(raider, 'an attacker on the map').toBeDefined();
-  await page.mouse.click(raider!.x, raider!.y);
-  expect(await stamped(page, 'focus')).toMatchObject({ target: raider!.id });
+  pts = await pointsWhen(page, 'an attacker', (p) => p.enemy.some((u) => u.visible));
+  const raider = pts.enemy.find((u) => u.visible)!;
+  await page.mouse.click(raider.x, raider.y);
+  expect(await stamped(page, 'focus')).toMatchObject({ target: raider.id });
   // The other player gives up: the battle ends, in the city's report.
   await page.evaluate(() => {
     const g = window.__game!;
@@ -296,8 +328,7 @@ test('M39: as the defender the city’s own sim hosts the battle; a friend’s b
   await reach(page, 198);
   expect(await map(page)).toMatchObject({ role: 'watcher', side: null, selected: [] });
   // The players' orders show in the watcher's battle.
-  pts = await points(page);
-  expect(pts.own.length + pts.enemy.length).toBeGreaterThan(0);
+  await pointsWhen(page, 'units of the two sides', (p) => p.own.length + p.enemy.length > 0);
   expect(await page.evaluate(() => window.__game!.liveSay(0, { kind: 'hold' }))).toBe(true);
   await expect(page.getByTestId('map-detail')).toContainText('1 order');
   await page.evaluate(() => {
@@ -342,7 +373,11 @@ test.describe('on a phone', () => {
     // Taps choose: All, then a unit toggles off; None; two taps choose two.
     await page.getByTestId('map-select-all').tap();
     expect((await map(page)).selected.length).toBe(m0.units.own);
-    let pts = await points(page);
+    let pts = await pointsWhen(
+      page,
+      'units of its own and a building',
+      (p) => p.own.some((u) => u.visible) && standing(p),
+    );
     const lone = pts.own.filter(
       (u) => u.visible && pts.own.every((o) => o.id === u.id || Math.hypot(o.x - u.x, o.y - u.y) > 3),
     );
@@ -360,10 +395,8 @@ test.describe('on a phone', () => {
     await page.getByTestId('map-select-all').tap();
     await page.getByTestId('map-order-focus').tap();
     expect((await map(page)).armed).toBe('focus');
-    pts = await points(page);
-    const goal =
-      pts.structs.find((s) => s.objective && s.visible && s.state !== 2) ??
-      pts.structs.find((s) => s.visible && s.state !== 2)!;
+    pts = await pointsWhen(page, 'a building that still stands', standing);
+    const goal = pickStanding(pts);
     await page.touchscreen.tap(goal.x, goal.y);
     // The finger lands on whichever standing building is nearest (guns first, where marks overlap).
     expect(standingNear(pts, goal, 14)).toContain((await stamped(page, 'focus')).target);

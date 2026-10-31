@@ -772,7 +772,17 @@ export class FriendsWar {
     id: string,
     how: { live?: true; agree?: boolean; abandoned?: true } = {},
   ): void {
-    if (this.findBattle(from, id)) return;
+    const had = this.findBattle(from, id);
+    if (had) {
+      // The defender's result can reach the room before the battle's end does (the defender's sim is
+      // first to finish): its line was written without the live mark, which it gains now.
+      if (how.live && had.battle && !had.battle.live) {
+        had.battle.live = true;
+        this.tellAll({ t: 'history', event: had });
+        this.lazy();
+      }
+      return;
+    }
     const A = this.name(from);
     const B = this.name(to);
     const text = how.live

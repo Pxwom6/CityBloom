@@ -39,7 +39,13 @@ export async function friendsPage(o: Parameters<typeof openPage>[0], clock: Cloc
     now: clock.now,
     changed: () => undefined,
   });
-  const page = await openPage({ ...o, beforeStart: (link) => fw.attach(link) });
+  const page = await openPage({
+    ...o,
+    beforeStart: (link) => {
+      fw.attach(link);
+      o.beforeStart?.(link);
+    },
+  });
   const p = page as FwPage;
   p.notices = notices;
   p.fw = fw;

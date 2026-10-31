@@ -166,7 +166,10 @@ export class RegionReplays implements ReplaySink {
    * kept in this browser. Resolves with the id the viewer opens (`?battle=`), or why it can't be.
    * The kept list loses the battle when the region says it doesn't keep it.
    */
-  async prepare(ref: ReplayRef): Promise<{ ok: true; id: string } | { ok: false; why: string }> {
+  async prepare(
+    ref: ReplayRef,
+    timeoutMs: number = FETCH_MS,
+  ): Promise<{ ok: true; id: string } | { ok: false; why: string }> {
     const key = replayKey(ref.from, ref.id);
     const say = (s: ReplayStatus | null) => {
       if (s) this.status.set(key, s);
@@ -181,7 +184,7 @@ export class RegionReplays implements ReplaySink {
     say({ state: 'fetching', what: 'Asking the region for the battle' });
     let record: LiveRecord;
     try {
-      record = await this.fetch(ref.from, ref.id);
+      record = await this.fetch(ref.from, ref.id, timeoutMs);
     } catch (err) {
       if (this.link?.state === 'in') this.kept = this.kept.filter((r) => replayKey(r.from, r.id) !== key);
       return fail(err instanceof Error ? err.message : String(err));

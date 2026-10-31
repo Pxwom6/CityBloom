@@ -84,8 +84,9 @@ const rowIds = (page) =>
     [...document.querySelectorAll('[data-testid^="rh-row-"]')].map((e) => e.getAttribute('data-testid')),
   );
 
+let fay;
 try {
-  const fay = await player('Fay', 3, '&seed=regionfay&preset=river&name=Faytown');
+  fay = await player('Fay', 3, '&seed=regionfay&preset=river&name=Faytown');
   // Fay joins the region by its code.
   await fay.keyboard.press('Shift+N');
   await fay.getByTestId('region-code').fill(CODE);
@@ -94,7 +95,7 @@ try {
   await fay.waitForFunction(() => window.__game.getRegion()?.rules.war === true, null, { timeout: 60000 });
   await fay.keyboard.press('Shift+N');
   await fay.waitForFunction(() => window.__game.getRegionHistory().rows.length >= 15, null, {
-    timeout: 30000,
+    timeout: 240000,
   });
   const h0 = await known(fay);
   log('Fay knows', h0.state, h0.rows.length, 'events;', h0.kept.length, 'replay(s)');
@@ -150,13 +151,14 @@ try {
   if (only.has('viewer')) {
     await panelShot(fay, 'history-8-before-watch');
     await fay.getByTestId(`rh-watch-${battle.id}`).click();
-    await fay.getByTestId('viewer-bar').waitFor({ timeout: 180000 });
+    await fay.getByTestId('viewer-bar').waitFor({ timeout: 480000 });
     await ready(fay);
     log('in the viewer; check', JSON.stringify((await known(fay)).check));
     await shot(fay, 'viewer-1-start');
-    await fay.evaluate(() => window.__game.setSpeed(3));
-    await new Promise((r) => setTimeout(r, 6000));
+    // The battle in the town while it is fought (the viewer follows it a moment after it starts), then faster.
+    await new Promise((r) => setTimeout(r, 4000));
     await shot(fay, 'viewer-2-battle');
+    await fay.evaluate(() => window.__game.setSpeed(3));
     await fay.waitForFunction(() => window.__game.getRegionHistory().check !== null, null, {
       timeout: 240000,
     });
@@ -180,6 +182,8 @@ try {
   log('page errors', errors.length ? errors.slice(0, 10) : 'none');
 } catch (e) {
   console.error(e);
+  console.error('page errors', errors.slice(0, 10));
+  await fay?.screenshot({ path: `${out}/failed.png`, timeout: 60000 }).catch(() => undefined);
   code = 1;
 } finally {
   await browser.close();

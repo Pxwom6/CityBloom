@@ -1192,3 +1192,79 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   battle); the cases that compare the city with one that hosted it whole fail on the old code (repair clock 93
   against 88, the wreck announced twice, the report's worth 0 against 18000, a lost tank dropped, the battle taken
   twice) and pass now.
+
+### M40 The final race: the atom bomb
+Plan `docs/plans/M40-design.md` (calls 1–20), code map `docs/plans/M40-codemap.md`. The plan came from three designs made
+apart (reuse first, the player first, risk and tests first), judged by two readers against the brief and the code, and merged;
+these are its calls and the reasons, with where they overturned the first draft.
+
+- **The bomb is its own state (`WarState.atom`), not a unit and not a battle.** `UnitKind` is a closed union read by every
+  loop over `UNIT_DEFS`, training, staffing and `baseRemoved`, and a bomb fits none of it (one a city, never in a force, never
+  fights); as a battle it would have to stamp a new version and could move the battle goldens. Own state keeps both untouched;
+  the materials code is shared (`materialBill`). One bomb a city, ever: the brief's "only one can be built per city", and the
+  last prize of the game should stay rare.
+- **"Every branch maxed, all six superweapons included" means all 24 tiers researched**, the six superweapons' tier 4s among
+  them, not the six built: M37 kept tier-4 research open with superweapons off for this reason, and a city in a region that
+  turned superweapons off could otherwise never race. The test is `TIER_KEYS.every(researched)`, never `tierCounts` (the
+  `research` cheat skips prerequisites). The gate is hard (`civicLock`, so sandbox cannot skip it); the Toolbar's tooltip reads
+  the same function through two new requirement kinds.
+- **The region's rule `bomb` stands only with total war and superweapons allowed.** The dome is the one counter the brief
+  gives; a bomb in a region where nobody may build a dome would be a weapon with no answer. Stored only when true (as
+  `supers`), ticked by default when the host chooses total war, so "the region's rules can turn it off entirely" holds and old
+  regions read off. A city of its own with rivals allows it.
+- **The enrichment plant and the silo are war projects with prices in millions and no refund.** Projects already take money by
+  stages, wait for a short treasury and (as war projects) for the war clock; a 25 % bulldozing refund of millions would make a
+  bank of the race, so `CivicDef.refundShare` is 0 for both. The plant shows on every region map the day it is placed (the
+  brief: "the moment it's built").
+- **Prices: about $20M from the first stone, $10.9M of it the silo and bomb**, about three years of a 57,000-resident careful
+  city's taxes for the silo and bomb, five and a half for the whole race (the brief: "several years of a big city's entire
+  income"). The bomb is paid in twelve instalments from the war stores first (mines and wells cut the bill) so the treasury
+  need not hold the sum at once. Times: about 5¼ hours of play at 1× on the critical path after the research (about 6 more).
+  Step 0's `atomprice.ts` checks the prices against the bench city's taxes.
+- **The flight is the target's own clock (24 game hours, 3 minutes at 1×), and the warning drops the game to 1× once without
+  locking it** (the merged plan locked it at 1× and lifted a pause; overturned). A live battle locks the speed because a paused
+  player holds up another; a bomb's countdown is the target's alone, so a pause only holds it, and the sim runs only while a
+  page does, so nobody comes back to a flattened city.
+- **A charged dome stops one bomb whole, then is down for `DOME.bombRecharge` (1,440 h) in a field of its own** (`dome.down`;
+  `checkDossier` refuses a negative `hours`). Whole, not a yield against the battle pool: the brief says "stops one bomb".
+- **The impact is not a meteor.** Meteors raise ambulances and a casualty per home, sit in the disasters' advisors and the
+  chronicle as a disaster, and count against `maxActive`. The bomb reuses what `applyWarDamage` already reuses (`toRubble`,
+  `ignite`, `damageCivic`) in its own module, levelled in hourly slices of at most 400 buildings for the tick budget. Ground zero
+  is the densest district, chosen by the target's own sim. Residents of levelled homes are counted as having left; no one is
+  hurt and nothing says so.
+- **Fallout is two layers** (merged plan; a single drifting raster was the first draft): the air pollution's semi-Lagrangian
+  shift moves a whole field a fixed distance each update, which empties the map in two to four game years while the brief wants
+  decades; so a ground layer stays and decays (half-life 8 game years: the core reopens after about 18 years, 11 hours of play
+  at 1×) and an air layer drifts with the city's wind, leaking off the edges into neighbours.
+- **Fallout and winter cross cities as cumulative counters and ids, never as events.** A friend's report carries its plume's
+  totals by neighbour and the receiver deposits only the difference from what it last saw; winters are ids the room appends
+  and each page applies once. Both survive drops, reloads and replays without double counting, and a newcomer, or a friend
+  away for the whole drift, is spared rather than hit by a backlog.
+- **The nuclear winter changes values, never draws** on `sim.rng.weather` (which `riverFlood` shares), so every other weather
+  roll and every flood stays where it was.
+- **The firing city's reputation is pinned at 0 for good, with one accessor**; every computer neighbour sanctions it under a
+  new cause that never lifts and needs no ties; its pacts end (no breach penalty: the city broke nothing); computer neighbours
+  and the room's friends may declare total war on it with no cooldown and no newcomer shield; a protest acts through both the
+  city's approval and each home's happiness, so people really leave. The chronicle never evicts an atom event and the region
+  keeps the launches outside its 100-event ring (`RegionMeta.atoms`).
+- **The deterrent asks, never refuses.** Computer neighbours declare plain war instead of total war on a city holding a bomb; a
+  friend is warned in plain words before declaring total war on one. Refusing a friend's declaration would make the bomb a
+  shield against all war, which the brief does not ask.
+- **The race rides the region report** (an optional field the room diffs into notices and history lines), so no new message is
+  needed for it; the strike on a friend rides the blackout tower's `op` path (`op: 'atom'`), which already keeps a verdict, waits
+  for an online target and is applied once by the target's page, and the target's own sim decides the dome and the damage. The
+  room also holds its own 20 real minutes of preparation before it keeps a strike, so a page cannot skip the wait by its report.
+  Protocol 7 (pages on 5 and 6 can neither race nor be struck, and are told why); co-op rooms need the same version, as every
+  sim change since M34.
+- **In a shared co-op city only the host may launch**, by one line in `roomRefusal`, rather than a fourth role: a launch
+  cannot be undone and changes every player's city for years.
+- **Computer neighbours race on Hard only, after 20 game years, on their own dice** (`${seed}:bomb:${month}`), so Easy and
+  Normal stay M37's war to the bit and the 20-year balance runs do not move at any level; one launches only in a total war it
+  is losing badly, and a spy or a won expedition delays it.
+- **Left out:** a second bomb; anti-missile defences other than the dome; aiming ground zero by hand; a treaty that calls a
+  flight back; replaying a strike in a neighbour's cached town.
+- **The v31 fixture** (`tests/fixtures/war/v31-war.citybloom`, with what it plays on to in two months,
+  `v31-war.json`) was saved at the M39 tip before any M40 change: a war city with research done and
+  queued, a war ended by a treaty paying tribute, a neighbour's ally still at war with it (so a stake
+  there is refused, and none is held), war weariness and a sanction. M40's save test loads it and asks
+  that it plays on to the same parts.

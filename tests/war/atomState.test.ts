@@ -162,7 +162,7 @@ describe('M40: the stage of the race', () => {
     delete a.bomb;
     a.have = true;
     expect(stage()).toBe('ready');
-    a.prep = { done: 10 };
+    a.prep = { done: 10, to: 3 };
     expect(stage()).toBe('preparing');
     delete a.have;
     delete a.prep;
@@ -190,6 +190,11 @@ describe('M40: the stage of the race', () => {
       nuclear: true,
       plant: false,
       fuel: 0,
+      fuelWait: null,
+      bomb: null,
+      have: false,
+      launch: null,
+      fired: null,
     });
     const plant = place('enrichment');
     ok(sim, { type: 'cheat', cheat: 'finishStages', civic: plant });

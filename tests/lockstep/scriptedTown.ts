@@ -17,10 +17,24 @@ export type Issue = (cmd: Command) => CommandResult;
 export const TOWN_OPTIONS = { seed: 'lockstep', preset: 'river' as const, cityName: 'Stepford' };
 
 /**
- * Every command kind, from the compiler-checked list beside `Command` (the cross-browser test checks
- * the script used each one, so a new kind fails it until the script issues it).
+ * Kinds the script does not issue yet, waiting for the section that will (M40: the atom bomb's four
+ * commands need a war town with all 24 tiers researched, a plant and a silo, which step 8's `atom`
+ * section builds). Step 8 empties this list; `determinism.test.ts` fails if a kind is listed here
+ * and the script already uses it, so the list cannot be forgotten.
  */
-export const ALL_KINDS: readonly CommandType[] = COMMAND_TYPES;
+export const PENDING_KINDS: readonly CommandType[] = [
+  'buildBomb',
+  'cancelBomb',
+  'launchBomb',
+  'cancelLaunch',
+];
+
+/**
+ * Every command kind the script must issue: the compiler-checked list beside `Command` less the
+ * pending ones (the cross-browser test checks the script used each one, so a new kind fails it until
+ * the script issues it, or is listed as pending above).
+ */
+export const ALL_KINDS: readonly CommandType[] = COMMAND_TYPES.filter((k) => !PENDING_KINDS.includes(k));
 
 /**
  * `shared`: as in a room, where cheats are refused; the town is then a sandbox (money and unlocks

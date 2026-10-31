@@ -18,6 +18,7 @@ import type { BattleInput, ForceIn } from './battle/types';
 import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
 import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
+import type { AtomStage } from '../data/atom';
 import type { UnitKind } from '../data/war';
 import type { DeclaredScale, Term } from '../data/diplomacy';
 import type { FriendPactsIn, FriendTreatyIn, FriendWarFacts } from './systems/friendsWar';
@@ -99,6 +100,13 @@ export type Command =
   | { type: 'cheat'; cheat: 'rivalTech'; neighbour: number; tech: number }
   /** Test mode (M38): a computer neighbour makes the city an offer of this kind now. */
   | { type: 'cheat'; cheat: 'offer'; neighbour: number; offer: 'arms' | 'invest' | 'loan' }
+  /**
+   * Test mode (M40): the race for the atom bomb standing at a stage, its waits skipped. Sets every
+   * research tier done (from the plant stage on), finishes the plant and silo the stage needs
+   * (placed already), and sets the facts: fuel, the bomb's build, `have`, a launch half prepared at
+   * `to` (default: the first computer neighbour), `fired`. `none` forgets the race.
+   */
+  | { type: 'cheat'; cheat: 'atom'; stage: AtomStage; to?: number }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
@@ -295,7 +303,15 @@ export type Command =
   | { type: 'sellUnit'; unit: number; neighbour: number }
   | { type: 'setSanction'; neighbour: number; on: boolean }
   /** Answer a computer neighbour's offer (M38): take it up (`accept`) or turn it down. */
-  | { type: 'answerOffer'; offer: number; accept: boolean };
+  | { type: 'answerOffer'; offer: number; accept: boolean }
+  /**
+   * The atom bomb (M40): start building it (the first of twelve instalments is paid), stop building
+   * it, prepare a launch at a neighbour in a total war, or call the launch off (half the price back).
+   */
+  | { type: 'buildBomb' }
+  | { type: 'cancelBomb' }
+  | { type: 'launchBomb'; to: number }
+  | { type: 'cancelLaunch' };
 
 export type CommandType = Command['type'];
 
@@ -386,6 +402,10 @@ const COMMAND_KINDS = {
   sellUnit: true,
   setSanction: true,
   answerOffer: true,
+  buildBomb: true,
+  cancelBomb: true,
+  launchBomb: true,
+  cancelLaunch: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

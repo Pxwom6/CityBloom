@@ -280,6 +280,7 @@ import {
   warEconomyMonth,
 } from './systems/warEconomy';
 import { answerOffer, offerCheat } from './systems/offers';
+import { atomCheat, atomCivicRemoved, buildBomb, cancelBomb, cancelLaunch, launchBomb } from './systems/atom';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -388,6 +389,12 @@ export type SimEvent = {
     | 'expeditionReport'
     // M39 step 6: a force that went to help a friend's live battle is over with it.
     | 'helpReport'
+    // The atom bomb (M40): fuel made, an instalment waiting, the bomb done, fired or lost with its plant or silo.
+    | 'fuelFull'
+    | 'bombWaiting'
+    | 'bombReady'
+    | 'bombFired'
+    | 'atomLost'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -1124,6 +1131,8 @@ export class Sim {
     for (const v of [...this.state.vehicles.values()]) if (v.home === id) this.state.vehicles.delete(v.id);
     // A military base's units are stood down with it (M34).
     baseRemoved(this, id);
+    // The atom bomb's plant halves its fuel, its silo loses the bomb (M40).
+    atomCivicRemoved(this, c);
     this.state.civics.delete(id);
     this.coverageCache = null;
     this.transitChanged();
@@ -1383,6 +1392,10 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'atom') {
+          if (!this.testMode) return fail('Test mode only');
+          return atomCheat(this, cmd.stage, cmd.to, dryRun);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -1601,6 +1614,14 @@ export class Sim {
         return setSanction(this, cmd.neighbour, cmd.on, dryRun);
       case 'answerOffer':
         return answerOffer(this, cmd.offer, cmd.accept, dryRun);
+      case 'buildBomb':
+        return buildBomb(this, dryRun);
+      case 'cancelBomb':
+        return cancelBomb(this, dryRun);
+      case 'launchBomb':
+        return launchBomb(this, cmd.to, dryRun);
+      case 'cancelLaunch':
+        return cancelLaunch(this, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':

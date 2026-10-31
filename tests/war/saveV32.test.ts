@@ -157,8 +157,8 @@ describe('M40: the race in the saved state', () => {
       (a) => (a.bomb = { done: Number.POSITIVE_INFINITY, paid: 0 }),
       (a) => (a.bomb = { done: 1, paid: 99 }),
       (a) => (a.have = true),
-      (a) => (a.prep = { done: 1 }),
-      (a) => ((a.bomb = undefined), (a.prep = { done: 1 })),
+      (a) => (a.prep = { done: 1, to: 3 }),
+      (a) => ((a.bomb = undefined), (a.prep = { done: 1, to: 3 })),
       (a) => (a.fired = { tick: 1, to: 2, name: 'Gravelford' }),
       (a) => ((a.bomb = undefined), (a.have = true), (a.fired = { tick: 1, to: 2, name: 'Gravelford' })),
       (a) => ((a.bomb = undefined), (a.fired = { tick: 1, to: Number.NaN, name: 'Gravelford' })),
@@ -180,7 +180,7 @@ describe('M40: the race in the saved state', () => {
     delete a.bomb;
     a.have = true;
     checkInvariants(sim);
-    a.prep = { done: 100 };
+    a.prep = { done: 100, to: 3 };
     checkInvariants(sim);
     delete a.have;
     delete a.prep;
@@ -248,7 +248,7 @@ describe('M40: a save at each state of the race so far', () => {
     delete a.bomb;
     a.have = true;
     roundTrip('ready', 'ready');
-    a.prep = { done: 100 };
+    a.prep = { done: 100, to: 3 };
     roundTrip('preparing', 'preparing');
 
     // In flight: fired just now at a neighbour, with the landing fixed; then the landing in hand.

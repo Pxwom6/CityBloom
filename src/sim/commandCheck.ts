@@ -462,6 +462,11 @@ const CHECKS: Record<CommandType, Check> = {
     isInt(c.neighbour) && isBool(c.on) ? { type: 'setSanction', neighbour: c.neighbour, on: c.on } : BAD,
   answerOffer: (c) =>
     isInt(c.offer) && isBool(c.accept) ? { type: 'answerOffer', offer: c.offer, accept: c.accept } : BAD,
+  // The atom bomb (M40).
+  buildBomb: () => ({ type: 'buildBomb' }),
+  cancelBomb: () => ({ type: 'cancelBomb' }),
+  launchBomb: (c) => (isInt(c.to) ? { type: 'launchBomb', to: c.to } : BAD),
+  cancelLaunch: () => ({ type: 'cancelLaunch' }),
 };
 
 /**

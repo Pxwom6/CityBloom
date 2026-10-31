@@ -179,6 +179,11 @@ const SAMPLES: Record<CommandType, Command> = {
   setSanction: { type: 'setSanction', neighbour: 2, on: true },
   // M38 step 7: a neighbour's offer.
   answerOffer: { type: 'answerOffer', offer: 7, accept: true },
+  // M40 step 2: the atom bomb.
+  buildBomb: { type: 'buildBomb' },
+  cancelBomb: { type: 'cancelBomb' },
+  launchBomb: { type: 'launchBomb', to: 2 },
+  cancelLaunch: { type: 'cancelLaunch' },
 };
 
 /** Values a field might carry instead of what it should. */

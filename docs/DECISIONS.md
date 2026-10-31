@@ -1322,3 +1322,55 @@ these are its calls and the reasons, with where they overturned the first draft.
   decides who is staffed (it fails without the rank clause), and the save test round-trips every state
   the race has so far (plant going up, enriching, silo going up, bomb, ready, preparing, flying,
   mid-impact, used). The test API types the region's `bomb` rule.
+- **Step 2 (fuel, bomb, preparation): calls the plan left open.**
+  - *Fuel is charged by the unit made, not by the hour.* `$2,000 × the hour's rate` on ledger line
+    `enrichment`, so a full load is the plan's $2.304M whatever the crew or funding (a flat charge would
+    have made a half-crewed plant dearer and left the price band in `atomState.test.ts` untrue), and
+    only while it works. It also waits when the treasury can't pay the hour (sandbox excepted) or defence
+    funding is 0, and says so (`AtomSummary.fuelWait`). A plain `accrue`, no dice.
+  - *Fuel is a gate, not a fuel.* Starting the bomb needs a full load but takes none, so a cancelled
+    bomb leaves the fuel as it was, and the plant "holds fuel" (can't be bulldozed) for as long as it has
+    any, until the bomb has left; then nothing is held and both buildings may be knocked down.
+  - *Losses.* A finished plant destroyed with fuel in it halves the fuel once (an unfinished
+    replacement, or a plant that never held any, costs nothing more); a silo destroyed clears the
+    build, the bomb and the launch and keeps the fuel. Both hang on `Sim.removeCivic`, the one funnel
+    (bulldozing is refused for what holds something, so this is damage, disasters and later the blast).
+    Event `atomLost {what: 'fuel' | 'bomb'}`.
+  - *What waits and what starts over.* The silo's build and a preparation wait (hours and instalments
+    kept) for rules turned off, a blackout, no crew (a quarter) or no power (a half), as the fuel does;
+    the plant also needs the nuclear plant running. Only a silo *closed* (damage or flood) sets a
+    preparation back to nothing, a complete one too ("a prepared bomb waits as long as it likes" but
+    cannot be left damaged).
+  - *Instalments.* The bomb's hours are capped at what the instalments paid so far cover
+    (`paid × 60`), so a missed instalment stops it exactly at the boundary, however fast the silo works
+    and no hour is lost to it; the unpaid state is `bomb.waiting` (told once, event `bombWaiting`, as a
+    project's `projectWaiting`). Money on ledger line `atomBomb`, bought-in materials on `warImports`,
+    the launch on `atomLaunch` (labels added); the stores are taken first through the same
+    `materialBill`/`takeStock` as a unit's (`unitBill` is unchanged, the goldens agree).
+  - *The launch carries its target* (`prep {done, to}`, the plan had `prep {done}`): a launch is aimed.
+    Aiming needs the city neither neutral nor a vassal and the neighbour not its vassal, plus the plan's
+    open total war. At the end of the preparation the bomb leaves if the war is open then; if not (a
+    ceasefire, a surrender) it stays prepared and **does not go off by itself when the war resumes**:
+    the city sends it again with `launchBomb` (free, and it may name another neighbour in a total war).
+    For a friend's city the bomb is prepared and held: nothing fires in this step (step 9 and 10 make the
+    room's say), and sending it again is refused in words saying so.
+  - *The flight is a seam.* A bomb that leaves for a computer neighbour sets `fired` and event
+    `bombFired`, then calls `startFlight`, which is empty until step 3. The chronicle line the plan puts
+    at "bomb ready" waits for step 6 with the `'atom'` chronicle kind it needs; `bombReady` is an event
+    only for now. `first` (the achievement's fact) is set at completion in a city of its own, where no
+    computer neighbour races yet (step 7 will ask); in a region it is the room's (step 10).
+  - *Roles.* `buildBomb` and `cancelBomb` are `defence`, `cancelLaunch` is `war`; the host-only line for
+    `launchBomb` comes first in `roomRefusal`, so every guest hears it whatever roles they hold.
+  - *The test cheat `atom {stage, to?}`* sets facts only: every research tier from the plant stage on
+    (past the gate; `none` leaves research alone), the buildings the stage needs finished (they must be
+    placed: "Place the enrichment plant first"; a refusal changes nothing), fuel (none, half, full), the
+    bomb half built with 7 instalments paid, `have`, a launch half prepared at `to` or the first computer
+    neighbour, `fired` (now, or a game day ago for `spent`). It never touches money, rules or the war.
+  - *The cross-browser script.* The four new commands need a war town with all 24 tiers, a plant and a
+    silo, which is step 8's `atom` section; until then `tests/lockstep/scriptedTown.ts` lists them in
+    `PENDING_KINDS`, `ALL_KINDS` leaves them out, and `determinism.test.ts` fails if the script ever
+    uses one, so step 8 must empty the list. Every other list (`COMMAND_KINDS`, `CHECKS`, `SAMPLES`,
+    `NEED`, the roles test) has them now.
+  - *Tests are cheap by design.* One long run through the real clock (`atomChain.test.ts`, about 45 s);
+    everything else plays hour by hour with `atomHour` on copies of one base town, crews set by hand, so
+    the money is asserted to the dollar.

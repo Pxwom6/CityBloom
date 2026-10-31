@@ -102,6 +102,12 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   setSanction: 'treaties',
   // An offer from a neighbour (M38) is a loan, an investment or an arms deal: the city's money.
   answerOffer: 'money',
+  // The atom bomb (M40): building it is defence spending, launching it waging war (and, in a shared
+  // city, the host's alone: `roomRefusal`).
+  buildBomb: 'defence',
+  cancelBomb: 'defence',
+  launchBomb: 'war',
+  cancelLaunch: 'war',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',
@@ -157,6 +163,10 @@ function needOf(cmd: Command): Permission | undefined {
 
 /** Why the room should turn this command away before ordering it, or null. */
 export function roomRefusal(rules: SharedRules | null, player: number, cmd: Command): string | null {
+  // A launch of the atom bomb (M40) cannot be undone and changes every player's city for years: the
+  // host's alone, whatever roles the host has given.
+  if (cmd.type === 'launchBomb' && rules && player && player !== rules.host)
+    return 'Only the host can launch the atom bomb';
   const need = needOf(cmd);
   if (need && !may(rules, player, need)) return `The host hasn't let you ${WORDS[need]}`;
   if (cmd.type === 'placeBuilding' && CIVIC.get(cmd.def)?.project && !may(rules, player, 'projects'))

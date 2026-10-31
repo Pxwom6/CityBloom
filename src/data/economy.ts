@@ -187,6 +187,10 @@ export const LEDGER_LABELS: Record<string, string> = {
   lenderRepaid: 'Neighbours’ loans repaid',
   investment: 'Neighbours’ investment in the city',
   investorShare: 'Investors’ share of industrial taxes',
+  // The atom bomb (M40).
+  enrichment: 'Fuel enrichment',
+  atomBomb: 'Atom bomb instalments',
+  atomLaunch: 'Launch preparation',
 };
 
 export function ledgerLabel(key: string): string {

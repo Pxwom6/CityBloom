@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeSave } from '../../src/client/saves';
 import { SCENARIO } from '../../src/data/scenarios';
 import { runDeterminism } from './determinism';
-import { ALL_KINDS } from './scriptedTown';
+import { ALL_KINDS, PENDING_KINDS } from './scriptedTown';
 
 /**
  * The cross-browser run's script, in Node (F13): it must issue every kind of command, or the
@@ -17,5 +17,7 @@ describe('the cross-browser determinism script', () => {
     const save = decodeSave(new Uint8Array(readFileSync(`public/scenarios/${SCENARIO.get(id)!.save}`)));
     const r = runDeterminism(10, { id, save });
     expect(r.used).toEqual([...ALL_KINDS].sort());
+    // A kind waiting for its section must not be used yet: when the section comes, the list empties.
+    for (const k of PENDING_KINDS) expect(r.used, `${k} is pending but the script uses it`).not.toContain(k);
   });
 });

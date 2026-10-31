@@ -1,21 +1,30 @@
 /**
  * The atom bomb (M40, SPEC-5.md): the last prize cities race for. This module is its state and its
- * gates (`docs/plans/M40-design.md`, calls 1 to 4): what a city has made so far, the stage that
- * follows from it, and why the enrichment plant and the silo can or can't be put down. Fuel, the
- * build, the launch, the flight and the impact come in later steps. `WarState.atom` appears when
- * first used, so every city that never races is exactly as before; nothing here draws from a random
- * stream.
+ * gates (`docs/plans/M40-design.md`, calls 1 to 7): what a city has made so far, the stage that
+ * follows from it, why the enrichment plant and the silo can or can't be put down, and the race
+ * itself: fuel made hour by hour, the bomb built in instalments, a launch prepared and (against a
+ * computer neighbour) fired. The flight, the impact and what follows come in later steps.
+ * `WarState.atom` appears when first used, so every city that never races is exactly as before;
+ * nothing here draws from a random stream.
  */
-import { ATOM, type AtomStage } from '../../data/atom';
+import { ATOM, atomStageNo, type AtomStage } from '../../data/atom';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
+import { TIER_KEYS } from '../../data/research';
 import { WAR } from '../../data/war';
+import { fail, ok, type CommandResult } from '../commands';
+import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
-import { civicOnline, type Civic } from '../world/civic';
-import { allTiersDone, researchTree } from './research';
+import { civicOnline, lowerName, type Civic } from '../world/civic';
+import { accrue } from './economy';
+import { fightingWith, neighbourOf, warWith } from './diplomacy';
+import type { Neighbour } from './region';
+import { allTiersDone, researchCheat, researchTree } from './research';
 import { requirementContext } from './projects';
+import { blackedOut, superWorking } from './supers';
 import { civicOutput } from './utilities';
+import { materialBill, takeStock } from './war';
 
 /**
  * The city's bomb race (`WarState.atom`), made when the first fact is set. The stage is derived from
@@ -26,12 +35,18 @@ import { civicOutput } from './utilities';
 export interface Atom {
   /** War hours of fuel made, 0 to `ATOM.fuel.hours`; a plant lost halves it. */
   fuel: number;
-  /** The bomb being built: war hours done, and instalments paid (of twelve, which stay spent if it is called off). */
-  bomb?: { done: number; paid: number };
+  /**
+   * The bomb being built: war hours done, and instalments paid (of twelve, which stay spent if it is
+   * called off). `waiting`: the next instalment is due and the city can't pay it yet (told once).
+   */
+  bomb?: { done: number; paid: number; waiting?: true };
   /** The finished bomb, in the silo. */
   have?: true;
-  /** A launch being prepared: war hours done of `ATOM.launch.prepHours`. */
-  prep?: { done: number };
+  /**
+   * A launch being prepared: war hours done of `ATOM.launch.prepHours`, and the neighbour it is aimed
+   * at. A prepared bomb (all the hours done) waits as long as it likes.
+   */
+  prep?: { done: number; to: number };
   /**
    * The bomb has left: the tick, the neighbour it was aimed at (its id and name) and, for a friend,
    * its place in the region. It is the end of the race for this city.
@@ -112,6 +127,14 @@ export function atomStage(sim: Sim): AtomStage {
   return plant ? 'plant' : 'none';
 }
 
+/** Why the rules don't let the city race or use the bomb now, in plain words, or null when they do. */
+export function atomRulesWhy(sim: Sim): string | null {
+  if (bombAllowed(sim)) return null;
+  return sim.state.region.rules
+    ? 'Your region’s rules turn the atom bomb off'
+    : 'The atom bomb needs rival neighbours or a region whose rules allow it';
+}
+
 /**
  * Why the city can't put down this building for want of the bomb's conditions, or null (also for
  * every building but the enrichment plant and the silo). The first missing step, in plain words:
@@ -132,10 +155,8 @@ export function atomLock(sim: Sim, defId: string): string | null {
     return null;
   };
   if (!allTiersDone(sim)) return needs(true) ?? 'Needs every research branch maxed';
-  if (!bombAllowed(sim))
-    return sim.state.region.rules
-      ? 'Your region’s rules turn the atom bomb off'
-      : 'The atom bomb needs rival neighbours or a region whose rules allow it';
+  const rules = atomRulesWhy(sim);
+  if (rules) return rules;
   if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
   if (sim.state.war?.atom?.fired) return 'The city has used its atom bomb: there is only ever one';
   return needs(false);
@@ -153,19 +174,59 @@ export interface AtomSummary {
   plant: boolean;
   /** Fuel made, 0 to 1. */
   fuel: number;
+  /** Why fuel isn't being made now, in words; null while it is, when the load is full, or before the race has begun. */
+  fuelWait: string | null;
+  /**
+   * The bomb being built: its share done (0 to 1), instalments paid of all, and why it waits (the
+   * silo can't work, or the next instalment can't be paid); null while it goes on.
+   */
+  bomb: { done: number; paid: number; of: number; wait: string | null } | null;
+  /** The bomb is finished and in the silo. */
+  have: boolean;
+  /**
+   * A launch being prepared: its share done (0 to 1), who it is aimed at, `ready` once it is all
+   * done and holding, and why it waits (null while it goes on or when it is ready).
+   */
+  launch: { done: number; to: number; name: string; ready: boolean; wait: string | null } | null;
+  /** The bomb has left: when, and for whom. */
+  fired: { tick: number; to: number; name: string } | null;
 }
 
 export function atomSummary(sim: Sim): AtomSummary | null {
   const w = sim.state.war;
   if (!w) return null;
   const tree = researchTree(sim);
+  const a = w.atom;
+  const full = (a?.fuel ?? 0) >= ATOM.fuel.hours;
+  const round = (v: number) => Math.round(v * 1000) / 1000;
   return {
     allowed: bombAllowed(sim),
     stage: atomStage(sim),
     research: { done: tree.done, total: tree.total, next: tree.next ?? null },
     nuclear: nuclearRunning(sim),
     plant: civicRunning(sim, 'enrichment'),
-    fuel: Math.round(Math.min(1, (w.atom?.fuel ?? 0) / ATOM.fuel.hours) * 1000) / 1000,
+    fuel: round(Math.min(1, (a?.fuel ?? 0) / ATOM.fuel.hours)),
+    fuelWait: !a?.fired && !full && (a || civicOfDef(sim, 'enrichment')) ? fuelBlock(sim) : null,
+    bomb: a?.bomb
+      ? {
+          done: round(a.bomb.done / ATOM.bomb.hours),
+          paid: a.bomb.paid,
+          of: INSTALMENTS,
+          wait:
+            siloBlock(sim) ?? (instalmentShort(sim) ? 'The treasury can’t pay the next instalment' : null),
+        }
+      : null,
+    have: !!a?.have,
+    launch: a?.prep
+      ? {
+          done: round(a.prep.done / ATOM.launch.prepHours),
+          to: a.prep.to,
+          name: neighbourOf(sim, a.prep.to)?.name ?? 'a neighbour',
+          ready: a.prep.done >= ATOM.launch.prepHours,
+          wait: a.prep.done >= ATOM.launch.prepHours ? null : siloBlock(sim),
+        }
+      : null,
+    fired: a?.fired ? { tick: a.fired.tick, to: a.fired.to, name: a.fired.name } : null,
   };
 }
 
@@ -200,4 +261,450 @@ export function atomPrices() {
     (CIVIC.get('enrichment')!.upkeep * (end - plantDone)) / 24 +
     (CIVIC.get('atomsilo')!.upkeep * (end - siloDone)) / 24;
   return { plant, fuel, silo, bomb, materials, launch, siloBomb, race, upkeep, plantDone, siloDone, end };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The race itself (M40 step 2, plan calls 1 and 5 to 7): fuel, the bomb's build, a launch's
+// preparation. All of it runs on the war clock (`atomHour`, from `warClockHour`), so the region's
+// fair clock holds it as it holds research.
+// ---------------------------------------------------------------------------------------------
+
+/** The bomb is paid in this many instalments, the first when it starts. */
+const INSTALMENTS = ATOM.bomb.hours / ATOM.bomb.every;
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const dollars = (v: number) => `$${formatInt(Math.round(v))}`;
+
+/** Where a finished building of the race can't yet work: the staff and power `superWorking` asks. */
+function crewWhy(c: Civic, name: string): string | null {
+  if ((c.staff ?? 0) < 0.25) return `The ${name} needs workers`;
+  if ((c.powered ?? 0) < 0.5) return `The ${name} needs power`;
+  return null;
+}
+
+/**
+ * Why a building of the race (`def`, called `name` in words) isn't working now, or null: missing,
+ * still going up, the rules turned the bomb off, closed by damage or flood, a blackout, no crew or
+ * no power. A closed building is the one thing that sets a preparation back (`prepHour`).
+ */
+function siteBlock(sim: Sim, def: string, name: string): string | null {
+  const c = civicOfDef(sim, def);
+  if (!c) return `The city has no ${name}`;
+  if (c.build) return `The ${name} is still going up`;
+  const rules = atomRulesWhy(sim);
+  if (rules) return rules;
+  if (c.flooded) return `The ${name} is flooded`;
+  if (c.damage > 0) return `The ${name} is closed for repairs`;
+  if (blackedOut(sim)) return `A blackout has the ${name} dark`;
+  return crewWhy(c, name) ?? (superWorking(c) ? null : `The ${name} isn’t working`);
+}
+
+/** The silo isn't working now (and so the bomb's build and a preparation wait), in words, or null. */
+export function siloBlock(sim: Sim): string | null {
+  return siteBlock(sim, 'atomsilo', 'atom silo');
+}
+
+/** Per war hour, how fast a working building of the race goes: crew, power and defence funding (to 125 %). */
+function workRate(sim: Sim, c: Civic): number {
+  return (
+    Math.min(1, c.staff ?? 0) * (c.powered ?? 0) * Math.min(ATOM.fuel.fundingMax, sim.fundingEff('defence'))
+  );
+}
+
+/**
+ * Why fuel isn't being made this hour, in words, or null when it is: no plant, one still going up,
+ * the rules, damage, a blackout, no running nuclear plant to feed on, no crew or power, no money.
+ * A full load, or a bomb already used, is not a wait (the caller asks). Reads only.
+ */
+export function fuelBlock(sim: Sim): string | null {
+  const why = siteBlock(sim, 'enrichment', 'enrichment plant');
+  if (why) return why;
+  if (!nuclearRunning(sim)) return 'No nuclear power plant is running';
+  const plant = civicOfDef(sim, 'enrichment')!;
+  const rate = workRate(sim, plant);
+  if (rate <= 0) return 'Defence funding is too low to run the plant';
+  const s = sim.state;
+  if (!s.options.sandbox && s.treasury < rate * ATOM.fuel.cost) return 'The treasury can’t pay for the fuel';
+  return null;
+}
+
+/** What the next instalment of the bomb costs now: the money, and the materials bought in. */
+function instalmentBill(sim: Sim) {
+  const inst = ATOM.bomb.instalment;
+  const bill = materialBill(sim, inst);
+  return { bill, money: inst.money, total: inst.money + bill.imports };
+}
+
+/** The bomb's next instalment is due and the treasury can't pay it. */
+function instalmentShort(sim: Sim): boolean {
+  const b = sim.state.war?.atom?.bomb;
+  if (!b || b.paid >= INSTALMENTS || b.done < b.paid * ATOM.bomb.every) return false;
+  return !sim.state.options.sandbox && sim.state.treasury < instalmentBill(sim).total;
+}
+
+/** Pay an instalment: the money, and the materials from the war stores first, the rest bought in. */
+function payInstalment(sim: Sim): void {
+  const { bill, money } = instalmentBill(sim);
+  takeStock(sim, bill.take);
+  sim.spend(money, 'atomBomb');
+  if (bill.imports > 0) sim.spend(bill.imports, 'warImports');
+}
+
+/**
+ * The race's hour on the war clock (M40, calls 1 and 5 to 7). Fuel grows while the plant works;
+ * the bomb is built a silo-hour at a time, an instalment due every 60; a prepared launch counts its
+ * hours, starts over if damage closes the silo, and at the end fires. A city that has not begun
+ * (no `war.atom`) and has no enrichment plant is left entirely alone: no state made, nothing
+ * booked, nothing read that changes anything.
+ */
+export function atomHour(sim: Sim): void {
+  const w = sim.state.war;
+  if (!w) return;
+  if (!w.atom && !civicOfDef(sim, 'enrichment')) return;
+  fuelHour(sim);
+  bombHour(sim);
+  prepHour(sim);
+}
+
+function fuelHour(sim: Sim): void {
+  const had = sim.state.war!.atom;
+  if (had?.fired || (had && had.fuel >= ATOM.fuel.hours)) return;
+  if (fuelBlock(sim)) return;
+  const a = atomOf(sim);
+  const made = Math.min(workRate(sim, civicOfDef(sim, 'enrichment')!), ATOM.fuel.hours - a.fuel);
+  a.fuel = round3(a.fuel + made);
+  // The load costs the same however fast it is made: so much a unit of fuel, only while the plant works.
+  accrue(sim, 'enrichment', -made * ATOM.fuel.cost);
+  if (a.fuel >= ATOM.fuel.hours - 1e-9) {
+    a.fuel = ATOM.fuel.hours;
+    sim.events.push({ kind: 'fuelFull', id: civicOfDef(sim, 'enrichment')!.id });
+  }
+  sim.warChanged();
+}
+
+function bombHour(sim: Sim): void {
+  const a = sim.state.war!.atom;
+  const b = a?.bomb;
+  if (!a || !b || siloBlock(sim)) return;
+  const silo = civicOfDef(sim, 'atomsilo')!;
+  // An instalment falls due every 60 hours (the first was paid when it began); a missed one waits
+  // like a project's stage, with the hours so far kept.
+  if (b.paid < INSTALMENTS && b.done >= b.paid * ATOM.bomb.every) {
+    if (instalmentShort(sim)) {
+      if (!b.waiting) {
+        b.waiting = true;
+        sim.events.push({ kind: 'bombWaiting', id: silo.id });
+        sim.warChanged();
+      }
+      return;
+    }
+    payInstalment(sim);
+    b.paid++;
+    delete b.waiting;
+  }
+  const rate = workRate(sim, silo);
+  if (rate <= 0) return;
+  b.done = Math.min(b.paid * ATOM.bomb.every, round3(b.done + rate));
+  if (b.done >= ATOM.bomb.hours) {
+    delete a.bomb;
+    a.have = true;
+    // First in the race: in a city of its own there is no one to beat but computer neighbours, which
+    // do not race yet (M40 step 7); in a region the room says who was first (step 10).
+    if (!sim.state.region.rules) a.first = true;
+    sim.events.push({ kind: 'bombReady', id: silo.id });
+  }
+  sim.warChanged();
+}
+
+function prepHour(sim: Sim): void {
+  const a = sim.state.war!.atom;
+  const p = a?.prep;
+  if (!a || !p) return;
+  const silo = civicOfDef(sim, 'atomsilo');
+  // Damage that closes the silo undoes the preparation, however far along (or complete) it was.
+  if (silo && !silo.build && !civicOnline(silo)) {
+    if (p.done > 0) {
+      p.done = 0;
+      sim.warChanged();
+    }
+    return;
+  }
+  // A prepared bomb waits as long as it likes; otherwise any other wait just holds the count.
+  if (p.done >= ATOM.launch.prepHours || siloBlock(sim)) return;
+  const rate = workRate(sim, silo!);
+  if (rate <= 0) return;
+  p.done = Math.min(ATOM.launch.prepHours, round3(p.done + rate));
+  sim.warChanged();
+  if (p.done >= ATOM.launch.prepHours) fireIfAble(sim);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Commands (calls 6 and 7)
+// ---------------------------------------------------------------------------------------------
+
+/** What every command of the race asks first: war on, the bomb not used. */
+function raceRefusal(sim: Sim): string | null {
+  const w = sim.state.war;
+  if (!w) return 'War is off in this city';
+  if (w.atom?.fired) return 'The city has used its atom bomb: there is only ever one';
+  return null;
+}
+
+/** Why the bomb can't be started now, or null. */
+function buildRefusal(sim: Sim): string | null {
+  const refused = raceRefusal(sim);
+  if (refused) return refused;
+  const a = sim.state.war!.atom;
+  if (a?.have) return 'The city has an atom bomb already';
+  if (a?.bomb) return 'The bomb is already being built';
+  const rules = atomRulesWhy(sim);
+  if (rules) return rules;
+  if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
+  const fuel = a?.fuel ?? 0;
+  if (fuel < ATOM.fuel.hours)
+    return `The bomb needs a full load of fuel (${Math.floor((fuel / ATOM.fuel.hours) * 100)} % made)`;
+  return siloBlock(sim);
+}
+
+/** Start building the bomb (M40, call 6): the first of twelve instalments is paid now. */
+export function buildBomb(sim: Sim, dryRun: boolean): CommandResult {
+  const refused = buildRefusal(sim);
+  if (refused) return fail(refused);
+  const { total, money } = instalmentBill(sim);
+  const s = sim.state;
+  if (!s.options.sandbox && s.treasury < total)
+    return fail(`Not enough money for the first instalment: ${dollars(total)} with the materials bought in`);
+  if (dryRun) return ok(total, { info: { instalment: money, imports: total - money, of: INSTALMENTS } });
+  payInstalment(sim);
+  atomOf(sim).bomb = { done: 0, paid: 1 };
+  sim.warChanged();
+  return ok(total, { info: { instalment: money, imports: total - money, of: INSTALMENTS } });
+}
+
+/** Stop building the bomb: the instalments paid stay spent, and so do the materials. */
+export function cancelBomb(sim: Sim, dryRun: boolean): CommandResult {
+  const a = sim.state.war?.atom;
+  if (!a?.bomb) return fail('No bomb is being built');
+  if (dryRun) return ok(0);
+  delete a.bomb;
+  sim.warChanged();
+  return ok(0);
+}
+
+/**
+ * Why a bomb can't be aimed at this neighbour now, or null: it must be a rival or a friend's city
+ * the city is fighting a total war with that is open (a ceasefire, a surrender or a warning still
+ * running pauses it), and the city can be neither neutral nor a vassal, nor the neighbour its vassal.
+ */
+function targetWhy(sim: Sim, to: number): string | null {
+  const s = sim.state;
+  const d = s.war?.diplomacy;
+  const n = neighbourOf(sim, to);
+  if (!n) return 'No such neighbour';
+  if (!n.player && !n.rival) return `${n.name} isn’t a rival`;
+  if (d?.neutral) return 'A neutral city doesn’t launch bombs';
+  if (d?.vassal) return 'A vassal can’t launch the bomb';
+  if (n.rival?.vassal || d?.subjects?.some((x) => x.with === to)) return `${n.name} is your vassal`;
+  const war = warWith(sim, to);
+  if (!war) return `The bomb needs a total war with ${n.name}: you are not at war`;
+  if (!fightingWith(sim, to)) {
+    if (s.tick < war.opens || war.friend?.state === 'declared')
+      return `The war with ${n.name} hasn’t opened yet`;
+    return `The war with ${n.name} is paused (a ceasefire or a surrender): the bomb waits`;
+  }
+  if (war.scale !== 'total')
+    return `Only a total war can use the bomb: your war with ${n.name} is not a total war`;
+  return null;
+}
+
+/**
+ * Prepare a launch at a neighbour (M40, call 7): $1.2M, then 288 war hours at the silo's rate
+ * (starting over if damage closes the silo). Needs the finished bomb, a working silo, the rules and
+ * a total war open with the target. On a bomb already prepared it sends it again: against a computer
+ * neighbour it fires if the war is open, at a friend's city it waits for the region (step 9).
+ */
+export function launchBomb(sim: Sim, to: number, dryRun: boolean): CommandResult {
+  const refused = raceRefusal(sim);
+  if (refused) return fail(refused);
+  const a = sim.state.war!.atom;
+  if (!a?.have)
+    return fail(a?.bomb ? 'The bomb isn’t finished yet' : 'The city has no atom bomb: build one first');
+  const rules = atomRulesWhy(sim);
+  if (rules) return fail(rules);
+  if (sim.state.scenario) return fail('The atom bomb is not part of a scenario');
+  const silo = siloBlock(sim);
+  if (silo) return fail(silo);
+  const target = targetWhy(sim, to);
+  if (target) return fail(target);
+  const n = neighbourOf(sim, to)!;
+  if (a.prep) {
+    // Sending a prepared bomb again, at the same neighbour or another.
+    if (a.prep.done < ATOM.launch.prepHours) return fail('A launch is already being prepared');
+    if (n.player)
+      return fail(`A strike on ${n.name}’s city goes through the region’s room, which has to agree`);
+    if (dryRun) return ok(0);
+    a.prep.to = to;
+    fireIfAble(sim);
+    return ok(0);
+  }
+  const s = sim.state;
+  if (!s.options.sandbox && s.treasury < ATOM.launch.cost)
+    return fail(`Not enough money: ${dollars(ATOM.launch.cost)} to prepare a launch`);
+  if (dryRun) return ok(ATOM.launch.cost);
+  sim.spend(ATOM.launch.cost, 'atomLaunch');
+  atomOf(sim).prep = { done: 0, to };
+  sim.warChanged();
+  return ok(ATOM.launch.cost);
+}
+
+/** Call off a launch: half the price comes back, and the bomb stays in the silo. */
+export function cancelLaunch(sim: Sim, dryRun: boolean): CommandResult {
+  const a = sim.state.war?.atom;
+  if (!a?.prep) return fail('No launch is being prepared');
+  const refund = Math.round(ATOM.launch.cost * ATOM.launch.refund);
+  if (dryRun) return ok(-refund);
+  delete a.prep;
+  sim.earn(refund, 'refunds');
+  sim.warChanged();
+  return ok(-refund);
+}
+
+/**
+ * A prepared bomb leaves if it can (M40, call 7): the target is a computer neighbour the city is
+ * fighting a total war with that is open now. A friend's city is the region's to agree to (step 9
+ * fills that in): nothing leaves for it here, and the bomb stays prepared. A war that is not open
+ * when the preparation ends leaves it prepared too; the city sends it again with `launchBomb`.
+ */
+function fireIfAble(sim: Sim): void {
+  const a = sim.state.war!.atom!;
+  const p = a.prep;
+  if (!p) return;
+  const n = neighbourOf(sim, p.to);
+  if (!n || n.player || !n.rival || targetWhy(sim, p.to)) return;
+  a.fired = { tick: sim.state.tick, to: n.id, name: n.name };
+  delete a.have;
+  delete a.prep;
+  sim.events.push({ kind: 'bombFired', id: n.id, info: { to: n.name } });
+  sim.warChanged();
+  startFlight(sim, n);
+}
+
+/**
+ * The seam for step 3: the missile is on its way to a computer neighbour (`fired` is set, the bomb
+ * has left the silo). Step 3 makes the flight and the landing here; step 6 turns the world on the
+ * firer. Until then a bomb fired at a computer neighbour is fired and nothing more happens.
+ */
+function startFlight(_sim: Sim, _target: Neighbour): void {
+  /* step 3 */
+}
+
+// ---------------------------------------------------------------------------------------------
+// Losses (call 1) and what holds the buildings up
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A civic building of the city was destroyed (`Sim.removeCivic`; bulldozing a plant that holds fuel,
+ * or a silo that holds a bomb or a build, is refused, so this is damage, a disaster or the blast):
+ * a finished plant lost halves the fuel, a silo lost loses the bomb, the build and the preparation.
+ */
+export function atomCivicRemoved(sim: Sim, c: Civic): void {
+  const a = sim.state.war?.atom;
+  if (!a) return;
+  if (c.def === 'enrichment' && !c.build && a.fuel > 0 && !a.fired) {
+    a.fuel = round3(a.fuel / 2);
+    sim.events.push({ kind: 'atomLost', id: c.id, info: { what: 'fuel' } });
+    sim.warChanged();
+  }
+  if (c.def === 'atomsilo' && (a.bomb || a.have || a.prep)) {
+    delete a.bomb;
+    delete a.have;
+    delete a.prep;
+    sim.events.push({ kind: 'atomLost', id: c.id, info: { what: 'bomb' } });
+    sim.warChanged();
+  }
+}
+
+/**
+ * Why a plant or silo can't be bulldozed, or null: a plant holding fuel, a silo holding a bomb, a
+ * build or a launch being prepared (as a base keeping a superweapon, `baseKeepsSuper`). Once the
+ * bomb has left there is nothing left to hold.
+ */
+export function atomKeeps(sim: Sim, c: Civic): string | null {
+  const a = sim.state.war?.atom;
+  if (!a || a.fired) return null;
+  const name = lowerName(CIVIC.get(c.def)?.name ?? c.def);
+  if (c.def === 'enrichment' && a.fuel > 0)
+    return `The ${name} holds the city’s fuel: it can’t be knocked down`;
+  if (c.def === 'atomsilo') {
+    if (a.prep) return `The ${name} is preparing a launch: call it off first`;
+    if (a.have) return `The ${name} holds an atom bomb: it can’t be knocked down`;
+    if (a.bomb) return `The ${name} is building the bomb: call it off first`;
+  }
+  return null;
+}
+
+/**
+ * Test mode: the race standing at a stage, its waits skipped (the plan's tests and the e2e). It sets
+ * only facts: every research tier done (from the plant stage on, which the gate lets in only with
+ * the whole tree done; `none` leaves the research alone), the plant and silo the stage needs
+ * finished (they must already be placed: a cheat chooses no ground), the fuel, the bomb's build
+ * half paid and done, `have`, a launch half prepared at `to` (or the first rival), `fired`. It
+ * never touches the money, the rules, the war or the neighbours; stage `none` forgets the race.
+ */
+export function atomCheat(
+  sim: Sim,
+  stage: AtomStage,
+  to: number | undefined,
+  dryRun: boolean,
+): CommandResult {
+  const w = sim.state.war;
+  if (!w) return fail('War is off in this city');
+  const no = atomStageNo(stage);
+  if (no < 0) return fail('No such stage');
+  const plant = civicOfDef(sim, 'enrichment');
+  const silo = civicOfDef(sim, 'atomsilo');
+  if (no >= 1 && !plant) return fail('Place the enrichment plant first');
+  if (no >= 3 && !silo) return fail('Place the atom silo first');
+  let aim: Neighbour | undefined;
+  if (no >= 6) {
+    aim =
+      to === undefined
+        ? sim.state.region.neighbours.find((n) => !!n.rival && !n.player)
+        : neighbourOf(sim, to);
+    if (!aim) return fail('No neighbour to aim at');
+  }
+  if (dryRun) return ok(0);
+  if (no === 0) {
+    delete w.atom;
+    sim.warChanged();
+    return ok(0);
+  }
+  researchCheat(sim, [...TIER_KEYS], false);
+  const finish = (c: Civic | undefined) => {
+    if (!c?.build) return;
+    delete c.build;
+    sim.civicStatusChanged(c.id);
+    sim.events.push({ kind: 'projectDone', id: c.id });
+  };
+  if (no >= 2) finish(plant);
+  if (no >= 4) finish(silo);
+  const a = atomOf(sim);
+  delete a.bomb;
+  delete a.have;
+  delete a.prep;
+  delete a.fired;
+  delete a.inbound;
+  delete a.impact;
+  a.fuel = no >= 3 ? ATOM.fuel.hours : no === 2 ? ATOM.fuel.hours / 2 : 0;
+  if (no === 4) {
+    const done = ATOM.bomb.hours / 2;
+    a.bomb = { done, paid: Math.floor(done / ATOM.bomb.every) + 1 };
+  }
+  if (no === 5 || no === 6) a.have = true;
+  if (no === 6) a.prep = { done: ATOM.launch.prepHours / 2, to: aim!.id };
+  if (no >= 7) {
+    const ago = no === 8 ? ATOM.flight.hours * TICKS_PER_HOUR : 0;
+    a.fired = { tick: sim.state.tick - ago, to: aim!.id, name: aim!.name };
+  }
+  sim.warChanged();
+  return ok(0);
 }

@@ -94,7 +94,10 @@ function checkAtom(sim: Sim): void {
     within('bomb done', a.bomb.done, ATOM.bomb.hours);
     within('bomb paid', a.bomb.paid, ATOM.bomb.hours / ATOM.bomb.every);
   }
-  if (a.prep) within('prep done', a.prep.done, ATOM.launch.prepHours);
+  if (a.prep) {
+    within('prep done', a.prep.done, ATOM.launch.prepHours);
+    if (!Number.isFinite(a.prep.to)) throw new InvariantError('atom launch without a target');
+  }
   // One bomb: being built, or finished and then prepared, or gone; never two of these at once.
   if (a.bomb && (a.have || a.prep || a.fired)) throw new InvariantError('atom bomb built twice');
   if (a.prep && !a.have) throw new InvariantError('atom launch prepared without a bomb');

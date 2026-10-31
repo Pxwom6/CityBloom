@@ -240,8 +240,11 @@ bomb** has begun: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b
 the `bomb` rule, `WarState.atom` with the derived stage, the gate (`atomLock`, hard: sandbox cannot
 skip it), the enrichment plant and atom silo (no refund) and save v32; the prices are the plan's, held
 in its band against the 57,000-resident reference city (`atomprice.ts`, DECISIONS "M40" step 1). Tests:
-`tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Not yet run for step 1:
-e2e, builds, balance, bench, soak (run at step 13).
+`tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Step 2 is done too (fuel,
+the bomb's twelve instalments, a launch's preparation and the bomb leaving for a computer neighbour; the
+flight is step 3's seam; the four commands, the loss rules, the bulldoze guard, the host-only launch and
+the `atom {stage}` cheat; `tests/war/atomChain.test.ts`; DECISIONS "M40" step 2). Not yet run for steps 1
+and 2: e2e, builds, balance, bench, soak (run at step 13).
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -297,9 +300,8 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 1. M39's close: the real two-hour soak on the final code, then PROGRESS's tick, the `M39 complete:`
    commit and pull request #23's title and description.
 2. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   and 1 are done. Next: step 2, fuel, bomb and preparation (`atomHour`, `materialBill`, the
-   instalments, `buildBomb`/`cancelBomb`/`launchBomb`/`cancelLaunch`, the loss rules, the bulldoze
-   guard, host-only launch, the `atom {stage}` cheat); then flight, dome and impact; fallout; the
+   to 2 are done. Next: step 3, the flight, the warning, the dome stopping one bomb and the impact
+   (fills `startFlight` in `src/sim/systems/atom.ts`); then fallout; the
    nuclear winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
    7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
    may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).

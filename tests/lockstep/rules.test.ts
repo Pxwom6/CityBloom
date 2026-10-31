@@ -75,6 +75,8 @@ describe('the roles of war in a shared city (M39)', () => {
       { type: 'declareWar', neighbour: 1, scale: 'war', reason: 'x' },
       { type: 'sendForce', to: 1, units: [1], target: 'military', stance: 'balanced', route: 'road' },
       { type: 'spyMission', neighbour: 1, op: 'reveal' },
+      // The atom bomb (M40): calling a launch off is waging war's; launching it is the host's alone (below).
+      { type: 'cancelLaunch' },
     ],
     treaties: [
       { type: 'propose', neighbour: 1, terms: [{ k: 'peace' }] },
@@ -86,6 +88,9 @@ describe('the roles of war in a shared city (M39)', () => {
       { type: 'queueResearch', tier: 'land1' },
       { type: 'setFunding', dept: 'defence', pct: 120 },
       { type: 'placeBuilding', def: military.id, x: 0, z: 0, angle: 0, side: 1 },
+      // The atom bomb (M40): building it is defence spending.
+      { type: 'buildBomb' },
+      { type: 'cancelBomb' },
     ],
   } as unknown as Record<'war' | 'treaties' | 'defence', Command[]>;
 

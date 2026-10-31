@@ -58,7 +58,7 @@ import {
   type WarEconomy,
   type WarEconomySummary,
 } from './warEconomy';
-import { atomSummary, type Atom, type AtomSummary } from './atom';
+import { atomHour, atomSummary, type Atom, type AtomSummary } from './atom';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -508,6 +508,8 @@ function warClockHour(sim: Sim): void {
   trialsHour(sim);
   // The superweapon buildings (M37): the dome charges, the tower fires; spies arrive and come home.
   supersHour(sim);
+  // The race for the atom bomb (M40): fuel, the bomb's build and a launch's preparation.
+  atomHour(sim);
   intelHour(sim);
   // Superweapons wound up again (M37).
   for (const u of w.units.values())
@@ -550,22 +552,41 @@ export function forcesUpkeep(sim: Sim): number {
   return n;
 }
 
+/**
+ * What a job needs of the war stores' materials (goods, ore, oil), what the stores cover (whole
+ * crates, first) and what must be bought in at the import price. A unit's bill and (M40) the atom
+ * bomb's instalments both come from here.
+ */
+export function materialBill(
+  sim: Sim,
+  need: Pick<WarStock, 'goods' | 'ore' | 'oil'>,
+): { imports: number; take: WarStock; short: WarStock } {
+  const w = sim.state.war;
+  const needed: WarStock = { goods: need.goods, ore: need.ore, oil: need.oil, munitions: 0 };
+  const take: WarStock = { goods: 0, ore: 0, oil: 0, munitions: 0 };
+  const short: WarStock = { goods: 0, ore: 0, oil: 0, munitions: 0 };
+  let imports = 0;
+  for (const m of MATERIALS) {
+    take[m] = Math.min(needed[m], Math.floor(w?.stock[m] ?? 0));
+    short[m] = needed[m] - take[m];
+    imports += short[m] * WAR.materials.importPrice[m];
+  }
+  return { imports, take, short };
+}
+
+/** Take what a bill's stores cover out of the war stores. */
+export function takeStock(sim: Sim, take: WarStock): void {
+  const w = sim.state.war!;
+  for (const mat of MATERIALS) w.stock[mat] = round3(w.stock[mat] - take[mat]);
+}
+
 /** Materials a unit needs, what the stores cover, and what must be bought in (with its price). */
 export function unitBill(
   sim: Sim,
   kind: UnitKind,
 ): { money: number; imports: number; take: WarStock; short: WarStock } {
   const def = UNIT.get(kind)!;
-  const w = sim.state.war;
-  const need: WarStock = { goods: def.goods, ore: def.ore, oil: def.oil, munitions: 0 };
-  const take: WarStock = { goods: 0, ore: 0, oil: 0, munitions: 0 };
-  const short: WarStock = { goods: 0, ore: 0, oil: 0, munitions: 0 };
-  let imports = 0;
-  for (const m of MATERIALS) {
-    take[m] = Math.min(need[m], Math.floor(w?.stock[m] ?? 0));
-    short[m] = need[m] - take[m];
-    imports += short[m] * WAR.materials.importPrice[m];
-  }
+  const { imports, take, short } = materialBill(sim, def);
   return { money: def.cost, imports, take, short };
 }
 
@@ -596,7 +617,7 @@ export function trainUnit(sim: Sim, baseId: number, kind: UnitKind, dryRun: bool
   if (!s.options.sandbox && s.treasury < total)
     return fail(`Not enough money: $${formatInt(total)} with the materials bought in`);
   if (dryRun) return ok(total, { info: { imports: bill.imports } });
-  for (const mat of MATERIALS) w.stock[mat] = round3(w.stock[mat] - bill.take[mat]);
+  takeStock(sim, bill.take);
   sim.spend(bill.money, 'training');
   if (bill.imports > 0) sim.spend(bill.imports, 'warImports');
   const id = s.nextId++;

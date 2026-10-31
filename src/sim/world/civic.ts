@@ -1,3 +1,4 @@
+import { atomKeeps } from '../systems/atom';
 import { baseKeepsSuper } from '../systems/war';
 import { scenarioForbids } from '../systems/scenario';
 import {
@@ -533,7 +534,7 @@ export function bulldozeCivic(sim: Sim, id: number, dryRun: boolean, refundShare
   if (!c) return fail('Nothing to bulldoze');
   if (civicDef(c).railLink) return fail('The regional rail link stays: it belongs to the regional railway');
   // A base keeping a superweapon (M37): never lost, so it's stood down first.
-  const keeps = baseKeepsSuper(sim, id);
+  const keeps = baseKeepsSuper(sim, id) ?? atomKeeps(sim, c);
   if (keeps) return fail(keeps);
   const refund = civicRefund(c, refundShare);
   if (dryRun) return ok(-refund, { info: { refund, buildings: [] } });

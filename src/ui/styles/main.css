@@ -3651,8 +3651,11 @@ body {
 .friends-help summary {
   cursor: pointer;
   color: var(--color-accent-strong);
-  /* A finger's target: at least 24 px tall (M39's narrow check); the disclosure marker stays. */
+  /* A finger's target: at least 24 px tall (M39's narrow check); the disclosure marker stays. The
+     padding is in rem, so at the smallest interface size (80 %) it is the floor that holds. */
   padding: 0.3rem 0;
+  min-height: 24px;
+  box-sizing: border-box;
 }
 .friends-help ul {
   margin: 0.4rem 0 0;
@@ -3799,21 +3802,22 @@ body {
 /*
  * Touch targets (M39's narrow check): on a phone's or a tablet's width a small button, a drop-down, a
  * text or number field, a slider and the top bar's date and weather are at least 24 px to tap (a finger lands on the button
- * itself, not its text; the figures stay as they were).
+ * itself, not its text; the figures stay as they were). A rem is 16 px times the interface size, which
+ * runs down to 80 % (a rem of 12.8 px, so 1.6rem is 20.5 px): the 24 px floor is in px so it holds there.
  */
 #ui[data-width='xs'] .btn.small {
-  min-height: 1.6rem;
+  min-height: max(24px, 1.6rem);
 }
 #ui[data-width='xs'] select,
 #ui[data-width='xs'] input[type='text'],
 #ui[data-width='xs'] input[type='number'] {
-  min-height: 1.6rem;
+  min-height: max(24px, 1.6rem);
 }
 #ui[data-width='xs'] input[type='range'] {
-  min-height: 1.6rem;
+  min-height: max(24px, 1.6rem);
 }
 #ui[data-width='xs'] .topbar .stat-btn {
-  min-height: 1.6rem;
+  min-height: max(24px, 1.6rem);
 }
 
 /* Research and intelligence (M37): the branch grid, tiers, chips, prototypes. */

@@ -20,7 +20,7 @@
 import type { Command, CommandResult } from '../sim/commands';
 import type { FriendWarFacts } from '../sim/systems/friendsWar';
 import { RAIDS } from '../data/battle';
-import { UNKNOWN_FRIEND, TREATY_TAKEN } from '../data/diplomacy';
+import { UNKNOWN_FRIEND, TREATY_TAKEN, raidVerdictWhy } from '../data/diplomacy';
 import {
   FRIENDS,
   termsFor,
@@ -671,6 +671,34 @@ export function newcomerNote(why: string | null | undefined): string {
   return why && /too young or small/.test(why)
     ? ` A city is protected as a newcomer until it has ${RAIDS.minPopulation.toLocaleString('en-US')} residents and has been going for ${RAIDS.minMonths === 12 ? 'a year' : `${RAIDS.minMonths} months`}.`
     : '';
+}
+
+/** What the Send tab says a raid on a friend's city will be (M39): how it is fought, or why it can't be. */
+export interface RaidNote {
+  /** `live`: both players command it; `saved`: against the region's copy, waiting for the player; `refused`: the region won't have it. */
+  kind: 'live' | 'saved' | 'refused';
+  text: string;
+}
+
+/**
+ * The note under the Send tab's town picker for a friend's city, from the region's verdict on raiding it
+ * (`raid`, as the room decides it: the sim refuses a force on the same words) and whether its player is
+ * here. A battle is live or a saved copy only when the verdict is `open`; a newcomer, a neutral city,
+ * one raided out for the day, or (in a region on someone's computer) a player who is away is refused.
+ * A region at peace gives no verdict: then only whether the player is here is known.
+ */
+export function raidNote(name: string, p: { online: boolean; raid?: string }): RaidNote {
+  const why = raidVerdictWhy(p.raid, name);
+  if (why) return { kind: 'refused', text: `${why}.${newcomerNote(why)}` };
+  return p.online
+    ? {
+        kind: 'live',
+        text: `${name}’s player is here, so the battle is live: you both command it on the battle map (the O key) as it is fought.`,
+      }
+    : {
+        kind: 'saved',
+        text: `${name}’s player is away: the battle is fought against their city as the region last saw it, with at most half the usual damage, and waits for them.`,
+      };
 }
 
 const money = (v: number) =>

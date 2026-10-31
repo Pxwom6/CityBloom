@@ -15,6 +15,7 @@ import {
   DIPLOMACY,
   DIPLOMATS,
   QUARTERS,
+  raidVerdictWhy,
   TERM_KINDS,
   TERM_NAMES,
   termProblem,
@@ -1773,13 +1774,8 @@ export function strikeRefusal(sim: Sim, to: number, target: string, breakPact: b
   if (!n) return fail('No such neighbour');
   if (d?.neutral) return fail('A neutral city doesn’t send forces');
   // A friend's city (M36): as the region room would decide it (it has the last word).
-  const verdict = n.player?.raid;
-  if (verdict === 'neutral') return fail(`${n.name} is neutral`);
-  if (verdict === 'new') return fail(`${n.name} is too young or small to raid, unless it strikes first`);
-  if (verdict === 'spent')
-    return fail(`${n.name} has taken the region’s three raids for today: no more until midnight (UTC)`);
-  if (verdict === 'absent')
-    return fail(`${n.name}’s player isn’t here, and this region keeps nothing for them`);
+  const turnedAway = raidVerdictWhy(n.player?.raid, n.name);
+  if (turnedAway) return fail(turnedAway);
   if (d?.leaving !== undefined && s.tick < d.leaving)
     return fail(`Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / H)} hours`);
   const war = warWith(sim, to);

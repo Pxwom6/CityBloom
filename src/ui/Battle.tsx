@@ -11,7 +11,7 @@ import { BRANCHES } from '../data/research';
 import type { BattleReport } from '../sim/systems/raids';
 import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
-import { newcomerNote } from '../client/friendsWar';
+import { newcomerNote, raidNote } from '../client/friendsWar';
 import { HelpButton } from './Help';
 import { helpForceLine } from './helpView';
 import { formatNumber, useGameUpdates } from './hooks';
@@ -422,14 +422,21 @@ export function SendForce() {
           ))}
         </select>
       </label>
-      {n.player && (
-        // What a raid on a friend's city will be, so the battle map doesn't come as a surprise (M39).
-        <p class="muted" data-testid="send-live">
-          {n.player.online
-            ? `${n.name}’s player is here, so the battle is live: you both command it on the battle map (the O key) as it is fought.`
-            : `${n.name}’s player is away: the battle is fought against their city as the region last saw it, with at most half the usual damage, and waits for them.`}
-        </p>
-      )}
+      {n.player &&
+        // What a raid on a friend's city will be, so the battle map doesn't come as a surprise (M39),
+        // or why the region won't have it: the verdict the room and the sim refuse a force by.
+        (() => {
+          const note = raidNote(n.name, n.player);
+          return note.kind === 'refused' ? (
+            <p class="war-warn" data-testid="send-refused">
+              {note.text}
+            </p>
+          ) : (
+            <p class="muted" data-testid="send-live" data-kind={note.kind}>
+              {note.text}
+            </p>
+          );
+        })()}
       <label>
         Strike{' '}
         <select

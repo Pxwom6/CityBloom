@@ -339,7 +339,8 @@ In a region where war is on, the other players' cities are in the Send tab and t
   their own until the player presses **Take command again**. Each city runs the battle and the two compare
   the result at the end. If the defender isn't there, the battle is fought against the region's saved copy
   of their city (with at most half the usual damage, if they have left) and waits for them: they take it, and it shows in
-  their Reports, when they come back.
+  their Reports, when they come back. (Not in a peer-to-peer region, which keeps nothing for a player who
+  is away: it refuses the raid, and the Send tab says so beside the town.)
 - **Allies' help.** A friend with an alliance with one of the fighters, or a defensive pact with the city
   being attacked, can send a force into a live battle (**Send help** in the bar or the battle map while
   watching). It arrives about half a minute later (three-quarters of a minute by sea), fights on its own judgement and
@@ -356,7 +357,9 @@ In a region where war is on, the other players' cities are in the Send tab and t
   wins battles against its overlord goes free, or the overlord can agree to it by treaty. Ending a pact
   early costs the city's reputation.
 - **The limits.** A city with fewer than 3,000 residents, or less than a year old, is protected as a newcomer:
-  friends can raid it only once it has raided them, or when a war between you has opened. A city can be **neutral**
+  a friend can neither raid it nor declare war on it, except for a day after it has raided them. Until then
+  **Declare war…** is greyed out with the reason beside it (a war already open when a city falls below the
+  limits stays open). A city can be **neutral**
   (Diplomacy tab): it raids no one and is raided by no one. A city takes three raids a day (UTC). A
   region's war runs on real time: the **fair clock** lets training and research run at the pace of the
   region's clock plus 48 game hours, so nobody builds an army by fast-forwarding, and a war's warning, a

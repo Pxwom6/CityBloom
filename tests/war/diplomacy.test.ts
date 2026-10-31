@@ -499,6 +499,7 @@ describe('M36: friends’ raids', () => {
       ['new', /too young or small/],
       ['neutral', /neutral/],
       ['spent', /today/],
+      ['absent', /player isn’t here/],
     ] as const) {
       const sam = friend(sim, { raid: verdict });
       const r = send(sim, sam.id);

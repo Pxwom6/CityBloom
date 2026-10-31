@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TIPS, pickTip } from '../src/client/tutorial';
-import { newcomerNote } from '../src/client/friendsWar';
+import { newcomerNote, raidNote } from '../src/client/friendsWar';
+import { raidVerdict } from '../src/net/regionLink';
 import { LONG_COMMUTE } from '../src/data/balance';
+import { RAIDS } from '../src/data/battle';
 import { advise } from '../src/sim/systems/advisors';
 import type { Game } from '../src/game';
 import type { CityStats } from '../src/sim/protocol';
@@ -106,6 +109,16 @@ describe('tips for war with friends', () => {
     expect(t.text).toMatch(/Declare war/);
   });
 
+  it('describes the newcomer shield as the region applies it: Declare war… is greyed out, not lifted by a war', () => {
+    const t = tip('friendsAtWar');
+    // A newcomer is one under RAIDS' size or age (in the tip's words), and the button stays greyed out with the reason.
+    expect(t.text).toContain(`${RAIDS.minPopulation.toLocaleString('en-US')} residents`);
+    expect(t.text).toMatch(/greyed out/);
+    // ...which only the newcomer's own raid on the declaring city lifts, for a day: not "a war between you".
+    expect(t.text).toMatch(/after it has raided you/);
+    expect(t.text).not.toMatch(/war between you lifts/);
+  });
+
   it('tells a region’s host that war is off, only when there is someone to fight', () => {
     const t = tip('regionWarOff');
     const region = (host: boolean, war: boolean, cities: number) =>
@@ -173,5 +186,77 @@ describe('the newcomer note on a friend’s refusal', () => {
     expect(newcomerNote('Samford is neutral')).toBe('');
     expect(newcomerNote(null)).toBe('');
     expect(newcomerNote(undefined)).toBe('');
+  });
+});
+
+describe('the Send tab’s note on a raid on a friend’s city', () => {
+  it('promises a live battle or a saved copy only where the region would take the raid', () => {
+    const live = raidNote('Samford', { online: true, raid: 'open' });
+    expect(live.kind).toBe('live');
+    expect(live.text).toMatch(/player is here, so the battle is live/);
+    const saved = raidNote('Samford', { online: false, raid: 'open' });
+    expect(saved.kind).toBe('saved');
+    expect(saved.text).toMatch(/player is away.*region last saw it.*half the usual damage/);
+    // A region at peace gives no verdict: whether the player is here is all there is to say.
+    expect(raidNote('Samford', { online: true }).kind).toBe('live');
+    expect(raidNote('Samford', { online: false }).kind).toBe('saved');
+  });
+
+  it('says why instead, for every verdict that is not open (the words the sim refuses a force by)', () => {
+    for (const online of [true, false]) {
+      expect(raidNote('Samford', { online, raid: 'neutral' })).toEqual({
+        kind: 'refused',
+        text: 'Samford is neutral.',
+      });
+      const young = raidNote('Samford', { online, raid: 'new' });
+      expect(young.kind).toBe('refused');
+      expect(young.text).toMatch(/^Samford is too young or small to raid, unless it strikes first\./);
+      // ...and how long a newcomer stays one.
+      expect(young.text).toContain('3,000 residents');
+      expect(raidNote('Samford', { online, raid: 'spent' }).text).toMatch(/three raids for today/);
+      expect(raidNote('Samford', { online, raid: 'absent' }).text).toBe(
+        'Samford’s player isn’t here, and this region keeps nothing for them.',
+      );
+    }
+  });
+
+  it('in a peer-to-peer region a friend who is away is refused, not promised a saved-copy battle', () => {
+    const city = (online: boolean) => ({ slot: 2, report: { shield: undefined }, online, raidsLeft: 3 });
+    const view = (kind: 'local' | 'p2p', online: boolean) =>
+      ({ kind, cities: [{ slot: 1, raidedBy: [] }, city(online)] }) as never;
+    const verdict = (kind: 'local' | 'p2p', online: boolean) => {
+      const v = view(kind, online);
+      return raidVerdict(v, 1, (v as { cities: never[] }).cities[1]!);
+    };
+    // The same friend, away: a hosted region keeps a copy and takes the raid; a peer-to-peer one doesn't.
+    expect(verdict('local', false)).toBe('open');
+    expect(raidNote('Samford', { online: false, raid: verdict('local', false) }).kind).toBe('saved');
+    expect(verdict('p2p', false)).toBe('absent');
+    expect(raidNote('Samford', { online: false, raid: verdict('p2p', false) }).kind).toBe('refused');
+    expect(verdict('p2p', true)).toBe('open');
+    expect(raidNote('Samford', { online: true, raid: verdict('p2p', true) }).kind).toBe('live');
+  });
+});
+
+describe('the README on what the region refuses a friend’s raid for', () => {
+  // The README is what a player reads before the game does the refusing: it must agree with the room.
+  const readme = readFileSync('README.md', 'utf8').replace(/\s+/g, ' ');
+
+  it('gives no way round the newcomer shield that Declare war… refuses', () => {
+    const limits = readme.slice(readme.indexOf('**The limits.**'));
+    expect(limits).toMatch(/neither raid it nor declare war on it/);
+    // ...except for a day after the newcomer's own raid (the room's RAID_ANSWER_MS), which it says.
+    expect(limits).toMatch(/for a day after it has raided them/);
+    expect(limits).not.toMatch(/or when a war between you has opened/);
+    expect(limits).toMatch(/greyed out/);
+  });
+
+  it('says a peer-to-peer region refuses the saved-copy battle against an absent friend', () => {
+    const live = readme.slice(
+      readme.indexOf('**Raids and live battles.**'),
+      readme.indexOf("**Allies' help.**"),
+    );
+    const saved = live.slice(live.indexOf('saved copy'));
+    expect(saved).toMatch(/Not in a peer-to-peer region/);
   });
 });

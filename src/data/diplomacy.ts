@@ -248,6 +248,26 @@ export const UNKNOWN_FRIEND = 'That city isn’t one of this city’s neighbours
 /** Why a treaty is turned away: this city has applied it already (the page then only acknowledges it). */
 export const TREATY_TAKEN = 'The city has applied that treaty already';
 
+/**
+ * Why a raid on a friend's city turns away, in words, from the region's verdict on it (M36) and the
+ * city's name: the sim's refusal of a force and the Send tab's note beforehand say the same thing.
+ * `null` for `open` (and for no verdict, which a region at peace gives).
+ */
+export function raidVerdictWhy(verdict: string | undefined, name: string): string | null {
+  switch (verdict) {
+    case 'neutral':
+      return `${name} is neutral`;
+    case 'new':
+      return `${name} is too young or small to raid, unless it strikes first`;
+    case 'spent':
+      return `${name} has taken the region’s three raids for today: no more until midnight (UTC)`;
+    case 'absent':
+      return `${name}’s player isn’t here, and this region keeps nothing for them`;
+    default:
+      return null;
+  }
+}
+
 /** A time from the region's clock (ms) in words: "90 seconds", "2 minutes", "3 hours". */
 export function timeWords(ms: number): string {
   const s = Math.max(1, Math.ceil(ms / 1000));

@@ -4,6 +4,7 @@ import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 import { LONG_COMMUTE, TRAM } from '../data/balance';
+import { RAIDS } from '../data/battle';
 
 /**
  * The first-city tutorial and contextual tips (DESIGN.md §5). Steps finish by themselves when the
@@ -195,8 +196,10 @@ export const TIPS: Tip[] = [
     text:
       'War is on in your region, and a friend’s city is in it. To go to war with them, open the war room ' +
       '(Shift+M), then the Diplomacy tab: your friends are listed under “Friends in the region”, each ' +
-      'with Declare war…. They are told at once and the war opens two minutes later. A new or small city ' +
-      'is safe from raids until it strikes first; a war between you lifts that once it has opened.',
+      'with Declare war…. They are told at once and the war opens two minutes later. A city with under ' +
+      `${RAIDS.minPopulation.toLocaleString('en-US')} residents or less than a year old is protected as a ` +
+      'newcomer: Declare war… stays greyed out, with the reason, until it has grown up (or for a day ' +
+      'after it has raided you).',
     when: (g) => {
       const w = g.world.stats.war;
       const d = w?.diplomacy;

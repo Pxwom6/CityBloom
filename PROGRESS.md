@@ -236,11 +236,17 @@ title names all five). **M39 War with friends** is under way on the same branch:
 `docs/plans/M39-design.md` (calls 1–15, steps 0–12; step 0 done), code map `docs/plans/M39-codemap.md`,
 calls in DECISIONS "M39". Done: step 1, battle version 4 (3292069: orders while a battle runs, helpers
 with owners); step 2, the room's live battles, protocol 6 (305b54d, `relay/live.ts`); step 3, the pages
-(67c60a7, 0c078a2: the defender hosts a live battle in its sim, `battleLive`, the attacker runs it in a
-live worker, `src/client/liveBattles.ts`, `liveRunner.ts`; tests `tests/war/liveBattles.test.ts` against a
-real room, and a live battle in the cross-browser script); step 8, co-op roles (ff4408d: `war`,
-`treaties`, `defence`). In progress: step 4 (the battle map and spectators) and step 9 (three war
-scenarios; "Hold the Line" in 00a96fc). Then step 5, wars and treaties between friends.
+(67c60a7, 0c078a2: the defender hosts a live battle in its sim, the attacker runs it in a live worker,
+`src/client/liveBattles.ts`; a live battle in the cross-browser script); step 4, the battle map
+(`src/ui/BattleMap.tsx`, key O, spectators, a one-page stand-in `src/client/liveStage.ts`;
+`e2e/m39-battlemap.spec.ts`; 19ddd63); step 5, wars and treaties between friends (the room keeps them,
+`relay/friendsWar.ts`, e4f55f0; each city mirrors them, `src/sim/systems/friendsWar.ts`,
+`src/client/friendsWar.ts`, the Diplomacy tab's "Friends in the region"; 39e89d1); step 8, co-op roles
+(ff4408d); step 9, three war scenarios (Hold the Line, A Clean War, Liberation; 00a96fc–5d3720f). In
+progress (a workflow): step 6, allies' help in a live battle, and step 7, the region's war history and
+replays in the City history panel. Then: step 10, the region soak; step 11, polish (README "War", tips,
+narrow and touch) and the two-player e2e (both commanding a live battle, then a treaty both accept);
+step 12, wrap-up.
 
 M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
 their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a

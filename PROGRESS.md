@@ -232,27 +232,27 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 ## In progress
 **M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war, M37 Weapon development
 and intelligence and M38 Investments and the war economy are complete**, in pull request #23 (its
-title names all five). **M39 War with friends** is under way on the same branch: plan
-`docs/plans/M39-design.md` (calls 1–15, steps 0–12; step 0 done), code map `docs/plans/M39-codemap.md`,
-calls in DECISIONS "M39". Done: step 1, battle version 4 (3292069: orders while a battle runs, helpers
-with owners); step 2, the room's live battles, protocol 6 (305b54d, `relay/live.ts`); step 3, the pages
-(67c60a7, 0c078a2: the defender hosts a live battle in its sim, the attacker runs it in a live worker,
-`src/client/liveBattles.ts`; a live battle in the cross-browser script); step 4, the battle map
-(`src/ui/BattleMap.tsx`, key O, spectators, a one-page stand-in `src/client/liveStage.ts`;
-`e2e/m39-battlemap.spec.ts`; 19ddd63); step 5, wars and treaties between friends (the room keeps them,
-`relay/friendsWar.ts`, e4f55f0; each city mirrors them, `src/sim/systems/friendsWar.ts`,
-`src/client/friendsWar.ts`, the Diplomacy tab's "Friends in the region"; 39e89d1); step 8, co-op roles
-(ff4408d); step 9, three war scenarios (Hold the Line, A Clean War, Liberation; 00a96fc–5d3720f); step
-6, allies' help in a live battle (`bhelp`, `src/ui/Help.tsx`; 2481974–67fcf02); step 7, the region's war
-history and replays in the City history panel (`src/client/regionHistory.ts`, `regionReplays.ts`; 09a64f4–
-b9098e5); step 10, the war soak (`scripts/dev/regionsoak.ts`, `scripts/lib/soak`; 754c3e8–3c08fdb); step 11,
-the two-player e2e (`e2e/m39-friends.spec.ts`: declared from the Diplomacy tab, a live battle both
-commanding, peace one offers and the other accepts), tips for a first war with a friend, the README "War"
-section, the lobby and war room on a phone and a tablet by touch (a32f684–2357032). Each step was built,
-reviewed by two independent reviewers and fixed (59 findings, all real, all fixed with tests). The soak
-found that an attacker who left a live battle could dodge its losses: fixed (84c9c3c). In progress: step
-12, the wrap-up (checks one at a time, DESIGN §3.33, SPEC_REVIEW, CLAUDE.md), then the final two-hour
-soak run alone on the final code, then `M39 complete:`.
+title names all five). **M39 War with friends** has met its done criteria in tests, e2e and
+virtual soaks on its final code (a19ae2b); the last check, the real two-hour soak on that code, is
+running (`bench-results/regionsoak-m39.log`), then `M39 complete:`. **M40 The final race: the atom
+bomb** has begun: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b82d790), code map
+`docs/plans/M40-codemap.md` (aeef8e3).
+
+M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
+with owners; the region room paces each battle by both players' progress and stamps every order at
+a shared frontier, protocol 6; the defender's city hosts it, the attacker's page runs the same
+battle, both end on one hash), the tactical battle map (key O) for both sides and spectators, a
+player quiet for 10 s handing over to their defences, allies' help, wars and treaties between
+friends kept by the room and mirrored in each sim (declarations, the score, capitulation, vassals,
+proposals, pacts, money terms), the region's war history and replays in the City history panel,
+co-op roles (war, treaties, defence), three war scenarios (Hold the Line, A Clean War, Liberation),
+the four-player region soak, tips, the README's War section, and the lobby and war room by touch on
+a phone and a tablet. Each step was built, reviewed by two independent reviewers and fixed (59
+findings, all real, all fixed with tests); the soaks found three more (an attacker leaving
+mid-battle dodged its losses; a page that missed orders ran a battle out alone; a record standing in
+for a battle the city still hosted fought it twice), each fixed with a test that fails on the old
+code. Calls: DECISIONS "M39"; design: DESIGN §3.33 (plan `docs/plans/M39-design.md`); SPEC_REVIEW
+"M39". Numbers: "Performance (M39)".
 
 M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
 their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a
@@ -289,12 +289,52 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M39 War with friends (SPEC-5.md), by the steps of `docs/plans/M39-design.md`: battle version 4,
-   the room's live battles, the pages' side, the battle map, wars and treaties between friends, allies'
-   help, the region's war history and replays, co-op roles, three scenarios, the region soak,
-   cross-browser and polish, wrap-up.
-2. M40.
-3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+1. M39's close: the real two-hour soak on the final code, then PROGRESS's tick, the `M39 complete:`
+   commit and pull request #23's title and description.
+2. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`: step 0's
+   rest (DECISIONS "M40", the v31 war fixture, golden and balance baselines, `atomprice.ts`); data,
+   gates and state (save v32); fuel, bomb and preparation; flight, dome and impact; fallout; the
+   nuclear winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
+   7); pages; UI and effects; e2e; wrap-up.
+3. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
+   5 and the README; a war with a computer neighbour and one between two players through the real
+   UI, a race for the bomb, and fixes for whatever feels off.
+4. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+
+## Performance (M39)
+- **The soak** (done criterion; `npx tsx scripts/dev/regionsoak.ts 120 --crash`, four headless
+  players on the local relay at the game's 1× pace with the fair clock on, run alone): on the final
+  code, running after the live-battle e2e (`bench-results/regionsoak-m39.log`). Before the last fixes, on d5cd6cc, the same story passed (121.1 min: 10 live
+  battles, 5 agreed and 5 explained by a leave, crash or outage, 0 failed; 2 fought the old way; 69
+  orders, 5 handovers, 4 helps sent and 2 booked; 3 wars declared and opened, 4 treaties, a conquest,
+  2 vassal dues; 8 drops, 8 outages, 9 reloads, 9 leaves, 8 crashes; the room 173 rows and 139
+  requests, 86 and 69 an hour, within the free plan). Virtual soaks (`--virtual`, the same story on
+  a clock the script moves) on the final code pass on seeds m39final, s6 and s4: 10 live battles each,
+  0 failed; 7 records stood in for a battle a city still hosted and all 7 finished it rather than
+  re-running it. The virtual runs found the three faults the real ones missed (In progress).
+- **Balance**: peace identical to `main` line for line (careful 67,373 residents, $1,838,985, 73 %
+  at year 20; greedy 420; neglectful 354); with rivals at Normal identical to M38's row (65,786,
+  $1,707,414, 70 %, 30 raids). M39 adds nothing a city without friends runs.
+- **Bench** (`bench.ts 6 --big`, the 110,174-resident city, two pairs with `main` back to back): sim
+  totals 5,366 and 5,195 ms against 5,460 and 5,641; months 4–6 tick avg 0.79–1.05 ms on the branch,
+  0.78–1.21 on `main`; p99 7–10 ms on both: no cost from M39.
+- **Battles**: a live battle is a hosted battle with orders, so its tick cost is M37's (a raid on the
+  100k city 0.16 ms a tick of battle on average); the room's pacing adds no work to the sim.
+- **Network** (`netbudget.ts`, four players): 184 messages a minute from the host, 63–64 from guests,
+  1.1 % of the free plan's requests for an hour a day, as M38. A live battle adds at most two `bstep`
+  a second from each combatant and a `ballow` when the frontier moves; the soak's two hours of war in
+  four cities cost the room 908 GB-s, inside the free plan projected to a day.
+- **Tests**: the unit suite, 1,427 tests in 155 files, passes on the final code (1,058 in 130 at
+  M38). E2e on the wrap-up tip, one at a time: every war spec, M34–M39 (14 specs), passes;
+  `m39-friends` (two players through the real UI: a war declared from the Diplomacy tab, a live
+  battle with both commanding, peace one offers and the other accepts) 693 s; `m39-battlemap` failed
+  once on a timing flake (fixed: it waits for the map to show what a click needs) and passed. On the
+  final code the four live-battle specs again (`m39-friends`, `m39-history`, `m39-battlemap`, `m39-help`): running. Screenshots reviewed.
+- **Cross-browser**: `xbrowser.yml` (Chromium, WebKit, real Firefox) green on every push, the final
+  code included, with the determinism script's `live` (a version-4 battle with orders from both
+  sides, a handover and a helper) and `friends` sections; Chromium locally too.
+- **Goldens**: the peace golden, the M36 golden and the v2 battle replays never moved; no save
+  version change (v31: every M39 field is optional).
 
 ## Performance (M38)
 - **Balance** with rivals (`npx tsx scripts/balance.ts 20 careful --rivals --difficulty …`, the
@@ -664,6 +704,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- War with friends (M39): an ally's force in a live battle fights on the battle's own judgement (its
+  owner watches but does not command it); replays are the room's last 20 battles rather than the
+  plan's 7 days; co-op roles are tested at command level, not through the room panel's checkboxes;
+  the three war scenarios are played by scripted moves in tests, not clicked through; a record that
+  cannot finish a battle the city still hosts (a different picture, or orders at steps already
+  played) still stands in for it and fights it whole, as before, logged with its reason (no soak has
+  met one since the fix).
 - A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
   the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
   machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
@@ -1071,6 +1118,13 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
+  test runs the room in one process: the live site offers peer-to-peer only); the region room on
+  Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);
+  the battle map's frame cost in a real window with many units; the lobby, war room and battle map
+  on a tablet in landscape and at 80 % interface size; an ally's help and a spectator with three
+  real players; a first pair of friends inviting each other, going to war and making peace with
+  only the tips to go by.
 - Phase 5 (M38): the bench against `main` (`npx tsx scripts/bench.ts 6 --big`, branch and `main`
   back to back, a few pairs): in the VM the branch ran within the noise of `main` but on its slow
   side, and no slower than the M37 tip. The Trade tab and weariness in a real window.

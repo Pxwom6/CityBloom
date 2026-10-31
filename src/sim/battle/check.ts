@@ -7,7 +7,18 @@
 import { BATTLE, BATTLE_MOD, ROUTES, SUPER, type BattleTarget, type Stance } from '../../data/battle';
 import { MAP_SIZE } from '../../data/world';
 import { UNIT } from '../../data/war';
-import { BATTLE_V2, BATTLE_V4, BATTLE_VERSION, CELL_DEEP, E, S, TAGS_V2, TAGS_V3 } from './types';
+import {
+  BATTLE_V2,
+  BATTLE_V4,
+  BATTLE_VERSION,
+  CELL_DEEP,
+  E,
+  S,
+  TAGS_V2,
+  TAGS_V3,
+  type BattleHelper,
+  type BattleInput,
+} from './types';
 
 /**
  * How big a battle's picture of a city may be, and what a version 4 battle may be given while it
@@ -166,6 +177,9 @@ function helpersIn(v: unknown, structs: number): string | null {
     owners.add(h.owner);
     if (!text(h.name) || !int(h.color, 0, 0xff_ffff) || (h.side !== 0 && h.side !== 1)) return 'a helper';
     if (!int(h.arrive, 0, BATTLE.maxSteps)) return 'a helper’s arrival';
+    // Added while the battle ran (the step it was stamped at): never arriving before it was added.
+    if (h.at !== undefined && !(int(h.at, 0, BATTLE.maxSteps) && h.at <= h.arrive))
+      return 'a helper’s arrival';
     if (h.route !== undefined && !(typeof h.route === 'string' && h.route in ROUTES))
       return 'a helper’s route';
     if (h.mods !== undefined && !modsIn(h.mods)) return 'a helper’s research';
@@ -177,6 +191,23 @@ function helpersIn(v: unknown, structs: number): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Is this list of helpers sound for a version 4 battle with this input? A live battle checks each
+ * helper the room stamps against the battle it is added to (the same on every page), the helpers it
+ * has already included with it.
+ */
+export function helperListProblem(input: BattleInput, helpers: readonly BattleHelper[]): string | null {
+  const why = helpersIn(helpers, input.layout.structs.length / S.stride);
+  if (why) return why;
+  return idsDiffer(
+    input.attacker.units as unknown as Obj[],
+    input.layout.defenders as unknown as Obj[],
+    helpers as unknown as Obj[],
+  )
+    ? null
+    : 'two units with one id';
 }
 
 /** Unit ids of a side differ (version 4: an order names units by id): the force and its helpers, the defenders and theirs. */

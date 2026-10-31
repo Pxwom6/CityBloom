@@ -17,6 +17,7 @@ import {
   type BattleOrder,
   type BattleUnitIn,
 } from '../../src/sim/battle/types';
+import { appendOrders, recordInput, stampLive, type StampedOrder } from '../../src/sim/battle/live';
 import { battleVersionOf, stampBattle, usesV4 } from '../../src/sim/battle/version';
 import { BATTLE, SUPER } from '../../src/data/battle';
 import { decodeBattle, encodeBattle } from '../../src/net/snapshot';
@@ -854,6 +855,237 @@ describe('helpers', () => {
     expect(one.events.find((x) => x.e.k === 'left' && (x.e as { unit: number }).unit === 7001)).toBeTruthy();
     expect(one.frames.some((f) => f.units.some((u) => u.id === 7002))).toBe(true);
     expect(one.frames.some((f) => f.units.some((u) => u.id === 7001))).toBe(false);
+  });
+});
+
+describe('helpers added while the battle runs (M39 step 6)', () => {
+  const defenders = () => crew('tank', 2, 5001, 0, { x: 900, z: 540 });
+  const config = () => ({ structs: [...TOWN, ...bunkers], defenders: defenders() });
+  /** The state to compare two runs by: the hash, and the step the battle ended at. */
+  const hashes = (b: Battle, to: number): string[] => {
+    const out: string[] = [];
+    while (!b.outcome && b.step < to) {
+      b.stepOnce();
+      if (b.step % 25 === 0) out.push(`${b.step}:${b.hash()}`);
+    }
+    return out;
+  };
+
+  it('a helper appended to the input while it runs joins as one given up front does', () => {
+    const force = crew('tank', 5, 1);
+    for (const side of [0, 1] as const) {
+      const help = ally({ side, arrive: 300, units: crew('tank', 3, 7001) });
+      // Given up front, with the step it was added at (as the room stamps it) ...
+      const front = new Battle(make(force, [], { ...config(), helpers: [{ ...help, at: 100 }] }));
+      // ... and added at that step to a battle that was running without it.
+      const late = new Battle(stampLive(make(force, [], config())));
+      const lateHashes = hashes(late, 60);
+      late.input.helpers = [{ ...help, at: 100 }];
+      lateHashes.push(...hashes(late, 100));
+      expect(late.frame().helpers?.[0]).toMatchObject({ owner: 7, alive: 3, total: 3 });
+      // Nothing of it in the battle before its step.
+      expect((late as unknown as Inside).units.some((u) => u.id >= 7001)).toBe(false);
+      const frontHashes = hashes(front, 100);
+      const sameBefore = frontHashes.filter((h) => Number(h.split(':')[0]) <= 100);
+      // (Before its step the two differ: one has the helper waiting from the start; the other has nothing
+      // of it. From the step it was added at they are the same battle.)
+      expect(lateHashes.length).toBeGreaterThan(0);
+      expect(sameBefore.length).toBeGreaterThan(0);
+      lateHashes.push(...hashes(late, 4_000));
+      frontHashes.push(...hashes(front, 4_000));
+      const from = (list: string[]) => list.filter((h) => Number(h.split(':')[0]) > 100);
+      expect(from(lateHashes).length).toBeGreaterThan(5);
+      expect(from(lateHashes)).toEqual(from(frontHashes));
+      expect(late.hash()).toBe(front.hash());
+      expect(late.step).toBe(front.step);
+      expect(late.result()).toEqual(front.result());
+      expect(late.result().units.filter((u) => u.owner === 7)).toHaveLength(3);
+    }
+  });
+
+  it('it comes in at its arrival step, whenever the page took the entry in', () => {
+    // A page that took the entry in a step after another still has the helper made at the same step.
+    const help = { ...ally({ arrive: 200, units: crew('tank', 2, 7001) }), at: 40 };
+    const a = new Battle(stampLive(make(crew('tank', 4, 1), [], config())));
+    const b = new Battle(stampLive(make(crew('tank', 4, 1), [], config())));
+    while (a.step < 10) a.stepOnce();
+    a.input.helpers = [structuredClone(help)];
+    while (b.step < 39) b.stepOnce();
+    b.input.helpers = [structuredClone(help)];
+    while (!a.outcome && a.step < 260) a.stepOnce();
+    while (!b.outcome && b.step < 260) b.stepOnce();
+    expect(a.hash()).toBe(b.hash());
+    const here = (x: Battle) => x.frame().units.filter((u) => u.id >= 7001);
+    expect(here(a)).toEqual(here(b));
+    expect(here(a).length).toBe(2);
+    // Not on the map before it arrives, on it after.
+    const c = new Battle(make(crew('tank', 4, 1), [], { ...config(), helpers: [structuredClone(help)] }));
+    while (c.step < 195) c.stepOnce();
+    expect(c.frame().units.some((u) => u.id >= 7001)).toBe(false);
+    while (c.step < 210) c.stepOnce();
+    expect(c.frame().units.some((u) => u.id >= 7001)).toBe(true);
+  });
+
+  it('a helper whose step the battle never reaches is no part of it', () => {
+    const help = { ...ally({ arrive: 900, units: crew('tank', 2, 7001) }), at: 600 };
+    const easy = stampLive(make(crew('tank', 4, 1), [], { structs: TOWN }));
+    const plain = Battle.run(easy);
+    expect(plain.step).toBeLessThan(600);
+    const b = new Battle(structuredClone(easy));
+    b.input.helpers = [help];
+    b.runToEnd();
+    expect(b.result().units.some((u) => u.owner === 7)).toBe(false);
+    expect(b.hash()).toBe(plain.hash());
+  });
+
+  it('a helper added after the army pulled out turns straight back', () => {
+    const guns: StructSpec[] = [0, 1, 2, 3].map((k) => ({
+      id: 30 + k,
+      tags: TAG.civic | TAG.military | TAG.defence,
+      x: 400 + k * 20,
+      z: 520,
+      r: 6,
+      hp: 900,
+      gun: 4,
+      range: 150,
+      against: ['land', 'air'],
+    }));
+    const i = stampLive(
+      make(crew('tank', 2, 1), [{ step: 40, side: 0, kind: 'withdraw' }], { structs: [...TOWN, ...guns] }),
+    );
+    const b = new Battle(i);
+    while (b.step < 60) b.stepOnce();
+    b.input.helpers = [{ ...ally({ arrive: 200, units: crew('tank', 2, 7001) }), at: 60 }];
+    const events: BattleEvent[] = [];
+    while (!b.outcome && b.step < 400) {
+      b.stepOnce();
+      events.push(...b.drain());
+    }
+    // They left at once, never fought: not lost, not on the map.
+    expect(events.filter((e) => e.k === 'left' && e.unit >= 7001)).toHaveLength(2);
+    expect(
+      b
+        .result()
+        .units.filter((u) => u.owner === 7)
+        .every((u) => !u.out),
+    ).toBe(true);
+    expect(b.frame().units.some((u) => u.id >= 7001)).toBe(false);
+  });
+
+  it('the checker wants an arrival no earlier than the step it was added at', () => {
+    const base = () => make(crew('tank', 3, 1), [], { helpers: [{ ...ally({ arrive: 200 }), at: 80 }] });
+    expect(checkBattleInput(base())).toBeNull();
+    const equal = base();
+    equal.helpers![0]!.at = 200;
+    expect(checkBattleInput(equal)).toBeNull();
+    const bad: [string, (b: BattleInput) => void][] = [
+      ['arriving before it was added', (b) => (b.helpers![0]!.at = 201)],
+      ['added at a half step', (b) => (b.helpers![0]!.at = 80.5)],
+      ['added before the start', (b) => (b.helpers![0]!.at = -1)],
+      ['added after the battle', (b) => (b.helpers![0]!.at = BATTLE.maxSteps + 1)],
+      ['an added step that isn’t a number', (b) => (b.helpers![0]!.at = 'soon' as unknown as number)],
+    ];
+    for (const [what, spoil] of bad) {
+      const b = base();
+      spoil(b);
+      expect(checkBattleInput(b), what).not.toBeNull();
+    }
+    // At most three helpers, as ever, whenever they were added.
+    const four = base();
+    for (const owner of [8, 9, 10])
+      four.helpers!.push({ ...ally({ arrive: 300, units: crew('tank', 1, owner * 1000) }), owner, at: 90 });
+    expect(checkBattleInput(four)).not.toBeNull();
+  });
+});
+
+describe('helpers in the room’s log (M39 step 6)', () => {
+  const stamped = (seq: number, step: number, over: Partial<StampedOrder> = {}): StampedOrder => ({
+    seq,
+    step,
+    side: 0,
+    kind: 'help',
+    helper: {
+      owner: 7,
+      name: 'Allies',
+      color: 0x33aa33,
+      side: 0,
+      arrive: step + 480,
+      units: crew('tank', 3, 70_000).map(({ id, kind, hp }) => ({ id, kind, hp })),
+    },
+    ...over,
+  });
+  const live = () => stampLive(make(crew('tank', 3, 1), [], { structs: [...TOWN, ...bunkers] }));
+
+  it('an entry in the log becomes a helper with the step it was stamped at, once', () => {
+    const i = live();
+    const seen = appendOrders(i, 0, [stamped(1, 64)]);
+    expect(seen).toBe(1);
+    expect(i.helpers).toHaveLength(1);
+    expect(i.helpers![0]).toMatchObject({ owner: 7, side: 0, at: 64, arrive: 544, name: 'Allies' });
+    expect(i.helpers![0]!.units[0]).toEqual({ id: 70_000, kind: 'tank', hp: 1, x: 0, z: 0, base: -1 });
+    expect(checkBattleInput(i)).toBeNull();
+    // Told the whole log again, it takes nothing twice.
+    expect(appendOrders(i, seen, [stamped(1, 64)])).toBe(1);
+    expect(i.helpers).toHaveLength(1);
+  });
+
+  it('what the battle could not take is left out the same way on every page', () => {
+    const i = live();
+    const bad: StampedOrder[] = [
+      // Arriving before it was stamped; on a side that isn't the entry's; an owner already there.
+      stamped(1, 64, { helper: { ...stamped(1, 64).helper!, arrive: 10 } }),
+      stamped(2, 64, { helper: { ...stamped(2, 64).helper!, side: 1 } }),
+      stamped(3, 64, { helper: { ...stamped(3, 64).helper!, owner: 0 } }),
+      // A superweapon; a unit that isn't one; with an id of the force's own.
+      stamped(4, 64, {
+        helper: { ...stamped(4, 64).helper!, units: [{ id: 70_000, kind: 'skyfortress', hp: 1 }] },
+      }),
+      stamped(5, 64, {
+        helper: { ...stamped(5, 64).helper!, units: [{ id: 70_000, kind: 'dragon' as never, hp: 1 }] },
+      }),
+      stamped(6, 64, { helper: { ...stamped(6, 64).helper!, units: [{ id: 1, kind: 'tank', hp: 1 }] } }),
+      stamped(7, 64, { helper: undefined }),
+    ];
+    expect(appendOrders(i, 0, bad)).toBe(7);
+    expect(i.helpers ?? []).toHaveLength(0);
+    // A good one after them still goes in; a second from the same owner and a fourth don't.
+    appendOrders(i, 7, [stamped(8, 64)]);
+    appendOrders(i, 8, [stamped(9, 70)]);
+    expect(i.helpers).toHaveLength(1);
+    for (const owner of [8, 9, 10]) {
+      const h = stamped(10 + owner, 80);
+      h.helper!.owner = owner;
+      h.helper!.units = [{ id: owner * 10_000, kind: 'tank', hp: 1 }];
+      appendOrders(i, 9 + owner - 1, [h]);
+    }
+    expect(i.helpers!.map((h) => h.owner)).toEqual([7, 8, 9]);
+    expect(checkBattleInput(i)).toBeNull();
+  });
+
+  it('a record with the log in it plays as the live battle did', () => {
+    const base = live();
+    const entry = stamped(2, 64);
+    const hold: StampedOrder = { seq: 1, step: 32, side: 0, kind: 'hold' };
+    const free: StampedOrder = { seq: 3, step: 96, side: 0, kind: 'free' };
+    // The live run: the entry and the orders fed to it as they were stamped.
+    const run = new Battle(structuredClone(base));
+    let seen = 0;
+    const feed = (list: StampedOrder[]) => (seen = appendOrders(run.input, seen, list));
+    while (run.step < 32) run.stepOnce();
+    feed([hold]);
+    while (run.step < 64) run.stepOnce();
+    feed([entry]);
+    while (run.step < 96) run.stepOnce();
+    feed([free]);
+    run.runToEnd();
+    expect(run.result().units.filter((u) => u.owner === 7)).toHaveLength(3);
+    // The record is the input with the whole log in it, run from the start.
+    const record = recordInput(base, [hold, entry, free]);
+    expect(record.helpers).toHaveLength(1);
+    expect(checkBattleInput(record)).toBeNull();
+    const again = Battle.run(record);
+    expect(again.hash()).toBe(run.hash());
+    expect(again.result()).toEqual(run.result());
   });
 });
 

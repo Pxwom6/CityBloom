@@ -191,7 +191,8 @@ export interface BattleOrder {
  * No superweapons and nothing carried; `base` −1. A helper's units count with their side's
  * strength: an attacking helper's with the force's (the army withdraws as one, at the stance's
  * share lost, and a unit sent home by `withdraw` isn't counted lost); a defending one's with the
- * defence, which never withdraws.
+ * defence, which never withdraws. A helper may be added while the battle runs (`at`, the step it was
+ * stamped at; `input.helpers` is read as the battle goes) and joins exactly as one given up front.
  */
 export interface BattleHelper {
   /** 1–255, and not another helper's (0 is the attacking force, −1 the defender's own units). */
@@ -204,6 +205,14 @@ export interface BattleHelper {
   route?: BattleRoute;
   /** Its own research's modifiers (the main force's don't pass to it). */
   mods?: BattleMods;
+  /**
+   * The step the helper was added at: a helper the region room stamps while the battle runs comes
+   * with the frontier it was stamped at, and the battle takes it up when it reaches that step (its
+   * units wait at the way in from then, as an up-front helper's wait from the start), so every page
+   * that fights the battle takes it at the same step, whenever its entry reached the page. Absent:
+   * from the start. `arrive` is never before it.
+   */
+  at?: number;
 }
 
 export interface BattleInput {

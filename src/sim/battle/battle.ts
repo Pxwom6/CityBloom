@@ -218,6 +218,8 @@ export class Battle {
   private gunFocus = NONE;
   /** Version 4: an attackers' focus order was given, so a fallen focus sends them on to an objective. */
   private refocus = false;
+  /** Version 4: which of `input.helpers` have been taken up (their units made), by index. */
+  private readonly helperTaken: boolean[] = [];
 
   constructor(input: BattleInput) {
     this.input = input;
@@ -273,12 +275,12 @@ export class Battle {
       .forEach((u, k) => this.addAttacker(u, k));
     for (const u of force.filter((x) => x.from !== undefined).slice(0, SUPER.maxCarried)) this.addCarried(u);
     for (const u of L.defenders.slice(0, BATTLE.maxDefenders)) this.addDefender(u);
-    // Version 4: helpers after everyone else, so no unit's index moves for a battle without them.
-    for (const h of input.helpers ?? []) this.addHelper(h);
-    // The attacking side's strength, helpers' units included: the army that came pulls out together
-    // when it has lost the stance's share, whoever's units were lost.
+    // The attacking side's strength, helpers' units included (below): the army that came pulls out
+    // together when it has lost the stance's share, whoever's units were lost.
     for (const u of this.units) if (u.side === 0) this.startStrength += this.strength(u);
     this.superweapon = this.units.some((u) => u.side === 0 && !!UNIT.get(u.kind)?.super);
+    // Version 4: helpers after everyone else, so no unit's index moves for a battle without them.
+    this.takeHelpers();
     if (!this.objectives.length) this.finish('withdrew');
   }
 
@@ -474,11 +476,10 @@ export class Battle {
    */
   private addHelper(h: BattleHelper): void {
     if (!h || (h.side !== 0 && h.side !== 1) || !Array.isArray(h.units)) return;
-    const arrive = Number.isFinite(h.arrive) ? Math.max(0, Math.floor(h.arrive)) : 0;
+    // Waits for the rest of the way: from now, which is the start, or the step it was added at.
+    const arrive = Number.isFinite(h.arrive) ? Math.max(0, Math.floor(h.arrive) - this.step) : 0;
     const L = this.input.layout;
-    const crew = h.units
-      .filter((u) => u.from === undefined && !UNIT.get(u.kind)?.super)
-      .slice(0, BATTLE.maxAttackers);
+    const crew = this.crewOf(h);
     const trucks = crew.filter((x) => x.kind === 'transport').length;
     const squads = crew.filter((x) => x.kind === 'infantry').length;
     crew.forEach((u, k) => {
@@ -518,6 +519,40 @@ export class Battle {
       }
       if (unit.domain === 'air') unit.y = BATTLE.flyHeight;
     });
+  }
+
+  /** The units of a helper the battle takes: no superweapons, nothing carried, at most the attackers' cap. */
+  private crewOf(h: BattleHelper): BattleUnitIn[] {
+    return Array.isArray(h?.units)
+      ? h.units.filter((u) => u.from === undefined && !UNIT.get(u.kind)?.super).slice(0, BATTLE.maxAttackers)
+      : [];
+  }
+
+  /**
+   * Take up the helpers the battle has reached (version 4): those given up front at the start, and
+   * each one added while it runs when the step it was stamped at (`at`) comes, so a helper joins the
+   * same battle at the same step on every page, whenever its entry reached the page. The input's list
+   * is read as the battle goes (the room's entries are appended to it in the order they were stamped).
+   */
+  private takeHelpers(): void {
+    const list = this.input.helpers;
+    if (!list?.length) return;
+    for (let k = 0; k < list.length; k++) {
+      if (this.helperTaken[k]) continue;
+      const h = list[k]!;
+      const at = typeof h?.at === 'number' && Number.isFinite(h.at) ? Math.max(0, Math.floor(h.at)) : 0;
+      if (at > this.step) continue;
+      this.helperTaken[k] = true;
+      const from = this.units.length;
+      this.addHelper(h);
+      if (h?.side !== 0) continue;
+      for (const u of this.units.slice(from)) {
+        // The attacking side's strength takes them in (once the army has pulled out, they turn back
+        // as the pending ones do).
+        if (this.withdrawing) this.pullOut(u);
+        else this.startStrength += this.strength(u);
+      }
+    }
   }
 
   private strength(u: Unit): number {
@@ -1720,6 +1755,7 @@ export class Battle {
     // Events this step alone (not those the caller hasn't drained yet): a battle plays the same
     // whether it's ticked, run straight through or re-run after a load.
     const before = this.events.length;
+    this.takeHelpers();
     this.orders();
     for (const u of this.units) {
       // Units pulling out don't stop to shoot back.
@@ -1898,7 +1934,20 @@ export class Battle {
       ...(this.domeMax > 0 ? { dome: Math.round((this.domeLeft / this.domeMax) * 1000) / 1000 } : {}),
       ...(this.v4 && this.input.helpers?.length
         ? {
-            helpers: this.input.helpers.map((h) => {
+            helpers: this.input.helpers.map((h, k) => {
+              // One the battle hasn't reached the step of yet is whole, on its way.
+              if (!this.helperTaken[k]) {
+                const n = this.crewOf(h).length;
+                return {
+                  owner: h.owner,
+                  name: h.name,
+                  color: h.color,
+                  side: h.side,
+                  arrive: h.arrive,
+                  alive: n,
+                  total: n,
+                };
+              }
               const list = this.units.filter((u) => u.owner === h.owner);
               return {
                 owner: h.owner,

@@ -202,10 +202,12 @@ export class Bots {
     const war = sim.state.war;
     if (!war) return;
     if (sim.state.treasury < 500_000) sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_000_000 });
+    // What each city keeps up (see `arm` in world.ts): Kit, who takes Louton's seat of power, the biggest army.
+    const [inf, tank, gun] = { Ada: [6, 4, 2], Sam: [6, 4, 2], Kit: [12, 8, 4], Lou: [4, 2, 0] }[p.name]!;
     const want: [UnitKind, number, string][] = [
-      ['infantry', 6, 'barracks'],
-      ['tank', 4, 'vehicledepot'],
-      ['artillery', 2, 'vehicledepot'],
+      ['infantry', inf, 'barracks'],
+      ['tank', tank, 'vehicledepot'],
+      ['artillery', gun, 'vehicledepot'],
     ];
     for (const [kind, n, def] of want) {
       const have =

@@ -216,10 +216,20 @@ async function adaAndSam(w: Soak, ada: Player, sam: Player): Promise<void> {
 
 /** Kit declares total war on Lou, takes his seat of power and holds it until the city falls, or wins by the score. */
 async function kitAndLou(w: Soak, kit: Player, lou: Player): Promise<void> {
+  // (The declaration is made at once: its warning runs while Kit helps his ally and Ada and Sam fight.)
   const war = await declare(w, kit, lou, 'total', 'Louton must fall');
   if (!war) return;
-  // Lou answers once with a raid of his own (it may break the hold if it wins).
-  w.later(40_000, () => void raid(w, lou, kit, 'military'));
+  // Kit's force is free for the total war once he has had his turn at helping.
+  await w.until(
+    'Kit to have helped',
+    () =>
+      (w.cover.helpSent > 0 && !kit.page?.live.helping()?.state.match(/asked|on|fighting/)) ||
+      w.minutes() > 7,
+    9 * MIN,
+  );
+  // Lou answers with a raid of his own now and then (it can break the hold if it wins; the region lets a
+  // city take three raids a day, and Kit has only those against Louton, so Lou does not always try).
+  if (w.rng.next() < 0.3) w.later(40_000, () => void raid(w, lou, kit, 'military'));
   // Kit goes for the seat of power until it is held (or the city has fallen or capitulated): a battle that
   // comes to nothing (the defender was away, the force was spent) is tried again when the force is ready.
   const give = w.now() + 40 * MIN;
@@ -314,17 +324,7 @@ export async function story(w: Soak): Promise<void> {
   await guard('alliance', () => alliance(w, kit, sam));
   const arcs = [
     guard('Ada and Sam', () => adaAndSam(w, ada, sam)),
-    guard('Kit and Lou', async () => {
-      // Kit's own force is free for the total war once he has had his turn at helping.
-      await w.until(
-        'Kit to have helped',
-        () =>
-          (w.cover.helpSent > 0 && !kit.page?.live.helping()?.state.match(/asked|on|fighting/)) ||
-          w.minutes() > 7,
-        9 * MIN,
-      );
-      await kitAndLou(w, kit, lou);
-    }),
+    guard('Kit and Lou', () => kitAndLou(w, kit, lou)),
   ];
   await Promise.all(arcs);
   if (!full) return;

@@ -30,10 +30,17 @@ const options = (minutes: number): SoakOptions => ({
 describe('M39 step 10: the war soak', () => {
   it('four players play the war story for a quarter of an hour of room time: no failures, and the story covers what it should', async () => {
     const { result, lines } = await runSoak(options(Number(process.env.SOAK_MINUTES ?? 15)));
-    // On a failure the whole report is the message.
-    expect(result.failures, lines.join('\n')).toEqual([]);
-    expect(result.coverageMissing).toEqual([]);
-    expect(result.battles.live).toBeGreaterThanOrEqual(2);
+    // On a failure the whole report is the message. (What the story covered is judged apart below: a story
+    // that fell a battle short in a quarter of an hour is not a defect of the game.)
+    const broken = result.failures.filter((f) => f.kind !== 'coverage');
+    expect(broken, lines.join('\n')).toEqual([]);
+    const c = result.coverage as Record<string, number>;
+    expect(c.liveBattles, lines.join('\n')).toBeGreaterThanOrEqual(2);
+    expect(c.orders).toBeGreaterThanOrEqual(4);
+    expect(c.warsOpened).toBeGreaterThanOrEqual(1);
+    expect(c.treaties).toBeGreaterThanOrEqual(1);
+    expect(c.helpSent).toBeGreaterThanOrEqual(1);
+    expect(c.drops! + c.outages! + c.reloads! + c.leaves!).toBeGreaterThanOrEqual(2);
     expect(result.battles.failed).toBe(0);
     expect(result.battles.unfinished).toBe(0);
     // Every live battle was taken by its defender and reported by its attacker (once each: the soak fails

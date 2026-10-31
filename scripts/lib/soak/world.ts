@@ -340,21 +340,25 @@ export class Soak {
     }
   }
 
-  /** Bases, forces and defences for a city (money by the test cheat; training takes the game months it takes). */
+  /**
+   * Bases, forces and defences for a city (money by the test cheat; training takes the game months it takes).
+   * The cast: Ada and Sam are alike and middling, Kit is strong and Lou weak, so the story's total war
+   * (Kit takes Louton's seat of power) can end as it should in the three raids a day the region allows.
+   */
   private arm(p: Player): void {
     const { sim, town } = p;
-    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 1_500_000 });
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_500_000 });
     town!.place('militaryhq');
-    town!.place('bunker');
+    if (p.name !== 'Lou') town!.place('bunker');
     const barracks = town!.place('barracks');
     const depot = town!.place('vehicledepot');
-    // Different armies: Ada and Kit lean on tanks, Sam and Lou on infantry.
-    const heavy = p.idx % 2 === 0;
-    for (let k = 0; k < (heavy ? 3 : 2); k++) sim.dispatch({ type: 'trainUnit', base: depot, kind: 'tank' });
-    for (let k = 0; k < (heavy ? 3 : 5); k++)
-      sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
-    sim.dispatch({ type: 'trainUnit', base: depot, kind: 'artillery' });
-    sim.advance(8 * TICKS_PER_MONTH);
+    const [tanks, infantry, guns] = { Ada: [3, 3, 1], Sam: [2, 5, 1], Kit: [6, 6, 3], Lou: [1, 3, 0] }[
+      p.name
+    ]!;
+    for (let k = 0; k < tanks; k++) sim.dispatch({ type: 'trainUnit', base: depot, kind: 'tank' });
+    for (let k = 0; k < infantry; k++) sim.dispatch({ type: 'trainUnit', base: barracks, kind: 'infantry' });
+    for (let k = 0; k < guns; k++) sim.dispatch({ type: 'trainUnit', base: depot, kind: 'artillery' });
+    sim.advance((p.name === 'Kit' ? 14 : 8) * TICKS_PER_MONTH);
     sim.dispatch({ type: 'cheat', cheat: 'unshield' });
   }
 

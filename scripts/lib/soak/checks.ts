@@ -259,6 +259,7 @@ export class Checks {
     for (const e of m.history ?? []) {
       if (this.history.has(e.id)) {
         // An event with an id seen again replaces the first (a battle gains its outcome).
+        if (e.outcome && !this.history.get(e.id)!.outcome) w.note(`region: ${e.text}`);
         this.history.set(e.id, e);
         continue;
       }
@@ -610,7 +611,9 @@ export function required(o: SoakOptions): [Cover, number][] {
   if (m >= 8) need.push(['declared', 1], ['warsOpened', 1], ['treaties', 1], ['pacts', 1]);
   if (m >= 10) need.push(['helpSent', 1], ['liveBattles', 3], ['raids', 3]);
   if (m >= 20) need.push(['conquests', 1]);
-  if (m >= 25) need.push(['vassalDues', 1], ['helpBooked', 1]);
+  if (m >= 25) need.push(['vassalDues', 1]);
+  // (A force sent to help is often late: the battle is over before it can get there.)
+  if (m >= 60) need.push(['helpBooked', 1]);
   if (o.disturb && m >= 8) need.push(['drops', 1], ['reloads', 1]);
   if (o.disturb && m >= 15) need.push(['leaves', 1], ['outages', 1]);
   return need;

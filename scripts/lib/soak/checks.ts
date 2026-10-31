@@ -1,6 +1,8 @@
 import { MAX_CITIES, REGION_LIMITS, type MemoryRegionStore } from '../../../relay/region';
 import type { FriendsState } from '../../../relay/friendsWar';
 import type { FriendWar, WarEvent } from '../../../relay/protocol';
+import { Battle } from '../../../src/sim/battle/battle';
+import type { BattleInput } from '../../../src/sim/battle/types';
 import type { Command, CommandResult } from '../../../src/sim/commands';
 import type { Sim } from '../../../src/sim/sim';
 import type { BattleLog, Cover, SoakOptions } from './types';
@@ -119,6 +121,8 @@ export class Checks {
    */
   standIns = 0;
   standInsContinued = 0;
+  /** Of the continued ones, those whose end (step and hash) was set beside the record played whole: they were the same. */
+  standInsHashed = 0;
   readonly standInsReplaced: { id: string; player: string; why: string }[] = [];
   readonly standInDamage: { id: string; player: string; buildings: number; wrecked: number }[] = [];
 
@@ -220,7 +224,7 @@ export class Checks {
       // battle, or whose player had a bad moment in it; anyone else taking a battle it is hosting has been
       // handed it twice.
       const standsIn = n > 1 && cmd.mode === 'instant' && hosted === id;
-      if (standsIn) this.standIn(p, id, prev, was, sim, r);
+      if (standsIn) this.standIn(p, id, prev, was, sim, r, cmd.input);
       else if (cmd.mode !== 'live') this.w.covered('oldBattles');
       if (n > 1 && !standsIn) {
         if (prev !== undefined && this.rewoundSince(p, prev)) {
@@ -273,6 +277,7 @@ export class Checks {
     was: Before | undefined,
     sim: Sim,
     r: CommandResult,
+    record?: BattleInput,
   ): void {
     const disturbed = this.battles.get(id)?.disturbed.some((d) => d.name === p.name);
     const loadedAgain = prev !== undefined && p.restores.some((r) => r.n > prev);
@@ -307,6 +312,7 @@ export class Checks {
           'damage-doubled',
           `${p.name}'s city began the repair clock of ${restarted.length} civic structures again that the hosted part of ${id} had wrecked, when the record finished the battle`,
         );
+      this.sameEnd(p, id, sim, record);
       return;
     }
     // What the record took on top of the hosted part: a building or civic structure the hosted part had
@@ -331,6 +337,30 @@ export class Checks {
       this.w.fail(
         'damage-doubled',
         `${p.name}'s city took ${again.buildings} buildings and wrecked ${again.wrecked} civic structures in the record of ${id} that the hosted part of the same battle had taken already`,
+      );
+  }
+
+  /**
+   * A battle the city finished with the record ends as the record played whole does (the same step and hash):
+   * the city's own end is in the events the command left, the record's is a plain run of it. (A record that
+   * is not a real battle, as the judge's own tests make, or an end the command did not leave, is not compared.)
+   */
+  private sameEnd(p: Player, id: string, sim: Sim, record?: BattleInput): void {
+    const events = (sim as Partial<Pick<Sim, 'events'>>).events ?? [];
+    const end = events.filter((e) => e.kind === 'battleEnded' && e.info?.live === id).at(-1);
+    if (!end || !record) return;
+    let whole: { steps: number; hash: string };
+    try {
+      const b = Battle.run(structuredClone(record)).result();
+      whole = { steps: b.steps, hash: b.hash };
+    } catch {
+      return;
+    }
+    this.standInsHashed++;
+    if (end.info?.step !== whole.steps || end.info?.hash !== whole.hash)
+      this.w.fail(
+        'desync',
+        `${p.name}'s city finished ${id} with the record and ended at step ${String(end.info?.step)} ${String(end.info?.hash)}, not where the record played whole ends (step ${whole.steps} ${whole.hash})`,
       );
   }
 

@@ -7,6 +7,7 @@ import type { Command, CommandResult } from '../../src/sim/commands';
 import type { SaveFile } from '../../src/sim/save';
 import { Sim } from '../../src/sim/sim';
 import { LIVE_ALLOW_MAX, type LiveCall } from '../../src/sim/systems/raids';
+import { SUPER_UNCOUNTED, battleHasSuper } from '../../src/sim/systems/regionOps';
 import { TICKS_PER_HOUR } from '../../src/sim/time';
 import { liveWorld, sendAgainst } from './liveTown';
 
@@ -346,6 +347,69 @@ describe('M39: the record of a live battle the city still hosts', () => {
       const r = takeRecord(sim, early.slice(0, 1));
       expect(replaced(r)).toMatch(/orders/);
       expect(w(sim).battle).toBeUndefined();
+    });
+  });
+
+  it('a record that comes after the hosted battle ended on its own changes nothing', () => {
+    const sim = hosting(frontier, true);
+    finishLive(sim, log);
+    const reports = w(sim).reports!.length;
+    const before = structuredClone(left(sim));
+    const r = takeRecord(sim, log);
+    expect(r.ok).toBe(false);
+    expect(w(sim).reports!.length).toBe(reports);
+    expect(left(sim)).toEqual(before);
+  });
+
+  describe('a superweapon battle', () => {
+    // The first of the force a superweapon (a giant robot): the region counts such a battle when it is offered.
+    const withRobot = (i: BattleInput): BattleInput => {
+      const out = structuredClone(i);
+      out.attacker.units[0]!.kind = 'windupbot';
+      return out;
+    };
+    const record = (i: BattleInput, all: StampedOrder[]): BattleInput => recordInput(i, all);
+
+    it('the region counted when the city began to host it is finished by its record, which brings no count of its own', () => {
+      const robot = withRobot(input);
+      expect(battleHasSuper(robot)).toBe(true);
+      const sim = load(samSave);
+      const host = sim.dispatch({
+        type: 'battleResolve',
+        input: structuredClone(robot),
+        mode: 'live',
+        from: 1,
+        super: true,
+      });
+      expect(host.ok).toBe(true);
+      for (let t = 0; t < 4_000 && hb(sim).step < frontier; t++) {
+        const allow = Math.min(hb(sim).step + 32, frontier);
+        live(
+          sim,
+          allow,
+          log.filter((o) => o.step < frontier),
+        );
+        sim.step();
+      }
+      expect(hb(sim).step).toBe(frontier);
+      for (let t = 0; t < STALL; t++) sim.step();
+      const r = sim.dispatch({ type: 'battleResolve', input: record(robot, log), mode: 'instant', from: 1 });
+      expect(r.ok).toBe(true);
+      expect(r.ok && r.info).toMatchObject({ standIn: 'continued' });
+      expect(w(sim).battle).toBeUndefined();
+      expect(left(sim).end!.hash).toBe(Battle.run(record(robot, log)).hash());
+    });
+
+    it('is refused as it was when the city hosts a battle without one: nothing changes', () => {
+      const sim = hosting(frontier, false);
+      const robot = withRobot(input);
+      const step = hb(sim).step;
+      const r = sim.dispatch({ type: 'battleResolve', input: record(robot, log), mode: 'instant', from: 1 });
+      expect(r.ok).toBe(false);
+      expect(!r.ok && r.reason).toBe(SUPER_UNCOUNTED);
+      // The hosted battle is still the city's, where it stood.
+      expect(w(sim).battle?.live?.id).toBe(input.id);
+      expect(hb(sim).step).toBe(step);
     });
   });
 

@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { Battle } from '../../src/sim/battle/battle';
+import type { BattleInput } from '../../src/sim/battle/types';
 import { Checks, notCoveredByLength, required, type Before } from '../../scripts/lib/soak/checks';
 import { parseArgs } from '../../scripts/dev/regionsoak';
 import type { BattleLog, SoakOptions } from '../../scripts/lib/soak/types';
@@ -243,6 +246,44 @@ describe('M39 step 10 review: a battle or a report taken twice', () => {
       ]);
       checks.applied(sam as never, 1, resolve('exp-a-5', 'instant'), continued, 'exp-a-5', was(90));
       expect(fails.map((f) => f.kind)).toEqual(['damage-doubled']);
+    });
+
+    // A real battle (one kept from M36): the city's own end is set beside the record played whole.
+    const kept = (
+      JSON.parse(readFileSync('tests/fixtures/war/battle-v2.json', 'utf8')) as { input: BattleInput }[]
+    )[0]!.input;
+    const endOf = (step: number, hash: string) => [
+      { kind: 'battleEnded', id: 1, info: { live: 'exp-a-5', step, hash } },
+    ];
+    const finish = (events: unknown[]) => {
+      const { checks, fails, sam } = setup();
+      sam.sim.state.war.reports.push({ collapsed: [7], civics: [{ id: 3, wrecked: true }] });
+      (sam.sim.state as unknown as { civics: Map<number, { damage: number }> }).civics = new Map([
+        [3, { damage: 88 }],
+      ]);
+      (sam.sim as unknown as { events: unknown[] }).events = events;
+      const cmd = {
+        type: 'battleResolve',
+        mode: 'instant',
+        from: 1,
+        input: { ...kept, id: 'exp-a-5' },
+      } as never;
+      checks.applied(sam as never, 1, cmd, continued, 'exp-a-5', was(90));
+      return { checks, fails };
+    };
+
+    it('sets the city’s end beside the record played whole: the same step and hash pass', () => {
+      const whole = Battle.run(structuredClone({ ...kept, id: 'exp-a-5' })).result();
+      const { checks, fails } = finish(endOf(whole.steps, whole.hash));
+      expect(fails).toEqual([]);
+      expect(checks.standInsHashed).toBe(1);
+    });
+
+    it('fails a city that finished the battle somewhere else than the record played whole does', () => {
+      const whole = Battle.run(structuredClone({ ...kept, id: 'exp-a-5' })).result();
+      const { checks, fails } = finish(endOf(whole.steps, `${whole.hash}-x`));
+      expect(fails.map((f) => f.kind)).toEqual(['desync']);
+      expect(checks.standInsHashed).toBe(1);
     });
 
     it('counts a record that was not the same battle as the fallback, with the sim’s reason', () => {

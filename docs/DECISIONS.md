@@ -1182,9 +1182,13 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   consequences: a stand-in that continues counts the people's weariness once (the old path counted it twice) and
   the battle's end event carries `live` as any hosted battle's does; a superweapon battle's record (no `super`
   flag from `takeRecord`) can now continue the hosted battle, which the room counted when it began, instead of being
-  refused and left to run out alone (by reading the code; no test brings a superweapon to it). The soak's `damage-doubled` check stays for the fallback and, for a
-  continuation, asks that no structure the hosted part wrecked has its repair clock raised
-  (`Before.hosted.clocks`). Tests: `tests/war/liveStandIn.test.ts` (the sim that hosted it, the same city saved and
-  loaded, a crash restored from an older autosave, help joining in the missing part, five fallbacks, no hosted
-  battle); the first three fail on the old code (repair clock 93 against 88, the wreck announced twice, the
-  report's worth 0 against 18000, a lost tank dropped, the battle taken twice) and pass now.
+  refused and left to run out alone (it cannot bring a superweapon the region did not count: the inputs are equal
+  apart from orders and helpers, and a helper's crew takes no superweapon; a record whose force carries one the
+  hosted battle lacks still fails `SUPER_UNCOUNTED` and leaves the hosted battle where it stood). The soak's
+  `damage-doubled` check stays for the fallback and, for a continuation, asks that no structure the hosted part
+  wrecked has its repair clock raised (`Before.hosted.clocks`). Tests: `tests/war/liveStandIn.test.ts` (the sim that
+  hosted it, the same city saved and loaded, a crash restored from an older autosave, help joining in the missing
+  part, six fallbacks, a superweapon battle both ways, a record told again or after the battle ended, no hosted
+  battle); the cases that compare the city with one that hosted it whole fail on the old code (repair clock 93
+  against 88, the wreck announced twice, the report's worth 0 against 18000, a lost tank dropped, the battle taken
+  twice) and pass now.

@@ -1494,6 +1494,263 @@ treaties. Every rate is a monthly ledger line accrued by the hour (`warEconomyRa
   tab (bar, cost, trend, the recovery) and the war room's head; tips for trade, weariness and
   sanctions.
 
+### 3.33 War with friends (phase 5, M39)
+
+Two players' cities fight each other with both commanding, in a region whose war switch is on. Nothing in
+a city's own sim changes shape: a live battle is an ordinary battle whose orders arrive while it runs
+(battle version 4), the region room paces it and keeps the truth of friends' wars and treaties, and each
+city applies its own side as page-only commands. Every new field of a city's state is optional and
+appears on first use (`HostedBattle.live`, `Expedition.help`, `Expedition.liveForce`, `War.friend`,
+`RivalNeighbour.subjectOf`, `ScenarioState.facts`), so the save stays at version 31. Protocol 6
+(`LIVE_PROTOCOL`); the region still serves pages on protocol 5 (`MIN_REGION_PROTOCOL`), which get the old
+behaviour: no live battle, no war or treaty with a friend. Plan: `docs/plans/M39-design.md`; the survey
+it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "M39".
+
+- **Battle version 4** (`src/sim/battle`: `types.ts`, `version.ts`, `check.ts`, `live.ts`, `battle.ts`).
+  - *Orders*: `BattleOrder {step, side, kind, units?, target?}` applies at the start of `step`, in input
+    order (`Battle.orders()`). `OrderKind`: `withdraw` (side 0: the named attackers pull out, all of them
+    without `units`, which is M35's order unchanged; a unit sent home is not counted lost), `focus`
+    (side 0: those units make structure `target` their objective; side 1: the named defenders and every
+    gun prefer attacker `target`, `gunFocus`), `guard` (side 1: defenders go to structure `target` and
+    stay near it; boats, and land units with no road to it, are skipped), `hold` (`Unit.held`: stand and
+    only fire) and `free` (back to the battle's own judgement). `units` are the battle's own unit ids
+    (none: the whole side). An order is checked when it applies: if its units are dead, its target has
+    fallen or never was, or its side may not give that kind, it does nothing, so no order stream can
+    break a battle. `BATTLE_LIMITS`: 256 orders (64 for versions 2 and 3, `withdraw` only), 4 a step from
+    a side, 256 units an order; `orderListProblem` is the check a live battle makes as each order is
+    taken.
+  - *Helpers and owners*: `BattleHelper {owner, name, color, side, units, arrive, route?, mods?, at?}` is
+    an allied force: at most three, one per owner (1–255), their unit ids not repeating a side's
+    (`helperListProblem`), no superweapons, nothing carried, `base` −1. `at` is the step the room stamped
+    it at: `takeHelpers()` makes its units when the battle reaches `at`, waiting at the way in until
+    `arrive`, so every page takes it at the same step whenever its entry reached the page; an attacking
+    helper's units count with the force's strength (the army withdraws as one), a defending one's with
+    the defence. Every unit has an `owner` (`OWNER_ATTACKER` 0, `OWNER_DEFENDER` −1, a helper's own) that
+    the result and the frames carry (`BattleResult.units[].owner`, `BattleFrame.helpers`), so each city's
+    losses are counted apart.
+  - *Stamping*: `stampBattle` (`battleVersionOf`, `usesV4`) gives 4 only to an input with an order other
+    than a plain `withdraw` or with a helper, and `Battle.hash()` adds the orders' and helpers' state
+    only for `v4`, so v2 and v3 battles, replays and the M36 golden are untouched; `stampLive` stamps
+    every live battle 4 from the start. `live.ts` is how every page feeds a battle the room's log:
+    `StampedOrder {seq, step, side, kind, ...}` (a `help` entry carries a `StampedHelper`),
+    `appendOrders(input, seen, list)` (in `seq` order, each once, an unsound entry skipped the same way
+    on every page, its number still counted), `battleOrderOf`, `battleHelperOf`, `OrderRequest` and
+    `recordInput(input, orders)`, the battle as it was fought.
+- **The region room's live sessions** (`relay/live.ts` `LiveSession`: the state machine alone, no
+  connections, no clock, never reading the battle; the methods around it are `RegionRoom`'s `blive`,
+  `binput`, `bstep`, `bdone`, `bjoin`, `bwatch`, `bhelp`, `endRun`). In memory only; the same class is
+  the local relay, the Durable Object and the peer-to-peer host's room.
+  - *Calling*: when a force arrives and the friend's player is here, the attacker's page sends
+    `blive {to, id, force}`. The room makes the checks a kept battle gets (war on, `strikeRefusal`, the
+    day's rows, the attacker's pace `battlesOf`) and what a live one needs: neither city in a live battle
+    (`runOf`), `LIVE.sessions` (2) in the region, the defender connected on a page that speaks
+    protocol 6. It calls the defender (`bcall`); the defender's page answers `binput` (the battle input
+    in at most `LIVE.inputParts` parts) or `bdecline`; no answer in `LIVE.call` (20 s) and `bliveoff`
+    sends the attacker the old way (M35: it fights the region's saved copy of the friend's city and the
+    defender takes that battle later). The raid is counted in the target's day (`raids`, `raidedBy`, a
+    superweapon's count) and the pace taken only when the input arrives.
+  - *Pacing by progress*: each combatant says how many steps its page has run (`bstep`, at most twice a
+    second, every few seconds when idle). `LiveSession.allow`, the frontier, is the slowest racing page's
+    step plus `LIVE.lead` (32 steps: 2 s of play, 16 steps a second at 1×) and never moves back; a page
+    runs only below it (`ballow`). The slower player sets the pace. The room has no timers: `sweep` runs
+    on every message and ping, and that is when a late answer, a silent combatant or an abandoned battle
+    is noticed.
+  - *Orders*: a player's orders ride on `bstep.orders` (`LIVE.perMessage` 4, shape-checked by
+    `cleanLiveOrder`; a unit may be a helper's, `helpUnitId`). `LiveSession.stamp` numbers each (`seq`)
+    and stamps it at the frontier, so it applies at the same step on every page, at most `LIVE.perStep` a
+    side a step and `LIVE.maxOrders` − `LIVE.reserve` in a log (the reserve is for handovers);
+    `ballow.ords` takes it to both pages and the watchers.
+  - *Handover and rejoin*: a side silent for `LIVE.silent` (10 s), or whose connection is gone, is handed
+    over (`LiveSession.handover`): the room stamps a `free` for it at the frontier, refuses its orders,
+    and paces by the other combatant alone (a page that speaks again, `back`, counts again). `bjoin`
+    (`rejoin`) takes command back: the room sends `bstart` again, with the input and every order so far,
+    and the page restarts its run from it and catches up (`LiveRunner` runs unpaced when more than two
+    leads behind). A page takes command back by itself a few times (`REJOIN_MAX`).
+  - *Watchers*: any other city's page may `bwatch` a running battle (`LIVE.watchers`, 8) and gets
+    `bstart` with role `watcher`, then the same `ballow`s; `blivenow` tells every city a battle began. A
+    combatant's `bwatch` is taken as `bjoin`.
+  - *The end and the record*: each page reports its end step and `hash()` (`bdone`). `LiveSession.ending`
+    settles when every side has reported or been left behind and one has: the defender's step and hash
+    stand and `agree` says whether both matched (`solo`: one side alone). If neither side has spoken for
+    `LIVE.abandon` (60 s) it ends `abandoned`. `endRun` makes the battle's writes, all at its end: a
+    `LiveRecord` (`{v, id, from, to, input, orders, end}`) in rows of the replay slots (`replayRow`),
+    listed as a `LiveReplay` in `RegionMeta.replays` (the last `LIVE.replays`, 20; none stored past the
+    day's row budget, which `bend.kept: false` says). A defender not here gets the record as a pending
+    battle (`live: true`) that its sim runs to the end with the orders in it; an attacker not here is
+    owed the end (`City.liveOwed`, sent with `liveWelcome`). `bend` goes to every page.
+  - *Limits*: one live battle a city, `LIVE.sessions` a region, 8 watchers, a force of at most
+    `LIVE.forceChars`, every connection its 2 messages a second (`REGION_LIMITS.rate`), which a `bstep`
+    twice a second and a few orders fit in. `relay/tests/regionLive.test.ts` drives it with scripted
+    pages.
+- **The pages** (`src/client/liveBattles.ts` `LiveBattles`, `Game.live`; it is handed a city, a store, a
+  runner and a clock, so `tests/war/liveHarness.ts` runs two pages against a real room in Node).
+  - *The defender hosts the battle in its own sim*: on `bcall` the page asks the sim for the picture
+    (`liveBattle` query, `liveBattleInput`: `battleLayout` of the city as it stands and the friend's
+    force, `stampLive`), starts hosting it (`battleResolve` with `mode: 'live'`, `HostedBattle.live` a
+    `LiveHosting {id, from, allow, seq, begun}`) and sends it. From then on it gives the sim the room's
+    log and frontier with the page-only `battleLive {id, allow, orders}` (`appendOrders` into
+    `hb.input.orders`; `allow` never goes back; `abort` drops a battle that never began). `battleTick`
+    still runs two steps a city tick but only up to `live.allow`, so damage, fires, shelter and the
+    report are an ordinary home battle's, and a save mid-battle re-runs `hb.input` (its orders included)
+    to `hb.step`. A paused city would hold both players up, so the page puts it back to 1× for the battle
+    (`keepRunning`) and says so; `LIVE_ALLOW_MAX` lets a battle the room let go run out.
+  - *The attacker runs a copy in its battle worker*: `LiveBattles.attack` (called by `AwayBattles` when a
+    force arrives) pins the force (`battleSettling`; `Expedition.liveForce` keeps the force first sent,
+    so a page that leaves and returns asks with the same one), sends `blive`, and on `bstart` checks the
+    input (`checkBattleInput`, its id, `sameForce`) before running it. `LiveRunner`
+    (`src/client/liveRunner.ts`, the worker's `live`, `liveFeed` and `liveStop` jobs, `pumpRun`) steps it
+    at the battle's pace (`LIVE_STEPS_PER_SECOND`), never past the frontier, and ends with the force's
+    `awayResult`, which `finalize` gives the sim (`battleReport`) once the room has the end. It answers
+    `fallback` (the old way), `refused` (with a time to ask again) or `wait`.
+  - *Each city's run is its truth* (as M35): the room compares the two `hash()`es at the end, a mismatch
+    is logged (`LiveState.desync`) and kept in the record (`agree: false`), and nothing changes: the
+    defender's run stands for its city and the attacker's for its force. A battle that ended while a page
+    was away is run from the record (`breplaydata`, `inputOfRecord`) and reported once. A page that
+    reloaded finds its sim hosting a battle it has no part in (`orphaned`), asks to join it with `bjoin`,
+    and if the room has none lets it run out.
+  - *The stand-in room*: `src/client/liveStage.ts` `LiveStage` plays the room for one page in test builds
+    (the real `LiveSession`, the page's reports pacing it, a side nobody plays handed over, a hidden
+    `LiveRunner` pacing a watched battle; `stageLive` in the test API), so the map is driven and
+    photographed alone; the page code under it is the real one.
+- **The battle map** (`src/ui/BattleMap.tsx` `BattleMapPanel`; the pure `battleMapView.ts` (fitting the
+  view, hit tests, `buildOrders`, `ordersFor`), `battleMapDraw.ts` (`MapCache`, `drawBattleMap`,
+  `Palette`) and the page's `BattleMapState` in `src/client/battleMapState.ts`, as `Game.battleMap`): a
+  canvas of the battle's roads, buildings and units by side and owner, drawn from a `LiveView`
+  (`LiveBattles.view()`: role, input, frame, step, `allow`, handed over, the room's end). The same panel
+  serves both combatants and the spectators; the defender also sees the battle in its city, the attacker
+  never gets a 3D view of a friend's town. Choose units (a click, a dragged box, All), then an order
+  button, or arm Focus or Guard and click a building or an attacker; `LiveBattles.order` queues it for
+  the next `bstep` and `orderLog()` shows it queued, sent, "heard" once stamped, or unheard. A side the
+  room handed over is told so, with Take command again (`rejoin`); a watcher's map is read-only and holds
+  Send help. Ways in: key **O** (`App.tsx`, `Game.toggleBattleMap`, `openBattleMap`), the battle bar's
+  Command button (`Battle.tsx`), a friend's card in the Region panel, and Watch (`watchLive`). Touch: tap
+  to select, tap to order, targets of 24 px or more.
+- **Allies' help** (`bhelp`; `LiveSession.help`, `helpSideOf`, `helpUnitId`, `helpTravelOf`). A friend
+  with an alliance with either combatant, or a defensive pact with the one attacked, may send a force
+  into a running battle: the room decides the side from the pacts it keeps (`FriendsWar.aidPact`,
+  `raidBlock` for a ceasefire or a vassal's duty), names and colours the helper itself, and stamps the
+  force into the log at the frontier like an order (kind `help`), arriving `LIVE.helpTravel` steps on
+  (480: 30 s by road, rail or air; 720 by sea) and only if it could arrive before the battle's last step
+  (`LIVE.lastStep`); one force a city, three a battle (`LIVE.helpUnits` 24 units each). Its units are
+  numbered `helpUnitId(slot, k)` from `LIVE.helpBase`, a range no city's sim mints, so no id repeats a
+  combatant's. The sim sends the units off, away and pinned (`helpSend`, `sendHelp`, `helpRefusal`: no
+  superweapons, one help at a time), the page watches the battle to run it, and the force's losses are
+  booked once by `helpEnd`, from the helper's run, only when that run ends where the room's `bend` says
+  (the same step and hash: `helpSettle`, `helpOver`); a battle that ended first, a lost link or a
+  mismatch sends the force home untouched. A helper fights on its own judgement; its owner watches but
+  doesn't command it. `HelpView` and `src/ui/Help.tsx` (`helpView.ts` for the pure rules) show it.
+- **Wars and treaties between friends** (`relay/friendsWar.ts` `FriendsWar` keeps the truth in
+  `RegionMeta.friends` (`FriendsState`: `wars`, `pacts`, `proposals`, `vassals`, a `queue` of treaties
+  per city, the cooldowns `ended`) and `RegionMeta.history`; each city's sim mirrors it).
+  - *The room*: the times are real time at the fair clock's pace (`FRIENDS`: a game hour is 7.5 s).
+    `wdeclare {to, scale, reason, breakPact?}` passes `declareRefusal` (war on, the scale within the
+    region's rules, both pages on protocol 6, neither city neutral, the target not a newcomer unless it
+    struck first, no war already, a vassal declaring only to rise against its overlord, the
+    `FRIENDS.cooldown` since the pair's last war, no binding pact unless `breakPact`: `wrefused` with
+    `breaks`), and the war opens after `FRIENDS.warning` (2 minutes). The defender's page reports each
+    battle (`battleResult {outcome, decisive, worth, seatDown, away}`), which `FriendsWar.result` turns
+    into M36's score once (`DIPLOMACY.score`, `battleKnown`); at −60 a side capitulates and the winner
+    has `FRIENDS.terms` (a day) to impose terms, then plain peace stands; in a total war the seat of
+    power taken starts a hold (`holdPerHour` points a game hour, `conquer` after `conquestHours`, 48)
+    that a battle the other side wins breaks. A proposal (`tprop`, checked by `termsProblem` against
+    `FRIEND_TERM_KINDS`: M36's terms less those that need a computer town's state (occupied districts,
+    demilitarised zones, release, liberation), plus `vassal`) waits `FRIENDS.proposal` (a day) for its
+    answer (`tans`), kept for a city that is away; a treaty signed (`sign`: pacts, wars ended, vassals
+    set) goes to both cities as `tsign` and stays in the `queue` of each until it says `tseen`; `tbreak`
+    ends a pact; a vassal is free at +30 in a rising (`FRIENDS.freeAt`) or by an `independence` term.
+    Each step is a `WarEvent`; only declarations, treaties signed, scores and pacts ending are written at
+    once.
+  - *Each city's mirror* (`src/sim/systems/friendsWar.ts`): the page turns the room's words into
+    page-only commands. `friendWar` is a war's whole state and idempotent (a `War` in
+    `WarState.diplomacy` with its `friend` {room, slot, state}; the score, the hold and a capitulation as
+    the room has them; `scoreBattle` itself skips a player's town); `friendTreaty` is applied once
+    (`WarState.taken`, `TREATY_TAKEN`): peace ends the mirror war, reparations are booked at once on both
+    sides (one pays, the other receives), tribute monthly on each city's own clock, an embargo ends its
+    deals; `friendPacts` is the region's pacts and vassals for the city by the room's ids, so order does
+    not matter on a reconnect and an old `tsign` cannot bring back a pact the room dropped. Whatever
+    already reads a war, a pact or a vassal (weariness, `bindingPacts`, the ledger) works for friends.
+    `forgetFriends` ends it all when the city leaves its region (`warClock` with `left`); a region
+    turning war off signs plain peace on every war (`FriendsWar.warOff`), which reaches each city as a
+    treaty.
+  - *Vassal dues*: a vassal's report says what it pays (`RegionReport.dues`, a fifth of its taxes, not
+    while it rises); the room passes it with the report and the link gives the overlord's sim
+    `PlayerNeighbour.dues`, which the overlord counts (`diplomacy.ts`, the `vassals` line) only from a
+    friend the room lists as its vassal, with no war between them, and at most three times what its
+    people could pay (`regionUpdate`), since it cannot see the vassal's taxes.
+  - *The page* (`src/client/friendsWar.ts` `FriendsWarClient`): asks (`declare`, `propose`, `answer`,
+    `endPact`), mirrors (a queue; the city is saved before `tseen`, so closing the page loses no treaty;
+    the room's messages wait for the welcome, `friendsHeld`), reports (`battleResult`, sent again until
+    the history shows it counted) and shows (`view()`). The war room's Diplomacy tab has the Friends
+    block (`FriendsDiplomacy` in `src/ui/DiplomacyFriends.tsx`: proposals in and out, wars with score
+    bars, treaties, the terms builder, a row per friend with Declare war… and Propose…); the sim answers
+    `friendTerms` before a treaty is sent, and the room's refusals read in words beside the control that
+    caused them (`refusal`, `raidNote`, `newcomerNote`, `raidVerdictWhy`).
+- **The region's war history and replays**: the room keeps the last 100 events (`FRIENDS.history`,
+  `WarEvent`: declared, opened, battle with its outcome and score, ceasefire, treaty, capitulated,
+  vassal, freed, hold, broken, ended) and tells a page in `rwelcome.friends` and one by one (`history`);
+  an event heard again by id replaces the first, since a battle's line is written when it ends and gains
+  its outcome when the defender reports. `src/client/regionHistory.ts` is the pure model (clean events,
+  `mergeHistory`, `historyRows` with a city or kind filter, `byDay`, `historyState`), and the City
+  history panel (Y) shows it as "Region at war" (`RegionAtWar`, `src/ui/RegionHistory.tsx`) beside the
+  city's own charts, since the region is on real time and the city on game months; the city's chronicle
+  is not touched (it is in a war city's state hash). Any city may replay a battle the room keeps
+  (`breplay`, `breplaydata`, `breplaygone`): `RegionReplays.prepare` (`src/client/regionReplays.ts`)
+  fetches the record and the town (this city's own copy of it if it fought the battle, else the region's
+  latest save of the defender's city), keeps both in the browser and the viewer opens `?battle=`.
+  `battleResolve` with `asFought` plays it as fought in whatever town it is shown in (every unit id and
+  the caps as recorded), and `replayVerdict` says whether it ended where the room's record did
+  (`expectOf`).
+- **Co-op roles** (`src/sim/rules.ts`): three permissions the host sets per player beside the old six,
+  `war` (declare, send and recall forces, help, spies, the blackout), `treaties` (propose, answer, end
+  pacts, neutrality, sanctions) and `defence` (military buildings, training, research and trials, the
+  dome, defence funding; `needOf`). `roomRefusal` turns a command away before the room orders it and
+  `simRefusal` checks the rest on every machine. A stored list that names none of them reads as allowing
+  all three (`permsOf`; `SharedRules.roles` is set once the host sets anyone's list, `setPerms`, which
+  gives older lists the roles they were read as allowing first), so older rooms keep working. A shared
+  city still cannot stand in a region (DECISIONS "M37"): its roles cover wars with computer neighbours.
+  `tests/lockstep/rules.test.ts`.
+- **Three war scenarios** (`src/data/scenarios.ts`, recipes in `scripts/lib/scenarioCities.ts`, tests in
+  `tests/scenarios/`): **Hold the Line** (`holdline`: a `script` of `ScriptStep`s, three raids at set
+  months fired by `fireScript` on the war's own dice; `scriptedInvasion` keeps the neighbours from
+  raiding or declaring on their own meanwhile; goals `waves` and `standing` (a zone's share of the
+  buildings it began with, `ScenarioState.base`)), **A Clean War** (`cleanwar`: win a declared war,
+  `warWon`, with no district occupied, `districtsLost`) and **Liberation** (`liberation`: free a town its
+  overlord holds, `liberated`). The measures are counted as they happen (`scenarioFact`,
+  `ScenarioState.facts`). A subject town is `RivalNeighbour.subjectOf` (set only by a scenario's save;
+  `heldBy`): while held it trades nothing, comes to no one's side and raids nobody, and it is freed
+  (`freeTown`: relation +50, an alliance offered) by a `liberate` term its overlord offers when badly
+  beaten, adds to the terms on its capitulation (`defaultTerms`) or by its fall.
+- **The soak** (`scripts/dev/regionsoak.ts`, the harness in `scripts/lib/soak`: `world.ts`, `bots.ts`,
+  `story.ts`, `checks.ts`, `report.ts`, `run.ts`): four players' cities in one region at war, each a sim,
+  a `RegionLink` and the helpers a game has (`tests/war/liveHarness.ts`, `friendsHarness.ts`), against
+  the local relay over real sockets and the wall clock (`real`, the cities at 1× with the fair clock on:
+  two hours take two hours) or the same room class in this process with a clock the soak moves
+  (`virtual`, or `SOAK_FAST=1`; the same seed plays the same story). The bots give orders, answer
+  proposals, send help and train; the story plays an alliance, a declared war that opens after its
+  warning and is fought in live battles, a treaty, a total war that ends in a conquest with a vassal
+  paying dues, and drops, outages, reloads, leaves and (`--crash`) a page that dies and returns from its
+  last autosave. The checks (`Checks`): every live battle's two runs agree or a disturbance explains it;
+  each battle is taken once by its defender and each force reported once; a treaty is applied by both
+  cities; the room's wars, pacts and vassals match each page and sim; invariants hold; coverage meets
+  `required` for the run's length (`notCoveredByLength` names what a short run cannot have covered); and
+  the room's cost, `budget()`, against Cloudflare's free plan: an evening of this play (4 hours) must
+  take at most half of the region's day of rows and of the plan's rows, requests and duration. It found
+  that an attacker who left a live battle could dodge its losses (`Expedition.liveForce`). The short
+  version is `relay/tests/regionSoak.test.ts` (project `live`) and `soakChecks.test.ts`.
+- **Cross-browser**: `runDeterminism` has a `live` section (the lab town hosts a live battle as the
+  room's frontier and orders arrive, two allies join, the city's own help is booked, the record is run
+  again) and a `friends` section (a friend's war, treaties, pacts and vassalage through the mirror
+  commands); both are compared with the M36–M38 sections in every browser and in SpiderMonkey's shell
+  (`e2e-xb/determinism.spec.ts`).
+- **Polish**: tips for a first war with a friend (`regionWarOff`, `friendsAtWar`, `friendWar`,
+  `liveBattle`, `friendPeace`, `friendTreaty`, `friendVassal`, `src/client/tutorial.ts`,
+  `tests/tips.test.ts`), a "War with friends" section in the README, the lobby, the Region panel's war
+  switch and the war room on a phone and a tablet by touch (`e2e/m39-narrow.spec.ts`): nothing wider than
+  the window, every control in reach, and none under 24 px to tap even at the 80 % interface size
+  (`max(24px, 1.6rem)`, `e2e/m39-touch-scale.spec.ts`). The two-player e2e is `e2e/m39-friends.spec.ts`:
+  war declared from the Diplomacy tab, a live battle both command, peace one offers and the other
+  accepts.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

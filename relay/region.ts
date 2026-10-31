@@ -350,11 +350,15 @@ export type RegionRoomMsg =
       agree: boolean;
       solo?: true;
       abandoned?: true;
+      /** `false`: the region did not store this battle (its day's rows were spent), so there is no replay of it. */
+      kept?: false;
     }
   /** A live battle started in the region (to every city but its combatants), to watch. */
   | { t: 'blivenow'; id: string; from: number; to: number }
   /** A finished battle's record, asked for (`breplay`) or owed to a combatant who wasn't here at its end. */
   | { t: 'breplaydata'; id: string; from: number; to: number; record: LiveRecord }
+  /** A replay asked for (`breplay`) that the region doesn't keep (any more): the page can stop waiting. */
+  | { t: 'breplaygone'; id: string; from?: number }
   /** The room turned an ally's help down (M39 step 6), and says why. */
   | { t: 'bhelpoff'; id: string; why: string }
   | { t: 'notice'; text: string }
@@ -2373,7 +2377,12 @@ export class RegionRoom {
   private breplay(conn: RegionConn, m: Extract<RegionClientMsg, { t: 'breplay' }>): void {
     const rep = this.replayOf(m.id, m.from);
     const record = rep && this.loadRecord(rep);
-    if (!rep || !record) return void conn.send({ t: 'notice', text: 'That battle isn’t kept any more' });
+    if (!rep || !record)
+      return void conn.send({
+        t: 'breplaygone',
+        id: m.id,
+        ...(m.from !== undefined ? { from: m.from } : {}),
+      });
     conn.send({ t: 'breplaydata', id: rep.id, from: rep.from, to: rep.to, record });
   }
 
@@ -2482,8 +2491,9 @@ export class RegionRoom {
         }),
       false,
     );
-    // To every city's page that speaks live battles, the watchers (cities all) among them.
-    this.toLive(endMsg(rep));
+    // To every city's page that speaks live battles, the watchers (cities all) among them; a battle
+    // that wasn't stored says so, so no page offers a replay of it.
+    this.toLive(endMsg(rep, kept));
     this.save();
     this.broadcast();
   }
@@ -2617,7 +2627,7 @@ function gone(id: string): RegionRoomMsg {
 }
 
 /** A finished battle's end, as the region tells it. */
-function endMsg(r: LiveReplay): RegionRoomMsg {
+function endMsg(r: LiveReplay, kept = true): RegionRoomMsg {
   return {
     t: 'bend',
     id: r.id,
@@ -2628,5 +2638,6 @@ function endMsg(r: LiveReplay): RegionRoomMsg {
     agree: r.agree,
     ...(r.solo ? { solo: true as const } : {}),
     ...(r.abandoned ? { abandoned: true as const } : {}),
+    ...(kept ? {} : { kept: false as const }),
   };
 }

@@ -93,13 +93,18 @@ export async function openPage(o: {
   rejoin?: { slot: number; secret: string };
   /** A page's own parts that must be on the link before it says hello (M39 step 5b: wars between friends). */
   beforeStart?: (link: RegionLink) => void;
+  /** The city's first report waits for this (a page slow to answer the welcome: M39 step 7's review). */
+  reportGate?: Promise<void>;
 }): Promise<Page> {
   const { sim, clock } = o;
   const taken: Page['taken'] = [];
   const kept: Page['kept'] = { towns: new Map(), battles: [] };
   const port: CityPort = {
     command: async (cmd) => sim.dispatch(cmd),
-    report: async (): Promise<RegionReport> => regionReport(sim),
+    report: async (): Promise<RegionReport> => {
+      if (o.reportGate) await o.reportGate;
+      return regionReport(sim);
+    },
     save: async () => sim.save(),
     cityName: () => sim.state.cityName,
     battle: async (input, meta) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_CITIES,
   MemoryRegionStore,
   REGION_LIMITS,
   RegionRoom,
@@ -1015,9 +1016,41 @@ describe('M39: the region room’s live battles', () => {
     late.say(report('Kitton'));
     late.say({ t: 'breplay', id: 'r-5' });
     expect(last(late, 'breplaydata')!.record.input).toEqual(['IN-5']);
-    late.say({ t: 'breplay', id: 'r-2' });
-    expect(notices(late).at(-1)).toBe('That battle isn’t kept any more');
+    // One the region no longer keeps is answered at once, so the page stops waiting (M39 step 7 review).
+    late.say({ t: 'breplay', id: 'r-2', from: 1 });
+    expect(last(late, 'breplaygone')).toEqual({ t: 'breplaygone', id: 'r-2', from: 1 });
+    late.say({ t: 'breplay', id: 'never-fought' });
+    expect(last(late, 'breplaygone')).toEqual({ t: 'breplaygone', id: 'never-fought' });
     expect(kit).toBeUndefined();
+  });
+
+  it('says a battle’s end was not stored when the day’s rows had gone, so no page offers a replay of it', () => {
+    const w = world({ limits: { raidsPerDay: 1000, battleBurst: 1000, dailyRows: 200 } });
+    const { ada, sam, store } = w;
+    // A battle begun within the allowance; then the day’s rows are spent by other writes before it ends.
+    w.fight('N1', 'IN-N1');
+    for (let k = 0; k < 400; k++) store.saveBattle(40, 0, ['burn']);
+    ada.say({ t: 'bdone', id: 'N1', step: 9, hash: 'ab' });
+    sam.say({ t: 'bdone', id: 'N1', step: 9, hash: 'ab' });
+    // Both combatants are told how it ended, and that the region did not keep it.
+    for (const r of [ada, sam]) {
+      expect(last(r, 'bend')).toEqual({
+        t: 'bend',
+        id: 'N1',
+        from: 1,
+        to: 2,
+        step: 9,
+        hash: 'ab',
+        agree: true,
+        kept: false,
+      });
+    }
+    // Asking for the battle is answered at once, with no record (none was written).
+    const kept = [...store.battles.keys()].filter((k) => k.startsWith(`${MAX_CITIES + 1}:`));
+    expect(kept).toEqual([]);
+    ada.say({ t: 'breplay', id: 'N1', from: 1 });
+    expect(last(ada, 'breplaygone')).toEqual({ t: 'breplaygone', id: 'N1', from: 1 });
+    expect(last(ada, 'breplaydata')).toBeUndefined();
   });
 
   it('keeps a region’s replays across a restart, in the same rows', () => {

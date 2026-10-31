@@ -1,12 +1,19 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { LIVE } from '../../relay/protocol';
-import { RegionReplays, replayRecordId, replayTownKey } from '../../src/client/regionReplays';
+import {
+  FETCH_MS,
+  RegionReplays,
+  replayRecordId,
+  replayTownKey,
+  type ReplayLink,
+} from '../../src/client/regionReplays';
 import { historyRows, replayKey, replayVerdict } from '../../src/client/regionHistory';
 import type { BattleRecord } from '../../src/client/battles';
 import { Battle } from '../../src/sim/battle/battle';
 import { S, TAG, type BattleInput } from '../../src/sim/battle/types';
 import type { SaveFile } from '../../src/sim/save';
 import { Sim } from '../../src/sim/sim';
+import { BATTLE_BUSY } from '../../src/sim/systems/raids';
 import { friendsPage, type FwPage } from './friendsHarness';
 import { Clock, closePages, driveUntil, flush, openPage, openRoom } from './liveHarness';
 import { armAda, armSam, liveTown, sendAgainst } from './liveTown';
@@ -149,10 +156,13 @@ async function fought() {
   let over = false;
   void ada.away.fight(sent.id).then(() => (over = true));
   let gave = false;
+  // Samford's city as the region could have it saved in the middle of the battle (it saves every few minutes).
+  let mid: SaveFile | null = null;
   const each = () => {
     const d = sam.live.state();
     if (gave || !d || d.step < 60) return;
     gave = true;
+    mid = sam.sim.save();
     const input = sam.live.input()!;
     ada.live.order({ kind: 'hold', units: [input.attacker.units[0]!.id] });
     sam.live.order({
@@ -171,7 +181,7 @@ async function fought() {
       200,
     ),
   ).toBe(true);
-  return { clock, room, ada, sam, eve };
+  return { clock, room, ada, sam, eve, mid: mid! as SaveFile };
 }
 
 describe('M39 step 7: replays from the region', () => {
@@ -240,6 +250,38 @@ describe('M39 step 7: replays from the region', () => {
     expect(replayVerdict(expectEnd, viewed(disbanded, rec.input, false))).toBe('differs');
   }, 300_000);
 
+  it('plays in a town saved in the middle of a battle of its own: the one shown is not that one', async () => {
+    const { eve, mid } = await fought();
+    const ref = eve.desk.list()[0]!;
+    expect((await eve.desk.prepare(ref)).ok).toBe(true);
+    const rec = eve.kept.battles.find((b) => b.id === replayRecordId(ref.from, ref.id))!;
+    // The region's save of Samford was taken while the battle was on: the city is hosting it.
+    const midTown = loaded(mid);
+    expect(midTown.state.war!.battle).toBeTruthy();
+    // A city that plays on refuses another battle now (a raid taken in a battle is the real city's)...
+    const busy = midTown.dispatch({
+      type: 'battleResolve',
+      input: structuredClone(rec.input),
+      mode: 'watch',
+    });
+    expect(busy).toMatchObject({ ok: false, reason: BATTLE_BUSY });
+    // ...but a replay is shown in a throwaway copy, and plays exactly as the battle was fought.
+    expect(replayVerdict(rec.region!.expect!, viewed(mid, rec.input))).toBe('checked');
+  }, 300_000);
+
+  it('a replay is also watched by the city that fought it, from its own copy of the town (the one kept)', async () => {
+    const { sam } = await fought();
+    const ref = sam.desk.list()[0]!;
+    const own = [...sam.kept.towns.keys()].filter((k) => k.startsWith('replay:def-'));
+    expect(own).toHaveLength(1);
+    const before = sam.kept.towns.size;
+    expect((await sam.desk.prepare(ref)).ok).toBe(true);
+    const rec = sam.kept.battles.find((b) => b.id === replayRecordId(ref.from, ref.id))!;
+    // Shown in the town the city already kept for the battle: no second copy of it.
+    expect(rec.townKey).toBe(own[0]);
+    expect(sam.kept.towns.size).toBe(before);
+  }, 300_000);
+
   it('the two fighters watch it in their own copies of the town, and a late arrival is told of it on joining', async () => {
     const { clock, room, ada, sam, eve } = await fought();
     const ref = eve.desk.list()[0]!;
@@ -273,21 +315,82 @@ describe('M39 step 7: replays from the region', () => {
     expect(rec.region!.expect).toEqual({ step: ref.step, hash: ref.hash });
   }, 300_000);
 
-  it('asking for a battle the region does not keep fails in words, and the list forgets it', async () => {
+  it('asking for a battle the region does not keep is answered at once, in words, and the list forgets it', async () => {
     const { eve } = await fought();
     const ref = { ...eve.desk.list()[0]!, id: 'not-kept' };
     // (A battle the page thinks is kept, that the room has dropped.)
-    const bend = { t: 'bend' as const, ...ref };
-    eve.desk.message(bend);
+    eve.desk.message({ t: 'bend', ...ref });
     expect(eve.desk.list().map((r) => r.id)).toContain('not-kept');
-    const got = await eve.desk.prepare(ref, 60);
+    // The room answers `breplaygone`: the page doesn't wait out its fifteen seconds.
+    const began = Date.now();
+    const got = await eve.desk.prepare(ref);
+    expect(Date.now() - began).toBeLessThan(FETCH_MS / 2);
     expect(got.ok).toBe(false);
-    expect(got).toMatchObject({ why: expect.stringContaining('may not keep it') });
+    expect(got).toMatchObject({ why: expect.stringContaining('doesn’t keep that battle any more') });
     expect(eve.desk.statusOf(ref.from, ref.id)).toMatchObject({ state: 'error' });
     expect(eve.desk.list().map((r) => r.id)).not.toContain('not-kept');
     // Nothing was kept for a battle that never came.
     expect(eve.kept.battles.some((b) => b.id === replayRecordId(ref.from, 'not-kept'))).toBe(false);
   }, 300_000);
+
+  it('a battle the room did not store is never offered, and takes no replay off the list', async () => {
+    const { eve } = await fought();
+    const ref = eve.desk.list()[0]!;
+    // The end of a battle the room had no rows left to keep: no replay of it, and the others stay.
+    eve.desk.message({
+      t: 'bend',
+      id: 'unstored',
+      from: 1,
+      to: 2,
+      step: 40,
+      hash: 'ab',
+      agree: true,
+      kept: false,
+    });
+    expect(eve.desk.list()).toEqual([ref]);
+    for (let k = 0; k < LIVE.replays + 2; k++)
+      eve.desk.message({
+        t: 'bend',
+        id: `u-${k}`,
+        from: 1,
+        to: 2,
+        step: 1,
+        hash: 'ab',
+        agree: true,
+        kept: false,
+      });
+    expect(eve.desk.list()).toEqual([ref]);
+  }, 300_000);
+
+  it('a battle the room is only slow to send stays in the list, with the reason beside it, to ask again', async () => {
+    // A room that never answers (a big record on a slow link): a page of its own with nobody to answer it.
+    const link = {
+      state: 'in',
+      slot: 1,
+      view: null,
+      replays: null,
+      sendLive: () => undefined,
+      fetchSave: async () => Promise.reject(new Error('none')),
+    } as ReplayLink;
+    const desk = new RegionReplays({
+      cityName: () => 'Adaville',
+      tick: () => 0,
+      now: () => 0,
+      loadTown: async () => null,
+      keepTown: async () => undefined,
+      keepBattle: async () => undefined,
+      changed: () => undefined,
+    });
+    desk.attach(link);
+    desk.message({ t: 'bend', id: 'slow', from: 2, to: 1, step: 5, hash: 'ab', agree: true });
+    const ref = desk.list()[0]!;
+    const got = await desk.prepare(ref, 20);
+    expect(got).toMatchObject({ ok: false, why: expect.stringContaining('try again') });
+    expect(desk.list()).toEqual([ref]);
+    expect(desk.statusOf(ref.from, ref.id)).toMatchObject({ state: 'error' });
+    // The button can be pressed again (the status is no longer 'fetching').
+    expect(desk.statusOf(ref.from, ref.id)?.state).not.toBe('fetching');
+  });
 
   it('the region keeps only the last battles, and the page’s list says the same', async () => {
     const { eve } = await fought();

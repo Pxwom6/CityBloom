@@ -143,17 +143,51 @@ export async function battlePosted(id: string): Promise<void> {
 
 /** A city keeps its newest battles to watch again; older ones, and the towns kept only for them, go. */
 export const KEEP_BATTLES = 24;
+/**
+ * The region's replays this browser keeps (M39 step 7), counted apart from the city's own battles: the
+ * region lists twenty, and watching them must never push the city's own `def-` and `exp-` battles out.
+ */
+export const KEEP_REPLAYS = 6;
 
-async function pruneBattles(city: string): Promise<void> {
-  const mine = (await allBattles())
+/** A battle record made to watch one of the region's replays (not one this city fought and kept). */
+export const isRegionReplay = (r: Pick<BattleRecord, 'region'>): boolean => r.region !== undefined;
+
+/**
+ * Which records go when `city` keeps its newest: its own battles past `KEEP_BATTLES` and its region
+ * replays past `KEEP_REPLAYS`, each counted alone; and the towns that were kept only for those (a
+ * replay's own copy or an attacker's), never one that a record staying still shows its battle in
+ * (a replay of a battle this city fought is shown in the town it already kept for it).
+ */
+export function battlesToDrop(
+  all: readonly BattleRecord[],
+  city: string,
+): { records: BattleRecord[]; towns: string[] } {
+  const mine = all
     .filter((r) => r.city === city && (r.postTo === undefined || r.posted))
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt) || b.id.localeCompare(a.id));
-  for (const r of mine.slice(KEEP_BATTLES)) {
-    await tx('readwrite', (s) => s.delete(r.id), BATTLE_STORE);
+  const records = [
+    ...mine.filter((r) => !isRegionReplay(r)).slice(KEEP_BATTLES),
+    ...mine.filter(isRegionReplay).slice(KEEP_REPLAYS),
+  ];
+  const going = new Set(records.map((r) => r.id));
+  const needed = new Set<string>();
+  for (const r of all) if (!going.has(r.id) && r.townKey) needed.add(r.townKey);
+  const towns = new Set<string>();
+  for (const r of records)
     // Computer neighbours' towns are kept for their next battle; a replay's own copy goes with it.
-    if (r.townKey && (r.townKey.startsWith('replay:') || r.townKey.startsWith('player:')))
-      await tx('readwrite', (s) => s.delete(r.townKey!), TOWN_STORE);
-  }
+    if (
+      r.townKey &&
+      (r.townKey.startsWith('replay:') || r.townKey.startsWith('player:')) &&
+      !needed.has(r.townKey)
+    )
+      towns.add(r.townKey);
+  return { records, towns: [...towns] };
+}
+
+async function pruneBattles(city: string): Promise<void> {
+  const { records, towns } = battlesToDrop(await allBattles(), city);
+  for (const r of records) await tx('readwrite', (s) => s.delete(r.id), BATTLE_STORE);
+  for (const key of towns) await tx('readwrite', (s) => s.delete(key), TOWN_STORE);
 }
 
 /** What the city's game offers this helper. */

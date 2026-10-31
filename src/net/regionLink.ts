@@ -254,6 +254,11 @@ export class RegionLink {
   friends: FriendsSink | null = null;
   /** The region's replays (M39 step 7): sees every message first, and takes the records it asked for. */
   replays: { message(m: RegionRoomMsg): boolean } | null = null;
+  /**
+   * The room's words about wars and treaties that came while a welcome was still being taken (the view
+   * and the first report take a moment): they wait for it, because the welcome sets the lists they change.
+   */
+  private friendsHeld: RegionRoomMsg[] | null = null;
   /** The places of the cities this one has an open war with (M39): set by `friends`, read when the region's news is taken. */
   atWar: ReadonlySet<number> = new Set();
   /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
@@ -395,12 +400,24 @@ export class RegionLink {
         this.misses = 0;
         if (this.state === 'reconnecting') this.onNotice?.('Back in the region');
         this.state = 'in';
-        await this.take(m.region);
-        await this.reportNow(true);
-        this.started?.resolve();
-        this.started = null;
-        this.live?.welcome();
-        this.friends?.welcome(m.friends);
+        {
+          // (A treaty or proposal the room sends right after the welcome, or an event of the history,
+          // is handled after the welcome has set what it changes; one from a link since lost is dropped.)
+          const held: RegionRoomMsg[] = (this.friendsHeld = []);
+          try {
+            await this.take(m.region);
+            await this.reportNow(true);
+            this.started?.resolve();
+            this.started = null;
+            this.live?.welcome();
+            this.friends?.welcome(m.friends);
+          } finally {
+            if (this.friendsHeld === held) {
+              this.friendsHeld = null;
+              for (const w of held) this.friends?.message(w);
+            }
+          }
+        }
         return;
       case 'region':
         await this.take(m.region);
@@ -493,7 +510,8 @@ export class RegionLink {
       case 'trefused':
       case 'pacts':
       case 'history':
-        this.friends?.message(m);
+        if (this.friendsHeld) this.friendsHeld.push(m);
+        else this.friends?.message(m);
         return;
       case 'bcall':
       case 'bliveoff':

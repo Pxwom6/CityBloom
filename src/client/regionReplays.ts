@@ -7,8 +7,8 @@
  *   Watch buttons;
  * - asks for one, and turns the record into a battle the viewer plays (`?battle=`): the record as a
  *   `BattleRecord` of this browser's (its final input, orders included, and the end it must reach), and
- *   the town it is shown in: this city's own copy if it fought the battle, else the region's latest
- *   save of the defender's city;
+ *   the town it is shown in: this city's own copy if it fought the battle (shown in that very copy, not
+ *   a second one), else the region's latest save of the defender's city;
  * - keeps a replay's progress for the panel (`statusOf`).
  *
  * The viewer then runs the battle in the town's own sim, as it does any kept battle, and the game
@@ -63,8 +63,11 @@ export const replayTownKey = (from: number, id: string): string => `replay:${rep
 const ownTownKey = (role: 'defender' | 'attacker', id: string): string =>
   role === 'defender' ? `replay:${`def-${id}`.slice(0, 60)}` : `player:${id}`;
 
-/** How long to wait for the room to send a record before saying it is not kept (ms). */
+/** How long to wait for the room to send a record before giving up for now (ms). */
 export const FETCH_MS = 15_000;
+
+/** The room said it doesn't keep the battle (any more), as opposed to not having sent it yet. */
+class Gone extends Error {}
 
 interface Wait {
   resolve(r: LiveRecord): void;
@@ -130,6 +133,17 @@ export class RegionReplays implements ReplaySink {
         w.resolve(m.record);
         return true;
       }
+      case 'breplaygone': {
+        // The room doesn't keep it: whoever is waiting stops at once (`prepare` forgets the battle).
+        if (typeof m.from !== 'number') return false;
+        const key = replayKey(m.from, m.id);
+        const w = this.waits.get(key);
+        if (!w) return false;
+        this.waits.delete(key);
+        clearTimeout(w.timer);
+        w.reject(new Gone('The region doesn’t keep that battle any more'));
+        return true;
+      }
       default:
         return false;
     }
@@ -150,7 +164,7 @@ export class RegionReplays implements ReplaySink {
     return new Promise<LiveRecord>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waits.delete(key);
-        reject(new Error('The region didn’t send that battle: it may not keep it any more'));
+        reject(new Error('The region didn’t send that battle yet: try again in a moment'));
       }, timeoutMs);
       this.waits.set(key, { resolve, reject, timer });
       link.sendLive({ t: 'breplay', id, from });
@@ -164,7 +178,8 @@ export class RegionReplays implements ReplaySink {
   /**
    * Get a replay ready for the viewer: the record from the region, the town to show it in, both
    * kept in this browser. Resolves with the id the viewer opens (`?battle=`), or why it can't be.
-   * The kept list loses the battle when the region says it doesn't keep it.
+   * The kept list loses the battle when the region says it doesn't keep it; one that is merely slow to
+   * come stays in the list with the reason beside it, to be asked for again.
    */
   async prepare(
     ref: ReplayRef,
@@ -187,7 +202,8 @@ export class RegionReplays implements ReplaySink {
     try {
       record = await this.fetch(ref.from, ref.id, timeoutMs);
     } catch (err) {
-      if (this.link?.state === 'in') this.kept = this.kept.filter((r) => replayKey(r.from, r.id) !== key);
+      if (err instanceof Gone && this.link?.state === 'in')
+        this.kept = this.kept.filter((r) => replayKey(r.from, r.id) !== key);
       return fail(err instanceof Error ? err.message : String(err));
     }
     let input;
@@ -197,25 +213,28 @@ export class RegionReplays implements ReplaySink {
       return fail('The region’s record of that battle couldn’t be read');
     }
     if (checkBattleInput(input)) return fail('The region’s record of that battle couldn’t be read');
-    // The town: this city's own copy when it fought the battle, else the region's latest save of
-    // the defender's city (which may have changed since: the viewer says if the battle differs).
+    // The town: this city's own copy when it fought the battle (the battle is shown in that very copy,
+    // so the browser keeps no second one), else the region's latest save of the defender's city (which
+    // may have changed since: the viewer says if the battle differs).
     say({ state: 'fetching', what: `Fetching ${this.nameOf(ref.to)}’s town` });
     let town: SaveFile | null = null;
+    let own: string | null = null;
     const mine = this.link?.slot;
-    if (mine === ref.to) town = await this.env.loadTown(ownTownKey('defender', ref.id)).catch(() => null);
-    else if (mine === ref.from)
-      town = await this.env.loadTown(ownTownKey('attacker', ref.id)).catch(() => null);
+    if (mine === ref.to) own = ownTownKey('defender', ref.id);
+    else if (mine === ref.from) own = ownTownKey('attacker', ref.id);
+    if (own) town = await this.env.loadTown(own).catch(() => null);
     if (!town) {
+      own = null;
       try {
         town = await this.link!.fetchSave(ref.to);
       } catch {
         return fail(`The region has no save of ${this.nameOf(ref.to)}’s city to show the battle in`);
       }
     }
-    const townKey = replayTownKey(ref.from, ref.id);
+    const townKey = own ?? replayTownKey(ref.from, ref.id);
     const id = replayRecordId(ref.from, ref.id);
     try {
-      await this.env.keepTown(townKey, town);
+      if (!own) await this.env.keepTown(townKey, town);
       const expect = expectOf(ref);
       await this.env.keepBattle({
         id,

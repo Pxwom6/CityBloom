@@ -56,7 +56,7 @@ import {
   type CityPort,
   type RegionLinkOptions,
 } from './net/regionLink';
-import { P2PHost, p2pConnect } from './net/p2p';
+import { P2PHost, p2pConnect, wallClock } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
@@ -803,7 +803,7 @@ export class Game {
         if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
         connect = () => webSocketLink(`${url}/region/${code}?create=1`);
       } else {
-        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
+        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: wallClock });
         this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
         await this.regionHost.listen();
         const host = this.regionHost;

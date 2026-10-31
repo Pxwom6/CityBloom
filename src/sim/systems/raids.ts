@@ -508,7 +508,11 @@ export function resolveBattle(
   // The record of a live battle this very city hosts (it was reloaded, or its page lost the room): it
   // stands in for the hosted one, which was only a part of the same battle.
   const standsIn = mode === 'instant' && from !== undefined && w.battle?.live?.id === input.id;
-  if (w.battle && !standsIn) return fail(BATTLE_BUSY);
+  // A replay shown in a throwaway town (M39 step 7) may find that town saved in the middle of a battle
+  // of its own (the region keeps a save every few minutes, whatever the city is doing): that battle is
+  // not the one shown, and the viewer's sim is never played on, so it is put aside.
+  const aside = asFought && mode === 'watch' && !!w.battle;
+  if (w.battle && !standsIn && !aside) return fail(BATTLE_BUSY);
   // A friend's battle is known by its sender too (M36: two cities' battles may share an id).
   const takenKey = from === undefined ? input.id : `${from}:${input.id}`;
   if (!standsIn && (w.taken?.includes(takenKey) || w.taken?.includes(input.id))) return fail(BATTLE_TAKEN);
@@ -520,7 +524,7 @@ export function resolveBattle(
   // didn't flag takes nothing here (a forged page could otherwise dodge the day's superweapon).
   if (from !== undefined && !counted && battleHasSuper(input)) return fail(SUPER_UNCOUNTED);
   if (dryRun) return ok(0);
-  if (standsIn) {
+  if (standsIn || aside) {
     delete w.battle;
     sim.battleRun = null;
     sim.battleFrame = null;

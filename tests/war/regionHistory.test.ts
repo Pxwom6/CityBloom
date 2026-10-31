@@ -13,7 +13,9 @@ import {
   historyCities,
   historyRows,
   historyState,
+  localOffset,
   mergeHistory,
+  offersRegionHistory,
   replayKey,
   replayOf,
   replayVerdict,
@@ -114,7 +116,10 @@ describe('merging the room’s events', () => {
       { id: 9, at: 1, kind: 'nonsense', a: 1, b: 2, text: 't' },
       { id: 9, at: 1, kind: 'battle', a: 1, b: 2, text: 5 },
       { id: -1, at: 1, kind: 'battle', a: 1, b: 2, text: 't' },
-      { id: 10, at: 1.5, kind: 'battle', a: 1, b: 2, text: 't' },
+      { id: 10, at: -5, kind: 'battle', a: 1, b: 2, text: 't' },
+      { id: 10, at: Number.NaN, kind: 'battle', a: 1, b: 2, text: 't' },
+      { id: 10, at: '5', kind: 'battle', a: 1, b: 2, text: 't' },
+      { id: 10.5, at: 5, kind: 'battle', a: 1, b: 2, text: 't' },
       { ...ev(11), text: 'x'.repeat(5_000), extra: 'dropped', battle: { from: 1, id: 'y'.repeat(200) } },
     ];
     const got = mergeHistory([], junk);
@@ -123,6 +128,22 @@ describe('merging the room’s events', () => {
     expect(got[0]).not.toHaveProperty('extra');
     // A battle id too long to be one is not kept with the event.
     expect(got[0]).not.toHaveProperty('battle');
+  });
+
+  it('rounds a time with fractions instead of dropping the event (a room on performance.now())', () => {
+    // Chromium's own: fractions of a millisecond, counted from the page's load.
+    const e = cleanEvent({ ...ev(4), at: 15.199999999254942 });
+    expect(e).toMatchObject({ id: 4, at: 15 });
+    expect(
+      mergeHistory(
+        [],
+        [
+          { ...ev(5), at: 5372.7000000477 },
+          { ...ev(6), at: 5372.2 },
+        ],
+      ).map((x) => x.at),
+    ).toEqual([5373, 5372]);
+    expect(cleanEvent({ ...ev(7), at: Infinity })).toBeNull();
   });
 
   it('cleanEvent keeps a battle’s link, outcome and score', () => {
@@ -190,6 +211,18 @@ describe('replays', () => {
     expect(again).toHaveLength(LIVE.replays);
     expect(again.filter((r) => r.id === 'b10')).toHaveLength(1);
     expect(again.at(-1)).toMatchObject({ id: 'b10', hash: 'ffff0000' });
+  });
+
+  it('a battle the room did not store is not added, and takes no replay of the others off', () => {
+    const full = Array.from({ length: LIVE.replays }, (_, k) => ref(`r${k}`));
+    const end = { id: 'unstored', from: 1, to: 2, step: 9, hash: 'ab', agree: true, kept: false as const };
+    expect(withReplay(full, end)).toEqual(full);
+    expect(withReplay([], end)).toEqual([]);
+    // One that was stored is added as before, and the oldest drop off.
+    const added = withReplay(full, { ...end, id: 'stored', kept: undefined });
+    expect(added).toHaveLength(LIVE.replays);
+    expect(added.at(-1)!.id).toBe('stored');
+    expect(added[0]!.id).toBe('r1');
   });
 
   it('two battles of the same id from different cities are two replays', () => {
@@ -306,6 +339,28 @@ describe('days', () => {
     expect(timeLabel(Date.UTC(2026, 9, 30, 3, 5), -300)).toBe('22:05');
   });
 
+  it('use the offset the player had at the time of each line: the clocks change in between', () => {
+    // New York: the clocks went back at 06:00 UTC on Sun 1 Nov 2026 (EDT, −4 h, then EST, −5 h).
+    const ny = (at: number): number => (at < Date.UTC(2026, 10, 1, 6) ? -240 : -300);
+    const now = Date.UTC(2026, 10, 2, 12); // Mon 2 Nov, noon UTC: 07:00 EST
+    const late = Date.UTC(2026, 9, 31, 3, 30); // 03:30 UTC on Sat 31 Oct: 23:30 EDT on Friday the 30th
+    const small = Date.UTC(2026, 9, 31, 4, 30); // 04:30 UTC: 00:30 EDT on Saturday the 31st
+    // Today's offset would say 22:30 and 23:30, and put both on Friday.
+    expect(timeLabel(late, ny)).toBe('23:30');
+    expect(timeLabel(small, ny)).toBe('00:30');
+    expect(timeLabel(small, ny(now))).toBe('23:30');
+    expect(dayLabel(small, now, ny)).toBe('Sat 31 Oct');
+    expect(dayLabel(small, now, ny(now))).toBe('Fri 30 Oct');
+    // And the rows land under the days they were lived in.
+    const rows = historyRows([ev(1, { at: late }), ev(2, { at: small })], []);
+    expect(byDay(rows, now, ny).map((d) => [d.day, d.rows.map((r) => r.id)])).toEqual([
+      ['Sat 31 Oct', [2]],
+      ['Fri 30 Oct', [1]],
+    ]);
+    // The browser's own offset takes a moment, as the function does.
+    expect(typeof localOffset(now)).toBe('number');
+  });
+
   it('put each line under its day, newest first', () => {
     const rows = historyRows(
       [
@@ -323,6 +378,16 @@ describe('days', () => {
 });
 
 describe('what the panel says', () => {
+  it('offers the region’s history only where war is on: peaceful play is unchanged', () => {
+    // A peaceful city, alone or in a region at peace: no new tab.
+    expect(offersRegionHistory({ cityWar: false, regionWar: undefined })).toBe(false);
+    expect(offersRegionHistory({ cityWar: false, regionWar: false })).toBe(false);
+    // A city with war on, or a region with war on (the city is joining it, or its war state is on).
+    expect(offersRegionHistory({ cityWar: true, regionWar: undefined })).toBe(true);
+    expect(offersRegionHistory({ cityWar: true, regionWar: false })).toBe(true);
+    expect(offersRegionHistory({ cityWar: false, regionWar: true })).toBe(true);
+  });
+
   it('has a list only in a region with war on and something to list', () => {
     expect(historyState({ inRegion: false, warOn: false, events: 0 })).toBe('none');
     expect(historyState({ inRegion: false, warOn: true, events: 5 })).toBe('none');
@@ -334,5 +399,23 @@ describe('what the panel says', () => {
     expect(historyState({ inRegion: true, warOn: true, events: 0, synced: true })).toBe('empty');
     expect(historyState({ inRegion: true, warOn: true, events: 3, synced: false })).toBe('list');
     for (const w of Object.values(STATE_WORDS)) expect(w.length).toBeGreaterThan(20);
+  });
+
+  it('a city on its way into a region says so, and is not told it has no region', () => {
+    // `game.region` is set at once; the region's view comes with the first word of the room.
+    expect(historyState({ inRegion: false, joining: true, warOn: false, events: 0 })).toBe('joining');
+    expect(historyState({ inRegion: false, joining: false, warOn: false, events: 0 })).toBe('none');
+    expect(STATE_WORDS.joining).toMatch(/Joining the region/);
+    expect(STATE_WORDS.joining).not.toMatch(/isn’t in a region/);
+  });
+
+  it('a region of an older version that keeps no history says so, rather than waiting for one', () => {
+    const base = { inRegion: true, warOn: true, events: 0 } as const;
+    expect(historyState({ ...base, synced: false })).toBe('loading');
+    expect(historyState({ ...base, synced: false, unsupported: true })).toBe('unsupported');
+    expect(STATE_WORDS.unsupported).toMatch(/older version/);
+    // Heard from, a region has its list or nothing to show; and never both.
+    expect(historyState({ ...base, synced: true, unsupported: false })).toBe('empty');
+    expect(historyState({ ...base, events: 2, unsupported: true })).toBe('list');
   });
 });

@@ -7,7 +7,7 @@
 // checked" note), and the way back to the city. Prints what the page knows at each point.
 // Usage: npm run build:test && npx tsx scripts/dev/historyshot.mjs outDir
 // Env: PORT=4396 (the preview), RELAY=8787 (where test builds look for the relay), QUALITY=low,
-//      ONLY=panel,filter,phone,viewer (the shots to take), PW_CHROMIUM=path to a Chromium to use.
+//      ONLY=panel,filter,phone,viewer (the shots to take; viewer includes the bar at 360 px), PW_CHROMIUM=path to a Chromium to use.
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -167,6 +167,13 @@ try {
     await shot(fay, 'viewer-3-checked');
     const note = await fay.getByTestId('viewer-check').textContent();
     log('note:', note);
+    // The bar on a phone: the window's width (less its gutters), not the half to the right of the middle.
+    await fay.setViewportSize({ width: 360, height: 740 });
+    await fay.evaluate(() => window.__game.waitFrames(3));
+    log('viewer bar at 360 px', JSON.stringify(await fay.getByTestId('viewer-bar').boundingBox()));
+    await shot(fay, 'viewer-4-phone');
+    await fay.setViewportSize({ width: 1280, height: 800 });
+    await fay.evaluate(() => window.__game.waitFrames(3));
     await fay.getByTestId('viewer-back').click();
     await ready(fay);
     await fay.waitForFunction(() => window.__game.getRegion()?.state === 'in', null, { timeout: 180000 });

@@ -27,11 +27,15 @@ export function RegionAtWar() {
   const view = game.region?.view ?? null;
   const fv = game.friends.view();
   const events = fv.history;
+  const friends = game.friends.snapshot();
   const state = historyState({
     inRegion: !!view,
+    // The city has a region but its view hasn't come yet (joining, or rejoining after a reload).
+    joining: !!game.region && !view,
     warOn: !!view?.rules?.war,
     events: events.length,
-    synced: game.friends.snapshot().synced,
+    synced: friends.synced,
+    unsupported: friends.unsupported,
   });
   if (state !== 'list')
     return (
@@ -44,8 +48,8 @@ export function RegionAtWar() {
   const cities = historyCities(events, view.cities);
   const rows = historyRows(events, replays, { city, groups });
   const now = fv.now || Date.now();
-  const offset = localOffset(now);
-  const days = byDay(rows, now, offset);
+  // The player's offset from UTC at each moment: an event from before the clocks changed keeps its time.
+  const days = byDay(rows, now, localOffset);
   const toggle = (g: HistoryGroup) =>
     setGroups((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
   return (
@@ -112,7 +116,7 @@ export function RegionAtWar() {
                       class={`rh-row ${r.group} ${r.a === fv.me || r.b === fv.me ? 'mine' : ''}`}
                       data-testid={`rh-row-${r.id}`}
                     >
-                      <span class="when">{timeLabel(r.at, offset)}</span>
+                      <span class="when">{timeLabel(r.at, localOffset)}</span>
                       <span class="rh-body">
                         <span class="rh-text">{r.text}</span>
                         {r.outcome && (

@@ -7,6 +7,7 @@ import { DISASTER_INFO } from '../tools/disasterTool';
 import { TimeChart, compactMoney, type TimeMarker } from './charts';
 import { formatNumber, useGameUpdates } from './hooks';
 import { IconHistory } from './icons';
+import { offersRegionHistory } from '../client/regionHistory';
 import { RegionAtWar } from './RegionHistory';
 
 type Range = 'all' | 'decade' | 'recent';
@@ -143,8 +144,12 @@ export function HistoryPanel() {
     return { month: d.totalMonths + d.dayFraction, kind: e.kind, label: eventLabel(e) };
   });
   const years = Math.floor((to - startMonth) / 12);
-  // A city in a region, or with war on, can see the region's war history beside its own.
-  const regional = !!game.region || !!game.world.stats.war;
+  // A city with war on, or in a region with war on, can see the region's war history beside its own;
+  // a peaceful one (or one in a region at peace) is shown nothing new.
+  const regional = offersRegionHistory({
+    cityWar: !!game.world.stats.war,
+    regionWar: game.region?.view?.rules?.war,
+  });
   const showRegion = regional && view === 'region';
   return (
     <aside class="budget history panel" data-testid="history-panel">

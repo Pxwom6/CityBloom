@@ -36,6 +36,8 @@ const OUTCOMES: readonly BattleOutcome[] = ['raided', 'repelled', 'withdrew'];
 export const TEXT_MAX = 400;
 
 const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+/** A time from the room: any finite number of ms since the epoch or the room's start (rounded). */
+const timeMs = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
 /**
  * An event as the room sent it, or null when it isn't one (a region in a friend's browser could send
@@ -44,12 +46,14 @@ const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInt
 export function cleanEvent(e: unknown): WarEvent | null {
   if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
   const r = e as Record<string, unknown>;
-  if (!whole(r.id) || !whole(r.at) || !whole(r.a) || !whole(r.b)) return null;
+  // (`at` is rounded rather than refused: a room on a fractional clock, as a browser's `performance.now()`
+  // is, would otherwise lose every event it keeps.)
+  if (!whole(r.id) || !timeMs(r.at) || !whole(r.a) || !whole(r.b)) return null;
   if (typeof r.kind !== 'string' || !KINDS.includes(r.kind as WarEventKind)) return null;
   if (typeof r.text !== 'string') return null;
   const out: WarEvent = {
     id: r.id,
-    at: r.at,
+    at: Math.round(r.at),
     kind: r.kind as WarEventKind,
     a: r.a,
     b: r.b,
@@ -127,6 +131,8 @@ export interface BattleEnd {
   agree: boolean;
   solo?: true;
   abandoned?: true;
+  /** `false`: the room did not store this battle (its day's rows were spent): there is no replay to watch. */
+  kept?: false;
 }
 
 function cleanRef(r: unknown): ReplayRef | null {
@@ -158,14 +164,15 @@ export function replaysFrom(list: readonly unknown[] | undefined): ReplayRef[] {
 
 /**
  * A battle ended and the room keeps it: added to the list (one heard again replaces its first), and
- * the oldest drop off past what the room keeps. A fresh list.
+ * the oldest drop off past what the room keeps. A battle the room did not store (`kept: false`) is not
+ * added, and takes nothing off the list: the room still keeps the others. A fresh list.
  */
 export function withReplay(
   list: readonly ReplayRef[],
   end: BattleEnd,
   cap: number = LIVE.replays,
 ): ReplayRef[] {
-  const ref = cleanRef(end);
+  const ref = end.kept === false ? null : cleanRef(end);
   if (!ref) return [...list];
   const rest = list.filter((r) => replayKey(r.from, r.id) !== replayKey(ref.from, ref.id));
   rest.push(ref);
@@ -268,26 +275,35 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const DAY_MS = 86_400_000;
 
-/** The player's offset from UTC in minutes (east positive), as the browser has it. */
+/** The player's offset from UTC in minutes (east positive) at that moment, as the browser has it. */
 export const localOffset = (at: number): number => -new Date(at).getTimezoneOffset();
+
+/**
+ * An offset from UTC in minutes: one for every moment, or a function of the moment, because the offset
+ * changes when the clocks do (an event from before the change is shown in the time it was).
+ */
+export type Offset = number | ((at: number) => number);
+
+const offsetAt = (o: Offset, at: number): number => (typeof o === 'number' ? o : o(at));
 
 const two = (n: number) => String(n).padStart(2, '0');
 
 /** "14:32", in the day the offset gives. */
-export function timeLabel(at: number, offsetMin: number): string {
-  const d = new Date(at + offsetMin * 60_000);
+export function timeLabel(at: number, offset: Offset): string {
+  const d = new Date(at + offsetAt(offset, at) * 60_000);
   return `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`;
 }
 
-const dayNumber = (at: number, offsetMin: number): number => Math.floor((at + offsetMin * 60_000) / DAY_MS);
+const dayNumber = (at: number, offset: Offset): number =>
+  Math.floor((at + offsetAt(offset, at) * 60_000) / DAY_MS);
 
 /** "Today", "Yesterday" or "Mon 12 Oct" (and the year when it isn't this one). */
-export function dayLabel(at: number, now: number, offsetMin: number): string {
-  const diff = dayNumber(now, offsetMin) - dayNumber(at, offsetMin);
+export function dayLabel(at: number, now: number, offset: Offset): string {
+  const diff = dayNumber(now, offset) - dayNumber(at, offset);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Yesterday';
-  const d = new Date(at + offsetMin * 60_000);
-  const year = new Date(now + offsetMin * 60_000).getUTCFullYear();
+  const d = new Date(at + offsetAt(offset, at) * 60_000);
+  const year = new Date(now + offsetAt(offset, now) * 60_000).getUTCFullYear();
   const base = `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
   return d.getUTCFullYear() === year ? base : `${base} ${d.getUTCFullYear()}`;
 }
@@ -296,40 +312,62 @@ export function dayLabel(at: number, now: number, offsetMin: number): string {
 export function byDay(
   rows: readonly HistoryRow[],
   now: number,
-  offsetMin: number,
+  offset: Offset,
 ): { day: string; rows: HistoryRow[] }[] {
   const out: { day: string; key: number; rows: HistoryRow[] }[] = [];
   for (const r of rows) {
-    const key = dayNumber(r.at, offsetMin);
+    const key = dayNumber(r.at, offset);
     const last = out.at(-1);
     if (last && last.key === key) last.rows.push(r);
-    else out.push({ day: dayLabel(r.at, now, offsetMin), key, rows: [r] });
+    else out.push({ day: dayLabel(r.at, now, offset), key, rows: [r] });
   }
   return out.map(({ day, rows: list }) => ({ day, rows: list }));
 }
 
 // ---- What the panel says -------------------------------------------------------------------
 
-/** Whether there is a list to show, and if not, why (`loading`: the region hasn't told this page its history yet). */
-export type HistoryState = 'list' | 'loading' | 'empty' | 'off' | 'none';
+/**
+ * Whether the City history panel offers the region's war history beside the city's own: only when war
+ * is on for the city (its sim has a war state) or for the region it stands in. A peaceful city, in a
+ * region or out of one, and a city in a region with war off, are shown nothing new (peaceful play
+ * is unchanged).
+ */
+export function offersRegionHistory(o: { cityWar: boolean; regionWar: boolean | undefined }): boolean {
+  return o.cityWar || o.regionWar === true;
+}
+
+/**
+ * Whether there is a list to show, and if not, why. `joining`: the city is on its way into a region and
+ * has not heard its rules yet; `loading`: the region has not told this page its history yet;
+ * `unsupported`: the region's room is of an older version that keeps no history, so none will come.
+ */
+export type HistoryState = 'list' | 'joining' | 'loading' | 'unsupported' | 'empty' | 'off' | 'none';
 
 export function historyState(o: {
   inRegion: boolean;
+  /** The city has a region (it is joining or rejoining one) though its view has not come yet. */
+  joining?: boolean;
   warOn: boolean;
   events: number;
   /** The region has told this page its whole state since the link came up. */
   synced?: boolean;
+  /** The region's room answered the welcome without a history: it doesn't speak wars between friends. */
+  unsupported?: boolean;
 }): HistoryState {
-  if (!o.inRegion) return 'none';
+  if (!o.inRegion) return o.joining ? 'joining' : 'none';
   if (!o.warOn) return 'off';
   if (o.events) return 'list';
+  if (o.unsupported) return 'unsupported';
   return o.synced === false ? 'loading' : 'empty';
 }
 
 export const STATE_WORDS: Record<Exclude<HistoryState, 'list'>, string> = {
   none: 'This city isn’t in a region. In a region with war on, the wars, battles and treaties between its cities are kept here (the Region panel, Shift+N, starts or joins one).',
   off: 'War is off in this region. When its host turns it on, the wars, battles and treaties between its cities are kept here.',
+  joining: 'Joining the region… its history will be asked for as soon as the city is in.',
   loading: 'Asking the region for its history…',
+  unsupported:
+    'This region runs an older version of the game that does not keep a war history. Its host needs to update, and then the wars, battles and treaties between its cities will be kept here.',
   empty:
     'Nothing has happened between the cities of this region yet. Declared wars, battles, treaties, conquests and broken pacts will be listed here, the last 100.',
 };

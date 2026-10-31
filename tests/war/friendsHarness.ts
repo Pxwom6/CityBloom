@@ -113,8 +113,7 @@ const loaded = (save: SaveFile): Sim => {
 };
 
 /** A fresh room with Ada's and Sam's pages open (Ada made the region; Sam is slot 2), their cities as saved. */
-export async function openWorld(saves: Saves): Promise<World> {
-  const clock = new Clock();
+export async function openWorld(saves: Saves, clock: Clock = new Clock()): Promise<World> {
   const room = openRoom(clock);
   const ada = await friendsPage(
     {

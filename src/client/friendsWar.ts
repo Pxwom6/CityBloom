@@ -116,6 +116,8 @@ export class FriendsWarClient implements FriendsSink {
   private appliedPacts = '';
   /** The room has told this page its whole state since the link came up. */
   private synced = false;
+  /** The room answered the welcome with no word on friends: it is of a version that keeps none (protocol 5). */
+  private unsupported = false;
   /** Treaties applied (and acknowledged, or about to be), by id. */
   private treaties = new Set<string>();
   private busy = new Set<string>();
@@ -155,6 +157,7 @@ export class FriendsWarClient implements FriendsSink {
     this.applied.clear();
     this.appliedPacts = '';
     this.synced = false;
+    this.unsupported = false;
     this.about.clear();
     this.results = [];
     this.lastOpen = '';
@@ -223,8 +226,11 @@ export class FriendsWarClient implements FriendsSink {
 
   welcome(info: FriendsWelcome | undefined): void {
     if (!info) {
-      // A room that doesn't speak wars between friends (protocol 5): nothing to keep.
+      // A room that doesn't speak wars between friends (protocol 5): nothing to keep, and nothing will come
+      // (the panel says so, rather than that it is still asking).
       this.synced = false;
+      this.unsupported = true;
+      this.host.changed();
       return;
     }
     this.enqueue(async () => {
@@ -232,7 +238,8 @@ export class FriendsWarClient implements FriendsSink {
       this.wars = new Map(info.wars.map((w) => [w.id, structuredClone(w)]));
       this.pacts = info.pacts.map((p) => ({ ...p }));
       this.vassals = info.vassals.map((v) => ({ ...v }));
-      this.history = mergeHistory([], info.history);
+      // Merged, not replaced: ids only grow, and an event heard while the welcome was being taken is not lost.
+      this.history = mergeHistory(this.history, info.history);
       // The proposals this city made and had no answer to are the room's list; its own sends that never got
       // there are gone with the link.
       this.outgoing = new Map(
@@ -243,6 +250,7 @@ export class FriendsWarClient implements FriendsSink {
       );
       this.incoming.clear();
       this.synced = true;
+      this.unsupported = false;
       this.applied.clear();
       this.appliedPacts = '';
       await this.mirror();
@@ -643,11 +651,12 @@ export class FriendsWarClient implements FriendsSink {
   }
 
   /** The state the test API shows. */
-  snapshot(): FriendsView & { results: number; synced: boolean; treaties: string[] } {
+  snapshot(): FriendsView & { results: number; synced: boolean; unsupported: boolean; treaties: string[] } {
     return {
       ...this.view(),
       results: this.results.length,
       synced: this.synced,
+      unsupported: this.unsupported,
       treaties: [...this.treaties],
     };
   }

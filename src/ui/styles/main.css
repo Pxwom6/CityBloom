@@ -4153,6 +4153,8 @@ body {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
+  /* Its own width up to the limit: left at 50% of the window the bar had only the half to the right of the middle. */
+  width: max-content;
   max-width: min(40rem, calc(100vw - 2rem));
   pointer-events: auto;
   font-size: var(--font-size-sm);

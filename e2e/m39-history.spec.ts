@@ -110,6 +110,16 @@ test('M39: the region’s war history lists a live battle, and Watch plays it ag
       want: region.replay.step,
     });
 
+    // On a phone the bar takes the window's width (less its gutters), not the half to the right of the
+    // middle, where the replay's note and the way back were squeezed into a column.
+    await fay.setViewportSize({ width: 360, height: 740 });
+    const bar = (await fay.getByTestId('viewer-bar').boundingBox())!;
+    expect(bar.x).toBeGreaterThanOrEqual(0);
+    expect(bar.x + bar.width).toBeLessThanOrEqual(360);
+    expect(bar.width).toBeGreaterThan(300);
+    expect((await fay.getByTestId('viewer-back').boundingBox())!.width).toBeGreaterThan(100);
+    await fay.setViewportSize({ width: 1280, height: 800 });
+
     // Back in its city, still in the region, with the history and the replay in hand.
     await fay.getByTestId('viewer-back').click();
     await fay.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120_000 });

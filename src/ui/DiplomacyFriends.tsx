@@ -38,7 +38,8 @@ const KINDS: readonly FriendTerm['k'][] = [
   'independence',
   'vassal',
 ];
-const kindName = (k: FriendTerm['k']) => (k === 'vassal' ? 'Vassalage' : TERM_NAMES[k as TermKind]);
+const kindName = (k: FriendTerm['k']) =>
+  k === 'vassal' ? 'Vassalage' : k === 'trade' ? 'Trade agreement' : TERM_NAMES[k as TermKind];
 
 let openings = 0;
 
@@ -157,7 +158,11 @@ export function FriendsDiplomacy({ d }: { d: DiplomacySummary }) {
       )}
       {d.subjects.map((s) => (
         <p key={s.with} class="dip-good" data-testid={`dip-fsubject-${s.with}`}>
-          {s.name} is the city’s vassal: it pays about {formatMoney(s.dues)} a month, until it goes free.
+          {s.name} is the city’s vassal:{' '}
+          {s.dues > 0
+            ? `it pays about ${formatMoney(s.dues)} a month`
+            : 'its first payment comes with its next report'}
+          , until it goes free.
         </p>
       ))}
 
@@ -367,6 +372,10 @@ function FriendRow({
   const refusal = game.friends.refusal(`war:${f.slot}`);
   const breaksAsked = game.friends.refusal(`warBreaks:${f.slot}`);
   const canDeclare = !f.declare || f.breaks;
+  // The war is declared (or on): the form has done its work.
+  useEffect(() => {
+    if (atWar && declaring) onDeclare();
+  }, [atWar]);
   const go = (breakPact: boolean) => {
     onAsked(null);
     game.friends.declare(f.slot, picked, reason, breakPact);
@@ -410,7 +419,7 @@ function FriendRow({
         )}
       </div>
       {!canDeclare && !atWar && f.declare && <p class="muted">{f.declare}.</p>}
-      {declaring && !atWar && (
+      {declaring && !atWar && canDeclare && (
         <div class="dip-declare" data-testid="dip-fdeclare-form">
           <label>
             Scale{' '}

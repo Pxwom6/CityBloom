@@ -4200,6 +4200,29 @@ body {
   margin: 0;
   padding-left: 1.1rem;
 }
+/* Friends (M39): their cards, proposals and rows stand apart from each other, whatever follows what. */
+.dip-friends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends > h4,
+.dip-friends h5 {
+  margin: 0;
+}
+.dip-friends [data-testid='dip-fwars'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends [data-testid='dip-friend-rows'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends .dip-neighbour + .dip-neighbour {
+  margin-top: 0;
+}
 .dip-confirm {
   border-color: var(--color-negative);
   background: color-mix(in srgb, var(--color-negative) 8%, transparent);

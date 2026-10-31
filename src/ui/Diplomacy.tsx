@@ -877,6 +877,8 @@ function answerFall(key: string): void {
 export function FallenCard() {
   const game = useGameUpdates(500);
   const fell = game.world.stats.war?.diplomacy?.fell;
+  // A friend's city holds no strength over the city, only the war score (M39).
+  const friendly = !!game.world.stats.war?.diplomacy?.vassal?.friend;
   const key = fell ? `${game.world.stats.cityName}:${fell.at}` : '';
   const [seen, setSeen] = useState<string | null>(null);
   if (!fell || seen === key || game.inMenu() || game.readOnly || game.viewing) return null;
@@ -890,8 +892,9 @@ export function FallenCard() {
     <div class="fallen panel" role="dialog" aria-label="The city has fallen" data-testid="fallen-card">
       <h2>{game.world.stats.cityName} has fallen</h2>
       <p>
-        {fell.name} held the city’s HQ long enough: the city is its vassal now. It pays {fell.name} a fifth of
-        its taxes and may go to war only to rise against it, once it’s strong enough.
+        {friendly ? `${fell.name} won the war` : `${fell.name} held the city’s HQ long enough`}: the city is
+        its vassal now. It pays {fell.name} a fifth of its taxes and may go to war only to rise against it
+        {friendly ? ', and it goes free once it wins battles against it.' : ', once it’s strong enough.'}
       </p>
       <div class="dip-actions">
         <button class="btn primary" data-testid="fallen-play-on" onClick={close}>

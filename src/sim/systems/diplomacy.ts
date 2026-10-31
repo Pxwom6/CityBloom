@@ -2021,7 +2021,13 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
         with: p.with,
         name: name(p.with),
         term: { ...p.term },
-        text: n ? termText(sim, n, p.term) : TERM_NAMES[p.term.k],
+        // (A trade pact with a friend is the region's own agreement, not the lifting of an embargo.)
+        text:
+          p.room !== undefined && p.term.k === 'trade'
+            ? 'a trade agreement'
+            : n
+              ? termText(sim, n, p.term)
+              : TERM_NAMES[p.term.k],
         since: p.since,
         until: p.until ?? null,
         left: p.left ?? null,

@@ -252,6 +252,8 @@ export class RegionLink {
   live: LiveSink | null = null;
   /** Wars and treaties with friends (M39): who takes the room's messages about them. */
   friends: FriendsSink | null = null;
+  /** The region's replays (M39 step 7): sees every message first, and takes the records it asked for. */
+  replays: { message(m: RegionRoomMsg): boolean } | null = null;
   /** The places of the cities this one has an open war with (M39): set by `friends`, read when the region's news is taken. */
   atWar: ReadonlySet<number> = new Set();
   /** The region keeps a battle this city sent (M35), and another city's force is on its way here. */
@@ -384,6 +386,7 @@ export class RegionLink {
   }
 
   private async receive(m: RegionRoomMsg): Promise<void> {
+    if (this.replays?.message(m)) return;
     switch (m.t) {
       case 'rwelcome':
         this.slot = m.slot;

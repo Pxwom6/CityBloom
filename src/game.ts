@@ -63,6 +63,8 @@ import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite }
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps } from './client/ops';
 import { FriendsWarClient } from './client/friendsWar';
+import { RegionReplays } from './client/regionReplays';
+import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
 import { OP_TAKEN } from './sim/systems/regionOps';
 import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
@@ -611,6 +613,21 @@ export class Game {
     now: () => performance.now(),
     changed: () => this.notify(),
   });
+  /**
+   * The region's replays (M39 step 7): which finished live battles it keeps, and getting one ready for
+   * the viewer (the City history panel's Watch buttons).
+   */
+  readonly replays: RegionReplays = new RegionReplays({
+    cityName: () => this.world.stats.cityName,
+    tick: () => this.world.stats.tick,
+    now: () => Date.now(),
+    loadTown,
+    keepTown,
+    keepBattle,
+    changed: () => this.notify(),
+  });
+  /** In the battle viewer, a replay of a live battle: how its run ended against the battle as fought. */
+  replayCheck: { verdict: ReplayVerdict; step: number; want: number } | null = null;
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
@@ -869,6 +886,7 @@ export class Game {
     this.regionKey = key;
     this.live.attach(link);
     this.friends.attach(link);
+    this.replays.attach(link);
     link.onNotice = (t) => this.toast(t, 'info', 4500);
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
@@ -959,6 +977,7 @@ export class Game {
     this.regionKey = null;
     this.live.detach();
     this.friends.detach();
+    this.replays.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(
@@ -1443,8 +1462,10 @@ export class Game {
           'bad',
         );
         this.audio?.play('raid');
-      } else if (e.kind === 'battleEnded') this.battleReport(e.info ?? {});
-      else if (e.kind === 'forceArrived')
+      } else if (e.kind === 'battleEnded') {
+        this.checkReplay(e.info ?? {});
+        this.battleReport(e.info ?? {});
+      } else if (e.kind === 'forceArrived')
         this.notice(
           `force:${e.id}`,
           `Our force has reached ${String(e.info?.to)}: the battle is on.`,
@@ -2218,6 +2239,37 @@ export class Game {
       return;
     }
     location.href = `${location.pathname}?battle=${encodeURIComponent(id)}&back=${encodeURIComponent(slot)}`;
+  }
+
+  /**
+   * Watch a finished live battle the region keeps (M39 step 7): its record and the town it is shown in
+   * are fetched and kept in this browser, then the battle opens in the viewer as any kept battle does.
+   */
+  async watchReplay(from: number, id: string): Promise<void> {
+    const ref = this.replays.list().find((r) => r.from === from && r.id === id);
+    if (!ref) {
+      this.toast('The region doesn’t keep that battle any more.', 'info');
+      return;
+    }
+    const got = await this.replays.prepare(ref);
+    if (got.ok) await this.watchBattle(got.id);
+    else this.toast(`${got.why}.`, 'info', 6000);
+  }
+
+  /**
+   * A replay's battle ended in the viewer: it has to end where the battle ended when it was fought
+   * (the same step and `hash()`), else it says it differs.
+   */
+  private checkReplay(info: Record<string, number | string>): void {
+    const want = this.viewing?.record.region?.expect;
+    if (!want) return;
+    const step = Number(info.step);
+    this.replayCheck = {
+      verdict: replayVerdict(want, { step, hash: String(info.hash ?? '') }),
+      step,
+      want: want.step,
+    };
+    this.notify();
   }
 
   /** Leave a battle being watched for the city it came from. */

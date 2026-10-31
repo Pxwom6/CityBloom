@@ -34,6 +34,7 @@ import {
 } from '../../relay/protocol';
 import type { RegionRoomMsg } from '../../relay/region';
 import { roomBattleId, type FriendsSink, type RegionLink } from '../net/regionLink';
+import { cleanEvent, mergeHistory } from './regionHistory';
 
 /** What the city's game offers this helper. */
 export interface FriendsHost {
@@ -231,7 +232,7 @@ export class FriendsWarClient implements FriendsSink {
       this.wars = new Map(info.wars.map((w) => [w.id, structuredClone(w)]));
       this.pacts = info.pacts.map((p) => ({ ...p }));
       this.vassals = info.vassals.map((v) => ({ ...v }));
-      this.history = info.history.map((e) => ({ ...e }));
+      this.history = mergeHistory([], info.history);
       // The proposals this city made and had no answer to are the room's list; its own sends that never got
       // there are gone with the link.
       this.outgoing = new Map(
@@ -335,12 +336,10 @@ export class FriendsWarClient implements FriendsSink {
         this.afterChange();
         return;
       case 'history': {
-        const e = structuredClone(m.event);
-        const i = this.history.findIndex((x) => x.id === e.id);
-        if (i >= 0) this.history[i] = e;
-        else this.history.push(e);
-        if (this.history.length > FRIENDS.history)
-          this.history.splice(0, this.history.length - FRIENDS.history);
+        // (The region's history, merged as the City history panel reads it: `regionHistory.ts`.)
+        const e = cleanEvent(m.event);
+        if (!e) return;
+        this.history = mergeHistory(this.history, [e]);
         // A battle counted: its result needn't be sent again.
         if (e.battle && e.outcome)
           this.results = this.results.filter((r) => !(r.id === e.battle!.id && r.from === e.battle!.from));

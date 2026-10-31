@@ -79,6 +79,11 @@ export interface BattleRecord {
   expedition?: number;
   result?: AwayResult & { replay?: string };
   away?: boolean;
+  /**
+   * M39: a replay of a live battle from the region (`regionReplays.ts`): how the battle ended when it
+   * was fought, which the viewer's run is checked against (null: nobody finished it, nothing to check).
+   */
+  region?: { expect: { step: number; hash: string } | null };
 }
 
 export async function loadTown(key: string): Promise<SaveFile | null> {

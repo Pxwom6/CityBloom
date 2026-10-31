@@ -797,15 +797,47 @@ export function ViewerBar() {
   const f = game.world.battle;
   return (
     <div class="viewer-bar panel" data-testid="viewer-bar" role="status">
-      <span>
-        {f
-          ? `Watching ${v.record.input.attacker.name}'s raid on ${v.record.input.defender.name}.`
-          : `${v.record.input.defender.name} after the raid: crews are clearing up and repairing.`}{' '}
-        Nothing here can be changed.
-      </span>
+      <div class="viewer-text">
+        <span>
+          {f
+            ? `Watching ${v.record.input.attacker.name}'s raid on ${v.record.input.defender.name}.`
+            : `${v.record.input.defender.name} after the raid: crews are clearing up and repairing.`}{' '}
+          Nothing here can be changed.
+        </span>
+        {v.record.region && <ReplayNote />}
+      </div>
       <button class="btn primary" data-testid="viewer-back" onClick={() => game.backToCity()}>
         Back to my city
       </button>
     </div>
+  );
+}
+
+/** A region replay in the viewer (M39 step 7): whether its run ends where the battle ended when it was fought. */
+function ReplayNote() {
+  const game = useGameUpdates(500);
+  const want = game.viewing?.record.region?.expect;
+  const check = game.replayCheck;
+  if (!want)
+    return (
+      <span class="viewer-check" data-testid="viewer-check">
+        Nobody finished this battle, so there is nothing to check the replay against.
+      </span>
+    );
+  if (!check)
+    return (
+      <span class="viewer-check" data-testid="viewer-check">
+        Checking the replay against the battle as it was fought…
+      </span>
+    );
+  return check.verdict === 'checked' ? (
+    <span class="viewer-check checked" data-testid="viewer-check">
+      Replay checked: it ends exactly as the battle did.
+    </span>
+  ) : (
+    <span class="viewer-check differs" data-testid="viewer-check">
+      Replay differs: it ended at step {check.step}, the battle at step {check.want}. The town it is shown in
+      may have changed since.
+    </span>
   );
 }

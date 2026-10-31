@@ -1,5 +1,6 @@
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendsWarClient } from './friendsWar';
+import { historyRows, historyState, replayKey } from './regionHistory';
 import type { ResearchSummary } from '../sim/systems/research';
 import type { IntelSummary } from '../sim/systems/intel';
 import type { SupersSummary } from '../sim/systems/supers';
@@ -203,6 +204,20 @@ export interface TestApi {
    * vassals, proposals each way, the war history and the room's last refusals; none outside a region.
    */
   getFriendsWar(): ReturnType<FriendsWarClient['snapshot']>;
+  /**
+   * The region's war history as the City history panel lists it (M39 step 7): the rows newest first
+   * (with a battle's replay when the region keeps it), the battles kept, the state of each replay
+   * being fetched, and how a replay in the viewer ended against the battle as fought.
+   */
+  getRegionHistory(): {
+    state: string;
+    rows: { id: number; at: number; kind: string; text: string; replay: string | null }[];
+    kept: { from: number; to: number; id: string; step: number; hash: string }[];
+    status: Record<string, string>;
+    check: { verdict: string; step: number; want: number } | null;
+  };
+  /** Watch a battle the region keeps (M39 step 7): as the history list's Watch button does. */
+  watchReplay(from: number, id: string): Promise<void>;
   /** Weapons research (M37): the labs, the queue, tiers done, prototypes and trials; null without. */
   getResearch(): ResearchSummary | null;
   /** Spies (M37): agents, counter-intelligence, missions and results; null with war off. */
@@ -842,6 +857,30 @@ export function installTestApi(game: Game): TestApi {
     }),
     getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
     getFriendsWar: () => game.friends.snapshot(),
+    getRegionHistory: () => {
+      const view = game.region?.view;
+      const fv = game.friends.view();
+      const kept = game.replays.list();
+      return {
+        state: historyState({ inRegion: !!view, warOn: !!view?.rules?.war, events: fv.history.length }),
+        rows: historyRows(fv.history, kept).map((r) => ({
+          id: r.id,
+          at: r.at,
+          kind: r.kind,
+          text: r.text,
+          replay: r.replay ? replayKey(r.replay.from, r.replay.id) : null,
+        })),
+        kept: kept.map((r) => ({ from: r.from, to: r.to, id: r.id, step: r.step, hash: r.hash })),
+        status: Object.fromEntries(
+          kept.flatMap((r) => {
+            const st = game.replays.statusOf(r.from, r.id);
+            return st ? [[replayKey(r.from, r.id), st.state === 'error' ? st.why : st.state]] : [];
+          }),
+        ),
+        check: game.replayCheck ? { ...game.replayCheck } : null,
+      };
+    },
+    watchReplay: (from, id) => game.watchReplay(from, id),
     getResearch: () => game.world.stats.war?.research ?? null,
     stageBattle: async (kind) => {
       const mix: UnitKind[] = [

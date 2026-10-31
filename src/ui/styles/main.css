@@ -4532,3 +4532,115 @@ body {
   width: 2.5rem;
   height: 2.5rem;
 }
+
+/* Region at war in the City history (M39 step 7): the room's war events as a list, with Watch buttons. */
+.history-views {
+  flex-shrink: 0;
+}
+.rh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rh-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.rh-city {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.rh-city select {
+  font: inherit;
+  max-width: 11rem;
+}
+.rh-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.rh-day {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.rh-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rh-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto;
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-left: 3px solid transparent;
+  font-size: var(--font-size-sm);
+}
+.rh-row.mine {
+  border-left-color: var(--color-accent);
+}
+.rh-row .when {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.rh-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-width: 0;
+}
+.rh-text {
+  overflow-wrap: anywhere;
+}
+.rh-tag {
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.rh-tag.raided {
+  color: var(--color-negative);
+  border-color: var(--color-negative);
+}
+.rh-tag.repelled {
+  color: var(--color-positive);
+  border-color: var(--color-positive);
+}
+.rh-tag.live {
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+.rh-error {
+  flex-basis: 100%;
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
+}
+.rh-row .btn {
+  white-space: nowrap;
+}
+.viewer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.viewer-check {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.viewer-check.checked {
+  color: var(--color-positive);
+}
+.viewer-check.differs {
+  color: var(--color-warning);
+}

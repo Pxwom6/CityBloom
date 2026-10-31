@@ -242,11 +242,17 @@ with owners); step 2, the room's live battles, protocol 6 (305b54d, `relay/live.
 `e2e/m39-battlemap.spec.ts`; 19ddd63); step 5, wars and treaties between friends (the room keeps them,
 `relay/friendsWar.ts`, e4f55f0; each city mirrors them, `src/sim/systems/friendsWar.ts`,
 `src/client/friendsWar.ts`, the Diplomacy tab's "Friends in the region"; 39e89d1); step 8, co-op roles
-(ff4408d); step 9, three war scenarios (Hold the Line, A Clean War, Liberation; 00a96fc–5d3720f). In
-progress (a workflow): step 6, allies' help in a live battle, and step 7, the region's war history and
-replays in the City history panel. Then: step 10, the region soak; step 11, polish (README "War", tips,
-narrow and touch) and the two-player e2e (both commanding a live battle, then a treaty both accept);
-step 12, wrap-up.
+(ff4408d); step 9, three war scenarios (Hold the Line, A Clean War, Liberation; 00a96fc–5d3720f); step
+6, allies' help in a live battle (`bhelp`, `src/ui/Help.tsx`; 2481974–67fcf02); step 7, the region's war
+history and replays in the City history panel (`src/client/regionHistory.ts`, `regionReplays.ts`; 09a64f4–
+b9098e5); step 10, the war soak (`scripts/dev/regionsoak.ts`, `scripts/lib/soak`; 754c3e8–3c08fdb); step 11,
+the two-player e2e (`e2e/m39-friends.spec.ts`: declared from the Diplomacy tab, a live battle both
+commanding, peace one offers and the other accepts), tips for a first war with a friend, the README "War"
+section, the lobby and war room on a phone and a tablet by touch (a32f684–2357032). Each step was built,
+reviewed by two independent reviewers and fixed (59 findings, all real, all fixed with tests). The soak
+found that an attacker who left a live battle could dodge its losses: fixed (84c9c3c). In progress: step
+12, the wrap-up (checks one at a time, DESIGN §3.33, SPEC_REVIEW, CLAUDE.md), then the final two-hour
+soak run alone on the final code, then `M39 complete:`.
 
 M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
 their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a

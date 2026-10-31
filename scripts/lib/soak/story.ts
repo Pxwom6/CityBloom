@@ -65,6 +65,12 @@ export async function raid(
       w.miss(`${att.name} cannot raid ${def.name}: ${att.up ? def.name : att.name} is not in the region`);
     return { ok: false, why: 'a player is away' };
   }
+  // A force just back from a battle is mending (an hour of game time mends a twentieth, a few seconds of
+  // room time): it is waited for a little, not given up on, so one disturbed battle does not end the arc.
+  if (homeUnits(att.sim).length < 2 && !w.over) {
+    await w.until(`${att.name}'s units to mend`, () => homeUnits(att.sim).length >= 2, 4 * MIN);
+    if (!(await whenUp(w, [att, def]))) return { ok: false, why: 'a player is away' };
+  }
   const units = homeUnits(att.sim).map((u) => u.id);
   const n = att.sim.state.region.neighbours.find((x) => x.player?.slot === def.slot);
   if (units.length < 2 || !n) {
@@ -89,6 +95,7 @@ export async function raid(
   w.note(
     `${att.name} sends ${Math.min(24, units.length)} units against ${def.name} (${target}), expedition ${exp}`,
   );
+  w.onRaid?.(att, def);
   const done = await w.until(
     `${att.name}'s force ${exp} to be fought`,
     () => {
@@ -98,8 +105,16 @@ export async function raid(
     14 * MIN,
   );
   if (!done) {
-    if (!w.over) w.miss(`${att.name}'s force ${exp} was still out after 14 minutes`);
-    else w.note(`${att.name}'s force ${exp} was still out when time ran out`);
+    const e = att.sim.state.war?.expeditions?.find((x) => x.id === exp);
+    if (w.over) w.note(`${att.name}'s force ${exp} was still out when time ran out`);
+    // A force that has arrived and fought nothing for fourteen minutes while both its cities were here is
+    // stuck, not slow (a journey is under a minute of room time, the longest wait for the region a few).
+    else if (e?.state === 'fighting' && att.up && def.up)
+      w.fail(
+        'battle',
+        `${att.name}'s force ${exp} against ${def.name} was still fighting after 14 minutes with both cities in the region`,
+      );
+    else w.miss(`${att.name}'s force ${exp} was still out after 14 minutes`);
     return { ok: false, why: 'never came home', expedition: exp };
   }
   // The region may have turned the battle away (a limit): it is told, and the force came home as it went.
@@ -146,7 +161,7 @@ async function declare(
  * A treaty put to a friend: waits until `signed` says so, or the room has dropped the proposal (turned
  * down, refused or lapsed), or `ms` have passed. Whether it was signed.
  */
-async function propose(
+export async function propose(
   w: Soak,
   a: Player,
   b: Player,
@@ -375,16 +390,41 @@ export function disturbances(w: Soak): void {
       again(MIN + rng.int(4 * MIN));
     });
   again(90_000 + rng.int(MIN));
-  // Mid-battle: a combatant has a bad moment in four battles of ten.
-  w.onBattle = (b) => {
-    if (rng.next() >= 0.4) return;
-    w.later(10_000 + rng.int(35_000), async () => {
-      if (w.over || !w.players.every((p) => p.up)) return;
-      const p = pick([w.bySlot(b.attacker)!, w.bySlot(b.defender)!].filter(Boolean));
-      if (p && (p.slot === b.attacker || p.slot === b.defender)) {
-        w.note(`${p.name} has a bad moment in ${b.id}`);
-        await disturb(p);
-      }
+  // The old way: from its third raid on, the first whose defender is here has its player leave a little after
+  // the force sets out and stay away past its arrival, so the region can only keep the battle for the defender
+  // to take on its return (a long run is sure to have one).
+  let raids = 0;
+  let leftForIt = false;
+  w.onRaid = (_att, def) => {
+    if (++raids < 3 || leftForIt || !def.up) return;
+    leftForIt = true;
+    w.later(15_000, () => {
+      if (def.up) {
+        w.note(`${def.name} leaves while a force is on its way`);
+        void w.away(def, 110_000);
+      } else leftForIt = false;
     });
+  };
+  // Mid-battle: a combatant has a bad moment in four battles of ten, and always in the second (a battle
+  // lasts under a minute, so it comes soon after it begins; a long run is sure to have one, and the room
+  // to hand a side over). Not everyone is here at the moment: it is tried again a few times.
+  let seen = 0;
+  w.onBattle = (b) => {
+    seen++;
+    if (seen !== 2 && rng.next() >= 0.4) return;
+    const bad = (tries: number) =>
+      w.later(tries ? 4_000 : 5_000 + rng.int(20_000), async () => {
+        if (w.over) return;
+        if (!w.players.every((p) => p.up)) {
+          if (tries < 5) bad(tries + 1);
+          return;
+        }
+        const p = pick([w.bySlot(b.attacker)!, w.bySlot(b.defender)!].filter(Boolean));
+        if (p && (p.slot === b.attacker || p.slot === b.defender)) {
+          w.note(`${p.name} has a bad moment in ${b.id}`);
+          await disturb(p);
+        }
+      });
+    bad(0);
   };
 }

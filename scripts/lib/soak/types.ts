@@ -29,6 +29,8 @@ export interface SoakOptions {
   crash?: boolean;
   /** Where lines go (the console and a log file). */
   log: (line: string) => void;
+  /** Called with the play's state now and then (every progress line): a runner keeps what it has found so far. */
+  onProgress?: (w: import('./world').Soak) => void;
   /** The relay's port in real mode (0: any free one). */
   port?: number;
   /**
@@ -104,7 +106,8 @@ export type Cover =
   | 'reloads'
   | 'leaves'
   | 'crashes'
-  | 'handovers';
+  | 'handovers'
+  | 'disturbedBattles';
 
 export const COVER_KEYS: Cover[] = [
   'raids',
@@ -131,6 +134,7 @@ export const COVER_KEYS: Cover[] = [
   'leaves',
   'crashes',
   'handovers',
+  'disturbedBattles',
 ];
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

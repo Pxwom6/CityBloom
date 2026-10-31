@@ -1,7 +1,8 @@
-import { REGION_LIMITS, type MemoryRegionStore } from '../../../relay/region';
+import { MAX_CITIES, REGION_LIMITS, type MemoryRegionStore } from '../../../relay/region';
 import type { FriendsState } from '../../../relay/friendsWar';
 import type { FriendWar, WarEvent } from '../../../relay/protocol';
 import type { Command, CommandResult } from '../../../src/sim/commands';
+import type { Sim } from '../../../src/sim/sim';
 import type { BattleLog, Cover, SoakOptions } from './types';
 import type { Player, Soak } from './world';
 
@@ -14,6 +15,34 @@ import type { Player, Soak } from './world';
  */
 
 type Meta = { friends?: FriendsState; history?: WarEvent[] };
+
+/** What a city looked like just before a command, for those whose effect is checked (`Soak.patch` makes it). */
+export interface Before {
+  /** The month's ledger lines, a copy. */
+  lines: Record<string, number>;
+  /** Pacts the city's diplomacy held. */
+  pacts: number;
+  /** The live battle the city was hosting, and what it had already taken (buildings that fell, civic buildings wrecked). */
+  hosted?: { id: string; collapsed: number[]; wrecked: number[] };
+}
+
+export function before(sim: Sim): Before {
+  const w = sim.state.war;
+  const hb = w?.battle;
+  return {
+    lines: { ...sim.state.economy.month },
+    pacts: w?.diplomacy?.pacts.length ?? 0,
+    ...(hb?.live
+      ? {
+          hosted: {
+            id: hb.live.id,
+            collapsed: [...hb.report.collapsed],
+            wrecked: hb.report.civics.filter((c) => c.wrecked).map((c) => c.id),
+          },
+        }
+      : {}),
+  };
+}
 
 /** The free plan's daily limits (SPEC-4): requests, GB-s of duration, rows written, rows read. */
 export const FREE_PLAN = { requests: 100_000, gbs: 13_000, rowsWritten: 100_000, rowsRead: 5_000_000 };
@@ -47,8 +76,25 @@ export class Checks {
   readonly notices: string[] = [];
   private resolved = new Map<string, number>();
   readonly reported = new Map<string, number>();
-  /** When (room ms) each application was first made, by the key it is counted under. */
-  private firstAt = new Map<string, number>();
+  /** The ticket (`Soak.ticket`) of each application last made, by the key it is counted under. */
+  private lastAt = new Map<string, number>();
+  /** Forces the cities sent (name:expedition), and the forces called home. */
+  readonly sent = new Map<string, { player: string; id: number; stamp: number }>();
+  private recalled = new Set<string>();
+  /** Was this force (name:expedition) called home, as a battle the region turned away leaves it? */
+  wasRecalled(key: string): boolean {
+    return this.recalled.has(key);
+  }
+  /** Treaties the room signed (found in its queues, or applied by a city), and the cities that applied each. */
+  private treaties = new Map<string, { parties: [number, number]; appliedBy: Set<number> }>();
+  /** Sides of live battles the room has handed over to their defences (battle:side). */
+  private handed = new Set<string>();
+  /** When (room ms) each battle row was stored for a city. */
+  private rowAt = new Map<string, number>();
+  /** Takes and reports the run excuses, and why (a battle the room ended with no one finishing it, a crash's loss). */
+  readonly excused: string[] = [];
+  /** Applications made again because a restore from an older save had lost the first. */
+  rewinds = 0;
   /** Battles each defender took (any way), by name:id; and each attacker's reports by name:expedition. */
   readonly taken = new Map<string, string>();
   private pending = new Map<string, number>();
@@ -61,8 +107,9 @@ export class Checks {
   private warOpened = new Set<number>();
   /** Messages the room refused for the rate (the page's link saw the connection closed). */
   closedByRoom = 0;
-  /** Records of live battles that stood in for the one the city was hosting. */
+  /** Records of live battles that stood in for the one the city was hosting, and what each took on top of the hosted part. */
   standIns = 0;
+  readonly standInDamage: { id: string; player: string; buildings: number; wrecked: number }[] = [];
 
   constructor(private readonly w: Soak) {}
 
@@ -100,10 +147,12 @@ export class Checks {
     const city = st.saveCity.bind(st);
     st.saveCity = (slot, parts) => count('city saves for visitors', () => city(slot, parts));
     const battle = st.saveBattle.bind(st);
-    st.saveBattle = (slot, k, parts) =>
-      count(slot >= 5 ? 'replays of live battles' : 'battles waiting for a city', () =>
+    st.saveBattle = (slot, k, parts) => {
+      if (slot <= MAX_CITIES) this.rowAt.set(`${slot}:${k}`, this.w.now());
+      count(slot > MAX_CITIES ? 'replays of live battles' : 'battles waiting for a city', () =>
         battle(slot, k, parts),
       );
+    };
     const gone = st.deleteBattle.bind(st);
     st.deleteBattle = (slot, k) => count('battle rows deleted', () => gone(slot, k));
   }
@@ -118,62 +167,201 @@ export class Checks {
     for (const e of events) this.simEvents.set(e.kind, (this.simEvents.get(e.kind) ?? 0) + 1);
   }
 
-  /** A command the city was asked to apply, and whether it did: a battle taken or a force's report twice is a failure. */
-  applied(p: Player, gen: number, cmd: Command, r: CommandResult, hosted?: string): void {
+  /**
+   * Was the player's city loaded again from a save older than `since` (a ticket), after it? What it did at
+   * `since` is then gone from it (a crash does this: the page dies and comes back from its last autosave; a
+   * reload or a return saves first, so it never does).
+   */
+  rewoundSince(p: Pick<Player, 'restores'>, since: number): boolean {
+    return p.restores.some((r) => r.n > since && r.fromN < since);
+  }
+
+  /**
+   * A command the city was asked to apply, and whether it did: a battle taken or a force's report twice is
+   * a failure, unless a restore from an older save between the two lost the first (the soak's own crash).
+   * `hosted` is the live battle the city was hosting when the command came, `was` the city's look before it,
+   * `sim` the one that took the command (a page that has been replaced may still finish a command).
+   */
+  applied(
+    p: Player,
+    gen: number,
+    cmd: Command,
+    r: CommandResult,
+    hosted?: string,
+    was?: Before,
+    sim: Sim = p.sim,
+  ): void {
+    const now = this.w.ticket();
     if (cmd.type === 'battleResolve' && r.ok) {
-      const key = `${p.name}:${cmd.input.id}`;
+      const id = cmd.input.id;
+      const key = `${p.name}:${id}`;
       const n = (this.resolved.get(key) ?? 0) + 1;
       this.resolved.set(key, n);
-      const first = this.firstAt.get(key) ?? this.w.now();
-      this.firstAt.set(key, first);
+      const prev = this.lastAt.get(key);
+      this.lastAt.set(key, now);
       this.taken.set(
         key,
         `${cmd.mode}${cmd.from !== undefined ? ` from ${cmd.from}` : ''} (generation ${gen})`,
       );
-      // The record of a live battle this very city was hosting stands in for it (design: a reload, or a page
-      // that lost the room): the second application is the first one finished, and is counted apart.
-      const standsIn = n > 1 && cmd.mode === 'instant' && hosted === cmd.input.id;
-      if (standsIn) {
-        this.standIns++;
-        this.w.note(
-          `${p.name}'s city takes the record of ${cmd.input.id} in place of the battle it was hosting`,
-        );
-      } else if (cmd.mode !== 'live') this.w.covered('oldBattles');
-      // A city that came back from an autosave older than the first time it took the battle has lost that.
-      const rewound = n > 1 && first > p.restoredAt;
-      if (rewound && !standsIn)
-        this.w.note(`${p.name}'s city takes ${cmd.input.id} again: its autosave was older than the first`);
-      if (n > 1 && !standsIn && !rewound)
-        this.w.fail(
-          'applied-twice',
-          `${p.name}'s city took battle ${cmd.input.id} ${n} times (this one ${cmd.mode}, generation ${gen})`,
-        );
+      // The record of a live battle this very city was hosting stands in for it (design: a reload, a crash
+      // that took the end of the hosted battle with it, or a page that lost the room): the second application
+      // is the first one finished. That is so only for a city that was loaded again since it began hosting the
+      // battle, or whose player had a bad moment in it; anyone else taking a battle it is hosting has been
+      // handed it twice.
+      const standsIn = n > 1 && cmd.mode === 'instant' && hosted === id;
+      if (standsIn) this.standIn(p, id, prev, was, sim);
+      else if (cmd.mode !== 'live') this.w.covered('oldBattles');
+      if (n > 1 && !standsIn) {
+        if (prev !== undefined && this.rewoundSince(p, prev)) {
+          this.rewinds++;
+          this.w.note(
+            `${p.name}'s city takes ${id} again: it came back from a save older than the first time`,
+          );
+        } else
+          this.w.fail(
+            'applied-twice',
+            `${p.name}'s city took battle ${id} ${n} times (this one ${cmd.mode}, generation ${gen}) and was not restored from an older save in between`,
+          );
+      }
+    } else if (cmd.type === 'sendForce' && r.ok) {
+      const id = r.created?.[0];
+      if (id !== undefined) this.sent.set(`${p.name}:${id}`, { player: p.name, id, stamp: now });
     } else if (cmd.type === 'recallForce' && r.ok) {
       this.w.covered('recalled');
+      this.recalled.add(`${p.name}:${cmd.expedition}`);
       this.w.note(`${p.name}'s force ${cmd.expedition} is called home (the battle was turned away)`);
     } else if (cmd.type === 'battleReport' && r.ok) {
       const key = `${p.name}:${cmd.expedition}`;
       const n = (this.reported.get(key) ?? 0) + 1;
       this.reported.set(key, n);
-      const first = this.firstAt.get(`report:${key}`) ?? this.w.now();
-      this.firstAt.set(`report:${key}`, first);
-      if (n > 1 && first > p.restoredAt)
-        this.w.note(
-          `${p.name}'s city takes the report of its force ${cmd.expedition} again: its autosave was older than the first`,
-        );
-      else if (n > 1)
-        this.w.fail(
-          'reported-twice',
-          `${p.name}'s city took the report of its force ${cmd.expedition} ${n} times (generation ${gen})`,
-        );
+      const prev = this.lastAt.get(`report:${key}`);
+      this.lastAt.set(`report:${key}`, now);
+      if (n > 1) {
+        if (prev !== undefined && this.rewoundSince(p, prev)) {
+          this.rewinds++;
+          this.w.note(
+            `${p.name}'s city takes the report of its force ${cmd.expedition} again: it came back from a save older than the first time`,
+          );
+        } else
+          this.w.fail(
+            'reported-twice',
+            `${p.name}'s city took the report of its force ${cmd.expedition} ${n} times (generation ${gen}) and was not restored from an older save in between`,
+          );
+      }
+    } else if (cmd.type === 'friendTreaty' && r.ok) this.treatyApplied(p, cmd, was, sim);
+  }
+
+  /**
+   * A record standing in for the hosted part of a live battle: allowed for a player who was disturbed in it or
+   * whose city was loaded again since it began hosting it; what it took is measured.
+   */
+  private standIn(p: Player, id: string, prev: number | undefined, was: Before | undefined, sim: Sim): void {
+    const disturbed = this.battles.get(id)?.disturbed.some((d) => d.name === p.name);
+    const loadedAgain = prev !== undefined && p.restores.some((r) => r.n > prev);
+    if (!disturbed && !loadedAgain) {
+      this.w.fail(
+        'applied-twice',
+        `${p.name}'s city took the record of ${id} in place of the battle it was hosting, and neither was its player disturbed in that battle nor was the city loaded again since it began hosting it`,
+      );
+      return;
     }
+    this.standIns++;
+    // What the record took on top of the hosted part: a building or civic structure the hosted part had
+    // already taken must not be taken again, and the battle's own report says which fell.
+    const done = sim.state.war?.reports?.at(-1);
+    const hosted = was?.hosted?.id === id ? was.hosted : undefined;
+    const again =
+      hosted && done
+        ? {
+            buildings: done.collapsed.filter((x) => hosted.collapsed.includes(x)).length,
+            wrecked: done.civics.filter((c) => c.wrecked && hosted.wrecked.includes(c.id)).length,
+          }
+        : { buildings: 0, wrecked: 0 };
+    this.standInDamage.push({ id, player: p.name, ...again });
+    this.w.note(
+      `${p.name}'s city takes the record of ${id} in place of the battle it was hosting` +
+        (hosted
+          ? ` (the hosted part had taken ${hosted.collapsed.length} buildings and wrecked ${hosted.wrecked.length}; the record took ${done?.collapsed.length ?? '?'} and wrecked ${done?.civics.filter((c) => c.wrecked).length ?? '?'}, ${again.buildings + again.wrecked} of them the same ones)`
+          : ''),
+    );
+    if (again.buildings + again.wrecked > 0)
+      this.w.fail(
+        'damage-doubled',
+        `${p.name}'s city took ${again.buildings} buildings and wrecked ${again.wrecked} civic structures in the record of ${id} that the hosted part of the same battle had taken already`,
+      );
+  }
+
+  /**
+   * A treaty a city applied: it is on the city's list of what it has taken, the money it carried reached the
+   * ledger of this side (reparations as paid or received, a tribute as a pact), and the treaty is noted
+   * so that it can be asked, at the end, whether both its cities took it.
+   */
+  private treatyApplied(
+    p: Player,
+    cmd: Extract<Command, { type: 'friendTreaty' }>,
+    was: Before | undefined,
+    sim: Sim,
+  ): void {
+    const key = `${cmd.slot}:treaty:${cmd.id}`;
+    const w = sim.state.war;
+    if (!w?.taken?.includes(key))
+      this.w.fail(
+        'treaty-not-applied',
+        `${p.name}'s city said yes to treaty ${cmd.id} and did not put it on the list of the treaties it has taken`,
+      );
+    this.treaty(cmd.id, [p.slot, cmd.slot]).appliedBy.add(p.slot);
+    if (!was) return;
+    // The terms as this side reads them: the proposer's are written from its side, the other's are turned round.
+    let out = 0;
+    let inn = 0;
+    let tributes = 0;
+    let money = 0;
+    for (const t of cmd.terms as { k: string; payer?: string; amount?: number }[]) {
+      if (t.k === 'tribute') tributes++;
+      if (t.k !== 'reparations' || typeof t.amount !== 'number') continue;
+      money++;
+      const pays = cmd.side === 'a' ? t.payer === 'us' : t.payer === 'them';
+      if (pays) out -= t.amount;
+      else inn += t.amount;
+    }
+    const now = sim.state.economy.month;
+    const gotOut = (now.reparationsOut ?? 0) - (was.lines.reparationsOut ?? 0);
+    const gotIn = (now.reparationsIn ?? 0) - (was.lines.reparationsIn ?? 0);
+    // (Whole dollars are booked and the part of a dollar carried, so a term can be a dollar out.)
+    if (Math.abs(gotOut - out) > money || Math.abs(gotIn - inn) > money)
+      this.w.fail(
+        'treaty-money',
+        `${p.name}'s city took treaty ${cmd.id}: its ledger shows ${gotOut} paid out and ${gotIn} received in reparations, the terms say ${out} and ${inn}`,
+      );
+    const pacts = (w?.diplomacy?.pacts.length ?? 0) - was.pacts;
+    if (pacts !== tributes)
+      this.w.fail(
+        'treaty-money',
+        `${p.name}'s city took treaty ${cmd.id}: ${tributes} tribute terms made ${pacts} pacts in its diplomacy`,
+      );
+  }
+
+  private treaty(id: string, parties: [number, number]) {
+    let t = this.treaties.get(id);
+    if (!t) this.treaties.set(id, (t = { parties, appliedBy: new Set() }));
+    return t;
   }
 
   /** A player dropped, left or reloaded: every battle of theirs that is on is marked, so what it does to it is explained. */
   disturb(p: Player, what: string): void {
     for (const b of this.battles.values())
-      if (!this.over(b) && (b.attacker === p.slot || b.defender === p.slot))
+      if (!this.over(b) && (b.attacker === p.slot || b.defender === p.slot)) {
+        if (!b.disturbed.length) this.w.covered('disturbedBattles');
         b.disturbed.push({ name: p.name, what, at: this.w.now() });
+      }
+  }
+
+  /** Is anything waiting for this city, which a settled page would have taken (a treaty not yet seen, a battle kept for it)? */
+  waitingFor(p: Player): boolean {
+    if (!p.page) return false;
+    if ((this.meta.friends?.queue[p.slot] ?? []).length) return true;
+    for (const key of this.store.battles.keys()) if (key.startsWith(`${p.slot}:`)) return true;
+    return false;
   }
 
   private over(b: BattleLog): boolean {
@@ -185,6 +373,19 @@ export class Checks {
 
   frame(): void {
     const now = this.w.now();
+    // The room hands a combatant's side to its defences when the combatant falls silent or its last connection
+    // goes: counted from the room's own sessions (a page that was away does not see it happen).
+    const lives = (
+      this.w.room as unknown as { lives?: Map<string, { s: { id: string; handed(): number[] } }> }
+    ).lives;
+    for (const r of lives?.values() ?? [])
+      for (const side of r.s.handed()) {
+        const key = `${r.s.id}:${side}`;
+        if (this.handed.has(key)) continue;
+        this.handed.add(key);
+        this.w.covered('handovers');
+        this.w.note(`the room hands side ${side} of ${r.s.id} over to its defences`);
+      }
     for (const p of this.w.players) {
       const st = p.page?.live.state();
       if (!st) continue;
@@ -211,10 +412,8 @@ export class Checks {
       const had = b.views.get(p.slot);
       b.views.set(p.slot, { slot: p.slot, role: st.role, state: st, seen: now });
       if (!st.ended) b.lastSeen = now;
-      if (st.handed && !had?.state.handed) {
-        this.w.covered('handovers');
+      if (st.handed && !had?.state.handed)
         this.w.note(`${p.name}'s side of ${st.id} is handed over to its defences`);
-      }
       if (st.ended && !had?.state.ended)
         this.w.note(`${p.name}'s run of ${st.id} ended at step ${st.hashes.mine?.step}`);
       if (st.hashes.room && !had?.state.hashes.room)
@@ -228,6 +427,7 @@ export class Checks {
     const w = this.w;
     const now = w.now();
     this.harvest();
+    this.queueSeen();
     this.consistency();
     this.links();
     this.dues();
@@ -241,6 +441,7 @@ export class Checks {
     if (now - this.lastProgress >= 5 * 60_000) {
       this.lastProgress = now;
       w.note(this.progress());
+      w.opts.onProgress?.(w);
     }
   }
 
@@ -279,6 +480,12 @@ export class Checks {
       w.covered('pacts');
     }
     for (const x of m.friends?.wars ?? []) if (x.state === 'open') this.warOpened.add(x.id);
+  }
+
+  /** The treaties waiting in the room's queues for a city to say it has seen them: every treaty signed shows there until then. */
+  private queueSeen(): void {
+    for (const q of Object.values(this.meta.friends?.queue ?? {}))
+      for (const t of q) this.treaty(t.id, [t.a, t.b]);
   }
 
   /** Each city's forces out, by name:id, and the state they were last seen in (a change is noted). */
@@ -418,6 +625,30 @@ export class Checks {
       for (const e of (this.meta.history ?? []).slice(-8))
         if (!mineIds.has(e.id))
           problems.push(`${p.name}'s page has not heard of event ${e.id} (${e.kind}: ${e.text})`);
+      // The city's own mirror of the pacts (the sim's, by the region's number): what the page shows is only
+      // the room's message echoed, the city is what the game plays on.
+      const slotOf = (neighbour: number) =>
+        p.sim.state.region.neighbours.find((n) => n.id === neighbour)?.player?.slot ?? 0;
+      const kept = (fs?.pacts ?? [])
+        .filter((x) => x.a === p.slot || x.b === p.slot)
+        .map((x) => `${x.id}:${x.kind}:${x.a === p.slot ? x.b : x.a}`)
+        .sort();
+      const mirrored = (p.sim.state.war?.diplomacy?.pacts ?? [])
+        .filter((x) => x.room !== undefined)
+        .map((x) => `${x.room}:${x.term.k}:${slotOf(x.with)}`)
+        .sort();
+      if (kept.join() !== mirrored.join())
+        problems.push(
+          `${p.name}'s city holds pacts [${mirrored}], the room [${kept}] (number:kind:the other city)`,
+        );
+      // And the vassals that pay it: the room's list of those whose overlord this city is.
+      const subjects = (fs?.vassals ?? [])
+        .filter((x) => x.overlord === p.slot)
+        .map((x) => x.vassal)
+        .sort();
+      const held = (p.sim.state.war?.diplomacy?.subjects ?? []).map((x) => slotOf(x.with)).sort();
+      if (subjects.join() !== held.join())
+        problems.push(`${p.name}'s city has vassals [${held}], the room says [${subjects}]`);
       // Its own city: a vassal's overlord, from the room's list.
       const link = (fs?.vassals ?? []).find((x) => x.vassal === p.slot);
       const dv = p.sim.state.war?.diplomacy?.vassal;
@@ -440,34 +671,160 @@ export class Checks {
 
   // ---------------------------------------------------------------- the end
 
-  /** The run is over and everything that could finish has: judge every battle and every application. */
+  /** The room's verdict on a live battle, from whichever page heard it. */
+  private verdict(b: BattleLog) {
+    return b.views.get(b.attacker)?.state.hashes.room ?? b.views.get(b.defender)?.state.hashes.room ?? null;
+  }
+
+  private excuse(text: string): void {
+    this.excused.push(text);
+    this.w.note(`excused: ${text}`);
+  }
+
+  /**
+   * The run is over and everything that could finish has (every city is back in its page): judge every
+   * battle and every application. Nothing is excused for a disturbance as such; what is excused is a
+   * battle the room itself ended with no one finishing it, and an application a restore from an older
+   * save (a crash) lost, each said in the log.
+   */
   finish(): void {
+    const w = this.w;
     this.harvest();
+    this.queueSeen();
     this.consistency();
     for (const b of this.battles.values()) this.judge(b);
-    // A force that reached a battle was reported once; a battle the city took was taken once (the guards say twice).
+    for (const p of w.players)
+      if (!p.page) w.fail('away-at-end', `${p.name}'s city was not in its page at the end`);
+    this.applications();
+    this.forcesEnd();
+    this.treatiesEnd();
+    this.rowsEnd();
+  }
+
+  /** Every live battle was taken by its defender (and kept: not lost to a restore); its attacker's force is judged apart (`forcesEnd`). */
+  private applications(): void {
+    const w = this.w;
     for (const b of this.battles.values()) {
       if (!b.judged || b.judged.problem) continue;
-      const d = this.w.bySlot(b.defender);
-      const a = this.w.bySlot(b.attacker);
-      if (d && !this.taken.has(`${d.name}:${b.id}`) && !b.disturbed.length)
-        this.w.fail('not-applied', `${b.defenderName}'s city never took live battle ${b.id}`);
-      else if (d && !this.taken.has(`${d.name}:${b.id}`))
-        this.w.note(`${b.defenderName}'s city did not take ${b.id} (it was disturbed during it)`);
-      if (a && a.page) {
-        const city = a.sim.state.war?.expeditions ?? [];
-        // Reports are counted by the attacker's city; the expedition of this battle ends with `exp-<seed>-<n>`.
-        const n = Number(/-(\d+)$/.exec(b.id)?.[1] ?? -1);
-        const reports = this.reported.get(`${a.name}:${n}`) ?? 0;
-        const stillOut = city.some((e) => e.id === n && e.state === 'fighting');
-        if (reports === 0 && !stillOut && !b.disturbed.length)
-          this.w.fail(
-            'not-reported',
-            `${b.attackerName}'s city never took the report of its force in ${b.id}`,
+      const d = w.bySlot(b.defender);
+      if (!d?.page) continue;
+      const key = `${d.name}:${b.id}`;
+      if (!this.taken.has(key)) {
+        if (this.verdict(b)?.abandoned)
+          this.excuse(
+            `${b.defenderName}'s city did not take ${b.id}: the room ended it with no one finishing it`,
           );
-        else if (reports === 0 && !stillOut)
-          this.w.note(`${b.attackerName}'s force in ${b.id} was not reported (it was disturbed during it)`);
+        else
+          w.fail(
+            'not-applied',
+            `${b.defenderName}'s city never took live battle ${b.id}${b.disturbed.length ? ` (disturbed in it: ${b.disturbed.map((x) => `${x.name} ${x.what}`).join(', ')})` : ''}`,
+          );
+      } else if (this.rewoundSince(d, this.lastAt.get(key) ?? 0))
+        this.excuse(
+          `${b.defenderName}'s city took ${b.id}, and a restore from an older save lost that; it was not taken again`,
+        );
+    }
+  }
+
+  /**
+   * Every force a city sent was reported or called home, is still on its way, or is still fighting when
+   * time ran out; one that vanished with neither report nor recall is lost. A force that is fighting although
+   * its live battle is over was never reported.
+   */
+  private forcesEnd(): void {
+    const w = this.w;
+    const liveOf = new Map<string, BattleLog>();
+    for (const b of this.battles.values()) {
+      const a = w.bySlot(b.attacker);
+      const n = /-(\d+)$/.exec(b.id)?.[1];
+      if (a && n) liveOf.set(`${a.name}:${n}`, b);
+    }
+    let out = 0;
+    let fighting = 0;
+    for (const [key, f] of this.sent) {
+      const p = w.player(f.player);
+      if (!p.page) continue;
+      const e = p.sim.state.war?.expeditions?.find((x) => x.id === f.id);
+      const battle = liveOf.get(key);
+      const where = battle ? ` (its battle was ${battle.id})` : '';
+      if (e) {
+        if (e.state === 'back') continue;
+        if (e.state === 'out') {
+          out++;
+          continue;
+        }
+        if (battle && this.over(battle) && !this.verdict(battle)?.abandoned)
+          w.fail(
+            'not-reported',
+            `${p.name}'s force ${f.id} is still fighting although its battle is over${where}`,
+          );
+        else fighting++;
+        continue;
       }
+      if (this.reported.has(key) || this.recalled.has(key)) {
+        // It came home. A report that a restore from an older save lost would have brought it back to the city.
+        continue;
+      }
+      if (this.rewoundSince(p, f.stamp))
+        this.excuse(`${p.name}'s force ${f.id} was sent and the city came back from a save older than that`);
+      else if (battle && this.verdict(battle)?.abandoned)
+        this.excuse(
+          `${p.name}'s force ${f.id} has no report: the room ended its battle with no one finishing it`,
+        );
+      else
+        w.fail(
+          'not-reported',
+          `${p.name}'s force ${f.id} left the city and was never reported nor called home${where}`,
+        );
+    }
+    if (out || fighting)
+      w.note(
+        `at the end ${out} forces were still on their way and ${fighting} still fighting (time ran out)`,
+      );
+  }
+
+  /** Every treaty the room signed was taken by both its cities, and none waits for a city that is here. */
+  private treatiesEnd(): void {
+    const w = this.w;
+    for (const [id, t] of this.treaties)
+      for (const slot of t.parties) {
+        const p = w.bySlot(slot);
+        if (p?.page && !t.appliedBy.has(slot))
+          w.fail(
+            'treaty-one-sided',
+            `treaty ${id} between cities ${t.parties.join(' and ')} was never applied by ${p.name}'s city`,
+          );
+      }
+    const signed = [...this.history.values()].filter((e) => e.kind === 'treaty').length;
+    if (signed > this.treaties.size)
+      w.fail(
+        'treaty-one-sided',
+        `the room signed ${signed} treaties and only ${this.treaties.size} were ever seen in its queues or applied by a city`,
+      );
+    for (const [slot, q] of Object.entries(this.meta.friends?.queue ?? {})) {
+      const p = w.bySlot(Number(slot));
+      if (p?.page && q.length)
+        w.fail(
+          'treaty-one-sided',
+          `the room still waits for ${p.name}'s city to say it has seen ${q.map((t) => t.id).join(', ')}`,
+        );
+    }
+  }
+
+  /** No battle is kept in the room for a city that has been here for a while. */
+  private rowsEnd(): void {
+    const w = this.w;
+    const now = w.now();
+    for (const key of this.store.battles.keys()) {
+      const slot = Number(key.split(':')[0]);
+      if (slot > MAX_CITIES) continue;
+      const p = w.bySlot(slot);
+      const waited = now - (this.rowAt.get(key) ?? now);
+      if (p?.page && waited > 90_000)
+        w.fail(
+          'unclaimed-battle',
+          `battle ${key} has waited ${Math.round(waited / 1000)} s in the room for ${p.name}, whose city is in the region`,
+        );
     }
   }
 
@@ -484,7 +841,9 @@ export class Checks {
     const left = !!room && (room.solo || room.abandoned) && b.disturbed.length > 0;
     if (!room) soft.push('the room gave no verdict');
     else {
-      if (room.agree === false) hard.push('the room saw the two cities’ runs end differently');
+      // (A battle nobody finished has no runs to disagree: the room's `agree: false` there only says so.)
+      if (room.agree === false && !room.abandoned)
+        hard.push('the room saw the two cities’ runs end differently');
       if (room.solo) soft.push('only one city finished it');
       if (room.abandoned) soft.push('nobody finished it');
     }
@@ -554,7 +913,8 @@ export class Checks {
       requests: (per.requests * EVENING) / FREE_PLAN.requests,
       gbs: (per.gbs * EVENING) / FREE_PLAN.gbs,
     };
-    // An evening of this play must take at most half of any daily allowance, and fit the region's own row budget.
+    // An evening of this play must take at most half of any daily allowance, the region's own row budget
+    // (what the room stops writing at, and refuses battles past) among them.
     const day = {
       rows: per.rows * 24,
       requests: per.requests * 24,
@@ -563,7 +923,7 @@ export class Checks {
     const used = (this.w.room as unknown as { budget: { used(n: number): number } }).budget.used(
       this.w.now(),
     );
-    const ok = share.rows <= 0.5 && share.regionRows <= 1 && share.requests <= 0.5 && share.gbs <= 0.5;
+    const ok = share.rows <= 0.5 && share.regionRows <= 0.5 && share.requests <= 0.5 && share.gbs <= 0.5;
     const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
     const lines = [
       `the room over ${hours.toFixed(2)} h of room time (${secs.toFixed(0)} s)`,
@@ -616,5 +976,30 @@ export function required(o: SoakOptions): [Cover, number][] {
   if (m >= 60) need.push(['helpBooked', 1]);
   if (o.disturb && m >= 8) need.push(['drops', 1], ['reloads', 1]);
   if (o.disturb && m >= 15) need.push(['leaves', 1], ['outages', 1]);
+  // A long run must have had a combatant disturbed in a live battle, and the room hand a side over.
+  if (o.disturb && m >= 60) need.push(['disturbedBattles', 1], ['handovers', 1]);
+  // A force that arrived while its defender was away is fought the old way, and the defender takes the battle on its return.
+  if (o.disturb && m >= 30) need.push(['oldBattles', 1]);
+  if (o.crash && m >= 25) need.push(['crashes', 1]);
   return need;
+}
+
+/**
+ * What a run of this length cannot have covered, by the same thresholds as `required`: a pass of a
+ * run shorter than the story's arc says so in its banner, so it is not mistaken for the full soak.
+ */
+export function notCoveredByLength(o: SoakOptions): string[] {
+  if (o.story === 'short') return [];
+  const m = o.minutes;
+  const out: string[] = [];
+  if (m < 8) out.push('a declared war, a treaty and pacts (8 minutes)');
+  if (m < 10) out.push('an ally’s help and three live battles (10 minutes)');
+  if (m < 20) out.push('a conquest (20 minutes)');
+  if (m < 25) out.push('a vassal’s dues (25 minutes)');
+  if (o.disturb && m < 15) out.push('a player away, and a network outage (15 minutes)');
+  if (m < 60)
+    out.push(
+      'a force that came home from helping, a combatant disturbed in a battle, a handover (60 minutes)',
+    );
+  return out;
 }

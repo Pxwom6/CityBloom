@@ -3,8 +3,8 @@ import { makeCode } from '../../../relay/protocol';
 import { MemoryRegionStore, RegionRoom } from '../../../relay/region';
 import { FakeClock } from '../../../relay/tests/harness';
 import { webSocketLink, type Link } from '../../../src/net/link';
-import { awayInput, awayResult, type AwayCity } from '../../../src/sim/battle/away';
-import { Battle } from '../../../src/sim/battle/battle';
+import type { AwayCity } from '../../../src/sim/battle/away';
+import { fightAwayCity } from '../../../src/sim/battle/awayFight';
 import { checkInvariants } from '../../../src/sim/invariants';
 import { Rng } from '../../../src/sim/rng';
 import type { SaveFile } from '../../../src/sim/save';
@@ -14,7 +14,7 @@ import { settle, friendsPage, type FwPage } from '../../../tests/war/friendsHarn
 import { flush, loopTo } from '../../../tests/war/liveHarness';
 import { friend, liveTown, regionOf, type LiveTown } from '../../../tests/war/liveTown';
 import { Bots } from './bots';
-import { Checks } from './checks';
+import { before, Checks } from './checks';
 import { COVER_KEYS, sleep, type BattleLog, type Cover, type Failure, type SoakOptions } from './types';
 
 /**
@@ -67,9 +67,16 @@ export class Player {
   /** Room ms the link has been in the region since (0: not in it). */
   upSince = 0;
   autosave: SaveFile | null = null;
-  /** When (room ms) the autosave was made, and the one the city's present generation began from. */
+  /** When (room ms) the autosave was made, and its ticket (see `Soak.ticket`). */
   autosaveAt = 0;
-  restoredAt = Infinity;
+  autosaveN = 0;
+  /**
+   * Every time the city was loaded again: the ticket of the load and of the autosave it was loaded from. A
+   * city restored from a save older than something it did has lost that (a crash does; a reload saves first).
+   */
+  restores: { n: number; fromN: number }[] = [];
+  /** The city is being opened in a page (a return, a reload): not to be opened twice. */
+  opening = false;
   town: LiveTown | null = null;
   /** The next proposals this player declines before it accepts one. */
   declineNext = 0;
@@ -119,6 +126,12 @@ export class Soak {
   over = false;
   /** Past the minutes asked for: finishing what is under way, nothing new is begun. */
   draining = false;
+  /** Asked to stop early (a signal): the run drains and is judged as if its time were up. */
+  stopped = false;
+  /** Told when a city sends its force against another's (the story's disturbances use it). */
+  onRaid: ((att: Player, def: Player) => void) | null = null;
+  /** Called when the cities are built and before they open pages (a test's own mischief with a city's sim). */
+  onBuilt: ((w: Soak) => void) | null = null;
   readonly failures: Failure[] = [];
   readonly misses: string[] = [];
   readonly journal: string[] = [];
@@ -144,6 +157,16 @@ export class Soak {
 
   now(): number {
     return this.clock.now();
+  }
+  private tickets = 0;
+  /**
+   * A number that only grows, taken whenever order matters and the clock cannot say: several things happen
+   * in the one millisecond of room time a virtual frame stands for (a city is loaded again and its page is
+   * handed a battle in the same instant), and whether a save is older than an application is a matter of
+   * which came first.
+   */
+  ticket(): number {
+    return ++this.tickets;
   }
   /** Minutes of room time since play began. */
   minutes(): number {
@@ -266,23 +289,12 @@ export class Soak {
     p.upSince = this.now();
     page.hooks.autosave = async () => this.autosave(p);
     page.link.onNotice = (text) => this.checks.linkNotice(p, text);
-    // The old way (a friend that cannot fight live, or is busy in another battle): the battle worker's job, done here.
+    // The old way (a friend that cannot fight live, or is busy in another battle): the battle worker's job,
+    // done here by the very function the worker calls (`fightAwayCity`), so the two cannot drift apart.
     (page.away as unknown as { run: (job: AwayJob) => Promise<unknown> }).run = async (job) => {
       if (job.type !== 'awayCity')
         return { type: 'error', id: job.id, message: 'the soak runs only a friend’s battle' };
-      const town = Sim.fromSave(job.save);
-      if (town.state.war?.battle) {
-        delete town.state.war.battle;
-        town.battleRun = null;
-      }
-      const input = awayInput(job.city, town);
-      return {
-        type: 'away',
-        id: job.id,
-        input,
-        result: awayResult(input, Battle.run(structuredClone(input))),
-        town: town.save(),
-      };
+      return { type: 'away', id: job.id, ...fightAwayCity(job) };
     };
     // What the region made of a force that came to a friend's city: a battle fought, or why not and when to ask again.
     const attack = page.live.attack.bind(page.live);
@@ -311,17 +323,20 @@ export class Soak {
     if (!p.page) return;
     p.autosave = p.page.sim.save();
     p.autosaveAt = this.now();
+    p.autosaveN = this.ticket();
   }
 
-  /** Count what the city is asked to apply (a battle taken, a force's report) so doing either twice shows. */
+  /** Count what the city is asked to apply (a battle taken, a force's report, a treaty) so doing either twice shows. */
   private patch(p: Player, sim: Sim): void {
     const dispatch = sim.dispatch.bind(sim);
     const gen = p.gen;
     sim.dispatch = ((cmd: Parameters<Sim['dispatch']>[0]) => {
       // The live battle this city hosts, before the command: a record of it may stand in for it (reload, lost room).
       const hosted = sim.state.war?.battle?.live?.id;
+      // How the city stood, for the commands whose effect is checked.
+      const was = cmd.type === 'friendTreaty' || cmd.type === 'battleResolve' ? before(sim) : undefined;
       const r = dispatch(cmd);
-      this.checks.applied(p, gen, cmd, r, hosted);
+      this.checks.applied(p, gen, cmd, r, hosted, was, sim);
       return r;
     }) as Sim['dispatch'];
   }
@@ -371,6 +386,7 @@ export class Soak {
       this.room = new RegionRoom(this.code, 'local', new MemoryRegionStore(), this.clock as FakeClock, {});
     }
     await this.build();
+    this.onBuilt?.(this);
     for (const p of this.players) {
       await this.open(p, p.sim, p.idx === 0);
       if (p.idx === 0 && this.opts.mode === 'real') this.room = this.relay!.regions.get(this.code)!;
@@ -555,19 +571,25 @@ export class Soak {
     return p.autosave;
   }
 
-  /** The tab opens again: the city is loaded from its save and rejoins the region with its place. */
-  async comeBack(p: Player): Promise<void> {
-    if (p.page || this.over) return;
-    p.offline = false;
-    p.gen++;
-    p.restoredAt = p.autosaveAt;
-    const sim = Sim.fromSave(p.autosave!);
-    sim.testMode = true;
-    this.note(`${p.name} comes back (the city loaded from its save)`);
+  /**
+   * The tab opens again: the city is loaded from its save and rejoins the region with its place.
+   * Once the time is up nobody comes back by themselves; the drain brings everyone back (`force`).
+   */
+  async comeBack(p: Player, force = false): Promise<void> {
+    if (p.page || p.opening || (this.over && !force)) return;
+    p.opening = true;
     try {
+      p.offline = false;
+      p.gen++;
+      p.restores.push({ n: this.ticket(), fromN: p.autosaveN });
+      const sim = Sim.fromSave(p.autosave!);
+      sim.testMode = true;
+      this.note(`${p.name} comes back (the city loaded from its save)`);
       await this.open(p, sim);
     } catch (e) {
       this.fail('rejoin', `${p.name} could not rejoin: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      p.opening = false;
     }
   }
 
@@ -626,7 +648,7 @@ export class Soak {
         this.fail('story', e instanceof Error ? (e.stack ?? e.message) : String(e)),
       );
       if (this.opts.disturb) disturbances(this);
-      await this.loop(() => this.now() >= end);
+      await this.loop(() => this.now() >= end || this.stopped);
       await this.drain();
     } finally {
       process.off('unhandledRejection', crashed);
@@ -634,26 +656,44 @@ export class Soak {
     }
   }
 
-  /** Past the time asked for: everyone comes back, nothing new begins, and what is on finishes (three minutes at most). */
+  /** Asked to stop (a signal): what is under way finishes and the run is judged, as when its time is up. */
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.note('asked to stop: finishing what is under way');
+  }
+
+  /**
+   * Past the time asked for: everyone comes back (a player who was away, crashed or cut off when the
+   * time ran out is judged with the rest), nothing new begins, and what is on finishes (three minutes
+   * at most, and at least a minute after the last return, which is what a returned page needs to be
+   * judged: `consistency` lets a page settle for 20 s and a difference stand for 25).
+   */
   private async drain(): Promise<void> {
     this.draining = true;
     this.over = true;
     this.note('time is up: finishing what is under way');
     for (const p of this.players) {
       p.offline = false;
-      if (!p.page) await this.comeBack(p);
+      if (!p.page) await this.comeBack(p, true);
     }
-    const until = this.now() + 180_000;
+    // (A page that was on its way back when the time ran out finishes opening first.)
+    for (let k = 0; k < 400 && this.players.some((p) => p.opening); k++) await this.pace();
+    for (const p of this.players)
+      if (!p.page)
+        this.fail('away-at-end', `${p.name}'s city could not be brought back for the final checks`);
+    const returned = this.now();
+    const until = returned + 180_000;
     const busy = () =>
       this.players.some((p) => {
         const s = p.page?.live.state();
         const exp = p.sim.state.war?.expeditions?.some((e) => e.state === 'fighting');
-        return (s && !s.ended) || exp || p.sim.state.war?.battle;
+        return (s && !s.ended) || exp || p.sim.state.war?.battle || this.checks.waitingFor(p);
       });
     let quiet = 0;
     await this.loop(() => {
       quiet = busy() ? 0 : quiet + 1;
-      return this.now() >= until || quiet > 160;
+      return this.now() >= until || (quiet > 160 && this.now() >= returned + 60_000);
     });
     // A last word from every page, and the room's.
     for (const p of this.players) await p.page?.link.reportNow(true);

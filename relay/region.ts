@@ -571,7 +571,10 @@ export interface RegionLimits {
   maxConns: number;
 }
 
-/** Online defaults. Four honest cities write about a hundred rows an hour. */
+/**
+ * Online defaults. Four honest cities write about a hundred rows an hour (the war soak measures it:
+ * `scripts/dev/regionsoak.ts` budget lines), so a day's 3,000 carry twenty-odd hours of play.
+ */
 export const REGION_LIMITS: RegionLimits = {
   rate: 2,
   burst: 60,
@@ -1470,17 +1473,14 @@ export class RegionRoom {
     if (st.v < LIVE_PROTOCOL && FRIEND_MESSAGES.has(m.t)) return;
     switch (m.t) {
       case 'report': {
-        // Every report goes to the others at once; only offers, deals and the like are written
-        // promptly, the numbers and the picture now and then.
+        // Every report goes to the others at once; only deals and the like are written promptly, the
+        // numbers, the offers and the picture now and then. (A running city's offers change with nearly
+        // every report, its spare power moves with the hour, so written promptly they were the record's
+        // whole cost: a row per city every half minute, which spends the region's day in six hours of
+        // play. The other cities hear them at once; the record only lets a region that was asleep wake
+        // knowing roughly what it knew, and every city reports again within half a minute.)
         const matters = (c: City) =>
-          JSON.stringify([
-            c.name,
-            c.report?.kind,
-            c.report?.offers,
-            c.report?.deals,
-            c.report?.projectBuilt,
-            c.report?.shield,
-          ]);
+          JSON.stringify([c.name, c.report?.kind, c.report?.deals, c.report?.projectBuilt, c.report?.shield]);
         // The fair clock (M37) is kept with the rest of what changes now and then.
         const kept = () => JSON.stringify([city.report, city.thumb, city.fair?.hours]);
         const before = kept();

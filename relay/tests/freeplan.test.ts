@@ -737,6 +737,41 @@ describe('F8: a region keeps within the free plan', () => {
     for (const c of cities) expect(c.closed).toBeNull();
   });
 
+  it('an hour of four cities whose offers change with every report writes about a hundred rows too, and loses none when the region empties', () => {
+    // A running city's spare power moves with the hour: the war soak (`scripts/dev/regionsoak.ts`) found its
+    // offers different in nearly every report, which written promptly cost a row per city every half minute
+    // (480 an hour, a region's whole day in six hours of play). They are written with the numbers now.
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('9HQOFF', 'local', store, clock);
+    const names = ['Ada', 'Sam', 'Kit', 'Lee'];
+    const cities = names.map((mayor, i) => {
+      const c = rawRegion(region);
+      c.say(rhello(mayor, i ? {} : { create: { name: 'Vale' } }));
+      return c;
+    });
+    const before = store.rowsWritten;
+    let power = 0;
+    for (let s = 0; s < 3600; s += 30)
+      cities.forEach((c, i) => {
+        clock.advance(30_000 / cities.length);
+        c.say(report(++power, 1000 + s + i, `${names[i]}ton`));
+        if (s % 300 === 0) c.say({ t: 'save', id: `${i}-${s}`, part: 0, parts: 1, data: 'SAVE' });
+      });
+    const rows = store.rowsWritten - before;
+    console.log(`[F8] an hour of four cities whose offers change every report: ${rows} rows written`);
+    expect(rows).toBeLessThanOrEqual(150);
+    for (const c of cities) expect(c.closed).toBeNull();
+    // The other cities heard every one at once; the record has the last of them once the region empties.
+    for (const c of cities) region.closed(c.conn);
+    expect(store.meta!.cities.map((c) => c.report!.offers.sell.power)).toEqual([
+      power - 3,
+      power - 2,
+      power - 1,
+      power,
+    ]);
+  });
+
   it('stops storing at its daily row budget', () => {
     const clock = new FakeClock();
     const store = new MemoryRegionStore();

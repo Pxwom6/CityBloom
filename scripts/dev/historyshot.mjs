@@ -7,7 +7,8 @@
 // checked" note), and the way back to the city. Prints what the page knows at each point.
 // Usage: npm run build:test && npx tsx scripts/dev/historyshot.mjs outDir
 // Env: PORT=4396 (the preview), RELAY=8787 (where test builds look for the relay), QUALITY=low,
-//      ONLY=panel,filter,phone,viewer (the shots to take; viewer includes the bar at 360 px), PW_CHROMIUM=path to a Chromium to use.
+//      ONLY=panel,filter,phone,viewer (the shots to take; viewer includes the bar at 360 px), PW_CHROMIUM=path to a Chromium to use,
+//      DIST=dist-test and BASE=/ (a build made with another --outDir/--base, e.g. DIST=dist-rev BASE=/CityBloom/).
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -19,6 +20,8 @@ mkdirSync(out, { recursive: true });
 const port = Number(process.env.PORT ?? 4396);
 const relayPort = Number(process.env.RELAY ?? 8787);
 const quality = process.env.QUALITY ?? 'low';
+const dist = process.env.DIST ?? 'dist-test';
+const base = process.env.BASE ?? '/';
 const only = new Set((process.env.ONLY ?? 'panel,filter,phone,viewer').split(','));
 const CODE = '7HSTRY';
 const t0 = Date.now();
@@ -30,7 +33,7 @@ relay.regions.set(CODE, fixture.room);
 log('fixture ready; replay', JSON.stringify(fixture.replay));
 const server = spawn(
   'npx',
-  ['vite', 'preview', '--outDir', 'dist-test', '--port', String(port), '--strictPort'],
+  ['vite', 'preview', '--outDir', dist, '--base', base, '--port', String(port), '--strictPort'],
   { stdio: 'ignore', detached: true },
 );
 await new Promise((r) => setTimeout(r, 2500));
@@ -56,7 +59,7 @@ async function player(name, color, query) {
   const page = await ctx.newPage();
   page.on('console', (m) => m.type() === 'error' && errors.push(`${name}: ${m.text()}`));
   page.on('pageerror', (e) => errors.push(`${name}: ${e}`));
-  await page.goto(`http://localhost:${port}/?paused=1${query}`);
+  await page.goto(`http://localhost:${port}${base}?paused=1${query}`);
   await ready(page);
   return page;
 }

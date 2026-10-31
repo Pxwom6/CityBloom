@@ -4159,6 +4159,18 @@ body {
   pointer-events: auto;
   font-size: var(--font-size-sm);
 }
+/* The way back keeps its size; it is the text beside it that wraps. */
+.viewer-bar .btn {
+  flex: none;
+  white-space: nowrap;
+}
+/* On a phone the way back goes under the text, as wide as the bar, instead of squeezing it into a column. */
+@media (max-width: 34rem) {
+  .viewer-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 
 /* Diplomacy (M36): the war room's Diplomacy tab and the fallen city's card. */
 .dip {

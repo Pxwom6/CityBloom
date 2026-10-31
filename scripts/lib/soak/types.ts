@@ -22,6 +22,11 @@ export interface SoakOptions {
   fairClock: boolean;
   /** Drops, outages, reloads and absences. */
   disturb: boolean;
+  /**
+   * Also crashes: a page that dies with no goodbye and comes back from its last autosave (up to five
+   * minutes old), so what it did since is lost and the room and the other pages know more than it does.
+   */
+  crash?: boolean;
   /** Where lines go (the console and a log file). */
   log: (line: string) => void;
   /** The relay's port in real mode (0: any free one). */
@@ -98,6 +103,7 @@ export type Cover =
   | 'outages'
   | 'reloads'
   | 'leaves'
+  | 'crashes'
   | 'handovers';
 
 export const COVER_KEYS: Cover[] = [
@@ -123,6 +129,7 @@ export const COVER_KEYS: Cover[] = [
   'outages',
   'reloads',
   'leaves',
+  'crashes',
   'handovers',
 ];
 

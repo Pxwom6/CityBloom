@@ -47,6 +47,8 @@ export class Checks {
   readonly notices: string[] = [];
   private resolved = new Map<string, number>();
   readonly reported = new Map<string, number>();
+  /** When (room ms) each application was first made, by the key it is counted under. */
+  private firstAt = new Map<string, number>();
   /** Battles each defender took (any way), by name:id; and each attacker's reports by name:expedition. */
   readonly taken = new Map<string, string>();
   private pending = new Map<string, number>();
@@ -122,6 +124,8 @@ export class Checks {
       const key = `${p.name}:${cmd.input.id}`;
       const n = (this.resolved.get(key) ?? 0) + 1;
       this.resolved.set(key, n);
+      const first = this.firstAt.get(key) ?? this.w.now();
+      this.firstAt.set(key, first);
       this.taken.set(
         key,
         `${cmd.mode}${cmd.from !== undefined ? ` from ${cmd.from}` : ''} (generation ${gen})`,
@@ -135,7 +139,11 @@ export class Checks {
           `${p.name}'s city takes the record of ${cmd.input.id} in place of the battle it was hosting`,
         );
       } else if (cmd.mode !== 'live') this.w.covered('oldBattles');
-      if (n > 1 && !standsIn)
+      // A city that came back from an autosave older than the first time it took the battle has lost that.
+      const rewound = n > 1 && first > p.restoredAt;
+      if (rewound && !standsIn)
+        this.w.note(`${p.name}'s city takes ${cmd.input.id} again: its autosave was older than the first`);
+      if (n > 1 && !standsIn && !rewound)
         this.w.fail(
           'applied-twice',
           `${p.name}'s city took battle ${cmd.input.id} ${n} times (this one ${cmd.mode}, generation ${gen})`,
@@ -147,7 +155,13 @@ export class Checks {
       const key = `${p.name}:${cmd.expedition}`;
       const n = (this.reported.get(key) ?? 0) + 1;
       this.reported.set(key, n);
-      if (n > 1)
+      const first = this.firstAt.get(`report:${key}`) ?? this.w.now();
+      this.firstAt.set(`report:${key}`, first);
+      if (n > 1 && first > p.restoredAt)
+        this.w.note(
+          `${p.name}'s city takes the report of its force ${cmd.expedition} again: its autosave was older than the first`,
+        );
+      else if (n > 1)
         this.w.fail(
           'reported-twice',
           `${p.name}'s city took the report of its force ${cmd.expedition} ${n} times (generation ${gen})`,
@@ -217,6 +231,8 @@ export class Checks {
     this.consistency();
     this.links();
     this.dues();
+    this.forces();
+    this.rate(now);
     // The cities' invariants (the sims check them every tick in test mode, so a break has thrown already).
     if (now - this.lastInvariants >= 30_000) {
       this.lastInvariants = now;
@@ -264,6 +280,52 @@ export class Checks {
     for (const x of m.friends?.wars ?? []) if (x.state === 'open') this.warOpened.add(x.id);
   }
 
+  /** Each city's forces out, by name:id, and the state they were last seen in (a change is noted). */
+  private seenForces = new Map<string, string>();
+  private forces(): void {
+    const seen = new Set<string>();
+    for (const p of this.w.players) {
+      if (!p.page) continue;
+      for (const e of p.sim.state.war?.expeditions ?? []) {
+        const key = `${p.name}:${e.id}`;
+        seen.add(key);
+        const was = this.seenForces.get(key);
+        const now = `${e.state}${e.settling ? ' (with the region)' : ''}`;
+        if (was !== now) {
+          this.seenForces.set(key, now);
+          this.w.note(`${p.name}'s force ${e.id} (${e.name}${e.help ? ', help' : ''}) is ${now}`);
+        }
+      }
+    }
+    for (const key of [...this.seenForces.keys()])
+      if (!seen.has(key) && this.w.players.find((p) => key.startsWith(`${p.name}:`))?.page) {
+        this.seenForces.delete(key);
+        this.w.note(`${key.replace(':', "'s force ")} is home`);
+      }
+  }
+
+  /** The lowest the message allowance of any connection has been (tokens; the room drops a message at under one). */
+  rateMin = Infinity;
+  /**
+   * Each connection may send two messages a second after a burst of sixty (F8); a connection under one token
+   * has had messages dropped. The room's own buckets are read: nothing is asked of the pages.
+   */
+  private rate(now: number): void {
+    const conns = (
+      this.w.room as unknown as { conns: Map<unknown, { slot: number; all: { has(n: number): boolean } }> }
+    ).conns;
+    for (const st of conns.values()) {
+      st.all.has(now);
+      const tokens = (st.all as unknown as { tokens: number }).tokens;
+      if (tokens < this.rateMin) this.rateMin = tokens;
+      if (tokens < 1)
+        this.w.fail(
+          'rate',
+          `city ${st.slot}'s connection ran out of its message allowance (2 a second): the room drops what it sends`,
+        );
+    }
+  }
+
   /** A vassal's dues reach the overlord's ledger at a month's close. */
   private dues(): void {
     for (const p of this.w.players) {
@@ -290,12 +352,9 @@ export class Checks {
         this.closedByRoom++;
         this.w.fail('link', `${p.name}'s link to the region closed: ${pg.link.error ?? 'no reason'}`);
         pg.ticking = false;
-      } else if (st === 'in') this.lastLink.set(p.name, now);
-      else if (!p.offline && now - (this.lastLink.get(p.name) ?? now) > 60_000)
-        this.w.fail(
-          'link',
-          `${p.name}'s link has been ${st} for ${Math.round((now - this.lastLink.get(p.name)!) / 1000)} s with no outage`,
-        );
+      } else if (st === 'in' || p.offline) this.lastLink.set(p.name, now);
+      else if (now - (this.lastLink.get(p.name) ?? now) > 60_000)
+        this.w.fail('link', `${p.name}'s link has been ${st} for more than a minute with no outage`);
     }
   }
 
@@ -353,6 +412,11 @@ export class Checks {
       const vseen = v.vassals.map((x) => `${x.vassal}>${x.overlord}`).sort();
       if (vas.join() !== vseen.join())
         problems.push(`${p.name}'s page lists vassals [${vseen}], the room [${vas}]`);
+      // The latest of the region's war history reached it (every page is told each event as it happens).
+      const mineIds = new Set(v.history.map((e) => e.id));
+      for (const e of (this.meta.history ?? []).slice(-8))
+        if (!mineIds.has(e.id))
+          problems.push(`${p.name}'s page has not heard of event ${e.id} (${e.kind}: ${e.text})`);
       // Its own city: a vassal's overlord, from the room's list.
       const link = (fs?.vassals ?? []).find((x) => x.vassal === p.slot);
       const dv = p.sim.state.war?.diplomacy?.vassal;
@@ -490,6 +554,14 @@ export class Checks {
       gbs: (per.gbs * EVENING) / FREE_PLAN.gbs,
     };
     // An evening of this play must take at most half of any daily allowance, and fit the region's own row budget.
+    const day = {
+      rows: per.rows * 24,
+      requests: per.requests * 24,
+      gbs: per.gbs * 24,
+    };
+    const used = (this.w.room as unknown as { budget: { used(n: number): number } }).budget.used(
+      this.w.now(),
+    );
     const ok = share.rows <= 0.5 && share.regionRows <= 1 && share.requests <= 0.5 && share.gbs <= 0.5;
     const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
     const lines = [
@@ -503,6 +575,8 @@ export class Checks {
         .map(([k, n]) => `${k} ${n}`)
         .join(', ')}`,
       `  duration: awake the whole time at 128 MB = ${gbs.toFixed(0)} GB-s (${per.gbs.toFixed(0)} an hour); an evening = ${pct(share.gbs)} of ${FREE_PLAN.gbs}`,
+      `  continuously for 24 h this would be ${day.rows.toFixed(0)} rows (${pct(day.rows / FREE_PLAN.rowsWritten)} of the plan, ${pct(day.rows / regionRows)} of the region's own ${regionRows}), ${day.requests.toFixed(0)} requests (${pct(day.requests / FREE_PLAN.requests)}), ${day.gbs.toFixed(0)} GB-s (${pct(day.gbs / FREE_PLAN.gbs)})`,
+      `  the region's own row budget used by the run: ${used} of ${regionRows}; the lowest message allowance any connection fell to: ${this.rateMin === Infinity ? 'unknown' : this.rateMin.toFixed(1)} of ${REGION_LIMITS.burst} tokens`,
       `  the plan carries about ${Math.floor(Math.min(carries.rows, carries.requests, carries.gbs))} such hours a day across all regions (rows ${carries.rows.toFixed(0)}, requests ${carries.requests.toFixed(0)}, duration ${carries.gbs.toFixed(0)}); one region's own row budget carries ${carries.regionRows.toFixed(1)} h`,
     ];
     return {

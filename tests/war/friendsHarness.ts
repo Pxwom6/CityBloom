@@ -28,6 +28,8 @@ export async function settle(n = 4): Promise<void> {
 export async function friendsPage(
   o: Parameters<typeof openPage>[0],
   clock: Pick<Clock, 'now'>,
+  /** Told whenever the page saves the city for the room (a game keeps its autosave then: M39 step 10's crashes start from it). */
+  onKeep?: () => void,
 ): Promise<FwPage> {
   const notices: string[] = [];
   let saves = 0;
@@ -36,6 +38,7 @@ export async function friendsPage(
     query: async <T>(q: Parameters<Sim['query']>[0]) => o.sim.query(q) as T,
     keep: async () => {
       saves++;
+      onKeep?.();
       return true;
     },
     notice: (_key, text) => void notices.push(text),

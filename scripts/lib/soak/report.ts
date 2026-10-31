@@ -108,7 +108,7 @@ export function lines(r: SoakResult, w: Soak): string[] {
   out.push(
     `covered: ${(['raids', 'raidsRefused', 'recalled', 'liveBattles', 'oldBattles', 'orders', 'handovers', 'helpSent', 'helpBooked'] as Cover[]).map(cov).join(', ')}`,
     `         ${(['declared', 'warsOpened', 'proposals', 'declined', 'treaties', 'pacts', 'capitulations', 'conquests', 'vassalDues', 'freed'] as Cover[]).map(cov).join(', ')}`,
-    `         ${(['drops', 'outages', 'reloads', 'leaves'] as Cover[]).map(cov).join(', ')}`,
+    `         ${(['drops', 'outages', 'reloads', 'leaves', 'crashes'] as Cover[]).map(cov).join(', ')}`,
   );
   if (r.coverageMissing.length) out.push(`NOT COVERED: ${r.coverageMissing.join('; ')}`);
   const b = r.battles;

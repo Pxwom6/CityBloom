@@ -12,7 +12,7 @@
  * duration) against Cloudflare's free plan. Exits 1 on any failure.
  *
  *   npx tsx scripts/dev/regionsoak.ts [minutes] [--virtual] [--seed s] [--speed 1|2|3] [--no-fair]
- *                                     [--no-disturb] [--story short|full] [--log file] [--json file]
+ *                                     [--no-disturb] [--crash] [--story short|full] [--log file] [--json file]
  *
  * `real` (the default) is the local relay over real sockets on the wall clock, the cities at the
  * game's own 1× pace and the game's fair clock on: two hours take two hours. `--virtual` (or
@@ -51,6 +51,7 @@ const { result, lines } = await runSoak({
   speed,
   fairClock: !flag('no-fair'),
   disturb: !flag('no-disturb'),
+  crash: flag('crash'),
   story: value('story') === 'short' ? 'short' : 'full',
   log,
 });

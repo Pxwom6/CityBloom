@@ -220,23 +220,31 @@ async function kitAndLou(w: Soak, kit: Player, lou: Player): Promise<void> {
   if (!war) return;
   // Lou answers once with a raid of his own (it may break the hold if it wins).
   w.later(40_000, () => void raid(w, lou, kit, 'military'));
-  for (let attempt = 0; attempt < 3 && !w.over; attempt++) {
+  // Kit goes for the seat of power until it is held (or the city has fallen or capitulated): a battle that
+  // comes to nothing (the defender was away, the force was spent) is tried again when the force is ready.
+  const give = w.now() + 40 * MIN;
+  while (!w.over && w.now() < give) {
     if (vassalOf(w, lou)) break;
     const live = warBetween(w, kit, lou);
-    if (!live) break;
-    if (live.state === 'capitulated') break;
-    if (live.hold?.by === kit.slot) break;
-    if (raidsLeft(kit, lou) <= 0) {
-      w.miss('Lou has taken the day’s raids: the total war waits until midnight (UTC)');
-      break;
+    if (!live || live.state === 'capitulated') break;
+    // The seat is held: six minutes of waiting (a battle Lou wins would break the hold, and Kit tries again).
+    if (live.hold?.by === kit.slot) {
+      await w.wait(15_000);
+      continue;
     }
-    await raid(w, kit, lou, 'cityhall');
+    if (raidsLeft(kit, lou) <= 0) {
+      w.note('Lou has taken the day’s raids: the total war waits');
+      await w.wait(3 * MIN);
+      continue;
+    }
+    const r = await raid(w, kit, lou, 'cityhall');
+    await w.wait(r.ok ? 8_000 : 90_000);
   }
   // A seat of power held for 48 game hours (6 minutes) and the city falls; or a score at −60 and it capitulates.
   const fell = await w.until(
     'Louton to fall or capitulate',
     () => !!vassalOf(w, lou) || warBetween(w, kit, lou)?.state === 'capitulated' || !warBetween(w, kit, lou),
-    12 * MIN,
+    2 * MIN,
   );
   if (!fell)
     return void w.miss(
@@ -335,10 +343,11 @@ export function disturbances(w: Soak): void {
     return from[rng.int(from.length)];
   };
   // The four kinds in a shuffled round, then again: every kind turns up early, in an order the dice choose.
-  let round: ('drop' | 'outage' | 'reload' | 'away')[] = [];
+  let round: ('drop' | 'outage' | 'reload' | 'away' | 'crash')[] = [];
   const nextKind = () => {
     if (!round.length) {
       round = ['drop', 'outage', 'reload', 'away'];
+      if (w.opts.crash) round.push('crash');
       for (let k = round.length - 1; k > 0; k--) {
         const j = rng.int(k + 1);
         [round[k], round[j]] = [round[j]!, round[k]!];
@@ -352,6 +361,7 @@ export function disturbances(w: Soak): void {
     else if (kind === 'outage')
       w.outage(p, w.opts.mode === 'virtual' ? 12_000 + rng.int(10_000) : 20_000 + rng.int(70_000));
     else if (kind === 'reload') await w.reload(p);
+    else if (kind === 'crash') await w.crash(p, 15_000 + rng.int(40_000));
     else await w.away(p, 60_000 + rng.int(150_000));
   };
   const again = (ms: number) =>

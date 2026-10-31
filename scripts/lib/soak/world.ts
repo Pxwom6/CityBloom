@@ -3,6 +3,8 @@ import { makeCode } from '../../../relay/protocol';
 import { MemoryRegionStore, RegionRoom } from '../../../relay/region';
 import { FakeClock } from '../../../relay/tests/harness';
 import { webSocketLink, type Link } from '../../../src/net/link';
+import { awayInput, awayResult, type AwayCity } from '../../../src/sim/battle/away';
+import { Battle } from '../../../src/sim/battle/battle';
 import { checkInvariants } from '../../../src/sim/invariants';
 import { Rng } from '../../../src/sim/rng';
 import type { SaveFile } from '../../../src/sim/save';
@@ -37,6 +39,14 @@ interface ClockLike {
   advance(ms: number): void;
 }
 
+/** The battle worker's job for a friend's battle fought in the region's copy of its city (`src/client/battleWorker.ts`). */
+interface AwayJob {
+  type: string;
+  id: number;
+  city: AwayCity;
+  save: SaveFile;
+}
+
 interface Waiter {
   what: string;
   pred: () => boolean;
@@ -57,6 +67,9 @@ export class Player {
   /** Room ms the link has been in the region since (0: not in it). */
   upSince = 0;
   autosave: SaveFile | null = null;
+  /** When (room ms) the autosave was made, and the one the city's present generation began from. */
+  autosaveAt = 0;
+  restoredAt = Infinity;
   town: LiveTown | null = null;
   /** The next proposals this player declines before it accepts one. */
   declineNext = 0;
@@ -245,20 +258,59 @@ export class Soak {
         link: this.linkOptions(),
       },
       this.clock,
+      () => this.autosave(p),
     );
     p.page = page;
     p.slot = page.link.slot;
     p.secret = page.link.secret;
     p.upSince = this.now();
-    page.hooks.autosave = async () => {
-      p.autosave = page.sim.save();
-    };
+    page.hooks.autosave = async () => this.autosave(p);
     page.link.onNotice = (text) => this.checks.linkNotice(p, text);
+    // The old way (a friend that cannot fight live, or is busy in another battle): the battle worker's job, done here.
+    (page.away as unknown as { run: (job: AwayJob) => Promise<unknown> }).run = async (job) => {
+      if (job.type !== 'awayCity')
+        return { type: 'error', id: job.id, message: 'the soak runs only a friend’s battle' };
+      const town = Sim.fromSave(job.save);
+      if (town.state.war?.battle) {
+        delete town.state.war.battle;
+        town.battleRun = null;
+      }
+      const input = awayInput(job.city, town);
+      return {
+        type: 'away',
+        id: job.id,
+        input,
+        result: awayResult(input, Battle.run(structuredClone(input))),
+        town: town.save(),
+      };
+    };
+    // What the region made of a force that came to a friend's city: a battle fought, or why not and when to ask again.
+    const attack = page.live.attack.bind(page.live);
+    page.live.attack = async (city, expedition) => {
+      const r = await attack(city, expedition);
+      const how =
+        r.kind === 'done'
+          ? `fought it (${r.ok ? 'taken' : 'not taken'})`
+          : r.kind === 'fallback'
+            ? 'goes the old way'
+            : r.kind === 'wait'
+              ? `must wait ${Math.round(r.ms / 1000)} s`
+              : `is turned away: ${r.reason}${r.later !== undefined ? ` (try again in ${Math.round(r.later / 1000)} s)` : ''}`;
+      this.note(`${p.name}'s force ${expedition} against ${city.neighbour.name} ${how}`);
+      return r;
+    };
     const frames = page.frames.bind(page);
     page.frames = () => {
       this.checks.events(p, page.sim.events);
       frames();
     };
+  }
+
+  /** The city saved to its autosave (the game does so every five minutes, and as a battle begins or a treaty is applied). */
+  private autosave(p: Player): void {
+    if (!p.page) return;
+    p.autosave = p.page.sim.save();
+    p.autosaveAt = this.now();
   }
 
   /** Count what the city is asked to apply (a battle taken, a force's report) so doing either twice shows. */
@@ -445,11 +497,15 @@ export class Soak {
         void pg.link.reportNow((this.seconds + p.idx * 7) % 300 === 0);
       // Forces that have arrived at a friend's town fight their battles (the game does this with each frame).
       const exps = pg.sim.state.war?.expeditions;
-      if (exps?.length && !this.draining)
+      // (Once time is up, only the forces already at a battle fight it: none that are still on the road begin another.)
+      const due = this.draining ? exps?.filter((e) => e.state === 'fighting') : exps;
+      if (due?.length)
         pg.away.check(
-          exps.map((e) => ({ id: e.id, state: e.state, ...(e.help ? { help: e.help.battle } : {}) })),
+          due.map((e) => ({ id: e.id, state: e.state, ...(e.help ? { help: e.help.battle } : {}) })),
         );
     }
+    for (const p of this.players)
+      if (p.page?.ticking && this.now() - p.autosaveAt >= 300_000) this.autosave(p);
     this.bots.second(this.seconds);
     this.checks.second();
   }
@@ -486,7 +542,7 @@ export class Soak {
     this.checks.disturb(p, why);
     this.note(`${p.name} ${why}`);
     pg.ticking = false;
-    p.autosave = pg.sim.save();
+    this.autosave(p);
     await pg.link.leave();
     p.retired.messages += pg.link.sent.messages;
     p.retired.bytes += pg.link.sent.bytes;
@@ -500,6 +556,7 @@ export class Soak {
     if (p.page || this.over) return;
     p.offline = false;
     p.gen++;
+    p.restoredAt = p.autosaveAt;
     const sim = Sim.fromSave(p.autosave!);
     sim.testMode = true;
     this.note(`${p.name} comes back (the city loaded from its save)`);
@@ -508,6 +565,29 @@ export class Soak {
     } catch (e) {
       this.fail('rejoin', `${p.name} could not rejoin: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  /**
+   * The page dies with no goodbye and comes back from its last autosave after `ms`: the room is only told
+   * the connection closed, and what the city did since the autosave is lost.
+   */
+  async crash(p: Player, ms: number): Promise<void> {
+    const pg = p.page;
+    if (!p.up || !pg) return;
+    this.covered('crashes');
+    this.checks.disturb(p, 'crashed');
+    const ago = Math.round((this.now() - p.autosaveAt) / 1000);
+    this.note(`${p.name}'s page crashes (the last autosave is ${ago} s old)`);
+    pg.ticking = false;
+    // The link cannot say goodbye: it is cut first, then closed (a link that is not in the region sends nothing).
+    p.offline = true;
+    pg.link.dropForTest();
+    await pg.link.leave();
+    p.retired.messages += pg.link.sent.messages;
+    p.retired.bytes += pg.link.sent.bytes;
+    p.page = null;
+    p.upSince = 0;
+    this.later(ms, () => this.comeBack(p));
   }
 
   /** A reload: the tab closes and opens again at once. */
@@ -563,7 +643,7 @@ export class Soak {
     const busy = () =>
       this.players.some((p) => {
         const s = p.page?.live.state();
-        const exp = p.sim.state.war?.expeditions?.some((e) => e.state === 'fighting' || e.state === 'out');
+        const exp = p.sim.state.war?.expeditions?.some((e) => e.state === 'fighting');
         return (s && !s.ended) || exp || p.sim.state.war?.battle;
       });
     let quiet = 0;

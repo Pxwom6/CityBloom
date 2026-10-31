@@ -1069,3 +1069,18 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
 - **Only declarations, treaties signed, scores and pacts ending are written at once**; proposals, declines and
   history lines wait for the record's 5-minute pace: 1,800 proposals cycled in 2.5 hours wrote 30 rows, and an
   evening of war between four cities 38 more rows than the same evening in peace (2.4 % of a day's 3,000).
+- **The room is the truth of a friend's war; each sim only mirrors it** (`friendWar`, idempotent): the sim
+  never scores a friend's war itself (`scoreBattle` returns early for players). Pacts and vassals come only
+  from the room's list (`friendPacts`, by the room's ids), and a treaty (`friendTreaty`, applied once) books
+  money, tribute, an embargo's end of deals and peace: order doesn't matter on a reconnect, and an old
+  `tsign` can't bring back a pact the room has since dropped. No save version: every field is optional.
+- **A vassal's report says what it pays its overlord** (`dues`), which the overlord counts only from a friend
+  the room lists as its vassal, with no war open between them, capped at three times the population
+  estimate: the overlord can't see the vassal's taxes, so its line may differ slightly from the vassal's.
+- **Breaking a pact with a friend**: ending it costs the city's word (reputation −30) and the room drops it; a
+  declaration under a pact asks first; a force sent at a friend under a pact is refused ("end it first").
+- **A friend's war counts as an open war for offers and aid, but not for computer neighbours' raid timing**,
+  which keeps its M36 rhythm; the defender's page reports only battles with contact (M36's rule).
+- **The UI asks the sim before sending a friend's terms** (`friendTerms` query): the money caps and the
+  room's rules show beside the control; the sim's own `declareWar` and `propose` point friends to the
+  Friends list. Leaving the region ends friends' wars, pacts and vassal mirrors; money already booked stays.

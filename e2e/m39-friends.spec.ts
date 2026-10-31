@@ -1,4 +1,5 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
+import { TIPS } from '../src/client/tutorial';
 import { closeContextsAfterEach, newContext, openGame, shot, watchErrors } from './helpers';
 import { armTown, servedTown } from './war';
 
@@ -12,6 +13,13 @@ import { armTown, servedTown } from './war';
  * The region stamps every order and sends it to both pages. The battle ends with both runs agreeing on its
  * hash, and the war's score moves on both sides. Then Sam offers peace from the Diplomacy tab, Ada
  * accepts it there, and both pages show the war over and the treaty signed.
+ *
+ * Both players play with the contextual tips on (the done criterion is that a player could invite a friend,
+ * go to war and make peace without reading anything first): at each step the tip meant for it has to come
+ * up on screen, in its own words, and the words it uses for buttons and tabs have to be the ones on the
+ * screen. The tips are read and dismissed as a player would, and the rest of the spec runs on as before.
+ * (The tips about building a town are marked as read to begin with: the towns are grown through the test
+ * API, and a card about power or traffic would only come between the spec and the buttons.)
  */
 
 // A button that never turns up fails in a minute, not at the test's timeout.
@@ -44,6 +52,94 @@ test.afterEach(async ({ browserName: _ }, info) => {
   watched.length = 0;
 });
 closeContextsAfterEach();
+
+/** The tips of a war between friends, from joining a region to the peace (src/client/tutorial.ts), in the order met. */
+const WAR_TIPS = [
+  'sharedRegion',
+  'rivals',
+  'warRoom',
+  'raidComing',
+  'sendForce',
+  'diplomacy',
+  'regionWarOff',
+  'friendsAtWar',
+  'friendWar',
+  'liveBattle',
+  'friendPeace',
+  'friendTreaty',
+  'friendVassal',
+];
+
+/** Turn the tips on in a city that was opened with them off (as the settings screen's box does). */
+async function tipsOn(page: Page): Promise<void> {
+  expect(TIPS.map((t) => t.id)).toEqual(expect.arrayContaining(WAR_TIPS));
+  const read = TIPS.map((t) => t.id).filter((id) => !WAR_TIPS.includes(id));
+  await page.evaluate((read) => window.__game!.setSettings({ tips: true, seenTips: read }), read);
+}
+
+/** The tip on show now (its id), and the ones shown so far in the order they came. */
+const tipNow = (page: Page) => page.evaluate(() => window.__game!.getShell().tip);
+const tipsSeen = (page: Page) =>
+  page
+    .evaluate(() => window.__game!.getShell().settings.seenTips as string[])
+    .then((ids) => ids.filter((id) => WAR_TIPS.includes(id)));
+/** Tips that came before the one a step wanted, read and dismissed on the way: what each player met. */
+const metOnTheWay: Record<string, string[]> = {};
+
+/**
+ * The tip `id` comes up on `page` (a card with its text, which no open panel is covering), is looked at
+ * (`shotName`: a screenshot) and dismissed with "Got it". A tip that comes first is read and dismissed too,
+ * as a player would; none showing for two minutes is a failure.
+ */
+async function readTip(
+  page: Page,
+  who: string,
+  id: string,
+  opts: { shotName?: string; front?: boolean } = {},
+): Promise<void> {
+  const want = TIPS.find((t) => t.id === id)!;
+  if (opts.front !== false) await page.bringToFront();
+  const card = page.getByTestId('tip');
+  const until = Date.now() + 120_000;
+  for (;;) {
+    const now = await tipNow(page);
+    if (now === id) break;
+    if (now && (await card.isVisible())) {
+      (metOnTheWay[who] ??= []).push(now);
+      await page.getByTestId('tip-ok').click();
+      continue;
+    }
+    if (Date.now() > until)
+      throw new Error(
+        `${who} never saw the ${id} tip (tip now: ${now ?? 'none'}; seen: ${(await tipsSeen(page)).join(', ')}; a panel open hides the card)`,
+      );
+    await page.waitForTimeout(300);
+  }
+  await expect(card, `${who}'s ${id} tip is on screen`).toBeVisible();
+  await expect(card).toContainText(want.text);
+  if (opts.shotName) await shot(page, `m39-e2e-tip-${opts.shotName}`);
+  await page.getByTestId('tip-ok').click();
+  await expect.poll(() => tipNow(page)).not.toBe(id);
+}
+
+/** Dismiss whatever tip card is showing (cards queue one at a time), so none stands over a button. */
+async function clearTips(page: Page, who: string): Promise<void> {
+  const card = page.getByTestId('tip');
+  for (let k = 0; k < 6; k++) {
+    await page.waitForTimeout(600);
+    if (!(await card.isVisible())) return;
+    const now = await tipNow(page);
+    if (now) (metOnTheWay[who] ??= []).push(now);
+    await page.getByTestId('tip-ok').click();
+  }
+}
+
+/** The war room open on its Diplomacy tab (the keyboard shortcut toggles it, so only if it isn't). */
+async function openDiplomacy(page: Page): Promise<void> {
+  await page.bringToFront();
+  if (!(await page.getByTestId('war-tab-diplomacy').isVisible())) await page.keyboard.press('Shift+KeyM');
+  await page.getByTestId('war-tab-diplomacy').click();
+}
 
 async function player(browser: Browser, name: string, color: number): Promise<Page> {
   // Two SwiftShader pages: Low graphics and smaller windows.
@@ -137,6 +233,8 @@ async function commandAttack(ada: Page): Promise<{ target: number | undefined; s
   await expect
     .poll(async () => (await live(ada))?.role, { timeout: 300_000, intervals: [1_000] })
     .toBe('attacker');
+  // A battle both players command: the tip says to press O, and she does.
+  await readTip(ada, 'Ada', 'liveBattle', { front: false, shotName: 'liveBattle-ada' });
   await ada.keyboard.press('KeyO');
   const sheet = ada.getByTestId('battle-map');
   await expect(sheet).toBeVisible();
@@ -159,6 +257,8 @@ async function commandDefend(sam: Page): Promise<{ guard: number | undefined; fo
     .poll(async () => (await live(sam))?.role, { timeout: 300_000, intervals: [1_000] })
     .toBe('defender');
   await expect(sam.getByTestId('battle-bar')).toBeVisible({ timeout: 120_000 });
+  await readTip(sam, 'Sam', 'liveBattle', { front: false });
+  await clearTips(sam, 'Sam');
   await sam.getByTestId('battle-command').click();
   const sheet = sam.getByTestId('battle-map');
   await expect(sheet).toBeVisible();
@@ -192,31 +292,45 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   watch('ada', ada);
   const adaErrs = watchErrors(ada);
   await openGame(ada, '&seed=regionada&preset=river&name=Adaville');
+  await tipsOn(ada);
   await servedTown(ada);
   const sam = await player(browser, 'Sam', 1);
   watch('sam', sam);
   const samErrs = watchErrors(sam);
   await openGame(sam, '&seed=regionsam&preset=lakes&name=Samford');
+  await tipsOn(sam);
   await servedTown(sam);
 
-  // --- A region at war: Ada starts it and allows war (not total war), Sam joins with the code. ---
+  // --- A region: Ada starts it, closes its panel and is told what a region is; Sam joins with the code. ---
   await ada.bringToFront();
   await ada.keyboard.press('Shift+N');
   await ada.getByTestId('region-start').click();
   await expect.poll(async () => (await region(ada))?.state, { timeout: 120_000 }).toBe('in');
-  await ada.getByTestId('region-war-on').check();
-  await expect.poll(async () => (await region(ada))?.rules.war, { timeout: 15_000 }).toBe(true);
-  await ada.getByTestId('region-war-scale-war').click();
-  await expect.poll(async () => (await region(ada))?.rules.scale, { timeout: 15_000 }).toBe('war');
   const code = (await region(ada))!.code;
+  await ada.keyboard.press('Shift+N');
+  await readTip(ada, 'Ada', 'sharedRegion', { shotName: 'sharedRegion-ada' });
   await sam.bringToFront();
   await sam.keyboard.press('Shift+N');
   await sam.getByTestId('region-code').fill(code);
   await sam.getByTestId('region-join').click();
   await expect.poll(async () => (await region(sam))?.state, { timeout: 120_000 }).toBe('in');
+  await expect(sam.getByTestId('region-war-rules')).toContainText('War is off', { timeout: 60_000 });
+  await sam.keyboard.press('Shift+N');
+  await readTip(sam, 'Sam', 'sharedRegion');
+
+  // --- The region is at peace. Ada, its host, is told so once a friend is here, and how to turn war on
+  // (not total war): the switch is in the Region panel, where she goes next. Sam sees the rules change. ---
+  await readTip(ada, 'Ada', 'regionWarOff', { shotName: 'regionWarOff-ada' });
+  await ada.keyboard.press('Shift+N');
+  await ada.getByTestId('region-war-on').check();
+  await expect.poll(async () => (await region(ada))?.rules.war, { timeout: 15_000 }).toBe(true);
+  await ada.getByTestId('region-war-scale-war').click();
+  await expect.poll(async () => (await region(ada))?.rules.scale, { timeout: 15_000 }).toBe('war');
+  await ada.keyboard.press('Shift+N');
+  await sam.bringToFront();
+  await sam.keyboard.press('Shift+N');
   await expect(sam.getByTestId('region-war-rules')).toContainText('War is on', { timeout: 60_000 });
   await shot(sam, 'm39-e2e-1-joined');
-  await ada.keyboard.press('Shift+N');
   await sam.keyboard.press('Shift+N');
   const adaSlot = (await region(ada))!.slot;
   const samSlot = (await region(sam))!.slot;
@@ -245,17 +359,31 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   });
   expect(target.slot).toBe(samSlot);
 
+  // --- War is on and a friend's city is in the region: both are told how to declare war, and the words
+  // the tip uses are the ones on the Diplomacy tab. (Cards for the war room and the rivals may come first.) ---
+  await readTip(ada, 'Ada', 'friendsAtWar', { shotName: 'friendsAtWar-ada' });
+  await readTip(sam, 'Sam', 'friendsAtWar');
+  const atWarText = TIPS.find((t) => t.id === 'friendsAtWar')!.text;
+
   // --- Ada declares war from the Diplomacy tab's Friends list. ---
   await ada.bringToFront();
   await ada.keyboard.press('Shift+KeyM');
   await ada.getByTestId('war-tab-diplomacy').click();
   await expect(ada.getByTestId(`dip-friend-${samSlot}`)).toContainText('Samford');
+  // The tip said: the war room (Shift+M), the Diplomacy tab, “Friends in the region”, each with “Declare war…”.
+  expect(atWarText).toContain('Friends in the region');
+  expect(atWarText).toContain('Declare war…');
+  await expect(
+    ada.getByTestId('dip-friends').getByRole('heading', { name: 'Friends in the region' }),
+  ).toBeVisible();
+  await expect(ada.getByTestId(`dip-fdeclare-${samSlot}`)).toHaveText('Declare war…');
   await ada.getByTestId(`dip-fdeclare-${samSlot}`).click();
   await expect(ada.getByTestId('dip-fdeclare-form')).toBeVisible();
   await ada.getByTestId('dip-freason').fill('The river is ours');
   await shot(ada, 'm39-e2e-2-declare');
   await ada.getByTestId('dip-fdeclare-go').click();
   await expect(ada.getByTestId(`dip-fwar-text-${samSlot}`)).toContainText('It opens in');
+  await ada.keyboard.press('Shift+KeyM');
   // Sam is told at once: a war card with the reason and the countdown.
   await sam.bringToFront();
   await sam.keyboard.press('Shift+KeyM');
@@ -265,6 +393,10 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   });
   await expect(sam.getByTestId(`dip-fwar-text-${adaSlot}`)).toContainText('Declared by Adaville');
   await shot(sam, 'm39-e2e-3-warned');
+  // Both close the war room and are told what a war with a friend is while it waits to open.
+  await sam.keyboard.press('Shift+KeyM');
+  await readTip(sam, 'Sam', 'friendWar', { shotName: 'friendWar-sam' });
+  await readTip(ada, 'Ada', 'friendWar');
 
   // --- Two minutes of real time later the region opens the war (it notices on the cities' next report). ---
   await expect
@@ -277,6 +409,7 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
       { timeout: 240_000, intervals: [8_000] },
     )
     .toEqual(['open', 'open']);
+  await openDiplomacy(sam);
   await expect(sam.getByTestId(`dip-fwar-text-${adaSlot}`)).toContainText('Score');
   await expect(sam.getByTestId(`dip-fpeace-${adaSlot}`)).toBeVisible();
   await shot(sam, 'm39-e2e-4-open');
@@ -284,6 +417,7 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
 
   // --- Ada sends a force from the Send tab; it arrives, and the region makes the battle live. ---
   await ada.bringToFront();
+  await ada.keyboard.press('Shift+KeyM');
   await ada.getByTestId('war-tab-send').click();
   await ada.getByTestId('send-to').selectOption(String(target.id));
   // The tab says what the raid will be, so the battle map doesn't come as a surprise.
@@ -351,6 +485,11 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
       { timeout: 120_000, intervals: [4_000] },
     )
     .toEqual([1, 1]);
+  // A battle has been fought: both are told how to end the war, in the words of the Offer terms button.
+  const peaceText = TIPS.find((t) => t.id === 'friendPeace')!.text;
+  expect(peaceText).toContain('Offer terms');
+  await readTip(sam, 'Sam', 'friendPeace', { shotName: 'friendPeace-sam' });
+  await readTip(ada, 'Ada', 'friendPeace');
   const roomScore = (await warWith(ada, samSlot))!.score;
   expect(roomScore).not.toBe(0);
   expect((await warWith(sam, adaSlot))!.score).toBe(roomScore);
@@ -374,6 +513,7 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   await sam.bringToFront();
   await sam.keyboard.press('Shift+KeyM');
   await sam.getByTestId('war-tab-diplomacy').click();
+  await expect(sam.getByTestId(`dip-fpeace-${adaSlot}`)).toHaveText('Offer terms');
   await sam.getByTestId(`dip-fpeace-${adaSlot}`).click();
   await expect(sam.getByTestId('dip-fbuilder')).toContainText('Terms to end the war with Adaville');
   await expect(sam.getByTestId('dip-fterm-words')).toContainText('peace');
@@ -381,7 +521,11 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   await shot(sam, 'm39-e2e-11-offer');
   await sam.getByTestId('dip-fsend').click();
   await expect(sam.locator('[data-testid^="dip-fwaiting-"]')).toContainText('waiting');
-  await ada.bringToFront();
+  // The terms wait a day for a friend who is away: the one who sent them is told so (back on the map),
+  // and so is the one asked, who has not opened the war room yet.
+  await sam.keyboard.press('Shift+KeyM');
+  await readTip(sam, 'Sam', 'friendTreaty', { shotName: 'friendTreaty-sam' });
+  await readTip(ada, 'Ada', 'friendTreaty', { shotName: 'friendTreaty-ada' });
   await ada.keyboard.press('Shift+KeyM');
   await ada.getByTestId('war-tab-diplomacy').click();
   const proposal = ada.locator('[data-testid^="dip-fproposal-"]');
@@ -408,7 +552,7 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
     expect(f.history.some((e) => e.kind === 'treaty' && e.text.includes('peace'))).toBe(true);
     expect(f.incoming).toEqual([]);
     expect(f.outgoing).toEqual([]);
-    await p.bringToFront();
+    await openDiplomacy(p);
     await expect(p.getByTestId(`dip-fwar-${other}`)).toHaveCount(0);
     await expect(p.getByTestId('dip-region-history')).toContainText('sign a treaty: peace');
     // The city's own mirror: no war with that friend any more.
@@ -420,6 +564,38 @@ test('M39: two players go to war, fight a live battle both commanding, and make 
   }
   await shot(ada, 'm39-e2e-13-peace-ada');
   await shot(sam, 'm39-e2e-14-peace-sam');
+
+  // What each player was shown, in the order the war went: every step's tip came, once, and in turn.
+  const adaTips = await tipsSeen(ada);
+  const samTips = await tipsSeen(sam);
+  console.log(
+    `tips Ada: ${adaTips.join(' > ')}; Sam: ${samTips.join(' > ')}; read on the way: ${JSON.stringify(metOnTheWay)}`,
+  );
+  const inTurn = (seen: string[], ids: string[]) => {
+    const at = ids.map((id) => seen.indexOf(id));
+    return at.every((n, k) => n >= 0 && (k === 0 || n > at[k - 1]!));
+  };
+  expect(
+    inTurn(adaTips, [
+      'sharedRegion',
+      'regionWarOff',
+      'friendsAtWar',
+      'friendWar',
+      'liveBattle',
+      'friendPeace',
+      'friendTreaty',
+    ]),
+  ).toBe(true);
+  expect(
+    inTurn(samTips, [
+      'sharedRegion',
+      'friendsAtWar',
+      'friendWar',
+      'liveBattle',
+      'friendPeace',
+      'friendTreaty',
+    ]),
+  ).toBe(true);
   adaErrs.check();
   samErrs.check();
 });

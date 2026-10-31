@@ -196,9 +196,9 @@ export const TIPS: Tip[] = [
     text:
       'War is on in your region, and a friend’s city is in it. To go to war with them, open the war room ' +
       '(Shift+M), then the Diplomacy tab: your friends are listed under “Friends in the region”, each ' +
-      'with Declare war…. They are told at once and the war opens two minutes later. A city with under ' +
+      'with a “Declare war…” button. They are told at once and the war opens two minutes later. A city with under ' +
       `${RAIDS.minPopulation.toLocaleString('en-US')} residents or less than a year old is protected as a ` +
-      'newcomer: Declare war… stays greyed out, with the reason, until it has grown up (or for a day ' +
+      'newcomer: “Declare war…” stays greyed out, with the reason, until it has grown up (or for a day ' +
       'after it has raided you).',
     when: (g) => {
       const w = g.world.stats.war;
@@ -232,7 +232,7 @@ export const TIPS: Tip[] = [
     // The first battle with a friend is over, or the war is going badly: how to stop it.
     id: 'friendPeace',
     text:
-      'Either of you can offer to end a war at any time: in the war room’s Diplomacy tab, press Offer terms next to ' +
+      'Either of you can offer to end a war at any time: in the war room’s Diplomacy tab, press “Offer terms” next to ' +
       'it, add what you want (peace is there already; reparations or a pact if you like) and Send. Your ' +
       'friend answers when they are here, and the offer waits a day. If you are losing, ask for terms ' +
       'before the score reaches −60: then the winner sets them.',
@@ -242,14 +242,17 @@ export const TIPS: Tip[] = [
       ),
   },
   {
+    // Terms sent or received, or a pact in force: the sender above all needs to hear that they wait a day.
     id: 'friendTreaty',
     text:
-      'A treaty with a friend waits for their answer for up to a day, even if they are away. Once signed, ' +
-      'both cities apply it: reparations are paid at once, tribute every month on each city’s own clock, ' +
-      'and pacts end by the region’s clock. Ending a pact early breaks your word and costs reputation.',
-    when: (g) =>
-      !!g.world.stats.war?.diplomacy?.pacts.some((p) => p.room !== null) ||
-      (g.friends?.view().incoming.length ?? 0) > 0,
+      'A treaty with a friend waits for an answer for up to a day, even if the other player is away. Once ' +
+      'signed, both cities apply it: reparations are paid at once, tribute every month on each city’s own ' +
+      'clock, and pacts end by the region’s clock. Ending a pact early breaks your word and costs reputation.',
+    when: (g) => {
+      if (g.world.stats.war?.diplomacy?.pacts.some((p) => p.room !== null)) return true;
+      const f = g.friends?.view();
+      return !!f && (f.incoming.length > 0 || f.outgoing.length > 0);
+    },
   },
   {
     id: 'friendVassal',

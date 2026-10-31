@@ -1112,3 +1112,13 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   older save came between; a treaty must be applied by both cities; a record that stands in for a hosted
   battle must not double its damage. A region's record writes changed offers with the numbers (every five
   minutes), not at once: the soak measured 480 rows an hour with them prompt, now about 100.
+- **The friend-treaty tip is for whoever sent the terms too** (found closing out M39 by reading the tips
+  against the two-player e2e, which now plays with tips on): it said a treaty "waits for their answer for up
+  to a day, even if they are away", which is the sender's worry, but came up only for the one asked
+  (`incoming`), so the player who had just pressed Send never saw it. It now comes for a sent proposal
+  (`outgoing`) as well, and its words suit both ("waits for an answer ... if the other player is away").
+  `m39-friends` turns tips on for both players (the tips about building a town marked read, since the towns are
+  grown through the test API) and checks that each step's tip comes up in its own words and that the buttons it
+  names are the ones on screen; the region is now joined first and war turned on after, so the host meets
+  `regionWarOff` as a new host would. Looking at the cards in the screenshots, `friendsAtWar` and `friendPeace`
+  named their buttons without quotes (“each with Declare war….” ended in four dots): they are quoted now.

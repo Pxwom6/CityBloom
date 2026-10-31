@@ -163,6 +163,28 @@ describe('tips for war with friends', () => {
     expect(t.text).toMatch(/Offer terms/);
   });
 
+  it('tells a treaty’s sender it waits a day, and the one asked, and a pact in force', () => {
+    const t = tip('friendTreaty');
+    const withFriends = (view: object | null, diplomacy: object | null = dip()) =>
+      ({ ...atWar(diplomacy), friends: view === null ? undefined : { view: () => view } }) as unknown as Game;
+    const sent = { incoming: [], outgoing: [{ id: 3 }] };
+    const asked = { incoming: [{ id: 4 }], outgoing: [] };
+    // Whoever sent terms needs to know they wait a day for a friend who is away: the tip is theirs too.
+    expect(t.when(withFriends(sent))).toBe(true);
+    expect(t.when(withFriends(asked))).toBe(true);
+    expect(t.when(withFriends({ incoming: [], outgoing: [] }))).toBe(false);
+    expect(t.when(withFriends(null))).toBe(false);
+    expect(t.when(gameWith({}))).toBe(false);
+    // A pact signed through the room is the other way in, with no proposal standing.
+    const pact = (room: number | null) => ({ ...dip(), pacts: [{ room }] });
+    const none = { incoming: [], outgoing: [] };
+    expect(t.when(withFriends(none, pact(5)))).toBe(true);
+    expect(t.when(withFriends(none, pact(null)))).toBe(false);
+    // Its words suit the sender and the one asked alike: an answer, not “their” answer.
+    expect(t.text).toMatch(/waits for an answer for up to a day/);
+    expect(t.text).not.toMatch(/their answer/);
+  });
+
   it('are the first of their kind shown, and each once (the order a friendship goes in)', () => {
     const ids = TIPS.map((x) => x.id);
     expect(new Set(ids).size).toBe(ids.length);

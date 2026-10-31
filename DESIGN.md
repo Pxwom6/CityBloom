@@ -1567,7 +1567,7 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
     and the page restarts its run from it and catches up (`LiveRunner` runs unpaced when more than two
     leads behind). A page takes command back by itself a few times (`REJOIN_MAX`).
   - *Watchers*: any other city's page may `bwatch` a running battle (`LIVE.watchers`, 8) and gets
-    `bstart` with role `watcher`, then the same `ballow`s; `blivenow` tells every city a battle began. A
+    `bstart` with role `watcher`, then the same `ballow`s; `blivenow` tells every city but the two fighting that a battle began. A
     combatant's `bwatch` is taken as `bjoin`.
   - *The end and the record*: each page reports its end step and `hash()` (`bdone`). `LiveSession.ending`
     settles when every side has reported or been left behind and one has: the defender's step and hash
@@ -1712,8 +1712,9 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
 - **Three war scenarios** (`src/data/scenarios.ts`, recipes in `scripts/lib/scenarioCities.ts`, tests in
   `tests/scenarios/`): **Hold the Line** (`holdline`: a `script` of `ScriptStep`s, three raids at set
   months fired by `fireScript` on the war's own dice; `scriptedInvasion` keeps the neighbours from
-  raiding or declaring on their own meanwhile; goals `waves` and `standing` (a zone's share of the
-  buildings it began with, `ScenarioState.base`)), **A Clean War** (`cleanwar`: win a declared war,
+  raiding or declaring on their own meanwhile; goals `waves` (all three fought off), `standing` (90 % of the
+  factories it began with: a zone's share of its starting buildings, `ScenarioState.base`) and a floor of
+  2,300 residents), **A Clean War** (`cleanwar`: win a declared war,
   `warWon`, with no district occupied, `districtsLost`) and **Liberation** (`liberation`: free a town its
   overlord holds, `liberated`). The measures are counted as they happen (`scenarioFact`,
   `ScenarioState.facts`). A subject town is `RivalNeighbour.subjectOf` (set only by a scenario's save;
@@ -1734,8 +1735,10 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
   cities; the room's wars, pacts and vassals match each page and sim; invariants hold; coverage meets
   `required` for the run's length (`notCoveredByLength` names what a short run cannot have covered); and
   the room's cost, `budget()`, against Cloudflare's free plan: an evening of this play (4 hours) must
-  take at most half of the region's day of rows and of the plan's rows, requests and duration. It found
-  that an attacker who left a live battle could dodge its losses (`Expedition.liveForce`). The short
+  take at most half of the region's day of rows and of the plan's rows, requests and duration. The soak found
+  that an attacker who left a live battle could dodge its losses (`Expedition.liveForce`). A raid on a
+  friend who is away is fought the old way by `fightAwayCity` (`src/sim/battle/awayFight.ts`), the one
+  function that the battle worker and the soak both call. The short
   version is `relay/tests/regionSoak.test.ts` (project `live`) and `soakChecks.test.ts`.
 - **Cross-browser**: `runDeterminism` has a `live` section (the lab town hosts a live battle as the
   room's frontier and orders arrive, two allies join, the city's own help is booked, the record is run
@@ -1745,9 +1748,12 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
 - **Polish**: tips for a first war with a friend (`regionWarOff`, `friendsAtWar`, `friendWar`,
   `liveBattle`, `friendPeace`, `friendTreaty`, `friendVassal`, `src/client/tutorial.ts`,
   `tests/tips.test.ts`), a "War with friends" section in the README, the lobby, the Region panel's war
-  switch and the war room on a phone and a tablet by touch (`e2e/m39-narrow.spec.ts`): nothing wider than
-  the window, every control in reach, and none under 24 px to tap even at the 80 % interface size
-  (`max(24px, 1.6rem)`, `e2e/m39-touch-scale.spec.ts`). The two-player e2e is `e2e/m39-friends.spec.ts`:
+  switch and the war room on a phone (390 px) and a tablet (820 px) by touch (`e2e/m39-narrow.spec.ts`, both
+  at the 100 % interface size, where both are the narrowest width class): nothing wider than the window,
+  every control in reach, and none under 24 px to tap. The 24 px floor is the `xs` width class's rule
+  (`#ui[data-width='xs']`, `max(24px, 1.6rem)`); at the smallest interface size (80 %) it is checked on a
+  phone only (`e2e/m39-touch-scale.spec.ts`), since a tablet at 80 % is a wider class that the rule, and
+  so the check, do not cover. The two-player e2e is `e2e/m39-friends.spec.ts`:
   war declared from the Diplomacy tab, a live battle both command, peace one offers and the other
   accepts.
 

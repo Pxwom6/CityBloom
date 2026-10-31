@@ -3,6 +3,9 @@ import type { PlayerHistory } from './history';
 import type { SharedRules } from './rules';
 import type { WeatherSummary } from './systems/weather';
 import type { RegionSummary } from './systems/region';
+import type { WarSummary } from './systems/war';
+import type { UnitKind } from '../data/war';
+import type { BattleFrame } from './battle/types';
 import type { ScenarioSummary } from './systems/scenario';
 import type { Crater, Disaster } from './systems/disasters';
 /** Typed messages between the main thread and the sim worker. DESIGN.md §1.4. */
@@ -21,6 +24,7 @@ import type { TripSample } from './systems/traffic';
 import type { BusStop } from './systems/transit';
 import type { Leg } from './systems/graph';
 import type { ServiceKind } from '../data/civic';
+import type { LiveCall } from './systems/raids';
 
 export interface CityStats {
   tick: number;
@@ -86,6 +90,8 @@ export interface CityStats {
     railZ: number | null;
     editor: boolean;
   } | null;
+  /** War (M34): the forces' figures for the war room, budget and toolbar; null with war off. */
+  war: WarSummary | null;
 }
 
 export interface ElectionSummary {
@@ -191,6 +197,34 @@ export interface CivicDetails {
     /** Match days or launches, when open. */
     nextEvent: string | null;
   } | null;
+  /** Military buildings (M34): staff, power, what it trains and keeps, and what it does. */
+  military?: MilitaryDetails | null;
+}
+
+/** A military building in the inspector (M34). */
+export interface MilitaryDetails {
+  /** Posts and those filled; power it draws now and the share served. */
+  jobs: number;
+  staffed: number;
+  power: number;
+  powered: number;
+  /** Units it keeps at most, and those based here now. */
+  holds: number;
+  units: { id: number; kind: UnitKind; hp: number }[];
+  /** Training here, oldest (in progress) first: hours done of `hours`, gained an hour now. */
+  training: { id: number; kind: UnitKind; done: number; hours: number; rate: number }[];
+  /** What it can train, each with its price now (money, and materials bought in) or why not. */
+  trains: { kind: UnitKind; cost: number; imports: number; hours: number; why: string | null }[];
+  /** Why training is held up here, or null. */
+  stalled: string | null;
+  hq: boolean;
+  /** Residents it shelters; what it defends against; how far its radar sees (M35). */
+  shelters: number;
+  defends: { against: string[]; strength: number; range: number } | null;
+  radar: number;
+  /** Homes nearby that feel safer for it, and the noise it makes (reach, m). */
+  safety: { radius: number; value: number } | null;
+  noise: number;
 }
 
 export interface BudgetReport {
@@ -354,6 +388,18 @@ export interface Snapshot {
   disasters: DisasterData;
   /** Districts (M21). */
   districts: DistrictData;
+  /** The city's forces (M34); absent with war off. */
+  forces?: ForceData;
+}
+
+/** The city's units and the training under way (M34), sent whenever they change. */
+export interface ForceData {
+  /** `away`: on an expedition (M35), so not at its base; `ready`: a superweapon's hours of winding up left (M37). */
+  units: { id: number; kind: UnitKind; base: number; hp: number; away?: number; ready?: number }[];
+  /** Training at each base, oldest first: hours done of `hours`, and hours gained an hour now. */
+  orders: { id: number; kind: UnitKind; base: number; done: number; hours: number; rate: number }[];
+  /** Prototypes on trial at proving grounds (M37): hours done of `hours`. */
+  trials: { ground: number; kind: UnitKind; done: number; hours: number }[];
 }
 
 export interface CivicData {
@@ -404,6 +450,10 @@ export interface FrameDiff {
   traffic?: TrafficData;
   transit?: TransitData;
   disasters?: DisasterData;
+  /** The forces (M34), when they changed. */
+  forces?: ForceData;
+  /** A battle in the city (M35): every tick while it's on, then null once as it ends. */
+  battle?: BattleFrame | null;
   districts?: DistrictData;
   /** Snow on roads (M22): segments whose snow changed, with their new depth (0 = clear). */
   roadSnow?: [number, number][];
@@ -497,10 +547,19 @@ export type Query =
   | { type: 'districts' }
   /** The map editor's map as edited, and its playability check (M24). */
   | { type: 'exportMap' }
+  /** An expedition fighting (M35): what its battle needs of the city, or null. */
+  | { type: 'awayCity'; expedition: number }
+  /** The battle a friend's force fights in this city, live (M39): its input, or why not (read only). */
+  | { type: 'liveBattle'; call: LiveCall }
   /** Who built a road, civic building, stop or district in a shared city (M31): a player id or null. */
   | { type: 'builtBy'; id: number }
   /** What this city tells a shared region about itself (M32). */
-  | { type: 'regionReport' };
+  | { type: 'regionReport' }
+  /**
+   * Why terms can't be put to (or accepted from) a friend's city now (M39): the region's rules as far
+   * as this city can tell, and its own money limits. `null` when they can. Terms are as the proposer reads them.
+   */
+  | { type: 'friendTerms'; slot: number; terms: unknown[]; imposed?: boolean; side?: 'a' | 'b' };
 
 /** Districts (M21) for the client: each district, and the district of every raster cell. */
 export interface DistrictData {

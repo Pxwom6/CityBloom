@@ -19,7 +19,7 @@ const zag = (c: number) => (c >>> 1) ^ -(c & 1);
 const wrap16 = (v: number) => (v << 16) >> 16;
 
 /** A model's 16-bit vertices as differences, x's then y's then z's. */
-function encodePositions(q: Int16Array): Uint16Array {
+export function encodePositions(q: Int16Array): Uint16Array {
   const n = q.length / 3;
   const out = new Uint16Array(q.length);
   for (let c = 0; c < 3; c++) {
@@ -33,7 +33,7 @@ function encodePositions(q: Int16Array): Uint16Array {
   return out;
 }
 
-function decodePositions(codes: Uint16Array, scale: number): Float32Array {
+export function decodePositions(codes: Uint16Array, scale: number): Float32Array {
   const n = codes.length / 3;
   const out = new Float32Array(codes.length);
   for (let c = 0; c < 3; c++) {
@@ -47,7 +47,7 @@ function decodePositions(codes: Uint16Array, scale: number): Float32Array {
 }
 
 /** Indices as differences from the one before: 16-bit, or 32-bit for a model past 65,535 vertices. */
-function encodeIndex(index: Uint32Array, wide: boolean): Uint16Array | Uint32Array {
+export function encodeIndex(index: Uint32Array, wide: boolean): Uint16Array | Uint32Array {
   const out = wide ? new Uint32Array(index.length) : new Uint16Array(index.length);
   let prev = 0;
   for (let i = 0; i < index.length; i++) {
@@ -58,7 +58,7 @@ function encodeIndex(index: Uint32Array, wide: boolean): Uint16Array | Uint32Arr
   return out;
 }
 
-function decodeIndex(codes: Uint16Array | Uint32Array, wide: boolean): Uint32Array {
+export function decodeIndex(codes: Uint16Array | Uint32Array, wide: boolean): Uint32Array {
   const out = new Uint32Array(codes.length);
   let prev = 0;
   for (let i = 0; i < codes.length; i++) {

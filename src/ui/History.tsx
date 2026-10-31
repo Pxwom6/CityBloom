@@ -7,6 +7,8 @@ import { DISASTER_INFO } from '../tools/disasterTool';
 import { TimeChart, compactMoney, type TimeMarker } from './charts';
 import { formatNumber, useGameUpdates } from './hooks';
 import { IconHistory } from './icons';
+import { offersRegionHistory } from '../client/regionHistory';
+import { RegionAtWar } from './RegionHistory';
 
 type Range = 'all' | 'decade' | 'recent';
 const RANGES: { id: Range; name: string; months: number }[] = [
@@ -114,6 +116,8 @@ function eventLabel(e: Chronicle['events'][number]): string {
 export function HistoryPanel() {
   const game = useGameUpdates(500);
   const [range, setRange] = useState<Range>('all');
+  // The city's own story, or what the region has seen its cities do in a war (M39 step 7).
+  const [view, setView] = useState<'city' | 'region'>('city');
   const [c, setC] = useState<Chronicle | null>(null);
   const open = game.panel === 'history';
   useEffect(() => {
@@ -140,6 +144,13 @@ export function HistoryPanel() {
     return { month: d.totalMonths + d.dayFraction, kind: e.kind, label: eventLabel(e) };
   });
   const years = Math.floor((to - startMonth) / 12);
+  // A city with war on, or in a region with war on, can see the region's war history beside its own;
+  // a peaceful one (or one in a region at peace) is shown nothing new.
+  const regional = offersRegionHistory({
+    cityWar: !!game.world.stats.war,
+    regionWar: game.region?.view?.rules?.war,
+  });
+  const showRegion = regional && view === 'region';
   return (
     <aside class="budget history panel" data-testid="history-panel">
       <header>
@@ -154,62 +165,91 @@ export function HistoryPanel() {
           ×
         </button>
       </header>
-      <nav class="tabs" role="tablist">
-        {RANGES.map((r) => (
-          <button
-            key={r.id}
-            role="tab"
-            aria-selected={range === r.id}
-            class={`tab ${range === r.id ? 'active' : ''}`}
-            data-testid={`history-range-${r.id}`}
-            onClick={() => setRange(r.id)}
-          >
-            {r.name}
-          </button>
-        ))}
-      </nav>
-      <div class="tab-body" data-testid="history-charts">
-        {c.step > 1 && (
-          <p class="note">
-            Each point averages {c.step} months: older cities keep their whole story in fewer points.
-          </p>
-        )}
-        {FIGURES.map((f) => (
-          <section key={f.title} class="history-figure" data-testid={`history-${f.keys[0]}`}>
-            <h3 title={f.note}>{f.title}</h3>
-            <TimeChart
-              title={f.title}
-              series={f.keys.map((k, i) => ({
-                name: f.names?.[i] ?? f.title,
-                values: c.series[CHRONICLE_SERIES.indexOf(k)]!,
-                cls: i ? 'chart-line-2' : 'chart-line',
-              }))}
-              months={months}
-              step={c.step}
-              from={from}
-              to={to}
-              markers={markers}
-              fmt={f.fmt}
-              tickFmt={f.tickFmt}
-              monthLabel={monthName}
-              floor={f.floor}
-              ceil={f.ceil}
-            />
-          </section>
-        ))}
-        <h3>Timeline</h3>
-        {c.events.length ? (
-          <ul class="history-events" data-testid="history-events">
-            {[...c.events].reverse().map((e, k) => (
-              <li key={k} class={e.kind}>
-                <span class="when">{monthName(dateOf(e.tick).totalMonths)}</span> {eventLabel(e)}
-              </li>
+      {regional && (
+        <nav class="tabs history-views" role="tablist" aria-label="What to show">
+          {(
+            [
+              ['city', 'The city'],
+              ['region', 'Region at war'],
+            ] as const
+          ).map(([id, name]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={view === id}
+              class={`tab ${view === id ? 'active' : ''}`}
+              data-testid={`history-view-${id}`}
+              onClick={() => setView(id)}
+            >
+              {name}
+            </button>
+          ))}
+        </nav>
+      )}
+      {showRegion ? (
+        <div class="tab-body" data-testid="history-region">
+          <RegionAtWar />
+        </div>
+      ) : (
+        <>
+          <nav class="tabs" role="tablist">
+            {RANGES.map((r) => (
+              <button
+                key={r.id}
+                role="tab"
+                aria-selected={range === r.id}
+                class={`tab ${range === r.id ? 'active' : ''}`}
+                data-testid={`history-range-${r.id}`}
+                onClick={() => setRange(r.id)}
+              >
+                {r.name}
+              </button>
             ))}
-          </ul>
-        ) : (
-          <p class="note">Milestones and disasters will be marked here and on the charts.</p>
-        )}
-      </div>
+          </nav>
+          <div class="tab-body" data-testid="history-charts">
+            {c.step > 1 && (
+              <p class="note">
+                Each point averages {c.step} months: older cities keep their whole story in fewer points.
+              </p>
+            )}
+            {FIGURES.map((f) => (
+              <section key={f.title} class="history-figure" data-testid={`history-${f.keys[0]}`}>
+                <h3 title={f.note}>{f.title}</h3>
+                <TimeChart
+                  title={f.title}
+                  series={f.keys.map((k, i) => ({
+                    name: f.names?.[i] ?? f.title,
+                    values: c.series[CHRONICLE_SERIES.indexOf(k)]!,
+                    cls: i ? 'chart-line-2' : 'chart-line',
+                  }))}
+                  months={months}
+                  step={c.step}
+                  from={from}
+                  to={to}
+                  markers={markers}
+                  fmt={f.fmt}
+                  tickFmt={f.tickFmt}
+                  monthLabel={monthName}
+                  floor={f.floor}
+                  ceil={f.ceil}
+                />
+              </section>
+            ))}
+            <h3>Timeline</h3>
+            {c.events.length ? (
+              <ul class="history-events" data-testid="history-events">
+                {[...c.events].reverse().map((e, k) => (
+                  <li key={k} class={e.kind}>
+                    <span class="when">{monthName(dateOf(e.tick).totalMonths)}</span> {eventLabel(e)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p class="note">Milestones and disasters will be marked here and on the charts.</p>
+            )}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

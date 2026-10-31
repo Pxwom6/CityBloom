@@ -9,6 +9,10 @@ import { twoDistricts } from '../../tests/trafficTown';
 import { crossroadsTown } from '../../tests/junctionTown';
 import { RIDGE, ridgeMap } from './ridgeMap';
 import { placeAlong } from '../../tests/helpers';
+import { militaryCivics, startWar } from '../../src/sim/systems/war';
+import { objectiveSpots } from '../../src/sim/battle/layout';
+import { BState } from '../../src/sim/world/buildings';
+import type { Personality, UnitKind } from '../../src/data/war';
 
 /** Let a mayor run the city for some months (four decisions a month, as the balance tool). */
 export function govern(p: Player, months: number): void {
@@ -17,6 +21,126 @@ export function govern(p: Player, months: number): void {
       p.play();
       p.sim.advance(TICKS_PER_HOUR * 6);
     }
+}
+
+/** Run on to 07:00 of the next morning, where the day starts. */
+export function toMorning(sim: Sim): void {
+  const left = TICKS_PER_MONTH - (sim.state.tick % TICKS_PER_MONTH);
+  if (left < TICKS_PER_MONTH) sim.advance(left);
+}
+
+/**
+ * A town for a war scenario (M39): grown by the careful mayor in peace (no raids meanwhile) to
+ * `pop` residents, then given rivals: war comes to it as to a city founded with rivals, and its
+ * neighbours get the characters, forces and feelings the scenario says (by their place among the
+ * computer neighbours).
+ */
+export interface RivalSpec {
+  personality: Personality;
+  forces: number;
+  defences: number;
+  relation: number;
+  /** Its population, if the scenario wants it bigger or smaller than the region's draw. */
+  population?: number;
+  /** Held as a subject by the computer neighbour at this place (M39). */
+  subjectOf?: number;
+}
+
+/** Give the city's computer neighbours (by their place) the characters, forces and feelings of a scenario. */
+export function setRivals(sim: Sim, rivals: RivalSpec[]): void {
+  const found = sim.state.region.neighbours.filter((n) => n.rival && !n.player);
+  found.forEach((n, k) => {
+    const r = rivals[k];
+    if (!r) return;
+    const { population, subjectOf, ...state } = r;
+    Object.assign(n.rival!, state);
+    n.rival!.allies = [];
+    if (population) {
+      n.population = population;
+      n.history = [...n.history.slice(0, -1), population];
+    }
+    if (subjectOf !== undefined) n.rival!.subjectOf = found[subjectOf]!.id;
+  });
+}
+
+export function warScenarioTown(seed: string, cityName: string, pop: number): Player {
+  const p = new Player('careful', { seed, preset: 'river', cityName });
+  const sim = p.sim;
+  while (sim.state.totals.population < pop) {
+    p.play();
+    sim.advance(TICKS_PER_HOUR * 6);
+  }
+  sim.state.options.rivals = true;
+  startWar(sim);
+  // Quiet neighbours while the town builds its garrison: no raids, no wars before the scenario.
+  for (const n of sim.state.region.neighbours) if (n.rival) n.rival.forces = 0.5;
+  return p;
+}
+
+/** Paint the town into districts: its homes and shops split by how far east they stand (the first name takes the west half). */
+export function districts(sim: Sim, names: string[]): void {
+  const blds = [...sim.state.buildings.values()].filter((b) => b.state !== BState.Rubble);
+  const xs = blds.map((b) => b.x).sort((a, b) => a - b);
+  names.forEach((name, k) => {
+    sim.dispatch({ type: 'createDistrict', name });
+    const lo = xs[Math.floor((xs.length * k) / names.length)]!;
+    const hi = xs[Math.min(xs.length - 1, Math.floor((xs.length * (k + 1)) / names.length))]!;
+    const zs = blds.filter((b) => b.x >= lo && b.x <= hi).map((b) => b.z);
+    const z = zs.reduce((a, v) => a + v, 0) / Math.max(1, zs.length);
+    sim.dispatch({
+      type: 'paintDistrict',
+      district: k + 1,
+      area: {
+        kind: 'brush',
+        points: [
+          { x: lo, z },
+          { x: hi, z },
+        ],
+        radius: 240,
+      },
+    });
+  });
+}
+
+/**
+ * A garrison for a war scenario's town (M39): the HQ and barracks (and a vehicle depot), bunkers
+ * round the HQ, squads and tanks drilled over `days` days while the mayor keeps the lights on.
+ */
+export function garrison(
+  p: Player,
+  o: { depot?: boolean; bunkers: number; infantry: number; tanks?: number; days?: number },
+): void {
+  const sim = p.sim;
+  for (const def of o.depot ? ['militaryhq', 'barracks', 'vehicledepot'] : ['militaryhq', 'barracks'])
+    if (!p.place(def, 'industry')) throw new Error(`no room for the ${def}`);
+  const hq = militaryCivics(sim).find((c) => c.def === 'militaryhq')!;
+  for (let k = 0; k < o.bunkers; k++)
+    if (!p.placeNear('bunker', hq, 300)) throw new Error('no room for the bunkers');
+  const order = (def: string, kind: UnitKind, n: number) => {
+    const base = militaryCivics(sim).find((c) => c.def === def);
+    for (let k = 0; base && k < n; k++) sim.dispatch({ type: 'trainUnit', base: base.id, kind });
+  };
+  order('barracks', 'infantry', o.infantry);
+  order('vehicledepot', 'tank', o.tanks ?? 0);
+  // (A base trains one order at a time, twelve hours for a squad and two days for a tank.)
+  const days = o.days ?? Math.max(o.infantry * 0.5, (o.tanks ?? 0) * 2) + 1;
+  for (let d = 0; d < days; d++)
+    for (let h = 0; h < 4; h++) {
+      p.utilities(false);
+      p.followAdvice();
+      sim.advance(TICKS_PER_HOUR * 6);
+    }
+}
+
+/** Train these units at the bases of the kinds that keep them, and wait for them (the forces first). */
+export function trainForces(sim: Sim, units: UnitKind[]): void {
+  for (const kind of units) {
+    const base = militaryCivics(sim).find(
+      (c) => c.def === (kind === 'infantry' ? 'barracks' : 'vehicledepot'),
+    );
+    if (base) sim.dispatch({ type: 'trainUnit', base: base.id, kind });
+  }
+  for (let m = 0; m < 12 && sim.state.war!.orders.size > 0; m++) sim.advance(TICKS_PER_MONTH);
 }
 
 /** Each scenario's starting city. */
@@ -419,6 +543,84 @@ export const RECIPES: Record<string, () => Sim> = {
     zone('R', { x: p.c.x + 2 * DW + 20, z: z - 60 }, { x: end.x - 20, z: z - 60 }, 50);
     zone('R', { x: end.x - 40, z: z - 190 }, { x: end.x - 40, z: z + 190 }, 36);
     govern(p, 3);
+    return sim;
+  },
+  // Stonegate (M39): a compact town by the highway with a small garrison, and three neighbours that
+  // mean it harm. The invasion is scripted (src/data/scenarios.ts): three waves at the factories
+  // by the highway, growing.
+  holdline: () => {
+    const p = warScenarioTown('bastion', 'Stonegate', 2_300);
+    const sim = p.sim;
+    sim.earn(200_000, 'grants');
+    for (const def of ['militaryhq', 'barracks', 'shelter'])
+      if (!p.place(def, 'industry')) throw new Error(`no room for the ${def}`);
+    // Three bunkers beside the factories by the highway, where the raiders will go.
+    const factories = objectiveSpots(sim, 'industry');
+    const heart = factories[Math.floor(factories.length / 2)] ?? p.c;
+    for (let k = 0; k < 3; k++)
+      if (!p.placeNear('bunker', heart, 400)) throw new Error('no room for the bunkers');
+    // The garrison drills for a few days while the town keeps its lights on and its taps running.
+    for (const kind of ['infantry', 'infantry', 'infantry', 'infantry'] as const) {
+      const barracks = militaryCivics(sim).find((c) => c.def === 'barracks')!;
+      sim.dispatch({ type: 'trainUnit', base: barracks.id, kind });
+    }
+    for (let m = 0; m < 3; m++)
+      for (let h = 0; h < 4; h++) {
+        p.utilities(false);
+        p.followAdvice();
+        sim.advance(TICKS_PER_HOUR * 6);
+      }
+    setRivals(sim, [
+      { personality: 'aggressive', forces: 30, defences: 8, relation: -45 },
+      { personality: 'treacherous', forces: 14, defences: 5, relation: -20 },
+      { personality: 'honourable', forces: 10, defences: 8, relation: 10 },
+    ]);
+    toMorning(sim);
+    return sim;
+  },
+  // Westmarch (M39): a town of about 5,000 with a thin garrison and two districts, and an aggressive
+  // neighbour that outguns it and wants a fight. A war to win without giving up a district.
+  cleanwar: () => {
+    const p = warScenarioTown('arden', 'Westmarch', 5_200);
+    const sim = p.sim;
+    sim.earn(260_000, 'grants');
+    districts(sim, ['Old Town', 'New Quarter']);
+    garrison(p, { depot: true, bunkers: 3, infantry: 6, tanks: 1 });
+    // The aggressor is a big town, and its strength is what its size keeps.
+    setRivals(sim, [
+      {
+        personality: 'aggressive',
+        forces: 44,
+        defences: 12,
+        relation: -55,
+        population: 18_000,
+      },
+      { personality: 'cautious', forces: 6, defences: 12, relation: 5 },
+      { personality: 'mercantile', forces: 5, defences: 6, relation: 15 },
+    ]);
+    toMorning(sim);
+    return sim;
+  },
+  // Coldharbour (M39): a town of about 5,000 with a small garrison. Its old friend Lark Spa, to the
+  // west, is held as a subject by Dunford, an aggressive neighbour with the bigger army; honourable
+  // Norcombe, to the south, is a friend who might stand by the city in a war.
+  liberation: () => {
+    const p = warScenarioTown('tidewater', 'Coldharbour', 5_200);
+    const sim = p.sim;
+    sim.earn(240_000, 'grants');
+    garrison(p, { depot: true, bunkers: 3, infantry: 6, tanks: 1 });
+    setRivals(sim, [
+      {
+        personality: 'aggressive',
+        forces: 44,
+        defences: 12,
+        relation: -50,
+        population: 18_000,
+      },
+      { personality: 'honourable', forces: 10, defences: 12, relation: 45 },
+      { personality: 'honourable', forces: 6, defences: 8, relation: 50, subjectOf: 0 },
+    ]);
+    toMorning(sim);
     return sim;
   },
 };

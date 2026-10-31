@@ -21,13 +21,17 @@ import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { DistrictsPanel } from './Districts';
+import { WarRoomPanel } from './Military';
+import { FallenCard } from './Diplomacy';
+import { BattleBar, LiveBar, ViewerBar } from './Battle';
+import { BattleMapPanel } from './BattleMap';
 import { EditorApp } from './Editor';
+import { typingIn } from '../client/keys';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (typingIn(e)) return;
       if (game.screen) return;
       // The active tool has first claim on a key (its listener runs first and marks what it
       // handled): with the road tool open, G toggles grid snap, not the scenario's goals.
@@ -39,9 +43,17 @@ function Shortcuts({ game }: { game: Game }) {
       } else if (e.code === 'Digit1') game.setSpeed(1);
       else if (e.code === 'Digit2') game.setSpeed(2);
       else if (e.code === 'Digit3') game.setSpeed(3);
-      else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
+      // The war room (M34): Shift+M, before M's budget (which ignores Shift).
+      else if (e.code === 'KeyM' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        if (game.world.stats.war?.hq != null) game.openPanel('war');
+        else if (game.world.stats.war) game.toast('Build a military HQ to open the war room', 'info', 3000);
+      } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) game.openPanel('budget');
       else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) game.openPanel('advisors');
       else if (e.code === 'KeyN' && e.shiftKey && !e.ctrlKey && !e.metaKey) game.openPanel('region');
+      // The battle map (M39), with a live battle to command or watch; O is also the road tool's one-way
+      // toggle, which has first claim on it.
+      else if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey)
+        game.toggleBattleMap();
       else if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey) game.openPanel('notifications');
       else if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) game.openPanel('city');
       else if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey) game.openPanel('history');
@@ -93,7 +105,8 @@ export function App({ game }: { game: Game }) {
       <Shortcuts game={game} />
       <TopBar />
       <DebugPanel />
-      {game.readOnly ? <VisitBanner /> : <Toolbar />}
+      {/* Watching a battle (M35), the viewer bar takes the visit banner's place. */}
+      {game.readOnly ? !game.viewing && <VisitBanner /> : <Toolbar />}
       <ToolHintLabel />
       <ToolQuestionCard />
       <Inspector />
@@ -106,6 +119,12 @@ export function App({ game }: { game: Game }) {
       <GoalsPanel />
       <DistrictsPanel />
       <RegionPanel />
+      <WarRoomPanel />
+      <FallenCard />
+      <BattleBar />
+      <LiveBar />
+      <BattleMapPanel />
+      <ViewerBar />
       <RoomPanel />
       <MilestoneBanner />
       <ThoughtsFeed />

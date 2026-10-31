@@ -22,6 +22,7 @@ import { encodeSnapshot } from '../../src/net/snapshot';
 import type { SharedSnapshot } from '../../src/sim/protocol';
 import type { Stamped } from '../../src/sim/lockstep';
 import { FakeClock, loopTo, makeRoom, player, stopAll, until } from './harness';
+import { DAY_MS } from '../limits';
 import { RegionLink } from '../../src/net/regionLink';
 import { Sim } from '../../src/sim/sim';
 import { regionReport } from '../../src/sim/systems/region';
@@ -457,6 +458,250 @@ describe('F8: a region keeps within the free plan', () => {
     expect(visitor.got.filter((m) => m.t === 'citysave').length).toBeLessThanOrEqual(2);
   });
 
+  it('keeps the save a city sends as its player leaves, once a connection, whatever the pace (M35)', () => {
+    const clock = new FakeClock();
+    const { region, store, ada } = openRegion('6RLAST', clock);
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's0', part: 0, parts: 1, data: 'FIRST' });
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: 'SOON' });
+    expect(store.loadCity(1)).toEqual(['FIRST']);
+    ada.say({ t: 'save', id: 's2', part: 0, parts: 1, data: 'LEAVING', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    // Only once: another "last" save on the same connection waits its turn like any other.
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's3', part: 0, parts: 1, data: 'AGAIN', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    region.closed(ada.conn);
+  });
+
+  it('keeps a city’s battles a few at once, then one every few minutes, and says each is kept (M35)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    // The pace alone (the day's limit on raids a city takes, M36, has a test of its own).
+    const region = new RegionRoom('6RWARS', 'local', store, clock, { raidsPerDay: 99 });
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    const before = store.rowsWritten;
+    for (let i = 0; i < 40; i++) {
+      clock.advance(1000);
+      ada.say({ t: 'battle', to: 2, id: `b${i}`, part: 0, parts: 1, data: `DATA${i}` });
+    }
+    const kept = ada.got.filter((m) => m.t === 'battleKept');
+    expect(kept.length).toBeLessThanOrEqual(REGION_LIMITS.battleBurst);
+    expect(store.rowsWritten - before).toBeLessThanOrEqual(REGION_LIMITS.battleBurst * 3);
+    // One sent again (its acknowledgement lost) is acknowledged again, and not kept twice.
+    ada.say({ t: 'battle', to: 2, id: 'b0', part: 0, parts: 1, data: 'DATA0' });
+    expect(ada.got.filter((m) => m.t === 'battleKept' && m.id === 'b0')).toHaveLength(2);
+    // Sam, playing, got each one kept as it came.
+    expect(sam.got.filter((m) => m.t === 'battle')).toHaveLength(kept.length);
+    // Ten minutes on, another is kept.
+    clock.advance(10 * 60_000);
+    ada.say({ t: 'battle', to: 2, id: 'later', part: 0, parts: 1, data: 'LATER' });
+    expect(ada.got.some((m) => m.t === 'battleKept' && m.id === 'later')).toBe(true);
+    // A force on its way is told to its target only, where war is on.
+    ada.say({ t: 'forceOut', to: 2, units: 7, hours: 6 });
+    expect(sam.got.filter((m) => m.t === 'incoming')).toEqual([
+      { t: 'incoming', from: 1, units: 7, hours: 6 },
+    ]);
+    expect(ada.got.some((m) => m.t === 'incoming')).toBe(false);
+    region.closed(ada.conn);
+    region.closed(sam.conn);
+  });
+
+  it('holds a friend raided all night while its player is away to the day’s raids, each marked away (M36)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('6RNITE', 'local', store, clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const welcome = sam.got.find((m) => m.t === 'rwelcome') as Extract<RegionRoomMsg, { t: 'rwelcome' }>;
+    // Both cities tell the region about themselves (no shield: neither is new or neutral).
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    // Sam goes to bed at nine in the evening (UTC); Ada raids every twenty minutes until nine.
+    clock.advance((Math.ceil(clock.t / DAY_MS) * DAY_MS - clock.t) % DAY_MS);
+    clock.advance(21 * 3600_000);
+    region.closed(sam.conn);
+    for (let i = 0; i < 36; i++) {
+      clock.advance(20 * 60_000);
+      ada.say({ t: 'battle', to: 2, id: `night${i}`, part: 0, parts: 1, data: `DATA${i}`, away: true });
+    }
+    // Three before midnight, three after: the rest turned away, and Ada's page told why.
+    const kept = ada.got.filter((m) => m.t === 'battleKept');
+    const refused = ada.got.filter((m) => m.t === 'battleRefused');
+    expect(kept).toHaveLength(2 * REGION_LIMITS.raidsPerDay);
+    expect(refused).toHaveLength(36 - 2 * REGION_LIMITS.raidsPerDay);
+    expect(refused[0]).toMatchObject({ reason: expect.stringContaining('Samton') });
+    // The region says so to every city, before anyone sends another.
+    const views = ada.got.filter((m) => m.t === 'region') as Extract<RegionRoomMsg, { t: 'region' }>[];
+    expect(views.at(-1)!.region.cities.find((c) => c.slot === 2)!.raidsLeft).toBe(0);
+    // Sam comes back in the morning: every raid of the night comes, marked as made while away.
+    const back = rawRegion(region);
+    back.say(rhello('Sam', { rejoin: { slot: 2, secret: welcome.secret } }));
+    const battles = back.got.filter((m) => m.t === 'battle') as Extract<RegionRoomMsg, { t: 'battle' }>[];
+    expect(battles).toHaveLength(2 * REGION_LIMITS.raidsPerDay);
+    for (const b of battles) expect(b).toMatchObject({ late: true, away: true });
+    // A new day: the region allows raids again.
+    clock.advance(DAY_MS);
+    ada.say({ t: 'battle', to: 2, id: 'nextday', part: 0, parts: 1, data: 'NEXT', away: false });
+    expect(ada.got.some((m) => m.t === 'battleKept' && m.id === 'nextday')).toBe(true);
+    // Sam, here now, gets it as it comes: not made while away.
+    const live = back.got.filter((m) => m.t === 'battle' && m.id === 'nextday');
+    expect(live[0]).toMatchObject({ late: false, away: false });
+    region.closed(ada.conn);
+    region.closed(back.conn);
+  });
+
+  it('turns away a raid on a neutral friend, a newcomer that hasn’t struck first, or from an unknown city (M36)', () => {
+    const clock = new FakeClock();
+    const region = new RegionRoom('6RSHLD', 'local', new MemoryRegionStore(), clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const raid = (from: RawRegion, to: number, id: string, away = false) => {
+      clock.advance(10 * 60_000);
+      from.say({ t: 'battle', to, id, part: 0, parts: 1, data: id, ...(away ? { away: true } : {}) });
+      return from.got.findLast((m) => (m.t === 'battleKept' || m.t === 'battleRefused') && m.id === id);
+    };
+    // Sam hasn't told the region about its city: nothing can be fought against it yet.
+    ada.say(report(0, 5_000, 'Adaton'));
+    expect(raid(ada, 2, 'early')).toMatchObject({ t: 'battleRefused' });
+    // Neutral, as its own report says.
+    const shielded = (shield: string) => ({
+      ...report(0, 5_000, 'Samton'),
+      report: { ...report().report, shield },
+    });
+    sam.say(shielded('neutral'));
+    expect(raid(ada, 2, 'n1')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('neutral'),
+    });
+    // A newcomer: refused, until it has raided Ada; then Ada may answer.
+    sam.say(shielded('new'));
+    expect(raid(ada, 2, 'n2')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('young'),
+    });
+    expect(raid(sam, 1, 'samfirst')).toMatchObject({ t: 'battleKept' });
+    expect(raid(ada, 2, 'answer')).toMatchObject({ t: 'battleKept' });
+    // A day later the window has closed.
+    clock.advance(DAY_MS);
+    expect(raid(ada, 2, 'late')).toMatchObject({ t: 'battleRefused' });
+    // Fought as if Sam were here, but Sam has left: fought again at half strength.
+    sam.say(report(0, 5_000, 'Samton'));
+    region.closed(sam.conn);
+    expect(raid(ada, 2, 'full')).toMatchObject({ t: 'battleRefused', again: true });
+    expect(raid(ada, 2, 'full', true)).toMatchObject({ t: 'battleKept' });
+    region.closed(ada.conn);
+  });
+
+  it('answers every battle, refusing rather than dropping or evicting one, and knows a resend by its sender (M36)', () => {
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('6RANSW', 'local', store, clock, { raidsPerDay: 99 });
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    const cleo = rawRegion(region);
+    cleo.say(rhello('Cleo'));
+    const samWelcome = sam.got.find((m) => m.t === 'rwelcome') as Extract<RegionRoomMsg, { t: 'rwelcome' }>;
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    cleo.say(report(0, 5_000, 'Cleoton'));
+    const answer = (from: RawRegion, id: string) =>
+      from.got.findLast((m) => (m.t === 'battleKept' || m.t === 'battleRefused') && m.id === id);
+    const raid = (from: RawRegion, to: number, id: string, gap = 10 * 60_000, away = false) => {
+      clock.advance(gap);
+      from.say({ t: 'battle', to, id, part: 0, parts: 1, data: id, ...(away ? { away: true } : {}) });
+      return answer(from, id);
+    };
+    // Two cities' battles may share an id: each is kept, and Sam gets both.
+    expect(raid(ada, 2, 'same')).toMatchObject({ t: 'battleKept' });
+    expect(raid(cleo, 2, 'same')).toMatchObject({ t: 'battleKept' });
+    expect(sam.got.filter((m) => m.t === 'battle' && m.id === 'same')).toHaveLength(2);
+    // Sam has seen Ada's: Ada's sent again is acknowledged, not delivered again.
+    sam.say({ t: 'battleSeen', id: 'same', from: 1 });
+    raid(ada, 2, 'same');
+    expect(ada.got.filter((m) => m.t === 'battleKept' && m.id === 'same')).toHaveLength(2);
+    expect(sam.got.filter((m) => m.t === 'battle' && m.id === 'same')).toHaveLength(2);
+    // The pace: a few at once, then "later" (the force waits), never silence.
+    for (const id of ['p1', 'p2', 'p3']) raid(cleo, 1, id, 1000);
+    expect(raid(cleo, 1, 'p4', 1000)).toMatchObject({ t: 'battleRefused', later: REGION_LIMITS.battleEvery });
+    // Sam away: the region keeps eight battles for it at most; the ninth is refused, not one evicted.
+    region.closed(sam.conn);
+    const kept: string[] = [];
+    for (let i = 0; kept.length < 8 && i < 20; i++)
+      if (raid(ada, 2, `q${i}`, 10 * 60_000, true)?.t === 'battleKept') kept.push(`q${i}`);
+    expect(raid(ada, 2, 'q-over', 10 * 60_000, true)).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('waiting'),
+    });
+    const back = rawRegion(region);
+    back.say(rhello('Sam', { rejoin: { slot: 2, secret: samWelcome.secret } }));
+    const waiting = back.got.filter((m) => m.t === 'battle').map((m) => (m as { id: string }).id);
+    expect(waiting).toEqual(expect.arrayContaining(kept.slice(-6)));
+    expect(waiting).toHaveLength(8);
+    // A neutral city raids no one.
+    ada.say({ ...report(0, 5_000, 'Adaton'), report: { ...report().report, shield: 'neutral' } });
+    expect(raid(ada, 3, 'neutral')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('Adaton'),
+    });
+    // War off: told so.
+    ada.say(report(0, 5_000, 'Adaton'));
+    ada.say({ t: 'rrules', rules: { war: false, scale: 'skirmish' } });
+    expect(raid(cleo, 1, 'off')).toMatchObject({
+      t: 'battleRefused',
+      reason: expect.stringContaining('War is off'),
+    });
+    // But a battle the region already holds, sent again (its word lost), is still answered kept:
+    // its target takes it, so its sender must too.
+    expect(raid(ada, 2, kept.at(-1)!, 10 * 60_000, true)).toMatchObject({ t: 'battleKept' });
+    for (const c of [ada, back, cleo]) region.closed(c.conn);
+  });
+
+  it('in a region on one player\u2019s computer, turns away raids on a player who isn\u2019t there (M36)', () => {
+    const clock = new FakeClock();
+    const region = new RegionRoom('ARPEER', 'p2p', new MemoryRegionStore(), clock);
+    const ada = rawRegion(region);
+    ada.say(rhello('Ada', { create: { name: 'Vale', rules: { war: true, scale: 'skirmish' } } }));
+    const sam = rawRegion(region);
+    sam.say(rhello('Sam'));
+    ada.say(report(0, 5_000, 'Adaton'));
+    sam.say(report(0, 5_000, 'Samton'));
+    region.closed(sam.conn);
+    ada.say({ t: 'battle', to: 2, id: 'gone', part: 0, parts: 1, data: 'X', away: true });
+    expect(ada.got.findLast((m) => m.t === 'battleRefused')).toMatchObject({
+      id: 'gone',
+      reason: expect.stringContaining('isn’t here'),
+    });
+    region.closed(ada.conn);
+  });
+
+  it('keeps the leaving save once, even sent again under the same name (M35)', () => {
+    const clock = new FakeClock();
+    const { region, store, ada } = openRegion('6RLST2', clock);
+    clock.advance(1000);
+    ada.say({ t: 'save', id: 's0', part: 0, parts: 1, data: 'FIRST' });
+    ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: 'LEAVING', last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    const rows = store.rowsWritten;
+    for (let i = 0; i < 10; i++)
+      ada.say({ t: 'save', id: 's1', part: 0, parts: 1, data: `AGAIN${i}`, last: true });
+    expect(store.loadCity(1)).toEqual(['LEAVING']);
+    expect(store.rowsWritten).toBe(rows);
+    region.closed(ada.conn);
+  });
+
   it('expires when no city has come back for a long while', () => {
     const clock = new FakeClock();
     const { region, ada } = openRegion('7RQUET', clock);
@@ -490,6 +735,41 @@ describe('F8: a region keeps within the free plan', () => {
     console.log(`[F8] an hour of four cities in a region: ${rows} rows written`);
     expect(rows).toBeLessThanOrEqual(150);
     for (const c of cities) expect(c.closed).toBeNull();
+  });
+
+  it('an hour of four cities whose offers change with every report writes about a hundred rows too, and loses none when the region empties', () => {
+    // A running city's spare power moves with the hour: the war soak (`scripts/dev/regionsoak.ts`) found its
+    // offers different in nearly every report, which written promptly cost a row per city every half minute
+    // (480 an hour, a region's whole day in six hours of play). They are written with the numbers now.
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('9HQOFF', 'local', store, clock);
+    const names = ['Ada', 'Sam', 'Kit', 'Lee'];
+    const cities = names.map((mayor, i) => {
+      const c = rawRegion(region);
+      c.say(rhello(mayor, i ? {} : { create: { name: 'Vale' } }));
+      return c;
+    });
+    const before = store.rowsWritten;
+    let power = 0;
+    for (let s = 0; s < 3600; s += 30)
+      cities.forEach((c, i) => {
+        clock.advance(30_000 / cities.length);
+        c.say(report(++power, 1000 + s + i, `${names[i]}ton`));
+        if (s % 300 === 0) c.say({ t: 'save', id: `${i}-${s}`, part: 0, parts: 1, data: 'SAVE' });
+      });
+    const rows = store.rowsWritten - before;
+    console.log(`[F8] an hour of four cities whose offers change every report: ${rows} rows written`);
+    expect(rows).toBeLessThanOrEqual(150);
+    for (const c of cities) expect(c.closed).toBeNull();
+    // The other cities heard every one at once; the record has the last of them once the region empties.
+    for (const c of cities) region.closed(c.conn);
+    expect(store.meta!.cities.map((c) => c.report!.offers.sell.power)).toEqual([
+      power - 3,
+      power - 2,
+      power - 1,
+      power,
+    ]);
   });
 
   it('stops storing at its daily row budget', () => {

@@ -18,7 +18,7 @@ import { RNG_STREAMS } from './state';
 const f64 = new Float64Array(1);
 const u32 = new Uint32Array(f64.buffer);
 
-class Mixer {
+export class Mixer {
   private h1 = 0x811c9dc5;
   private h2 = 0x01000193;
   num(v: number): void {
@@ -90,6 +90,24 @@ export function checksum(sim: Sim): string {
   m.num(sumArray(s.crime));
   m.num(sumArray(s.terrainDelta));
   m.num(s.weather.temp);
+  // War (M34), only where it's on: a peaceful city's checksum is as before.
+  const w = s.war;
+  if (w) {
+    m.int(w.units.size);
+    m.int(w.orders.size);
+    for (const o of w.orders.values()) m.num(o.done);
+    m.num(w.readiness);
+    m.num(w.clock);
+    m.num(w.stock.goods + w.stock.ore + w.stock.oil + w.stock.munitions);
+    m.int(w.bonds.length);
+    // Battles (M35), only once there's been one.
+    if (w.battle) {
+      m.int(w.battle.step);
+      m.int(w.battle.report.collapsed.length + w.battle.report.burning.length);
+    }
+    if (w.incoming) m.int(w.incoming.length);
+    if (w.reports) m.int(w.reports.length);
+  }
   return m.hex();
 }
 

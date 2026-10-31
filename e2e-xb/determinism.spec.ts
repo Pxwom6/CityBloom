@@ -53,6 +53,13 @@ test('the scripted town gives the same state hash at every month end as in Node'
     expect(got.months[m], `${browserName}, month ${m + 1}`).toBe(want.months[m]);
   expect(got.editor).toBe(want.editor);
   expect(got.scenario).toEqual(want.scenario);
+  expect(got.war, `${browserName}, the war town`).toEqual(want.war);
+  expect(got.battle, `${browserName}, the battles`).toEqual(want.battle);
+  expect(got.diplomacy, `${browserName}, diplomacy (M36)`).toBe(want.diplomacy);
+  expect(got.research, `${browserName}, research, superweapons and spies (M37)`).toEqual(want.research);
+  expect(got.economy, `${browserName}, the war economy (M38)`).toEqual(want.economy);
+  expect(got.live, `${browserName}, a live battle with a friend (M39)`).toEqual(want.live);
+  expect(got.friends, `${browserName}, wars and treaties with a friend (M39)`).toEqual(want.friends);
   expect(got.used).toEqual(want.used);
   expect(got.refused).toEqual(want.refused);
 });
@@ -85,5 +92,12 @@ test('the scripted town gives the same hashes in the SpiderMonkey shell', async 
   expect(got.months).toEqual(want.months);
   expect(got.editor).toBe(want.editor);
   expect(got.scenario).toEqual(want.scenario);
+  expect(got.war).toEqual(want.war);
+  expect(got.battle).toEqual(want.battle);
+  expect(got.diplomacy).toBe(want.diplomacy);
+  expect(got.research).toEqual(want.research);
+  expect(got.economy).toEqual(want.economy);
+  expect(got.live).toEqual(want.live);
+  expect(got.friends).toEqual(want.friends);
   expect(got.refused).toEqual(want.refused);
 });

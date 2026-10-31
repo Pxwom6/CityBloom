@@ -5,6 +5,8 @@
 //   [--save dir] (keeps each strategy's city as <dir>/<strategy>.citybloom, loadable in the game)
 //   [--demo] (with --save: no random disasters, unused zoning cleared and a mid-afternoon clock, for
 //   the main menu's town)
+//   [--rivals] (M38: each city founded with rival neighbours, so war is on; the careful mayor then plays
+//   the war too, and the summary adds the war's lines. Without it nothing here changes.)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { gzipSync, strToU8 } from 'fflate';
 import { checkInvariants } from '../src/sim/invariants';
@@ -19,6 +21,8 @@ import { happinessFactors } from '../src/sim/systems/happiness';
 import { BState } from '../src/sim/world/buildings';
 import { GROWTH } from '../src/data/balance';
 import { Player, type Sample, type StrategyId } from './lib/mayor';
+import { cityStrength } from '../src/sim/systems/raids';
+import { warEconomySummary } from '../src/sim/systems/warEconomy';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => {
@@ -29,6 +33,8 @@ const csvDir = flag('--csv');
 const saveDir = flag('--save');
 const demo = args.includes('--demo');
 if (demo) args.splice(args.indexOf('--demo'), 1);
+const rivals = args.includes('--rivals');
+if (rivals) args.splice(args.indexOf('--rivals'), 1);
 const verbose = Number(flag('--verbose') ?? 0);
 // WINTER=1: step hour by hour and list each winter's power shortfalls (hours, buildings without
 // power, MW short) and whether the winter warning showed in the three months before.
@@ -93,9 +99,41 @@ function spark(values: number[], lo = Math.min(...values), hi = Math.max(...valu
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
+/** The war's lines (rivals on, M38): by year, then raids, treaties, weariness, stakes and what the military costs. */
+function warLines(p: Player, samples: Sample[]): void {
+  const w = p.sim.state.war!;
+  const t = p.warPlan.tally;
+  console.log(
+    'war by year: raids wars-on peaces open weariness | stakes-worth dividends(cum) military/spending(cum)',
+  );
+  for (let y = 1; y <= years; y++) {
+    const s = samples[y * MONTHS_PER_YEAR - 1]?.war;
+    if (!s) continue;
+    console.log(
+      `${String(y).padStart(4)} ${String(s.raids).padStart(6)} ${String(s.warsOn).padStart(8)} ${String(s.peaces).padStart(7)} ${String(s.open).padStart(5)} ${s.weariness.toFixed(2).padStart(9)} | ${fmt(s.stakes).padStart(12)} ${fmt(s.dividends).padStart(14)} ${`${s.spending ? ((100 * s.military) / s.spending).toFixed(1) : '0.0'}%`.padStart(10)}`,
+    );
+  }
+  const outcomes = Object.entries(t.outcomes)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, v]) => `${k} ${v}`)
+    .join(', ');
+  console.log(
+    `war: ${t.raids} raids suffered (${outcomes || 'none'}), ${t.collapsed} buildings and ${t.homeless} homes lost; ${t.warsOn} wars declared on the city, ${t.peaces} made peace of; peak weariness ${t.peakWeariness.toFixed(2)}`,
+  );
+  const stakes = warEconomySummary(p.sim);
+  const years20 = Math.max(1, years);
+  console.log(
+    `war money: stakes worth $${fmt(stakes?.worth ?? 0)} (paid $${fmt([...Object.values(w.economy?.stakes ?? {})].reduce((a, k) => a + k.paid, 0))}), dividends $${fmt(t.dividends / years20)} a year on average, military upkeep ${t.spending ? ((100 * t.military) / t.spending).toFixed(1) : '0.0'}% of spending`,
+  );
+  const open = (w.diplomacy?.wars ?? []).map((x) => `${x.name} (${x.scale}, score ${Math.round(x.score)})`);
+  console.log(
+    `wars open at the end: ${open.length ? open.join(', ') : 'none'}; forces ${w.units.size} units, strength ${cityStrength(p.sim).toFixed(1)}`,
+  );
+}
+
 for (const id of strategies) {
   const t0 = performance.now();
-  const p = new Player(id, { seed, difficulty, cityName: demo ? 'Bloomfield' : id });
+  const p = new Player(id, { seed, difficulty, cityName: demo ? 'Bloomfield' : id, rivals });
   if (weatherIntensity !== undefined || seasonsOff)
     p.sim.dispatch({
       type: 'setWeather',
@@ -247,6 +285,7 @@ for (const id of strategies) {
   const built = new Map<string, number>();
   for (const c of p.sim.state.civics.values()) built.set(c.def, (built.get(c.def) ?? 0) + 1);
   console.log(`built: ${[...built].map(([d, n]) => `${d}×${n}`).join(' ')}`);
+  if (p.sim.state.war) warLines(p, samples);
   if (saveDir) {
     mkdirSync(saveDir, { recursive: true });
     if (demo) {

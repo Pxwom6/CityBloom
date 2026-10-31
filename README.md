@@ -63,7 +63,8 @@ the name and colour you choose.
   game month on its own clock), share commuters and shoppers along the highway, pay together for
   **Sunfield Commons** (the biggest giver builds it, everyone who gave shares its power) and can
   **Visit** each other's cities, read-only. Everyone plays at their own speed; a city that's offline
-  keeps its last offers.
+  keeps its last offers. The region's host can also turn **war** on, so friends' cities can raid each
+  other, fight live battles and make peace (see [War](#war)).
 
 **When something goes wrong**
 
@@ -261,6 +262,8 @@ along with a car, bus or passer-by, and save a PNG at up to twice the screen's r
 | Budget / advisors / notifications / city (progress, policies, election, achievements) | top bar | | M / J / N / P |
 | City history | top bar | | Y |
 | Region: neighbours, deals, commuters and visitors | top bar towns button | | Shift+N |
+| War room (with war on and a military HQ) | top bar war room button | | Shift+M |
+| Battle map in a live battle (command or watch) | Command in the battle bar | | O |
 | Scenario goals | the city's name in the top bar | | G |
 | Photo mode (H hides its panel, Enter saves, Esc leaves) | toolbar camera | | K |
 | Data maps | toolbar | | L toggles the power map |
@@ -277,6 +280,94 @@ a brush working; its bar has the map's name and climate, the check, save, export
 The pause menu (Escape) has save, load, settings (graphics quality, shadows, draw distance,
 interface size, pointing device, volumes, edge scrolling, disasters, elections, autosave) and export/import of `.citybloom`
 save files. The city autosaves every few minutes.
+
+## War
+
+War is off unless you ask for it, so everything above plays as a peaceful city builder. Turn it on and
+your city can raise an army, be raided, send raids of its own and go to war, against the towns along the
+highway or against a friend's city. Nothing is lost for good: a building knocked down by a battle is rubble
+that clears and regrows, a city building that is hit closes for repairs, and roads that are cratered mend.
+
+**Turning it on**
+
+- **A city of your own:** on the New city screen tick **Rival neighbours**. The neighbouring towns then
+  arm month by month, each with a character (aggressive, cautious, mercantile, honourable or
+  treacherous), and in time raid, trade and bargain with you. The tick isn't remembered: every new city
+  starts at peace.
+- **A shared region:** its host decides. Tick **War in the region** on the New city screen when starting
+  the region, or later in the Region panel (Shift+N), and choose how far it may go (**Skirmishes only**,
+  **Up to war** or **Total war allowed**) and whether **Superweapons** are allowed. Turning war off again
+  ends every war in plain peace; cities keep what they built. Everyone else in the region sees the rules
+  and can't change them.
+
+**Raising forces.** From 2,000 residents the toolbar's **Military** button builds a military HQ, which
+opens the **war room** (Shift+M, or its button in the top bar) and the other military buildings: barracks
+for infantry, a vehicle depot for tanks, artillery and transports, then airfields and naval yards, bunkers,
+shelters, radar and the rest. Click a base to train units: they take workers from nearby homes (the forces
+may take a quarter of the city's workers at most), need power and a funded defence budget, and cost upkeep.
+The war room's tabs are Forces, Send, Map, Research, Intelligence, Diplomacy, Trade, Upkeep, Readiness and
+Reports.
+
+**Raids.** Computer neighbours raid a city of at least 3,000 residents that is a year old, with an hour's
+warning (the red countdown in the top bar; a radar warns earlier). Bunkers, guns and units fight on their
+own and residents near the targets go to the shelters. You can raid too: the war room's **Send** tab picks
+the town (a neighbour or a friend's city), what to strike (military buildings, industry or power near the
+border, or the HQ in a declared war), the way (road, rail, sea or air) and up to 24 units. The battle is
+fought when the force arrives; **Reports** lists it and **Watch** plays it again.
+
+**Diplomacy.** The **Diplomacy** tab declares war (with a reason; it opens after a warning) and shows each
+war's score. At a score of −60 a side capitulates and the winner sets the terms. Treaties put into words
+what each side gives: peace, a ceasefire, reparations, tribute, a non-aggression pact, an alliance, a
+defensive pact, an embargo, trade, independence. Break a pact and everyone hears of it. In a **total war**
+a fallen city can be taken as a **vassal**: it pays its overlord a fifth of its taxes every month and may go
+to war only to rise against it. Research (six branches, the fourth tier a superweapon), spies
+(Intelligence) and trade (stakes in a neighbour's industry, loans and arms deals with allies) have tabs of
+their own.
+
+### War with friends
+
+In a region where war is on, the other players' cities are in the Send tab and the Diplomacy tab's
+**Friends in the region** list.
+
+- **Raids and live battles.** A friend's city is raided like a neighbour. If its player is in the region
+  when your force arrives, the battle is **live**: both of you watch it and command it on the **battle
+  map** (the **O** key, or **Command** in the bar under the top bar). Choose units (click, drag a box, or
+  **All**) and give an order: **Focus** (attackers: a building to strike; defenders: an attacker to hit),
+  **Guard** a building, **Hold** (stand still and only fire), **Free** them to use their own judgement
+  again, or **Withdraw**. The region passes every order to both pages and the map shows when it was "heard". The
+  battle runs at the pace of the slower page; if a page stops answering for ten seconds its units fight on
+  their own until the player presses **Take command again**. Each city runs the battle and the two compare
+  the result at the end. If the defender isn't there, the battle is fought against the region's saved copy
+  of their city (with at most half the usual damage, if they have left) and waits for them: they take it, and it shows in
+  their Reports, when they come back. (Not in a peer-to-peer region, which keeps nothing for a player who
+  is away: it refuses the raid, and the Send tab says so beside the town.)
+- **Allies' help.** A friend with an alliance with one of the fighters, or a defensive pact with the city
+  being attacked, can send a force into a live battle (**Send help** in the bar or the battle map while
+  watching). It arrives about half a minute later (three-quarters of a minute by sea), fights on its own judgement and
+  its losses go back to its own city: one force of up to 24 units per city, three helpers a battle.
+- **Watching and replays.** Any player in the region may **Watch** a live battle between two other cities,
+  from the bar or the Region panel: the battle map, read-only. The region keeps its last 20 battles, and
+  **City history** (Y) has a **Region at war** list, in real time, with a Watch button on each.
+- **Declaring war and making peace.** In the Diplomacy tab press **Declare war…** by a friend, give a
+  reason and a scale; they're told at once and the war opens **two minutes** later. Each battle between
+  your cities moves the score. Press **Offer terms** next to a war to propose peace (adding reparations or
+  a pact if you like); a proposal waits a day for its answer, so a friend who is away answers when they're
+  back, and a treaty signed binds both cities. A side that capitulates gives the winner a day to set the
+  terms (then plain peace stands), and in a total war the winner may take it as a vassal; a vassal that
+  wins battles against its overlord goes free, or the overlord can agree to it by treaty. Ending a pact
+  early costs the city's reputation.
+- **The limits.** A city with fewer than 3,000 residents, or less than a year old, is protected as a newcomer:
+  a friend can neither raid it nor declare war on it, except for a day after it has raided them. Until then
+  **Declare war…** is greyed out with the reason beside it (a war already open when a city falls below the
+  limits stays open). A city can be **neutral**
+  (Diplomacy tab): it raids no one and is raided by no one. A city takes three raids a day (UTC). A
+  region's war runs on real time: the **fair clock** lets training and research run at the pace of the
+  region's clock plus 48 game hours, so nobody builds an army by fast-forwarding, and a war's warning, a
+  proposal and a ceasefire are counted in real minutes and hours (a game hour is 7.5 seconds at normal
+  speed). A region on someone's computer ends with its host, and refuses raids on a player who isn't there.
+- **Roles in a shared city.** In a co-op city the host chooses who may **Wage war**, make **Treaties** and
+  spend on **Defence** (the room panel's list of permissions, with taxes and the rest). A shared city can't
+  stand in a region, so its wars are with the computer neighbours.
 
 ## Develop
 

@@ -10,6 +10,8 @@ import { App } from './ui/App';
 import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
 import { decodeSave, readSlot } from './client/saves';
+import { loadBattle, loadTown } from './client/battles';
+import { BATTLE_V4 } from './sim/battle/types';
 import { newMapId, readMap, writeMap } from './client/maps';
 import { MapEditor } from './client/editor';
 import { mapFromGenerator, type MapData } from './sim/terrain/customMap';
@@ -30,6 +32,7 @@ import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
 import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
+import { WAR_SCALES, type WarScale } from './data/war';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -71,6 +74,8 @@ function optionsFrom(params: URLSearchParams): Partial<GameOptions> {
   o.elections = params.has('elections') ? params.get('elections') === '1' : loadSettings().elections;
   const name = params.get('name')?.trim();
   if (name) o.cityName = name.slice(0, 40);
+  // Rival neighbours (M34): war on for this city. Off unless asked for.
+  if (params.get('rivals') === '1') o.rivals = true;
   return o;
 }
 
@@ -199,9 +204,22 @@ async function boot(): Promise<void> {
       },
     );
   }
-  const menu = !['paused', 'seed', 'preset', 'load', 'new', 'scenario', 'editor', 'join', 'visit'].some((k) =>
-    params.has(k),
-  );
+  // Watching a battle fought in a neighbour's town (M35): its record and the town it was fought in.
+  const battleId = params.get('battle');
+  const battleRecord = battleId ? await loadBattle(battleId).catch(() => null) : null;
+  const battleTown = battleRecord?.townKey ? await loadTown(battleRecord.townKey).catch(() => null) : null;
+  const menu = ![
+    'paused',
+    'seed',
+    'preset',
+    'load',
+    'new',
+    'scenario',
+    'editor',
+    'join',
+    'visit',
+    'battle',
+  ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
   // An invite link (M30): into the room, whose city comes as a snapshot.
@@ -241,14 +259,25 @@ async function boot(): Promise<void> {
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
   const found = visited
     ? visited
-    : loadSlot
-      ? await readSlot(loadSlot).catch(() => null)
-      : scenario
-        ? await shippedSave(`scenarios/${scenario.save}`)
-        : menu
-          ? await shippedSave('demo.citybloom')
-          : null;
+    : battleTown
+      ? battleTown
+      : loadSlot
+        ? await readSlot(loadSlot).catch(() => null)
+        : scenario
+          ? await shippedSave(`scenarios/${scenario.save}`)
+          : menu
+            ? await shippedSave('demo.citybloom')
+            : null;
   const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
+  // A battle this browser doesn't keep (or whose town won't open): back to the city it came from,
+  // never a fresh city in its place (which would autosave over the player's).
+  if (battleId && !(battleRecord && battleTown && opened)) {
+    const back = params.get('back');
+    location.replace(
+      back ? `${location.pathname}?load=${encodeURIComponent(back)}&noreplay=1` : location.pathname,
+    );
+    return;
+  }
   // A player's save that opened (not the menu's demo town).
   const save = !menu && opened ? found : null;
   const snap = joined
@@ -285,6 +314,28 @@ async function boot(): Promise<void> {
     game.setCamera('overview', true);
     // A reload carries on editing this map.
     history.replaceState(null, '', `${location.pathname}?editor=${encodeURIComponent(editing.id)}`);
+  } else if (battleRecord && battleTown && opened) {
+    // The battle again, in the town's own sim: its fires and rubble, then its repairs.
+    game.readOnly = true;
+    game.viewing = { record: battleRecord, back: params.get('back') };
+    const shown = await client.command({
+      type: 'battleResolve',
+      input: battleRecord.input,
+      mode: 'watch',
+      // A live battle (version 4: players gave orders in it) is shown as it was fought, in whatever
+      // town it has now (M39 step 7).
+      ...(battleRecord.input.v >= BATTLE_V4 ? { asFought: true } : {}),
+    });
+    if (!shown.ok) {
+      // Nothing to show here after all (another version's battle, say): say why, and go back.
+      game.toast(`That battle can’t be shown: ${shown.reason}.`, 'info', 6000);
+      setTimeout(() => game.backToCity(), 3000);
+    }
+    // It plays once the town is drawn (a big one takes a while on a slow device), not before.
+    game.setSpeed(0);
+    game.viewerStart = 3;
+    game.setCamera('overview', true);
+    history.replaceState(null, '', location.pathname);
   } else if (visited) {
     game.readOnly = true;
     game.setSpeed(0);
@@ -341,6 +392,9 @@ async function boot(): Promise<void> {
     // re-creating this city from scratch.
     if (params.has('new') || params.has('load') || scenario)
       history.replaceState(null, '', location.pathname);
+    // Back from a battle this browser doesn't keep (M35).
+    if (params.get('noreplay') === '1')
+      game.toast('That battle’s replay isn’t kept in this browser.', 'info', 6000);
     // Founded or opened to share with friends (the lobby's Host buttons, M30).
     const host = params.get('host');
     if (host === 'online' || host === 'p2p') void game.hostRoom(host);
@@ -369,9 +423,21 @@ async function boot(): Promise<void> {
       void game.startRegion(
         newRegion,
         params.get('rname')?.trim().slice(0, 40) || `${world.stats.cityName} and friends`,
+        // War in the region (M34), as its host chose on the new-city screen.
+        params.get('rwar') === '1'
+          ? {
+              war: true,
+              scale: (WAR_SCALES as readonly string[]).includes(params.get('rscale') ?? '')
+                ? (params.get('rscale') as WarScale)
+                : 'skirmish',
+            }
+          : undefined,
       );
     else if (regionCode) void game.joinRegion(regionCode, regionRejoin(meta, regionCode)?.rejoin ?? null);
     else if (mine) void game.joinRegion(mine.invite, mine.rejoin);
+    // A loaded city that won't stand in a region now (M37): the region's fair-clock cap it saved, and
+    // what it knew of friends there by their places, no longer apply (quietly nothing without war).
+    else if (loadSlot && save) void game.dispatch({ type: 'warClock', cap: null, left: true });
   }
   // A first launch picks graphics to suit the device from its first few seconds: on the main menu, and
   // in a room or a visit an invite link opened straight into (F12).

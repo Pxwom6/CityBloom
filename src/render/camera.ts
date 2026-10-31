@@ -1,6 +1,7 @@
 import { PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { MAP_SIZE } from '../data/world';
 import { clamp, lerp, smoothstep } from '../sim/terrain/noise';
+import { typingIn } from '../client/keys';
 
 export interface CameraPose {
   x: number;
@@ -323,8 +324,7 @@ export class CameraController {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (typingIn(e)) return;
     if (!this.inputEnabled) return;
     this.keys.add(e.code);
   };

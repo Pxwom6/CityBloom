@@ -38,6 +38,9 @@ import { RoadTint } from './roadTint';
 import { TrafficRenderer } from './traffic';
 import { TransitRenderer } from './transit';
 import { PortRenderer } from './ports';
+import { UnitRenderer, type UnitQuality } from './units';
+import { BattleEffects } from './battle';
+import { SuperEffects } from './shields';
 import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
@@ -82,6 +85,8 @@ export interface RenderStats {
   rail: { tram: number; train: number; freight: number };
   /** Planes and ships drawn (M23). */
   ports: { planes: number; ships: number };
+  /** The city's units drawn close up, far off and as dots (M34). */
+  units: { near: number; far: number; dots: number };
   smoke: number;
 }
 
@@ -148,6 +153,12 @@ export class GameRenderer {
   readonly railVehicles: RailVehicleRenderer;
   readonly crossings: CrossingRenderer;
   readonly ports: PortRenderer;
+  /** The city's forces (M34): nothing is made or drawn with war off. */
+  readonly units: UnitRenderer;
+  /** A battle's tracers, shells and smoke (M35). */
+  readonly battle: BattleEffects;
+  /** The superweapon buildings' effects (M37): the dome, shield bubbles, the gate's swirl, the tower's ring. */
+  readonly supers: SuperEffects;
   readonly streetLights: StreetLightRenderer;
   /** Benches, bins and planters along the pavements (M27). */
   readonly streetProps: StreetProps;
@@ -192,6 +203,7 @@ export class GameRenderer {
     buses: 0,
     rail: { tram: 0, train: 0, freight: 0 },
     ports: { planes: 0, ships: 0 },
+    units: { near: 0, far: 0, dots: 0 },
     smoke: 0,
   };
 
@@ -263,6 +275,12 @@ export class GameRenderer {
     this.railVehicles.traffic = this.traffic;
     this.ports = new PortRenderer(world);
     this.scene.add(this.ports.group);
+    this.units = new UnitRenderer(world);
+    this.scene.add(this.units.group);
+    this.battle = new BattleEffects(world);
+    this.scene.add(this.battle.group);
+    this.supers = new SuperEffects(world);
+    this.scene.add(this.supers.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
     this.streetProps = new StreetProps(world);
@@ -319,6 +337,7 @@ export class GameRenderer {
       this.transit.group,
       this.railVehicles.group,
       this.ports.group,
+      this.units.group,
       this.streetLights.group,
       this.streetProps.group,
       this.garbage.mesh,
@@ -342,6 +361,9 @@ export class GameRenderer {
       [this.transit.group, 'transit'],
       [this.railVehicles.group, 'railVehicles'],
       [this.ports.group, 'ports'],
+      [this.units.group, 'units'],
+      [this.battle.group, 'battle'],
+      [this.supers.group, 'supers'],
       [this.streetLights.group, 'streetLights'],
       [this.streetProps.group, 'streetProps'],
       [this.routeTint.group, 'routeTint'],
@@ -541,6 +563,7 @@ export class GameRenderer {
     cascades: 1 | 2;
     ground: 0 | 1;
     closeShadowHz: number;
+    units: UnitQuality;
   }): void {
     this.closeShadowEvery = g.closeShadowHz > 0 ? 1 / g.closeShadowHz : 0;
     this.groundDetail = g.ground;
@@ -566,6 +589,9 @@ export class GameRenderer {
     this.pedestrians.crowd = g.crowd;
     this.weather.drops = Math.round(9000 * g.crowd);
     this.traffic.maxCars = Math.round(360 * g.crowd);
+    this.units.quality = { ...g.units };
+    this.supers.quality = g.units.shields;
+    this.battle.dust = g.units.dust;
   }
 
   /**
@@ -736,7 +762,9 @@ export class GameRenderer {
       this.renderer.toneMappingExposure *= tone.exposure;
     }
     this.terrain.update(this.time, !!this.photo, this.renderer.getPixelRatio());
-    this.buildings.update(l.night, this.camera.position);
+    // Blacked out by a friend's tower (M37): the city's windows go dark, but for a few candles.
+    const dark = this.world.stats.war?.supers?.blackout ? 0.15 : 1;
+    this.buildings.update(l.night * dark, this.camera.position);
     this.civics.update(this.camera.position, this.buildings.range);
     this.vehicles.update(this.world.displayTick);
     this.traffic.night = l.night;
@@ -750,6 +778,7 @@ export class GameRenderer {
     this.railVehicles.update(this.world.displayTick);
     this.crossings.update(this.world.displayTick, this.railVehicles.closed);
     this.ports.update(this.world.displayTick);
+    this.units.update(this.world.displayTick, this.camera.position, l.night);
     this.icons.update(this.time, this.buildings.heights, this.civics.heights);
     this.garbage.update();
     // Small things out of both passes from where they'd be specks (M26): piles of bags a metre
@@ -771,6 +800,8 @@ export class GameRenderer {
       0.35 + 0.65 * l.light,
     );
     this.disasters.update(dt, this.world.displayTick, pxPerMetre, 0.35 + 0.65 * l.light);
+    this.battle.update(this.time, pxPerMetre);
+    this.supers.update(this.time);
     this.camera.position.add(this.disasters.shake);
     // Trees under new buildings: rebuilt at most twice a second.
     if (this.treePoints.length && this.time - this.treeRebuildAt > 0.5) {
@@ -842,6 +873,7 @@ export class GameRenderer {
       buses: this.transit.busCount,
       rail: { ...this.railVehicles.counts },
       ports: { ...this.ports.counts },
+      units: { ...this.units.counts },
       smoke: this.effects.smokeParticles,
     };
   }

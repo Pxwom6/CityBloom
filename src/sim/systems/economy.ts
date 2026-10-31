@@ -29,6 +29,9 @@ import { districtAt, districtFigures } from './districts';
 import { civicDef, civicUpkeep } from '../world/civic';
 import type { DistrictReport } from '../protocol';
 import { formatInt } from '../dmath';
+import { bondRates, forcesUpkeep } from './war';
+import { diplomacyRates } from './diplomacy';
+import { warEconomyRates } from './warEconomy';
 
 export interface Loan {
   id: number;
@@ -51,7 +54,8 @@ export interface MonthReport {
 
 export interface EconomyState {
   taxes: Record<ZoneKey, [number, number, number]>;
-  funding: Record<Dept, number>;
+  /** Funding per department (%); a war-only department (defence) is absent in a peaceful city: 100 %. */
+  funding: Partial<Record<Dept, number>>;
   loans: Loan[];
   /** Integer totals per ledger category for the current month (signed: + income, − expense). */
   month: Record<string, number>;
@@ -64,8 +68,8 @@ export interface EconomyState {
 }
 
 export function defaultEconomy(treasury: number): EconomyState {
-  const funding = {} as Record<Dept, number>;
-  for (const d of DEPTS) funding[d.id] = 100;
+  const funding: Partial<Record<Dept, number>> = {};
+  for (const d of DEPTS) if (!d.war) funding[d.id] = 100;
   return {
     taxes: {
       R: [TAX_DEFAULT, TAX_DEFAULT, TAX_DEFAULT],
@@ -81,6 +85,11 @@ export function defaultEconomy(treasury: number): EconomyState {
     negativeHours: 0,
     bankrupt: false,
   };
+}
+
+/** A department's funding (%): 100 for one the city has never set (defence in a peaceful city). */
+export function fundingPct(e: EconomyState, dept: Dept): number {
+  return e.funding[dept] ?? 100;
 }
 
 /** Book an integer amount to the treasury and the ledger (+ income, − expense). */
@@ -155,7 +164,7 @@ export function districtReports(sim: Sim): DistrictReport[] {
   for (const c of s.civics.values()) {
     const def = civicDef(c);
     const d = districtAt(s.districtCells, c.x, c.z);
-    upkeep.set(d, (upkeep.get(d) ?? 0) + civicUpkeep(c) * (s.economy.funding[def.dept] / 100) * scale);
+    upkeep.set(d, (upkeep.get(d) ?? 0) + civicUpkeep(c) * (fundingPct(s.economy, def.dept) / 100) * scale);
   }
   const people = new Map([...figs].map(([id, f]) => [id, f.population + f.jobs]));
   const everyone = [...people.values()].reduce((a, b) => a + b, 0);
@@ -212,9 +221,9 @@ export function monthlyRates(sim: Sim): Record<string, number> {
     if (deck) roadUpkeep += deck.overWater * perMetre * (BRIDGE.upkeepFactor - 1);
   }
   const scale = sim.upkeepScale();
-  add('roadUpkeep', -roadUpkeep * (e.funding.roads / 100) * scale);
+  add('roadUpkeep', -roadUpkeep * (fundingPct(e, 'roads') / 100) * scale);
   for (const [dept, cost] of Object.entries(sim.departmentUpkeep()))
-    add(`upkeep:${dept}`, -cost * (e.funding[dept as Dept] / 100) * scale);
+    add(`upkeep:${dept}`, -cost * (fundingPct(e, dept as Dept) / 100) * scale);
   for (const [k, v] of Object.entries(specialisationIncome(sim))) add(k, v);
   const deals = regionRates(sim);
   add('imports', deals.imports);
@@ -230,6 +239,21 @@ export function monthlyRates(sim: Sim): Record<string, number> {
     add('loanInterest', -interest);
     add('loanPrincipal', -Math.min(loan.balance, loan.payment - interest));
   }
+  // War (M34): the units' upkeep at the defence funding, and war bond instalments.
+  if (s.war) {
+    add('forces', -forcesUpkeep(sim) * (fundingPct(e, 'defence') / 100) * scale);
+    const bonds = bondRates(sim);
+    add('bondInterest', -bonds.interest);
+    add('bondPrincipal', -bonds.principal);
+    // Diplomacy (M36): tribute, occupied districts' taxes and vassals' dues, in and out.
+    if (s.war.diplomacy || s.region.neighbours.some((n) => n.rival?.vassal)) {
+      let taxes = 0;
+      for (const [k, v] of Object.entries(out)) if (k.startsWith('tax')) taxes += v;
+      for (const [k, v] of Object.entries(diplomacyRates(sim, taxes))) add(k, v);
+    }
+    // The war economy (M38): dividends from stakes, allies' loan instalments and aid sent.
+    if (s.war.economy) for (const [k, v] of Object.entries(warEconomyRates(sim, out))) add(k, v);
+  }
   return out;
 }
 
@@ -240,7 +264,20 @@ export function economyHour(sim: Sim): void {
   if (e.bankrupt) return;
   const rates = monthlyRates(sim);
   for (const k of Object.keys(rates).sort()) {
-    if (k === 'loanPrincipal' || k === 'loanInterest') continue;
+    // Loan and bond instalments are booked by their own hour (they depend on the balance), allies' and
+    // neighbours' too, and so are the munitions sold (the stores have what they have).
+    if (
+      k === 'loanPrincipal' ||
+      k === 'loanInterest' ||
+      k === 'bondPrincipal' ||
+      k === 'bondInterest' ||
+      k === 'allyInterest' ||
+      k === 'allyRepaid' ||
+      k === 'armsSales' ||
+      k === 'lenderInterest' ||
+      k === 'lenderRepaid'
+    )
+      continue;
     accrue(sim, k, rates[k]! / HOURS_PER_DAY);
   }
   // Loans: pay an hourly share of the monthly payment; interest first, then principal.

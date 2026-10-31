@@ -1,3 +1,5 @@
+import { WarRoomButton } from './Military';
+import { RaidChip } from './Battle';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
@@ -107,7 +109,7 @@ export function TopBar() {
           aria-label="More"
           aria-haspopup="true"
           aria-expanded={moreOpen}
-          title="More: city, history, region, advisors, notifications"
+          title={`More: city, history, region, advisors, notifications${game.world.stats.war?.hq != null ? ', war room' : ''}`}
           onClick={() => setMoreOpen(!moreOpen)}
         >
           ⋯
@@ -122,8 +124,10 @@ export function TopBar() {
           <RegionButton />
           <AdvisorsButton />
           <NotificationsButton />
+          <WarRoomButton />
         </div>
       </div>
+      <RaidChip />
       <span class="divider" />
       <button
         class="stat stat-btn stat-date"

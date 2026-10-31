@@ -1,5 +1,14 @@
+import { UNIT } from '../data/war';
 import { roadIslands, type RoadIsland } from './world/islands';
 import { WEATHER_KINDS } from '../data/climate';
+import {
+  queueResearch,
+  researchCheat,
+  researchPointsCheat,
+  startTrial,
+  stopTrial,
+  unqueueResearch,
+} from './systems/research';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { fnv1a } from './hash';
 import { Rng } from './rng';
@@ -19,6 +28,7 @@ import type {
   BuildingData,
   CityStats,
   FrameDiff,
+  ForceData,
   NetDiff,
   NodeData,
   SegmentData,
@@ -203,6 +213,75 @@ import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
+import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
+import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
+import { missionResult, opResolve, spySettling, warClock } from './systems/regionOps';
+import { friendPacts, friendTermsQuery, friendTreaty, friendWar } from './systems/friendsWar';
+import {
+  baseRemoved,
+  bondsHour,
+  cancelTraining,
+  disbandUnit,
+  forceData,
+  issueBond,
+  militaryDetails,
+  repayBond,
+  rivalsMonth,
+  startWar,
+  superReadyCheat,
+  trainUnit,
+  warHour,
+  warSummary,
+  type WarSummary,
+} from './systems/war';
+import {
+  battleLive,
+  battleTick,
+  liveBattleInput,
+  mendUnits,
+  planRaid,
+  raidsHour,
+  raidsTick,
+  resolveBattle,
+  startHomeBattle,
+} from './systems/raids';
+import {
+  battleReport,
+  battleSettling,
+  expeditionsTick,
+  helpEnd,
+  recallForce,
+  sendForce,
+  sendHelp,
+} from './systems/expeditions';
+import {
+  answerProposal,
+  buyBack,
+  declareWar,
+  diplomacyHour,
+  diplomacyMonth,
+  endPact,
+  fallCheat,
+  proposalCheat,
+  propose,
+  setNeutral,
+  withdrawProposal,
+} from './systems/diplomacy';
+import {
+  buyStake,
+  fundAlly,
+  lendAlly,
+  sellStake,
+  sellUnit,
+  setArmsDeal,
+  setSanction,
+  warEconomyHour,
+  warEconomyMonth,
+} from './systems/warEconomy';
+import { answerOffer, offerCheat } from './systems/offers';
+import { awayCity } from './battle/away';
+import type { Battle } from './battle/battle';
+import type { BattleFrame } from './battle/types';
 import { rectsOverlap, type ORect } from './geom';
 import { nameSegments as nameSegmentsIn, namesSeed } from './world/streetNames';
 import {
@@ -211,6 +290,7 @@ import {
   defaultEconomy,
   districtReports,
   economyHour,
+  fundingPct,
   monthlyRates,
   taxPayers,
   repayLoan,
@@ -268,7 +348,47 @@ export type SimEvent = {
     | 'scenarioLost'
     | 'season'
     | 'seasonsNew'
-    | 'weather';
+    | 'weather'
+    // War (M34).
+    | 'unitTrained'
+    | 'bondRepaid'
+    // Battles (M35).
+    | 'raidsOpen'
+    | 'raidWarning'
+    | 'battleStarted'
+    | 'battleEnded'
+    | 'unitLost'
+    | 'superTowed'
+    | 'superReady'
+    | 'domeCharged'
+    | 'domeFell'
+    | 'domeRaised'
+    | 'domePopped'
+    | 'blackoutCharging'
+    | 'blackout'
+    | 'intel'
+    | 'spyLeft'
+    | 'spyHome'
+    | 'enemySpyCaught'
+    | 'sabotaged'
+    | 'rivalTech'
+    | 'forceArrived'
+    | 'forceHome'
+    // Operations between friends and the fair clock (M37).
+    | 'spyArrived'
+    | 'blackoutWarning'
+    | 'blackoutRefused'
+    | 'clockHeld'
+    | 'researchDone'
+    | 'researchWaiting'
+    | 'spinoff'
+    | 'trialRun'
+    | 'trialPassed'
+    | 'expeditionReport'
+    // M39 step 6: a force that went to help a friend's live battle is over with it.
+    | 'helpReport'
+    // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
+    | 'diplomacy';
   id: number;
   /** Extra details for the notification (disaster reports, destroyed buildings). */
   info?: Record<string, number | string>;
@@ -334,6 +454,8 @@ export class Sim {
    */
   static create(opts: Partial<GameOptions> = {}, map: MapData | null = null): Sim {
     const options: GameOptions = { ...DEFAULT_OPTIONS, ...opts };
+    // Rival neighbours (M34) only when on: a peaceful city's options have no such key.
+    if (!options.rivals || options.editor) delete options.rivals;
     if (map) {
       options.seed = map.seed;
       options.preset = map.preset;
@@ -392,6 +514,8 @@ export class Sim {
       builtBy: new Map(),
     };
     const sim = new Sim(state, terrain);
+    // Rival neighbours (M34): the war state, and characters and forces for the computer neighbours.
+    if (options.rivals) startWar(sim);
     // The map editor's city has no roads: the highway and railway entries are the map's own.
     if (options.editor) return sim;
     sim.buildHighway();
@@ -694,7 +818,7 @@ export class Sim {
 
   /** Effectiveness (0..1.25) of a department at its current funding. */
   fundingEff(dept: Dept): number {
-    return fundingEffect(this.state.economy.funding[dept] / 100);
+    return fundingEffect(fundingPct(this.state.economy, dept) / 100);
   }
 
   avgTax(zone: 'R' | 'C' | 'I'): number {
@@ -772,6 +896,33 @@ export class Sim {
 
   private blockedCache: Set<number> | null = null;
   private disastersDirty = true;
+  /** The forces changed (M34): units, training or bonds; the next frame carries the roster. */
+  private warDirty = true;
+  /**
+   * The battle in the city (M35), as it runs: derived from `state.war.battle` (its input and the
+   * steps played), rebuilt after a load; and the frame it showed last.
+   */
+  battleRun: Battle | null = null;
+  battleFrame: BattleFrame | null = null;
+
+  warChanged(): void {
+    this.warDirty = true;
+    this.warStatsAt = -1;
+  }
+
+  /** The forces' figures for the page, worked out at most once a tick (frames ask 20 times a second). */
+  private warStatsAt = -1;
+  private warStatsCache: WarSummary | null = null;
+
+  private warStats(): WarSummary | null {
+    if (!this.state.war) return null;
+    const key = this.state.tick * 1_000_003 + this.log.length;
+    if (this.warStatsAt !== key) {
+      this.warStatsCache = warSummary(this, (c) => extractionPerDay(this, c));
+      this.warStatsAt = key;
+    }
+    return this.warStatsCache;
+  }
 
   /** Roads were damaged, repaired, flooded or drained: routing and everything built on it changes. */
   roadsBlockedChanged(): void {
@@ -970,6 +1121,8 @@ export class Sim {
     const c = this.state.civics.get(id);
     if (!c) return;
     for (const v of [...this.state.vehicles.values()]) if (v.home === id) this.state.vehicles.delete(v.id);
+    // A military base's units are stood down with it (M34).
+    baseRemoved(this, id);
     this.state.civics.delete(id);
     this.coverageCache = null;
     this.transitChanged();
@@ -1135,6 +1288,100 @@ export class Sim {
           }
           return ok(0);
         }
+        if (cmd.cheat === 'researchPoints') {
+          if (!this.testMode) return fail('Test mode only');
+          return researchPointsCheat(this, cmd.points, dryRun);
+        }
+        if (cmd.cheat === 'research') {
+          if (!this.testMode) return fail('Test mode only');
+          return researchCheat(this, cmd.tiers, dryRun);
+        }
+        if (cmd.cheat === 'spyIn') {
+          if (!this.testMode) return fail('Test mode only');
+          return spyInCheat(this, cmd.neighbour, cmd.op, cmd.target, dryRun);
+        }
+        if (cmd.cheat === 'rivalTech') {
+          if (!this.testMode) return fail('Test mode only');
+          return rivalTechCheat(this, cmd.neighbour, cmd.tech, dryRun);
+        }
+        if (cmd.cheat === 'offer') {
+          if (!this.testMode) return fail('Test mode only');
+          return offerCheat(this, cmd.neighbour, cmd.offer, dryRun);
+        }
+        if (cmd.cheat === 'finishStages') {
+          if (!this.testMode) return fail('Test mode only');
+          const c = this.state.civics.get(cmd.civic);
+          if (!c?.build) return fail('That isn’t being built');
+          if (dryRun) return ok(0);
+          delete c.build;
+          this.civicStatusChanged(c.id);
+          this.events.push({ kind: 'projectDone', id: c.id });
+          return ok(0);
+        }
+        if (cmd.cheat === 'superReady') {
+          if (!this.testMode) return fail('Test mode only');
+          const r = superReadyCheat(this, dryRun);
+          if (r.ok && !dryRun) superBuildingsReady(this);
+          return r;
+        }
+        if (cmd.cheat === 'unshield') {
+          if (!this.testMode) return fail('Test mode only');
+          if (!this.state.war) return fail('War is off in this city');
+          if (!dryRun) this.state.war.unshielded = true;
+          return ok(0);
+        }
+        if (cmd.cheat === 'fall') {
+          if (!this.testMode) return fail('Test mode only');
+          return fallCheat(this, cmd.neighbour, dryRun);
+        }
+        if (cmd.cheat === 'proposal') {
+          if (!this.testMode) return fail('Test mode only');
+          return proposalCheat(this, cmd.neighbour, cmd.terms, dryRun);
+        }
+        if (cmd.cheat === 'rival') {
+          if (!this.testMode) return fail('Test mode only');
+          const n = this.state.region.neighbours.find((x) => x.id === cmd.neighbour);
+          if (!n?.rival) return fail('No such rival');
+          if (![cmd.forces, cmd.defences].every((v) => Number.isFinite(v) && v >= 0))
+            return fail('Invalid numbers');
+          if (!dryRun) {
+            n.rival.forces = cmd.forces;
+            n.rival.defences = cmd.defences;
+          }
+          return ok(0);
+        }
+        if (cmd.cheat === 'raidIn') {
+          if (!this.testMode) return fail('Test mode only');
+          const w = this.state.war;
+          if (!w) return fail('War is off in this city');
+          if (w.battle || w.incoming?.length) return fail('A raid is already on its way');
+          const n = this.state.region.neighbours.find(
+            (x) => !!x.rival && !x.player && (cmd.neighbour === undefined || x.id === cmd.neighbour),
+          );
+          if (!n) return fail('No rival neighbour');
+          if (!Number.isFinite(cmd.hours) || cmd.hours < 0) return fail('Invalid hours');
+          if (!dryRun) {
+            const rng = new Rng(w.rng);
+            const raid = planRaid(this, n, n.rival!, rng, Math.max(1, Math.round(cmd.hours)), !!cmd.seat);
+            w.rng = rng.getState();
+            // M37: a force of the test's own choosing (the heaviest battle, measured).
+            if (cmd.units?.length) {
+              raid.units = cmd.units
+                .filter((k) => UNIT.has(k))
+                .slice(0, 24)
+                .map((kind) => ({ kind, hp: 1 }));
+              // Its warning (already given) counts the force it brings now.
+              for (const e of this.events)
+                if (e.kind === 'raidWarning' && e.id === raid.id && e.info) e.info.units = raid.units.length;
+            }
+            if (cmd.hours === 0) {
+              w.incoming = w.incoming!.filter((r) => r !== raid);
+              if (!w.incoming.length) delete w.incoming;
+              startHomeBattle(this, raid);
+            }
+          }
+          return ok(0);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -1194,6 +1441,8 @@ export class Sim {
         return setTax(this, cmd.zone, cmd.wealth, cmd.rate, dryRun);
       }
       case 'setFunding':
+        if (cmd.dept === 'defence' && !this.state.war)
+          return fail('Defence funding is for a city with war on');
         return setFunding(this, cmd.dept, cmd.pct, dryRun);
       case 'takeLoan': {
         const no = scenarioForbids(this, { loan: true });
@@ -1233,6 +1482,126 @@ export class Sim {
       }
       case 'addModule':
         return addModule(this, cmd.civic, cmd.module, dryRun);
+      // War (M34).
+      case 'trainUnit':
+        return trainUnit(this, cmd.base, cmd.kind, dryRun);
+      case 'sendForce':
+        return sendForce(
+          this,
+          cmd.units,
+          cmd.to,
+          cmd.route,
+          cmd.target,
+          cmd.stance,
+          !!cmd.breakPact,
+          dryRun,
+          !!cmd.gate,
+        );
+      case 'recallForce':
+        return recallForce(this, cmd.expedition, dryRun);
+      case 'battleReport':
+        return battleReport(this, cmd.expedition, cmd.result, dryRun);
+      case 'battleSettling':
+        return battleSettling(this, cmd.expedition, cmd.on, dryRun, cmd.force);
+      case 'helpSend':
+        return sendHelp(this, cmd.units, cmd.to, cmd.battle, cmd.route, dryRun);
+      case 'helpEnd':
+        return helpEnd(this, cmd.expedition, cmd.result, dryRun);
+      case 'battleResolve':
+        return resolveBattle(
+          this,
+          cmd.input,
+          cmd.mode,
+          dryRun,
+          cmd.replay,
+          cmd.from,
+          !!cmd.away,
+          !!cmd.super,
+          !!cmd.asFought,
+        );
+      case 'battleLive':
+        return battleLive(this, cmd.id, cmd.allow, cmd.orders, !!cmd.abort, dryRun);
+      case 'cancelTraining':
+        return cancelTraining(this, cmd.order, dryRun);
+      case 'disbandUnit':
+        return disbandUnit(this, cmd.unit, dryRun);
+      case 'issueBond':
+        return issueBond(this, cmd.amount, dryRun);
+      case 'declareWar':
+        return declareWar(this, cmd.neighbour, cmd.scale, cmd.reason, !!cmd.breakPact, dryRun);
+      case 'propose':
+        return propose(this, cmd.neighbour, cmd.terms, cmd.counters, dryRun);
+      case 'answerProposal':
+        return answerProposal(this, cmd.proposal, cmd.accept, dryRun);
+      case 'withdrawProposal':
+        return withdrawProposal(this, cmd.proposal, dryRun);
+      case 'endPact':
+        return endPact(this, cmd.pact, !!cmd.breakPact, dryRun);
+      case 'buyBack':
+        return buyBack(this, cmd.pact, dryRun);
+      case 'setNeutral':
+        return setNeutral(this, cmd.on, dryRun);
+      case 'queueResearch':
+        return queueResearch(this, cmd.key, dryRun);
+      case 'unqueueResearch':
+        return unqueueResearch(this, cmd.key, dryRun);
+      case 'startTrial':
+        return startTrial(this, cmd.ground, cmd.kind, dryRun);
+      case 'stopTrial':
+        return stopTrial(this, cmd.ground, dryRun);
+      case 'setDome':
+        return setDome(this, cmd.mode, dryRun);
+      case 'useBlackout':
+        return useBlackout(this, cmd.neighbour, !!cmd.breakPact, dryRun);
+      case 'spyMission':
+        return spyMission(this, cmd.neighbour, cmd.op, cmd.target, cmd.branch, !!cmd.breakPact, dryRun);
+      case 'spySettling':
+        return spySettling(this, cmd.mission, cmd.on, dryRun);
+      case 'missionResult':
+        return missionResult(this, cmd.mission, cmd.outcome, dryRun, {
+          ...(cmd.stole !== undefined ? { stole: cmd.stole } : {}),
+          ...(cmd.dossier !== undefined ? { dossier: cmd.dossier } : {}),
+          ...(typeof cmd.reason === 'string' ? { reason: cmd.reason } : {}),
+        });
+      case 'opResolve':
+        return opResolve(
+          this,
+          {
+            from: cmd.from,
+            id: cmd.id,
+            op: cmd.op,
+            outcome: cmd.outcome,
+            ...(cmd.target !== undefined ? { target: cmd.target } : {}),
+            late: cmd.late,
+          },
+          dryRun,
+        );
+      case 'warClock':
+        return warClock(this, cmd.cap, dryRun, !!cmd.left);
+      case 'friendWar':
+        return friendWar(this, cmd, dryRun);
+      case 'friendTreaty':
+        return friendTreaty(this, cmd, dryRun);
+      case 'friendPacts':
+        return friendPacts(this, cmd, dryRun);
+      case 'buyStake':
+        return buyStake(this, cmd.neighbour, cmd.share, dryRun);
+      case 'sellStake':
+        return sellStake(this, cmd.neighbour, dryRun);
+      case 'lendAlly':
+        return lendAlly(this, cmd.neighbour, cmd.amount, dryRun);
+      case 'fundAlly':
+        return fundAlly(this, cmd.neighbour, cmd.perMonth, dryRun);
+      case 'setArmsDeal':
+        return setArmsDeal(this, cmd.neighbour, cmd.crates, dryRun);
+      case 'sellUnit':
+        return sellUnit(this, cmd.unit, cmd.neighbour, dryRun);
+      case 'setSanction':
+        return setSanction(this, cmd.neighbour, cmd.on, dryRun);
+      case 'answerOffer':
+        return answerOffer(this, cmd.offer, cmd.accept, dryRun);
+      case 'repayBond':
+        return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
         return createDistrict(this, cmd.name, dryRun);
       case 'paintDistrict':
@@ -1511,6 +1880,8 @@ export class Sim {
       this.markNetworkChanged();
       this.deckCache.clear();
     }
+    // Units and training (M34) came back or went with their base.
+    if (t.ids.units || t.ids.orders) this.warChanged();
     for (const id of t.ids.buildings ?? []) {
       if (this.state.buildings.has(id)) {
         this.removedBuildings.delete(id);
@@ -1600,6 +1971,16 @@ export class Sim {
         projectEvents(this);
         electionsMonth(this);
         regionMonth(this);
+        // Computer neighbours arm (M34), only where war is on.
+        if (s.war) {
+          // The war economy (M38): last month's aid becomes this month's lift, before neighbours arm.
+          warEconomyMonth(this);
+          rivalsMonth(this);
+          // Diplomacy (M36): tribute counted, computer neighbours' proposals and declarations.
+          diplomacyMonth(this);
+          // Intelligence (M37): computer neighbours' tech, and their spies.
+          intelMonth(this);
+        }
         scenarioMonth(this);
         for (const c of s.civics.values()) {
           c.lastDay = c.processedToday;
@@ -1610,6 +1991,11 @@ export class Sim {
     run('vehicles', () => stepVehicles(this));
     run('incidents', () => incidentsTick(this));
     run('disasters', () => disastersTick(this));
+    // Raids on their way and a battle in the city (M35): warnings, arrivals, the battle's steps.
+    if (s.war?.incoming) run('raids', () => raidsTick(this));
+    if (s.war?.battle) run('battle', () => battleTick(this));
+    // Forces away (M35): arrivals and homecomings on the minute, as the war room counts them down.
+    if (s.war?.expeditions) run('expeditions', () => expeditionsTick(this));
     if (t % GROWTH.passInterval === 0) run('growth', () => growthPass(this));
     // Hourly systems, spread over the hour in their usual order (HOURLY_AT).
     const minute = t % TICKS_PER_HOUR;
@@ -1677,6 +2063,19 @@ export class Sim {
           updateDemand(this);
         });
         run('economy', () => economyHour(this));
+        // War (M34): training, readiness, the stores and war bonds, after the money of the hour.
+        if (s.war)
+          run('war', () => {
+            warHour(this, (c) => extractionPerDay(this, c));
+            bondsHour(this);
+            // The war economy (M38): allies' loan instalments, aid counted.
+            warEconomyHour(this);
+            // Raids (M35): the neighbours' decisions; units mend at their bases.
+            raidsHour(this);
+            mendUnits(this);
+            // Diplomacy (M36): wars open, seats of power held, proposals answered.
+            diplomacyHour(this);
+          });
         run('progress', () => {
           specialisationsHour(this);
           progressHour(this);
@@ -1790,6 +2189,7 @@ export class Sim {
             editor: !!this.state.options.editor,
           }
         : null,
+      war: this.warStats(),
     };
   }
 
@@ -1929,7 +2329,13 @@ export class Sim {
       transit: this.transitData(),
       disasters: this.disasterData(),
       districts: this.districtData(),
+      ...(this.state.war ? { forces: this.forceData()! } : {}),
     };
+  }
+
+  /** The forces for the page (M34), or null with war off. */
+  forceData(): ForceData | null {
+    return forceData(this);
   }
 
   /** Districts for the client (M21). */
@@ -2062,6 +2468,7 @@ export class Sim {
     for (const id of n.segments.keys()) this.snowDirty.add(id);
     this.vehiclesDirty = this.trafficDirty = this.transitDirty = true;
     this.districtsDirty = this.disastersDirty = true;
+    this.warDirty = true;
   }
 
   collectFrame(): FrameDiff {
@@ -2153,6 +2560,16 @@ export class Sim {
       frame.disasters = this.disasterData();
       this.disastersDirty = false;
     }
+    if (this.warDirty) {
+      const f = this.forceData();
+      if (f) frame.forces = f;
+      this.warDirty = false;
+    }
+    // A battle on (M35): where everyone is this tick; once more as it ends, then nothing.
+    if (this.state.war?.battle || this.battleFrame) {
+      frame.battle = this.state.war?.battle ? this.battleFrame : null;
+      if (!this.state.war?.battle) this.battleFrame = null;
+    }
     if (this.snowDirty.size) {
       frame.roadSnow = [...this.snowDirty]
         .sort((a, b) => a - b)
@@ -2169,7 +2586,11 @@ export class Sim {
   /** Terrain samples changed by earthworks, for the client (M13). */
   markTerrainDirty(idx: number): void {
     this.dirtyTerrain.add(idx);
+    this.terrainEdits++;
   }
+
+  /** Earthworks this sim has seen, so what's worked out from the ground can be kept until it moves (M37). */
+  terrainEdits = 0;
 
   /**
    * The ground moved inside `box` (earthworks, M13): buildings and civic buildings settle onto it
@@ -2210,6 +2631,8 @@ export class Sim {
         return this.state.builtBy.get(q.id) ?? null;
       case 'regionReport':
         return regionReport(this);
+      case 'friendTerms':
+        return friendTermsQuery(this, q.slot, q.terms, !!q.imposed, q.side ?? 'a');
       case 'hash':
         return this.hash();
       case 'summary':
@@ -2228,6 +2651,12 @@ export class Sim {
         return districtReports(this);
       case 'exportMap':
         return exportMap(this);
+      case 'liveBattle':
+        return liveBattleInput(this, q.call);
+      case 'awayCity': {
+        const e = this.state.war?.expeditions?.find((x) => x.id === q.expedition);
+        return e && e.state === 'fighting' ? awayCity(this, e) : null;
+      }
       case 'overlay':
         return computeOverlay(this, q.map);
       case 'coveragePreview':
@@ -2264,8 +2693,10 @@ export class Sim {
       name: d.name,
       category: d.category,
       blurb: d.blurb,
-      upkeep: Math.round(civicUpkeep(c) * (this.state.economy.funding[d.dept] / 100) * this.upkeepScale()),
-      funding: this.state.economy.funding[d.dept],
+      upkeep: Math.round(
+        civicUpkeep(c) * (fundingPct(this.state.economy, d.dept) / 100) * this.upkeepScale(),
+      ),
+      funding: fundingPct(this.state.economy, d.dept),
       access: !!c.access,
       produces,
       polluted:
@@ -2305,6 +2736,7 @@ export class Sim {
             yesterday: c.lastDay,
           }
         : null,
+      military: d.military ? militaryDetails(this, c) : null,
       project: d.project
         ? {
             stages: d.project.stages.map((st) => ({ ...st })),

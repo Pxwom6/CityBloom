@@ -10,6 +10,8 @@
  * host's browser). Single player never goes through it.
  */
 import type { Command, CommandType } from './commands';
+import { BRANCH_IDS, DOME_MODES, TIER, type TierKey } from '../data/research';
+import { SPY_OPS } from '../data/intel';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
@@ -22,6 +24,9 @@ import { DEAL_RESOURCES } from '../data/region';
 import { TERRAFORM, TERRAFORM_MODES } from '../data/terraform';
 import { MAP_BRUSHES, MAP_EDIT } from '../data/mapEditor';
 import { CLIMATES } from '../data/climate';
+import { UNIT, WAR, type UnitKind } from '../data/war';
+import { cleanTerm, DIPLOMACY, type Term } from '../data/diplomacy';
+import { ARMS, INVEST, LENDING, WAR_AID } from '../data/warEconomy';
 import { MAP_SIZE } from '../data/world';
 
 /**
@@ -37,6 +42,21 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'setMapEntry',
   'setMapInfo',
   'startScenario',
+  'battleReport',
+  'battleSettling',
+  'helpSend',
+  'helpEnd',
+  'battleResolve',
+  'battleLive',
+  // Operations between friends (M37): the region decides them, each city's own page passes it on.
+  'spySettling',
+  'missionResult',
+  'opResolve',
+  'warClock',
+  // Wars and treaties between friends (M39): the same.
+  'friendWar',
+  'friendTreaty',
+  'friendPacts',
 ]);
 
 const DISASTERS = { earthquake: true, tornado: true, flood: true, meteor: true } as const satisfies Record<
@@ -88,6 +108,7 @@ const stroke = (c: Fields): { stroke?: number } | null =>
 const ROADS = BUILDABLE_ROADS as readonly string[];
 const DEPT_IDS = DEPTS.map((d) => d.id) as readonly string[];
 const LOANS = LOAN_OPTIONS.map((l) => l.amount);
+const BONDS = WAR.bonds.map((b) => b.amount);
 const PROMISE_IDS = PROMISES.map((p) => p.id) as readonly string[];
 const MODES = TERRAFORM_MODES.map((m) => m.id) as readonly string[];
 const BRUSHES = MAP_BRUSHES.map((b) => b.id) as readonly string[];
@@ -305,6 +326,142 @@ const CHECKS: Record<CommandType, Check> = {
     isInt(c.civic) && typeof c.module === 'string' && MODULE.has(c.module)
       ? { type: 'addModule', civic: c.civic, module: c.module }
       : BAD,
+  trainUnit: (c) =>
+    isInt(c.base) && typeof c.kind === 'string' && UNIT.has(c.kind as never)
+      ? { type: 'trainUnit', base: c.base, kind: c.kind as Extract<Command, { type: 'trainUnit' }>['kind'] }
+      : BAD,
+  cancelTraining: (c) => (isInt(c.order) ? { type: 'cancelTraining', order: c.order } : BAD),
+  sendForce: (c) =>
+    Array.isArray(c.units) &&
+    c.units.length <= 64 &&
+    c.units.every((u) => isInt(u)) &&
+    isInt(c.to) &&
+    oneOf(c.route, ['highway', 'rail', 'sea', 'air'] as const) &&
+    oneOf(c.target, ['military', 'industry', 'power', 'cityhall'] as const) &&
+    oneOf(c.stance, ['cautious', 'bold'] as const)
+      ? {
+          type: 'sendForce',
+          units: [...(c.units as number[])],
+          to: c.to,
+          route: c.route,
+          target: c.target,
+          stance: c.stance,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+          ...(c.gate === true ? { gate: true } : {}),
+        }
+      : BAD,
+  recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
+  battleReport: () => 'Only your own game reports its battles',
+  battleSettling: () => 'Only your own game reports its battles',
+  helpSend: () => 'Only your own game sends its forces to a friend’s battle',
+  helpEnd: () => 'Only your own game reports its battles',
+  battleResolve: () => 'Only your own game hosts its battles',
+  battleLive: () => 'Only your own game hosts its battles',
+  spySettling: () => 'Only your own game hears from the region',
+  missionResult: () => 'Only your own game hears from the region',
+  opResolve: () => 'Only your own game hears from the region',
+  warClock: () => 'Only your own game hears from the region',
+  friendWar: () => 'Only your own game hears from the region',
+  friendTreaty: () => 'Only your own game hears from the region',
+  friendPacts: () => 'Only your own game hears from the region',
+  disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
+  issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
+  repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),
+  declareWar: (c) =>
+    isInt(c.neighbour) &&
+    oneOf(c.scale, ['war', 'total'] as const) &&
+    typeof c.reason === 'string' &&
+    c.reason.length <= DIPLOMACY.reasonMax
+      ? {
+          type: 'declareWar',
+          neighbour: c.neighbour,
+          scale: c.scale,
+          reason: c.reason,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
+  propose: (c) => {
+    if (!isInt(c.neighbour) || !Array.isArray(c.terms) || c.terms.length > DIPLOMACY.maxTerms) return BAD;
+    const terms = c.terms.map((t) => cleanTerm(t));
+    if (terms.some((t) => !t)) return BAD;
+    if (c.counters !== undefined && !isInt(c.counters)) return BAD;
+    return {
+      type: 'propose',
+      neighbour: c.neighbour,
+      terms: terms as Term[],
+      ...(c.counters !== undefined ? { counters: c.counters as number } : {}),
+    };
+  },
+  answerProposal: (c) =>
+    isInt(c.proposal) && typeof c.accept === 'boolean'
+      ? { type: 'answerProposal', proposal: c.proposal, accept: c.accept }
+      : BAD,
+  withdrawProposal: (c) => (isInt(c.proposal) ? { type: 'withdrawProposal', proposal: c.proposal } : BAD),
+  endPact: (c) =>
+    isInt(c.pact)
+      ? { type: 'endPact', pact: c.pact, ...(c.breakPact === true ? { breakPact: true } : {}) }
+      : BAD,
+  buyBack: (c) => (isInt(c.pact) ? { type: 'buyBack', pact: c.pact } : BAD),
+  setNeutral: (c) => (typeof c.on === 'boolean' ? { type: 'setNeutral', on: c.on } : BAD),
+  queueResearch: (c) =>
+    typeof c.key === 'string' && TIER.has(c.key as TierKey)
+      ? { type: 'queueResearch', key: c.key as TierKey }
+      : BAD,
+  startTrial: (c) =>
+    isInt(c.ground) && typeof c.kind === 'string' && UNIT.has(c.kind as UnitKind)
+      ? { type: 'startTrial', ground: c.ground, kind: c.kind as UnitKind }
+      : BAD,
+  stopTrial: (c) => (isInt(c.ground) ? { type: 'stopTrial', ground: c.ground } : BAD),
+  setDome: (c) => (oneOf(c.mode, DOME_MODES) ? { type: 'setDome', mode: c.mode } : BAD),
+  spyMission: (c) =>
+    isInt(c.neighbour) &&
+    oneOf(c.op, SPY_OPS) &&
+    (c.target === undefined || oneOf(c.target, ['power', 'depot'] as const)) &&
+    (c.branch === undefined || oneOf(c.branch, BRANCH_IDS))
+      ? {
+          type: 'spyMission',
+          neighbour: c.neighbour,
+          op: c.op,
+          ...(c.target !== undefined ? { target: c.target } : {}),
+          ...(c.branch !== undefined ? { branch: c.branch } : {}),
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
+  useBlackout: (c) =>
+    isInt(c.neighbour)
+      ? {
+          type: 'useBlackout',
+          neighbour: c.neighbour,
+          ...(c.breakPact === true ? { breakPact: true } : {}),
+        }
+      : BAD,
+  unqueueResearch: (c) =>
+    typeof c.key === 'string' && TIER.has(c.key as TierKey)
+      ? { type: 'unqueueResearch', key: c.key as TierKey }
+      : BAD,
+  buyStake: (c) =>
+    isInt(c.neighbour) && isInt(c.share, INVEST.step, INVEST.maxShare)
+      ? { type: 'buyStake', neighbour: c.neighbour, share: c.share }
+      : BAD,
+  sellStake: (c) => (isInt(c.neighbour) ? { type: 'sellStake', neighbour: c.neighbour } : BAD),
+  lendAlly: (c) =>
+    isInt(c.neighbour) && oneOf(c.amount, LENDING.amounts)
+      ? { type: 'lendAlly', neighbour: c.neighbour, amount: c.amount }
+      : BAD,
+  fundAlly: (c) =>
+    isInt(c.neighbour) && isInt(c.perMonth, 0, WAR_AID.max)
+      ? { type: 'fundAlly', neighbour: c.neighbour, perMonth: c.perMonth }
+      : BAD,
+  setArmsDeal: (c) =>
+    isInt(c.neighbour) && isInt(c.crates, 0, ARMS.max)
+      ? { type: 'setArmsDeal', neighbour: c.neighbour, crates: c.crates }
+      : BAD,
+  sellUnit: (c) =>
+    isInt(c.unit) && isInt(c.neighbour) ? { type: 'sellUnit', unit: c.unit, neighbour: c.neighbour } : BAD,
+  setSanction: (c) =>
+    isInt(c.neighbour) && isBool(c.on) ? { type: 'setSanction', neighbour: c.neighbour, on: c.on } : BAD,
+  answerOffer: (c) =>
+    isInt(c.offer) && isBool(c.accept) ? { type: 'answerOffer', offer: c.offer, accept: c.accept } : BAD,
 };
 
 /**

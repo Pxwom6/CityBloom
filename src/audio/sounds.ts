@@ -15,7 +15,14 @@ export type SoundName =
   | 'boom'
   | 'fanfare'
   | 'thunder'
-  | 'earth';
+  | 'earth'
+  | 'raid'
+  | 'pop'
+  | 'superRobot'
+  | 'superFortress'
+  | 'superWhale'
+  | 'powerDown'
+  | 'gate';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -199,6 +206,101 @@ export const SOUNDS: Record<
     osc.start(t);
     osc.stop(t + 2.25);
     return t + 2.2;
+  },
+
+  /**
+   * A raid warning (M35): a hand-cranked siren winding slowly up, holding, and winding down, two
+   * voices a little apart, softened so it carries without grating.
+   */
+  raid: (ctx, out, t, v) => {
+    const base = 210 + v * 20;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.8);
+    g.gain.setValueAtTime(0.09, t + 3.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 4.4);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1400;
+    lp.connect(g).connect(out);
+    for (const [type, detune] of [
+      ['square', 0],
+      ['triangle', 1.006],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      const f = osc.frequency;
+      f.setValueAtTime(base * (detune || 1), t);
+      f.exponentialRampToValueAtTime(base * 2.6 * (detune || 1), t + 1.6);
+      f.setValueAtTime(base * 2.6 * (detune || 1), t + 2.8);
+      f.exponentialRampToValueAtTime(base * 1.2 * (detune || 1), t + 4.4);
+      const vg = ctx.createGain();
+      vg.gain.value = type === 'square' ? 0.35 : 0.65;
+      osc.connect(vg).connect(lp);
+      osc.start(t);
+      osc.stop(t + 4.45);
+    }
+    return t + 4.4;
+  },
+
+  /** M37: a giant wind-up robot on its way: a music box's tick-tock and a little tune. */
+  superRobot: (ctx, out, t, v) => {
+    let end = t;
+    for (let k = 0; k < 8; k++)
+      end = tone(ctx, out, t + k * 0.25, {
+        type: 'triangle',
+        f0: k % 2 ? 1320 : 1760 + v * 40,
+        gain: 0.06,
+        dur: 0.05,
+      });
+    for (const [k, f] of [523.25, 659.25, 783.99, 659.25].entries())
+      end = tone(ctx, out, t + 0.1 + k * 0.5, { f0: f * 2, gain: 0.05, dur: 0.45 });
+    return end;
+  },
+
+  /** M37: a sky fortress: a deep drone hum swelling and passing. */
+  superFortress: (ctx, out, t, v) => {
+    tone(ctx, out, t, { type: 'sawtooth', f0: 55 + v * 4, gain: 0.12, attack: 1.2, dur: 3.2, lp: 260 });
+    return tone(ctx, out, t, {
+      type: 'sawtooth',
+      f0: 82.4 + v * 5,
+      gain: 0.08,
+      attack: 1.4,
+      dur: 3.2,
+      lp: 300,
+    });
+  },
+
+  /** M37: a clockwork whale: a foghorn, and its song. */
+  superWhale: (ctx, out, t, v) => {
+    tone(ctx, out, t, { type: 'square', f0: 110 + v * 6, gain: 0.12, attack: 0.15, dur: 1.6, lp: 420 });
+    tone(ctx, out, t + 1.7, { f0: 420, f1: 720, gain: 0.08, attack: 0.3, dur: 0.9 });
+    return tone(ctx, out, t + 2.6, { f0: 720, f1: 350, gain: 0.08, dur: 1.1 });
+  },
+
+  /** M37: a blackout: everything winding down with a whine, and a dull click. */
+  powerDown: (ctx, out, t, v) => {
+    tone(ctx, out, t, { f0: 900 + v * 60, f1: 50, gain: 0.12, dur: 1.8 });
+    return burst(ctx, out, t + 1.75, { colour: 'brown', filter: 'lowpass', f0: 500, gain: 0.2, dur: 0.12 });
+  },
+
+  /** M37: the express gate opening: a rising whoosh with a shimmer. */
+  gate: (ctx, out, t, v) => {
+    burst(ctx, out, t, { colour: 'pink', f0: 300, f1: 3200, q: 1.2, gain: 0.22, attack: 0.9, dur: 1.4 });
+    for (let k = 0; k < 4; k++)
+      tone(ctx, out, t + 0.3 + k * 0.15, {
+        type: 'triangle',
+        f0: 1568 + k * 220 + v * 30,
+        gain: 0.04,
+        dur: 0.3,
+      });
+    return t + 1.4;
+  },
+
+  /** A toy gun's pop in a battle (M35): a short cork-like knock and a little hiss. */
+  pop: (ctx, out, t, v) => {
+    burst(ctx, out, t, { colour: 'brown', filter: 'lowpass', f0: 900 + v * 300, gain: 0.12, dur: 0.12 });
+    return tone(ctx, out, t, { type: 'triangle', f0: 240 + v * 60, f1: 90, gain: 0.14, dur: 0.09 });
   },
 };
 

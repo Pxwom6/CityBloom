@@ -11,8 +11,27 @@
  */
 import type { Stamped } from '../src/sim/lockstep';
 import { PERMISSIONS, type Permission, type SharedRules } from '../src/sim/rules';
+import type { Term } from '../src/data/diplomacy';
 
-export const PROTOCOL_VERSION = 1;
+/**
+ * 2: war (M34): a region's war rules, and the war commands a shared city may carry. 3: battles
+ * between friends (M35). 4: the region's daily raid limit, raids on absent players, diplomacy's
+ * commands in a shared city (M36). 5: spies and blackouts between friends decided by the region,
+ * superweapon battles flagged and counted, research tiers and the fair clock in reports (M37).
+ * 6: live battles between friends, ordered by the region room (M39): `blive`, `bcall`, `binput`,
+ * `bstart`, `bstep`, `ballow`, `bend`, watching, replays and allies' help (`bhelp`: stamped into the
+ * battle's log like an order; `bhelpoff` turns it down); wars and treaties between friends,
+ * kept by the region (M39, design calls 9 and 10): `wdeclare`, `tprop`, `tans`, `tbreak`, `tseen`,
+ * `battleResult` and the room's `war`, `tsign`, `pacts`, `history` (see `FriendsClientMsg`). A region
+ * accepts protocol 5 pages as well (`MIN_REGION_PROTOCOL`): they never get a live or a friends'
+ * message, a live battle against one falls back to the old way and a war against one is refused.
+ * A room (a shared city) is stricter: every player runs the same sim.
+ */
+export const PROTOCOL_VERSION = 6;
+/** The oldest page a region still serves (no live battles for it). */
+export const MIN_REGION_PROTOCOL = 5;
+/** The first protocol with live battles. */
+export const LIVE_PROTOCOL = 6;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -28,6 +47,104 @@ export const SNAPSHOT_PART = 200_000;
 export const MAX_SNAPSHOT_PARTS = 40;
 export const MAX_NAME = 20;
 export const MAX_CHAT = 280;
+
+/**
+ * Live battles (M39, design call 3): what the region room asks of a battle between two players'
+ * cities. The room orders it as a room orders a city: each combatant's page says how far it has run,
+ * and the room lets every page run `lead` steps past the slowest (the frontier, `allow`); an order
+ * is stamped at the frontier and sent to every page. All times are the room's own clock, noticed
+ * when a message reaches it (no timers).
+ */
+export const LIVE = {
+  /**
+   * Steps the frontier runs ahead of the slowest combatant. A step stands for half a game second
+   * (`BATTLE.dt`) and a page runs 16 of them a second at 1× (8 city ticks of 2 steps), so 32 steps are
+   * 2 s of real time at 1× (16 s of game time): a combatant is never held up by the room's reply
+   * unless it takes longer than that, and an order lands about that far ahead of the step both pages
+   * are on.
+   */
+  lead: 32,
+  /** A combatant silent this long (ms) is handed over to the battle's own judgement. */
+  silent: 10_000,
+  /** A battle nobody has spoken in for this long (ms) ends abandoned. */
+  abandon: 60_000,
+  /** A defender has this long (ms) to answer a call, and the attacker's force falls back to the old way. */
+  call: 20_000,
+  /** Live battles in a region at once, calling or running. */
+  sessions: 2,
+  /** Orders a battle's log keeps, with `reserve` of them kept for handovers (the sim takes 256). */
+  maxOrders: 256,
+  reserve: 16,
+  /** Orders in a message, a side's orders at one step, and units an order may name. */
+  perMessage: 4,
+  perStep: 4,
+  units: 64,
+  /** The biggest force a call carries (characters of JSON). */
+  forceChars: 40_000,
+  /** Parts a battle's input may come in (200 KB each; a normal one is one part of about 10 KB). */
+  inputParts: 3,
+  /** Finished battles the region keeps for replays. */
+  replays: 20,
+  /** Watchers (connections) of one battle. */
+  watchers: 8,
+  /**
+   * Allied help (step 6): the forces that may join one battle (the battle takes three), the most units
+   * one sends (a force's cap), the ids its units are numbered in (`helpUnitId`: `helpBase + owner ×
+   * helpIds + k`, a range above any id a city's sim mints, so a helper's unit never shares an id with a
+   * combatant's: the cities' ids are one counter that a grown city takes well past 10,000), and the steps
+   * from the frontier it was stamped at to its arrival by each route: 30 s of play (480 steps at 16 a
+   * second) by road, rail or air, 45 s by sea. A force that could not arrive before the battle's last
+   * step (`lastStep`, the battle's own `maxSteps`) is refused.
+   */
+  helpers: 3,
+  helpUnits: 24,
+  helpBase: 0x4000_0000,
+  helpIds: 10_000,
+  helpTravel: { highway: 480, rail: 480, air: 480, sea: 720 },
+  lastStep: 1_440,
+} as const;
+
+/** The id the city at `slot` gives its `k`th helping unit in a battle (see `LIVE.helpBase`). */
+export const helpUnitId = (slot: number, k: number): number => LIVE.helpBase + slot * LIVE.helpIds + k;
+
+/** Is `id` one the city at `slot` may give a helping unit? */
+export function isHelpUnitId(slot: number, id: unknown): id is number {
+  const lo = helpUnitId(slot, 0);
+  return typeof id === 'number' && Number.isInteger(id) && id >= lo && id < lo + LIVE.helpIds;
+}
+
+/**
+ * Steps from the frontier to a force's arrival by `route`, or null for anything but one of the routes
+ * (an own property: `constructor` or `__proto__` are names an object answers to, not routes).
+ */
+export function helpTravelOf(route: unknown): number | null {
+  return typeof route === 'string' && Object.hasOwn(LIVE.helpTravel, route)
+    ? LIVE.helpTravel[route as keyof typeof LIVE.helpTravel]
+    : null;
+}
+
+/** The pact of mutual aid a city keeps with a friend: an alliance, else a defensive pact, else none. */
+export type AidPact = 'alliance' | 'defensivePact' | null;
+
+/**
+ * Which combatant of a live battle an ally's help fights for, from the pacts it keeps with the attacker
+ * and with the defender (M39 step 6, design call 7): an alliance with either, a defensive pact with the
+ * one attacked. The room decides with it, and the page uses the same rule to know when to offer the
+ * button. `none` says why not: `both` (pacts on both sides: it can't take sides), `attacking` (only a
+ * defensive pact with the attacker, which is for a friend who is attacked) or `nopact`.
+ */
+export function helpSideOf(
+  withAttacker: AidPact,
+  withDefender: AidPact,
+): { side: 0 | 1 } | { none: 'both' | 'attacking' | 'nopact' } {
+  const forAttacker = withAttacker === 'alliance';
+  const forDefender = withDefender !== null;
+  if (forAttacker && forDefender) return { none: 'both' };
+  if (forDefender) return { side: 1 };
+  if (forAttacker) return { side: 0 };
+  return { none: withAttacker === 'defensivePact' ? 'attacking' : 'nopact' };
+}
+
 /** Player colours (an index into this list travels). */
 export const PLAYER_COLORS = [
   '#e4572e',
@@ -540,4 +657,293 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------- wars and treaties between friends
+
+/**
+ * Wars and treaties between friends (M39, design calls 9 and 10): what the region room keeps of them
+ * and the times it counts in. Time is the room's own clock (real time, noticed when a message reaches
+ * it); a game hour is 7.5 s at 1× (the fair clock's pace), so M36's durations, which count game time,
+ * keep their feel (`relay/tests/friendsWar.test.ts` checks the derived ones against `DIPLOMACY`).
+ */
+export const FRIENDS = {
+  /** A game hour in real time at 1× (ms): the fair clock's pace (`FAIR.msPerHour`). */
+  hour: 7_500,
+  /** A game month is a game day: 24 hours. */
+  month: 24 * 7_500,
+  /** From a declaration to the war opening: 2 minutes (design call 9; M36's 12 game hours is 90 s at 1×). */
+  warning: 120_000,
+  /**
+   * After a war ends, no new declaration between the two for M36's three game months: 72 game hours,
+   * 9 minutes at 1×.
+   */
+  cooldown: 3 * 24 * 7_500,
+  /**
+   * A proposal waits for its answer this long (ms): a day of real time. M36's 48 game hours would be
+   * six minutes, too short for a friend who isn't at the computer: the proposal is kept for an absent
+   * player and delivered when they come back.
+   */
+  proposal: 24 * 3_600_000,
+  /**
+   * The winner of a capitulation has this long to impose its terms (ms), then plain peace stands: the
+   * same day (the winner may be away, like a proposal's target); M36's seven game days would be 21 minutes.
+   */
+  terms: 24 * 3_600_000,
+  /** A vassal that rises against its overlord is free when its score in that war reaches this (design call 9). */
+  freeAt: 30,
+  /** Terms in a treaty, and a reason's longest (as M36's). */
+  maxTerms: 8,
+  reasonMax: 80,
+  /**
+   * Proposals waiting for an answer in the region together (a city may have one for each other city:
+   * three at most with four cities).
+   */
+  proposals: 8,
+  /** War events kept (design call 10). */
+  history: 100,
+  /** Signed treaties kept for a city until it has seen them (oldest dropped past this: never reached in play). */
+  queue: 64,
+  /** Proposals answered lately, remembered so one sent again isn't signed twice; battles counted per war. */
+  done: 32,
+  counted: 16,
+  /** A city's diplomatic moves (declarations, proposals, ended pacts): one every few seconds, a few at once. */
+  actEvery: 5_000,
+  actBurst: 6,
+} as const;
+
+/** A war between friends may be fought at any scale the region's rules allow. */
+export type FriendScale = 'skirmish' | 'war' | 'total';
+
+/**
+ * A term in a treaty between friends: M36's terms less those that need a computer town's state
+ * (a demilitarised zone, occupied districts, a liberated town), plus `vassal` (the other city becomes
+ * the proposer's vassal: imposed only, after it capitulated in a total war). `payer` and `side` are
+ * from the point of view of the treaty's `a` (the proposer, or the winner): 'us' is `a`, 'them' is `b`.
+ */
+export type FriendTerm =
+  | Extract<
+      Term,
+      {
+        k:
+          | 'ceasefire'
+          | 'peace'
+          | 'reparations'
+          | 'tribute'
+          | 'nonAggression'
+          | 'alliance'
+          | 'defensivePact'
+          | 'embargo'
+          | 'trade'
+          | 'independence';
+      }
+    >
+  | { k: 'vassal' };
+
+export type FriendWarState = 'declared' | 'open' | 'ceasefire' | 'capitulated' | 'ended';
+
+/** A battle's outcome, as the battle reports it: `raided` is the attacker's win. */
+export type BattleOutcome = 'raided' | 'repelled' | 'withdrew';
+
+/** A war between two cities of the region (slots). The score is from `a`'s side, −100 to 100. */
+export interface FriendWar {
+  id: number;
+  /** The city that declared it, and the other. */
+  a: number;
+  b: number;
+  scale: FriendScale;
+  reason: string;
+  /** When it was declared and when it opens (the room's ms). */
+  declared: number;
+  opens: number;
+  score: number;
+  /** Battles counted. */
+  battles: number;
+  state: FriendWarState;
+  /** Who capitulated (a slot), and when. */
+  capitulated?: { by: number; at: number };
+  /** A vassal's rising against its overlord. */
+  rebellion?: true;
+  /**
+   * Total war: `by` holds the other side's seat of power since `since`; the score was counted to
+   * `scored`. While it stands the score grows by M36's `holdPerHour` for each game hour (7.5 s) it
+   * has held, counted when the room next looks and sent with the war's next message.
+   */
+  hold?: { by: number; since: number; scored: number };
+  /** Under a ceasefire: when it began (the hold and the warning wait for it). */
+  paused?: number;
+  /** The room's tally of the battles counted (`from:id`); not sent. */
+  counted?: string[];
+}
+
+export type PactKind = 'ceasefire' | 'nonAggression' | 'alliance' | 'defensivePact' | 'embargo' | 'trade';
+export const PACT_KINDS: readonly PactKind[] = [
+  'ceasefire',
+  'nonAggression',
+  'alliance',
+  'defensivePact',
+  'embargo',
+  'trade',
+];
+/** Pacts that stand in the way of a war or a raid against the friend they are held with (and of help sent against it). */
+export const BINDING_PACTS: readonly PactKind[] = ['ceasefire', 'nonAggression', 'alliance', 'defensivePact'];
+export const PACT_NAMES: Record<PactKind, string> = {
+  ceasefire: 'ceasefire',
+  nonAggression: 'non-aggression pact',
+  alliance: 'alliance',
+  defensivePact: 'defensive pact',
+  embargo: 'embargo',
+  trade: 'trade agreement',
+};
+
+/** A pact in force between two cities (a ceasefire also pauses its war). */
+export interface FriendPact {
+  id: number;
+  /** The proposer and the other. */
+  a: number;
+  b: number;
+  kind: PactKind;
+  since: number;
+  /** When it ends by itself (a ceasefire, a non-aggression pact). */
+  until?: number;
+  /** A ceasefire's war. */
+  war?: number;
+}
+
+/** `vassal` pays `overlord` this `share` of its taxes each game month, until it is freed. */
+export interface Vassal {
+  vassal: number;
+  overlord: number;
+  since: number;
+  share: number;
+}
+
+export interface FriendProposal {
+  id: string;
+  from: number;
+  to: number;
+  /** From `from`'s point of view: 'us' is `from`. */
+  terms: FriendTerm[];
+  made: number;
+  expires: number;
+}
+
+/** A treaty signed, kept for each of its two cities until it says `tseen`. `a` is the proposer (or the winner). */
+export interface SignedTreaty {
+  id: string;
+  a: number;
+  b: number;
+  terms: FriendTerm[];
+  imposed?: true;
+  at: number;
+}
+
+export type WarEventKind =
+  | 'declared'
+  | 'opened'
+  | 'battle'
+  | 'ceasefire'
+  | 'treaty'
+  | 'capitulated'
+  | 'vassal'
+  | 'freed'
+  | 'hold'
+  | 'broken'
+  | 'ended';
+
+/** One line of the region's war history (design call 10). An event with an id seen again replaces the first. */
+export interface WarEvent {
+  id: number;
+  at: number;
+  kind: WarEventKind;
+  /** The two cities (slots) it concerns. */
+  a: number;
+  b: number;
+  text: string;
+  war?: number;
+  /** A battle (attacker `from`, its id): watch it again from the region's replays if kept. */
+  battle?: { from: number; id: string; live?: true };
+  outcome?: BattleOutcome;
+  /** The war's score from its `a`'s side, after a battle. */
+  score?: number;
+}
+
+/** What a protocol-6 city is told when it joins: the region's wars, pacts and vassals, its own outstanding proposals, and the history. */
+export interface FriendsWelcome {
+  /** The room's clock (ms): the times in the lists are on it. */
+  now: number;
+  wars: FriendWar[];
+  pacts: FriendPact[];
+  vassals: Vassal[];
+  /** The proposals this city has made and not had answered. */
+  proposals: FriendProposal[];
+  /** The last 100 war events, oldest first. */
+  history: WarEvent[];
+}
+
+/** Page → room (protocol 6). */
+export type FriendsClientMsg =
+  /** Declare war on `to`; `breakPact` agrees to break the pacts in the way (a refusal says when there are any). */
+  | { t: 'wdeclare'; to: number; scale: FriendScale; reason: string; breakPact?: true }
+  /** Put terms to `to`; `imposed`: the winner of a capitulated war sets them (signed at once). */
+  | { t: 'tprop'; id: string; to: number; terms: unknown[]; imposed?: true }
+  | { t: 'tans'; id: string; accept: boolean }
+  /** End a pact early. */
+  | { t: 'tbreak'; pact: number }
+  /** A signed treaty has been applied: forget it. */
+  | { t: 'tseen'; id: string }
+  /**
+   * How a battle `from` fought against `to` ended, from `to`'s sim (the defender, whose truth it is for
+   * its city): `decisive` 0–1 (objectives down for an attacker's win, attackers knocked out for a
+   * defender's), `worth` the dollars of its buildings knocked down, `seatDown` its seat of power fell
+   * (a total war's hold), `away` its player wasn't here (no hold starts).
+   */
+  | {
+      t: 'battleResult';
+      id: string;
+      from: number;
+      to: number;
+      outcome: BattleOutcome;
+      decisive?: number;
+      worth?: number;
+      seatDown?: true;
+      away?: true;
+    };
+
+/** Room → page (protocol 6). `at` is the room's clock when it was sent (ms): the times inside are on it. */
+export type FriendsRoomMsg =
+  /** A war's state, to both its cities (and a `notice` to the others). */
+  | { t: 'war'; war: FriendWar; at: number; text?: string }
+  /** A declaration turned down; `breaks`: a pact is in the way (send again with `breakPact` to break it). */
+  | { t: 'wrefused'; to: number; why: string; breaks?: true }
+  /** A proposal for this city to answer (now if it is here, else when it comes back). */
+  | {
+      t: 'tprop';
+      id: string;
+      from: number;
+      to: number;
+      terms: FriendTerm[];
+      made: number;
+      expires: number;
+      at: number;
+    }
+  /** A treaty signed: apply this city's side once, then say `tseen`. Sent again until it does. */
+  | { t: 'tsign'; id: string; a: number; b: number; terms: FriendTerm[]; imposed?: true; at: number }
+  /**
+   * A proposal, an answer or a pact end the region turned down (`id` is the proposal's, or the pact's number
+   * in text), or a proposal that was `declined` or `expired`.
+   */
+  | { t: 'trefused'; id: string; why: string; declined?: true; expired?: true }
+  /** Every pact and vassal in the region, whenever one changes. */
+  | { t: 'pacts'; pacts: FriendPact[]; vassals: Vassal[]; at: number }
+  | { t: 'history'; event: WarEvent }
+  | { t: 'notice'; text: string };
+
+/** The terms of a treaty as the city on side `mine` of it ('a': the proposer) reads them: 'us' is that city. */
+export function termsFor(terms: readonly FriendTerm[], mine: 'a' | 'b'): FriendTerm[] {
+  if (mine === 'a') return terms.map((t) => ({ ...t }));
+  const flip = (p: 'us' | 'them'): 'us' | 'them' => (p === 'us' ? 'them' : 'us');
+  return terms.map((t) =>
+    t.k === 'reparations' || t.k === 'tribute' ? { ...t, payer: flip(t.payer) } : { ...t },
+  );
 }

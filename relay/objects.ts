@@ -46,6 +46,8 @@ export interface SocketTag {
   /** The player or city it speaks for. */
   player?: number;
   slot?: number;
+  /** A region page's protocol (M39: live battles need a page that speaks them), kept through hibernation. */
+  v?: number;
   /** Signalling: the peer's id, and whether it's the host. */
   id?: number;
   host?: boolean;
@@ -61,7 +63,7 @@ export interface HostSocket {
 
 interface Hosted<C> {
   open(conn: C): void;
-  reattach(conn: C, id: number): void;
+  reattach(conn: C, id: number, tag?: SocketTag | null): void;
   message(conn: C, raw: string): void;
   closed(conn: C): void;
   expiresAt(): number | null;
@@ -107,7 +109,7 @@ abstract class ObjectHost<H extends Hosted<C>, C> {
     const h = (this.hosted = this.build(code));
     for (const ws of open) {
       const id = this.idOf(ws.tag());
-      if (id) h.reattach(this.conn(ws), id);
+      if (id) h.reattach(this.conn(ws), id, ws.tag());
       else h.open(this.conn(ws));
     }
     return h;
@@ -208,7 +210,7 @@ export class RegionHost extends ObjectHost<RegionRoom, RegionConn> {
     return {
       send: (m) => ObjectHost.send(ws, m),
       close: (code, reason) => ws.close(code, reason),
-      bind: (slot) => ws.setTag({ ...ws.tag(), slot }),
+      bind: (slot, v) => ws.setTag({ ...ws.tag(), slot, ...(v !== undefined ? { v } : {}) }),
       mayCreate: ws.tag()?.create === true,
     };
   }

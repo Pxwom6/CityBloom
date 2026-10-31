@@ -1,3 +1,4 @@
+import { UNIT, type RegionWarRules, type UnitKind } from './data/war';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -20,6 +21,23 @@ import type { ToolHint, ToolQuestion } from './tools/tool';
 import type { AudioEngine } from './audio/engine';
 import { ambientScene } from './audio/scene';
 import { writeSlot } from './client/saves';
+import { loadWarModels } from './client/models';
+import { formatNumber } from './ui/hooks';
+import {
+  AwayBattles,
+  battlePosted,
+  keepBattle,
+  keepTown,
+  loadBattle,
+  loadTown,
+  unpostedBattles,
+  type BattleRecord,
+} from './client/battles';
+import { LiveBattles } from './client/liveBattles';
+import { BattleMapState } from './client/battleMapState';
+import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
+import type { BattleInput, ForceIn } from './sim/battle/types';
+import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import type { AppInstall } from './client/install';
@@ -27,20 +45,34 @@ import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
-import { barsClass, widthClass } from './ui/layout';
+import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
-import { RegionLink, type CityPort, type RegionLinkOptions } from './net/regionLink';
-import { P2PHost, p2pConnect } from './net/p2p';
+import {
+  RegionLink,
+  raidVerdict,
+  type BattleAnswer,
+  type BattleMeta,
+  type OpOn,
+  type CityPort,
+  type RegionLinkOptions,
+} from './net/regionLink';
+import { P2PHost, p2pConnect, wallClock } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
+import { RegionOps } from './client/ops';
+import { FriendsWarClient } from './client/friendsWar';
+import { RegionReplays } from './client/regionReplays';
+import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
+import { OP_TAKEN } from './sim/systems/regionOps';
+import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
 import { PLAYER_COLORS, type Shape } from '../relay/protocol';
 import type { PresenceMark } from './render/presence';
-import { loadProfile } from './client/profile';
+import { loadProfile, storedProfile } from './client/profile';
 import {
   DRAW_DISTANCE_PARAMS,
   QUALITY_PARAMS,
@@ -48,6 +80,7 @@ import {
   saveSettings,
   type Settings,
 } from './client/settings';
+import { typingIn } from './client/keys';
 
 type Listener = () => void;
 
@@ -89,7 +122,17 @@ function layoutUi(): void {
   if (!ui) return;
   const rem = window.innerWidth / (16 * uiScale);
   ui.dataset.width = widthClass(rem);
-  ui.dataset.bars = barsClass(rem);
+  ui.dataset.bars = barsClassWith(rem, extraTools);
+}
+
+/** Toolbar buttons beyond a peaceful city's (M34: the Military category with war on). */
+let extraTools = 0;
+
+/** Lay the bars out again for a toolbar with `n` extra buttons. */
+export function setExtraTools(n: number): void {
+  if (n === extraTools) return;
+  extraTools = n;
+  layoutUi();
 }
 if (typeof window !== 'undefined') window.addEventListener('resize', layoutUi);
 
@@ -159,6 +202,10 @@ export class Game {
     | 'room'
     /** The map editor's playability check (M24). */
     | 'editorCheck'
+    /** The war room (M34), with a military HQ. */
+    | 'war'
+    /** The battle map (M39): commanding a live battle with a friend, or watching one. */
+    | 'battleMap'
     | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
@@ -185,6 +232,8 @@ export class Game {
   /** Player settings (volumes now; graphics and controls with the game shell). */
   settings: Settings = loadSettings();
   private ambientAt = 0;
+  /** When the forces' colour was last looked up (M34). */
+  private ownerAt = -Infinity;
   /** 'menu': the main menu over a backdrop map; 'play': a city. */
   /** The main menu, a city, or the map editor (M24). */
   mode: 'menu' | 'play' | 'editor' = 'play';
@@ -230,10 +279,28 @@ export class Game {
     readonly install: AppInstall,
   ) {
     install.onChange = () => this.notify();
+    this.wireLive();
     client.onFrame((diff, perf, speed) => {
       this.world.applyFrame(diff);
+      // A city with war on (M34) has the Military category in its toolbar, and the war models.
+      const war = !!diff.stats.war && !this.inMenu();
+      setExtraTools(war ? 1 : 0);
       // The main menu's demo town runs quietly.
       if (diff.events && !this.inMenu()) this.onEvents(diff.events);
+      // A live battle with a friend (M39): this page tells the region how far the battle has got.
+      if (!this.inMenu() && !this.readOnly)
+        this.live.frame(diff.stats.war ?? null, diff.events, this.world.battle);
+      // A friend's raid on the city that ended (M39): the page tells the region how it went.
+      if (diff.events && !this.inMenu() && !this.readOnly) this.friends.events(diff.events);
+      if (diff.battle && !this.inMenu()) this.battleSounds(diff.battle);
+      // Forces arrived at a neighbour's town (M35): this page fights their battles. In a shared city
+      // only the host's page does (a second report would be turned away anyway).
+      const exps = diff.stats.war?.expeditions;
+      if (exps?.length && !this.inMenu() && !this.readOnly && (!this.net || this.net.session.isHost))
+        this.away.check(exps);
+      // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
+      const ops = diff.stats.war?.intel?.regionOps;
+      if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -269,6 +336,10 @@ export class Game {
       void this.refreshAdvice();
       this.checkGuidance();
     }, 2000);
+    // (Frames carry the live battle's reports while the page is in front; this keeps them coming in
+    // a page whose frames the browser slows.)
+    setInterval(() => this.live.pump(), 250);
+    setInterval(() => this.friends.pump(), 1000);
   }
 
   subscribe(l: Listener): () => void {
@@ -449,8 +520,156 @@ export class Game {
   private regionHost: P2PHost | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
+  /** Battles away from the city (M35): fought by this page when the city's forces arrive. */
+  readonly away = new AwayBattles({
+    query: (q) => this.client.query(q),
+    report: async (expedition, result) =>
+      (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
+    tick: () => this.world.stats.tick,
+    changed: () => this.notify(),
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    // Out of touch: waits (its region may come back); in no region at all now: nothing will answer.
+    postBattle: (slot, input, away) =>
+      this.region
+        ? this.region.sendBattle(slot, input, away)
+        : Promise.resolve(
+            this.boundRegion ? null : { kept: false, reason: 'the city is in no region now', again: false },
+          ),
+    // As the region room would decide it (it has the last word, before the city takes anything).
+    mayStrike: (slot) => {
+      const link = this.region;
+      const c = link?.view?.cities.find((x) => x.slot === slot);
+      if (!link?.view || !c) return null;
+      const v = raidVerdict(link.view, link.slot, c, link.atWar.has(c.slot));
+      return v === 'neutral'
+        ? `${c.name} is neutral`
+        : v === 'new'
+          ? `${c.name} is too young or small to raid, unless it strikes first`
+          : v === 'spent'
+            ? `${c.name} has taken the region’s raids for today`
+            : v === 'absent'
+              ? `${c.name}’s player isn’t here, and this region keeps nothing for them`
+              : null;
+    },
+    recall: async (expedition, why) => {
+      await this.dispatch({ type: 'recallForce', expedition });
+      this.notice(`recalled:${expedition}`, `The force turns for home: ${why}.`, 'info');
+    },
+    settle: async (expedition, on, force?: ForceIn) =>
+      (await this.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) })).ok,
+    live: (city, expedition) => this.live.attack(city, expedition),
+  });
+  /** The battle map's state (M39): units chosen, the order waiting for its target, the zoom. */
+  readonly battleMap = new BattleMapState();
+  /**
+   * Live battles with friends (M39): this page's part in a battle the region room orders between two
+   * players' cities, as the defender hosting it in the city's sim or the attacker running it in a worker.
+   */
+  readonly live: LiveBattles = new LiveBattles({
+    now: () => performance.now(),
+    city: {
+      query: (q) => this.client.query(q),
+      preview: (cmd) => this.client.preview(cmd),
+      command: (cmd) => this.client.command(cmd),
+      save: () => this.client.save(),
+      autosave: () => this.saveTo('auto', 'Autosave', true),
+      cityName: () => this.world.stats.cityName,
+      tick: () => this.world.stats.tick,
+      speed: () => this.speed,
+      setSpeed: (speed) => this.setSpeed(speed),
+      notice: (key, text, tone) => this.notice(key, text, tone),
+    },
+    store: { keepTown, keepBattle },
+    runner: (input, on) => this.away.liveRunner(input, on),
+    report: async (expedition, result) =>
+      (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
+    settle: async (expedition, on, force?: ForceIn) =>
+      (await this.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) })).ok,
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+  });
+  /**
+   * Operations against friends' cities (M37): put to the region by this page, their verdicts handed
+   * to the city. Out of touch, they wait; in no region at all, they're turned back (and refunded).
+   */
+  readonly ops = new RegionOps({
+    command: (cmd) => this.dispatch(cmd),
+    post: (op) =>
+      this.region
+        ? this.region.sendOp(op)
+        : Promise.resolve(this.boundRegion ? null : { kept: false, reason: 'the city is in no region now' }),
+    fetchSave: (slot) =>
+      this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    changed: () => this.notify(),
+  });
+  /**
+   * Wars and treaties with friends (M39): this page asks the region for them, mirrors what it says in
+   * the city's sim, and tells it how the city's end of a friend's raid went.
+   */
+  readonly friends: FriendsWarClient = new FriendsWarClient({
+    command: (cmd) => this.client.command(cmd),
+    query: (q) => this.client.query(q),
+    keep: async () => !!(await this.saveTo('auto', 'Autosave', true)),
+    notice: (key, text, tone) => this.notice(key, text, tone),
+    now: () => performance.now(),
+    changed: () => this.notify(),
+  });
+  /**
+   * The region's replays (M39 step 7): which finished live battles it keeps, and getting one ready for
+   * the viewer (the City history panel's Watch buttons).
+   */
+  readonly replays: RegionReplays = new RegionReplays({
+    cityName: () => this.world.stats.cityName,
+    tick: () => this.world.stats.tick,
+    now: () => Date.now(),
+    loadTown,
+    keepTown,
+    keepBattle,
+    changed: () => this.notify(),
+  });
+  /** In the battle viewer, a replay of a live battle: how its run ended against the battle as fought. */
+  replayCheck: { verdict: ReplayVerdict; step: number; want: number } | null = null;
+  /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
+  viewerStart = 0;
+  /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
+  viewing: { record: BattleRecord; back: string | null } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
   boundRegion: RegionBinding | null = null;
+
+  /** What the page does when a live battle (M39) changes: the panels redraw, and the player is told of a battle. */
+  private wireLive(): void {
+    this.live.onChange = () => {
+      // The map closes with the battle it showed when there is nothing left to show.
+      if (this.panel === 'battleMap' && !this.live.view() && !this.live.watchingId()) this.panel = null;
+      this.notify();
+    };
+    this.live.onBegin = (v) => {
+      this.battleMap.forBattle(v.id);
+      const other = v.role === 'attacker' ? v.input.defender.name : v.input.attacker.name;
+      if (v.role === 'attacker')
+        this.notice(
+          `live-begin:${v.id}`,
+          `Your force is fighting in ${other}: a live battle. Command it from the battle map (O).`,
+          'info',
+        );
+      else
+        this.notice(
+          `live-begin:${v.id}`,
+          `${other}’s force is attacking: a live battle. Command your defences from the battle map (O).`,
+          'bad',
+        );
+    };
+    this.live.onSpectacle = (b) => {
+      const name = (slot: number) =>
+        this.region?.view?.cities.find((c) => c.slot === slot)?.name ?? 'A neighbour';
+      this.notice(
+        `live-spectacle:${b.id}`,
+        `${name(b.from)} and ${name(b.to)} are fighting a live battle: you can watch it.`,
+        'info',
+      );
+    };
+  }
 
   /** What a region link needs from this city. */
   private cityPort(): CityPort {
@@ -460,7 +679,98 @@ export class Game {
       save: () => this.client.save(),
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
+      battle: (input, meta) => this.takeBattle(input, meta),
+      op: (o) => this.takeOp(o),
     };
+  }
+
+  /**
+   * An operation a friend's city made against this one, as the region decided it (M37): the city's
+   * own sim takes it once (choosing what a saboteur closes), and the city is saved before the region
+   * is told, so closing the page never loses one.
+   */
+  private async takeOp(o: OpOn): Promise<BattleAnswer> {
+    if (this.readOnly) return 'later';
+    if (!this.region?.view?.cities.some((c) => c.slot === o.from)) return 'refused';
+    const r = await this.client.command({
+      type: 'opResolve',
+      from: o.from,
+      id: o.id,
+      op: o.op,
+      outcome: o.outcome,
+      ...(o.target ? { target: o.target } : {}),
+      late: o.late,
+    });
+    if (!r.ok && r.reason !== OP_TAKEN) return 'refused';
+    return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
+  }
+
+  /**
+   * A battle a friend's city fought against this one (M35): the city as it stands is kept as the
+   * replay's backdrop, then its own sim takes the battle: as it happens while the player is here,
+   * all at once if it was fought while they were away (the report then waits in the war room).
+   * The city is saved before the region is told it has the battle, so closing the page never
+   * loses one; a battle offered again (that word was lost) is known and only acknowledged.
+   */
+  private async takeBattle(input: BattleInput, meta: BattleMeta): Promise<BattleAnswer> {
+    if (this.readOnly) return 'later';
+    // Only from a city of the region, and named as the region names it.
+    const sender = this.region?.view?.cities.find((c) => c.slot === meta.from);
+    if (!sender || typeof input !== 'object' || !input?.attacker) return 'refused';
+    input = { ...input, attacker: { ...input.attacker, name: sender.name } };
+    // Made while the player was away: half the damage, kept that way for the replay (M36).
+    if (meta.away && typeof input.caps === 'object' && input.caps) input = awayCaps(input);
+    const id = `def-${input.id}`.slice(0, 60);
+    // Who sent it (a newcomer or a neutral city refuses friends' raids), and whether the player was
+    // away when it came: then it does half the damage (M36).
+    const cmd = {
+      type: 'battleResolve',
+      input,
+      mode: meta.late ? 'instant' : 'watch',
+      replay: id,
+      from: meta.from,
+      ...(meta.away ? { away: true } : {}),
+      // Counted by the region as bringing a superweapon (M37): the city takes nothing from one not.
+      ...(meta.super ? { super: true } : {}),
+    } as const;
+    const pre = await this.client.preview(cmd);
+    if (!pre.ok) {
+      if (pre.reason === BATTLE_BUSY) return 'later';
+      if (pre.reason === BATTLE_TAKEN)
+        return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
+      return 'refused';
+    }
+    try {
+      const backdrop = await this.client.save();
+      await keepTown(`replay:${id}`, backdrop);
+      await keepBattle({
+        id,
+        city: this.world.stats.cityName,
+        other: input.attacker.name,
+        tick: this.world.stats.tick,
+        input,
+        townKey: `replay:${id}`,
+        savedAt: new Date().toISOString(),
+      });
+    } catch {
+      /* the replay is a nicety: the battle still counts */
+    }
+    const r = await this.client.command(cmd);
+    if (!r.ok) return r.reason === BATTLE_BUSY ? 'later' : 'refused';
+    if (meta.late)
+      this.notice(
+        `late:${id}`,
+        `While you were away, ${input.attacker.name} raided the city${meta.away ? ' (with you away, it did half the damage it could)' : ''}. The war room has the report, and you can watch it.`,
+        'bad',
+      );
+    return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
+  }
+
+  /** Battles against friends' cities the region hasn't confirmed it keeps: sent again (M35). */
+  private async repostBattles(): Promise<void> {
+    const link = this.region;
+    if (!link) return;
+    for (const r of await unpostedBattles()) if (r.postTo !== undefined) link.sendBattle(r.postTo, r.input);
   }
 
   /** A small picture of the city as the camera sees it, for the region view. */
@@ -484,7 +794,7 @@ export class Game {
   }
 
   /** Start a shared region with this city in it (M32), online or from this browser. */
-  async startRegion(kind: 'online' | 'p2p', name: string): Promise<boolean> {
+  async startRegion(kind: 'online' | 'p2p', name: string, rules?: RegionWarRules): Promise<boolean> {
     if (this.region || this.net || this.readOnly) return false;
     const code = makeCode(kind);
     const key = kind === 'p2p' ? makeKey() : null;
@@ -495,13 +805,19 @@ export class Game {
         if (!url) throw new Error("Online regions aren't set up yet: start one on this computer instead");
         connect = () => webSocketLink(`${url}/region/${code}?create=1`);
       } else {
-        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: () => performance.now() });
+        const hub = new RegionRoom(code, 'p2p', new MemoryRegionStore(), { now: wallClock });
         this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
         await this.regionHost.listen();
         const host = this.regionHost;
         connect = () => host.connectSelf();
       }
-      await this.attachRegion(code, key, connect, { create: { name } }, kind === 'p2p');
+      await this.attachRegion(
+        code,
+        key,
+        connect,
+        { create: { name, ...(rules?.war ? { rules } : {}) } },
+        kind === 'p2p',
+      );
       this.toast(
         `Your region is open: code ${formatInvite({ code, key })}. Friends join it with their own cities.`,
         'ok',
@@ -562,12 +878,53 @@ export class Game {
     const link = new RegionLink(this.cityPort(), connect, {
       mayor: profile.name,
       color: profile.color,
+      // The region's fair clock caps the war clock (M37); a test build's spec that fast-forwards its
+      // cities far past the region's 1× pace may turn it off (localStorage `citybloom.fairClock`).
+      ...(IS_TEST_BUILD && fairClockOff() ? { fairClock: false } : {}),
       ...extra,
     });
     this.region = link;
     this.regionCode = code;
     this.regionKey = key;
+    this.live.attach(link);
+    this.friends.attach(link);
+    this.replays.attach(link);
     link.onNotice = (t) => this.toast(t, 'info', 4500);
+    // Battles between friends (M35): sent again until the region keeps them; a friend's force on
+    // its way is announced, with the siren.
+    link.onBattleKept = (id) => void battlePosted(id);
+    // Turned away (M36): a battle reposted from before is not sent again; a force's own battle is
+    // its page's to settle (forgotten, fought again, or asked again later).
+    link.onBattleRefused = (id) =>
+      void loadBattle(id).then((r) => (r && r.expedition === undefined ? battlePosted(id) : undefined));
+    link.onIncoming = ({ from, units, hours, super: sup, gate }) => {
+      const who = link.view?.cities.find((c) => c.slot === from)?.name ?? 'A neighbour';
+      // With a superweapon, or through the express gate (M37), the siren says so.
+      const name = (UNIT.get(sup!)?.name ?? 'superweapon').toLowerCase();
+      const what = sup
+        ? `a ${name}${units > 1 ? ` and ${units - 1} more unit${units === 2 ? '' : 's'}` : ''}`
+        : `${units} unit${units === 1 ? '' : 's'}`;
+      // A superweapon coming: whether the city's dome will rise over the battle.
+      const dome = this.world.stats.war?.supers?.dome;
+      const shield =
+        !sup || !dome
+          ? ''
+          : dome.mode !== 'off' && dome.charge >= 1
+            ? ' The dome shield will rise over the battle.'
+            : dome.mode === 'off'
+              ? ' The dome shield is switched off.'
+              : ` The dome shield is only ${Math.floor(dome.charge * 100)} % charged: it won’t rise.`;
+      this.notice(
+        `incoming:${from}`,
+        (gate
+          ? `Sirens! A gate swirls open on the border: ${who} is sending ${what} through it.`
+          : `Sirens! ${who} is sending ${what} against the city: about ${hours} hours of their time away.`) +
+          shield,
+        'bad',
+      );
+      this.audio?.play('raid');
+    };
+    let welcomed = false;
     // Until it's in, a failure is the caller's to report (one toast, not two).
     let started = false;
     link.onChange = () => {
@@ -580,10 +937,21 @@ export class Game {
           ...(hosted ? { hosted } : {}),
         };
       }
+      // Each time it's in (again), battles the region hasn't confirmed are sent again.
+      if (link.state === 'in' && !welcomed) {
+        welcomed = true;
+        void this.repostBattles();
+      } else if (link.state !== 'in') welcomed = false;
       if (link.state === 'closed' && this.region === link) {
         if (link.error && started) this.toast(link.error, 'bad', 8000);
-        // The region shut for good (its host left it): the city's saves no longer name it (F10).
-        if (link.gone) this.forgetRegion();
+        // The region shut for good (its host left it): the city's saves no longer name it (F10). One
+        // that no longer exists is let go too, if it's the one the city is bound to (M37: its fair
+        // clock would otherwise hold the city's war clock for good).
+        if (
+          link.gone ||
+          (link.missing && this.boundRegion && parseInvite(this.boundRegion.invite)?.code === code)
+        )
+          this.forgetRegion();
         this.leaveRegion(false);
       }
       this.notify();
@@ -599,6 +967,9 @@ export class Game {
     const code = bound ? parseInvite(bound.invite)?.code : null;
     if (bound && code) forgetRegionSecret(code, bound.slot);
     this.boundRegion = null;
+    // A city of its own again: the region's fair clock no longer caps its war clock, and what it
+    // knew of friends there by their places is forgotten (M37).
+    if (this.world.stats.war) void this.dispatch({ type: 'warClock', cap: null, left: true });
   }
 
   leaveRegion(say = true): void {
@@ -606,6 +977,9 @@ export class Game {
     this.region = null;
     this.regionCode = null;
     this.regionKey = null;
+    this.live.detach();
+    this.friends.detach();
+    this.replays.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(
@@ -678,9 +1052,8 @@ export class Game {
     if (!this.pingKey) {
       // Shift+G over the map: "look here" for the others.
       this.pingKey = (e: KeyboardEvent) => {
-        const t = e.target as HTMLElement | null;
         if (e.code !== 'KeyG' || !e.shiftKey || e.metaKey || e.ctrlKey || !this.net || !this.here.at) return;
-        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (typingIn(e)) return;
         this.pingAt({ x: this.here.at[0], z: this.here.at[1] });
       };
       window.addEventListener('keydown', this.pingKey);
@@ -747,8 +1120,52 @@ export class Game {
   }
 
   openPanel(p: Game['panel']): void {
-    this.panel = this.panel === p ? null : p;
+    const was = this.panel;
+    this.panel = was === p ? null : p;
+    // Watching a friend's battle lasts as long as its map is open.
+    if (was === 'battleMap' && this.panel !== 'battleMap') this.live.unwatch();
     this.notify();
+  }
+
+  /**
+   * Open the battle map (M39) on the live battle this page fights, or watches, or fought last: false
+   * when there is none. A narrow window's inspector steps aside for it, as for the war room.
+   */
+  openBattleMap(): boolean {
+    const v = this.live.view();
+    const id = v?.id ?? this.live.watchingId();
+    if (!id) return false;
+    this.battleMap.forBattle(id);
+    if (this.panel !== 'battleMap') {
+      this.openPanel('battleMap');
+      const w = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
+      if (w === 'xs' || w === 's') this.select(null);
+    }
+    return true;
+  }
+
+  /** The battle map's key and buttons: open it, or close it if it is open. */
+  toggleBattleMap(): void {
+    if (this.panel === 'battleMap') this.openPanel('battleMap');
+    else this.openBattleMap();
+  }
+
+  /** Watch a battle between two other cities, from the region (M39): the map opens when the room starts it. */
+  watchLive(id: string): boolean {
+    if (!this.live.watch(id)) return false;
+    this.battleMap.forBattle(id);
+    if (this.panel !== 'battleMap') this.openBattleMap();
+    return true;
+  }
+
+  /**
+   * Open the war room (M34) without closing it if it's open; on a narrow window the inspector
+   * (which covers it) steps aside.
+   */
+  openWarRoom(): void {
+    if (this.panel !== 'war') this.openPanel('war');
+    const w = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
+    if (w === 'xs' || w === 's') this.select(null);
   }
 
   select(sel: Selection | null): void {
@@ -874,6 +1291,44 @@ export class Game {
     }
   }
 
+  private lastPop = 0;
+  private lastBoom = 0;
+
+  /** A battle on screen (M35): a few toy pops for its guns and a boom now and then for its shells. */
+  private battleSounds(f: BattleFrame): void {
+    const now = performance.now();
+    if (f.shots.length && now - this.lastPop > 330) {
+      this.lastPop = now;
+      this.audio?.play('pop');
+    }
+    if (f.shots.some((s) => s.kind === 1 && s.hit) && now - this.lastBoom > 1200) {
+      this.lastBoom = now;
+      this.audio?.play('boom');
+    }
+  }
+
+  /** What a battle in the city left behind (M35). */
+  private battleReport(info: Record<string, number | string>): void {
+    const n = (v: unknown) => Number(v) || 0;
+    const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+    const head =
+      info.outcome === 'repelled'
+        ? `${String(info.from)}'s raid was beaten off`
+        : info.outcome === 'withdrew'
+          ? `${String(info.from)}'s force pulled back`
+          : `${String(info.from)}'s raiders struck their target and left`;
+    const parts: string[] = [];
+    if (n(info.collapsed)) parts.push(`${plural(n(info.collapsed), 'building')} knocked down`);
+    if (n(info.civics)) parts.push(`${plural(n(info.civics), 'city building')} to repair`);
+    if (n(info.lost)) parts.push(`${plural(n(info.lost), 'of our units', 'of our units')} knocked out`);
+    parts.push(`${plural(n(info.theirLost), 'of theirs', 'of theirs')} knocked out`);
+    this.notice(
+      'battleEnded',
+      `${head}: ${parts.join(', ')}. Crews are repairing the damage; the war room has the report.`,
+      info.outcome === 'repelled' ? 'ok' : 'info',
+    );
+  }
+
   /** What a disaster left behind, when it's over. */
   private disasterReport(info: Record<string, number | string>): void {
     const name = { earthquake: 'earthquake', tornado: 'tornado', flood: 'flood', meteor: 'meteor strike' }[
@@ -972,6 +1427,202 @@ export class Game {
         if (text) this.notice('weather', text, 'info', undefined, true);
       } else if (e.kind === 'roadRepaired')
         this.notice('roadRepaired', 'A damaged road reopened.', 'ok', undefined, false);
+      else if (e.kind === 'unitTrained') {
+        // War (M34): a unit finished training at its base.
+        const base = Number(e.info?.base);
+        this.notice(
+          'unitTrained',
+          `${String(e.info?.unit ?? 'A unit')} trained and ready.`,
+          'ok',
+          this.placeOf(base),
+          false,
+        );
+      } else if (e.kind === 'bondRepaid')
+        this.notice('bondRepaid', 'A war bond is repaid in full.', 'ok', undefined, false);
+      // Battles (M35).
+      else if (e.kind === 'raidsOpen')
+        this.notice(
+          'raidsOpen',
+          'The city has grown enough for its rivals to take notice: from now on they may raid it. The war room’s Map tab shows who and how far.',
+          'info',
+        );
+      else if (e.kind === 'raidWarning') {
+        const i = e.info ?? {};
+        const shelter = Number(i.near)
+          ? ` ${formatNumber(Number(i.sheltered))} of the ${formatNumber(Number(i.near))} residents nearby head for the shelters.`
+          : '';
+        this.notice(
+          `raid:${e.id}`,
+          `Sirens! ${String(i.from)} is sending ${String(i.units)} unit${i.units === 1 ? '' : 's'} against the city: they arrive in ${String(i.hours)} hour${i.hours === 1 ? '' : 's'}.${shelter}`,
+          'bad',
+        );
+        this.audio?.play('raid');
+      } else if (e.kind === 'battleStarted') {
+        this.notice(
+          `battle:${e.id}`,
+          `${String(e.info?.from)}'s force has reached the city, and the defences are fighting back.`,
+          'bad',
+        );
+        this.audio?.play('raid');
+      } else if (e.kind === 'battleEnded') {
+        this.checkReplay(e.info ?? {});
+        this.battleReport(e.info ?? {});
+      } else if (e.kind === 'forceArrived')
+        this.notice(
+          `force:${e.id}`,
+          `Our force has reached ${String(e.info?.to)}: the battle is on.`,
+          'info',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'expeditionReport') {
+        const i = e.info ?? {};
+        const lost = Number(i.lost) || 0;
+        const head =
+          i.outcome === 'raided'
+            ? `Our raid on ${String(i.to)} struck home: ${String(i.down)} of their targets knocked out`
+            : i.outcome === 'repelled'
+              ? `Our raid on ${String(i.to)} was beaten off`
+              : `Our force pulled back from ${String(i.to)}`;
+        this.notice(
+          `force:${e.id}`,
+          `${head}${lost ? `, and ${lost} of our units were knocked out` : ''}. The war room has the report.`,
+          i.outcome === 'raided' ? 'ok' : 'info',
+        );
+      } else if (e.kind === 'forceHome')
+        this.notice('forceHome', `Our force is home from ${String(e.info?.from)}.`, 'ok', undefined, false);
+      // Diplomacy (M36): declarations, treaties, pacts, capitulations and conquests.
+      else if (e.kind === 'diplomacy') {
+        const what = String(e.info?.what ?? '');
+        const text = String(e.info?.text ?? '');
+        // The sim says which way news cuts when it can go either way (a hold, terms signed).
+        const tone = e.info?.tone;
+        const bad =
+          tone === 'bad' ||
+          (!tone &&
+            ['declaredOn', 'capitulated', 'fell', 'broken', 'pactsEnded', 'theyBroke'].includes(what));
+        const good =
+          tone === 'good' ||
+          (!tone && ['theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what));
+        // Keyed by its words too: two different notes of a kind (theirs and ours) never merge.
+        this.notice(`dip:${what}:${e.id}:${text}`, text, bad ? 'bad' : good ? 'ok' : 'info');
+        if (what === 'declaredOn' || what === 'fell' || (what === 'hold' && bad)) this.audio?.play('raid');
+      }
+      // Weapon development and intelligence (M37).
+      else if (e.kind === 'researchDone')
+        this.notice(`research:${String(e.info?.key)}`, `Research done: ${String(e.info?.name)}.`, 'ok');
+      else if (e.kind === 'researchWaiting')
+        this.notice('researchWaiting', `The weapons labs are waiting: ${String(e.info?.text)}.`, 'bad');
+      else if (e.kind === 'spinoff')
+        this.notice(
+          `spinoff:${String(e.info?.key)}`,
+          `A civilian spin-off: ${String(e.info?.name)}. The research pays off in the city too.`,
+          'ok',
+        );
+      else if (e.kind === 'trialRun')
+        this.notice(
+          `trial:${e.id}`,
+          `${String(e.info?.name)} trial: run ${String(e.info?.run)} of 3 done.`,
+          'info',
+          this.placeOf(e.id),
+          false,
+        );
+      else if (e.kind === 'trialPassed')
+        this.notice(
+          `trial:${e.id}`,
+          `The ${String(e.info?.name).toLowerCase()} passed its trial: it can be trained now.`,
+          'ok',
+          this.placeOf(e.id),
+        );
+      else if (e.kind === 'superTowed')
+        this.notice(
+          `super:${e.id}`,
+          `Our ${String(UNIT.get(e.info?.kind as UnitKind)?.name ?? 'superweapon').toLowerCase()} was knocked out: it is being towed home, and will wind up again twice as slowly.`,
+          'bad',
+        );
+      else if (e.kind === 'superReady')
+        this.notice(
+          `super:${e.id}`,
+          `The ${String(UNIT.get(e.info?.kind as UnitKind)?.name ?? 'superweapon').toLowerCase()} is wound up and ready.`,
+          'ok',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'domeCharged')
+        this.notice(
+          'dome',
+          'The dome shield is charged: it will rise over the next battle in its mode.',
+          'ok',
+        );
+      else if (e.kind === 'domeRaised') this.notice('dome', 'The dome shield rises over the city!', 'ok');
+      else if (e.kind === 'domePopped') {
+        this.notice('dome', 'The dome shield has popped: it took all it could.', 'bad');
+      } else if (e.kind === 'domeFell')
+        this.notice(
+          'dome',
+          'The blackout drained the dome shield: it will charge again once power is back.',
+          'bad',
+        );
+      else if (e.kind === 'blackoutCharging')
+        this.notice(
+          `blackout:${e.id}`,
+          `The blackout tower is charging at ${String(e.info?.to)}: an hour to go.`,
+          'info',
+        );
+      else if (e.kind === 'blackout') {
+        this.audio?.play('powerDown');
+        this.notice(
+          `blackout:${e.id}`,
+          e.info?.friend
+            ? `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: its power plants falter and its radars give it no warning.`
+            : `${String(e.info?.to)} is blacked out for ${String(e.info?.hours)} hours: no raids or spies from it, and its guns are half-blind.`,
+          'ok',
+        );
+      } else if (e.kind === 'blackoutRefused')
+        this.notice(
+          `blackout:${e.id}`,
+          `The region turned the blackout at ${String(e.info?.to)} away${e.info?.reason ? `: ${String(e.info.reason)}` : ''}. The tower stands ready.`,
+          'bad',
+        );
+      // A friend's blackout tower aimed at the city (M37, step 9): an hour's warning.
+      else if (e.kind === 'blackoutWarning') {
+        if (e.info?.late)
+          this.notice(
+            `blackoutWarning:${e.id}`,
+            `${String(e.info?.by)} aimed a blackout tower at the city while you were away: it has passed.`,
+            'info',
+          );
+        else {
+          this.audio?.play('siren');
+          this.notice(
+            `blackoutWarning:${e.id}`,
+            `${String(e.info?.by)} is charging a blackout tower at the city! In ${String(e.info?.in)} hour${e.info?.in === 1 ? '' : 's'} its power plants falter for ${String(e.info?.hours)} hours, and the radars go dark.`,
+            'bad',
+          );
+        }
+      } else if (e.kind === 'spyArrived')
+        this.notice(
+          `spy:${e.id}`,
+          `Our agent is in ${String(e.info?.to)}: the region decides how it goes.`,
+          'info',
+          undefined,
+          false,
+        );
+      else if (e.kind === 'clockHeld') this.notice('clockHeld', String(e.info?.text), 'info');
+      else if (e.kind === 'intel') {
+        const tone = e.info?.tone;
+        this.notice(
+          `intel:${String(e.info?.text)}`,
+          String(e.info?.text),
+          tone === 'good' ? 'ok' : tone === 'bad' ? 'bad' : 'info',
+        );
+      } else if (e.kind === 'sabotaged') this.audio?.play('raid');
+      else if (e.kind === 'rivalTech')
+        this.notice(
+          `rivalTech:${e.id}`,
+          `${String(e.info?.name)} has better weapons now (tech ${String(e.info?.tech)} of 4): your weapons lab has your neighbours worried.`,
+          'info',
+        );
       else if (e.kind === 'decayed')
         this.notice(
           'decayed',
@@ -1122,6 +1773,7 @@ export class Game {
       cascades: q.cascades,
       ground: q.ground,
       closeShadowHz: q.closeShadowHz,
+      units: q.units,
     });
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;
@@ -1242,6 +1894,13 @@ export class Game {
       return;
     }
     this.leaveRoom(false);
+    // A city in a shared region leaves it as its player does, keeping its place: its last save goes
+    // to the region first, so a friend's raid while it's away is fought in the city as it was left.
+    const link = this.region;
+    if (link) {
+      this.region = null;
+      await Promise.race([link.leave(), new Promise((r) => setTimeout(r, 6000))]);
+    }
     location.href = location.pathname;
   }
 
@@ -1565,6 +2224,95 @@ export class Game {
   }
 
   /** Fly the camera to a spot (advisors, notifications), optionally opening a data map. */
+  /**
+   * Watch a battle fought in a neighbour's town (M35): the city is saved, and the town opens in this
+   * page, read-only, where the battle plays out again. "Back to my city" reopens the save.
+   */
+  async watchBattle(id: string): Promise<void> {
+    // Only when this browser keeps the battle and its town: otherwise there's nothing to show.
+    const rec = await loadBattle(id);
+    if (!rec || (rec.townKey && !(await loadTown(rec.townKey)))) {
+      this.toast('That battle’s replay isn’t kept in this browser.', 'info');
+      return;
+    }
+    const slot = this.slot ?? 'auto';
+    if (!this.readOnly && !(await this.saveTo(slot, undefined, true))) {
+      this.toast('The city couldn’t be saved first, so the battle can’t be shown now.', 'bad');
+      return;
+    }
+    location.href = `${location.pathname}?battle=${encodeURIComponent(id)}&back=${encodeURIComponent(slot)}`;
+  }
+
+  /**
+   * Watch a finished live battle the region keeps (M39 step 7): its record and the town it is shown in
+   * are fetched and kept in this browser, then the battle opens in the viewer as any kept battle does.
+   */
+  async watchReplay(from: number, id: string): Promise<void> {
+    const ref = this.replays.list().find((r) => r.from === from && r.id === id);
+    if (!ref) {
+      this.toast('The region doesn’t keep that battle any more.', 'info');
+      return;
+    }
+    const got = await this.replays.prepare(ref);
+    if (got.ok) await this.watchBattle(got.id);
+    else this.toast(`${got.why}.`, 'info', 6000);
+  }
+
+  /**
+   * A replay's battle ended in the viewer: it has to end where the battle ended when it was fought
+   * (the same step and `hash()`), else it says it differs.
+   */
+  private checkReplay(info: Record<string, number | string>): void {
+    const want = this.viewing?.record.region?.expect;
+    if (!want) return;
+    const step = Number(info.step);
+    this.replayCheck = {
+      verdict: replayVerdict(want, { step, hash: String(info.hash ?? '') }),
+      step,
+      want: want.step,
+    };
+    this.notify();
+  }
+
+  /** Leave a battle being watched for the city it came from. */
+  backToCity(): void {
+    const back = this.viewing?.back;
+    location.href = back ? `${location.pathname}?load=${encodeURIComponent(back)}` : location.pathname;
+  }
+
+  /** Look at the battle in the city (M35): the middle of its units, from far enough to see them. */
+  followBattle(): void {
+    const f = this.world.battle;
+    if (!f?.units.length) {
+      this.openPanel('war');
+      return;
+    }
+    // The attackers still in it (where the fighting is), else whoever is left; the toy units are
+    // small, so close in on the middle of the group nearest its centre.
+    const live = f.units.filter((u) => u.state !== 2);
+    const attackers = live.filter((u) => u.side === 0);
+    const list = attackers.length ? attackers : live.length ? live : f.units;
+    let x = list.reduce((a, u) => a + u.x, 0) / list.length;
+    let z = list.reduce((a, u) => a + u.z, 0) / list.length;
+    const near = [...list].sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+    const core = near.slice(0, Math.max(1, Math.ceil(near.length * 0.6)));
+    x = core.reduce((a, u) => a + u.x, 0) / core.length;
+    z = core.reduce((a, u) => a + u.z, 0) / core.length;
+    const spread = Math.max(...core.map((u) => Math.hypot(u.x - x, u.z - z)));
+    const cur = this.renderer.controller.goal;
+    this.following = 0;
+    this.renderer.controller.setPose(
+      { x, z, distance: Math.min(420, Math.max(120, spread * 1.8 + 80)), yaw: cur.yaw, tilt: cur.tilt },
+      false,
+    );
+  }
+
+  /** Fly to a building or city building by id. */
+  flyToId(id: number): void {
+    const at = this.placeOf(id);
+    if (at) this.flyTo(at);
+  }
+
   flyTo(at: { x: number; z: number }, map?: string): void {
     this.following = 0;
     const cur = this.renderer.controller.goal;
@@ -1612,6 +2360,22 @@ export class Game {
     this.notify();
   }
 
+  /** The war models asked for (phase 5): once, when a city with war on is open. */
+  private warAsked = false;
+
+  /**
+   * A city with war on (rival neighbours, or a region whose rules allow it, M34) fetches the war
+   * models once, when it opens or when war comes on; its military buildings are drawn again with
+   * them when they arrive. A peaceful city, and the main menu, never ask.
+   */
+  private warModels(): void {
+    if (this.warAsked || !this.world.stats?.war) return;
+    this.warAsked = true;
+    void loadWarModels().then(({ models }) => {
+      if (models) this.renderer.civics.redraw((def) => CIVIC.get(def)?.category === 'military');
+    });
+  }
+
   /** Called every animation frame. */
   frame(now: number): void {
     const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
@@ -1630,12 +2394,26 @@ export class Game {
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
     if (this.mode === 'menu') this.renderer.controller.goal.yaw += dt * 0.025;
-    else void this.autosave(now);
+    else {
+      void this.autosave(now);
+      this.warModels();
+    }
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
     this.regionView.update();
     this.editor?.update();
+    // The city's forces wear its player's colour; a shared city's wear the host's, so every player
+    // sees the same (M34). Looked up once a second.
+    if (w.forces && now - this.ownerAt > 1000) {
+      this.ownerAt = now;
+      const host = this.net?.session.players.find((p) => p.host);
+      this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
+    }
     this.renderer.frame(dt);
+    if (this.viewerStart > 0 && --this.viewerStart === 0) {
+      this.setSpeed(1);
+      setTimeout(() => this.followBattle(), 1500);
+    }
     this.labels.update();
     if (this.audio && now - this.ambientAt > 250) {
       this.ambientAt = now;
@@ -1644,5 +2422,14 @@ export class Game {
     const work = performance.now() - t0;
     this.frameMs = this.frameMs * 0.9 + work * 0.1;
     if (this.frameSamples && interval > 0) this.frameSamples.push(interval, work);
+  }
+}
+
+/** A test build's spec may turn the region's fair clock off (M37): it fast-forwards its cities. */
+function fairClockOff(): boolean {
+  try {
+    return localStorage.getItem('citybloom.fairClock') === 'off';
+  } catch {
+    return false;
   }
 }

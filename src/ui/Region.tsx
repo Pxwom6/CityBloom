@@ -7,7 +7,11 @@ import {
   type DealDirection,
   type DealResource,
 } from '../data/region';
-import type { RegionSummary } from '../sim/systems/region';
+import type { RegionSummary, RivalNeighbour } from '../sim/systems/region';
+import type { RegionLink } from '../net/regionLink';
+import { PEACE_RULES, PERSONALITY, WAR_SCALES, WAR_SCALE_NAMES, warRulesText } from '../data/war';
+import { HelpButton } from './Help';
+import { Segmented } from './Shell';
 import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { IconRegion } from './icons';
@@ -235,6 +239,54 @@ function DealRow(props: { n: N; res: DealResource; dir: DealDirection }) {
   );
 }
 
+/** A computer neighbour's character and forces (M34), on its card in a city with war on. */
+function RivalLine({ rival, id }: { rival: RivalNeighbour; id: number }) {
+  const p = PERSONALITY[rival.personality];
+  const mood = rival.relation >= 25 ? 'friendly' : rival.relation <= -25 ? 'hostile' : 'wary';
+  return (
+    <p class="region-rival" data-testid={`neighbour-${id}-rival`} title={p.blurb}>
+      <strong>{p.name}</strong> · forces {Math.round(rival.forces)} · defences {Math.round(rival.defences)} ·{' '}
+      <span class={mood === 'friendly' ? 'pos' : mood === 'hostile' ? 'neg' : 'muted'}>{mood}</span>
+    </p>
+  );
+}
+
+/**
+ * A friend's city in a live battle (M39): the way into the battle map, as a commander if it is this
+ * city's own battle with them, or as a spectator if it is theirs with someone else.
+ */
+function LiveWithFriend({ slot, name }: { slot: number; name: string }) {
+  const game = useGameUpdates(500);
+  const mine = game.live.view();
+  if (mine && mine.role !== 'watcher' && !mine.over && (mine.attacker === slot || mine.defender === slot))
+    return (
+      <p class="region-live" data-testid={`live-with-${slot}`}>
+        Fighting {name} in a live battle.{' '}
+        <button class="btn small" data-testid={`command-live-${slot}`} onClick={() => game.openBattleMap()}>
+          Command
+        </button>
+      </p>
+    );
+  const b = game.live.runningBattles().find((x) => x.from === slot || x.to === slot);
+  if (!b || (mine && !mine.over)) return null;
+  const other = b.from === slot ? b.to : b.from;
+  const who = game.region?.view?.cities.find((c) => c.slot === other)?.name ?? 'someone';
+  return (
+    <p class="region-live" data-testid={`live-at-${slot}`}>
+      Fighting {who} in a live battle.{' '}
+      <button
+        class="btn small"
+        data-testid={`watch-live-${slot}`}
+        title="Watch it on the battle map: you can't give orders"
+        onClick={() => game.watchLive(b.id)}
+      >
+        Watch
+      </button>{' '}
+      <HelpButton battle={b} small />
+    </p>
+  );
+}
+
 function NeighbourCard({ n }: { n: N }) {
   const game = useGameUpdates(500);
   const flows = game.world.stats.region.flows;
@@ -261,6 +313,7 @@ function NeighbourCard({ n }: { n: N }) {
             Played by {pl.mayor}.{' '}
             {(view?.online ?? pl.online) ? 'Playing now.' : 'Away: its last offers stand.'}
           </p>
+          <LiveWithFriend slot={pl.slot} name={n.name} />
           {view?.visitable && game.regionInvite && (
             <a
               class="btn small"
@@ -289,6 +342,7 @@ function NeighbourCard({ n }: { n: N }) {
           {def.blurb} To the {SIDE[n.side] ?? n.side}.
         </p>
       )}
+      {n.rival && <RivalLine rival={n.rival} id={n.id} />}
       {f && (f.in > 0 || f.out > 0 || f.shop > 0) && (
         <p class="region-flow" data-testid={`neighbour-${n.id}-flow`}>
           {f.in > 0 && <>{formatNumber(f.in)} of its people work here. </>}
@@ -366,6 +420,9 @@ export function RegionPanel() {
               the highway; what's sold only ever comes from what you make yourself, once your own homes and
               businesses are served, never from what you buy.
               {t.utilities.power.unserved > 0 ? ' Short of power? A neighbour may sell you some.' : ''}
+              {t.war?.economy
+                ? ' Munitions, units and stakes in a rival’s industry are traded from the war room’s Trade tab.'
+                : ''}
             </p>
             {r.neighbours.map((n) => (
               <NeighbourCard key={n.id} n={n} />
@@ -521,9 +578,69 @@ function SharedRegion() {
           )}
         </div>
       )}
+      <RegionWar link={link} />
       <button class="btn small" data-testid="region-leave" onClick={() => game.leaveRegion()}>
         Leave the region
       </button>
     </section>
+  );
+}
+
+/** The region's war rules (M34): its host sets them; everyone else sees them. */
+function RegionWar({ link }: { link: RegionLink }) {
+  const rules = link.view?.rules ?? PEACE_RULES;
+  const host = link.view?.cities.find((c) => c.slot === (link.view?.host ?? 1))?.name;
+  return (
+    <div class="region-war" data-testid="region-war">
+      <h4>War in the region</h4>
+      {link.isHost ? (
+        <>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={rules.war}
+              data-testid="region-war-on"
+              onChange={(e) => link.setRules({ ...rules, war: (e.target as HTMLInputElement).checked })}
+            />
+            <span>
+              War on <small class="muted">every city raises forces, and they may raid each other</small>
+            </span>
+          </label>
+          {rules.war && (
+            <Segmented
+              value={rules.scale}
+              options={WAR_SCALES}
+              label={(s) => WAR_SCALE_NAMES[s]}
+              testid="region-war-scale"
+              onChange={(scale) => link.setRules({ ...rules, scale })}
+            />
+          )}
+          {rules.war && (
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!rules.supers}
+                data-testid="region-war-supers"
+                onChange={(e) => {
+                  const { supers: _, ...rest } = rules;
+                  link.setRules((e.target as HTMLInputElement).checked ? { ...rest, supers: true } : rest);
+                }}
+              />
+              <span>
+                Superweapons{' '}
+                <small class="muted">
+                  the robot, sky fortress and clockwork whale, the dome, blackout tower and express gate
+                </small>
+              </span>
+            </label>
+          )}
+        </>
+      ) : (
+        <p class="muted" data-testid="region-war-rules">
+          {rules.war ? `War is on: ${warRulesText(rules)}.` : 'War is off.'} {host ?? 'The region’s host'}{' '}
+          sets the rules.
+        </p>
+      )}
+    </div>
   );
 }

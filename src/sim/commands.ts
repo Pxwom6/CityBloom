@@ -1,5 +1,7 @@
 import type { WeatherIntensity, WeatherKind } from '../data/climate';
 import type { DealDirection, DealResource } from '../data/region';
+import type { Branch, DomeMode, TierKey } from '../data/research';
+import type { SabotageTarget, SpyOp } from '../data/intel';
 import type { PromiseId } from '../data/elections';
 import type { RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
@@ -10,7 +12,15 @@ import type { PolicyId } from '../data/policies';
 import type { TerraformMode } from '../data/terraform';
 import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
+import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
+import type { AwayResult, HelpResult } from './systems/expeditions';
+import type { BattleInput, ForceIn } from './battle/types';
+import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
+import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
+import type { UnitKind } from '../data/war';
+import type { DeclaredScale, Term } from '../data/diplomacy';
+import type { FriendPactsIn, FriendTreatyIn, FriendWarFacts } from './systems/friendsWar';
 
 export type ZoneArea = { kind: 'brush'; points: Vec2[]; radius: number } | { kind: 'segment'; id: number };
 export type BulldozeTarget =
@@ -58,6 +68,39 @@ export type Command =
   | { type: 'cheat'; cheat: 'electionIn'; months: number }
   /** Test mode: take the regional rail link away, as an old city whose edge was full had none. */
   | { type: 'cheat'; cheat: 'removeRailLink' }
+  /**
+   * Test mode only (M35): a computer neighbour (the first rival, or `neighbour`) sets off to raid the
+   * city now, arriving in `hours` (0: the battle begins at once).
+   */
+  | {
+      type: 'cheat';
+      cheat: 'raidIn';
+      hours: number;
+      neighbour?: number;
+      seat?: boolean;
+      /** M37: the raiders themselves (a heavy battle staged for measuring), 24 at most. */
+      units?: UnitKind[];
+    }
+  /** Test mode (M36): a computer neighbour puts these terms to the city. */
+  | { type: 'cheat'; cheat: 'proposal'; neighbour: number; terms: Term[] }
+  /** Test mode (M36): the city falls to a computer neighbour at once. */
+  | { type: 'cheat'; cheat: 'fall'; neighbour: number }
+  /** Test mode (M36): friends may raid the city though it's a newcomer. */
+  | { type: 'cheat'; cheat: 'unshield' }
+  /** Test mode (M37): research points poured into the queue, or tiers done at once (scripted tests). */
+  | { type: 'cheat'; cheat: 'researchPoints'; points: number }
+  | { type: 'cheat'; cheat: 'research'; tiers: TierKey[] }
+  /** Test mode (M37): every superweapon wound up at once, and the superweapon buildings charged. */
+  | { type: 'cheat'; cheat: 'superReady' }
+  /** Test mode (M37): a project building's stages done at once. */
+  | { type: 'cheat'; cheat: 'finishStages'; civic: number }
+  /** Test mode (M37): a computer neighbour's spy arrives now; a computer neighbour's tech set. */
+  | { type: 'cheat'; cheat: 'spyIn'; neighbour: number; op: SpyOp; target?: SabotageTarget }
+  | { type: 'cheat'; cheat: 'rivalTech'; neighbour: number; tech: number }
+  /** Test mode (M38): a computer neighbour makes the city an offer of this kind now. */
+  | { type: 'cheat'; cheat: 'offer'; neighbour: number; offer: 'arms' | 'invest' | 'loan' }
+  /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
+  | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */
   | { type: 'disaster'; kind: DisasterKind; at: Vec2; size?: number; heading?: number }
   /** Random disasters on or off. */
@@ -128,7 +171,131 @@ export type Command =
   /** Pay into the shared region's project (M32). */
   | { type: 'contributeProject'; amount: number }
   /** Add a module (extra engines, beds, classrooms, buses...) to a civic building. */
-  | { type: 'addModule'; civic: number; module: string };
+  | { type: 'addModule'; civic: number; module: string }
+  /** War (M34): train a unit at a military building, call training off, or stand a unit down. */
+  | { type: 'trainUnit'; base: number; kind: UnitKind }
+  /** Battles (M35): send a force to raid a neighbour, or call it back before it arrives. */
+  | {
+      type: 'sendForce';
+      units: number[];
+      to: number;
+      route: BattleRoute;
+      target: BattleTarget;
+      stance: Stance;
+      /** Send it even though it breaks a pact (M36; the page asks first). */
+      breakPact?: boolean;
+      /** Through the express gate (M37): there in an hour. */
+      gate?: boolean;
+    }
+  | { type: 'recallForce'; expedition: number }
+  /** The page's account of an expedition's battle, fought in the other town (page only). */
+  | { type: 'battleReport'; expedition: number; result: AwayResult }
+  /** A force's battle with a friend's city is with the region: pinned until it answers (page only, M36). */
+  | { type: 'battleSettling'; expedition: number; on: boolean; force?: ForceIn }
+  /**
+   * Units go to help a friend in a live battle (M39 step 6, page only: the page sends them to the
+   * region room, which decides whether they go in), and what happened to them when it ended (`result`
+   * absent: they never fought, and come home).
+   */
+  | { type: 'helpSend'; units: number[]; to: number; battle: string; route: BattleRoute }
+  | { type: 'helpEnd'; expedition: number; result?: HelpResult }
+  /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
+  | {
+      type: 'battleResolve';
+      input: BattleInput;
+      mode: 'watch' | 'instant' | 'live';
+      replay?: string;
+      /** A friend's city that fought it (its place in the region), and whether the player was away (M36). */
+      from?: number;
+      away?: boolean;
+      /** The region flagged it as bringing a superweapon, and counted it so (M37). */
+      super?: boolean;
+      /**
+       * A replay of a battle others fought (M39 step 7): its course stays exactly as it was fought
+       * whatever the city it is shown in looks like now; only buildings that stand there take damage.
+       */
+      asFought?: boolean;
+    }
+  /**
+   * The region room's word on a live battle this city hosts (M39, page only): its stamped orders not
+   * taken yet, how far the battle may now run, or (`abort`) that it never began.
+   */
+  | { type: 'battleLive'; id: string; allow: number; orders: StampedOrder[]; abort?: boolean }
+  | { type: 'cancelTraining'; order: number }
+  | { type: 'disbandUnit'; unit: number }
+  /** War bonds (M34): borrow from the residents, or pay one off early. */
+  | { type: 'issueBond'; amount: number }
+  | { type: 'repayBond'; id: number }
+  /**
+   * Diplomacy (M36): declare war on a computer neighbour, put terms to it or answer its own, take a
+   * proposal back, end a pact, buy an occupied district back, or stand neutral.
+   */
+  | { type: 'declareWar'; neighbour: number; scale: DeclaredScale; reason: string; breakPact?: boolean }
+  | { type: 'propose'; neighbour: number; terms: Term[]; counters?: number }
+  | { type: 'answerProposal'; proposal: number; accept: boolean }
+  | { type: 'withdrawProposal'; proposal: number }
+  | { type: 'endPact'; pact: number; breakPact?: boolean }
+  | { type: 'buyBack'; pact: number }
+  | { type: 'setNeutral'; on: boolean }
+  /** Weapons research (M37): put a tier in the labs' queue, or take it out. */
+  | { type: 'queueResearch'; key: TierKey }
+  | { type: 'unqueueResearch'; key: TierKey }
+  /** A prototype's trial at a proving ground (M37), or calling it off. */
+  | { type: 'startTrial'; ground: number; kind: UnitKind }
+  | { type: 'stopTrial'; ground: number }
+  /** The superweapon buildings (M37): the dome's mode, and the blackout tower aimed at a rival. */
+  | { type: 'setDome'; mode: DomeMode }
+  | { type: 'useBlackout'; neighbour: number; breakPact?: boolean }
+  /** Send an agent (M37): look round a rival, sabotage its power or depot, or steal its research. */
+  | {
+      type: 'spyMission';
+      neighbour: number;
+      op: SpyOp;
+      target?: SabotageTarget;
+      branch?: Branch;
+      breakPact?: boolean;
+    }
+  /**
+   * Operations between friends (M37, page only): an operation of the city's pinned while the region
+   * decides on it, the region's verdict on it, an operation against the city as the region decided
+   * it, and the cap the region's fair clock puts on the war clock.
+   */
+  | { type: 'spySettling'; mission: number; on: boolean }
+  | {
+      type: 'missionResult';
+      mission: number;
+      outcome: MissionOutcome;
+      stole?: TierKey;
+      dossier?: Dossier;
+      reason?: string;
+    }
+  | ({ type: 'opResolve' } & OpInput)
+  | { type: 'warClock'; cap: number | null; left?: true }
+  /**
+   * Wars and treaties between friends (M39, page only): the region's state of a war with a friend's
+   * city (applied again with every word about it), a treaty it signed (applied once), and the pacts
+   * and vassals it keeps for this city (the mirror holds what the region lists).
+   */
+  | ({ type: 'friendWar' } & FriendWarFacts)
+  | ({ type: 'friendTreaty' } & FriendTreatyIn)
+  | ({ type: 'friendPacts' } & FriendPactsIn)
+  /**
+   * The war economy (M38): buy `share` percent (a multiple of 5) of a computer neighbour's industry
+   * or sell the whole stake; lend an ally money; fund an ally's war `perMonth` dollars (0 stops).
+   */
+  | { type: 'buyStake'; neighbour: number; share: number }
+  | { type: 'sellStake'; neighbour: number }
+  | { type: 'lendAlly'; neighbour: number; amount: number }
+  | { type: 'fundAlly'; neighbour: number; perMonth: number }
+  /**
+   * Arms trade (M38): sell an ally `crates` of munitions a month from the war stores (0 ends the
+   * deal), or one of the city's units outright. Sanctions: put them on a neighbour or lift them.
+   */
+  | { type: 'setArmsDeal'; neighbour: number; crates: number }
+  | { type: 'sellUnit'; unit: number; neighbour: number }
+  | { type: 'setSanction'; neighbour: number; on: boolean }
+  /** Answer a computer neighbour's offer (M38): take it up (`accept`) or turn it down. */
+  | { type: 'answerOffer'; offer: number; accept: boolean };
 
 export type CommandType = Command['type'];
 
@@ -177,6 +344,48 @@ const COMMAND_KINDS = {
   regionUpdate: true,
   contributeProject: true,
   addModule: true,
+  trainUnit: true,
+  sendForce: true,
+  recallForce: true,
+  battleReport: true,
+  battleSettling: true,
+  helpSend: true,
+  helpEnd: true,
+  battleResolve: true,
+  battleLive: true,
+  cancelTraining: true,
+  disbandUnit: true,
+  issueBond: true,
+  repayBond: true,
+  declareWar: true,
+  propose: true,
+  answerProposal: true,
+  withdrawProposal: true,
+  endPact: true,
+  buyBack: true,
+  setNeutral: true,
+  queueResearch: true,
+  unqueueResearch: true,
+  startTrial: true,
+  stopTrial: true,
+  setDome: true,
+  useBlackout: true,
+  spyMission: true,
+  spySettling: true,
+  missionResult: true,
+  opResolve: true,
+  warClock: true,
+  friendWar: true,
+  friendTreaty: true,
+  friendPacts: true,
+  buyStake: true,
+  sellStake: true,
+  lendAlly: true,
+  fundAlly: true,
+  setArmsDeal: true,
+  sellUnit: true,
+  setSanction: true,
+  answerOffer: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

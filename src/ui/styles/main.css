@@ -1534,6 +1534,20 @@ body {
 #ui[data-bars='compact'] .topbar-panels.open {
   display: flex;
 }
+/*
+ * On a phone the bar wraps into rows and the More button sits at the left of the last one: a menu
+ * hung from its right edge ran off the window's left side, with the Region and history buttons out
+ * of reach (M39's narrow check). Under the whole bar instead, centred.
+ */
+#ui[data-bars='compact'] .topbar.rows .topbar-more {
+  position: static;
+}
+#ui[data-bars='compact'] .topbar.rows .topbar-panels {
+  left: var(--space-2);
+  right: var(--space-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
 /* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
 #ui[data-bars='compact'] .more-toggle:has(~ .topbar-panels .badge)::after {
   content: '';
@@ -3637,6 +3651,11 @@ body {
 .friends-help summary {
   cursor: pointer;
   color: var(--color-accent-strong);
+  /* A finger's target: at least 24 px tall (M39's narrow check); the disclosure marker stays. The
+     padding is in rem, so at the smallest interface size (80 %) it is the floor that holds. */
+  padding: 0.3rem 0;
+  min-height: 24px;
+  box-sizing: border-box;
 }
 .friends-help ul {
   margin: 0.4rem 0 0;
@@ -3644,4 +3663,1098 @@ body {
 }
 .friends-help li {
   margin-bottom: 0.3rem;
+}
+
+/* War (M34): the war room, a military building's section in the inspector. */
+.advisors.war-room {
+  width: 27rem;
+}
+.war-room header .war-head {
+  font-size: var(--font-size-sm);
+  margin-left: auto;
+  margin-right: var(--space-2);
+}
+.war-room .tabs {
+  flex-shrink: 0;
+  /* Eight tabs don't fit the panel's width: a second row rather than tabs scrolled out of sight. */
+  flex-wrap: wrap;
+}
+.war-room .tab-body {
+  flex: 1;
+  min-height: 0;
+}
+.war-bar {
+  flex: 1;
+  min-width: 4rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.war-bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-positive);
+}
+.war-bar.warn span {
+  background: var(--color-warning);
+}
+.war-bar.bad span {
+  background: var(--color-negative);
+}
+.war-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.war-row > span:first-child {
+  min-width: 7rem;
+}
+.war-store-name {
+  min-width: 5rem;
+}
+.war-groups {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.war-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: var(--font-size-xs);
+}
+.war-group strong {
+  font-size: var(--font-size-lg);
+}
+.war-group.none {
+  opacity: 0.5;
+}
+.war-base h4,
+.war-rivals h4 {
+  margin: var(--space-2) 0 var(--space-1);
+}
+.war-base .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.war-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+}
+.war-dl dd {
+  margin: 0;
+}
+.war-warn {
+  color: var(--color-negative);
+  font-size: var(--font-size-sm);
+}
+.war-reasons {
+  font-size: var(--font-size-sm);
+  padding-left: var(--space-4);
+}
+.military h3 {
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 var(--space-1);
+}
+.military .btn svg {
+  width: 1rem;
+  height: 1rem;
+  vertical-align: -0.15rem;
+}
+.region-rival {
+  font-size: var(--font-size-sm);
+}
+.region-war {
+  margin: var(--space-3) 0;
+}
+.new-region-war .segmented {
+  margin: var(--space-1) 0 var(--space-2) var(--space-5);
+  /* Inside the card, as wide as it leaves room for (the three scales wrap on a phone). */
+  display: flex;
+  max-width: calc(100% - var(--space-5));
+}
+.new-region-war .segmented button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+#ui[data-width='xs'] .war-room .tab,
+#ui[data-width='s'] .war-room .tab {
+  padding: var(--space-1) var(--space-2);
+}
+#ui[data-width='xs'] .war-groups {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/*
+ * Touch targets (M39's narrow check): on a phone's or a tablet's width a small button, a drop-down, a
+ * text or number field, a slider and the top bar's date and weather are at least 24 px to tap (a finger lands on the button
+ * itself, not its text; the figures stay as they were). A rem is 16 px times the interface size, which
+ * runs down to 80 % (a rem of 12.8 px, so 1.6rem is 20.5 px): the 24 px floor is in px so it holds there.
+ */
+#ui[data-width='xs'] .btn.small {
+  min-height: max(24px, 1.6rem);
+}
+#ui[data-width='xs'] select,
+#ui[data-width='xs'] input[type='text'],
+#ui[data-width='xs'] input[type='number'] {
+  min-height: max(24px, 1.6rem);
+}
+#ui[data-width='xs'] input[type='range'] {
+  min-height: max(24px, 1.6rem);
+}
+#ui[data-width='xs'] .topbar .stat-btn {
+  min-height: max(24px, 1.6rem);
+}
+
+/* Research and intelligence (M37): the branch grid, tiers, chips, prototypes. */
+.research-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+  font-size: var(--font-size-sm);
+  margin: var(--space-1) 0 var(--space-2);
+}
+.research-branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 var(--space-1);
+}
+.research-branch-chip {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.research-branch-chip.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.research-proto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.research-proto .war-bar {
+  flex: 1 1 6rem;
+}
+.research-branch h4 {
+  margin: var(--space-1) 0;
+}
+.research-tier {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  margin-bottom: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.research-tier p {
+  margin: 0;
+}
+.research-tier.done {
+  background: color-mix(in srgb, var(--color-positive) 8%, transparent);
+}
+.research-tier.working {
+  border-color: var(--color-accent);
+}
+.research-tier.locked {
+  opacity: 0.7;
+}
+.research-tier-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+.research-chip {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  font-size: var(--font-size-xs);
+}
+.research-chip.super {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.research-chip.head {
+  font-weight: 600;
+}
+.research-why {
+  font-size: var(--font-size-xs);
+}
+.research-protos {
+  margin: var(--space-2) 0;
+}
+.research-tier .btn {
+  align-self: flex-start;
+}
+.supers-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.supers-slot {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.supers-slot strong {
+  font-size: var(--font-size-sm);
+}
+.supers-slot.ready {
+  border-color: var(--color-positive);
+}
+.supers-slot.off {
+  opacity: 0.55;
+}
+#ui[data-width='xs'] .supers-strip {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Battles (M35): the raid countdown, the battle bar, reports. */
+.raid-chip {
+  background: var(--color-negative);
+  color: #fff;
+  border-color: transparent;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.raid-chip strong {
+  font-variant-numeric: tabular-nums;
+}
+.raid-chip.fighting {
+  animation: raid-pulse 1.4s ease-in-out infinite;
+}
+@keyframes raid-pulse {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .raid-chip.fighting {
+    animation: none;
+  }
+}
+.battle-bar {
+  position: absolute;
+  top: calc(var(--space-6) + 3.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  max-width: min(36rem, calc(100vw - 2rem));
+  pointer-events: auto;
+  font-size: var(--font-size-sm);
+}
+.battle-sides {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.battle-side i {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  vertical-align: -0.05rem;
+}
+.battle-side i.ours {
+  background: var(--color-accent);
+}
+.battle-vs {
+  color: var(--color-text-muted);
+}
+.battle-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.battle-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 7rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.battle-target .bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.battle-target .bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-negative);
+}
+.battle-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.war-reports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.war-report ul {
+  margin: var(--space-1) 0 0;
+  padding-left: 1.1rem;
+}
+.war-report button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.war-send {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.war-send label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.war-send select {
+  max-width: 16rem;
+}
+.war-send-units {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.war-send-unit input {
+  width: 4rem;
+}
+.war-expeditions {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.war-expeditions li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.war-map svg {
+  width: 100%;
+  height: auto;
+}
+.war-map-bg {
+  fill: var(--color-accent-soft);
+}
+.war-map-route {
+  stroke: var(--color-text-muted);
+  stroke-width: 3;
+}
+.war-map-route.front {
+  stroke: var(--color-negative);
+  stroke-dasharray: 6 4;
+}
+.war-map-air {
+  stroke: var(--color-accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.war-map-sea {
+  stroke: var(--color-accent-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 4;
+}
+.war-map-town {
+  fill: #fff;
+  stroke: var(--color-text-muted);
+  stroke-width: 2;
+}
+.war-map-town.rival {
+  stroke: var(--color-negative);
+}
+.war-map-town.mine {
+  fill: var(--color-accent);
+  stroke: var(--color-accent-strong);
+}
+.war-map-name {
+  font-size: 11px;
+  text-anchor: middle;
+  font-weight: 600;
+  fill: currentColor;
+}
+.war-map-note,
+.war-map-hours {
+  font-size: 9px;
+  fill: var(--color-text-muted);
+}
+.war-map-note.town,
+.war-map-front {
+  text-anchor: middle;
+}
+/* Labels keep a halo of the map's colour, so lines running under them don't cut through. */
+.war-map-name,
+.war-map-note,
+.war-map-hours,
+.war-map-front {
+  paint-order: stroke;
+  stroke: var(--color-accent-soft);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.war-map-front {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--color-negative);
+}
+.war-map-token.ours {
+  fill: var(--color-accent);
+}
+.war-map-token.theirs {
+  fill: var(--color-negative);
+}
+/* M37: superweapons on the map, a gate jump, a revealed neighbour, a blacked-out one. */
+.war-map-super {
+  fill: var(--color-accent);
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+.war-map-super.robot line {
+  stroke: var(--color-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.war-map-super.whale {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-dasharray: 3 3;
+}
+.war-map-gate {
+  fill: none;
+  stroke: #8fd7ff;
+  stroke-width: 2;
+  stroke-dasharray: 1 5;
+  stroke-linecap: round;
+}
+.war-map-eye {
+  fill: var(--color-accent);
+  font-size: 11px;
+}
+.war-map-dark {
+  fill: rgba(20, 20, 30, 0.55);
+  stroke: rgba(20, 20, 30, 0.8);
+}
+.war-map-tier-bg {
+  fill: var(--color-border-strong);
+}
+.war-map-tier {
+  fill: var(--color-accent);
+}
+.viewer-bar {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  /* Its own width up to the limit: left at 50% of the window the bar had only the half to the right of the middle. */
+  width: max-content;
+  max-width: min(40rem, calc(100vw - 2rem));
+  pointer-events: auto;
+  font-size: var(--font-size-sm);
+}
+/* The way back keeps its size; it is the text beside it that wraps. */
+.viewer-bar .btn {
+  flex: none;
+  white-space: nowrap;
+}
+/* On a phone the way back goes under the text, as wide as the bar, instead of squeezing it into a column. */
+@media (max-width: 34rem) {
+  .viewer-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Diplomacy (M36): the war room's Diplomacy tab and the fallen city's card. */
+.dip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dip h4 {
+  margin: 0 0 var(--space-1);
+}
+.dip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.dip-war,
+.dip-proposal,
+.dip-neighbour,
+.dip-builder,
+.dip-confirm {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.dip-war + .dip-war,
+.dip-neighbour + .dip-neighbour,
+.dip-proposal + .dip-proposal {
+  margin-top: var(--space-2);
+}
+.dip-war p,
+.dip-proposal p,
+.dip-neighbour p,
+.dip-builder p {
+  margin: 0;
+}
+.dip-proposal ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+/* Friends (M39): their cards, proposals and rows stand apart from each other, whatever follows what. */
+.dip-friends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends > h4,
+.dip-friends h5 {
+  margin: 0;
+}
+.dip-friends [data-testid='dip-fwars'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends [data-testid='dip-friend-rows'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dip-friends .dip-neighbour + .dip-neighbour {
+  margin-top: 0;
+}
+.dip-confirm {
+  border-color: var(--color-negative);
+  background: color-mix(in srgb, var(--color-negative) 8%, transparent);
+}
+.dip-why {
+  color: var(--color-negative);
+  margin: 0;
+}
+.dip-good {
+  color: var(--color-positive);
+}
+.dip-bad,
+.dip-vassal {
+  color: var(--color-negative);
+}
+.dip-score {
+  position: relative;
+  flex: 1;
+  min-width: 6rem;
+  max-width: 10rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+.dip-score-mid {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-text-muted);
+}
+.dip-score-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.dip-score-fill.good {
+  background: var(--color-positive);
+}
+.dip-score-fill.bad {
+  background: var(--color-negative);
+}
+.dip-declare,
+.dip-term {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.dip-declare {
+  flex-direction: column;
+  align-items: stretch;
+}
+.dip-declare label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.dip-term input[type='number'] {
+  width: 6rem;
+}
+.dip-term .btn.icon {
+  margin-left: auto;
+}
+.dip-log {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--font-size-sm);
+}
+.fallen {
+  position: fixed;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  width: min(28rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 30;
+}
+.fallen h2 {
+  margin: 0;
+}
+.fallen p {
+  margin: 0;
+}
+
+/* The battle map (M39): a live battle from above, to command or to watch. */
+.battle-map {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-5));
+  right: var(--space-3);
+  width: min(46rem, calc(100vw - 2 * var(--space-3)));
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 3rem);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: var(--z-panel);
+  font-size: var(--font-size-sm);
+}
+.battle-map header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+.battle-map h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-map-clock {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.battle-map-wait {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.battle-map-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-4) var(--space-2);
+}
+.battle-map-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.battle-map-side i {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.3rem;
+  vertical-align: -0.1rem;
+}
+/* The same marks as on the map: attackers an arrow, defenders a square. */
+.battle-map-side.att i {
+  background: var(--map-attacker);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.battle-map-side.def i {
+  background: var(--map-defender);
+  border-radius: 2px;
+}
+.battle-map-side.ally i {
+  border-radius: 50%;
+}
+.battle-map-detail {
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.battle-map-flag {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.battle-map-flag.over {
+  background: var(--color-accent-soft);
+  font-weight: var(--font-weight-medium);
+}
+.battle-map > * {
+  flex: none;
+}
+/* The picture takes what the rest leaves (at least a small one), whatever the window's height. */
+.battle-map .battle-map-stage {
+  position: relative;
+  flex: 1 1 24rem;
+  min-height: 11rem;
+  margin: 0 var(--space-3);
+}
+.battle-map-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: calc(100% - 2.1rem);
+  background: var(--map-ground);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.battle-map-canvas.armed {
+  cursor: crosshair;
+}
+.battle-map-zoom {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.battle-map-zoom .btn.icon {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+.battle-map-legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding-top: var(--space-1);
+  font-size: var(--font-size-xs);
+}
+.battle-map-flagrow {
+  min-height: 1.9rem;
+}
+.battle-map.watching .battle-map-flagrow {
+  min-height: 0;
+}
+.battle-map-orders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+.battle-map-select,
+.battle-map-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.battle-map-select .btn.small {
+  align-self: center;
+}
+.battle-map-buttons .btn {
+  min-width: 4.5rem;
+  min-height: 1.9rem;
+}
+.battle-map-hint {
+  margin: 0;
+  min-height: 1.35em;
+  color: var(--color-text-muted);
+}
+.battle-map-handed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--color-warning);
+  background: var(--color-surface-sunken);
+}
+.battle-map-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 3.6em;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.battle-map-log li[data-state='stamped'] .battle-map-ack {
+  color: var(--color-positive);
+}
+.battle-map-log li[data-state='unheard'] .battle-map-ack {
+  color: var(--color-negative);
+}
+.live-bar .battle-sides {
+  flex: 1;
+}
+.live-bar {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+.region-live {
+  margin: var(--space-1) 0;
+}
+/* A phone or a small window: a sheet across the width under the top bar. */
+#ui:is([data-width='s'], [data-width='xs']) .battle-map {
+  top: calc(var(--topbar-height) + var(--space-3));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-height: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+#ui:is([data-width='s'], [data-width='xs']) .battle-map .battle-map-stage {
+  flex-basis: 20rem;
+}
+#ui:is([data-width='s'], [data-width='xs']) .battle-map-buttons .btn {
+  flex: 1;
+  min-height: 2.5rem;
+}
+#ui:is([data-width='s'], [data-width='xs']) .battle-map-select .btn.small {
+  min-height: 2.25rem;
+  min-width: 3.5rem;
+}
+#ui:is([data-width='s'], [data-width='xs']) .battle-map-zoom .btn.icon {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+/* Region at war in the City history (M39 step 7): the room's war events as a list, with Watch buttons. */
+.history-views {
+  flex-shrink: 0;
+}
+/* A phone's width: the panel stays inside the window (its list has a Watch button at the edge). */
+.budget.history {
+  max-width: calc(100vw - 2 * var(--space-3));
+}
+.rh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rh-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.rh-city {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.rh-city select {
+  font: inherit;
+  max-width: 11rem;
+}
+.rh-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.rh-day {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.rh-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rh-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto;
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-left: 3px solid transparent;
+  font-size: var(--font-size-sm);
+}
+.rh-row.mine {
+  border-left-color: var(--color-accent);
+}
+.rh-row .when {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.rh-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-width: 0;
+}
+.rh-text {
+  overflow-wrap: anywhere;
+}
+.rh-tag {
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.rh-tag.raided {
+  color: var(--color-negative);
+  border-color: var(--color-negative);
+}
+.rh-tag.repelled {
+  color: var(--color-positive);
+  border-color: var(--color-positive);
+}
+.rh-tag.live {
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+.rh-error {
+  flex-basis: 100%;
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
+}
+.rh-row .btn {
+  white-space: nowrap;
+}
+.viewer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.viewer-check {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.viewer-check.checked {
+  color: var(--color-positive);
+}
+.viewer-check.differs {
+  color: var(--color-warning);
+}
+
+/* Allies sending help into a friend's live battle (M39 step 6): the picker, and how the force is getting on. */
+.help-picker,
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.help-picker {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.help-picker h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.help-picker p {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.help-units {
+  display: grid;
+  gap: var(--space-1);
+}
+.help-unit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.help-unit input {
+  width: 4rem;
+}
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.help-status {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  font-size: var(--font-size-xs);
+}
+.help-status.refused {
+  background: var(--color-surface-sunken);
 }

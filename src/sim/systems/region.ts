@@ -1,3 +1,5 @@
+import type { RivalBlackout } from './supers';
+import type { RivalIntel } from './intel';
 import { WEATHER } from '../../data/climate';
 import {
   DEAL_RESOURCES,
@@ -12,8 +14,18 @@ import {
 import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import type { RegionFlows } from './regionFlows';
-import { civicDef, civicOnline } from '../world/civic';
+import { BERTH_DEPTH, civicDef, civicOnline } from '../world/civic';
 import { seasonAt, type WeatherState } from './weather';
+import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
+import { raidThreat, startWar } from './war';
+import { embargoed, forgetNeighbour, heldBy, monthlyTaxes } from './diplomacy';
+import { DIPLOMACY } from '../../data/diplomacy';
+import { sanctionDrag, sanctionsBetween } from './warEconomy';
+import { BRANCH_IDS, cleanTiers } from '../../data/research';
+import { BATTLE } from '../../data/battle';
+import { MAP_SIZE } from '../../data/world';
+import { tierCounts } from './research';
+import { counterIntel } from './intel';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -41,7 +53,33 @@ export interface PlayerNeighbour {
   shoppers: number;
   /** Playing now (an offline city's last offer stands). */
   online: boolean;
+  /** Its map has a coast a force can come from by sea (M37, from its report). */
+  coast?: boolean;
+  /**
+   * In a region at war (M37, from its report): its research tiers per branch (`BRANCHES` order), so
+   * a theft is refused before an agent leaves, and its counter-intelligence (‰, the war term left
+   * out), for the odds the region rolls a spy against.
+   */
+  tiers?: number[];
+  counter?: number;
+  /**
+   * In a region at war (M36): whether the region would let this city raid it now, as the region
+   * room decides (`open`), or why not: a newcomer that hasn't raided this city lately, neutral, or
+   * raided out for the day.
+   */
+  raid?: RaidVerdict;
+  /**
+   * What this friend pays the city each month as its vassal (M39), as its own report says; the city
+   * counts it only from a friend the region lists as its vassal.
+   */
+  dues?: number;
 }
+
+/** Why a friend's city can't be raided (M36): its own report says so. */
+export type Shield = 'new' | 'neutral';
+/** The region's verdict on raiding a friend's city now (M36). */
+/** `absent`: its player isn't here, in a region on one player's computer (it keeps nothing for them). */
+export type RaidVerdict = 'open' | 'new' | 'neutral' | 'spent' | 'absent';
 
 export interface Neighbour {
   id: number;
@@ -55,6 +93,37 @@ export interface Neighbour {
   trend: number;
   /** Population at the end of each of the last 24 months (oldest first), for the panel's chart. */
   history: number[];
+  /**
+   * A computer neighbour's character and forces in a city with war on (M34); absent otherwise, and
+   * for another player's city.
+   */
+  rival?: RivalNeighbour;
+}
+
+/** A computer neighbour as a rival (M34): its character, its forces and defences, how it feels. */
+export interface RivalNeighbour {
+  personality: Personality;
+  /** Fighting strength of its forces and of its fixed defences (strength points). */
+  forces: number;
+  defences: number;
+  /** Its feelings towards the city, −100 (hostile) to 100 (friendly). */
+  relation: number;
+  /** Other computer neighbours it would stand by (M36): their ids. */
+  allies?: number[];
+  /** Conquered by the city (M36): it pays a fifth of its taxes, and may rise again. */
+  vassal?: { since: number };
+  /**
+   * Held as a subject by this other computer neighbour (M39, scenarios only): it trades with nobody
+   * and helps no one until it is freed (`liberate`, or its overlord's fall).
+   */
+  subjectOf?: number;
+  /** Blacked out by the city's tower (M37): no raids or spies from it meanwhile. */
+  blackout?: RivalBlackout;
+  /** Its weapons tech, 0–4 (M37), and the war-clock hour before which it takes no further step. */
+  tech?: number;
+  techAt?: number;
+  /** What the city's spies know and did there, and what its own spies know of the city (M37). */
+  intel?: RivalIntel;
 }
 
 export interface Deal {
@@ -95,6 +164,11 @@ export interface RegionState {
   nextDeal: number;
   /** The shared region's project (M32), or null when the city isn't in a shared region. */
   project?: RegionProjectState | null;
+  /**
+   * The shared region's war rules (M34), set by its host: present only while they allow war, so a
+   * peaceful city's state has no such key.
+   */
+  rules?: RegionWarRules;
 }
 
 const SIDES: NeighbourSide[] = ['north', 'south', 'west'];
@@ -153,6 +227,8 @@ export function capacity(
       0,
       Math.floor(direction === 'buy' ? n.player.offers.sell[resource] : n.player.offers.buy[resource]),
     );
+  // A town held by another (M39, scenarios) has nothing to trade with the city.
+  if (n.rival?.subjectOf !== undefined && heldBy(sim, n.id)) return 0;
   const per = NEIGHBOUR_KIND[n.kind].per;
   const rate = direction === 'buy' ? per.sell[resource] : per.buy[resource];
   let cap = (rate * n.population) / 1000;
@@ -166,6 +242,18 @@ export function neighbour(sim: Sim, id: number): Neighbour | undefined {
   return sim.state.region.neighbours.find((n) => n.id === id);
 }
 
+/**
+ * Deals with a neighbour can't run while it is under embargo (M36) or sanctions stand between it and
+ * the city (M38): the checks that end them (signing the embargo, putting the sanction on) and
+ * refuse new ones are one thing, and this is the other, so a deal that somehow survives them
+ * delivers nothing and earns nothing.
+ */
+function dealStopped(sim: Sim, neighbourId: number): boolean {
+  return (
+    embargoed(sim, neighbourId) || sanctionsBetween(sim, neighbourId) || heldBy(sim, neighbourId) !== null
+  );
+}
+
 /** Power or water coming in under deals now (what the neighbours can actually send). */
 export function regionImport(sim: Sim, u: 'power' | 'water' | 'sewage'): number {
   if (u === 'sewage') return 0;
@@ -174,7 +262,7 @@ export function regionImport(sim: Sim, u: 'power' | 'water' | 'sewage'): number 
   for (const d of sim.state.region.deals) {
     if (d.resource !== u || d.direction !== 'buy') continue;
     const n = neighbour(sim, d.neighbour);
-    d.delivered = n ? Math.min(d.amount, capacity(sim, n, u, 'buy')) : 0;
+    d.delivered = n && !dealStopped(sim, d.neighbour) ? Math.min(d.amount, capacity(sim, n, u, 'buy')) : 0;
     total += d.delivered;
   }
   return total;
@@ -191,9 +279,10 @@ export function regionExport(sim: Sim, u: 'power' | 'water' | 'sewage', spare: n
   if (!sales.length) return 0;
   const want = sales.map((d) => {
     const n = neighbour(sim, d.neighbour);
+    if (!n || dealStopped(sim, d.neighbour)) return 0;
     // Another player's city signed for it against this city's offer: it takes what it signed for.
-    if (d.remote) return n ? d.amount : 0;
-    return n ? Math.min(d.amount, capacity(sim, n, u, 'sell')) : 0;
+    if (d.remote) return d.amount;
+    return Math.min(d.amount, capacity(sim, n, u, 'sell'));
   });
   const total = want.reduce((a, b) => a + b, 0);
   const k = total > 0 ? Math.min(1, Math.max(0, spare) / total) : 0;
@@ -216,7 +305,10 @@ export function garbageDealsHour(sim: Sim): void {
   const civics = [...s.civics.values()].sort((a, b) => a.id - b.id);
   for (const d of deals) {
     const n = neighbour(sim, d.neighbour);
-    const hourly = n ? Math.min(d.amount, capacity(sim, n, 'garbage', d.direction)) / 24 : 0;
+    const hourly =
+      n && !dealStopped(sim, d.neighbour)
+        ? Math.min(d.amount, capacity(sim, n, 'garbage', d.direction)) / 24
+        : 0;
     let moved = 0;
     if (d.direction === 'buy') {
       // They collect from the landfills at the edge of town: fullest first.
@@ -265,7 +357,12 @@ export function regionMonth(sim: Sim): void {
     }
     const def = NEIGHBOUR_KIND[n.kind];
     n.trend = Math.max(def.trend[0], Math.min(def.trend[1], n.trend + rng.range(-1, 1) * REGION.trendStep));
-    n.population = Math.max(REGION.minPopulation, Math.round(n.population * (1 + n.trend)));
+    // A town the city sanctions (M38) grows more slowly.
+    const drag = sanctionDrag(sim, n.id);
+    n.population = Math.max(
+      REGION.minPopulation,
+      Math.round(n.population * (drag ? 1 + n.trend + drag : 1 + n.trend)),
+    );
     n.history.push(n.population);
     if (n.history.length > 24) n.history.shift();
   }
@@ -305,6 +402,14 @@ export function setDeal(
     if (i >= 0 && apply) deals.splice(i, 1);
     return { ok: true };
   }
+  // A town held by another (M39, scenarios) trades with nobody until it is freed.
+  const holder = heldBy(sim, n.id);
+  if (holder) return { ok: false, reason: `${n.name} is held by ${holder.name} and can’t trade` };
+  // An embargo (M36) stops trade with that neighbour until a treaty resumes it.
+  if (embargoed(sim, n.id)) return { ok: false, reason: `Trade with ${n.name} is under embargo` };
+  // Sanctions (M38) stand in the way of new deals too, from either side.
+  if (sanctionsBetween(sim, n.id))
+    return { ok: false, reason: `Sanctions between the city and ${n.name} stand in the way` };
   if (cap <= 0)
     return {
       ok: false,
@@ -370,6 +475,14 @@ export interface RegionCity {
   jobs: number;
   shoppers: number;
   online: boolean;
+  /** In a region at war (M36): the region's verdict on this city raiding it now. */
+  raid?: RaidVerdict;
+  /** In a region at war (M37): whether its map has a coast, its research tiers, its counter-intelligence. */
+  coast?: true;
+  tiers?: number[];
+  counter?: number;
+  /** What this city pays the one it reports to as its vassal each month (M39): the region passes it to its overlord. */
+  dues?: number;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -384,6 +497,8 @@ export interface RegionUpdate {
   cities: RegionCity[];
   contracts: RegionContract[];
   project: Omit<RegionProjectState, 'mine'> | null;
+  /** The region's war rules (M34); none from an older region: peace. */
+  rules?: RegionWarRules;
 }
 
 /**
@@ -396,6 +511,10 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
   for (const c of [...u.cities].sort((a, b) => a.slot - b.slot)) {
     const n = r.neighbours.find((x) => x.player?.slot === c.slot) ?? r.neighbours.find((x) => !x.player);
     if (!n) continue;
+    // A friend's city isn't a computer rival: its war stance is its own, and whatever the city had
+    // with the town it replaces ends (M36).
+    if (n.rival) forgetNeighbour(sim, n.id);
+    delete n.rival;
     n.name = c.name;
     n.kind = c.kind;
     n.population = Math.max(0, Math.round(c.population));
@@ -408,6 +527,28 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       jobs: Math.max(0, c.jobs),
       shoppers: Math.max(0, c.shoppers),
       online: c.online,
+      ...(c.raid === 'open' ||
+      c.raid === 'new' ||
+      c.raid === 'neutral' ||
+      c.raid === 'spent' ||
+      c.raid === 'absent'
+        ? { raid: c.raid }
+        : {}),
+      // War (M37): a coast to sail to, its tiers (a theft needs one further on) and its guard.
+      ...(c.coast === true ? { coast: true } : {}),
+      ...(cleanTiers(c.tiers) ? { tiers: [...c.tiers!] } : {}),
+      ...(typeof c.counter === 'number' && Number.isInteger(c.counter) && c.counter >= 0 && c.counter <= 1000
+        ? { counter: c.counter }
+        : {}),
+      // Vassalage (M39): what this friend says it pays the city, within what its people could pay.
+      ...(typeof c.dues === 'number' && c.dues > 0 && Number.isFinite(c.dues)
+        ? {
+            dues: Math.min(
+              Math.round(c.dues),
+              Math.round(n.population * DIPLOMACY.neighbourTaxPerResident * DIPLOMACY.vassal.taxShare * 3),
+            ),
+          }
+        : {}),
     };
   }
   // The other cities' deals with this one: replaced as a whole with each update.
@@ -431,6 +572,13 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
   }
   r.deals = keep;
   r.project = u.project ? { ...u.project, mine: r.project?.mine ?? 0 } : null;
+  // War (M34): the region's host turns it on, and the city raises forces. Turned off again, the
+  // city keeps what it built and trained, but can't fight (later milestones say what that means).
+  const rules = u.rules ? cleanWarRules(u.rules) : null;
+  if (rules?.war) {
+    r.rules = rules;
+    startWar(sim);
+  } else delete r.rules;
 }
 
 /** What this city offers the others in a shared region (M32): its spare and its needs, its people. */
@@ -445,6 +593,42 @@ export interface RegionReport {
   deals: { slot: number; resource: DealResource; direction: DealDirection; amount: number }[];
   /** The region project's building stands in this city. */
   projectBuilt: boolean;
+  /** War (M36): why friends can't raid it, if they can't. */
+  shield?: Shield;
+  /**
+   * War (M37), in a city at war only: its research tiers per branch (six, `BRANCHES` order), its
+   * counter-intelligence (‰, without the war term: the region rolls friends' spies against it),
+   * whether its map has a sea entry a force can come from, and its war clock (hours: the region
+   * starts the city's fair clock from it).
+   */
+  tiers?: number[];
+  counter?: number;
+  coast?: true;
+  clock?: number;
+  /**
+   * War (M39), a city that is a friend's vassal: what it pays that friend a month (a fifth of its
+   * taxes) and who it pays, so the region can tell the overlord's city what its income is.
+   */
+  dues?: { slot: number; amount: number };
+}
+
+/** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */
+const coastCache = new WeakMap<Sim, { edits: number; coast: boolean }>();
+
+/**
+ * Does the city's map have a sea entry a force can come from (M37): deep water in an edge cell of
+ * the battles' terrain grid, as `battleLayout` finds one. Worked out again only after earthworks.
+ */
+export function mapHasCoast(sim: Sim): boolean {
+  const hit = coastCache.get(sim);
+  if (hit && hit.edits === sim.terrainEdits) return hit.coast;
+  const c = BATTLE.cell;
+  const n = Math.ceil(MAP_SIZE / c);
+  const deep = (i: number, j: number) => sim.terrain.heightAt((i + 0.5) * c, (j + 0.5) * c) < BERTH_DEPTH / 2;
+  let coast = false;
+  for (let k = 0; k < n && !coast; k++) coast = deep(k, 0) || deep(k, n - 1) || deep(0, k) || deep(n - 1, k);
+  coastCache.set(sim, { edits: sim.terrainEdits, coast });
+  return coast;
 }
 
 export function regionReport(sim: Sim): RegionReport {
@@ -483,5 +667,31 @@ export function regionReport(sim: Sim): RegionReport {
           : [];
       }),
     projectBuilt: [...s.civics.values()].some((c) => civicDef(c).regionProject),
+    // War (M36): friends may not raid a neutral city, nor one under the newcomer bar (the region
+    // room holds them to it).
+    ...(s.war
+      ? s.war.diplomacy?.neutral
+        ? { shield: 'neutral' as const }
+        : !raidThreat(sim).open && !s.war.unshielded
+          ? { shield: 'new' as const }
+          : {}
+      : {}),
+    // War (M37): research, counter-intelligence, a coast and the war clock, for the region's room.
+    ...(s.war
+      ? {
+          tiers: BRANCH_IDS.map((b) => tierCounts(sim)[b]),
+          counter: counterIntel(sim),
+          ...(mapHasCoast(sim) ? { coast: true as const } : {}),
+          clock: s.war.clock,
+        }
+      : {}),
+    // War (M39): a friend's vassal says what it pays its overlord (not while it rises against it).
+    ...(() => {
+      const d = s.war?.diplomacy;
+      const over = d?.vassal && s.region.neighbours.find((n) => n.id === d.vassal!.overlord);
+      if (!over?.player || d!.wars.some((w) => w.with === over.id)) return {};
+      const amount = Math.round(monthlyTaxes(sim) * DIPLOMACY.vassal.taxShare);
+      return amount > 0 ? { dues: { slot: over.player.slot, amount } } : {};
+    })(),
   };
 }

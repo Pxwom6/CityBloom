@@ -1,7 +1,22 @@
+import type { DiplomacySummary } from '../sim/systems/diplomacy';
+import type { FriendsWarClient } from './friendsWar';
+import { historyRows, historyState, replayKey } from './regionHistory';
+import type { ResearchSummary } from '../sim/systems/research';
+import type { IntelSummary } from '../sim/systems/intel';
+import type { SupersSummary } from '../sim/systems/supers';
+import type { BudgetReport } from '../sim/protocol';
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
-import { Vector3, type Mesh } from 'three';
-import { CIVIC } from '../data/civic';
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Group,
+  Mesh as ThreeMesh,
+  MeshLambertMaterial,
+  Vector3,
+  type Mesh,
+} from 'three';
+import { CIVIC, type CivicDef } from '../data/civic';
 import { roadsidePose } from '../sim/world/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import type { Game } from '../game';
@@ -27,6 +42,24 @@ import { touching } from '../render/buildings';
 import type { AmbientMix } from '../audio/mix';
 import type { Stamped } from '../sim/lockstep';
 import { readSlot } from './saves';
+import { loadWarModels, warModelsAsked } from './models';
+import type { UnitShown } from '../render/units';
+import { MILITARY_SITES } from '../render/assets/militaryModels';
+import { buildCivicModel } from '../render/assets/civicModels';
+import { UNIT, type UnitKind } from '../data/war';
+import type { HelpView, LiveRunning, LiveState, OrderLogEntry } from './liveBattles';
+import type { OrderRequest } from '../sim/battle/live';
+import { stageLive, stageNow, type StageRole } from './liveStage';
+import {
+  fitView,
+  mapBounds,
+  pictureOf,
+  sideOfView,
+  structStates,
+  structsOf,
+  toScreen,
+  mapUnits,
+} from '../ui/battleMapView';
 
 /** A box in the world: a footprint centred on x, z, `w` along x, `d` along z and `h` tall (m). */
 export interface Box {
@@ -35,6 +68,46 @@ export interface Box {
   w: number;
   d: number;
   h: number;
+}
+
+/** What the battle map shows and has been told (test API `battleMap`). */
+export interface BattleMapReport {
+  open: boolean;
+  role: 'attacker' | 'defender' | 'watcher' | null;
+  side: 0 | 1 | null;
+  watching: string | null;
+  battle: string | null;
+  selected: number[];
+  armed: string | null;
+  note: string | null;
+  zoom: number;
+  centre: { x: number; z: number } | null;
+  canvas: { w: number; h: number };
+  step: number;
+  allow: number;
+  handed: boolean;
+  over: boolean;
+  outcome: string | null;
+  units: { own: number; enemy: number };
+  structs: { total: number; damaged: number; fallen: number };
+  log: OrderLogEntry[];
+  /** The stand-in's stamped orders so far (empty with a real room). */
+  stamped: number;
+}
+
+export interface BattleMapPoints {
+  own: { id: number; kind: string; x: number; y: number; visible: boolean }[];
+  enemy: { id: number; kind: string; x: number; y: number; visible: boolean }[];
+  structs: {
+    k: number;
+    kind: string;
+    state: number;
+    objective: boolean;
+    x: number;
+    y: number;
+    visible: boolean;
+  }[];
+  canvas: { x: number; y: number; w: number; h: number };
 }
 
 export interface TestApi {
@@ -72,7 +145,96 @@ export interface TestApi {
     state: string;
     cities: { slot: number; name: string; online: boolean; population: number; visitable: boolean }[];
     project: { total: number; goal: number; funded: boolean; host: number; built: boolean } | null;
+    /** War in the region (M34): its rules, and whether this city is its host. */
+    rules: { war: boolean; scale: string; supers?: true };
+    host: boolean;
   } | null;
+  /** The city's forces (M34): every unit and the training at each base; null with war off. */
+  getForces(): {
+    units: { id: number; kind: string; base: number; hp: number }[];
+    orders: { id: number; kind: string; base: number; done: number; hours: number; rate: number }[];
+    /** Prototypes on trial at proving grounds (M37). */
+    trials: { ground: number; kind: string; done: number; hours: number }[];
+  } | null;
+  /**
+   * A battle in the city (M35): who's fighting, units on screen and wrecks, shots and puffs drawn
+   * last frame, and the reports kept; null frame when none is on.
+   */
+  getBattle(): {
+    frame: {
+      id: string;
+      step: number;
+      units: number;
+      wrecks: number;
+      sides: { name: string; alive: number; total: number }[];
+      outcome: string | null;
+    } | null;
+    effects: { tracers: number; puffs: number };
+    drawn: number;
+    incoming: { from: string; arrive: number } | null;
+    /** Newest first: the other side, whether we went to them, and (away) the targets aimed at. */
+    reports: {
+      id: number;
+      other: string;
+      ours: boolean;
+      outcome: string | null;
+      collapsed: number;
+      civics: number;
+      lost: number;
+      theirLost: number;
+      aimed: number | null;
+    }[];
+  };
+  /**
+   * What's broken in the city now (M35): city buildings closed for repairs, rubble, fires, and
+   * damaged roads.
+   */
+  getDamage(): { civics: number; rubble: number; burning: number; roads: number };
+  /** The page's battles away (M35): a town being grown for one, and whether it's busy. */
+  getAway(): {
+    scouting: { name: string; population: number; target: number } | null;
+    viewing: string | null;
+  };
+  /** The war room (M34): open, its top-bar button shown, the HQ's id. */
+  getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
+  /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
+  getDiplomacy(): DiplomacySummary | null;
+  /**
+   * Wars and treaties with friends (M39), as this page knows them from the region: the wars, pacts,
+   * vassals, proposals each way, the war history and the room's last refusals; none outside a region.
+   */
+  getFriendsWar(): ReturnType<FriendsWarClient['snapshot']>;
+  /**
+   * The region's war history as the City history panel lists it (M39 step 7): the rows newest first
+   * (with a battle's replay when the region keeps it), the battles kept, the state of each replay
+   * being fetched, and how a replay in the viewer ended against the battle as fought.
+   */
+  getRegionHistory(): {
+    state: string;
+    rows: { id: number; at: number; kind: string; text: string; replay: string | null }[];
+    kept: { from: number; to: number; id: string; step: number; hash: string }[];
+    status: Record<string, string>;
+    check: { verdict: string; step: number; want: number } | null;
+  };
+  /** Watch a battle the region keeps (M39 step 7): as the history list's Watch button does. */
+  watchReplay(from: number, id: string): Promise<void>;
+  /** Weapons research (M37): the labs, the queue, tiers done, prototypes and trials; null without. */
+  getResearch(): ResearchSummary | null;
+  /** Spies (M37): agents, counter-intelligence, missions and results; null with war off. */
+  getIntel(): IntelSummary | null;
+  /**
+   * The heaviest battle the city can stage (M37, for the frame budget): 24 raiders of every kind at
+   * once (`max`), or with the giant robot among them (`robot`). Null when it started, else why not.
+   */
+  stageBattle(kind: 'max' | 'robot'): Promise<string | null>;
+  /** The superweapon buildings (M37), what the effects draw, and the superweapon units. */
+  getSupers(): {
+    buildings: SupersSummary | null;
+    shown: { dome: boolean; bubbles: number; swirl: boolean; tower: boolean };
+    units: { id: number; kind: string; away: boolean; ready: number | null; hp: number }[];
+  };
+  /** The budget as the Budget panel reads it: this month's ledger, the closed months, rates. */
+  getLedger(): Promise<BudgetReport>;
   /** Report to the region now (it does every 30 s by itself). */
   regionReportNow(): Promise<void>;
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
@@ -185,6 +347,26 @@ export interface TestApi {
   };
   /** Trams and trains as last drawn (M20): the front of each. */
   getRailVehicles(): { kind: 'tram' | 'train' | 'freight'; x: number; y: number; z: number }[];
+  /**
+   * The city's units drawn last frame (M34): which version (near, far or a dot), where, and what
+   * each is doing (parked, drill, patrol, flying, sailing). Units indoors aren't listed.
+   */
+  getUnits(): UnitShown[];
+  /**
+   * Dev (M34): every war building's generated look by model id (the 21 in PROMPTS-WAR.md, those
+   * not in the game yet too), laid out in rows from `at` on the ground, `width` m wide. Returns how
+   * many were shown; an empty list takes them away.
+   */
+  showWarModels(
+    ids: string[],
+    at: { x: number; z: number },
+    width: number,
+  ): { id: string; x: number; z: number }[];
+  /**
+   * Dev (M34): add units to the client's roster only (the sim never hears of them), as if trained at
+   * these bases: for looking at kinds that need research the sim can't train yet. Returns their ids.
+   */
+  showUnits(extra: { kind: string; base: number }[]): number[];
   /** Planes and ships drawn last frame (M23), with their positions. */
   getPorts(): {
     counts: { planes: number; ships: number };
@@ -307,6 +489,12 @@ export interface TestApi {
   getHandDesigns(): { id: string; kind: 'zoned' | 'civic' | 'annex'; def: string; w: number; d: number }[];
   /** A civic building's site, in metres. */
   civicSize(def: string): { w: number; d: number };
+  /**
+   * The war models (phase 5): fetch them now, as a city with war on does (once a page), and draw
+   * the military buildings again with them; and what this page has asked for and loaded.
+   */
+  loadWarModels(): Promise<{ models: number; units: number }>;
+  getWarModels(): { asked: boolean; designs: string[]; units: string[] };
   /** Dev (phase 3): civic buildings side by side, wrapping after `width` metres; each with its add-ons, fill and stage. */
   showCivics(
     items: { def: string; variant?: number; modules?: string[]; fill?: number; stage?: number }[],
@@ -435,6 +623,55 @@ export interface TestApi {
     groundY: number;
   };
   followNearest(kinds?: ('car' | 'walker' | 'bus' | 'vehicle')[]): boolean;
+  /** Look at the battle in the city, as its button does (M35). */
+  followBattle(): void;
+  /**
+   * The live battle this page is in with a friend (M39): its id and role, the room's frontier, the
+   * step this page has run to, whether its side is handed over, orders and the hashes that end it
+   * (its own, and the room's). The last battle's, once it is over; null before the first.
+   */
+  getLive(): LiveState | null;
+  /** Give an order to this page's side of the live battle (it goes to the room with the next report). */
+  liveOrder(order: OrderRequest): boolean;
+  /**
+   * Stage a live battle in this page with no second player (M39 step 4): as the defender (the city's
+   * sim hosts it, a stand-in plays the room), the attacker, or a spectator of two other cities. Null when
+   * it started, else why not. The city needs war on.
+   */
+  stageLive(
+    role: 'attacker' | 'defender' | 'watcher',
+    opts?: { units?: UnitKind[]; hold?: number; helpSide?: 0 | 1; helpTravel?: number },
+  ): Promise<string | null>;
+  /**
+   * An ally's force joins the staged battle (M39 step 6; the stand-in plays the room): stamped at the
+   * frontier, `travel` steps from it (the room's own 480 without). False when it could not.
+   */
+  stageHelp(opts: { owner: number; name: string; side: 0 | 1; units: UnitKind[]; travel?: number }): boolean;
+  /** The force this page sent to help a friend in a live battle, as the panels show it. */
+  getHelp(): HelpView | null;
+  /** Send units to help a friend in a live battle on now, as the picker does: null when it went, else why not. */
+  sendHelp(battle: string, ally: number, units: { id: number; kind: UnitKind }[]): Promise<string | null>;
+  /** The stand-in lets a held battle (`stageLive` with `hold`) go on, or holds it at a step from now. */
+  liveRelease(hold?: number): void;
+  /** The stand-in room hands this page's side over (it stays handed over until the player takes command). */
+  liveHandOver(ignoreJoins?: number): boolean;
+  /** The stand-in's other combatant (side 0 attackers, 1 defenders) gives an order. */
+  liveSay(side: 0 | 1, order: OrderRequest): boolean;
+  /** Battles on in the region that this page could watch. */
+  getLiveRunning(): LiveRunning[];
+  /** Watch one of them, as the Watch buttons do (the map opens). */
+  watchLive(id?: string): boolean;
+  /** Open the battle map, as its key does: false when there is no live battle to show. */
+  openBattleMap(): boolean;
+  /** The battle map as it stands: what is chosen and armed, what it last said, the battle's strength. */
+  battleMap(): BattleMapReport;
+  /**
+   * Where things are on the battle map, as page coordinates to click: this side's units, the other
+   * side's, and the buildings (with their state, and whether they are what the attackers aim at).
+   */
+  battleMapPoints(): BattleMapPoints | null;
+  /** Open (or close) a panel by name, as its button does. */
+  openPanel(name: string): void;
   /** Change photo mode's settings directly (dev scenes). */
   setPhoto(patch: Partial<PhotoState>): void;
   /** Seasons and weather (M22): force a look on screen (null for the city's own), and read it. */
@@ -570,8 +807,136 @@ export function installTestApi(game: Game): TestApi {
               built: v.project.built,
             }
           : null,
+        rules: { ...(v?.rules ?? { war: false, scale: 'skirmish' }) },
+        host: r.isHost,
       };
     },
+    getForces: () => {
+      const f = game.world.forces;
+      return f
+        ? {
+            units: f.units.map((u) => ({ ...u })),
+            orders: f.orders.map((o) => ({ ...o })),
+            trials: (f.trials ?? []).map((t) => ({ ...t })),
+          }
+        : null;
+    },
+    getBattle: () => {
+      const f = game.world.battle;
+      const w = game.world.stats.war;
+      return {
+        frame: f
+          ? {
+              id: f.id,
+              step: f.step,
+              units: f.units.length,
+              wrecks: f.units.filter((u) => u.state === 2).length,
+              sides: f.sides.map((s) => ({ name: s.name, alive: s.alive, total: s.total })),
+              outcome: f.outcome,
+            }
+          : null,
+        effects: { ...game.renderer.battle.counts },
+        drawn: game.renderer.units.shown.filter((u) => u.doing === 'battle').length,
+        incoming: w?.incoming ? { from: w.incoming.from, arrive: w.incoming.arrive } : null,
+        reports: (w?.reports ?? []).map((r) => ({
+          id: r.id,
+          other: r.other,
+          ours: r.ours,
+          outcome: r.outcome,
+          collapsed: r.collapsed.length,
+          civics: r.civics.length,
+          lost: Object.values(r.lost).reduce((a, v) => a + (v ?? 0), 0),
+          theirLost: r.theirLost,
+          aimed: r.away?.objectives.aimed ?? null,
+        })),
+      };
+    },
+    getDamage: () => {
+      const w = game.world;
+      return {
+        civics: [...w.civics.values()].filter((c) => c.damage > 0).length,
+        rubble: [...w.buildings.values()].filter((b) => b.state === 3).length,
+        burning: [...w.buildings.values()].filter((b) => b.fire > 0).length,
+        roads: w.disasters.damaged.length,
+      };
+    },
+    getAway: () => ({
+      scouting: game.away.scouting ? { ...game.away.scouting } : null,
+      viewing: game.viewing?.record.id ?? null,
+    }),
+    getDiplomacy: () => game.world.stats.war?.diplomacy ?? null,
+    getFriendsWar: () => game.friends.snapshot(),
+    getRegionHistory: () => {
+      const view = game.region?.view;
+      const fv = game.friends.view();
+      const kept = game.replays.list();
+      return {
+        state: historyState({ inRegion: !!view, warOn: !!view?.rules?.war, events: fv.history.length }),
+        rows: historyRows(fv.history, kept).map((r) => ({
+          id: r.id,
+          at: r.at,
+          kind: r.kind,
+          text: r.text,
+          replay: r.replay ? replayKey(r.replay.from, r.replay.id) : null,
+        })),
+        kept: kept.map((r) => ({ from: r.from, to: r.to, id: r.id, step: r.step, hash: r.hash })),
+        status: Object.fromEntries(
+          kept.flatMap((r) => {
+            const st = game.replays.statusOf(r.from, r.id);
+            return st ? [[replayKey(r.from, r.id), st.state === 'error' ? st.why : st.state]] : [];
+          }),
+        ),
+        check: game.replayCheck ? { ...game.replayCheck } : null,
+      };
+    },
+    watchReplay: (from, id) => game.watchReplay(from, id),
+    getResearch: () => game.world.stats.war?.research ?? null,
+    stageBattle: async (kind) => {
+      const mix: UnitKind[] = [
+        'tank',
+        'tank',
+        'tank',
+        'heavytank',
+        'heavytank',
+        'artillery',
+        'artillery',
+        'artillery',
+        'infantry',
+        'infantry',
+        'transport',
+        'bomber',
+        'bomber',
+        'fighter',
+        'fighter',
+        'helicopter',
+        'helicopter',
+        'helicopter',
+        'drone',
+        'drone',
+        'drone',
+        'drone',
+        'tank',
+        'artillery',
+      ];
+      const units = kind === 'robot' ? (['windupbot', ...mix.slice(1)] as UnitKind[]) : mix;
+      const r = await game.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0, units });
+      return r.ok ? null : r.reason;
+    },
+    getIntel: () => game.world.stats.war?.intel ?? null,
+    getSupers: () => ({
+      buildings: game.world.stats.war?.supers ?? null,
+      shown: { ...game.renderer.supers.shown },
+      units: (game.world.forces?.units ?? [])
+        .filter((u) => UNIT.get(u.kind)?.super)
+        .map((u) => ({ id: u.id, kind: u.kind, away: !!u.away, ready: u.ready ?? null, hp: u.hp })),
+    }),
+    getLedger: () => game.client.query<BudgetReport>({ type: 'budget' }),
+    getWarRoom: () => ({
+      open: game.panel === 'war',
+      button: !!document.querySelector('[data-testid="open-war"]'),
+      hq: game.world.stats.war?.hq ?? null,
+      war: !!game.world.stats.war,
+    }),
     regionReportNow: async () => {
       await game.region?.reportNow(true);
     },
@@ -643,6 +1008,8 @@ export function installTestApi(game: Game): TestApi {
             ? Math.hypot(a.mid.x - near.x, a.mid.z - near.z) - Math.hypot(b.mid.x - near.x, b.mid.z - near.z)
             : a.s.id - b.s.id,
         );
+      // Why each try was refused, told once all fail (a spec's console shows it).
+      const why = new Map<string, number>();
       for (const { s } of segs) {
         const len = net.curve(s.id).length;
         for (let at = d.w / 2 + 10; at < len - d.w / 2 - 10; at += 8) {
@@ -650,9 +1017,13 @@ export function installTestApi(game: Game): TestApi {
             const pose = roadsidePose(net, s.id, at, side, d.d);
             const r = await game.dispatch({ type: 'placeBuilding', def, ...pose });
             if (r.ok) return r.created![0]!;
+            why.set(r.reason, (why.get(r.reason) ?? 0) + 1);
           }
         }
       }
+      console.warn(
+        `placeCivic ${def}: no room. ${[...why].map(([r, n]) => `${r} (×${n})`).join('; ') || 'No road to stand by'}`,
+      );
       return null;
     },
     heightAt: (x, z) => game.world.heightAt(x, z),
@@ -757,6 +1128,65 @@ export function installTestApi(game: Game): TestApi {
       })),
     }),
     getRailVehicles: () => game.renderer.railVehicles.fronts.map((f) => ({ ...f })),
+    getUnits: () => game.renderer.units.shown.map((u) => ({ ...u })),
+    showWarModels: (ids, at, width) => {
+      const scene = game.renderer.scene;
+      const old = scene.getObjectByName('war-gallery');
+      if (old) {
+        scene.remove(old);
+        old.traverse((o) => (o as ThreeMesh).geometry?.dispose());
+      }
+      const out: { id: string; x: number; z: number }[] = [];
+      if (!ids.length) return out;
+      const group = new Group();
+      group.name = 'war-gallery';
+      const mat = new MeshLambertMaterial({ vertexColors: true });
+      let x = at.x;
+      let z = at.z;
+      let deep = 0;
+      for (const id of ids) {
+        const site = MILITARY_SITES[id];
+        if (!site) continue;
+        const [w, d] = site;
+        if (x > at.x && x + w > at.x + width) {
+          x = at.x;
+          z += deep + 10;
+          deep = 0;
+        }
+        const def = { id, model: id, w, d } as unknown as CivicDef;
+        const m = buildCivicModel(def, 0);
+        const g = new BufferGeometry();
+        g.setAttribute('position', new BufferAttribute(m.pos, 3));
+        g.setAttribute('normal', new BufferAttribute(m.nrm, 3));
+        g.setAttribute('color', new BufferAttribute(m.col, 3));
+        const mesh = new ThreeMesh(g, mat);
+        const cx = x + w / 2;
+        const cz = z + d / 2;
+        mesh.position.set(cx, game.world.heightAt(cx, cz), cz);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+        out.push({ id, x: cx, z: cz });
+        x += w + 10;
+        deep = Math.max(deep, d);
+      }
+      scene.add(group);
+      return out;
+    },
+    showUnits: (extra) => {
+      const w = game.world;
+      if (!w.forces) return [];
+      let id = 9_900_000 + w.forces.units.length;
+      const ids: number[] = [];
+      const units = [...w.forces.units];
+      for (const e of extra) {
+        units.push({ id, kind: e.kind as UnitKind, base: e.base, hp: 1 });
+        ids.push(id++);
+      }
+      w.forces = { ...w.forces, units };
+      w.forcesVersion++;
+      return ids;
+    },
     getPorts: () => ({
       counts: { ...game.renderer.ports.counts },
       shown: game.renderer.ports.shown.map((f) => ({ ...f })),
@@ -1052,6 +1482,103 @@ export function installTestApi(game: Game): TestApi {
       };
     },
     followNearest: (kinds) => game.followNearest(kinds),
+    followBattle: () => game.followBattle(),
+    getLive: () => game.live.state(),
+    liveOrder: (order) => game.live.order(order),
+    stageLive: (role: StageRole, opts) => stageLive(game, role, opts),
+    stageHelp: (opts) => stageNow()?.addHelper({ ...opts, color: 0x33aa33 }) ?? false,
+    getHelp: () => game.live.helping(),
+    sendHelp: (battle, ally, units) => game.live.sendHelp(battle, ally, units),
+    liveRelease: (hold) => {
+      const st = stageNow();
+      if (!st) return;
+      if (hold === undefined) st.release();
+      else st.hold = hold;
+    },
+    liveHandOver: (ignore) => stageNow()?.handOver(ignore) ?? false,
+    liveSay: (side, order) => stageNow()?.say(side, order) ?? false,
+    getLiveRunning: () => game.live.runningBattles(),
+    watchLive: (id) => {
+      const target = id ?? game.live.runningBattles()[0]?.id;
+      return target ? game.watchLive(target) : false;
+    },
+    openBattleMap: () => game.openBattleMap(),
+    battleMap: () => {
+      const m = game.battleMap;
+      const v = game.live.view();
+      const side = sideOfView(v);
+      const frame = v ? pictureOf(game, v) : null;
+      const states = v ? structStates(frame, structsOf(v.input.layout).length) : [];
+      const log = game.live.orderLog();
+      return {
+        open: game.panel === 'battleMap',
+        role: v?.role ?? null,
+        side,
+        watching: game.live.watchingId(),
+        battle: v?.id ?? null,
+        selected: [...m.selected],
+        armed: m.armed,
+        note: m.note,
+        zoom: m.zoom,
+        centre: m.centre ? { ...m.centre } : null,
+        canvas: { ...m.canvas },
+        step: frame?.step ?? v?.step ?? 0,
+        allow: v?.allow ?? 0,
+        handed: v?.handed ?? false,
+        over: v?.over ?? false,
+        outcome: frame?.outcome ?? null,
+        units: {
+          own: side === null ? 0 : mapUnits(frame).filter((u) => u.side === side && u.state !== 2).length,
+          enemy: side === null ? 0 : mapUnits(frame).filter((u) => u.side !== side && u.state !== 2).length,
+        },
+        structs: {
+          total: states.length,
+          damaged: states.filter((x) => x === 1).length,
+          fallen: states.filter((x) => x === 2).length,
+        },
+        log: log.map((e) => ({ ...e })),
+        stamped: stageNow()?.stamped.length ?? 0,
+      };
+    },
+    battleMapPoints: () => {
+      const v = game.live.view();
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="map-canvas"]');
+      if (!v || !canvas) return null;
+      const m = game.battleMap;
+      const mv = fitView(mapBounds(v.input.layout), m.canvas.w, m.canvas.h, m.zoom, m.centre);
+      const r = canvas.getBoundingClientRect();
+      const frame = pictureOf(game, v);
+      const side = sideOfView(v);
+      const at = (x: number, z: number) => {
+        const p = toScreen(mv, x, z);
+        return {
+          x: Math.round((r.left + p.x) * 10) / 10,
+          y: Math.round((r.top + p.y) * 10) / 10,
+          visible: p.x >= 0 && p.y >= 0 && p.x <= mv.w && p.y <= mv.h,
+        };
+      };
+      const list = (mine: boolean) =>
+        mapUnits(frame)
+          .filter(
+            (u) => u.state !== 2 && (side === null ? (u.side === 0) === mine : (u.side === side) === mine),
+          )
+          .map((u) => ({ id: u.id, kind: u.kind, ...at(u.x, u.z) }));
+      const states = structStates(frame, structsOf(v.input.layout).length);
+      const aimed = new Set((frame?.targets ?? []).map((t) => t.id));
+      return {
+        own: list(true),
+        enemy: list(false),
+        structs: structsOf(v.input.layout).map((s) => ({
+          k: s.k,
+          kind: s.kind,
+          state: states[s.k] ?? 0,
+          objective: aimed.has(s.id),
+          ...at(s.x, s.z),
+        })),
+        canvas: { x: r.left, y: r.top, w: r.width, h: r.height },
+      };
+    },
+    openPanel: (name) => game.openPanel(name as Parameters<Game['openPanel']>[0]),
     setPhoto: (patch) => game.setPhoto(patch),
     setWeatherLook: (look) => {
       game.renderer.weatherOverride = look;
@@ -1118,7 +1645,7 @@ export function installTestApi(game: Game): TestApi {
       let z = at.z;
       let deep = 0;
       for (const it of items) {
-        const def = CIVIC.get(it.def);
+        const def = CIVIC.get(it.def) ?? warStandIn(it.def);
         if (!def) continue;
         if (x > at.x && x + def.w > at.x + width) {
           x = at.x;
@@ -1268,6 +1795,15 @@ export function installTestApi(game: Game): TestApi {
     getHandDesigns: () =>
       handmade.list().map((m) => ({ id: m.id, kind: m.kind, def: m.def, w: m.w, d: m.d })),
     civicSize: (def) => ({ w: CIVIC.get(def)?.w ?? 0, d: CIVIC.get(def)?.d ?? 0 }),
+    loadWarModels: async () => {
+      const got = await loadWarModels();
+      game.renderer.civics.redraw((def) => CIVIC.get(def)?.category === 'military');
+      return got;
+    },
+    getWarModels: () => {
+      const { designs, units } = handmade.warList();
+      return { asked: warModelsAsked(), designs: designs.map((m) => m.id), units: units.map((u) => u.id) };
+    },
     showProjects: (at) => {
       const w = game.world;
       const upserts: CivicData[] = [];
@@ -1308,6 +1844,30 @@ export function installTestApi(game: Game): TestApi {
   };
   window.__game = api;
   return api;
+}
+
+/**
+ * Dev: a war building the game doesn't have yet (M37, M40) but has a hand-made design loaded, as a
+ * stand-in civic on this page only (never the sim's), so `showCivics` can lay it out to look at.
+ */
+function warStandIn(id: string): CivicDef | undefined {
+  const m = handmade.all('civic', id)[0];
+  if (!m) return undefined;
+  const def: CivicDef = {
+    id,
+    name: id,
+    category: 'military',
+    dept: 'defence',
+    w: m.w,
+    d: m.d,
+    cost: 0,
+    upkeep: 0,
+    blurb: 'A war building not in the game yet (dev).',
+    unlockPopulation: 0,
+    model: id,
+  };
+  CIVIC.set(id, def);
+  return def;
 }
 
 function countZones(game: Game): { R: number; C: number; I: number } {

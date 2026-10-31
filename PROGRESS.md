@@ -59,10 +59,10 @@ without it.
 - [x] M36 Diplomacy and the stakes of war
 - [x] M37 Weapon development and intelligence
 - [x] M38 Investments and the war economy
-- [ ] M39 War with friends
+- [x] M39 War with friends
 - [ ] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M38 are complete; M39 is next.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M39 are complete; M40 is next.** Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -231,11 +231,8 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 
 ## In progress
 **M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war, M37 Weapon development
-and intelligence and M38 Investments and the war economy are complete**, in pull request #23 (its
-title names all five). **M39 War with friends** has met its done criteria in tests, e2e and
-virtual soaks on its final code (a19ae2b); the last check, the real two-hour soak on that code, is
-running (`bench-results/regionsoak-m39.log`), then `M39 complete:`. **M40 The final race: the atom
-bomb** has begun: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b82d790), code map
+and intelligence, M38 Investments and the war economy and M39 War with friends are complete**, in
+pull request #23 (its title names all six). **M40 The final race: the atom bomb** is under way: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b82d790), code map
 `docs/plans/M40-codemap.md` (aeef8e3). Steps 0 and 1 are done and reviewed: the data (`src/data/atom.ts`),
 the `bomb` rule, `WarState.atom` with the derived stage, the gate (`atomLock`, hard: sandbox cannot
 skip it), the enrichment plant and atom silo (no refund) and save v32; the prices are the plan's, held
@@ -299,23 +296,28 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M39's close: the real two-hour soak on the final code, then PROGRESS's tick, the `M39 complete:`
-   commit and pull request #23's title and description.
-2. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
+1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
    to 2 are done. Next: step 3, the flight, the warning, the dome stopping one bomb and the impact
    (fills `startFlight` in `src/sim/systems/atom.ts`); then fallout; the
    nuclear winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
    7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
    may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
-3. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
+2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real
    UI, a race for the bomb, and fixes for whatever feels off.
-4. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
 
 ## Performance (M39)
 - **The soak** (done criterion; `npx tsx scripts/dev/regionsoak.ts 120 --crash`, four headless
   players on the local relay at the game's 1× pace with the fair clock on, run alone): on the final
-  code, running after the live-battle e2e (`bench-results/regionsoak-m39.log`). Before the last fixes, on d5cd6cc, the same story passed (121.1 min: 10 live
+  code (a19ae2b), **passed**: 121.0 min of room time; 11 live battles, all 11 agreed (both cities'
+  runs ended on one hash), 0 failed, each taken once by its defender and reported once by its
+  attacker; 1 fought the old way; 88 orders, 1 handover, 6 helps sent and 2 booked; 2 wars declared
+  and opened, 10 proposals, 8 treaties, 7 pacts, a conquest, 2 vassal dues; 8 drops, 8 outages, 8
+  reloads, 9 leaves, 8 crashes; a record stood in once for a battle its city still hosted and
+  finished it. The room: 158 rows (78 an hour), 163 requests (81 an hour), 908 GB-s, within the free
+  plan (an evening of 4 h is 10.4 % of the region's own 3,000 rows a day); log
+  `bench-results/regionsoak-m39.log`. Before the last fixes, on d5cd6cc, the same story passed (121.1 min: 10 live
   battles, 5 agreed and 5 explained by a leave, crash or outage, 0 failed; 2 fought the old way; 69
   orders, 5 handovers, 4 helps sent and 2 booked; 3 wars declared and opened, 4 treaties, a conquest,
   2 vassal dues; 8 drops, 8 outages, 9 reloads, 9 leaves, 8 crashes; the room 173 rows and 139
@@ -340,7 +342,8 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
   `m39-friends` (two players through the real UI: a war declared from the Diplomacy tab, a live
   battle with both commanding, peace one offers and the other accepts) 693 s; `m39-battlemap` failed
   once on a timing flake (fixed: it waits for the map to show what a click needs) and passed. On the
-  final code the four live-battle specs again (`m39-friends`, `m39-history`, `m39-battlemap`, `m39-help`): running. Screenshots reviewed.
+  final code the four live-battle specs again pass (`m39-friends` 790 s, `m39-history` 144 s,
+  `m39-battlemap` 236 s, `m39-help` 313 s). Screenshots reviewed.
 - **Cross-browser**: `xbrowser.yml` (Chromium, WebKit, real Firefox) green on every push, the final
   code included, with the determinism script's `live` (a version-4 battle with orders from both
   sides, a handover and a helper) and `friends` sections; Chromium locally too.

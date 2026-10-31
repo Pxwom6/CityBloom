@@ -12,7 +12,7 @@ import type { FriendScale, FriendTerm } from '../../relay/protocol';
 import { FRIENDS, termsFor } from '../../relay/protocol';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendWar as RoomWar } from '../../relay/protocol';
-import { friendTermWords, friendTermsWords } from '../client/friendsWar';
+import { friendTermWords, friendTermsWords, newcomerNote } from '../client/friendsWar';
 import { formatMoney } from './hooks';
 import { useGameUpdates } from './hooks';
 import { Feedback, ScoreBar, type Asked } from './Diplomacy';
@@ -372,6 +372,7 @@ function FriendRow({
   const refusal = game.friends.refusal(`war:${f.slot}`);
   const breaksAsked = game.friends.refusal(`warBreaks:${f.slot}`);
   const canDeclare = !f.declare || f.breaks;
+  const waitingOn = d.wars.some((w) => w.with === f.id && w.capitulated?.by === 'us');
   // The war is declared (or on): the form has done its work.
   useEffect(() => {
     if (atWar && declaring) onDeclare();
@@ -403,9 +404,16 @@ function FriendRow({
         </span>
       </p>
       <div class="dip-actions">
-        <button class="btn" data-testid={`dip-fpropose-${f.slot}`} onClick={onPropose}>
-          Propose…
-        </button>
+        {waitingOn ? (
+          // A side that capitulated has nothing to propose: the winner sets the terms (or plain peace stands).
+          <span class="muted" data-testid={`dip-fwait-${f.slot}`}>
+            Waiting for {f.name} to set the terms
+          </span>
+        ) : (
+          <button class="btn" data-testid={`dip-fpropose-${f.slot}`} onClick={onPropose}>
+            Propose…
+          </button>
+        )}
         {!atWar && (
           <button
             class="btn"
@@ -418,7 +426,11 @@ function FriendRow({
           </button>
         )}
       </div>
-      {!canDeclare && !atWar && f.declare && <p class="muted">{f.declare}.</p>}
+      {!canDeclare && !atWar && f.declare && (
+        <p class="muted" data-testid={`dip-fwhy-declare-${f.slot}`}>
+          {f.declare}.{newcomerNote(f.declare)}
+        </p>
+      )}
       {declaring && !atWar && canDeclare && (
         <div class="dip-declare" data-testid="dip-fdeclare-form">
           <label>

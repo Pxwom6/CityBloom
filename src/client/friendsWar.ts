@@ -19,6 +19,7 @@
  */
 import type { Command, CommandResult } from '../sim/commands';
 import type { FriendWarFacts } from '../sim/systems/friendsWar';
+import { RAIDS } from '../data/battle';
 import { UNKNOWN_FRIEND, TREATY_TAKEN } from '../data/diplomacy';
 import {
   FRIENDS,
@@ -660,6 +661,16 @@ export class FriendsWarClient implements FriendsSink {
       treaties: [...this.treaties],
     };
   }
+}
+
+/**
+ * What a "too young or small" refusal means, in the words a player needs: the room says a newcomer is
+ * protected, and this says until when (a sentence to put after the refusal; nothing for any other).
+ */
+export function newcomerNote(why: string | null | undefined): string {
+  return why && /too young or small/.test(why)
+    ? ` A city is protected as a newcomer until it has ${RAIDS.minPopulation.toLocaleString('en-US')} residents and has been going for ${RAIDS.minMonths === 12 ? 'a year' : `${RAIDS.minMonths} months`}.`
+    : '';
 }
 
 const money = (v: number) =>

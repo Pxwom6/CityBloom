@@ -202,7 +202,8 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
       <h3>A shared region</h3>
       <p class="muted">
         Or each play your own city side by side (up to four): your cities take the neighbouring towns’ places,
-        trade power and water, share commuters and build a great work together.
+        trade power and water, share commuters and build a great work together, or, if the host turns war on,
+        raid each other, fight live battles and make peace.
       </p>
       <div class="friends-region-row">
         <button

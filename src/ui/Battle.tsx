@@ -11,6 +11,7 @@ import { BRANCHES } from '../data/research';
 import type { BattleReport } from '../sim/systems/raids';
 import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
+import { newcomerNote } from '../client/friendsWar';
 import { HelpButton } from './Help';
 import { helpForceLine } from './helpView';
 import { formatNumber, useGameUpdates } from './hooks';
@@ -519,6 +520,7 @@ export function SendForce() {
       {why && (
         <p class="war-warn" data-testid="send-why">
           {why}
+          {newcomerNote(why)}
         </p>
       )}
       {breaks?.form === form && (

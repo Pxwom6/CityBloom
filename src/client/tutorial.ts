@@ -112,10 +112,12 @@ export const TIPS: Tip[] = [
     when: (g) => !!g.net && g.net.session.state === 'playing',
   },
   {
-    id: 'region',
+    // (Its own id: 'region' is the neighbours' tip below, and a tip seen hides the one sharing its id.)
+    id: 'sharedRegion',
     text:
       'Your city is in a shared region: the other players’ cities now stand where neighbouring towns did. ' +
-      'Open the Region panel (Shift+N) to trade with them, pay into Sunfield Commons, or visit their cities.',
+      'Open the Region panel (Shift+N) to trade with them, pay into Sunfield Commons, or visit their cities. ' +
+      'If war is on, a military HQ (the toolbar’s Military button, from 2,000 residents) opens the war room.',
     when: (g) => g.region?.state === 'in',
   },
   {
@@ -176,13 +178,65 @@ export const TIPS: Tip[] = [
   },
   // Wars and treaties with friends (M39).
   {
+    // A region at war where the host is the only one to turn it on, and nobody has yet.
+    id: 'regionWarOff',
+    text:
+      'Your region is at peace. If you and your friends want to fight, you, as its host, can turn war on ' +
+      'in the Region panel (Shift+N): every city then raises forces, and a war can be declared on a ' +
+      'friend. The same switch turns it off again and ends every war in plain peace.',
+    when: (g) =>
+      g.region?.state === 'in' &&
+      g.region.isHost &&
+      !(g.region.view?.rules.war ?? false) &&
+      (g.region.view?.cities.length ?? 0) > 1,
+  },
+  {
+    id: 'friendsAtWar',
+    text:
+      'War is on in your region, and a friend’s city is in it. To go to war with them, open the war room ' +
+      '(Shift+M), then the Diplomacy tab: your friends are listed under “Friends in the region”, each ' +
+      'with Declare war…. They are told at once and the war opens two minutes later. A new or small city ' +
+      'is safe from raids until it strikes first; a war between you lifts that once it has opened.',
+    when: (g) => {
+      const w = g.world.stats.war;
+      const d = w?.diplomacy;
+      return !!w && w.hq != null && !!d && d.friends.length > 0 && !d.wars.some((x) => x.friend);
+    },
+  },
+  {
     id: 'friendWar',
     text:
       'You are at war with a friend’s city. It runs on the region’s time: the war opens two minutes after ' +
-      'it is declared, every battle between your cities moves the score, and a side that falls to −60 ' +
-      'gives up and the winner sets the terms. Offer peace from the Diplomacy tab; your friend answers ' +
-      'when they are here.',
+      'it is declared, then your forces can strike their city (the Send tab), and every battle between ' +
+      'your cities moves the score. A side that falls to −60 gives up and the winner sets the terms.',
     when: (g) => !!g.world.stats.war?.diplomacy?.wars.some((w) => w.friend),
+  },
+  {
+    // A battle between two players' cities whose players are both here: both give orders as it happens.
+    id: 'liveBattle',
+    text:
+      'A live battle: the other player is here too, and you both command. Press O (or Command in the ' +
+      'bar) for the battle map. Choose your units (click, drag a box round some, or All), then give an ' +
+      'order: Focus (a building to strike if you attack, an attacker to hit if you defend), Guard a ' +
+      'building, Hold position, Free to let them use their own judgement, or Withdraw. Each order is shown ' +
+      'as “heard” when the region has passed it to both of you.',
+    when: (g) => {
+      const v = g.live?.view();
+      return !!v && v.role !== 'watcher' && !v.over;
+    },
+  },
+  {
+    // The first battle with a friend is over, or the war is going badly: how to stop it.
+    id: 'friendPeace',
+    text:
+      'Either of you can offer to end a war at any time: in the war room’s Diplomacy tab, press Offer terms next to ' +
+      'it, add what you want (peace is there already; reparations or a pact if you like) and Send. Your ' +
+      'friend answers when they are here, and the offer waits a day. If you are losing, ask for terms ' +
+      'before the score reaches −60: then the winner sets them.',
+    when: (g) =>
+      !!g.world.stats.war?.diplomacy?.wars.some(
+        (w) => w.friend && w.friend.state === 'open' && (w.battles > 0 || w.score <= -20),
+      ),
   },
   {
     id: 'friendTreaty',

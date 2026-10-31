@@ -14,7 +14,7 @@ import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
 import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
 import type { AwayResult, HelpResult } from './systems/expeditions';
-import type { BattleInput } from './battle/types';
+import type { BattleInput, ForceIn } from './battle/types';
 import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
 import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
@@ -191,7 +191,7 @@ export type Command =
   /** The page's account of an expedition's battle, fought in the other town (page only). */
   | { type: 'battleReport'; expedition: number; result: AwayResult }
   /** A force's battle with a friend's city is with the region: pinned until it answers (page only, M36). */
-  | { type: 'battleSettling'; expedition: number; on: boolean }
+  | { type: 'battleSettling'; expedition: number; on: boolean; force?: ForceIn }
   /**
    * Units go to help a friend in a live battle (M39 step 6, page only: the page sends them to the
    * region room, which decides whether they go in), and what happened to them when it ended (`result`

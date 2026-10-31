@@ -1502,7 +1502,7 @@ export class Sim {
       case 'battleReport':
         return battleReport(this, cmd.expedition, cmd.result, dryRun);
       case 'battleSettling':
-        return battleSettling(this, cmd.expedition, cmd.on, dryRun);
+        return battleSettling(this, cmd.expedition, cmd.on, dryRun, cmd.force);
       case 'helpSend':
         return sendHelp(this, cmd.units, cmd.to, cmd.battle, cmd.route, dryRun);
       case 'helpEnd':

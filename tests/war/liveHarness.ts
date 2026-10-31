@@ -6,7 +6,7 @@ import type { BattleRecord } from '../../src/client/battles';
 import { LiveBattles, type LiveRunnerHandlers } from '../../src/client/liveBattles';
 import { LiveRunner, pumpRun } from '../../src/client/liveRunner';
 import { awayCity } from '../../src/sim/battle/away';
-import type { BattleInput } from '../../src/sim/battle/types';
+import type { BattleInput, ForceIn } from '../../src/sim/battle/types';
 import type { SaveFile } from '../../src/sim/save';
 import type { Sim } from '../../src/sim/sim';
 import { regionReport, type RegionReport } from '../../src/sim/systems/region';
@@ -173,7 +173,8 @@ export async function openPage(o: {
       };
     },
     report: async (expedition, result) => sim.dispatch({ type: 'battleReport', expedition, result }).ok,
-    settle: async (expedition, on) => sim.dispatch({ type: 'battleSettling', expedition, on }).ok,
+    settle: async (expedition, on, force?: ForceIn) =>
+      sim.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) }).ok,
     fetchSave: (slot) => link.fetchSave(slot),
   });
   live.attach(link);
@@ -186,7 +187,8 @@ export async function openPage(o: {
     postBattle: (slot, input, away) => link.sendBattle(slot, input, away, 2_000),
     mayStrike: () => null,
     recall: async (expedition) => void sim.dispatch({ type: 'recallForce', expedition }),
-    settle: async (expedition, on) => sim.dispatch({ type: 'battleSettling', expedition, on }).ok,
+    settle: async (expedition, on, force?: ForceIn) =>
+      sim.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) }).ok,
     live: (city, expedition) => live.attack(city, expedition),
   });
   const page: Page = {

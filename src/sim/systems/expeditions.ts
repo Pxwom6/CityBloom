@@ -15,13 +15,14 @@ import {
   type BattleRoute,
   type BattleTarget,
   type Stance,
+  SUPER,
 } from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
 import { fail, ok, type CommandErr, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
 import { civicOnline } from '../world/civic';
-import type { Outcome } from '../battle/types';
+import type { ForceIn, Outcome } from '../battle/types';
 import { travelHours, type BattleReport } from './raids';
 import { militaryCivics, militaryOf } from './war';
 import { researchEffect, superweaponsAllowed } from './research';
@@ -52,6 +53,12 @@ export interface Expedition {
    * for the region's answer (the page reports the battle once the region keeps it).
    */
   settling?: true;
+  /**
+   * The force as this city first put it to a live battle with a friend (M39): asked again (the page
+   * came back to a battle that ended while it was away), the same force is asked with, so the
+   * region's record still matches it though the city's readiness or research moved meanwhile.
+   */
+  liveForce?: ForceIn;
   /**
    * Its battle was fought and reported, for a force with a superweapon (M37): the superweapon winds
    * up again once home, for twice as long when it was knocked out (`downed`). A force called back or
@@ -271,15 +278,41 @@ export function recallForce(sim: Sim, id: number, dryRun: boolean): CommandResul
  * The page has fought a force's battle with a friend's city and puts it to the region (M36): the
  * force is pinned until the region answers (`on`), or freed again when it turned the battle away.
  */
-export function battleSettling(sim: Sim, id: number, on: boolean, dryRun: boolean): CommandResult {
+export function battleSettling(
+  sim: Sim,
+  id: number,
+  on: boolean,
+  dryRun: boolean,
+  force?: ForceIn,
+): CommandResult {
   const e = sim.state.war?.expeditions?.find((x) => x.id === id);
   if (!e) return fail('No such force');
   if (on && e.state !== 'fighting') return fail('That force isn’t fighting');
+  if (force !== undefined && !keepableForce(force, e.units.length))
+    return fail('That force could not be read');
   if (dryRun) return ok(0);
   if (on) e.settling = true;
   else delete e.settling;
+  // The first force put to a live battle is kept (M39): the one every later ask is made with.
+  if (on && force && !e.liveForce) e.liveForce = JSON.parse(JSON.stringify(force)) as ForceIn;
   sim.warChanged();
   return ok(0);
+}
+
+/** A force a page may keep with its expedition: its shape, and no more units than a force with these and what they carry. */
+function keepableForce(f: unknown, units: number): f is ForceIn {
+  if (!f || typeof f !== 'object') return false;
+  const o = f as Record<string, unknown>;
+  return (
+    Array.isArray(o.units) &&
+    o.units.length <= units + SUPER.maxCarried &&
+    typeof o.route === 'string' &&
+    typeof o.target === 'string' &&
+    typeof o.stance === 'string' &&
+    typeof o.readiness === 'number' &&
+    Number.isFinite(o.readiness) &&
+    JSON.stringify(f).length <= 40_000
+  );
 }
 
 // ----- Allied help in a friend's live battle (M39 step 6) -----

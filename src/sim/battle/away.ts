@@ -43,6 +43,8 @@ export interface AwayCity {
   units: { id: number; kind: UnitKind; hp: number }[];
   /** Its research's battle modifiers (M37), when it has any. */
   mods?: BattleMods;
+  /** The force as the city first put it to a live battle (M39), asked with again. */
+  kept?: ForceIn;
   neighbour: {
     id: number;
     name: string;
@@ -85,6 +87,7 @@ export function awayCity(city: Sim, e: Expedition): AwayCity {
       return u ? [{ id, kind: u.kind, hp: u.hp }] : [];
     }),
     ...(Object.keys(mods).length ? { mods } : {}),
+    ...(e.liveForce ? { kept: e.liveForce } : {}),
     neighbour: {
       id: n.id,
       name: n.name,

@@ -1103,3 +1103,12 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
 - **The room's friend messages wait for the page's welcome** (`RegionLink.friendsHeld`) and the history is
   merged, not replaced: a proposal waiting for a returning city was otherwise lost. A browser-hosted region's
   clock is whole milliseconds (`wallClock()`).
+- **A force asks for its live battle again with the force it first sent** (`Expedition.liveForce`, kept by
+  the pin `battleSettling` the first time): an attacker who left mid-battle and came back used to rebuild its
+  force from the city as it then was, and a moved readiness or a finished research tier made the region's
+  record "not its force", so the force came home untouched: leaving mid-battle dodged the losses (found by the
+  soak). The check against a forged record stays; it now compares with what was really sent.
+- **The soak's verdicts** (step 10): a battle or force applied twice fails unless a crash's restore from an
+  older save came between; a treaty must be applied by both cities; a record that stands in for a hosted
+  battle must not double its damage. A region's record writes changed offers with the numbers (every five
+  minutes), not at once: the soak measured 480 rows an hour with them prompt, now about 100.

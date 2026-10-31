@@ -80,7 +80,7 @@ export interface LiveEnv {
   /** The attacker's city takes its force's result (a `battleReport`): true if it did. */
   report(expedition: number, result: AwayResult & { replay?: string }): Promise<boolean>;
   /** Pin the force while its battle is with the region, or free it: false if it isn't fighting. */
-  settle(expedition: number, on: boolean): Promise<boolean>;
+  settle(expedition: number, on: boolean, force?: ForceIn): Promise<boolean>;
   /** The latest save the region keeps of a friend's city (the town a replay is shown in). */
   fetchSave(slot: number): Promise<SaveFile>;
 }
@@ -1175,8 +1175,11 @@ export class LiveBattles implements LiveSink {
     const id = awayBattleId(city.seed, expedition);
     if (this.calls.has(id)) return { kind: 'wait', ms: 5_000 };
     // Pinned while the region has the battle, as the old way pins it: it can't be called back.
-    if (!(await this.env.settle(expedition, true))) return { kind: 'wait', ms: 60_000 };
-    const force = awayForce(city);
+    // The force first put to this battle (kept with the expedition), so a page that comes back to
+    // a battle that ended while it was away asks with what the region's record holds, though the
+    // city's readiness or research has moved since.
+    const force = city.kept ?? awayForce(city);
+    if (!(await this.env.settle(expedition, true, force))) return { kind: 'wait', ms: 60_000 };
     let resolveDone!: (a: LiveAttack) => void;
     const done = new Promise<LiveAttack>((resolve) => (resolveDone = resolve));
     const call: Call = {

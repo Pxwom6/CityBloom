@@ -36,7 +36,7 @@ import {
 import { LiveBattles } from './client/liveBattles';
 import { BattleMapState } from './client/battleMapState';
 import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
-import type { BattleInput } from './sim/battle/types';
+import type { BattleInput, ForceIn } from './sim/battle/types';
 import type { BattleFrame } from './sim/battle/types';
 import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
@@ -556,7 +556,8 @@ export class Game {
       await this.dispatch({ type: 'recallForce', expedition });
       this.notice(`recalled:${expedition}`, `The force turns for home: ${why}.`, 'info');
     },
-    settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
+    settle: async (expedition, on, force?: ForceIn) =>
+      (await this.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) })).ok,
     live: (city, expedition) => this.live.attack(city, expedition),
   });
   /** The battle map's state (M39): units chosen, the order waiting for its target, the zoom. */
@@ -583,7 +584,8 @@ export class Game {
     runner: (input, on) => this.away.liveRunner(input, on),
     report: async (expedition, result) =>
       (await this.dispatch({ type: 'battleReport', expedition, result })).ok,
-    settle: async (expedition, on) => (await this.dispatch({ type: 'battleSettling', expedition, on })).ok,
+    settle: async (expedition, on, force?: ForceIn) =>
+      (await this.dispatch({ type: 'battleSettling', expedition, on, ...(force ? { force } : {}) })).ok,
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
   });

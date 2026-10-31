@@ -441,6 +441,56 @@ describe('M39: live battles between pages', () => {
     expect(hosted.theirLost).toBe(Object.values(lost).reduce((n, v) => n + v, 0));
   }, 120_000);
 
+  it('an attacker who leaves mid-battle and comes back readier or less ready still takes its losses', async () => {
+    const { clock, room, ada, sam, expedition } = await fight();
+    void ada.away.fight(expedition);
+    expect(
+      await driveUntil(
+        [ada, sam],
+        clock,
+        () => (sam.live.state()?.step ?? 0) >= 60,
+        2_000,
+        scripted(ada, sam),
+      ),
+    ).toBe(true);
+    // Ada's city as it is mid-battle (the force pinned, and kept as it was put to the battle).
+    const adaSave = ada.sim.save();
+    expect(ada.sim.state.war!.expeditions![0]!.liveForce).toBeTruthy();
+    const { slot, secret } = ada.link;
+    await ada.link.leave();
+    ada.deaf = true;
+    expect(await driveUntil([sam], clock, () => !!sam.live.state()?.ended, 4_000)).toBe(true);
+    const d = sam.live.state()!;
+    const back = await openPage({
+      room,
+      clock,
+      sim: loaded(adaSave),
+      mayor: 'Ada',
+      color: 0,
+      rejoin: { slot, secret },
+    });
+    back.ticking = false;
+    // Meanwhile Ada's forces' readiness moved (funding, staff): the force it asks with again is the one it sent.
+    const w = back.sim.state.war!;
+    w.readiness = w.readiness > 0.5 ? w.readiness - 0.3 : w.readiness + 0.3;
+    await flush();
+    let done = false;
+    void back.away.fight(expedition).then(() => (done = true));
+    expect(await driveUntil([back], clock, () => done, 500)).toBe(true);
+    // Not sent home untouched: the battle ran from the room's record, and its losses are Ada's.
+    const record = back.kept.battles.find((b) => b.id === d.id)!;
+    expect(record).toBeTruthy();
+    expect(rerun(record.input).hash()).toBe(d.hashes.mine!.hash);
+    const report = back.sim.state.war!.reports!.at(-1)!;
+    const lost: Record<string, number> = {};
+    for (const u of rerun(record.input).result().units)
+      if (u.side === 0 && u.out) lost[u.kind] = (lost[u.kind] ?? 0) + 1;
+    expect(report.lost).toEqual(lost);
+    expect(sam.sim.state.war!.reports!.at(-1)!.theirLost).toBe(
+      Object.values(lost).reduce((n, v) => n + v, 0),
+    );
+  }, 120_000);
+
   it('turns down a battle that is not the one its force was sent to fight', async () => {
     const { room, ada } = await setup({ v5: true });
     // Sam is a raw page that speaks protocol 6 and answers the call with another battle.

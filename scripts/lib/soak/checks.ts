@@ -836,8 +836,11 @@ export class Checks {
     const hard: string[] = [];
     const soft: string[] = [];
     // One side finished the battle while the other was away: the room ended it with the one verdict it had
-    // (`solo`), and the side that came back ran its battle out alone with the orders it had been sent. That
-    // is a disagreement a disturbance explains; any other is a failure.
+    // (`solo`), or with none (`abandoned`). That the room had only one verdict is a disturbance's doing, and
+    // the disturbance explains it. It does not explain two runs that ended differently: the page that came
+    // back takes the room's whole log before it runs its own battle out (`LiveBattles.runOut`), so its end is
+    // the room's, whatever it missed while it was away. Only a run that never finished (a crash that lost the
+    // page, a leave that was not undone) is excused.
     const left = !!room && (room.solo || room.abandoned) && b.disturbed.length > 0;
     if (!room) soft.push('the room gave no verdict');
     else {
@@ -847,24 +850,32 @@ export class Checks {
       if (room.solo) soft.push('only one city finished it');
       if (room.abandoned) soft.push('nobody finished it');
     }
-    const differ: string[] = [];
     for (const [who, v] of [
       [b.attackerName, att],
       [b.defenderName, def],
     ] as const) {
       if (!v) soft.push(`${who}'s page never showed it`);
       else {
-        if (v.state.desync) differ.push(`${who}'s page logged that the runs ended differently`);
+        // (An abandoned battle's pages are told `agree: false` by construction: they log it, and it is explained.)
+        if (v.state.desync)
+          (left && room?.abandoned ? soft : hard).push(
+            `${who}'s page logged that the runs ended differently`,
+          );
         if (!v.state.ended || !v.state.hashes.mine) soft.push(`${who}'s run did not end`);
+        // A run that ended where the room's verdict (the one finisher's, in a solo end) says it did not.
+        const mine = v.state.hashes.mine;
+        if (room && !room.abandoned && mine && (mine.step !== room.step || mine.hash !== room.hash))
+          hard.push(
+            `${who}'s run ended at step ${mine.step} ${mine.hash}, not where the room's verdict has it (step ${room.step} ${room.hash})`,
+          );
       }
     }
     const am = att?.state.hashes.mine;
     const dm = def?.state.hashes.mine;
     if (am && dm && (am.hash !== dm.hash || am.step !== dm.step))
-      differ.push(
+      hard.push(
         `the two runs ended differently (${b.attackerName} step ${am.step} ${am.hash}, ${b.defenderName} step ${dm.step} ${dm.hash})`,
       );
-    (left ? soft : hard).push(...differ);
     if (hard.length) {
       b.judged = { ok: false, problem: hard.join('; ') };
       this.w.fail('desync', `live battle ${b.id}: ${hard.join('; ')}`);

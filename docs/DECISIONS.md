@@ -1143,3 +1143,24 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   the room ended (the region's copy, kept for the city while it was away, stood in for the hosted one through
   `battleResolve` `instant`) lets its session go instead of holding an unfinished battle for ever (it blocked
   watching and helping).
+- **The soak's judge no longer lets a disturbance explain two runs that ended differently** (found checking the
+  late-return fix): a battle the room ended `solo` or `abandoned` is still explained by the player who was away,
+  but only as far as the room having one verdict (or none). Two cities' runs that both finished and differ, a
+  finished run that is not the room's verdict (in a solo end that is the one finisher's), and a page that logs a
+  difference in a solo end are failures whatever was disturbed; only a run that never finished (a crash that lost
+  the page) stays excused, and the difference pages log in an abandoned battle (`agree: false` by construction).
+  `relay/tests/soakChecks.test.ts` holds the soak's `exp-ce747761-818` numbers (Sam step 1502, Ada step 491). The
+  old tests' room verdicts now carry the step and hash a real one always has.
+  Open, found by the same virtual soaks and **older than the late-return fix** (the commit before it fails the
+  same way at the same minute with seed `m39final`, battle 810): a record that stands in for a hosted battle
+  (`resolveBattle`, `instant`, `standsIn`) re-runs the whole battle on a city whose hosted part has already
+  applied damage, so a civic structure the hosted part wrecked is wrecked again (`damageCivic` keeps the larger
+  repair clock, so the repair hours start over), and the report the battle ends with is the record's alone (the
+  hosted part's is dropped with it). Not a double loss of buildings or units (those are gone from the city, so
+  the record takes them as strangers). It shows when the hosted part had progressed before the page was lost: a bad moment
+  late in the battle (seed `m39final`, battle 810, minute 5) or a restore from an autosave made mid-battle (battle
+  2418, minute 101). The soak's `damage-doubled` check catches it; earlier runs passed because their hosted parts had
+  not yet wrecked anything. The way out is the sim's: a stand-in takes the hosted part's wrecked and damaged
+  structures as strangers (`adoptBattle`) and carries the hosted report's collapsed, civic, burning, lost, homeless
+  and worth entries into the report it ends with; or the page, which still has its session, gives the hosted
+  part the record's orders (`battleLive`) and lets it finish instead of replacing it. Left for a decision.

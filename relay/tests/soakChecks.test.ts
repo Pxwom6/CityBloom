@@ -337,7 +337,8 @@ describe('M39 step 10 review: a battle or a force the end finds unfinished', () 
   const log = (
     id: string,
     over: Partial<BattleLog> = {},
-    room: Record<string, unknown> = { agree: true },
+    // (The room's verdict carries the step and hash it was given, as a page's state shows them: the two runs here.)
+    room: Record<string, unknown> = { agree: true, step: 50, hash: 'h' },
   ) => {
     const mine = { hash: 'h', step: 50 };
     const state = { ended: true, desync: false, hashes: { mine, room } };
@@ -434,6 +435,115 @@ describe('M39 step 10 review: a battle or a force the end finds unfinished', () 
     at(200_000);
     checks.finish();
     expect(fails.map((f) => f.kind)).toEqual(['unclaimed-battle']);
+  });
+});
+
+describe('M39 late-return fix: a disturbance explains a battle with one verdict, not two runs that differ', () => {
+  type Mine = { step: number; hash: string } | null;
+  /** A battle as both pages showed it, and the room's verdict on it. */
+  const battle = (
+    id: string,
+    runs: { att: Mine; def: Mine },
+    room: Record<string, unknown>,
+    over: Partial<BattleLog> & { desync?: boolean } = {},
+  ) => {
+    const view = (slot: number, role: string, mine: Mine) => ({
+      slot,
+      role,
+      seen: 0,
+      state: { ended: !!mine, desync: !!over.desync, hashes: { mine, room } },
+    });
+    return {
+      id,
+      attacker: 1,
+      defender: 2,
+      attackerName: 'Sam',
+      defenderName: 'Ada',
+      began: 0,
+      lastSeen: 0,
+      views: new Map([
+        [1, view(1, 'attacker', runs.att)],
+        [2, view(2, 'defender', runs.def)],
+      ]),
+      disturbed: [{ name: 'Sam', what: 'outage', at: 5 }],
+      orders: { attacker: 0, defender: 0 },
+      helpedBy: [],
+      ...over,
+    } as unknown as BattleLog;
+  };
+  const judged = (b: BattleLog) => {
+    const ada = player('Ada', 2);
+    const { checks, fails, notes, at } = world([player('Sam', 1), ada]);
+    checks.battles.set(b.id, b);
+    at(1);
+    checks.applied(ada as never, 1, resolve(b.id), OK);
+    checks.finish();
+    return { fails, notes, b };
+  };
+  const ada = { step: 491, hash: '5d35edfd2823486b' };
+
+  it('explains a solo end that both runs agree with, and says so', () => {
+    const { fails, notes } = judged(
+      battle('exp-a-1', { att: ada, def: ada }, { ...ada, agree: true, solo: true }),
+    );
+    expect(fails).toEqual([]);
+    expect(notes.some((n) => /explained: only one city finished it/.test(n))).toBe(true);
+  });
+
+  it('fails a solo end whose two runs ended at different steps, though a player was disturbed in it (the soak’s exp-ce747761-818)', () => {
+    const { fails } = judged(
+      battle(
+        'exp-a-2',
+        { att: { step: 1502, hash: '0553db3af1d9ba85' }, def: ada },
+        { ...ada, agree: true, solo: true },
+      ),
+    );
+    expect(fails.map((f) => f.kind)).toEqual(['desync']);
+    expect(fails[0]!.text).toMatch(
+      /the two runs ended differently \(Sam step 1502 0553db3af1d9ba85, Ada step 491/,
+    );
+    expect(fails[0]!.text).toMatch(/Sam's run ended at step 1502 .*not where the room's verdict has it/);
+  });
+
+  it('fails a run that is not the room’s verdict though the other never finished', () => {
+    const { fails } = judged(
+      battle(
+        'exp-a-3',
+        { att: { step: 1502, hash: 'beef' }, def: null },
+        { ...ada, agree: true, solo: true },
+      ),
+    );
+    expect(fails.map((f) => f.kind)).toEqual(['desync']);
+    expect(fails[0]!.text).toMatch(/Sam's run ended at step 1502/);
+  });
+
+  it('still excuses a run that never finished (a crash lost the page), and says so', () => {
+    const { fails, notes } = judged(
+      battle('exp-a-4', { att: null, def: ada }, { ...ada, agree: true, solo: true }),
+    );
+    expect(fails).toEqual([]);
+    expect(notes.some((n) => /explained: only one city finished it; Sam's run did not end/.test(n))).toBe(
+      true,
+    );
+  });
+
+  it('fails a page that logged a difference in a solo end, whose agreement is the room’s own', () => {
+    const { fails } = judged(
+      battle('exp-a-5', { att: ada, def: ada }, { ...ada, agree: true, solo: true }, { desync: true }),
+    );
+    expect(fails.map((f) => f.kind)).toEqual(['desync']);
+    expect(fails[0]!.text).toMatch(/logged that the runs ended differently/);
+  });
+
+  it('explains the difference pages log in a battle nobody finished, but not runs that ended apart', () => {
+    const room = { step: 600, hash: '', agree: false, abandoned: true };
+    const same = judged(battle('exp-a-6', { att: ada, def: ada }, room, { desync: true }));
+    expect(same.fails).toEqual([]);
+    const apart = judged(
+      battle('exp-a-7', { att: { step: 700, hash: 'aa' }, def: ada }, room, { desync: true }),
+    );
+    expect(apart.fails.map((f) => f.kind)).toEqual(['desync']);
+    expect(apart.fails[0]!.text).toMatch(/the two runs ended differently/);
   });
 });
 

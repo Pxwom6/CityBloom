@@ -594,6 +594,14 @@ describe('M39: live battles between pages', () => {
     expect(held.step).toBeLessThan(d.hashes.mine!.step);
     expect(held.step).toBeGreaterThanOrEqual(stalledAt);
     expect(held.orders).toBeLessThan(d.orders);
+    // (Everything the room says of the end once Ada’s page is back: it owes the end and the record on the
+    // welcome, again to the `bjoin`, and once more to the page’s own `breplay`.)
+    const heard: RegionRoomMsg[] = [];
+    const message = ada.live.message.bind(ada.live);
+    ada.live.message = (m) => {
+      if (m.t === 'bend' || m.t === 'breplaydata') heard.push(m);
+      message(m);
+    };
     // The network comes back: Ada takes the room’s whole log, then runs the battle out.
     await restore(ada, adaNet);
     expect(await driveUntil([ada, sam], clock, () => over, 2_000)).toBe(true);
@@ -620,6 +628,18 @@ describe('M39: live battles between pages', () => {
     expect(hosted.theirLost).toBe(Object.values(lost).reduce((n, v) => n + v, 0));
     expect(ada.sim.state.war!.expeditions![0]!.state).toBe('back');
     expect(sam.sim.state.war!.battle).toBeUndefined();
+    // The room’s word comes again, all of it, twice more: nothing is run, kept or reported a second time.
+    expect(heard.filter((m) => m.t === 'breplaydata').length).toBeGreaterThanOrEqual(1);
+    const keptBefore = ada.kept.battles.length;
+    const reportsBefore = ada.sim.state.war!.reports!.length;
+    const said = [...heard];
+    ada.live.message = message;
+    for (let k = 0; k < 2; k++) for (const m of said) ada.live.message(m);
+    await driveUntil([ada, sam], clock, () => false, 20);
+    expect(ada.live.state()!.hashes.mine).toEqual(d.hashes.mine);
+    expect(ada.kept.battles.length).toBe(keptBefore);
+    expect(ada.sim.state.war!.reports!.length).toBe(reportsBefore);
+    expect(ada.sim.state.war!.expeditions![0]!.state).toBe('back');
   }, 120_000);
 
   /**

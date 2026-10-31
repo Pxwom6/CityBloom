@@ -46,6 +46,7 @@ import type { Sim } from '../sim';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { BState } from '../world/buildings';
 import { civicOnline } from '../world/civic';
+import { bombMood } from './atom';
 import { ZONE_R } from '../../data/zones';
 import { ignite, toRubble } from './incidents';
 import { militaryCivics, militaryOf, raidThreat } from './war';
@@ -249,8 +250,8 @@ export function raidsTick(sim: Sim): void {
   for (const r of w.incoming) if (!r.warned && s.tick >= r.warn) warnRaid(sim, r);
   const due = w.incoming.find((r) => s.tick >= r.arrive);
   if (!due) return;
-  // One battle at a time: a second force waits an hour.
-  if (w.battle) due.arrive = s.tick + TICKS_PER_HOUR;
+  // One battle at a time: a second force waits an hour (so does one while an atom bomb is on its way, M40).
+  if (w.battle || w.atom?.inbound) due.arrive = s.tick + TICKS_PER_HOUR;
   else {
     w.incoming = w.incoming.filter((r) => r !== due);
     if (!w.incoming.length) delete w.incoming;
@@ -292,7 +293,7 @@ export function raidsHour(sim: Sim): void {
     w.exposed = true;
     sim.events.push({ kind: 'raidsOpen', id: 0 });
   }
-  if (w.incoming?.length || w.battle) return;
+  if (w.incoming?.length || w.battle || w.atom?.inbound) return;
   // In a declared war (M36) raids come closer together, and a city at war is raided however young.
   const atWar = anyWarOpen(sim, true);
   const last = w.raided?.any ?? -Infinity;
@@ -368,6 +369,16 @@ function raidTarget(sim: Sim, want: BattleTarget): BattleTarget {
   return 'military';
 }
 
+/** The places the city's shelters hold (online ones, by how well they are staffed). */
+function shelterPlaces(sim: Sim): number {
+  let places = 0;
+  for (const c of militaryCivics(sim)) {
+    const m = militaryOf(c)!;
+    if (m.shelters && civicOnline(c)) places += m.shelters * Math.min(1, Math.max(0.5, c.staff ?? 0));
+  }
+  return places;
+}
+
 /** Residents near what a raid is after: the homes within reach of those targets. */
 function shelterCount(sim: Sim, target: BattleTarget): { near: number; sheltered: number } {
   const s = sim.state;
@@ -379,12 +390,26 @@ function shelterCount(sim: Sim, target: BattleTarget): { near: number; sheltered
       if (b.zone !== ZONE_R || b.state !== BState.Active || b.pop <= 0) continue;
       if (spots.some((p) => DMath.hypot(p.x - b.x, p.z - b.z) <= 600)) near += b.pop;
     }
-  let places = 0;
-  for (const c of militaryCivics(sim)) {
-    const m = militaryOf(c)!;
-    if (m.shelters && civicOnline(c)) places += m.shelters * Math.min(1, Math.max(0.5, c.staff ?? 0));
-  }
+  const places = shelterPlaces(sim);
   return { near: Math.round(near), sheltered: Math.round(Math.min(near, places)) };
+}
+
+/**
+ * Residents within `r` metres of a point and the places the shelters can give them (M40: an atom
+ * bomb's warning counts the homes inside the blast): `shelterCount` for a circle.
+ */
+export function sheltersWithin(
+  sim: Sim,
+  x: number,
+  z: number,
+  r: number,
+): { near: number; sheltered: number } {
+  let near = 0;
+  for (const b of sim.state.buildings.values()) {
+    if (b.zone !== ZONE_R || b.state !== BState.Active || b.pop <= 0) continue;
+    if (DMath.hypot(b.x - x, b.z - z) <= r) near += b.pop;
+  }
+  return { near: Math.round(near), sheltered: Math.round(Math.min(near, shelterPlaces(sim))) };
 }
 
 function warnRaid(sim: Sim, r: Raid): void {
@@ -513,6 +538,8 @@ export function resolveBattle(
   // not the one shown, and the viewer's sim is never played on, so it is put aside.
   const aside = asFought && mode === 'watch' && !!w.battle;
   if (w.battle && !standsIn && !aside) return fail(BATTLE_BUSY);
+  // No battle begins while an atom bomb is on its way (M40): a friend's offers it again afterwards.
+  if (w.atom?.inbound && !standsIn && !aside && mode !== 'watch') return fail(BATTLE_BUSY);
   // A friend's battle is known by its sender too (M36: two cities' battles may share an id).
   const takenKey = from === undefined ? input.id : `${from}:${input.id}`;
   if (!standsIn && (w.taken?.includes(takenKey) || w.taken?.includes(input.id))) return fail(BATTLE_TAKEN);
@@ -899,7 +926,7 @@ export function awayCaps(input: BattleInput): BattleInput {
 }
 
 /** A battle that can't go on (it could not be read after all): it ends, nothing more is done. */
-function abandonBattle(sim: Sim): void {
+export function abandonBattle(sim: Sim): void {
   const w = sim.state.war!;
   const hb = w.battle;
   if (!hb) return;
@@ -1136,13 +1163,15 @@ function endHomeBattle(sim: Sim, run: Battle): void {
 /** Approval the last raid costs for three days, by the share of nearby residents left unsheltered. */
 export function raidMood(sim: Sim): number {
   const w = sim.state.war;
+  // An atom bomb on its way, or lately landed (M40), weighs on the people as a raid does, only more.
+  const bomb = bombMood(sim);
   // The newest raid on the city that found residents near (a report of our own raid doesn't count).
   const r = [...(w?.reports ?? [])].reverse().find((x) => !x.ours && x.near > 0);
-  if (!r) return 0;
+  if (!r) return bomb;
   const age = sim.state.tick - r.end;
   const span = 3 * 24 * TICKS_PER_HOUR;
-  if (age >= span) return 0;
-  return -0.04 * (1 - r.sheltered / r.near) * (1 - age / span);
+  if (age >= span) return bomb;
+  return Math.min(bomb, -0.04 * (1 - r.sheltered / r.near) * (1 - age / span));
 }
 
 /**

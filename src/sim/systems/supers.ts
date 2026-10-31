@@ -3,6 +3,7 @@
  * gate, built as big projects once their research is done (`docs/plans/M37-design.md`, key call 9).
  * Their state appears when the first of them is finished, so other cities are unchanged.
  */
+import { ATOM } from '../../data/atom';
 import { BLACKOUT, DOME, DOME_MODES, GATE, type DomeMode } from '../../data/research';
 import { CIVIC } from '../../data/civic';
 import { fail, ok, type CommandResult } from '../commands';
@@ -17,8 +18,12 @@ import { friendBlackout, friendTowerHour } from './regionOps';
 export type SuperBuilding = 'dome' | 'tower' | 'gate';
 
 export interface Supers {
-  /** The dome: hours charged (of `DOME.chargeHours`), its mode, hours left on its reserve in a blackout, raised now. */
-  dome?: { hours: number; mode: DomeMode; reserve?: number; raised?: true };
+  /**
+   * The dome: hours charged (of `DOME.chargeHours`), its mode, hours left on its reserve in a blackout,
+   * raised now, and (M40) the war hours it stays down after stopping an atom bomb before it starts
+   * charging again (`ATOM.dome.down`, then the 240 of charging: `DOME.bombRecharge` in all).
+   */
+  dome?: { hours: number; mode: DomeMode; reserve?: number; raised?: true; down?: number };
   /**
    * The tower: the war-clock hour it can fire again, and the neighbour it's charging at (and when it
    * fires). At a friend's city (step 9): its place in the region and the operation's number the
@@ -96,6 +101,15 @@ export function supersHour(sim: Sim): void {
   }
   const s = w.supers;
   if (!s) return;
+  // A dome that stopped an atom bomb is down for a long while (M40): the hours count whatever else
+  // happens (a blackout, a battle, no crew), and charging starts the hour after they are done, so
+  // the whole wait is `DOME.bombRecharge` war hours.
+  const down = !!s.dome?.down && s.dome.down > 0;
+  if (down) {
+    s.dome!.down = s.dome!.down! - 1;
+    if (s.dome!.down! <= 0) delete s.dome!.down;
+    sim.warChanged();
+  }
   if (s.dome && !s.dome.raised) {
     const dome = s.dome;
     if (blackedOut(sim)) {
@@ -111,7 +125,7 @@ export function supersHour(sim: Sim): void {
       }
     } else {
       if (dome.reserve !== undefined) delete dome.reserve;
-      if (dome.hours < DOME.chargeHours && superWorking(superBuilding(sim, 'dome'))) {
+      if (!down && dome.hours < DOME.chargeHours && superWorking(superBuilding(sim, 'dome'))) {
         dome.hours++;
         if (dome.hours >= DOME.chargeHours) sim.events.push({ kind: 'domeCharged', id: 0 });
         sim.warChanged();
@@ -167,6 +181,8 @@ export function raiseDome(sim: Sim, bringsSuper: boolean): number {
 export function domePool(sim: Sim, bringsSuper: boolean): number {
   const d = sim.state.war?.supers?.dome;
   if (!d || d.raised || d.hours < DOME.chargeHours) return 0;
+  // Still down after stopping a bomb (M40): it rises over nothing until it has charged again.
+  if (d.down) return 0;
   if (d.mode === 'off' || (d.mode === 'super' && !bringsSuper)) return 0;
   // Built while they were allowed, it stands idle where the region's rules turn superweapons off.
   if (!superweaponsAllowed(sim) || !superWorking(superBuilding(sim, 'dome'))) return 0;
@@ -179,6 +195,35 @@ export function lowerDome(sim: Sim): void {
   if (!d?.raised) return;
   delete d.raised;
   d.hours = 0;
+  delete d.reserve;
+  sim.warChanged();
+}
+
+/**
+ * Would the dome stop an atom bomb that lands now (M40, call 9)? Built, working (crew and power),
+ * superweapons allowed, in a mode that rises for the bomb (`all`, or `super`: the bomb is the
+ * superweapon that mode was written for), not blacked out, not down from stopping an earlier one,
+ * and charged, or raised over a battle (which counts as charged; the battle keeps its own pool).
+ * Reads only.
+ */
+export function bombStopped(sim: Sim): boolean {
+  const d = sim.state.war?.supers?.dome;
+  if (!d || d.down) return false;
+  if (d.mode === 'off') return false;
+  if (!superweaponsAllowed(sim) || !superWorking(superBuilding(sim, 'dome')) || blackedOut(sim)) return false;
+  return d.hours >= DOME.chargeHours || !!d.raised;
+}
+
+/**
+ * The dome takes a bomb whole (M40, call 9): its charge is spent and it is down for `ATOM.dome.down`
+ * war hours, then charges again for 240 (`supersHour` counts both): `DOME.bombRecharge` in all. A
+ * dome raised over a battle stays raised for it (`lowerDome` leaves the downtime as it is).
+ */
+export function domeTakesBomb(sim: Sim): void {
+  const d = sim.state.war?.supers?.dome;
+  if (!d) return;
+  d.hours = 0;
+  d.down = ATOM.dome.down;
   delete d.reserve;
   sim.warChanged();
 }
@@ -279,8 +324,11 @@ export function superBuildingsReady(sim: Sim): void {
 
 /** The superweapon buildings as the page shows them (M37): the war room, the inspectors and the effects. */
 export interface SupersSummary {
-  /** The dome: its building, charge (0–1), mode, raised over a battle now. */
-  dome: { civic: number; charge: number; mode: DomeMode; raised: boolean } | null;
+  /**
+   * The dome: its building, charge (0–1), mode, raised over a battle now, and (M40) the war hours it
+   * stays down after stopping an atom bomb (0 when it isn't).
+   */
+  dome: { civic: number; charge: number; mode: DomeMode; raised: boolean; down: number } | null;
   /** The tower: its building, hours until it can fire, and the neighbour it's charging at. */
   tower: { civic: number; wait: number; charging: { to: number; hours: number } | null } | null;
   /** The gate: its building, hours until it can send, and war hours since a force last went through. */
@@ -306,6 +354,7 @@ export function supersSummary(sim: Sim): SupersSummary | null {
             charge: s.dome.hours / DOME.chargeHours,
             mode: s.dome.mode,
             raised: !!s.dome.raised,
+            down: s.dome.down ?? 0,
           }
         : null,
     tower: tower

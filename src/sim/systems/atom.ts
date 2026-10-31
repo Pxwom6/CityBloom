@@ -3,7 +3,9 @@
  * gates (`docs/plans/M40-design.md`, calls 1 to 7): what a city has made so far, the stage that
  * follows from it, why the enrichment plant and the silo can or can't be put down, and the race
  * itself: fuel made hour by hour, the bomb built in instalments, a launch prepared and (against a
- * computer neighbour) fired. The flight, the impact and what follows come in later steps.
+ * computer neighbour) fired; and (step 3, calls 8 to 10) the flight, the warning a city under a
+ * bomb is given, the dome that may stop it and the blast (`atomImpact.ts`). What follows the blast
+ * (fallout, winter, the world's turn on the firer) comes in later steps.
  * `WarState.atom` appears when first used, so every city that never races is exactly as before;
  * nothing here draws from a random stream.
  */
@@ -19,11 +21,13 @@ import type { Edit } from '../history';
 import { TICKS_PER_HOUR } from '../time';
 import { civicOnline, lowerName, type Civic } from '../world/civic';
 import { accrue } from './economy';
-import { fightingWith, neighbourOf, warWith } from './diplomacy';
+import { fightingWith, neighbourOf, scoreIntel, warWith } from './diplomacy';
+import { groundZero, impactCivics, impactFires, impactOver, impactSlice } from './atomImpact';
+import { abandonBattle, sheltersWithin } from './raids';
 import type { Neighbour } from './region';
 import { allTiersDone, researchCheat, researchTree } from './research';
 import { requirementContext } from './projects';
-import { blackedOut, superWorking } from './supers';
+import { blackedOut, bombStopped, domeTakesBomb, superWorking } from './supers';
 import { civicOutput } from './utilities';
 import { materialBill, takeStock } from './war';
 
@@ -52,14 +56,44 @@ export interface Atom {
    * The bomb has left: the tick, the neighbour it was aimed at (its id and name) and, for a friend,
    * its place in the region. It is the end of the race for this city.
    */
-  fired?: { tick: number; to: number; name: string; slot?: number };
+  fired?: { tick: number; to: number; name: string; slot?: number; landed?: true };
   /**
    * A bomb on its way to this city, who sent it, the ticks it was warned of and lands at, and
-   * ground zero (fixed when it was accepted).
+   * ground zero (fixed when it was accepted). `warned` once the city has been told; the residents
+   * within the blast and the places the shelters have for them, counted at the warning.
    */
-  inbound?: { from: number; name: string; slot?: number; warn: number; arrive: number; x: number; z: number };
-  /** The landing in hand: hourly slices done, residents who have left the city so far, ground zero. */
-  impact?: { done: number; fled: number; x: number; z: number };
+  inbound?: {
+    from: number;
+    name: string;
+    slot?: number;
+    warn: number;
+    arrive: number;
+    x: number;
+    z: number;
+    warned?: true;
+    near?: number;
+    sheltered?: number;
+  };
+  /**
+   * The landing in hand (`atomImpact.ts`): hourly slices done, residents who have left the city so
+   * far, ground zero. Also the tick of the first slice (the landing), the buildings levelled so far,
+   * the residents near and the shelter places (from the warning), `fires` once the fires round the
+   * edge are set (the tick after the landing), `razed` once every building inside is levelled, and
+   * `over` once the civic buildings inside are gone too: the record of the last bomb that landed here.
+   */
+  impact?: {
+    done: number;
+    fled: number;
+    x: number;
+    z: number;
+    at?: number;
+    levelled?: number;
+    near?: number;
+    sheltered?: number;
+    fires?: true;
+    razed?: true;
+    over?: true;
+  };
   /** The city finished a bomb before every other city in its region (the achievement's fact). */
   first?: true;
   /** Bombs that have landed in this city, and bombs its dome has stopped. */
@@ -201,6 +235,22 @@ export interface AtomSummary {
   } | null;
   /** The bomb has left: when, and for whom. */
   fired: { tick: number; to: number; name: string } | null;
+  /**
+   * A bomb on its way to this city (M40): who sent it, when it lands (a tick), ground zero, the
+   * residents near it and the shelter places, and whether the dome would stop it if it landed now.
+   * Null unless warned.
+   */
+  inbound: {
+    from: string;
+    arrive: number;
+    x: number;
+    z: number;
+    near: number;
+    sheltered: number;
+    stops: boolean;
+  } | null;
+  /** The last bomb to land here: where, the residents who have left the city, buildings levelled, and whether the blast is over. */
+  impact: { x: number; z: number; fled: number; levelled: number; over: boolean } | null;
 }
 
 export function atomSummary(sim: Sim): AtomSummary | null {
@@ -239,6 +289,26 @@ export function atomSummary(sim: Sim): AtomSummary | null {
         }
       : null,
     fired: a?.fired ? { tick: a.fired.tick, to: a.fired.to, name: a.fired.name } : null,
+    inbound: a?.inbound?.warned
+      ? {
+          from: a.inbound.name,
+          arrive: a.inbound.arrive,
+          x: a.inbound.x,
+          z: a.inbound.z,
+          near: a.inbound.near ?? 0,
+          sheltered: a.inbound.sheltered ?? 0,
+          stops: bombStopped(sim),
+        }
+      : null,
+    impact: a?.impact
+      ? {
+          x: a.impact.x,
+          z: a.impact.z,
+          fled: a.impact.fled,
+          levelled: a.impact.levelled ?? 0,
+          over: !!a.impact.over,
+        }
+      : null,
   };
 }
 
@@ -652,17 +722,240 @@ function fireIfAble(sim: Sim): boolean {
   delete a.prep;
   sim.events.push({ kind: 'bombFired', id: n.id, info: { to: n.name } });
   sim.warChanged();
-  startFlight(sim, n);
+  startFlight(sim);
   return true;
 }
 
 /**
- * The seam for step 3: the missile is on its way to a computer neighbour (`fired` is set, the bomb
- * has left the silo). Step 3 makes the flight and the landing here; step 6 turns the world on the
- * firer. Until then a bomb fired at a computer neighbour is fired and nothing more happens.
+ * The bomb has left the silo for a computer neighbour (`fired` is set). The flight needs no state of
+ * its own: it lands `ATOM.flight.hours` after `fired.tick`, on this city's own clock (`atomTick`).
+ * What the world makes of the firer is `atomFired`.
  */
-function startFlight(_sim: Sim, _target: Neighbour): void {
-  /* step 3 */
+function startFlight(sim: Sim): void {
+  atomFired(sim);
+}
+
+/**
+ * The seam for step 6, "the world turns on the firer" (plan call 14): called once, the moment the
+ * bomb leaves for any target, stopped or not (a refusal never reaches it). The firer's reputation
+ * falls to nothing for good, every neighbour embargoes it, its pacts end, anyone may declare total
+ * war, its people protest and the chronicle keeps the launch. Does nothing yet.
+ */
+export function atomFired(_sim: Sim): void {
+  /* step 6 */
+}
+
+// ---------------------------------------------------------------------------------------------
+// Flight, warning and landing (M40 step 3, plan calls 8 to 10). Every clock here is the city's own,
+// not the war clock: the fair clock holds research and the race, never a missile in the air.
+// ---------------------------------------------------------------------------------------------
+
+/** The minute of the hour the blast's later slices are dealt in (a quiet one). */
+const SLICE_MINUTE = 1;
+
+/** Who sent a bomb at the city. */
+export interface BombSender {
+  id: number;
+  name: string;
+  /** Another player's city in the region. */
+  slot?: number;
+}
+
+/**
+ * A bomb is on its way to this city (plan call 8). The senders are a Hard computer neighbour
+ * (step 7) and the region's room for a friend (step 10); the test cheat `bombIn` is a third. This
+ * city's own sim takes it: ground zero is fixed now, from this city as it stands, never from a
+ * message, and the warning is given on the next tick (`atomTick`). One bomb is in the air at a time:
+ * a second is refused (the sender is told, and may send it again). Returns why not, or null.
+ */
+export function atomInbound(sim: Sim, from: BombSender, hours: number = ATOM.flight.hours): string | null {
+  const w = sim.state.war;
+  if (!w) return 'War is off in this city';
+  const a = atomOf(sim);
+  if (a.inbound) return 'A bomb is already on its way to the city';
+  const at = groundZero(sim);
+  const tick = sim.state.tick;
+  a.inbound = {
+    from: from.id,
+    name: from.name,
+    ...(from.slot !== undefined ? { slot: from.slot } : {}),
+    warn: tick,
+    arrive: tick + Math.max(0, Math.round(hours * TICKS_PER_HOUR)),
+    x: at.x,
+    z: at.z,
+  };
+  sim.warChanged();
+  return null;
+}
+
+/**
+ * Test mode: a computer neighbour (the first rival, or `from`) fires at the city now, to land in
+ * `hours` (default `ATOM.flight.hours`; 0: it lands at once). Sets only what a real sender sets.
+ */
+export function bombInCheat(
+  sim: Sim,
+  hours: number | undefined,
+  from: number | undefined,
+  dryRun: boolean,
+): CommandResult {
+  const w = sim.state.war;
+  if (!w) return fail('War is off in this city');
+  if (w.atom?.inbound) return fail('A bomb is already on its way to the city');
+  const n = sim.state.region.neighbours.find(
+    (x) => !!x.rival && !x.player && (from === undefined || x.id === from),
+  );
+  if (!n) return fail('No rival neighbour');
+  const h = hours ?? ATOM.flight.hours;
+  if (!Number.isFinite(h) || h < 0) return fail('Invalid hours');
+  if (dryRun) return ok(0);
+  const why = atomInbound(sim, { id: n.id, name: n.name }, h);
+  return why ? fail(why) : ok(0);
+}
+
+/**
+ * Every tick while something of the bomb is in the air or being dealt out (plan calls 8 to 10): the
+ * warning to a city a bomb is aimed at, its landing, the blast's hourly slices, and the landing of a
+ * bomb this city fired at a computer neighbour. A city with none of these costs a lookup.
+ */
+export function atomTick(sim: Sim): void {
+  const a = sim.state.war?.atom;
+  if (!a) return;
+  if (a.inbound) inboundTick(sim, a, a.inbound);
+  const im = a.impact;
+  if (im && !im.over) {
+    // The hourly slices level the buildings; the civic buildings inside come down a few every tick.
+    const t = sim.state.tick;
+    const later = t > (im.at ?? -1);
+    if (!im.razed && t % TICKS_PER_HOUR === SLICE_MINUTE && later && impactSlice(sim, im)) im.razed = true;
+    // One heavy thing a tick after the landing: the fires first, then the civic buildings a few at a time.
+    if (!im.fires) {
+      if (later) {
+        impactFires(sim, im);
+        im.fires = true;
+      }
+    } else if (impactCivics(sim, im) && im.razed) impactOver(sim, a, im);
+  }
+  const f = a.fired;
+  if (f && !f.landed && sim.state.tick >= f.tick + ATOM.flight.hours * TICKS_PER_HOUR) landFlight(sim, f);
+}
+
+type Inbound = NonNullable<Atom['inbound']>;
+
+function inboundTick(sim: Sim, a: Atom, hit: Inbound): void {
+  const s = sim.state;
+  if (!hit.warned) {
+    // The people are told at once: the siren, how many live in the blast and how many the shelters
+    // can take (the page drops the game to 1x once, and the dome says what it will do).
+    const { near, sheltered } = sheltersWithin(sim, hit.x, hit.z, ATOM.impact.level);
+    hit.warned = true;
+    hit.near = near;
+    hit.sheltered = sheltered;
+    sim.events.push({
+      kind: 'bombWarning',
+      id: hit.from,
+      info: {
+        from: hit.name,
+        hours: Math.max(0, Math.round((hit.arrive - s.tick) / TICKS_PER_HOUR)),
+        near,
+        sheltered,
+        stops: bombStopped(sim) ? 1 : 0,
+      },
+    });
+    sim.warChanged();
+  }
+  if (s.tick < hit.arrive) return;
+  // It lands. A dome that is up stops it whole (checked first, so a dome raised over a battle does).
+  if (bombStopped(sim)) {
+    domeTakesBomb(sim);
+    delete a.inbound;
+    a.stopped++;
+    sim.events.push({
+      kind: 'bombStopped',
+      id: hit.from,
+      info: { from: hit.name, down: ATOM.dome.down },
+    });
+    sim.warChanged();
+    return;
+  }
+  // A blast still being dealt out holds the next one back until it is over.
+  if (a.impact && !a.impact.over) return;
+  // A battle in the city holds it back too, for at most `battleWait` hours: then the battle is ended
+  // (as withdrawn; a live one's page takes its usual road for a battle that is gone) and the bomb falls.
+  const w = s.war!;
+  if (w.battle) {
+    if (s.tick - hit.arrive < ATOM.impact.battleWait * TICKS_PER_HOUR) return;
+    abandonBattle(sim);
+  }
+  delete a.inbound;
+  const im: NonNullable<Atom['impact']> = {
+    done: 0,
+    fled: 0,
+    x: hit.x,
+    z: hit.z,
+    at: s.tick,
+    levelled: 0,
+    near: hit.near ?? 0,
+    sheltered: hit.sheltered ?? 0,
+  };
+  a.impact = im;
+  sim.events.push({ kind: 'bombLanded', id: hit.from, info: { from: hit.name, x: hit.x, z: hit.z } });
+  if (impactSlice(sim, im)) im.razed = true;
+  sim.warChanged();
+}
+
+/**
+ * The bomb this city fired lands (a game day after it left, this city's clock). At a computer
+ * neighbour the landing is a change to its record (plan call 10): most of its people, forces and
+ * defences gone, its feeling for the city at the bottom, fallout on its ground (step 4 uses the
+ * level), the war score swung hard in the city's favour through the war's own scoring, and an
+ * event the region map draws. At a friend's city (step 10) the friend's own sim does the landing:
+ * nothing is done here.
+ */
+function landFlight(sim: Sim, f: NonNullable<Atom['fired']>): void {
+  f.landed = true;
+  sim.warChanged();
+  if (f.slot !== undefined) return;
+  const n = neighbourOf(sim, f.to);
+  const r = n?.rival;
+  if (!n || !r || n.player) return;
+  const keep = ATOM.record.keep;
+  const before = n.population;
+  n.population = Math.round(n.population * keep);
+  r.forces = Math.round(r.forces * keep * 1000) / 1000;
+  r.defences = Math.round(r.defences * keep * 1000) / 1000;
+  r.relation = ATOM.record.relation;
+  r.fallout = ATOM.record.fallout;
+  scoreIntel(sim, n.id, ATOM.record.score);
+  sim.events.push({
+    kind: 'atomImpact',
+    id: n.id,
+    info: { to: n.name, side: n.side, lost: before - n.population },
+  });
+}
+
+/**
+ * What a bomb on its way, or lately landed, does to approval (M40, plan call 8): the raid dip's
+ * formula (the share of nearby residents the shelters can't take) at the bomb's own weight, in
+ * full while the bomb is in the air and fading over `ATOM.warning.days` after it lands. A bomb the
+ * dome stopped leaves nothing behind. 0 without one.
+ */
+export function bombMood(sim: Sim): number {
+  const a = sim.state.war?.atom;
+  if (!a) return 0;
+  const span = ATOM.warning.days * 24 * TICKS_PER_HOUR;
+  let near = 0;
+  let sheltered = 0;
+  let ease = 1;
+  if (a.inbound?.warned) {
+    near = a.inbound.near ?? 0;
+    sheltered = a.inbound.sheltered ?? 0;
+  } else if (a.impact && a.impact.at !== undefined) {
+    near = a.impact.near ?? 0;
+    sheltered = a.impact.sheltered ?? 0;
+    ease = 1 - (sim.state.tick - a.impact.at) / span;
+  } else return 0;
+  if (near <= 0 || ease <= 0) return 0;
+  return -ATOM.warning.mood * (1 - sheltered / near) * ease;
 }
 
 // ---------------------------------------------------------------------------------------------

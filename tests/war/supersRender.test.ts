@@ -51,7 +51,7 @@ function world(supers: Partial<SupersSummary>, battle: { dome?: number } | null)
 
 describe('M37 superweapon effects', () => {
   it('the dome rises over a battle at home, reaching every building, flashes as it is hit and pops', () => {
-    const dome = { civic: 1, charge: 0, mode: 'all' as const, raised: true };
+    const dome = { civic: 1, charge: 0, mode: 'all' as const, raised: true, down: 0 };
     const w = world({ dome }, { dome: 1 });
     const fx = new SuperEffects(w);
     fx.update(0);
@@ -71,7 +71,7 @@ describe('M37 superweapon effects', () => {
   });
 
   it('draws as a ring on the ground at Low, and nothing without a battle', () => {
-    const dome = { civic: 1, charge: 1, mode: 'all' as const, raised: false };
+    const dome = { civic: 1, charge: 1, mode: 'all' as const, raised: false, down: 0 };
     const fx = new SuperEffects(world({ dome }, null));
     fx.update(0);
     expect(fx.shown).toEqual({ dome: false, bubbles: 0, swirl: false, tower: false });

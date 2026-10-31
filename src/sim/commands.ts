@@ -107,6 +107,11 @@ export type Command =
    * `to` (default: the first computer neighbour), `fired`. `none` forgets the race.
    */
   | { type: 'cheat'; cheat: 'atom'; stage: AtomStage; to?: number }
+  /**
+   * Test mode (M40): a computer neighbour (the first rival, or `from`) has fired an atom bomb at the
+   * city: it lands in `hours` (default a game day; 0: at once), ground zero fixed by this city's own sim.
+   */
+  | { type: 'cheat'; cheat: 'bombIn'; hours?: number; from?: number }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */

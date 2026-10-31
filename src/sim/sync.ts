@@ -114,6 +114,10 @@ export function checksum(sim: Sim): string {
       m.num(a.bomb?.done ?? -1);
       m.num(a.prep?.done ?? -1);
       m.int((a.have ? 1 : 0) + (a.fired ? 2 : 0) + (a.inbound ? 4 : 0) + (a.impact ? 8 : 0));
+      if (a.impact) {
+        m.int(a.impact.done);
+        m.num(a.impact.fled);
+      }
       m.int(a.boom);
       m.int(a.stopped);
     }

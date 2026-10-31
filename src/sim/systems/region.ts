@@ -124,6 +124,11 @@ export interface RivalNeighbour {
   techAt?: number;
   /** What the city's spies know and did there, and what its own spies know of the city (M37). */
   intel?: RivalIntel;
+  /**
+   * Fallout on its ground, 0 to 1 (M40): 1 after an atom bomb of the city's lands on it, and (step 4)
+   * what drifts over from a bomb that fell near its side of the map. Absent until there is some.
+   */
+  fallout?: number;
 }
 
 export interface Deal {

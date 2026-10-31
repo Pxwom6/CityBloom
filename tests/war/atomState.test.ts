@@ -195,6 +195,8 @@ describe('M40: the stage of the race', () => {
       have: false,
       launch: null,
       fired: null,
+      inbound: null,
+      impact: null,
     });
     const plant = place('enrichment');
     ok(sim, { type: 'cheat', cheat: 'finishStages', civic: plant });

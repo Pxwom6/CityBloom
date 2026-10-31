@@ -1410,3 +1410,74 @@ these are its calls and the reasons, with where they overturned the first draft.
     full load at 0.3333, +$8,444 at worst). The charge is now the whole thousandths gained times the
     price, so the sum is exact and a full load is $2,304,000 whatever the crew, power or funding, with
     nothing left in the carry.
+- **Step 3 (flight, dome, impact): calls the plan left open.**
+  - *Who is warned, and how.* `atomInbound(sim, sender, hours)` is the one door (the test cheat
+    `bombIn {hours?, from?}` is the first caller; step 7's Hard rival and step 10's room are the others):
+    the target's own sim fixes ground zero now and stores the bomb in `Atom.inbound`; the warning is
+    given by `atomTick` on the next tick (flag `warned`, event `bombWarning` with who, hours, the homes in
+    the blast, the shelter places and whether the dome would stop it), so a bomb loaded from a save is
+    told once too. One bomb is in the air at a time: a second is refused to its sender, who may send it
+    again. The page drops the speed to 1x on the warning if it is faster and never locks or unpauses it;
+    the sound is the existing raid siren (the plan's `atomWarn` is step 11's).
+  - *The clock.* The flight, the landing, the blast's slices and the hosted-battle wait all count the
+    city's own ticks, not the war clock: the fair clock can hold the war clock for good, and a missile
+    (or a wait that must end) must not be held with it. The dome's long downtime is the opposite, war
+    hours (as its charge always was), so a held clock holds it. The plan's "12 war hours" for the battle
+    wait is therefore 12 game hours from the tick the bomb arrived.
+  - *Dome.* `bombStopped(sim)` is a pure read, `domeTakesBomb` the action. A blacked-out dome does not
+    stop a bomb, even on its four-hour reserve (the reserve holds it up for a battle, not for a missile).
+    Mode `super` stops it, mode `off` does not. The check comes before any wait, so a dome raised over
+    a battle stops a bomb that falls during it, and goes on over the battle (the battle keeps its own
+    pool; `lowerDome` leaves the downtime). `supersHour` counts `down` first, whatever else is going on
+    (a blackout, a raised dome, no crew), and charging starts the hour after it reaches 0, so the wait is
+    exactly `DOME.bombRecharge` = 1,440 war hours. `SupersSummary.dome.down` is the hours left.
+  - *The blast's timing: one heavy thing a tick.* The first version did everything on the landing
+    tick and cost 119 ms on the 110k bench city (taking a civic building away re-checks the lots round
+    it, about 4 ms each, 45 of them inside the blast; the fires cost 10 ms). Now the landing tick does
+    slice 0 (the nearest `ATOM.impact.slice` buildings, the ring's civic buildings closed, the roads, the
+    trees and the crater: 7 ms), the next tick sets the fires (11 ms), and from the one after the civic
+    buildings inside come down `civicsPerTick` (3) a tick, nearest first (5 to 14 ms); the later slices
+    of buildings are dealt at minute 1 of an hour (a quiet one), never twice in the landing hour. All of
+    it is read from the city each time, so it resumes from a save and is idempotent. `Impact.fires`,
+    `razed` (every building inside levelled) and `over` (and the civic buildings gone too) mark the
+    stages. A second bomb that lands while a blast is still being dealt out waits for it (after its own
+    dome check). The finished blast stays as `Atom.impact` with the buildings levelled and the residents
+    gone, for the card; a later bomb replaces it.
+  - *Ground zero.* The densest window of `ATOM.impact.window` (8 cells of 64 m) by the `pop` of every
+    active building, as `cityCentre` weighs them (so a downtown of shops counts, not only homes), its
+    centre; ties to the lowest cell, north first and then west; a map with nobody on it gives its middle.
+  - *What the blast does.* Civics whose centre is inside 450 m are removed (`removeCivic`: a base's units
+    and orders go with it, a plant or silo lose what they hold) over the first minutes; out to 1.5 times that they close for 72
+    hours through the war's own `damageCivic` (so Repair crews shorten it). Roads reaching into it close
+    for 240 hours, except the regional highway (the city's lifeline, as the war's craters spare it).
+    Trees go to 1.6 times the radius, and the crater joins the meteors' list, fading with theirs. Fires:
+    a building between 450 and 675 m catches fire with chance `ATOM.impact.fireChance` (0.7) falling
+    linearly to nothing at 675 m, on a die seeded by the game seed and that building's id, so no order
+    or shared stream matters; at most 400, nearest first.
+  - *What a landing at a computer neighbour is.* Its people, forces and defences are multiplied by 0.4
+    (rounded), its relation is -100, `RivalNeighbour.fallout` is 1 (a direct hit; step 4's level), and
+    the war score swings +60 through `scoreIntel`, which is the war's own scoring for a strike that is
+    not a battle: in an open war that is the score at which the neighbour capitulates, so a bomb ends a
+    war it was fired in (a ceasefire by then, or a war over, swings nothing). The allies' -40, the ended
+    pacts and the sanctions are step 6's, from `atomFired`. A flight aimed at a friend's slot lands
+    nothing here (its own sim does that, step 10); one at a neighbour that is gone lands nothing.
+  - *Approval.* `raidMood` takes the lower of the raid's dip and `bombMood`: the same formula (the
+    share of nearby residents the shelters can't take) at 0.08 instead of 0.04, in full while the bomb
+    is in the air, fading over three days from the landing; a stopped bomb leaves none.
+  - *No battle begins while one is in the air.* `raidsHour` decides no raid (before it draws a die),
+    `raidsTick` holds a raid that is due an hour at a time, the `raidIn` cheat refuses, and
+    `resolveBattle` answers a friend's battle with `BATTLE_BUSY` (the page offers it again), watch
+    modes excepted. A raid already on its way goes on after the bomb has landed or been stopped.
+  - *Seams and what was left.* `atomFired(sim)` (called when the bomb leaves for a computer neighbour;
+    step 10 adds the friend's way) for step 6, `startFallout` and `startWinter` (called when the blast is
+    over) for steps 4 and 5, all empty. The chronicle line waits for step 6's `'atom'` kind. Events
+    `bombWarning`, `bombStopped`, `bombLanded` (the landing tick, for the flash) and `atomImpact`
+    (the blast over, with who left and what fell; for the firing city, who it fell on).
+    `AtomSummary` gains `inbound` and `impact`, `WarSummary.incoming` a `kind` ('raid' or 'bomb') and a
+    bomb's ground zero (the chip says "Atom bomb from X"; the raid tip and the war map's raid token
+    ignore a bomb). The achievement `underTheDome` is "stopped at least one" (`ACHIEVEMENTS` has 13).
+  - *Tests are deliberately cheap.* The scripted town is only 750 m long, so the blast's rings are made
+    by moving ground zero by hand in a test (the densest-district rule is tested on its own) and the
+    multi-slice behaviour by lowering `ATOM.impact.slice` for a test; `atombench.ts` is the 400 on the
+    110k city. Mutations checked: no distance order, no cap, fires from a shared stream, charging while
+    down and ignoring a blackout each fail a test.

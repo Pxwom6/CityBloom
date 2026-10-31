@@ -1461,7 +1461,37 @@ export class Game {
           'bad',
         );
         this.audio?.play('raid');
-      } else if (e.kind === 'battleStarted') {
+      } else if (e.kind === 'bombWarning') {
+        // An atom bomb is on its way (M40): the siren, and the game drops to 1x once if it is faster.
+        // The speed buttons stay the player's (pausing only holds the missile: it flies on the city's
+        // own clock, and the sim runs only while a page does).
+        const i = e.info ?? {};
+        const shelter = Number(i.near)
+          ? ` ${formatNumber(Number(i.sheltered))} of the ${formatNumber(Number(i.near))} residents in its path head for the shelters.`
+          : '';
+        this.notice(
+          `bomb:${e.id}`,
+          `Sirens! ${String(i.from)} has fired an atom bomb at the city: it lands in ${String(i.hours)} hour${i.hours === 1 ? '' : 's'}.${i.stops ? ' The dome shield is charged and will stop it.' : ''}${shelter}`,
+          'bad',
+        );
+        this.audio?.play('raid');
+        if (this.speed > 1) this.setSpeed(1);
+      } else if (e.kind === 'bombLanded') this.audio?.play('boom');
+      else if (e.kind === 'bombStopped')
+        this.notice(
+          `bomb:${e.id}`,
+          `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
+          'ok',
+        );
+      else if (e.kind === 'atomImpact')
+        this.notice(
+          'atomImpact',
+          e.info?.to !== undefined
+            ? `The atom bomb has landed on ${String(e.info.to)}.`
+            : `${formatNumber(Number(e.info?.fled ?? 0))} residents have left the city; ${formatNumber(Number(e.info?.levelled ?? 0))} buildings were levelled.`,
+          'bad',
+        );
+      else if (e.kind === 'battleStarted') {
         this.notice(
           `battle:${e.id}`,
           `${String(e.info?.from)}'s force has reached the city, and the defences are fighting back.`,

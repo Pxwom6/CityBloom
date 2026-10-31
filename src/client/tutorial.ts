@@ -154,7 +154,7 @@ export const TIPS: Tip[] = [
       'A raid is on its way: the red countdown in the top bar says when it arrives. Your bunkers, guns and ' +
       'units fight on their own; residents near the targets go to the shelters. A radar gives earlier ' +
       'warning. When it comes, the battle bar follows the fighting.',
-    when: (g) => !!g.world.stats.war?.incoming || !!g.world.stats.war?.battle,
+    when: (g) => g.world.stats.war?.incoming?.kind === 'raid' || !!g.world.stats.war?.battle,
   },
   {
     id: 'sendForce',

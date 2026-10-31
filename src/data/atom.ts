@@ -108,5 +108,26 @@ export const ATOM = {
     fires: 400,
     crater: 90,
     battleWait: 12,
+    /** The chance a building at the blast's edge catches fire, falling to nothing at the fire reach. */
+    fireChance: 0.7,
+    /**
+     * Civic buildings inside the blast come down this many a tick, nearest first, from the second tick
+     * after the landing on (taking one away re-checks the lots round it: 4 ms each on the 100k city, so
+     * all at once would blow the tick), not in the hourly slices. The first tick after the landing sets
+     * the fires, which cost as much as a few of them.
+     */
+    civicsPerTick: 3,
   },
+  /**
+   * What a bomb that lands on a computer neighbour does to its record (call 10): the share of its
+   * people, forces and defences left, its feeling for the city, its fallout level (1: a direct hit)
+   * and the swing of the war score (`scoreIntel`, in a war that is open).
+   */
+  record: { keep: 0.4, relation: -100, fallout: 1, score: 60 },
+  /**
+   * The dread of a bomb on its way, and for `days` after it lands (call 8): the raid dip's
+   * approval term (`raidMood`) scaled by this much, by the share of nearby residents the shelters
+   * can't take.
+   */
+  warning: { mood: 0.08, days: 3 },
 };

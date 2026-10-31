@@ -43,6 +43,20 @@ export function RaidChip() {
   const hours = Math.max(0, (r.arrive - game.world.displayTick) / TICKS_PER_HOUR);
   const h = Math.floor(hours);
   const m = Math.floor((hours - h) * 60);
+  if (r.kind === 'bomb')
+    return (
+      <button
+        class="btn raid-chip"
+        data-testid="raid-chip"
+        title={`${r.from} has fired an atom bomb at the city`}
+        onClick={() => game.openPanel('war')}
+      >
+        Atom bomb from {r.from} in{' '}
+        <strong data-testid="raid-eta">
+          {h}:{String(m).padStart(2, '0')}
+        </strong>
+      </button>
+    );
   return (
     <button
       class="btn raid-chip"
@@ -794,6 +808,7 @@ export function RegionMap() {
           );
         })}
         {w.incoming &&
+          w.incoming.kind === 'raid' &&
           (() => {
             const n = ns.find((x) => x.name === w.incoming!.from);
             const p = n && at[n.id];

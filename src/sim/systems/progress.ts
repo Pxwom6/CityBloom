@@ -52,6 +52,8 @@ const CHECKS: Record<string, (sim: Sim) => boolean> = {
   skyline: (sim) => [...sim.state.civics.values()].filter((c) => !!civicDef(c).tourism?.draw).length >= 3,
   nestEgg: (sim) => sim.state.treasury >= 500_000,
   metropolis: (sim) => sim.state.progress.peak >= 100_000,
+  // The dome stopped an atom bomb (M40).
+  underTheDome: (sim) => (sim.state.war?.atom?.stopped ?? 0) > 0,
 };
 
 /**

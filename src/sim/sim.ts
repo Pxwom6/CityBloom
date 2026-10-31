@@ -283,7 +283,9 @@ import { answerOffer, offerCheat } from './systems/offers';
 import {
   atomCheat,
   atomCivicRemoved,
+  atomTick,
   atomUndoRefusal,
+  bombInCheat,
   buildBomb,
   cancelBomb,
   cancelLaunch,
@@ -404,6 +406,11 @@ export type SimEvent = {
     | 'bombFired'
     | 'launchHeld'
     | 'atomLost'
+    // A bomb on its way to the city, stopped by its dome, landed, and the blast over (M40 step 3).
+    | 'bombWarning'
+    | 'bombStopped'
+    | 'bombLanded'
+    | 'atomImpact'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -1374,6 +1381,7 @@ export class Sim {
           const w = this.state.war;
           if (!w) return fail('War is off in this city');
           if (w.battle || w.incoming?.length) return fail('A raid is already on its way');
+          if (w.atom?.inbound) return fail('An atom bomb is on its way');
           const n = this.state.region.neighbours.find(
             (x) => !!x.rival && !x.player && (cmd.neighbour === undefined || x.id === cmd.neighbour),
           );
@@ -1404,6 +1412,10 @@ export class Sim {
         if (cmd.cheat === 'atom') {
           if (!this.testMode) return fail('Test mode only');
           return atomCheat(this, cmd.stage, cmd.to, dryRun);
+        }
+        if (cmd.cheat === 'bombIn') {
+          if (!this.testMode) return fail('Test mode only');
+          return bombInCheat(this, cmd.hours, cmd.from, dryRun);
         }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
@@ -2028,6 +2040,8 @@ export class Sim {
     // Raids on their way and a battle in the city (M35): warnings, arrivals, the battle's steps.
     if (s.war?.incoming) run('raids', () => raidsTick(this));
     if (s.war?.battle) run('battle', () => battleTick(this));
+    // The atom bomb (M40): a warning, the landing and the blast's slices, or a flight that ends.
+    if (s.war?.atom) run('atom', () => atomTick(this));
     // Forces away (M35): arrivals and homecomings on the minute, as the war room counts them down.
     if (s.war?.expeditions) run('expeditions', () => expeditionsTick(this));
     if (t % GROWTH.passInterval === 0) run('growth', () => growthPass(this));

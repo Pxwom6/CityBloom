@@ -234,8 +234,19 @@ describe('M40: the race through the real clock', () => {
     // One bomb ever: nothing more can be made, aimed or built.
     expect(atomLock(sim, PLANT)).toMatch(/used its atom bomb/);
     expect(why(sim, { type: 'buildBomb' })).toMatch(/used its atom bomb/);
-    // (The flight itself is step 3's.)
+    // The flight is on the city's own clock: a game day after it left the bomb lands on the neighbour
+    // (step 3's landing; its record is tested in atomStrike.test.ts), and the city is not its target.
     expect(a()!.inbound).toBeUndefined();
+    const fired = a()!.fired!;
+    const popBefore = () => target.population;
+    sim.advance(fired.tick + ATOM.flight.hours * H - 1 - sim.state.tick);
+    const pre = popBefore();
+    expect(a()!.fired!.landed).toBeUndefined();
+    sim.advance(1);
+    expect(a()!.fired!.landed).toBe(true);
+    expect(target.population).toBe(Math.round(pre * ATOM.record.keep));
+    expect(target.rival!.relation).toBe(-100);
+    expect(stage()).toBe('spent');
     expect(nuclear).toBeGreaterThan(0);
   }, 300_000);
 });

@@ -945,6 +945,8 @@ export interface WarSummary {
    * arrives), the battle on now, and the last reports, newest first.
    */
   incoming: {
+    /** A raid, or (M40) an atom bomb: it comes first, and has no units; `target` reads 'bomb'. */
+    kind: 'raid' | 'bomb';
     id: number;
     from: string;
     units: number;
@@ -952,6 +954,8 @@ export interface WarSummary {
     target: string;
     near: number;
     sheltered: number;
+    /** A bomb's ground zero. */
+    at?: { x: number; z: number };
   } | null;
   battle: {
     id: number;
@@ -1138,9 +1142,24 @@ function superOf(w: WarState, units: number[]): { super?: UnitKind } {
 }
 
 function incomingSummary(w: WarState): WarSummary['incoming'] {
+  // An atom bomb on its way (M40) comes before any raid.
+  const bomb = w.atom?.inbound;
+  if (bomb?.warned)
+    return {
+      kind: 'bomb',
+      id: 0,
+      from: bomb.name,
+      units: 0,
+      arrive: bomb.arrive,
+      target: 'bomb',
+      near: bomb.near ?? 0,
+      sheltered: bomb.sheltered ?? 0,
+      at: { x: bomb.x, z: bomb.z },
+    };
   const r = (w.incoming ?? []).find((x) => x.warned);
   if (!r) return null;
   return {
+    kind: 'raid',
     id: r.id,
     from: r.name,
     units: r.units.length,

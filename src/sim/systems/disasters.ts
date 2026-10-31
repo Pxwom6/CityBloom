@@ -241,7 +241,7 @@ function damageCivic(sim: Sim, c: Civic, hours: number, d: Disaster): void {
   }
 }
 
-function segmentsNear(sim: Sim, x: number, z: number, r: number): { seg: number; d: number }[] {
+export function segmentsNear(sim: Sim, x: number, z: number, r: number): { seg: number; d: number }[] {
   const out: { seg: number; d: number }[] = [];
   for (const id of sim.net.segHash.queryPoint(x, z, r)) {
     const p = sim.net.curve(id).project({ x, z });
@@ -250,7 +250,7 @@ function segmentsNear(sim: Sim, x: number, z: number, r: number): { seg: number;
   return out.sort((a, b) => a.seg - b.seg);
 }
 
-function buildingsNear(sim: Sim, x: number, z: number, r: number): Building[] {
+export function buildingsNear(sim: Sim, x: number, z: number, r: number): Building[] {
   return [...sim.bldHash.queryPoint(x, z, r)]
     .sort((a, b) => a - b)
     .map((id) => sim.state.buildings.get(id)!)
@@ -268,7 +268,7 @@ function civicsNear(sim: Sim, x: number, z: number, r: number): Civic[] {
     });
 }
 
-function clearTrees(sim: Sim, x: number, z: number, r: number): void {
+export function clearTrees(sim: Sim, x: number, z: number, r: number): void {
   const s = sim.state;
   for (let j = Math.floor((z - r) / GRID_CELL); j <= Math.floor((z + r) / GRID_CELL); j++)
     for (let i = Math.floor((x - r) / GRID_CELL); i <= Math.floor((x + r) / GRID_CELL); i++) {

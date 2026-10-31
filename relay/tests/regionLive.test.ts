@@ -305,7 +305,17 @@ describe('M39: the region room’s live battles', () => {
     ada.say({ t: 'bdone', id: 'L1', step: 700, hash: 'cafe0123cafe0123' });
     expect(all(sam, 'bend')).toHaveLength(0);
     sam.say({ t: 'bdone', id: 'L1', step: 700, hash: 'cafe0123cafe0123' });
-    const end = { t: 'bend', id: 'L1', from: 1, to: 2, step: 700, hash: 'cafe0123cafe0123', agree: true };
+    // (No order was given: the log is empty, and the end says so.)
+    const end = {
+      t: 'bend',
+      id: 'L1',
+      from: 1,
+      to: 2,
+      step: 700,
+      hash: 'cafe0123cafe0123',
+      agree: true,
+      seq: 0,
+    };
     for (const r of [ada, sam, kit!, lou!]) expect(all(r, 'bend')).toEqual([end]);
     // It's kept for replays, and written now (the record's row and the region's).
     expect(store.rowsWritten).toBeGreaterThan(rows);
@@ -551,7 +561,8 @@ describe('M39: the region room’s live battles', () => {
     // Sam goes silent: handed over, and the battle ends with Ada's word alone.
     w.room.message(ada.conn, 'ping');
     expect(all(sam, 'bend')).toEqual([
-      { t: 'bend', id: 'L1', from: 1, to: 2, step: 700, hash: 'aaaa', agree: true, solo: true },
+      // (The `free` the room stamped for Sam when it handed him over is the log's one order.)
+      { t: 'bend', id: 'L1', from: 1, to: 2, step: 700, hash: 'aaaa', agree: true, solo: true, seq: 1 },
     ]);
   });
 
@@ -569,6 +580,7 @@ describe('M39: the region room’s live battles', () => {
       step: 700,
       hash: 'bbbb',
       agree: false,
+      seq: 0,
     });
     // The same hash at another step is no agreement either.
     const w2 = world();
@@ -847,7 +859,18 @@ describe('M39: the region room’s live battles', () => {
     expect(all(ada, 'bend')).toHaveLength(0);
     clock.advance(1);
     kit!.say(report('Kitton'));
-    const end = { t: 'bend', id: 'L1', from: 1, to: 2, step: 12, hash: '', agree: false, abandoned: true };
+    // (Four orders were stamped: Ada's focus, Sam's guard, and a handover for each side.)
+    const end = {
+      t: 'bend',
+      id: 'L1',
+      from: 1,
+      to: 2,
+      step: 12,
+      hash: '',
+      agree: false,
+      abandoned: true,
+      seq: 4,
+    };
     for (const r of [ada, kit!]) expect(all(r, 'bend')).toEqual([end]);
     // Sam wasn't here: the record waits for it as a pending battle, with a place kept in its row.
     const meta = (
@@ -925,11 +948,23 @@ describe('M39: the region room’s live battles', () => {
     // (a battle to its own attacker: the room's checks come first)
     const back = raw(room);
     back.say(hello('Ada', { rejoin: { slot: 1, secret: secrets.Ada } }));
+    // (Sam's `hold` and Ada's handover: two orders, which Ada, who saw neither, can now count.)
     expect(all(back, 'bend')).toEqual([
-      { t: 'bend', id: 'L1', from: 1, to: 2, step: 700, hash: 'abcd', agree: true, solo: true },
+      {
+        t: 'bend',
+        id: 'L1',
+        from: 1,
+        to: 2,
+        step: 700,
+        hash: 'abcd',
+        agree: true,
+        solo: true,
+        seq: 2,
+      },
     ]);
     const rec = last(back, 'breplaydata')!.record;
     expect(rec.orders.map((o) => `${o.side}${o.kind}`)).toEqual(['1hold', '0free']);
+    expect(rec.orders.map((o) => o.seq)).toEqual([1, 2]);
     // Owed once: the next welcome brings nothing.
     const again = raw(room);
     again.say(hello('Ada', { rejoin: { slot: 1, secret: secrets.Ada } }));
@@ -937,6 +972,31 @@ describe('M39: the region room’s live battles', () => {
     // And a `bjoin` for a battle that's over brings its end.
     again.say({ t: 'bjoin', id: 'L1' });
     expect(all(again, 'bend')).toHaveLength(1);
+  });
+
+  it('says how many orders it stamped when a battle ends, and again to a page that asks after it', () => {
+    const w = world({ cities: 4 });
+    const { ada, sam, kit, room, clock, secrets } = w;
+    w.fight();
+    clock.advance(500);
+    // Orders from both players and the handover of one who goes: each is numbered in the log, and counted.
+    ada.say(step('L1', 10, [{ kind: 'focus', target: 1 }, { kind: 'hold' }]));
+    sam.say(step('L1', 10, [{ kind: 'guard', target: 2 }]));
+    room.closed(ada.conn);
+    sam.say({ t: 'bdone', id: 'L1', step: 300, hash: 'f00d' });
+    const stamped = last(sam, 'bend')!;
+    expect(stamped).toMatchObject({ solo: true, seq: 4 });
+    // The number is the length of the log the record holds, the numbers running 1 to `seq`.
+    kit!.say({ t: 'breplay', id: 'L1', from: 1 });
+    const rec = last(kit!, 'breplaydata')!.record;
+    expect(rec.orders.map((o) => o.seq)).toEqual([1, 2, 3, 4]);
+    // A page that asks after the end (a combatant coming back, or the history) is told the same count.
+    const back = raw(room);
+    back.say(hello('Ada', { rejoin: { slot: 1, secret: secrets.Ada } }));
+    back.say({ t: 'bjoin', id: 'L1' });
+    expect(all(back, 'bend').map((m) => m.seq)).toEqual([4, 4]);
+    // The region's list of what it keeps carries it as well.
+    expect(last(back, 'rwelcome')!.replays!.find((r) => r.id === 'L1')).toMatchObject({ seq: 4 });
   });
 
   it('lets any city watch: the input and the orders so far, then the pace and the end; and stop', () => {
@@ -1049,6 +1109,7 @@ describe('M39: the region room’s live battles', () => {
         hash: 'ab',
         agree: true,
         kept: false,
+        seq: 0,
       });
     }
     // Asking for the battle is answered at once, with no record (none was written).

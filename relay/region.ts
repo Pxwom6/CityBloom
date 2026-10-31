@@ -357,6 +357,12 @@ export type RegionRoomMsg =
       abandoned?: true;
       /** `false`: the region did not store this battle (its day's rows were spent), so there is no replay of it. */
       kept?: false;
+      /**
+       * How many orders the room stamped in all (they are numbered 1 to `seq`; a help entry counts). A
+       * page whose log is shorter was away while some were stamped and must take the record's before it
+       * runs its own battle out. Absent from an older room, and from battles it kept before this field.
+       */
+      seq?: number;
     }
   /** A live battle started in the region (to every city but its combatants), to watch. */
   | { t: 'blivenow'; id: string; from: number; to: number }
@@ -455,6 +461,8 @@ export interface LiveReplay {
   agree: boolean;
   solo?: true;
   abandoned?: true;
+  /** How many orders were stamped in it (`bend`'s `seq`); battles kept before this field lack it. */
+  seq?: number;
   /** Its row (0 to `LIVE.replays` − 1; the region's, not a city's). */
   k: number;
 }
@@ -2461,6 +2469,7 @@ export class RegionRoom {
       agree: end.agree,
       ...(end.solo ? { solo: true as const } : {}),
       ...(end.abandoned ? { abandoned: true as const } : {}),
+      seq: s.orders.length,
       k: 0,
     };
     // Kept for replays, within the day's rows (a battle lost for want of a row would be worse).
@@ -2656,5 +2665,6 @@ function endMsg(r: LiveReplay, kept = true): RegionRoomMsg {
     ...(r.solo ? { solo: true as const } : {}),
     ...(r.abandoned ? { abandoned: true as const } : {}),
     ...(kept ? {} : { kept: false as const }),
+    ...(r.seq !== undefined ? { seq: r.seq } : {}),
   };
 }

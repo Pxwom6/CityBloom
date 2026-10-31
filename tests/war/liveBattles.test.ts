@@ -1,7 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { UNIT } from '../../src/data/war';
 import { PROTOCOL_VERSION } from '../../relay/protocol';
-import type { RegionConn, RegionRoomMsg } from '../../relay/region';
+import type { RegionConn, RegionRoom, RegionRoomMsg } from '../../relay/region';
+import type { Link } from '../../src/net/link';
 import { encodeBattle } from '../../src/net/snapshot';
 import { awayBattleId, awayCity, awayInput } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
@@ -9,7 +10,7 @@ import { S, TAG, type BattleInput } from '../../src/sim/battle/types';
 import type { SaveFile } from '../../src/sim/save';
 import { Sim } from '../../src/sim/sim';
 import type { BattleReport } from '../../src/sim/systems/raids';
-import { Clock, closePages, driveUntil, flush, openPage, openRoom, type Page } from './liveHarness';
+import { Clock, closePages, driveUntil, flush, loopTo, openPage, openRoom, type Page } from './liveHarness';
 import { armAda, armSam, liveTown, sendAgainst } from './liveTown';
 
 /**
@@ -124,6 +125,64 @@ function scripted(ada: Page, sam: Page) {
 /** The battle again from a final record: a plain run, with no one to command. */
 const rerun = (input: BattleInput) => Battle.run(structuredClone(input));
 
+/**
+ * A page's way to its room that a test can cut for as long as it likes: the link's own retries fail
+ * while it is down, and the first to find it up again gets the page back in (a network outage).
+ */
+interface Net {
+  down: boolean;
+  connect: () => Promise<Link>;
+}
+
+function net(room: RegionRoom): Net {
+  const open = loopTo(room);
+  const n: Net = { down: false, connect: () => (n.down ? Promise.reject(new Error('offline')) : open()) };
+  return n;
+}
+
+/** The network goes down under a page: its link closes and cannot come back until `restore`. */
+function cut(page: Page, n: Net): void {
+  n.down = true;
+  page.link.dropForTest();
+}
+
+/** The network is back: the page's link finds the room again (real time, as the link's retries are). */
+async function restore(page: Page, n: Net): Promise<void> {
+  n.down = false;
+  for (let k = 0; k < 400 && page.link.state !== 'in'; k++) await new Promise((r) => setTimeout(r, 25));
+  expect(page.link.state).toBe('in');
+  await flush();
+}
+
+/** `fight()` with each page's network under the test's hand. */
+async function fightOnNets() {
+  const clock = new Clock();
+  const room = openRoom(clock);
+  const adaNet = net(room);
+  const samNet = net(room);
+  const ada = await openPage({
+    connect: adaNet.connect,
+    clock,
+    sim: loaded(saves.ada),
+    mayor: 'Ada',
+    color: 0,
+    create: { name: 'Two Rivers', rules: { war: true, scale: 'skirmish' } },
+  });
+  const sam = await openPage({
+    connect: samNet.connect,
+    clock,
+    sim: loaded(saves.sam),
+    mayor: 'Sam',
+    color: 1,
+  });
+  await ada.link.reportNow(true);
+  await sam.link.reportNow(true);
+  await flush();
+  ada.ticking = false;
+  const sent = sendAgainst(ada.sim, sam.link.slot);
+  return { clock, room, ada, sam, adaNet, samNet, expedition: sent.id };
+}
+
 describe('M39: live battles between pages', () => {
   it('a friend’s force fights its battle live, both commanding: both runs end alike, and so do the reports', async () => {
     const w = await fight();
@@ -189,6 +248,13 @@ describe('M39: live battles between pages', () => {
 
   it('a defender page that stops reporting is handed over, and the battle still ends alike on both sides', async () => {
     const { clock, ada, sam, expedition } = await fight();
+    // (A page that was never off the link has every order the room stamped: it asks for no record.)
+    const asked: string[] = [];
+    const sendLive = sam.link.sendLive.bind(sam.link);
+    sam.link.sendLive = (m) => {
+      asked.push(m.t);
+      sendLive(m);
+    };
     let over = false;
     void ada.away.fight(expedition).then(() => (over = true));
     expect(
@@ -223,6 +289,7 @@ describe('M39: live battles between pages', () => {
     expect(mine.input.orders.some((o) => o.kind === 'free' && o.side === 1)).toBe(true);
     expect(rerun(mine.input).hash()).toBe(a.hashes.mine!.hash);
     expect(sam.sim.state.war!.battle).toBeUndefined();
+    expect(asked).not.toContain('breplay');
     // The same battle is what each city took: its losses are the attacker's, counted twice.
     const hosted = sam.sim.state.war!.reports!.at(-1)!;
     expect(hosted.theirLost).toBe(
@@ -489,6 +556,258 @@ describe('M39: live battles between pages', () => {
     expect(sam.sim.state.war!.reports!.at(-1)!.theirLost).toBe(
       Object.values(lost).reduce((n, v) => n + v, 0),
     );
+  }, 120_000);
+
+  it('an attacker whose network was down when the room ended the battle takes the room’s orders before it runs its own out', async () => {
+    const { clock, ada, sam, adaNet, expedition } = await fightOnNets();
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    // Both command at first: Ada holds a unit, Sam guards a building.
+    expect(
+      await driveUntil(
+        [ada, sam],
+        clock,
+        () => (sam.live.state()?.step ?? 0) >= 60,
+        2_000,
+        scripted(ada, sam),
+      ),
+    ).toBe(true);
+    const id = ada.live.state()!.id;
+    const stalledAt = ada.live.state()!.step;
+    cut(ada, adaNet);
+    // Sam goes on alone: the room hands Ada’s forces over (a `free`) and Sam orders on, in steps Ada’s
+    // page, held at the last frontier it heard of, has not run.
+    let gave = false;
+    const alone = () => {
+      const input = sam.live.input();
+      if (gave || !input || (sam.live.state()?.step ?? 0) < 120) return;
+      gave = sam.live.order({ kind: 'focus', target: input.attacker.units[0]!.id });
+    };
+    expect(await driveUntil([ada, sam], clock, () => !!sam.live.state()?.ended, 4_000, alone)).toBe(true);
+    const d = sam.live.state()!;
+    expect(gave).toBe(true);
+    expect(d.hashes.room).toMatchObject({ solo: true, hash: d.hashes.mine!.hash });
+    // Ada’s page is where it was when the network went: its run is behind the frontier and not over.
+    const held = ada.live.state()!;
+    expect(held.ended).toBe(false);
+    expect(held.step).toBeLessThanOrEqual(held.allow);
+    expect(held.step).toBeLessThan(d.hashes.mine!.step);
+    expect(held.step).toBeGreaterThanOrEqual(stalledAt);
+    expect(held.orders).toBeLessThan(d.orders);
+    // The network comes back: Ada takes the room’s whole log, then runs the battle out.
+    await restore(ada, adaNet);
+    expect(await driveUntil([ada, sam], clock, () => over, 2_000)).toBe(true);
+    const a = ada.live.state()!;
+    expect(a.id).toBe(id);
+    expect(a.hashes.mine).toEqual(d.hashes.mine);
+    expect(a.orders).toBe(d.orders);
+    expect(a.desync || d.desync).toBe(false);
+    // The record Ada kept is the battle as it was fought, the handover and Sam’s later orders in it.
+    const theirs = ada.kept.battles.find((b) => b.id === id)!;
+    const mine = sam.kept.battles.find((b) => b.id === `def-${id}`)!;
+    expect(theirs.input.orders).toEqual(mine.input.orders);
+    expect(theirs.input.orders.some((o) => o.kind === 'free' && o.side === 0)).toBe(true);
+    expect(theirs.input.orders.some((o) => o.kind === 'focus' && o.side === 1)).toBe(true);
+    const again = rerun(theirs.input);
+    expect(again.hash()).toBe(d.hashes.mine!.hash);
+    expect(again.step).toBe(d.hashes.mine!.step);
+    // Ada’s force took the losses of the battle Sam’s city took (the very same battle).
+    const lost: Record<string, number> = {};
+    for (const u of again.result().units) if (u.side === 0 && u.out) lost[u.kind] = (lost[u.kind] ?? 0) + 1;
+    const report = ada.sim.state.war!.reports!.at(-1)!;
+    expect(report.lost).toEqual(lost);
+    const hosted = sam.sim.state.war!.reports!.at(-1)!;
+    expect(hosted.theirLost).toBe(Object.values(lost).reduce((n, v) => n + v, 0));
+    expect(ada.sim.state.war!.expeditions![0]!.state).toBe('back');
+    expect(sam.sim.state.war!.battle).toBeUndefined();
+  }, 120_000);
+
+  /**
+   * A defender whose network drops mid-battle while the attacker goes on alone, up to the battle's end,
+   * and the page back on the network with its city's sim held at the frontier it last heard of.
+   */
+  async function defenderAway() {
+    const w = await fightOnNets();
+    const { clock, ada, sam, samNet, expedition } = w;
+    let over = false;
+    void ada.away.fight(expedition).then(() => (over = true));
+    expect(
+      await driveUntil(
+        [ada, sam],
+        clock,
+        () => (sam.live.state()?.step ?? 0) >= 60,
+        2_000,
+        scripted(ada, sam),
+      ),
+    ).toBe(true);
+    const id = ada.live.state()!.id;
+    const stalledAt = sam.live.state()!.step;
+    cut(sam, samNet);
+    // Ada goes on alone: the room hands Sam’s forces over (a `free`), and Ada gives orders in steps
+    // Sam’s city, held at the last frontier it heard of, has not played.
+    let gave = false;
+    const alone = () => {
+      const input = ada.live.input();
+      if (gave || !input || (ada.live.state()?.step ?? 0) < 120) return;
+      const mil = standing(input, TAG.military);
+      gave = ada.live.order({ kind: 'focus', target: mil[mil.length - 1]! });
+    };
+    expect(await driveUntil([ada, sam], clock, () => over, 4_000, alone)).toBe(true);
+    expect(gave).toBe(true);
+    const a = ada.live.state()!;
+    expect(a.hashes.room).toMatchObject({ solo: true, hash: a.hashes.mine!.hash });
+    const held = sam.live.state()!;
+    expect(held.ended).toBe(false);
+    expect(held.step).toBeGreaterThanOrEqual(stalledAt);
+    expect(held.step).toBeLessThan(a.hashes.mine!.step);
+    expect(sam.sim.state.war!.battle?.live?.id).toBe(id);
+    return { ...w, id, a };
+  }
+
+  /**
+   * What Sam’s city took, checked against the battle as the room fought it: `input` is the battle the city
+   * ran (the page’s own record of it, or the region’s copy it was handed).
+   */
+  function expectFought(w: Awaited<ReturnType<typeof defenderAway>>, input: () => BattleInput) {
+    const { ada, sam, id, a } = w;
+    const d = sam.live.state()!;
+    expect(d.hashes.mine).toEqual(a.hashes.mine);
+    expect(d.orders).toBe(a.orders);
+    expect(d.desync || a.desync).toBe(false);
+    const theirs = ada.kept.battles.find((b) => b.id === id)!;
+    const ran = input();
+    expect(ran.orders).toEqual(theirs.input.orders);
+    expect(ran.orders.some((o) => o.kind === 'free' && o.side === 1)).toBe(true);
+    expect(ran.orders.some((o) => o.kind === 'focus' && o.side === 0)).toBe(true);
+    const again = rerun(ran);
+    expect(again.hash()).toBe(a.hashes.mine!.hash);
+    expect(again.step).toBe(a.hashes.mine!.step);
+    // The damage Sam’s city took is what its sim does with that record on the city as it stood, and
+    // the losses Ada’s force counted are the ones Sam’s city counted.
+    const fresh = Sim.fromSave(sam.kept.towns.get(`replay:def-${id}`)!);
+    expect(fresh.dispatch({ type: 'battleResolve', input: ran, mode: 'instant', from: 1 }).ok).toBe(true);
+    const hosted = sam.sim.state.war!.reports!.at(-1)!;
+    expect(damage(hosted)).toEqual(damage(fresh.state.war!.reports!.at(-1)!));
+    const report = ada.sim.state.war!.reports!.at(-1)!;
+    expect(hosted.theirLost).toBe(Object.values(report.lost).reduce((n, v) => n + v!, 0));
+    expect(sam.sim.state.war!.battle).toBeUndefined();
+  }
+
+  it('a defender whose network was down when the room ended the battle takes the room’s orders before its city runs the battle out', async () => {
+    const w = await defenderAway();
+    const { clock, ada, sam, samNet } = w;
+    // (The game keeps the replay’s backdrop before it hands its city the region’s copy of a battle, which
+    // takes longer than the page needs to run its own battle out: the copy comes second.)
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    sam.hooks.battle = () => held;
+    await restore(sam, samNet);
+    expect(await driveUntil([ada, sam], clock, () => !!sam.live.state()?.ended, 2_000)).toBe(true);
+    const reports = sam.sim.state.war!.reports!.length;
+    const kept = () => sam.kept.battles.find((b) => b.id === `def-${w.id}`)!.input;
+    expectFought(w, kept);
+    // The region’s copy of the battle then reaches the city, which has taken the battle and takes nothing twice.
+    release();
+    await driveUntil([ada, sam], clock, () => false, 20);
+    expect(sam.taken).toHaveLength(1);
+    expect(sam.sim.state.war!.reports!.length).toBe(reports);
+    expectFought(w, kept);
+  }, 120_000);
+
+  it('a defender whose city is handed the region’s copy of the battle first lets its own go', async () => {
+    const w = await defenderAway();
+    const { clock, ada, sam, samNet } = w;
+    // (The region kept the battle for the city while it was away, and hands it over with the welcome.)
+    await restore(sam, samNet);
+    await driveUntil([ada, sam], clock, () => !!sam.live.state()?.ended, 400);
+    expect(sam.taken).toHaveLength(1);
+    expect(sam.taken[0]).toMatchObject({ late: true, from: ada.link.slot });
+    // The city took the battle as fought, and the page is not left holding one that never ends.
+    expect(sam.live.state()!.ended).toBe(true);
+    expect(sam.live.view()?.over).toBe(true);
+    expectFought(w, () => sam.taken[0]!.input);
+  }, 120_000);
+
+  it('an attacker whose record never comes runs the battle out with the orders it has after twenty seconds, and logs it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { clock, ada, sam, adaNet, expedition } = await fightOnNets();
+      let over = false;
+      void ada.away.fight(expedition).then(() => (over = true));
+      expect(
+        await driveUntil(
+          [ada, sam],
+          clock,
+          () => (sam.live.state()?.step ?? 0) >= 60,
+          2_000,
+          scripted(ada, sam),
+        ),
+      ).toBe(true);
+      cut(ada, adaNet);
+      expect(await driveUntil([ada, sam], clock, () => !!sam.live.state()?.ended, 4_000)).toBe(true);
+      const d = sam.live.state()!;
+      // Nothing from the region reaches Ada’s page but the battle’s end: no record (a link that fails).
+      const message = ada.live.message.bind(ada.live);
+      ada.live.message = (m) => {
+        if (m.t !== 'breplaydata' && m.t !== 'breplaygone') message(m);
+      };
+      await restore(ada, adaNet);
+      // It waits for the record: nothing is run out in the first seconds.
+      await driveUntil([ada, sam], clock, () => over, 40);
+      expect(over).toBe(false);
+      expect(ada.live.state()!.ended).toBe(false);
+      // At twenty seconds it gives up waiting and runs the battle out with what it has, as before.
+      expect(await driveUntil([ada, sam], clock, () => over, 400)).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('the region’s record did not come'));
+      const a = ada.live.state()!;
+      expect(a.ended).toBe(true);
+      expect(a.hashes.mine).not.toEqual(d.hashes.mine);
+      expect(a.hashes.room).toMatchObject({ solo: true, hash: d.hashes.mine!.hash });
+    } finally {
+      warn.mockRestore();
+    }
+  }, 120_000);
+
+  it('a page told of an end whose record the region no longer keeps runs out with the orders it has, and logs it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { clock, ada, sam, expedition } = await fightOnNets();
+      void ada.away.fight(expedition);
+      expect(
+        await driveUntil(
+          [ada, sam],
+          clock,
+          () => (sam.live.state()?.step ?? 0) >= 60,
+          2_000,
+          scripted(ada, sam),
+        ),
+      ).toBe(true);
+      const asked: string[] = [];
+      const sendLive = sam.link.sendLive.bind(sam.link);
+      sam.link.sendLive = (m) => {
+        asked.push(m.t);
+        sendLive(m);
+      };
+      // An end that counts more orders than Sam’s page holds, for a battle the region has no record of
+      // (it is still running there, and nothing is kept of it): the page asks, and is told so.
+      const d = sam.live.state()!;
+      sam.live.message({
+        t: 'bend',
+        id: d.id,
+        from: d.attacker,
+        to: d.defender,
+        step: 500,
+        hash: 'beef',
+        agree: true,
+        solo: true,
+        seq: d.orders + 3,
+      });
+      await driveUntil([ada, sam], clock, () => false, 2);
+      expect(asked).toContain('breplay');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no longer keeps the battle'));
+    } finally {
+      warn.mockRestore();
+    }
   }, 120_000);
 
   it('turns down a battle that is not the one its force was sent to fight', async () => {

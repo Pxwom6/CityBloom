@@ -1122,3 +1122,24 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   names are the ones on screen; the region is now joined first and war turned on after, so the host meets
   `regionWarOff` as a new host would. Looking at the cards in the screenshots, `friendsAtWar` and `friendPeace`
   named their buttons without quotes (“each with Declare war….” ended in four dots): they are quoted now.
+- **A page that missed orders takes the room's whole log before it runs a battle out** (found by the
+  two-hour soak: `exp-ce747761-818`, a combatant whose network was down mid-battle). The room hands a
+  silent or gone side over (a stamped `free`) and ends the battle `solo` when the other finishes; the page
+  that comes back used to run its own battle out alone with the orders it had, missing the handover and the
+  other player's later orders, so its force's losses (or its city's damage) came from another battle than the
+  one the room recorded: a player's disconnect changed their own outcome. Now `bend` says how many orders the
+  room stamped in all (`seq`, optional: protocol 6 stays compatible; `LiveReplay.seq` keeps it for a page that
+  asks after the end), and a page whose run is not over when `bend` arrives checks its log against it
+  (`LiveBattles.lacks`). Missing none, it runs out at once as before. Missing some (or the room is an older one
+  and says nothing), it asks for the record (`breplay`) and waits, then takes the orders it lacks by number
+  and runs out: the attacker's runner is fed them, the defender's sim gets them in `battleLive` (idempotent:
+  the sim and the runner take each number once). Why this is sound: a page stalls at the last frontier it
+  heard of and the room stamps every order at its frontier, which is at or past that, so the orders it missed
+  lie at steps it has not run. The wait is bounded (`RECORD_WAIT`, 20 s of the page's clock): a record that
+  never comes, or one the region no longer keeps (`breplaygone`, now passed on to the live battles), falls
+  back to the old run-out with the log it has, written to the console. Two companions found on the way: a
+  page stops reporting its progress once the room has ended its battle (the room could only answer "no such
+  battle", which the page took for a reason to run out), and a defender whose sim no longer hosts a battle
+  the room ended (the region's copy, kept for the city while it was away, stood in for the hosted one through
+  `battleResolve` `instant`) lets its session go instead of holding an unfinished battle for ever (it blocked
+  watching and helping).

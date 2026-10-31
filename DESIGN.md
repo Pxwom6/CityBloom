@@ -1607,7 +1607,13 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
     defender's run stands for its city and the attacker's for its force. A battle that ended while a page
     was away is run from the record (`breplaydata`, `inputOfRecord`) and reported once. A page that
     reloaded finds its sim hosting a battle it has no part in (`orphaned`), asks to join it with `bjoin`,
-    and if the room has none lets it run out.
+    and if the room has none lets it run out. A page whose own run is not over when `bend` arrives (it was
+    handed over, its network down) first checks its log against `bend.seq`, the number of orders the room
+    stamped (`LiveBattles.lacks`): missing none, it runs out at once; missing some, it asks for the record
+    (`breplay`), takes the orders it lacks by number (they lie at steps its run, held at the last frontier it
+    heard of, has not reached; the attacker's runner and the defender's `battleLive` each take a number
+    once) and then runs out, so its end is the room's. A record that does not come in `RECORD_WAIT` (20 s) or
+    is gone (`breplaygone`) lets it run out with what it has, logged.
   - *The stand-in room*: `src/client/liveStage.ts` `LiveStage` plays the room for one page in test builds
     (the real `LiveSession`, the page's reports pacing it, a side nobody plays handed over, a hidden
     `LiveRunner` pacing a watched battle; `stageLive` in the test API), so the map is driven and

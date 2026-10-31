@@ -73,8 +73,12 @@ export interface Page {
   ticking: boolean;
   /** Frames not sent to the live battles (a page that has stopped looking). */
   deaf: boolean;
-  /** Things a test lets happen at a moment of the page's answering a call. */
-  hooks: { autosave?: () => Promise<void> };
+  /**
+   * Things a test lets happen at a moment of the page's answering a call (`autosave`), or of the city
+   * being handed a battle the region kept for it (`battle`: the game keeps the backdrop first, which
+   * takes a while the sim does not wait for).
+   */
+  hooks: { autosave?: () => Promise<void>; battle?: () => Promise<void> };
   /** Tell the live battles what the sim did this tick (a page that is looking). */
   frames(): void;
   pumpRuns(): void;
@@ -110,6 +114,7 @@ export async function openPage(o: {
     save: async () => sim.save(),
     cityName: () => sim.state.cityName,
     battle: async (input, meta) => {
+      await page.hooks.battle?.();
       if (meta.away) input = awayCaps(input);
       taken.push({ input, late: meta.late, from: meta.from });
       const r = sim.dispatch({

@@ -520,6 +520,7 @@ export class RegionLink {
       case 'bend':
       case 'blivenow':
       case 'breplaydata':
+      case 'breplaygone':
       case 'bhelpoff':
         this.live?.message(m);
         return;

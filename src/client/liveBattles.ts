@@ -281,6 +281,11 @@ interface Session {
   started: boolean;
   /** The defender's commands to its sim, one after another (a command waits for the one before it). */
   chain: Promise<unknown>;
+  /**
+   * The room has ended the battle and this page's run may lack some of its orders (it was away while they
+   * were stamped): the room's record is asked for, and the run waits for it (since when, in ms).
+   */
+  fetching?: { since: number };
   /** The attacker's: its runner, how it ended, and the call it came from. */
   runner?: LiveRunnerPort;
   end?: LiveEnd;
@@ -327,6 +332,11 @@ const HURT = 0.005;
 const END_WAIT = 120_000;
 /** A hosted battle the page can't find a session for is let go after this long (ms). */
 const ORPHAN_WAIT = 20_000;
+/**
+ * A page that missed orders waits this long (ms) for the room's record of the battle before it runs the
+ * battle out with what it has (the room answers a `breplay` at once, so this is a link that has failed).
+ */
+const RECORD_WAIT = 20_000;
 /** How many times a page takes command back by itself after a handover. */
 const REJOIN_MAX = 3;
 /** The room's answer to a call: its own twenty seconds for the defender, and some to spare. */
@@ -597,7 +607,28 @@ export class LiveBattles implements LiveSink {
       this.keepRunning(s);
     } else if (live && !this.answering.has(live.id)) this.orphaned(live.id);
     else this.orphan = null;
+    // A battle the room has ended that the city's sim no longer hosts, though this page never saw it end
+    // there: the region's own copy of it (kept for the city while it was away) stood in for the hosted one.
+    for (const d of [...this.sessions.values()])
+      if (d.role === 'defender' && d.room && !d.mine && !d.finalized && live?.id !== d.id) this.standIn(d);
     this.pump();
+  }
+
+  /**
+   * The city took the battle as the room fought it, from the region's copy (`battleResolve`, `instant`, in
+   * place of the part it hosted): its sim has played that, so this page has nothing left to run, to fetch
+   * or to keep (the copy was kept under the same name when the city took it).
+   */
+  private standIn(s: Session): void {
+    delete s.fetching;
+    s.mine = { step: s.room!.step, hash: s.room!.hash };
+    s.mineAt = this.now;
+    s.finalized = true;
+    this.last = this.stateOf(s);
+    this.lastView = { ...this.viewOf(s), over: true };
+    this.lastLog = s.log;
+    this.sessions.delete(s.id);
+    this.onChange?.();
   }
 
   /** A paused city holds up both players: it runs at normal speed for as long as the battle lasts. */
@@ -663,9 +694,18 @@ export class LiveBattles implements LiveSink {
       this.onHelpOff(h.battle, 'The region did not answer');
     for (const s of [...this.sessions.values()]) {
       for (const e of s.log) if (e.state === 'sent' && t - e.sentAt >= UNHEARD) e.state = 'unheard';
+      // The room's record of a battle it ended without this page never came: the run goes on with what it has.
+      if (s.fetching && t - s.fetching.since >= RECORD_WAIT) {
+        console.warn(
+          `[live] ${s.id}: the region’s record did not come; this page runs the battle out with the orders it has`,
+        );
+        this.release(s);
+      }
       if (s.finalized || !s.started) continue;
       const gap = t - s.seenAt;
       s.seenAt = t;
+      // (A battle the room has ended has nothing more to hear of this page's progress.)
+      if (s.room && !s.mine) continue;
       if (s.mine) {
         if (s.room) continue;
         // Waiting for the room's word on the end: a word to it now and then (it notices a battle one
@@ -734,6 +774,9 @@ export class LiveBattles implements LiveSink {
         return;
       case 'breplaydata':
         this.onRecord(m.id, m.record);
+        return;
+      case 'breplaygone':
+        this.onRecordGone(m.id, m.from);
         return;
       case 'bhelpoff':
         this.onHelpOff(m.id, m.why);
@@ -1011,7 +1054,8 @@ export class LiveBattles implements LiveSink {
     const s = this.sessions.get(m.id);
     if (s && !s.finalized) {
       // A battle the region doesn't have (it was over, or the room restarted): carry on with what this page has.
-      if (m.gone) return this.release(s);
+      // (One the room has ended and whose record is on its way is waited for: the room only means it's over.)
+      if (m.gone) return s.fetching ? undefined : this.release(s);
       // The call came to nothing before it began: the battle the sim set up is dropped.
       if (s.role === 'defender' && s.allow === 0) {
         this.sessions.delete(s.id);
@@ -1068,9 +1112,10 @@ export class LiveBattles implements LiveSink {
         s.desync = true;
         console.warn(`[live] ${m.id}: the two cities’ runs ended differently`, m);
       }
-      // Its own run still to finish (the room ended it, or the other side did): it runs out alone.
+      // Its own run still to finish (the room ended it, or the other side did): it runs out, with every
+      // order the room stamped (which it fetches first if it was away while some were).
       if (s.mine) void this.finalize(s);
-      else this.release(s);
+      else this.runOut(s);
       this.onChange?.();
       return;
     }
@@ -1082,12 +1127,64 @@ export class LiveBattles implements LiveSink {
     }
   }
 
-  /** A battle this page can't follow any more: it runs on alone to its end. */
-  private release(s: Session): void {
+  /**
+   * The room has ended a battle that this page's own run has not reached the end of (the room left this
+   * page behind, or called the battle off). The run goes on to its end, and the end it comes to must be
+   * the room's: so first the page must hold every order the room stamped. A page that was away (its
+   * network down, its tab asleep) was handed over and its run held at the last frontier it heard of;
+   * the orders it missed lie at steps it has not run, so it takes them and then runs out. A page that
+   * missed nothing runs out at once.
+   */
+  private runOut(s: Session): void {
+    if (s.finalized || s.mine || s.fetching) return;
+    const end = s.room;
+    if (!end || !this.lacks(s, end)) return this.release(s);
+    s.fetching = { since: this.now };
+    this.send({ t: 'breplay', id: s.id, from: s.from });
+  }
+
+  /**
+   * Might this page's log lack orders the room stamped? The room says how many in all (`seq`, orders
+   * numbered from 1); an older room does not, and then a page whose run isn't over can't know.
+   */
+  private lacks(s: Session, end: End): boolean {
+    if (typeof end.seq !== 'number') return true;
+    const have = new Set(s.orders.map((o) => o.seq));
+    for (let n = 1; n <= end.seq; n++) if (!have.has(n)) return true;
+    return false;
+  }
+
+  /** The room's record of the battle this page ran, asked for after it ended: the orders it lacked, then the run-out. */
+  private takeLog(s: Session, record: LiveRecord): void {
+    delete s.fetching;
+    // (The whole list goes to the run: it takes each order once, by its number, so nothing is doubled.)
+    const known = new Set(s.orders.map((o) => o.seq));
+    s.orders.push(...record.orders.filter((o) => !known.has(o.seq)).map((o) => ({ ...o })));
+    s.orders.sort((a, b) => a.seq - b.seq);
+    s.allow = LIVE_ALLOW_MAX;
+    this.release(s, record.orders);
+  }
+
+  /** The room doesn't keep the record this page asked for: it runs the battle out with the orders it has. */
+  private onRecordGone(id: string, from?: number): void {
+    const s = this.sessions.get(id);
+    if (!s?.fetching || s.finalized || (from !== undefined && from !== s.from)) return;
+    console.warn(
+      `[live] ${id}: the region no longer keeps the battle; this page runs it out with the orders it has`,
+    );
+    this.release(s);
+  }
+
+  /**
+   * A battle this page can't follow any more: it runs on alone to its end, with `orders` (the room's whole
+   * log, if it was fetched: each is taken once, by its number) and no more to come.
+   */
+  private release(s: Session, orders: readonly StampedOrder[] = []): void {
+    delete s.fetching;
     if (s.finalized || s.mine) return;
     if (s.role === 'defender')
-      void this.command(s, { type: 'battleLive', id: s.id, allow: LIVE_ALLOW_MAX, orders: [] });
-    else s.runner?.feed([], LIVE_ALLOW_MAX, true);
+      void this.command(s, { type: 'battleLive', id: s.id, allow: LIVE_ALLOW_MAX, orders: [...orders] });
+    else s.runner?.feed(orders, LIVE_ALLOW_MAX, true);
   }
 
   /** The attacker's run failed: the force asks again later. */
@@ -1110,6 +1207,13 @@ export class LiveBattles implements LiveSink {
       this.takeWatch(w, record.orders, LIVE_ALLOW_MAX);
       w.runner.feed([], LIVE_ALLOW_MAX, true);
       return;
+    }
+    // The record of a battle this page ran and lacks some orders of (the room ended it while the page was
+    // away): the orders it missed, and then the run-out.
+    const own = this.sessions.get(id);
+    if (own?.fetching && !own.finalized) {
+      if (record.id !== own.id || record.from !== own.from || record.to !== own.to) return;
+      return this.takeLog(own, record);
     }
     const call = this.calls.get(id);
     if (!call && this.war?.battle?.live?.id === id && !this.sessions.has(id)) return this.takeRecord(record);

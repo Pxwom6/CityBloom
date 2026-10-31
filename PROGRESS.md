@@ -243,8 +243,10 @@ in its band against the 57,000-resident reference city (`atomprice.ts`, DECISION
 `tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Step 2 is done too (fuel,
 the bomb's twelve instalments, a launch's preparation and the bomb leaving for a computer neighbour; the
 flight is step 3's seam; the four commands, the loss rules, the bulldoze guard, the host-only launch and
-the `atom {stage}` cheat; `tests/war/atomChain.test.ts`; DECISIONS "M40" step 2). Not yet run for steps 1
-and 2: e2e, builds, balance, bench, soak (run at step 13).
+the `atom {stage}` cheat; `tests/war/atomChain.test.ts`, 71 tests; DECISIONS "M40" step 2 and its review
+fixes: a silo on no funding says so, a held launch is told, undo can't take a plant or silo that holds the
+race, the bomb's hours lose no work at an instalment boundary, fuel is charged on the fuel gained). Not yet
+run for steps 1 and 2: e2e, builds, balance, bench, soak (run at step 13).
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at

@@ -155,6 +155,12 @@ const SILO_WAITS: { name: string; cause: (sim: Sim) => void; cure: (sim: Sim) =>
     cure: (sim) => delete sim.state.region.rules,
     words: /region’s rules turn the atom bomb off/,
   },
+  {
+    name: 'no funding',
+    cause: (sim) => ok(sim, { type: 'setFunding', dept: 'defence', pct: 0 }),
+    cure: (sim) => ok(sim, { type: 'setFunding', dept: 'defence', pct: 100 }),
+    words: /Defence funding is too low to run the silo/,
+  },
 ];
 
 describe('M40: the race through the real clock', () => {
@@ -276,6 +282,34 @@ describe('M40: fuel', () => {
     expect(events(sim, 'fuelFull')).toHaveLength(1);
     expect(atomSummary(sim)).toMatchObject({ fuel: 1, fuelWait: null, stage: 'enriching' });
   });
+
+  // The fuel gained and the dollars charged are the same count: a crew that works at a rate which isn't
+  // a whole number of thousandths a hour still pays exactly the price of a full load.
+  for (const [staff, powered] of [
+    [0.3333, 1],
+    [0.6171, 1],
+    [1, 0.771],
+    [0.26, 0.55],
+  ] as const)
+    it(`is a full load for $2.3M at a crew's rate of ${Math.round(staff * powered * 10000) / 10000}, to the dollar`, () => {
+      const sim = at('plant');
+      const plant = civic(sim, PLANT);
+      plant.staff = staff;
+      plant.powered = powered;
+      const a = atomOf(sim);
+      let calls = 0;
+      while (a.fuel < ATOM.fuel.hours && calls < 10_000) {
+        atomHour(sim);
+        calls++;
+      }
+      expect(a.fuel).toBe(ATOM.fuel.hours);
+      expect(sim.state.economy.month.enrichment).toBe(-ATOM.fuel.hours * ATOM.fuel.cost);
+      // Nothing is left owing in the carry.
+      expect(sim.state.economy.carry.enrichment ?? 0).toBe(0);
+      // And it takes about as long as the rate says.
+      expect(calls).toBeGreaterThan(ATOM.fuel.hours / (staff * powered) - 5);
+      expect(calls).toBeLessThan(ATOM.fuel.hours / (staff * powered) + 5);
+    });
 
   /** Every reason fuel waits: the way to bring it about, the way to put it right, and the words. */
   const WAITS: {
@@ -497,6 +531,51 @@ describe('M40: the bomb’s build', () => {
     expect(calls).toBe(576);
   });
 
+  // A rate that doesn't divide the 60 hours between instalments crosses a boundary part-way through
+  // an hour: the hours stop at it until the instalment is paid, and the rest of that hour goes on past
+  // it (no work is lost to the boundary).
+  for (const staff of [0.7, 0.45, 0.333])
+    it(`stops at each boundary and loses no work to it at a crew of ${staff}`, () => {
+      const sim = at('silo');
+      civic(sim, SILO).staff = staff;
+      ok(sim, { type: 'buildBomb' });
+      const spent = spyOnSpending(sim);
+      const a = atomOf(sim);
+      let calls = 0;
+      while (a.bomb && calls < 5_000) {
+        atomHour(sim);
+        calls++;
+        if (a.bomb) expect(a.bomb.done).toBeLessThanOrEqual(a.bomb.paid * ATOM.bomb.every);
+      }
+      expect(a.have).toBe(true);
+      expect(spent.atomBomb).toHaveLength(11);
+      // The work is `staff` an hour, all of it counted: 720 of it takes 720 / staff hours, to the hour.
+      expect(calls).toBe(Math.ceil(ATOM.bomb.hours / staff - 1e-9));
+    });
+
+  it('pays no instalment while the silo has no funding, and says why', () => {
+    const sim = at('silo');
+    ok(sim, { type: 'buildBomb' });
+    const a = atomOf(sim);
+    hours(sim, 60);
+    expect(a.bomb).toEqual({ done: 60, paid: 1 });
+    const spent = spyOnSpending(sim);
+    const treasury = sim.state.treasury;
+    ok(sim, { type: 'setFunding', dept: 'defence', pct: 0 });
+    expect(atomSummary(sim)!.bomb!.wait).toBe('Defence funding is too low to run the silo');
+    hours(sim, 20);
+    // The instalment is due, but it isn't paid for hours that cannot go by.
+    expect(a.bomb).toEqual({ done: 60, paid: 1 });
+    expect(spent.atomBomb).toBeUndefined();
+    expect(spent.warImports).toBeUndefined();
+    expect(sim.state.treasury).toBe(treasury);
+    ok(sim, { type: 'setFunding', dept: 'defence', pct: 100 });
+    expect(atomSummary(sim)!.bomb!.wait).toBeNull();
+    hours(sim, 1);
+    expect(a.bomb).toEqual({ done: 61, paid: 2 });
+    expect(spent.atomBomb).toEqual([ATOM.bomb.instalment.money]);
+  });
+
   for (const w of SILO_WAITS)
     it(`waits for ${w.name}, keeping the hours and the instalments paid`, () => {
       const sim = at('bomb');
@@ -563,6 +642,9 @@ describe('M40: the bomb’s build', () => {
     const crewless = at('silo');
     civic(crewless, SILO).staff = 0;
     expect(asked(crewless)).toBe('The atom silo needs workers');
+    const unfunded = at('silo');
+    ok(unfunded, { type: 'setFunding', dept: 'defence', pct: 0 });
+    expect(asked(unfunded)).toBe('Defence funding is too low to run the silo');
     // Money.
     const poor = at('silo');
     setTreasury(poor, 100_000);
@@ -599,7 +681,13 @@ describe('M40: a launch', () => {
     expect(spent.atomLaunch).toEqual([ATOM.launch.cost]);
     expect(a.prep).toEqual({ done: 0, to: ids.rival });
     expect(atomStage(sim)).toBe('preparing');
-    expect(atomSummary(sim)!.launch).toMatchObject({ done: 0, to: ids.rival, ready: false, wait: null });
+    expect(atomSummary(sim)!.launch).toMatchObject({
+      done: 0,
+      to: ids.rival,
+      ready: false,
+      wait: null,
+      held: null,
+    });
     hours(sim, ATOM.launch.prepHours - 1);
     expect(a.prep!.done).toBe(ATOM.launch.prepHours - 1);
     expect(a.fired).toBeUndefined();
@@ -618,6 +706,8 @@ describe('M40: a launch', () => {
     // A bomb used is used: no second launch, no second bomb.
     expect(why(sim, launch(ids.rival))).toMatch(/used its atom bomb/);
     expect(why(sim, { type: 'buildBomb' })).toMatch(/used its atom bomb/);
+    // A bomb that leaves is not a bomb held.
+    expect(events(sim, 'launchHeld')).toHaveLength(0);
     hours(sim, 100);
     expect(a.fired!.to).toBe(ids.rival);
     expect(spent.atomLaunch).toHaveLength(1);
@@ -681,10 +771,22 @@ describe('M40: a launch', () => {
     expect(atomStage(sim)).toBe('preparing');
     expect(atomSummary(sim)!.launch).toMatchObject({ done: 1, ready: true, wait: null });
     expect(why(sim, launch(ids.rival))).toMatch(/war with .* is paused/);
-    // The war is open again: it does not go off by itself, however long it waits.
+    // The city is told the prepared bomb is held, once, and why; the Bomb tab says the same.
+    const target = sim.state.region.neighbours.find((n) => n.id === ids.rival)!;
+    expect(events(sim, 'launchHeld')).toEqual([
+      expect.objectContaining({
+        kind: 'launchHeld',
+        id: ids.rival,
+        info: { to: target.name, why: expect.stringMatching(/is paused \(a ceasefire or a surrender\)/) },
+      }),
+    ]);
+    expect(atomSummary(sim)!.launch!.held).toMatch(/is paused \(a ceasefire or a surrender\)/);
+    // The war is open again: it does not go off by itself, however long it waits (and nothing holds it).
     dip(sim).pacts = dip(sim).pacts.filter((p) => p.term.k !== 'ceasefire');
     expect(fightingWith(sim, ids.rival)?.scale).toBe('total');
+    expect(atomSummary(sim)!.launch).toMatchObject({ ready: true, held: null });
     hours(sim, 2_000);
+    expect(events(sim, 'launchHeld')).toHaveLength(1);
     expect(a.fired).toBeUndefined();
     expect(a.prep!.done).toBe(ATOM.launch.prepHours);
     // The city sends it again, for nothing: it leaves at once.
@@ -694,6 +796,23 @@ describe('M40: a launch', () => {
     expect(sim.state.treasury).toBe(treasury);
     expect(a.fired).toMatchObject({ to: ids.rival });
     expect(a.prep).toBeUndefined();
+  });
+
+  it('tells the city a launch is held when its war ended before the preparation did, and a call-off clears it', () => {
+    const sim = at('ready');
+    ok(sim, launch(ids.rival));
+    hours(sim, 100);
+    // A ceasefire in the middle: the summary already says the bomb could not leave now.
+    treaty(sim, ids.rival, [{ k: 'ceasefire', hours: 720 }]);
+    expect(atomSummary(sim)!.launch).toMatchObject({
+      ready: false,
+      held: expect.stringMatching(/is paused/),
+    });
+    expect(events(sim, 'launchHeld')).toHaveLength(0);
+    hours(sim, ATOM.launch.prepHours);
+    expect(events(sim, 'launchHeld')).toHaveLength(1);
+    ok(sim, { type: 'cancelLaunch' });
+    expect(atomSummary(sim)!.launch).toBeNull();
   });
 
   it('can be sent again at another neighbour in a total war', () => {
@@ -763,6 +882,17 @@ describe('M40: a launch', () => {
     expect(a.have).toBe(true);
     expect(atomStage(sim)).toBe('preparing');
     expect(events(sim, 'bombFired')).toHaveLength(0);
+    // The city is told it is held, and that the room has the say.
+    expect(events(sim, 'launchHeld')).toEqual([
+      expect.objectContaining({
+        id: friend.id,
+        info: { to: friend.name, why: expect.stringMatching(/goes through the region’s room/) },
+      }),
+    ]);
+    expect(atomSummary(sim)!.launch).toMatchObject({
+      ready: true,
+      held: expect.stringMatching(/goes through the region’s room/),
+    });
     // Sending it again waits for the room, which is not in this version of the sim yet.
     expect(why(sim, launch(friend.id))).toMatch(/goes through the region’s room/);
     expect(a.fired).toBeUndefined();
@@ -791,6 +921,9 @@ describe('M40: a launch', () => {
     const crewless = at('ready');
     civic(crewless, SILO).staff = 0;
     expect(asked(crewless)).toBe('The atom silo needs workers');
+    const unfunded = at('ready');
+    ok(unfunded, { type: 'setFunding', dept: 'defence', pct: 0 });
+    expect(asked(unfunded)).toBe('Defence funding is too low to run the silo');
     expect(asked(at('ready'), 99_999)).toBe('No such neighbour');
     // Not at war with that neighbour, at war but not total, a war not yet open, a ceasefire.
     const ready = at('ready');
@@ -944,6 +1077,100 @@ describe('M40: what is lost, and what is kept', () => {
     const gone = at('flying');
     expect(bulldoze(gone, PLANT)).toMatchObject({ ok: true });
     expect(bulldoze(gone, SILO)).toMatchObject({ ok: true });
+  });
+
+  describe('undo and redo', () => {
+    /**
+     * The base town with the given buildings of the race taken down and put up again by the player
+     * (finished by the cheat), so that each is an edit to undo, the last of them the newest.
+     */
+    function putUpAgain(...defs: string[]): Sim {
+      const sim = clone(base);
+      const poses = defs.map((def) => {
+        const c = civic(sim, def);
+        return { def, x: c.x, z: c.z, angle: c.angle, side: c.side };
+      });
+      for (const def of defs) sim.removeCivic(civic(sim, def).id);
+      for (const pose of poses) {
+        const id = ok(sim, { type: 'placeBuilding', ...pose }).created![0]!;
+        ok(sim, { type: 'cheat', cheat: 'finishStages', civic: id });
+      }
+      crews(sim);
+      expect(sim.history.undo).toHaveLength(defs.length);
+      return sim;
+    }
+
+    it('refuses to undo the placing of a silo that holds a build, a bomb or a launch, changing nothing', () => {
+      for (const [stage, words] of [
+        ['bomb', /building the bomb/],
+        ['ready', /holds an atom bomb/],
+        ['preparing', /preparing a launch/],
+      ] as const) {
+        const sim = putUpAgain(PLANT, SILO);
+        ok(sim, { type: 'cheat', cheat: 'atom', stage, to: ids.rival });
+        const was = JSON.stringify(sim.state.war!.atom);
+        const treasury = sim.state.treasury;
+        const silo = civic(sim, SILO).id;
+        const r = sim.dispatch({ type: 'undo' });
+        expect(r.ok, stage).toBe(false);
+        if (!r.ok) expect(r.reason, stage).toMatch(words);
+        // Nothing moved: the silo stands, the race and the money are as they were, and it is still the newest edit.
+        expect(sim.state.civics.has(silo), stage).toBe(true);
+        expect(JSON.stringify(sim.state.war!.atom), stage).toBe(was);
+        expect(sim.state.treasury, stage).toBe(treasury);
+        expect(sim.history.undo, stage).toHaveLength(2);
+        expect(atomStage(sim), stage).toBe(stage);
+        // The race can still be carried on from here: the bomb is not lost to a stray undo.
+        expect(atomSummary(sim)!.have || !!atomSummary(sim)!.bomb).toBe(true);
+      }
+    });
+
+    it('undoes the placing of a silo that holds nothing, and then the plant is the newest edit', () => {
+      const sim = putUpAgain(PLANT, SILO);
+      ok(sim, { type: 'cheat', cheat: 'atom', stage: 'silo' });
+      const silo = civic(sim, SILO).id;
+      ok(sim, { type: 'undo' });
+      expect(sim.state.civics.has(silo)).toBe(false);
+      expect(atomStage(sim)).toBe('enriching');
+      // The plant holds the fuel, so the newest edit left is not one to undo.
+      expect(why(sim, { type: 'undo' })).toMatch(/holds the city’s fuel/);
+    });
+
+    it('refuses to undo the placing of a plant that holds fuel, and undoes one that holds none', () => {
+      const sim = putUpAgain(PLANT);
+      ok(sim, { type: 'cheat', cheat: 'atom', stage: 'enriching' });
+      const fuel = atomOf(sim).fuel;
+      expect(fuel).toBeGreaterThan(0);
+      const treasury = sim.state.treasury;
+      const plant = civic(sim, PLANT).id;
+      expect(why(sim, { type: 'undo' })).toMatch(
+        /^Can't undo the .*: The enrichment plant holds the city’s fuel/,
+      );
+      expect(sim.state.civics.has(plant)).toBe(true);
+      expect(atomOf(sim).fuel).toBe(fuel);
+      expect(sim.state.treasury).toBe(treasury);
+      // A plant that has made nothing yet comes away as any placement does (its fuel was never there to halve).
+      const bare = putUpAgain(PLANT);
+      const bareId = civic(bare, PLANT).id;
+      ok(bare, { type: 'undo' });
+      expect(bare.state.civics.has(bareId)).toBe(false);
+      expect(bare.state.war!.atom).toBeUndefined();
+    });
+
+    it('refuses to redo the bulldozing of a plant that has made fuel since it was undone', () => {
+      const sim = clone(base);
+      const plant = civic(sim, PLANT).id;
+      ok(sim, { type: 'bulldoze', target: { kind: 'civic', id: plant } });
+      expect(sim.state.civics.has(plant)).toBe(false);
+      ok(sim, { type: 'undo' });
+      expect(sim.state.civics.has(plant)).toBe(true);
+      ok(sim, { type: 'cheat', cheat: 'atom', stage: 'enriching' });
+      const fuel = atomOf(sim).fuel;
+      expect(why(sim, { type: 'redo' })).toMatch(/The enrichment plant holds the city’s fuel/);
+      expect(sim.state.civics.has(plant)).toBe(true);
+      expect(atomOf(sim).fuel).toBe(fuel);
+      expect(sim.history.redo).toHaveLength(1);
+    });
   });
 
   it('allows one bomb, ever: once fired, no more fuel, no second bomb, no second launch', () => {

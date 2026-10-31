@@ -280,7 +280,15 @@ import {
   warEconomyMonth,
 } from './systems/warEconomy';
 import { answerOffer, offerCheat } from './systems/offers';
-import { atomCheat, atomCivicRemoved, buildBomb, cancelBomb, cancelLaunch, launchBomb } from './systems/atom';
+import {
+  atomCheat,
+  atomCivicRemoved,
+  atomUndoRefusal,
+  buildBomb,
+  cancelBomb,
+  cancelLaunch,
+  launchBomb,
+} from './systems/atom';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -394,6 +402,7 @@ export type SimEvent = {
     | 'bombWaiting'
     | 'bombReady'
     | 'bombFired'
+    | 'launchHeld'
     | 'atomLost'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
@@ -1869,6 +1878,9 @@ export class Sim {
     if (!edit) return fail(dir === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
     const cost = dir === 'undo' ? edit.treasury : -edit.treasury;
     if (dryRun) return ok(cost, { info: { label: edit.label } });
+    // The race's buildings can't be undone away while they hold something (the bulldozer's rule).
+    const held = atomUndoRefusal(this, edit, dir);
+    if (held) return fail(`Can't ${dir} the ${edit.label}: ${held}`, { info: { label: edit.label } });
     this.syncRng();
     const r = applyEdit(this.state, edit, dir);
     if (!r.ok) return fail(`Can't ${dir} the ${edit.label}: ${r.reason}`, { info: { label: edit.label } });

@@ -1343,8 +1343,9 @@ these are its calls and the reasons, with where they overturned the first draft.
     cannot be left damaged).
   - *Instalments.* The bomb's hours are capped at what the instalments paid so far cover
     (`paid × 60`), so a missed instalment stops it exactly at the boundary, however fast the silo works
-    and no hour is lost to it; the unpaid state is `bomb.waiting` (told once, event `bombWaiting`, as a
-    project's `projectWaiting`). Money on ledger line `atomBomb`, bought-in materials on `warImports`,
+    and no hour is lost to it (the rest of the hour that crossed a boundary goes on past it once the
+    instalment is paid; see the review fixes); the unpaid state is `bomb.waiting` (told once, event
+    `bombWaiting`, as a project's `projectWaiting`). Money on ledger line `atomBomb`, bought-in materials on `warImports`,
     the launch on `atomLaunch` (labels added); the stores are taken first through the same
     `materialBill`/`takeStock` as a unit's (`unitBill` is unchanged, the goldens agree).
   - *The launch carries its target* (`prep {done, to}`, the plan had `prep {done}`): a launch is aimed.
@@ -1374,3 +1375,38 @@ these are its calls and the reasons, with where they overturned the first draft.
   - *Tests are cheap by design.* One long run through the real clock (`atomChain.test.ts`, about 45 s);
     everything else plays hour by hour with `atomHour` on copies of one base town, crews set by hand, so
     the money is asserted to the dollar.
+- **Step 2 review fixes (nine findings from two reviewers, six distinct).**
+  - *A silo on no funding says so and pays nothing.* `siloBlock` now carries the funding wait the plant
+    always had ("Defence funding is too low to run the silo"), so `AtomSummary.bomb.wait` and
+    `.launch.wait` show it, `buildBomb` and `launchBomb` refuse in those words, and `bombHour` returns
+    before an instalment that falls due is paid for hours that cannot go by. The two `rate <= 0` returns
+    that stood behind it are gone (a crew of a quarter, power of a half and any funding at all always
+    give a rate above zero).
+  - *A launch held is told.* When a preparation completes and the bomb cannot leave (a ceasefire or
+    surrender, a war that ended, a friend's city that is the room's to agree to) the city gets event
+    `launchHeld {to, why}` once, and `AtomSummary.launch.held` carries the reason at all times: the
+    `targetWhy` text, or the room's, and null when sending it would fire it. A ready bomb with `held`
+    null is a bomb waiting to be sent again (nothing fires it by itself; call 7's deterrent). The
+    "bomb ready" chronicle line is still step 6's.
+  - *Undo and redo go through the same guards as the bulldozer.* `applyEdit` removes a building with
+    `map.delete`, round `removeCivic`, so an undone placement of a plant holding fuel kept all the fuel
+    and an undone placement of a silo kept the bomb with no silo. `atomUndoRefusal` (called in
+    `Sim.undoRedo` before anything changes) refuses an undo that would take a whole plant or silo away,
+    and a redo of a bulldozing that would, while `atomKeeps` says it holds something; a plant that has
+    made nothing and a silo that holds nothing still come away as any placement does. (The undo's
+    refund of the first stage's price is the ordinary undo of a placement; `refundShare` is the
+    bulldozer's. The same hole exists for a base keeping a superweapon, M37's `baseKeepsSuper`; left
+    alone here, as it is not M40's.) No invariant was added for "a bomb needs a silo": the three ways
+    a silo goes (damage and the blast through `removeCivic`, the bulldozer, undo) are all guarded now.
+  - *The cap on the bomb's hours loses no work.* The first version stopped `done` at the boundary and
+    threw the rest of the hour away, so a crew of 0.7 lost up to 0.7 of an hour at each of eleven
+    boundaries. `bombHour` now works through the hour in a loop: up to the boundary, then (the
+    instalment paid, or the build waiting if it can't be) on past it with what is left. The build takes
+    exactly `ceil(720 / rate)` hours at any rate; the hours still never pass `paid x 60`. The earlier test
+    only ran a rate of 1.25, which divides 60 and so never crossed a boundary part-way; a mutation
+    check (cap removed) now fails three tests.
+  - *Fuel is charged on the fuel gained.* Charging `made x $2,000` against a fuel that is rounded to
+    thousandths drifted by dollars at a rate that is not a whole number of thousandths (+$2,075 on a
+    full load at 0.3333, +$8,444 at worst). The charge is now the whole thousandths gained times the
+    price, so the sum is exact and a full load is $2,304,000 whatever the crew, power or funding, with
+    nothing left in the carry.

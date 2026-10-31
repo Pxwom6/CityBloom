@@ -1150,7 +1150,10 @@ Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
   difference in a solo end are failures whatever was disturbed; only a run that never finished (a crash that lost
   the page) stays excused, and the difference pages log in an abandoned battle (`agree: false` by construction).
   `relay/tests/soakChecks.test.ts` holds the soak's `exp-ce747761-818` numbers (Sam step 1502, Ada step 491). The
-  old tests' room verdicts now carry the step and hash a real one always has.
+  old tests' room verdicts now carry the step and hash a real one always has. The virtual soak reproduces the gap:
+  `npx tsx scripts/dev/regionsoak.ts 120 --virtual --crash --seed s6` on the client before the fix (`d5cd6cc`)
+  with this judge fails `exp-995ec388-821` (Ada, away when the room ended it solo, ran out alone to step 509;
+  the room's verdict and Sam's run are step 441); with the fix both pages end at 441 and the run has no failures.
   Open, found by the same virtual soaks and **older than the late-return fix** (the commit before it fails the
   same way at the same minute with seed `m39final`, battle 810): a record that stands in for a hosted battle
   (`resolveBattle`, `instant`, `standsIn`) re-runs the whole battle on a city whose hosted part has already

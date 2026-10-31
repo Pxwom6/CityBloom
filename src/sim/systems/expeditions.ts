@@ -61,6 +61,12 @@ export interface Expedition {
   downed?: number[];
   /** Sent through the express gate (M37): an hour each way. */
   gate?: true;
+  /**
+   * Sent to fight beside an ally in a friend's live battle (M39 step 6), not to raid: the room's id
+   * for the battle. It has no journey of the sim's (the room puts its arrival in battle steps), so it
+   * is `fighting` and pinned from the start, until the page says how the battle ended (`helpEnd`).
+   */
+  help?: { battle: string };
 }
 
 /** What the page hands back after fighting an expedition's battle. */
@@ -272,6 +278,134 @@ export function battleSettling(sim: Sim, id: number, on: boolean, dryRun: boolea
   if (dryRun) return ok(0);
   if (on) e.settling = true;
   else delete e.settling;
+  sim.warChanged();
+  return ok(0);
+}
+
+// ----- Allied help in a friend's live battle (M39 step 6) -----
+
+/** Why units can't go to help a friend in a live battle, or null: a force's rules, no superweapons, one force at a time. */
+export function helpRefusal(sim: Sim, units: number[], to: number, route: BattleRoute): string | null {
+  const w = sim.state.war;
+  if (!w) return 'War is off in this city';
+  const n = sim.state.region.neighbours.find((x) => x.id === to);
+  if (!n?.player) return 'Only a friend’s battle can be helped';
+  if (units.some((id) => UNIT.get(w.units.get(id)?.kind as UnitKind)?.super))
+    return 'A superweapon doesn’t go as help';
+  if (w.expeditions?.some((e) => e.help && e.state !== 'back')) return 'A force is helping already';
+  return forceRefusal(sim, units, to, route, 'military', false);
+}
+
+/**
+ * Units go to help a friend's side of a live battle the region room orders: they leave their bases
+ * (away, pinned) at once, and the page reports the battle's end with `helpEnd`. The way they go
+ * (`route`) only names how they come in; the room puts the time they take in battle steps.
+ */
+export function sendHelp(
+  sim: Sim,
+  units: number[],
+  to: number,
+  battle: string,
+  route: BattleRoute,
+  dryRun: boolean,
+): CommandResult {
+  if (typeof battle !== 'string' || !/^[\w:.-]{1,60}$/.test(battle)) return fail('Not a battle');
+  const why = helpRefusal(sim, units, to, route);
+  if (why) return fail(why);
+  if (dryRun) return ok(0);
+  const s = sim.state;
+  const w = s.war!;
+  const n = s.region.neighbours.find((x) => x.id === to)!;
+  const e: Expedition = {
+    id: s.nextId++,
+    units: [...units],
+    to,
+    name: n.name,
+    slot: n.player!.slot,
+    route,
+    target: 'military',
+    stance: 'bold',
+    depart: s.tick,
+    arrive: s.tick,
+    home: 0,
+    state: 'fighting',
+    settling: true,
+    help: { battle },
+  };
+  for (const id of units) w.units.get(id)!.away = e.id;
+  (w.expeditions ??= []).push(e);
+  sim.warChanged();
+  return ok(0, { created: [e.id] });
+}
+
+/** How the help fought, as the page reads it from the battle's end. */
+export interface HelpResult {
+  outcome: Outcome;
+  /** The force's units: health after (0–1) and whether knocked out; those the battle never met are left out. */
+  units: { id: number; hp: number; out: boolean }[];
+}
+
+/**
+ * The battle a force helped in is over (or never took it): its losses come off the city's forces and
+ * the rest mend on the way home. Applied once (the force is `back` after, and `helpEnd` on it fails),
+ * and with no result at all the force simply comes home as it went.
+ */
+export function helpEnd(sim: Sim, id: number, r: HelpResult | undefined, dryRun: boolean): CommandResult {
+  const w = sim.state.war;
+  const e = w?.expeditions?.find((x) => x.id === id);
+  if (!w || !e?.help) return fail('No such force');
+  if (e.state !== 'fighting') return fail('That force isn’t helping');
+  if (r !== undefined && (!r || !Array.isArray(r.units) || r.units.length > BATTLE.maxAttackers))
+    return fail('Not a result');
+  if (dryRun) return ok(0);
+  const s = sim.state;
+  const lost: Partial<Record<UnitKind, number>> = {};
+  for (const u of r?.units ?? []) {
+    if (!e.units.includes(u.id)) continue;
+    const unit = w.units.get(u.id);
+    if (!unit) continue;
+    if (u.out) {
+      lost[unit.kind] = (lost[unit.kind] ?? 0) + 1;
+      w.units.delete(u.id);
+      sim.events.push({ kind: 'unitLost', id: u.id, info: { kind: unit.kind } });
+    } else if (Number.isFinite(u.hp))
+      unit.hp = Math.max(0.05, Math.min(unit.hp, Math.round(u.hp * 1000) / 1000));
+  }
+  const sent = e.units.length;
+  e.units = e.units.filter((u) => w.units.has(u));
+  const total = Object.values(lost).reduce((a, v) => a + (v ?? 0), 0);
+  if (r) {
+    const report: BattleReport = {
+      id: e.id,
+      start: e.depart,
+      end: s.tick,
+      other: e.name,
+      ours: true,
+      help: true,
+      target: 'military',
+      outcome: r.outcome,
+      collapsed: [],
+      burning: [],
+      civics: [],
+      craters: 0,
+      lost,
+      theirLost: 0,
+      theirTotal: 0,
+      near: 0,
+      sheltered: 0,
+      homeless: 0,
+    };
+    w.reports = [...(w.reports ?? []), report].slice(-12);
+  }
+  e.state = 'back';
+  delete e.settling;
+  // Home in an hour or two: the way back is short, and a battle has been fought.
+  e.home = e.units.length ? s.tick + 2 * TICKS_PER_HOUR : s.tick;
+  sim.events.push({
+    kind: 'helpReport',
+    id: e.id,
+    info: { to: e.name, sent, lost: total, outcome: r?.outcome ?? 'none' },
+  });
   sim.warChanged();
   return ok(0);
 }

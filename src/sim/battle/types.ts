@@ -239,8 +239,8 @@ export type BattleEvent =
   | { k: 'destroyed'; s: number }
   /** A road cratered (the city's segment id). */
   | { k: 'crater'; seg: number }
-  /** A unit knocked out (a puff of smoke and a wreck), or gone off the map. */
-  | { k: 'out'; side: Side; unit: number; kind: UnitKind }
+  /** A unit knocked out (a puff of smoke and a wreck), or gone off the map; an ally's (version 4's helper) says whose. */
+  | { k: 'out'; side: Side; unit: number; kind: UnitKind; owner?: number }
   | { k: 'left'; side: Side; unit: number }
   /** Version 3: the dome's pool is spent (the dome pops). */
   | { k: 'dome'; left: 0 }

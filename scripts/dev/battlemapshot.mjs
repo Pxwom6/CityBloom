@@ -3,7 +3,7 @@
 // town (as battleshot.mjs), then stages live battles in the one page with the test API's stageLive (a
 // stand-in plays the region room) and shoots the map. Prints what the map reports at each moment.
 // Usage: npm run build:test && node scripts/dev/battlemapshot.mjs outDir
-// Env: QUALITY=low (low|medium|high), PORT=4393, SEED=port, ONLY=attacker,armed,sent,defender,handed,watcher,phone,touch
+// Env: QUALITY=low (low|medium|high), PORT=4393, SEED=port, ONLY=attacker,armed,sent,defender,handed,watcher,help,phone,touch
 // (a scene's earlier ones run first when it needs them)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -139,10 +139,10 @@ try {
       }),
     );
   };
-  const begin = async (role, hold, units) => {
+  const begin = async (role, hold, units, extra = {}) => {
     const why = await api(
-      ([r, h, u]) => window.__game.stageLive(r, { hold: h, units: u }),
-      [role, hold, units],
+      ([r, h, u, x]) => window.__game.stageLive(r, { hold: h, units: u, ...x }),
+      [role, hold, units, extra],
     );
     if (why) throw new Error(`stageLive ${role}: ${why}`);
   };
@@ -298,6 +298,87 @@ try {
     await page.evaluate(() => window.__game.waitFrames(3));
     await snap('phone-watcher');
     await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByTestId('map-close').click();
+  }
+  // ---------------------------------------------------------------- an ally's help (M39 step 6)
+  if (want('help')) {
+    await page.evaluate(() => window.__game.advance(120));
+    // Two friends fight a live battle: Samford (the attacker) is this city's ally, by a pact the region
+    // keeps and the city's sim mirrors; the region's rules allow war.
+    // (The room's own 30 s would outlast this small battle: the stand-in puts the force 4 s from the frontier.)
+    await begin('watcher', 120, SMALL, { helpTravel: 64, helpSide: 0 });
+    const set = await api(async () => {
+      const g = window.__game;
+      const none = { power: 0, water: 0, garbage: 0 };
+      const a = await g.dispatch({
+        type: 'regionUpdate',
+        update: {
+          cities: [
+            {
+              slot: 2,
+              name: 'Samford',
+              mayor: 'Sam',
+              color: 1,
+              population: 4000,
+              kind: 'suburb',
+              offers: { buy: { ...none }, sell: { ...none } },
+              workers: 0,
+              jobs: 0,
+              shoppers: 0,
+              online: true,
+              raid: 'open',
+            },
+          ],
+          contracts: [],
+          project: null,
+          rules: { war: true, scale: 'skirmish', supers: false },
+        },
+      });
+      const b = await g.dispatch({
+        type: 'friendPacts',
+        me: 3,
+        pacts: [{ room: 1, slot: 2, kind: 'alliance' }],
+        vassals: [],
+      });
+      return [a.ok ? 'ok' : a.reason, b.ok ? 'ok' : b.reason];
+    });
+    log('region and pact', JSON.stringify(set));
+    await waitFor(
+      'the invitation',
+      () => !!document.querySelector('[data-testid="live-watch"]'),
+      undefined,
+      30000,
+    );
+    await page.evaluate(() => window.__game.waitFrames(2));
+    await page.screenshot({ path: `${out}/help-bar.png`, timeout: 240000 });
+    // "Send help to Samford" opens the map on that battle with the picker open.
+    await page.locator('[data-testid^="help-stage"]').first().click();
+    await running(115);
+    await page.getByTestId('help-picker').waitFor({ timeout: 30000 });
+    await snap('help-picker');
+    for (const [kind, n] of [
+      ['tank', 2],
+      ['infantry', 2],
+    ]) {
+      const box = page.getByTestId(`help-${kind}`);
+      if (await box.count()) await box.fill(String(n));
+    }
+    await snap('help-picked');
+    await page.getByTestId('help-send').click();
+    await waitFor('the room to take it', () => window.__game.getHelp()?.state === 'on', undefined, 30000);
+    log('help', JSON.stringify(await api(() => window.__game.getHelp())));
+    await snap('help-on');
+    // Let the battle go on, held again just after the force's arrival step: it is on the field.
+    await api(() => window.__game.liveRelease(204));
+    await waitFor('the force to arrive', () => window.__game.battleMap().step >= 200, undefined, 240000);
+    await page.evaluate(() => window.__game.waitFrames(2));
+    await snap('help-arrived');
+    log('help', JSON.stringify(await api(() => window.__game.getHelp())));
+    await api(() => window.__game.liveRelease());
+    await waitFor('the battle to end', () => window.__game.battleMap().over, undefined, 150000);
+    await waitFor('the force to hear', () => window.__game.getHelp()?.state === 'done', undefined, 30000);
+    await snap('help-over');
+    log('help', JSON.stringify(await api(() => window.__game.getHelp())));
     await page.getByTestId('map-close').click();
   }
   if (errors.length) {

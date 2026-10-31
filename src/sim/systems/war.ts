@@ -965,6 +965,8 @@ export interface WarSummary {
     /** M37: the superweapon with it, and whether it went through the express gate. */
     super?: UnitKind;
     gate?: boolean;
+    /** M39 step 6: it went to help a friend in this live battle (the room's id), not to raid. */
+    help?: string;
   }[];
 }
 
@@ -1091,6 +1093,7 @@ export function warSummary(sim: Sim, extraction: (c: Civic) => number): WarSumma
       home: e.home,
       ...superOf(w, e.units),
       ...(e.gate ? { gate: true } : {}),
+      ...(e.help ? { help: e.help.battle } : {}),
     })),
   };
 }

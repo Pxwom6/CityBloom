@@ -44,6 +44,8 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'startScenario',
   'battleReport',
   'battleSettling',
+  'helpSend',
+  'helpEnd',
   'battleResolve',
   'battleLive',
   // Operations between friends (M37): the region decides them, each city's own page passes it on.
@@ -351,6 +353,8 @@ const CHECKS: Record<CommandType, Check> = {
   recallForce: (c) => (isInt(c.expedition) ? { type: 'recallForce', expedition: c.expedition } : BAD),
   battleReport: () => 'Only your own game reports its battles',
   battleSettling: () => 'Only your own game reports its battles',
+  helpSend: () => 'Only your own game sends its forces to a friend’s battle',
+  helpEnd: () => 'Only your own game reports its battles',
   battleResolve: () => 'Only your own game hosts its battles',
   battleLive: () => 'Only your own game hosts its battles',
   spySettling: () => 'Only your own game hears from the region',

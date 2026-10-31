@@ -42,6 +42,7 @@ import {
   type MapView,
   type OrderChoice,
 } from './battleMapView';
+import { HelpSection } from './Help';
 import { useGameUpdates } from './hooks';
 
 /** A pointer moves this far (CSS pixels) before a press is a drag and not a click. */
@@ -203,9 +204,18 @@ function BattleMap({ game }: { game: Game }) {
                 </div>
               </>
             ) : (
-              <p class="muted" data-testid="map-readonly">
-                You are watching. The two players give the orders; nothing here can be changed.
-              </p>
+              <>
+                <p class="muted" data-testid="map-readonly">
+                  You are watching. The two players give the orders; nothing here can be changed.
+                </p>
+                <HelpSection
+                  game={game}
+                  battle={view.id}
+                  from={view.attacker}
+                  to={view.defender}
+                  over={view.over}
+                />
+              </>
             )}
             <p class="battle-map-hint" data-testid="map-hint" role="status">
               {m.armed && side !== null

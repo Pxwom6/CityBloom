@@ -47,6 +47,10 @@ export class LiveStage implements LiveLink {
   private lastStep = 0;
   /** Orders the stand-in stamped, as the page's test API reports them. */
   readonly stamped: LiveOrder[] = [];
+  /** Help the page sends (step 6) fights for this side, takes this many steps to arrive (null: the room's own), and is called this. */
+  helpSide: LiveSide = 0;
+  helpTravel: number | null = null;
+  cityName = 'Your city';
 
   constructor(
     readonly role: StageRole,
@@ -145,9 +149,61 @@ export class LiveStage implements LiveLink {
       case 'bwatch':
         if (this.role === 'watcher' && this.session) this.tell(this.start('watcher'));
         return;
+      case 'bhelp':
+        return this.onHelp(m);
       default:
         return;
     }
+  }
+
+  /**
+   * The page sends its own force to help (M39 step 6): the stand-in puts it in as the room would, on
+   * the side `helpSide` (the ally's; no pacts here to say), `helpTravel` steps from the frontier.
+   */
+  private onHelp(m: Extract<RegionClientMsg, { t: 'bhelp' }>): void {
+    const s = this.session;
+    if (!s || s.id !== m.id || this.ended) return;
+    const route = m.route ?? 'highway';
+    const put = s.help(
+      this.helpSide,
+      { slot: this.slot, name: this.cityName, color: 0x3a78c8 },
+      { units: m.units, route, ...(m.mods ? { mods: m.mods } : {}) },
+      this.helpTravel ?? LIVE.helpTravel[route as keyof typeof LIVE.helpTravel],
+    );
+    if (!put.entry) return this.tell({ t: 'bhelpoff', id: s.id, why: put.refused });
+    this.stamped.push(put.entry);
+    this.ghost?.feed([put.entry], s.allow);
+    this.tell({ t: 'ballow', id: s.id, allow: s.allow, ords: [put.entry] });
+  }
+
+  /**
+   * Another city's allied force joins the battle (M39 step 6, for a picture of help arriving): stamped at
+   * the frontier like any, `travel` steps from it. False when the battle is over, full of help, or not here.
+   */
+  addHelper(opts: {
+    owner: number;
+    name: string;
+    color: number;
+    side: LiveSide;
+    units: UnitKind[];
+    travel?: number;
+  }): boolean {
+    const s = this.session;
+    if (!s || this.ended) return false;
+    const put = s.help(
+      opts.side,
+      { slot: opts.owner, name: opts.name, color: opts.color },
+      {
+        units: opts.units.map((kind, k) => ({ id: opts.owner * LIVE.helpIds + k, kind, hp: 1 })),
+        route: 'highway',
+      },
+      opts.travel ?? this.helpTravel ?? LIVE.helpTravel.highway,
+    );
+    if (!put.entry) return false;
+    this.stamped.push(put.entry);
+    this.ghost?.feed([put.entry], s.allow);
+    this.tell({ t: 'ballow', id: s.id, allow: s.allow, ords: [put.entry] });
+    return true;
   }
 
   private onStep(m: Extract<RegionClientMsg, { t: 'bstep' }>): void {
@@ -293,7 +349,7 @@ export const stageNow = (): LiveStage | null => current;
 export async function stageLive(
   game: Game,
   role: StageRole,
-  opts: { units?: UnitKind[]; hold?: number } = {},
+  opts: { units?: UnitKind[]; hold?: number; helpSide?: LiveSide; helpTravel?: number } = {},
 ): Promise<string | null> {
   const units = opts.units ?? STAGE_FORCE;
   if (!game.world.stats.war) return 'War is off in this city';
@@ -370,6 +426,9 @@ export async function stageLive(
   input.defender.color = 0x5aa05a;
   const stage = new LiveStage('watcher', 3, 2, 4);
   stage.hold = opts.hold ?? null;
+  stage.cityName = here;
+  stage.helpSide = opts.helpSide ?? 0;
+  stage.helpTravel = opts.helpTravel ?? null;
   current = stage;
   game.live.attach(stage);
   stage.beginWatched(input);

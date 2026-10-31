@@ -28,6 +28,7 @@ import { battleLayout, objectiveSpots, strengthFactors, structureAsSeen } from '
 import {
   BATTLE_V4,
   BATTLE_VERSION,
+  OWNER_DEFENDER,
   S,
   type BattleEvent,
   type BattleFrame,
@@ -89,6 +90,8 @@ export interface BattleReport {
   other: string;
   /** This city attacked (an expedition) rather than defended. */
   ours: boolean;
+  /** Its force went to help a friend in a live battle (M39 step 6), not to raid. */
+  help?: true;
   target: BattleTarget;
   outcome: Outcome | null;
   collapsed: number[];
@@ -951,6 +954,8 @@ export function applyWarDamage(
       }
     } else if (e.k === 'out') {
       if (e.side === 1) {
+        // An ally's unit (a helper's, M39 step 6) is its own city's loss, not this one's.
+        if (e.owner !== undefined) continue;
         const u = w?.units.get(e.unit);
         if (u && !u.away && w!.units.delete(e.unit)) {
           report.lost[e.kind] = (report.lost[e.kind] ?? 0) + 1;
@@ -986,7 +991,8 @@ function endHomeBattle(sim: Sim, run: Battle): void {
   // their bases.
   const went = new Map(hb.input.layout.defenders.map((u) => [u.id, u.hp]));
   for (const u of result.units) {
-    if (u.side !== 1 || u.out) continue;
+    // (An ally's units, a helper's, are lost to its own city: not this one's, whatever their ids.)
+    if (u.side !== 1 || u.out || (u.owner ?? OWNER_DEFENDER) > 0) continue;
     const unit = w.units.get(u.id);
     if (!unit || unit.away) continue;
     const took = Math.max(0, (went.get(u.id) ?? u.hp) - u.hp);

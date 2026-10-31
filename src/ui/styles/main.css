@@ -4648,3 +4648,52 @@ body {
 .viewer-check.differs {
   color: var(--color-warning);
 }
+
+/* Allies sending help into a friend's live battle (M39 step 6): the picker, and how the force is getting on. */
+.help-picker,
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.help-picker {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.help-picker h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.help-picker p {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.help-units {
+  display: grid;
+  gap: var(--space-1);
+}
+.help-unit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.help-unit input {
+  width: 4rem;
+}
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.help-status {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  font-size: var(--font-size-xs);
+}
+.help-status.refused {
+  background: var(--color-surface-sunken);
+}

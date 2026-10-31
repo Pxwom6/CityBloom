@@ -28,6 +28,12 @@ export interface LiveEnd {
   hash: string;
   /** The force's side of it, as the city is told. */
   result: AwayResult;
+  /**
+   * The allied forces that fought in it (version 4's helpers), by their owners: what became of each
+   * one's units (their health after, and whether knocked out). A unit that never came in is left out.
+   * Absent when no ally came.
+   */
+  helpers?: Record<number, { id: number; hp: number; out: boolean }[]>;
 }
 
 export class LiveRunner {
@@ -98,7 +104,16 @@ export class LiveRunner {
   end(): LiveEnd | null {
     const b = this.battle;
     if (!b.outcome) return null;
-    return { step: b.step, hash: b.hash(), result: awayResult(this.input, b) };
+    const helpers: NonNullable<LiveEnd['helpers']> = {};
+    for (const u of b.result().units)
+      if (u.owner !== undefined && u.owner > 0)
+        (helpers[u.owner] ??= []).push({ id: u.id, hp: u.hp, out: u.out });
+    return {
+      step: b.step,
+      hash: b.hash(),
+      result: awayResult(this.input, b),
+      ...(Object.keys(helpers).length ? { helpers } : {}),
+    };
   }
 }
 

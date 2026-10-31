@@ -72,6 +72,7 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   repayLoan: 'money',
   issueBond: 'money',
   sendForce: 'war',
+  helpSend: 'war',
   recallForce: 'war',
   // Diplomacy (M36): war needs the spending permission, treaties the policies one (M39 brings roles).
   declareWar: 'war',

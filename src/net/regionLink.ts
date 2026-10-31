@@ -502,6 +502,7 @@ export class RegionLink {
       case 'bend':
       case 'blivenow':
       case 'breplaydata':
+      case 'bhelpoff':
         this.live?.message(m);
         return;
       case 'incoming':

@@ -166,4 +166,59 @@ describe('M39: the stand-in room', () => {
     expect(end.run!.hash).toBe(end.end!.hash);
     expect(p.live.runningBattles()).toEqual([]);
   }, 120_000);
+
+  it('an ally’s force joins a watched battle: stamped at the frontier, in the frames as it arrives, in both runs', async () => {
+    const input = stagedInput('stage-h');
+    const p = page('watcher', input);
+    await flush();
+    expect(p.live.watch('stage-h')).toBe(true);
+    await p.drive(40);
+    expect(
+      p.stage.addHelper({
+        owner: 7,
+        name: 'Kitburg',
+        color: 0x33aa33,
+        side: 1,
+        units: ['tank', 'tank', 'infantry'],
+        travel: 120,
+      }),
+    ).toBe(true);
+    // (A second force from the same city is the room's to turn down.)
+    expect(
+      p.stage.addHelper({
+        owner: 7,
+        name: 'Kitburg',
+        color: 0x33aa33,
+        side: 1,
+        units: ['tank'],
+        travel: 120,
+      }),
+    ).toBe(false);
+    await p.drive(4);
+    const entry = p.stage.session!.helpers()[0]!;
+    expect(entry.helper).toMatchObject({ owner: 7, side: 1, name: 'Kitburg' });
+    // The page's run knows of it at once (whole, on its way), and has it on the map once it arrives.
+    expect(p.live.view()!.frame!.helpers).toEqual([
+      {
+        owner: 7,
+        name: 'Kitburg',
+        color: 0x33aa33,
+        side: 1,
+        arrive: entry.helper!.arrive,
+        alive: 3,
+        total: 3,
+      },
+    ]);
+    const onMap = () => p.live.view()!.frame!.units.filter((u) => u.owner === 7).length;
+    expect(onMap()).toBe(0);
+    await p.drive(300);
+    expect(p.live.view()!.step).toBeGreaterThan(entry.helper!.arrive);
+    expect(onMap()).toBeGreaterThan(0);
+    // It ends alike in the hidden run that paces it and the page's, the allies' units reported by owner.
+    await p.drive(4_000);
+    const end = p.live.view()!;
+    expect(end.over).toBe(true);
+    expect(end.end).toMatchObject({ id: 'stage-h', agree: true });
+    expect(end.run!.hash).toBe(end.end!.hash);
+  }, 120_000);
 });

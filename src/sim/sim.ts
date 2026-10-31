@@ -245,7 +245,15 @@ import {
   resolveBattle,
   startHomeBattle,
 } from './systems/raids';
-import { battleReport, battleSettling, expeditionsTick, recallForce, sendForce } from './systems/expeditions';
+import {
+  battleReport,
+  battleSettling,
+  expeditionsTick,
+  helpEnd,
+  recallForce,
+  sendForce,
+  sendHelp,
+} from './systems/expeditions';
 import {
   answerProposal,
   buyBack,
@@ -377,6 +385,8 @@ export type SimEvent = {
     | 'trialRun'
     | 'trialPassed'
     | 'expeditionReport'
+    // M39 step 6: a force that went to help a friend's live battle is over with it.
+    | 'helpReport'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -1493,6 +1503,10 @@ export class Sim {
         return battleReport(this, cmd.expedition, cmd.result, dryRun);
       case 'battleSettling':
         return battleSettling(this, cmd.expedition, cmd.on, dryRun);
+      case 'helpSend':
+        return sendHelp(this, cmd.units, cmd.to, cmd.battle, cmd.route, dryRun);
+      case 'helpEnd':
+        return helpEnd(this, cmd.expedition, cmd.result, dryRun);
       case 'battleResolve':
         return resolveBattle(
           this,

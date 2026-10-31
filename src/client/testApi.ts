@@ -47,7 +47,7 @@ import type { UnitShown } from '../render/units';
 import { MILITARY_SITES } from '../render/assets/militaryModels';
 import { buildCivicModel } from '../render/assets/civicModels';
 import { UNIT, type UnitKind } from '../data/war';
-import type { LiveRunning, LiveState, OrderLogEntry } from './liveBattles';
+import type { HelpView, LiveRunning, LiveState, OrderLogEntry } from './liveBattles';
 import type { OrderRequest } from '../sim/battle/live';
 import { stageLive, stageNow, type StageRole } from './liveStage';
 import {
@@ -640,8 +640,17 @@ export interface TestApi {
    */
   stageLive(
     role: 'attacker' | 'defender' | 'watcher',
-    opts?: { units?: UnitKind[]; hold?: number },
+    opts?: { units?: UnitKind[]; hold?: number; helpSide?: 0 | 1; helpTravel?: number },
   ): Promise<string | null>;
+  /**
+   * An ally's force joins the staged battle (M39 step 6; the stand-in plays the room): stamped at the
+   * frontier, `travel` steps from it (the room's own 480 without). False when it could not.
+   */
+  stageHelp(opts: { owner: number; name: string; side: 0 | 1; units: UnitKind[]; travel?: number }): boolean;
+  /** The force this page sent to help a friend in a live battle, as the panels show it. */
+  getHelp(): HelpView | null;
+  /** Send units to help a friend in a live battle on now, as the picker does: null when it went, else why not. */
+  sendHelp(battle: string, ally: number, units: { id: number; kind: UnitKind }[]): Promise<string | null>;
   /** The stand-in lets a held battle (`stageLive` with `hold`) go on, or holds it at a step from now. */
   liveRelease(hold?: number): void;
   /** The stand-in room hands this page's side over (it stays handed over until the player takes command). */
@@ -1477,6 +1486,9 @@ export function installTestApi(game: Game): TestApi {
     getLive: () => game.live.state(),
     liveOrder: (order) => game.live.order(order),
     stageLive: (role: StageRole, opts) => stageLive(game, role, opts),
+    stageHelp: (opts) => stageNow()?.addHelper({ ...opts, color: 0x33aa33 }) ?? false,
+    getHelp: () => game.live.helping(),
+    sendHelp: (battle, ally, units) => game.live.sendHelp(battle, ally, units),
     liveRelease: (hold) => {
       const st = stageNow();
       if (!st) return;

@@ -11,6 +11,7 @@ import { BRANCHES } from '../data/research';
 import type { BattleReport } from '../sim/systems/raids';
 import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
+import { HelpButton } from './Help';
 import { formatNumber, useGameUpdates } from './hooks';
 
 const TARGETS: Record<string, string> = {
@@ -158,6 +159,7 @@ export function LiveBar() {
         <button class="btn primary" data-testid="live-watch" onClick={() => game.watchLive(b.id)}>
           Watch
         </button>
+        <HelpButton battle={b} />
         <button class="btn" data-testid="live-dismiss" onClick={() => setHidden([...hidden, b.id])}>
           Not now
         </button>
@@ -174,19 +176,34 @@ const unitName = (kind: string, n: number) => {
 /** One battle's report: what happened, what it cost, what's being repaired. */
 export function ReportCard({ r }: { r: BattleReport }) {
   const game = useGameUpdates(1000);
-  const head = r.ours
-    ? r.outcome === 'raided'
-      ? `Our raid on ${r.other} hit ${TARGETS[r.target] ?? r.target}`
+  const head = r.help
+    ? `Our force helped ${r.other}: ${r.outcome === 'repelled' ? 'the defence held' : r.outcome === 'raided' ? 'the attack hit its targets' : 'the attackers pulled out'}`
+    : r.ours
+      ? r.outcome === 'raided'
+        ? `Our raid on ${r.other} hit ${TARGETS[r.target] ?? r.target}`
+        : r.outcome === 'repelled'
+          ? `Our raid on ${r.other} was beaten off`
+          : `Our force pulled back from ${r.other}`
       : r.outcome === 'repelled'
-        ? `Our raid on ${r.other} was beaten off`
-        : `Our force pulled back from ${r.other}`
-    : r.outcome === 'repelled'
-      ? `${r.other}'s raid was beaten off`
-      : r.outcome === 'withdrew'
-        ? `${r.other}'s force pulled back`
-        : `${r.other}'s raiders hit ${TARGETS[r.target] ?? r.target}`;
+        ? `${r.other}'s raid was beaten off`
+        : r.outcome === 'withdrew'
+          ? `${r.other}'s force pulled back`
+          : `${r.other}'s raiders hit ${TARGETS[r.target] ?? r.target}`;
   const lost = Object.entries(r.lost).filter(([, n]) => (n ?? 0) > 0);
   const day = formatDate(dateOf(r.end));
+  if (r.help)
+    return (
+      <li class="war-report" data-testid={`report-${r.id}`}>
+        <strong>{head}</strong>
+        {day && <span class="muted"> · {day}</span>}
+        <ul>
+          <li data-testid={`report-${r.id}-lost`}>
+            Our units lost:{' '}
+            {lost.length ? lost.map(([k, n]) => `${n} ${unitName(k, n ?? 0)}`).join(', ') : 'none'}
+          </li>
+        </ul>
+      </li>
+    );
   if (r.ours && r.away)
     return (
       <li class="war-report" data-testid={`report-${r.id}`}>

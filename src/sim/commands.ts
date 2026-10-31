@@ -13,7 +13,7 @@ import type { TerraformMode } from '../data/terraform';
 import type { MapBrush } from '../data/mapEditor';
 import type { ClimateId } from '../data/climate';
 import type { BattleRoute, BattleTarget, Stance } from '../data/battle';
-import type { AwayResult } from './systems/expeditions';
+import type { AwayResult, HelpResult } from './systems/expeditions';
 import type { BattleInput } from './battle/types';
 import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
@@ -192,6 +192,13 @@ export type Command =
   | { type: 'battleReport'; expedition: number; result: AwayResult }
   /** A force's battle with a friend's city is with the region: pinned until it answers (page only, M36). */
   | { type: 'battleSettling'; expedition: number; on: boolean }
+  /**
+   * Units go to help a friend in a live battle (M39 step 6, page only: the page sends them to the
+   * region room, which decides whether they go in), and what happened to them when it ended (`result`
+   * absent: they never fought, and come home).
+   */
+  | { type: 'helpSend'; units: number[]; to: number; battle: string; route: BattleRoute }
+  | { type: 'helpEnd'; expedition: number; result?: HelpResult }
   /** Host a battle fought elsewhere: watch it play out, or take its result at once (page only). */
   | {
       type: 'battleResolve';
@@ -342,6 +349,8 @@ const COMMAND_KINDS = {
   recallForce: true,
   battleReport: true,
   battleSettling: true,
+  helpSend: true,
+  helpEnd: true,
   battleResolve: true,
   battleLive: true,
   cancelTraining: true,

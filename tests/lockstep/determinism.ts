@@ -13,6 +13,8 @@ import { editorScript, growTown, newTown, placeAlong, roadIds } from './scripted
 import { growRivalTown } from '../../src/sim/ai/town';
 import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
+import { recordInput } from '../../src/sim/battle/live';
+import { UNIT } from '../../src/data/war';
 
 export interface DeterminismResult {
   months: string[];
@@ -358,14 +360,27 @@ export function runDeterminism(
     const defenders = input.layout.defenders.map((u) => u.id);
     liveLog.push(JSON.stringify([input.id, input.layout.structs.length, defenders.length]));
     lab({ type: 'battleResolve', input: structuredClone(input), mode: 'live', from: 2 });
-    // As the room stamps them: at the frontier of the moment.
-    const log = [
-      { seq: 1, step: 32, side: 0 as const, kind: 'hold', units: [11] },
-      { seq: 2, step: 64, side: 1 as const, kind: 'guard', units: defenders.slice(0, 2), target: 0 },
-      { seq: 3, step: 96, side: 0 as const, kind: 'focus', target: 0 },
-      { seq: 4, step: 96, side: 1 as const, kind: 'focus', target: 12 },
-      { seq: 5, step: 160, side: 1 as const, kind: 'free' },
-      { seq: 6, step: 224, side: 0 as const, kind: 'withdraw' },
+    // As the room stamps them: at the frontier of the moment. Two allied forces join while it runs
+    // (M39 step 6): tanks and a squad on the city's side, stamped at step 96, and tanks on the raiders'
+    // side stamped at 128; each is taken up when the battle reaches the step it was stamped at, and
+    // arrives shortly after (the room puts 30 s between the two; the compared run needn't wait so long).
+    const ally = (owner: number, side: 0 | 1, arrive: number, kinds: ('tank' | 'infantry')[]) => ({
+      owner,
+      name: `Ally ${owner}`,
+      color: 0x33aa33,
+      side,
+      arrive,
+      units: kinds.map((kind, k) => ({ id: owner * 10_000 + k, kind, hp: 1 })),
+    });
+    const log: import('../../src/sim/battle/live').StampedOrder[] = [
+      { seq: 1, step: 32, side: 0, kind: 'hold', units: [11] },
+      { seq: 2, step: 64, side: 1, kind: 'guard', units: defenders.slice(0, 2), target: 0 },
+      { seq: 3, step: 96, side: 0, kind: 'focus', target: 0 },
+      { seq: 4, step: 96, side: 1, kind: 'focus', target: 12 },
+      { seq: 5, step: 96, side: 1, kind: 'help', helper: ally(7, 1, 150, ['tank', 'tank', 'infantry']) },
+      { seq: 6, step: 128, side: 0, kind: 'help', helper: ally(8, 0, 190, ['tank', 'tank']) },
+      { seq: 7, step: 160, side: 1, kind: 'free' },
+      { seq: 8, step: 224, side: 0, kind: 'withdraw' },
     ];
     let allow = 0;
     for (let t = 0; t < 700 && labSim.state.war!.battle; t++) {
@@ -385,6 +400,54 @@ export function runDeterminism(
     const ended = labSim.events.filter((e) => e.kind === 'battleEnded').at(-1);
     liveLog.push(
       JSON.stringify([ended?.info ?? null, labSim.state.war!.reports?.at(-1) ?? null, labSim.hash()]),
+    );
+    // The city's own part in a friend's battle (M39 step 6): two units go to help it, and the page
+    // reports how they fared when it ended (the last knocked out, the rest hurt): applied once.
+    const spare = [...labSim.state.war!.units.values()]
+      .filter((u) => !u.away && u.hp >= 0.5 && !UNIT.get(u.kind)?.super)
+      .sort((a, b) => a.id - b.id)
+      .slice(0, 2);
+    const helped = lab({
+      type: 'helpSend',
+      units: spare.map((u) => u.id),
+      to: friend,
+      battle: 'exp-00000000-8',
+      route: 'highway',
+    });
+    if (helped.ok) {
+      const done: Command = {
+        type: 'helpEnd',
+        expedition: helped.created![0]!,
+        result: {
+          outcome: 'repelled',
+          units: spare.map((u, k) => ({
+            id: u.id,
+            hp: k < spare.length - 1 ? 0.4 : 0,
+            out: k === spare.length - 1,
+          })),
+        },
+      };
+      lab(done);
+      lab(done);
+      liveLog.push(JSON.stringify([labSim.state.war!.reports?.at(-1) ?? null, labSim.hash()]));
+    } else liveLog.push(`no help: ${JSON.stringify(helped)}`);
+    // The battle as the room's record has it (the input with the whole log in it), played again on its
+    // own: its hash every 100 steps and its result, the allies' units by owner among them.
+    const record = recordInput(input, log);
+    const again = new Battle(record);
+    while (!again.outcome && again.step < 4_000) {
+      again.stepOnce();
+      if (again.step % 100 === 0) liveLog.push(`record ${again.step}:${again.hash()}`);
+    }
+    const result = again.result();
+    liveLog.push(
+      JSON.stringify([
+        record.helpers?.map((h) => [h.owner, h.side, h.at, h.arrive, h.units.length]),
+        result.outcome,
+        result.steps,
+        result.hash,
+        result.units.filter((u) => (u.owner ?? 0) > 0).map((u) => [u.owner, u.id, u.hp, u.out]),
+      ]),
     );
   }
 

@@ -1388,7 +1388,13 @@ export class Battle {
     t.mode = Mode.Out;
     t.target = NONE;
     t.firing = false;
-    this.events.push({ k: 'out', side: t.side, unit: t.id, kind: t.kind });
+    this.events.push({
+      k: 'out',
+      side: t.side,
+      unit: t.id,
+      kind: t.kind,
+      ...(t.owner > 0 ? { owner: t.owner } : {}),
+    });
     if (t.carries) this.dropCarried(t);
   }
 

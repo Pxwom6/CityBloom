@@ -10,6 +10,7 @@ import {
 import type { RegionSummary, RivalNeighbour } from '../sim/systems/region';
 import type { RegionLink } from '../net/regionLink';
 import { PEACE_RULES, PERSONALITY, WAR_SCALES, WAR_SCALE_NAMES, warRulesText } from '../data/war';
+import { HelpButton } from './Help';
 import { Segmented } from './Shell';
 import type { SupplyBalance, UtilityBalance } from '../sim/systems/utilities';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
@@ -280,7 +281,8 @@ function LiveWithFriend({ slot, name }: { slot: number; name: string }) {
         onClick={() => game.watchLive(b.id)}
       >
         Watch
-      </button>
+      </button>{' '}
+      <HelpButton battle={b} small />
     </p>
   );
 }

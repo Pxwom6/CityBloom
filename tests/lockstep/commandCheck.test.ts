@@ -88,6 +88,12 @@ const SAMPLES: Record<CommandType, Command> = {
     orders: [{ seq: 1, step: 32, side: 1, kind: 'hold' }],
   },
   battleSettling: { type: 'battleSettling', expedition: 6, on: true },
+  helpSend: { type: 'helpSend', units: [3, 4], to: 2, battle: 'exp-1a2b3c4d-9', route: 'highway' },
+  helpEnd: {
+    type: 'helpEnd',
+    expedition: 6,
+    result: { outcome: 'repelled', units: [{ id: 3, hp: 0.5, out: false }] },
+  },
   battleReport: {
     type: 'battleReport',
     expedition: 6,

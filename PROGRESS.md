@@ -239,11 +239,18 @@ skip it), the enrichment plant and atom silo (no refund) and save v32; the price
 in its band against the 57,000-resident reference city (`atomprice.ts`, DECISIONS "M40" step 1). Tests:
 `tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Step 2 is done too (fuel,
 the bomb's twelve instalments, a launch's preparation and the bomb leaving for a computer neighbour; the
-flight is step 3's seam; the four commands, the loss rules, the bulldoze guard, the host-only launch and
-the `atom {stage}` cheat; `tests/war/atomChain.test.ts`, 71 tests; DECISIONS "M40" step 2 and its review
-fixes: a silo on no funding says so, a held launch is told, undo can't take a plant or silo that holds the
-race, the bomb's hours lose no work at an instalment boundary, fuel is charged on the fuel gained). Not yet
-run for steps 1 and 2: e2e, builds, balance, bench, soak (run at step 13).
+four commands, the loss rules, the bulldoze guard, the host-only launch and the `atom {stage}` cheat;
+`tests/war/atomChain.test.ts`; DECISIONS "M40" step 2 and its review fixes). Step 3 is done (6d8b0a0,
+17fb30e): the flight to a computer neighbour (its people, forces and defences x 0.4, the war score),
+a bomb inbound to the city (`atomInbound`, cheat `bombIn`, the warning and siren, the game dropping to
+1x once, no raid while it flies, the countdown chip), the dome stopping one bomb and then down 1,440 h,
+the impact in `src/sim/systems/atomImpact.ts` (ground zero the densest district, everything within
+450 m levelled, residents of levelled homes gone, ring civics closed, roads closed 240 h, the crater,
+fires on their own dice, the rail link and Sunfield Commons only closed; open calls for help on
+levelled homes forgotten), bounded ticks; `tests/war/{atomStrike,atomImpact}.test.ts`;
+`scripts/dev/atombench.ts` on the 110k city: the worst blast tick 11 ms (370 buildings levelled,
+25,266 residents gone, about 66,000 left once the closed roads and civics take their toll). Next:
+step 4, fallout. Not yet run for steps 1-3: e2e, builds, balance, bench (run at step 13).
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -297,9 +304,8 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 2 are done. Next: step 3, the flight, the warning, the dome stopping one bomb and the impact
-   (fills `startFlight` in `src/sim/systems/atom.ts`); then fallout; the
-   nuclear winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
+   to 3 are done. Next: step 4, fallout (fills `startFallout` in `atomImpact.ts`); then the nuclear
+   winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
    7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
    may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase

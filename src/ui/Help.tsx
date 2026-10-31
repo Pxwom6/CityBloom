@@ -11,7 +11,7 @@ import type { Game } from '../game';
 import type { LiveRunning } from '../client/liveBattles';
 import { UNIT } from '../data/war';
 import { useGameUpdates } from './hooks';
-import { helpAlliesOf, helpLine, pickUnits, seconds, type HelpAlly } from './helpView';
+import { helpAlliesOf, helpLine, pickUnits, readyToGo, seconds, type HelpAlly } from './helpView';
 
 export type { HelpAlly } from './helpView';
 
@@ -29,15 +29,8 @@ export function helpAllies(game: Game, b: { from: number; to: number }): HelpAll
   );
 }
 
-/** Units fit to go: at home, mended, not a superweapon, on the ground or in the air. */
-function ready(game: Game) {
-  return (game.world.forces?.units ?? []).filter((u) => {
-    const d = UNIT.get(u.kind);
-    return (
-      !u.away && u.hp >= 0.5 && !u.ready && !!d && !d.super && (d.domain === 'land' || d.domain === 'air')
-    );
-  });
-}
+/** Units fit to go (see `readyToGo`). */
+const ready = (game: Game) => readyToGo(game.world.forces?.units ?? []);
 
 const unitName = (kind: string, n: number) => {
   const d = UNIT.get(kind as never);

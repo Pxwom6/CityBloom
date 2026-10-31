@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE } from '../../relay/protocol';
 import type { HelpView } from '../../src/client/liveBattles';
-import { helpAlliesOf, helpForceLine, helpLine, pickUnits, type PactsView } from '../../src/ui/helpView';
+import {
+  helpAlliesOf,
+  helpForceLine,
+  helpLine,
+  pickUnits,
+  readyToGo,
+  type PactsView,
+} from '../../src/ui/helpView';
 
 /**
  * M39 step 6 (review): the arithmetic and words of an ally's help, as `Help.tsx` and the war room use
@@ -56,6 +63,45 @@ describe('M39 step 6 review: who a city may help', () => {
     expect(allies([pact(11, 'trade'), pact(12, 'alliance')])).toEqual([
       { id: 12, slot: 2, name: 'Samford', side: 1 },
     ]);
+  });
+});
+
+describe('M39 step 6 review: the units that may go', () => {
+  const unit = (
+    id: number,
+    kind: string,
+    extra: Partial<{ hp: number; away: number; ready: number }> = {},
+  ) => ({
+    id,
+    kind,
+    hp: 1,
+    ...extra,
+  });
+
+  it('offers land and air units at home, mended, and nothing else', () => {
+    const forces = [
+      unit(1, 'infantry'),
+      unit(2, 'tank'),
+      unit(3, 'artillery'),
+      unit(4, 'transport'),
+      unit(5, 'fighter'),
+      unit(6, 'helicopter'),
+      unit(7, 'drone'),
+      // Not these: boats, a superweapon of any kind, one already away, one worn below half, one still winding up.
+      unit(10, 'patrolboat'),
+      unit(11, 'gunboat'),
+      unit(12, 'landingcraft'),
+      unit(13, 'windupbot'),
+      unit(14, 'skyfortress'),
+      unit(15, 'clockworkwhale'),
+      unit(16, 'tank', { away: 99 }),
+      unit(17, 'tank', { hp: 0.49 }),
+      unit(18, 'tank', { ready: 2 }),
+      unit(19, 'dragon'),
+    ];
+    expect(readyToGo(forces).map((u) => u.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    // Half health is enough.
+    expect(readyToGo([unit(20, 'tank', { hp: 0.5 })])).toHaveLength(1);
   });
 });
 

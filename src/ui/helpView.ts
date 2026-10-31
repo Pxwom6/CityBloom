@@ -6,6 +6,7 @@
  */
 import { BINDING_PACTS, LIVE, helpSideOf, type AidPact } from '../../relay/protocol';
 import type { HelpView } from '../client/liveBattles';
+import { UNIT } from '../data/war';
 
 /** Seconds of play a battle step takes at the room's pace: 16 steps a second. */
 const STEPS_PER_SECOND = 16;
@@ -53,6 +54,26 @@ export function helpAlliesOf(view: PactsView, b: { from: number; to: number }): 
   const enemy = find(rule.side === 0 ? b.to : b.from);
   if (enemy && pacts.some((p) => p.with === enemy.id && BINDING_PACTS.includes(p.term.k as never))) return [];
   return [{ id: n.id, slot, name: n.name, side: rule.side }];
+}
+
+/** A unit of the city's forces, as the picker sees it. */
+export interface ForceUnit {
+  id: number;
+  kind: string;
+  hp: number;
+  /** On an expedition (not at its base), and a superweapon's hours of winding up left. */
+  away?: unknown;
+  ready?: number;
+}
+
+/** Units fit to go: at home, mended (half health or better), not winding up, no superweapon, on the ground or in the air. */
+export function readyToGo<U extends ForceUnit>(units: readonly U[]): U[] {
+  return units.filter((u) => {
+    const d = UNIT.get(u.kind as never);
+    return (
+      !u.away && u.hp >= 0.5 && !u.ready && !!d && !d.super && (d.domain === 'land' || d.domain === 'air')
+    );
+  });
 }
 
 /**

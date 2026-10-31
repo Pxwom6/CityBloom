@@ -180,7 +180,8 @@ export class RegionReplays implements ReplaySink {
       say({ state: 'error', why });
       return { ok: false as const, why };
     };
-    if (this.status.get(key)?.state === 'fetching') return fail('Already on its way');
+    if (this.status.get(key)?.state === 'fetching')
+      return { ok: false, why: 'That battle is already on its way' };
     say({ state: 'fetching', what: 'Asking the region for the battle' });
     let record: LiveRecord;
     try {

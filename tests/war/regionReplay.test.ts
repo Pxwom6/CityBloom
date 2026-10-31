@@ -110,10 +110,18 @@ function rerun(input: BattleInput): { step: number; hash: string; outcome: strin
   return { step: r.steps, hash: r.hash, outcome: r.outcome };
 }
 
-/** The battle as the viewer plays it: hosted by the town's own sim, to its end. */
-function viewed(town: SaveFile, input: BattleInput): { step: number; hash: string } {
+/**
+ * The battle as the viewer plays it: hosted by the town's own sim, to its end (`asFought`, as the
+ * viewer asks for a live battle's record: its course doesn't depend on the town it is shown in).
+ */
+function viewed(town: SaveFile, input: BattleInput, asFought = true): { step: number; hash: string } {
   const sim = loaded(town);
-  const r = sim.dispatch({ type: 'battleResolve', input: structuredClone(input), mode: 'watch' });
+  const r = sim.dispatch({
+    type: 'battleResolve',
+    input: structuredClone(input),
+    mode: 'watch',
+    ...(asFought ? { asFought: true } : {}),
+  });
   if (!r.ok) throw new Error(`the viewer could not host it: ${r.reason}`);
   for (let k = 0; k < 4_000; k++) {
     sim.step();
@@ -212,16 +220,24 @@ describe('M39 step 7: replays from the region', () => {
     expect(replayVerdict(rec.region!.expect!, seen)).toBe('checked');
   }, 300_000);
 
-  it('a town that has changed since is said to differ, not passed off as the battle', async () => {
-    const { eve } = await fought();
+  it('plays the same battle in any town: one changed since, or the defender’s city after the battle', async () => {
+    const { eve, sam } = await fought();
     const ref = eve.desk.list()[0]!;
     expect((await eve.desk.prepare(ref)).ok).toBe(true);
     const rec = eve.kept.battles.find((b) => b.id === replayRecordId(ref.from, ref.id))!;
-    // Samford disbanded its army since the region saved its city: Samford's own orders find nothing to command.
+    const expectEnd = rec.region!.expect!;
+    // Samford disbanded its army since the region saved its city.
     const town = loaded(eve.kept.towns.get(rec.townKey!)!);
     for (const u of [...town.state.war!.units.values()]) town.dispatch({ type: 'disbandUnit', unit: u.id });
-    const seen = viewed(town.save(), rec.input);
-    expect(replayVerdict(rec.region!.expect!, seen)).toBe('differs');
+    const disbanded = town.save();
+    // Or the region's save of Samford is from after the battle: what it lost is gone, the rubble is there.
+    const after = sam.sim.save();
+    expect(sam.sim.state.war!.reports?.length ?? 0).toBeGreaterThan(0);
+    for (const backdrop of [disbanded, after])
+      expect(replayVerdict(expectEnd, viewed(backdrop, rec.input))).toBe('checked');
+    // Without the flag the city's own picture decides which of Samford's units the orders can name, and a
+    // town that has lost them plays another battle: what the flag is for.
+    expect(replayVerdict(expectEnd, viewed(disbanded, rec.input, false))).toBe('differs');
   }, 300_000);
 
   it('the two fighters watch it in their own copies of the town, and a late arrival is told of it on joining', async () => {

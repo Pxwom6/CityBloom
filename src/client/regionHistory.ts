@@ -310,18 +310,26 @@ export function byDay(
 
 // ---- What the panel says -------------------------------------------------------------------
 
-/** Whether there is a list to show, and if not, why. */
-export type HistoryState = 'list' | 'empty' | 'off' | 'none';
+/** Whether there is a list to show, and if not, why (`loading`: the region hasn't told this page its history yet). */
+export type HistoryState = 'list' | 'loading' | 'empty' | 'off' | 'none';
 
-export function historyState(o: { inRegion: boolean; warOn: boolean; events: number }): HistoryState {
+export function historyState(o: {
+  inRegion: boolean;
+  warOn: boolean;
+  events: number;
+  /** The region has told this page its whole state since the link came up. */
+  synced?: boolean;
+}): HistoryState {
   if (!o.inRegion) return 'none';
   if (!o.warOn) return 'off';
-  return o.events ? 'list' : 'empty';
+  if (o.events) return 'list';
+  return o.synced === false ? 'loading' : 'empty';
 }
 
 export const STATE_WORDS: Record<Exclude<HistoryState, 'list'>, string> = {
   none: 'This city isn’t in a region. In a region with war on, the wars, battles and treaties between its cities are kept here (the Region panel, Shift+N, starts or joins one).',
   off: 'War is off in this region. When its host turns it on, the wars, battles and treaties between its cities are kept here.',
+  loading: 'Asking the region for its history…',
   empty:
     'Nothing has happened between the cities of this region yet. Declared wars, battles, treaties, conquests and broken pacts will be listed here, the last 100.',
 };

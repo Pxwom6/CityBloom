@@ -27,7 +27,12 @@ export function RegionAtWar() {
   const view = game.region?.view ?? null;
   const fv = game.friends.view();
   const events = fv.history;
-  const state = historyState({ inRegion: !!view, warOn: !!view?.rules?.war, events: events.length });
+  const state = historyState({
+    inRegion: !!view,
+    warOn: !!view?.rules?.war,
+    events: events.length,
+    synced: game.friends.snapshot().synced,
+  });
   if (state !== 'list')
     return (
       <p class="note" data-testid="rh-empty">

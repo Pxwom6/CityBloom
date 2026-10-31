@@ -491,6 +491,8 @@ export function resolveBattle(
   away = false,
   /** The region flagged it as bringing a superweapon, and counted it so (M37). */
   counted = false,
+  /** A replay of a battle fought by others (M39 step 7): its course stays exactly as it was fought. */
+  asFought = false,
 ): CommandResult {
   const s = sim.state;
   const w = s.war;
@@ -525,7 +527,7 @@ export function resolveBattle(
   // half them for a raid that came while the player was away.
   // (A live battle's picture is this city's own, made a moment ago and run by the friend's page too:
   // it is taken as it is, so both pages fight the same battle.)
-  const adopted = live ? input : adoptBattle(sim, input, away);
+  const adopted = live ? input : adoptBattle(sim, input, away, asFought);
   let run: Battle;
   try {
     run = new Battle(adopted);
@@ -729,7 +731,7 @@ export const BATTLE_TAKEN_KEEP = 32;
  * answer to its ids; anything else it names is a stranger to this city and takes no damage. The
  * caps are this city's own.
  */
-export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleInput {
+export function adoptBattle(sim: Sim, input: BattleInput, away = false, asFought = false): BattleInput {
   const s = sim.state;
   const w = s.war;
   const L = input.layout;
@@ -767,7 +769,10 @@ export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleI
     )
       weak.add(d);
   }
+  // (A replay as it was fought keeps every unit's number: the orders given in the battle name them, and
+  // the city it is shown in may have changed since.)
   const defenders = L.defenders.map((u, k) => {
+    if (asFought) return u;
     // One of this city's units at home, of that kind, at its base, and no weaker than it is.
     const mine = w?.units.get(u.id);
     const base = mine ? s.civics.get(mine.base) : undefined;
@@ -786,10 +791,12 @@ export function adoptBattle(sim: Sim, input: BattleInput, away = false): BattleI
   return {
     ...input,
     layout: { ...L, structs, defenders },
-    caps: {
-      maxCollapse: Math.min(input.caps.maxCollapse, away ? SKIRMISH.awayCollapse : SKIRMISH.maxCollapse),
-      maxWreck: Math.min(input.caps.maxWreck, away ? SKIRMISH.awayWreck : SKIRMISH.maxWreck),
-    },
+    caps: asFought
+      ? input.caps
+      : {
+          maxCollapse: Math.min(input.caps.maxCollapse, away ? SKIRMISH.awayCollapse : SKIRMISH.maxCollapse),
+          maxWreck: Math.min(input.caps.maxWreck, away ? SKIRMISH.awayWreck : SKIRMISH.maxWreck),
+        },
   };
 }
 

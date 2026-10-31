@@ -203,6 +203,11 @@ export type Command =
       away?: boolean;
       /** The region flagged it as bringing a superweapon, and counted it so (M37). */
       super?: boolean;
+      /**
+       * A replay of a battle others fought (M39 step 7): its course stays exactly as it was fought
+       * whatever the city it is shown in looks like now; only buildings that stand there take damage.
+       */
+      asFought?: boolean;
     }
   /**
    * The region room's word on a live battle this city hosts (M39, page only): its stamped orders not

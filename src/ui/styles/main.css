@@ -4537,6 +4537,10 @@ body {
 .history-views {
   flex-shrink: 0;
 }
+/* A phone's width: the panel stays inside the window (its list has a Watch button at the edge). */
+.budget.history {
+  max-width: calc(100vw - 2 * var(--space-3));
+}
 .rh {
   display: flex;
   flex-direction: column;

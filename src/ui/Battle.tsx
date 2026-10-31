@@ -836,8 +836,11 @@ function ReplayNote() {
     </span>
   ) : (
     <span class="viewer-check differs" data-testid="viewer-check">
-      Replay differs: it ended at step {check.step}, the battle at step {check.want}. The town it is shown in
-      may have changed since.
+      Replay differs from the battle as it was fought:{' '}
+      {check.step === check.want
+        ? 'it ended at the same step, but not the same way.'
+        : `it ended at step ${check.step}, the battle at step ${check.want}.`}{' '}
+      The two cities may be playing different versions of the game.
     </span>
   );
 }

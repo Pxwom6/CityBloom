@@ -25,7 +25,10 @@ export async function settle(n = 4): Promise<void> {
 }
 
 /** A page of the game: the helper that has the wars and treaties with friends, attached before the link says hello. */
-export async function friendsPage(o: Parameters<typeof openPage>[0], clock: Clock): Promise<FwPage> {
+export async function friendsPage(
+  o: Parameters<typeof openPage>[0],
+  clock: Pick<Clock, 'now'>,
+): Promise<FwPage> {
   const notices: string[] = [];
   let saves = 0;
   const fw = new FriendsWarClient({

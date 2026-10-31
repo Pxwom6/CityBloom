@@ -81,8 +81,11 @@ export interface Page {
 }
 
 export async function openPage(o: {
-  room: RegionRoom;
-  clock: Clock;
+  /** The room the page talks to in this process (loopback), or leave it out and give `connect`. */
+  room?: RegionRoom;
+  /** How the page reaches a room instead: a socket to a relay (M39 step 7's e2e). */
+  connect?: () => Promise<Link>;
+  clock: { now(): number; advance(ms: number): void };
   sim: Sim;
   mayor: string;
   color: number;
@@ -112,7 +115,7 @@ export async function openPage(o: {
       return r.ok ? 'taken' : r.reason === BATTLE_BUSY ? 'later' : 'refused';
     },
   };
-  const link = new RegionLink(port, loopTo(o.room), {
+  const link = new RegionLink(port, o.connect ?? loopTo(o.room!), {
     mayor: o.mayor,
     color: o.color,
     saveEvery: 0,

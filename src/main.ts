@@ -11,6 +11,7 @@ import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
 import { decodeSave, readSlot } from './client/saves';
 import { loadBattle, loadTown } from './client/battles';
+import { BATTLE_V4 } from './sim/battle/types';
 import { newMapId, readMap, writeMap } from './client/maps';
 import { MapEditor } from './client/editor';
 import { mapFromGenerator, type MapData } from './sim/terrain/customMap';
@@ -317,7 +318,14 @@ async function boot(): Promise<void> {
     // The battle again, in the town's own sim: its fires and rubble, then its repairs.
     game.readOnly = true;
     game.viewing = { record: battleRecord, back: params.get('back') };
-    const shown = await client.command({ type: 'battleResolve', input: battleRecord.input, mode: 'watch' });
+    const shown = await client.command({
+      type: 'battleResolve',
+      input: battleRecord.input,
+      mode: 'watch',
+      // A live battle (version 4: players gave orders in it) is shown as it was fought, in whatever
+      // town it has now (M39 step 7).
+      ...(battleRecord.input.v >= BATTLE_V4 ? { asFought: true } : {}),
+    });
     if (!shown.ok) {
       // Nothing to show here after all (another version's battle, say): say why, and go back.
       game.toast(`That battle can’t be shown: ${shown.reason}.`, 'info', 6000);

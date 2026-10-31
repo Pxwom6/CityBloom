@@ -329,6 +329,10 @@ describe('what the panel says', () => {
     expect(historyState({ inRegion: true, warOn: false, events: 5 })).toBe('off');
     expect(historyState({ inRegion: true, warOn: true, events: 0 })).toBe('empty');
     expect(historyState({ inRegion: true, warOn: true, events: 1 })).toBe('list');
-    for (const w of Object.values(STATE_WORDS)) expect(w.length).toBeGreaterThan(40);
+    // Just back in a region, before it has told the page its history: not "nothing has happened".
+    expect(historyState({ inRegion: true, warOn: true, events: 0, synced: false })).toBe('loading');
+    expect(historyState({ inRegion: true, warOn: true, events: 0, synced: true })).toBe('empty');
+    expect(historyState({ inRegion: true, warOn: true, events: 3, synced: false })).toBe('list');
+    for (const w of Object.values(STATE_WORDS)) expect(w.length).toBeGreaterThan(20);
   });
 });

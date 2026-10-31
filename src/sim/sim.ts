@@ -1503,6 +1503,7 @@ export class Sim {
           cmd.from,
           !!cmd.away,
           !!cmd.super,
+          !!cmd.asFought,
         );
       case 'battleLive':
         return battleLive(this, cmd.id, cmd.allow, cmd.orders, !!cmd.abort, dryRun);

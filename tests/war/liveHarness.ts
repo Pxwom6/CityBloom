@@ -1,6 +1,6 @@
 import { RegionRoom, MemoryRegionStore, type RegionConn, type RegionLimits } from '../../relay/region';
 import { loopbackPair, type Link } from '../../src/net/link';
-import { RegionLink, type CityPort } from '../../src/net/regionLink';
+import { RegionLink, type CityPort, type RegionLinkOptions } from '../../src/net/regionLink';
 import { AwayBattles } from '../../src/client/battles';
 import type { BattleRecord } from '../../src/client/battles';
 import { LiveBattles, type LiveRunnerHandlers } from '../../src/client/liveBattles';
@@ -95,6 +95,8 @@ export async function openPage(o: {
   beforeStart?: (link: RegionLink) => void;
   /** The city's first report waits for this (a page slow to answer the welcome: M39 step 7's review). */
   reportGate?: Promise<void>;
+  /** The link's options in place of the test defaults (M39 step 10's soak keeps the game's own report pace and fair clock). */
+  link?: Partial<RegionLinkOptions>;
 }): Promise<Page> {
   const { sim, clock } = o;
   const taken: Page['taken'] = [];
@@ -128,6 +130,7 @@ export async function openPage(o: {
     reportEvery: 1_000_000,
     ...(o.create ? { create: o.create } : {}),
     ...(o.rejoin ? { rejoin: o.rejoin } : {}),
+    ...o.link,
   });
   const runs: Run[] = [];
   const live = new LiveBattles({

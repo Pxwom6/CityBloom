@@ -10,9 +10,15 @@
  * battle's line is first written when it ends and gains its outcome and score when the defender
  * reports), and it hears of each battle the room keeps in `rwelcome` and in `bend`. Times are the
  * room's, real time in milliseconds; this shows them in the player's day.
+ *
+ * The atom bomb is kept for good (M40): the room's record of it (`RegionMeta.atoms`, at most 16 marks,
+ * outside the 100 events) is drawn as a block at the top of the list (`atomRecord`), so a bomb that
+ * has left the ring is still there, and the ring's own lines for the same moments are not drawn twice
+ * (`withoutAtomRecord`).
  */
 import { FRIENDS, LIVE, type BattleOutcome, type WarEvent, type WarEventKind } from '../../relay/protocol';
-import type { LiveReplay } from '../../relay/region';
+import type { LiveReplay, RegionAtomMark } from '../../relay/region';
+import { atomStageNo, bombLine, raceLine } from '../data/atom';
 
 // ---- Events --------------------------------------------------------------------------------
 
@@ -328,6 +334,120 @@ export function byDay(
   }
   return out.map(({ day, rows: list }) => ({ day, rows: list }));
 }
+
+// ---- The atom bomb's record ----------------------------------------------------------------
+
+/** The test id of the block, and of each of its lines (by the mark's place in the room's record). */
+export const ATOM_BLOCK_ID = 'rh-atom';
+export const atomLineId = (index: number): string => `${ATOM_BLOCK_ID}-${index}`;
+
+/**
+ * One mark of the region's record of the bomb in words, the same words as the room's notices and its
+ * history lines (`raceLine`, `bombLine`); the first city to finish it says so. `names` gives a city
+ * for a place, for a mark that carries no name of its own and for the city a bomb was fired at.
+ */
+export function atomMarkText(m: RegionAtomMark, names: (slot: number) => string): string {
+  const who = m.name || names(m.slot);
+  const line =
+    m.kind === 'ready'
+      ? raceLine(atomStageNo('ready'), who)!
+      : m.kind === 'fired'
+        ? bombLine('fired', who, m.to ? names(m.to) : undefined)
+        : m.kind === 'boom'
+          ? bombLine('boom', who)
+          : bombLine('stopped', who);
+  return m.first ? `${line}, the first in the region` : line;
+}
+
+/** One line of the block. */
+export interface AtomRecordLine {
+  /** The mark's place in the room's record, oldest first: what the line's test id is made from. */
+  index: number;
+  /** The room's time (ms). */
+  at: number;
+  kind: RegionAtomMark['kind'];
+  /** The city whose mark it is, and the city a bomb was fired at, if the region knew. */
+  slot: number;
+  to?: number;
+  first: boolean;
+  text: string;
+  /** "Today 14:32" or "Mon 12 Oct 09:05": the day and the time, in the player's day. */
+  when: string;
+}
+
+/**
+ * The block "The atom bomb": the room's record of it, newest first, one line for each mark (who has
+ * the bomb and, for the first, that they were first; who fired at whom; where one fell; where a dome
+ * stopped one), with the room's real time in the player's day as the list shows its other events. It
+ * is narrowed as the list is: by the Atom bomb kind, and by a city (a mark is about the city whose it
+ * is, and the city it was fired at). `names` knows the cities of the region now; a city that has left
+ * is named by its own marks, else "another city".
+ */
+export function atomRecord(
+  marks: readonly RegionAtomMark[],
+  o: {
+    names: (slot: number) => string | undefined;
+    now: number;
+    offset: Offset;
+    filter?: HistoryFilter;
+  },
+): AtomRecordLine[] {
+  const filter = o.filter ?? NO_FILTER;
+  if (filter.groups.length && !filter.groups.includes('atom')) return [];
+  const earlier = new Map<number, string>();
+  for (const m of marks) if (m.name) earlier.set(m.slot, m.name);
+  const nameOf = (slot: number) => o.names(slot) ?? earlier.get(slot) ?? 'another city';
+  const lines: AtomRecordLine[] = [];
+  marks.forEach((m, index) => {
+    if (filter.city !== null && m.slot !== filter.city && m.to !== filter.city) return;
+    lines.push({
+      index,
+      at: m.at,
+      kind: m.kind,
+      slot: m.slot,
+      ...(m.to ? { to: m.to } : {}),
+      first: m.first === true,
+      text: atomMarkText(m, nameOf),
+      when: `${dayLabel(m.at, o.now, o.offset)} ${timeLabel(m.at, o.offset)}`,
+    });
+  });
+  return lines.sort((x, y) => y.at - x.at || y.index - x.index);
+}
+
+/** How far apart (ms) the room's line and its mark of the same moment can be: it reads its clock twice. */
+const SAME_MOMENT = 2_000;
+
+/** Whether the ring's line is the same moment as the mark, in the same words the room wrote both in. */
+function writtenWith(m: RegionAtomMark, e: WarEvent): boolean {
+  if (e.a !== m.slot || Math.abs(e.at - m.at) > SAME_MOMENT) return false;
+  switch (m.kind) {
+    case 'ready':
+      return e.kind === 'race' && e.text === raceLine(atomStageNo('ready'), m.name);
+    case 'fired':
+      return e.kind === 'bomb' && e.b === (m.to ?? 0) && e.text.startsWith(bombLine('fired', m.name));
+    default:
+      return e.kind === 'bomb' && e.text === bombLine(m.kind, m.name);
+  }
+}
+
+/**
+ * The ring's events without the lines the block already says: a bomb finished, fired, fallen or
+ * stopped is in the record for good, and in the ring besides until 100 later events push it out. A line
+ * the record no longer holds (its mark was one of the least when the record was full) stays in the ring's
+ * list, and so do the race's earlier stages, which the record never had. A fresh list.
+ */
+export function withoutAtomRecord(events: readonly WarEvent[], marks: readonly RegionAtomMark[]): WarEvent[] {
+  if (!marks.length) return [...events];
+  return events.filter(
+    (e) => (e.kind !== 'bomb' && e.kind !== 'race') || !marks.some((m) => writtenWith(m, e)),
+  );
+}
+
+/** A city's name from the region's list, for `atomRecord`. */
+export const cityNamer =
+  (cities: readonly { slot: number; name: string }[]) =>
+  (slot: number): string | undefined =>
+    cities.find((c) => c.slot === slot)?.name;
 
 // ---- What the panel says -------------------------------------------------------------------
 

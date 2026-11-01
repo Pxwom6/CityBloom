@@ -15,6 +15,7 @@ import {
 import { ATOM_PROTOCOL, FRIENDS, MIN_REGION_PROTOCOL, PROTOCOL_VERSION } from '../protocol';
 import { DAY_MS } from '../limits';
 import { ATOM_WIRE, bombLine, cleanAtomReport, raceLine } from '../../src/data/atom';
+import { atomRecord, withoutAtomRecord } from '../../src/client/regionHistory';
 import { regionUpdateFor } from '../../src/net/regionLink';
 import type { Conn } from '../room';
 import { FakeClock, makeRoom } from './harness';
@@ -1317,5 +1318,51 @@ describe('M40 review: the strike’s evidence', () => {
     prepared(FULL_TIERS);
     w.ada.say(strike(2, 'tier-3'));
     expect(last(w.ada, 'opKept')).toMatchObject({ id: 'tier-3', outcome: 'success' });
+  });
+});
+
+describe('M40: the region’s history shows the bomb’s record once', () => {
+  it('leaves out of the ring exactly the lines the permanent record says, as the room writes them', () => {
+    // A race to the bomb, a strike on a friend, and a bomb that fell and one the dome stopped.
+    const w = world({ who: ['Ada', 'Sam'] });
+    for (let stage = 1; stage <= 5; stage++) race(w, 'Sam', { stage });
+    readyToStrike(w);
+    w.ada.say(strike(2, 'bo-history-1'));
+    race(w, 'Sam', { stage: 5, stopped: 1 });
+    w.clock.advance(5_000);
+    race(w, 'Sam', { stage: 5, stopped: 1, hit: 1, boom: 1 });
+    const ring = all(w.ada, 'history').map((m) => m.event);
+    const marks = last(w.ada, 'atoms')!.atoms;
+    expect(marks.map((m) => [m.slot, m.kind])).toEqual([
+      [2, 'ready'],
+      [1, 'ready'],
+      [1, 'fired'],
+      [2, 'stopped'],
+      [2, 'boom'],
+    ]);
+    // Every mark has its line in the ring, and the list is left with the race's other stages and the
+    // war's own lines (the declaration and its opening).
+    const left = withoutAtomRecord(ring, marks);
+    expect(ring.length - left.length).toBe(marks.length);
+    expect(left.some((e) => e.kind === 'bomb')).toBe(false);
+    expect(left.every((e) => e.kind === 'race' || e.kind === 'declared' || e.kind === 'opened')).toBe(true);
+    expect(left.map((e) => e.text)).not.toContain(raceLine(5, 'Samton'));
+    expect(left.map((e) => e.text)).not.toContain(raceLine(5, 'Adaton'));
+    expect(left.map((e) => e.text)).toContain(raceLine(4, 'Samton'));
+    expect(left.map((e) => e.text)).toContain(raceLine(6, 'Adaton'));
+    // The block says the same five moments in the same words as the room's notices.
+    const block = atomRecord(marks, {
+      names: (slot) => ({ 1: 'Adaton', 2: 'Samton' })[slot],
+      now: w.clock.now(),
+      offset: 0,
+    }).map((l) => l.text);
+    expect(block).toEqual([
+      bombLine('boom', 'Samton'),
+      bombLine('stopped', 'Samton'),
+      bombLine('fired', 'Adaton', 'Samton'),
+      `${raceLine(5, 'Adaton')}`,
+      `${raceLine(5, 'Samton')}, the first in the region`,
+    ]);
+    for (const t of block) expect(notices(w.ada).some((n) => t.startsWith(n))).toBe(true);
   });
 });

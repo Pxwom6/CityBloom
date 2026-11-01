@@ -5090,6 +5090,9 @@ body {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
+.rh-atom .rh-row {
+  grid-template-columns: 8.5rem 1fr;
+}
 .rh-body {
   display: flex;
   flex-wrap: wrap;

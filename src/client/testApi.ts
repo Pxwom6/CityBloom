@@ -1,6 +1,16 @@
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendsWarClient } from './friendsWar';
-import { historyRows, historyState, replayKey } from './regionHistory';
+import {
+  ATOM_BLOCK_ID,
+  atomLineId,
+  atomRecord,
+  cityNamer,
+  historyRows,
+  historyState,
+  localOffset,
+  replayKey,
+  withoutAtomRecord,
+} from './regionHistory';
 import type { ResearchSummary } from '../sim/systems/research';
 import type { IntelSummary } from '../sim/systems/intel';
 import type { SupersSummary } from '../sim/systems/supers';
@@ -251,6 +261,12 @@ export interface TestApi {
   getRegionHistory(): {
     state: string;
     rows: { id: number; at: number; kind: string; text: string; replay: string | null }[];
+    /**
+     * The block "The atom bomb" (M40) the panel draws above the rows, newest first: its test id and each
+     * line's (`id`), with the room's time, the mark's kind and the words; empty when there is none to show.
+     * The rows leave out the ring's lines that the block already says.
+     */
+    atom: { id: string; lines: { id: string; at: number; kind: string; first: boolean; text: string }[] };
     kept: { from: number; to: number; id: string; step: number; hash: string }[];
     status: Record<string, string>;
     check: { verdict: string; step: number; want: number } | null;
@@ -909,15 +925,28 @@ export function installTestApi(game: Game): TestApi {
       const view = game.region?.view;
       const fv = game.friends.view();
       const kept = game.replays.list();
+      const marks = game.atomRegion.atoms;
       return {
-        state: historyState({ inRegion: !!view, warOn: !!view?.rules?.war, events: fv.history.length }),
-        rows: historyRows(fv.history, kept).map((r) => ({
+        state: historyState({
+          inRegion: !!view,
+          warOn: !!view?.rules?.war,
+          events: fv.history.length + marks.length,
+        }),
+        rows: historyRows(withoutAtomRecord(fv.history, marks), kept).map((r) => ({
           id: r.id,
           at: r.at,
           kind: r.kind,
           text: r.text,
           replay: r.replay ? replayKey(r.replay.from, r.replay.id) : null,
         })),
+        atom: {
+          id: ATOM_BLOCK_ID,
+          lines: atomRecord(marks, {
+            names: cityNamer(view?.cities ?? []),
+            now: fv.now || Date.now(),
+            offset: localOffset,
+          }).map((l) => ({ id: atomLineId(l.index), at: l.at, kind: l.kind, first: l.first, text: l.text })),
+        },
         kept: kept.map((r) => ({ from: r.from, to: r.to, id: r.id, step: r.step, hash: r.hash })),
         status: Object.fromEntries(
           kept.flatMap((r) => {

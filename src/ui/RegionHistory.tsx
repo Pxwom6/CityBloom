@@ -1,15 +1,20 @@
 import { useState } from 'preact/hooks';
 import { LIVE } from '../../relay/protocol';
 import {
+  ATOM_BLOCK_ID,
   HISTORY_GROUPS,
   OUTCOME_NAMES,
   STATE_WORDS,
+  atomLineId,
+  atomRecord,
   byDay,
+  cityNamer,
   historyCities,
   historyRows,
   historyState,
   localOffset,
   timeLabel,
+  withoutAtomRecord,
   type HistoryGroup,
 } from '../client/regionHistory';
 import { useGameUpdates } from './hooks';
@@ -18,7 +23,9 @@ import { useGameUpdates } from './hooks';
  * Region at war (M39 step 7, design call 10): the war events the region room keeps, as a list in the
  * City history panel beside the city's own charts. The region runs on real time and the city on game
  * months, so this is a list with real dates and times, newest first, that can be narrowed to a city
- * or to kinds of events; each battle the room still keeps as a replay has a Watch button.
+ * or to kinds of events; each battle the room still keeps as a replay has a Watch button. The atom
+ * bomb is kept for good (M40): its record, which the room holds outside the last 100 events, is a block
+ * at the top, so it is still there when the events have moved on.
  */
 export function RegionAtWar() {
   const game = useGameUpdates(1000);
@@ -27,13 +34,15 @@ export function RegionAtWar() {
   const view = game.region?.view ?? null;
   const fv = game.friends.view();
   const events = fv.history;
+  const marks = game.atomRegion.atoms;
   const friends = game.friends.snapshot();
   const state = historyState({
     inRegion: !!view,
     // The city has a region but its view hasn't come yet (joining, or rejoining after a reload).
     joining: !!game.region && !view,
     warOn: !!view?.rules?.war,
-    events: events.length,
+    // (The bomb's record is something to list though the ring has nothing.)
+    events: events.length + marks.length,
     synced: friends.synced,
     unsupported: friends.unsupported,
   });
@@ -46,10 +55,17 @@ export function RegionAtWar() {
   if (!view) return null;
   const replays = game.replays.list();
   const cities = historyCities(events, view.cities);
-  const rows = historyRows(events, replays, { city, groups });
+  // (The ring's lines for moments the bomb's record says for good are left out of the list.)
+  const rows = historyRows(withoutAtomRecord(events, marks), replays, { city, groups });
   const now = fv.now || Date.now();
   // The player's offset from UTC at each moment: an event from before the clocks changed keeps its time.
   const days = byDay(rows, now, localOffset);
+  const bomb = atomRecord(marks, {
+    names: cityNamer(view.cities),
+    now,
+    offset: localOffset,
+    filter: { city, groups },
+  });
   const toggle = (g: HistoryGroup) =>
     setGroups((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
   return (
@@ -96,10 +112,32 @@ export function RegionAtWar() {
           ))}
         </div>
       </div>
+      {bomb.length > 0 && (
+        <section class="rh-atom" data-testid={ATOM_BLOCK_ID}>
+          <h4 class="rh-day">The atom bomb</h4>
+          <p class="muted">Kept for good: these stay here when the list below has moved on.</p>
+          <ul class="rh-rows">
+            {bomb.map((l) => (
+              <li
+                key={l.index}
+                class={`rh-row atom ${l.slot === fv.me || l.to === fv.me ? 'mine' : ''}`}
+                data-testid={atomLineId(l.index)}
+              >
+                <span class="when">{l.when}</span>
+                <span class="rh-body">
+                  <span class="rh-text">{l.text}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {rows.length === 0 ? (
-        <p class="note" data-testid="rh-none">
-          Nothing in the history matches that. Choose another city or kind.
-        </p>
+        bomb.length === 0 && (
+          <p class="note" data-testid="rh-none">
+            Nothing in the history matches that. Choose another city or kind.
+          </p>
+        )
       ) : (
         <div class="rh-list" data-testid="rh-list">
           {days.map((d) => (

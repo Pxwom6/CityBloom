@@ -6,16 +6,8 @@
  * keeps (no word of anyone hurt). `Atom.tsx` draws what these return.
  */
 import type { RegionAtomMark } from '../../relay/region';
-import {
-  ATOM,
-  ATOM_STAGES,
-  ATOM_STAGE_NAMES,
-  FALLOUT,
-  WINTER_YEARS,
-  atomStageNo,
-  bombLine,
-  raceLine,
-} from '../data/atom';
+import { ATOM, ATOM_STAGES, ATOM_STAGE_NAMES, FALLOUT, WINTER_YEARS, atomStageNo } from '../data/atom';
+import { atomMarkText } from '../client/regionHistory';
 import { DOME } from '../data/research';
 import { HOST_ONLY_LAUNCH } from '../sim/rules';
 import { TICKS_PER_HOUR } from '../sim/time';
@@ -676,18 +668,7 @@ export function raceRows(
 
 /** The region's record of the bomb as lines, newest first, the first finisher's mark named (`names` maps a place to a city). */
 export function markLines(marks: readonly RegionAtomMark[], names: (slot: number) => string): string[] {
-  return [...marks].reverse().map((m) => {
-    const who = m.name || names(m.slot);
-    const line =
-      m.kind === 'ready'
-        ? raceLine(atomStageNo('ready'), who)!
-        : m.kind === 'fired'
-          ? bombLine('fired', who, m.to ? names(m.to) : undefined)
-          : m.kind === 'boom'
-            ? bombLine('boom', who)
-            : bombLine('stopped', who);
-    return m.first ? `${line}, the first in the region` : line;
-  });
+  return [...marks].reverse().map((m) => atomMarkText(m, names));
 }
 
 // ---------------------------------------------------------------------------------------------

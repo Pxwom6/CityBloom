@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { FRIENDS, LIVE, type WarEvent } from '../../relay/protocol';
+import type { RegionAtomMark } from '../../relay/region';
+import { bombLine, raceLine } from '../../src/data/atom';
 import {
+  ATOM_BLOCK_ID,
   HISTORY_GROUPS,
   NO_FILTER,
   STATE_WORDS,
   TEXT_MAX,
+  atomLineId,
+  atomMarkText,
+  atomRecord,
   byDay,
+  cityNamer,
   cleanEvent,
   dayLabel,
   expectOf,
@@ -22,6 +29,7 @@ import {
   replaysFrom,
   timeLabel,
   withReplay,
+  withoutAtomRecord,
   type ReplayRef,
 } from '../../src/client/regionHistory';
 
@@ -445,5 +453,219 @@ describe('what the panel says', () => {
     // Heard from, a region has its list or nothing to show; and never both.
     expect(historyState({ ...base, synced: true, unsupported: false })).toBe('empty');
     expect(historyState({ ...base, events: 2, unsupported: true })).toBe('list');
+  });
+});
+
+/**
+ * M40: the atom bomb is kept for good. The region room holds a record of it outside the history's ring
+ * of 100 (`RegionMeta.atoms`); "Region at war" draws it as a block at the top, in the words the room's
+ * own notices use, and does not draw the ring's lines for the same moments again.
+ */
+describe('the atom bomb’s record', () => {
+  const H = 3_600_000;
+  const NAMES: Record<number, string> = { 1: 'Adaville', 2: 'Samford', 3: 'Kitton' };
+  const names = (slot: number): string | undefined => NAMES[slot];
+  const mark = (
+    kind: RegionAtomMark['kind'],
+    slot: number,
+    at: number,
+    over: Partial<RegionAtomMark> = {},
+  ): RegionAtomMark => ({ slot, name: NAMES[slot] ?? `City ${slot}`, kind, at, ...over });
+
+  /** The record of a whole bomb story, oldest first, as the room writes it. */
+  const record: RegionAtomMark[] = [
+    mark('ready', 1, T0 + H, { first: true }),
+    mark('ready', 2, T0 + 2 * H),
+    mark('fired', 1, T0 + 3 * H, { to: 2 }),
+    mark('boom', 2, T0 + 3 * H + 60_000),
+    mark('stopped', 3, T0 + 24 * H),
+  ];
+  const NOW = T0 + 48 * H; // Sun 1 Nov 2026, noon UTC
+  const lines = (marks: readonly RegionAtomMark[] = record, filter = NO_FILTER) =>
+    atomRecord(marks, { names, now: NOW, offset: 0, filter });
+
+  /** The ring's line for a mark, as the room writes the two together (same moment, same words). */
+  const ringLine = (id: number, m: RegionAtomMark, over: Partial<WarEvent> = {}): WarEvent => {
+    const text =
+      m.kind === 'ready'
+        ? raceLine(5, m.name)!
+        : m.kind === 'fired'
+          ? bombLine('fired', m.name, m.to ? NAMES[m.to] : undefined)
+          : bombLine(m.kind, m.name);
+    return ev(id, {
+      at: m.at,
+      kind: m.kind === 'ready' ? 'race' : 'bomb',
+      a: m.slot,
+      b: m.to ?? 0,
+      text,
+      ...over,
+    });
+  };
+
+  it('says each kind of mark in the room’s own words, newest first, who was first named', () => {
+    expect(lines().map((l) => l.text)).toEqual([
+      'Kitton’s dome has stopped an atom bomb',
+      'An atom bomb has fallen on Samford',
+      'Adaville has fired the atom bomb at Samford',
+      'Samford has the atom bomb',
+      'Adaville has the atom bomb, the first in the region',
+    ]);
+    // The same sentences the room announces (and the war room's Bomb tab reads): one source.
+    const [stopped, boom, fired, readyLate, readyFirst] = lines();
+    expect(stopped!.text).toBe(bombLine('stopped', 'Kitton'));
+    expect(boom!.text).toBe(bombLine('boom', 'Samford'));
+    expect(fired!.text).toBe(bombLine('fired', 'Adaville', 'Samford'));
+    expect(readyLate!.text).toBe(raceLine(5, 'Samford'));
+    expect(readyFirst!.text).toBe(`${raceLine(5, 'Adaville')}, the first in the region`);
+    expect(lines().map((l) => l.kind)).toEqual(['stopped', 'boom', 'fired', 'ready', 'ready']);
+    // Only the first finisher is called the first, and the line says it as a flag too.
+    expect(
+      lines()
+        .filter((l) => l.first)
+        .map((l) => l.slot),
+    ).toEqual([1]);
+    // A bomb fired where the region doesn't know the target says only who fired it.
+    expect(lines([mark('fired', 3, T0)])[0]!.text).toBe('Kitton has fired the atom bomb');
+  });
+
+  it('gives each line the room’s real time, in the player’s day, as the list shows its events', () => {
+    const l = lines();
+    expect(l.map((x) => x.when)).toEqual([
+      'Yesterday 12:00',
+      'Fri 30 Oct 15:01',
+      'Fri 30 Oct 15:00',
+      'Fri 30 Oct 14:00',
+      'Fri 30 Oct 13:00',
+    ]);
+    // The same moment in the list is the same label (the day by `dayLabel`, the hour by `timeLabel`).
+    for (const x of l) expect(x.when).toBe(`${dayLabel(x.at, NOW, 0)} ${timeLabel(x.at, 0)}`);
+    // The player's own offset from UTC moves the day and the hour.
+    const east = atomRecord(record, { names, now: NOW, offset: 13 * 60 });
+    expect(east.at(-1)!.when).toBe('Sat 31 Oct 02:00');
+    // ... and one clock change in between leaves each line in the time it was.
+    const flip = (at: number) => (at < T0 + 2 * H ? 0 : 60);
+    expect(atomRecord(record, { names, now: NOW, offset: flip }).map((x) => x.when)[3]).toBe(
+      'Fri 30 Oct 15:00',
+    );
+  });
+
+  it('keeps the order of the room’s record when two marks share a moment, and numbers the lines by it', () => {
+    const same = [mark('boom', 2, T0), mark('stopped', 3, T0)];
+    const l = lines(same);
+    expect(l.map((x) => x.kind)).toEqual(['stopped', 'boom']);
+    expect(l.map((x) => atomLineId(x.index))).toEqual([`${ATOM_BLOCK_ID}-1`, `${ATOM_BLOCK_ID}-0`]);
+    expect(ATOM_BLOCK_ID).toBe('rh-atom');
+  });
+
+  it('names a city by the region now, else by its own marks, else says another city', () => {
+    // A mark with no name of its own takes the region's.
+    expect(atomMarkText({ slot: 1, name: '', kind: 'boom', at: T0 }, (s) => NAMES[s] ?? '?')).toBe(
+      'An atom bomb has fallen on Adaville',
+    );
+    // A bomb fired at a city that has since left the region: its own marks still name it ...
+    const left = [mark('fired', 1, T0 + H, { to: 9 }), mark('boom', 9, T0 + 2 * H, { name: 'Oldtown' })];
+    expect(lines(left).map((l) => l.text)).toEqual([
+      'An atom bomb has fallen on Oldtown',
+      'Adaville has fired the atom bomb at Oldtown',
+    ]);
+    // ... and with none, it is another city.
+    expect(lines([mark('fired', 1, T0, { to: 9 })])[0]!.text).toBe(
+      'Adaville has fired the atom bomb at another city',
+    );
+    // The region's list gives names by place.
+    expect(cityNamer([{ slot: 2, name: 'Samford' }])(2)).toBe('Samford');
+    expect(cityNamer([{ slot: 2, name: 'Samford' }])(5)).toBeUndefined();
+  });
+
+  it('is narrowed as the list is: by the Atom bomb kind, and by a city on either side of the line', () => {
+    expect(lines(record, { city: null, groups: ['atom'] })).toHaveLength(5);
+    expect(lines(record, { city: null, groups: ['atom', 'battles'] })).toHaveLength(5);
+    // Another kind alone leaves the block out.
+    expect(lines(record, { city: null, groups: ['battles'] })).toEqual([]);
+    // Samford: its own marks and the bomb fired at it.
+    expect(lines(record, { city: 2, groups: [] }).map((l) => l.kind)).toEqual(['boom', 'fired', 'ready']);
+    expect(lines(record, { city: 3, groups: [] }).map((l) => l.kind)).toEqual(['stopped']);
+    expect(lines(record, { city: 4, groups: [] })).toEqual([]);
+    // Nothing in the record, nothing to show.
+    expect(lines([])).toEqual([]);
+  });
+
+  it('names no one hurt', () => {
+    for (const l of lines()) expect(l.text).not.toMatch(/casualt|killed|dead|victim|died/i);
+  });
+
+  describe('beside the ring’s own lines', () => {
+    const ring = (): WarEvent[] => {
+      let id = 0;
+      return [
+        // The race's first stages: only the ring has them.
+        ev(++id, { kind: 'race', a: 1, b: 0, at: T0 - 5 * H, text: raceLine(1, 'Adaville')! }),
+        ev(++id, { kind: 'race', a: 1, b: 0, at: T0 - 4 * H, text: raceLine(4, 'Adaville')! }),
+        ...record.map((m) => ringLine(++id, m)),
+        ev(++id, { kind: 'race', a: 2, b: 0, at: T0 + 2 * H + 1000, text: raceLine(6, 'Samford')! }),
+        ev(++id, { kind: 'battle', a: 1, b: 2, at: T0 + 4 * H, text: 'Adaville raided Samford' }),
+      ];
+    };
+
+    it('does not draw a moment twice: the ring keeps what the record has not', () => {
+      const left = withoutAtomRecord(ring(), record);
+      // Both bomb lines and the “has the atom bomb” lines of the record are gone from the list ...
+      expect(left.filter((e) => e.kind === 'bomb')).toEqual([]);
+      expect(left.filter((e) => e.kind === 'race').map((e) => e.text)).toEqual([
+        raceLine(1, 'Adaville'),
+        raceLine(4, 'Adaville'),
+        raceLine(6, 'Samford'),
+      ]);
+      // ... the rest of the history stays as it was.
+      expect(left.find((e) => e.kind === 'battle')).toBeDefined();
+      // Each moment is in the block or the rows, once.
+      const rows = historyRows(left, []).map((r) => r.text);
+      const block = lines().map((l) => l.text.replace(/, the first in the region$/, ''));
+      for (const t of block) expect(rows).not.toContain(t);
+      expect(rows).not.toContain(bombLine('stopped', 'Kitton'));
+    });
+
+    it('the room reads its clock twice for a moment, so a second apart is the same moment', () => {
+      const m = mark('boom', 2, T0);
+      const near = ringLine(1, m, { at: T0 + 40 });
+      expect(withoutAtomRecord([near], [m])).toEqual([]);
+      // A minute apart is another bomb of the same city.
+      const later = ringLine(2, m, { at: T0 + 60_000 });
+      expect(withoutAtomRecord([later], [m])).toEqual([later]);
+    });
+
+    it('keeps a line whose mark the record no longer holds, or that is about another city', () => {
+      const lost = ringLine(1, mark('stopped', 3, T0 + 5 * H));
+      expect(withoutAtomRecord([lost], record)).toEqual([lost]);
+      const other = ringLine(2, mark('boom', 1, record[3]!.at));
+      expect(withoutAtomRecord([other], record)).toEqual([other]);
+      // A fired line is told apart by its target as well: Samford's, not Kitton's.
+      const wrongTarget = ringLine(3, mark('fired', 1, record[2]!.at, { to: 3 }));
+      expect(withoutAtomRecord([wrongTarget], record)).toEqual([wrongTarget]);
+    });
+
+    it('leaves the list it was given alone, and is the same list with no record', () => {
+      const events = ring();
+      const copy = structuredClone(events);
+      withoutAtomRecord(events, record);
+      expect(events).toEqual(copy);
+      expect(withoutAtomRecord(events, [])).toEqual(events);
+      expect(withoutAtomRecord(events, [])).not.toBe(events);
+    });
+
+    it('the block is still there when the ring has moved on: 101 later events evict every bomb line', () => {
+      const later = Array.from({ length: 101 }, (_, k) =>
+        ev(100 + k, { kind: 'battle', a: 1, b: 2, at: T0 + 100 * H + k * 1000, text: `later ${k}` }),
+      );
+      const full = mergeHistory(ring(), later);
+      // The ring keeps its 100 newest: none of the bomb's lines, nor the race's.
+      expect(full).toHaveLength(FRIENDS.history);
+      expect(full.some((e) => e.kind === 'bomb' || e.kind === 'race')).toBe(false);
+      expect(historyRows(full, []).some((r) => r.group === 'atom')).toBe(false);
+      // The record is the room's, outside the ring: the block still says all five moments.
+      expect(withoutAtomRecord(full, record)).toEqual(full);
+      expect(lines().map((l) => l.kind)).toEqual(['stopped', 'boom', 'fired', 'ready', 'ready']);
+      expect(lines()[4]!.text).toBe('Adaville has the atom bomb, the first in the region');
+    });
   });
 });

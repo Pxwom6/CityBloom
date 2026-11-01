@@ -60,9 +60,9 @@ without it.
 - [x] M37 Weapon development and intelligence
 - [x] M38 Investments and the war economy
 - [x] M39 War with friends
-- [ ] M40 The final race: the atom bomb
+- [x] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is under way: M34 to M39 are complete; M40 is next.** Branch: this cloud session's
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40.** What remains is the phase's end (In progress). Branch: this cloud session's
 `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
@@ -230,80 +230,30 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M34 Armed forces, M35 Into battle, M36 Diplomacy and the stakes of war, M37 Weapon development
-and intelligence, M38 Investments and the war economy and M39 War with friends are complete**, in
-pull request #23 (its title names all six). **M40 The final race: the atom bomb** is under way: plan `docs/plans/M40-design.md` (calls 1–20, steps 0–13; b82d790), code map
-`docs/plans/M40-codemap.md` (aeef8e3). Steps 0 and 1 are done and reviewed: the data (`src/data/atom.ts`),
-the `bomb` rule, `WarState.atom` with the derived stage, the gate (`atomLock`, hard: sandbox cannot
-skip it), the enrichment plant and atom silo (no refund) and save v32; the prices are the plan's, held
-in its band against the 57,000-resident reference city (`atomprice.ts`, DECISIONS "M40" step 1). Tests:
-`tests/war/{atomGate,atomState,saveV32}.test.ts`, `relay/tests/warRules.test.ts`. Step 2 is done too (fuel,
-the bomb's twelve instalments, a launch's preparation and the bomb leaving for a computer neighbour; the
-four commands, the loss rules, the bulldoze guard, the host-only launch and the `atom {stage}` cheat;
-`tests/war/atomChain.test.ts`; DECISIONS "M40" step 2 and its review fixes). Step 3 is done (6d8b0a0,
-17fb30e): the flight to a computer neighbour (its people, forces and defences x 0.4, the war score),
-a bomb inbound to the city (`atomInbound`, cheat `bombIn`, the warning and siren, the game dropping to
-1x once, no raid while it flies, the countdown chip), the dome stopping one bomb and then down 1,440 h,
-the impact in `src/sim/systems/atomImpact.ts` (ground zero the densest district, everything within
-450 m levelled, residents of levelled homes gone, ring civics closed, roads closed 240 h, the crater,
-fires on their own dice, the rail link and Sunfield Commons only closed; open calls for help on
-levelled homes forgotten), bounded ticks; `tests/war/{atomStrike,atomImpact}.test.ts`;
-`scripts/dev/atombench.ts` on the 110k city: the worst blast tick 11 ms (370 buildings levelled,
-25,266 residents gone, about 66,000 left once the closed roads and civics take their toll). Next:
-Step 4 is done (cecd86e, 32b68fc): fallout in `src/sim/systems/fallout.ts` (a ground layer that stays,
-half-life 9 game years, and an air layer drifting with the city's wind; nothing zoned, built or grown on
-ground at 0.2 or more for about 21 years at the centre, 12.5 hours of play at 1x; sickness, "Fallout
-nearby", less work and land value under it; the `radiation` data map with a hazard ramp and a tooltip
-by hover or tap; `cleanFallout` crews and relief crews; the plume carried off the north, south and
-west edges into computer neighbours, and theirs blowing back in), `tests/war/atomFallout*.test.ts`,
-`scripts/dev/fallout.ts`. Step 5 is done (a15b481, b9b36cb): the nuclear winter (`WeatherState.winters`,
-six game years, colder by up to 18 C, solar down by up to 55 %, rain as snow even in July; values
-only, so the weather's dice are the same with or without it; a struck city, the firing city and
-every computer neighbour get it; the forecast, a top-bar badge, an energy advisor line and the grey
-look; `scripts/dev/winter.ts` shows every climate playable: demand at most 1.19x the city's own
-January peak, ploughs coping, no shortfall), `tests/war/atomWinter.test.ts`. Step 6 is done (2c61851, afc0134): the
-world turns on a city that fires (`src/sim/systems/atomWorld.ts`: reputation pinned at 0 for good
-behind one accessor, every computer neighbour's "bomb" sanction that never lifts, every pact of
-friendship ended and no new one signed, no neutral stance, total war declared on it with no cooldown,
-even by neighbours once fond of it; a protest in approval and in every home: approval 57 % to 14 %
-and a third of the people gone in three game months; the chronicle keeping atom events forever) and
-the deterrent of a bomb ready (computer neighbours declare plain war, not total; a friend is warned
-before declaring total war), `tests/war/atomWorld.test.ts`. Step 7 is done (9eb1941, 614180c): a spy's `plant`
-sabotage (a stage of the plant or silo five days late, 120 hours of fuel or of the bomb lost, the
-works closed 12 h; computer spies strike the works of a city in the race with the same dice; the
-room refuses one against a friend in words until step 9), and the computer race on Hard only
-(`src/sim/systems/atomRival.ts`: never before year 20, one neighbour at a time, its own dice;
-fuel, silo and bomb told stage by stage; slowed by spies and won expeditions; a launch only in a
-total war it is losing badly, after ten days the city is told about; it ends with the town's fall),
-`tests/war/{atomSpy,atomRival}.test.ts`, `relay/tests/regionAtomOps.test.ts`. Step 8 is done (b50c3df,
-172c334): the cross-browser test's `atom` section (`tests/lockstep/atomSection.ts`, 66 entries: the race
-through the real commands, the plant sabotage, the dome stopping a bomb, the town's own bomb on a
-computer neighbour, the blast in six slices with the fire ring, 300 game hours of fallout hashed by the
-bits of every cell, the drift into the neighbours, a clean-up crew, the winter, the pariah and a Hard
-neighbour's launch), every command kind used; Node and Chromium agree, and CI runs WebKit and Firefox.
-Step 9 is done (9df0be1, 92034b1): protocol 7 and the room's half (the race in each
-city's report, cleaned field by field and dropped if malformed; the room announcing each stage forward
-once, at most 8 a day, to pages on 7; `RegionMeta.atoms` kept for good outside the history ring and the
-first finisher marked and told; `RegionMeta.winters` for every other city; plumes routed to the right
-neighbour; the strike on a friend riding `op: 'atom'` with the room's own 20-minute preparation, every
-refusal in words; the firer flagged pariah among friends: pacts dropped, none new, declarations on it
-with no cooldown or shield; a modified client can't push fallout, winters or marks onto others beyond
-what the room can account for), `relay/tests/regionAtom.test.ts`, `tests/war/atomRegion.test.ts`; the
-free plan's rows with a race in four cities 63 an hour. Step 10 is done (ab360f3, 698a58d): the pages' half
-(`src/client/atomRegion.ts`: the page-only `friendFallout` (a friend's cloud in at the edge facing it,
-a high-water mark so repeats add nothing), `friendWinter` and `atomFirst` (the `firstBomb`
-achievement); the strike between friends end to end: sent through the ops road, fired only when the
-room keeps it, the target's own sim taking it once with a fresh countdown and checking it against its
-own books; race notices logged, the bomb's lines as red alerts), `tests/war/atomFriends.test.ts` (three
-cities in a real room), `tests/war/atomNotices.test.ts`; Chromium agrees with Node. Step 11a is done (478e26b, f69b659): the
-interface (`src/ui/Atom.tsx`, `atomView.ts`, `src/client/atomUi.ts`: the war room's Bomb tab with the race's
-ladder and why each step waits, the launch card listing the consequences behind a 3-second hold that
-works by touch and keys, Stop building that asks first; the countdown card with the dome in words;
-the aftermath cards; the race on the region map; the clean-up tool on the radiation map
-(`src/tools/cleanTool.ts`); six tips; "Soften flashes"; `scripts/dev/atomshot.mjs`), screenshots reviewed.
-Step 11b (the missile, flash, mushroom cloud, radiation tint, silo hatch, sounds, frame times) runs on
-the owner's Mac (a Remote Control session, real GPU), then the e2e. Not yet run for steps 1-11a: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
-1,642 tests in 163 files pass.
+**Phase 5's milestones M34 to M40 are complete**, in pull request #23 (its title names all seven).
+What is left of phase 5 is its end (SPEC-5.md, "When every milestone is done"): the summary at the
+top of this file, SPEC_REVIEW's phase-5 section and the README; then a war with a computer neighbour
+and one between two players through the real UI, a race for the bomb, and fixes for whatever feels
+off (best on the owner's Mac, where the real-UI runs are fast).
+
+M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
+it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
+a silo and a bomb paid in twelve instalments (about $20M in all, some 5½ years of a 57,000-resident
+city's taxes), a region whose host allows total war, superweapons and the bomb, a declared total war
+and a long preparation, launched by a three-second hold. The missile crosses the region with a
+countdown and sirens; a charged dome stops one, then is down 1,440 game hours; a landing levels 450 m
+around the densest district (its residents leave; no one is hurt on screen) under a toy mushroom
+cloud. After it: fallout (two layers, nothing built on closed ground for about 21 game years, the
+radiation map, clean-up crews, drift into neighbours, friends included), a nuclear winter on every
+city in the region for six game years, and the world turning on the firer for good (reputation 0,
+every computer neighbour's sanction, pacts ended, total war declared on it with no cooldown, a
+protest that empties homes). Computer neighbours race on Hard only, after year 20; spies and war can
+slow any race. Between friends the region room keeps the truth (protocol 7: the race in each report,
+notices, the record kept for good, winters, the strike on the blackout tower's road, the pariah)
+within bounds a modified client can't push past. Save v32. Each step built, then reviewed by two
+reviewers and fixed; the soak, with a bomb race added, found two more defects (fixed). Calls:
+DECISIONS "M40"; design: DESIGN §3.34 (plan `docs/plans/M40-design.md`); SPEC_REVIEW "M40".
+Numbers: "Performance (M40)".
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -356,15 +306,46 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 11a are done. Next: step 11b on the Mac, the 3D effects and sounds (the missile, the flash
-   and the cloud, the radiation tint, the silo hatch, the siren) with real frame times; then e2e
-   (on the Mac too); wrap-up. Layout specs that count the Military subbar's buttons may
-   need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
-2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
-   5 and the README; a war with a computer neighbour and one between two players through the real
-   UI, a race for the bomb, and fixes for whatever feels off.
-3. Still open from phase 4: the real-device checks for multiplayer ("To check on the Mac").
+1. Phase 5's end (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase-5 section and
+   the README; then play through the real UI: a war with a computer neighbour, a war between two
+   players, a race for the atom bomb; fix whatever feels off.
+2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
+
+## Performance (M40)
+- **E2E through the real UI** (on the owner's Mac, Playwright's Chromium): `e2e/m40-atom.spec.ts` (one
+  player, 1.9 min: the race built from the toolbar, total war from the Diplomacy tab, the bomb built
+  and launched by a real three-second hold, a hold let go early sending nothing, the region map's arc
+  and cloud mark, reputation 0 and the sanctions; then a neighbour's bomb on the city for the four
+  pictures the brief asks for: `docs/screenshots/m40-e2e-{countdown,cloud,radiation,winter}.png`, all
+  looked at) and `e2e/m40-friends.spec.ts` (two players against the local relay, 4.7 min: the race
+  seen by each other, the first finisher, a strike kept by the room, the target levelled, the winter
+  on the firer, the pariah; `m40-e2e-friends-*.png`). Every M34–M39 war spec passes alone; the full
+  `npm run e2e` ran for the first time (127 passed, 3 failed, none M40's: f2-trystero fails the same
+  on `main`, an m39-battlemap phone flake from before M40, m30-rooms passes alone).
+- **Frame times** (Mac, real Chrome, frame cap off, the 100k bench city, overview with the cloud and
+  missile filling the view against the plain city; avg / p95 ms): High 7.22 / 11.1 against 7.23 /
+  10.7, Medium 4.32 / 7.0 against 4.16 / 6.7, Low 3.01 / 3.9 against 2.99 / 3.9. The cloud is at most
+  3 draw calls and about 1,260 triangles (the caps: 6 and 4,000).
+- **Tick**: `atombench.ts` on the 100k city: the blast's worst tick 25.0 ms (15.2 ms in the atom
+  system; about the plan's 25 ms budget on this VM); the whole blast over in 120 ticks; ticks average
+  1.35 ms 12 hours after.
+- **Balance**: peace identical to `main` file for file (20 years: careful, greedy, neglectful); with
+  rivals at Easy, Normal and Hard identical to M38 at year 20 (Normal 65,786 residents, $1,707,414,
+  70 %, 30 raids). A 35-year Hard run saw no computer race: a computer neighbour's weapons only
+  advance once the city researches its own, and the careful mayor researches none.
+- **Bench** (`bench.ts 6 --big`, two pairs with `main`): 6.4–6.7 s against 6.3–6.6 s, months 4–6 tick
+  avg 0.93–1.30 ms on both: no cost from M40 in a city that never races.
+- **Network** (`netbudget.ts`, four players): 1.1 % of the free plan's requests, as before; the race
+  adds 20–80 bytes to a report in ordinary play. With a race advancing in four cities the room writes
+  63 rows an hour against 58 without one (`relay/tests/freeplan.test.ts`).
+- **Soak** (`regionsoak.ts 120 --virtual --crash`, the story now with two bomb strikes between friends
+  and crashes in the countdown and the blast): PASSED on seeds m40, m40b and after the fixes m40b
+  again with nothing excused (strikes fired, taken and landed once each, every winter taken once,
+  fallout within the room's bounds).
+- **Tests**: the unit suite, 2,017 tests in 183 files, passes on the final M40 code (with typecheck, lint and prettier). The cross-browser test (`xbrowser.yml`, Chromium,
+  WebKit, real Firefox) passes on every push with the atom section (the race, both strikes, 300 game
+  hours of fallout hashed by the bits of every cell, the winter, the pariah, a Hard neighbour's launch).
+- **Goldens**: the peace golden, the M36 golden, the v2 battle replays and the v31 fixture never moved.
 
 ## Performance (M39)
 - **The soak** (done criterion; `npx tsx scripts/dev/regionsoak.ts 120 --crash`, four headless
@@ -777,6 +758,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- The atom bomb (M40): a computer neighbour races only on Hard after year 20, and only once its weapons
+  are at their top tier, which happens only after the city researches its own; computer neighbours
+  have no weather, so for them the nuclear winter is a drag on growth; the region keeps 16 marks of the
+  bomb, so a long-lived region can lose its oldest landings and stops from the record (not the
+  firings); a firing city that crashes in the moment between the room keeping its strike and its save
+  loses the firing on its side (the room still counts it); the protest and prices are measured on test
+  towns, not a played-out city.
 - War with friends (M39): an ally's force in a live battle fights on the battle's own judgement (its
   owner watches but does not command it); replays are the room's last 20 battles rather than the
   plan's 7 days; co-op roles are tested at command level, not through the room panel's checkboxes;
@@ -1191,6 +1179,10 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
+  the launch button by finger on a tablet and a phone; a strike between two real machines over
+  peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;
+  a long Hard game with a player who researches, to meet a computer neighbour's race.
 - Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
   test runs the room in one process: the live site offers peer-to-peer only); the region room on
   Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);

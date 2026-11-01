@@ -268,8 +268,15 @@ friendship ended and no new one signed, no neutral stance, total war declared on
 even by neighbours once fond of it; a protest in approval and in every home: approval 57 % to 14 %
 and a third of the people gone in three game months; the chronicle keeping atom events forever) and
 the deterrent of a bomb ready (computer neighbours declare plain war, not total; a friend is warned
-before declaring total war), `tests/war/atomWorld.test.ts`. Next: step 7, the computer race and spies.
-Not yet run for steps 1-6: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+before declaring total war), `tests/war/atomWorld.test.ts`. Step 7 is done (9eb1941, 614180c): a spy's `plant`
+sabotage (a stage of the plant or silo five days late, 120 hours of fuel or of the bomb lost, the
+works closed 12 h; computer spies strike the works of a city in the race with the same dice; the
+room refuses one against a friend in words until step 9), and the computer race on Hard only
+(`src/sim/systems/atomRival.ts`: never before year 20, one neighbour at a time, its own dice;
+fuel, silo and bomb told stage by stage; slowed by spies and won expeditions; a launch only in a
+total war it is losing badly, after ten days the city is told about; it ends with the town's fall),
+`tests/war/{atomSpy,atomRival}.test.ts`, `relay/tests/regionAtomOps.test.ts`. Next: step 8, the
+cross-browser section. Not yet run for steps 1-7: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
@@ -324,8 +331,7 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 6 are done. Next: step 7, the computer race and spies; then cross-browser; the room (protocol
-   7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   to 7 are done. Next: step 8, the cross-browser section; then the room (protocol 7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
    need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

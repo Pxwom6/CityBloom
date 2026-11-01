@@ -6,6 +6,7 @@ import { workforceEducation } from './health';
 import { launchCheer, matchDayNow } from './projects';
 import { honeymoon } from './elections';
 import { bondMood } from './war';
+import { bombShame } from './atomWorld';
 import { raidMood } from './raids';
 import { warCheer } from './weariness';
 
@@ -105,9 +106,16 @@ export function computeTotals(sim: Sim): CityTotals {
   // A match day at the stadium cheers the whole city (M17).
   // So does a won election, for a year.
   const md = matchDayNow(sim);
-  // War bonds (M34) weigh on it while they're owed, and so does being tired of war (M38).
+  // War bonds (M34) weigh on it while they're owed, and so does being tired of war (M38). A city that
+  // has fired the atom bomb is ashamed of it (M40; the term is 0 for every other city).
   const cheer =
-    (md?.approval ?? 0) + launchCheer(sim) + honeymoon(sim) + bondMood(sim) + raidMood(sim) + warCheer(sim);
+    (md?.approval ?? 0) +
+    launchCheer(sim) +
+    honeymoon(sim) +
+    bondMood(sim) +
+    raidMood(sim) +
+    warCheer(sim) +
+    bombShame(sim);
   if (cheer && resW > 0) t.approval = Math.max(0, Math.min(1, t.approval + cheer));
   t.highwayConnected = sim.highwayConnectedBlocks() > 0;
   const [e1, e2] = workforceEducation(sim);

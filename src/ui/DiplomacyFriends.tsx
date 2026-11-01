@@ -12,7 +12,7 @@ import type { FriendScale, FriendTerm } from '../../relay/protocol';
 import { FRIENDS, termsFor } from '../../relay/protocol';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendWar as RoomWar } from '../../relay/protocol';
-import { friendTermWords, friendTermsWords, newcomerNote } from '../client/friendsWar';
+import { declareWarning, friendTermWords, friendTermsWords, newcomerNote } from '../client/friendsWar';
 import { formatMoney } from './hooks';
 import { useGameUpdates } from './hooks';
 import { Feedback, ScoreBar, type Asked } from './Diplomacy';
@@ -377,7 +377,19 @@ function FriendRow({
   useEffect(() => {
     if (atWar && declaring) onDeclare();
   }, [atWar]);
-  const go = (breakPact: boolean) => {
+  // A friend with the atom bomb ready is asked about, never refused (M40): a total war may be met with it.
+  const warning = declareWarning({ name: f.name, player: { atom: f.atom } });
+  const go = (breakPact: boolean, warned = false) => {
+    if (!warned && picked === 'total' && warning) {
+      onAsked({
+        at: `fdeclare-${f.slot}`,
+        text: warning,
+        yes: 'Declare anyway',
+        no: 'Not yet',
+        go: () => go(breakPact, true),
+      });
+      return;
+    }
     onAsked(null);
     game.friends.declare(f.slot, picked, reason, breakPact);
   };
@@ -388,7 +400,7 @@ function FriendRow({
         at: `fdeclare-${f.slot}`,
         text: `${breaksAsked}. Your reputation will suffer, and other cities will hear of it.`,
         yes: rising ? 'Rise anyway' : 'Declare war anyway',
-        go: () => go(true),
+        go: () => go(true, true),
       });
   }, [breaksAsked]);
   return (

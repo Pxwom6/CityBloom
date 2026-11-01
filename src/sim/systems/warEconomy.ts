@@ -27,7 +27,18 @@ import { formatInt } from '../dmath';
 import type { Sim } from '../sim';
 import { HOURS_PER_DAY, TICKS_PER_MONTH } from '../time';
 import { accrue, book } from './economy';
-import { anyWarOpen, embargoed, fightingWith, heldBy, helpers, note, pactsWith, warWith } from './diplomacy';
+import {
+  anyWarOpen,
+  embargoed,
+  fightingWith,
+  heldBy,
+  helpers,
+  isPariah,
+  note,
+  pactsWith,
+  reputationOf,
+  warWith,
+} from './diplomacy';
 import { powerSabotaged } from './intel';
 import type { Neighbour } from './region';
 import { rivalBlackedOut } from './supers';
@@ -104,7 +115,7 @@ export interface Sanction {
 }
 
 /** Why a computer neighbour sanctions the city (`SANCTION`). */
-export type SanctionCause = 'broke' | 'ally' | 'reputation';
+export type SanctionCause = 'broke' | 'ally' | 'reputation' | 'bomb';
 
 /** A computer neighbour's sanction on the city. */
 export interface SanctionOnCity {
@@ -640,8 +651,9 @@ function hasTies(sim: Sim, id: number): boolean {
 }
 
 /**
- * Why a computer neighbour sanctions the city now, or null (`SANCTION`): it is allied to one the city
- * is at war with (until the war is over), or the city's reputation is low. (A pact broken is
+ * Why a computer neighbour sanctions the city now, or null (`SANCTION`): the city has fired the atom
+ * bomb (M40: every neighbour, for good, whether or not they did business), it is allied to one the
+ * city is at war with (until the war is over), or the city's reputation is low. (A pact broken is
  * remembered by the sanction it brings at once, `sanctionsOnBreak`, not read from the state.) Read
  * from the state, so a neighbour that would sanction the city refuses new dealings from the moment
  * the cause holds.
@@ -650,9 +662,10 @@ export function sanctionCause(sim: Sim, n: Neighbour): SanctionCause | null {
   const w = sim.state.war;
   const r = n.rival;
   if (!w || !r || n.player || r.vassal) return null;
+  if (isPariah(sim)) return 'bomb';
   const d = w.diplomacy;
   if (d?.wars.some((x) => x.with !== n.id && r.allies?.includes(x.with))) return 'ally';
-  if (d && d.reputation < SANCTION.reputation) return 'reputation';
+  if (reputationOf(sim) < SANCTION.reputation) return 'reputation';
   return null;
 }
 
@@ -733,6 +746,8 @@ export function sanctionText(sim: Sim, n: Neighbour, cause: SanctionCause): stri
       return `${n.name} sanctions the city for its war on ${alliedEnemy(sim, n)?.name ?? 'its ally'}, ${n.name}’s ally`;
     case 'reputation':
       return `${n.name} sanctions the city: its word counts for too little`;
+    case 'bomb':
+      return `${n.name} sanctions the city for firing the atom bomb, and will not lift it`;
   }
 }
 
@@ -752,14 +767,17 @@ function sanctionsPass(sim: Sim, broke: boolean): void {
       delete e.sanctioned[n.id];
       sim.warChanged();
     }
+    // The bomb is the cause that outranks the rest: it never lifts, and is imposed on every neighbour,
+    // with or without something to cut.
+    const held = sanctionCause(sim, n);
     const cause: SanctionCause | null =
-      broke && SANCTION.punishesBreaking[n.rival.personality] ? 'broke' : sanctionCause(sim, n);
+      held !== 'bomb' && broke && SANCTION.punishesBreaking[n.rival.personality] ? 'broke' : held;
     const rec = e?.sanctionedBy?.[n.id];
     if (cause) {
       if (rec) {
         rec.cause = cause;
         rec.last = s.tick;
-      } else if (hasTies(sim, n.id)) {
+      } else if (cause === 'bomb' || hasTies(sim, n.id)) {
         (economy(sim).sanctionedBy ??= {})[n.id] = { since: s.tick, cause, last: s.tick };
         cutTrade(sim, n, `${n.name} sanctions the city`);
         note(
@@ -784,6 +802,11 @@ function sanctionsPass(sim: Sim, broke: boolean): void {
 
 /** Each month, before anything else: a cause that has come up since last month, or one that has gone. */
 export function sanctionsMonth(sim: Sim): void {
+  sanctionsPass(sim, false);
+}
+
+/** The city has fired the atom bomb (M40): every computer neighbour sanctions it on the spot, for good. */
+export function sanctionsOnBomb(sim: Sim): void {
   sanctionsPass(sim, false);
 }
 

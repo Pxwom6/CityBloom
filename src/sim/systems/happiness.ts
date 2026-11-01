@@ -11,6 +11,7 @@ import { parkShare } from './weather';
 import { safetyAt } from './war';
 import { tiredOfWar } from './weariness';
 import { falloutMood } from './fallout';
+import { homeShame } from './atomWorld';
 
 const ZONE_LETTER = ['R', 'R', 'C', 'I'] as const;
 
@@ -124,6 +125,9 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
     // A long war wears people down (M38): past half weariness, homes grow less happy.
     const tired = tiredOfWar(sim);
     if (tired <= -0.001) f.push({ label: 'Tired of war', value: tired });
+    // The city fired the atom bomb (M40): its people are ashamed, and homes empty (move-outs follow).
+    const ashamed = homeShame(sim);
+    if (ashamed <= -0.001) f.push({ label: 'Ashamed of the bomb', value: ashamed });
   }
   if (b.zone === ZONE_R && b.pop > 0 && b.sick > 0.05) {
     const untreated = (b.sick * (1 - b.treated)) / b.pop;

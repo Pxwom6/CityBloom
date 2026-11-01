@@ -139,6 +139,32 @@ export const ATOM = {
    * can't take.
    */
   warning: { mood: 0.08, days: 3 },
+  /**
+   * The world turns on the city that fires the bomb (M40 step 6, plan call 14), the moment it
+   * leaves, stopped or not. Every computer neighbour's feeling for the city falls: the target's to
+   * `target`, its allies' by `allies`, every other neighbour's by `others`. A neighbour may then
+   * declare a total war on the city whatever its character (`floor`: it declares at the chance of one
+   * at least that aggressive), whenever (no cooldown after a war that ended), against a city half as
+   * strong as itself (`ratio`: the usual is one and a half times).
+   */
+  world: { target: -100, allies: -40, others: -40, ratio: 0.5, floor: 0.5 },
+  /**
+   * The protest at home (call 14): the firing city's people are ashamed. Approval takes `approval`
+   * (a city-wide term) and every home's happiness `home`, each starting at `start` when the bomb
+   * leaves and easing, in a straight line over `hours` game hours (the city's own clock: it is the
+   * people's mood, not the war's), to `end`, which stays: shame fades but never goes.
+   */
+  shame: {
+    approval: { start: -0.3, end: -0.05 },
+    home: { start: -0.25, end: -0.06 },
+    hours: 720,
+  },
+  /**
+   * The deterrent (call 15): what a computer neighbour adds to its liking for peace, a ceasefire and
+   * the pacts of friendship with a city that has the bomb ready or is preparing to use it. It also
+   * fights such a city a limited war, never a total one.
+   */
+  deter: 15,
 };
 
 /**
@@ -238,3 +264,28 @@ export const WINTER = {
 /** Game hours a winter lasts from its first bomb to its last cold day, and how many game years that is. */
 export const WINTER_HOURS = WINTER.rise + WINTER.hold + WINTER.fall;
 export const WINTER_YEARS = WINTER_HOURS / WINTER.yearHours;
+
+/**
+ * The line the city's history shows for one of the bomb's moments (the chronicle's `atom` events,
+ * whose `ref` is `what` or `what:who`; `src/sim/systems/atomWorld.ts` writes them). A plain voice.
+ */
+export function atomEventText(ref: string | number): string {
+  const text = String(ref);
+  const at = text.indexOf(':');
+  const what = at < 0 ? text : text.slice(0, at);
+  const who = at < 0 ? '' : text.slice(at + 1);
+  switch (what) {
+    case 'ready':
+      return 'Finished the atom bomb';
+    case 'fired':
+      return who ? `Fired the atom bomb at ${who}` : 'Fired the atom bomb';
+    case 'landed':
+      return who ? `The atom bomb fell on ${who}` : 'The atom bomb fell';
+    case 'hit':
+      return who ? `An atom bomb from ${who} fell on the city` : 'An atom bomb fell on the city';
+    case 'stopped':
+      return who ? `The dome stopped an atom bomb from ${who}` : 'The dome stopped an atom bomb';
+    default:
+      return 'The atom bomb';
+  }
+}

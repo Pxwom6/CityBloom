@@ -79,6 +79,7 @@ export function checkInvariants(sim: Sim): void {
     if (!Number.isFinite(v) || v < -1 || v > 1) throw new InvariantError(`demand ${k} = ${v}`);
   }
   checkAtom(sim);
+  checkPariah(sim);
   checkFallout(sim);
   checkWinters(sim);
 }
@@ -148,4 +149,13 @@ function checkAtom(sim: Sim): void {
   const im = a.impact;
   if (im && ![im.done, im.fled, im.x, im.z].every(Number.isFinite))
     throw new InvariantError('atom impact is not finite');
+}
+
+/** The firer of the bomb (M40): its reputation is nothing, for good, and the mark is a past tick. */
+function checkPariah(sim: Sim): void {
+  const d = sim.state.war?.diplomacy;
+  if (!d?.pariah) return;
+  if (!Number.isFinite(d.pariah.tick) || d.pariah.tick > sim.state.tick)
+    throw new InvariantError(`pariah since ${d.pariah.tick}`);
+  if (d.reputation !== 0) throw new InvariantError(`a pariah's reputation is ${d.reputation}`);
 }

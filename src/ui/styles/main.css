@@ -1811,6 +1811,17 @@ body {
   content: '◆ ';
   color: var(--color-accent);
 }
+.chart-marker.atom line {
+  stroke: var(--color-negative);
+}
+.chart-marker.atom circle {
+  fill: var(--color-negative);
+}
+.chart-tip-event.atom::before,
+.history-events li.atom::before {
+  content: '● ';
+  color: var(--color-negative);
+}
 .chart-marker.disaster line {
   stroke: var(--color-warning);
 }

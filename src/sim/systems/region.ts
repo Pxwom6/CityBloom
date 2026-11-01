@@ -74,6 +74,12 @@ export interface PlayerNeighbour {
    * counts it only from a friend the region lists as its vassal.
    */
   dues?: number;
+  /**
+   * In a region with the atom bomb on (M40, from its report): how far its race has got, the stage's
+   * number (`atomStageNo`, 1 to 8; absent before it has begun). Step 9's report adds the rest (its
+   * fuel, the bomb fired, landed or stopped, its plume).
+   */
+  atom?: { stage: number };
 }
 
 /** Why a friend's city can't be raided (M36): its own report says so. */

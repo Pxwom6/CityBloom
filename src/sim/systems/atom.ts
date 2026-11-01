@@ -31,6 +31,7 @@ import { blackedOut, bombStopped, domeTakesBomb, superWorking } from './supers';
 import { civicOutput } from './utilities';
 import { startWinter } from './weather';
 import { materialBill, takeStock } from './war';
+import { atomChronicle, worldTurns } from './atomWorld';
 
 /**
  * The city's bomb race (`WarState.atom`), made when the first fact is set. The stage is derived from
@@ -530,6 +531,7 @@ function bombHour(sim: Sim): void {
       // do not race yet (M40 step 7); in a region the room says who was first (step 10).
       if (!sim.state.region.rules) a.first = true;
       sim.events.push({ kind: 'bombReady', id: silo.id });
+      atomChronicle(sim, 'ready');
       return;
     }
   }
@@ -741,13 +743,24 @@ function startFlight(sim: Sim): void {
 }
 
 /**
- * The seam for step 6, "the world turns on the firer" (plan call 14): called once, the moment the
- * bomb leaves for any target, stopped or not (a refusal never reaches it). The firer's reputation
- * falls to nothing for good, every neighbour embargoes it, its pacts end, anyone may declare total
- * war, its people protest and the chronicle keeps the launch. Does nothing yet.
+ * The world turns on the firer (M40 step 6, plan call 14): called once, the moment the bomb leaves
+ * for any target, stopped or not (a refusal never reaches it). The firer's reputation falls to
+ * nothing for good, every neighbour embargoes it, its pacts end, anyone may declare a total war on
+ * it, its people protest and the chronicle keeps the launch. All of it is `atomWorld.ts`; the room's
+ * half for friends (the pariah flag in `FriendsState`, from the report's `fired`) is step 9.
  */
-export function atomFired(_sim: Sim): void {
-  /* step 6 */
+export function atomFired(sim: Sim): void {
+  worldTurns(sim);
+}
+
+/**
+ * The city holds the bomb ready or is preparing to use it (M40, call 15): a computer neighbour thinks
+ * twice, liking peace and pacts more and fighting it a limited war only. The same as the stage being
+ * `ready` or `preparing`, from the facts (no building to look for).
+ */
+export function atomDeters(sim: Sim): boolean {
+  const a = sim.state.war?.atom;
+  return !!a && !a.fired && !!(a.prep || a.have);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -884,6 +897,7 @@ function inboundTick(sim: Sim, a: Atom, hit: Inbound): void {
       id: hit.from,
       info: { from: hit.name, down: ATOM.dome.down },
     });
+    atomChronicle(sim, 'stopped', hit.name);
     sim.warChanged();
     return;
   }
@@ -909,6 +923,7 @@ function inboundTick(sim: Sim, a: Atom, hit: Inbound): void {
   };
   a.impact = im;
   sim.events.push({ kind: 'bombLanded', id: hit.from, info: { from: hit.name, x: hit.x, z: hit.z } });
+  atomChronicle(sim, 'hit', hit.name);
   if (impactSlice(sim, im)) im.razed = true;
   sim.warChanged();
 }
@@ -943,6 +958,7 @@ function landFlight(sim: Sim, f: NonNullable<Atom['fired']>): void {
     id: n.id,
     info: { to: n.name, side: n.side, lost: before - n.population },
   });
+  atomChronicle(sim, 'landed', n.name);
 }
 
 /**

@@ -182,7 +182,7 @@ export interface TimeSeries {
 export interface TimeMarker {
   /** Month since the city began (fractional). */
   month: number;
-  kind: 'milestone' | 'disaster' | 'project' | 'election';
+  kind: 'milestone' | 'disaster' | 'project' | 'election' | 'atom';
   label: string;
 }
 

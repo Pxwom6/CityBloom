@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { atomEventText } from '../data/atom';
 import { CIVIC } from '../data/civic';
 import { MILESTONES } from '../data/progression';
 import { CHRONICLE_SERIES, type Chronicle, type SeriesKey } from '../sim/systems/chronicle';
@@ -101,6 +102,7 @@ const FIGURES: Figure[] = [
 export const monthName = monthLabel;
 
 function eventLabel(e: Chronicle['events'][number]): string {
+  if (e.kind === 'atom') return atomEventText(e.ref);
   if (e.kind === 'election') return e.ref === 'won' ? 'Won the election' : 'Lost the election';
   if (e.kind === 'project')
     return `Opened the ${CIVIC.get(e.ref as string)?.name.toLowerCase() ?? 'project'}`;

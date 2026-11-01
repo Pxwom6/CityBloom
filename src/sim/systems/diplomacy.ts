@@ -10,6 +10,7 @@
  * declaration, proposal or stance: peace, and a war city that never uses it, are unchanged.
  */
 import { freshIncident, grieved } from './intel';
+import { ATOM } from '../../data/atom';
 import {
   cleanTerm,
   DIPLOMACY,
@@ -36,6 +37,7 @@ import { Rng, type RngState } from '../rng';
 import type { Sim } from '../sim';
 import { dateOf, START_TICK_OFFSET, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../time';
 import { accrue, districtReports } from './economy';
+import { atomDeters } from './atom';
 import { turnBack } from './expeditions';
 import { cityStrength, type BattleReport } from './raids';
 import type { Neighbour } from './region';
@@ -125,8 +127,14 @@ export interface DiplomacyEntry {
 }
 
 export interface Diplomacy {
-  /** 0–100: how far other cities trust the city's word. */
+  /** 0–100: how far other cities trust the city's word. Read `reputationOf`, change it with `reputationChange`. */
   reputation: number;
+  /**
+   * The city fired the atom bomb (M40, plan call 14): the tick it left. From then on its reputation
+   * is nothing for good (`reputationOf`, `reputationChange`), every computer neighbour sanctions it,
+   * its pacts of friendship have ended and any neighbour may declare a total war on it.
+   */
+  pariah?: { tick: number };
   wars: War[];
   pacts: Pact[];
   proposals: Proposal[];
@@ -152,6 +160,8 @@ const M = TICKS_PER_MONTH;
 const LOG_KEEP = 40;
 /** Pacts a strike or a declaration breaks. */
 const BINDING: readonly TermKind[] = ['ceasefire', 'nonAggression', 'alliance', 'defensivePact'];
+/** Terms a computer neighbour likes better with a city that has the atom bomb ready (M40). */
+const DETERRED_TERMS: readonly TermKind[] = ['peace', ...BINDING];
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -222,10 +232,44 @@ export function incident(
   note(sim, n.id, what, text, tone);
 }
 
-/** The city's reputation moves (M37: a spy of the city's caught). */
-export function reputationChange(sim: Sim, delta: number): void {
+/**
+ * The city's reputation (0–100) as the rest of the game reads it: the figure, or nothing once the city
+ * has fired the atom bomb (M40). Everything that reads the reputation (`weigh`, the sanctions, the
+ * war room) goes through here.
+ */
+export function reputationOf(sim: Sim): number {
+  const d = sim.state.war?.diplomacy;
+  if (d?.pariah) return 0;
+  return d?.reputation ?? DIPLOMACY.reputation.start;
+}
+
+/** Has the city fired the atom bomb (M40)? Its word is worth nothing, for good. */
+export function isPariah(sim: Sim): boolean {
+  return !!sim.state.war?.diplomacy?.pariah;
+}
+
+/**
+ * The city's reputation moves by `delta`, to between 0 and `cap` (a month's mending stops at where it
+ * started). The one place it is written: the fall for a declared war or a broken pact, a spy caught
+ * (M37), the monthly mend. Once the city is a pariah nothing moves it, a rise least of all (M40).
+ */
+export function reputationChange(sim: Sim, delta: number, cap = 100): void {
   const d = dip(sim);
-  d.reputation = clamp(d.reputation + delta, 0, 100);
+  if (d.pariah) return;
+  d.reputation = clamp(d.reputation + delta, 0, cap);
+  sim.warChanged();
+}
+
+/**
+ * The city fires the atom bomb (M40, plan call 14): its reputation falls to nothing, through the
+ * accessor, and the mark is set that keeps it there. Once. (What else follows, the neighbours'
+ * sanctions, the pacts ended and the protest, is `worldTurns` in `atomWorld.ts`.)
+ */
+export function makePariah(sim: Sim): void {
+  const d = dip(sim);
+  if (d.pariah) return;
+  reputationChange(sim, -100);
+  d.pariah = { tick: sim.state.tick };
   sim.warChanged();
 }
 
@@ -299,7 +343,7 @@ export function tributeDemand(sim: Sim, share: number): number {
 }
 
 /** Computer neighbours allied with this one. */
-function alliesOf(sim: Sim, n: Neighbour): Neighbour[] {
+export function alliesOf(sim: Sim, n: Neighbour): Neighbour[] {
   const ids = n.rival?.allies ?? [];
   return sim.state.region.neighbours.filter((x) => ids.includes(x.id) && x.rival && !x.player);
 }
@@ -423,7 +467,7 @@ function startWarWith(
     // Struck first by its raid, or (M37) its spy caught here lately: a declaration costs no reputation.
     const struckUs =
       s.tick - (s.war!.raided?.by[n.id] ?? -Infinity) < RAIDS.retaliate * M || grieved(sim, n.id);
-    if (!struckUs && !rebellion) d.reputation = clamp(d.reputation + DIPLOMACY.reputation.declare, 0, 100);
+    if (!struckUs && !rebellion) reputationChange(sim, DIPLOMACY.reputation.declare);
     r.relation = clamp(r.relation + DIPLOMACY.declareRelation, -100, 100);
     for (const a of alliesOf(sim, n))
       a.rival!.relation = clamp(a.rival!.relation + DIPLOMACY.allyDeclareRelation, -100, 100);
@@ -492,7 +536,7 @@ function joinAgainst(sim: Sim, a: Neighbour, friend: Neighbour): void {
 /** The city breaks pacts: its reputation, the victim's feelings and its allies'. */
 export function breakPacts(sim: Sim, n: Neighbour, pacts: Pact[]): void {
   const d = dip(sim);
-  d.reputation = clamp(d.reputation + DIPLOMACY.reputation.breakPact, 0, 100);
+  reputationChange(sim, DIPLOMACY.reputation.breakPact);
   d.pacts = d.pacts.filter((p) => !pacts.includes(p));
   if (n.rival) n.rival.relation = clamp(n.rival.relation + DIPLOMACY.declareRelation, -100, 100);
   const names = [...new Set(pacts.map((p) => TERM_NAMES[p.term.k].toLowerCase()))].join(' and ');
@@ -1258,8 +1302,11 @@ export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
   const score = war?.score ?? 0;
   const means = Math.max(1_000, neighbourTaxes(n)) * 6;
   const worth = (amount: number) => (30 * amount) / means;
+  // A city with the atom bomb ready (M40, call 15) is one to make peace and friends with.
+  const deter = atomDeters(sim) ? ATOM.deter : 0;
   let v = 0;
   for (const t of terms) {
+    if (deter && DETERRED_TERMS.includes(t.k)) v += deter;
     switch (t.k) {
       case 'peace':
         v += (score / 2) * dp.peace + (1 - aggression) * 10 - 5;
@@ -1309,9 +1356,7 @@ export function weigh(sim: Sim, n: Neighbour, terms: Term[]): number {
         break;
     }
   }
-  return (
-    v + ((d?.reputation ?? DIPLOMACY.reputation.start) - DIPLOMACY.reputation.start) / 4 + r.relation / 10
-  );
+  return v + (reputationOf(sim) - DIPLOMACY.reputation.start) / 4 + r.relation / 10;
 }
 
 /** Terms a computer neighbour would sign instead, or null when nothing near would do. */
@@ -1558,8 +1603,8 @@ export function diplomacyMonth(sim: Sim): void {
         );
       }
     }
-    if (d.reputation < DIPLOMACY.reputation.start)
-      d.reputation = Math.min(DIPLOMACY.reputation.start, d.reputation + DIPLOMACY.reputation.mendPerMonth);
+    if (reputationOf(sim) < DIPLOMACY.reputation.start)
+      reputationChange(sim, DIPLOMACY.reputation.mendPerMonth, DIPLOMACY.reputation.start);
     // Each ally fighting at the city's side wears the enemy down.
     for (const { ally, war } of helpers(sim)) {
       if (!d.wars.includes(war)) continue;
@@ -1588,6 +1633,10 @@ function computerMoves(sim: Sim): void {
   const strength = Math.max(1, cityStrength(sim));
   const threat = raidThreat(sim);
   const neutral = !!w.diplomacy?.neutral;
+  // A city that has the atom bomb ready is fought a limited war, never a total one (M40, call 15); one
+  // that has fired it has the whole world against it (call 14). Both are values, not draws.
+  const deterred = atomDeters(sim);
+  const pariah = isPariah(sim);
   let declared = false;
   for (const n of s.region.neighbours) {
     const r = n.rival;
@@ -1610,7 +1659,14 @@ function computerMoves(sim: Sim): void {
         allowed &&
         allowed !== 'skirmish'
       )
-        startWarWith(sim, n, allowed === 'total' ? 'total' : 'war', 'them', 'We will not kneel', true);
+        startWarWith(
+          sim,
+          n,
+          allowed === 'total' && !deterred ? 'total' : 'war',
+          'them',
+          'We will not kneel',
+          true,
+        );
       continue;
     }
     if (war) {
@@ -1663,21 +1719,37 @@ function computerMoves(sim: Sim): void {
     // A spy of the city's caught there within a day (M37): it declares at even strength, twice as likely.
     const caught = freshIncident(sim, n.id);
     const aggression = aggressionOf(sim, r.personality);
-    if (aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength) continue;
-    const ended = w.diplomacy?.ended?.[n.id];
-    if (ended !== undefined && s.tick - ended < DIPLOMACY.cooldownMonths * M) continue;
+    // The firer of the atom bomb (M40): any character will do, against a city half as strong as
+    // itself, with no cooldown after a war that ended; the chance is that of one at least as keen as
+    // the aggressive. For every other city the three checks are as they always were.
+    if (pariah) {
+      if (r.relation > RAIDS.hostile || r.forces < ATOM.world.ratio * strength) continue;
+    } else {
+      if (aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength)
+        continue;
+      const ended = w.diplomacy?.ended?.[n.id];
+      if (ended !== undefined && s.tick - ended < DIPLOMACY.cooldownMonths * M) continue;
+    }
     const bound = bindingPacts(sim, n.id);
     if (bound.length && !(r.personality === 'treacherous' && rng.chance((1 - p.keepsPacts) * 0.3))) continue;
-    if (!rng.chance(aggression * 0.15 * (caught ? 2 : 1))) continue;
+    if (!rng.chance((pariah ? Math.max(aggression, ATOM.world.floor) : aggression) * 0.15 * (caught ? 2 : 1)))
+      continue;
     if (bound.length) {
       const dd = dip(sim);
       dd.pacts = dd.pacts.filter((x) => !bound.includes(x));
       note(sim, n.id, 'theyBroke', `${n.name} breaks its word to the city`);
     }
     const reasons = WAR_REASONS[r.personality];
-    const scale: DeclaredScale = allowed === 'total' && r.forces >= 2.5 * strength ? 'total' : 'war';
+    const scale: DeclaredScale =
+      allowed === 'total' && !deterred && (pariah || r.forces >= 2.5 * strength) ? 'total' : 'war';
     const reason = reasons[rng.int(reasons.length)]!;
-    startWarWith(sim, n, scale, 'them', caught ? 'We caught your spies in our town' : reason);
+    startWarWith(
+      sim,
+      n,
+      scale,
+      'them',
+      pariah ? 'We will not stand for the atom bomb' : caught ? 'We caught your spies in our town' : reason,
+    );
     declared = true;
   }
   dip(sim).rng = rng.getState();
@@ -1870,6 +1942,8 @@ export function theirDmz(sim: Sim, id: number): boolean {
 
 export interface DiplomacySummary {
   reputation: number;
+  /** The city fired the atom bomb (M40): since when. Its reputation is nothing for good. */
+  pariah: { since: number } | null;
   /** The largest war the city may declare, or null. */
   allowed: WarScale | null;
   neutral: boolean;
@@ -1970,7 +2044,8 @@ export function diplomacySummary(sim: Sim): DiplomacySummary | null {
   const help = helpers(sim);
   const overlord = d?.vassal ? neighbourOf(sim, d.vassal.overlord) : undefined;
   return {
-    reputation: Math.round(d?.reputation ?? DIPLOMACY.reputation.start),
+    reputation: Math.round(reputationOf(sim)),
+    pariah: d?.pariah ? { since: d.pariah.tick } : null,
     allowed,
     neutral: !!d?.neutral,
     leaving: d?.leaving !== undefined && s.tick < d.leaving ? d.leaving : null,

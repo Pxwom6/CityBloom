@@ -19,6 +19,7 @@
  */
 import type { Command, CommandResult } from '../sim/commands';
 import type { FriendWarFacts } from '../sim/systems/friendsWar';
+import { atomStageNo } from '../data/atom';
 import { RAIDS } from '../data/battle';
 import { UNKNOWN_FRIEND, TREATY_TAKEN, raidVerdictWhy } from '../data/diplomacy';
 import {
@@ -671,6 +672,18 @@ export function newcomerNote(why: string | null | undefined): string {
   return why && /too young or small/.test(why)
     ? ` A city is protected as a newcomer until it has ${RAIDS.minPopulation.toLocaleString('en-US')} residents and has been going for ${RAIDS.minMonths === 12 ? 'a year' : `${RAIDS.minMonths} months`}.`
     : '';
+}
+
+/**
+ * The question to ask before declaring a total war on a friend whose bomb is ready (M40, call 15), or
+ * null: its report says its race has reached `ready` or `preparing`, the bomb is built, and in a total
+ * war it may use it. A friend is asked, never refused: the bomb must not be a shield against all war.
+ * `n` is a neighbour (its `player` carries the report's `atom`).
+ */
+export function declareWarning(n: { name: string; player?: { atom?: { stage: number } } }): string | null {
+  const stage = n.player?.atom?.stage;
+  if (stage !== atomStageNo('ready') && stage !== atomStageNo('preparing')) return null;
+  return `${n.name} has the atom bomb ready. In a total war it may use it. Declare anyway?`;
 }
 
 /** What the Send tab says a raid on a friend's city will be (M39): how it is fought, or why it can't be. */

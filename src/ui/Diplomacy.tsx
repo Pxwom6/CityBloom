@@ -97,6 +97,8 @@ export interface Asked {
   at: string;
   text: string;
   yes?: string;
+  /** The button that leaves things as they are (the city's word kept, by default). */
+  no?: string;
   go?: () => void;
 }
 
@@ -126,7 +128,7 @@ export function Feedback({ at, asked, onClose }: { at: string; asked: Asked | nu
               {mine.yes}
             </button>
             <button class="btn" data-testid="dip-confirm-no" onClick={onClose}>
-              Keep the city’s word
+              {mine.no ?? 'Keep the city’s word'}
             </button>
           </div>
         </div>
@@ -197,6 +199,11 @@ export function Diplomacy() {
             <span style={{ width: `${d.reputation}%` }} />
           </span>
         </p>
+        {d.pariah && (
+          <p class="dip-bad" data-testid="dip-pariah">
+            The world has turned on the city for firing the atom bomb: its word counts for nothing, for good.
+          </p>
+        )}
         <Weariness now={now} />
         {d.vassal && !d.vassal.friend && (
           <p class="dip-vassal" data-testid="dip-vassal">

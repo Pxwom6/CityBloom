@@ -48,6 +48,7 @@ import {
   neighbourTaxes,
   note,
   pactsWith,
+  reputationChange,
   stopFighting,
   termText,
   warScaleAllowed,
@@ -122,7 +123,6 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const isInt = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 const isParty = (v: unknown): v is Party => v === 'us' || v === 'them';
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const money = (v: number) => `$${formatInt(Math.round(v))}`;
 
 /** A friend's war as the page hands it over, checked: a clean copy, or null if it isn't one. */
@@ -273,11 +273,10 @@ export function friendWar(sim: Sim, raw: unknown, dryRun: boolean): CommandResul
 /** The cost of declaring a war on a friend: its reputation, and a pact in the way broken. */
 function declaredByUs(sim: Sim, n: Neighbour, rebellion: boolean): void {
   const s = sim.state;
-  const d = dip(sim);
   // Struck first by its raid, or (M37) its spy caught here lately: a declaration costs no reputation.
   const struckUs =
     s.tick - (s.war!.raided?.by[n.id] ?? -Infinity) < RAIDS.retaliate * M || grieved(sim, n.id);
-  if (!struckUs && !rebellion) d.reputation = clamp(d.reputation + DIPLOMACY.reputation.declare, 0, 100);
+  if (!struckUs && !rebellion) reputationChange(sim, DIPLOMACY.reputation.declare);
   const bound = bindingPacts(sim, n.id);
   if (bound.length) breakPacts(sim, n, bound);
 }
@@ -809,6 +808,8 @@ export interface FriendSummary {
   dues: number | null;
   /** Its taxes a month, roughly (from its people), for the sums beside a money term. */
   taxes: number;
+  /** How far its race for the atom bomb has got (M40, from its report), when it has begun: the stage's number. */
+  atom?: { stage: number };
 }
 
 export function friendsSummary(sim: Sim): FriendSummary[] {
@@ -833,6 +834,7 @@ export function friendsSummary(sim: Sim): FriendSummary[] {
       subject: !!d?.subjects?.some((x) => x.with === n.id),
       dues: d?.subjects?.some((x) => x.with === n.id) ? (p.dues ?? 0) : null,
       taxes: neighbourTaxes(n),
+      ...(p.atom ? { atom: { stage: p.atom.stage } } : {}),
     });
   }
   return out;

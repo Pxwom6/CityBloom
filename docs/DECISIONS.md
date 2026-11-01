@@ -1765,3 +1765,87 @@ these are its calls and the reasons, with where they overturned the first draft.
       holds the limit exactly: a plain city in a long storm and a twin under a deep winter in the snow, whose
       streams part only when the plain river passes 1.2 m, while the winter city's river and stream never
       move.
+- **Step 6 (the world reacts, the sim half): calls the plan left open.**
+  - *One accessor for the reputation.* `reputationOf(sim)` is the figure everything reads (`weigh`,
+    `sanctionCause`, the war room's summary) and `reputationChange(sim, delta, cap = 100)` the only code
+    that writes it: the fall for a declaration (the sim's and the friends'), a broken pact, a spy caught,
+    and the monthly mend (which passes the cap `start`, so it stops where it always did). While
+    `Diplomacy.pariah` is set `reputationChange` does nothing (no rise ever applies; a fall has nowhere
+    to go) and `reputationOf` says 0 whatever the field holds. `makePariah` falls to 0 through the
+    accessor and then sets the mark, once. A grep test reads `src/sim` and fails if any other code
+    reads or writes `.reputation` (the data constants `DIPLOMACY.reputation` and the like are numbers).
+    `checkInvariants` holds a pariah to a raw 0 and a past tick. `DiplomacySummary.pariah` carries the
+    mark to the page.
+  - *The world's turn is `atomWorld.ts`, called from `atomFired`.* Every computer neighbour's feeling
+    falls: the target's to -100 (as the landing sets it later), its allies' by `ATOM.world.allies` (-40),
+    **every other neighbour's by `ATOM.world.others` (-40, not in the plan)**. The plan's waivers (the
+    aggression floor, the 0.5x forces ratio, no cooldown) all sit behind the old test that a neighbour's
+    feeling must be at or under `RAIDS.hostile` (-25) to declare at all, and a neighbour the city had
+    never wronged sits at 0 or higher: without a fall for the others the pariah would be declared on only
+    by the target and its allies, and "anyone may declare a total war" (the card's words, call 20) would
+    be false. The relation test is kept, not waived: a neighbour that stays fond of the city (+50 and
+    over) does not declare on the day.
+  - *Which pacts end.* The pacts of friendship: non-aggression, alliance and defensive pact, through
+    `endPactsWith` with no breach (nothing is broken, and the city's word is nothing already). A
+    ceasefire, a treaty's tribute, a demilitarised zone, an occupied district, an embargo and a trade
+    agreement stand: they are the settlement of a war, not a friendship, and ending a ceasefire would
+    reopen a war the bomb's firer did not choose to reopen. A friend's pacts are the room's (step 9).
+  - *The sanction.* `sanctionCause` returns `'bomb'` first, before the neighbour's own ally and
+    reputation tests; `sanctionsPass` takes the bomb ahead of `'broke'` and imposes it with or without
+    something to cut (`sanctionsOnBomb`, called at once from the world's turn, so the Trade tab and the
+    notices are right on the day, not at the next month close). It never lifts while the mark stands;
+    only a neighbour that has fallen to the city (a vassal, the city's own) is outside it, as for every
+    cause.
+  - *Declaring on a pariah.* In `computerMoves` the pariah branch replaces the three checks and the
+    cooldown with a forces ratio of `ATOM.world.ratio` (0.5) and a chance made with
+    `max(aggression, ATOM.world.floor)`; the scale is total whenever the region allows it (the usual
+    2.5x lead is waived too: a half-strength city is not declared on for a "limited" war); the reason is
+    "We will not stand for the atom bomb". Everything else (pacts held, the `caught` doubling, the die
+    that is drawn, one declaration a day) is as it was, and for a city that is not a pariah the code is
+    the old code, line for line and die for die (the goldens and `difficulty.test.ts` agree).
+  - *The deterrent.* `atomDeters(sim)` reads the facts (`have` or `prep`, no `fired`) rather than
+    `atomStage`, which looks for the buildings in a loop. `computerMoves` takes scale `war` for a declaration
+    on such a city, and for a vassal's rising too (both are a computer neighbour choosing its war), and
+    `weigh()` adds `ATOM.deter` (15) to peace, a ceasefire and the three pacts of friendship, and to
+    nothing else (an embargo, trade, money terms and territory are not about fear).
+  - *The protest is `bombShame` and `homeShame`, not `bombMood`* (the dread of a bomb on its way holds that
+    name in `atom.ts`). Both run on the city's own game hours from `pariah.tick` (the people's mood, not
+    the war economy's: the region's fair clock can hold the war clock for ever, and a held clock
+    must not hold shame), in a straight line over 720 game hours from -0.30 to -0.05 (approval) and
+    -0.25 to -0.06 (homes), and **stay** at the second figure: the plan's "easing to" read as a lasting
+    floor, "a record that stays". The home term is a happiness factor, so it also lowers the city's
+    approval (the residents' mean): the protest costs more than its -0.30. Both are exactly 0 for a city
+    with no mark, the cheer term is added last so the sum is bit-identical, and the factor is listed
+    only at -0.001 or lower.
+  - *The chronicle.* Kind `atom`, refs `ready`, `fired:Name`, `landed:Name`, `hit:Name`, `stopped:Name`
+    (`atomEventText` in `src/data/atom.ts` says them). `ready` is written when `bombHour` finishes the bomb
+    (the stage cheat sets facts only and writes none, as `finishStages` does not), `fired` from the world's
+    turn, `hit` and `stopped` at the landing tick (not when the blast is over, so a save made mid-blast
+    already has it), `landed` when a bomb of the city's falls on a computer neighbour. `chronicleEvent`
+    drops the oldest event that is not an `atom` one; with none in the ring it is the old splice, so no
+    other city's ring moves.
+  - *The warning to a friend.* `declareWarning(neighbour)` (`src/client/friendsWar.ts`) reads
+    `PlayerNeighbour.atom.stage` (the field is declared now as `{ stage }`; step 9's report fills it and
+    widens it) and asks for ready and preparing alike, in the plan's words. The declare form puts it as a
+    question only when the scale chosen is total (a smaller war cannot be met with the bomb), with
+    "Declare anyway" and "Not yet" (`Asked.no`, which was fixed to "Keep the city's word"), and
+    `FriendSummary.atom` carries the stage to the form.
+  - *The seam for step 9 and 10.* `worldTurns` changes computer neighbours only, and reads the target's
+    record by id; a friend as target changes nothing here, and the room flags the sender from its report's
+    `fired` (step 9). `atomFired` is called with `fired` already set, so the friend's way in step 10
+    needs only to set it first.
+  - *What the protest costs, measured* (the 2,600-resident test town, the mark alone with no bomb, same
+    dice for the control): approval 0.57 → 0.14 and population -32 % after 3 game months (-34 % at 2, the
+    worst), -35 % at 6, -20 % at one game year and -10 % at two; abandoned buildings 53 → 124 in the first
+    two months. The plan's tests ask for 25 points and 8 %, which this clears by a wide margin because the
+    two terms add (the home term lowers the mean the approval is made of) and a home at 0.55 happiness
+    loses a quarter of its occupancy at once. The figures are the plan's (`ATOM.shame`); if the balance step
+    finds a quarter of a city leaving in the first game days too hard, the lever is `ATOM.shame.home.start`.
+  - *Tests* (`atomWorld.test.ts`, 27, about 45 s): the town is `labTown(0, { length: 800, streets: 7 })`
+    with every tier, a plant, a silo, a dome and a total war on the first rival, pacts and a deal with the
+    other two. The test town tops out at 2,600 residents, under `RAIDS.minPopulation`, so the declaration
+    tests lower that bar for their own run as `raid.test.ts` does (`lowBar`); a control without the mark
+    shares every one of those runs and must not declare. Mutations checked: the pariah branch of
+    `computerMoves` off, the guard in `reputationChange` off (also caught by the invariant), the sanction
+    needing ties, the chronicle's atom exemption off, the cheer term off and the home factor off each fail
+    their tests.

@@ -142,6 +142,7 @@ export const SANCTION = {
   relation: -15,
   /**
    * Computer neighbours sanction the city for these causes, each held as long as it is true:
+   *  - it fired the atom bomb (M40): every neighbour, with or without something to cut, for good;
    *  - it broke a pact with anyone (honourable and cautious ones only), for `lapseDays` days;
    *  - the neighbour is allied to one the city is at war with, until the war is over;
    *  - the city's reputation is below `reputation`.

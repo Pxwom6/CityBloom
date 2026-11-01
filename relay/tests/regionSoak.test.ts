@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { propose, raid } from '../../scripts/lib/soak/story';
+import { atomAct, propose, raid } from '../../scripts/lib/soak/story';
 import { runSoak } from '../../scripts/lib/soak/run';
 import type { SoakOptions } from '../../scripts/lib/soak/types';
 
@@ -148,4 +148,64 @@ describe('M39 step 10: the war soak', () => {
     expect(comebackAfterTimeUp).toBe(true);
     expect(result.failures.filter((f) => f.kind === 'away-at-end')).toEqual([]);
   }, 240_000);
+});
+
+/**
+ * M40 step 13: the atom bomb between friends, the story's last act. One city races to a ready bomb (by the test
+ * cheats, as the real game takes years), a total war is declared through the region, the region waits out its
+ * launch and keeps the strike, the target's city takes it and is hit, and the other cities have the winter.
+ */
+describe('M40 step 13: the atom act of the war soak', () => {
+  const act = (w: Parameters<typeof atomAct>[0]) => async () => {
+    await w.wait(8_000);
+    await atomAct(w, new Set(), new Set());
+  };
+
+  it('a strike at a friend is kept, taken once, fired once, lands, and the others have the winter once: no failures', async () => {
+    const { result, lines } = await runSoak(
+      { ...options(14), disturb: false, story: 'short' },
+      { story: (w) => act(w)() },
+    );
+    // (The short story's own coverage is the M39 acts', which this run does not play.)
+    const broken = result.failures.filter((f) => f.kind !== 'coverage');
+    expect(broken, lines.join('\n')).toEqual([]);
+    const c = result.coverage as Record<string, number>;
+    expect(c.bombsReady, lines.join('\n')).toBe(1);
+    expect(c.strikesKept).toBe(1);
+    expect(c.strikesTaken).toBe(1);
+    expect(c.bombsLanded).toBe(1);
+    expect(c.wintersTaken).toBe(3);
+    expect(result.atom.strikes).toHaveLength(1);
+    const s = result.atom.strikes[0]!;
+    expect(s).toMatchObject({ fired: 1, taken: 1, landed: 1, stopped: 0, phase: 'over' });
+    // The room's record holds the race, the strike and the landing; the winter chills the three other cities.
+    expect(result.atom.marks).toMatchObject({ ready: 1, fired: 1, boom: 1 });
+    expect(result.atom.winters).toHaveLength(1);
+    expect(result.atom.winters[0]).toMatchObject({ cities: expect.any(Array), sims: 3 });
+    expect(result.atom.winters[0]!.cities).toHaveLength(3);
+  }, 420_000);
+
+  it('catches a city that is told of the nuclear winter and never begins it', async () => {
+    const { result, lines } = await runSoak(
+      { ...options(14), disturb: false, story: 'short' },
+      {
+        // Lou's sim says yes to every winter and does nothing with it.
+        before: (w) => {
+          w.onBuilt = () => {
+            const sim = w.player('Lou').sim;
+            const dispatch = sim.dispatch.bind(sim);
+            sim.dispatch = ((cmd: Parameters<typeof dispatch>[0]) =>
+              cmd.type === 'friendWinter' ? { ok: true } : dispatch(cmd)) as typeof dispatch;
+          };
+        },
+        story: (w) => act(w)(),
+      },
+    );
+    const kinds = new Set(result.failures.map((f) => f.kind));
+    expect(kinds, lines.join('\n')).toContain('winter-missing');
+    // (Whichever two cities the dice chose, Lou is a bystander in some strike or the target of it; the winter is one the others hold.)
+    expect(result.failures.find((f) => f.kind === 'winter-missing')!.text).toMatch(
+      /never had the nuclear winter|its own city has 0 winters/,
+    );
+  }, 420_000);
 });

@@ -94,8 +94,18 @@ const loaded = (save: SaveFile): Sim => {
   return sim;
 };
 
-/** A page of the game for the bomb: the wars and treaties, the operations road, the atom sink, the strike taken. */
-export async function atomPage(o: Parameters<typeof friendsPage>[0], clock: Clock): Promise<AtomPage> {
+/**
+ * A page of the game for the bomb: the wars and treaties, the operations road, the atom sink, the strike taken.
+ * `onKeep` is told whenever the page saves the city for the room (`friendsPage`'s own); `afterTaken` runs
+ * when the city has taken an operation and before the room is told (the game saves the city then: M40
+ * step 13's soak keeps its autosave there, so a crash never loses a strike).
+ */
+export async function atomPage(
+  o: Parameters<typeof friendsPage>[0],
+  clock: Pick<Clock, 'now'>,
+  onKeep?: () => void,
+  afterTaken?: () => void,
+): Promise<AtomPage> {
   const sim = o.sim;
   const atom = new AtomRegion({
     command: async (cmd) => sim.dispatch(cmd),
@@ -116,7 +126,10 @@ export async function atomPage(o: Parameters<typeof friendsPage>[0], clock: Cloc
         if (ctl.hold) return 'later';
         if (!link.view?.cities.some((c) => c.slot === opOn.from)) return 'refused';
         const answer = await resolveOp({ command: async (cmd) => sim.dispatch(cmd) }, opOn);
-        if (answer === 'taken') strikes++;
+        if (answer === 'taken') {
+          strikes++;
+          afterTaken?.();
+        }
         return answer;
       },
       beforeStart: (l) => {
@@ -127,6 +140,7 @@ export async function atomPage(o: Parameters<typeof friendsPage>[0], clock: Cloc
       },
     },
     clock,
+    onKeep,
   )) as AtomPage;
   page.atom = atom;
   page.toasts = toasts;

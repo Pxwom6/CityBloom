@@ -1,11 +1,21 @@
-import { MAX_CITIES, REGION_LIMITS, type MemoryRegionStore } from '../../../relay/region';
+import {
+  MAX_CITIES,
+  REGION_LIMITS,
+  type MemoryRegionStore,
+  type RegionAtomMark,
+  type RegionWinter,
+} from '../../../relay/region';
 import type { FriendsState } from '../../../relay/friendsWar';
 import type { FriendWar, WarEvent } from '../../../relay/protocol';
+import { cleanAtomMarks, cleanWinters } from '../../../src/client/atomRegion';
+import { ATOM_WIRE } from '../../../src/data/atom';
 import { Battle } from '../../../src/sim/battle/battle';
 import type { BattleInput } from '../../../src/sim/battle/types';
 import type { Command, CommandResult } from '../../../src/sim/commands';
-import type { Sim } from '../../../src/sim/sim';
-import type { BattleLog, Cover, SoakOptions } from './types';
+import type { SaveFile } from '../../../src/sim/save';
+import { Sim } from '../../../src/sim/sim';
+import { isPariah, reputationOf } from '../../../src/sim/systems/diplomacy';
+import { ATOM_ACT, type BattleLog, type Cover, type SoakOptions, type StrikeLog } from './types';
 import type { Player, Soak } from './world';
 
 /**
@@ -16,7 +26,22 @@ import type { Player, Soak } from './world';
  * (`story.ts`) and the world (`world.ts`) only make things happen.
  */
 
-type Meta = { friends?: FriendsState; history?: WarEvent[] };
+/**
+ * What the soak reads of the room's record (`RegionMeta`): the wars and pacts, the history, and (M40) the bomb's
+ * permanent record, the winters it began, and what the room keeps of each city's race.
+ */
+type Meta = {
+  friends?: FriendsState;
+  history?: WarEvent[];
+  atoms?: RegionAtomMark[];
+  winters?: RegionWinter[];
+  cities?: {
+    slot: number;
+    name?: string;
+    atom?: { hit: number; boom: number; stopped: number; used?: true; rival?: true; struck?: number };
+    ops?: unknown[];
+  }[];
+};
 
 /** What a city looked like just before a command, for those whose effect is checked (`Soak.patch` makes it). */
 export interface Before {
@@ -75,6 +100,23 @@ export interface BudgetReport {
   lines: string[];
 }
 
+/** A sim event as the checks read it. */
+interface SimEventLike {
+  kind: string;
+  id?: number;
+  info?: Record<string, number | string>;
+}
+
+/** The sim events that follow a bomb: it leaves the silo, is held back, lands, or is stopped. */
+const ATOM_EVENTS = new Set([
+  'bombFired',
+  'launchHeld',
+  'strikeSent',
+  'bombWarning',
+  'bombLanded',
+  'bombStopped',
+]);
+
 export class Checks {
   readonly battles = new Map<string, BattleLog>();
   readonly simEvents = new Map<string, number>();
@@ -125,6 +167,16 @@ export class Checks {
   standInsHashed = 0;
   readonly standInsReplaced: { id: string; player: string; why: string }[] = [];
   readonly standInDamage: { id: string; player: string; buildings: number; wrecked: number }[] = [];
+  /** The atom strikes the region kept at a friend (M40 step 13), by `firer>target`. */
+  readonly strikes = new Map<string, StrikeLog>();
+  /** Marks of the bomb's record already seen (`slot:kind:at`), so each is counted once. */
+  private marksSeen = new Set<string>();
+  /** Fresh `friendWinter` applications, by player name and winter id. */
+  private winterTakes = new Map<string, number>();
+  /** A friend's cloud as a city took it in (`receiver:source`): the most it was given, and the totals that put air on the map. */
+  private clouds = new Map<string, { top: number; deposits: number[] }>();
+  /** The most each sim's `fallout.seen` has been (`receiver:generation:source`): it only ever rises. */
+  private seenMax = new Map<string, number>();
 
   constructor(private readonly w: Soak) {}
 
@@ -177,9 +229,12 @@ export class Checks {
     if (this.notices.length > 400) this.notices.shift();
   }
 
-  /** The sim's events of a frame, counted. */
-  events(_p: Player, events: readonly { kind: string }[]): void {
-    for (const e of events) this.simEvents.set(e.kind, (this.simEvents.get(e.kind) ?? 0) + 1);
+  /** The sim's events of a frame, counted (the bomb's are followed too: who fired, where it landed). */
+  events(p: Player, events: readonly SimEventLike[]): void {
+    for (const e of events) {
+      this.simEvents.set(e.kind, (this.simEvents.get(e.kind) ?? 0) + 1);
+      if (ATOM_EVENTS.has(e.kind)) this.atomEvent(p, e);
+    }
   }
 
   /**
@@ -264,6 +319,9 @@ export class Checks {
           );
       }
     } else if (cmd.type === 'friendTreaty' && r.ok) this.treatyApplied(p, cmd, was, sim);
+    else if (cmd.type === 'opResolve' && cmd.op === 'atom' && r.ok) this.strikeTaken(p, cmd.from, now);
+    else if (cmd.type === 'friendWinter' && r.ok) this.winterTaken(p, cmd.id, r, now);
+    else if (cmd.type === 'friendFallout' && r.ok) this.cloudTaken(p, cmd.from, cmd.total, r, now);
   }
 
   /**
@@ -427,12 +485,20 @@ export class Checks {
         if (!b.disturbed.length) this.w.covered('disturbedBattles');
         b.disturbed.push({ name: p.name, what, at: this.w.now() });
       }
+    // And a strike in the air or a blast on: a bad moment for the firer or the target while it lasts (M40 step 13).
+    for (const s of this.strikes.values())
+      if (s.phase !== 'over' && (s.firer === p.slot || s.target === p.slot)) {
+        if (!s.disturbed.length) this.w.covered('atomDisturbed');
+        s.disturbed.push({ name: p.name, what, at: this.w.now() });
+      }
   }
 
   /** Is anything waiting for this city, which a settled page would have taken (a treaty not yet seen, a battle kept for it)? */
   waitingFor(p: Player): boolean {
     if (!p.page) return false;
     if ((this.meta.friends?.queue[p.slot] ?? []).length) return true;
+    // A strike (or any operation) the region keeps for the city until its player takes it.
+    if ((this.meta.cities?.find((c) => c.slot === p.slot)?.ops ?? []).length) return true;
     for (const key of this.store.battles.keys()) if (key.startsWith(`${p.slot}:`)) return true;
     return false;
   }
@@ -502,6 +568,7 @@ export class Checks {
     this.harvest();
     this.queueSeen();
     this.consistency();
+    this.atomWatch();
     this.links();
     this.dues();
     this.forces();
@@ -553,6 +620,7 @@ export class Checks {
       w.covered('pacts');
     }
     for (const x of m.friends?.wars ?? []) if (x.state === 'open') this.warOpened.add(x.id);
+    this.atomHarvest();
   }
 
   /** The treaties waiting in the room's queues for a city to say it has seen them: every treaty signed shows there until then. */
@@ -732,6 +800,24 @@ export class Checks {
         problems.push(
           `${p.name}'s city has ${overlord ? `city ${overlord}` : 'no one'} for an overlord, the room says ${link ? `city ${link.overlord}` : 'no one'}`,
         );
+      // The bomb's record and winters (M40): the page keeps the room's record as it cleans it, and its city holds
+      // the winters the room began for it (and none of its own bombs': those are its sim's).
+      if (p.page.atom) {
+        const record = JSON.stringify(cleanAtomMarks(this.meta.atoms ?? []));
+        if (JSON.stringify(p.page.atom.atoms) !== record)
+          problems.push(
+            `${p.name}'s page keeps the bomb's record ${JSON.stringify(p.page.atom.atoms.map((m) => `${m.slot}:${m.kind}`))}, the room ${JSON.stringify(cleanAtomMarks(this.meta.atoms ?? []).map((m) => `${m.slot}:${m.kind}`))}`,
+          );
+        const due = cleanWinters(this.meta.winters ?? [], p.slot)
+          .map((x) => x.id)
+          .sort();
+        const held = (p.sim.state.weather?.winters ?? [])
+          .map((x) => x.id)
+          .filter((id) => !id.startsWith('self:'))
+          .sort();
+        if (due.join() !== held.join())
+          problems.push(`${p.name}'s city has the nuclear winters [${held}], the room began [${due}] for it`);
+      }
     }
     const next = new Map<string, number>();
     for (const t of problems) {
@@ -740,6 +826,527 @@ export class Checks {
       if (now - first > 25_000) w.fail('region', t);
     }
     this.pending = next;
+  }
+
+  // ---------------------------------------------------------------- the atom bomb between friends (M40 step 13)
+
+  /**
+   * The strike the region kept from `firer` at `target`, made the first time anything of it is seen (the room's
+   * mark that the bomb has left, the firer's sim firing it, the target's sim taking it).
+   */
+  private strikeOf(firer: number, target: number): StrikeLog {
+    const id = `${firer}>${target}`;
+    let s = this.strikes.get(id);
+    if (!s) {
+      const name = (slot: number) => this.w.bySlot(slot)?.name ?? `city ${slot}`;
+      s = {
+        id,
+        firer,
+        target,
+        firerName: name(firer),
+        targetName: name(target),
+        keptAt: this.w.now(),
+        keptTicket: this.w.ticket(),
+        taken: 0,
+        fired: 0,
+        landed: 0,
+        stopped: 0,
+        phase: 'kept',
+        disturbed: [],
+      };
+      this.strikes.set(id, s);
+      this.w.covered('strikesKept');
+      this.w.note(`the region keeps ${s.firerName}'s atom strike at ${s.targetName}`);
+      this.w.onAtom?.('kept', s);
+    }
+    return s;
+  }
+
+  /**
+   * A city did something once in the bomb's story and has now done it `n` times (`key` says what): a second
+   * time is a failure unless a restore from an older save between the two lost the first (the soak's crash).
+   */
+  private repeat(p: Player, key: string, n: number, kind: string, text: string, now: number): void {
+    const prev = this.lastAt.get(key);
+    this.lastAt.set(key, now);
+    if (n <= 1) return;
+    if (prev !== undefined && this.rewoundSince(p, prev)) {
+      this.rewinds++;
+      this.w.note(`${text} again: ${p.name}'s city came back from a save older than the first time`);
+    } else
+      this.w.fail(
+        kind,
+        `${text} ${n} times, and ${p.name}'s city was not restored from an older save in between`,
+      );
+  }
+
+  /** The target's city took the strike the region kept (the countdown begins from now, on its own clock). */
+  private strikeTaken(p: Player, from: number, now: number): void {
+    const s = this.strikeOf(from, p.slot);
+    s.taken++;
+    this.w.covered('strikesTaken');
+    this.repeat(
+      p,
+      `strike:${s.id}:taken`,
+      s.taken,
+      'strike-twice',
+      `${p.name}'s city took ${s.firerName}'s atom strike`,
+      now,
+    );
+    if (s.phase === 'kept') {
+      s.phase = 'taken';
+      this.w.note(`${p.name}'s city takes ${s.firerName}'s atom strike: the countdown begins`);
+      this.w.onAtom?.('taken', s);
+    }
+  }
+
+  /** What a city's sim says of the bomb as it happens: it leaves the silo, is held back, is warned of, lands, is stopped. */
+  private atomEvent(p: Player, e: SimEventLike): void {
+    const now = this.w.ticket();
+    const slotOf = (id: number | undefined) =>
+      p.sim.state.region.neighbours.find((n) => n.id === id)?.player?.slot;
+    if (e.kind === 'launchHeld') {
+      this.w.covered('strikesHeld');
+      this.w.note(`${p.name}'s bomb is held back: ${String(e.info?.why ?? 'no reason given')}`);
+      return;
+    }
+    if (e.kind === 'strikeSent') {
+      this.w.note(`${p.name}'s bomb is put to the region for ${String(e.info?.to ?? 'a friend')}`);
+      return;
+    }
+    if (e.kind === 'bombWarning') {
+      this.w.note(
+        `${p.name}'s city is warned of a bomb from ${String(e.info?.from)}: ${String(e.info?.hours)} hours to go`,
+      );
+      return;
+    }
+    const other = slotOf(e.id);
+    if (other === undefined) return;
+    if (e.kind === 'bombFired') {
+      const s = this.strikeOf(p.slot, other);
+      s.fired++;
+      this.repeat(
+        p,
+        `strike:${s.id}:fired`,
+        s.fired,
+        'strike-twice',
+        `${p.name}'s city fired its atom bomb at ${s.targetName}`,
+        now,
+      );
+      return;
+    }
+    // A bomb lands or is stopped over this city (`other` is the firer).
+    const s = this.strikeOf(other, p.slot);
+    if (e.kind === 'bombLanded') {
+      s.landed++;
+      this.w.covered('bombsLanded');
+      this.repeat(
+        p,
+        `strike:${s.id}:landed`,
+        s.landed,
+        'strike-twice',
+        `${s.firerName}'s atom bomb landed on ${p.name}'s city`,
+        now,
+      );
+      if (s.phase !== 'over' && s.phase !== 'landed') {
+        s.phase = 'landed';
+        this.w.note(`${s.firerName}'s atom bomb lands on ${p.name}'s city`);
+        this.w.onAtom?.('landed', s);
+      }
+    } else if (e.kind === 'bombStopped') {
+      s.stopped++;
+      s.phase = 'over';
+      this.w.note(`${p.name}'s dome stops ${s.firerName}'s atom bomb`);
+      this.w.onAtom?.('stopped', s);
+    }
+  }
+
+  /** A city began the nuclear winter the region gave it (an id seen again is only acknowledged by the sim: not counted). */
+  private winterTaken(p: Player, id: string, r: CommandResult, now: number): void {
+    if (r.ok && r.info?.already) return;
+    const key = `${p.name}:${id}`;
+    const n = (this.winterTakes.get(key) ?? 0) + 1;
+    this.winterTakes.set(key, n);
+    this.w.covered('wintersTaken');
+    this.w.note(`${p.name}'s city begins the nuclear winter ${id}`);
+    this.repeat(
+      p,
+      `winter:${key}`,
+      n,
+      'winter-twice',
+      `${p.name}'s city began the nuclear winter ${id}`,
+      now,
+    );
+  }
+
+  /**
+   * A friend's cloud reached a city (`friendFallout`): it puts air on the map once for a total, the most it was
+   * ever given is kept as a high-water mark (a total at or below it adds nothing), and the total is no more than
+   * the bombs the region has on record could make. A restore from an older save forgets the mark, and says so.
+   */
+  private cloudTaken(p: Player, from: number, total: number, r: CommandResult, now: number): void {
+    const key = `${p.name}:${from}`;
+    const c = this.clouds.get(key) ?? { top: 0, deposits: [] };
+    this.clouds.set(key, c);
+    const put = r.ok ? Number(r.info?.deposited ?? 0) : 0;
+    if (put > 0) {
+      this.w.covered('falloutIn');
+      const prev = this.lastAt.get(`cloud:${key}`);
+      this.lastAt.set(`cloud:${key}`, now);
+      if (total <= c.top) {
+        if (prev !== undefined && this.rewoundSince(p, prev)) {
+          this.rewinds++;
+          this.w.note(
+            `${p.name}'s city takes the cloud from city ${from} (${total}) into its air again: it came back from a save older than the first time`,
+          );
+        } else
+          this.w.fail(
+            'fallout-twice',
+            `${p.name}'s city put air on its map for a cloud from city ${from} of ${total} with ${c.top} already taken in (a total at or below the high-water mark adds nothing)`,
+          );
+      }
+      c.deposits.push(total);
+      this.w.note(`${p.name}'s city takes in a cloud from city ${from}: total ${total}, ${put} on the map`);
+    }
+    if (total > c.top) c.top = total;
+    const limit = this.cloudLimit();
+    if (total > limit + 1e-6)
+      this.w.fail(
+        'fallout-bound',
+        `${p.name}'s city was given a cloud of ${total} from city ${from}, when the bombs on record in the region (${this.bombsOnRecord()}) could make ${limit} at most`,
+      );
+  }
+
+  /** Bombs that have fallen in the region as far as the room has taken them as news (its own count). */
+  private bombsOnRecord(): number {
+    let n = 0;
+    for (const c of this.meta.cities ?? []) n += (c.atom?.hit ?? 0) + (c.atom?.rival ? 1 : 0);
+    return n;
+  }
+
+  /** The thickest cloud the room believes: no more than the air of the bombs on record. */
+  private cloudLimit(): number {
+    return Math.min(ATOM_WIRE.plumeMax, ATOM_WIRE.plumePerBomb * this.bombsOnRecord());
+  }
+
+  /** The bomb's record as the room keeps it, read as it comes: each mark counted once, a kept strike followed from here. */
+  private atomHarvest(): void {
+    const w = this.w;
+    for (const m of this.meta.atoms ?? []) {
+      const key = `${m.slot}:${m.kind}:${m.at}`;
+      if (this.marksSeen.has(key)) continue;
+      this.marksSeen.add(key);
+      if (m.kind === 'ready') {
+        w.covered('bombsReady');
+        this.lastAt.set(`ready:${m.slot}`, w.ticket());
+      }
+      if (m.kind === 'fired' && m.to !== undefined) this.strikeOf(m.slot, m.to);
+      w.note(
+        `region record of the bomb: ${m.name} ${m.kind}${m.to !== undefined ? ` at city ${m.to}` : ''}${m.first ? ' (the first in the region)' : ''}`,
+      );
+    }
+    // The room's own copy of each city's report: no cloud thicker than the bombs on record could make.
+    const limit = this.cloudLimit();
+    for (const c of this.meta.cities ?? []) {
+      const r = (c as { report?: { atom?: { plume?: { slot: number; total: number }[] } } }).report;
+      for (const pl of r?.atom?.plume ?? [])
+        if (pl.total > limit + 1e-6)
+          w.fail(
+            'fallout-bound',
+            `the room holds a cloud of ${pl.total} from city ${c.slot} over city ${pl.slot}, when the bombs on record (${this.bombsOnRecord()}) could make ${limit} at most`,
+          );
+    }
+  }
+
+  /** Every second: where each strike stands (the blast over?), and each city's clouds only ever rise. */
+  private atomWatch(): void {
+    const w = this.w;
+    for (const s of this.strikes.values()) {
+      if (s.phase === 'over') continue;
+      const t = w.bySlot(s.target);
+      if (t?.page && t.sim.state.war?.atom?.impact?.over && s.landed > 0) {
+        s.phase = 'over';
+        w.note(`the blast of ${s.firerName}'s atom bomb on ${s.targetName} is over`);
+        w.onAtom?.('over', s);
+      }
+    }
+    for (const p of w.players) {
+      const seen = p.page ? p.sim.state.fallout?.seen : undefined;
+      if (!seen) continue;
+      for (const [from, v] of Object.entries(seen)) {
+        const key = `${p.name}:${p.gen}:${from}`;
+        const last = this.seenMax.get(key) ?? 0;
+        if (v < last - 1e-9)
+          w.fail(
+            'fallout-regress',
+            `${p.name}'s city has taken in less of the cloud from city ${from} than it had (${v} after ${last}): the mark of what it has taken in only ever rises`,
+          );
+        if (v > ATOM_WIRE.plumeMax)
+          w.fail(
+            'fallout-bound',
+            `${p.name}'s city has taken in ${v} of the cloud from city ${from}, past the ${ATOM_WIRE.plumeMax} a region can make`,
+          );
+        this.seenMax.set(key, Math.max(last, v));
+      }
+    }
+  }
+
+  /** A strike is in the air or its blast is on: the run is not done until it is. */
+  atomBusy(): boolean {
+    return [...this.strikes.values()].some((s) => s.phase !== 'over');
+  }
+
+  /**
+   * The bomb's judges at the end of the run (M40 step 13). The region kept some strikes; for each: the firer's
+   * city fired once (never twice, never lost), the target's city took it once (never twice, never lost) and has
+   * what became of it, the firer is a pariah in the room and in its own sim; for each bomb that landed, every
+   * other city has the nuclear winter the room began for it exactly once, by its id; the room's record holds the
+   * marks of the race, the strike and the landing; and no cloud took more into a city than it should. What a
+   * restore from an older save lost (a crash) is excused, and said.
+   */
+  atomEnd(): void {
+    const marks = this.meta.atoms ?? [];
+    this.marksEnd(marks);
+    for (const s of this.strikes.values()) this.strikeEnd(s, marks);
+    this.wintersEnd();
+    this.cloudsEnd();
+    this.roundTrips();
+  }
+
+  /**
+   * How a city hashes before and after its save is loaded again (a reload does just that, a crash does it from an
+   * older save). A test swaps it for stand-in cities.
+   */
+  roundTrip: (sim: Sim) => { before: string; after: string } = (sim) => {
+    const copy = Sim.fromSave(JSON.parse(JSON.stringify(sim.save())) as SaveFile);
+    copy.testMode = true;
+    return { before: sim.hash(), after: copy.hash() };
+  };
+
+  /**
+   * A bomb in the region changes cities in ways the first sixty years of saves never held (an impact in hand, a
+   * nuclear winter, a cloud on the map): every city that is here must save and load as the city it is.
+   */
+  private roundTrips(): void {
+    if (!this.strikes.size) return;
+    for (const p of this.w.players) {
+      if (!p.page) continue;
+      const r = this.roundTrip(p.sim);
+      if (r.before !== r.after)
+        this.w.fail(
+          'atom-roundtrip',
+          `${p.name}'s city, saved and loaded again after the bomb, hashes ${r.after} where it hashes ${r.before}`,
+        );
+    }
+  }
+
+  /** The record of the bomb: one mark of each kind for what each city did once, one first finisher, a mark for each kept strike and landing. */
+  private marksEnd(marks: RegionAtomMark[]): void {
+    const w = this.w;
+    const name = (slot: number) => w.bySlot(slot)?.name ?? `city ${slot}`;
+    for (const kind of ['ready', 'fired'] as const) {
+      const seen = new Map<number, number>();
+      for (const m of marks) if (m.kind === kind) seen.set(m.slot, (seen.get(m.slot) ?? 0) + 1);
+      for (const [slot, n] of seen)
+        if (n > 1)
+          w.fail(
+            'atoms-record',
+            `the region's record of the bomb has ${name(slot)} as ${kind === 'ready' ? 'having the bomb' : 'having fired it'} ${n} times: a city does each once`,
+          );
+    }
+    const firsts = marks.filter((m) => m.first);
+    const ready = marks.filter((m) => m.kind === 'ready');
+    if (firsts.length > 1)
+      w.fail('atoms-record', `the region's record of the bomb names ${firsts.length} first finishers`);
+    else if (ready.length && firsts[0] !== ready[0])
+      w.fail(
+        'atoms-record',
+        `the first finisher of the bomb should be ${ready[0]!.name}, whose mark came first, and the record has ${firsts[0] ? firsts[0].name : 'none'}`,
+      );
+    // The first finisher's own city holds the word (the achievement's fact), unless a restore lost it.
+    if (firsts[0]) {
+      const p = w.bySlot(firsts[0].slot);
+      if (
+        p?.page &&
+        !p.sim.state.war?.atom?.first &&
+        !this.rewoundSince(p, this.lastAt.get(`ready:${p.slot}`) ?? 0)
+      )
+        w.fail(
+          'atoms-record',
+          `${p.name} finished the bomb first and its city does not hold the word (the region told its page)`,
+        );
+    }
+  }
+
+  private strikeEnd(s: StrikeLog, marks: RegionAtomMark[]): void {
+    const w = this.w;
+    const F = w.bySlot(s.firer);
+    const T = w.bySlot(s.target);
+    const who = `${s.firerName}'s atom strike at ${s.targetName}`;
+    // The record: one mark that it was fired at this city, and one that it landed if it did.
+    const fired = marks.filter((m) => m.kind === 'fired' && m.slot === s.firer);
+    if (fired.length !== 1 || fired[0]!.to !== s.target)
+      w.fail(
+        'atoms-record',
+        `the region kept ${who} and its record has ${fired.length} marks that ${s.firerName} fired${fired.length ? ` (at ${fired.map((m) => m.to).join(', ')})` : ''}`,
+      );
+    if (s.landed > 0 && !marks.some((m) => m.kind === 'boom' && m.slot === s.target))
+      w.fail(
+        'atoms-record',
+        `${who} landed and the region's record has no mark that it fell on ${s.targetName}`,
+      );
+    // The firer: fired it once, and the world turned on it.
+    if (F?.page) {
+      if (s.fired === 0) {
+        if (this.rewoundSince(F, s.keptTicket))
+          this.excuse(`${s.firerName}'s city never fired ${who}: it came back from a save older than that`);
+        else
+          w.fail(
+            'strike-lost',
+            `the region kept ${who} and ${s.firerName}'s city never fired its bomb (the strike is lost to the firer)`,
+          );
+      } else {
+        const atom = F.sim.state.war?.atom;
+        const prev = this.lastAt.get(`strike:${s.id}:fired`) ?? s.keptTicket;
+        if (atom?.fired?.slot !== s.target) {
+          if (this.rewoundSince(F, prev))
+            this.excuse(
+              `${s.firerName}'s city no longer holds that it fired ${who}: it came back from a save older than that`,
+            );
+          else
+            w.fail(
+              'strike-lost',
+              `${s.firerName}'s city fired ${who} and no longer holds it (its bomb is ${atom?.fired ? `fired at city ${atom.fired.slot}` : atom?.have ? 'back in the silo' : 'nowhere'})`,
+            );
+        }
+        const pariahs = this.meta.friends?.pariahs ?? {};
+        if (pariahs[s.firer] === undefined)
+          w.fail('pariah', `${s.firerName} fired ${who} and the region does not hold it a pariah`);
+        const sim = F.sim;
+        if (!isPariah(sim) || reputationOf(sim) !== 0) {
+          if (this.rewoundSince(F, prev))
+            this.excuse(`${s.firerName}'s city is no pariah: it came back from a save older than the strike`);
+          else
+            w.fail(
+              'pariah',
+              `${s.firerName}'s city fired ${who} and is ${isPariah(sim) ? '' : 'not '}a pariah with a reputation of ${reputationOf(sim)} (a city that fires the bomb is a pariah for good, with none)`,
+            );
+        }
+      }
+    }
+    // The target: took it once, and has what became of it; the region holds nothing for it.
+    if (T?.page) {
+      const atom = T.sim.state.war?.atom;
+      if (s.taken === 0) {
+        if (this.rewoundSince(T, s.keptTicket))
+          this.excuse(`${s.targetName}'s city never took ${who}: it came back from a save older than that`);
+        else
+          w.fail(
+            'strike-lost',
+            `the region kept ${who} and ${s.targetName}'s city never took it (the strike is lost to the target)`,
+          );
+      } else {
+        const prev = this.lastAt.get(`strike:${s.id}:taken`) ?? s.keptTicket;
+        const struck = (atom?.struck ?? []).filter((x) => x === s.firer).length;
+        if (struck !== 1) {
+          if (this.rewoundSince(T, prev))
+            this.excuse(
+              `${s.targetName}'s city does not hold that it took ${who}: it came back from a save older than that`,
+            );
+          else
+            w.fail(
+              'strike-twice',
+              `${s.targetName}'s city took ${who} and holds ${struck} strikes from ${s.firerName} (it is one a city, ever)`,
+            );
+        } else if (!atom?.inbound && !atom?.impact && !(atom?.stopped ?? 0) && !(atom?.boom ?? 0)) {
+          w.fail(
+            'strike-lost',
+            `${s.targetName}'s city took ${who} and the bomb is nowhere: not in the air, not landed, not stopped`,
+          );
+        }
+      }
+      const ops = this.meta.cities?.find((c) => c.slot === s.target)?.ops ?? [];
+      if (ops.length)
+        w.fail(
+          'strike-unseen',
+          `the region still holds ${ops.length} operations for ${s.targetName}, whose city is in the region (${who} among them?)`,
+        );
+    }
+    if (s.phase !== 'over' && s.taken > 0 && T?.page && T.sim.state.war?.atom?.inbound)
+      w.note(`at the end ${who} was still in the air (time ran out)`);
+  }
+
+  /** The winters: every bomb that landed has one in the room, and every other city has it once, by its id. */
+  private wintersEnd(): void {
+    const w = this.w;
+    const list = this.meta.winters ?? [];
+    const landedOn = new Map<number, number>();
+    for (const s of this.strikes.values())
+      if (s.landed > 0) landedOn.set(s.target, (landedOn.get(s.target) ?? 0) + 1);
+    for (const [slot, n] of landedOn) {
+      const began = list.filter((x) => x.id.startsWith(`${slot}-`)).length;
+      const name = w.bySlot(slot)?.name ?? `city ${slot}`;
+      if (began < n)
+        w.fail(
+          'winter-missing',
+          `${n} atom bombs landed on ${name} and the region began ${began} nuclear winters for the other cities`,
+        );
+      const t = w.bySlot(slot);
+      const own = (t?.sim.state.weather?.winters ?? []).filter((x) => x.id.startsWith('self:')).length;
+      if (t?.page && own < n && !this.rewoundSince(t, this.landTicket(slot)))
+        w.fail(
+          'winter-missing',
+          `${n} atom bombs landed on ${name} and its own city has ${own} winters of its own`,
+        );
+    }
+    const slots = w.players.map((p) => p.slot).sort((a, b) => a - b);
+    for (const win of list) {
+      const from = Number(win.id.split('-')[0]);
+      const chilled = slots.filter((x) => x !== from);
+      if ([...win.slots].sort((a, b) => a - b).join() !== chilled.join())
+        w.fail(
+          'winter-reach',
+          `the region's winter ${win.id} chills cities [${win.slots}], when every city but ${from} was here to be chilled [${chilled}]`,
+        );
+      for (const p of w.players) {
+        if (!p.page) continue;
+        const has = (p.sim.state.weather?.winters ?? []).filter((x) => x.id === win.id).length;
+        const wants = win.slots.includes(p.slot) && p.slot !== from ? 1 : 0;
+        if (has === wants) continue;
+        if (has > wants)
+          w.fail(
+            'winter-twice',
+            `${p.name}'s city has the nuclear winter ${win.id} ${has} times, not ${wants}`,
+          );
+        else
+          w.fail(
+            'winter-missing',
+            `${p.name}'s city never had the nuclear winter ${win.id} that the region began for it`,
+          );
+      }
+    }
+  }
+
+  /** The ticket of the first landing on a city. */
+  private landTicket(slot: number): number {
+    let t = 0;
+    for (const s of this.strikes.values())
+      if (s.target === slot) t = Math.max(t, this.lastAt.get(`strike:${s.id}:landed`) ?? 0);
+    return t;
+  }
+
+  /** The clouds: what each city took in of a friend's is within what a region can make. */
+  private cloudsEnd(): void {
+    const w = this.w;
+    for (const p of w.players) {
+      const seen = p.page ? p.sim.state.fallout?.seen : undefined;
+      for (const [from, v] of Object.entries(seen ?? {}))
+        if (v > this.cloudLimit() + 1e-6)
+          w.fail(
+            'fallout-bound',
+            `${p.name}'s city has taken in ${v} of the cloud from city ${from}, when the bombs on record (${this.bombsOnRecord()}) could make ${this.cloudLimit()} at most`,
+          );
+    }
   }
 
   // ---------------------------------------------------------------- the end
@@ -771,6 +1378,7 @@ export class Checks {
     this.applications();
     this.forcesEnd();
     this.treatiesEnd();
+    this.atomEnd();
     this.rowsEnd();
   }
 
@@ -1065,6 +1673,18 @@ export function required(o: SoakOptions): [Cover, number][] {
   // A force that arrived while its defender was away is fought the old way, and the defender takes the battle on its return.
   if (o.disturb && m >= 30) need.push(['oldBattles', 1]);
   if (o.crash && m >= 25) need.push(['crashes', 1]);
+  // M40's atom act, late in the run: a city races to a ready bomb, the region keeps its strike at a friend, the
+  // friend's city takes it, it lands, and the others have the winter. A long run plays it twice.
+  if (m >= ATOM_ACT.needs)
+    need.push(
+      ['bombsReady', 1],
+      ['strikesKept', 1],
+      ['strikesTaken', 1],
+      ['bombsLanded', 1],
+      ['wintersTaken', 3],
+    );
+  if (m >= ATOM_ACT.second) need.push(['strikesKept', 2], ['bombsLanded', 2], ['wintersTaken', 6]);
+  if (o.disturb && m >= ATOM_ACT.second) need.push(['atomDisturbed', 1]);
   return need;
 }
 
@@ -1085,5 +1705,10 @@ export function notCoveredByLength(o: SoakOptions): string[] {
     out.push(
       'a force that came home from helping, a combatant disturbed in a battle, a handover (60 minutes)',
     );
+  if (m < ATOM_ACT.needs)
+    out.push(
+      `the atom bomb: a race, a strike at a friend, its landing and the winters (${ATOM_ACT.needs} minutes)`,
+    );
+  else if (m < ATOM_ACT.second) out.push(`a second atom strike (${ATOM_ACT.second} minutes)`);
   return out;
 }

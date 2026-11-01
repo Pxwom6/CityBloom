@@ -10,12 +10,21 @@ import { Rng } from '../../../src/sim/rng';
 import type { SaveFile } from '../../../src/sim/save';
 import { Sim } from '../../../src/sim/sim';
 import { TICKS_PER_MONTH } from '../../../src/sim/time';
-import { settle, friendsPage, type FwPage } from '../../../tests/war/friendsHarness';
+import { atomPage, type AtomPage } from '../../../tests/war/atomFriendsHarness';
+import { settle } from '../../../tests/war/friendsHarness';
 import { flush, loopTo } from '../../../tests/war/liveHarness';
 import { friend, liveTown, regionOf, type LiveTown } from '../../../tests/war/liveTown';
 import { Bots } from './bots';
 import { before, Checks } from './checks';
-import { COVER_KEYS, sleep, type BattleLog, type Cover, type Failure, type SoakOptions } from './types';
+import {
+  COVER_KEYS,
+  sleep,
+  type BattleLog,
+  type Cover,
+  type Failure,
+  type SoakOptions,
+  type StrikeLog,
+} from './types';
 
 /**
  * The soak's world (M39 step 10): four cities' pages in a region at war, each a sim, a `RegionLink`
@@ -56,7 +65,7 @@ interface Waiter {
 
 /** One of the four players: a city that may be open in a page, or closed (the tab shut, a reload on the way). */
 export class Player {
-  page: FwPage | null = null;
+  page: AtomPage | null = null;
   sim!: Sim;
   slot = 0;
   secret = '';
@@ -130,6 +139,15 @@ export class Soak {
   stopped = false;
   /** Told when a city sends its force against another's (the story's disturbances use it). */
   onRaid: ((att: Player, def: Player) => void) | null = null;
+  /** The two cities of the bomb's story while it is on (firer, target): nobody else raids between them. */
+  atomPair: [number, number] | null = null;
+  /**
+   * Told as an atom strike moves on (M40 step 13): the region keeps it (`kept`), the target's city takes it
+   * and its countdown begins (`taken`), the bomb lands (`landed`) or is stopped (`stopped`). The story's
+   * disturbances use it to give the firer or the target a bad moment in the countdown or the blast.
+   */
+  onAtom: ((phase: 'kept' | 'taken' | 'landed' | 'stopped' | 'over', strike: StrikeLog) => void) | null =
+    null;
   /** Called when the cities are built and before they open pages (a test's own mischief with a city's sim). */
   onBuilt: ((w: Soak) => void) | null = null;
   readonly failures: Failure[] = [];
@@ -144,6 +162,11 @@ export class Soak {
   private seconds = 0;
   behind = 0;
   private rejections = 0;
+
+  /** How long the room waits before it keeps a friend's atom strike (ms): a minute, not the online room's twenty. */
+  get atomPrep(): number {
+    return this.opts.atomPrep ?? 60_000;
+  }
 
   constructor(readonly opts: SoakOptions) {
     this.rng = Rng.fromSeed(opts.seed);
@@ -267,7 +290,10 @@ export class Soak {
     this.patch(p, sim);
     p.sim = sim;
     const rejoin = p.slot && p.secret ? { slot: p.slot, secret: p.secret } : undefined;
-    const page = await friendsPage(
+    const alive = () => p.sim === sim && (p.page ? p.page.ticking : p.opening);
+    // The page of the game as it is since M40: wars and treaties, the operations road, the atom sink (the
+    // region's winters and clouds), and the city taking an operation against it, saved before the region is told.
+    const page = await atomPage(
       {
         connect: this.connector(p, first),
         clock: this.clock,
@@ -281,7 +307,10 @@ export class Soak {
         link: this.linkOptions(),
       },
       this.clock,
-      () => this.autosave(p),
+      // (The sim that is saving, not the page's: a strike offered in the welcome is taken before the page is made.
+      // A page that has died saves nothing, whatever its last message still does.)
+      () => alive() && this.autosave(p, sim),
+      () => alive() && this.autosave(p, sim),
     );
     p.page = page;
     p.slot = page.link.slot;
@@ -318,10 +347,14 @@ export class Soak {
     };
   }
 
-  /** The city saved to its autosave (the game does so every five minutes, and as a battle begins or a treaty is applied). */
-  private autosave(p: Player): void {
-    if (!p.page) return;
-    p.autosave = p.page.sim.save();
+  /**
+   * The city saved to its autosave (the game does so every five minutes, and as a battle begins, a treaty is
+   * applied or an operation against the city is taken). `sim` is the city that is saving, when it is not yet
+   * the page's (an operation offered in a returning page's welcome).
+   */
+  private autosave(p: Player, sim: Sim | undefined = p.page?.sim): void {
+    if (!sim) return;
+    p.autosave = sim.save();
     p.autosaveAt = this.now();
     p.autosaveN = this.ticket();
   }
@@ -379,11 +412,15 @@ export class Soak {
 
   async setup(): Promise<void> {
     if (this.opts.mode === 'real') {
-      this.relay = await startRelay(this.opts.port ?? 0);
+      this.relay = await startRelay(this.opts.port ?? 0, null, {
+        regionLimits: { atomPrep: this.atomPrep },
+      });
       this.code = makeCode('online');
     } else {
       this.code = makeCode('online');
-      this.room = new RegionRoom(this.code, 'local', new MemoryRegionStore(), this.clock as FakeClock, {});
+      this.room = new RegionRoom(this.code, 'local', new MemoryRegionStore(), this.clock as FakeClock, {
+        atomPrep: this.atomPrep,
+      });
     }
     await this.build();
     this.onBuilt?.(this);
@@ -685,6 +722,7 @@ export class Soak {
     const returned = this.now();
     const until = returned + 180_000;
     const busy = () =>
+      this.checks.atomBusy() ||
       this.players.some((p) => {
         const s = p.page?.live.state();
         const exp = p.sim.state.war?.expeditions?.some((e) => e.state === 'fighting');

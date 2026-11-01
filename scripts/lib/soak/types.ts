@@ -35,9 +35,16 @@ export interface SoakOptions {
   port?: number;
   /**
    * The story: `full` plays every part (two wars, an alliance and its help, a treaty, a total war to a
-   * conquest and the vassal's dues); `short` only what fits in a few minutes of room time.
+   * conquest and the vassal's dues, and late in the run M40's atom bomb: a race, a total war, a strike
+   * the region keeps, a landing and the winters it brings); `short` only what fits in a few minutes of
+   * room time, with no bomb.
    */
   story: 'full' | 'short';
+  /**
+   * How long the region waits before it keeps a friend's atom strike, in ms of room time (the real
+   * room's 20 minutes would be a fifth of the milestone's run: the e2e's relay shortens it the same way).
+   */
+  atomPrep?: number;
 }
 
 export interface Failure {
@@ -81,6 +88,31 @@ export interface BattleLog {
   judged?: { ok: boolean; explained?: string; problem?: string };
 }
 
+/**
+ * A friend's atom strike the region kept, as the soak followed it (M40 step 13): the firer's bomb has left
+ * its silo and the region has told the target. Each count is of fresh applications by that city's sim.
+ */
+export interface StrikeLog {
+  /** The firer's place and the target's, e.g. `1>3`. */
+  id: string;
+  firer: number;
+  target: number;
+  firerName: string;
+  targetName: string;
+  /** Room ms the strike was first seen kept, and its ticket (see `Soak.ticket`). */
+  keptAt: number;
+  keptTicket: number;
+  /** The target's sim took the strike (and began the countdown); the firer's sim fired; the bomb landed; the dome stopped it. */
+  taken: number;
+  fired: number;
+  landed: number;
+  stopped: number;
+  /** Where it stands: the region has it; the target's city has it (the countdown runs); it landed; the blast is over (or it was stopped). */
+  phase: 'kept' | 'taken' | 'landed' | 'over';
+  /** Players who dropped, left, reloaded or crashed while it was in the air or the blast was on (name, what, when). */
+  disturbed: { name: string; what: string; at: number }[];
+}
+
 /** One kind of thing the story did, counted so the report can say what the soak covered. */
 export type Cover =
   | 'raids'
@@ -107,7 +139,16 @@ export type Cover =
   | 'leaves'
   | 'crashes'
   | 'handovers'
-  | 'disturbedBattles';
+  | 'disturbedBattles'
+  // M40's atom bomb between friends: the race, the strike the region kept, what the cities made of it.
+  | 'bombsReady'
+  | 'strikesKept'
+  | 'strikesHeld'
+  | 'strikesTaken'
+  | 'bombsLanded'
+  | 'wintersTaken'
+  | 'falloutIn'
+  | 'atomDisturbed';
 
 export const COVER_KEYS: Cover[] = [
   'raids',
@@ -135,6 +176,26 @@ export const COVER_KEYS: Cover[] = [
   'crashes',
   'handovers',
   'disturbedBattles',
+  'bombsReady',
+  'strikesKept',
+  'strikesHeld',
+  'strikesTaken',
+  'bombsLanded',
+  'wintersTaken',
+  'falloutIn',
+  'atomDisturbed',
 ];
+
+/**
+ * When the story's atom act is played (M40 step 13). It begins late, so the M39 acts have happened: at
+ * `from` of the run, and never before minute `earliest`. One act needs about `minutes` of room time (the
+ * region's wait for a launch, the war's warning, a countdown of three minutes, the blast and the winters,
+ * with a disturbance or two); a run of `needs` minutes has room for one, a run of `second` for two.
+ */
+export const ATOM_ACT = { from: 0.5, earliest: 25, minutes: 28, needs: 60, second: 110 };
+
+/** The minute of the run the first atom act begins. */
+export const atomStartMinute = (minutes: number): number =>
+  Math.max(ATOM_ACT.earliest, Math.floor(minutes * ATOM_ACT.from));
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

@@ -1,7 +1,17 @@
 import type { BattleTarget } from '../../../src/data/battle';
 import type { FriendTerm, FriendWar } from '../../../relay/protocol';
 import type { FriendsState } from '../../../relay/friendsWar';
+import type { RegionAtomMark } from '../../../relay/region';
+import { ATOM } from '../../../src/data/atom';
+import { TIER_KEYS } from '../../../src/data/research';
+import type { RegionWarRules } from '../../../src/data/war';
+import type { Command } from '../../../src/sim/commands';
+import type { Sim } from '../../../src/sim/sim';
+import { atomHour, civicOfDef } from '../../../src/sim/systems/atom';
+import { friendsSummary } from '../../../src/sim/systems/friendsWar';
+import { connectPoint, placeAlong } from '../../../tests/helpers';
 import { homeUnits } from './bots';
+import { ATOM_ACT, atomStartMinute, type StrikeLog } from './types';
 import type { Player, Soak } from './world';
 
 /**
@@ -302,7 +312,9 @@ async function filler(w: Soak): Promise<void> {
     const up = w.players.filter((p) => p.up);
     if (up.length < 3) continue;
     const a = up[rng.int(up.length)]!;
-    const others = up.filter((p) => p !== a && raidsLeft(a, p) > 0);
+    // (Nobody raids between the two cities of the bomb's story while it is on: a skirmish's score or a ceasefire
+    // would turn the strike away for reasons that are not the bomb's.)
+    const others = up.filter((p) => p !== a && raidsLeft(a, p) > 0 && !atomPaired(w, a, p));
     if (!others.length) continue;
     const b = others[rng.int(others.length)]!;
     if (rng.next() < 0.7) await raid(w, a, b);
@@ -329,6 +341,359 @@ async function rising(w: Soak, kit: Player, lou: Player): Promise<void> {
   else w.note(`Louton's rising ends with the score at ${warBetween(w, lou, kit)?.score}`);
 }
 
+// ---------------------------------------------------------------- the atom act (M40 step 13)
+
+/** The region's rules once the bomb is allowed: total war and superweapons, which it needs, and the bomb itself. */
+const BOMB_RULES: RegionWarRules = { war: true, scale: 'total', supers: true, bomb: true };
+
+/** Are these two the cities of the bomb's story, which is on? */
+const atomPaired = (w: Soak, a: Player, b: Player): boolean =>
+  !!w.atomPair &&
+  ((w.atomPair[0] === a.slot && w.atomPair[1] === b.slot) ||
+    (w.atomPair[0] === b.slot && w.atomPair[1] === a.slot));
+
+type RoomAtom = {
+  meta: {
+    rules?: { bomb?: boolean };
+    host?: number;
+    atoms?: RegionAtomMark[];
+    cities?: { slot: number; atom?: { prep?: number; used?: true } }[];
+  };
+};
+const roomMeta = (w: Soak) => (w.room as unknown as RoomAtom).meta;
+
+/** The region has kept this city's strike at a friend (its record says its bomb has left). */
+const strikeKept = (w: Soak, f: Player): boolean =>
+  !!roomMeta(w).atoms?.some((m) => m.kind === 'fired' && m.slot === f.slot);
+
+/**
+ * A command or test cheat the act needs of a city. A refusal is the act's miss (the story could not do what it
+ * meant to), never a failure of the game: whether the soak covered what it should is the report's business.
+ */
+function must(w: Soak, p: Player, cmd: Command): boolean {
+  const r = p.sim.dispatch(cmd);
+  if (!r.ok)
+    w.miss(`${p.name}'s city refused ${cmd.type}${'cheat' in cmd ? ` ${cmd.cheat}` : ''}: ${r.reason}`);
+  return r.ok;
+}
+
+/** The host turns the bomb on in the region's rules, and every city that is here hears it. */
+async function bombRules(w: Soak): Promise<boolean> {
+  if (roomMeta(w).rules?.bomb) return true;
+  const host = w.bySlot(roomMeta(w).host ?? 1);
+  if (!host || !(await whenUp(w, [host], 8 * MIN))) return false;
+  host.page!.link.setRules(BOMB_RULES);
+  w.note(`${host.name}, who made the region, turns the atom bomb on in its rules`);
+  if (!(await w.until('the rules to hold the bomb', () => !!roomMeta(w).rules?.bomb, 20_000))) return false;
+  // Every page that is here has been told; one that is away is told on its return.
+  await w.until(
+    'the cities to hear the rules',
+    () => w.players.every((p) => !p.up || p.sim.state.region.rules?.bomb === true),
+    60_000,
+  );
+  return true;
+}
+
+/**
+ * Two cities that can go to a total war and a strike: both here, neither at war with the other in a smaller
+ * way, the firer free to declare (no pact, no vassal, not neutral) and not a city whose one bomb is spent;
+ * a city a bomb has levelled races no more, if another can.
+ */
+async function atomPair(w: Soak, fired: Set<number>, struck: Set<number>): Promise<[Player, Player] | null> {
+  const give = w.now() + 8 * MIN;
+  while (!w.over && w.now() < give) {
+    const cands: [Player, Player][] = [];
+    for (const f of w.players)
+      for (const t of w.players) {
+        if (f === t || fired.has(f.slot) || !f.up || !t.up) continue;
+        // (A vassal can’t launch the bomb, a neutral city goes to no war, and a city's own vassal is not a target.)
+        const d = f.sim.state.war?.diplomacy;
+        const tn = f.sim.state.region.neighbours.find((n) => n.player?.slot === t.slot);
+        if (d?.vassal || d?.neutral || (tn && d?.subjects?.some((x) => x.with === tn.id))) continue;
+        const open = warBetween(w, f, t);
+        if (open) {
+          if (open.scale === 'total' && open.state === 'open') cands.push([f, t]);
+          continue;
+        }
+        const sum = friendsSummary(f.sim).find((x) => x.slot === t.slot);
+        if (sum && sum.declare === null) cands.push([f, t]);
+      }
+    if (cands.length) {
+      // (Better two cities with no force out: a total war declared on a city a force is on its way to turns
+      // that battle away, which is the region's way but takes the other acts' raids from the run.)
+      const idle = (p: Player) => !p.sim.state.war?.expeditions?.length;
+      const calm = cands.filter(([f, t]) => idle(f) && idle(t));
+      const fresh = (calm.length ? calm : cands).filter(([f]) => !struck.has(f.slot));
+      const pool = fresh.length ? fresh : calm.length ? calm : cands;
+      return pool[w.rng.int(pool.length)]!;
+    }
+    await w.wait(20_000);
+  }
+  return null;
+}
+
+/** Roads of the street that runs east from the end of the town's avenue, where the race's big buildings go. */
+function eastStreet(sim: Sim): number[] {
+  const c = connectPoint(sim);
+  const net = sim.state.net;
+  const out: number[] = [];
+  for (const [id, seg] of net.segments) {
+    const a = net.nodes.get(seg.a);
+    const b = net.nodes.get(seg.b);
+    if (a && b && a.x >= c.x + 470 && b.x >= c.x + 470 && Math.abs(a.z - c.z) < 6 && Math.abs(b.z - c.z) < 6)
+      out.push(id);
+  }
+  return out;
+}
+
+/** Put one of the race's buildings down on the street east of the town (made if the city lacks it). */
+function raceSite(w: Soak, p: Player, def: string): boolean {
+  const sim = p.sim;
+  let segs = eastStreet(sim);
+  if (!segs.length) {
+    const c = connectPoint(sim);
+    const r = sim.dispatch({
+      type: 'buildRoad',
+      road: 'street',
+      points: [
+        { x: c.x + 480, z: c.z },
+        { x: c.x + 800, z: c.z },
+      ],
+    });
+    if (!r.ok) {
+      w.miss(`${p.name}'s city could not lay a street for the ${def}: ${r.reason}`);
+      return false;
+    }
+    segs = eastStreet(sim);
+  }
+  for (const seg of segs)
+    try {
+      placeAlong(sim, def, seg);
+      return true;
+    } catch {
+      /* the next street */
+    }
+  w.miss(`${p.name}'s city has no room for the ${def}`);
+  return false;
+}
+
+/** The crews are in and the power is on at the plant and the silo (a town this small could not crew them itself). */
+function crew(sim: Sim): void {
+  for (const def of ['enrichment', 'atomsilo']) {
+    const c = civicOfDef(sim, def);
+    if (c) {
+      c.staff = 1;
+      c.powered = 1;
+    }
+  }
+}
+
+/**
+ * The city's race, by the test cheats, to a launch half prepared at that neighbour: every research branch, the
+ * nuclear plant, the enrichment plant and the silo (finished), fuel and a bomb. What the real game takes years
+ * for is the soak's setting, not its subject; the strike and what follows are.
+ */
+function stageRace(w: Soak, p: Player, to: number): boolean {
+  if (!must(w, p, { type: 'cheat', cheat: 'addMoney', amount: 120_000_000 })) return false;
+  if (!must(w, p, { type: 'cheat', cheat: 'research', tiers: [...TIER_KEYS] })) return false;
+  for (const def of ['militaryhq', 'nuclear', 'enrichment', 'atomsilo']) {
+    if (!civicOfDef(p.sim, def) && !raceSite(w, p, def)) return false;
+    const c = civicOfDef(p.sim, def);
+    if (c?.build && !must(w, p, { type: 'cheat', cheat: 'finishStages', civic: c.id })) return false;
+  }
+  if (!must(w, p, { type: 'cheat', cheat: 'atom', stage: 'preparing', to })) return false;
+  crew(p.sim);
+  return true;
+}
+
+/** The rest of the launch's preparation is worked hour by hour (it is 288 of the war's hours); the bomb then goes to the region. */
+function finishPrep(sim: Sim): void {
+  for (let k = 0; k < ATOM.launch.prepHours + 4; k++) {
+    const prep = sim.state.war?.atom?.prep;
+    if (!prep || prep.send || prep.done >= ATOM.launch.prepHours) return;
+    atomHour(sim);
+  }
+}
+
+/**
+ * The firer's bomb to the region's keeping: the race staged, the room seeing the launch prepared on its own
+ * clock for as long as it waits, the preparation finished and the bomb sent (again, when the region turned it
+ * away: its target's player not here, or the wait not over). Whether the region kept the strike.
+ */
+async function fireBomb(w: Soak, F: Player, T: Player): Promise<boolean> {
+  const give = w.now() + 14 * MIN;
+  let sentTo = '';
+  let lastRefusal = '';
+  let refusals = 0;
+  while (!w.over && w.now() < give) {
+    if (strikeKept(w, F)) return true;
+    if (!(await whenUp(w, [F, T], 4 * MIN))) continue;
+    const to = F.sim.state.region.neighbours.find((n) => n.player?.slot === T.slot)?.id;
+    if (to === undefined) {
+      await w.wait(5_000);
+      continue;
+    }
+    if (warBetween(w, F, T)?.state !== 'open') {
+      w.miss(`${F.name}'s total war on ${T.name} is no longer open: no strike`);
+      return false;
+    }
+    // The race, once (again if a restore from an older save has taken it back).
+    let a = F.sim.state.war?.atom;
+    // (A launch prepared at another city, from an act that came to nothing, is called off and made anew.)
+    if (a?.prep && a.prep.to !== to && !a.prep.send) {
+      F.sim.dispatch({ type: 'cancelLaunch' });
+      a = F.sim.state.war?.atom;
+    }
+    if (!a?.prep) {
+      if (!stageRace(w, F, to)) return false;
+      w.note(`${F.name}'s bomb is ready and a launch at ${T.name} is half prepared`);
+      await F.page!.link.reportNow(true);
+      await w.wait(1_000);
+      continue;
+    }
+    // The region has seen the launch prepared for as long as it waits (its own clock, from the first report that says so).
+    const since = roomMeta(w).cities?.find((c) => c.slot === F.slot)?.atom?.prep;
+    if (since === undefined) {
+      await F.page!.link.reportNow(true);
+      await w.wait(3_000);
+      continue;
+    }
+    const wait = since + w.atomPrep + 3_000 - w.now();
+    if (wait > 0) {
+      await w.wait(Math.min(wait, 10_000));
+      continue;
+    }
+    // The preparation is finished and the bomb is sent: the page puts it to the region at its next frame.
+    crew(F.sim);
+    finishPrep(F.sim);
+    a = F.sim.state.war?.atom;
+    const prep = a?.prep;
+    if (prep && prep.done >= ATOM.launch.prepHours && !prep.send && !a?.fired) {
+      const r = F.sim.dispatch({ type: 'launchBomb', to });
+      if (!r.ok) {
+        w.miss(`${F.name}'s bomb could not be sent at ${T.name}: ${r.reason}`);
+        // The same refusal three times is not a moment that will pass (a vassal, a neutral city, a war of another size).
+        refusals = r.reason === lastRefusal ? refusals + 1 : 1;
+        lastRefusal = r.reason;
+        if (refusals >= 3) return false;
+        await w.wait(15_000);
+        continue;
+      }
+    }
+    await w.until(
+      `the region’s answer on ${F.name}’s strike`,
+      () => strikeKept(w, F) || !!F.sim.state.war?.atom?.prep?.refused,
+      30_000,
+    );
+    const refused = F.sim.state.war?.atom?.prep?.refused;
+    if (refused && refused !== sentTo) {
+      sentTo = refused;
+      w.note(`the region turns ${F.name}'s bomb away: ${refused}`);
+    }
+    if (refused && /only ever one/.test(refused)) {
+      w.miss(`the region has ${F.name}'s bomb as used and the city does not (a restore from an older save?)`);
+      return false;
+    }
+    if (refused) await w.wait(10_000);
+  }
+  return strikeKept(w, F);
+}
+
+/** Have the cities that are here (but the target) the winter the region began for the bomb that fell on `target`? */
+function wintered(w: Soak, target: Player): boolean {
+  const ids = (roomMeta(w) as unknown as { winters?: { id: string }[] }).winters
+    ?.filter((x) => x.id.startsWith(`${target.slot}-`))
+    .map((x) => x.id);
+  if (!ids?.length) return false;
+  return w.players.every(
+    (p) => !p.up || p === target || ids.every((id) => p.sim.state.weather?.winters?.some((x) => x.id === id)),
+  );
+}
+
+/** What follows a kept strike: the target takes it, the countdown, the landing, the blast, the winters and, if the wind carries one, a cloud. */
+async function followStrike(w: Soak, s: StrikeLog): Promise<void> {
+  const T = w.bySlot(s.target)!;
+  if (!(await w.until(`${s.targetName}’s city to take the strike`, () => s.taken > 0, 10 * MIN)))
+    return void w.miss(`${s.targetName}'s city did not take ${s.firerName}'s strike within ten minutes`);
+  if (!(await w.until('the bomb to land', () => s.landed > 0 || s.stopped > 0, 8 * MIN)))
+    return void w.miss(
+      `${s.firerName}'s bomb had not landed on ${s.targetName} eight minutes after it was taken`,
+    );
+  await w.until('the blast to be over', () => s.phase === 'over', 8 * MIN);
+  if (!(await w.until('the other cities to have the winter', () => wintered(w, T), 4 * MIN)))
+    w.miss(`not every city had the nuclear winter of ${s.targetName} four minutes after it landed`);
+  // A cloud over a border towards a friend takes game hours to get there (and some winds carry it off the map):
+  // waited for a while, and no more than the run has time for.
+  const had = w.cover.falloutIn;
+  const room = (w.opts.minutes - w.minutes() - 3) * MIN;
+  if (room > 0) await w.until('a cloud to come in', () => w.cover.falloutIn > had, Math.min(7 * MIN, room));
+  if (w.cover.falloutIn === had) w.note(`no cloud had crossed a border to a friend of ${s.targetName} yet`);
+}
+
+/**
+ * One act of the bomb: the region allows it, two cities that can are chosen, a total war is declared and opens
+ * after its warning, the firer races to a ready bomb and sends it, the region keeps the strike, the target
+ * takes it (no dome stands in these towns, so it lands), and the others have the winter. Whether it came to a
+ * strike.
+ */
+export async function atomAct(w: Soak, fired: Set<number>, struck: Set<number>): Promise<boolean> {
+  if (!(await bombRules(w))) {
+    if (!w.over) w.miss('the region would not turn the atom bomb on');
+    return false;
+  }
+  for (let tries = 0; tries < 4 && !w.over; tries++) {
+    const pair = await atomPair(w, fired, struck);
+    if (!pair) {
+      if (!w.over) w.miss('no two cities could go to a total war and a strike');
+      return false;
+    }
+    const [F, T] = pair;
+    w.atomPair = [F.slot, T.slot];
+    w.note(`the atom act: ${F.name} will race to the bomb and strike ${T.name}`);
+    try {
+      const open = warBetween(w, F, T);
+      const war =
+        open?.scale === 'total' && open.state === 'open'
+          ? open
+          : await declare(w, F, T, 'total', 'The race for the bomb');
+      if (!war) continue;
+      if (!(await fireBomb(w, F, T))) {
+        if (!w.over) w.miss(`the region did not keep ${F.name}'s strike at ${T.name}`);
+        continue;
+      }
+      const s = w.checks.strikes.get(`${F.slot}>${T.slot}`);
+      if (!s) {
+        w.miss(`the region kept ${F.name}'s strike and the soak has no record of it`);
+        return false;
+      }
+      fired.add(F.slot);
+      struck.add(T.slot);
+      await followStrike(w, s);
+      w.note(`the atom act is over: ${F.name}'s bomb and ${T.name}`);
+      return true;
+    } finally {
+      w.atomPair = null;
+    }
+  }
+  return false;
+}
+
+/** The atom acts of a run, late in it: one, or two in a long run (a second city races, and may strike back at a pariah). */
+export async function atomActs(w: Soak): Promise<void> {
+  const acts = w.opts.minutes >= ATOM_ACT.second ? 2 : 1;
+  const fired = new Set<number>();
+  const struck = new Set<number>();
+  if (!(await w.wait(Math.max(0, atomStartMinute(w.opts.minutes) * MIN - (w.now() - w.start))))) return;
+  for (let k = 0; k < acts && !w.over; k++) {
+    if (k > 0 && w.minutes() + ATOM_ACT.minutes > w.opts.minutes) {
+      w.miss('no time left for a second strike');
+      break;
+    }
+    if (!(await atomAct(w, fired, struck)) && !w.over) w.miss(`atom act ${k + 1} came to no strike`);
+    if (k + 1 < acts && !(await w.wait(3 * MIN))) break;
+  }
+}
+
 export async function story(w: Soak): Promise<void> {
   const [ada, sam, kit, lou] = w.players as [Player, Player, Player, Player];
   const full = w.opts.story === 'full';
@@ -344,6 +709,8 @@ export async function story(w: Soak): Promise<void> {
   await Promise.all(arcs);
   if (!full) return;
   const rest = [guard('filler', () => filler(w)), guard('rising', () => rising(w, kit, lou))];
+  // Late in the run, once the M39 acts have been played: the atom bomb between friends (M40 step 13).
+  rest.push(guard('atom', () => atomActs(w)));
   await Promise.all(rest);
 }
 
@@ -370,8 +737,9 @@ export function disturbances(w: Soak): void {
     }
     return round.shift()!;
   };
-  const disturb = async (p: Player) => {
-    const kind = nextKind();
+  const disturb = async (p: Player, forced?: 'drop' | 'outage' | 'reload' | 'away' | 'crash') => {
+    // (A crash asked for in a run that does not crash is the player leaving for a while.)
+    const kind = forced ? (forced === 'crash' && !w.opts.crash ? 'away' : forced) : nextKind();
     if (kind === 'drop') w.drop(p);
     else if (kind === 'outage')
       w.outage(p, w.opts.mode === 'virtual' ? 12_000 + rng.int(10_000) : 20_000 + rng.int(70_000));
@@ -390,6 +758,32 @@ export function disturbances(w: Soak): void {
       again(MIN + rng.int(4 * MIN));
     });
   again(90_000 + rng.int(MIN));
+  // The bomb (M40 step 13): the interesting case is a bad moment for the firer or the target in the countdown or
+  // the blast, so each strike has two, whatever the dice would have chosen: the first strike's target crashes in
+  // the countdown (it comes back from the save it made as it took the strike) and its firer in the blast; the
+  // second's firer loses the network in the countdown and its target crashes in the blast (the bomb then lands
+  // again in the city that comes back, which the region's record and the winters must not count twice).
+  let strikes = 0;
+  const bad = [
+    { taken: ['target', 'crash'], landed: ['firer', 'crash'] },
+    { taken: ['firer', 'outage'], landed: ['target', 'crash'] },
+  ] as const;
+  w.onAtom = (phase, s) => {
+    if (phase === 'kept') {
+      strikes++;
+      return;
+    }
+    if (phase !== 'taken' && phase !== 'landed') return;
+    const [side, kind] = bad[Math.min(strikes, bad.length) - 1]![phase];
+    const who = w.bySlot(side === 'firer' ? s.firer : s.target);
+    if (!who) return;
+    // (The blast of a small town is over in two seconds of room time, so a bad moment in it comes at once.)
+    w.later(phase === 'taken' ? 20_000 + rng.int(40_000) : 300 + rng.int(1_200), async () => {
+      if (w.over || !who.up) return;
+      w.note(`${who.name} has a bad moment in the ${phase === 'taken' ? 'countdown' : 'blast'} of ${s.id}`);
+      await disturb(who, kind);
+    });
+  };
   // The old way: from its third raid on, the first whose defender is here has its player leave a little after
   // the force sets out and stay away past its arrival, so the region can only keep the battle for the defender
   // to take on its return (a long run is sure to have one).

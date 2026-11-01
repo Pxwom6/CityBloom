@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Battle } from '../../src/sim/battle/battle';
 import type { BattleInput } from '../../src/sim/battle/types';
 import { Checks, notCoveredByLength, required, type Before } from '../../scripts/lib/soak/checks';
+import { ATOM_ACT, atomStartMinute } from '../../scripts/lib/soak/types';
 import { parseArgs } from '../../scripts/dev/regionsoak';
 import type { BattleLog, SoakOptions } from '../../scripts/lib/soak/types';
 
@@ -706,5 +707,476 @@ describe('M39 step 10 review: the command line', () => {
     expect(a.values.get('speed')).toBe('2');
     expect(a.flags.has('virtual')).toBe(true);
     expect(parseArgs(['--seed', '7']).minutes).toBeUndefined();
+  });
+});
+
+describe('M40 step 13: the atom bomb between friends', () => {
+  /**
+   * Four cities as the judges read them: Ada (1) fired her one bomb at Sam (2), whose city took the strike and was
+   * hit; Kit (3) and Lou (4) look on. The room's record holds the marks, the winter 2-1 chills the other three,
+   * and each city has what it should. A test spoils one thing and asks what the judges make of it.
+   */
+  function atomWorld() {
+    const neighbours = (of: number[]) => of.map((slot) => ({ id: 10 + slot, player: { slot } }));
+    /** A city as the atom judges read it: a stand-in player whose sim state has the bomb's facts too. */
+    type AtomPlayer = Omit<ReturnType<typeof player>, 'sim'> & {
+      gen?: number;
+      sim: {
+        state: {
+          war: {
+            atom: Record<string, unknown>;
+            diplomacy: Record<string, unknown>;
+          };
+          weather: { winters: { id: string }[] };
+          fallout: { seen: Record<number, number> };
+        };
+      };
+    };
+    const city = (name: string, slot: number, others: number[], atom: object, extra: object = {}) =>
+      player(name, slot, {
+        up: true,
+        upSince: 0,
+        sim: {
+          state: {
+            war: {
+              taken: [] as string[],
+              expeditions: [],
+              diplomacy: { pacts: [], subjects: [], wars: [] },
+              reports: [],
+              atom,
+              ...extra,
+            },
+            economy: { month: {} },
+            region: { neighbours: neighbours(others) },
+            weather: { winters: [] as { id: string }[] },
+            fallout: { seen: {} as Record<number, number> },
+          },
+        },
+      }) as unknown as AtomPlayer;
+    const ada = city(
+      'Ada',
+      1,
+      [2, 3, 4],
+      { fuel: 0, boom: 0, stopped: 0, fired: { slot: 2, to: 12, tick: 1 }, first: true },
+      {
+        diplomacy: { pacts: [], subjects: [], wars: [], pariah: { tick: 1 }, reputation: 80 },
+      },
+    );
+    const sam = city('Sam', 2, [1, 3, 4], {
+      fuel: 0,
+      boom: 1,
+      stopped: 0,
+      struck: [1],
+      impact: { done: 1, fled: 0, x: 0, z: 0 },
+    });
+    const kit = city('Kit', 3, [1, 2, 4], { fuel: 0, boom: 0, stopped: 0 });
+    const lou = city('Lou', 4, [1, 2, 3], { fuel: 0, boom: 0, stopped: 0 });
+    for (const p of [ada, kit, lou]) p.sim.state.weather.winters.push({ id: '2-1' });
+    sam.sim.state.weather.winters.push({ id: 'self:1' });
+    const wd = world([ada, sam, kit, lou]);
+    // (The stand-in cities cannot be saved and loaded: the round trip is tried apart, below.)
+    wd.checks.roundTrip = () => ({ before: 'a1', after: 'a1' });
+    const meta = wd.room.meta as unknown as Record<string, unknown>;
+    meta.atoms = [
+      { slot: 1, name: 'Adaville', kind: 'ready', at: 1, first: true },
+      { slot: 1, name: 'Adaville', kind: 'fired', at: 2, to: 2 },
+      { slot: 2, name: 'Samford', kind: 'boom', at: 3 },
+    ];
+    meta.winters = [{ id: '2-1', at: 3, slots: [1, 3, 4] }];
+    meta.cities = [
+      { slot: 1, atom: { hit: 0, boom: 0, stopped: 0, used: true } },
+      { slot: 2, atom: { hit: 1, boom: 1, stopped: 0, struck: 1 }, ops: [] },
+      { slot: 3, atom: { hit: 0, boom: 0, stopped: 0 } },
+      { slot: 4, atom: { hit: 0, boom: 0, stopped: 0 } },
+    ];
+    (meta.friends as { pariahs?: Record<number, number> }).pariahs = { 1: 2 };
+    const strikeOp = {
+      type: 'opResolve',
+      from: 1,
+      id: 'ao-1',
+      op: 'atom',
+      outcome: 'success',
+      late: false,
+    } as never;
+    const winter = { type: 'friendWinter', id: '2-1' } as never;
+    /** What the soak saw happen, in order: the region keeps the strike, Ada fires, Sam takes it and is hit, the others chill. */
+    const play = () => {
+      (wd.checks as unknown as { atomHarvest(): void }).atomHarvest();
+      wd.checks.events(ada as never, [{ kind: 'bombFired', id: 12 }]);
+      wd.checks.applied(sam as never, 1, strikeOp, OK);
+      wd.checks.events(sam as never, [{ kind: 'bombLanded', id: 11 }]);
+      for (const p of [ada, kit, lou]) wd.checks.applied(p as never, 1, winter, OK);
+    };
+    return { ...wd, ada, sam, kit, lou, meta, strikeOp, winter, play };
+  }
+  const kinds = (fails: Fail[]) => fails.map((f) => f.kind);
+
+  it('is content when the strike was kept once, fired once, taken once, landed, and every other city has the winter once', () => {
+    const g = atomWorld();
+    g.play();
+    g.checks.atomEnd();
+    expect(g.fails).toEqual([]);
+    expect(g.covered).toEqual(
+      expect.arrayContaining(['strikesKept', 'strikesTaken', 'bombsLanded', 'wintersTaken']),
+    );
+    expect(g.covered.filter((k) => k === 'wintersTaken')).toHaveLength(3);
+    const s = g.checks.strikes.get('1>2')!;
+    expect(s).toMatchObject({ taken: 1, fired: 1, landed: 1, phase: 'landed' });
+  });
+
+  describe('a strike taken or fired twice, or a bomb landed twice', () => {
+    it('fails the target’s second take, the firer’s second firing and a second landing', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.applied(g.sam as never, 1, g.strikeOp, OK);
+      g.checks.events(g.ada as never, [{ kind: 'bombFired', id: 12 }]);
+      g.checks.events(g.sam as never, [{ kind: 'bombLanded', id: 11 }]);
+      expect(kinds(g.fails)).toEqual(['strike-twice', 'strike-twice', 'strike-twice']);
+      expect(g.fails[0]!.text).toMatch(/Sam's city took Ada's atom strike 2 times/);
+      expect(g.fails[1]!.text).toMatch(/Ada's city fired its atom bomb at Sam 2 times/);
+      expect(g.fails[2]!.text).toMatch(/Ada's atom bomb landed on Sam's city 2 times/);
+    });
+
+    it('excuses each when a restore from an older save lay between the two, and says so', () => {
+      const g = atomWorld();
+      g.play();
+      // Sam crashed and came back from an autosave made before it took the strike, and was warned and hit again.
+      const saved = 0;
+      g.sam.restores.push({ n: g.ticket(), fromN: saved });
+      g.ada.restores.push({ n: g.ticket(), fromN: saved });
+      g.checks.applied(g.sam as never, 2, g.strikeOp, OK);
+      g.checks.events(g.sam as never, [{ kind: 'bombLanded', id: 11 }]);
+      g.checks.events(g.ada as never, [{ kind: 'bombFired', id: 12 }]);
+      expect(g.fails).toEqual([]);
+      expect(g.checks.rewinds).toBe(3);
+    });
+  });
+
+  describe('a strike the region kept that one of the two cities never had', () => {
+    it('fails a target that never took it, and a firer that never fired', () => {
+      const g = atomWorld();
+      (g.checks as unknown as { atomHarvest(): void }).atomHarvest();
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toContain('strike-lost');
+      const texts = g.fails.filter((f) => f.kind === 'strike-lost').map((f) => f.text);
+      expect(texts.some((t) => /Ada's city never fired its bomb/.test(t))).toBe(true);
+      expect(texts.some((t) => /Sam's city never took it/.test(t))).toBe(true);
+    });
+
+    it('excuses them for a city that came back from a save older than the keeping, and says so', () => {
+      const g = atomWorld();
+      const saved = g.ticket();
+      (g.checks as unknown as { atomHarvest(): void }).atomHarvest();
+      for (const p of [g.ada, g.sam]) p.restores.push({ n: g.ticket(), fromN: saved });
+      g.checks.atomEnd();
+      expect(g.fails.filter((f) => f.kind === 'strike-lost')).toEqual([]);
+      expect(g.checks.excused.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('fails a target that took the strike and has no bomb anywhere (not in the air, not landed, not stopped)', () => {
+      const g = atomWorld();
+      g.play();
+      const atom = g.sam.sim.state.war.atom as Record<string, unknown>;
+      delete atom.impact;
+      atom.boom = 0;
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(/the bomb is nowhere/);
+    });
+
+    it('fails a firer whose city no longer holds that it fired, and a target that holds the strike twice', () => {
+      const g = atomWorld();
+      g.play();
+      delete (g.ada.sim.state.war.atom as Record<string, unknown>).fired;
+      (g.sam.sim.state.war.atom as { struck: number[] }).struck = [1, 1];
+      g.checks.atomEnd();
+      const texts = g.fails.map((f) => f.text).join('\n');
+      expect(texts).toMatch(/Ada's city fired Ada's atom strike at Sam and no longer holds it/);
+      expect(texts).toMatch(/holds 2 strikes from Ada/);
+    });
+
+    it('fails an operation the region still holds for a target that is here', () => {
+      const g = atomWorld();
+      g.play();
+      (g.meta.cities as { slot: number; ops?: unknown[] }[])[1]!.ops = [{ id: 'ao-1' }];
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['strike-unseen']);
+    });
+  });
+
+  describe('the winters', () => {
+    it('fails a city that never had the winter the region began for it, and a city that has it twice', () => {
+      const g = atomWorld();
+      g.play();
+      g.kit.sim.state.weather.winters.length = 0;
+      g.lou.sim.state.weather.winters.push({ id: '2-1' });
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['winter-missing', 'winter-twice']);
+      expect(g.fails[0]!.text).toMatch(/Kit's city never had the nuclear winter 2-1/);
+      expect(g.fails[1]!.text).toMatch(/Lou's city has the nuclear winter 2-1 2 times, not 1/);
+    });
+
+    it('fails a bomb that landed with no winter in the region, a winter that misses a city, and a target without its own', () => {
+      const g = atomWorld();
+      g.play();
+      g.meta.winters = [{ id: '2-1', at: 3, slots: [1, 3] }];
+      g.sam.sim.state.weather.winters.length = 0;
+      g.checks.atomEnd();
+      const texts = g.fails.map((f) => `${f.kind}: ${f.text}`).join('\n');
+      expect(texts).toMatch(/winter-reach: the region's winter 2-1 chills cities \[1,3\]/);
+      expect(texts).toMatch(
+        /winter-missing: 1 atom bombs landed on Sam and its own city has 0 winters of its own/,
+      );
+      expect(texts).toMatch(/winter-twice: Lou's city has the nuclear winter 2-1 1 times, not 0/);
+      g.fails.length = 0;
+      g.meta.winters = [];
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(
+        /1 atom bombs landed on Sam and the region began 0/,
+      );
+    });
+
+    it('fails a second fresh application of the same winter, unless a restore lay between', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.applied(g.kit as never, 1, g.winter, OK);
+      expect(kinds(g.fails)).toEqual(['winter-twice']);
+      expect(g.fails[0]!.text).toMatch(/Kit's city began the nuclear winter 2-1 2 times/);
+      g.fails.length = 0;
+      // Told again, the sim only says it has it: not an application.
+      g.checks.applied(g.lou as never, 1, g.winter, { ok: true, info: { already: 1 } } as never);
+      expect(g.fails).toEqual([]);
+      // Lou crashed and came back from a save older than the first time, and was given the winter again.
+      g.lou.restores.push({ n: g.ticket(), fromN: 0 });
+      g.checks.applied(g.lou as never, 2, g.winter, OK);
+      expect(g.fails).toEqual([]);
+    });
+  });
+
+  describe('a friend’s cloud', () => {
+    const cloud = (from: number, total: number, deposited: number) =>
+      [
+        { type: 'friendFallout', from, total, base: 0 } as never,
+        { ok: true, info: { deposited } } as never,
+      ] as const;
+
+    it('fails a cloud that puts air on the map for a total at or below the most it was given', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 40, 1.5));
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 60, 0.9));
+      // A total it has had before, or a lower one, adds nothing: air on the map for it is a second cloud.
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 60, 0.4));
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 20, 0.3));
+      expect(kinds(g.fails)).toEqual(['fallout-twice', 'fallout-twice']);
+      expect(g.fails[0]!.text).toMatch(/of 60 with 60 already taken in/);
+      expect(g.covered.filter((k) => k === 'falloutIn')).toHaveLength(4);
+    });
+
+    it('is content with a total heard again that adds nothing, and with a first sight that is only a baseline', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 40, 0));
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 40, 0));
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 55, 1.2));
+      expect(g.fails).toEqual([]);
+    });
+
+    it('excuses air put on again after a restore from an older save forgot the mark', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 40, 1.5));
+      g.kit.restores.push({ n: g.ticket(), fromN: 0 });
+      g.checks.applied(g.kit as never, 2, ...cloud(2, 40, 1.5));
+      expect(g.fails).toEqual([]);
+      expect(g.checks.rewinds).toBe(1);
+    });
+
+    it('fails a cloud thicker than the bombs on record could make, in a city and in the room’s copy of a report', () => {
+      const g = atomWorld();
+      g.play();
+      // One bomb is on record (Sam's): a cloud can be 700 at most.
+      g.checks.applied(g.kit as never, 1, ...cloud(2, 701, 0));
+      expect(kinds(g.fails)).toEqual(['fallout-bound']);
+      g.fails.length = 0;
+      (g.meta.cities as unknown as { report?: object }[])[1]!.report = {
+        atom: { plume: [{ slot: 3, total: 900 }] },
+      };
+      (g.checks as unknown as { atomHarvest(): void }).atomHarvest();
+      expect(kinds(g.fails)).toEqual(['fallout-bound']);
+      expect(g.fails[0]!.text).toMatch(/the room holds a cloud of 900 from city 2 over city 3/);
+    });
+
+    it('fails a city whose mark of what it has taken in goes down, though a reload may start it again', () => {
+      const g = atomWorld();
+      const second = () => (g.checks as unknown as { atomWatch(): void }).atomWatch();
+      g.kit.sim.state.fallout.seen[2] = 40;
+      second();
+      g.kit.sim.state.fallout.seen[2] = 12;
+      second();
+      expect(kinds(g.fails)).toEqual(['fallout-regress']);
+      // A city loaded again is a new generation: its mark begins from what its save held.
+      g.fails.length = 0;
+      (g.kit as { gen?: number }).gen = 1;
+      second();
+      expect(g.fails).toEqual([]);
+    });
+  });
+
+  describe('the pariah and the record', () => {
+    it('fails a firer the region does not hold a pariah, and a city that is none in its own sim', () => {
+      const g = atomWorld();
+      g.play();
+      (g.meta.friends as { pariahs?: Record<number, number> }).pariahs = {};
+      delete (g.ada.sim.state.war.diplomacy as Record<string, unknown>).pariah;
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['pariah', 'pariah']);
+      expect(g.fails[0]!.text).toMatch(/does not hold it a pariah/);
+      expect(g.fails[1]!.text).toMatch(/is not a pariah with a reputation of 80/);
+    });
+
+    it('fails a record with a bomb fired or ready twice, no mark for the strike, or the first finisher on the wrong mark', () => {
+      const g = atomWorld();
+      g.play();
+      const atoms = g.meta.atoms as {
+        slot: number;
+        name: string;
+        kind: string;
+        at: number;
+        to?: number;
+        first?: true;
+      }[];
+      atoms.push({ slot: 1, name: 'Adaville', kind: 'fired', at: 4, to: 2 });
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(
+        /Adaville.*fired.*|Ada as having fired it 2 times/,
+      );
+      g.fails.length = 0;
+      g.meta.atoms = [{ slot: 1, name: 'Adaville', kind: 'ready', at: 1 }];
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(
+        /the first finisher of the bomb should be Adaville/,
+      );
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(/its record has 0 marks that Ada fired/);
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(/no mark that it fell on Sam/);
+    });
+
+    it('fails a first finisher whose city was never given the word', () => {
+      const g = atomWorld();
+      g.play();
+      delete (g.ada.sim.state.war.atom as Record<string, unknown>).first;
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(
+        /finished the bomb first and its city does not hold the word/,
+      );
+    });
+
+    it('fails a page that keeps another record than the room, or a city with other winters than the room began, when it stands', () => {
+      const g = atomWorld();
+      const atoms = [{ slot: 1, name: 'Adaville', kind: 'ready', at: 1, first: true }];
+      for (const p of [g.ada, g.sam, g.kit, g.lou]) {
+        (p as unknown as { page: object }).page = {
+          fw: { view: () => ({ wars: [], pacts: [], vassals: [], history: [], incoming: [], outgoing: [] }) },
+          atom: { atoms },
+        };
+      }
+      const consistent = () => (g.checks as unknown as { consistency(): void }).consistency();
+      for (const ms of [30_000, 40_000, 70_000]) {
+        g.at(ms);
+        consistent();
+      }
+      const texts = g.fails.map((f) => f.text);
+      expect(
+        texts.some((t) =>
+          /Ada's page keeps the bomb's record \["1:ready"\], the room \["1:ready","1:fired","2:boom"\]/.test(
+            t,
+          ),
+        ),
+      ).toBe(true);
+      // Kit's city has the winter and the room began it for it: no difference; Ada's lacks nothing either.
+      expect(texts.some((t) => /nuclear winters/.test(t))).toBe(false);
+      g.kit.sim.state.weather.winters.length = 0;
+      for (const ms of [100_000, 110_000, 140_000]) {
+        g.at(ms);
+        consistent();
+      }
+      expect(
+        g.fails
+          .map((f) => f.text)
+          .some((t) => /Kit's city has the nuclear winters \[\], the room began \[2-1\]/.test(t)),
+      ).toBe(true);
+    });
+  });
+
+  describe('a city saved and loaded again', () => {
+    it('fails a city that hashes otherwise after its save is loaded again, once a bomb has been in the region', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.roundTrip = (sim) =>
+        (sim as unknown) === g.sam.sim ? { before: 'a1', after: 'b2' } : { before: 'a1', after: 'a1' };
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['atom-roundtrip']);
+      expect(g.fails[0]!.text).toMatch(
+        /Sam's city, saved and loaded again after the bomb, hashes b2 where it hashes a1/,
+      );
+    });
+
+    it('asks nothing of the cities when no bomb was kept', () => {
+      const g = atomWorld();
+      let asked = 0;
+      g.checks.roundTrip = () => ((asked += 1), { before: 'a', after: 'b' });
+      g.checks.atomEnd();
+      expect(asked).toBe(0);
+      expect(g.fails).toEqual([]);
+    });
+  });
+
+  describe('the run’s own time and coverage', () => {
+    const o = (minutes: number, over: Partial<SoakOptions> = {}): SoakOptions => ({
+      minutes,
+      mode: 'virtual',
+      seed: 's',
+      speed: 1,
+      fairClock: false,
+      disturb: true,
+      story: 'full',
+      log: () => undefined,
+      ...over,
+    });
+
+    it('asks a run with room for the atom act to have played it, a longer one to have played it twice, and no short story to', () => {
+      const keys = (x: SoakOptions) => required(x).map(([k]) => k);
+      expect(keys(o(ATOM_ACT.needs - 1))).not.toContain('strikesKept');
+      expect(keys(o(ATOM_ACT.needs))).toEqual(
+        expect.arrayContaining(['bombsReady', 'strikesKept', 'strikesTaken', 'bombsLanded', 'wintersTaken']),
+      );
+      expect(
+        required(o(ATOM_ACT.needs))
+          .filter(([k]) => k === 'strikesKept')
+          .map(([, n]) => n),
+      ).toEqual([1]);
+      expect(
+        required(o(ATOM_ACT.second))
+          .filter(([k]) => k === 'strikesKept')
+          .map(([, n]) => n),
+      ).toEqual([1, 2]);
+      expect(keys(o(ATOM_ACT.second))).toContain('atomDisturbed');
+      expect(keys(o(ATOM_ACT.second, { disturb: false }))).not.toContain('atomDisturbed');
+      expect(keys(o(120, { story: 'short' }))).not.toContain('strikesKept');
+    });
+
+    it('says what a run too short for the bomb cannot have covered', () => {
+      expect(notCoveredByLength(o(30)).join(' ')).toMatch(/atom bomb.*60 minutes/);
+      expect(notCoveredByLength(o(60)).join(' ')).toMatch(/second atom strike \(110 minutes\)/);
+      expect(notCoveredByLength(o(120))).toEqual([]);
+    });
+
+    it('begins the act late, after the M39 acts, and early enough for a long run to have two', () => {
+      expect(atomStartMinute(15)).toBe(ATOM_ACT.earliest);
+      expect(atomStartMinute(120)).toBe(60);
+      // The second act of a hundred-minute run still has its half hour.
+      expect(atomStartMinute(ATOM_ACT.second) + 2 * ATOM_ACT.minutes).toBeLessThanOrEqual(
+        ATOM_ACT.second + 20,
+      );
+    });
   });
 });

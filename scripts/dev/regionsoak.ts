@@ -5,17 +5,28 @@
  * total war that ends in a conquest and a vassal paying dues, and, now and then, a connection that
  * drops, a network that goes, a page that reloads and a player who leaves and comes back.
  *
+ * The full story ends, late in the run (M40 step 13), with the atom bomb between friends: the region's
+ * rules allow it, one city races to a ready bomb (by the test cheats), a total war is declared through the
+ * region, the region keeps the strike (after `--atom-prep` seconds, a minute unless asked: the online room
+ * waits twenty), the target's city takes it and is hit, and the other cities have the winter; a long run
+ * plays it twice. It needs `ATOM_ACT.needs` (60) minutes of room time, and a short story has none.
+ * A page that crashes or reloads in the countdown or the blast is the case it is built for.
+ *
  * It checks, as it goes and at the end: every live battle's two runs agreed (or the disagreement is
  * explained by a disturbance and listed); every battle was taken once by its defender and every force
  * reported (or called home) once by its attacker, and none waits in the room for a city that is here;
  * every treaty was applied by both its cities, and the region's pacts and vassals are the ones each
  * city's sim mirrors; the cities' invariants; the region's wars as the room keeps them against each
- * page and each city; and what the room cost (rows, requests, duration) against Cloudflare's free
- * plan. Everyone who is away when the time is up comes back before the final checks. Exits 1 on any
+ * page and each city; every atom strike the region kept was fired once and taken once, the firer is a
+ * pariah in the room and in its own sim, every other city has each nuclear winter once by its id, a
+ * friend's cloud puts air on a map once for a total, and the bomb's record in the room is the one each
+ * page keeps; and what the room cost (rows, requests, duration) against Cloudflare's free plan.
+ * Everyone who is away when the time is up comes back before the final checks. Exits 1 on any
  * failure.
  *
  *   npx tsx scripts/dev/regionsoak.ts [minutes] [--virtual] [--seed s] [--speed 1|2|3] [--no-fair]
- *                                     [--no-disturb] [--crash] [--story short|full] [--log file] [--json file]
+ *                                     [--no-disturb] [--crash] [--story short|full] [--atom-prep seconds]
+ *                                     [--log file] [--json file]
  *
  * `real` (the default) is the local relay over real sockets on the wall clock, the cities at the
  * game's own 1× pace and the game's fair clock on: two hours take two hours. `--virtual` (or
@@ -45,7 +56,7 @@ import { runSoak } from '../lib/soak/run';
 import type { Soak } from '../lib/soak/world';
 
 /** Flags that take a value (a bare number after one of these is its value, not the minutes). */
-const VALUE_FLAGS = new Set(['seed', 'speed', 'log', 'json', 'story', 'minutes']);
+const VALUE_FLAGS = new Set(['seed', 'speed', 'log', 'json', 'story', 'minutes', 'atom-prep']);
 
 /** The command line: the minutes (the first bare number, or `--minutes n`) and the flags. */
 export function parseArgs(args: string[]): {
@@ -85,6 +96,7 @@ async function main(): Promise<void> {
   const mode = fast ? 'virtual' : 'real';
   const story = values.get('story') === 'short' ? 'short' : 'full';
   const speed = Number(values.get('speed') ?? 1) as 1 | 2 | 3;
+  const atomPrep = Number(values.get('atom-prep') ?? 0);
   log(
     `soak: ${minutes} minutes (${asked === undefined ? 'the default' : 'asked for'}), ${mode} mode, seed ${values.get('seed') ?? 'soak'}, ${story} story, speed ${speed}×${flags.has('crash') ? ', with crashes' : ''}${flags.has('no-disturb') ? ', undisturbed' : ''}`,
   );
@@ -119,6 +131,7 @@ async function main(): Promise<void> {
       disturb: !flags.has('no-disturb'),
       crash: flags.has('crash'),
       story,
+      ...(atomPrep ? { atomPrep: atomPrep * 1000 } : {}),
       log,
       onProgress: snapshot,
     },

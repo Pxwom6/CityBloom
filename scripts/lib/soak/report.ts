@@ -50,6 +50,26 @@ export interface SoakResult {
     /** Buildings and civic structures a stand-in record took that the hosted part of the same battle had taken. */
     standInDamaged: number;
   };
+  /** The atom bomb between friends (M40 step 13): each strike the region kept and what the cities made of it. */
+  atom: {
+    strikes: {
+      id: string;
+      firer: string;
+      target: string;
+      taken: number;
+      fired: number;
+      landed: number;
+      stopped: number;
+      phase: string;
+      disturbed: string[];
+    }[];
+    /** The region's record of the bomb: marks by kind, and the winters it began (id and the cities chilled). */
+    marks: Record<string, number>;
+    winters: { id: string; cities: number[]; sims: number }[];
+    /** Fresh winters cities began, and clouds that put air on a map. */
+    wintersTaken: number;
+    cloudsIn: number;
+  };
   simEvents: Record<string, number>;
   regionHistory: Record<string, number>;
   budget: BudgetReport;
@@ -126,11 +146,45 @@ export function result(w: Soak, final = true): SoakResult {
         return c.reported.has(`${b.attackerName}:${n}`);
       }).length,
     },
+    atom: atomResult(w),
     simEvents: events,
     regionHistory: history,
     budget,
     misses: w.misses,
     behind: w.behind,
+  };
+}
+
+function atomResult(w: Soak): SoakResult['atom'] {
+  const c = w.checks;
+  const meta = (
+    w.room as unknown as {
+      meta?: { atoms?: { kind: string }[]; winters?: { id: string; slots: number[] }[] };
+    }
+  ).meta;
+  const marks: Record<string, number> = {};
+  for (const m of meta?.atoms ?? []) marks[m.kind] = (marks[m.kind] ?? 0) + 1;
+  return {
+    strikes: [...c.strikes.values()].map((s) => ({
+      id: s.id,
+      firer: s.firerName,
+      target: s.targetName,
+      taken: s.taken,
+      fired: s.fired,
+      landed: s.landed,
+      stopped: s.stopped,
+      phase: s.phase,
+      disturbed: s.disturbed.map((d) => `${d.name} ${d.what}`),
+    })),
+    marks,
+    winters: (meta?.winters ?? []).map((x) => ({
+      id: x.id,
+      cities: x.slots,
+      sims: w.players.filter((p) => p.page && p.sim.state.weather?.winters?.some((e) => e.id === x.id))
+        .length,
+    })),
+    wintersTaken: w.cover.wintersTaken,
+    cloudsIn: w.cover.falloutIn,
   };
 }
 
@@ -152,6 +206,7 @@ export function lines(r: SoakResult, w: Soak): string[] {
     `covered: ${(['raids', 'raidsRefused', 'recalled', 'liveBattles', 'oldBattles', 'orders', 'handovers', 'helpSent', 'helpBooked'] as Cover[]).map(cov).join(', ')}`,
     `         ${(['declared', 'warsOpened', 'proposals', 'declined', 'treaties', 'pacts', 'capitulations', 'conquests', 'vassalDues', 'freed'] as Cover[]).map(cov).join(', ')}`,
     `         ${(['drops', 'outages', 'reloads', 'leaves', 'crashes', 'disturbedBattles'] as Cover[]).map(cov).join(', ')}`,
+    `         the bomb: ${(['bombsReady', 'strikesKept', 'strikesHeld', 'strikesTaken', 'bombsLanded', 'wintersTaken', 'falloutIn', 'atomDisturbed'] as Cover[]).map(cov).join(', ')}`,
   );
   if (r.coverageMissing.length) out.push(`NOT COVERED: ${r.coverageMissing.join('; ')}`);
   const b = r.battles;
@@ -164,6 +219,20 @@ export function lines(r: SoakResult, w: Soak): string[] {
     );
   if (w.checks.excused.length)
     out.push(`excused (${w.checks.excused.length}):`, ...w.checks.excused.map((x) => `  ${x}`));
+  const a = r.atom;
+  if (a.strikes.length || r.coverage.bombsReady) {
+    out.push(
+      `atom bomb: ${a.strikes.length} strikes kept by the region; its record has ${
+        Object.entries(a.marks)
+          .map(([k, n]) => `${k} ${n}`)
+          .join(', ') || 'no marks'
+      }; ${a.winters.length} nuclear winters began (${a.winters.map((x) => `${x.id} chills ${x.cities.length} cities, ${x.sims} hold it`).join('; ')}); ${a.cloudsIn} clouds put air on a friend's map`,
+    );
+    for (const s of a.strikes)
+      out.push(
+        `  ${s.id}: ${s.firer} -> ${s.target}: fired ${s.fired}, taken ${s.taken}, landed ${s.landed}, stopped ${s.stopped}, ${s.phase}${s.disturbed.length ? `; disturbed: ${s.disturbed.join(', ')}` : ''}`,
+      );
+  } else out.push('atom bomb: no strike was kept by the region in this run');
   out.push(
     `region history: ${
       Object.entries(r.regionHistory)

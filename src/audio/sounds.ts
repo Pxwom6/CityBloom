@@ -22,7 +22,11 @@ export type SoundName =
   | 'superFortress'
   | 'superWhale'
   | 'powerDown'
-  | 'gate';
+  | 'gate'
+  | 'atomWarn'
+  | 'atomTick'
+  | 'atomBlast'
+  | 'atomWind';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -301,6 +305,98 @@ export const SOUNDS: Record<
   pop: (ctx, out, t, v) => {
     burst(ctx, out, t, { colour: 'brown', filter: 'lowpass', f0: 900 + v * 300, gain: 0.12, dur: 0.12 });
     return tone(ctx, out, t, { type: 'triangle', f0: 240 + v * 60, f1: 90, gain: 0.14, dur: 0.09 });
+  },
+
+  /**
+   * M40: an atom bomb in the air: a two-tone civil-defence siren, high and low, played every six
+   * seconds of play while it flies. Softer than the raid siren's wind-up so it can repeat.
+   */
+  atomWarn: (ctx, out, t, v) => {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.075, t + 0.12);
+    g.gain.setValueAtTime(0.075, t + 2.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1700;
+    lp.connect(g).connect(out);
+    const hi = 588 + v * 12;
+    const lo = 440 + v * 9;
+    for (const [type, gain, mul] of [
+      ['square', 0.3, 1],
+      ['triangle', 0.7, 1.004],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      // Hee-haw: four halves of 0.6 s, each tone gliding a little into the next.
+      osc.frequency.setValueAtTime(hi * mul, t);
+      for (let k = 1; k < 4; k++) {
+        osc.frequency.setValueAtTime((k % 2 ? hi : lo) * mul, t + k * 0.6);
+        osc.frequency.linearRampToValueAtTime((k % 2 ? lo : hi) * mul, t + k * 0.6 + 0.04);
+      }
+      const vg = ctx.createGain();
+      vg.gain.value = gain;
+      osc.connect(vg).connect(lp);
+      osc.start(t);
+      osc.stop(t + 2.55);
+    }
+    return t + 2.5;
+  },
+
+  /** M40: the countdown's last ten seconds: a dry clock tick, a little lower on the even seconds. */
+  atomTick: (ctx, out, t, v) => {
+    burst(ctx, out, t, { f0: 3200, q: 4, gain: 0.07, dur: 0.025 });
+    return tone(ctx, out, t, { type: 'triangle', f0: 1380 + v * 120, f1: 1100, gain: 0.11, dur: 0.05 });
+  },
+
+  /**
+   * M40: the atom bomb landing: a sharp crack, then a very low boom that rolls on (a toy's thunder, not
+   * a war film's): the deepest and longest boom in the game, kept under the clipping line.
+   */
+  atomBlast: (ctx, out, t, v) => {
+    burst(ctx, out, t, { f0: 2600, f1: 500, q: 0.6, gain: 0.32, dur: 0.16 });
+    burst(ctx, out, t + 0.02, {
+      colour: 'brown',
+      filter: 'lowpass',
+      f0: 1100,
+      f1: 45,
+      gain: 0.62,
+      attack: 0.05,
+      dur: 4.2,
+    });
+    tone(ctx, out, t, { f0: 52 + v * 6, f1: 22, gain: 0.42, attack: 0.04, dur: 3.6 });
+    return tone(ctx, out, t + 0.25, {
+      type: 'triangle',
+      f0: 34,
+      f1: 24,
+      gain: 0.18,
+      attack: 0.6,
+      dur: 3.2,
+      lp: 120,
+    });
+  },
+
+  /** M40: after the blast, the wind rushing back in towards the cloud: a long rising and falling hiss. */
+  atomWind: (ctx, out, t, v) => {
+    burst(ctx, out, t, {
+      colour: 'pink',
+      f0: 320,
+      f1: 1500 + v * 200,
+      q: 0.8,
+      gain: 0.26,
+      attack: 1.4,
+      dur: 4.6,
+    });
+    return burst(ctx, out, t + 0.3, {
+      colour: 'brown',
+      filter: 'lowpass',
+      f0: 600,
+      f1: 160,
+      gain: 0.22,
+      attack: 1.6,
+      dur: 4.8,
+    });
   },
 };
 

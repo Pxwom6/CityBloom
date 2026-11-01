@@ -52,6 +52,10 @@ export interface UnitQuality {
   shields: 0 | 1 | 2;
   /** M37: share of the battle's dust and spray drawn (stomps, launches, the whale's wake). */
   dust: number;
+  /** M40: the atom bomb's cost switches: puffs in the mushroom cloud and in the missile's trail, and the fallout's tint on the ground (`atomFx.ts`). */
+  atomPuffs: number;
+  atomTrail: number;
+  atomTint: 0 | 1;
 }
 
 export const UNIT_QUALITY_DEFAULT: UnitQuality = {
@@ -64,6 +68,9 @@ export const UNIT_QUALITY_DEFAULT: UnitQuality = {
   fly: 4,
   shields: 2,
   dust: 1,
+  atomPuffs: 500,
+  atomTrail: 60,
+  atomTint: 1,
 };
 
 /** How a part moves (the shader's codes). */

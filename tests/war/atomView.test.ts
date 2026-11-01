@@ -103,6 +103,8 @@ const inbound = (
   over: Partial<NonNullable<AtomSummary['inbound']>> = {},
 ): NonNullable<AtomSummary['inbound']> => ({
   from: 'Calhaven',
+  warn: 0,
+  side: 'north',
   arrive: 1_000,
   x: 0,
   z: 0,
@@ -645,9 +647,9 @@ describe('M40 step 11: the region’s race', () => {
     expect(bombTabShown(off, [], 0)).toBe(false);
     expect(bombTabShown({ ...off, stage: 'enriching' }, [], 0)).toBe(true);
     expect(bombTabShown({ ...off, fallout: true }, [], 0)).toBe(true);
-    expect(bombTabShown({ ...off, impact: { x: 0, z: 0, fled: 0, levelled: 0, over: true } }, [], 0)).toBe(
-      true,
-    );
+    expect(
+      bombTabShown({ ...off, impact: { x: 0, z: 0, at: 0, fled: 0, levelled: 0, over: true } }, [], 0),
+    ).toBe(true);
     expect(
       bombTabShown({ ...off, rivals: [{ id: 1, name: 'X', stage: 2, fuel: 5, launchIn: null }] }, [], 0),
     ).toBe(true);

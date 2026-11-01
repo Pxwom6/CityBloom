@@ -83,6 +83,8 @@ import {
   type Settings,
 } from './client/settings';
 import { typingIn } from './client/keys';
+import { atomBeats } from './render/atomFx';
+import type { OverlayResult } from './sim/systems/overlays';
 
 type Listener = () => void;
 
@@ -323,6 +325,11 @@ export class Game {
     });
     this.randomDisasters = world.options.disasters;
     renderer.disasters.onImpact = () => this.audio?.play('boom');
+    // The atom bomb in the sky (M40 step 11b): the countdown card's "Look at the missile".
+    this.atomUi.missile = {
+      available: () => renderer.atom.canLook,
+      look: () => void renderer.atom.look(renderer.controller),
+    };
     // Thunder follows the flash by the time sound takes to cover the distance (M22).
     renderer.weather.onStrike = (distance) =>
       setTimeout(() => this.audio?.play('thunder'), Math.min(4000, (distance / 343) * 1000));
@@ -1507,8 +1514,11 @@ export class Game {
         if (this.speed > 1) this.setSpeed(1);
         // (An old card from the last bomb makes way for the countdown.)
         this.atomUi.dismissAfter();
-      } else if (e.kind === 'bombLanded') this.audio?.play('boom');
-      else if (e.kind === 'bombStopped') {
+      } else if (e.kind === 'bombLanded') {
+        // A low boom, then the wind rushing back in (M40 step 11b).
+        this.audio?.play('atomBlast');
+        setTimeout(() => this.audio?.play('atomWind'), 2200);
+      } else if (e.kind === 'bombStopped') {
         this.notice(
           `bomb:${e.id}`,
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
@@ -1868,6 +1878,7 @@ export class Game {
       closeShadowHz: q.closeShadowHz,
       units: q.units,
     });
+    this.renderer.atom.softFlash = s.reduceFlashes;
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;
     applyUiScale(s.uiScale);
@@ -2470,6 +2481,57 @@ export class Game {
   }
 
   /** Called every animation frame. */
+  /** The display tick the atom bomb's beats were last read at (M40 step 11b), and when the fallout's tint was last asked for. */
+  private atomBeatAt = -1;
+  private atomTintAt = -Infinity;
+  private atomTintAsking = false;
+  private atomLook = false;
+
+  /**
+   * The atom bomb's page side, a frame at a time (M40 step 11b): the siren every few seconds and the
+   * last ten seconds' ticks while a bomb is in the air (on the display clock: a pause holds them as it
+   * holds the missile), and the fallout's tint on the ground, asked of the sim every few seconds while
+   * the city has fallout and the quality draws it.
+   */
+  private atomFrame(now: number): void {
+    const w = this.world;
+    const a = w.stats.war?.atom;
+    const tick = w.displayTick;
+    if (a?.inbound && this.atomBeatAt >= 0 && !this.readOnly) {
+      const b = atomBeats(a.inbound, this.atomBeatAt, tick);
+      if (b.siren) this.audio?.play('atomWarn');
+      if (b.ticks) this.audio?.play('atomTick');
+    }
+    this.atomBeatAt = tick;
+    // The countdown card offers "Look at the missile" only while there is one in the sky: it is told
+    // when that changes (a paused city sends no updates of its own to redraw it).
+    const look = this.atomUi.canLook;
+    if (look !== this.atomLook) {
+      this.atomLook = look;
+      this.notify();
+    }
+    const tint = QUALITY_PARAMS[this.settings.quality].units.atomTint === 1;
+    if (!a?.fallout || !tint) {
+      if (this.atomTintAt > -Infinity) {
+        this.atomTintAt = -Infinity;
+        this.renderer.atom.setRadiation(null);
+      }
+      return;
+    }
+    if (this.atomTintAsking || now - this.atomTintAt < 4000) return;
+    this.atomTintAt = now;
+    this.atomTintAsking = true;
+    void this.client
+      .query<OverlayResult>({ type: 'overlay', map: 'radiation' })
+      .then((r) => {
+        if (this.world.stats.war?.atom?.fallout) this.renderer.atom.setRadiation(r.values);
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.atomTintAsking = false;
+      });
+  }
+
   frame(now: number): void {
     const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
     const dt = this.lastFrameAt ? Math.min(0.1, interval / 1000) : 1 / 60;
@@ -2502,6 +2564,7 @@ export class Game {
       const host = this.net?.session.players.find((p) => p.host);
       this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
     }
+    if (this.mode !== 'menu') this.atomFrame(now);
     this.renderer.frame(dt);
     if (this.viewerStart > 0 && --this.viewerStart === 0) {
       this.setSpeed(1);

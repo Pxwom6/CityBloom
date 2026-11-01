@@ -26,6 +26,7 @@ import { fightingWith, neighbourOf, scoreIntel, warWith } from './diplomacy';
 import { groundZero, impactCivics, impactFires, impactOver, impactSlice } from './atomImpact';
 import { abandonBattle, damageCivic, sheltersWithin } from './raids';
 import type { Neighbour } from './region';
+import type { NeighbourSide } from '../../data/region';
 import { allTiersDone, researchCheat, researchTree } from './research';
 import { requirementContext } from './projects';
 import { blackedOut, bombStopped, domeTakesBomb, superWorking } from './supers';
@@ -324,8 +325,8 @@ export interface AtomSummary {
    */
   launchWhy: string | null;
   targets: { id: number; name: string; friend: boolean; why: string | null }[];
-  /** The bomb has left: when, and for whom. */
-  fired: { tick: number; to: number; name: string } | null;
+  /** The bomb has left: when, and for whom (and the side of the map the target stands on, for the missile's way out). */
+  fired: { tick: number; to: number; name: string; side: NeighbourSide | null } | null;
   /** The city finished the bomb before any other city in the race (M40 step 10: the region's word for friends). */
   first: boolean;
   /**
@@ -335,6 +336,9 @@ export interface AtomSummary {
    */
   inbound: {
     from: string;
+    /** When the city was warned (a tick), and the side of the map the sender stands on (the missile comes from there). */
+    warn: number;
+    side: NeighbourSide | null;
     arrive: number;
     x: number;
     z: number;
@@ -344,8 +348,8 @@ export interface AtomSummary {
     /** The dome would stop it if it were raised now (it is switched off but charged and working). */
     raisable: boolean;
   } | null;
-  /** The last bomb to land here: where, the residents who have left the city, buildings levelled, and whether the blast is over. */
-  impact: { x: number; z: number; fled: number; levelled: number; over: boolean } | null;
+  /** The last bomb to land here: where, when (a tick; absent from a save made before step 11b's effects read it), the residents who have left the city, buildings levelled, and whether the blast is over. */
+  impact: { x: number; z: number; at: number | null; fled: number; levelled: number; over: boolean } | null;
   /**
    * The computer neighbours that race for the bomb (M40 step 7, Hard only): who, the stage's number
    * (`atomStageNo`) and, for a launch being prepared, the war hours until it leaves. For the region map.
@@ -409,11 +413,20 @@ export function atomSummary(sim: Sim): AtomSummary | null {
       : null,
     launchWhy: a?.have || a?.prep ? launchBlock(sim) : null,
     targets: launchTargets(sim),
-    fired: a?.fired ? { tick: a.fired.tick, to: a.fired.to, name: a.fired.name } : null,
+    fired: a?.fired
+      ? {
+          tick: a.fired.tick,
+          to: a.fired.to,
+          name: a.fired.name,
+          side: neighbourOf(sim, a.fired.to)?.side ?? null,
+        }
+      : null,
     first: a?.first === true,
     inbound: a?.inbound?.warned
       ? {
           from: a.inbound.name,
+          warn: a.inbound.warn,
+          side: neighbourOf(sim, a.inbound.from)?.side ?? null,
           arrive: a.inbound.arrive,
           x: a.inbound.x,
           z: a.inbound.z,
@@ -427,6 +440,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
       ? {
           x: a.impact.x,
           z: a.impact.z,
+          at: a.impact.at ?? null,
           fled: a.impact.fled,
           levelled: a.impact.levelled ?? 0,
           over: !!a.impact.over,

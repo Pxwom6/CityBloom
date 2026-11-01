@@ -41,6 +41,7 @@ import { PortRenderer } from './ports';
 import { UnitRenderer, type UnitQuality } from './units';
 import { BattleEffects } from './battle';
 import { SuperEffects } from './shields';
+import { AtomEffects, type AtomStats } from './atom';
 import { CrossingRenderer } from './crossings';
 import { RailVehicleRenderer } from './railVehicles';
 import { StreetLightRenderer } from './streetLights';
@@ -88,6 +89,8 @@ export interface RenderStats {
   /** The city's units drawn close up, far off and as dots (M34). */
   units: { near: number; far: number; dots: number };
   smoke: number;
+  /** The atom bomb's effects (M40): the cloud's draw calls, triangles and puffs, and what else shows. */
+  atom: AtomStats;
 }
 
 /** Photo mode's view (M16): the lens, time of day, field of view and whether zones show. */
@@ -143,6 +146,8 @@ export class GameRenderer {
   readonly battle: BattleEffects;
   /** The superweapon buildings' effects (M37): the dome, shield bubbles, the gate's swirl, the tower's ring. */
   readonly supers: SuperEffects;
+  /** The atom bomb (M40): the missile, the silo's hatch, the flash, the mushroom cloud, the fallout's tint. */
+  readonly atom: AtomEffects;
   readonly streetLights: StreetLightRenderer;
   /** Benches, bins and planters along the pavements (M27). */
   readonly streetProps: StreetProps;
@@ -189,6 +194,7 @@ export class GameRenderer {
     ports: { planes: 0, ships: 0 },
     units: { near: 0, far: 0, dots: 0 },
     smoke: 0,
+    atom: { calls: 0, triangles: 0, puffs: 0, missile: false, hatch: 0, flash: 0, tint: false },
   };
 
   constructor(
@@ -265,6 +271,8 @@ export class GameRenderer {
     this.scene.add(this.battle.group);
     this.supers = new SuperEffects(world);
     this.scene.add(this.supers.group);
+    this.atom = new AtomEffects(world, this.terrain);
+    this.scene.add(this.atom.group);
     this.streetLights = new StreetLightRenderer(world);
     this.scene.add(this.streetLights.group);
     this.streetProps = new StreetProps(world);
@@ -348,6 +356,7 @@ export class GameRenderer {
       [this.units.group, 'units'],
       [this.battle.group, 'battle'],
       [this.supers.group, 'supers'],
+      [this.atom.group, 'atom'],
       [this.streetLights.group, 'streetLights'],
       [this.streetProps.group, 'streetProps'],
       [this.routeTint.group, 'routeTint'],
@@ -576,6 +585,7 @@ export class GameRenderer {
     this.units.quality = { ...g.units };
     this.supers.quality = g.units.shields;
     this.battle.dust = g.units.dust;
+    this.atom.quality = g.units;
   }
 
   /**
@@ -785,7 +795,18 @@ export class GameRenderer {
     this.disasters.update(dt, this.world.displayTick, pxPerMetre, 0.35 + 0.65 * l.light);
     this.battle.update(this.time, pxPerMetre);
     this.supers.update(this.time);
+    this.atom.update(
+      this.time,
+      this.world.displayTick,
+      this.camera,
+      l,
+      this.controller,
+      windAngle(this.world.options.seed, this.world.displayTick),
+    );
+    // The bomb's flash brightens the whole frame for a moment (M40), and its blast shakes the camera.
+    this.renderer.toneMappingExposure *= 1 + 2.4 * this.atom.flash;
     this.camera.position.add(this.disasters.shake);
+    this.camera.position.add(this.atom.shake);
     // Trees under new buildings: rebuilt at most twice a second.
     if (this.treePoints.length && this.time - this.treeRebuildAt > 0.5) {
       this.treeRebuildAt = this.time;
@@ -858,6 +879,7 @@ export class GameRenderer {
       ports: { ...this.ports.counts },
       units: { ...this.units.counts },
       smoke: this.effects.smokeParticles,
+      atom: { ...this.atom.stats },
     };
   }
 }

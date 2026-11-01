@@ -33,6 +33,7 @@ import type { BuildingData, CityStats, DisasterData } from '../sim/protocol';
 import { ZONED_DEFS } from '../data/buildings';
 import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
+import type { AtomStage, AtomStats } from '../render/atom';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
 import type { InstallWay } from './install';
@@ -224,6 +225,15 @@ export interface TestApi {
   };
   /** Open the war room on the Bomb tab (what the countdown card's Open the war room does). */
   openAtomTab(): void;
+  /**
+   * Dev (M40 step 11b): stage the atom bomb's effects for a picture, in place of what the city's
+   * summary says (null puts the city's own back): ground zero, the missile part way, the flash some
+   * seconds in, the cloud at an age, the silo's hatch open, the city's own bomb some ticks after it
+   * left. Draws a frame and returns what the effects drew.
+   */
+  showAtom(stage: AtomStage | null): Promise<AtomStats>;
+  /** What the atom bomb's effects drew last frame (the cloud's draw calls, triangles and puffs, and the rest). */
+  getAtomFx(): AtomStats;
   /** The fallout in the city and what the map's tooltip would say at a spot (the `fallout` query). */
   getFallout(x?: number, z?: number): Promise<FalloutQuery>;
   /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
@@ -1253,6 +1263,16 @@ export function installTestApi(game: Game): TestApi {
       scene.add(group);
       return out;
     },
+    showAtom: async (stage) => {
+      game.renderer.atom.stage = stage ? { ...stage } : null;
+      await new Promise<void>((resolve) => {
+        let k = 0;
+        const step = () => (++k >= 3 ? resolve() : requestAnimationFrame(step));
+        requestAnimationFrame(step);
+      });
+      return { ...game.renderer.lastStats.atom };
+    },
+    getAtomFx: () => ({ ...game.renderer.lastStats.atom }),
     showUnits: (extra) => {
       const w = game.world;
       if (!w.forces) return [];

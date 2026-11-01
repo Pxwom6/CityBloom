@@ -2621,3 +2621,54 @@ these are its calls and the reasons, with where they overturned the first draft.
     plain stores: the held button's keys and sliding finger, the again button, the guest, the stop question, the countdown's
     live region, the stylesheet's rules), `atomView.test.ts` (+ the real dome's states against the card, the scenarios, the
     words, the cloud), `atomCleanTool.test.ts` (+1).
+- **M40 step 11b: the effects** (`src/render/atom.ts`, the numbers in `src/render/atomFx.ts`), made and judged on the Mac
+  in real Chrome on the GPU.
+  - *Display only, from the summary and the display clock.* The summary gained three read-only facts the effects need
+    (`inbound.warn` and `inbound.side`, `fired.side`, `impact.at`, null from a save whose impact predates `at`); nothing
+    hashed moved. The missile's place is `inboundAt(flight, ground, displayTick)`: from 5.2 km out on the sender's side,
+    a parabola 1.7 km high, diving onto ground zero at `arrive`; a sender with no side comes from the east. Pausing
+    holds it where it is, as it holds the sim's flight.
+  - *The city's own bomb* stands in its silo with its nose out of the open hatch while it waits, then rises straight up
+    for 40 ticks and bends away towards the target's side (`outboundAt`). The hatch is an overlay (two half discs slid
+    apart over the model's own hatch, a dark shaft between), opening over the last 15 % of the preparation, open while a
+    prepared bomb waits, shut 160 ticks after it has gone. Its place is the hand-made silo's hatch (the middle of the
+    site, 4.3 m up, 4.9 m across) or the generated one's (3 m back, 6.4 m), by whether the war models have a silo.
+  - *The missile is drawn 2.6 times its model's size* (a toy, "comically huge") in flight, its model's own size in the
+    silo; `handmade.unit('atombomb')` when loaded, a generated rocket in the same colours otherwise.
+  - *The cloud is camera-facing puffs shaded as small spheres* (two triangles each, one draw call): 500 at High, 300 at
+    Medium, 120 at Low, bigger as they are fewer so the shape stays full; stem, cap (a rolling torus) and a ring round the
+    stem that shows only while the cap is up. A thinning part shrinks and drops its puffs one by one rather than going
+    see-through (a first try dithered them, which read as speckle), so nothing needs sorting. It rises and spreads for
+    20 s of play, glowing orange as it goes up and cooling to white in about ten; the stem goes between 3 and 9 game
+    hours, the cap drifts with the city's wind at 70 m an hour and is gone by 22. Its age is the landing's tick on the
+    display clock, or the real seconds since this page saw it land if more (a pause right after the landing doesn't
+    freeze the cloud half risen).
+  - *Flash, ring and shake run on real time from the moment the display clock crosses the landing* the page watched (a
+    page that loads after the landing shows the cloud, not a flash). The flash is a glow over ground zero plus the frame's
+    exposure (`1 + 2.4 x flash`): 0.3 s at full, gone by 0.9 s; with `reduceFlashes` a 0.8 s fade that never passes 0.45 and
+    never jumps, and no shake. A bomb the dome stops gets a smaller pale-blue flash high over the city, no ring, cloud or
+    shake. The camera shake is the disasters' way (added after the camera is placed), 9 m easing out over 1.6 s.
+  - *"Look at the missile"* follows it from the side of its way and a little behind, high enough to look down on it,
+    with the missile in the middle of the view (outside photo mode the camera can't look up into the sky); any move of
+    the player's own ends the follow, and at the landing it pulls back to 2.6 km over ground zero. The card is told when a
+    missile appears or goes (a paused city sends no updates to redraw it: found when the card had no button in the GPU
+    run).
+  - *The radiation tint* reads the radiation map's values (ground from its first amber band) every 4 s while the city
+    has fallout and the quality draws it, into a 128² texture the terrain shader turns into a straw-yellow, speckled
+    stain; the map itself stays the reading. Air alone tints nothing.
+  - *Cost switches* in `QUALITY_PARAMS.units`: `atomPuffs` (500/300/120), `atomTrail` (60/40/24), `atomTint` (off at Low).
+    `renderStats().atom` reports the cloud's calls, triangles and puffs (at most 3 calls and about 1,260 triangles: the
+    plan allowed 6 and 4,000; a unit test stages every moment at every quality against those caps).
+  - *Sounds:* `atomWarn` (a two-tone hee-haw siren, 2.5 s, as loud as the raid siren) every 6 s of play from the warning,
+    `atomTick` each second of the last ten (both on the display clock: a pause silences them, a jump plays at most one),
+    `atomBlast` and, 2.2 s later, `atomWind` at the `bombLanded` event (it was the meteor's `boom`). Offline renders:
+    peaks 0.079, 0.097, 0.528, 0.105; nothing clips.
+  - *The nuclear winter's look* (step 5's `worldLook`) was checked at full depth: snow over everything in what would be
+    July, a grey-blue sky; left as it was.
+  - *Frame times* (Mac, Chrome, frame cap off, the 100k bench city, cloud and missile staged with `showAtom` over the
+    city's middle, back to back with a plain run): High overview 7.23 → 7.22 ms average (p95 10.7 → 11.1), Medium 4.16 →
+    4.32 (6.7 → 7.0), Low 2.99 → 3.01 (3.9 → 3.9); 3 more draw calls. City and street views with the cloud off screen
+    unchanged within noise.
+  - *Test API* `showAtom(stage)` stages any moment for a picture (`AtomStage`), `getAtomFx()`; `atomshot.mjs` gained
+    `GPU=1` (real Chrome) and the scenes `fx`, `fxlow`, `fxnight`, `street`, `hatch` (staged, in photo mode for the low
+    camera and the hour) and `missile`, `tint`, `winter` (played for real).

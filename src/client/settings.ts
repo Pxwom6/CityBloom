@@ -119,6 +119,7 @@ export const QUALITY_PARAMS: Record<
     /**
      * Units (M34): how far the near and far versions reach before dots, whether parts move, their
      * shadows, and per base how many squads drill, vehicles and boats go out, and aircraft fly.
+     * M40: the atom bomb's cloud and trail puffs and the fallout's tint on the ground (off at Low).
      */
     units: UnitQuality;
   }
@@ -145,6 +146,9 @@ export const QUALITY_PARAMS: Record<
       fly: 1,
       shields: 0,
       dust: 0,
+      atomPuffs: 120,
+      atomTrail: 24,
+      atomTint: 0,
     },
   },
   medium: {
@@ -169,6 +173,9 @@ export const QUALITY_PARAMS: Record<
       fly: 2,
       shields: 1,
       dust: 0.5,
+      atomPuffs: 300,
+      atomTrail: 40,
+      atomTint: 1,
     },
   },
   high: {
@@ -193,6 +200,9 @@ export const QUALITY_PARAMS: Record<
       fly: 4,
       shields: 2,
       dust: 1,
+      atomPuffs: 500,
+      atomTrail: 60,
+      atomTint: 1,
     },
   },
 };

@@ -246,6 +246,8 @@ describe('M40 step 11 review: the countdown card', () => {
   const card = (over: { raise?: boolean; canLook?: boolean } = {}) => {
     const inbound = {
       from: 'Calhaven',
+      warn: 60,
+      side: 'north' as const,
       arrive: 1_500,
       x: 0,
       z: 0,

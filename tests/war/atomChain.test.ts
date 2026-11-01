@@ -712,7 +712,12 @@ describe('M40: a launch', () => {
       expect.objectContaining({ kind: 'bombFired', id: ids.rival, info: { to: target.name } }),
     ]);
     expect(atomStage(sim)).toBe('flying');
-    expect(atomSummary(sim)!.fired).toEqual({ tick: sim.state.tick, to: ids.rival, name: target.name });
+    expect(atomSummary(sim)!.fired).toEqual({
+      tick: sim.state.tick,
+      to: ids.rival,
+      name: target.name,
+      side: target.side,
+    });
     expect(a.inbound).toBeUndefined();
     // A bomb used is used: no second launch, no second bomb.
     expect(why(sim, launch(ids.rival))).toMatch(/used its atom bomb/);

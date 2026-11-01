@@ -5,6 +5,11 @@
 // raised from the card, stopping the bomb), the card a bomb leaves behind, the war room's Map tab with
 // the race's marks and a strike's arc and cloud, the radiation map with the clean-up tool out, and
 // the phone width. Prints what the page reports (test API getAtom) at each moment.
+// Step 11b adds the effects (ONLY=fx,fxnight,fxlow,street,hatch,missile,tint,winter; GPU=1 draws them in a
+// real Chrome window on the GPU, as the look is judged): the missile on its trail, the flash, the cloud
+// rising and drifting, the shock ring, the silo's hatch and the bomb leaving it, the fallout's tint and
+// the nuclear winter, each staged with the test API's showAtom (or played for real: missile, tint,
+// winter), printing what the effects drew (getAtomFx: the cloud's draw calls and triangles).
 // Usage: npm run build:test && node scripts/dev/atomshot.mjs outDir
 // Env: QUALITY=low (low|medium|high), PORT=4394, SEED=port, ONLY=racing,ready,hold,prepared,map,
 //   countdown,raised,stopped,hit,used,clean,phone,settings  (a scene's earlier ones run first when it needs them)
@@ -26,10 +31,25 @@ const server = spawn(
   { stdio: 'ignore', detached: true },
 );
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
-});
+const gpu = !!process.env.GPU;
+const browser = await chromium.launch(
+  gpu
+    ? {
+        channel: 'chrome',
+        headless: false,
+        // (A window behind others is throttled: the interface would stop redrawing between pictures.)
+        args: [
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-background-timer-throttling',
+          '--window-position=0,0',
+        ],
+      }
+    : {
+        args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+        ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
+      },
+);
 const t0 = Date.now();
 const log = (...a) => console.log(`[atomshot ${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 let code = 0;
@@ -131,7 +151,12 @@ try {
     for (const n of st.region.neighbours.filter((x) => x.rival))
       await d({ type: 'cheat', cheat: 'rival', neighbour: n.id, forces: 0.5, defences: 1 });
     await g.advance(60 * 12);
-    return { ids, fails, rivals: st.region.neighbours.filter((x) => x.rival).map((n) => [n.id, n.name]) };
+    return {
+      ids,
+      fails,
+      hw,
+      rivals: st.region.neighbours.filter((x) => x.rival).map((n) => [n.id, n.name]),
+    };
   });
   log('town', JSON.stringify(built));
   const [r1, r2, r3] = built.rivals.map(([id]) => id);
@@ -176,6 +201,8 @@ try {
   /** The war room panel, whole page too, by name; tall panels are shot at the top and scrolled to the end. */
   const shot = async (name, opts = {}) => {
     await frames(2);
+    // (On the GPU a scene can run faster than the interface redraws, every half second for some cards.)
+    if (gpu) await page.waitForTimeout(700);
     if (opts.full !== false) await pic(page, name);
     if (opts.panel) {
       const panel = page.getByTestId('war-room');
@@ -377,6 +404,233 @@ try {
     await closeRoom();
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForTimeout(500);
+  }
+
+  // ---------------------------------------------------------------- the effects (step 11b), staged
+  const gz = { x: built.hw.x + 240, z: built.hw.z - 140 };
+  const fx = async (name, stage, pose) => {
+    if (pose) await setView(pose);
+    const st = await api((x) => window.__game.showAtom(x), stage);
+    await frames(3);
+    await pic(page, name);
+    log(name, JSON.stringify(st));
+    return st;
+  };
+  const setQuality = (q) => api((x) => window.__game.setSettings({ quality: x }), q);
+  // Pictures are taken in photo mode (no interface, the camera may look along the ground, the hour
+  // can be set): `aim` points the camera so a spot `h` m above (x, z) is in the middle of the frame.
+  const aim = (at, distance, pitch, yaw, h = 450) => {
+    const s = Math.min(1, Math.max(0, (distance - 25) / 2575));
+    const base = 0.32 + 0.68 * s * s * (3 - 2 * s);
+    const off = h / Math.tan(pitch);
+    return {
+      x: at.x - Math.sin(yaw) * off,
+      z: at.z - Math.cos(yaw) * off,
+      distance,
+      yaw,
+      tilt: pitch - base,
+    };
+  };
+  /** A camera `back` m behind (x, z) along `yaw` and `height` m up, looking down at `pitch`: for something high in the sky. */
+  const aimFrom = (at, back, height, pitch, yaw) => {
+    const distance = height / Math.sin(pitch);
+    const run = distance * Math.cos(pitch) - back;
+    const s = Math.min(1, Math.max(0, (distance - 25) / 2575));
+    const base = 0.32 + 0.68 * s * s * (3 - 2 * s);
+    return {
+      x: at.x - Math.sin(yaw) * run,
+      z: at.z - Math.cos(yaw) * run,
+      distance,
+      yaw,
+      tilt: pitch - base,
+    };
+  };
+  const photo = async (hour = null, fov = 45) => {
+    if (!(await api(() => window.__game.getPhoto().on))) await page.getByTestId('tool-photo').click();
+    await api(([h, f]) => window.__game.setPhoto({ panel: false, hour: h, fov: f }), [hour, fov]);
+    await frames(2);
+  };
+  const photoOff = async () => {
+    if (!(await api(() => window.__game.getPhoto().on))) return;
+    await api(() => window.__game.setPhoto({ panel: true }));
+    await page.getByTestId('photo-exit').click();
+    await frames(1);
+  };
+  const far = aim(gz, 4200, 0.3, 0.35);
+  const missileAt = (k) => ({ x: gz.x, z: gz.z - 5200 * (1 - k), h: 4 * 1700 * k * (1 - k) });
+  const fxRun = async (tag, hour = 13) => {
+    await photo(hour);
+    const m = missileAt(0.78);
+    await fx(
+      `fx-${tag}-missile`,
+      { ...gz, side: 'north', missile: 0.78 },
+      aimFrom(m, 2600, m.h * 0.75, 0.1, 0.35),
+    );
+    const m2 = missileAt(0.97);
+    await fx(`fx-${tag}-dive`, { ...gz, side: 'north', missile: 0.97 }, aim(m2, 2600, 0.2, 0.35, m2.h * 0.5));
+    await fx(`fx-${tag}-flash`, { ...gz, flash: 0.06 }, far);
+    await fx(`fx-${tag}-ring`, { ...gz, ring: 1.4, cloud: { seconds: 3 } }, far);
+    await fx(`fx-${tag}-rising`, { ...gz, cloud: { seconds: 9 } }, far);
+    await fx(`fx-${tag}-cloud`, { ...gz, cloud: { seconds: 24 } }, far);
+    await fx(`fx-${tag}-drift`, { ...gz, cloud: { seconds: 70, hours: 9 } }, far);
+    await fx(`fx-${tag}-late`, { ...gz, cloud: { seconds: 160, hours: 17 } }, far);
+    await api(() => window.__game.showAtom(null));
+    await photoOff();
+  };
+  if (want('fx') || want('fxnight') || want('fxlow') || want('street') || want('hatch')) {
+    await closeRoom();
+  }
+  if (want('fx')) {
+    await setQuality('high');
+    await fxRun('high');
+  }
+  if (want('fxlow')) {
+    await setQuality('low');
+    await fxRun('low');
+    await setQuality('high');
+  }
+  if (want('street')) {
+    // From a street 700 m off: the cloud over the roofs.
+    // From a street at the town's edge, looking along it (a wide lens): the cloud rising over the roofs.
+    await photo(13, 72);
+    const yaw = -1.25;
+    const st = {
+      x: gz.x + Math.sin(yaw) * 330,
+      z: gz.z + Math.cos(yaw) * 330,
+      distance: 40,
+      yaw,
+      tilt: -0.35,
+    };
+    await fx('fx-street-rising', { ...gz, cloud: { seconds: 4 } }, st);
+    await fx('fx-street-missile', { ...gz, side: 'north', missile: 0.985 }, st);
+    await photo(13, 60);
+    // (From inside the map: south-east of the town, which stands near the map's west edge.)
+    await fx('fx-street-cloud', { ...gz, cloud: { seconds: 26 } }, aimFrom(gz, 1500, 60, 0.02, 0.6));
+    await api(() => window.__game.showAtom(null));
+    await photoOff();
+  }
+  if (want('hatch')) {
+    const silo = (await api(() => window.__game.getCivics())).find((c) => c.def === 'atomsilo');
+    if (silo) {
+      await photo(13);
+      const near = aim(silo, 120, 0.6, 0.6, 0);
+      await fx('fx-hatch-shut', { hatch: 0 }, near);
+      await fx('fx-hatch-half', { hatch: 0.5 }, near);
+      await fx('fx-hatch-open', { hatch: 1 }, near);
+      await fx('fx-launch-rise', { side: 'south', launch: 24 }, aimFrom(silo, 450, 110, 0.12, 0.6));
+      await fx(
+        'fx-launch-away',
+        { side: 'south', launch: 90 },
+        aimFrom({ x: silo.x, z: silo.z + 600 }, 2400, 650, 0.15, -1.57),
+      );
+      await api(() => window.__game.showAtom(null));
+      await photoOff();
+    } else log('no silo for the hatch');
+  }
+  if (want('fxnight')) await fxRun('night', 22);
+  if (want('missile')) {
+    // For real: a bomb on its way, the countdown card, the missile in the sky, and the card's
+    // "Look at the missile" taking the camera to it.
+    await closeRoom();
+    await setQuality('high');
+    await cheat({ cheat: 'bombIn', hours: 24, from: r2 });
+    await api(() => window.__game.advance(1080));
+    await frames(4);
+    const a = await atom();
+    log('missile', JSON.stringify({ missile: a.missile, fx: await api(() => window.__game.getAtomFx()) }));
+    await setView({ ...far, distance: 2400 });
+    await shot('missile-sky', { panel: false });
+    if (gpu) await page.waitForTimeout(700);
+    log(
+      'card',
+      JSON.stringify(
+        await api(() => ({
+          card: !!document.querySelector('[data-testid="atom-countdown"]'),
+          look: !!document.querySelector('[data-testid="atom-look"]'),
+          photo: window.__game.getPhoto().on,
+          shell: window.__game.getShell().mode,
+        })),
+      ),
+    );
+    const look = page.getByTestId('atom-look');
+    if (await look.count()) {
+      await look.click();
+      await page.waitForTimeout(1500);
+      await shot('missile-look', { panel: false });
+    } else log('no Look at the missile button');
+    // Let it land with the clock running at 1x, to see the flash, the ring and the cloud rising.
+    // (With the interface up the camera can't look along the ground: from the default height instead.)
+    const ui = aim(gz, 2600, 0.66, 0.35);
+    await api(() => window.__game.advance(320));
+    await setView(ui);
+    await api(() => window.__game.setSpeed(1));
+    for (let k = 0; k < 300; k++) {
+      const f = await api(() => window.__game.getAtomFx());
+      if (f.flash > 0.2) break;
+      await page.waitForTimeout(50);
+    }
+    await pic(page, 'missile-flash');
+    log('landed', JSON.stringify(await api(() => window.__game.getAtomFx())));
+    await page.waitForTimeout(6000);
+    await setView(ui);
+    await frames(2);
+    await pic(page, 'missile-cloud');
+    await api(() => window.__game.setSpeed(0));
+  }
+  if (want('tint') || want('winter')) {
+    await closeRoom();
+    await setQuality('high');
+    await dismissCard();
+    const a = await atom();
+    if (!a.summary?.impact) {
+      await cheat({ cheat: 'bombIn', hours: 0, from: r2 });
+      await api(async () => {
+        const g = window.__game;
+        for (let k = 0; k < 40; k++) {
+          await g.advance(60);
+          if (g.getAtom().summary?.impact?.over) break;
+        }
+      });
+    }
+    // To a clear midday (and, for the winter, until it has set in), with the card read.
+    await api(async (deep) => {
+      const g = window.__game;
+      await g.advance(60 * 30);
+      for (let k = 0; deep && k < 30; k++) {
+        if ((await g.getState()).weather.winter >= 0.85) break;
+        await g.advance(60 * 24);
+      }
+    }, want('winter'));
+    await dismissCard();
+    await page.waitForTimeout(4500);
+    await frames(3);
+    const im = (await atom()).summary.impact;
+    log('tint', JSON.stringify(await api(() => window.__game.getAtomFx())));
+    if (want('tint')) {
+      // In photo mode at midday: the tint is easiest read in daylight.
+      await photo(13);
+      await setView(aim(im, 1500, 0.55, 0.4, 0));
+      await frames(3);
+      await pic(page, 'tint');
+      await setView(aim(im, 450, 0.45, 0.9, 0));
+      await frames(3);
+      await pic(page, 'tint-near');
+      await photoOff();
+    }
+    if (want('winter')) {
+      await api(() => window.__game.setWeatherLook(null));
+      const w = await api(async () => (await window.__game.getState()).weather);
+      log('winter', JSON.stringify(w));
+      await page.waitForTimeout(5000);
+      await setView({ x: im.x + 300, z: im.z + 500, distance: 900, yaw: 0.5, tilt: 0.2 });
+      await frames(4);
+      await shot('winter-ui', { panel: false });
+      await photo(13);
+      await setView(aimFrom({ x: im.x + 500, z: im.z + 200 }, 900, 160, 0.1, 0.5));
+      await frames(4);
+      await pic(page, 'winter');
+      await photoOff();
+    }
   }
 
   // ---------------------------------------------------------------- a bomb on its way

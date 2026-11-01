@@ -206,13 +206,18 @@ export interface LiveSink {
 
 /**
  * What takes the region's word on the atom bomb (M40, `docs/plans/M40-design.md` calls 16 and 17;
- * the page's half is step 10): the room's `atoms` (the permanent record, in full), `winters` (this
+ * `src/client/atomRegion.ts`): the room's `atoms` (the permanent record, in full), `winters` (this
  * city's, in full: each id is applied once, a late one on return) and `atomFirst` (this city finished
  * the bomb before any other), and the lists and the mark in the welcome.
  */
 export interface AtomSink {
   message(m: RegionRoomMsg): void;
   welcome(info: { atoms?: RegionAtomMark[]; winters?: RegionWinter[] }): void;
+  /**
+   * The region's news was taken into the city (step 10): a friend's cloud over the border is in it,
+   * for the sink to hand to the sim (`friendFallout`). Never throws; waited for.
+   */
+  update?(update: RegionUpdate): Promise<void> | void;
 }
 
 /**
@@ -300,6 +305,8 @@ export class RegionLink {
   /** Operations against this city taken already and acknowledged, by `sender:id` (M37). */
   private opsDone = new Set<string>();
   private opsTaking = new Set<string>();
+  /** Operations the city couldn't take yet (M40: an atom bomb already in the air): tried again with each report. */
+  private opsWaiting = new Map<string, OpOn>();
   /** Operations sent, waiting for the region's answer, by id (M37). */
   private opWaits = new Map<string, (a: OpSent) => void>();
   /** The war-clock cap last given the city (M37): undefined until the region first says. */
@@ -585,7 +592,11 @@ export class RegionLink {
     this.opsTaking.add(key);
     try {
       const answer = (await this.city.op?.(o)) ?? 'later';
-      if (answer === 'later') return;
+      if (answer === 'later') {
+        this.opsWaiting.set(key, o);
+        return;
+      }
+      this.opsWaiting.delete(key);
       this.opsDone.add(key);
       this.send({ t: 'opSeen', id: o.id, from: o.from });
     } finally {
@@ -739,10 +750,8 @@ export class RegionLink {
   private async take(view: RegionView): Promise<void> {
     this.view = view;
     if (this.slot) {
-      const update = this.city.command({
-        type: 'regionUpdate',
-        update: regionUpdateFor(view, this.slot, this.atWar),
-      });
+      const news = regionUpdateFor(view, this.slot, this.atWar);
+      const update = this.city.command({ type: 'regionUpdate', update: news });
       // The fair clock (M37): the city's war clock may run this far, told again once it moves by an
       // hour or more (or comes off, where war is off). The first word on a link is always told: a cap
       // the city saved from before (war turned off meanwhile) mustn't hold it for good.
@@ -755,6 +764,8 @@ export class RegionLink {
         void this.city.command({ type: 'warClock', cap });
       }
       await update;
+      // A friend's cloud over the border (M40): now that the city knows the friend, its sim takes it in.
+      await this.atom?.update?.(news);
       // A friend that wasn't a neighbour yet may be one now: what the region said of it is applied.
       this.friends?.viewChanged();
     }
@@ -765,6 +776,7 @@ export class RegionLink {
   async reportNow(force = false, last = false): Promise<void> {
     if (this.state !== 'in' || !this.link) return;
     if (!last) for (const b of [...this.battlesWaiting.values()]) await this.takeBattle(b);
+    if (!last) for (const o of [...this.opsWaiting.values()]) await this.takeOp(o);
     const now = performance.now();
     const report = await this.city.report();
     // Leaving, the save goes first and no picture is drawn (a slow device could take seconds over

@@ -152,6 +152,11 @@ function checkAtom(sim: Sim): void {
   if (a.prep) {
     within('prep done', a.prep.done, ATOM.launch.prepHours);
     if (!Number.isFinite(a.prep.to)) throw new InvariantError('atom launch without a target');
+    // A strike with the region's room is only ever of a bomb fully prepared.
+    const send = a.prep.send;
+    if (send && !(Number.isFinite(send.op) && Number.isFinite(send.at) && Number.isInteger(send.slot)))
+      throw new InvariantError('atom strike without a number');
+    if (send && a.prep.done < ATOM.launch.prepHours) throw new InvariantError('atom strike sent unprepared');
   }
   // One bomb: being built, or finished and then prepared, or gone; never two of these at once.
   if (a.bomb && (a.have || a.prep || a.fired)) throw new InvariantError('atom bomb built twice');

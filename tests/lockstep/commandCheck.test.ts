@@ -186,6 +186,10 @@ const SAMPLES: Record<CommandType, Command> = {
   cancelLaunch: { type: 'cancelLaunch' },
   // M40 step 4: clearing fallout.
   cleanFallout: { type: 'cleanFallout', x: 640, z: 700 },
+  // M40 step 10: the atom bomb among friends (page only).
+  friendFallout: { type: 'friendFallout', from: 2, total: 120.5 },
+  friendWinter: { type: 'friendWinter', id: '2-1' },
+  atomFirst: { type: 'atomFirst' },
 };
 
 /** Values a field might carry instead of what it should. */

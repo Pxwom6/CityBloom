@@ -31,6 +31,7 @@ import {
 } from '../../data/diplomacy';
 
 export { TREATY_TAKEN, UNKNOWN_FRIEND };
+import { atomFiredBy } from '../../data/atom';
 import { RAIDS } from '../../data/battle';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
@@ -668,8 +669,11 @@ export function friendDeclareProblem(sim: Sim, n: Neighbour): { why: string | nu
       why: `Leaving neutrality counts in ${Math.ceil((d.leaving - s.tick) / TICKS_PER_HOUR)} hours`,
       breaks: false,
     };
-  if (p.raid === 'neutral') return { why: `${n.name} is neutral`, breaks: false };
-  if (p.raid === 'new')
+  // A friend that has fired the atom bomb is a pariah (M40): the region lets any city declare on it,
+  // with no neutral's or newcomer's shield, and the city's own rules (above) still stand.
+  const pariah = atomFiredBy(p.atom);
+  if (p.raid === 'neutral' && !pariah) return { why: `${n.name} is neutral`, breaks: false };
+  if (p.raid === 'new' && !pariah)
     return {
       why: `${n.name} is too young or small to go to war with, unless it strikes first`,
       breaks: false,
@@ -810,6 +814,8 @@ export interface FriendSummary {
   taxes: number;
   /** How far its race for the atom bomb has got (M40, from its report), when it has begun: the stage's number. */
   atom?: { stage: number };
+  /** It has fired its bomb (from its report): a pariah, which any city may declare war on at once (M40 step 10). */
+  pariah?: true;
 }
 
 export function friendsSummary(sim: Sim): FriendSummary[] {
@@ -835,6 +841,7 @@ export function friendsSummary(sim: Sim): FriendSummary[] {
       dues: d?.subjects?.some((x) => x.with === n.id) ? (p.dues ?? 0) : null,
       taxes: neighbourTaxes(n),
       ...(p.atom ? { atom: { stage: p.atom.stage } } : {}),
+      ...(atomFiredBy(p.atom) ? { pariah: true as const } : {}),
     });
   }
   return out;

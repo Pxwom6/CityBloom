@@ -57,6 +57,10 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'friendWar',
   'friendTreaty',
   'friendPacts',
+  // The atom bomb among friends (M40 step 10): the same.
+  'friendFallout',
+  'friendWinter',
+  'atomFirst',
 ]);
 
 const DISASTERS = { earthquake: true, tornado: true, flood: true, meteor: true } as const satisfies Record<
@@ -364,6 +368,9 @@ const CHECKS: Record<CommandType, Check> = {
   friendWar: () => 'Only your own game hears from the region',
   friendTreaty: () => 'Only your own game hears from the region',
   friendPacts: () => 'Only your own game hears from the region',
+  friendFallout: () => 'Only your own game hears from the region',
+  friendWinter: () => 'Only your own game hears from the region',
+  atomFirst: () => 'Only your own game hears from the region',
   disbandUnit: (c) => (isInt(c.unit) ? { type: 'disbandUnit', unit: c.unit } : BAD),
   issueBond: (c) => (oneOf(c.amount, BONDS) ? { type: 'issueBond', amount: c.amount } : BAD),
   repayBond: (c) => (isInt(c.id) ? { type: 'repayBond', id: c.id } : BAD),

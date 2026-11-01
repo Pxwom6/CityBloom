@@ -12,6 +12,10 @@
  *   largest working power plant or its vehicle depot for a day (or, M40, puts the atom bomb's
  *   works back: `sabotagePlant`), a blackout darkens the city for 12 hours after an hour's warning;
  *   one that came while its player was away brings only a notice.
+ * - The atom bomb (M40 step 10, call 17) rides the same road: a prepared bomb aimed at a friend waits
+ *   in the sender's silo while the page puts it to the region (`atom.ts` `strikeSend`, listed with the
+ *   others by `friendOpsWaiting`, pinned by `spySettling`, answered by `missionResult`); the target's
+ *   page hands the kept strike to `opResolve`, whose sim starts the bomb's flight at its own city.
  * - The fair clock: `warClock` sets the cap the region's fair clock puts on the war clock.
  *
  * Every time here is on the war clock (hours), as the rest of intelligence.
@@ -39,15 +43,15 @@ import {
   TARGET_NAME,
   type Mission,
 } from './intel';
-import { plantSabotageText, sabotagePlant } from './atom';
+import { atomInbound, BOMB_IN_AIR, plantSabotageText, sabotagePlant, strikeResult, strikeSend } from './atom';
 import { BATTLE_TAKEN_KEEP, damageCivic } from './raids';
 import type { Neighbour } from './region';
 import { bankPoints, tierCounts } from './research';
 import { forgetFriends } from './friendsWar';
 
-/** An operation between friends (the region room's word for it). */
-export type FriendOp = SpyOp | 'blackout';
-export const FRIEND_OPS: readonly FriendOp[] = [...SPY_OPS, 'blackout'];
+/** An operation between friends (the region room's word for it): a spy, the blackout, and (M40) the atom bomb. */
+export type FriendOp = SpyOp | 'blackout' | 'atom';
+export const FRIEND_OPS: readonly FriendOp[] = [...SPY_OPS, 'blackout', 'atom'];
 export type FriendOutcome = 'success' | 'failed' | 'caught';
 
 /** Why the city turns an operation away: it took it already (the page then only acknowledges it). */
@@ -165,9 +169,10 @@ export function checkDossier(d: unknown): Dossier | null {
   };
 }
 
-/** The id the region knows an operation by: the city's seed (hashed) and the mission's or tower's number. */
-export function opKey(sim: Sim, kind: 'spy' | 'tower', n: number): string {
-  return `${kind === 'spy' ? 'op' : 'bo'}-${fnv1a(sim.state.options.seed).slice(0, 8)}-${n}`;
+/** The id the region knows an operation by: the city's seed (hashed) and the mission's, tower's or strike's number. */
+export function opKey(sim: Sim, kind: 'spy' | 'tower' | 'atom', n: number): string {
+  const prefix = kind === 'spy' ? 'op' : kind === 'tower' ? 'bo' : 'ao';
+  return `${prefix}-${fnv1a(sim.state.options.seed).slice(0, 8)}-${n}`;
 }
 
 /** An operation of the city's waiting for the region's verdict (for the page, which puts it there). */
@@ -208,6 +213,16 @@ export function friendOpsWaiting(sim: Sim): FriendOpWaiting[] {
       slot: c.slot,
       op: 'blackout',
       settling: !!c.settling,
+    });
+  // A prepared bomb aimed at a friend, with the region's room (M40).
+  const strike = strikeSend(sim);
+  if (strike)
+    out.push({
+      mission: strike.op,
+      key: opKey(sim, 'atom', strike.op),
+      slot: strike.slot,
+      op: 'atom',
+      settling: !!strike.settling,
     });
   return out;
 }
@@ -272,11 +287,12 @@ export function spySettling(sim: Sim, mission: number, on: boolean, dryRun: bool
   const m = w?.intel?.missions.find((x) => x.id === mission);
   const t = w?.supers?.tower?.charging;
   const tower = t && t.op === mission && t.slot !== undefined && !t.kept ? t : undefined;
-  if (!m && !tower) return fail('No such operation');
+  const strike = strikeSend(sim, mission);
+  if (!m && !tower && !strike) return fail('No such operation');
   if (m && (m.state !== 'arrived' || m.slot === undefined))
     return fail('That agent isn’t waiting for the region');
   if (dryRun) return ok(0);
-  const pin = (m ?? tower)!;
+  const pin = (m ?? tower ?? strike)!;
   if (on) pin.settling = true;
   else delete pin.settling;
   sim.warChanged();
@@ -301,6 +317,9 @@ export function missionResult(
   const w = sim.state.war;
   if (!w) return fail('War is off in this city');
   if (!['success', 'failed', 'caught', 'refused'].includes(outcome)) return fail('No such outcome');
+  // The atom bomb's strike (M40): kept, or turned away, by the number it was sent under.
+  const struck = strikeResult(sim, mission, outcome, extra.reason, dryRun);
+  if (struck) return struck;
   const t = w.supers?.tower;
   if (t?.charging && t.charging.op === mission && t.charging.slot !== undefined && !t.charging.kept)
     return towerResult(sim, outcome, extra.reason, dryRun);
@@ -522,7 +541,7 @@ export function checkOpInput(o: unknown): string | null {
   if (!isInt(o.from, 1, 64) || typeof o.id !== 'string' || !/^[\w-]{1,40}$/.test(o.id)) return BAD;
   if (!FRIEND_OPS.includes(o.op as FriendOp)) return BAD;
   if (o.outcome !== 'success' && o.outcome !== 'failed' && o.outcome !== 'caught') return BAD;
-  if (o.op === 'blackout' && o.outcome !== 'success') return BAD;
+  if ((o.op === 'blackout' || o.op === 'atom') && o.outcome !== 'success') return BAD;
   if (o.op === 'sabotage' ? !SABOTAGE_TARGETS.includes(o.target as SabotageTarget) : o.target !== undefined)
     return BAD;
   if (typeof o.late !== 'boolean') return BAD;
@@ -544,10 +563,20 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
   if (!n) return fail('That came from a city this one doesn’t know');
   const key = `${o.from}:op:${o.id}`;
   if (w.taken?.includes(key)) return fail(OP_TAKEN);
+  // A bomb in the air holds the next one back: not taken, so the page offers it again.
+  if (o.op === 'atom' && w.atom?.inbound) return fail(BOMB_IN_AIR);
   if (dryRun) return ok(0);
   w.taken = [...(w.taken ?? []), key].slice(-BATTLE_TAKEN_KEEP);
   sim.warChanged();
   const now = w.clock;
+  if (o.op === 'atom') {
+    // An atom bomb from a friend (M40, call 17): the region kept the strike, and this city's own sim
+    // takes it with a full countdown from now (one that waited for the player's return starts when
+    // it is taken), chooses ground zero and decides whether the dome stops it.
+    atomInbound(sim, { id: n.id, name: n.name, slot: o.from });
+    intelResult(sim, n.id, `${n.name} has fired the atom bomb at the city`, 'bad');
+    return ok(0);
+  }
   if (o.outcome === 'failed') return ok(0);
   if (o.outcome === 'caught') {
     // An incident: logged here as at the sender's.

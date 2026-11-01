@@ -292,7 +292,15 @@ import {
   cancelLaunch,
   launchBomb,
 } from './systems/atom';
-import { cleanFallout, falloutDue, falloutReading, falloutSummary, updateFallout } from './systems/fallout';
+import {
+  cleanFallout,
+  falloutDue,
+  falloutReading,
+  falloutSummary,
+  friendFallout,
+  updateFallout,
+} from './systems/fallout';
+import { atomFirst, friendWinter } from './systems/atomFriends';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -407,6 +415,8 @@ export type SimEvent = {
     | 'bombReady'
     | 'bombFired'
     | 'launchHeld'
+    // A prepared bomb put to the region's room for a friend's city (M40 step 10).
+    | 'strikeSent'
     | 'atomLost'
     // A bomb on its way to the city, stopped by its dome, landed, and the blast over (M40 step 3).
     | 'bombWarning'
@@ -1630,6 +1640,12 @@ export class Sim {
         return friendTreaty(this, cmd, dryRun);
       case 'friendPacts':
         return friendPacts(this, cmd, dryRun);
+      case 'friendFallout':
+        return friendFallout(this, cmd.from, cmd.total, dryRun);
+      case 'friendWinter':
+        return friendWinter(this, cmd.id, dryRun);
+      case 'atomFirst':
+        return atomFirst(this, dryRun);
       case 'buyStake':
         return buyStake(this, cmd.neighbour, cmd.share, dryRun);
       case 'sellStake':

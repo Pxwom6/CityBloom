@@ -325,7 +325,15 @@ export type Command =
   | { type: 'launchBomb'; to: number }
   | { type: 'cancelLaunch' }
   /** Send a crew to clear the fallout within 128 m of a spot (M40): $350,000, 96 hours, three at a time. */
-  | { type: 'cleanFallout'; x: number; z: number };
+  | { type: 'cleanFallout'; x: number; z: number }
+  /**
+   * The atom bomb among friends (M40 step 10, page only, each applied again harmlessly): a friend's
+   * cloud over the border (its cumulative air towards this city), a nuclear winter the region began
+   * (by its id, applied once), and the region's word that this city finished the bomb first.
+   */
+  | { type: 'friendFallout'; from: number; total: number }
+  | { type: 'friendWinter'; id: string }
+  | { type: 'atomFirst' };
 
 export type CommandType = Command['type'];
 
@@ -421,6 +429,9 @@ const COMMAND_KINDS = {
   launchBomb: true,
   cancelLaunch: true,
   cleanFallout: true,
+  friendFallout: true,
+  friendWinter: true,
+  atomFirst: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

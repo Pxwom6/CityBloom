@@ -101,6 +101,8 @@ export async function openPage(o: {
   reportGate?: Promise<void>;
   /** The link's options in place of the test defaults (M39 step 10's soak keeps the game's own report pace and fair clock). */
   link?: Partial<RegionLinkOptions>;
+  /** How the city takes an operation another city made against it (M40 step 10: the atom bomb's strike); left out, the city takes none. */
+  op?: CityPort['op'];
 }): Promise<Page> {
   const { sim, clock } = o;
   const taken: Page['taken'] = [];
@@ -126,6 +128,7 @@ export async function openPage(o: {
       });
       return r.ok ? 'taken' : r.reason === BATTLE_BUSY ? 'later' : 'refused';
     },
+    ...(o.op ? { op: o.op } : {}),
   };
   const link = new RegionLink(port, o.connect ?? loopTo(o.room!), {
     mayor: o.mayor,

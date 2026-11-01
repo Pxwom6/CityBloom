@@ -17,7 +17,7 @@
  * random stream is touched. Updated every three game hours in the slot after the air pollution's;
  * the friends' half (the report's plume, `friendFallout`) is step 10 and uses `seen` and `out`.
  */
-import { FALLOUT } from '../../data/atom';
+import { ATOM_WIRE, FALLOUT } from '../../data/atom';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { DMath, formatInt } from '../dmath';
 import { fail, ok, type CommandResult } from '../commands';
@@ -237,6 +237,11 @@ function inflows(sim: Sim): Record<Side, number> {
   return out;
 }
 
+/** Does a wind at this bearing blow in from the neighbour on that side (towards the city)? */
+function windFrom(a: number, side: Side): boolean {
+  return side === 'north' ? DMath.sin(a) > 0 : side === 'south' ? DMath.sin(a) < 0 : DMath.cos(a) > 0;
+}
+
 /**
  * Does the city need an update now: it has fallout, or a neighbour has some whose stream the wind
  * would carry in? (Cheap: three neighbours and a bearing.) A city with neither is left alone.
@@ -248,9 +253,9 @@ export function falloutDue(sim: Sim): boolean {
   if (inn.north <= 0 && inn.south <= 0 && inn.west <= 0) return false;
   const a = windAngle(s.options.seed, s.tick);
   return (
-    (inn.north > 0 && DMath.sin(a) > 0) ||
-    (inn.south > 0 && DMath.sin(a) < 0) ||
-    (inn.west > 0 && DMath.cos(a) > 0)
+    (inn.north > 0 && windFrom(a, 'north')) ||
+    (inn.south > 0 && windFrom(a, 'south')) ||
+    (inn.west > 0 && windFrom(a, 'west'))
   );
 }
 
@@ -393,6 +398,72 @@ function handOver(sim: Sim, f: Fallout, gone: Record<Side, number>): void {
       );
     }
   }
+}
+
+/**
+ * A friend's cloud reaches the city (M40 step 10, plan call 12; page only, `friendFallout`). `total`
+ * is the friend's cumulative air towards this city, as the region gave it; the sim keeps how much of
+ * it it has taken in (`seen`) and puts what is new on the edge facing that friend, as air, only while
+ * the city's own wind blows from that side (air put there while the wind blows away would leave by the
+ * same edge at once, and be counted back to the sender as `out`). Idempotent: the same total twice
+ * adds once; the first sight of a friend takes nothing (a newcomer, or a friend away for the whole
+ * drift, is spared); a lower total (the friend went back to a save) sets `seen` down. When the wind is
+ * wrong the cloud waits, `seen` where it was, and comes in the next time the wind is right. What one
+ * message adds is bounded (`FALLOUT.friend.step`): the room bounds the total, not the flow.
+ */
+export function friendFallout(sim: Sim, from: unknown, total: unknown, dryRun: boolean): CommandResult {
+  const BAD = 'That cloud could not be read';
+  if (typeof from !== 'number' || !Number.isInteger(from) || from < 1 || from > ATOM_WIRE.slots)
+    return fail(BAD);
+  if (typeof total !== 'number' || !Number.isFinite(total) || total < 0 || total > ATOM_WIRE.plumeMax)
+    return fail(BAD);
+  const s = sim.state;
+  if (!s.war) return fail('War is off in this city');
+  const n = s.region.neighbours.find((x) => x.player?.slot === from);
+  if (!n) return fail('That came from a city this one doesn’t know');
+  const t = round3(total);
+  const seen = s.fallout?.seen[from];
+  // First sight (or nothing from it yet): taken as already known, and nothing deposited.
+  if (seen === undefined) {
+    if (t <= 0) return ok(0);
+    if (dryRun) return ok(0);
+    falloutOf(sim).seen[from] = t;
+    sim.warChanged();
+    return ok(0, { info: { deposited: 0 } });
+  }
+  if (t === seen) return ok(0, { info: { deposited: 0 } });
+  if (t < seen) {
+    if (dryRun) return ok(0);
+    s.fallout!.seen[from] = t;
+    sim.warChanged();
+    return ok(0, { info: { deposited: 0 } });
+  }
+  // New cloud, but not on this city's wind: it waits at the border.
+  if (!windFrom(windAngle(s.options.seed, s.tick), n.side))
+    return ok(0, { info: { deposited: 0, waiting: true } });
+  if (dryRun) return ok(0);
+  const put = depositFromFriend(s.fallout!, n.side, t - seen);
+  s.fallout!.seen[from] = t;
+  sim.warChanged();
+  return ok(0, { info: { deposited: put } });
+}
+
+/** Put a friend's new cloud (`news` of its total) on the strip of the edge facing it; the air added (mass). */
+function depositFromFriend(f: Fallout, side: Side, news: number): number {
+  const F = FALLOUT.friend;
+  const cells = R * F.rows;
+  const per = Math.min(F.cell, (Math.min(news, F.step) * F.share) / (cells * F.spread));
+  let put = 0;
+  for (let j = 0; j < R; j++)
+    for (let i = 0; i < R; i++) {
+      const on = side === 'north' ? j < F.rows : side === 'south' ? j >= R - F.rows : i < F.rows;
+      if (!on) continue;
+      const k = j * R + i;
+      const v = Math.min(1, f.air[k]! + per);
+      put += v - f.air[k]!;
+      f.air[k] = v;
+    }
+  return round3(put);
 }
 
 /** A computer neighbour's fallout halves every eight game years, and is gone once it is a trace. */

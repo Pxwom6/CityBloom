@@ -61,11 +61,11 @@ import { webSocketLink, type Link } from './net/link';
 import { RegionRoom, MemoryRegionStore } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
-import { RegionOps } from './client/ops';
+import { RegionOps, resolveOp } from './client/ops';
+import { AtomRegion } from './client/atomRegion';
 import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
-import { OP_TAKEN } from './sim/systems/regionOps';
 import { IS_TEST_BUILD } from './config';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
@@ -301,6 +301,8 @@ export class Game {
       // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
       const ops = diff.stats.war?.intel?.regionOps;
       if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
+      // The city's own race for the atom bomb (M40): the region hears when its stage changes.
+      if (!this.inMenu() && !this.readOnly && !this.net) this.atomRegion.frame(diff.stats.war?.atom?.stage);
       const sel = this.selected;
       if (sel?.kind === 'building' && diff.buildings) {
         if (diff.buildings.removed.includes(sel.id)) this.select(null);
@@ -616,6 +618,16 @@ export class Game {
     changed: () => this.notify(),
   });
   /**
+   * The atom bomb among friends (M40 step 10): the region's record of it, the winters it began and
+   * the first finisher, handed to the city's sim; a friend's cloud over the border; and the city's
+   * own race stage told to the region as it changes.
+   */
+  readonly atomRegion: AtomRegion = new AtomRegion({
+    command: (cmd) => this.client.command(cmd),
+    now: () => performance.now(),
+    changed: () => this.notify(),
+  });
+  /**
    * The region's replays (M39 step 7): which finished live battles it keeps, and getting one ready for
    * the viewer (the City history panel's Watch buttons).
    */
@@ -692,18 +704,10 @@ export class Game {
   private async takeOp(o: OpOn): Promise<BattleAnswer> {
     if (this.readOnly) return 'later';
     if (!this.region?.view?.cities.some((c) => c.slot === o.from)) return 'refused';
-    // The atom bomb's strike (M40 step 10 gives the city's sim a way to take it): until then it waits in the region.
-    if (o.op === 'atom') return 'later';
-    const r = await this.client.command({
-      type: 'opResolve',
-      from: o.from,
-      id: o.id,
-      op: o.op,
-      outcome: o.outcome,
-      ...(o.target ? { target: o.target } : {}),
-      late: o.late,
-    });
-    if (!r.ok && r.reason !== OP_TAKEN) return 'refused';
+    // (An atom bomb from a friend (M40) is taken the same way; one that comes while another is still
+    // in the air waits in the region and is offered again.)
+    const answer = await resolveOp({ command: (cmd) => this.client.command(cmd) }, o);
+    if (answer !== 'taken') return answer;
     return (await this.saveTo('auto', 'Autosave', true)) ? 'taken' : 'later';
   }
 
@@ -894,6 +898,7 @@ export class Game {
     this.regionKey = key;
     this.live.attach(link);
     this.friends.attach(link);
+    this.atomRegion.attach(link);
     this.replays.attach(link);
     link.onNotice = (t) => this.toast(t, 'info', 4500);
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
@@ -987,6 +992,7 @@ export class Game {
     this.regionKey = null;
     this.live.detach();
     this.friends.detach();
+    this.atomRegion.detach();
     this.replays.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
@@ -1487,6 +1493,22 @@ export class Game {
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
+      else if (e.kind === 'strikeSent')
+        // The bomb is put to the region's room for a friend's city (M40 step 10): it leaves only if the room keeps it.
+        this.notice(
+          `strike:${e.id}`,
+          `The atom bomb is with the region’s room, which has to agree to the strike on ${String(e.info?.to)}.`,
+          'info',
+        );
+      else if (e.kind === 'launchHeld')
+        // A prepared bomb that can't leave (a war paused, or the room's refusal in its words): it waits in the silo.
+        this.notice(
+          `held:${e.id}`,
+          `The prepared bomb can’t leave: ${String(e.info?.why)}. It stays in the silo until it is sent again.`,
+          'bad',
+        );
+      else if (e.kind === 'bombFired')
+        this.notice(`fired:${e.id}`, `The atom bomb has left the silo for ${String(e.info?.to)}.`, 'bad');
       else if (e.kind === 'rivalBomb')
         // A computer neighbour's race for the bomb (M40, Hard): each stage is public.
         this.notice(

@@ -410,6 +410,7 @@ function FriendRow({
           <strong>{f.name}</strong> <small class="muted">{f.mayor}’s city</small>
           {f.overlord && <small class="dip-bad"> · your overlord</small>}
           {f.subject && <small class="dip-good"> · your vassal</small>}
+          {f.pariah && <small class="dip-bad"> · fired the atom bomb</small>}
         </span>
         <span class="muted" title={f.online ? 'Their player is here' : 'Their player is away'}>
           {f.online ? 'here now' : 'away'} · {f.population.toLocaleString('en-US')} people
@@ -441,6 +442,11 @@ function FriendRow({
       {!canDeclare && !atWar && f.declare && (
         <p class="muted" data-testid={`dip-fwhy-declare-${f.slot}`}>
           {f.declare}.{newcomerNote(f.declare)}
+        </p>
+      )}
+      {f.pariah && !atWar && canDeclare && (
+        <p class="muted" data-testid={`dip-fpariah-${f.slot}`}>
+          {f.name} fired the atom bomb. The region lets any city declare war on it at once.
         </p>
       )}
       {declaring && !atWar && canDeclare && (

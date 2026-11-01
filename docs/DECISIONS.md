@@ -2284,3 +2284,119 @@ these are its calls and the reasons, with where they overturned the first draft.
     `plumePerBomb`), `tests/war/regionHistory.test.ts`. Every new test fails on the code before the fix.
     Older tests that used counts nothing could account for (a city hit thirty times) were changed to
     possible ones (strikes kept by the room, regions of two); the test report's default tiers are full.
+- **Step 10 (pages): calls the plan left open.** The pages' half of the race among friends: three page-only
+  commands, the strike put to the room and taken at the target, the sink that hands the room's words to the sim.
+  - *The strike is sent from the prepared bomb, on the road spies take.* A prepared bomb aimed at a friend's city
+    is put to the room when its preparation ends (or when the city sends it again with `launchBomb`): the sim
+    sets `Atom.prep.send = { op, at, slot, settling? }` (`op` an id from `nextId`, as the tower's, `at` the war
+    hour, `slot` the friend's place) and the event `strikeSent`. `friendOpsWaiting` lists it beside the agents
+    and the tower (key `ao-<seed hash>-<op>`, `opKey` kind `atom`), `spySettling` pins it, and the room's
+    verdict is `missionResult` for its number (`strikeResult` in `atom.ts`): `success` (the room kept it) sets
+    `fired` with the friend's place, takes `have` and `prep`, and calls `atomFired`, so the world turns on the
+    firer exactly as at a computer neighbour; `refused` takes `send` off, keeps the bomb prepared and puts the
+    room's reason in `prep.refused` (bounded to 160 characters; the summary's `launch.held` shows it, and the
+    event `launchHeld` carries it). `RegionOps` needed no change: `FriendOp` and `FRIEND_OPS` gained `'atom'`
+    and the page's `settle` already hands the outcome on. The preparation's early return is a new first line:
+    **a strike with the room no longer cares what happens to the silo** (it left it; the hours are not reset
+    by damage), and the silo being *removed* meanwhile (a blast on the firer) keeps `have`/`prep` for the
+    answer: kept, the bomb has gone; turned away or timed out, `strikeBack` finds no silo and loses the bomb
+    (`atomLost`). `launchBomb` and `cancelLaunch` are refused while it is with the room ("The strike is with
+    the region’s room, which has to agree"); the launch checks `prep.send` before the silo's own so the
+    reason is the right one. The plan's "after `SETTLE_TIMEOUT_HOURS` with no answer it goes back to prepared"
+    is the tower's rule exactly: 72 war hours unpinned (`FIGHT_TIMEOUT_HOURS`), 720 pinned. **Known hole,
+    accepted (the tower has it too):** if the room kept the strike and the answer was lost for those 720
+    hours (30 game days), the bomb goes back to prepared while the room has it as used; sending it again is
+    refused in the room's words ("has used its atom bomb") and the bomb is stuck. Invariants: a strike has a
+    number and a place and is of a fully prepared bomb.
+  - *A prepared bomb at a friend is put to the room once, by itself, and then waits for the city.* When the
+    preparation ends and the war is open (`targetWhy`) the sim sends it; a refusal is not retried by the page
+    or the sim (the room would say the same until something changes): the city sends it again with
+    `launchBomb` (free, as at a computer neighbour). `heldWhy` is the target's check only now; `roomWhy` is
+    gone. The step 2 test that expected "goes through the region’s room" and a refusal of sending again was
+    changed to the new behaviour (put to the room, in flight, nothing can call it off).
+  - *The target takes it with `opResolve` `op: 'atom'`.* `checkOpInput` allows `atom` with outcome `success` and
+    no target; the sim calls `atomInbound` (24 game hours, ground zero chosen by its own sim, the dome and
+    the damage its own) and writes the intelligence log line "X has fired the atom bomb at the city". **A
+    bomb already in the air is not taken**: `opResolve` fails with `BOMB_IN_AIR` *before* marking the operation
+    taken, `resolveOp` (`src/client/ops.ts`, shared by `Game.takeOp` and the tests) maps that one reason to
+    `later` (any other failure that is not `OP_TAKEN` is `refused`), so the room keeps the strike for it. This
+    exposed that `RegionLink` never offered a `later` operation again until the city rejoined (the room
+    re-sends them only on a hello): it keeps them now (`opsWaiting`) and offers them with each report, as it
+    does a battle; that also covers a visitor-mode or briefly busy page for the M37 operations. A strike that
+    waited for a player who was away has no real-time deadline: it starts its **full countdown from the tick
+    the sim takes it**, whether `late` or not (`late` is ignored for the bomb), and the rules are not checked
+    again at the target (a strike the room kept stands, as the plan says of the host turning the bomb off).
+  - *Cloud over the border: `friendFallout` waits for the wind.* The plan's "otherwise deposit ... only while this
+    city's own wind blows from that friend's side" left open what a message does when the wind is wrong. It
+    does nothing and leaves `seen` where it was, so the cloud waits at the border and the next news while the
+    wind is right takes in everything that waited (a computer neighbour's stream does the same: its level is
+    kept and the stream comes whenever the wind comes from its side). `AtomRegion` therefore hands a total over
+    again with each of the region's news until the sim has not answered `waiting`. A first sight sets `seen`
+    to the total and deposits nothing; a lower total sets `seen` down; the same total adds nothing.
+  - *How much, and where (`FALLOUT.friend`).* The new part of the total times `share` (0.6) is spread over the two
+    outermost rows or columns of the edge facing the friend (`R x rows` = 256 cells), `spread` (3) times
+    thinner than the strip would hold (the cloud has spread over two maps by the time it arrives), no cell
+    more than `cell` (0.4) and at most `step` (700 = `plumePerBomb`) of the total in one message (step 9's
+    note: the room bounds the total, not the flow). Probe (a middle strike's whole cloud, 356, as one
+    message, seeds `citybloom f b c a1..a6`, 120 updates): it lies 0.28 thick across the strip (71 of
+    air), crosses the map and leaves 0.002 to 0.018 on the ground at most, no closed cell on any seed,
+    where a computer neighbour's whole stream leaves 0.03 in ten years. A haze that shows on the radiation
+    map (air is drawn lighter) and costs those under it a little for a few game days, never a second
+    strike. The strip is walked in index order, the wind is `windAngle` of the city's own seed (the
+    helper `windFrom` now serves `falloutDue` too, the same expression), and no random stream is touched.
+    `friendFallout` needs war on and the sender a neighbour of the city; a total over `plumeMax` or not a
+    number is refused.
+  - *`friendWinter` and `atomFirst`.* A winter id must be the room's (`winterIdOk`: place 1 to 64, which bomb 1
+    to 8 -- `ATOM_WIRE.winters`, `.slots`, `.marks` are the page's copies of the room's limits); the sim
+    applies it once by id (`startWinter`), at the city's own tick, and keeps at most `ATOM_WIRE.winters x 5`
+    in all (a region's three friends and the city's own). `atomFirst` is refused for a city with no bomb
+    held, prepared or fired, ok for a city that has it already, and sets `Atom.first`. **The achievement
+    `firstBomb` ("First to the bomb") did not exist and is added** (14 achievements): `Atom.first`, which
+    the sim sets by itself in a city of its own and the room tells in a region. `AtomSummary.first` shows it.
+  - *`AtomRegion` (src/client/atomRegion.ts), the sink.* It cleans the room's lists again, because a region in
+    a player's browser has a host that is not trusted: marks that are well formed (place, a name cut to
+    40, kind, time), the last 16, one `first` (the earliest); winters whose ids pass `winterIdOk`, name this
+    city among those chilled, are not this city's own, once each, 8 from any one city at most, 32 in all, with
+    slots cut to 8. Each new winter id is `friendWinter` once (a failure of the call is tried again, a
+    refusal in words is final); `atomFirst` is the command; `RegionLink.take` hands the sink the region's news
+    after the city's `regionUpdate` is in (`AtomSink.update?`, optional so the step 9 sinks still fit) and the
+    sink turns each friend's `atom.plume` into `friendFallout`. Everything runs in order on one chain; a
+    failure of one word does not stop the next. `frame(stage)`, called from `Game`'s frame, asks the link for a
+    report when the city's own stage changes: the first frame only learns where the city stands (the link
+    reports on joining), and at most one ask every 5 seconds (`ASK_GAP`; the room takes a few messages a
+    second), a change inside the gap made on the first frame after it. It is not attached to a shared (co-op)
+    city (`!this.net`), where there is no region.
+  - *Declaring on a friend that fired.* The room flags a city pariah from its report's `fired` (or a stage past a
+    launch being prepared) and sends no list of them, so the page reads the same two facts
+    (`atomFiredBy`, `src/data/atom.ts`): `friendDeclareProblem` leaves out the newcomer's and the neutral's
+    shields for such a friend (the city's own rules above them stand: a neutral city still can't declare),
+    `FriendSummary.pariah` carries it, and the Diplomacy tab says "fired the atom bomb" beside the name and,
+    when a declaration is open, "The region lets any city declare war on it at once." The page has no
+    cooldown to skip: the cooldown was only ever the room's.
+  - *The page says what happened to the bomb.* `Game.onEvents` gives three notices that had none (the Bomb tab
+    that shows them in full is step 11): `strikeSent` ("The atom bomb is with the region’s room, which has to
+    agree to the strike on X"), `launchHeld` (the reason, the room's own words for a refusal: "The prepared
+    bomb can’t leave: ... It stays in the silo until it is sent again") and `bombFired` ("The atom bomb has
+    left the silo for X"). They are the same for a computer neighbour's launch.
+  - *Tests.* `tests/war/atomFriends.test.ts` (20), on three lab towns in a real `RegionRoom`
+    (`atomFriendsHarness.ts`: pages with `FriendsWarClient`, `RegionOps`, `AtomRegion` and `resolveOp`, `Clock`,
+    the room's `atomPrep` short): the race announced to the other two and the first finisher's mark, word and
+    achievement (and a second finisher gets none), a stage change told at once and inside the gap held, the first
+    finisher told again on return; the whole strike (a pact between two friends, a dome, total war, the room's
+    refusal before its own clock has run, sent again and kept, the firer a pariah in sim and room and its
+    pact gone from both, the target's countdown from the moment it took it and told again changing nothing, the
+    dome stopping one with no winter anywhere, then a second city's strike landing -- levelled, its report's
+    hit, the winter reaching the third city *and* the firer); refusals (target away, target on protocol 6,
+    the room never answering) leaving the bomb prepared with the reason; a friend who cannot take it now
+    (offered again with each report) and one who is gone (taken on return with a fresh countdown); a second
+    bomb waiting for the first; the cloud (first sight, new part only, repeats, a reload, a bounded big step, a
+    lower total, waiting for the wind and coming in when it turns, nothing from a stranger or a nonsense
+    number); the winter on a city's return, once; ids that are not winters; declaring on a pariah friend;
+    the cleaners on hostile lists. `tests/war/atomChain.test.ts` has the friend-target test changed as
+    above, `atomState.test.ts` the summary's new `first`. **The cross-browser script** (`determinism.ts`,
+    friends section, hash and answer of each step, 80 entries now) uses the three commands: `atomFirst`
+    refused and taken, a strike put to the region, turned away, put again and kept (the world turns on the
+    city), winters by id (one a repeat, one refused), a cloud on each of the three sides in turn (the town's
+    wind comes from some and not others: deposited, waiting, repeated, set down), a bomb from the friend
+    taken once, a repeat refused, a second refused while one is in the air. `determinism.test.ts` reads the
+    entries for each of those. Chromium agrees with Node (24 months in 22 s).

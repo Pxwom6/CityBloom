@@ -10,6 +10,7 @@
  * nothing here draws from a random stream.
  */
 import { ATOM, atomStageNo, spanWords, type AtomReport, type AtomStage } from '../../data/atom';
+import { FIGHT_TIMEOUT_HOURS, SETTLE_TIMEOUT_HOURS } from '../../data/battle';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
 import { TIER_KEYS } from '../../data/research';
@@ -52,9 +53,12 @@ export interface Atom {
   have?: true;
   /**
    * A launch being prepared: war hours done of `ATOM.launch.prepHours`, and the neighbour it is aimed
-   * at. A prepared bomb (all the hours done) waits as long as it likes.
+   * at. A prepared bomb (all the hours done) waits as long as it likes. At a friend's city (M40 step
+   * 10, call 17) a prepared bomb is put to the region's room: `send` is that strike while the room
+   * decides (its number, the war hour it was sent at, the friend's place, `settling` once the page has
+   * put it to the room), and `refused` the room's last reason for turning it away, in its words.
    */
-  prep?: { done: number; to: number };
+  prep?: { done: number; to: number; send?: StrikeSend; refused?: string };
   /**
    * The bomb has left: the tick, the neighbour it was aimed at (its id and name) and, for a friend,
    * its place in the region. It is the end of the race for this city.
@@ -106,6 +110,16 @@ export interface Atom {
   /** Bombs that have landed in this city, and bombs its dome has stopped. */
   boom: number;
   stopped: number;
+}
+
+/** A prepared bomb on its way to the region's room, aimed at a friend's city (M40 step 10, call 17). */
+export interface StrikeSend {
+  /** The operation's number (an id of the sim's, as the tower's), the war hour it was sent at, the friend's place. */
+  op: number;
+  at: number;
+  slot: number;
+  /** The page has put it to the room and waits for the answer (it then waits longer). */
+  settling?: true;
 }
 
 /** The city's bomb race, made on first use (the caller is about to set a fact in it). */
@@ -264,9 +278,10 @@ export interface AtomSummary {
   /**
    * A launch being prepared: its share done (0 to 1), who it is aimed at, `ready` once it is all
    * done and holding, why the preparation waits (null while it goes on or when it is ready), and
-   * why the bomb couldn't leave for its target now (a war paused or over, a friend's city that is
-   * the room's to agree to); null when sending it would fire it. A ready bomb with `held` set waits
-   * for the city to send it again (`launchBomb`) or call it off.
+   * why the bomb couldn't leave for its target now (a war paused or over; at a friend's city, the
+   * region's room deciding on the strike, or its last refusal in its words); null when sending it
+   * would send it. A ready bomb with `held` set waits for the city to send it again (`launchBomb`) or
+   * call it off.
    */
   launch: {
     done: number;
@@ -278,6 +293,8 @@ export interface AtomSummary {
   } | null;
   /** The bomb has left: when, and for whom. */
   fired: { tick: number; to: number; name: string } | null;
+  /** The city finished the bomb before any other city in the race (M40 step 10: the region's word for friends). */
+  first: boolean;
   /**
    * A bomb on its way to this city (M40): who sent it, when it lands (a tick), ground zero, the
    * residents near it and the shelter places, and whether the dome would stop it if it landed now.
@@ -333,10 +350,11 @@ export function atomSummary(sim: Sim): AtomSummary | null {
           name: neighbourOf(sim, a.prep.to)?.name ?? 'a neighbour',
           ready: a.prep.done >= ATOM.launch.prepHours,
           wait: a.prep.done >= ATOM.launch.prepHours ? null : siloBlock(sim),
-          held: heldWhy(sim, a.prep.to),
+          held: a.prep.send ? IN_THE_ROOM : (a.prep.refused ?? heldWhy(sim, a.prep.to)),
         }
       : null,
     fired: a?.fired ? { tick: a.fired.tick, to: a.fired.to, name: a.fired.name } : null,
+    first: a?.first === true,
     inbound: a?.inbound?.warned
       ? {
           from: a.inbound.name,
@@ -585,6 +603,8 @@ function prepHour(sim: Sim): void {
   const a = sim.state.war!.atom;
   const p = a?.prep;
   if (!a || !p) return;
+  // A strike with the region's room has left the silo: what happens to the silo no longer matters.
+  if (p.send) return strikeHour(sim, a, p, p.send);
   const silo = civicOfDef(sim, 'atomsilo');
   // Damage that closes the silo undoes the preparation, however far along (or complete) it was.
   if (silo && !silo.build && !civicOnline(silo)) {
@@ -598,9 +618,9 @@ function prepHour(sim: Sim): void {
   if (p.done >= ATOM.launch.prepHours || siloBlock(sim)) return;
   p.done = Math.min(ATOM.launch.prepHours, round3(p.done + workRate(sim, silo!)));
   sim.warChanged();
-  // Prepared. If the bomb can't leave (the war is paused or over, or the target is a friend's city)
-  // the city is told it is held and why: it waits to be sent again or called off.
-  if (p.done >= ATOM.launch.prepHours && !fireIfAble(sim)) {
+  // Prepared. If the bomb can't leave (the war is paused or over) the city is told it is held and why:
+  // it waits to be sent again or called off. At a friend's city it goes to the region's room instead.
+  if (p.done >= ATOM.launch.prepHours && fireIfAble(sim) === 'held') {
     const n = neighbourOf(sim, p.to);
     sim.events.push({
       kind: 'launchHeld',
@@ -689,20 +709,16 @@ function targetWhy(sim: Sim, to: number): string | null {
   return null;
 }
 
-/** A strike on a friend's city is the region's room to agree to (steps 9 and 10), not the sim's. */
-function roomWhy(n: Neighbour): string {
-  return `A strike on ${n.name}’s city goes through the region’s room, which has to agree`;
-}
+/** What a strike with the region's room is, in words: it has left the silo and the room decides. */
+const IN_THE_ROOM = 'The strike is with the region’s room, which has to agree';
 
 /**
- * Why a prepared bomb can't leave for this neighbour now, or null when sending it would fire it:
- * `targetWhy`, and for a friend's city the room's say.
+ * Why a prepared bomb can't leave for this neighbour now, or null when sending it would send it: the
+ * target's (`targetWhy`). A friend's city is the region's room to agree to; sending the bomb puts it
+ * to the room, and the room's refusal, when there is one, is `prep.refused` (the summary shows it).
  */
 function heldWhy(sim: Sim, to: number): string | null {
-  const why = targetWhy(sim, to);
-  if (why) return why;
-  const n = neighbourOf(sim, to);
-  return n?.player ? roomWhy(n) : null;
+  return targetWhy(sim, to);
 }
 
 /**
@@ -717,6 +733,7 @@ export function launchBomb(sim: Sim, to: number, dryRun: boolean): CommandResult
   const a = sim.state.war!.atom;
   if (!a?.have)
     return fail(a?.bomb ? 'The bomb isn’t finished yet' : 'The city has no atom bomb: build one first');
+  if (a.prep?.send) return fail(IN_THE_ROOM);
   const rules = atomRulesWhy(sim);
   if (rules) return fail(rules);
   if (sim.state.scenario) return fail('The atom bomb is not part of a scenario');
@@ -724,11 +741,9 @@ export function launchBomb(sim: Sim, to: number, dryRun: boolean): CommandResult
   if (silo) return fail(silo);
   const target = targetWhy(sim, to);
   if (target) return fail(target);
-  const n = neighbourOf(sim, to)!;
   if (a.prep) {
-    // Sending a prepared bomb again, at the same neighbour or another.
+    // Sending a prepared bomb again, at the same neighbour or another (a friend's city: to the region's room).
     if (a.prep.done < ATOM.launch.prepHours) return fail('A launch is already being prepared');
-    if (n.player) return fail(roomWhy(n));
     if (dryRun) return ok(0);
     a.prep.to = to;
     fireIfAble(sim);
@@ -748,6 +763,7 @@ export function launchBomb(sim: Sim, to: number, dryRun: boolean): CommandResult
 export function cancelLaunch(sim: Sim, dryRun: boolean): CommandResult {
   const a = sim.state.war?.atom;
   if (!a?.prep) return fail('No launch is being prepared');
+  if (a.prep.send) return fail(IN_THE_ROOM);
   const refund = Math.round(ATOM.launch.cost * ATOM.launch.refund);
   if (dryRun) return ok(-refund);
   delete a.prep;
@@ -758,23 +774,105 @@ export function cancelLaunch(sim: Sim, dryRun: boolean): CommandResult {
 
 /**
  * A prepared bomb leaves if it can (M40, call 7): the target is a computer neighbour the city is
- * fighting a total war with that is open now. A friend's city is the region's to agree to (step 9
- * fills that in): nothing leaves for it here, and the bomb stays prepared. A war that is not open
- * when the preparation ends leaves it prepared too; the city sends it again with `launchBomb`.
- * Says whether it left; the caller tells the city when it did not (event `launchHeld`).
+ * fighting a total war with that is open now, and it fires. At a friend's city the bomb is put to the
+ * region's room (step 10, call 17): it is `sent`, stays in the silo's books as prepared, and leaves
+ * only when the room keeps the strike (`strikeResult`). A war that is not open when the preparation
+ * ends leaves the bomb prepared and `held`; the city sends it again with `launchBomb`. The caller
+ * tells the city when it was held (event `launchHeld`).
  */
-function fireIfAble(sim: Sim): boolean {
+function fireIfAble(sim: Sim): 'fired' | 'sent' | 'held' {
   const a = sim.state.war!.atom!;
   const p = a.prep;
-  if (!p || heldWhy(sim, p.to)) return false;
+  if (!p || heldWhy(sim, p.to)) return 'held';
+  if (p.send) return 'sent';
   const n = neighbourOf(sim, p.to)!;
+  if (n.player) {
+    // (A fresh try: the room's last refusal, if there was one, no longer stands.)
+    delete p.refused;
+    p.send = { op: sim.state.nextId++, at: sim.state.war!.clock, slot: n.player.slot };
+    sim.events.push({ kind: 'strikeSent', id: n.id, info: { to: n.name } });
+    sim.warChanged();
+    return 'sent';
+  }
   a.fired = { tick: sim.state.tick, to: n.id, name: n.name };
   delete a.have;
   delete a.prep;
   sim.events.push({ kind: 'bombFired', id: n.id, info: { to: n.name } });
   sim.warChanged();
   startFlight(sim);
-  return true;
+  return 'fired';
+}
+
+/**
+ * The strike with the region's room waiting for its answer, by the operation's number (the page asks
+ * for these through `friendOpsWaiting`), or undefined. `mission` leaves out the number to ask for any.
+ */
+export function strikeSend(sim: Sim, mission?: number): StrikeSend | undefined {
+  const send = sim.state.war?.atom?.prep?.send;
+  return send && (mission === undefined || send.op === mission) ? send : undefined;
+}
+
+/** The room's refusal in the words it sent, bounded. */
+const refusalWords = (reason: unknown): string =>
+  String(reason || 'the region would not have it').slice(0, 160);
+
+/**
+ * A strike the room has not answered for too long is called back to the silo (the tower's rule: the
+ * war hours a page has to put it, `FIGHT_TIMEOUT_HOURS`, and longer once pinned, `SETTLE_TIMEOUT_HOURS`):
+ * the bomb is prepared again and the city is told.
+ */
+function strikeHour(sim: Sim, a: Atom, p: NonNullable<Atom['prep']>, send: StrikeSend): void {
+  const wait = send.settling ? SETTLE_TIMEOUT_HOURS : FIGHT_TIMEOUT_HOURS;
+  if (sim.state.war!.clock < send.at + wait) return;
+  strikeBack(sim, a, p, 'The region gave no answer: the bomb is prepared, send it again');
+}
+
+/** A strike did not go: the bomb is prepared again (or lost, if its silo is gone), and the city told why. */
+function strikeBack(sim: Sim, a: Atom, p: NonNullable<Atom['prep']>, why: string): void {
+  delete p.send;
+  p.refused = why;
+  const n = neighbourOf(sim, p.to);
+  if (!civicOfDef(sim, 'atomsilo')) {
+    // (The silo went while the strike was with the room: with nowhere to keep it, the bomb is gone.)
+    delete a.have;
+    delete a.prep;
+    sim.events.push({ kind: 'atomLost', id: 0, info: { what: 'bomb' } });
+  } else sim.events.push({ kind: 'launchHeld', id: p.to, info: { to: n?.name ?? 'a friend', why } });
+  sim.warChanged();
+}
+
+/**
+ * The region's verdict on the strike (M40 step 10, call 17; page only, as `missionResult` for the
+ * strike's number): `success` is the room keeping it, and the bomb has left (`fired`, with the
+ * friend's place; the world turns on the firer; its flight is the friend's sim's to land), `refused`
+ * is the room turning it away, and the bomb stays prepared with the room's reason shown (the city
+ * sends it again with `launchBomb`). Null when `mission` is not the strike's.
+ */
+export function strikeResult(
+  sim: Sim,
+  mission: number,
+  outcome: string,
+  reason: string | undefined,
+  dryRun: boolean,
+): CommandResult | null {
+  const a = sim.state.war?.atom;
+  const p = a?.prep;
+  const send = strikeSend(sim, mission);
+  if (!a || !p || !send) return null;
+  if (outcome !== 'success' && outcome !== 'refused') return fail('No such outcome');
+  if (dryRun) return ok(0);
+  if (outcome === 'refused') {
+    strikeBack(sim, a, p, refusalWords(reason));
+    return ok(0);
+  }
+  const n = neighbourOf(sim, p.to);
+  a.fired = { tick: sim.state.tick, to: p.to, name: n?.name ?? 'a friend', slot: send.slot };
+  delete a.have;
+  delete a.prep;
+  sim.events.push({ kind: 'bombFired', id: p.to, info: { to: n?.name ?? 'a friend' } });
+  sim.warChanged();
+  startFlight(sim);
+  return ok(0);
 }
 
 /**
@@ -815,6 +913,12 @@ export function atomDeters(sim: Sim): boolean {
 /** The minute of the hour the blast's later slices are dealt in (a quiet one). */
 const SLICE_MINUTE = 1;
 
+/**
+ * Why a second bomb is held back while one is in the air. A friend's strike is not taken then: the
+ * page offers it again (`Game.takeOp` answers `later`) until the first has landed or been stopped.
+ */
+export const BOMB_IN_AIR = 'A bomb is already on its way to the city';
+
 /** Who sent a bomb at the city. */
 export interface BombSender {
   id: number;
@@ -834,7 +938,7 @@ export function atomInbound(sim: Sim, from: BombSender, hours: number = ATOM.fli
   const w = sim.state.war;
   if (!w) return 'War is off in this city';
   const a = atomOf(sim);
-  if (a.inbound) return 'A bomb is already on its way to the city';
+  if (a.inbound) return BOMB_IN_AIR;
   const at = groundZero(sim);
   const tick = sim.state.tick;
   let arrive = tick + Math.max(0, Math.round(hours * TICKS_PER_HOUR));
@@ -1131,6 +1235,12 @@ export function atomCivicRemoved(sim: Sim, c: Civic): void {
   }
   if (c.def === 'atomsilo' && (a.bomb || a.have || a.prep)) {
     delete a.bomb;
+    // A strike with the region's room has left the silo already: if the room keeps it the bomb has gone
+    // and the world turns on the city, and if it doesn't (`strikeBack`) there is no silo for it any more.
+    if (a.prep?.send) {
+      sim.warChanged();
+      return;
+    }
     delete a.have;
     delete a.prep;
     sim.events.push({ kind: 'atomLost', id: c.id, info: { what: 'bomb' } });

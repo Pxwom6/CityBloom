@@ -5,12 +5,15 @@
  * region with the id the city's sim gives it, and hands the verdict back to the city
  * (`missionResult`). A look round that worked brings a dossier, made here from the friend's latest
  * save in the region. With no word, it asks again later with the same id, and the region, which
- * remembers its verdicts, gives the same answer.
+ * remembers its verdicts, gives the same answer. The atom bomb aimed at a friend (M40 step 10) goes
+ * this way too: the city's sim lists it among the operations waiting, and the region's `opKept`
+ * is its `missionResult`. The other end, an operation against this city, is `resolveOp`.
  */
 import type { Command, CommandResult } from '../sim/commands';
-import type { OpOut, OpSent } from '../net/regionLink';
+import type { BattleAnswer, OpOn, OpOut, OpSent } from '../net/regionLink';
 import { readSaveFile, type SaveFile } from '../sim/save';
-import { dossierOf, type Dossier, type FriendOpWaiting } from '../sim/systems/regionOps';
+import { BOMB_IN_AIR } from '../sim/systems/atom';
+import { OP_TAKEN, dossierOf, type Dossier, type FriendOpWaiting } from '../sim/systems/regionOps';
 
 /** What the city's game offers this helper. */
 export interface OpsHost {
@@ -95,4 +98,24 @@ export class RegionOps {
       this.host.changed?.();
     }
   }
+}
+
+/**
+ * An operation another city made against this one, as the region decided it (M37), handed to the
+ * city's own sim, which takes it once (M40: an atom bomb among them). `taken`: the sim has it (or had
+ * it already), so the page keeps the city and the region can forget the operation; `refused`: it never
+ * will, and the region forgets it; `later`: not now (a bomb is in the air already): it is offered again.
+ */
+export async function resolveOp(host: Pick<OpsHost, 'command'>, o: OpOn): Promise<BattleAnswer> {
+  const r = await host.command({
+    type: 'opResolve',
+    from: o.from,
+    id: o.id,
+    op: o.op,
+    outcome: o.outcome,
+    ...(o.target ? { target: o.target } : {}),
+    late: o.late,
+  });
+  if (r.ok || r.reason === OP_TAKEN) return 'taken';
+  return r.reason === BOMB_IN_AIR ? 'later' : 'refused';
 }

@@ -15,6 +15,9 @@ import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { recordInput } from '../../src/sim/battle/live';
 import { UNIT } from '../../src/data/war';
+import { ATOM } from '../../src/data/atom';
+import { atomOf } from '../../src/sim/systems/atom';
+import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
 import { runAtomSection } from './atomSection';
 
 export interface DeterminismResult {
@@ -535,6 +538,79 @@ export function runDeterminism(
   fr({ type: 'friendPacts', me: 1, pacts: [], vassals: [], wars: [] });
   labSim.advance(TICKS_PER_MONTH);
   friends.push(labSim.hash(), JSON.stringify(labSim.state.war!.diplomacy ?? null));
+
+  // The atom bomb among friends (M40 step 10), in the same town: the region's words as the page passes them
+  // on. A city with no bomb is refused the first finisher's word; with a bomb held (a fact set by hand, as the
+  // atom section sets its ground zero) it takes it, once. A launch prepared at the friend is put to the
+  // region, turned away, put again and kept: the bomb has left, and the world turns on the city. The friend's
+  // winters are applied once by their ids. Its cloud arrives as a cumulative total on each side in turn
+  // (this town's own wind blows from some of them and not from others): the first sight takes nothing, new
+  // cloud is deposited where the wind comes from and waits where it does not, the same total twice adds
+  // once, and a lower one sets it down. And a strike from the friend starts a bomb's flight here once.
+  const bomb = (cmd: Command) => {
+    const r = lab(cmd);
+    friends.push(JSON.stringify(r.ok ? [r.cost, r.info ?? null] : r.reason), labSim.hash());
+  };
+  const fa = atomOf(labSim);
+  bomb({ type: 'atomFirst' });
+  fa.have = true;
+  bomb({ type: 'atomFirst' });
+  bomb({ type: 'atomFirst' });
+  const mate = labSim.state.region.neighbours.find((n) => n.player?.slot === 2)!;
+  const labWar = labSim.state.war!;
+  for (const [op, word] of [
+    [9_001, 'refused'],
+    [9_002, 'success'],
+  ] as const) {
+    fa.prep = { done: ATOM.launch.prepHours, to: mate.id, send: { op, at: labWar.clock, slot: 2 } };
+    friends.push(JSON.stringify(friendOpsWaiting(labSim)));
+    bomb({ type: 'spySettling', mission: op, on: true });
+    friends.push(JSON.stringify(friendOpsWaiting(labSim)));
+    bomb({ type: 'missionResult', mission: op, outcome: word, reason: 'Not now' });
+    friends.push(JSON.stringify([fa.fired ?? null, fa.prep ?? null, fa.have ?? null]));
+  }
+  bomb({ type: 'friendWinter', id: '2-1' });
+  bomb({ type: 'friendWinter', id: '2-1' });
+  bomb({ type: 'friendWinter', id: '2-2' });
+  bomb({ type: 'friendWinter', id: 'self:0' });
+  friends.push(JSON.stringify(labSim.state.weather.winters ?? null));
+  let total = 4;
+  for (const side of ['north', 'south', 'west'] as const) {
+    mate.side = side;
+    bomb({ type: 'friendFallout', from: 2, total });
+    total += 31.25;
+    bomb({ type: 'friendFallout', from: 2, total });
+    bomb({ type: 'friendFallout', from: 2, total });
+  }
+  bomb({ type: 'friendFallout', from: 2, total: 1 });
+  bomb({ type: 'friendFallout', from: 3, total: 9 });
+  friends.push(JSON.stringify(labSim.state.fallout?.seen ?? null));
+  bomb({
+    type: 'opResolve',
+    from: 2,
+    id: 'ao-00000000-9002',
+    op: 'atom',
+    outcome: 'success',
+    late: false,
+  });
+  bomb({
+    type: 'opResolve',
+    from: 2,
+    id: 'ao-00000000-9002',
+    op: 'atom',
+    outcome: 'success',
+    late: false,
+  });
+  bomb({
+    type: 'opResolve',
+    from: 2,
+    id: 'ao-00000000-9003',
+    op: 'atom',
+    outcome: 'success',
+    late: true,
+  });
+  labSim.advance(TICKS_PER_HOUR);
+  friends.push(JSON.stringify(labSim.state.war!.atom ?? null), labSim.hash());
 
   // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
   // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,

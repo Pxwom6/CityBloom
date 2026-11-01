@@ -35,6 +35,16 @@ export function atomStageNo(stage: AtomStage): number {
   return ATOM_STAGES.indexOf(stage);
 }
 
+/**
+ * Has a friend's city fired its bomb, as its report says (M40 step 10): `fired`, or a stage past a launch
+ * being prepared (the bomb in flight or used). The region room flags such a city a pariah the same way
+ * (`FriendsWar.markPariah`): any city may declare war on it at once, with no newcomer's or neutral's
+ * shield and no cooldown.
+ */
+export function atomFiredBy(atom: { stage: number; fired?: true } | undefined): boolean {
+  return !!atom && (atom.fired === true || atom.stage > atomStageNo('preparing'));
+}
+
 /** What each stage is called, for the war room's ladder, the region's notices and the map. */
 export const ATOM_STAGE_NAMES: Record<AtomStage, string> = {
   none: 'Nothing started',
@@ -303,6 +313,20 @@ export const FALLOUT = {
   edge: { round: 0.001 },
   town: { share: 0.6, scale: 750, drag: 0.01, inflow: 0.006 },
   /**
+   * A friend's cloud over the border (M40 step 10, call 12): its page gives the city the friend's
+   * cumulative total towards it and the sim takes in what is new, `share` of it, as air along the
+   * `rows` outermost rows or columns of the edge facing that friend, at most `step` of the total a
+   * message (a bomb's whole cloud is under `ATOM_WIRE.plumePerBomb`: a lying room can add no more
+   * than one bomb a message). The cloud has spread over two maps before it arrives, so it comes in
+   * `spread` times thinner than the strip would hold, and no cell of it is thicker than `cell`: a
+   * middle strike's whole cloud (356) lies about 0.28 thick across the strip and crosses the map in
+   * a few game days, leaving at most a couple of hundredths on the ground (the probe in the step's
+   * summary): a haze, as a computer neighbour's stream is, that is seen on the radiation map and felt
+   * a little by those under it, and never closes ground. Only while the city's own wind blows from
+   * that friend's side.
+   */
+  friend: { share: 0.6, rows: 2, spread: 3, cell: 0.4, step: 700 },
+  /**
    * What fallout does where people are, with `dose` = ground + `airDose` x air, at most 1: sickness
    * (new cases per resident per hour, on top of HEALTH's), a home's mood, the share of its work that
    * is lost (taxes, freight, specialisation income: at most `workMax`), and land value.
@@ -449,7 +473,23 @@ export const ATOM_WIRE = {
    * of one to four cities has at most six bombs, a player city's own and its computer neighbours').
    */
   plumeMax: 8 * 700,
+  /**
+   * The winters one city's bombs can begin and the marks the record holds: the room's own limits
+   * (`ATOM_WINTERS_PER_CITY`, `ATOM_MARKS`), which a page checks again, for a region in a player's
+   * browser has a host that is not trusted.
+   */
+  winters: 8,
+  marks: 16,
+  /** The most cities a region holds, so the most places a mark, a winter or a strike can name. */
+  slots: 64,
 };
+
+/** A winter id the region sends: the place of the city whose bomb landed, and which of its bombs ("2-1"). */
+export function winterIdOk(id: unknown): id is string {
+  if (typeof id !== 'string') return false;
+  const m = /^([1-9]\d?)-([1-9]\d?)$/.exec(id);
+  return !!m && +m[1]! <= ATOM_WIRE.slots && +m[2]! <= ATOM_WIRE.winters;
+}
 
 const whole = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;

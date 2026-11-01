@@ -868,7 +868,7 @@ describe('M40: a launch', () => {
     expect(spent.atomLaunch).toEqual([ATOM.launch.cost, ATOM.launch.cost]);
   });
 
-  it('is aimed at a friend’s city only with the region’s say: prepared, never fired here', () => {
+  it('is aimed at a friend’s city only with the region’s say: put to the room, prepared until it keeps it', () => {
     const sim = at('ready');
     friendTakesPlace(sim);
     const friend = sim.state.region.neighbours.find((n) => n.player)!;
@@ -889,27 +889,23 @@ describe('M40: a launch', () => {
     expect(a.prep).toEqual({ done: 0, to: friend.id });
     hours(sim, ATOM.launch.prepHours + 100);
     expect(a.prep!.done).toBe(ATOM.launch.prepHours);
+    // The preparation done, the bomb is put to the room (the page asks for it by `friendOpsWaiting`) and
+    // not fired here: it leaves the sim only when the room keeps the strike (`missionResult`).
     expect(a.fired).toBeUndefined();
     expect(a.have).toBe(true);
+    expect(a.prep!.send).toMatchObject({ slot: 2 });
     expect(atomStage(sim)).toBe('preparing');
     expect(events(sim, 'bombFired')).toHaveLength(0);
-    // The city is told it is held, and that the room has the say.
-    expect(events(sim, 'launchHeld')).toEqual([
-      expect.objectContaining({
-        id: friend.id,
-        info: { to: friend.name, why: expect.stringMatching(/goes through the region’s room/) },
-      }),
-    ]);
+    expect(events(sim, 'strikeSent')).toHaveLength(1);
+    expect(events(sim, 'launchHeld')).toHaveLength(0);
     expect(atomSummary(sim)!.launch).toMatchObject({
       ready: true,
-      held: expect.stringMatching(/goes through the region’s room/),
+      held: expect.stringMatching(/with the region’s room/),
     });
-    // Sending it again waits for the room, which is not in this version of the sim yet.
-    expect(why(sim, launch(friend.id))).toMatch(/goes through the region’s room/);
+    // Sending it again or calling it off waits for the room's word.
+    expect(why(sim, launch(friend.id))).toMatch(/with the region’s room/);
+    expect(why(sim, { type: 'cancelLaunch' })).toMatch(/with the region’s room/);
     expect(a.fired).toBeUndefined();
-    // It can be called off, as any launch.
-    ok(sim, { type: 'cancelLaunch' });
-    expect(a.prep).toBeUndefined();
   });
 
   it('is refused in plain words', () => {

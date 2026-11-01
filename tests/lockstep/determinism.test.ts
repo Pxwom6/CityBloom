@@ -43,6 +43,21 @@ describe('the cross-browser determinism script', () => {
     expect(run().used).toEqual([...ALL_KINDS].sort());
   });
 
+  // The same for the bomb among friends (M40 step 10), at the end of the friends section: every browser is
+  // asked about a strike put to the region and turned away and kept, a cloud that is deposited where the
+  // wind comes from and waits where it does not, and a bomb from the friend that starts its flight here.
+  it("the friends' entries hold the bomb among friends: a strike kept, a cloud taken in and left waiting, a bomb coming", () => {
+    const friends = run().friends;
+    const all = friends.join('\n');
+    expect(all).toMatch(/"op":"atom"/);
+    expect(all).toMatch(/"fired":\{"tick":\d+,"to":\d+,"name":"Brookside","slot":2\}/);
+    expect(all).toMatch(/"deposited":[1-9]/);
+    expect(all).toMatch(/"deposited":0,"waiting":true/);
+    expect(all).toMatch(/"inbound":\{"from":\d+,"name":"Brookside","slot":2/);
+    expect(all).toMatch(/"id":"2-1","from":\d+,"depth":1/);
+    expect(run().refused).toContain('opResolve: A bomb is already on its way to the city');
+  });
+
   // What the browsers are asked to agree on has to be in the entries: a section that went green while the
   // blast was one slice and no fire was set would compare nothing about either (the strike's cap on a
   // slice and the fire ring's resumption are the code of those two).

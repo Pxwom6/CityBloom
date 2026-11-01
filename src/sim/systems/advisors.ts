@@ -655,18 +655,31 @@ function weatherAdvice(sim: Sim): Advice[] {
       map: 'power',
     });
   }
-  // A nuclear winter (M40): the sun is weak and the cold comes in any month.
+  // A nuclear winter (M40): the sun is weak and the cold comes in any month. Each half is said only
+  // when it is so: solar plants to be dimmed, and homes heating (a mean under the heating line; in a
+  // warm month, at a depth too small to cool it enough, or in a heatwave, there is no heating to speak of).
   const depth = winterDepth(w, s.tick);
   if (depth >= 0.05 && power.demand > 0) {
     const sun = [...s.civics.values()].some((c) => c.def === 'solar');
     const more = Math.round((weatherUse(w, s.tick).power.R - 1) * 100);
-    out.push({
-      advisor: 'utilities',
-      severity: power.unserved > 0 ? 2 : 1,
-      title: 'Nuclear winter',
-      text: `${sun ? `Solar is down ${Math.round(WINTER.solar * depth * 100)} %; heating` : 'Heating'} is up: homes use ${more} % more power than in mild weather. Plants that don't need the sun, and power bought from neighbours, carry the city through it.`,
-      map: 'power',
-    });
+    const heating = w.mean < WEATHER.heatBelow && more > 0;
+    const solar = `Solar is down ${Math.round(WINTER.solar * depth * 100)} %`;
+    const heat = `homes use ${more} % more power than in mild weather`;
+    const said = sun
+      ? heating
+        ? `${solar}; heating is up: ${heat}.`
+        : `${solar}.`
+      : heating
+        ? `Heating is up: ${heat}.`
+        : null;
+    if (said)
+      out.push({
+        advisor: 'utilities',
+        severity: power.unserved > 0 ? 2 : 1,
+        title: 'Nuclear winter',
+        text: `${said} Plants that don't need the sun, and power bought from neighbours, carry the city through it.`,
+        map: 'power',
+      });
   }
   // Winter ahead: the city's own need on the coldest day (the coldest month in its deepest cold
   // spell, each zone heating by its own factor, eased in for a city new to seasons), against its

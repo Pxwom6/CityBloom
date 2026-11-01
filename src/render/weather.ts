@@ -63,6 +63,48 @@ export function pureSeason(s: Season): [number, number, number, number] {
  */
 export const WINTER_LOOK = { overcast: 0.6, snow: 0.9 };
 
+/** How overcast the sky is for a look: its weather's cloud, or a nuclear winter's ash if that is greyer. */
+export function overcastOf(look: Pick<WeatherLook, 'kind' | 'strength' | 'winter'>): number {
+  const st = look.kind === 'clear' ? 0 : look.strength;
+  return Math.max(OVERCAST[look.kind] * Math.min(1, 0.4 + st), WINTER_LOOK.overcast * look.winter);
+}
+
+/** Photo mode's season and weather over the city's own look (M22). */
+export function photoWeather(
+  p: { season: Season | null; weather: WeatherKind | null },
+  base: WeatherLook,
+): Partial<WeatherLook> {
+  const out: Partial<WeatherLook> = {};
+  // (A season or weather picked here is the look wanted: a nuclear winter's grey doesn't override it.)
+  if (p.season || p.weather) out.winter = 0;
+  if (p.season) {
+    out.season = pureSeason(p.season);
+    out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;
+  }
+  if (p.weather) {
+    out.kind = p.weather;
+    out.strength = p.weather === 'clear' ? 0 : 0.85;
+    out.wet = p.weather === 'rain' || p.weather === 'storm' ? 1 : p.weather === 'heat' ? 0 : base.wet;
+    if (p.weather === 'snow') out.snow = Math.max(0.7, out.snow ?? base.snow);
+  }
+  return out;
+}
+
+/**
+ * The look to draw a frame with: the city's own, a test's override, then photo mode's pick. Data maps
+ * are read in clear weather and under no nuclear winter's grey, like the flat daylight they are read in.
+ */
+export function frameLook(
+  base: WeatherLook,
+  override: Partial<WeatherLook> | null,
+  photo: Partial<WeatherLook> | null,
+  mapOn: boolean,
+): WeatherLook {
+  const look = { ...base, ...(override ?? {}), ...(photo ?? {}) };
+  if (mapOn) Object.assign(look, { kind: 'clear', strength: 0, winter: 0 });
+  return look;
+}
+
 /** What the world's weather looks like at its display tick. */
 export function worldLook(world: ClientWorld): WeatherLook {
   const w = world.stats.weather;
@@ -312,7 +354,7 @@ void main() {
     u.uWet.value = L.wet;
     u.uSeason.value.set(L.season[0], L.season[1], L.season[2], L.season[3]);
     const st = L.kind === 'clear' ? 0 : L.strength;
-    this.overcast = Math.max(OVERCAST[L.kind] * Math.min(1, 0.4 + st), WINTER_LOOK.overcast * L.winter);
+    this.overcast = overcastOf(L);
     this.fog =
       L.kind === 'fog' ? st : L.kind === 'rain' || L.kind === 'snow' || L.kind === 'storm' ? st * 0.45 : 0;
     this.haze = L.kind === 'heat' ? st : 0;

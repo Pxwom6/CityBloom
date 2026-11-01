@@ -4,14 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
-import {
-  WEATHER_ICON,
-  weatherBrief,
-  weatherLines,
-  weatherName,
-  winterBadge,
-  winterBadgeShort,
-} from './weather';
+import { WEATHER_ICON, weatherBrief, weatherLines, weatherName, winterBadgeText } from './weather';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
 import { Rci } from './Rci';
 import { SystemMenu } from './SystemMenu';
@@ -36,6 +29,7 @@ export function TopBar() {
   const st = game.world.stats;
   const date = dateOf(Math.floor(game.world.displayTick));
   const WeatherIcon = WEATHER_ICON[st.weather.kind];
+  const winter = winterBadgeText(st.weather);
   const [weatherOpen, setWeatherOpen] = useState(false);
   // On a narrow window the bar folds its lesser buttons into this menu (`#ui[data-bars='compact']`).
   const [moreOpen, setMoreOpen] = useState(false);
@@ -135,16 +129,16 @@ export function TopBar() {
         </div>
       </div>
       <RaidChip />
-      {st.weather.winter > 0 && (
+      {winter && (
         <button
           class="btn winter-badge"
           data-testid="winter-badge"
-          aria-label={winterBadge(st.weather)}
+          aria-label={winter.long}
           title={weatherLines(st.weather).join('\n')}
           onClick={() => setWeatherOpen(!weatherOpen)}
         >
-          <span class="winter-long">{winterBadge(st.weather)}</span>
-          <span class="winter-short">{winterBadgeShort(st.weather)}</span>
+          <span class="winter-long">{winter.long}</span>
+          <span class="winter-short">{winter.short}</span>
         </button>
       )}
       <span class="divider" />

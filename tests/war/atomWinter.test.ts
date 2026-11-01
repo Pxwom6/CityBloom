@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { Vector3 } from 'three';
 import { ATOM, WINTER, WINTER_HOURS, WINTER_YEARS } from '../../src/data/atom';
+import { DISASTERS } from '../../src/data/balance';
 import { CLIMATES, WEATHER, type ClimateId, type WeatherKind } from '../../src/data/climate';
 import { TIER_KEYS } from '../../src/data/research';
 import type { MapPreset } from '../../src/data/world';
@@ -22,19 +24,30 @@ import {
   initialWeather,
   maxWinterDepth,
   seasonAt,
+  setSpell,
+  snowLine,
   solarShare,
   startWinter,
   weatherHour,
   weatherSummary,
   weatherUse,
   winterDepth,
+  winterInForce,
   winterTownDrag,
   winterYear,
   type WeatherState,
 } from '../../src/sim/systems/weather';
 import { dateOf, TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
-import { worldLook, WINTER_LOOK } from '../../src/render/weather';
-import { weatherLines, winterBadge, winterBadgeShort } from '../../src/ui/weather';
+import {
+  frameLook,
+  overcastOf,
+  photoWeather,
+  WeatherRenderer,
+  worldLook,
+  WINTER_LOOK,
+  type WeatherLook,
+} from '../../src/render/weather';
+import { weatherLines, winterBadge, winterBadgeShort, winterBadgeText } from '../../src/ui/weather';
 import { buildTown, newSim, placeAlong, serveTown } from '../helpers';
 import { clone, friendTakesPlace, rivals, warCity } from './economyHelpers';
 import { labTown, ok } from './researchTown';
@@ -154,6 +167,39 @@ describe('M40: winters add, and stop at the cap', () => {
     expect(w.winters![1]).toMatchObject({ id: 'a:1', depth: WINTER.later });
   });
 
+  it('winters begun in the same tick are a first and a later ones, as they are a tick apart (a returning player gets the room’s ids in a row)', () => {
+    const together = bare('river', 10);
+    const apart = clone(together);
+    for (const id of ['a', 'b', 'c']) startWinter(together, id);
+    for (const id of ['a', 'b', 'c']) {
+      startWinter(apart, id);
+      apart.advance(1);
+    }
+    const t = together.state.weather.winters!;
+    expect(t.map((e) => e.depth)).toEqual([1, WINTER.later, WINTER.later]);
+    expect(apart.state.weather.winters!.map((e) => e.depth)).toEqual([1, WINTER.later, WINTER.later]);
+    // And the same winter follows: the city that took them at once is where the one that took them in turn is.
+    for (const h of [10, 72, 144, 400, 900, 1_400]) {
+      const at = (sim: Sim) => winterDepth(sim.state.weather, t[0]!.from + h * H);
+      expect(at(together)).toBeCloseTo(at(apart), 2);
+    }
+    expect(winterDepth(together.state.weather, t[0]!.from + 144 * H)).toBe(WINTER.cap);
+  });
+
+  it('a winter is in force from its first tick to its last, and not a tick after', () => {
+    const w = initialWeather('river');
+    w.winters = [{ id: 'a', from: 100 * H, depth: 1 }];
+    const end = 100 * H + WINTER_HOURS * H;
+    expect(winterInForce(w, 100 * H - 1)).toBe(false);
+    // (Its depth is still nothing on the tick it begins: it is in force all the same.)
+    expect(winterDepth(w, 100 * H)).toBe(0);
+    expect(winterInForce(w, 100 * H)).toBe(true);
+    expect(winterInForce(w, 100 * H + 1)).toBe(true);
+    expect(winterInForce(w, end - 1)).toBe(true);
+    expect(winterInForce(w, end)).toBe(false);
+    expect(winterInForce(initialWeather('river'), 5)).toBe(false);
+  });
+
   it('adds the winters in force, to at most 1.5; a winter that has run its course adds nothing', () => {
     const w = initialWeather('river');
     w.winters = [
@@ -198,17 +244,19 @@ describe('M40: what a winter does to the weather', () => {
   ];
 
   /** Two copies of a city a year-and-a-bit on, one with a deep winter that began 200 hours ago; the weather's hours. */
-  function year(preset: MapPreset, wild = true) {
+  function year(preset: MapPreset, wild = true, depth = 1) {
     const a = bare(preset, 200);
     if (wild) a.dispatch({ type: 'setWeather', intensity: 3 });
     const b = clone(a);
-    winterIn(b, 1, 200);
-    expect(winterDepth(b.state.weather, b.state.tick)).toBe(1);
+    winterIn(b, depth, 200);
+    expect(winterDepth(b.state.weather, b.state.tick)).toBe(depth);
     // Every spell from here on is drawn under the winter (the one in hand ends now, in both).
     a.state.weather.until = a.state.tick;
     b.state.weather.until = b.state.tick;
     const hours: {
       season: string;
+      /** What the page is told of the winter's snow (`winterSnows`) in the winter city. */
+      snows: boolean;
       a: { kind: WeatherKind; mean: number; solar: number };
       b: { kind: WeatherKind; mean: number; solar: number };
     }[] = [];
@@ -219,11 +267,12 @@ describe('M40: what a winter does to the weather', () => {
       const wb = b.state.weather;
       hours.push({
         season: season(a),
+        snows: weatherSummary(b).winterSnows,
         a: { kind: wa.kind, mean: wa.mean, solar: solarShare(wa, a.state.tick) },
         b: { kind: wb.kind, mean: wb.mean, solar: solarShare(wb, b.state.tick) },
       });
     }
-    expect(winterDepth(b.state.weather, b.state.tick)).toBe(1);
+    expect(winterDepth(b.state.weather, b.state.tick)).toBe(depth);
     return { a, b, hours };
   }
 
@@ -260,6 +309,25 @@ describe('M40: what a winter does to the weather', () => {
       expect(snowing).toBeGreaterThanOrEqual(wet);
       expect(b.state.weather.snow).toBeGreaterThan(0);
     });
+
+  for (const preset of ['river', 'lakes'] as const)
+    it(`${preset}: at half depth July rain is still rain and the page does not say otherwise; at full depth it is snow, and says so`, () => {
+      const half = year(preset, true, 0.5);
+      const summer = half.hours.filter((h) => h.season === 'summer');
+      expect(summer.filter((h) => h.b.kind === 'rain' || h.b.kind === 'storm').length).toBeGreaterThan(0);
+      expect(summer.filter((h) => h.b.kind === 'snow')).toHaveLength(0);
+      expect(summer.filter((h) => h.snows)).toHaveLength(0);
+      const full = year(preset, true, 1).hours.filter((h) => h.season === 'summer');
+      expect(full.length).toBeGreaterThan(0);
+      expect(full.every((h) => h.snows)).toBe(true);
+      expect(full.filter((h) => h.b.kind === 'rain' || h.b.kind === 'storm')).toHaveLength(0);
+    });
+
+  it('the snow line is the usual one with no winter and 6 degrees higher for each unit of depth', () => {
+    expect(snowLine(0)).toBe(WEATHER.snowBelow);
+    expect(snowLine(1)).toBe(WEATHER.snowBelow + WINTER.snowLine);
+    expect(snowLine(1.5)).toBe(WEATHER.snowBelow + 1.5 * WINTER.snowLine);
+  });
 
   it('no heatwave comes under a deep winter, though the spell is drawn like any other', () => {
     const { hours } = year('lakes');
@@ -646,9 +714,9 @@ describe('M40: where a winter starts', () => {
 });
 
 describe('M40: the forecast, the advisors and the page agree with the winter', () => {
-  /** The test town on the alpine highlands, served, with solar plants, grown to October of its first year. */
-  function town(): Sim {
-    const sim = newSim({ seed: 'wx', preset: 'highlands', disasters: false });
+  /** The test town (the alpine highlands by default), served, with solar plants, grown to a month (October) on the calendar. */
+  function town(preset: MapPreset = 'highlands', month = 9, minTick = 0): Sim {
+    const sim = newSim({ seed: 'wx', preset, disasters: false });
     buildTown(sim);
     serveTown(sim);
     sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 400_000 });
@@ -661,13 +729,13 @@ describe('M40: the forecast, the advisors and the page agree with the winter', (
         /* no room here */
       }
     expect(solar).toBeGreaterThan(0);
-    toMonth(sim, 9);
+    toMonth(sim, month, minTick);
     return sim;
   }
 
-  /** Forward to the first hour of a month (0 = January) on the calendar. */
-  function toMonth(sim: Sim, month: number): void {
-    while (dateOf(sim.state.tick).month !== month) sim.advance(H);
+  /** Forward to the first hour of a month (0 = January) on the calendar, no sooner than tick `minTick`. */
+  function toMonth(sim: Sim, month: number, minTick = 0): void {
+    while (dateOf(sim.state.tick).month !== month || sim.state.tick < minTick) sim.advance(H);
   }
 
   it('the winter forecast counts on the dimmer sun and the colder day the winter will bring', () => {
@@ -739,6 +807,97 @@ describe('M40: the forecast, the advisors and the page agree with the winter', (
     expect(advise(early).find((x) => x.title === 'Nuclear winter')).toBeUndefined();
   });
 
+  it('the energy advisor says only what is so: no heating in a warm month or a heatwave, however faint the winter', () => {
+    // July of the second year, on the temperate river map.
+    const sim = town('river', 6, (HOLD + 4) * H);
+    sim.advance(H);
+    const w = sim.state.weather;
+    expect(season(sim)).toBe('summer');
+    const line = () => advise(sim).find((a) => a.title === 'Nuclear winter');
+    const heating = /heating|more power/i;
+    // A faint winter: the sun is a little dimmer, and no home is heating (the mean is far above the line).
+    winterIn(sim, 0.07, HOLD, 'faint');
+    sim.advance(H);
+    expect(w.mean).toBeGreaterThan(WEATHER.heatBelow);
+    expect(line()!.text).toContain(`Solar is down ${Math.round(WINTER.solar * 0.07 * 100)} %.`);
+    expect(line()!.text).not.toMatch(heating);
+    // A heatwave in it: homes use more power to cool, which is not heating.
+    setSpell(sim, 'heat', 1, 12);
+    expect(weatherUse(w, sim.state.tick).power.R).toBeGreaterThan(1);
+    expect(line()!.text).toContain('Solar is down');
+    expect(line()!.text).not.toMatch(heating);
+    // Deep in it, July is bitter: heating, by the figure the homes really use.
+    w.winters = [];
+    winterIn(sim, 1, HOLD, 'deep');
+    w.offset = 0;
+    setSpell(sim, 'clear', 0, 48);
+    sim.advance(H);
+    expect(w.mean).toBeLessThan(WEATHER.heatBelow);
+    const more = Math.round((weatherUse(w, sim.state.tick).power.R - 1) * 100);
+    expect(more).toBeGreaterThan(0);
+    expect(line()!.text).toContain(`Solar is down 55 %; heating is up: homes use ${more} % more power`);
+    // The same without a solar plant: heating alone.
+    const plants = [...sim.state.civics.values()].filter((c) => c.def === 'solar');
+    for (const c of plants) sim.state.civics.delete(c.id);
+    expect(line()!.text).toMatch(new RegExp(`^Heating is up: homes use ${more} % more power`));
+    // And a faint winter with no solar plant has nothing to tell a city yet.
+    w.winters = [];
+    winterIn(sim, 0.07, HOLD, 'faint2');
+    sim.advance(H);
+    expect(w.mean).toBeGreaterThan(WEATHER.heatBelow);
+    expect(line()).toBeUndefined();
+  });
+
+  it('the tooltip says only what is so at this depth: nothing yet, then the cold and the sun, and summer snow only once it falls', () => {
+    const sim = bare('river', 0);
+    while (dateOf(sim.state.tick).month !== 6 || sim.state.tick < 210 * H) sim.advance(H);
+    expect(season(sim)).toBe('summer');
+    const tip = (depth: number) => {
+      sim.state.weather.winters = [];
+      winterIn(sim, depth, DEEP, `d${depth}`);
+      sim.advance(H);
+      const w = weatherSummary(sim);
+      return { w, text: weatherLines(w).find((l) => l.startsWith('Nuclear winter'))! };
+    };
+    // Barely there: the year and the ash, and no degree or percent that rounds to nothing.
+    const faint = tip(0.005);
+    expect(faint.text).toBe('Nuclear winter, year 1 of 6: ash dims the sky.');
+    // Faint: a degree colder, the sun a little weaker, July rain still rain.
+    const light = tip(0.07);
+    expect(light.text).toBe(
+      'Nuclear winter, year 1 of 6: ash dims the sky. Every month is 1 °C colder and solar plants give 4 % less.',
+    );
+    expect(light.w.winterSnows).toBe(false);
+    // Half way: nine degrees, and July rain is still rain (the snow line is at 4 °C, July is at 10).
+    const half = tip(0.5);
+    expect(half.text).toBe(
+      'Nuclear winter, year 1 of 6: ash dims the sky. Every month is 9 °C colder and solar plants give 28 % less.',
+    );
+    expect(half.w.winterSnows).toBe(false);
+    expect(half.text).not.toContain('snow');
+    // Deep: July rain falls as snow, and the page says so.
+    const deep = tip(1);
+    expect(deep.w.winterSnows).toBe(true);
+    expect(deep.text).toBe(
+      'Nuclear winter, year 1 of 6: ash dims the sky. Every month is 18 °C colder, solar plants give 55 % less and even summer rain falls as snow.',
+    );
+    // In a real winter month the rain is snow anyway: said without "even summer".
+    const winterMonth = bare('river', 0);
+    while (dateOf(winterMonth.state.tick).month !== 0 || winterMonth.state.tick < 210 * H)
+      winterMonth.advance(H);
+    winterIn(winterMonth, 0.5, DEEP);
+    winterMonth.advance(H);
+    const cold = weatherSummary(winterMonth);
+    expect(cold.winterSnows).toBe(true);
+    expect(weatherLines(cold).join('\n')).toContain('and rain falls as snow.');
+    // None at all: no line, and the page's flag is down.
+    sim.state.weather.winters = [];
+    sim.advance(H);
+    const none = weatherSummary(sim);
+    expect(none.winterSnows).toBe(false);
+    expect(weatherLines(none).some((l) => l.startsWith('Nuclear winter'))).toBe(false);
+  });
+
   it('the page is told how deep it is (0 to 1), which year it is, and not the list of winters', () => {
     const sim = bare('river', 320);
     expect(weatherSummary(sim)).toMatchObject({ winter: 0, winterDepth: 0, winterYear: 0 });
@@ -785,6 +944,129 @@ describe('M40: the forecast, the advisors and the page agree with the winter', (
     expect(plain.winter).toBe(0);
     expect(plain.snow).toBe(0);
     expect(plain.season[3]).toBe(0);
+  });
+});
+
+describe('M40: the renderer’s half of the look, and the badge', () => {
+  const grey: WeatherLook = { season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0, winter: 1 };
+
+  it('the sky greys to the winter’s overcast whatever the weather, never less than the weather’s own', () => {
+    expect(overcastOf({ kind: 'clear', strength: 0, winter: 0 })).toBe(0);
+    expect(overcastOf({ kind: 'clear', strength: 0, winter: 1 })).toBe(WINTER_LOOK.overcast);
+    expect(overcastOf({ kind: 'clear', strength: 0.9, winter: 0.5 })).toBeCloseTo(
+      WINTER_LOOK.overcast / 2,
+      9,
+    );
+    // A storm is greyer than the winter's floor, and stays so.
+    const storm = overcastOf({ kind: 'storm', strength: 1, winter: 0 });
+    expect(storm).toBeGreaterThan(WINTER_LOOK.overcast);
+    expect(overcastOf({ kind: 'storm', strength: 1, winter: 1 })).toBe(storm);
+    // A cloudy day under the winter is the greyer of the two.
+    expect(overcastOf({ kind: 'cloudy', strength: 0.2, winter: 1 })).toBe(WINTER_LOOK.overcast);
+  });
+
+  it('the renderer’s sky follows: grey under a winter, clear again when a data map is up', () => {
+    const world = { roadSnowVersion: 0, netState: { segments: new Map() } };
+    const r = new WeatherRenderer(world as never);
+    const centre = new Vector3();
+    const draw = (look: WeatherLook) => {
+      r.snapNext = true;
+      r.update(1 / 60, 0, look, centre, 500, 1);
+    };
+    draw({ ...grey, winter: 0 });
+    expect(r.overcast).toBe(0);
+    draw(grey);
+    expect(r.overcast).toBe(WINTER_LOOK.overcast);
+    expect(r.uniforms.uGrade.value.x).toBe(WINTER_LOOK.overcast);
+    // A data map is read in flat daylight: the same winter, the map up.
+    draw(frameLook(grey, null, null, true));
+    expect(r.overcast).toBe(0);
+    expect(r.look.winter).toBe(0);
+    expect(r.look.kind).toBe('clear');
+  });
+
+  it('a data map is read in clear weather and under no winter; photo mode’s own season or weather wins over the winter', () => {
+    const rainy = { ...grey, kind: 'rain' as const, strength: 0.8 };
+    // Not a map: the winter stays, with the rain.
+    expect(frameLook(rainy, null, null, false)).toEqual(rainy);
+    // A map: clear, no strength, no winter; the season's colours and the snow are the ground's own.
+    expect(frameLook(rainy, null, null, true)).toEqual({ ...rainy, kind: 'clear', strength: 0, winter: 0 });
+    expect(frameLook(rainy, { kind: 'storm' }, null, true).kind).toBe('clear');
+    // Photo mode: a season or a weather picked there drops the winter's grey and snow; neither leaves it.
+    expect(photoWeather({ season: null, weather: null }, grey)).toEqual({});
+    expect(photoWeather({ season: 'summer', weather: null }, grey)).toMatchObject({ winter: 0, snow: 0 });
+    expect(photoWeather({ season: null, weather: 'clear' }, grey)).toMatchObject({
+      winter: 0,
+      kind: 'clear',
+    });
+    expect(frameLook(grey, null, photoWeather({ season: 'autumn', weather: null }, grey), false).winter).toBe(
+      0,
+    );
+    expect(frameLook(grey, null, photoWeather({ season: null, weather: null }, grey), false).winter).toBe(1);
+    // A test's override comes under photo mode's.
+    expect(frameLook(grey, { winter: 0.3 }, {}, false).winter).toBe(0.3);
+    expect(frameLook(grey, { winter: 0.3 }, { winter: 0 }, false).winter).toBe(0);
+  });
+
+  it('the top bar shows the badge only while a winter holds, in a long and a short form', () => {
+    const sim = bare('river', 320);
+    expect(winterBadgeText(weatherSummary(sim))).toBeNull();
+    winterIn(sim, 1, 300);
+    sim.advance(H);
+    const w = weatherSummary(sim);
+    expect(winterBadgeText(w)).toEqual({
+      long: `Nuclear winter, year 2 of 6, ${Math.round(w.temp)} °C`,
+      short: 'Winter 2/6',
+    });
+    // Still there in its last cold days, gone when it has run its course.
+    const tail = bare('river', 20);
+    startWinter(tail, 'z');
+    tail.advance((WINTER_HOURS - 5) * H);
+    expect(winterBadgeText(weatherSummary(tail))?.short).toBe('Winter 6/6');
+    tail.advance(10 * H);
+    expect(winterBadgeText(weatherSummary(tail))).toBeNull();
+  });
+});
+
+describe('M40: the one stream a winter can still move', () => {
+  it('a city with disasters on parts company with a winter-free one only when its river rises over the flood line', () => {
+    // A town of over 1,500 on the lakes (the only way riverFlood draws), grown until a winter of 200 hours' age is possible.
+    const sim = newSim({ seed: 'wx', preset: 'lakes', disasters: true });
+    buildTown(sim, { length: 800, streets: 7 });
+    serveTown(sim);
+    sim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 400_000 });
+    while (sim.state.totals.population < DISASTERS.minPopulation + 300 || sim.state.tick < 210 * H)
+      sim.advance(H);
+    // Two copies: the plain one in a long storm, the one under a deep winter in the snow the storm falls as.
+    const plain = clone(sim);
+    const dark = clone(sim);
+    winterIn(dark, 1, DEEP);
+    for (const c of [plain, dark]) {
+      c.state.weather.river = 0;
+      c.state.weather.intensity = 2;
+    }
+    setSpell(plain, 'storm', 1, 120);
+    setSpell(dark, 'snow', 1, 120);
+    const start = JSON.stringify(dark.rng.weather.getState());
+    expect(JSON.stringify(plain.rng.weather.getState())).toBe(start);
+    const river: number[] = [];
+    let first = -1;
+    for (let h = 0; h < 60; h++) {
+      plain.advance(H);
+      dark.advance(H);
+      river.push(plain.state.weather.river);
+      // The winter city's river never reaches the line, and nothing in it draws.
+      expect(dark.state.weather.river).toBeLessThanOrEqual(WEATHER.floodRise);
+      expect(JSON.stringify(dark.rng.weather.getState())).toBe(start);
+      if (first < 0 && JSON.stringify(plain.rng.weather.getState()) !== start) first = h;
+    }
+    // The plain city's flood draw is the only thing that moved a stream: it came with a river over the line,
+    // and not an hour before one.
+    expect(first).toBeGreaterThan(0);
+    expect(Math.max(river[first - 1]!, river[first]!)).toBeGreaterThan(WEATHER.floodRise);
+    for (let h = 0; h < first - 1; h++) expect(river[h]!).toBeLessThanOrEqual(WEATHER.floodRise);
+    // (So "a winter draws nothing" holds for the winter's own code, and for the weather's dice with the
+    // river below the flood line or disasters off; a river the winter keeps from rising is a value changed.)
   });
 });
 

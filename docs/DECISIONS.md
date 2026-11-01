@@ -1663,8 +1663,9 @@ these are its calls and the reasons, with where they overturned the first draft.
     neighbour does not raise its own `boom`, so the room's rule "a report whose `boom` rises" does not reach
     a friend of a city whose bomb fell on a computer neighbour; if that should chill the friends too, the
     report needs a landed mark to diff (the firer's `fired.landed`), not a new message.
-  - *Depth.* A first winter is depth 1; one that begins while another is in force (depth above 0 at that
-    tick) is `WINTER.later` (0.5); one that begins after the world has recovered is a first one again (1).
+  - *Depth.* A first winter is depth 1; one that begins while another is in force (begun and not yet run its
+    course, `winterInForce`: the first tick of a winter counts, though its depth is still 0 then) is
+    `WINTER.later` (0.5); one that begins after the world has recovered is a first one again (1).
     Winters add, to at most 1.5; a depth asked for is held to the cap. The list is kept for good (an id
     must stay applied once, however late a repeat arrives), a few bytes a bomb. Linear rise, hold and fall
     (`winterShape`, plain arithmetic).
@@ -1677,7 +1678,12 @@ these are its calls and the reasons, with where they overturned the first draft.
     the same state at every tick of a year with a winter or without, and every spell ends on the same
     tick (tests step a year tick by tick with one winter and with two). `riverFlood`'s dice follow the
     river, which a winter does change (frozen snow does not melt into it), so a city with disasters on
-    draws there as the river dictates: that is the weather's value changing, not a draw added.
+    draws there as the river dictates: that is the weather's value changing, not a draw added. **The limit
+    of "a winter draws nothing":** `riverFlood` draws on `rng.weather` every hour the river is over
+    `WEATHER.floodRise` (1.2 m) in a city of 1,500 with disasters on, and a winter keeps the river down
+    (snow adds no runoff), so such a city and its winter-free twin part streams from the first hour the
+    twin's river is over the line; every spell drawn after that comes from another point of the stream
+    (see the review fixes below).
   - *Readers.* `monthMean` is the calendar's mean less `18 × depth` before the seasons-off return;
     `solarShare` is × `1 − 0.55 depth`; `nextSpell` turns rain and storms into snow at the calendar mean
     less the chill up to `1 °C + 6 × depth` (July rain falls as snow; in a seasons-off city too, so
@@ -1706,7 +1712,8 @@ these are its calls and the reasons, with where they overturned the first draft.
     6, -7 °C") sits beside the weather chip rather than in it, because the chip's label is hidden on a
     narrow bar; it has a short form ("Winter 2/6") for the narrow and wrapped bars and opens the weather
     panel, whose lines gain the winter's. The energy advisor says "Solar is down 55 %; heating is up: homes
-    use 60 % more power than in mild weather", or only heating without a solar plant, from depth 0.05.
+    use 60 % more power than in mild weather", or only heating without a solar plant, from depth 0.05, and
+    each half only while it is so (see the review fixes below).
     The event `nuclearWinter` gives one notice. Screenshots come with step 11.
   - *Saves and checks.* Nothing to migrate: the key appears with the first winter, the checksum adds the
     winters only when there are some (the temperature is hashed already), `partHashes` see the weather
@@ -1718,3 +1725,43 @@ these are its calls and the reasons, with where they overturned the first draft.
     1.29 times its own control at worst), snow lies at 1.0 in the cold months and thaws once the mean
     is above freezing (never piling past the cap), three ploughs keep the busiest roads clear as in a
     normal alpine winter, population is unchanged, and the winter fades out by its sixth year.
+  - **Review fixes (step 5).**
+    - *Same-tick winters.* Whether a winter is "in force" for `startWinter` was `winterDepth > 0` at the call,
+      and a winter's depth is 0 on its first tick, so two ids applied in the same tick were both depth 1
+      (1 + 1 + 1, held to 1.5) while the same ids a tick apart were 1, 0.5, 0.5. Step 10's returning player
+      takes the room's ids in a row on one tick, so the two would have risen at different speeds and held the
+      cap for different lengths. `winterInForce(w, tick)` (begun, and `WINTER_HOURS` not yet passed) is the
+      test now; the same tick and a tick apart give the same depths. A winter that has run its course is
+      still a first one again.
+    - *The advisor says what is so.* The "Nuclear winter" line was 'heating is up: N % more' from depth 0.05
+      in any month, and N was the whole residential factor: 0 % in a warm month at a faint depth, and
+      cooling in a heatwave. The solar half is said when the city has a solar plant, the heating half only
+      when the day's mean is under `WEATHER.heatBelow` (14 °C) and the homes really use more power; with
+      neither there is no line (a faint winter in July, without solar, has nothing to tell a city).
+    - *The tooltip says what is so.* "...and even summer rain falls as snow" was added at any depth. The
+      weather summary now carries `winterSnows` (a winter in force, and the month's mean less the chill at or
+      under `snowLine(depth)`, the same `snowLine` that `nextSpell` turns rain into snow by), and the line
+      names only the parts that round to something: a degree or a percent that rounds to nothing is left
+      out ("Nuclear winter, year 1 of 6: ash dims the sky." alone at the very start or end), "even summer
+      rain" only in summer. A temperate July needs depth 0.75 or so for its rain to fall as snow; at half
+      depth July rain is rain, and a test steps a year of spells at 0.5 and 1 to hold the flag to the draws.
+    - *Data maps read under no winter.* `renderer.ts` zeroed the weather's kind and strength for a data map
+      but left `winter`, so the sky stayed grey and the sun cut by 0.57. `frameLook` (render/weather.ts, with
+      `photoWeather` and `overcastOf` moved there from the renderer so the pieces can be tested without
+      WebGL) clears `winter` too. The season's colours and the snow cover a map is drawn on stay the ground's.
+    - *Tested.* The renderer's overcast floor (`overcastOf`, and a headless `WeatherRenderer.update`), the map
+      case, photo mode's override and the badge's text (`winterBadgeText`, which TopBar now uses, so the
+      visible-only-in-a-winter condition is the one tested) are in `atomWinter.test.ts`. What no test here
+      can reach is the badge's CSS (the short form on a narrow or wrapped bar) and the picture of the grey
+      sky and the snow: those are step 11's screenshots and narrow-width check, as before.
+    - *`rng.weather` and the river floods (a limit, not a bug).* The step's claim and its tests ("the weather's
+      dice are in the same state at every tick of a year") hold with disasters off, and in a city with them on
+      for as long as its river stays under the flood line (they use `Sim.create({ disasters: false })`). Over
+      the line, `riverFlood` draws on `rng.weather` each hour and the winter keeps the river down, so the
+      two timelines part there. It is not a cross-machine determinism problem (every sim with the same
+      winters has the same river and draws alike), and moving the flood draw to a stream of its own would
+      change the weather of every city that floods, in peace as well (phase 5 leaves peaceful play as it
+      is), so it stays. A disasters-on test
+      holds the limit exactly: a plain city in a long storm and a twin under a deep winter in the snow, whose
+      streams part only when the plain river passes 1.2 m, while the winter city's river and stream never
+      move.

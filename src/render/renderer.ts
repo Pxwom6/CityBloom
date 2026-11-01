@@ -52,7 +52,7 @@ import { PhotoLens, type PhotoLook } from './photo';
 import { PostPipeline, type PostSettings } from './post';
 import { castNearOnly } from './sunShadow';
 import { DisasterRenderer } from './disasters';
-import { pureSeason, WeatherRenderer, worldLook, type WeatherLook } from './weather';
+import { frameLook, photoWeather, WeatherRenderer, worldLook, type WeatherLook } from './weather';
 import type { Season, WeatherKind } from '../data/climate';
 
 export interface RenderStats {
@@ -100,24 +100,6 @@ export interface PhotoView extends PhotoLook {
   /** Vertical field of view, degrees. */
   fov: number;
   zones: boolean;
-}
-
-/** Photo mode's season and weather over the city's own look (M22). */
-function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
-  const out: Partial<WeatherLook> = {};
-  // (A season or weather picked here is the look wanted: a nuclear winter's grey doesn't override it.)
-  if (p.season || p.weather) out.winter = 0;
-  if (p.season) {
-    out.season = pureSeason(p.season);
-    out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;
-  }
-  if (p.weather) {
-    out.kind = p.weather;
-    out.strength = p.weather === 'clear' ? 0 : 0.85;
-    out.wet = p.weather === 'rain' || p.weather === 'storm' ? 1 : p.weather === 'heat' ? 0 : base.wet;
-    if (p.weather === 'snow') out.snow = Math.max(0.7, out.snow ?? base.snow);
-  }
-  return out;
 }
 
 /** Normal vertical field of view, degrees. */
@@ -692,8 +674,7 @@ export class GameRenderer {
     // Data maps are read in clear weather too.
     const mapOn = this.terrain.uniforms.uOverlayOn.value > 0.5;
     const base = worldLook(this.world);
-    const look = { ...base, ...(this.weatherOverride ?? {}), ...(p ? photoWeather(p, base) : {}) };
-    if (mapOn) Object.assign(look, { kind: 'clear', strength: 0 });
+    const look = frameLook(base, this.weatherOverride, p ? photoWeather(p, base) : null, mapOn);
     this.weather.update(
       dt,
       this.time,

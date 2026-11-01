@@ -55,6 +55,10 @@ export function winterBadge(w: WeatherSummary): string {
 export function winterBadgeShort(w: WeatherSummary): string {
   return `Winter ${w.winterYear}/${WINTER_YEARS}`;
 }
+/** What the top bar's badge shows (both forms, the bar's width picks one), or null with no winter. */
+export function winterBadgeText(w: WeatherSummary): { long: string; short: string } | null {
+  return w.winter > 0 ? { long: winterBadge(w), short: winterBadgeShort(w) } : null;
+}
 
 /** Why the weather matters right now, for the top bar's tooltip. */
 export function weatherLines(w: WeatherSummary): string[] {
@@ -69,10 +73,7 @@ export function weatherLines(w: WeatherSummary): string[] {
         ? `Heating: homes use ${pct(use.power.R - 1)} more power, shops ${pct(use.power.C - 1)} more.`
         : `Cooling: homes use ${pct(use.power.R - 1)} more power, and ${pct(use.water.R - 1)} more water.`,
     );
-  if (w.winter > 0)
-    out.push(
-      `Nuclear winter, year ${w.winterYear} of ${WINTER_YEARS}: ash dims the sky. Every month is ${Math.round(WINTER.chill * w.winterDepth)} °C colder, solar plants give ${pct(WINTER.solar * w.winterDepth)} less and even summer rain falls as snow.`,
-    );
+  if (w.winter > 0) out.push(winterLine(w));
   if (w.roadsSnowy > 0.02)
     out.push(
       `Snow on ${pct(w.roadsSnowy)} of the roads (deep on ${pct(w.roadsDeep)}): traffic up to ${(1 + WEATHER.snowSlow).toFixed(1)}× slower until it melts or is ploughed.`,
@@ -87,4 +88,22 @@ export function weatherLines(w: WeatherSummary): string[] {
     );
   if (w.intensity === 0) out.push('Weather is off in Settings.');
   return out;
+}
+
+/**
+ * The nuclear winter's line for the tooltip and the weather panel: only what is so at this depth (a
+ * winter rising or fading is not yet a degree colder, a dimmer sun or summer snow).
+ */
+function winterLine(w: WeatherSummary): string {
+  const says: string[] = [];
+  const chill = Math.round(WINTER.chill * w.winterDepth);
+  if (chill >= 1) says.push(`every month is ${chill} °C colder`);
+  const dim = Math.round(WINTER.solar * w.winterDepth * 100);
+  if (dim >= 1) says.push(`solar plants give ${dim} % less`);
+  if (w.winterSnows) says.push(`${w.season === 'summer' ? 'even summer rain' : 'rain'} falls as snow`);
+  const head = `Nuclear winter, year ${w.winterYear} of ${WINTER_YEARS}: ash dims the sky.`;
+  if (!says.length) return head;
+  const last = says.pop()!;
+  const list = says.length ? `${says.join(', ')} and ${last}` : last;
+  return `${head} ${cap(list)}.`;
 }

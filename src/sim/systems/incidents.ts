@@ -7,7 +7,7 @@ import { BState, footprint, type Building } from '../world/buildings';
 import { civicDef, civicOnline, civicVehicles } from '../world/civic';
 import { attachmentOf } from './commute';
 import { Dijkstra } from './graph';
-import { sicknessRate } from './health';
+import { usualSicknessRate } from './health';
 import { HEALTH } from '../../data/balance';
 import { POLICY_EFFECTS } from '../../data/policies';
 import {
@@ -106,6 +106,19 @@ export function ignite(sim: Sim, b: Building): void {
 }
 
 /**
+ * The chance an ambulance is called to a home this hour: a small base rate plus a share of the new
+ * cases the usual causes make (so pollution brings ambulances). Fallout's cases are left out: under a
+ * plume they would make a flood of calls, each unanswered one a resident lost.
+ */
+export function emergencyChance(sim: Sim, b: Building): number {
+  return Math.min(
+    0.3,
+    SERVICES.emergencyRate * b.pop +
+      SERVICES.emergencyPerCase * (b.pop - b.sick) * (usualSicknessRate(sim, b) - HEALTH.baseRate),
+  );
+}
+
+/**
  * Chance of a crime at an active home or business this hour: more with unemployment, poverty and
  * unhappiness, less with police coverage and a neighbourhood watch; scaled by how full it is.
  */
@@ -148,17 +161,7 @@ export function incidentsHour(sim: Sim): void {
       }
     }
     // Emergencies: a small base rate plus a share of new sickness (so pollution brings ambulances).
-    if (
-      b.zone === ZONE_R &&
-      b.pop > 0 &&
-      rng.chance(
-        Math.min(
-          0.3,
-          SERVICES.emergencyRate * b.pop +
-            SERVICES.emergencyPerCase * (b.pop - b.sick) * (sicknessRate(sim, b) - HEALTH.baseRate),
-        ),
-      )
-    ) {
+    if (b.zone === ZONE_R && b.pop > 0 && rng.chance(emergencyChance(sim, b))) {
       const inc: Incident = {
         id: s.nextId++,
         kind: 'emergency',

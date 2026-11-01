@@ -27,14 +27,18 @@ import {
   strikeDeposit,
   updateFallout,
 } from '../../src/sim/systems/fallout';
+import { MatchRound } from '../../src/sim/systems/commute';
 import { happinessFactors } from '../../src/sim/systems/happiness';
 import { sicknessRate } from '../../src/sim/systems/health';
+import { emergencyChance, incidentsHour } from '../../src/sim/systems/incidents';
 import { updateLandValue } from '../../src/sim/systems/landValue';
 import { computeOverlay } from '../../src/sim/systems/overlays';
 import { windAngle } from '../../src/sim/systems/pollution';
+import { highTechJobs, industrialJobs, specialisationIncome } from '../../src/sim/systems/specialisations';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { BState } from '../../src/sim/world/buildings';
 import { roadsidePose } from '../../src/sim/world/civic';
+import { freightTown } from '../freightTown';
 import { buildTown, connectPoint, newSim, road, serveTown } from '../helpers';
 import { clone, rivals, why } from './economyHelpers';
 import { labTown, ok } from './researchTown';
@@ -317,6 +321,44 @@ describe('M40: fallout across the map’s edges', () => {
     for (const v of [first, second]) expect(Math.abs(v * 1000 - Math.round(v * 1000))).toBeLessThan(1e-6);
   });
 
+  it('what the wind carries off an edge is counted whole, wherever the cloud sits', () => {
+    // A cloud with nothing to fade it (no decay, no deposit, no spreading): every unit of it leaves by
+    // the edge the wind blows towards and is counted there. (A band of rows cleared after the step saw
+    // about half: the parcels that happened to land in it.)
+    const A = FALLOUT.air;
+    const kept = { ...A };
+    try {
+      Object.assign(A, { decay: 1, deposit: 0, diffusion: 0 });
+      // The three oblique winds (c, d, g) blow towards the south-east, the others straight on.
+      for (const seed of ['f', 'citybloom', 'b', 'e', 'c', 'd', 'g']) {
+        const sim = bare(seed);
+        const f = falloutOf(sim);
+        for (let j = 60; j < 68; j++) for (let i = 60; i < 68; i++) f.air[j * R + i] = 1;
+        update(sim, 80);
+        const counted = f.out.north + f.out.south + f.out.west;
+        expect(com(f.air).mass, `${seed}: nothing left on the map`).toBeLessThan(0.5);
+        expect(counted, `${seed}: counted ${counted} of 64`).toBeGreaterThan(64 * 0.95);
+        expect(counted, `${seed}: and no more than there was`).toBeLessThanOrEqual(64.001);
+      }
+      // Struck again nearer one edge, the same cloud still comes to the same total.
+      const near = bare('f');
+      const far = bare('f');
+      for (const [sim, z] of [
+        [near, 120],
+        [far, 1500],
+      ] as const) {
+        const f = falloutOf(sim);
+        for (let j = z / GRID_CELL; j < z / GRID_CELL + 8; j++)
+          for (let i = 60; i < 68; i++) f.air[j * R + i] = 1;
+        update(sim, 120);
+      }
+      expect(falloutOf(near).out.north).toBeGreaterThan(64 * 0.95);
+      expect(falloutOf(far).out.north).toBeGreaterThan(64 * 0.95);
+    } finally {
+      Object.assign(A, kept);
+    }
+  });
+
   it('a neighbour’s level fades by half every eight game years and a trace is dropped', () => {
     const sim = bare('f');
     const n = rivals(sim)[0]!;
@@ -401,8 +443,48 @@ describe('M40: a neighbour’s fallout drifts back in when the wind blows from i
     // A real cloud still counts: the same city, struck, sends its plume south.
     depositFallout(sim, MID, MAP_SIZE - 300);
     day(sim, 4);
-    expect(f.out.south).toBeGreaterThan(FALLOUT.edge.trickle);
+    expect(f.out.south).toBeGreaterThan(100);
     expect(level(sim, 'south')).toBeGreaterThan(0.05);
+  });
+
+  it('a neighbour’s stream is not counted as leaving, whichever way the bearing’s wobble turns the wind', () => {
+    // Pairs of (seed, the side the neighbour is on) for which the wind runs nearly along that edge or
+    // crosses the city at a slant: the stream smears along the edge it came in by, or passes a far
+    // one, and was counted when the wobble turned it (a few units, put on the next town).
+    const cases = [
+      ['s0', 'north'],
+      ['s6', 'west'],
+      ['s10', 'south'],
+      ['s15', 'south'],
+      ['s25', 'south'],
+      ['s38', 'west'],
+      ['s53', 'north'],
+      ['s2', 'west'],
+      ['s24', 'west'],
+      ['s36', 'north'],
+      ['s41', 'west'],
+      ['s45', 'west'],
+      ['s51', 'west'],
+      ['s58', 'west'],
+    ] as const;
+    const faded = Math.pow(0.5, 40 / (FALLOUT.halfLifeYears * 12));
+    let ran = 0;
+    for (const [seed, side] of cases) {
+      const sim = bare(seed);
+      rivals(sim).find((n) => n.side === side)!.rival!.fallout = 1;
+      if (!falloutDue(sim)) continue;
+      ran++;
+      day(sim, 40);
+      expect(falloutOf(sim).out, `${seed}: the ${side} neighbour’s stream`).toEqual({
+        north: 0,
+        south: 0,
+        west: 0,
+      });
+      // The neighbour’s own level only faded.
+      expect(level(sim, side), `${seed}: ${side}`).toBeLessThanOrEqual(faded + 1e-4);
+      for (const other of ['north', 'south', 'west']) if (other !== side) expect(level(sim, other)).toBe(0);
+    }
+    expect(ran, 'most of these winds bring the stream in').toBeGreaterThan(8);
   });
 
   it('the stream coming in is not counted as leaving again', () => {
@@ -568,7 +650,7 @@ describe('M40: the radiation map', () => {
     expect(v(1500, 1500)).toBeLessThan(v(1050, 650));
     expect(v(1050, 650)).toBeLessThan(v(750, 750));
     expect(v(604, 604)).toBe(1);
-    expect(o.legend).toEqual(['Clear', 'Heavy fallout']);
+    expect(o.legend).toEqual(['Thin haze', 'Heavy fallout']);
   });
 
   it('is part of the lockstep poke and answers the same on a copy', () => {
@@ -950,11 +1032,10 @@ describe('M40: what fallout does to the people and the work', () => {
     expect(doseAtCell(f, cellH)).toBe(1);
   });
 
-  it('freight and the specialisations’ income are scaled by the same work', () => {
+  it('taxes over the whole city are scaled by the work', () => {
     const control = clone(base);
     const hot = clone(base);
     closeRect(hot, 0, 0, MAP_SIZE, MAP_SIZE, 0.5);
-    // Taxes over the whole city: lower by the work share.
     let tc = 0;
     let th = 0;
     for (const b of control.state.buildings.values()) tc += buildingTax(control, b);
@@ -963,14 +1044,117 @@ describe('M40: what fallout does to the people and the work', () => {
     expect(th).toBeGreaterThan(tc * 0.35);
   });
 
-  it('move-outs follow: homes in the cloud lose residents faster than the control’s', () => {
+  it('freight: industry ships less and shops ask for less, each by its own building’s work', () => {
+    // One matching round on two copies of the same town, no time between them, so the only thing the
+    // fallout can change is what `runFreight` reads: the traffic (cars the same, trucks not).
+    const sim = newSim({ seed: 'goods', rivals: true, disasters: false });
+    freightTown(sim);
+    sim.advance(5 * TICKS_PER_MONTH);
+    sim.finishMatching();
+    const heat = (zone: number | null, v: number): number => {
+      const s = Sim.fromSave(JSON.parse(JSON.stringify(sim.save())));
+      s.testMode = true;
+      if (zone !== null) {
+        const f = falloutOf(s);
+        for (const b of s.state.buildings.values()) if (b.zone === zone) f.ground[cell(b.x, b.z)] = v;
+      }
+      const r = new MatchRound(s);
+      r.step(r.size + 1);
+      r.finish();
+      let total = 0;
+      for (const t of s.state.traffic.values()) total += t;
+      return total;
+    };
+    const control = heat(null, 0);
+    // An empty raster changes nothing.
+    expect(heat(-1, 0)).toBe(control);
+    // Industry (zone 3) heated: its output shrinks, and more with more dose.
+    const mild = heat(3, 0.25);
+    const strong = heat(3, 0.5);
+    expect(mild).toBeLessThan(control - 100);
+    expect(strong).toBeLessThan(mild - 100);
+    // Shops (zone 2) heated: what they ask for shrinks, so the goods go elsewhere.
+    expect(Math.abs(heat(2, 0.5) - control)).toBeGreaterThan(10);
+    // Homes (zone 1) heated: nothing in the freight reads them.
+    expect(heat(1, 0.5)).toBe(control);
+  }, 120_000);
+
+  it('the specialisations’ income follows the work of the jobs it is paid on', () => {
+    const lab = labTown(0, { length: 800, streets: 7 });
+    for (const def of ['freighthub', 'university', 'techpark']) lab.place(def);
+    const sim = lab.sim;
+    sim.advance(2 * 60);
+    let k = 0;
+    for (const b of sim.state.buildings.values())
+      if (b.zone === 3 && b.state === BState.Active && b.pop > 0 && k++ < 12) b.wealth = 2;
+    const control = clone(sim);
+    const c = specialisationIncome(control);
+    expect(highTechJobs(control)).toBeGreaterThan(50);
+    expect(c.trade, 'a freight hub ships the estate’s goods').toBeGreaterThan(100);
+    expect(c.technology, 'a research park earns licence fees').toBeGreaterThan(100);
+    for (const [v, work] of [
+      [0.25, 1 - FALLOUT.effect.work * 0.25],
+      [0.5, 1 - FALLOUT.effect.workMax],
+    ] as const) {
+      const hot = clone(sim);
+      const f = falloutOf(hot);
+      for (const b of hot.state.buildings.values()) f.ground[cell(b.x, b.z)] = v;
+      const income = specialisationIncome(hot);
+      expect(industrialJobs(hot), `industrial jobs at ${v}`).toBeCloseTo(industrialJobs(control) * work, 6);
+      expect(highTechJobs(hot), `high-tech jobs at ${v}`).toBeCloseTo(highTechJobs(control) * work, 6);
+      expect(income.trade, `trade at ${v}`).toBeCloseTo(c.trade! * work, 6);
+      expect(income.technology, `technology at ${v}`).toBeCloseTo(c.technology! * work, 6);
+    }
+  }, 120_000);
+
+  it('move-outs follow: the mood and the sickness each send residents away, with the ban and the work held out', () => {
+    // Ground at 0.15 is open (below the ban of 0.2), so what differs between these runs is only what
+    // the home feels: its mood and its sickness (the land value and the work are the same in all).
+    const run = (mood: number, sickness: number): number => {
+      const sim = clone(base);
+      closeRect(sim, 0, 0, MAP_SIZE, MAP_SIZE, 0.15);
+      const kept = { mood: FALLOUT.effect.mood, sickness: FALLOUT.effect.sickness };
+      try {
+        FALLOUT.effect.mood = mood;
+        FALLOUT.effect.sickness = sickness;
+        sim.advance(2 * TICKS_PER_MONTH);
+      } finally {
+        FALLOUT.effect.mood = kept.mood;
+        FALLOUT.effect.sickness = kept.sickness;
+      }
+      return sim.state.totals.population;
+    };
+    const full = run(FALLOUT.effect.mood, FALLOUT.effect.sickness);
+    const noMood = run(0, FALLOUT.effect.sickness);
+    const noSickness = run(FALLOUT.effect.mood, 0);
+    const neither = run(0, 0);
+    expect(noMood, 'without the mood, more stay').toBeGreaterThan(full + 100);
+    expect(noSickness, 'without the sickness, more stay').toBeGreaterThan(full + 100);
+    expect(neither, 'with neither, most of all').toBeGreaterThan(Math.max(noMood, noSickness));
+    // And a town that is not under any fallout loses fewer than any of them.
+    const clean = clone(base);
+    clean.advance(2 * TICKS_PER_MONTH);
+    expect(clean.state.totals.population).toBeGreaterThan(full + 100);
+  }, 120_000);
+
+  it('fallout makes the sick, but does not call an ambulance for each case', () => {
     const control = clone(base);
     const hot = clone(base);
-    closeRect(hot, 0, 0, MAP_SIZE, MAP_SIZE, 0.6);
-    const pop = (s: Sim) => s.state.totals.population;
-    control.advance(2 * TICKS_PER_MONTH);
-    hot.advance(2 * TICKS_PER_MONTH);
-    expect(pop(hot)).toBeLessThan(pop(control));
+    closeRect(hot, 0, 0, MAP_SIZE, MAP_SIZE, 0.5);
+    const homes = [...hot.state.buildings.values()].filter(
+      (b) => b.pop > 0 && b.state === BState.Active && b.zone === 1,
+    );
+    expect(homes.length).toBeGreaterThan(20);
+    for (const h of homes) {
+      const c = control.state.buildings.get(h.id)!;
+      expect(sicknessRate(hot, h)).toBeGreaterThan(sicknessRate(control, c));
+      expect(emergencyChance(hot, h), `home ${h.id}`).toBe(emergencyChance(control, c));
+    }
+    // So an hour of incidents draws the same calls in both (the same dice, the same chances).
+    incidentsHour(hot);
+    incidentsHour(control);
+    const calls = (s: Sim) => [...s.state.incidents.values()].filter((i) => i.kind === 'emergency').length;
+    expect(calls(hot)).toBe(calls(control));
   });
 });
 

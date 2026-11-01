@@ -54,7 +54,7 @@ export function highTechJobs(sim: Sim): number {
 }
 
 /** Industrial jobs filled (the goods a freight terminal ships). */
-function industrialJobs(sim: Sim): number {
+export function industrialJobs(sim: Sim): number {
   let n = 0;
   for (const b of sim.state.buildings.values())
     if (b.state === BState.Active && b.zone === ZONE_I) n += b.pop * radiationWork(sim, b);

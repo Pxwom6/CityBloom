@@ -170,17 +170,18 @@ export const FALLOUT = {
   ground: { diffusion: 0.02 },
   floor: 1e-5,
   /**
-   * What the air carries out across the map's edges (call 12): the outermost `rows` rows or columns
-   * on the north, south and west are cleared into a cumulative counter (rounded to `round`) when the
-   * wind blows towards that edge; the east edge is a sink. Less than `trickle` crossing in one update
-   * is haze, cleared but not counted (a neighbour's thin stream passing through the city must not make
-   * the next town ill). A computer neighbour on that side gains `town.share x counted / town.scale`
-   * fallout (at most 1); its growth is dragged by `town.drag` x its level a month. And from a
-   * neighbour with fallout upwind, `town.inflow` x its level is the air's concentration beyond that
-   * edge, drifting in when the wind blows from that side.
+   * What the air carries out across the map's edges (call 12): the shift of one update is counted
+   * where it carries air off the north, south or west edge (the east edge is a sink), into a
+   * cumulative counter rounded to `round`. Air thinner than `town.inflow`, the thickest stream a
+   * neighbour can send, is haze and is not counted (a neighbour's stream passing through the city must
+   * not make the next town ill, nor be taken back to the one it came from). A computer neighbour on
+   * that side gains `town.share x counted / town.scale` fallout (at most 1); its growth is dragged by
+   * `town.drag` x its level a month. And from a neighbour with fallout upwind, `town.inflow` x its
+   * level is the air's concentration beyond that edge, drifting in when the wind blows from that side.
+   * (`scale` 750: a strike in the middle of the map gives the downwind neighbour about 0.28.)
    */
-  edge: { rows: 2, round: 0.001, trickle: 1 },
-  town: { share: 0.6, scale: 400, drag: 0.01, inflow: 0.006 },
+  edge: { round: 0.001 },
+  town: { share: 0.6, scale: 750, drag: 0.01, inflow: 0.006 },
   /**
    * What fallout does where people are, with `dose` = ground + `airDose` x air, at most 1: sickness
    * (new cases per resident per hour, on top of HEALTH's), a home's mood, the share of its work that

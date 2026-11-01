@@ -1,6 +1,7 @@
 import type { ZoneLetter } from '../data/zones';
 import type { Vec2 } from '../sim/geom';
 import type { Game } from '../game';
+import type { CommandResult } from '../sim/commands';
 import type { Tool, ToolPointer } from './tool';
 
 const BRUSH_COLOURS: Record<ZoneLetter | 'none', string> = {
@@ -23,6 +24,8 @@ export class ZoneTool implements Tool {
   private painting = false;
   private last: Vec2 | null = null;
   private stroke = 0;
+  /** The stroke whose refusal has been shown (a drag paints every few metres: say it once). */
+  private told = 0;
 
   constructor(private game: Game) {}
 
@@ -44,12 +47,30 @@ export class ZoneTool implements Tool {
   }
 
   private paint(points: Vec2[]): void {
-    void this.game.dispatch({
-      type: 'zone',
-      zone: this.zone,
-      area: { kind: 'brush', points, radius: this.radius },
-      stroke: this.stroke,
-    });
+    const stroke = this.stroke;
+    void this.game
+      .dispatch({
+        type: 'zone',
+        zone: this.zone,
+        area: { kind: 'brush', points, radius: this.radius },
+        stroke,
+      })
+      .then((r) => this.report(r, stroke));
+  }
+
+  /**
+   * Say why a brush painted nothing, or only part (M40: fallout closes ground to building, and the
+   * sim's words give the years left), once for a drag; a click on a road (`stroke` 0) says it each time.
+   */
+  private report(r: CommandResult, stroke: number): void {
+    if (stroke !== 0 && this.told === stroke) return;
+    const closed = r.ok ? (r.info?.closed as number | undefined) : 0;
+    if (r.ok && !closed) return;
+    const why = r.ok ? (r.info?.closedWhy as string | undefined) : r.reason;
+    if (!why) return;
+    if (stroke !== 0) this.told = stroke;
+    this.game.audio?.play('error');
+    this.game.toast(r.ok ? `Part of this ground is closed and was left unpainted. ${why}` : why, 'bad', 5000);
   }
 
   pointerDown(p: ToolPointer): void {
@@ -57,7 +78,9 @@ export class ZoneTool implements Tool {
     if (p.shift) {
       const hit = this.game.world.net.nearestSegment(p.ground, 20);
       if (hit)
-        void this.game.dispatch({ type: 'zone', zone: this.zone, area: { kind: 'segment', id: hit.seg } });
+        void this.game
+          .dispatch({ type: 'zone', zone: this.zone, area: { kind: 'segment', id: hit.seg } })
+          .then((r) => this.report(r, 0));
       return;
     }
     this.painting = true;

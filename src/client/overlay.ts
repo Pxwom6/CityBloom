@@ -7,6 +7,7 @@ import { ROAD_TYPES, isRail } from '../data/roads';
 import { JUNCTION, TRAFFIC } from '../data/balance';
 import { hourOfDay } from '../sim/time';
 import type { FalloutQuery } from '../sim/systems/fallout';
+import { clickSlop } from '../tools/tool';
 
 /** Colour ramps for data maps (see the data-viz reference palette). */
 const SEQUENTIAL = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'].map(
@@ -79,11 +80,16 @@ export class OverlayController {
   /** Show only this district on data maps (M21), or everywhere (null). */
   district: number | null = null;
   last: OverlayResult | null = null;
-  /** The fallout map's tooltip (M40): what the pointer is over, where on the screen. */
-  reading: { text: string; x: number; y: number } | null = null;
+  /**
+   * The fallout map's tooltip (M40): what the pointer is over, where on the screen, and whether it
+   * was a finger's tap (the tip then sits above the finger, not under it).
+   */
+  reading: { text: string; x: number; y: number; touch?: true } | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private pointer: { x: number; z: number; cx: number; cy: number } | null = null;
+  private pointer: { x: number; z: number; cx: number; cy: number; touch?: true } | null = null;
   private asking = false;
+  /** A touch or pen that is down on the fallout map: a tap reads the spot, a drag (a pan) does not. */
+  private tap: { id: number; x: number; y: number } | null = null;
 
   constructor(private game: Game) {}
 
@@ -92,9 +98,18 @@ export class OverlayController {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     window.removeEventListener('pointermove', this.watch);
+    window.removeEventListener('pointerdown', this.touchDown);
+    window.removeEventListener('pointerup', this.touchUp);
+    window.removeEventListener('pointercancel', this.touchCancel);
     this.reading = null;
     this.pointer = null;
-    if (map === 'radiation') window.addEventListener('pointermove', this.watch);
+    this.tap = null;
+    if (map === 'radiation') {
+      window.addEventListener('pointermove', this.watch);
+      window.addEventListener('pointerdown', this.touchDown);
+      window.addEventListener('pointerup', this.touchUp);
+      window.addEventListener('pointercancel', this.touchCancel);
+    }
     const u = this.game.renderer.terrain.uniforms;
     this.game.renderer.coverageMap.show(null);
     this.roadsKey = '';
@@ -111,8 +126,16 @@ export class OverlayController {
     this.game.notify();
   }
 
-  /** The pointer moved: on the fallout map, ask the sim what it is over (one question at a time). */
+  /**
+   * The pointer moved: on the fallout map, ask the sim what it is over (one question at a time). A
+   * finger has no hover, so its moves (a pan) are left to `touchUp`, and so is a pen that is pressed.
+   */
   private watch = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' || (e.pointerType === 'pen' && e.buttons !== 0)) return;
+    this.lookAt(e);
+  };
+
+  private lookAt(e: PointerEvent): void {
     if (e.target !== this.game.renderer.canvas) {
       this.pointer = null;
       if (this.reading) {
@@ -122,8 +145,38 @@ export class OverlayController {
       return;
     }
     const g = this.game.renderer.controller.screenToGround(e.clientX, e.clientY);
-    this.pointer = g ? { x: g.x, z: g.z, cx: e.clientX, cy: e.clientY } : null;
+    const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    this.pointer = g
+      ? { x: g.x, z: g.z, cx: e.clientX, cy: e.clientY, ...(touch ? { touch: true as const } : {}) }
+      : null;
     if (!this.asking) void this.read();
+  }
+
+  /**
+   * A finger has no hover, and a one-finger drag pans the camera: so on the fallout map a tap (a touch
+   * or pen that comes up within a click's slop of where it went down) reads the spot, and the tip
+   * stays until the next touch; a touch that starts clears it, and a drag leaves none.
+   */
+  private touchDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'mouse') return;
+    this.tap = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    this.pointer = null;
+    if (this.reading) {
+      this.reading = null;
+      this.game.notify();
+    }
+  };
+
+  private touchUp = (e: PointerEvent): void => {
+    const t = this.tap;
+    if (e.pointerType === 'mouse' || !t || t.id !== e.pointerId) return;
+    this.tap = null;
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > clickSlop(e.pointerType)) return;
+    this.lookAt(e);
+  };
+
+  private touchCancel = (): void => {
+    this.tap = null;
   };
 
   private async read(): Promise<void> {
@@ -138,7 +191,9 @@ export class OverlayController {
         });
         if (this.active !== 'radiation') break;
         this.reading =
-          res.reading && res.reading.dose >= 0.005 ? { text: res.reading.text, x: p.cx, y: p.cy } : null;
+          res.reading && res.reading.dose >= 0.005
+            ? { text: res.reading.text, x: p.cx, y: p.cy, ...(p.touch ? { touch: true as const } : {}) }
+            : null;
         this.game.notify();
         if (this.pointer === p) break;
       }

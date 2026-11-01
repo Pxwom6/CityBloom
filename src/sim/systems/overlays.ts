@@ -188,7 +188,7 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
     }
     case 'radiation':
       radiationValues(sim, values);
-      return { map, values, ramp: 'hazard', legend: ['Clear', 'Heavy fallout'] };
+      return { map, values, ramp: 'hazard', legend: ['Thin haze', 'Heavy fallout'] };
     case 'region':
       // Drawn on the roads by the client: traffic to and from the neighbours and visitors (M23).
       return { map, values, ramp: 'sequential', legend: ['Little', 'Busy with the region'] };

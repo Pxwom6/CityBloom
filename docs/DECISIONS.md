@@ -1600,3 +1600,56 @@ these are its calls and the reasons, with where they overturned the first draft.
     `seen`) is step 10; the clean-up tool's UI, the Bomb tab's fallout block and the radiation tint in
     3D are step 11; the cross-browser `atomSim` section (which uses `cleanFallout`: it is in
     `PENDING_KINDS` with the bomb's four commands) is step 8.
+- **Step 4 review fixes (eight findings from the reviewers, six distinct).** These override the step 4 block
+  above where they differ.
+  - *The air that leaves the map is counted by the flux, not by a band of rows.* The old `edges()` cleared the
+    outermost two rows or columns after the step and counted what lay there. The wind moves the air four cells
+    an update, so a parcel that started in the two rows behind the band was carried past the edge without ever
+    standing in it, and only about half of a plume reached `out` and the neighbour (a probe with no decay, no
+    deposit and no spreading counted 32 of 64 units on every seed). The count is now `carriedOff`: each cell's
+    air goes to the point the shift sends it and is shared over the four cells round it with the very weights
+    the bilinear step reads back with, so the share whose cells lie beyond the north, south or west edge is
+    exactly the mass the step drops (corners to north and south; the east edge is a sink, not counted); the
+    same probe now counts 62.4 to 64 of 64 on all seven seeds, wherever the cloud sits. `FALLOUT.edge.rows`
+    is gone. Because `out` and the neighbour's fallout were tuned on the lossy count, `town.scale` went from
+    400 to 750, which restores the numbers the step 4 block gave (a middle strike gives the downwind
+    neighbour about 0.28, one 300 m from its edge about 0.41); `out` itself is now about twice what that
+    block's table printed (356 for a middle strike on seed `f`, not 190). Step 10's report `plume` reads
+    `out`, so a friend now receives the whole cloud. Step 10 must also drop a friend's plume only when the
+    receiver's own wind blows from that friend's side, as for a computer neighbour: air put on the strip
+    facing a friend while the wind blows towards it leaves by that edge at once, and now would be counted
+    back to the sender as `out`.
+  - *A neighbour's stream is never counted as leaving.* `edge.trickle` (a floor of 1 unit an update) is
+    replaced by a floor on the air itself: air thinner than `town.inflow` (0.006, the thickest stream a
+    neighbour at level 1 can send) is haze and is not counted. That holds wherever the stream goes (60 seeds
+    by 3 sides, 96 cities with a stream in, 40 days: no unit counted on any side, where the band clearing
+    counted 1 to 2 units on the side the stream came by in 7 cases, and a flux count with the old floor
+    counted up to 6 units on another side in 7 more, because a stream is 3 units an update where it comes in).
+    A plume is hundreds of units in cells far above the floor, so it loses under 1 %. Cleared air is no longer
+    a thing: nothing is zeroed at the edges, the mass just leaves.
+  - *Fallout does not call an ambulance.* `sicknessRate` still adds the fallout term (it drives `b.sick`),
+    but the hourly emergency chance reads `usualSicknessRate`, the same expression without it, through the new
+    `emergencyChance`. Under a plume the emergency rate had jumped (35 `death` events in three game days
+    without fallout, 158 at ground 0.25, 213 at 0.6 on the lab town), each unanswered call a resident gone
+    with the "ambulance could not reach a patient" line, which is the casualty feel the step 3 review took out
+    of the blast. The slow sickness stays (its effect on the home's `sick` and the move-outs), so the plume
+    still costs people, quietly. No hash moves: with no fallout the two functions are the same expression.
+  - *The zone tool says what the sim said.* A brush that found only closed ground, or part of it, now shows a
+    toast with the sim's words and the error sound, once for a drag (a stroke dispatches every radius/3
+    metres); a shift-click on a road says it every time. The sim's mixed result carries `info.closedWhy`
+    beside `info.closed`. Any other refusal of the zone command (no road there, a shared city's rules) is
+    shown the same way, which it was not before.
+  - *The legend's pale end is "Thin haze", not "Clear".* The pale yellow means air with nothing on the ground,
+    as the band list says; ground with no fallout is not tinted.
+  - *The map's tooltip works by touch.* A tap (a touch or pen that comes up within a click's slop of where it
+    went down) on the fallout map reads the spot, the tip sits above the finger and stays until the next
+    touch; a touch that starts clears it, a drag (a pan) reads nothing, and a finger's moves no longer ask the
+    sim anything (a mouse and a hovering pen still do).
+  - *Tests that could not fail now can.* The move-out test compares runs with the mood and the sickness
+    switched off one at a time at ground 0.15 (below the ban, so growth and land value are alike in all four);
+    freight is tried with one matching round on two copies of the freight town with no time between them, so
+    only `runFreight`'s two hooks can differ (industry, shops, and homes, which must not); the specialisations'
+    income is tried on a town with a freight hub and a research park (`industrialJobs` is now exported). Each
+    was checked by taking its hook out and seeing the test fail. The edge and stream tests fail on the old
+    band clearing. `tests/war/atomFalloutTools.test.ts` drives the real `ZoneTool` and `OverlayController`
+    with a stand-in game.

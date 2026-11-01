@@ -956,7 +956,10 @@ export function RadiationTip() {
     <div
       class="radiation-tip panel"
       data-testid="radiation-tip"
-      style={{ left: `${Math.min(r.x + 14, window.innerWidth - 300)}px`, top: `${r.y + 18}px` }}
+      style={{
+        left: `${Math.max(8, Math.min(r.x + 14, window.innerWidth - 300))}px`,
+        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + 18}px`,
+      }}
     >
       {r.text}
     </div>

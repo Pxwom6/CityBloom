@@ -6,10 +6,10 @@
  *   eight game years, so the core of a strike reopens after about 18 years (11 hours of play at 1x);
  *   at or above `FALLOUT.ban` nothing can be zoned, placed or grown on it;
  * - the **air** layer is the plume: it moves with the city's own wind (`windAngle`, the way the smoke
- *   does), spreads, leaves a little on the ground as it goes and fades. What reaches the north, south
- *   or west edge is counted (`out`) and falls on the computer neighbour on that side; the east edge
- *   is a sink. A computer neighbour with fallout of its own sends a thin stream the other way when
- *   the wind blows from its side.
+ *   does), spreads, leaves a little on the ground as it goes and fades. What the wind carries off the
+ *   north, south or west edge is counted (`out`) and falls on the computer neighbour on that side; the
+ *   east edge is a sink. A computer neighbour with fallout of its own sends a thin stream the other
+ *   way when the wind blows from its side.
  *
  * `SimState.fallout` is made by the first strike or the first inflow, so a city that never has any is
  * exactly as before; every effect (sickness, mood, work, land value) reads it through one function
@@ -257,9 +257,9 @@ export function falloutDue(sim: Sim): boolean {
 /**
  * One update (three game hours): finished clean-up jobs clear their ground, then the air moves with
  * the wind (a stream from a neighbour with fallout coming in beyond the edges), spreads, leaves a
- * little on the ground and fades, the ground spreads a little and decays, and what the air carried
- * to the outermost rows or columns on the north, south and west is counted and handed to the
- * neighbour there (the east edge is a sink).
+ * little on the ground and fades, the ground spreads a little and decays, and what the wind carried
+ * off the north, south and west edges is counted and handed to the neighbour there (the east edge is
+ * a sink).
  */
 export function updateFallout(sim: Sim): void {
   const s = sim.state;
@@ -278,7 +278,9 @@ export function updateFallout(sim: Sim): void {
   let any = inn.north > 0 || inn.south > 0 || inn.west > 0;
   for (let k = 0; k < N && !any; k++) if (air[k]! > 0) any = true;
   const moved = new Float32Array(N);
+  let gone: Record<Side, number> = { north: 0, south: 0, west: 0 };
   if (any) {
+    gone = carriedOff(air, dx, dz);
     const at = (i: number, j: number): number =>
       i >= R ? 0 : j < 0 ? inn.north : j >= R ? inn.south : i < 0 ? inn.west : air[j * R + i]!;
     for (let j = 0; j < R; j++)
@@ -337,33 +339,51 @@ export function updateFallout(sim: Sim): void {
     }
   air.set(nextAir);
   ground.set(nextGround);
-  edges(sim, f, dx, dz);
+  handOver(sim, f, gone);
 }
 
 /**
- * The air at the outermost rows and columns of an edge the wind is blowing towards is taken out of
- * the city (the corners go to north and south): counted for the north, south and west, and handed to
- * the computer neighbour there (`FALLOUT.town`); the east edge is a sink and is not counted. An edge
- * the wind blows in from is left alone, so a stream coming in from a neighbour is not counted as
- * leaving again before it has moved on; a trickle (under `FALLOUT.edge.trickle` in one update) is
- * cleared but not counted.
+ * What the shift of one update carries off the map: the air in each cell goes to the point `(dx, dz)`
+ * cells away and is shared out over the four cells round it, exactly the weights the bilinear step
+ * above reads back with, so the share whose cells lie beyond the north, south or west edge is the very
+ * mass the step drops (the corners go to north and south; the east edge is a sink and is not counted).
+ * Counting the flux, not a band of rows, keeps the total whole whatever the wind: a band cleared after
+ * the step saw only the parcels that happened to land in it (about half of a plume), and cleared a
+ * stream smeared along an edge when the wind turned. An edge the wind is not blowing towards gets
+ * nothing, and one it grazes only the little the shift reaches.
  */
-function edges(sim: Sim, f: Fallout, dx: number, dz: number): void {
-  const E = FALLOUT.edge.rows;
-  const air = f.air;
+function carriedOff(air: Float32Array, dx: number, dz: number): Record<Side, number> {
   const sums: Record<Side, number> = { north: 0, south: 0, west: 0 };
-  const take = (side: Side, j: number, i: number) => {
-    sums[side] += air[j * R + i]!;
-    air[j * R + i] = 0;
-  };
-  if (dz < 0) for (let j = 0; j < E; j++) for (let i = 0; i < R; i++) take('north', j, i);
-  if (dz > 0) for (let j = R - E; j < R; j++) for (let i = 0; i < R; i++) take('south', j, i);
-  if (dx < 0) for (let j = E; j < R - E; j++) for (let i = 0; i < E; i++) take('west', j, i);
-  // The east edge is a sink.
-  if (dx > 0) for (let j = 0; j < R; j++) for (let i = R - E; i < R; i++) air[j * R + i] = 0;
+  for (let j = 0; j < R; j++)
+    for (let i = 0; i < R; i++) {
+      // Air no thicker than the thickest stream a neighbour can send is haze, not a cloud.
+      const v = air[j * R + i]! - FALLOUT.town.inflow;
+      if (!(v > 0)) continue;
+      const x = i + dx;
+      const z = j + dz;
+      const i0 = Math.floor(x);
+      const j0 = Math.floor(z);
+      // The footprint (i0..i0+1, j0..j0+1) lies wholly on the map for nearly every cell.
+      if (i0 >= 0 && j0 >= 0 && j0 + 1 < R) continue;
+      const fx = x - i0;
+      const fz = z - j0;
+      for (let b = 0; b < 4; b++) {
+        const w = (b & 1 ? fx : 1 - fx) * (b & 2 ? fz : 1 - fz);
+        if (!(w > 0)) continue;
+        const ii = i0 + (b & 1);
+        const jj = j0 + (b >> 1);
+        if (jj < 0) sums.north += v * w;
+        else if (jj >= R) sums.south += v * w;
+        else if (ii < 0) sums.west += v * w;
+      }
+    }
+  return sums;
+}
+
+/** Count what left the map and hand it to the computer neighbour on that side (`FALLOUT.town`). */
+function handOver(sim: Sim, f: Fallout, gone: Record<Side, number>): void {
   for (const side of SIDES) {
-    // (A trickle is haze: a neighbour's thin stream passing through the city is not a cloud.)
-    const d = sums[side] >= FALLOUT.edge.trickle ? round3(sums[side]) : 0;
+    const d = round3(gone[side]);
     if (d <= 0) continue;
     f.out[side] = round3(f.out[side] + d);
     for (const n of sim.state.region.neighbours) {

@@ -53,5 +53,7 @@ export function zone(sim: Sim, letter: ZoneLetter | 'none', area: ZoneArea, dryR
       sim.net.dirty.blocks.add(bid);
     }
   }
-  return ok(0, { info: { cells: changes.length, ...(skipped ? { closed: skipped } : {}) } });
+  return ok(0, {
+    info: { cells: changes.length, ...(skipped ? { closed: skipped, closedWhy: closed } : {}) },
+  });
 }

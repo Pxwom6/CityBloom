@@ -295,8 +295,14 @@ a high-water mark so repeats add nothing), `friendWinter` and `atomFirst` (the `
 achievement); the strike between friends end to end: sent through the ops road, fired only when the
 room keeps it, the target's own sim taking it once with a fresh countdown and checking it against its
 own books; race notices logged, the bomb's lines as red alerts), `tests/war/atomFriends.test.ts` (three
-cities in a real room), `tests/war/atomNotices.test.ts`; Chromium agrees with Node. Next: step 11, the
-UI and effects. Not yet run for steps 1-10: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+cities in a real room), `tests/war/atomNotices.test.ts`; Chromium agrees with Node. Step 11a is done (478e26b, f69b659): the
+interface (`src/ui/Atom.tsx`, `atomView.ts`, `src/client/atomUi.ts`: the war room's Bomb tab with the race's
+ladder and why each step waits, the launch card listing the consequences behind a 3-second hold that
+works by touch and keys, Stop building that asks first; the countdown card with the dome in words;
+the aftermath cards; the race on the region map; the clean-up tool on the radiation map
+(`src/tools/cleanTool.ts`); six tips; "Soften flashes"; `scripts/dev/atomshot.mjs`), screenshots reviewed.
+Step 11b (the missile, flash, mushroom cloud, radiation tint, silo hatch, sounds, frame times) runs on
+the owner's Mac (a Remote Control session, real GPU), then the e2e. Not yet run for steps 1-11a: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
@@ -351,8 +357,9 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 10 are done. Next: step 11, the UI and effects (the Bomb tab, the countdown, the missile, the
-   flash and the cloud, the radiation map's look, the winter's look, sounds, tips); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   to 11a are done. Next: step 11b on the Mac, the 3D effects and sounds (the missile, the flash
+   and the cloud, the radiation tint, the silo hatch, the siren) with real frame times; then e2e
+   (on the Mac too); wrap-up. Layout specs that count the Military subbar's buttons may
    need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

@@ -694,7 +694,7 @@ export function CountdownView({ c, canLook, roomOpen, onShow, onRaise, onLook, o
         </span>
       </header>
       <p class="muted" data-testid="atom-play-left">
-        Lands in about {c.playLeft} at normal speed.
+        {c.when}
       </p>
       <p data-testid="atom-aim">
         {c.aim}.{' '}

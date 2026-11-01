@@ -194,7 +194,18 @@ export class GameRenderer {
     ports: { planes: 0, ships: 0 },
     units: { near: 0, far: 0, dots: 0 },
     smoke: 0,
-    atom: { calls: 0, triangles: 0, puffs: 0, missile: false, hatch: 0, flash: 0, tint: false },
+    atom: {
+      calls: 0,
+      triangles: 0,
+      puffs: 0,
+      missile: false,
+      hatch: 0,
+      flash: 0,
+      tint: false,
+      inbound: false,
+      outbound: false,
+      following: false,
+    },
   };
 
   constructor(

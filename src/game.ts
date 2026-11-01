@@ -83,7 +83,7 @@ import {
   type Settings,
 } from './client/settings';
 import { typingIn } from './client/keys';
-import { atomBeats } from './render/atomFx';
+import { atomBeats, blastSounds } from './render/atomFx';
 import type { OverlayResult } from './sim/systems/overlays';
 
 type Listener = () => void;
@@ -325,10 +325,22 @@ export class Game {
     });
     this.randomDisasters = world.options.disasters;
     renderer.disasters.onImpact = () => this.audio?.play('boom');
+    // The atom bomb's end, as the page shows it (M40 step 11b): a landing's boom and the wind after it,
+    // or the dome taking it, each once, with the flash.
+    renderer.atom.onBlast = (stopped) => {
+      for (const s of blastSounds(stopped))
+        if (s.delay) setTimeout(() => this.audio?.play(s.name), s.delay);
+        else this.audio?.play(s.name);
+    };
     // The atom bomb in the sky (M40 step 11b): the countdown card's "Look at the missile".
     this.atomUi.missile = {
       available: () => renderer.atom.canLook,
-      look: () => void renderer.atom.look(renderer.controller),
+      look: () => {
+        // (Following a friend's camera in a shared city would take the view straight back.)
+        this.following = 0;
+        renderer.atom.look(renderer.controller);
+        this.notify();
+      },
     };
     // Thunder follows the flash by the time sound takes to cover the distance (M22).
     renderer.weather.onStrike = (distance) =>
@@ -1515,9 +1527,7 @@ export class Game {
         // (An old card from the last bomb makes way for the countdown.)
         this.atomUi.dismissAfter();
       } else if (e.kind === 'bombLanded') {
-        // A low boom, then the wind rushing back in (M40 step 11b).
-        this.audio?.play('atomBlast');
-        setTimeout(() => this.audio?.play('atomWind'), 2200);
+        // (Its sounds come with its flash, when the display clock reaches the landing: `renderer.atom.onBlast`.)
       } else if (e.kind === 'bombStopped') {
         this.notice(
           `bomb:${e.id}`,
@@ -2483,23 +2493,34 @@ export class Game {
   /** Called every animation frame. */
   /** The display tick the atom bomb's beats were last read at (M40 step 11b), and when the fallout's tint was last asked for. */
   private atomBeatAt = -1;
+  /** The bomb in the air the siren is sounding for (its warning tick), and when it last sounded (real ms). */
+  private atomSirenFor = -1;
+  private atomSirenAt = 0;
   private atomTintAt = -Infinity;
   private atomTintAsking = false;
   private atomLook = false;
 
   /**
-   * The atom bomb's page side, a frame at a time (M40 step 11b): the siren every few seconds and the
-   * last ten seconds' ticks while a bomb is in the air (on the display clock: a pause holds them as it
-   * holds the missile), and the fallout's tint on the ground, asked of the sim every few seconds while
-   * the city has fallout and the quality draws it.
+   * The atom bomb's page side, a frame at a time (M40 step 11b): the siren every few seconds of real
+   * time and the last ten seconds' ticks while a bomb is in the air (only while the display clock runs:
+   * a pause holds them as it holds the missile), and the fallout's tint on the ground, asked of the sim
+   * every few seconds while the city has fallout and the quality draws it.
    */
   private atomFrame(now: number): void {
     const w = this.world;
     const a = w.stats.war?.atom;
     const tick = w.displayTick;
+    if (a?.inbound && this.atomSirenFor !== a.inbound.warn) {
+      // A new bomb in the air: the warning's own siren has just sounded.
+      this.atomSirenFor = a.inbound.warn;
+      this.atomSirenAt = now;
+    }
     if (a?.inbound && this.atomBeatAt >= 0 && !this.readOnly) {
-      const b = atomBeats(a.inbound, this.atomBeatAt, tick);
-      if (b.siren) this.audio?.play('atomWarn');
+      const b = atomBeats(a.inbound, this.atomBeatAt, tick, (now - this.atomSirenAt) / 1000);
+      if (b.siren) {
+        this.audio?.play('atomWarn');
+        this.atomSirenAt = now;
+      }
       if (b.ticks) this.audio?.play('atomTick');
     }
     this.atomBeatAt = tick;

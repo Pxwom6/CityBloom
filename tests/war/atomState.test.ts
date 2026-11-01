@@ -239,6 +239,7 @@ describe('M40: the stage of the race', () => {
       fired: null,
       first: false,
       inbound: null,
+      stopped: 0,
       impact: null,
       rivals: [],
       fallout: false,

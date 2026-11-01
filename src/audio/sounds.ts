@@ -26,7 +26,8 @@ export type SoundName =
   | 'atomWarn'
   | 'atomTick'
   | 'atomBlast'
-  | 'atomWind';
+  | 'atomWind'
+  | 'atomStopped';
 
 /**
  * Sound-effect recipes, all synthesised. `v` (0–1) varies pitch a little so repeats don't grate.
@@ -397,6 +398,26 @@ export const SOUNDS: Record<
       attack: 1.6,
       dur: 4.8,
     });
+  },
+
+  /**
+   * M40: the dome shield stopping an atom bomb: a muffled thump high overhead, and the dome ringing
+   * like a struck glass bell as it goes down (far softer than a landing).
+   */
+  atomStopped: (ctx, out, t, v) => {
+    burst(ctx, out, t, { colour: 'brown', filter: 'lowpass', f0: 700, f1: 90, gain: 0.34, dur: 1.4 });
+    tone(ctx, out, t, { f0: 64 + v * 6, f1: 40, gain: 0.22, attack: 0.02, dur: 1.2 });
+    let end = t;
+    for (const [k, f] of [1318.5, 1567.98, 1975.53].entries())
+      end = tone(ctx, out, t + 0.08 + k * 0.05, {
+        type: 'triangle',
+        f0: f + v * 20,
+        f1: f * 0.72,
+        gain: 0.045,
+        attack: 0.01,
+        dur: 1.9,
+      });
+    return end;
   },
 };
 

@@ -5,10 +5,12 @@ import { QUALITY_PARAMS, QUALITIES } from '../../src/client/settings';
 import { AtomEffects, type AtomStage } from '../../src/render/atom';
 import {
   ATOM_FX,
+  HOVER_K,
   MAX_PUFFS,
   TICKS_PER_SECOND,
   atomBeats,
   atomCaps,
+  blastSounds,
   cloudAt,
   cloudPuffs,
   flashAt,
@@ -20,6 +22,7 @@ import {
 } from '../../src/render/atomFx';
 import type { CameraController } from '../../src/render/camera';
 import type { Lighting } from '../../src/render/lighting';
+import { SOUND_NAMES } from '../../src/audio/sounds';
 
 /** M40 step 11b: the atom bomb's effects, the pure maths and the renderer's budget. */
 
@@ -34,14 +37,32 @@ describe('the missile', () => {
     expect(start.dy).toBeGreaterThan(0);
     const mid = inboundAt(flight, 5, (flight.warn + flight.arrive) / 2)!;
     expect(mid.y).toBeCloseTo(5 + ATOM_FX.apex);
-    const late = inboundAt(flight, 5, flight.arrive - 1)!;
-    expect(Math.hypot(late.x - flight.x, late.z - flight.z)).toBeLessThan(10);
+    // The dive ends just over ground zero (it bursts in the air there), steeply down.
+    const late = inboundAt(flight, 5, flight.warn + HOVER_K * (flight.arrive - flight.warn) - 0.5)!;
+    expect(Math.hypot(late.x - flight.x, late.z - flight.z)).toBeLessThan(60);
+    expect(late.y - 5).toBeCloseTo(ATOM_FX.hover, -1);
     expect(late.dy).toBeLessThan(-0.5);
     for (const p of [start, mid, late]) expect(Math.hypot(p.dx, p.dy, p.dz)).toBeCloseTo(1);
     // Each side brings it from its own edge; none before the warning's tick is wrong, none from the landing on.
     expect(inboundAt({ ...flight, side: 'south' }, 0, flight.warn)!.z).toBeGreaterThan(flight.z + 5000);
     expect(inboundAt({ ...flight, side: 'west' }, 0, flight.warn)!.x).toBeLessThan(flight.x - 5000);
-    expect(inboundAt(flight, 0, flight.arrive)).toBeNull();
+    expect(inboundAt(flight, 0, flight.warn - 1)).toBeNull();
+    expect(inboundAt({ ...flight, arrive: flight.warn }, 0, flight.warn)).toBeNull();
+  });
+
+  it('ends its dive just over ground zero and circles there, never below it, until its landing is shown (step 11b review)', () => {
+    // The sim may hold a landing back (a battle in the city, a blast not over) for up to 12 game hours.
+    let prev = inboundAt(flight, 5, flight.arrive - 30)!;
+    for (let t = flight.arrive - 30; t <= flight.arrive + 12 * 60; t += 0.5) {
+      const p = inboundAt(flight, 5, t)!;
+      expect(p).not.toBeNull();
+      expect(p.y).toBeGreaterThan(5 + ATOM_FX.hover - 8);
+      expect(Math.hypot(p.x - flight.x, p.z - flight.z)).toBeLessThan(120);
+      // No jump from one half tick to the next.
+      expect(Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z)).toBeLessThan(20);
+      expect(Math.hypot(p.dx, p.dy, p.dz)).toBeCloseTo(1);
+      prev = p;
+    }
   });
 
   it('flies on the display clock: the same tick, the same place', () => {
@@ -139,23 +160,65 @@ describe('the flash, the shake and the sounds', () => {
     expect(shakeAt(ATOM_FX.shakeSeconds, false)).toBe(0);
   });
 
-  it('sounds the siren every six seconds of play and ticks through the last ten, on the display clock', () => {
+  /** A flight played a frame at a time at a speed, as the page does: the sirens' times (real s) and the ticks. */
+  function play(speed: number) {
     const f = { warn: 0, arrive: 1440 };
-    let sirens = 0;
+    const sirens: number[] = [];
     let ticks = 0;
-    // A frame at a time at normal speed (eight ticks a second, sixty frames).
-    for (let t = 0; t < 1440; t += TICKS_PER_SECOND / 60) {
-      const b = atomBeats(f, t, t + TICKS_PER_SECOND / 60);
-      if (b.siren) sirens++;
+    let last = 0;
+    let real = 0;
+    const step = (TICKS_PER_SECOND * speed) / 60;
+    for (let t = 0; t < 1440; t += step) {
+      real += 1 / 60;
+      const b = atomBeats(f, t, t + step, real - last);
+      if (b.siren) {
+        sirens.push(real);
+        last = real;
+      }
       ticks += b.ticks;
     }
-    expect(sirens).toBe(Math.floor(1440 / TICKS_PER_SECOND / ATOM_FX.sirenEvery) - 1);
-    expect(ticks).toBe(ATOM_FX.tickFrom);
-    // Paused, nothing; after the landing, nothing.
-    expect(atomBeats(f, 700, 700)).toEqual({ siren: false, ticks: 0 });
-    expect(atomBeats(f, 1440, 1500)).toEqual({ siren: false, ticks: 0 });
+    return { sirens, ticks, real };
+  }
+
+  it('sounds the siren every six seconds and ticks through the last ten seconds of play', () => {
+    const one = play(1);
+    expect(one.sirens).toHaveLength(Math.floor(1440 / TICKS_PER_SECOND / ATOM_FX.sirenEvery) - 1);
+    expect(one.ticks).toBe(ATOM_FX.tickFrom);
+    const f = { warn: 0, arrive: 1440 };
+    // Paused, nothing; not at the planned landing itself; not before six seconds since the last.
+    expect(atomBeats(f, 700, 700, 100)).toEqual({ siren: false, ticks: 0 });
+    expect(atomBeats(f, 1439, 1441, 100)).toEqual({ siren: false, ticks: 0 });
+    // Past it with the flight still there (the sim holding the landing back, the missile circling
+    // overhead), the siren goes on, without ticks (step 11b review).
+    expect(atomBeats(f, 1540, 1541, 7)).toEqual({ siren: true, ticks: 0 });
+    expect(atomBeats(f, 1540, 1541, 5)).toEqual({ siren: false, ticks: 0 });
+    expect(atomBeats(f, 700, 701, 5.9).siren).toBe(false);
+    expect(atomBeats(f, 700, 701, 6).siren).toBe(true);
     // A jump (a load) plays one of each at most.
-    expect(atomBeats(f, 0, 1439).ticks).toBeLessThanOrEqual(1);
+    expect(atomBeats(f, 0, 1439, 100).ticks).toBeLessThanOrEqual(1);
+  });
+
+  it('never lets a siren overlap the last at 2x or 3x: they are spaced in real time (step 11b review)', () => {
+    for (const speed of [2, 3]) {
+      const r = play(speed);
+      expect(r.sirens.length).toBeGreaterThan(0);
+      for (let i = 1; i < r.sirens.length; i++)
+        expect(r.sirens[i]! - r.sirens[i - 1]!).toBeGreaterThanOrEqual(
+          Math.max(ATOM_FX.sirenEvery, ATOM_FX.sirenLength) - 1e-9,
+        );
+      // At 3x the flight is a minute of real time: one siren every six seconds of it.
+      expect(r.sirens.length).toBeLessThanOrEqual(Math.ceil(r.real / ATOM_FX.sirenEvery));
+      expect(r.ticks).toBe(ATOM_FX.tickFrom);
+    }
+  });
+
+  it('plays a landing’s blast then its wind, once each, and the dome’s own sound for a stop (step 11b review)', () => {
+    expect(blastSounds(false)).toEqual([
+      { name: 'atomBlast', delay: 0 },
+      { name: 'atomWind', delay: 2200 },
+    ]);
+    expect(blastSounds(true)).toEqual([{ name: 'atomStopped', delay: 0 }]);
+    for (const s of [...blastSounds(false), ...blastSounds(true)]) expect(SOUND_NAMES).toContain(s.name);
   });
 });
 

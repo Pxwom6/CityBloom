@@ -7,6 +7,7 @@
 import { MAP_SIZE } from '../data/world';
 import { TICKS_PER_HOUR } from '../sim/time';
 import type { NeighbourSide } from '../data/region';
+import type { SoundName } from '../audio/sounds';
 
 /** Ticks of game time a second at normal speed (a game hour is 7.5 s of play). */
 export const TICKS_PER_SECOND = TICKS_PER_HOUR / 7.5;
@@ -17,6 +18,11 @@ export const ATOM_FX = {
   apex: 1700,
   /** The missile is drawn this many times its model's size (a toy, comically big). */
   scale: 2.6,
+  /**
+   * The missile's dive ends this high over ground zero (m): it bursts in the air there at the landing,
+   * and circles there while the sim holds the landing back (a battle in the city, a blast not over).
+   */
+  hover: 60,
   /** The city's own bomb: rising out of the silo (ticks), then away to the target's side (ticks). */
   rise: 40,
   away: 200,
@@ -39,11 +45,21 @@ export const ATOM_FX = {
   /** The flash (s, real time): a short white bloom, or a soft fade when flashes are softened. */
   flash: 0.3,
   softFlash: 0.8,
+  /**
+   * A landing is flashed only if the display clock reaches it within this many seconds of play (a
+   * page that loads, or whose clock jumps, after the landing shows the cloud with no flash or sound).
+   */
+  flashWindow: 6,
   /** The camera's shake (m) and how long it lasts (s); never with flashes softened. */
   shake: 9,
   shakeSeconds: 1.6,
-  /** The siren every this many seconds of play while a bomb is in the air; a tick each second of the last ten. */
+  /**
+   * The siren every this many seconds of real time while a bomb is in the air and the clock runs (at
+   * 3x, every 18 s of play: the sound is 2.5 s long and must not overlap itself); a tick each second
+   * of play in the last ten.
+   */
   sirenEvery: 6,
+  sirenLength: 2.5,
   tickFrom: 10,
   /** The cloud's budget (the plan's cap): draw calls and triangles. */
   maxCalls: 6,
@@ -101,18 +117,62 @@ export interface MissilePose {
   k: number;
 }
 
+/** The share of the flight at which the dive reaches `ATOM_FX.hover` over ground zero (just short of 1). */
+export const HOVER_K = (1 + Math.sqrt(1 - ATOM_FX.hover / ATOM_FX.apex)) / 2;
+
 /**
  * The bomb on its way to the city at a tick (display time, fractional): from far out on the sender's
- * side, up in an arc and steeply down onto ground zero at `arrive`. Null before it was warned of and
- * from the landing on. `ground` is the height of ground zero.
+ * side, up in an arc and steeply down to `ATOM_FX.hover` m over ground zero, which it reaches a moment
+ * before `arrive`; from there it circles slowly in place until the page sees the landing (at `arrive`,
+ * or later if the sim holds it back), so it never vanishes before its flash. Null before it was warned
+ * of, and for a flight with no time in the air. `ground` is the height of ground zero.
  */
 export function inboundAt(
   f: { warn: number; arrive: number; x: number; z: number; side: NeighbourSide | null },
   ground: number,
   tick: number,
 ): MissilePose | null {
-  if (tick >= f.arrive || f.arrive <= f.warn) return null;
-  const k = clamp01((tick - f.warn) / (f.arrive - f.warn));
+  if (f.arrive <= f.warn || tick < f.warn) return null;
+  const span = f.arrive - f.warn;
+  const hold = f.warn + HOVER_K * span;
+  if (tick >= hold) {
+    // Circling over ground zero, the circle opening out from the dive's end so nothing jumps.
+    const base = dive(f, ground, HOVER_K);
+    const t = tick - hold;
+    const open = 1 - Math.exp(-t / 12);
+    const ang = t * 0.11;
+    const r = 35 * open;
+    const cx = Math.cos(ang);
+    const cz = Math.sin(ang);
+    // Heading round the circle, nose a little down; eased in from the dive's own heading.
+    const tx = -cz;
+    const tz = cx;
+    let dx = base.dx + (tx - base.dx) * open;
+    let dy = base.dy + (-0.35 - base.dy) * open;
+    let dz = base.dz + (tz - base.dz) * open;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    dx /= l;
+    dy /= l;
+    dz /= l;
+    return {
+      x: base.x + (cx - 1) * r,
+      y: base.y + 5 * Math.sin(t * 0.17) * open,
+      z: base.z + cz * r,
+      dx,
+      dy,
+      dz,
+      k: 1,
+    };
+  }
+  return dive(f, ground, clamp01((tick - f.warn) / span));
+}
+
+/** The dive's pose at share `k` of the flight. */
+function dive(
+  f: { x: number; z: number; side: NeighbourSide | null },
+  ground: number,
+  k: number,
+): MissilePose {
   const d = sideDir(f.side);
   const R = ATOM_FX.reach;
   const H = ATOM_FX.apex;
@@ -125,6 +185,15 @@ export function inboundAt(
   const vy = 4 * H * (1 - 2 * k);
   const l = Math.hypot(vx, vy, vz) || 1;
   return { x: f.x + d.x * h, y, z: f.z + d.z * h, dx: vx / l, dy: vy / l, dz: vz / l, k };
+}
+
+/**
+ * How big the city's own bomb is drawn as it leaves (times its model's size): its own size while it
+ * stands in the silo and lifts off, growing to the flight's toy size as it turns away (eased, so it
+ * never jumps from one frame to the next).
+ */
+export function outboundScale(p: MissilePose): number {
+  return 1 + (ATOM_FX.scale - 1) * smooth(0, 0.2, p.k);
 }
 
 /**
@@ -356,23 +425,26 @@ export function shakeAt(t: number, soft: boolean): number {
 }
 
 /**
- * The beats of sound between two display ticks while a bomb is in the air (the page plays them): the
- * siren every `sirenEvery` seconds of play from the warning, and a tick each second of the last
- * `tickFrom` seconds before the landing. A display clock that jumped (a load, a long hold) plays at
- * most one of each.
+ * The beats of sound between two display ticks while a bomb is in the air (the page plays them, for
+ * as long as the summary has the flight): the siren once `sirenEvery` seconds of real time have
+ * passed since the last (`sinceSiren`; the page starts it at the warning, whose own siren is the
+ * game's warning sound), never while the clock is stopped and never closer than the siren's own
+ * length, so it can't overlap itself at 3x, and on through a landing the sim holds back; and a tick
+ * each second of play in the last `tickFrom` before the planned landing. A display clock that jumped
+ * (a load, a long hold) plays at most one of each.
  */
 export function atomBeats(
   f: { warn: number; arrive: number },
   from: number,
   to: number,
+  sinceSiren: number,
 ): { siren: boolean; ticks: number } {
-  if (to <= from || to <= f.warn || from >= f.arrive) return { siren: false, ticks: 0 };
+  if (to <= from || to <= f.warn) return { siren: false, ticks: 0 };
   const S = TICKS_PER_SECOND;
-  const every = ATOM_FX.sirenEvery * S;
-  // The siren at the warning itself is the game's own warning sound; every beat after it here.
-  const beat = (t: number) => Math.floor((Math.min(t, f.arrive) - f.warn) / every);
-  // (Not at the landing itself: the blast is the sound then.)
-  const siren = from >= f.warn && to < f.arrive && beat(to) > beat(from);
+  // Not in the moment of its planned landing (the blast is the sound then); past it, while the page
+  // still has the flight (the sim holding the landing back, the missile circling overhead), it goes on.
+  const landing = to >= f.arrive && to < f.arrive + 2 * S;
+  const siren = from >= f.warn && !landing && sinceSiren >= Math.max(ATOM_FX.sirenEvery, ATOM_FX.sirenLength);
   // Ticks: seconds left (at normal speed) crossing a whole number at or under `tickFrom`.
   const left = (t: number) => Math.ceil((f.arrive - Math.min(t, f.arrive)) / S);
   const a = left(from);
@@ -380,6 +452,19 @@ export function atomBeats(
   let ticks = 0;
   for (let s = a - 1; s >= b && s >= 1; s--) if (s <= ATOM_FX.tickFrom) ticks++;
   return { siren, ticks: Math.min(ticks, 1) };
+}
+
+/**
+ * What the page plays when it shows a landing (the flash): the blast, then the wind rushing back in;
+ * or, for a bomb the dome stopped, the dome taking it. Each name once, with its delay (ms).
+ */
+export function blastSounds(stopped: boolean): { name: SoundName; delay: number }[] {
+  return stopped
+    ? [{ name: 'atomStopped', delay: 0 }]
+    : [
+        { name: 'atomBlast', delay: 0 },
+        { name: 'atomWind', delay: 2200 },
+      ];
 }
 
 /** A default ground zero (the map's middle) for a staged picture with none given. */

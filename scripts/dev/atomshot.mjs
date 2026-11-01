@@ -5,7 +5,7 @@
 // raised from the card, stopping the bomb), the card a bomb leaves behind, the war room's Map tab with
 // the race's marks and a strike's arc and cloud, the radiation map with the clean-up tool out, and
 // the phone width. Prints what the page reports (test API getAtom) at each moment.
-// Step 11b adds the effects (ONLY=fx,fxnight,fxlow,street,hatch,missile,tint,winter; GPU=1 draws them in a
+// Step 11b adds the effects (ONLY=fx,fxnight,fxlow,street,hatch,missile,review,held,tint,winter; GPU=1 draws them in a
 // real Chrome window on the GPU, as the look is judged): the missile on its trail, the flash, the cloud
 // rising and drifting, the shock ring, the silo's hatch and the bomb leaving it, the fallout's tint and
 // the nuclear winter, each staged with the test API's showAtom (or played for real: missile, tint,
@@ -575,6 +575,106 @@ try {
     await setView(ui);
     await frames(2);
     await pic(page, 'missile-cloud');
+    await api(() => window.__game.setSpeed(0));
+  }
+  if (want('review')) {
+    // Step 11b review, played for real: the city's own bomb leaving while an enemy's comes in (both
+    // drawn), "Look at the missile" from 5 km out (in the middle of the view, past the map's edge),
+    // and a landing a battle in the city holds back (the missile circling over ground zero until the
+    // sim lets it fall, then the flash at the real landing, not the planned one).
+    await closeRoom();
+    await setQuality('high');
+    const fx = () => api(() => window.__game.getAtomFx());
+    await cheat({ cheat: 'atom', stage: 'flying', to: r3 });
+    await api(() => window.__game.advance(2));
+    await cheat({ cheat: 'bombIn', hours: 24, from: r2 });
+    await api(() => window.__game.advance(20));
+    const silo = (await api(() => window.__game.getCivics())).find((c) => c.def === 'atomsilo');
+    await setView({ x: silo.x, z: silo.z + 200, distance: 700, yaw: 0.3, tilt: -0.35 });
+    await frames(4);
+    log('review-both', JSON.stringify(await fx()));
+    await shot('review-both', { panel: false });
+    // Follow the bomb in from far out.
+    await api(() => window.__game.advance(40));
+    await page.waitForTimeout(700);
+    await page.getByTestId('atom-look').click();
+    await page.waitForTimeout(2500);
+    log(
+      'review-look-early',
+      JSON.stringify({ fx: await fx(), cam: await api(() => window.__game.getPhoto().camera) }),
+    );
+    await shot('review-look-early', { panel: false });
+    await api(() => window.__game.setSpeed(3));
+    await page.waitForTimeout(12000);
+    await api(() => window.__game.setSpeed(0));
+    await page.waitForTimeout(1500);
+    log('review-look-mid', JSON.stringify(await fx()));
+    await shot('review-look-mid', { panel: false });
+    // A drag ends the follow and carries on from where the view is, easing back to the map.
+    await page.mouse.move(640, 520);
+    await page.mouse.down();
+    for (let i = 1; i <= 20; i++) {
+      await page.mouse.move(640 + i * 12, 520, { steps: 1 });
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(2500);
+    log('review-drag', JSON.stringify(await fx()));
+    await shot('review-drag', { panel: false });
+    // Looked at again, then "Show where" ends it: the player's own turn and tilt over ground zero.
+    await page.getByTestId('atom-look').click();
+    await page.waitForTimeout(1500);
+    await page.getByText('Show where').click();
+    await page.waitForTimeout(1500);
+    log('review-show-where', JSON.stringify(await fx()));
+    await shot('review-show-where', { panel: false });
+    await api(() => window.__game.setSpeed(0));
+  }
+  if (want('held')) {
+    // A landing a battle in the city holds back (run on its own: ONLY=held, the town still standing):
+    // the missile circles over ground zero past its planned tick, with no flash or cloud, until the sim
+    // lets it fall; then the flash, at the real landing.
+    await closeRoom();
+    await setQuality('high');
+    const fx = () => api(() => window.__game.getAtomFx());
+    const summary = () => api(() => window.__game.getAtom().summary);
+    const why = await api(() => window.__game.stageBattle('max'));
+    log('battle', why ?? 'staged');
+    for (let k = 0; k < 60 && !(await api(() => window.__game.getBattle().frame)); k++)
+      await api(() => window.__game.advance(1));
+    await cheat({ cheat: 'bombIn', hours: 1, from: r2 });
+    await api(() => window.__game.advance(2));
+    const s0 = await summary();
+    await api(() => window.__game.advance(90));
+    await frames(4);
+    const held = await summary();
+    log(
+      'review-held',
+      JSON.stringify({
+        battle: !!(await api(() => window.__game.getBattle().frame)),
+        planned: s0.inbound?.arrive,
+        inbound: !!held.inbound,
+        impact: held.impact?.at ?? null,
+        tick: await api(async () => (await window.__game.getState()).tick),
+        fx: await fx(),
+      }),
+    );
+    await setView(aim({ x: s0.inbound.x, z: s0.inbound.z }, 1500, 0.66, 0.35, 60));
+    await frames(4);
+    await shot('review-held', { panel: false });
+    // Let it fall at 1x and catch the flash.
+    await api(() => window.__game.setSpeed(1));
+    let flashed = null;
+    for (let k = 0; k < 2400 && !flashed; k++) {
+      const f = await fx();
+      if (f.flash > 0.2) flashed = f;
+      else await page.waitForTimeout(50);
+    }
+    await pic(page, 'review-flash');
+    const after = await summary();
+    log('review-flash', JSON.stringify({ flashed, landed: after.impact?.at, planned: s0.inbound.arrive }));
+    await page.waitForTimeout(5000);
+    await shot('review-cloud', { panel: false });
     await api(() => window.__game.setSpeed(0));
   }
   if (want('tint') || want('winter')) {

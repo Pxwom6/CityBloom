@@ -377,7 +377,15 @@ describe('M40 step 11: the countdown', () => {
     const later = countdown(s.inbound!, s.inbound!.arrive + 50, dome, false);
     expect(later.eta).toBe('0:00');
     expect(later.hoursLeft).toBe(0);
-    for (const w of strings(c)) expect(w).not.toMatch(NOT_SAID);
+    // On time it says when it lands; past its time and still in the air (the sim holding it back for
+    // fighting in the city or a blast not over), that it is overhead and why it waits (step 11b review).
+    expect(c.held).toBe(false);
+    expect(c.when).toBe('Lands in about 3 minutes at normal speed.');
+    expect(later.held).toBe(true);
+    expect(later.when).toMatch(/over the city now/);
+    expect(later.when).not.toMatch(/Lands in/);
+    expect(countdown(s.inbound!, s.inbound!.arrive, dome, false).held).toBe(false);
+    for (const w of [...strings(c), ...strings(later)]) expect(w).not.toMatch(NOT_SAID);
   });
 
   it('tells the shelters in a line, or nothing without anyone near', () => {

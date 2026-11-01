@@ -58,6 +58,7 @@ import {
   hatchOpen,
   inboundAt,
   outboundAt,
+  outboundScale,
   placePuff,
   shakeAt,
   sideDir,
@@ -299,7 +300,54 @@ export interface AtomStats {
   hatch: number;
   flash: number;
   tint: boolean;
+  /** The bomb on its way in and the city's own are drawn (both may be in the sky at once). */
+  inbound: boolean;
+  outbound: boolean;
+  /** The camera is following a missile ("Look at the missile"). */
+  following: boolean;
 }
+
+/** A bomb on its way to the city, as the effects keep it. */
+interface Flight {
+  warn: number;
+  arrive: number;
+  x: number;
+  z: number;
+  side: NeighbourSide | null;
+}
+
+/** The end of a flight: a landing at ground zero, or the dome stopping it; its tick and where. */
+interface FlightEnd {
+  stopped: boolean;
+  at: number;
+  x: number;
+  z: number;
+}
+
+/** A camera pose, as the follow keeps the player's own and the last one it set. */
+interface Pose {
+  x: number;
+  z: number;
+  distance: number;
+  yaw: number;
+  tilt: number;
+}
+
+/** A flight, by its warning and landing ticks. */
+const stopKey = (f: Flight) => `stop:${f.warn}:${f.arrive}`;
+
+const samePose = (a: Pose, b: Pose) =>
+  Math.abs(a.x - b.x) < 1e-3 &&
+  Math.abs(a.z - b.z) < 1e-3 &&
+  Math.abs(a.distance - b.distance) < 1e-3 &&
+  Math.abs(a.yaw - b.yaw) < 1e-6 &&
+  Math.abs(a.tilt - b.tilt) < 1e-6;
+
+/** The farthest the camera stands from a missile it follows (m; inside the camera's roaming limit). */
+const FOLLOW_FAR = 5800;
+
+/** How far out the camera stands over ground zero after a blast it followed the missile to (at least; m). */
+const AFTER_BLAST = 2400;
 
 export class AtomEffects {
   readonly group = new Group();
@@ -312,30 +360,66 @@ export class AtomEffects {
   flash = 0;
   /** A picture staged by the test API, in place of the city's own bomb. */
   stage: AtomStage | null = null;
-  /** Called once when a bomb lands (the flash), and when a dome stops one, for sound. */
+  /**
+   * Called once when the page shows a flight's end (its flash: a landing, or the dome stopping it),
+   * for the sounds (`blastSounds`); not for an end the display clock reached too late to flash.
+   */
   onBlast: ((stopped: boolean) => void) | null = null;
-  stats: AtomStats = { calls: 0, triangles: 0, puffs: 0, missile: false, hatch: 0, flash: 0, tint: false };
+  stats: AtomStats = {
+    calls: 0,
+    triangles: 0,
+    puffs: 0,
+    missile: false,
+    hatch: 0,
+    flash: 0,
+    tint: false,
+    inbound: false,
+    outbound: false,
+    following: false,
+  };
 
   private puffMat = puffMaterial();
   private cloud = new Puffs(MAX_PUFFS, this.puffMat);
   private trailMat = puffMaterial();
-  private trail = new Puffs(MAX_TRAIL, this.trailMat);
+  /** Both missiles' trails, one after the other in one draw call. */
+  private trail = new Puffs(MAX_TRAIL * 2, this.trailMat);
   private puffs: Puff[] = [];
   private glow: Mesh;
   private ring: Mesh;
+  /** The bomb on its way in, and the city's own (in its silo, or leaving it): they share a model. */
   private missile: Mesh;
+  private rocket: Mesh;
   private missileFor = -1;
   private hatch: InstancedMesh;
   private pit: Mesh;
-  /** The landing this page saw (the display clock crossing it), by its tick: when (real s) and whether the dome stopped it. */
-  private seen: { arrive: number; at: number; stopped: boolean; x: number; z: number } | null = null;
-  /** The last bomb in the air, as last read (the summary drops it at the landing). */
-  private flying: { warn: number; arrive: number; x: number; z: number; stops: boolean } | null = null;
-  private lastTick = -1;
+  /**
+   * The bomb in the air as last read. The summary drops it at the landing, which the display clock
+   * may not have reached yet: it is kept, and drawn, until the page shows its end.
+   */
+  private flying: Flight | null = null;
+  /**
+   * A flight's end the sim has reached and the display clock hasn't: shown (flashed) when it gets
+   * there; with the flight it ends (drawn until then), if this page saw it in the air.
+   */
+  private pending: (FlightEnd & { flight: Flight | null }) | null = null;
+  /** The last end shown: when its flash began (real s), or null if the clock came to it too late to flash. */
+  private shown: (FlightEnd & { real: number | null }) | null = null;
+  /** The landing's tick and the dome's stops as last read: undefined before the first frame (what is there then is old). */
+  private knownImpact: number | null | undefined = undefined;
+  private knownStops = 0;
+  private lastSimTick = -1;
   private tmp: PuffPlace = { x: 0, y: 0, z: 0, size: 0, show: 0, heat: 0 };
-  /** The camera follows the missile ("Look at the missile") until the player moves it. */
-  private following: { moves: number; landed: boolean } | null = null;
-  private pose: MissilePose | null = null;
+  /**
+   * The camera following a missile ("Look at the missile"): which one, the player's own pose when it
+   * began (given back after), the pose it set last frame (any other change, from the player or a
+   * command such as "Show where", ends the follow), and the player's moves when it began.
+   */
+  private following: { which: 'in' | 'out'; saved: Pose; set: Pose | null; moves: number } | null = null;
+  private inPose: MissilePose | null = null;
+  private outPose: MissilePose | null = null;
+  /** The side each missile comes from or goes to (the follow stands beside its way). */
+  private inSide: NeighbourSide | null = null;
+  private outSide: NeighbourSide | null = null;
 
   constructor(
     private readonly world: ClientWorld,
@@ -367,8 +451,11 @@ export class AtomEffects {
         side: DoubleSide,
       }),
     );
-    this.missile = new Mesh(generatedRocket(), new MeshLambertMaterial({ vertexColors: true }));
-    this.missile.castShadow = true;
+    const rocketMat = new MeshLambertMaterial({ vertexColors: true });
+    const model = generatedRocket();
+    this.missile = new Mesh(model, rocketMat);
+    this.rocket = new Mesh(model, rocketMat);
+    this.missile.castShadow = this.rocket.castShadow = true;
     this.hatch = new InstancedMesh(hatchHalf(), new MeshLambertMaterial({ vertexColors: true }), 2);
     this.hatch.castShadow = true;
     this.pit = new Mesh(
@@ -381,6 +468,7 @@ export class AtomEffects {
       this.glow,
       this.ring,
       this.missile,
+      this.rocket,
       this.hatch,
       this.pit,
     ]) {
@@ -421,14 +509,38 @@ export class AtomEffects {
 
   /** A missile is in the sky now (inbound to the city, or the city's own leaving). */
   get canLook(): boolean {
-    return this.pose !== null;
+    return this.inPose !== null || this.outPose !== null;
   }
 
-  /** "Look at the missile": the camera goes to it and follows it down (until the player moves the camera). */
+  /**
+   * "Look at the missile": the camera goes to the bomb on its way in (else the city's own leaving)
+   * and follows it, past the map's edge if need be, until it lands (then it stands back over ground
+   * zero, as the player had it turned), it has gone (the player's own view back), or anything else
+   * moves the camera.
+   */
   look(controller: CameraController): boolean {
-    if (!this.pose) return false;
-    this.following = { moves: controller.userMoves, landed: false };
+    const which = this.inPose ? 'in' : this.outPose ? 'out' : null;
+    if (!which) return false;
+    const g = controller.goal;
+    this.following = {
+      which,
+      // (Asked again while following, the player's own view is still the one from before.)
+      saved: this.following?.saved ?? { x: g.x, z: g.z, distance: g.distance, yaw: g.yaw, tilt: g.tilt },
+      set: null,
+      moves: controller.userMoves,
+    };
+    controller.roam = true;
     return true;
+  }
+
+  /**
+   * The follow ends: the camera keeps to the map and its zoom again (eased back from where it is, so
+   * nothing jumps) and, if asked, takes this pose.
+   */
+  private endFollow(controller: CameraController, pose: Partial<Pose> | null): void {
+    this.following = null;
+    controller.release();
+    if (pose) controller.setPose(pose);
   }
 
   private ground(x: number, z: number): number {
@@ -457,23 +569,24 @@ export class AtomEffects {
     if (v === this.missileFor) return;
     this.missileFor = v;
     this.missile.geometry.dispose();
-    this.missile.geometry = u ? unitGeometry(u, false) : generatedRocket();
+    this.missile.geometry = this.rocket.geometry = u ? unitGeometry(u, false) : generatedRocket();
   }
 
-  private placeMissile(p: MissilePose, scale: number): void {
-    this.missile.position.set(p.x, p.y, p.z);
-    this.missile.quaternion.setFromUnitVectors(UP, new Vector3(p.dx, p.dy, p.dz));
-    this.missile.scale.setScalar(scale);
-    this.missile.visible = true;
+  private place(mesh: Mesh, p: MissilePose, scale: number): void {
+    this.missileModel();
+    mesh.position.set(p.x, p.y, p.z);
+    mesh.quaternion.setFromUnitVectors(UP, new Vector3(p.dx, p.dy, p.dz));
+    mesh.scale.setScalar(scale);
+    mesh.visible = true;
   }
 
   /**
-   * The smoke trail behind a missile: puffs at its own earlier places, growing and thinning with age,
-   * spaced along the way it came (a fast rocket's are as close as a slow one's), the first two a
-   * small hot glow at the nozzle.
+   * A smoke trail behind a missile, from puff `from` on: puffs at its own earlier places, growing and
+   * thinning with age, spaced along the way it came (a fast rocket's are as close as a slow one's),
+   * the first two a small hot glow at the nozzle. Returns the next free puff.
    */
-  private placeTrail(at: (tick: number) => MissilePose | null, tick: number): number {
-    let n = 0;
+  private placeTrail(at: (tick: number) => MissilePose | null, tick: number, from: number): number {
+    let n = from;
     const max = this.q.atomTrail;
     const here = at(tick);
     const back = at(tick - 1);
@@ -487,8 +600,80 @@ export class AtomEffects {
       const hot = i <= 2;
       this.trail.set(n++, p.x, p.y, p.z, hot ? 3.5 : 8 + 22 * age, 1 - age * 0.8, hot ? 0.7 : 0, 1);
     }
-    this.trail.done(n);
     return n;
+  }
+
+  /**
+   * The city's bomb flights as the summary says, a frame at a time: the bomb in the air (kept after the
+   * summary drops it, until its end is shown), a landing or a dome's stop the sim has reached (shown
+   * when the display clock reaches it: the flash, the ring, the sound), and what has been shown.
+   * Returns the end shown this frame, if any.
+   */
+  private readFlights(now: number, tick: number): FlightEnd | null {
+    const w = this.world;
+    const a = w.stats.war?.atom ?? null;
+    const inbound = a?.inbound ?? null;
+    const impactAt = a?.impact?.at ?? null;
+    const stops = a?.stopped ?? 0;
+    const simTick = w.stats.tick;
+    // Ends first, against the flight as it was before this read: a bomb warned in the same read (a
+    // friend's bomb sent again, a rival's retried launch) must not take the ending one's place.
+    const prev = this.flying;
+    if (this.knownImpact === undefined) {
+      // The first look: a landing or a stop already there happened before this page was watching.
+      this.knownImpact = impactAt;
+      this.knownStops = stops;
+      if (impactAt !== null) this.remember(`hit:${impactAt}`);
+    } else {
+      // (A sim put back to before an end, a co-op city's resync, brings the same end round again:
+      // each is shown once.)
+      if (impactAt !== null && impactAt !== this.knownImpact && !this.ends.includes(`hit:${impactAt}`))
+        this.pending = {
+          stopped: false,
+          at: impactAt,
+          x: a!.impact!.x,
+          z: a!.impact!.z,
+          flight: prev && prev.arrive <= impactAt ? prev : null,
+        };
+      if (stops > this.knownStops && prev && !this.ends.includes(stopKey(prev))) {
+        // The dome stopped it at its landing, somewhere since the last tick this page read.
+        const at = Math.min(simTick, Math.max(prev.arrive, this.lastSimTick));
+        this.pending = { stopped: true, at, x: prev.x, z: prev.z, flight: prev };
+      }
+      this.knownImpact = impactAt;
+      this.knownStops = stops;
+    }
+    this.lastSimTick = simTick;
+    if (inbound)
+      this.flying = {
+        warn: inbound.warn,
+        arrive: inbound.arrive,
+        x: inbound.x,
+        z: inbound.z,
+        side: inbound.side,
+      };
+    let ended: FlightEnd | null = null;
+    const p = this.pending;
+    if (p && tick >= p.at) {
+      // The display clock has reached it: the flash now, unless the clock came to it long after.
+      const late = tick - p.at >= ATOM_FX.flashWindow * TICKS_PER_SECOND;
+      this.shown = { stopped: p.stopped, at: p.at, x: p.x, z: p.z, real: late ? null : now };
+      this.pending = null;
+      this.remember(p.stopped && p.flight ? stopKey(p.flight) : `hit:${p.at}`);
+      if (p.flight && this.flying && stopKey(this.flying) === stopKey(p.flight)) this.flying = null;
+      if (!late) this.onBlast?.(p.stopped);
+      ended = p;
+    }
+    // A flight gone with no end to show (a save loaded, say) is let go.
+    if (!inbound && !this.pending) this.flying = null;
+    return ended;
+  }
+
+  /** Ends shown (a few, the latest last), so none is shown twice. */
+  private ends: string[] = [];
+  private remember(key: string): void {
+    this.ends.push(key);
+    if (this.ends.length > 16) this.ends.shift();
   }
 
   update(
@@ -505,13 +690,15 @@ export class AtomEffects {
     this.shake.set(0, 0, 0);
     this.flash = 0;
     this.missile.visible = false;
-    this.trail.done(0);
+    this.rocket.visible = false;
     this.cloud.done(0);
     this.ring.visible = false;
     this.glow.visible = false;
     this.hatch.visible = false;
     this.pit.visible = false;
-    this.pose = null;
+    this.inPose = null;
+    this.outPose = null;
+    let trail = 0;
     let cloudCalls = 0;
     let cloudTris = 0;
 
@@ -527,44 +714,33 @@ export class AtomEffects {
       amb.lerp(new Color(grey, grey, grey), 0.5).add(new Color(0.06, 0.06, 0.07));
     }
 
-    // ---------------------------------------------------------------- the missile
-    const siloAt = this.silo();
-    let gz: { x: number; z: number } | null = null;
-    const inbound = st ? null : (a?.inbound ?? null);
-    if (inbound) {
-      this.flying = {
-        warn: inbound.warn,
-        arrive: inbound.arrive,
-        x: inbound.x,
-        z: inbound.z,
-        stops: inbound.stops,
-      };
-    }
-    if (st?.missile !== undefined) {
-      const x = st.x ?? 1024;
-      const z = st.z ?? 1024;
-      const f = { warn: 0, arrive: 1000, x, z, side: st.side ?? null };
-      const g = this.ground(x, z);
+    // ---------------------------------------------------------------- the bomb on its way in
+    const ended = st ? null : this.readFlights(now, tick);
+    const flight: Flight | null = st
+      ? st.missile !== undefined
+        ? { warn: 0, arrive: 1000, x: st.x ?? 1024, z: st.z ?? 1024, side: st.side ?? null }
+        : null
+      : // In the sky until the page shows its end (circling over ground zero while the sim holds it
+        // back); a bomb warned meanwhile waits for it.
+        (this.pending?.flight ?? a?.inbound ?? null);
+    if (flight) {
+      const g = this.ground(flight.x, flight.z);
+      const f = { warn: flight.warn, arrive: flight.arrive, x: flight.x, z: flight.z, side: flight.side };
       const at = (t: number) => inboundAt(f, g, t);
-      const p = at(st.missile * 1000);
+      const t = st ? st.missile! * 1000 : tick;
+      const p = at(t);
       if (p) {
-        this.missileModel();
-        this.placeMissile(p, ATOM_FX.scale);
-        this.placeTrail(at, st.missile * 1000);
-        this.pose = p;
-      }
-    } else if (inbound && tick < inbound.arrive) {
-      const g = this.ground(inbound.x, inbound.z);
-      const at = (t: number) => inboundAt({ ...inbound, side: inbound.side }, g, t);
-      const p = at(tick);
-      if (p) {
-        this.missileModel();
-        this.placeMissile(p, ATOM_FX.scale);
-        this.placeTrail(at, tick);
-        this.pose = p;
+        this.place(this.missile, p, ATOM_FX.scale);
+        trail = this.placeTrail(at, t, trail);
+        this.inPose = p;
+        this.inSide = flight.side;
       }
     }
-    // The city's own bomb: in the silo with the hatch open, then rising out of it and away.
+
+    // ---------------------------------------------------------------- the city's own bomb
+    // In the silo with the hatch open, then rising out of it and away (drawn whether or not a bomb is
+    // on its way in at the same time).
+    const siloAt = this.silo();
     const fired = st ? (st.launch !== undefined ? 0 : null) : (a?.fired?.tick ?? null);
     const firedSide = st ? (st.side ?? null) : (a?.fired?.side ?? null);
     const launchTick = st?.launch !== undefined ? st.launch : tick;
@@ -604,23 +780,25 @@ export class AtomEffects {
         ? st.hatch !== undefined && st.launch === undefined
         : !!(a?.have || a?.launch) && fired === null;
       const out = fired !== null ? outboundAt(siloAt, firedSide, fired, launchTick) : null;
-      if (out && !this.pose) {
-        this.missileModel();
-        this.placeMissile(out, out.k > 0 ? ATOM_FX.scale : 1);
-        this.placeTrail((t) => outboundAt(siloAt, firedSide, fired!, t), launchTick);
-        this.pose = out;
-      } else if (holding && open > 0.3 && !this.pose) {
+      if (out) {
+        this.place(this.rocket, out, outboundScale(out));
+        trail = this.placeTrail((t) => outboundAt(siloAt, firedSide, fired!, t), launchTick, trail);
+        this.outPose = out;
+        this.outSide = firedSide;
+      } else if (holding && open > 0.3) {
         // The bomb in its silo, its nose up out of the open hatch.
-        this.missileModel();
-        this.placeMissile(
+        this.place(
+          this.rocket,
           { x: siloAt.x, y: siloAt.y - 12 + 6 * open, z: siloAt.z, dx: 0, dy: 1, dz: 0, k: 0 },
           1,
         );
       }
     }
+    this.trail.done(trail);
 
-    // ---------------------------------------------------------------- the landing: flash, ring, cloud
+    // ---------------------------------------------------------------- the end: flash, ring, cloud
     const soft = st?.soft ?? this.softFlash;
+    let gz: { x: number; z: number } | null = null;
     let flashT: number | null = null;
     let ringT: number | null = null;
     let stopped = false;
@@ -631,25 +809,11 @@ export class AtomEffects {
       if (st.ring !== undefined) ringT = st.ring;
       else if (st.flash !== undefined) ringT = st.flash;
     } else {
-      // The display clock crossing a landing this page watched: the flash starts now (real time).
-      const f = this.flying;
-      if (
-        f &&
-        this.lastTick >= 0 &&
-        this.lastTick < f.arrive &&
-        tick >= f.arrive &&
-        tick - f.arrive < 4 * TICKS_PER_SECOND
-      ) {
-        this.seen = { arrive: f.arrive, at: now, stopped: f.stops, x: f.x, z: f.z };
-        this.flying = null;
-        this.onBlast?.(f.stops);
-      }
-      if (f && tick >= f.arrive + 4 * TICKS_PER_SECOND) this.flying = null;
-      const s = this.seen;
-      if (s && now - s.at < 8) {
+      const s = this.shown;
+      if (s && s.real !== null && now - s.real < 8) {
         gz = { x: s.x, z: s.z };
-        flashT = now - s.at;
-        ringT = s.stopped ? null : now - s.at;
+        flashT = now - s.real;
+        ringT = s.stopped ? null : now - s.real;
         stopped = s.stopped;
       }
     }
@@ -657,8 +821,8 @@ export class AtomEffects {
       const f = flashAt(flashT, soft) * (stopped ? 0.35 : 1);
       if (f > 0.001) {
         const g = this.ground(gz.x, gz.z);
-        // A dome's stop is high over the city, on its shell; a landing at ground zero.
-        this.glow.position.set(gz.x, g + (stopped ? 420 : 60), gz.z);
+        // A dome's stop is high over the city, on its shell; a landing bursts at the dive's end.
+        this.glow.position.set(gz.x, g + (stopped ? 420 : ATOM_FX.hover), gz.z);
         const gu = (this.glow.material as ShaderMaterial).uniforms;
         gu.uOn!.value = Math.min(1, f * 1.4);
         gu.uSize!.value = stopped ? 700 : 1500;
@@ -683,18 +847,23 @@ export class AtomEffects {
       cloudTris += 256;
     }
 
-    // The cloud: from the staged age, or the landing's tick (and real time, if this page saw it).
+    // The cloud: from the staged age, or the landing's tick (and real time since its flash, if this
+    // page showed it) once the display clock has reached the landing: never before its flash.
     let shape: CloudShape | null = null;
     let at: { x: number; z: number } | null = null;
     if (st?.cloud) {
       shape = cloudAt(st.cloud.seconds, st.cloud.hours ?? st.cloud.seconds / 7.5);
       at = { x: st.x ?? 1024, z: st.z ?? 1024 };
-    } else if (!st && a?.impact && a.impact.at !== null) {
-      const ticks = tick - a.impact.at;
-      const real =
-        this.seen && !this.seen.stopped && this.seen.arrive === a.impact.at ? now - this.seen.at : 0;
-      shape = cloudAt(Math.max(ticks / TICKS_PER_SECOND, real), ticks / 60);
-      at = { x: a.impact.x, z: a.impact.z };
+    } else if (!st && a?.impact && a.impact.at !== null && tick >= a.impact.at) {
+      const landing = a.impact.at;
+      const waiting = this.pending && !this.pending.stopped && this.pending.at === landing;
+      if (!waiting) {
+        const s = this.shown;
+        const real = s && !s.stopped && s.at === landing && s.real !== null ? now - s.real : 0;
+        const ticks = tick - landing;
+        shape = cloudAt(Math.max(ticks / TICKS_PER_SECOND, real), ticks / 60);
+        at = { x: a.impact.x, z: a.impact.z };
+      }
     }
     if (shape && at) {
       const g = this.ground(at.x, at.z);
@@ -723,44 +892,100 @@ export class AtomEffects {
       cloudTris += n * 2;
     }
 
-    // ---------------------------------------------------------------- the camera following the missile
-    const fol = this.following;
-    if (fol) {
-      if (controller.userMoves !== fol.moves) this.following = null;
-      else if (this.pose) {
-        // From the side of its way and a little behind, high enough to look down on it, the missile in
-        // the middle of the view (the camera can't look up at the sky outside photo mode).
-        const p = this.pose;
-        const h = Math.max(0, p.y - this.ground(p.x, p.z));
-        const sd = sideDir(inbound ? inbound.side : firedSide);
-        const ax = -sd.z * 0.8 + sd.x * 0.6;
-        const az = sd.x * 0.8 + sd.z * 0.6;
-        const yaw = Math.atan2(ax, az);
-        const distance = Math.min(5000, Math.max(900, h * 2.4 + 600));
-        const tilt = -0.35;
-        const pitch = controller.pitchFor({ x: 0, z: 0, distance, yaw, tilt });
-        const back = h / Math.tan(pitch);
-        controller.setPose({ x: p.x - ax * back, z: p.z - az * back, distance, yaw, tilt });
-      } else if (!fol.landed && gz) {
-        fol.landed = true;
-        controller.setPose({ x: gz.x, z: gz.z, distance: 2600 });
-        this.following = null;
-      } else if (!this.flying) this.following = null;
-    }
+    // ---------------------------------------------------------------- the camera following a missile
+    this.follow(controller, ended);
 
     // ---------------------------------------------------------------- the fallout's tint
     const tint = this.q.atomTint === 1 && this.hasTint;
     this.terrain.uniforms.uRadOn.value = tint ? 1 : 0;
 
-    this.lastTick = tick;
     this.stats = {
       calls: cloudCalls,
       triangles: cloudTris,
       puffs: this.cloud.count,
-      missile: this.missile.visible,
+      missile: this.missile.visible || this.rocket.visible,
       hatch: open,
       flash: this.flash,
       tint,
+      inbound: this.missile.visible,
+      outbound: this.rocket.visible,
+      following: this.following !== null,
     };
+  }
+
+  /**
+   * "Look at the missile", a frame at a time: anything else that moved the camera since last frame
+   * (the player, or a command such as "Show where", a preset or a fly-to) ends it there; the flight's
+   * end shown this frame stands the camera back over ground zero, turned as the player had it; a
+   * missile gone with no end (the city's own, out of sight) gives the player's own view back; else
+   * the camera stands beside the missile's way and a little behind, high enough to look down on it,
+   * with the missile in the middle of the view (outside photo mode the camera can't look up).
+   */
+  private follow(controller: CameraController, ended: FlightEnd | null): void {
+    const fol = this.following;
+    if (!fol) return;
+    const g = controller.goal;
+    if (controller.userMoves !== fol.moves) {
+      this.endFollow(controller, null);
+      return;
+    }
+    if (fol.set && !samePose(g, fol.set)) {
+      // A command moved it ("Show where", a fly-to, following a battle): it goes where it was sent, but
+      // one that kept the follow's own turn and tilt (they build on the pose they find) gets the
+      // player's back, not the follow's low, sideways look. A preset sets its own and keeps them.
+      const kept = Math.abs(g.yaw - fol.set.yaw) < 1e-6 && Math.abs(g.tilt - fol.set.tilt) < 1e-6;
+      this.endFollow(controller, kept ? { yaw: fol.saved.yaw, tilt: fol.saved.tilt } : null);
+      return;
+    }
+    if (ended && fol.which === 'in') {
+      const s = fol.saved;
+      this.endFollow(controller, {
+        x: ended.x,
+        z: ended.z,
+        distance: Math.max(AFTER_BLAST, s.distance),
+        yaw: s.yaw,
+        tilt: s.tilt,
+      });
+      return;
+    }
+    const p = fol.which === 'in' ? this.inPose : this.outPose;
+    if (!p) {
+      this.endFollow(controller, fol.saved);
+      return;
+    }
+    const sd = sideDir(fol.which === 'in' ? this.inSide : this.outSide);
+    const ax = -sd.z * 0.8 + sd.x * 0.6;
+    const az = sd.x * 0.8 + sd.z * 0.6;
+    const yaw = Math.atan2(ax, az);
+    const tilt = -0.35;
+    // The camera looks at a point on the ground (`back` beyond the missile, on the far side from the
+    // camera) whose view's middle ray passes through the missile. Its height over that ground, not the
+    // ground under the missile, sets `back` (the hills past the map's edge stand far higher than the
+    // sea under a missile); and the camera stands far enough out to be above the missile and short of
+    // it, since the camera's pitch flattens as it comes in (at 900 m it is barely 9 degrees).
+    let distance = Math.min(FOLLOW_FAR, Math.max(900, (p.y - this.ground(p.x, p.z)) * 2.4 + 600));
+    let x = p.x;
+    let z = p.z;
+    for (let i = 0; i < 24; i++) {
+      const pitch = controller.pitchFor({ x: 0, z: 0, distance, yaw, tilt });
+      // (A missile lower than the hills the view meets has its ground point short of it: `back` < 0.)
+      // Settled by halves: on a hillside each step's ground is another height, and full steps can swing.
+      let back = (p.y - this.ground(x, z)) / Math.tan(pitch);
+      for (let j = 0; j < 12; j++)
+        back += ((p.y - this.ground(p.x - ax * back, p.z - az * back)) / Math.tan(pitch) - back) * 0.5;
+      x = p.x - ax * back;
+      z = p.z - az * back;
+      const rise = p.y - this.ground(x, z);
+      back = rise / Math.tan(pitch);
+      const above = distance * Math.sin(pitch) - rise >= 120;
+      const short = distance * Math.cos(pitch) >= back + 200;
+      // And over the hills under the camera itself (it would lift itself clear of them, off the aim).
+      const run = distance * Math.cos(pitch);
+      const clear = p.y - rise + distance * Math.sin(pitch) >= this.ground(x + ax * run, z + az * run) + 40;
+      if ((above && short && clear) || distance >= FOLLOW_FAR) break;
+      distance = Math.min(FOLLOW_FAR, distance * 1.12);
+    }
+    controller.setPose({ x, z, distance, yaw, tilt });
+    fol.set = { x: g.x, z: g.z, distance: g.distance, yaw: g.yaw, tilt: g.tilt };
   }
 }

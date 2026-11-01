@@ -348,6 +348,8 @@ export interface AtomSummary {
     /** The dome would stop it if it were raised now (it is switched off but charged and working). */
     raisable: boolean;
   } | null;
+  /** Bombs the city's dome has stopped (the page's effects see a new one go up in a pale flash over the city). */
+  stopped: number;
   /** The last bomb to land here: where, when (a tick; absent from a save made before step 11b's effects read it), the residents who have left the city, buildings levelled, and whether the blast is over. */
   impact: { x: number; z: number; at: number | null; fled: number; levelled: number; over: boolean } | null;
   /**
@@ -436,6 +438,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
           raisable: bombStopped(sim, true),
         }
       : null,
+    stopped: a?.stopped ?? 0,
     impact: a?.impact
       ? {
           x: a.impact.x,

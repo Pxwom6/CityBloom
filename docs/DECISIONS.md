@@ -2672,3 +2672,52 @@ these are its calls and the reasons, with where they overturned the first draft.
   - *Test API* `showAtom(stage)` stages any moment for a picture (`AtomStage`), `getAtomFx()`; `atomshot.mjs` gained
     `GPU=1` (real Chrome) and the scenes `fx`, `fxlow`, `fxnight`, `street`, `hatch` (staged, in photo mode for the low
     camera and the hour) and `missile`, `tint`, `winter` (played for real).
+- **M40 step 11b review fixes** (eight findings from two readers, each with a test that drives the real `AtomEffects`
+  from the summary over ticks: `tests/war/atomFxLive.test.ts`, with a real `CameraController`).
+  - *A landing is shown when the display clock reaches the sim's real landing,* not its planned tick: the sim keeps
+    `inbound` past `arrive` while a battle or an earlier blast holds it back, and sets `impact.at` at the real landing.
+    The effects keep the flight until its end is shown (the summary drops it at the landing, which a trailing display
+    clock may not have reached), and flash, ring, shake, sound and the follow's pull-back come from that end. The dive
+    now ends `ATOM_FX.hover` (60 m) over ground zero, a moment before `arrive`, and circles there until then: a held
+    landing keeps the missile in the sky, and a normal one bursts in the air (the flash was already drawn 60 m up).
+    The cloud never shows before its flash (a trailing clock showed puffs at age 0). A landing the clock reaches more
+    than `flashWindow` (6 s of play) late, or one already there on the first frame (a page loaded after it), shows as
+    a cloud with no flash or sound.
+  - *A dome's stop* is seen from a new read-only `AtomSummary.stopped` (a count), timed between the last tick read and
+    the current one, never before `arrive`; it gets its pale flash and its own sound `atomStopped` (a muffled thump
+    and the dome ringing; offline peak in the probe's range), once.
+  - *Sounds come with the flash,* not the `bombLanded` event: `blastSounds(stopped)` is the one list (`atomBlast`, then
+    `atomWind` 2.2 s later, or `atomStopped`), played by `renderer.atom.onBlast`, which fires once per end shown. A
+    landing never shown (a page that wasn't watching) is silent, as it has no flash.
+  - *The siren is spaced in real time* (every 6 s, never closer than its own 2.5 s), and sounds only while the display
+    clock runs; at 3x that is every 18 s of play rather than overlapping itself.
+  - *"Look at the missile" roams:* `CameraController.roam` lifts the map-edge clamp and the zoom limit (to 6 km)
+    while it follows, so the missile is in the middle of the view from 5 km out (the clamp had it off screen for the
+    first 70 s). The follow remembers the pose it set; any other change (the player, "Show where", a preset, a
+    fly-to) ends it on the next frame, and the camera's limits apply again at once. At the landing it stands back over
+    ground zero at 2.4 km or the player's own distance, turned and tilted as the player had it; when the city's own bomb
+    it followed has gone, the player's whole view comes back.
+  - *Both missiles at once:* the bomb on its way in and the city's own (in its silo, or leaving) are two meshes sharing
+    one model, their trails in one draw call; "Look at the missile" prefers the one coming in.
+  - *The lift-off's scale eases* from the model's own size to the flight's over the first fifth of the turn
+    (`outboundScale`), where it jumped at the turn's first tick.
+  - *An independent check of these fixes* (a workflow: each fix undone in a worktree, nine of nine caught by a test;
+    three readers, a skeptic per finding) found seven more, all fixed with a test that fails without the fix:
+    - *A bomb warned while the last one's end is still waiting for the display clock* no longer takes its place: ends
+      are read against the flight as it was before the read, the waiting end keeps its own flight (drawn and followed
+      until its flash), and a dome's stop takes that flight's tick and place.
+    - *Each end is shown once:* a sim put back to before a landing or a stop (a co-op city's resync) and played on to
+      it again doesn't flash, shake or sound it twice (`AtomEffects.ends`, the last 16 shown).
+    - *The camera's limits ease back in after a roam* (`CameraController.release`, `home`): the allowed area and zoom
+      shrink from where the view is to the map's own over about a second, so a drag that ends the follow carries on
+      without the view jumping onto the map or the grabbed point being left kilometres away, and a wheel turn out
+      never zooms in (`zoomBy` reads the same limit). The roam is never ended by clearing the flag.
+    - *"Look at the missile" asked again* while following keeps the player's own view to give back.
+    - *A fly-to that ends the follow* ("Show where", a notice's Show, following a battle) builds on the pose it finds;
+      when it kept the follow's turn and tilt, the player's own are put back (a preset sets its own and keeps them).
+    - *In a shared city* "Look at the missile" stops following a friend's camera first, as every other camera command
+      does (`Game.following = 0`; a one-liner in `Game`, not covered by a unit test).
+    - *The siren goes on while the sim holds a landing back* (the missile circling overhead), not in the two seconds
+      at the planned landing; the countdown's ticks stay bounded by it. The countdown card says so too: past its
+      time and still in the air, "It is over the city now, and falls as soon as the fighting here, or the last blast,
+      is over" instead of "Lands in about 1 second" for up to 90 s (`Countdown.held`, `when`).

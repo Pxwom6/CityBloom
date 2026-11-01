@@ -491,6 +491,13 @@ export interface Countdown {
   eta: string;
   hoursLeft: number;
   playLeft: string;
+  /**
+   * Past its time and still in the air: the sim holds a landing back while there is fighting in the
+   * city or an earlier blast is still being dealt out (the missile circles overhead). `when` says so,
+   * or when it lands.
+   */
+  held: boolean;
+  when: string;
   aim: string;
   dome: DomeLine;
   shelter: string | null;
@@ -522,11 +529,17 @@ export function countdown(
   const ticks = Math.max(0, inbound.arrive - displayTick);
   const hoursLeft = ticks / TICKS_PER_HOUR;
   const line = domeLine(dome, inbound.stops, blackout, inbound.raisable);
+  const held = displayTick >= inbound.arrive + 1;
+  const playLeft = playWords(hoursLeft);
   return {
     from: inbound.from,
     eta: etaClock(ticks),
     hoursLeft,
-    playLeft: playWords(hoursLeft),
+    playLeft,
+    held,
+    when: held
+      ? 'It is over the city now, and falls as soon as the fighting here, or the last blast, is over.'
+      : `Lands in about ${playLeft} at normal speed.`,
     aim: 'Aimed at your densest district',
     dome: line,
     shelter: shelterLine(inbound.near, inbound.sheltered),

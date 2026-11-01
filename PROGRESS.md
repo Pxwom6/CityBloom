@@ -275,8 +275,13 @@ room refuses one against a friend in words until step 9), and the computer race 
 (`src/sim/systems/atomRival.ts`: never before year 20, one neighbour at a time, its own dice;
 fuel, silo and bomb told stage by stage; slowed by spies and won expeditions; a launch only in a
 total war it is losing badly, after ten days the city is told about; it ends with the town's fall),
-`tests/war/{atomSpy,atomRival}.test.ts`, `relay/tests/regionAtomOps.test.ts`. Next: step 8, the
-cross-browser section. Not yet run for steps 1-7: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+`tests/war/{atomSpy,atomRival}.test.ts`, `relay/tests/regionAtomOps.test.ts`. Step 8 is done (b50c3df,
+172c334): the cross-browser test's `atom` section (`tests/lockstep/atomSection.ts`, 66 entries: the race
+through the real commands, the plant sabotage, the dome stopping a bomb, the town's own bomb on a
+computer neighbour, the blast in six slices with the fire ring, 300 game hours of fallout hashed by the
+bits of every cell, the drift into the neighbours, a clean-up crew, the winter, the pariah and a Hard
+neighbour's launch), every command kind used; Node and Chromium agree, and CI runs WebKit and Firefox.
+Next: step 9, the room (protocol 7). Not yet run for steps 1-8: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
@@ -331,7 +336,7 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 7 are done. Next: step 8, the cross-browser section; then the room (protocol 7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   to 8 are done. Next: step 9, the room (protocol 7); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
    need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

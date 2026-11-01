@@ -13,6 +13,7 @@ import { atomDeters, atomFired, atomHour, atomStage, atomTick } from '../../src/
 import { CHRONICLE, chronicleEvent } from '../../src/sim/systems/chronicle';
 import {
   diplomacyMonth,
+  FRIENDSHIP,
   fightingWith,
   isPariah,
   makePariah,
@@ -126,6 +127,40 @@ function fire(sim: Sim): void {
   crewed(sim);
   for (let k = 0; k < ATOM.launch.prepHours && !atom(sim).fired; k++) atomHour(sim);
   expect(atom(sim).fired, 'the bomb left').toBeDefined();
+}
+
+/**
+ * The neighbour is made a keen enemy (or not) and its war with the city "just ended"; the month's
+ * diplomacy runs again and again, the war that ended refreshed each time, until it declares or the
+ * days run out. Returns the war it declared, if it did.
+ */
+function tries(
+  sim: Sim,
+  id: number,
+  opts: {
+    personality?: 'aggressive' | 'cautious';
+    forces?: number;
+    days?: number;
+    /** Its feeling for the city (the default is a keen -60; `keep` leaves what the world made of it). */
+    relation?: number | 'keep';
+  } = {},
+) {
+  const n = neighbour(sim, id);
+  n.rival!.personality = opts.personality ?? 'aggressive';
+  n.rival!.forces = opts.forces ?? 50;
+  if (opts.relation !== 'keep') n.rival!.relation = opts.relation ?? -60;
+  // (A pact in the way would hold a control back for a reason that is not the one tried.)
+  dip(sim).pacts = dip(sim).pacts.filter((p) => p.with !== id);
+  return lowBar(() => {
+    for (let k = 0; k < (opts.days ?? 80); k++) {
+      (dip(sim).ended ??= {})[id] = sim.state.tick;
+      diplomacyMonth(sim);
+      sim.state.tick += M;
+      const war = warWith(sim, id);
+      if (war) return war;
+    }
+    return undefined;
+  });
 }
 
 describe('M40: the firer is a pariah', () => {
@@ -244,8 +279,13 @@ describe('M40: every neighbour sanctions the firer', () => {
     expect(sim.state.region.deals).toEqual([]);
     const told = events(sim, 'diplomacy').filter((e) => e.info?.what === 'sanctionedUs');
     expect(told).toHaveLength(all.length);
-    expect(String(told[0]!.info!.text)).toMatch(/sanctions the city for firing the atom bomb/);
-    expect(sanctionText(sim, all[0]!, 'bomb')).toMatch(/will not lift it/);
+    // One plain sentence: the cause, then what it means. "For good" is said once, with the trade ending.
+    expect(String(told[0]!.info!.text)).toMatch(
+      /sanctions the city for firing the atom bomb: their trade ends for good, and nothing new is agreed$/,
+    );
+    expect(sanctionText(sim, all[0]!, 'bomb')).toMatch(/sanctions the city for firing the atom bomb$/);
+    for (const cause of ['broke', 'ally', 'reputation'] as const)
+      expect(sanctionText(sim, all[0]!, cause), cause).not.toMatch(/for good|will not lift/);
     // It stays: month after month, a year on, with the war over or not, and whatever the standing.
     for (let k = 0; k < 40; k++) {
       sim.advance(M);
@@ -328,40 +368,6 @@ describe('M40: pacts and feelings', () => {
 });
 
 describe('M40: any neighbour may declare a total war on the pariah', () => {
-  /**
-   * The neighbour is made a keen enemy (or not) and its war with the city "just ended"; the month's
-   * diplomacy runs again and again, the war that ended refreshed each time, until it declares or the
-   * days run out. Returns the war it declared, if it did.
-   */
-  function tries(
-    sim: Sim,
-    id: number,
-    opts: {
-      personality?: 'aggressive' | 'cautious';
-      forces?: number;
-      days?: number;
-      /** Its feeling for the city (the default is a keen -60; `keep` leaves what the world made of it). */
-      relation?: number | 'keep';
-    } = {},
-  ) {
-    const n = neighbour(sim, id);
-    n.rival!.personality = opts.personality ?? 'aggressive';
-    n.rival!.forces = opts.forces ?? 50;
-    if (opts.relation !== 'keep') n.rival!.relation = opts.relation ?? -60;
-    // (A pact in the way would hold a control back for a reason that is not the one tried.)
-    dip(sim).pacts = dip(sim).pacts.filter((p) => p.with !== id);
-    return lowBar(() => {
-      for (let k = 0; k < (opts.days ?? 80); k++) {
-        (dip(sim).ended ??= {})[id] = sim.state.tick;
-        diplomacyMonth(sim);
-        sim.state.tick += M;
-        const war = warWith(sim, id);
-        if (war) return war;
-      }
-      return undefined;
-    });
-  }
-
   it('declares at once of its own accord, with no cooldown after a war that ended', () => {
     const control = town();
     expect(tries(control, ids.pacted)).toBeUndefined();
@@ -400,6 +406,135 @@ describe('M40: any neighbour may declare a total war on the pariah', () => {
       by: 'them',
       scale: 'total',
     });
+  }, 180_000);
+});
+
+describe('M40: the pariah has no way out of the world’s turn', () => {
+  /** The war with the target is over (peace is what the landing swings its way), as the world's is not. */
+  function atPeace(sim: Sim): void {
+    dip(sim).wars = [];
+  }
+
+  it('cannot go neutral, and so is declared on all the same', () => {
+    // A city that never fired can: this is the shield, and the control for the run below.
+    const control = town();
+    atPeace(control);
+    expect(why(control, { type: 'setNeutral', on: true })).toBeNull();
+    expect(dip(control).neutral).toBeDefined();
+    const sim = town();
+    fire(sim);
+    atPeace(sim);
+    expect(why(sim, { type: 'setNeutral', on: true })).toMatch(/fired the atom bomb/);
+    expect(dip(sim).neutral).toBeUndefined();
+    expect(tries(sim, ids.pacted)).toMatchObject({ by: 'them', scale: 'total' });
+  }, 120_000);
+
+  it('is not neutral when the bomb leaves, whatever its stance was a moment before', () => {
+    // (The sim's own launch refuses a neutral city; the room's way for a friend, step 10, sets `fired`
+    // and calls `atomFired` after a wait in which the city may have gone neutral.)
+    const sim = town();
+    atPeace(sim);
+    ok(sim, { type: 'setNeutral', on: true });
+    atom(sim).fired = { tick: sim.state.tick, to: ids.rival, name: neighbour(sim, ids.rival).name };
+    atomFired(sim);
+    expect(isPariah(sim)).toBe(true);
+    expect(dip(sim).neutral).toBeUndefined();
+    expect(diplomacySummary(sim)!.neutral).toBe(false);
+  });
+
+  /** Its pacts of friendship are over: it can sign none, and none is offered it or waiting for it. */
+  it('signs no new pact of friendship with any neighbour, by its own proposal or a neighbour’s', () => {
+    const sim = town();
+    fire(sim);
+    const n = neighbour(sim, ids.pacted);
+    n.rival!.relation = 100;
+    const wanted = [{ k: 'nonAggression', months: 24 }, { k: 'alliance' }, { k: 'defensivePact' }] as Term[];
+    for (const t of wanted) {
+      expect(why(sim, { type: 'propose', neighbour: n.id, terms: [t] }), t.k).toMatch(
+        /signs no pact of friendship with a city that fired the atom bomb/,
+      );
+      expect(why(sim, { type: 'cheat', cheat: 'proposal', neighbour: n.id, terms: [t] }), t.k).toMatch(
+        /fired the atom bomb/,
+      );
+    }
+    // One among several terms spoils the lot.
+    expect(
+      why(sim, { type: 'propose', neighbour: n.id, terms: [{ k: 'trade' }, { k: 'alliance' }] }),
+    ).toMatch(/fired the atom bomb/);
+    expect(dip(sim).pacts.filter((p) => FRIENDSHIP.includes(p.term.k))).toEqual([]);
+    // What is not friendship is as open as ever: a ceasefire in a war, peace.
+    const war = warWith(sim, ids.rival)!;
+    expect(war).toBeDefined();
+    expect(
+      why(sim, { type: 'propose', neighbour: ids.rival, terms: [{ k: 'ceasefire', hours: 24 }] }),
+    ).toBeNull();
+    // A city that has not fired may sign them.
+    const control = town();
+    expect(
+      why(control, {
+        type: 'propose',
+        neighbour: ids.pacted,
+        terms: [{ k: 'alliance' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('is offered none by a neighbour still fond of it, and the offers waiting when it fires lapse', () => {
+    // Waiting: a neighbour's alliance and, apart, its embargo (which is no friendship and stays).
+    const sim = town();
+    ok(sim, { type: 'cheat', cheat: 'proposal', neighbour: ids.pacted, terms: [{ k: 'alliance' }] });
+    ok(sim, { type: 'cheat', cheat: 'proposal', neighbour: ids.rival, terms: [{ k: 'embargo' }] });
+    ok(sim, { type: 'propose', neighbour: ids.rival, terms: [{ k: 'ceasefire', hours: 24 }] });
+    expect(
+      dip(sim)
+        .proposals.map((p) => p.terms[0]!.k)
+        .sort(),
+    ).toEqual(['alliance', 'ceasefire', 'embargo']);
+    // (A friendship proposal of the city's own, put before the launch and not yet answered.)
+    ok(sim, { type: 'propose', neighbour: ids.pacted, terms: [{ k: 'defensivePact' }] });
+    fire(sim);
+    expect(
+      dip(sim).proposals.filter((p) => p.terms.some((t) => FRIENDSHIP.includes(t.k))),
+      'no friendship proposal waits',
+    ).toEqual([]);
+    expect(
+      dip(sim)
+        .proposals.map((p) => p.terms[0]!.k)
+        .sort(),
+    ).toEqual(['ceasefire', 'embargo']);
+    // Offering: an honourable neighbour at 60 (it was at 100) proposes a pact to a city it likes, at a
+    // daily chance, and to a pariah never. It is too weak to declare, so the only die is the offer's.
+    const offered = (s2: Sim) => {
+      const n = neighbour(s2, ids.pacted);
+      n.rival!.personality = 'honourable';
+      n.rival!.relation = 60;
+      n.rival!.forces = 0;
+      dip(s2).pacts = dip(s2).pacts.filter((p) => p.with !== n.id);
+      dip(s2).proposals = dip(s2).proposals.filter((p) => p.with !== n.id);
+      for (let k = 0; k < 150; k++) {
+        diplomacyMonth(s2);
+        s2.state.tick += M;
+        if (dip(s2).proposals.some((p) => p.with === n.id && p.from === 'them')) return true;
+      }
+      return false;
+    };
+    expect(offered(town()), 'a city that did not fire is offered a pact').toBe(true);
+    expect(offered(sim), 'the pariah is not').toBe(false);
+  }, 120_000);
+
+  it('is declared on by a neighbour that was fond of it, bomb or no bomb: no one is spared', () => {
+    // A neighbour at 100 falls to 60 with the bomb, far above the old line for declaring.
+    const sim = town();
+    neighbour(sim, ids.pacted).rival!.relation = 100;
+    fire(sim);
+    expect(neighbour(sim, ids.pacted).rival!.relation).toBe(60);
+    const war = tries(sim, ids.pacted, { relation: 'keep', days: 200 });
+    expect(war, 'declared on despite the feeling').toMatchObject({ by: 'them', scale: 'total' });
+    expect(war!.reason).toMatch(/atom bomb/);
+    // The same neighbour, with the same feeling, leaves a city that did not fire alone.
+    const control = town();
+    neighbour(control, ids.pacted).rival!.relation = 60;
+    expect(tries(control, ids.pacted, { relation: 'keep', days: 200 })).toBeUndefined();
   }, 180_000);
 });
 

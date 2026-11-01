@@ -268,7 +268,7 @@ export function impactOver(sim: Sim, a: Atom, im: Impact): void {
   startFallout(sim, im);
   // The winter is named for the bomb (this city's `boom`th), so a repeat of this call changes nothing.
   startWinter(sim, `self:${a.boom}`);
-  // (The chronicle line for the bomb waits for step 6's `atom` kind.)
+  // (The chronicle's `hit` and `stopped` lines are written at the landing tick, in `atom.ts` `inboundTick`.)
   sim.warChanged();
 }
 

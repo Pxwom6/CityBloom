@@ -1783,8 +1783,8 @@ these are its calls and the reasons, with where they overturned the first draft.
     feeling must be at or under `RAIDS.hostile` (-25) to declare at all, and a neighbour the city had
     never wronged sits at 0 or higher: without a fall for the others the pariah would be declared on only
     by the target and its allies, and "anyone may declare a total war" (the card's words, call 20) would
-    be false. The relation test is kept, not waived: a neighbour that stays fond of the city (+50 and
-    over) does not declare on the day.
+    be false. (The relation test was first kept, so that a neighbour fond of the city did not declare;
+    the review overturned that: see "Step 6 review fixes" below. The fall for the others stays.)
   - *Which pacts end.* The pacts of friendship: non-aggression, alliance and defensive pact, through
     `endPactsWith` with no breach (nothing is broken, and the city's word is nothing already). A
     ceasefire, a treaty's tribute, a demilitarised zone, an occupied district, an embargo and a trade
@@ -1849,3 +1849,32 @@ these are its calls and the reasons, with where they overturned the first draft.
     `computerMoves` off, the guard in `reputationChange` off (also caught by the invariant), the sanction
     needing ties, the chronicle's atom exemption off, the cheer term off and the home factor off each fail
     their tests.
+- **Step 6 review fixes (five findings; the decisions behind them).**
+  - *No way out by neutrality.* `setNeutral(on)` is refused for a pariah ("A city that fired the atom bomb
+    can't be neutral"), and `worldTurns` drops a neutral stance already held when the bomb leaves (the sim's own
+    launch refuses a neutral city, but step 10's way for a friend sets `fired` after a wait in which the city may
+    have gone neutral). Neutrality was the one shield that survived the pariah branch of `computerMoves`
+    (and cut raids to a quarter in `raidStance`); with it gone neither reader needed a change.
+  - *No new friends.* `termsRefusal` turns away any term of `FRIENDSHIP` (non-aggression, alliance, defensive
+    pact; now exported from `diplomacy.ts` and shared with `atomWorld.ts`) while the mark stands, in a city's own
+    proposal, a neighbour's, a counter and the cheat alike. A ceasefire, peace and the money terms stay open: they
+    end a war, they are not a friendship. `worldTurns` drops friendship proposals waiting at the launch (the
+    city's own would only have lapsed at the answer; the neighbours' could not have been accepted), and the
+    neighbours' own offer of a non-aggression pact (honourable and cautious, at 30 or more) is not made to a
+    pariah. A new pact would also have counted as binding in `computerMoves` and held that neighbour back.
+  - *The feeling no longer gates a declaration on the pariah.* The first reading kept `relation <= RAIDS.hostile`
+    (-25) for the pariah and only lowered every neighbour by 40: a neighbour the city had made friends with
+    (alliances need 40, defensive pacts 25, a pact partner at 50 ends at 10) never declared, however long it
+    waited, and nothing raises hostility later. The brief says every other city may declare, so the pariah branch
+    now asks only for the forces ratio (0.5x), and the daily chance (0.15 x max(aggression, 0.5)) still spaces
+    the declarations: one a day, a fond neighbour taking its turn. The -40 for the others stays: it is what
+    they feel in `weigh` for any peace or pact later. A city that did not fire is declared on as it always was
+    (-25 or lower, aggression 0.5 or more, 1.5x the forces, the cooldown): the goldens agree.
+  - *Wording.* The bomb's sanction reads "X sanctions the city for firing the atom bomb" and the notice
+    "...: their trade ends for good, and nothing new is agreed"; "will not lift it" is gone from the cause.
+  - *A stale comment* in `atomImpact.ts` (the chronicle line "waits for step 6") now says where `hit` and `stopped` are written.
+  - *Tests* (`atomWorld.test.ts`, 32): the pariah cannot go neutral and is declared on all the same (the
+    control can go neutral); a neutral stance is dropped when the bomb leaves; no friendship term is signed or
+    proposed after the bomb, from either side, and a ceasefire is; the waiting proposals lapse and the
+    neighbours' offers stop (with a control that is offered); a neighbour at 100 (60 after the bomb) declares on the pariah and leaves a
+    city that did not fire alone; the sanction's wording. Each fix was taken out in turn and its test failed.

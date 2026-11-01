@@ -160,6 +160,11 @@ const M = TICKS_PER_MONTH;
 const LOG_KEEP = 40;
 /** Pacts a strike or a declaration breaks. */
 const BINDING: readonly TermKind[] = ['ceasefire', 'nonAggression', 'alliance', 'defensivePact'];
+/**
+ * The pacts of friendship: the ones a city that fired the atom bomb loses with every computer neighbour
+ * and signs no new one of (M40). A ceasefire is not one: it is the pause in a war.
+ */
+export const FRIENDSHIP: readonly TermKind[] = ['nonAggression', 'alliance', 'defensivePact'];
 /** Terms a computer neighbour likes better with a city that has the atom bomb ready (M40). */
 const DETERRED_TERMS: readonly TermKind[] = ['peace', ...BINDING];
 
@@ -277,7 +282,7 @@ export function makePariah(sim: Sim): void {
  * A computer neighbour ends its pacts of these kinds with the city (M37: honourable and cautious
  * ones, over a spy caught): not a breach of the city's, so its word counts as before.
  */
-export function endPactsWith(sim: Sim, n: Neighbour, kinds: TermKind[], text: string): void {
+export function endPactsWith(sim: Sim, n: Neighbour, kinds: readonly TermKind[], text: string): void {
   const d = dip(sim);
   const had = d.pacts.filter((p) => p.with === n.id && kinds.includes(p.term.k));
   if (!had.length) return;
@@ -808,6 +813,9 @@ export function termsRefusal(sim: Sim, to: number, terms: Term[]): string | null
   if (holder) return `${n.name} is held by ${holder.name} and signs nothing until it is free`;
   if (!terms.length) return 'A treaty needs terms';
   if (terms.length > DIPLOMACY.maxTerms) return `A treaty has ${DIPLOMACY.maxTerms} terms at most`;
+  // The firer of the atom bomb (M40) has no friends to sign with: peace, a ceasefire and the like, yes.
+  if (isPariah(sim) && terms.some((t) => FRIENDSHIP.includes(t.k)))
+    return `${n.name} signs no pact of friendship with a city that fired the atom bomb`;
   const d = s.war.diplomacy;
   const war = warWith(sim, to);
   const kinds = terms.map((t) => t.k);
@@ -1244,6 +1252,8 @@ export function setNeutral(sim: Sim, on: boolean, dryRun: boolean): CommandResul
   const d = w.diplomacy;
   if (on) {
     if (d?.neutral) return fail('The city is neutral already');
+    // The world's turn on the firer of the atom bomb (M40) is not to be sat out.
+    if (d?.pariah) return fail('A city that fired the atom bomb can’t be neutral');
     if (d?.wars.length) return fail('Make peace first: a city at war can’t be neutral');
     if (d?.vassal) return fail('A vassal can’t be neutral');
     if (w.expeditions?.some((e) => e.state !== 'back')) return fail('Call the forces home first');
@@ -1694,6 +1704,7 @@ function computerMoves(sim: Sim): void {
       const pacts = pactsWith(sim, n.id);
       const has = (k: TermKind) => pacts.some((x) => x.term.k === k);
       if (
+        !pariah &&
         (r.personality === 'honourable' || r.personality === 'cautious') &&
         r.relation >= 30 &&
         !has('nonAggression') &&
@@ -1719,11 +1730,11 @@ function computerMoves(sim: Sim): void {
     // A spy of the city's caught there within a day (M37): it declares at even strength, twice as likely.
     const caught = freshIncident(sim, n.id);
     const aggression = aggressionOf(sim, r.personality);
-    // The firer of the atom bomb (M40): any character will do, against a city half as strong as
-    // itself, with no cooldown after a war that ended; the chance is that of one at least as keen as
-    // the aggressive. For every other city the three checks are as they always were.
+    // The firer of the atom bomb (M40): any character will do, however fond it was of the city, against
+    // a city half as strong as itself, with no cooldown after a war that ended; the chance is that of
+    // one at least as keen as the aggressive. For every other city the three checks are as they always were.
     if (pariah) {
-      if (r.relation > RAIDS.hostile || r.forces < ATOM.world.ratio * strength) continue;
+      if (r.forces < ATOM.world.ratio * strength) continue;
     } else {
       if (aggression < 0.5 || r.relation > RAIDS.hostile || r.forces < (caught ? 1 : 1.5) * strength)
         continue;

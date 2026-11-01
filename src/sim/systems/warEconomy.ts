@@ -747,7 +747,7 @@ export function sanctionText(sim: Sim, n: Neighbour, cause: SanctionCause): stri
     case 'reputation':
       return `${n.name} sanctions the city: its word counts for too little`;
     case 'bomb':
-      return `${n.name} sanctions the city for firing the atom bomb, and will not lift it`;
+      return `${n.name} sanctions the city for firing the atom bomb`;
   }
 }
 
@@ -784,7 +784,8 @@ function sanctionsPass(sim: Sim, broke: boolean): void {
           sim,
           n.id,
           'sanctionedUs',
-          `${sanctionText(sim, n, cause)}: their trade ends, and nothing new is agreed`,
+          // (The bomb's sanction is for good: it says so where the others say it ends their trade.)
+          `${sanctionText(sim, n, cause)}: their trade ends${cause === 'bomb' ? ' for good' : ''}, and nothing new is agreed`,
           'bad',
           { cause },
         );

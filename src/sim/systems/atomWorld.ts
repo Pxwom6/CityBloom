@@ -18,12 +18,8 @@ import { ATOM } from '../../data/atom';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
 import { chronicleEvent } from './chronicle';
-import { alliesOf, endPactsWith, isPariah, makePariah, note } from './diplomacy';
+import { alliesOf, dip, endPactsWith, FRIENDSHIP, isPariah, makePariah, note } from './diplomacy';
 import { sanctionsOnBomb } from './warEconomy';
-import type { TermKind } from '../../data/diplomacy';
-
-/** The pacts of friendship a firer loses with every computer neighbour (not a ceasefire or a treaty's terms). */
-const FRIENDSHIP: TermKind[] = ['nonAggression', 'alliance', 'defensivePact'];
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -40,6 +36,11 @@ export function worldTurns(sim: Sim): void {
   const a = s.war?.atom;
   if (!a?.fired || isPariah(sim)) return;
   makePariah(sim);
+  // No sitting it out: a neutral stance (it cannot be taken up from now on) is over, and no pact of
+  // friendship is on the table, from either side (`termsRefusal` turns away any new one).
+  const d = dip(sim);
+  delete d.neutral;
+  d.proposals = d.proposals.filter((p) => !p.terms.some((t) => FRIENDSHIP.includes(t.k)));
   const target = s.region.neighbours.find((n) => n.id === a.fired!.to && n.rival && !n.player);
   const kin = target ? alliesOf(sim, target) : [];
   for (const n of s.region.neighbours) {

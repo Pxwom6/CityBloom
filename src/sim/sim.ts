@@ -412,8 +412,9 @@ export type SimEvent = {
     | 'bombStopped'
     | 'bombLanded'
     | 'atomImpact'
-    // A clean-up crew has cleared its ground (M40 step 4).
+    // A clean-up crew has cleared its ground (M40 step 4); a nuclear winter begins (step 5).
     | 'falloutCleaned'
+    | 'nuclearWinter'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -2254,7 +2255,7 @@ export class Sim {
   /** Season and weather for the client, worked out once a game hour (it walks every road). */
   private weatherStats(): WeatherSummary {
     const w = this.state.weather;
-    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${w.kind}:${w.until}:${w.intensity}:${w.seasons}`;
+    const key = `${Math.floor(this.state.tick / TICKS_PER_HOUR)}:${w.kind}:${w.until}:${w.intensity}:${w.seasons}:${w.winters?.length ?? 0}`;
     if (this.weatherCache?.key !== key) this.weatherCache = { key, value: weatherSummary(this) };
     return this.weatherCache.value;
   }

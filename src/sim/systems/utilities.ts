@@ -1,3 +1,4 @@
+import { WINTER } from '../../data/atom';
 import { CIVIC, UTILITIES, UTILITY_USE, type Utility } from '../../data/civic';
 import { CLIMATES, WEATHER } from '../../data/climate';
 import { BLACKOUT } from '../../data/research';
@@ -12,7 +13,14 @@ import { militaryCivics, militaryPowerNeed } from './war';
 import { garbageMadePerDay } from './garbage';
 import { Dijkstra } from './graph';
 import { capacity, neighbour, regionExport, regionImport } from './region';
-import { monthsToWinter, pumpShare, solarShare, weatherUse, type WeatherState } from './weather';
+import {
+  maxWinterDepth,
+  monthsToWinter,
+  pumpShare,
+  solarShare,
+  weatherUse,
+  type WeatherState,
+} from './weather';
 
 export interface UtilityStat {
   supply: number;
@@ -45,6 +53,11 @@ export interface PowerSky {
  * without a storm's boost.
  */
 export const WINTER_SKY: PowerSky = { solar: WEATHER.solar.snow * WEATHER.solarSeason.winter, storm: false };
+
+/** The same sky under a nuclear winter of this depth (M40): the sun gives `WINTER.solar x depth` less. */
+export function winterSky(depth: number): PowerSky {
+  return depth > 0 ? { solar: WINTER_SKY.solar * (1 - WINTER.solar * depth), storm: false } : WINTER_SKY;
+}
 
 /**
  * Output of a producer for a utility at current funding and site conditions, under today's sky or
@@ -264,11 +277,12 @@ export function cityUse(sim: Sim, u: Utility, k?: ReturnType<typeof weatherUse>)
 
 /**
  * The coldest day a winter brings: the coldest month's mean with the deepest cold spell under it
- * (`WEATHER.offset`). Forecasts plan for it (PR #14 review: planning for the month's mean left a
- * city that just cleared the warning 181 MW short in a cold spell).
+ * (`WEATHER.offset`), and a nuclear winter of `depth` (M40) colder still. Forecasts plan for it (PR #14
+ * review: planning for the month's mean left a city that just cleared the warning 181 MW short in a
+ * cold spell).
  */
-export function coldestDay(w: WeatherState): number {
-  return Math.min(...CLIMATES[w.climate].temps) + WEATHER.offset[0];
+export function coldestDay(w: WeatherState, depth = 0): number {
+  return Math.min(...CLIMATES[w.climate].temps) + WEATHER.offset[0] - WINTER.chill * depth;
 }
 
 /**
@@ -283,13 +297,15 @@ export function powerOutlook(
   sim: Sim,
   mean: number,
   tick?: number,
+  depth = 0,
 ): { need: number; have: number; cut: number } {
   const w = { ...sim.state.weather, mean };
   const need = cityUse(sim, 'power', weatherUse(w, tick));
   // The plants counted as `updateUtilities` counts them: on a road.
   let own = 0;
   for (const c of sim.state.civics.values())
-    if (c.access && sim.state.net.segments.has(c.access.seg)) own += civicOutput(sim, c, 'power', WINTER_SKY);
+    if (c.access && sim.state.net.segments.has(c.access.seg))
+      own += civicOutput(sim, c, 'power', winterSky(depth));
   let bought = 0;
   let then = 0;
   for (const d of sim.state.region.deals) {
@@ -301,13 +317,19 @@ export function powerOutlook(
   return { need, have: own + then, cut: Math.max(0, bought - then) };
 }
 
-/** The power outlook for the coldest day ahead; `months` away (0 in winter). Null with seasons off. */
+/**
+ * The power outlook for the coldest day ahead; `months` away (0 in winter). Null with seasons off.
+ * Under a nuclear winter (M40) it counts on the deepest the winter gets from then to the end of the
+ * winter season: a colder day and a dimmer sun, as the day itself will be.
+ */
 export function winterOutlook(sim: Sim): ({ months: number } & ReturnType<typeof powerOutlook>) | null {
   const w = sim.state.weather;
   if (!w.seasons) return null;
   const months = monthsToWinter(w, sim.state.tick);
   if (!Number.isFinite(months)) return null;
-  return { months, ...powerOutlook(sim, coldestDay(w), sim.state.tick + months * TICKS_PER_MONTH) };
+  const from = sim.state.tick + months * TICKS_PER_MONTH;
+  const depth = maxWinterDepth(w, from, from + 3 * TICKS_PER_MONTH);
+  return { months, ...powerOutlook(sim, coldestDay(w, depth), from, depth) };
 }
 
 /** One utility for the Region panel: what the city makes and uses itself, and what crosses the border. */

@@ -15,7 +15,7 @@ import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import type { RegionFlows } from './regionFlows';
 import { BERTH_DEPTH, civicDef, civicOnline } from '../world/civic';
-import { seasonAt, type WeatherState } from './weather';
+import { seasonAt, winterTownDrag, type WeatherState } from './weather';
 import { cleanWarRules, type Personality, type RegionWarRules } from '../../data/war';
 import { raidThreat, startWar } from './war';
 import { embargoed, forgetNeighbour, heldBy, monthlyTaxes } from './diplomacy';
@@ -363,8 +363,9 @@ export function regionMonth(sim: Sim): void {
     }
     const def = NEIGHBOUR_KIND[n.kind];
     n.trend = Math.max(def.trend[0], Math.min(def.trend[1], n.trend + rng.range(-1, 1) * REGION.trendStep));
-    // A town the city sanctions (M38), or whose ground its fallout fell on (M40), grows more slowly.
-    const drag = sanctionDrag(sim, n.id) - falloutTownDrag(n);
+    // A town the city sanctions (M38), whose ground its fallout fell on or that lives under a nuclear
+    // winter (M40), grows more slowly (values, never draws).
+    const drag = sanctionDrag(sim, n.id) - falloutTownDrag(n) - winterTownDrag(sim);
     falloutTownMonth(n);
     n.population = Math.max(
       REGION.minPopulation,

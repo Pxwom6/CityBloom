@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
-import { WEATHER_ICON, weatherBrief, weatherLines, weatherName } from './weather';
+import {
+  WEATHER_ICON,
+  weatherBrief,
+  weatherLines,
+  weatherName,
+  winterBadge,
+  winterBadgeShort,
+} from './weather';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
 import { Rci } from './Rci';
 import { SystemMenu } from './SystemMenu';
@@ -128,6 +135,18 @@ export function TopBar() {
         </div>
       </div>
       <RaidChip />
+      {st.weather.winter > 0 && (
+        <button
+          class="btn winter-badge"
+          data-testid="winter-badge"
+          aria-label={winterBadge(st.weather)}
+          title={weatherLines(st.weather).join('\n')}
+          onClick={() => setWeatherOpen(!weatherOpen)}
+        >
+          <span class="winter-long">{winterBadge(st.weather)}</span>
+          <span class="winter-short">{winterBadgeShort(st.weather)}</span>
+        </button>
+      )}
       <span class="divider" />
       <button
         class="stat stat-btn stat-date"

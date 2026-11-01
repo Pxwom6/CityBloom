@@ -29,6 +29,8 @@ export interface WeatherLook {
   /** Snow lying on the ground and roofs, 0–1. */
   snow: number;
   wet: number;
+  /** A nuclear winter (M40), 0–1: grey sky and snow cover in any month while it holds. */
+  winter: number;
 }
 
 const SEASON_INDEX: Record<Season, number> = { spring: 0, summer: 1, autumn: 2, winter: 3 };
@@ -55,16 +57,26 @@ export function pureSeason(s: Season): [number, number, number, number] {
   return w;
 }
 
+/**
+ * A nuclear winter's look at full depth (M40): the sky as grey as a cloudy day's and the ground snowy
+ * under any season's colours, whatever the calendar says.
+ */
+export const WINTER_LOOK = { overcast: 0.6, snow: 0.9 };
+
 /** What the world's weather looks like at its display tick. */
 export function worldLook(world: ClientWorld): WeatherLook {
   const w = world.stats.weather;
   const d = dateOf(world.displayTick);
+  const season = w.seasons ? seasonWeights(d.month, d.dayFraction) : pureSeason('summer');
+  const k = w.winter ?? 0;
   return {
-    season: w.seasons ? seasonWeights(d.month, d.dayFraction) : pureSeason('summer'),
+    // (A nuclear winter is winter in every month: the season's colours blend towards it.)
+    season: k > 0 ? (season.map((x, i) => x + ((i === 3 ? 1 : 0) - x) * k) as WeatherLook['season']) : season,
     kind: w.kind,
     strength: w.strength,
-    snow: w.snow,
+    snow: k > 0 ? Math.max(w.snow, WINTER_LOOK.snow * k) : w.snow,
     wet: w.wet,
+    winter: k,
   };
 }
 
@@ -149,7 +161,14 @@ const MAX_DROPS = 9000;
 export class WeatherRenderer {
   readonly uniforms: WeatherUniforms;
   /** The look now (eased) and where it's heading. */
-  readonly look: WeatherLook = { season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 };
+  readonly look: WeatherLook = {
+    season: [0, 1, 0, 0],
+    kind: 'clear',
+    strength: 0,
+    snow: 0,
+    wet: 0,
+    winter: 0,
+  };
   /** Overcast 0–1, fog 0–1, heat haze 0–1 and a lightning flash 0–1, for the lighting. */
   overcast = 0;
   fog = 0;
@@ -282,6 +301,7 @@ void main() {
     for (let i = 0; i < 4; i++) L.season[i] = L.season[i]! + (target.season[i]! - L.season[i]!) * k;
     L.snow += (target.snow - L.snow) * k;
     L.wet += (target.wet - L.wet) * k;
+    L.winter += (target.winter - L.winter) * k;
     // The spell itself cross-fades: the old weather fades out as the new one fades in.
     if (target.kind !== L.kind) {
       L.strength -= Math.min(L.strength, dt / 2);
@@ -292,7 +312,7 @@ void main() {
     u.uWet.value = L.wet;
     u.uSeason.value.set(L.season[0], L.season[1], L.season[2], L.season[3]);
     const st = L.kind === 'clear' ? 0 : L.strength;
-    this.overcast = OVERCAST[L.kind] * Math.min(1, 0.4 + st);
+    this.overcast = Math.max(OVERCAST[L.kind] * Math.min(1, 0.4 + st), WINTER_LOOK.overcast * L.winter);
     this.fog =
       L.kind === 'fog' ? st : L.kind === 'rain' || L.kind === 'snow' || L.kind === 'storm' ? st * 0.45 : 0;
     this.haze = L.kind === 'heat' ? st : 0;

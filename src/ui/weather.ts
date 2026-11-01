@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { WINTER, WINTER_YEARS } from '../data/atom';
 import { CLIMATES, WEATHER, type WeatherKind } from '../data/climate';
 import { weatherUse, type WeatherSummary } from '../sim/systems/weather';
 import { IconCloud, IconFog, IconHeat, IconRain, IconSnow, IconStorm, IconSun } from './icons';
@@ -44,6 +45,17 @@ export function weatherBrief(w: WeatherSummary): string {
   return `${Math.round(w.temp)} °C · ${w.seasons ? cap(w.season) : 'No seasons'}`;
 }
 
+/**
+ * The nuclear winter's badge beside the weather chip (M40): "Nuclear winter, year 2 of 6, -7 °C", and the
+ * short form a narrow bar keeps.
+ */
+export function winterBadge(w: WeatherSummary): string {
+  return `Nuclear winter, year ${w.winterYear} of ${WINTER_YEARS}, ${Math.round(w.temp)} °C`;
+}
+export function winterBadgeShort(w: WeatherSummary): string {
+  return `Winter ${w.winterYear}/${WINTER_YEARS}`;
+}
+
 /** Why the weather matters right now, for the top bar's tooltip. */
 export function weatherLines(w: WeatherSummary): string[] {
   const out = [
@@ -56,6 +68,10 @@ export function weatherLines(w: WeatherSummary): string[] {
       w.mean < 14
         ? `Heating: homes use ${pct(use.power.R - 1)} more power, shops ${pct(use.power.C - 1)} more.`
         : `Cooling: homes use ${pct(use.power.R - 1)} more power, and ${pct(use.water.R - 1)} more water.`,
+    );
+  if (w.winter > 0)
+    out.push(
+      `Nuclear winter, year ${w.winterYear} of ${WINTER_YEARS}: ash dims the sky. Every month is ${Math.round(WINTER.chill * w.winterDepth)} °C colder, solar plants give ${pct(WINTER.solar * w.winterDepth)} less and even summer rain falls as snow.`,
     );
   if (w.roadsSnowy > 0.02)
     out.push(

@@ -90,6 +90,15 @@ export function checksum(sim: Sim): string {
   m.num(sumArray(s.crime));
   m.num(sumArray(s.terrainDelta));
   m.num(s.weather.temp);
+  // Nuclear winters (M40), only once there is one: when each began and how deep it is.
+  const winters = s.weather.winters;
+  if (winters) {
+    m.int(winters.length);
+    for (const e of winters) {
+      m.int(e.from);
+      m.num(e.depth);
+    }
+  }
   // Fallout (M40), only once there is some: the rasters' sums and what the air has carried out.
   const fo = s.fallout;
   if (fo) {

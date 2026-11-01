@@ -3135,6 +3135,24 @@ body {
   color: inherit;
 }
 
+/* A nuclear winter (M40): a cold pill beside the weather chip; the bar's narrow forms keep it short. */
+.winter-badge {
+  background: var(--color-info);
+  color: #fff;
+  border-color: transparent;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.winter-badge .winter-short,
+#ui:is([data-width='s'], [data-width='xs']) .winter-badge .winter-long,
+.topbar.rows .winter-badge .winter-long {
+  display: none;
+}
+#ui:is([data-width='s'], [data-width='xs']) .winter-badge .winter-short,
+.topbar.rows .winter-badge .winter-short {
+  display: inline;
+}
+
 /* Region (M23) */
 .region-summary {
   margin: 0 0 var(--space-2);

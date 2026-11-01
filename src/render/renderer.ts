@@ -105,6 +105,8 @@ export interface PhotoView extends PhotoLook {
 /** Photo mode's season and weather over the city's own look (M22). */
 function photoWeather(p: PhotoView, base: WeatherLook): Partial<WeatherLook> {
   const out: Partial<WeatherLook> = {};
+  // (A season or weather picked here is the look wanted: a nuclear winter's grey doesn't override it.)
+  if (p.season || p.weather) out.winter = 0;
   if (p.season) {
     out.season = pureSeason(p.season);
     out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;

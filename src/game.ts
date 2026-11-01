@@ -1485,6 +1485,12 @@ export class Game {
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
+      else if (e.kind === 'nuclearWinter')
+        this.notice(
+          'nuclearWinter',
+          'A nuclear winter has begun. Ash dims the sky and the cold stays in every month for about six game years: solar plants give less and heating costs more.',
+          'bad',
+        );
       else if (e.kind === 'falloutCleaned')
         this.notice(
           'falloutCleaned',

@@ -1,5 +1,5 @@
 import type { Sim } from './sim';
-import { ATOM } from '../data/atom';
+import { ATOM, WINTER } from '../data/atom';
 import { MAP_SIZE } from '../data/world';
 import { TICKS_PER_HOUR } from './time';
 import { buildingCapacity } from './world/buildings';
@@ -80,6 +80,23 @@ export function checkInvariants(sim: Sim): void {
   }
   checkAtom(sim);
   checkFallout(sim);
+  checkWinters(sim);
+}
+
+/** Nuclear winters (M40): each has a name of its own, a start in the past and a depth in range. */
+function checkWinters(sim: Sim): void {
+  const list = sim.state.weather.winters;
+  if (!list) return;
+  const seen = new Set<string>();
+  for (const e of list) {
+    if (!e.id || seen.has(e.id))
+      throw new InvariantError(`nuclear winter ${e.id || '(no id)'} twice or nameless`);
+    seen.add(e.id);
+    if (!Number.isInteger(e.from) || e.from < 0 || e.from > sim.state.tick)
+      throw new InvariantError(`nuclear winter ${e.id} began at ${e.from}`);
+    if (!Number.isFinite(e.depth) || e.depth <= 0 || e.depth > WINTER.cap)
+      throw new InvariantError(`nuclear winter ${e.id} depth ${e.depth}`);
+  }
 }
 
 /** Fallout (M40): finite rasters, the ground in [0, 1], the air not negative, the counters not negative. */

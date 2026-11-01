@@ -29,6 +29,7 @@ import { allTiersDone, researchCheat, researchTree } from './research';
 import { requirementContext } from './projects';
 import { blackedOut, bombStopped, domeTakesBomb, superWorking } from './supers';
 import { civicOutput } from './utilities';
+import { startWinter } from './weather';
 import { materialBill, takeStock } from './war';
 
 /**
@@ -917,8 +918,9 @@ function inboundTick(sim: Sim, a: Atom, hit: Inbound): void {
  * neighbour the landing is a change to its record (plan call 10): most of its people, forces and
  * defences gone, its feeling for the city at the bottom, fallout on its ground (step 4 uses the
  * level), the war score swung hard in the city's favour through the war's own scoring, and an
- * event the region map draws. At a friend's city (step 10) the friend's own sim does the landing:
- * nothing is done here.
+ * event the region map draws; and the nuclear winter falls on the firing city too (`self:0`: its one
+ * bomb, as `self:n` is the nth to land in a city). At a friend's city (step 10) the friend's own sim
+ * does the landing: nothing is done here (the region room's winters reach every city then).
  */
 function landFlight(sim: Sim, f: NonNullable<Atom['fired']>): void {
   f.landed = true;
@@ -935,6 +937,7 @@ function landFlight(sim: Sim, f: NonNullable<Atom['fired']>): void {
   r.relation = ATOM.record.relation;
   r.fallout = ATOM.record.fallout;
   scoreIntel(sim, n.id, ATOM.record.score);
+  startWinter(sim, 'self:0');
   sim.events.push({
     kind: 'atomImpact',
     id: n.id,

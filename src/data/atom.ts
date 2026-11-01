@@ -208,3 +208,33 @@ export const FALLOUT = {
   yearHours: 288,
   secondsPerHour: 7.5,
 };
+
+/**
+ * The nuclear winter (M40 step 5, plan call 13): a bomb that lands anywhere darkens every city's sky.
+ * A winter is a depth (1 for the first bomb; `later` for one that lands while another still holds)
+ * that rises for `rise` game hours, holds for `hold` and falls back over `fall` (6 game years in all,
+ * 3.6 hours of play at 1x); winters in force add up to at most `cap`. At depth d the month's mean
+ * temperature is `chill x d` degrees lower (every month, seasons on or off), the sun gives `solar x d`
+ * less, rain and storms fall as snow up to `snowLine x d` degrees above the usual snow line, and from
+ * `noHeat` on a heatwave drawn turns into a cloudy spell. A computer neighbour's town grows `townDrag
+ * x d` slower a month. Everything is a value: no winter reads or adds a draw on any random stream.
+ * The sim side is `winterDepth` in `src/sim/systems/weather.ts`.
+ */
+export const WINTER = {
+  rise: 144,
+  hold: 576,
+  fall: 1_008,
+  /** Game hours in a game year, for "year 2 of 6". */
+  yearHours: 288,
+  cap: 1.5,
+  later: 0.5,
+  chill: 18,
+  solar: 0.55,
+  snowLine: 6,
+  noHeat: 0.25,
+  townDrag: 0.008,
+};
+
+/** Game hours a winter lasts from its first bomb to its last cold day, and how many game years that is. */
+export const WINTER_HOURS = WINTER.rise + WINTER.hold + WINTER.fall;
+export const WINTER_YEARS = WINTER_HOURS / WINTER.yearHours;

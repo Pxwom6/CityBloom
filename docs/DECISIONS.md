@@ -1653,3 +1653,68 @@ these are its calls and the reasons, with where they overturned the first draft.
     was checked by taking its hook out and seeing the test fail. The edge and stream tests fail on the old
     band clearing. `tests/war/atomFalloutTools.test.ts` drives the real `ZoneTool` and `OverlayController`
     with a stand-in game.
+- **Step 5 (nuclear winter, the sim half): calls the plan left open.**
+  - *Where a winter begins, and its name.* `startWinter(sim, id, depth?)` (`weather.ts`) is the one door, once
+    for each `id`. A city struck in its own sim starts `self:n` when the blast is over (`n` its `boom`, so
+    `self:1`, `self:2`); the firing city, when its bomb lands on a computer neighbour, starts `self:0` (it
+    fires one bomb ever, and `boom` counts bombs that fell *in* a city, so it is not raised). A flight at a
+    neighbour that has gone lands nothing and starts nothing. The room's `slot-n` ids and `friendWinter`
+    (step 10) call the same function. **Seam for steps 9 and 10:** the firing city against a computer
+    neighbour does not raise its own `boom`, so the room's rule "a report whose `boom` rises" does not reach
+    a friend of a city whose bomb fell on a computer neighbour; if that should chill the friends too, the
+    report needs a landed mark to diff (the firer's `fired.landed`), not a new message.
+  - *Depth.* A first winter is depth 1; one that begins while another is in force (depth above 0 at that
+    tick) is `WINTER.later` (0.5); one that begins after the world has recovered is a first one again (1).
+    Winters add, to at most 1.5; a depth asked for is held to the cap. The list is kept for good (an id
+    must stay applied once, however late a repeat arrives), a few bytes a bomb. Linear rise, hold and fall
+    (`winterShape`, plain arithmetic).
+  - *Same dice, same days: a winter moves no spell's end.* The plan's "the same draws" would still have
+    drifted: a spell's length comes from its kind's range (rain 4–12 hours, snow 5–14), and rain made
+    snow by the winter would end at another hour, so every later spell would begin in another season with
+    other weights (clear is 3 draws, anything else 4) and the streams would part. A spell's length is now
+    that of the weather the *calendar* would have brought (`lasts`, the old rule, unchanged for a city
+    with no winter), and the winter changes only what it is and how cold. So the weather's dice are in
+    the same state at every tick of a year with a winter or without, and every spell ends on the same
+    tick (tests step a year tick by tick with one winter and with two). `riverFlood`'s dice follow the
+    river, which a winter does change (frozen snow does not melt into it), so a city with disasters on
+    draws there as the river dictates: that is the weather's value changing, not a draw added.
+  - *Readers.* `monthMean` is the calendar's mean less `18 × depth` before the seasons-off return;
+    `solarShare` is × `1 − 0.55 depth`; `nextSpell` turns rain and storms into snow at the calendar mean
+    less the chill up to `1 °C + 6 × depth` (July rain falls as snow; in a seasons-off city too, so
+    "no snow spells" is the weather-off city's, which has no spells at all); a heatwave drawn at depth 0.25
+    or more comes as a cloudy spell with its offset held to the usual (`WINTER.noHeat`), after its draws.
+    A storm that falls as snow is a blizzard, as before.
+  - *Heating needed no new cap.* Heating reads `weather.mean` through `weatherUse`, whose `cold` share is
+    clamped to 0–1 (saturating at −10 °C), so a zone asks at most `1 + its heating` (1.6, 1.4, 1.2 times)
+    however deep the winter. That is under 1.3 times the coldest January of any climate (the alpine
+    January already saturates it) and far under the plan's "twice the January peak"; a test holds both
+    (the factors in every climate, and a served town's whole demand), and the probe prints the ratio.
+    Nothing was added to the code for a cap that cannot bind.
+  - *The forecast tells the truth about the winter.* `winterOutlook` takes the deepest the winter gets from
+    the coming winter season's start to three months later (`maxWinterDepth`: a piecewise-linear sum, so
+    the ends and the breakpoints), and counts on `winterSky(depth)` (the sun that much weaker) and
+    `coldestDay(w, depth)` (that much colder); a winter over by then changes the outlook not at all
+    (`toEqual`). The test checks the other direction too: in the hold, a snowy January's actual solar
+    output is the forecast's, and the actual demand at the coldest spell is its need.
+  - *Neighbours.* `regionMonth`'s drag is `0.008 × depth` added to the sanction's and the fallout's, read
+    from the city's own clock for every computer neighbour (a friend's city grows on its own machine).
+  - *The page.* The summary carries `winter` (0 to 1, for the look), `winterDepth` (to 1.5, for the words)
+    and `winterYear` (1 to 6, from the oldest winter in force), and not the list. `worldLook` blends the
+    season's colours towards winter and lifts the snow to `0.9 × winter` in any month, and the renderer
+    greys the sky to `0.6 × winter` overcast (the existing cloud grade, so the light and shadows follow);
+    photo mode's own season or weather wins over it. The badge `winter-badge` ("Nuclear winter, year 2 of
+    6, -7 °C") sits beside the weather chip rather than in it, because the chip's label is hidden on a
+    narrow bar; it has a short form ("Winter 2/6") for the narrow and wrapped bars and opens the weather
+    panel, whose lines gain the winter's. The energy advisor says "Solar is down 55 %; heating is up: homes
+    use 60 % more power than in mild weather", or only heating without a solar plant, from depth 0.05.
+    The event `nuclearWinter` gives one notice. Screenshots come with step 11.
+  - *Saves and checks.* Nothing to migrate: the key appears with the first winter, the checksum adds the
+    winters only when there are some (the temperature is hashed already), `partHashes` see the weather
+    part change, and `checkInvariants` holds each to a start in the past, a depth in (0, 1.5] and an id
+    of its own. The page's weather summary is cached by the hour *and* the number of winters.
+  - *The probe* `scripts/dev/winter.ts [months] [seed] [presets]` follows the test town (a depot, three
+    ploughs) in each climate with and without a winter that begins in June; the table is in the step's
+    summary. Nothing absurd: demand saturates at 505 MW (1.03 to 1.19 times each town's January peak,
+    1.29 times its own control at worst), snow lies at 1.0 in the cold months and thaws once the mean
+    is above freezing (never piling past the cap), three ploughs keep the busiest roads clear as in a
+    normal alpine winter, population is unchanged, and the winter fades out by its sixth year.

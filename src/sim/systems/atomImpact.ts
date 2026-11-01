@@ -12,8 +12,8 @@
  * disaster line: homes that fall are residents who have left the city, and that is all the city is
  * told. It draws only from dice of its own (`Rng.fromSeed(seed:atom:id)`, a building's own id), never
  * from a `sim.rng` stream, and a slice done is rubble, so a slice is idempotent and a city saved in
- * the middle of an impact carries on exactly. Fallout (`fallout.ts`) and the nuclear winter, which follow the last
- * slice, are the two calls at the bottom (the winter is step 5's seam).
+ * the middle of an impact carries on exactly. Fallout (`fallout.ts`) and the nuclear winter
+ * (`startWinter`, `weather.ts`), which follow the last slice, are the two calls at the bottom.
  */
 import { ATOM } from '../../data/atom';
 import { MAP_SIZE } from '../../data/world';
@@ -30,6 +30,7 @@ import { buildingsNear, clearTrees, segmentsNear } from './disasters';
 import { depositFallout } from './fallout';
 import { ignite, toRubble } from './incidents';
 import { damageCivic } from './raids';
+import { startWinter } from './weather';
 
 /** The landing in hand (`Atom.impact`). */
 export type Impact = NonNullable<Atom['impact']>;
@@ -265,7 +266,8 @@ export function impactOver(sim: Sim, a: Atom, im: Impact): void {
     info: { x: im.x, z: im.z, fled: im.fled, levelled: im.levelled ?? 0 },
   });
   startFallout(sim, im);
-  startWinter(sim, im);
+  // The winter is named for the bomb (this city's `boom`th), so a repeat of this call changes nothing.
+  startWinter(sim, `self:${a.boom}`);
   // (The chronicle line for the bomb waits for step 6's `atom` kind.)
   sim.warChanged();
 }
@@ -273,9 +275,4 @@ export function impactOver(sim: Sim, a: Atom, im: Impact): void {
 /** The ground and the air carry the fallout from ground zero (`fallout.ts`). */
 function startFallout(sim: Sim, im: Impact): void {
   depositFallout(sim, im.x, im.z);
-}
-
-/** The seam for step 5: a nuclear winter begins, here, at once. */
-function startWinter(_sim: Sim, _im: Impact): void {
-  /* step 5 */
 }

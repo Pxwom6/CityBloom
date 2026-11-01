@@ -1,4 +1,5 @@
 import { ROAD_TYPES, isPlayerRoad, isRail } from '../../data/roads';
+import { WINTER } from '../../data/atom';
 import { WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
@@ -12,7 +13,7 @@ import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { unploughable } from './ploughs';
-import { seasonEase } from './weather';
+import { seasonEase, weatherUse, winterDepth } from './weather';
 import { coldestDay, powerOutlook, winterOutlook } from './utilities';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
@@ -651,6 +652,19 @@ function weatherAdvice(sim: Sim): Advice[] {
       severity: full.have < full.need * 0.95 ? 1 : 0,
       title: 'Seasons are new here',
       text: `Winters now need heating. It counts for ${share} % now and in full in ${done} ${done === 1 ? 'month' : 'months'} (this first winter is spared). A full winter will lift power demand to about ${MW(full.need)}; we make ${MW(full.have)}.`,
+      map: 'power',
+    });
+  }
+  // A nuclear winter (M40): the sun is weak and the cold comes in any month.
+  const depth = winterDepth(w, s.tick);
+  if (depth >= 0.05 && power.demand > 0) {
+    const sun = [...s.civics.values()].some((c) => c.def === 'solar');
+    const more = Math.round((weatherUse(w, s.tick).power.R - 1) * 100);
+    out.push({
+      advisor: 'utilities',
+      severity: power.unserved > 0 ? 2 : 1,
+      title: 'Nuclear winter',
+      text: `${sun ? `Solar is down ${Math.round(WINTER.solar * depth * 100)} %; heating` : 'Heating'} is up: homes use ${more} % more power than in mild weather. Plants that don't need the sun, and power bought from neighbours, carry the city through it.`,
       map: 'power',
     });
   }

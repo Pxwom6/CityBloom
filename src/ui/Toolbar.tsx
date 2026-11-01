@@ -951,15 +951,30 @@ export function MapLegend() {
 export function RadiationTip() {
   const game = useGameUpdates(150);
   const r = game.overlay.reading;
+  const ref = useRef<HTMLDivElement>(null);
+  // A tool's hint sits at the pointer too (the zone tool's, the clean-up tool's): the reading goes under
+  // it, and clear of it where the hint has wrapped to more lines or moved above the pointer (step 12:
+  // the zone tool's hint stood over the reading's first line).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const hint = document.querySelector('[data-testid="tool-hint"]');
+    if (!el || !hint || r?.touch) return;
+    const h = hint.getBoundingClientRect();
+    const me = el.getBoundingClientRect();
+    if (me.top >= h.bottom + 2 || me.bottom <= h.top - 2 || me.right <= h.left || me.left >= h.right) return;
+    let y = h.bottom + 6;
+    if (y + me.height > window.innerHeight - 8) y = Math.max(8, h.top - 6 - me.height);
+    el.style.top = `${y}px`;
+  });
   if (game.overlay.active !== 'radiation' || !r) return null;
   return (
     <div
+      ref={ref}
       class="radiation-tip panel"
       data-testid="radiation-tip"
       style={{
         left: `${Math.max(8, Math.min(r.x + 14, window.innerWidth - 300))}px`,
-        // (The clean-up tool's own hint sits at the pointer: the reading goes under it.)
-        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + (game.tools.activeId === 'cleanup' ? 58 : 18)}px`,
+        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + (game.hint ? 58 : 18)}px`,
       }}
     >
       {r.text}

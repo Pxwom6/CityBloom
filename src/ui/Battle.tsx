@@ -788,7 +788,9 @@ export function RegionMap() {
                       <g
                         class="war-map-cloud"
                         data-testid={`map-cloud-${n.id}`}
-                        transform={`translate(${p.x} ${p.y - r - 10})`}
+                        // (Left of the town: above it the north side's travel times are written; to
+                        // its right stand the race's pips and the first finisher's star.)
+                        transform={`translate(${p.x - r - 11} ${p.y - 1})`}
                       >
                         <title>{`An atom bomb has fallen on ${n.name}`}</title>
                         <circle cx={-5} cy={0} r={4} />

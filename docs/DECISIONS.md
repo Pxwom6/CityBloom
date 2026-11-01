@@ -2721,3 +2721,36 @@ these are its calls and the reasons, with where they overturned the first draft.
       at the planned landing; the countdown's ticks stay bounded by it. The countdown card says so too: past its
       time and still in the air, "It is over the city now, and falls as soon as the fighting here, or the last blast,
       is over" instead of "Lands in about 1 second" for up to 90 s (`Countdown.held`, `when`).
+- **M40 step 12: the end-to-end tests** (`e2e/m40-atom.spec.ts`, one player; `e2e/m40-friends.spec.ts`, two).
+  - *A shorter wait for a friend's strike, for tests only.* The region room keeps a friend's atom strike only once the
+    launch has been prepared for `REGION_LIMITS.atomPrep` (20 real minutes). The local relay takes `--atom-prep
+    <seconds>` (`RelayOptions.regionLimits`, passed to each `RegionRoom` the way relay tests pass limits), and the e2e
+    config starts it with `--atom-prep 20`. The Worker online has no such switch; nothing else reads it. A relay already
+    running on 8787 without the flag (the config reuses one) makes the spec read the room's refusal ("waits N minutes
+    more"), wait it out when it is two minutes or less, and send the bomb again with a second hold.
+  - *The war is kept still while the specs wait.* A launch's preparation is 288 war hours (twelve game days at full
+    defence funding). Across that wait any battle moves the war's score: a raid lost made the city a vassal, one won
+    made the neighbour capitulate, and either ended the total war the launch needs. The specs set the computer
+    neighbours' forces to nothing each day (`rival` cheat) and the city keeps only its HQ, so only the specs' own moves
+    decide the war.
+  - *Towns big enough to run the silo.* The forces take at most a quarter of a city's workers, the HQ first and the
+    plant and silo last. Adaville on m39's river map (about 1,500 residents) never staffed its silo, so it is founded
+    on the coast map m40-atom uses (about 2,200 then); Samford keeps the lakes map.
+  - *Samford's HQ stands east of the town,* beyond the blast and the closed ground: the war room opens only while a
+    city has a military HQ (it is the seat of power), and a city whose HQ the bomb took must build another before it can
+    make peace or declare war. Left as it is (the seat of power is the design), and noted here.
+  - *"Its dome down"* is a dome Samford builds once the war is open, too late to have charged; the card says "still
+    charging (0 %): it can't stop this bomb yet" and the bomb lands.
+  - *"Pacts gone"* is checked on Ada's pact with a computer neighbour, accepted from the Diplomacy tab before the war
+    and ended by the strike: the only pacts the room drops for a pariah are pacts of friendship, which are binding, and
+    a war between the two players has already ended theirs.
+  - *"May declare at once"* is shown by peace and a declaration straight after it: Samford offers peace, Adaville accepts,
+    the Friends row says the region lets any city declare war on Adaville at once, and Samford's declaration is
+    accepted with no cooldown.
+  - *The tips are checked by their conditions:* for each, the tips are turned on with every other tip marked read and
+    the war room shut, and the card must come up by itself with the tip's own words once the city reaches the moment
+    (a neighbour racing, the bomb in the silo, a launch prepared, a bomb on its way, fallout, the winter).
+  - *Found by the pictures and fixed:* the radiation map's reading stood under the zone tool's hint, its first line
+    hidden (step 11a moved it below the clean-up tool's hint only; it now keeps clear of any tool's hint, measured, and
+    the spec asserts the two don't overlap); the region map's cloud mark sat over the north town's travel times (it is
+    drawn left of the town now, clear of the times above and the race's pips and star to the right).

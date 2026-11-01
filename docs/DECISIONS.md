@@ -2573,3 +2573,51 @@ these are its calls and the reasons, with where they overturned the first draft.
     fallout lines, the tone), `atomCleanTool.test.ts` (5: the tool with the real sim), `atomUi.test.ts` (7: the card, the missile hook, the held button, the guard after a committed press),
     `atomState.test.ts` (the tone test now reads the interface files and the six tips; the summary's new keys),
     `shell.test.ts` (`reduceFlashes`: 2), `atomRival.test.ts` (the rivals' new `fuel`). No golden moved.
+- **M40 step 11a review fixes** (20 findings from two readers, 15 distinct once the doubles are counted once).
+  - *Sending the bomb again is held like the first launch.* The prepared-and-held card's "Send it again" was a plain
+    button that put the one irreversible thing in the game in the air on a tap; it is the same `HoldButton` (three
+    seconds, keys, touch) and the consequences read before it are the card's. The first launch's hold may be long past by
+    the time a ceasefire ends, and the target can be changed on the card, so the hold is the guard each time.
+  - *A guest cannot launch, and the button says so.* The room allows `launchBomb` to the host alone (`roomRefusal`); the
+    launch card is dead for a guest in a shared city with the room's own words (`HOST_ONLY_LAUNCH`, exported from
+    `rules.ts` so the room and the card cannot drift) instead of letting the 3 s bar fill and then refusing.
+  - *Keys and fingers on the held button.* Every keydown of Space or Enter on it is swallowed, auto-repeat included, and
+    only the first begins the hold (the window's Space handler acts on any keydown that was not default-prevented, so the
+    repeats paused and resumed the game thirty times a second); a finger that slides off ends the hold on the move that
+    leaves the button's box (`pointerInside`), because a touch is captured by its button and never fires a leave. The mouse
+    still ends it on leave.
+  - *Stop building asks first,* in the house style (`dip-confirm`), and says what stopping costs: the build is lost, what was
+    paid stays spent, a restart begins from nothing and pays the first instalment again (`stopTerms`, and `buildTerms` says
+    it before the build starts). The caption "What has been paid stays spent" read as if the build could be picked up again.
+  - *The first bomb's tip does not cover the countdown card.* Both stood at the top left on a phone or tablet, the tip on top,
+    hiding the clock and the dome button the tip tells you to press. While a card is up (`.atom-countdown ~ .guide`) the tip
+    stands above the toolbar. Measured in Chromium on the real stylesheet at 390, 800 and 1280 px: no overlap.
+  - *The scenario refusal comes first.* A scenario city has the Bomb tab hidden unless something of the race exists
+    (`AtomSummary.allowed` is false there and `rules` says "The atom bomb is not part of a scenario"); the ladder's first rung
+    gives that reason instead of 24 tiers of research for a race that cannot finish. `atomRulesWhy` and `bombAllowed` are
+    untouched (the sim's gates keep their order); only the summary says it.
+  - *"Raise the dome now" is offered only when raising it helps,* and its result is read like every other action's. The
+    summary's `inbound.raisable` is `bombStopped(sim, true)` (the same read as `stops`, as if the mode were one that rises
+    for the bomb); a dome that is dark, unstaffed or unpowered says "isn't working", not "raise it". A refusal (a guest without
+    the `defence` role) is a toast with the sim's reason and a sound, as everywhere else.
+  - *Region map cloud.* A friend's city gets the cloud only from its own report (`hit`): the sender's flight timer proves
+    nothing about a friend (its dome, or its page not having taken the strike). A computer neighbour keeps the timer and its
+    fallout (`cloudOnMap`).
+  - *The countdown card is not a live region.* It was `role="alert"` round a clock that changes eight times a second. Now a
+    labelled group with one hidden alert whose words hold no figure (`announce`: the sender and the dome's state in a phrase),
+    so a screen reader hears it once and again only when the dome's state changes.
+  - *Words.* "1 seconds" is "1 second" (`playWords`); a computer neighbour's launch is counted in the war room's own unit,
+    months of a game day each ("leaves in about 10 months", `warTime`/`launchWords`; "leaves within the hour" at the last),
+    where it said days by dividing by 24, which read 30 times further off than it was; the embargo line says "computer
+    neighbour" (the sim embargoes those only).
+  - *Touch.* "Show where" has the phone's 24 px target (`#ui[data-width='xs'] .atom-countdown .link`) and `COVERED` in
+    the touch-scale e2e looks at it.
+  - *The clean-up tool after it is put down.* The answer to a click made just before Escape or Done no longer draws the ring
+    or a hint on the next tool: the click's `then` checks an epoch that `activate` and `deactivate` bump. The crew that went is
+    still announced; a refusal arriving late is a toast.
+  - *Not changed.* Nothing in the sim's hashed state moved: `bombStopped`'s new argument defaults to the old read and nothing
+    the sim runs passes it; the five goldens pass unchanged.
+  - *Tests.* `tests/war/atomComponents.test.ts` (10: components called without a browser, `preact/hooks` stood in for by
+    plain stores: the held button's keys and sliding finger, the again button, the guest, the stop question, the countdown's
+    live region, the stylesheet's rules), `atomView.test.ts` (+ the real dome's states against the card, the scenarios, the
+    words, the cloud), `atomCleanTool.test.ts` (+1).

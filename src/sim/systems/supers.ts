@@ -206,10 +206,12 @@ export function lowerDome(sim: Sim): void {
  * and charged, or raised over a battle (which counts as charged; the battle keeps its own pool).
  * Reads only.
  */
-export function bombStopped(sim: Sim): boolean {
+export function bombStopped(sim: Sim, asRaised = false): boolean {
   const d = sim.state.war?.supers?.dome;
   if (!d || d.down) return false;
-  if (d.mode === 'off') return false;
+  // (`asRaised`: the answer if the dome's mode were one that rises for the bomb; the page asks it to know
+  // whether "Raise the dome now" would do anything. Nothing the sim runs on passes it.)
+  if (d.mode === 'off' && !asRaised) return false;
   if (!superweaponsAllowed(sim) || !superWorking(superBuilding(sim, 'dome')) || blackedOut(sim)) return false;
   return d.hours >= DOME.chargeHours || !!d.raised;
 }

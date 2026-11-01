@@ -225,6 +225,9 @@ export function atomReportField(sim: Sim): AtomReport | undefined {
   };
 }
 
+/** What a scenario says to the bomb (the one reason every gate gives for it). */
+const SCENARIO_WHY = 'The atom bomb is not part of a scenario';
+
 /** Why the rules don't let the city race or use the bomb now, in plain words, or null when they do. */
 export function atomRulesWhy(sim: Sim): string | null {
   if (bombAllowed(sim)) return null;
@@ -255,14 +258,14 @@ export function atomLock(sim: Sim, defId: string): string | null {
   if (!allTiersDone(sim)) return needs(true) ?? 'Needs every research branch maxed';
   const rules = atomRulesWhy(sim);
   if (rules) return rules;
-  if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
+  if (sim.state.scenario) return SCENARIO_WHY;
   if (sim.state.war?.atom?.fired) return 'The city has used its atom bomb: there is only ever one';
   return needs(false);
 }
 
 /** The city's race as the page shows it (M40): what the build menu and the war room need to know. */
 export interface AtomSummary {
-  /** The rules (or the city's rivals) allow the bomb; and, when they don't, why not in words. */
+  /** The rules (or the city's rivals) allow the bomb, and the city is not a scenario; and, when they don't, why not in words. */
   allowed: boolean;
   rules: string | null;
   stage: AtomStage;
@@ -338,6 +341,8 @@ export interface AtomSummary {
     near: number;
     sheltered: number;
     stops: boolean;
+    /** The dome would stop it if it were raised now (it is switched off but charged and working). */
+    raisable: boolean;
   } | null;
   /** The last bomb to land here: where, the residents who have left the city, buildings levelled, and whether the blast is over. */
   impact: { x: number; z: number; fled: number; levelled: number; over: boolean } | null;
@@ -366,8 +371,10 @@ export function atomSummary(sim: Sim): AtomSummary | null {
   const full = (a?.fuel ?? 0) >= ATOM.fuel.hours;
   const round = (v: number) => Math.round(v * 1000) / 1000;
   return {
-    allowed: bombAllowed(sim),
-    rules: atomRulesWhy(sim),
+    // (A scenario is never a place for the bomb: the plant is refused there whatever the rules say, so the
+    // tab says so first rather than inviting a race that cannot finish.)
+    allowed: bombAllowed(sim) && !sim.state.scenario,
+    rules: atomRulesWhy(sim) ?? (sim.state.scenario ? SCENARIO_WHY : null),
     stage: atomStage(sim),
     research: { done: tree.done, total: tree.total, next: tree.next ?? null },
     nuclear: nuclearRunning(sim),
@@ -413,6 +420,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
           near: a.inbound.near ?? 0,
           sheltered: a.inbound.sheltered ?? 0,
           stops: bombStopped(sim),
+          raisable: bombStopped(sim, true),
         }
       : null,
     impact: a?.impact
@@ -701,7 +709,7 @@ function buildRefusal(sim: Sim): string | null {
   if (a?.bomb) return 'The bomb is already being built';
   const rules = atomRulesWhy(sim);
   if (rules) return rules;
-  if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
+  if (sim.state.scenario) return SCENARIO_WHY;
   const fuel = a?.fuel ?? 0;
   if (fuel < ATOM.fuel.hours)
     return `The bomb needs a full load of fuel (${Math.floor((fuel / ATOM.fuel.hours) * 100)} % made)`;
@@ -768,7 +776,7 @@ function launchBlock(sim: Sim): string | null {
   const a = sim.state.war?.atom;
   const rules = atomRulesWhy(sim);
   if (rules) return rules;
-  if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
+  if (sim.state.scenario) return SCENARIO_WHY;
   if (a?.prep?.send) return IN_THE_ROOM;
   const silo = siloBlock(sim);
   if (silo) return silo;
@@ -813,7 +821,7 @@ export function launchBomb(sim: Sim, to: number, dryRun: boolean): CommandResult
   if (a.prep?.send) return fail(IN_THE_ROOM);
   const rules = atomRulesWhy(sim);
   if (rules) return fail(rules);
-  if (sim.state.scenario) return fail('The atom bomb is not part of a scenario');
+  if (sim.state.scenario) return fail(SCENARIO_WHY);
   const silo = siloBlock(sim);
   if (silo) return fail(silo);
   const target = targetWhy(sim, to);

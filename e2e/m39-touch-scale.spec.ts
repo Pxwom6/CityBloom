@@ -22,6 +22,7 @@ const COVERED: Record<string, string> = {
   'help summary': '.friends-help summary',
   // The atom bomb's (M40 step 11): the buttons on the countdown card, and the launch's held button.
   'bomb card button': '.atom-countdown .btn',
+  'bomb card link': '.atom-countdown .link',
   'bomb hold': '.launch-hold',
 };
 

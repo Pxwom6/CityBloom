@@ -175,6 +175,40 @@ describe('M40 step 11: the clean-up tool', () => {
     expect(tool.cancel()).toBe(false);
   });
 
+  it('the answer to a click made just before the tool is put down draws no ring and no hint on the next tool', async () => {
+    // Refused (a crew works at SPOT already, from the click test above): its words are a toast, not a hint.
+    const refused = stand();
+    refused.tool.activate();
+    refused.tool.pointerDown(pointer(SPOT.x, SPOT.z));
+    refused.tool.deactivate();
+    const drawn = refused.log.brushes.length;
+    const hinted = refused.log.hints.length;
+    await flush();
+    await flush();
+    expect(refused.log.brushes.length, 'no ring drawn after the tool went').toBe(drawn);
+    expect(refused.log.brushes.at(-1)!.at).toBeNull();
+    expect(refused.log.hints.length, 'no hint drawn after the tool went').toBe(hinted);
+    expect(refused.log.hints.at(-1)).toBeNull();
+    expect(refused.log.sounds).toContain('error');
+    expect(refused.log.toasts.at(-1)).toMatch(/already working there/);
+
+    // Sent: the crew went, so that is said, but the ring and the hint are not put up again.
+    const sent = stand();
+    sent.tool.activate();
+    const crews = falloutSummary(sim)!.jobs.length;
+    sent.tool.pointerDown(pointer(SPOT.x, SPOT.z + 250));
+    sent.tool.deactivate();
+    const rings = sent.log.brushes.length;
+    const hints = sent.log.hints.length;
+    await flush();
+    await flush();
+    expect(falloutSummary(sim)!.jobs.length).toBe(crews + 1);
+    expect(sent.log.toasts).toEqual(['A clean-up crew is at work there']);
+    expect(sent.log.brushes.length).toBe(rings);
+    expect(sent.log.hints.length).toBe(hints);
+    expect(sent.log.hints.at(-1)).toBeNull();
+  });
+
   it('a hint that arrives after the tool is put down is not drawn', async () => {
     const { tool, log } = stand();
     tool.activate();

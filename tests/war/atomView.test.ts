@@ -6,13 +6,14 @@ import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import type { Sim } from '../../src/sim/sim';
 import { atomSummary, type AtomSummary } from '../../src/sim/systems/atom';
 import { falloutSummary, falloutYears } from '../../src/sim/systems/fallout';
-import { supersSummary, type SupersSummary } from '../../src/sim/systems/supers';
+import { bombStopped, supersSummary, type SupersSummary } from '../../src/sim/systems/supers';
 import {
   HOLD_MS,
   PIPS,
   aftermath,
   bombTabShown,
   buildTerms,
+  cloudOnMap,
   consequences,
   countdown,
   defaultTarget,
@@ -21,16 +22,24 @@ import {
   falloutLines,
   headline,
   holdFraction,
+  holdKey,
   holdSeconds,
   ladderRows,
+  launchGuestWhy,
   launchTerms,
+  launchWords,
   markLines,
   moneyWords,
   playWords,
+  pointerInside,
   raceRows,
   shelterLine,
+  stopTerms,
   targetRows,
+  warTime,
 } from '../../src/ui/atomView';
+import { HOST_ONLY_LAUNCH, roomRefusal, type SharedRules } from '../../src/sim/rules';
+import { openScenario } from '../scenarios/harness';
 import { clone, dip, rivals } from './economyHelpers';
 import { labTown, ok } from './researchTown';
 
@@ -58,6 +67,8 @@ beforeAll(() => {
   ok(sim, { type: 'cheat', cheat: 'addMoney', amount: 60_000_000 });
   ok(sim, { type: 'cheat', cheat: 'finishStages', civic: place('enrichment') });
   ok(sim, { type: 'cheat', cheat: 'finishStages', civic: place('atomsilo') });
+  // (The dome last, so nothing else in the town moves for it.)
+  ok(sim, { type: 'cheat', cheat: 'finishStages', civic: place('domeshield') });
   for (const n of sim.state.region.neighbours) if (n.rival) n.rival.blackout = { from: 0, until: 1e9 };
   sim.advance(3 * M);
   base = sim;
@@ -86,6 +97,21 @@ function at(stage: AtomStage, war = false): Sim {
   }
   return sim;
 }
+
+/** A bomb in the air as the summary reports it, for the pure cases. */
+const inbound = (
+  over: Partial<NonNullable<AtomSummary['inbound']>> = {},
+): NonNullable<AtomSummary['inbound']> => ({
+  from: 'Calhaven',
+  arrive: 1_000,
+  x: 0,
+  z: 0,
+  near: 0,
+  sheltered: 0,
+  stops: false,
+  raisable: false,
+  ...over,
+});
 
 /** Every string a value holds, at any depth. */
 function strings(v: unknown, into: string[] = []): string[] {
@@ -277,7 +303,7 @@ describe('M40 step 11: the launch card', () => {
     const text = list.join(' ');
     for (const part of [
       /reputation falls to nothing, for good/i,
-      /embargoes/,
+      /Every computer neighbour embargoes the city/,
       /pact and alliance/,
       /declare a total war on the city at once/,
       /protest/,
@@ -291,7 +317,7 @@ describe('M40 step 11: the launch card', () => {
       `Holding the button pays $1.2M and starts the preparation, about ${playWords(ATOM.launch.prepHours)} of play. Until the bomb leaves you can call it off, and $600,000 comes back.`,
     );
     expect(buildTerms()).toBe(
-      `12 instalments of $650,000, each with 50 goods, 200 ore and 167 oil, taken from the war stores first and bought in for the rest. About ${playWords(ATOM.bomb.hours)} of play. If it is stopped, what was paid stays spent.`,
+      `12 instalments of $650,000, each with 50 goods, 200 ore and 167 oil, taken from the war stores first and bought in for the rest. About ${playWords(ATOM.bomb.hours)} of play. If it is stopped, everything built so far is lost, what was paid stays spent, and starting again begins from nothing.`,
     );
     for (const w of [...list, launchTerms(), buildTerms()]) expect(w).not.toMatch(NOT_SAID);
   });
@@ -312,6 +338,9 @@ describe('M40 step 11: the launch card', () => {
     expect(moneyWords(350_000)).toBe('$350,000');
     expect(moneyWords(2_000_000)).toBe('$2M');
     expect(playWords(4)).toBe('30 seconds');
+    // Never "1 seconds", and never "0 seconds" in the card's last moments.
+    for (const h of [0, 0.05, 0.1, 0.15]) expect(playWords(h), `${h} h`).toBe('1 second');
+    expect(playWords(0.2)).toBe('2 seconds');
     expect(playWords(24)).toBe('3 minutes');
     expect(playWords(ATOM.launch.prepHours)).toBe('36 minutes');
     expect(playWords(1_440)).toBe('3 hours');
@@ -368,6 +397,7 @@ describe('M40 step 11: the countdown', () => {
     expect(stops).toEqual({
       text: `The dome shield is charged: it will stop the bomb, then it is down for about ${playWords(DOME.bombRecharge)} of play.`,
       tone: 'good',
+      kind: 'stops',
       raise: false,
     });
     expect(stops.text).toContain('about 3 hours of play');
@@ -385,27 +415,129 @@ describe('M40 step 11: the countdown', () => {
     expect(domeLine(d({ charge: 0.4 }), false, false).text).toBe(
       'The dome shield is still charging (40 %): it can’t stop this bomb yet.',
     );
-    // Charged but switched off: it can be raised.
-    const off = domeLine(d({ mode: 'off' }), false, false);
-    expect(off).toMatchObject({ tone: 'warn', raise: true });
+    // Charged but switched off, and the sim says raising it would stop the bomb: it can be raised.
+    const off = domeLine(d({ mode: 'off' }), false, false, true);
+    expect(off).toMatchObject({ tone: 'warn', raise: true, kind: 'off' });
     expect(off.text).toMatch(/switched off/);
+    // Charged and switched off but not working (no crew, no power): raising it would not help, so it is not offered.
+    const dark = domeLine(d({ mode: 'off' }), false, false, false);
+    expect(dark).toMatchObject({ tone: 'bad', raise: false, kind: 'idle' });
+    expect(dark.text).toMatch(/needs workers and power/);
     // A charged dome in a mode that stops it, but not working: no raise button.
     expect(domeLine(d(), false, false)).toMatchObject({ tone: 'bad', raise: false });
     expect(domeLine(d(), false, false).text).toMatch(/needs workers and power/);
+    // The words a screen reader gets hold no figure that moves while the card counts down.
+    expect(countdown(inbound({ raisable: false }), 0, d({ charge: 0.4 }), false).announce).not.toMatch(/\d/);
+    expect(countdown(inbound({ raisable: false }), 0, d({ down: 600 }), false).announce).not.toMatch(/\d/);
   });
 
-  it('agrees with the real dome: the sim says it stops the bomb exactly when the card says it will', () => {
-    const sim = at('none');
-    // Built, charged, staffed and powered, and the mode stops the bomb.
-    const dome = [...sim.state.civics.values()].find((c) => c.def === 'domeshield');
-    expect(dome, 'the lab town has no dome; the pure cases above cover the rest').toBeUndefined();
-    ok(sim, { type: 'cheat', cheat: 'bombIn', hours: 24 });
-    sim.advance(2);
-    const s = atomSummary(sim)!;
-    expect(s.inbound!.stops).toBe(false);
-    expect(countdown(s.inbound!, sim.state.tick, supersSummary(sim)!.dome, false).dome.text).toBe(
-      'The city has no dome shield: nothing will stop it.',
-    );
+  describe('the dome on the card is the real dome', () => {
+    const dome = (sim: Sim) => sim.state.war!.supers!.dome!;
+    /** The dome at full strength: crewed, powered, charged, in the mode that stops a bomb. */
+    function charged(sim: Sim): void {
+      const c = civic(sim, 'domeshield');
+      c.staff = 1;
+      c.powered = 1;
+      const d = dome(sim);
+      d.hours = DOME.chargeHours;
+      d.mode = 'all';
+      delete d.down;
+      delete d.reserve;
+      delete d.raised;
+    }
+    /** What the card makes of the bomb in the air over this town (`fire`: first send one), with the sim's own answer beside it. */
+    function card(sim: Sim, fire = true) {
+      if (fire) {
+        ok(sim, { type: 'cheat', cheat: 'bombIn', hours: 24 });
+        sim.advance(2);
+      }
+      const sum = atomSummary(sim)!;
+      const sup = supersSummary(sim)!;
+      const c = countdown(sum.inbound!, sim.state.tick, sup.dome, !!sup.blackout);
+      return { sum, c, stops: bombStopped(sim), raised: bombStopped(sim, true) };
+    }
+    const town = () => {
+      const sim = clone(base);
+      charged(sim);
+      return sim;
+    };
+
+    it('a charged, working dome stops the bomb, and the card says it will', () => {
+      const sim = town();
+      const { sum, c, stops } = card(sim);
+      expect(stops).toBe(true);
+      expect(sum.inbound!.stops).toBe(true);
+      expect(c.dome).toMatchObject({ kind: 'stops', tone: 'good', raise: false });
+      expect(c.dome.text).toContain('it will stop the bomb');
+    });
+
+    it('a charged, working dome that is switched off is offered for raising, and raising it does what the card says', () => {
+      const sim = town();
+      dome(sim).mode = 'off';
+      const before = card(sim);
+      expect(before.stops).toBe(false);
+      expect(before.raised, 'the sim says raising it would stop the bomb').toBe(true);
+      expect(before.sum.inbound).toMatchObject({ stops: false, raisable: true });
+      expect(before.c.dome).toMatchObject({ kind: 'off', tone: 'warn', raise: true });
+      // The button's own command, then the card again.
+      ok(sim, { type: 'setDome', mode: 'super' });
+      const after = card(sim, false);
+      expect(after.stops).toBe(true);
+      expect(after.sum.inbound!.stops).toBe(true);
+      expect(after.c.dome).toMatchObject({ kind: 'stops', raise: false });
+    });
+
+    it('a switched-off dome that is not working is not offered for raising: raising it would not stop the bomb', () => {
+      for (const [name, cause] of [
+        ['no crew', (sim: Sim) => (civic(sim, 'domeshield').staff = 0.1)],
+        ['no power', (sim: Sim) => (civic(sim, 'domeshield').powered = 0.2)],
+      ] as const) {
+        const sim = town();
+        dome(sim).mode = 'off';
+        cause(sim);
+        const { sum, c, stops, raised } = card(sim);
+        expect(stops, name).toBe(false);
+        expect(raised, `${name}: the sim agrees raising it would not help`).toBe(false);
+        expect(sum.inbound!.raisable, name).toBe(false);
+        expect(c.dome.raise, `${name}: no button`).toBe(false);
+        expect(c.dome, name).toMatchObject({ kind: 'idle', tone: 'bad' });
+        expect(c.dome.text, name).toMatch(/needs workers and power/);
+      }
+    });
+
+    it('every state of the dome has the card say what the sim says', () => {
+      const cases: { name: string; kind: string; cause: (sim: Sim) => void }[] = [
+        {
+          name: 'working but unstaffed',
+          kind: 'idle',
+          cause: (sim) => (civic(sim, 'domeshield').staff = 0.1),
+        },
+        {
+          name: 'still charging',
+          kind: 'charging',
+          cause: (sim) => (dome(sim).hours = DOME.chargeHours / 2),
+        },
+        { name: 'down from stopping a bomb', kind: 'down', cause: (sim) => (dome(sim).down = 600) },
+        {
+          name: 'dark in a blackout',
+          kind: 'blackout',
+          cause: (sim) => {
+            const w = sim.state.war!;
+            w.blackout = { by: 1, from: w.clock - 1, until: w.clock + 10 };
+          },
+        },
+        { name: 'gone', kind: 'none', cause: (sim) => sim.removeCivic(civic(sim, 'domeshield').id) },
+      ];
+      for (const { name, kind, cause } of cases) {
+        const sim = town();
+        cause(sim);
+        const { sum, c, stops } = card(sim);
+        expect(stops, name).toBe(false);
+        expect(sum.inbound!.stops, name).toBe(false);
+        expect(c.dome.kind, name).toBe(kind);
+        expect(c.dome.raise, `${name}: nothing to raise`).toBe(false);
+      }
+    });
   });
 
   it('tells what a bomb left behind: the count that left and the buildings levelled, or the dome’s save', () => {
@@ -557,5 +689,113 @@ describe('M40 step 11: the fallout block', () => {
     const clean = falloutLines({ ...f!, closedArea: 0 }, 0);
     expect(clean).toMatchObject({ closed: 'No ground is closed to building', years: null });
     for (const w of [...strings(lines), ...strings(out), ...strings(clean)]) expect(w).not.toMatch(NOT_SAID);
+  });
+});
+
+describe('M40 step 11 review: words, guards and the places they stand', () => {
+  it('counts a rival’s wait in the game’s own months, one of them in the singular', () => {
+    expect(warTime(0)).toBe('0 h');
+    expect(warTime(12)).toBe('12 h');
+    expect(warTime(24)).toBe('1 month');
+    expect(warTime(36)).toBe('1.5 months');
+    expect(warTime(240)).toBe('10 months');
+    expect(launchWords(240)).toBe('leaves in about 10 months');
+    expect(launchWords(24)).toBe('leaves in about 1 month');
+    expect(launchWords(5)).toBe('leaves in about 5 h');
+    expect(launchWords(1)).toBe('leaves in about 1 h');
+    // Never "0 days", never "1 days": the last hour is the last hour.
+    expect(launchWords(0.4)).toBe('leaves within the hour');
+    expect(launchWords(0)).toBe('leaves within the hour');
+    for (const h of [0, 0.4, 1, 5, 24, 48, 240])
+      expect(launchWords(h), `${h} h`).not.toMatch(/\b0 |1 [a-z]+s\b|days/);
+  });
+
+  it('tells what stopping the build throws away: all of it, with the money paid staying spent', () => {
+    const text = stopTerms({ done: 0.5, paid: 7, of: 12 });
+    expect(text).toContain('50 % built');
+    expect(text).toContain('7 of 12 instalments paid');
+    expect(text).toContain(`${moneyWords(7 * ATOM.bomb.instalment.money)} and the materials) stays spent`);
+    expect(text).toMatch(/all of that is lost/);
+    expect(text).toMatch(/starting again begins from nothing and pays the first instalment again/);
+    expect(text).not.toMatch(NOT_SAID);
+    // The button's own caption cannot be read as "picked up again later" either.
+    expect(buildTerms()).toMatch(/everything built so far is lost/);
+    expect(buildTerms()).toMatch(/starting again begins from nothing/);
+  });
+
+  it('the consequences name computer neighbours only for the embargo, which is all the sim imposes', () => {
+    const text = consequences().join(' ');
+    expect(text).toMatch(/Every computer neighbour embargoes the city/);
+    expect(text).not.toMatch(/Every neighbour/);
+  });
+
+  it('keeps the keys of a held button to the hold: the repeats are swallowed, and only the first press begins', () => {
+    expect(holdKey({ key: ' ', repeat: false })).toEqual({ swallow: true, begin: true });
+    expect(holdKey({ key: ' ', repeat: true })).toEqual({ swallow: true, begin: false });
+    expect(holdKey({ key: 'Enter', repeat: false })).toEqual({ swallow: true, begin: true });
+    expect(holdKey({ key: 'Enter', repeat: true })).toEqual({ swallow: true, begin: false });
+    // A browser that reports the key as "Spacebar" or "Unidentified" still has a code.
+    expect(holdKey({ key: 'Unidentified', code: 'Space', repeat: true })).toEqual({
+      swallow: true,
+      begin: false,
+    });
+    // Any other key is the game's own.
+    for (const key of ['1', 'Escape', 'm', 'Tab'])
+      expect(holdKey({ key, code: `Key${key}`, repeat: false }), key).toEqual({
+        swallow: false,
+        begin: false,
+      });
+  });
+
+  it('knows when a finger has slid off the button (a touch never fires a leave)', () => {
+    const box = { left: 100, right: 300, top: 400, bottom: 440 };
+    expect(pointerInside(box, 200, 420)).toBe(true);
+    expect(pointerInside(box, 100, 400)).toBe(true);
+    expect(pointerInside(box, 300, 440)).toBe(true);
+    expect(pointerInside(box, 200, 160)).toBe(false);
+    expect(pointerInside(box, 99, 420)).toBe(false);
+    expect(pointerInside(box, 301, 420)).toBe(false);
+    expect(pointerInside(box, 200, 441)).toBe(false);
+  });
+
+  it('greys the launch for a guest in a shared city, in the room’s own words', () => {
+    expect(launchGuestWhy(false)).toBeNull();
+    expect(launchGuestWhy(true)).toBe(HOST_ONLY_LAUNCH);
+    // The words are the room's: it refuses a guest with exactly this, and lets the host through.
+    const rules: SharedRules = { perms: { 2: [] }, host: 1, spendLimit: null };
+    const launch = { type: 'launchBomb', to: 1 } as const;
+    expect(roomRefusal(rules, 2, launch)).toBe(launchGuestWhy(true));
+    expect(roomRefusal(rules, 1, launch)).toBeNull();
+  });
+
+  it('draws a cloud on a computer neighbour by its fallout or the flight, and on a friend only by the friend’s own report', () => {
+    const flight = 100;
+    const fired = { to: 7, tick: 1_000 };
+    const rival = (fallout?: number) => ({ id: 7, rival: { fallout } });
+    const friend = (hit?: number) => ({ id: 7, player: { atom: hit === undefined ? {} : { hit } } });
+    // A computer neighbour: after the flight, or when its fallout says so; not before.
+    expect(cloudOnMap(rival(0), fired, 1_099, flight)).toBe(false);
+    expect(cloudOnMap(rival(0), fired, 1_100, flight)).toBe(true);
+    expect(cloudOnMap(rival(0.5), null, 0, flight)).toBe(true);
+    expect(cloudOnMap(rival(0.2), null, 0, flight)).toBe(false);
+    expect(cloudOnMap({ id: 8, rival: { fallout: 0 } }, fired, 5_000, flight)).toBe(false);
+    // A friend: the flight's time proves nothing (its dome may have stopped the bomb, its page may not
+    // have taken the strike), only its own report does.
+    expect(cloudOnMap(friend(), fired, 5_000, flight)).toBe(false);
+    expect(cloudOnMap(friend(0), fired, 5_000, flight)).toBe(false);
+    expect(cloudOnMap(friend(1), null, 0, flight)).toBe(true);
+  });
+
+  it('puts the atom bomb out of reach in a scenario, and says so first rather than at the bottom of the ladder', () => {
+    for (const id of ['holdline', 'cleanwar', 'liberation']) {
+      const sim = openScenario(id);
+      const s = atomSummary(sim)!;
+      expect(s, id).not.toBeNull();
+      expect(s.allowed, id).toBe(false);
+      expect(s.rules, id).toBe('The atom bomb is not part of a scenario');
+      expect(bombTabShown(s, [], 0), `${id}: no tab inviting a race that cannot finish`).toBe(false);
+      const research = ladderRows(s).find((r) => r.id === 'research')!;
+      expect(research.reason, id).toBe('The atom bomb is not part of a scenario');
+    }
   });
 });

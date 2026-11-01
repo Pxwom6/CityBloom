@@ -163,12 +163,14 @@ function needOf(cmd: Command): Permission | undefined {
   return NEED[cmd.type];
 }
 
+/** What the room says to a guest who tries to launch the bomb (the war room's launch card says it before the hold). */
+export const HOST_ONLY_LAUNCH = 'Only the host can launch the atom bomb';
+
 /** Why the room should turn this command away before ordering it, or null. */
 export function roomRefusal(rules: SharedRules | null, player: number, cmd: Command): string | null {
   // A launch of the atom bomb (M40) cannot be undone and changes every player's city for years: the
   // host's alone, whatever roles the host has given.
-  if (cmd.type === 'launchBomb' && rules && player && player !== rules.host)
-    return 'Only the host can launch the atom bomb';
+  if (cmd.type === 'launchBomb' && rules && player && player !== rules.host) return HOST_ONLY_LAUNCH;
   const need = needOf(cmd);
   if (need && !may(rules, player, need)) return `The host hasn't let you ${WORDS[need]}`;
   if (cmd.type === 'placeBuilding' && CIVIC.get(cmd.def)?.project && !may(rules, player, 'projects'))

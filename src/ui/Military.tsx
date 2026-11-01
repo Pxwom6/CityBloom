@@ -19,14 +19,12 @@ import { TIERS, type TierKey } from '../data/research';
 import { Intelligence } from './Intel';
 import { Trade } from './Trade';
 import { Bomb } from './Atom';
-import { bombTabShown } from './atomView';
+import { bombTabShown, warTime } from './atomView';
 import type { WarTab } from '../client/atomUi';
 
 /** Training time in the game's own terms: hours, or months for longer (a month is a day and night). */
 export function trainingTime(hours: number): string {
-  if (hours < 24) return `${Math.round(hours)} h`;
-  const months = Math.round((hours / 24) * 10) / 10;
-  return `${months} month${months === 1 ? '' : 's'}`;
+  return warTime(hours);
 }
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;

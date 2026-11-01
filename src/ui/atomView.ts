@@ -17,6 +17,7 @@ import {
   raceLine,
 } from '../data/atom';
 import { DOME } from '../data/research';
+import { HOST_ONLY_LAUNCH } from '../sim/rules';
 import { TICKS_PER_HOUR } from '../sim/time';
 import type { AtomSummary } from '../sim/systems/atom';
 import type { FalloutSummary } from '../sim/systems/fallout';
@@ -38,6 +39,51 @@ export function holdSeconds(elapsed: number): number {
   return Math.max(0, Math.ceil((HOLD_MS - Math.max(0, elapsed)) / 1000));
 }
 
+/**
+ * What a key does to a held button: Space and Enter hold it, and the keyboard's auto-repeat of a key
+ * held down is swallowed like the first press (it must not reach the window's Space, which pauses the
+ * game, thirty times a second) but does not begin the hold again.
+ */
+export function holdKey(e: { key: string; code?: string; repeat: boolean }): {
+  swallow: boolean;
+  begin: boolean;
+} {
+  const mine = e.key === ' ' || e.key === 'Enter' || e.code === 'Space';
+  return { swallow: mine, begin: mine && !e.repeat };
+}
+
+/**
+ * Whether a pointer is still over a box. A finger that touches a button is captured by it (a touch has no
+ * "leave" until it lifts), so the hold asks this on every move to learn it has slid off.
+ */
+export function pointerInside(
+  r: { left: number; right: number; top: number; bottom: number },
+  x: number,
+  y: number,
+): boolean {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/** Why this player's launch button is greyed out, or null: in a shared city only the host launches (the room says so). */
+export function launchGuestWhy(guest: boolean): string | null {
+  return guest ? HOST_ONLY_LAUNCH : null;
+}
+
+/**
+ * Whether the region map draws a cloud on a neighbour: a computer neighbour's own fallout, or the bomb
+ * this city fired at it having had its flight; a friend's city only once the friend's own report says a
+ * bomb fell on it (the friend's sim decides the dome and the damage, not the sender's).
+ */
+export function cloudOnMap(
+  n: { id: number; rival?: { fallout?: number } | null; player?: { atom?: { hit?: number } } | null },
+  fired: { to: number; tick: number } | null,
+  tick: number,
+  flightTicks: number,
+): boolean {
+  if (n.player) return (n.player.atom?.hit ?? 0) > 0;
+  return (!!fired && fired.to === n.id && tick >= fired.tick + flightTicks) || (n.rival?.fallout ?? 0) >= 0.5;
+}
+
 /** Money as the war room says it: "$1.2M" for millions, "$650,000" below. */
 export function moneyWords(v: number): string {
   if (v >= 1_000_000) return `$${(Math.round(v / 100_000) / 10).toString()}M`;
@@ -50,11 +96,30 @@ export function moneyWords(v: number): string {
  */
 export function playWords(gameHours: number): string {
   const seconds = gameHours * FALLOUT.secondsPerHour;
-  if (seconds < 90) return `${Math.max(1, Math.round(seconds))} seconds`;
+  if (seconds < 90) {
+    const n = Math.max(1, Math.round(seconds));
+    return `${n} second${n === 1 ? '' : 's'}`;
+  }
   const minutes = seconds / 60;
   if (minutes < 90) return `${Math.round(minutes)} minutes`;
   const hours = Math.round((minutes / 60) * 2) / 2;
   return `${hours === Math.round(hours) ? hours : hours.toFixed(1)} hours`;
+}
+
+/**
+ * Game hours in the game's own terms, as the war room counts a long wait: hours, or months for longer
+ * (a month is a game day and night, 24 hours): "12 h", "1 month", "10 months".
+ */
+export function warTime(hours: number): string {
+  if (hours < 24) return `${Math.max(0, Math.round(hours))} h`;
+  const months = Math.round((hours / 24) * 10) / 10;
+  return `${months} month${months === 1 ? '' : 's'}`;
+}
+
+/** When a computer neighbour's bomb leaves, from the war hours left of its preparation. */
+export function launchWords(hoursLeft: number): string {
+  if (hoursLeft < 1) return 'leaves within the hour';
+  return `leaves in about ${warTime(hoursLeft)}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -301,7 +366,7 @@ export function defaultTarget(a: AtomSummary, chosen: number | null): number | n
 export function consequences(): string[] {
   return [
     'Your reputation falls to nothing, for good. It never recovers.',
-    'Every neighbour embargoes the city, for good: trade with them ends.',
+    'Every computer neighbour embargoes the city, for good: trade with them ends.',
     'Every pact and alliance of friendship ends.',
     'Any neighbour may declare a total war on the city at once, with no waiting.',
     'People at home protest: approval falls and residents leave.',
@@ -320,7 +385,17 @@ export function launchTerms(): string {
 export function buildTerms(): string {
   const i = ATOM.bomb.instalment;
   const n = ATOM.bomb.hours / ATOM.bomb.every;
-  return `${n} instalments of ${moneyWords(i.money)}, each with ${i.goods} goods, ${i.ore} ore and ${i.oil} oil, taken from the war stores first and bought in for the rest. About ${playWords(ATOM.bomb.hours)} of play. If it is stopped, what was paid stays spent.`;
+  return `${n} instalments of ${moneyWords(i.money)}, each with ${i.goods} goods, ${i.ore} ore and ${i.oil} oil, taken from the war stores first and bought in for the rest. About ${playWords(ATOM.bomb.hours)} of play. If it is stopped, everything built so far is lost, what was paid stays spent, and starting again begins from nothing.`;
+}
+
+/**
+ * What stopping the bomb's build throws away, for the question asked before it is stopped: how far it
+ * has got, what was paid (which stays spent), and that a restart begins from nothing (it pays the first
+ * instalment again).
+ */
+export function stopTerms(bomb: { done: number; paid: number; of: number }): string {
+  const i = ATOM.bomb.instalment;
+  return `The bomb is ${pct(bomb.done)} built, with ${bomb.paid} of ${bomb.of} instalments paid. If it is stopped, all of that is lost: what was paid (${moneyWords(bomb.paid * i.money)} and the materials) stays spent, and starting again begins from nothing and pays the first instalment again.`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -340,48 +415,68 @@ type Dome = SupersSummary['dome'];
 export interface DomeLine {
   text: string;
   tone: 'good' | 'warn' | 'bad';
-  /** The dome is charged but switched off: it can be raised now. */
+  /** What stands between the dome and the bomb, for the words a screen reader is told (no figures in them). */
+  kind: 'stops' | 'none' | 'down' | 'blackout' | 'charging' | 'off' | 'idle';
+  /** The dome is charged but switched off, and raising it now would stop the bomb: the card offers to. */
   raise: boolean;
 }
 
 /**
  * What the dome shield will do to the bomb on its way. `stops` is the sim's own answer (a pure read of
  * `bombStopped`): when it is true the dome stops the bomb and is then down for a long while; when it is
- * false the reason is read off the dome the summary shows.
+ * false the reason is read off the dome the summary shows. `canRaise` is the sim's answer to "would it
+ * stop the bomb if it were raised" (`bombStopped(sim, true)`): the way to raise it is offered only
+ * then, never for a dome that is dark, unstaffed or unpowered, which raising would not help.
  */
-export function domeLine(dome: Dome, stops: boolean, blackout: boolean): DomeLine {
+export function domeLine(dome: Dome, stops: boolean, blackout: boolean, canRaise = false): DomeLine {
   if (stops)
     return {
       text: `The dome shield is charged: it will stop the bomb, then it is down for about ${playWords(DOME_AFTER)} of play.`,
       tone: 'good',
+      kind: 'stops',
       raise: false,
     };
-  if (!dome) return { text: 'The city has no dome shield: nothing will stop it.', tone: 'bad', raise: false };
+  if (!dome)
+    return {
+      text: 'The city has no dome shield: nothing will stop it.',
+      tone: 'bad',
+      kind: 'none',
+      raise: false,
+    };
   if (dome.down > 0)
     return {
       text: `The dome shield is down for ${playWords(dome.down)} more: it can’t stop this bomb.`,
       tone: 'bad',
+      kind: 'down',
       raise: false,
     };
   if (blackout)
     return {
       text: 'A blackout has the dome shield dark: it can’t stop this bomb.',
       tone: 'bad',
+      kind: 'blackout',
       raise: false,
     };
   if (dome.charge < 1)
     return {
       text: `The dome shield is still charging (${pct(dome.charge)}): it can’t stop this bomb yet.`,
       tone: 'bad',
+      kind: 'charging',
       raise: false,
     };
-  if (dome.mode === 'off')
+  if (dome.mode === 'off' && canRaise)
     return {
       text: 'The dome shield is charged but switched off: it won’t stop the bomb unless it is raised.',
       tone: 'warn',
+      kind: 'off',
       raise: true,
     };
-  return { text: 'The dome shield isn’t working: it needs workers and power.', tone: 'bad', raise: false };
+  return {
+    text: 'The dome shield isn’t working: it needs workers and power.',
+    tone: 'bad',
+    kind: 'idle',
+    raise: false,
+  };
 }
 
 /** The shelters in a line: how many of the residents in the blast's reach have a place. */
@@ -399,6 +494,23 @@ export interface Countdown {
   aim: string;
   dome: DomeLine;
   shelter: string | null;
+  /** What a screen reader is told once when the card appears or the dome's state changes: no clock, no figures. */
+  announce: string;
+}
+
+/** The dome's state as it is announced (the same for any charge or time left, so it is said when it changes, not as it counts). */
+const DOME_ANNOUNCE: Record<DomeLine['kind'], string> = {
+  stops: 'The dome shield will stop it.',
+  none: 'The city has no dome shield.',
+  down: 'The dome shield is down.',
+  blackout: 'A blackout has the dome shield dark.',
+  charging: 'The dome shield is still charging.',
+  off: 'The dome shield is switched off. It can be raised from the card.',
+  idle: 'The dome shield is not working.',
+};
+
+export function announcement(from: string, kind: DomeLine['kind']): string {
+  return `An atom bomb from ${from} is on its way to the city. ${DOME_ANNOUNCE[kind]}`;
 }
 
 export function countdown(
@@ -409,14 +521,16 @@ export function countdown(
 ): Countdown {
   const ticks = Math.max(0, inbound.arrive - displayTick);
   const hoursLeft = ticks / TICKS_PER_HOUR;
+  const line = domeLine(dome, inbound.stops, blackout, inbound.raisable);
   return {
     from: inbound.from,
     eta: etaClock(ticks),
     hoursLeft,
     playLeft: playWords(hoursLeft),
     aim: 'Aimed at your densest district',
-    dome: domeLine(dome, inbound.stops, blackout),
+    dome: line,
     shelter: shelterLine(inbound.near, inbound.sheltered),
+    announce: announcement(inbound.from, line.kind),
   };
 }
 

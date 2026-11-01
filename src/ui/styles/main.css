@@ -4658,6 +4658,24 @@ body {
 .atom-countdown p {
   margin: 0;
 }
+/* What a screen reader is told when the card appears (the clock moves too often to be read out): off screen. */
+.atom-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/*
+ * The first bomb brings its tip (it says to raise the dome from the card): the tip and the card both sit at
+ * the top left of the screen, and on a phone or a tablet the tip would cover the clock and the button. While
+ * the card is up the tip stands above the toolbar instead.
+ */
+.atom-countdown ~ .guide {
+  top: auto;
+  bottom: calc(var(--toolbar-height) + var(--space-3));
+}
 .atom-eta {
   font-size: var(--font-size-xl, 1.6rem);
   font-weight: var(--font-weight-bold);
@@ -4783,6 +4801,12 @@ body {
 }
 #ui[data-width='xs'] .atom-eta {
   font-size: var(--font-size-lg);
+}
+/* "Show where" is a line of text with a tap in it: on a phone it is as tall to tap as a small button. */
+#ui[data-width='xs'] .atom-countdown .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: max(24px, 1.6rem);
 }
 
 /* The battle map (M39): a live battle from above, to command or to watch. */

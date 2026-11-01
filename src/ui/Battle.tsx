@@ -13,7 +13,7 @@ import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
 import { newcomerNote, raidNote } from '../client/friendsWar';
 import { HelpButton } from './Help';
-import { PIPS, etaClock, pipsOf } from './atomView';
+import { PIPS, cloudOnMap, etaClock, pipsOf } from './atomView';
 import { ATOM, ATOM_STAGE_NAMES, ATOM_STAGES, atomStageNo } from '../data/atom';
 import { helpForceLine } from './helpView';
 import { formatNumber, useGameUpdates } from './hooks';
@@ -726,10 +726,8 @@ export function RegionMap() {
               {(() => {
                 const race = raceOf(n);
                 const r = n.rival ? 13 : 10;
-                const struck =
-                  (atom?.fired?.to === n.id && tick >= atom.fired.tick + flightTicks) ||
-                  (n.rival?.fallout ?? 0) >= 0.5 ||
-                  (n.player?.atom?.hit ?? 0) > 0;
+                // (A friend's city is struck when the friend says so: its own sim decides the dome and the damage.)
+                const struck = cloudOnMap(n, atom?.fired ?? null, tick, flightTicks);
                 if (!race && !struck) return null;
                 const ready =
                   !!race && (race.stage === atomStageNo('ready') || race.stage === atomStageNo('preparing'));

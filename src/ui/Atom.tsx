@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import type { FalloutQuery } from '../sim/systems/fallout';
+import type { AtomSummary } from '../sim/systems/atom';
 import { falloutYears } from '../sim/systems/fallout';
 import {
   HOLD_MS,
@@ -19,13 +20,19 @@ import {
   falloutLines,
   headline,
   holdFraction,
+  holdKey,
   holdSeconds,
   ladderRows,
+  launchGuestWhy,
   launchTerms,
+  launchWords,
   markLines,
   moneyWords,
+  pointerInside,
   raceRows,
+  stopTerms,
   targetRows,
+  type Countdown,
   type LadderRow,
   type RaceRow,
 } from './atomView';
@@ -84,7 +91,7 @@ function Rung({ r }: { r: LadderRow }) {
  * Enter held do the same. It works by mouse, finger and pen alike (pointer events), and the game keeps
  * the press in `atomUi.hold` so a test can read how far it has got.
  */
-function HoldButton({
+export function HoldButton({
   game,
   testid,
   label,
@@ -172,15 +179,25 @@ function HoldButton({
       onPointerUp={stop}
       onPointerCancel={stop}
       onPointerLeave={stop}
+      // A mouse that slides off fires a leave; a finger never does (a touch is captured by the button it
+      // touched until it lifts), so every move asks whether the pointer is still over the button.
+      onPointerMove={(e) => {
+        if (live.current && !pointerInside(e.currentTarget.getBoundingClientRect(), e.clientX, e.clientY))
+          stop();
+      }}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => {
-        if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+        const k = holdKey(e);
+        // (Every keydown of Space or Enter, the auto-repeat of a held one too, is the hold's: left alone
+        // the repeats reach the window's Space and flip the game between paused and running.)
+        if (k.swallow) {
           e.preventDefault();
-          begin();
+          e.stopPropagation();
         }
+        if (k.begin) begin();
       }}
       onKeyUp={(e) => {
-        if (e.key === ' ' || e.key === 'Enter') stop();
+        if (holdKey(e).swallow) stop();
       }}
       onBlur={stop}
     >
@@ -191,14 +208,17 @@ function HoldButton({
 }
 
 /** The launch card: who to aim at, what it costs the city, and the held button that commits. */
-function LaunchCard({ game, again }: { game: Game; again: boolean }) {
+export function LaunchCard({ game, again }: { game: Game; again: boolean }) {
   const a = game.world.stats.war!.atom!;
   const act = useAct(game);
   const [chosen, setChosen] = useState<number | null>(null);
   const rows = targetRows(a);
   const target = defaultTarget(a, chosen ?? a.launch?.to ?? null);
   const picked = rows.find((r) => r.id === target);
-  const blocked = a.launchWhy ?? (target === null ? 'No neighbour is in a total war with the city' : null);
+  // In a shared city only the host launches: the room refuses a guest, so the button says so before the hold.
+  const guestWhy = launchGuestWhy(!!game.net && !game.net.session.isHost);
+  const blocked =
+    guestWhy ?? a.launchWhy ?? (target === null ? 'No neighbour is in a total war with the city' : null);
   return (
     <section class="atom-launch dip-neighbour" data-testid="atom-launch-card">
       <h4>{again ? 'Send the bomb again' : 'Launch the bomb'}</h4>
@@ -237,31 +257,29 @@ function LaunchCard({ game, again }: { game: Game; again: boolean }) {
           {blocked}.
         </p>
       )}
-      {again ? (
-        <button
-          class="btn danger"
-          data-testid="atom-send-again"
-          disabled={game.readOnly || !!blocked || target === null}
-          onClick={() => target !== null && act({ type: 'launchBomb', to: target })}
-        >
-          Send it again{picked ? ` at ${picked.name}` : ''}
-        </button>
-      ) : (
-        <HoldButton
-          game={game}
-          testid="launch-hold"
-          label={picked ? `Hold to launch at ${picked.name}` : 'Hold to launch'}
-          disabled={game.readOnly || !!blocked || target === null}
-          title={blocked ?? undefined}
-          onDone={() => {
-            if (target !== null)
-              act(
-                { type: 'launchBomb', to: target },
-                `The launch at ${picked?.name ?? 'the target'} is being prepared`,
-              );
-          }}
-        />
-      )}
+      {/* (Sending it again is as final as the first launch: it is held the same three seconds.) */}
+      <HoldButton
+        game={game}
+        testid={again ? 'atom-send-again' : 'launch-hold'}
+        label={
+          again
+            ? `Hold to send it again${picked ? ` at ${picked.name}` : ''}`
+            : picked
+              ? `Hold to launch at ${picked.name}`
+              : 'Hold to launch'
+        }
+        disabled={game.readOnly || !!blocked || target === null}
+        title={blocked ?? undefined}
+        onDone={() => {
+          if (target !== null)
+            act(
+              { type: 'launchBomb', to: target },
+              again
+                ? `The bomb is sent again at ${picked?.name ?? 'the target'}`
+                : `The launch at ${picked?.name ?? 'the target'} is being prepared`,
+            );
+        }}
+      />
     </section>
   );
 }
@@ -336,7 +354,9 @@ function RaceLine({ r }: { r: RaceRow }) {
           </>
         )}
         {r.launchIn !== null && (
-          <small class="dip-bad">leaves in about {Math.ceil(r.launchIn / 24)} days</small>
+          <small class="dip-bad" data-testid="atom-race-leaves">
+            {launchWords(r.launchIn)}
+          </small>
         )}
       </div>
     </li>
@@ -394,8 +414,12 @@ function FalloutBlock({ game }: { game: Game }) {
   );
 }
 
+/** What the toast says once the dome is set to stop the bomb (a refusal says its own reason instead). */
+const RAISED = 'The dome shield is set to stop the bomb';
+
 /** A bomb on its way, first in the Bomb tab: the clock, the dome in a sentence and the way to raise it. */
 function InboundSection({ game }: { game: Game }) {
+  const act = useAct(game);
   const w = game.world.stats.war!;
   const c = countdown(w.atom!.inbound!, game.world.displayTick, w.supers?.dome ?? null, !!w.supers?.blackout);
   return (
@@ -413,12 +437,55 @@ function InboundSection({ game }: { game: Game }) {
           data-testid="atom-tab-raise-dome"
           disabled={game.readOnly}
           title="Sets the dome to “Superweapons only”, which stops an atom bomb"
-          onClick={() => void game.dispatch({ type: 'setDome', mode: 'super' })}
+          onClick={() => act({ type: 'setDome', mode: 'super' }, RAISED)}
         >
           Raise the dome now
         </button>
       )}
     </section>
+  );
+}
+
+/**
+ * Stop the bomb's build, after asking: the build is thrown away (a restart begins from nothing and pays the
+ * first instalment again), which is no small thing at instalment ten of twelve.
+ */
+export function StopBuilding({ game, bomb }: { game: Game; bomb: NonNullable<AtomSummary['bomb']> }) {
+  const act = useAct(game);
+  const [asking, setAsking] = useState(false);
+  return (
+    <div class="atom-actions">
+      <button
+        class="btn"
+        data-testid="atom-stop"
+        disabled={game.readOnly}
+        title="Everything built so far is lost"
+        onClick={() => setAsking(true)}
+      >
+        Stop building…
+      </button>
+      <p class="muted">What has been built is lost, and what was paid stays spent.</p>
+      {asking && (
+        <div class="dip-confirm" role="alertdialog" data-testid="atom-stop-confirm">
+          <p data-testid="atom-stop-terms">{stopTerms(bomb)}</p>
+          <div class="dip-actions">
+            <button
+              class="btn danger"
+              data-testid="atom-stop-yes"
+              onClick={() => {
+                setAsking(false);
+                act({ type: 'cancelBomb' }, 'The bomb is no longer being built');
+              }}
+            >
+              Stop and lose it
+            </button>
+            <button class="btn" data-testid="atom-stop-no" onClick={() => setAsking(false)}>
+              Keep building
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -489,20 +556,7 @@ export function Bomb() {
           <p class="muted">{buildTerms()}</p>
         </div>
       )}
-      {a.bomb && (
-        <div class="atom-actions">
-          <button
-            class="btn"
-            data-testid="atom-stop"
-            disabled={game.readOnly}
-            title="What has been paid stays spent"
-            onClick={() => act({ type: 'cancelBomb' }, 'The bomb is no longer being built')}
-          >
-            Stop building
-          </button>
-          <p class="muted">What has been paid stays spent.</p>
-        </div>
-      )}
+      {a.bomb && <StopBuilding game={game} bomb={a.bomb} />}
 
       {/* A bomb in the silo: choose a target and hold the button. */}
       {a.have && !prep && !a.fired && <LaunchCard game={game} again={false} />}
@@ -583,17 +637,56 @@ export function AtomCountdown() {
 
 function CountdownCard() {
   const game = useGameUpdates(120);
+  const act = useAct(game);
   const w = game.world.stats.war;
   const inbound = w?.atom?.inbound;
   if (!w || !inbound) return null;
   // On a narrow window the war room's Bomb tab fills the screen and says the same (its first section is this
   // countdown), so the card steps aside for it.
   const width = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
-  if ((width === 'xs' || width === 's') && game.panel === 'war' && game.warTab === 'atom') return null;
-  const c = countdown(inbound, game.world.displayTick, w.supers?.dome ?? null, !!w.supers?.blackout);
-  const act = (mode: 'super') => void game.dispatch({ type: 'setDome', mode });
+  const roomOpen = game.panel === 'war' && game.warTab === 'atom';
+  if ((width === 'xs' || width === 's') && roomOpen) return null;
   return (
-    <div class="atom-countdown panel" data-testid="atom-countdown" role="alert" aria-live="assertive">
+    <CountdownView
+      c={countdown(inbound, game.world.displayTick, w.supers?.dome ?? null, !!w.supers?.blackout)}
+      canLook={game.atomUi.canLook}
+      roomOpen={roomOpen}
+      onShow={() => game.flyTo({ x: inbound.x, z: inbound.z })}
+      onRaise={() => act({ type: 'setDome', mode: 'super' }, RAISED)}
+      onLook={() => game.atomUi.look()}
+      onRoom={() => game.openWarRoom('atom')}
+    />
+  );
+}
+
+export interface CountdownViewProps {
+  c: Countdown;
+  /** The effects have a missile to look at. */
+  canLook: boolean;
+  /** The war room is open on the Bomb tab already. */
+  roomOpen: boolean;
+  onShow(): void;
+  onRaise(): void;
+  onLook(): void;
+  onRoom(): void;
+}
+
+/**
+ * The card itself, from what `countdown` made. A screen reader is told once (the hidden alert, whose words
+ * hold no clock and no figure, so they change only when the dome's state does); the clock is drawn
+ * outside any live region, since it moves eight times a second.
+ */
+export function CountdownView({ c, canLook, roomOpen, onShow, onRaise, onLook, onRoom }: CountdownViewProps) {
+  return (
+    <div
+      class="atom-countdown panel"
+      data-testid="atom-countdown"
+      role="group"
+      aria-label="An atom bomb is on its way"
+    >
+      <p class="atom-announce" role="alert" data-testid="atom-announce">
+        {c.announce}
+      </p>
       <header>
         <strong data-testid="atom-from">Atom bomb from {c.from}</strong>
         <span class="atom-eta" data-testid="atom-eta" title="Game time until it lands">
@@ -605,11 +698,7 @@ function CountdownCard() {
       </p>
       <p data-testid="atom-aim">
         {c.aim}.{' '}
-        <button
-          class="link"
-          data-testid="atom-show"
-          onClick={() => game.flyTo({ x: inbound.x, z: inbound.z })}
-        >
+        <button class="link" data-testid="atom-show" onClick={onShow}>
           Show where
         </button>
       </p>
@@ -627,18 +716,18 @@ function CountdownCard() {
             class="btn small atom-raise"
             data-testid="atom-raise-dome"
             title="Sets the dome to “Superweapons only”, which stops an atom bomb"
-            onClick={() => act('super')}
+            onClick={onRaise}
           >
             Raise the dome now
           </button>
         )}
-        {game.atomUi.canLook && (
-          <button class="btn small" data-testid="atom-look" onClick={() => game.atomUi.look()}>
+        {canLook && (
+          <button class="btn small" data-testid="atom-look" onClick={onLook}>
             Look at the missile
           </button>
         )}
-        {!(game.panel === 'war' && game.warTab === 'atom') && (
-          <button class="btn small" data-testid="atom-open-room" onClick={() => game.openWarRoom('atom')}>
+        {!roomOpen && (
+          <button class="btn small" data-testid="atom-open-room" onClick={onRoom}>
             Open the war room
           </button>
         )}

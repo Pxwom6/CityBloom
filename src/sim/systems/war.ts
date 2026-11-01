@@ -59,6 +59,7 @@ import {
   type WarEconomySummary,
 } from './warEconomy';
 import { atomHour, atomSummary, type Atom, type AtomSummary } from './atom';
+import { rivalBombHour } from './atomRival';
 import type { FlowAccumulator } from './traffic';
 
 /**
@@ -510,6 +511,7 @@ function warClockHour(sim: Sim): void {
   supersHour(sim);
   // The race for the atom bomb (M40): fuel, the bomb's build and a launch's preparation.
   atomHour(sim);
+  rivalBombHour(sim);
   intelHour(sim);
   // Superweapons wound up again (M37).
   for (const u of w.units.values())

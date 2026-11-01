@@ -1,5 +1,6 @@
 import type { RivalBlackout } from './supers';
 import type { RivalIntel } from './intel';
+import type { RivalBomb } from './atomRival';
 import { WEATHER } from '../../data/climate';
 import {
   DEAL_RESOURCES,
@@ -136,6 +137,11 @@ export interface RivalNeighbour {
    * what drifts over from a bomb that fell near its side of the map. Absent until there is some.
    */
   fallout?: number;
+  /**
+   * Its race for the atom bomb (M40 step 7, Hard difficulty only): the stage, the war-clock hour
+   * the stage began and the war hours its end has been put back. Absent until it starts.
+   */
+  bomb?: RivalBomb;
 }
 
 export interface Deal {
@@ -624,6 +630,13 @@ export interface RegionReport {
    * taxes) and who it pays, so the region can tell the overlord's city what its income is.
    */
   dues?: { slot: number; amount: number };
+  /**
+   * The race for the atom bomb (M40, call 16), in a region with the bomb on: how far this city has got,
+   * the stage's number (`atomStageNo`, 1 to 8; absent before it has begun). The room's report reader
+   * and `regionReport` fill it in step 9 (with the fuel, the launch and the plume): until then no
+   * report carries it, and the room refuses a plant sabotage against any city.
+   */
+  atom?: { stage: number };
 }
 
 /** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */

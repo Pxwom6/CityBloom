@@ -24,7 +24,15 @@ import {
   type RegionWarRules,
   type UnitKind,
 } from '../src/data/war';
-import { SPY_OPS, spyOdds, spyOutcome, type SabotageTarget, type SpyOp } from '../src/data/intel';
+import {
+  SABOTAGE_TARGETS,
+  SPY_OPS,
+  spyOdds,
+  spyOutcome,
+  type SabotageTarget,
+  type SpyOp,
+} from '../src/data/intel';
+import { raceSlowWhy } from '../src/data/atom';
 import { BRANCHES, BRANCH_IDS, cleanTiers, type Branch, type TierKey } from '../src/data/research';
 import {
   FRIENDS,
@@ -804,7 +812,7 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
       if (!REGION_OPS.includes(m.op as RegionOp)) return null;
       const op = m.op as RegionOp;
       // A saboteur's target, and a thief's branch: each only with its operation.
-      if (op === 'sabotage' ? m.target !== 'power' && m.target !== 'depot' : m.target !== undefined)
+      if (op === 'sabotage' ? !SABOTAGE_TARGETS.includes(m.target as SabotageTarget) : m.target !== undefined)
         return null;
       if (op === 'steal' ? !BRANCH_IDS.includes(m.branch as Branch) : m.branch !== undefined) return null;
       return {
@@ -1339,6 +1347,17 @@ export class RegionRoom {
     return Math.max(0, this.limits.opsPerDay - (c.spied?.day === day ? c.spied.n : 0));
   }
 
+  /**
+   * Why the atom bomb's targets can't be aimed at this city, or null: its page speaks a protocol
+   * older than the bomb's (M40 step 7's seam; step 9 fills it in with protocol 7, when a page on 5
+   * or 6 can neither race nor be struck, and says "<city>’s game is older than this room"). Until
+   * then no report carries a race (`RegionReport.atom` is set by step 9's reader), so `opRefusal`
+   * has already turned every plant sabotage away before it asks.
+   */
+  private atomProtocolWhy(_target: City): string | null {
+    return null;
+  }
+
   /** Superweapons a city may still take today (UTC; M37): blackouts and superweapons' battles. */
   private supersLeft(c: City, now: number): number {
     const day = Math.floor(now / DAY_MS);
@@ -1386,6 +1405,14 @@ export class RegionRoom {
       return `${from.name} is neutral: its spies only look`;
     if (m.op !== 'reveal' && target.report.shield === 'neutral')
       return `${target.name} is neutral: spies may only look there`;
+    // The atom bomb's works (M40) need a race to slow, as the target's report shows one; a city
+    // whose report shows none is turned away in words, and the connection stays.
+    if (m.op === 'sabotage' && m.target === 'plant') {
+      const why = raceSlowWhy({ name: target.name, player: { atom: target.report.atom } });
+      if (why) return why;
+      const old = this.atomProtocolWhy(target);
+      if (old) return old;
+    }
     const harm = m.op === 'sabotage' || m.op === 'blackout';
     if (harm && target.report.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
       return `${target.name} is too young or small for that, unless it strikes first`;

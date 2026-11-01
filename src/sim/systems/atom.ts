@@ -9,7 +9,7 @@
  * `WarState.atom` appears when first used, so every city that never races is exactly as before;
  * nothing here draws from a random stream.
  */
-import { ATOM, atomStageNo, type AtomStage } from '../../data/atom';
+import { ATOM, atomStageNo, spanWords, type AtomStage } from '../../data/atom';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
 import { TIER_KEYS } from '../../data/research';
@@ -23,7 +23,7 @@ import { civicOnline, lowerName, type Civic } from '../world/civic';
 import { accrue } from './economy';
 import { fightingWith, neighbourOf, scoreIntel, warWith } from './diplomacy';
 import { groundZero, impactCivics, impactFires, impactOver, impactSlice } from './atomImpact';
-import { abandonBattle, sheltersWithin } from './raids';
+import { abandonBattle, damageCivic, sheltersWithin } from './raids';
 import type { Neighbour } from './region';
 import { allTiersDone, researchCheat, researchTree } from './research';
 import { requirementContext } from './projects';
@@ -32,6 +32,7 @@ import { civicOutput } from './utilities';
 import { startWinter } from './weather';
 import { materialBill, takeStock } from './war';
 import { atomChronicle, worldTurns } from './atomWorld';
+import { rivalAhead, rivalRaces, type RivalRace } from './atomRival';
 
 /**
  * The city's bomb race (`WarState.atom`), made when the first fact is set. The stage is derived from
@@ -257,6 +258,11 @@ export interface AtomSummary {
   } | null;
   /** The last bomb to land here: where, the residents who have left the city, buildings levelled, and whether the blast is over. */
   impact: { x: number; z: number; fled: number; levelled: number; over: boolean } | null;
+  /**
+   * The computer neighbours that race for the bomb (M40 step 7, Hard only): who, the stage's number
+   * (`atomStageNo`) and, for a launch being prepared, the war hours until it leaves. For the region map.
+   */
+  rivals: RivalRace[];
 }
 
 export function atomSummary(sim: Sim): AtomSummary | null {
@@ -315,6 +321,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
           over: !!a.impact.over,
         }
       : null,
+    rivals: rivalRaces(sim),
   };
 }
 
@@ -527,9 +534,10 @@ function bombHour(sim: Sim): void {
     if (b.done >= ATOM.bomb.hours) {
       delete a.bomb;
       a.have = true;
-      // First in the race: in a city of its own there is no one to beat but computer neighbours, which
-      // do not race yet (M40 step 7); in a region the room says who was first (step 10).
-      if (!sim.state.region.rules) a.first = true;
+      // First in the race: in a city of its own there is no one to beat but a computer neighbour that
+      // has finished its own bomb already (M40 step 7: Hard only); in a region the room says who
+      // was first (step 10).
+      if (!sim.state.region.rules && !rivalAhead(sim)) a.first = true;
       sim.events.push({ kind: 'bombReady', id: silo.id });
       atomChronicle(sim, 'ready');
       return;
@@ -984,6 +992,88 @@ export function bombMood(sim: Sim): number {
   } else return 0;
   if (near <= 0 || ease <= 0) return 0;
   return -ATOM.warning.mood * (1 - sheltered / near) * ease;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Spies (M40 step 7, plan call 18): the saboteur's target of its own
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * What a saboteur strikes in the race, if the city has anything to strike (target `plant`): the silo
+ * while a bomb is being built or waits in it (closing it sets a launch back to the start), else the
+ * enrichment plant, else a silo with no plant. Nothing once the bomb has left: the race is over.
+ */
+export function plantTarget(sim: Sim): Civic | undefined {
+  const a = sim.state.war?.atom;
+  if (a?.fired) return undefined;
+  const silo = civicOfDef(sim, 'atomsilo');
+  if (silo && (a?.bomb || a?.have)) return silo;
+  return civicOfDef(sim, 'enrichment') ?? silo;
+}
+
+/** The city has a plant or a silo for saboteurs to find (an unfinished one included). */
+export function inTheRace(sim: Sim): boolean {
+  return plantTarget(sim) !== undefined;
+}
+
+/** What a saboteur's strike did: a building going up set back, fuel or the bomb's work taken, or only a closure. */
+export interface PlantStrike {
+  what: 'build' | 'fuel' | 'bomb' | 'closed';
+  /** War hours of work or of the stage clock lost. */
+  hours: number;
+  civic: Civic;
+}
+
+/**
+ * A saboteur gets through (plan call 18): a plant or silo still going up has its stage clock put back
+ * `ATOM.spy.setBack` war hours; a finished plant loses that many hours of fuel and a finished silo
+ * that many hours of the bomb's build, never going below nothing and never taking back an instalment
+ * already paid (the hours are done again without paying twice, so the loss is time, not money); a
+ * finished one is closed `ATOM.spy.closed` hours besides (and a closed silo starts a launch's
+ * preparation again). The caller says what happened (`plantSabotageText`). Null: nothing to strike.
+ */
+export function sabotagePlant(sim: Sim): PlantStrike | null {
+  const c = plantTarget(sim);
+  if (!c) return null;
+  const a = sim.state.war!.atom;
+  const back = ATOM.spy.setBack;
+  let strike: PlantStrike;
+  if (c.build) {
+    // (Both buildings are war projects, so a stage also waits for the war clock: its start moves on.)
+    if (c.build.clock !== undefined) c.build.clock += back;
+    strike = { what: 'build', hours: back, civic: c };
+  } else if (c.def === 'atomsilo' && a?.bomb) {
+    const b = a.bomb;
+    const lost = Math.min(b.done, back);
+    b.done = round3(b.done - lost);
+    // Back inside the instalments already paid for, the next one is not due yet: no longer waiting.
+    if (b.done < b.paid * ATOM.bomb.every) delete b.waiting;
+    strike = { what: 'bomb', hours: lost, civic: c };
+  } else if (c.def === 'enrichment' && a) {
+    const lost = Math.min(a.fuel, back);
+    a.fuel = round3(a.fuel - lost);
+    strike = { what: 'fuel', hours: lost, civic: c };
+  } else strike = { what: 'closed', hours: 0, civic: c };
+  if (!c.build) damageCivic(sim, c.id, ATOM.spy.closed, false);
+  sim.warChanged();
+  return strike;
+}
+
+/** What saboteurs from `by` did to the race's works here, in plain words (for the city's log and notices). */
+export function plantSabotageText(strike: PlantStrike, by: string): string {
+  const name = lowerName(CIVIC.get(strike.civic.def)?.name ?? strike.civic.def);
+  const shut = `closed the ${name} for ${spanWords(ATOM.spy.closed)}`;
+  const lost = spanWords(strike.hours);
+  switch (strike.what) {
+    case 'build':
+      return `Saboteurs from ${by} put the ${name} back ${lost}`;
+    case 'fuel':
+      return `Saboteurs from ${by} ${strike.hours > 0 ? `spoiled ${lost} of fuel and ` : ''}${shut}`;
+    case 'bomb':
+      return `Saboteurs from ${by} ${strike.hours > 0 ? `undid ${lost} of work on the bomb and ` : ''}${shut}`;
+    default:
+      return `Saboteurs from ${by} ${shut}`;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -11,7 +11,7 @@
  */
 import type { Command, CommandType } from './commands';
 import { BRANCH_IDS, DOME_MODES, TIER, type TierKey } from '../data/research';
-import { SPY_OPS } from '../data/intel';
+import { SABOTAGE_TARGETS, SPY_OPS } from '../data/intel';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
@@ -416,7 +416,7 @@ const CHECKS: Record<CommandType, Check> = {
   spyMission: (c) =>
     isInt(c.neighbour) &&
     oneOf(c.op, SPY_OPS) &&
-    (c.target === undefined || oneOf(c.target, ['power', 'depot'] as const)) &&
+    (c.target === undefined || oneOf(c.target, SABOTAGE_TARGETS)) &&
     (c.branch === undefined || oneOf(c.branch, BRANCH_IDS))
       ? {
           type: 'spyMission',

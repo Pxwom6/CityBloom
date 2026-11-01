@@ -18,7 +18,7 @@ import type { BattleInput, ForceIn } from './battle/types';
 import type { StampedOrder } from './battle/live';
 import type { RegionUpdate } from './systems/region';
 import type { Dossier, MissionOutcome, OpInput } from './systems/regionOps';
-import type { AtomStage } from '../data/atom';
+import type { AtomStage, RivalStage } from '../data/atom';
 import type { UnitKind } from '../data/war';
 import type { DeclaredScale, Term } from '../data/diplomacy';
 import type { FriendPactsIn, FriendTreatyIn, FriendWarFacts } from './systems/friendsWar';
@@ -112,6 +112,13 @@ export type Command =
    * city: it lands in `hours` (default a game day; 0: at once), ground zero fixed by this city's own sim.
    */
   | { type: 'cheat'; cheat: 'bombIn'; hours?: number; from?: number }
+  | {
+      type: 'cheat';
+      cheat: 'rivalBomb';
+      neighbour: number;
+      stage: RivalStage | 'none';
+      hours?: number;
+    }
   /** Test mode only (M35): set a computer neighbour's forces and defences (e2e battles to win). */
   | { type: 'cheat'; cheat: 'rival'; neighbour: number; forces: number; defences: number }
   /** Start a disaster at a point (the disasters menu). `size` and `heading` are for tests. */

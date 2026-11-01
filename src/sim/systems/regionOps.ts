@@ -9,15 +9,16 @@
  *   tower aimed at a friend charges as at a computer neighbour, and its recharge starts only once
  *   the region keeps the blackout (`missionResult` again, by the tower's operation's number).
  * - The target: `opResolve` takes each operation once (`w.taken`): a saboteur closes the city's own
- *   largest working power plant or its vehicle depot for a day, a blackout darkens the city for 12
- *   hours after an hour's warning; one that came while its player was away brings only a notice.
+ *   largest working power plant or its vehicle depot for a day (or, M40, puts the atom bomb's
+ *   works back: `sabotagePlant`), a blackout darkens the city for 12 hours after an hour's warning;
+ *   one that came while its player was away brings only a notice.
  * - The fair clock: `warClock` sets the cap the region's fair clock puts on the war clock.
  *
  * Every time here is on the war clock (hours), as the rest of intelligence.
  */
 import { CIVIC } from '../../data/civic';
 import { BLACKOUT, BRANCH_IDS, DOME, TIER, type Branch, type TierKey } from '../../data/research';
-import { INTEL, SPY_OPS, type SabotageTarget, type SpyOp } from '../../data/intel';
+import { INTEL, SABOTAGE_TARGETS, SPY_OPS, type SabotageTarget, type SpyOp } from '../../data/intel';
 import { FIGHT_TIMEOUT_HOURS, SETTLE_TIMEOUT_HOURS } from '../../data/battle';
 import { UNIT, type UnitKind } from '../../data/war';
 import type { BattleInput } from '../battle/types';
@@ -30,7 +31,15 @@ import { TICKS_PER_MONTH } from '../time';
 import { lowerName } from '../world/civic';
 import { accrue } from './economy';
 import { strikeRefusal } from './diplomacy';
-import { counterIntel, intel as intelOf, result as intelResult, sabotageTarget, type Mission } from './intel';
+import {
+  counterIntel,
+  intel as intelOf,
+  result as intelResult,
+  sabotageTarget,
+  TARGET_NAME,
+  type Mission,
+} from './intel';
+import { plantSabotageText, sabotagePlant } from './atom';
 import { BATTLE_TAKEN_KEEP, damageCivic } from './raids';
 import type { Neighbour } from './region';
 import { bankPoints, tierCounts } from './research';
@@ -350,8 +359,15 @@ export function missionResult(
       );
     } else intelResult(sim, m.to, `${agent} looked round ${m.name}, but brought nothing back`);
   } else if (m.op === 'sabotage') {
-    const what = m.target === 'depot' ? 'vehicle depot' : 'power plant';
-    intelResult(sim, m.to, `${agent} sabotaged ${m.name}’s ${what}: it’s closed for a day`, 'good');
+    if (m.target === 'plant')
+      intelResult(sim, m.to, `${agent} sabotaged ${m.name}’s atom bomb works: its race is put back`, 'good');
+    else
+      intelResult(
+        sim,
+        m.to,
+        `${agent} sabotaged ${m.name}’s ${TARGET_NAME[m.target ?? 'power']}: it’s closed for a day`,
+        'good',
+      );
   } else {
     // A theft: a quarter of the tier the city lacks next in that branch, once per friend and tier.
     const branch = m.branch!;
@@ -507,7 +523,8 @@ export function checkOpInput(o: unknown): string | null {
   if (!FRIEND_OPS.includes(o.op as FriendOp)) return BAD;
   if (o.outcome !== 'success' && o.outcome !== 'failed' && o.outcome !== 'caught') return BAD;
   if (o.op === 'blackout' && o.outcome !== 'success') return BAD;
-  if (o.op === 'sabotage' ? o.target !== 'power' && o.target !== 'depot' : o.target !== undefined) return BAD;
+  if (o.op === 'sabotage' ? !SABOTAGE_TARGETS.includes(o.target as SabotageTarget) : o.target !== undefined)
+    return BAD;
   if (typeof o.late !== 'boolean') return BAD;
   return null;
 }
@@ -534,8 +551,7 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
   if (o.outcome === 'failed') return ok(0);
   if (o.outcome === 'caught') {
     // An incident: logged here as at the sender's.
-    const where =
-      o.op === 'sabotage' ? ` at the ${o.target === 'depot' ? 'vehicle depot' : 'power plant'}` : '';
+    const where = o.op === 'sabotage' ? ` at the ${TARGET_NAME[o.target!]}` : '';
     (intelOf(sim).grievance ??= {})[n.id] = now;
     intelResult(sim, n.id, `Your agents caught a spy from ${n.name}${where}`, 'good');
     sim.events.push({ kind: 'enemySpyCaught', id: n.id, info: { from: n.name } });
@@ -557,6 +573,15 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
   if (o.op === 'sabotage') {
     if (o.late) {
       intelResult(sim, n.id, `Saboteurs from ${n.name} came while you were away and found nothing to strike`);
+      return ok(0);
+    }
+    if (o.target === 'plant') {
+      // The city's own race (M40): the plant or silo is set back, spoiled or closed; its sim decides which.
+      const strike = sabotagePlant(sim);
+      if (strike) {
+        intelResult(sim, n.id, plantSabotageText(strike, n.name), 'bad');
+        sim.events.push({ kind: 'sabotaged', id: strike.civic.id, info: { from: n.name } });
+      } else intelResult(sim, n.id, `Saboteurs from ${n.name} found nothing to strike`);
       return ok(0);
     }
     const c = sabotageTarget(sim, o.target!);

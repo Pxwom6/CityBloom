@@ -165,7 +165,98 @@ export const ATOM = {
    * fights such a city a limited war, never a total one.
    */
   deter: 15,
+  /**
+   * Spies and the race (M40 step 7, plan call 18). A sabotage of the race's works that gets through
+   * sets a plant or silo still going up back `setBack` war hours (its stage clock), takes that many
+   * hours of work from a finished one (fuel at the plant, the bomb's build at the silo: instalments
+   * paid stay paid) and closes it `closed` game hours. While an enrichment plant stands the city's
+   * counter-intelligence is `guard` per thousand higher (guards at the gate). A won expedition sets a
+   * computer neighbour's race back `expedition` war hours.
+   */
+  spy: { setBack: 120, closed: 12, guard: 150, expedition: 240 },
 };
+
+/** The stages of a computer neighbour's race: the city's stages from the fuel on (it builds no plant to see). */
+export type RivalStage = Extract<AtomStage, 'enriching' | 'silo' | 'bomb' | 'ready' | 'preparing' | 'spent'>;
+/** ... in the order a race takes them. */
+export const RIVAL_STAGES: readonly RivalStage[] = [
+  'enriching',
+  'silo',
+  'bomb',
+  'ready',
+  'preparing',
+  'spent',
+];
+
+/**
+ * A computer neighbour's race for the bomb (M40 step 7, plan call 19), Hard difficulty only. A
+ * neighbour starts once the city is `years` game years old, the neighbour has weapons `tech` 4 and
+ * `population` residents and no other neighbour is racing, by a chance a month of `chance` times
+ * (`character` + its aggression), on dice of their own (`${seed}:bomb:${month}`). Each stage takes
+ * `hours` war hours (fuel, then the silo, then the bomb), set back by the city's spies and forces.
+ * A finished bomb waits until the neighbour is desperate (an open total war with the war score, from
+ * the city's side, at or above `desperate`); it then prepares for `prep` war hours (ten game days)
+ * and, if it still is desperate, launches once, at the city.
+ */
+export const RIVAL_BOMB = {
+  years: 20,
+  tech: 4,
+  population: 40_000,
+  chance: 0.015,
+  character: 0.5,
+  hours: { enriching: 1_500, silo: 500, bomb: 800 } as Record<'enriching' | 'silo' | 'bomb', number>,
+  prep: 240,
+  desperate: 45,
+};
+
+/**
+ * Why the city's saboteurs can't be sent for the atom bomb's works at this neighbour, or null (M40
+ * step 7). A computer neighbour must be racing with its bomb not finished (a bomb waiting for its war,
+ * or used, has nothing to slow); a friend's city, as its last report said (a stage from the plant to
+ * a launch being prepared: the report carries it from step 9). Pure, so the war room's menu and the
+ * sim's refusal read the same thing.
+ */
+export function raceSlowWhy(n: {
+  name: string;
+  player?: { atom?: { stage: number } };
+  rival?: { bomb?: { stage: string } };
+}): string | null {
+  if (n.player) {
+    const stage = n.player.atom?.stage ?? 0;
+    return stage >= 1 && stage <= atomStageNo('preparing')
+      ? null
+      : `${n.name} isn’t racing for the atom bomb`;
+  }
+  const stage = n.rival?.bomb?.stage;
+  if (!stage) return `${n.name} isn’t racing for the atom bomb`;
+  if (stage === 'ready') return `${n.name} has finished its atom bomb: there is nothing left to slow`;
+  if (stage === 'spent') return `${n.name} has used its atom bomb`;
+  return null;
+}
+
+/** A span of war hours in words: "5 days", or "9 hours" under a day. */
+export function spanWords(hours: number): string {
+  const h = Math.round(hours);
+  if (hours < 24) return `${h} hour${h === 1 ? '' : 's'}`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+/** The notice a computer neighbour's stage gives the city (call 19), in a plain voice. */
+export function rivalNotice(stage: AtomStage, who: string): string {
+  switch (stage) {
+    case 'enriching':
+      return `${who} has begun enriching fuel for an atom bomb.`;
+    case 'silo':
+      return `${who} has begun building an atom silo.`;
+    case 'bomb':
+      return `${who} is building the atom bomb.`;
+    case 'ready':
+      return `${who} has the atom bomb.`;
+    default:
+      return `${who} is racing for the atom bomb.`;
+  }
+}
 
 /**
  * Fallout (M40 step 4, plan calls 11 and 12): a ground layer that stays and decays, and an air layer
@@ -285,6 +376,15 @@ export function atomEventText(ref: string | number): string {
       return who ? `An atom bomb from ${who} fell on the city` : 'An atom bomb fell on the city';
     case 'stopped':
       return who ? `The dome stopped an atom bomb from ${who}` : 'The dome stopped an atom bomb';
+    // A computer neighbour's race (Hard), stage by stage.
+    case 'rivalFuel':
+      return `${who || 'A neighbour'} began enriching fuel for an atom bomb`;
+    case 'rivalSilo':
+      return `${who || 'A neighbour'} began building an atom silo`;
+    case 'rivalBomb':
+      return `${who || 'A neighbour'} began building an atom bomb`;
+    case 'rivalReady':
+      return `${who || 'A neighbour'} finished an atom bomb`;
     default:
       return 'The atom bomb';
   }

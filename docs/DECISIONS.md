@@ -1878,3 +1878,106 @@ these are its calls and the reasons, with where they overturned the first draft.
     proposed after the bomb, from either side, and a ceasefire is; the waiting proposals lapse and the
     neighbours' offers stop (with a control that is offered); a neighbour at 100 (60 after the bomb) declares on the pariah and leaves a
     city that did not fire alone; the sanction's wording. Each fix was taken out in turn and its test failed.
+- **Step 7 (computer race and spies): calls the plan left open.**
+  - *What a saboteur finds for the target `plant`.* `plantTarget` (`atom.ts`): the silo while a bomb is
+    being built or waits in it (closing a silo is what hurts then: a launch being prepared starts again,
+    the existing rule), else the enrichment plant, else a silo with no plant; nothing once the bomb has
+    left. The plan's "the plant, else the silo while the bomb builds" read literally would have hit a
+    plant whose fuel no longer matters. An unfinished plant or silo is a target too (`inTheRace`).
+  - *What a strike does* (`sabotagePlant`, one function for the three ways in: a computer neighbour's
+    spy, a friend's operation as the region decided it, and nothing else): a building going up has its
+    stage clock put back 120 war hours (`build.clock += 120`, so its stage ends 5 game days later: a test
+    runs the months); a finished plant loses 120 hours of fuel and a finished silo 120 hours of the
+    bomb's build, neither below nothing, and either is closed 12 hours through `damageCivic` (repair crews
+    shorten it). "Never below an instalment already paid for" is decided as: the instalments paid
+    stay paid (`paid` never goes down) and the lost hours are done again without paying twice, so the
+    loss is time, not money; a `waiting` mark is cleared if the loss puts the count back under the
+    instalments paid. A plant with no fuel, a silo with no bomb under way, are only closed, and the
+    words say so. The words ("Saboteurs from X spoiled 5 days of fuel and closed the enrichment plant
+    for 12 hours") are `plantSabotageText`, shared by both ways in.
+  - *The guards.* `counterIntel` is 150 higher while any enrichment plant stands (built or going up),
+    in the sim itself, not only in the report: `regionReport.counter` calls the same function, so a
+    computer neighbour's spies and a friend's face the same odds (the plan said the report only,
+    which would have left the two disagreeing). Still capped at 750.
+  - *A computer neighbour's saboteur* keeps the draw `intelMonth` always made for it: heads was the
+    power plant and tails the depot, and in a city that has a plant or silo in the race heads is the
+    plant and tails still the depot (so the power plants are not touched there). No draw is added or
+    moved; the test runs 240 months side by side with and without the plant and compares who, what and
+    when. (The month's dice are seeded again each month and the pick is the last draw before the loop
+    ends, so an added draw there could not move a later roll; what the test can hold is the rest of the
+    spy and the mapping of the target, which is what it asserts.)
+  - *Sending an agent for the plant.* `raceSlowWhy` (`src/data/atom.ts`, pure) is the one question the
+    sim's refusal, the war room's menu and the region room ask: a computer neighbour must have a race
+    with its bomb not finished ("has finished its atom bomb: there is nothing left to slow", "has used
+    its atom bomb"); a friend's city, as its last report said, from the plant going up to a launch being
+    prepared (stages 1 to 6; its bomb in flight or used, and nothing, are "isn't racing for the atom
+    bomb"). A friend with a bomb ready can be struck because the silo is closed by it (the launch
+    starts again); a computer neighbour's finished bomb has no preparation yet to start again.
+    `Intel.tsx` offers "atom bomb works" only where that is null. `SabotageTarget` has one list,
+    `SABOTAGE_TARGETS`, which the command check, the operation check and the room's parse read.
+  - *The room's refusal and the seam for step 9.* `RegionReport.atom?: { stage }` is declared now (the
+    type only: `cleanReport` still drops it and `regionReport` does not fill it until step 9), so for now
+    every plant sabotage against a friend is refused in words by the room ("X isn't racing for the atom
+    bomb"), the connection stays, no verdict is kept and no day is counted; the room's check sits after
+    the neutral shields and before the newcomer and online ones. `atomProtocolWhy(target)` is the empty
+    seam for the protocol gate (a target on a page below protocol 7); step 9 fills it and the report's
+    reader, and `relay/tests/regionAtomOps.test.ts` already holds the accepting half (a report given a
+    stage by hand).
+  - *The Hard lever is a key that Easy and Normal do not have* (`WAR_DIFFICULTY.hard.bomb: true`;
+    `bomb?: true` in the type), so the Normal row of the table, and `difficulty.test.ts` that compares
+    it whole, are unchanged.
+  - *The rival's race* (`src/sim/systems/atomRival.ts`, `RivalNeighbour.bomb: { stage, at, delay }`). The
+    stages are the city's own from the fuel on (`enriching`, `silo`, `bomb`, `ready`, `preparing`,
+    `spent`): a neighbour builds no plant to see, so it starts at its fuel. A stage ends at `at + hours +
+    delay` (1,500, 500, 800 war hours) and `delay` is reset with each stage, so a setback hits the stage
+    it lands in. A start (`rivalBombMonth`, after `intelMonth`) needs Hard, `bombAllowed`, no scenario,
+    the city 20 game years old (ticks), no other neighbour racing (a neighbour that has used its bomb no
+    longer counts, and never starts twice), and, for the neighbour, tech 4, 40,000 residents and no
+    vassalage; one roll per candidate in id order on `${seed}:bomb:${month}`, the chance 1.5 % times
+    (0.5 + its aggression, Hard's +0.1 included): 2.1 % for an aggressive neighbour and 1.2 % for a
+    mercantile one. On seed `citybloom` an eligible neighbour begins 23 game months after year 20, for
+    every character (the same dice sequence); the stages then take 2,800 war hours (about 6 hours of
+    play). The race idles while the rules turn the bomb off and while the town is the city's vassal; a
+    blackout holds it hour by hour (`delay` grows by one for each hour dark), which the plan did not say
+    and which gives the tower a use; the fair clock holds it because it runs on the war clock.
+  - *Spies and forces put it back.* A sabotage of `plant` that gets through adds 120 to `delay`; a
+    launch being prepared starts over instead (as the city's own does when its silo is closed); a
+    finished bomb waiting for its war has nothing to slow (the mission is refused when sent, and stands
+    down as "found nothing to slow" if the race ended on the way). A won expedition (`outcome: 'raided'`
+    in `battleReport`, any raid on a neighbour with a race) adds 240; both are told in the intelligence
+    log (`The raid put X's atom bomb race back 10 days`).
+  - *The launch.* A neighbour whose bomb is ready is desperate when it is in an open total war with the
+    city and the war score (the city's side) is 45 or more; a neighbour capitulates at 60. It then
+    prepares for 240 war hours, which the city is told once, in the plan's words, as a diplomacy note
+    (`rivalDesperate`: "X is desperate and has the bomb. Offer peace."; it is in the Diplomacy log too).
+    Each hour it is checked again: a ceasefire, a peace, a surrender or a war turned round calls the
+    launch off ("X has called off its launch, for now", `rivalStandDown`) and it waits as ready, the
+    next preparation starting from nothing. At the end it launches through `atomInbound` (the city's own
+    clock, a game day, the dome, the warning): if another bomb is in the air it waits and tries again
+    each hour. It fires once.
+  - *"The other neighbours' relation to it falls by 40" has nothing to fall.* Computer neighbours have
+    no feeling for each other, only alliances (`RivalNeighbour.allies`, which are what carry a war to
+    another neighbour). So the launch ends the firer's alliances, both ways, and the diplomacy log says so
+    ("X's allies turn from it over the atom bomb", `rivalShunned`); what the others feel for the city
+    is not touched, and the city is no pariah. The war score is not swung by a strike on the city (the
+    strike on a neighbour swings it by 60 for the city; the other way was not asked for).
+  - *Announcements.* Each stage (`rivalBomb` event with the words, a notice in `game.ts`, and in a city
+    of its own, where the room keeps no record, a chronicle line: `rivalFuel`, `rivalSilo`, `rivalBomb`,
+    `rivalReady` in `atomEventText`); the launch is told by the bomb's own warning and the chronicle's
+    `hit`/`stopped` line. `AtomSummary.rivals` carries each racing neighbour's stage number and the war
+    hours until a launch leaves, for the region map (step 11).
+  - *First.* In a city of its own the city's `first` is not set if a computer neighbour has a bomb ready,
+    being prepared or used when the city's bomb is done (`rivalAhead`); one that finishes after does not
+    take it back.
+  - *Cheat and checks.* `rivalBomb {neighbour, stage, hours?}` (stages `none` to `spent`; `hours` into the
+    stage; sets facts only, one race at a time, test mode); `checkInvariants` holds the stage known, the
+    times finite and at most one race going.
+  - *Tests.* `atomSpy.test.ts` (14: the effects on each building, the three ways in, the refusals, the
+    guards, the 240 months side by side) and `atomRival.test.ts` (24: the lever, Easy and Normal over 240
+    months with the chance forced to 1, nothing before year 20, who may start, the stages and their
+    words, the setbacks by real missions and a real battle report, the launch and its refusals, the dome,
+    the allies, `first`, the cheat, the real clock), `relay/tests/regionAtomOps.test.ts` (4). Taken out
+    in turn: the lever, the age bar and the pick's meaning each fail a test.
+  - *Left for the steps that own them:* the report's race field and the protocol gate (9); the region
+    map's pips and the Intel tab's word for a race on the region map (11); the tip text about spies
+    (still "power or depot"); the cross-browser section for the rival's launch (8).

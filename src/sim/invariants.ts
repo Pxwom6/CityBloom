@@ -1,5 +1,5 @@
 import type { Sim } from './sim';
-import { ATOM, WINTER } from '../data/atom';
+import { ATOM, RIVAL_STAGES, WINTER } from '../data/atom';
 import { MAP_SIZE } from '../data/world';
 import { TICKS_PER_HOUR } from './time';
 import { buildingCapacity } from './world/buildings';
@@ -79,9 +79,25 @@ export function checkInvariants(sim: Sim): void {
     if (!Number.isFinite(v) || v < -1 || v > 1) throw new InvariantError(`demand ${k} = ${v}`);
   }
   checkAtom(sim);
+  checkRivalBombs(sim);
   checkPariah(sim);
   checkFallout(sim);
   checkWinters(sim);
+}
+
+/** Computer neighbours' races for the bomb (M40 step 7): a known stage, finite times, at most one still racing. */
+function checkRivalBombs(sim: Sim): void {
+  if (!sim.state.war) return;
+  let racing = 0;
+  for (const n of sim.state.region.neighbours) {
+    const b = n.rival?.bomb;
+    if (!b) continue;
+    if (!RIVAL_STAGES.includes(b.stage)) throw new InvariantError(`${n.name}’s bomb race stage ${b.stage}`);
+    if (!Number.isFinite(b.at) || !Number.isFinite(b.delay) || b.delay < 0)
+      throw new InvariantError(`${n.name}’s bomb race at ${b.at}, delay ${b.delay}`);
+    if (b.stage !== 'spent') racing++;
+  }
+  if (racing > 1) throw new InvariantError('two neighbours race for the atom bomb');
 }
 
 /** Nuclear winters (M40): each has a name of its own, a start in the past and a depth in range. */

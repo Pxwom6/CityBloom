@@ -8,7 +8,12 @@ import type { TierKey } from './research';
 
 export type SpyOp = 'reveal' | 'sabotage' | 'steal';
 export const SPY_OPS: readonly SpyOp[] = ['reveal', 'sabotage', 'steal'];
-export type SabotageTarget = 'power' | 'depot';
+/**
+ * What a saboteur goes for: a power plant, the vehicle depot, or (M40) the works of the atom bomb
+ * race, the enrichment plant and the silo (`plantTarget` in `src/sim/systems/atom.ts` says which).
+ */
+export type SabotageTarget = 'power' | 'depot' | 'plant';
+export const SABOTAGE_TARGETS: readonly SabotageTarget[] = ['power', 'depot', 'plant'];
 
 export interface SpyOpDef {
   name: string;

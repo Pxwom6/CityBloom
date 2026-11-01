@@ -9,6 +9,7 @@ import { BRANCHES, TIER, type Branch, type TierKey } from '../../data/research';
 import {
   AGENT_NAMES,
   INTEL,
+  SABOTAGE_TARGETS,
   SPY_OP,
   SPY_OPS,
   spyOdds,
@@ -16,6 +17,7 @@ import {
   type SabotageTarget,
   type SpyOp,
 } from '../../data/intel';
+import { ATOM, raceSlowWhy, spanWords } from '../../data/atom';
 import { CIVIC } from '../../data/civic';
 import { fail, ok, type CommandResult } from '../commands';
 import { formatInt } from '../dmath';
@@ -35,6 +37,8 @@ import {
   strikeRefusal,
 } from './diplomacy';
 import { damageCivic } from './raids';
+import { civicOfDef, inTheRace, plantSabotageText, plantTarget, sabotagePlant } from './atom';
+import { setBackRival } from './atomRival';
 import type { Neighbour, RivalNeighbour } from './region';
 import { bankPoints, researched, tierCounts } from './research';
 import { militaryCivics, militaryOf } from './war';
@@ -120,7 +124,11 @@ export interface RivalIntel {
 }
 
 const BRANCH_NAME = new Map(BRANCHES.map((b) => [b.id, b.name]));
-const TARGET_NAME: Record<SabotageTarget, string> = { power: 'power plant', depot: 'vehicle depot' };
+export const TARGET_NAME: Record<SabotageTarget, string> = {
+  power: 'power plant',
+  depot: 'vehicle depot',
+  plant: 'atom bomb works',
+};
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -184,6 +192,8 @@ export function counterIntel(sim: Sim, from?: number): number {
   if (researched(sim, 'intel2')) v += c.intel2;
   if (researched(sim, 'intel3')) v += c.intel3;
   if (from !== undefined && fightingWith(sim, from)) v += c.atWar;
+  // Guards at the gate of the atom bomb's works (M40): the region's report folds this in too.
+  if (civicOfDef(sim, 'enrichment')) v += ATOM.spy.guard;
   return Math.min(c.max, v);
 }
 
@@ -269,8 +279,13 @@ function missionRefusal(
     if (why) return why;
   } else if (!n.rival) return `${n.name} isn’t a rival`;
   if (s.war?.diplomacy?.neutral && op !== 'reveal') return 'A neutral city only sends spies to look';
-  if (op === 'sabotage' && target !== 'power' && target !== 'depot')
+  if (op === 'sabotage' && !(target && SABOTAGE_TARGETS.includes(target)))
     return 'Choose what to sabotage: its power or its depot';
+  // The atom bomb's works need a race to slow (a friend's: as its last report said).
+  if (op === 'sabotage' && target === 'plant') {
+    const why = raceSlowWhy(n);
+    if (why) return why;
+  }
   if (op === 'steal') {
     if (!branch || !BRANCH_NAME.has(branch)) return 'Choose the research to steal';
     const next = nextTier(sim, branch);
@@ -423,6 +438,20 @@ function resolveMission(sim: Sim, m: Mission): void {
         `${agent} sabotaged ${n.name}’s power: its guns are half-manned for three days`,
         'good',
       );
+    } else if (m.target === 'plant') {
+      // Its race for the bomb is put back, if it still has one to slow (M40).
+      const back = setBackRival(sim, n, ATOM.spy.setBack);
+      if (back <= 0) {
+        m.outcome = 'failed';
+        result(sim, n.id, `${agent} found nothing to slow in ${n.name}`);
+        return;
+      }
+      result(
+        sim,
+        n.id,
+        `${agent} sabotaged ${n.name}’s atom bomb works: its race is put back ${spanWords(back)}`,
+        'good',
+      );
     } else {
       r.forces = Math.round(r.forces * INTEL.sabotageDepotForces * 10) / 10;
       // Its months are game days.
@@ -479,6 +508,16 @@ function resolveTheirs(sim: Sim, spy: TheirSpy): void {
     ri.knows = now + INTEL.revealHours;
     return;
   }
+  if (spy.op === 'sabotage' && spy.target === 'plant') {
+    // The works of the city's own race (M40): set back, or its fuel spoiled, and closed a while.
+    const strike = sabotagePlant(sim);
+    if (strike) {
+      result(sim, n.id, plantSabotageText(strike, n.name), 'bad');
+      sim.events.push({ kind: 'sabotaged', id: strike.civic.id, info: { from: n.name } });
+      scoreIntel(sim, n.id, -INTEL.score);
+    }
+    return;
+  }
   if (spy.op === 'sabotage') {
     const c = sabotageTarget(sim, spy.target ?? 'power');
     if (c) {
@@ -506,9 +545,11 @@ function resolveTheirs(sim: Sim, spy: TheirSpy): void {
   }
 }
 
-/** What a saboteur goes for: the largest working power plant, or the vehicle depot. */
+/** What a saboteur goes for: the largest working power plant, the vehicle depot, or (M40) the atom bomb's works. */
 export function sabotageTarget(sim: Sim, target: SabotageTarget): Civic | undefined {
   const s = sim.state;
+  // The race's works (M40) may still be going up: online or not.
+  if (target === 'plant') return plantTarget(sim);
   let best: Civic | undefined;
   for (const c of [...s.civics.values()].sort((a, b) => a.id - b.id)) {
     if (!civicOnline(c)) continue;
@@ -615,13 +656,22 @@ export function intelMonth(sim: Sim): void {
         id,
         from: n.id,
         op,
-        ...(op === 'sabotage' ? { target: rng.chance(0.5) ? ('power' as const) : ('depot' as const) } : {}),
+        ...(op === 'sabotage' ? { target: theirTarget(sim, rng.chance(0.5)) } : {}),
         arrive: w.clock + wait,
       },
     ];
     sim.warChanged();
     break;
   }
+}
+
+/**
+ * What a computer neighbour's saboteur is sent for, from the one draw `intelMonth` always made for it:
+ * the power plant or the depot, and in a city that has a plant or silo in the race (M40) the plant in
+ * the power's place. The draw is where it was, so a city outside the race rolls exactly as before.
+ */
+function theirTarget(sim: Sim, heads: boolean): SabotageTarget {
+  return heads ? (inTheRace(sim) ? 'plant' : 'power') : 'depot';
 }
 
 /** Computer neighbours' tech (M37, design call 12): the chance a month by character, and the gap. */

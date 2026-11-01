@@ -31,6 +31,9 @@ import type { Neighbour } from './region';
 import { GATE, RESEARCH, SUPER_STRIKE } from '../../data/research';
 import { gateRefusal, useGate } from './supers';
 import { incident, scoreAwayBattle, strikeBreaks, strikeRefusal } from './diplomacy';
+import { ATOM, spanWords } from '../../data/atom';
+import { setBackRival } from './atomRival';
+import { result as intelResult } from './intel';
 
 /** A force away from the city. */
 export interface Expedition {
@@ -552,6 +555,12 @@ export function battleReport(sim: Sim, id: number, r: AwayResult, dryRun: boolea
     n.rival.defences = Math.max(0, Math.round((n.rival.defences - r.defencesLost * 3) * 10) / 10);
     if (superStrike) superStruck(sim, n);
     else n.rival.relation = Math.max(-100, n.rival.relation - RAIDS.relationHit);
+    // A raid won puts a racing neighbour's atom bomb back (M40, Hard only: no one else has a race).
+    if (r.outcome === 'raided' && n.rival.bomb) {
+      const back = setBackRival(sim, n, ATOM.spy.expedition);
+      if (back > 0)
+        intelResult(sim, n.id, `The raid put ${n.name}’s atom bomb race back ${spanWords(back)}`, 'good');
+    }
   }
   // Struck: a computer neighbour may answer, and a friend's city may answer even as a newcomer.
   if (n) w.struck = { ...(w.struck ?? {}), [n.id]: s.tick };

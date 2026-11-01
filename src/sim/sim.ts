@@ -216,6 +216,7 @@ import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/po
 import { healthHour } from './systems/health';
 import { setDome, superBuildingsReady, useBlackout } from './systems/supers';
 import { intelMonth, rivalTechCheat, spyInCheat, spyMission } from './systems/intel';
+import { rivalBombCheat, rivalBombMonth } from './systems/atomRival';
 import { missionResult, opResolve, spySettling, warClock } from './systems/regionOps';
 import { friendPacts, friendTermsQuery, friendTreaty, friendWar } from './systems/friendsWar';
 import {
@@ -415,6 +416,8 @@ export type SimEvent = {
     // A clean-up crew has cleared its ground (M40 step 4); a nuclear winter begins (step 5).
     | 'falloutCleaned'
     | 'nuclearWinter'
+    // A computer neighbour reaches a stage of its race for the bomb (M40 step 7, Hard only).
+    | 'rivalBomb'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -1421,6 +1424,10 @@ export class Sim {
           if (!this.testMode) return fail('Test mode only');
           return bombInCheat(this, cmd.hours, cmd.from, dryRun);
         }
+        if (cmd.cheat === 'rivalBomb') {
+          if (!this.testMode) return fail('Test mode only');
+          return rivalBombCheat(this, cmd.neighbour, cmd.stage, cmd.hours, dryRun);
+        }
         if (cmd.cheat === 'electionIn') {
           if (!this.testMode) return fail('Test mode only');
           if (!electionsOn(this)) return fail('This city has no elections');
@@ -2032,6 +2039,8 @@ export class Sim {
           diplomacyMonth(this);
           // Intelligence (M37): computer neighbours' tech, and their spies.
           intelMonth(this);
+          // The race for the atom bomb (M40): on Hard, a computer neighbour may begin (dice of its own).
+          rivalBombMonth(this);
         }
         scenarioMonth(this);
         for (const c of s.civics.values()) {

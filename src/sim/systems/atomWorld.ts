@@ -98,12 +98,14 @@ export function homeShame(sim: Sim): number {
 /**
  * The chronicle keeps this moment of the bomb for good: `ready` (the bomb is finished), `fired` (it
  * left, at `who`), `landed` (it fell on the computer neighbour `who`), `hit` (one from `who` fell on
- * the city) or `stopped` (the dome stopped one from `who`). `chronicleEvent` never drops an `atom`
- * event, however many others the ring has dropped since.
+ * the city) or `stopped` (the dome stopped one from `who`); and, of a computer neighbour's race, a
+ * stage it began (`rivalFuel`, `rivalSilo`, `rivalBomb`) or reached (`rivalReady`). `chronicleEvent`
+ * never drops an `atom` event, however many others the ring has dropped since.
  */
 export function atomChronicle(
   sim: Sim,
-  what: 'ready' | 'fired' | 'landed' | 'hit' | 'stopped',
+  what:
+    'ready' | 'fired' | 'landed' | 'hit' | 'stopped' | 'rivalFuel' | 'rivalSilo' | 'rivalBomb' | 'rivalReady',
   who?: string,
 ): void {
   chronicleEvent(sim, 'atom', who ? `${what}:${who}` : what);

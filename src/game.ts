@@ -1485,6 +1485,13 @@ export class Game {
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
+      else if (e.kind === 'rivalBomb')
+        // A computer neighbour's race for the bomb (M40, Hard): each stage is public.
+        this.notice(
+          `rivalBomb:${e.id}:${String(e.info?.stage)}`,
+          String(e.info?.text),
+          Number(e.info?.stage) >= 5 ? 'bad' : 'info',
+        );
       else if (e.kind === 'nuclearWinter')
         this.notice(
           'nuclearWinter',

@@ -218,11 +218,17 @@ export const WAR_DIFFICULTY: Record<
     terms: number;
     /** Weariness rises this much as fast. */
     weariness: number;
+    /**
+     * Computer neighbours race for the atom bomb (M40 step 7): Hard only. Easy and Normal have no
+     * such lever (the key is absent, so Normal is M37's war to the bit and this table's Normal row
+     * is unchanged).
+     */
+    bomb?: true;
   }
 > = {
   easy: { arming: 0.7, raids: 0.6, aggression: 0, terms: 0.7, weariness: 0.7 },
   normal: { arming: 1, raids: 1, aggression: 0, terms: 1, weariness: 1 },
-  hard: { arming: 1.3, raids: 1.4, aggression: 0.1, terms: 1.4, weariness: 1.3 },
+  hard: { arming: 1.3, raids: 1.4, aggression: 0.1, terms: 1.4, weariness: 1.3, bomb: true },
 };
 
 /**

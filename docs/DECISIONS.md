@@ -2011,9 +2011,10 @@ these are its calls and the reasons, with where they overturned the first draft.
     "spoiled 0 hours of fuel") and "1 day" from 23.5 hours (it read "24 hours"); 0 is "0 hours".
 - **Step 8 (cross-browser): calls the plan left open.**
   - *Where it lives.* The `atom` section is `tests/lockstep/atomSection.ts` (`runAtomSection`), called from
-    `runDeterminism` after the war economy and returned as `DeterminismResult.atom` (60 entries), rather than
-    a fifth block inline in `determinism.ts`. Both browser tests (and the SpiderMonkey one) compare it with
-    Node's; the section touches no global (no data constant is changed to bring a case about).
+    `runDeterminism` after the war economy and returned as `DeterminismResult.atom` (66 entries after the review
+    fixes below; 60 as first written), rather than a fifth block inline in `determinism.ts`. Both browser
+    tests (and the SpiderMonkey one) compare it with Node's. It touches no global except two throttles of the
+    blast for the strike on the town (see the review fixes).
   - *The town and the difficulty.* The lab town of the bomb's own tests (`labTown(0, { length: 800, streets: 7
     })`: the smallest that crews the plant, silo, dome and agency together), set to Hard after it is made
     (`options.difficulty`, as `atomRival.test.ts` does) and its neighbours' alliances cleared. About 9 s in
@@ -2041,12 +2042,12 @@ these are its calls and the reasons, with where they overturned the first draft.
     The race is then cleared with the cheat so the other neighbour may have its own (one at a time).
   - *Three strikes on the town.* The first (`bombIn`, two hours, from the second neighbour) meets the
     charged dome: stopped, `dome.down` 1,200, no winter, no fallout. The second (`bombIn`, one hour) finds it
-    down: it lands, a ground zero in the densest district, 273 buildings levelled, 1,905 residents gone, the
-    fires and the civic buildings over the next ticks. The third is the second neighbour's own launch, the
+    down: it lands, and the west of the town is levelled in slices (see the review fixes for where and how
+    many), the fires and the civic buildings over the next ticks. The third is the second neighbour's own launch, the
     real Hard path: its race is put by the cheat two hours short of its launch, its war score set by hand
     to just over the desperation line (the way the economy section sets a score), and it fires, lands a
-    game day later during the fallout window on ground that is bare already (ground zero then falls on the
-    middle of the map: nobody is left), and starts the third winter. The cheats stand in for the long waits;
+    game day later during the fallout window on what the second left standing (the east of the town: 28
+    buildings levelled, 40 residents gone), and starts the third winter. The cheats stand in for the long waits;
     the launch, the warning, the landing and the blast go the usual way.
   - *What the entries hold.* The race's facts and the exact `checksum` (which holds the rasters' sums, the
     `out` counters, the winters and the atom state) at each step, and the city's full `hash()` at the
@@ -2057,7 +2058,7 @@ these are its calls and the reasons, with where they overturned the first draft.
     with `winterDepth` and `solarShare` at seven ticks up to the long fall, the diplomacy (reputation,
     pariah mark, pacts, wars, each neighbour's relation and sanction cause, the sanctions) at the launch,
     after the landing and at the end, every event that tells the story, the chronicle's atom lines, and the
-    neighbours' fallout levels (at the end 0.92 north, 0.30 south and 0.16 west: the drift reaches the two
+    neighbours' fallout levels (at the end 0.92 north, 0.12 south and 0.27 west: the drift reaches the two
     that were not hit, by their sides). The `zone` of the struck ground is refused with the fallout's words, so the
     reason (with its "19 more game years" from the decay's logarithm) is compared too.
   - *Not covered here.* A neighbour's declaration on the pariah and a hosted battle holding a bomb back:
@@ -2073,7 +2074,51 @@ these are its calls and the reasons, with where they overturned the first draft.
     1194 build): the whole run equals Node's, the atom entries included. The SpiderMonkey shell can't be
     fetched here (the proxy refuses `archive.mozilla.org`) and WebKit and Firefox aren't installed in this
     VM: the shell's bundle was run in a bare `vm` context with only `print` and `structuredClone` (no DOM,
-    no Node globals) and gave the same 60 entries as the direct call, so nothing in the section needs a
+    no Node globals) and gave the same 60 entries (the section as first written) as the direct call, so nothing in the section needs a
     browser API; WebKit and Firefox are reported by `.github/workflows/xbrowser.yml` on the pull request.
-    A deliberate error in `DMath.pow` (3e-16 relative) changes 30 of the 60 entries, so a libm difference
-    would show.
+    A deliberate error in `DMath.pow` (3e-16 relative) changes 30 of the 60 entries (31 of the 66 after the
+    review fixes), so a libm difference would show.
+- **Step 8 review fixes (two findings on the cross-browser section).**
+  - *The blast never ran a second slice or lit the fire ring (real).* At the game's numbers the section's
+    second strike levelled all 273 buildings inside 450 m in slice 0 (the cap is 400, the whole town has
+    301), so `blast+0..+7` and `slice 0` repeated one picture, `done` never passed 1 and the nearest-first cut
+    by `(distance, id)`, the sums over slices and the fires' resumption (`fireAfter`, `firesPerTick`) were
+    never compared between engines; no building stood in the 450 to 675 m ring either (4 of them, all
+    rubble), so `impactFires` lit nothing. A longer or denser town cannot fix it: `buildTown` zones a strip
+    about 310 m wide, so a disc of 450 m holds about 300 buildings whatever the length, and zoning more
+    would pass 3,000 residents and bring raids and declarations into a story that has none. So, as
+    `atomImpact.test.ts` does, the section lowers the two throttles for that one strike (`THROTTLES`: 40
+    buildings a slice, 5 fires a tick; the game's 400 and 120) with a `try/finally` that puts them back
+    (`throttled`), and moves ground zero by hand 240 m west of the densest district (`coming.x -= WEST`, the
+    state edit `atomImpact.test.ts` makes with `inbound.x`), where the town ends and the ring has houses.
+    Result: 207 buildings and 1,141 residents in six slices (an hour apart), 33 fires lit over seven
+    ticks (five a tick, the next tick resuming where the last stopped), the civic buildings over the same
+    ticks; the third strike now
+    lands on the east of the town (28 buildings, 40 residents) rather than on bare ground. This relaxes step
+    8's "no global is changed" for these two caps only, which are throttles on work per tick and hour, never
+    on what a blast does; every other number is the game's.
+  - *The section was a pure recorder (real).* It now stops with `Error: the atom section's story broke: ...`
+    (`must`) when a step of the story does not happen: the plant running, both wars open, fuel made, the
+    bomb built, called off and built again and ready, the dome charged and then down after stopping a bomb
+    whole, the bomb fired and landed, the pariah and the sanctions, the winter, the blast in more than one
+    slice and the fires over several ticks, a civic building down, the zone refusal in the fallout's words,
+    the crew, the second war still open for the neighbour's launch, two bombs landed and one stopped, the
+    levelling twice, the drift on both neighbours not hit, three winters and the ban. `determinism.test.ts`
+    also reads the returned entries for the same markers (slices, fires over ticks, a caught agent and a
+    success, the dome down, the race's end), so what the browsers compare is known to hold them.
+  - *Which sabotage branch runs.* A mission's dice are its own, keyed by its id, so extra buildings before the
+    agency (a probe placed one to six parks) changed the three first agents from caught, caught, through to
+    caught, caught, nothing, or through, caught, through, or three nothings. The section now sends rounds of
+    agents (up to six, three at a time, a day apart if all are lost) until one agent has been caught and
+    the race has been put back once; with the ids as they are the first three do it and nothing changes.
+    The same probe showed what else the id shift moves. The second neighbour holds the city's seat of power
+    from tick 13,676 (while the first bomb is in the air) and conquers the city at tick 16,608, which ends
+    every war of the city's; its own bomb lands at 16,068, nine game hours before, and with no war it is not
+    fired (the desperation line needs one). The longer the spies take, the nearer the story runs to that
+    fall. With one or three extra parks the section now stops at "the second neighbour is no longer at war
+    with the town"; with none, two, four, five or six it plays to the end. Re-declaring the war was tried and
+    is refused (the levelled town lacks the strength to rise), so the guard stands: that is the section
+    saying its story needs a retune, not a hole in what it compares.
+  - Tests: `determinism.test.ts` (the markers in the entries) and `atomSection.test.ts` (the section stops,
+    saying what, when no fire catches, when the cap is the game's 400, and when no saboteur is ever caught;
+    the throttles are the game's again after a stop). All four fail against the section as first written.

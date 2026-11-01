@@ -45,7 +45,7 @@ export interface DeterminismResult {
   friends: string[];
   /**
    * The atom bomb (M40), in a war town of its own: the race, a bomb the dome stops, the launch and the
-   * world's turn on the firer, a blast that levels the town in slices, a neighbour's launch, and three
+   * world's turn on the firer, a blast that levels the west of the town in slices, a neighbour's launch, and three
    * hundred game hours of fallout with its rasters hashed by their bits (`atomSection.ts`).
    */
   atom: string[];

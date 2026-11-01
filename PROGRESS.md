@@ -256,8 +256,14 @@ ground at 0.2 or more for about 18 years at the centre, 11 hours of play at 1x; 
 nearby", less work and land value under it; the `radiation` data map with a hazard ramp and a tooltip
 by hover or tap; `cleanFallout` crews and relief crews; the plume carried off the north, south and
 west edges into computer neighbours, and theirs blowing back in), `tests/war/atomFallout*.test.ts`,
-`scripts/dev/fallout.ts`. Next: step 5, the nuclear winter. Not yet run for steps 1-4: e2e, builds,
-balance, bench (run at step 13).
+`scripts/dev/fallout.ts`. Step 5 is done (a15b481, b9b36cb): the nuclear winter (`WeatherState.winters`,
+six game years, colder by up to 18 C, solar down by up to 55 %, rain as snow even in July; values
+only, so the weather's dice are the same with or without it; a struck city, the firing city and
+every computer neighbour get it; the forecast, a top-bar badge, an energy advisor line and the grey
+look; `scripts/dev/winter.ts` shows every climate playable: demand at most 1.19x the city's own
+January peak, ploughs coping, no shortfall), `tests/war/atomWinter.test.ts`. Next: step 6, the world
+reacts. Not yet run for steps 1-5: e2e, builds, balance, bench (run at step 13). Full unit suite after
+step 4: 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -311,8 +317,7 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 4 are done. Next: step 5, the nuclear winter (fills `startWinter` in `atomImpact.ts`); then the
-   world reacts; the computer race and spies; cross-browser; the room (protocol 7); pages; UI and
+   to 5 are done. Next: step 6, the world reacts (fills `atomFired` in `atom.ts`); then the computer race and spies; cross-browser; the room (protocol 7); pages; UI and
    effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
    may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase

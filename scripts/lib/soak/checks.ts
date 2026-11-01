@@ -1163,6 +1163,19 @@ export class Checks {
         'atoms-record',
         `the first finisher of the bomb should be ${ready[0]!.name}, whose mark came first, and the record has ${firsts[0] ? firsts[0].name : 'none'}`,
       );
+    // A landing is one mark: no more boom marks for a city than the strikes that landed on it (a city that came
+    // back from a crash and was hit again is the same strike, and the room must not write it down twice).
+    const landed = this.landedOn();
+    const booms = new Map<number, number>();
+    for (const m of marks) if (m.kind === 'boom') booms.set(m.slot, (booms.get(m.slot) ?? 0) + 1);
+    for (const [slot, n] of booms) {
+      const l = landed.get(slot) ?? 0;
+      if (n > l)
+        w.fail(
+          'atoms-record',
+          `the region's record of the bomb has ${n} ${n === 1 ? 'mark' : 'marks'} that a bomb fell on ${name(slot)}, when ${l} atom ${l === 1 ? 'strike' : 'strikes'} landed on it (a landing is one mark, however often the city lands it again)`,
+        );
+    }
     // The first finisher's own city holds the word (the achievement's fact), unless a restore lost it.
     if (firsts[0]) {
       const p = w.bySlot(firsts[0].slot);
@@ -1199,7 +1212,9 @@ export class Checks {
     if (F?.page) {
       if (s.fired === 0) {
         if (this.rewoundSince(F, s.keptTicket))
-          this.excuse(`${s.firerName}'s city never fired ${who}: it came back from a save older than that`);
+          this.excuse(
+            `${s.firerName}'s city never fired its bomb at ${s.targetName}: it came back from a save older than that`,
+          );
         else
           w.fail(
             'strike-lost',
@@ -1211,17 +1226,20 @@ export class Checks {
         if (atom?.fired?.slot !== s.target) {
           if (this.rewoundSince(F, prev))
             this.excuse(
-              `${s.firerName}'s city no longer holds that it fired ${who}: it came back from a save older than that`,
+              `${s.firerName}'s city no longer holds that it fired at ${s.targetName}: it came back from a save older than that`,
             );
           else
             w.fail(
               'strike-lost',
-              `${s.firerName}'s city fired ${who} and no longer holds it (its bomb is ${atom?.fired ? `fired at city ${atom.fired.slot}` : atom?.have ? 'back in the silo' : 'nowhere'})`,
+              `${s.firerName}'s city fired its bomb at ${s.targetName} and no longer holds it (its bomb is ${atom?.fired ? `fired at city ${atom.fired.slot}` : atom?.have ? 'back in the silo' : 'nowhere'})`,
             );
         }
         const pariahs = this.meta.friends?.pariahs ?? {};
         if (pariahs[s.firer] === undefined)
-          w.fail('pariah', `${s.firerName} fired ${who} and the region does not hold it a pariah`);
+          w.fail(
+            'pariah',
+            `${s.firerName} fired its bomb at ${s.targetName} and the region does not hold it a pariah`,
+          );
         const sim = F.sim;
         if (!isPariah(sim) || reputationOf(sim) !== 0) {
           if (this.rewoundSince(F, prev))
@@ -1229,7 +1247,7 @@ export class Checks {
           else
             w.fail(
               'pariah',
-              `${s.firerName}'s city fired ${who} and is ${isPariah(sim) ? '' : 'not '}a pariah with a reputation of ${reputationOf(sim)} (a city that fires the bomb is a pariah for good, with none)`,
+              `${s.firerName}'s city fired its bomb at ${s.targetName} and is ${isPariah(sim) ? '' : 'not '}a pariah with a reputation of ${reputationOf(sim)} (a city that fires the bomb is a pariah for good, with none)`,
             );
         }
       }
@@ -1239,7 +1257,9 @@ export class Checks {
       const atom = T.sim.state.war?.atom;
       if (s.taken === 0) {
         if (this.rewoundSince(T, s.keptTicket))
-          this.excuse(`${s.targetName}'s city never took ${who}: it came back from a save older than that`);
+          this.excuse(
+            `${s.targetName}'s city never took the strike from ${s.firerName}: it came back from a save older than that`,
+          );
         else
           w.fail(
             'strike-lost',
@@ -1251,17 +1271,17 @@ export class Checks {
         if (struck !== 1) {
           if (this.rewoundSince(T, prev))
             this.excuse(
-              `${s.targetName}'s city does not hold that it took ${who}: it came back from a save older than that`,
+              `${s.targetName}'s city does not hold that it took the strike from ${s.firerName}: it came back from a save older than that`,
             );
           else
             w.fail(
               'strike-twice',
-              `${s.targetName}'s city took ${who} and holds ${struck} strikes from ${s.firerName} (it is one a city, ever)`,
+              `${s.targetName}'s city took the strike from ${s.firerName} and holds ${struck} strikes from ${s.firerName} (it is one a city, ever)`,
             );
         } else if (!atom?.inbound && !atom?.impact && !(atom?.stopped ?? 0) && !(atom?.boom ?? 0)) {
           w.fail(
             'strike-lost',
-            `${s.targetName}'s city took ${who} and the bomb is nowhere: not in the air, not landed, not stopped`,
+            `${s.targetName}'s city took the strike from ${s.firerName} and the bomb is nowhere: not in the air, not landed, not stopped`,
           );
         }
       }
@@ -1280,11 +1300,22 @@ export class Checks {
   private wintersEnd(): void {
     const w = this.w;
     const list = this.meta.winters ?? [];
-    const landedOn = new Map<number, number>();
-    for (const s of this.strikes.values())
-      if (s.landed > 0) landedOn.set(s.target, (landedOn.get(s.target) ?? 0) + 1);
+    const landedOn = this.landedOn();
+    const winterIds = (slot: number) => list.filter((x) => x.id.startsWith(`${slot}-`));
+    // A landing begins one winter (`<slot>-<n>`): no more for a city than the bombs that fell on it, and its own
+    // bomb on a computer neighbour (the room's `rival`, which `bombsOnRecord` counts too), however often it lands again.
+    for (const slot of new Set(list.map((x) => Number(x.id.split('-')[0])))) {
+      const ids = winterIds(slot);
+      const l = landedOn.get(slot) ?? 0;
+      const rival = !!this.meta.cities?.find((c) => c.slot === slot)?.atom?.rival;
+      if (ids.length > l + (rival ? 1 : 0))
+        w.fail(
+          'winter-twice',
+          `the region began ${ids.length} nuclear winters (${ids.map((x) => x.id).join(', ')}) for the bombs that fell on ${w.bySlot(slot)?.name ?? `city ${slot}`}, when ${l} atom ${l === 1 ? 'strike' : 'strikes'} landed on it${rival ? ' and its own bomb fell on a computer neighbour' : ''} (a landing begins one winter)`,
+        );
+    }
     for (const [slot, n] of landedOn) {
-      const began = list.filter((x) => x.id.startsWith(`${slot}-`)).length;
+      const began = winterIds(slot).length;
       const name = w.bySlot(slot)?.name ?? `city ${slot}`;
       if (began < n)
         w.fail(
@@ -1325,6 +1356,14 @@ export class Checks {
           );
       }
     }
+  }
+
+  /** How many strikes the soak saw land on each city (a strike is one landing, though a city that came back from a crash may land it again). */
+  private landedOn(): Map<number, number> {
+    const landed = new Map<number, number>();
+    for (const s of this.strikes.values())
+      if (s.landed > 0) landed.set(s.target, (landed.get(s.target) ?? 0) + 1);
+    return landed;
   }
 
   /** The ticket of the first landing on a city. */

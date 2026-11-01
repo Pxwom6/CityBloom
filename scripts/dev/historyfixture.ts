@@ -4,13 +4,17 @@
  * fights Sam's city live with orders from both sides, so the room keeps a real replay of it, and a war
  * is declared, opened and ended with a treaty around that battle, all by the pages' own code. Older
  * events (earlier wars, a treaty, a conquest, a broken pact) are written into the room's history by
- * hand, in the words the room itself uses, so the list has several days and every kind in it.
+ * hand, in the words the room itself uses, so the list has several days and every kind in it. So is the
+ * atom bomb's record (M40): marks for a bomb finished, fired, fallen and stopped, one city (Hillburg, slot
+ * 6) that has left and whose lines are no longer in the ring of events, and the ring's own lines for the
+ * two newest marks (which the panel leaves out) and for one stage of the race the record never held.
  *
  * The room's clock starts a quarter of an hour in the past so that the battle is "just now" when the
  * fixture is done, and then follows the real one.
  */
 import { FRIENDS, type WarEvent } from '../../relay/protocol';
-import type { RegionMeta, RegionRoom } from '../../relay/region';
+import type { RegionAtomMark, RegionMeta, RegionRoom } from '../../relay/region';
+import { bombLine, raceLine } from '../../src/data/atom';
 import { friendsPage, settle, type FwPage } from '../../tests/war/friendsHarness';
 import { BUSY, Clock, driveUntil, flush, openRoom, type Page } from '../../tests/war/liveHarness';
 import { armAda, armSam, liveTown, sendAgainst } from '../../tests/war/liveTown';
@@ -174,6 +178,45 @@ function olderHistory(now: number): WarEvent[] {
   return list.map((e, k) => ({ ...e, id: k + 1 }));
 }
 
+/**
+ * The atom bomb's story in the room's permanent record (`RegionMeta.atoms`, oldest first), slots as above and
+ * 6 Hillburg, a city that has left. Hillburg finished the bomb first and fired it at Evetown, whose dome
+ * stopped it; Adaville finished hers later and fired at Samford, where it fell.
+ */
+function atomRecord(now: number): RegionAtomMark[] {
+  const at = (hoursAgo: number) => Math.round(now - hoursAgo * HOUR);
+  return [
+    { slot: 6, name: 'Hillburg', kind: 'ready', at: at(80), first: true },
+    { slot: 1, name: 'Adaville', kind: 'ready', at: at(70) },
+    { slot: 6, name: 'Hillburg', kind: 'fired', at: at(40), to: 3 },
+    { slot: 3, name: 'Evetown', kind: 'stopped', at: at(39.9) },
+    { slot: 1, name: 'Adaville', kind: 'fired', at: at(6), to: 2 },
+    { slot: 2, name: 'Samford', kind: 'boom', at: at(5.9) },
+  ];
+}
+
+/**
+ * The ring's lines about the bomb: the two newest marks were written to the ring as well, in the same words
+ * a moment apart (the panel leaves these out of the list); the older marks' lines have been pushed out of
+ * the ring, and a stage of the race that the record never holds is still in it.
+ */
+function atomRing(now: number): Omit<WarEvent, 'id'>[] {
+  const marks = atomRecord(now);
+  const fired = marks[4]!;
+  const boom = marks[5]!;
+  return [
+    {
+      at: Math.round(now - 8 * HOUR),
+      kind: 'race',
+      a: 1,
+      b: 0,
+      text: raceLine(6, 'Adaville')!,
+    },
+    { at: fired.at + 400, kind: 'bomb', a: 1, b: 2, text: bombLine('fired', 'Adaville', 'Samford') },
+    { at: boom.at + 400, kind: 'bomb', a: 2, b: 0, text: bombLine('boom', 'Samford') },
+  ];
+}
+
 /** Make the room notice that time has passed: any message looks at the clock. */
 async function tick(pages: Page[]): Promise<void> {
   for (const p of pages) await p.link.reportNow(true);
@@ -205,7 +248,11 @@ export async function historyFixture(code: string, log: (...a: unknown[]) => voi
   armSam(samTown);
   log('armed');
   // Older events first (their numbers come before the ones the pages make).
-  (room as unknown as Poke).meta.history = olderHistory(clock.now());
+  // (Numbered in the order of the times, as the room numbers its own: the next line takes the last number plus one.)
+  (room as unknown as Poke).meta.history = [...olderHistory(clock.now()), ...atomRing(clock.now())]
+    .sort((x, y) => x.at - y.at)
+    .map((e, k) => ({ ...e, id: k + 1 }));
+  (room as unknown as Poke).meta.atoms = atomRecord(clock.now());
   for (const p of [ada, sam, eve]) await p.link.reportNow(true);
   await settle();
   ada.ticking = false;

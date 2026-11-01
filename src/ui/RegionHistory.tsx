@@ -54,7 +54,7 @@ export function RegionAtWar() {
     );
   if (!view) return null;
   const replays = game.replays.list();
-  const cities = historyCities(events, view.cities);
+  const cities = historyCities(events, view.cities, marks);
   // (The ring's lines for moments the bomb's record says for good are left out of the list.)
   const rows = historyRows(withoutAtomRecord(events, marks), replays, { city, groups });
   const now = fv.now || Date.now();

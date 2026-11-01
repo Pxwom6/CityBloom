@@ -262,21 +262,35 @@ export interface HistoryCity {
 
 /**
  * The cities to choose from: those in the region now, and those the history mentions that have left
- * (their lines stay; the room has no name for them any more).
+ * (their lines stay; the room has no name for them any more). The bomb's record is history too, and it
+ * outlasts the ring of events: a city that has left may be in its marks alone (as the one that made a
+ * mark or the one a bomb was fired at), and is offered by the name its own marks give it, else as a
+ * former city, so the lines the list shows for it can be chosen.
  */
 export function historyCities(
   events: readonly WarEvent[],
   inRegion: readonly { slot: number; name: string }[],
+  marks: readonly RegionAtomMark[] = [],
 ): HistoryCity[] {
   const out: HistoryCity[] = inRegion.map((c) => ({ slot: c.slot, name: c.name }));
   const known = new Set(out.map((c) => c.slot));
-  for (const e of events)
+  const named = new Map<number, string>();
+  for (const m of marks) if (m.name) named.set(m.slot, m.name);
+  const add = (slot: number | undefined) => {
     // (A line about one city, like the atom bomb's race, has 0 for its second: no city at all.)
-    for (const slot of [e.a, e.b])
-      if (slot > 0 && !known.has(slot)) {
-        known.add(slot);
-        out.push({ slot, name: `A former city (#${slot})`, gone: true });
-      }
+    if (!slot || slot <= 0 || known.has(slot)) return;
+    known.add(slot);
+    const name = named.get(slot);
+    out.push({ slot, name: name ? `${name} (a former city)` : `A former city (#${slot})`, gone: true });
+  };
+  for (const e of events) {
+    add(e.a);
+    add(e.b);
+  }
+  for (const m of marks) {
+    add(m.slot);
+    add(m.to);
+  }
   return out.sort((x, y) => Number(!!x.gone) - Number(!!y.gone) || x.name.localeCompare(y.name));
 }
 

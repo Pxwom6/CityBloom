@@ -5,16 +5,25 @@ import { frames, placeFromToolbar, screen, settings, state } from './ui';
 import { armTown, servedTown } from './war';
 
 /**
- * M40 through the real UI, one player in a city with computer rivals (Low graphics): the nuclear plant,
- * the enrichment plant and the silo built from the toolbar; total war declared on a neighbour from the
- * Diplomacy tab; the bomb built from the Bomb tab and launched by a real three-second hold (a hold let
- * go early sends nothing); its arc and cloud on the region map, the city's reputation gone for good and
- * every neighbour's sanctions. Then the city is a target (the `bombIn` cheat): the countdown with the
- * missile in the sky, the mushroom cloud, the radiation map with zoning refused on the contaminated
- * ground in the sim's words, and the nuclear winter's snow in a summer month (the four pictures the
- * milestone asks for), the cloud's draw calls and triangles held to their caps, and the six atom tips,
- * each when its condition first holds. Cheats only skip the long waits (research, a project's stages, the
- * fuel, the bomb's instalments, a launch's preparation).
+ * M40 through the real UI, one player in a city with computer rivals (Low graphics). Played for real: the
+ * nuclear plant, the enrichment plant and the silo placed from the toolbar; total war declared on a
+ * neighbour from the Diplomacy tab; the bomb's first instalment paid and its launch started from the Bomb
+ * tab by a real three-second hold (a hold let go early sends nothing); the launch's preparation run on the
+ * clock until the bomb leaves; then its arc on the region map, the city's reputation gone for good, every
+ * computer neighbour's sanctions, and the cloud over the neighbour it fell on.
+ *
+ * The cheats do more than skip long waits, and this says which. Waits skipped: `research` (all 24 tiers),
+ * `addMoney`, `finishStages` (the plant's and the silo's months of building), `atom` (the fuel and the
+ * finished bomb) and `rivalBomb` (a neighbour's race begun, for the race tip). Keeping the war the launch
+ * needs: `rival` with no forces (`calmRivals`) leaves the computer neighbours too weak to raid, so no battle
+ * ends the total war. And `bombIn` makes a computer neighbour's bomb fall on the city, so the countdown with
+ * the missile in the sky, the mushroom cloud, the radiation map with zoning refused on the contaminated
+ * ground, and the cloud's draw calls and triangles held to their caps are all of that neighbour's strike on
+ * the city, not of the city's own launch: one player cannot watch the countdown on their own target or its
+ * levelled city (the real launch's countdown and the levelled city are in `e2e/m40-friends.spec.ts`).
+ * The nuclear winter's snow, in a summer month, comes from both strikes: the city's own began a winter
+ * (checked before the neighbour's bomb falls) and the bomb that fell on it began another. Also checked:
+ * the six atom tips, each when its condition first holds.
  */
 
 // A button that never turns up fails in a minute, not at the test's timeout.

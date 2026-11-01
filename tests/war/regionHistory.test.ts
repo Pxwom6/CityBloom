@@ -577,6 +577,41 @@ describe('the atom bomb’s record', () => {
     expect(cityNamer([{ slot: 2, name: 'Samford' }])(5)).toBeUndefined();
   });
 
+  it('offers a city that has left and is in the record alone, by the name its marks give it', () => {
+    const inRegion = [
+      { slot: 1, name: 'Adaville' },
+      { slot: 2, name: 'Samford' },
+    ];
+    // Oldtown (9) made a mark, and a bomb was fired at Hilltop (8): neither has a line in the ring any more.
+    const marks = [
+      mark('ready', 9, T0, { name: 'Oldtown', first: true }),
+      mark('fired', 1, T0 + H, { to: 8 }),
+      mark('boom', 2, T0 + 2 * H),
+    ];
+    const cities = historyCities([], inRegion, marks);
+    expect(cities.map((c) => c.slot)).toEqual([1, 2, 8, 9]);
+    expect(cities[3]).toMatchObject({ gone: true, name: 'Oldtown (a former city)' });
+    expect(cities[2]).toMatchObject({ gone: true, name: 'A former city (#8)' });
+    // Picking one finds its lines in the block: the marks it made and the bomb fired at it.
+    expect(lines(marks, { city: 9, groups: [] }).map((l) => l.kind)).toEqual(['ready']);
+    expect(lines(marks, { city: 8, groups: [] }).map((l) => l.kind)).toEqual(['fired']);
+    // A city in the region keeps its own name, and one in the ring and the record is offered once, by the record's name.
+    const ring = [ev(30, { kind: 'bomb', a: 9, b: 0, text: 'x' })];
+    const both = historyCities(ring, inRegion, marks);
+    expect(both.filter((c) => c.slot === 9)).toEqual([
+      { slot: 9, name: 'Oldtown (a former city)', gone: true },
+    ]);
+    expect(both.map((c) => c.slot)).toEqual([1, 2, 8, 9]);
+    // No bomb record, no change: the ring alone offers what it did.
+    expect(historyCities(ring, inRegion).map((c) => c.name)).toEqual([
+      'Adaville',
+      'Samford',
+      'A former city (#9)',
+    ]);
+    // A mark never offers “city 0” (a bomb fired where the region knew no target).
+    expect(historyCities([], inRegion, [mark('fired', 1, T0)]).map((c) => c.slot)).toEqual([1, 2]);
+  });
+
   it('is narrowed as the list is: by the Atom bomb kind, and by a city on either side of the line', () => {
     expect(lines(record, { city: null, groups: ['atom'] })).toHaveLength(5);
     expect(lines(record, { city: null, groups: ['atom', 'battles'] })).toHaveLength(5);

@@ -5,9 +5,13 @@
 // and opens the panel. Shots: the panel's two views, the list filtered by kind and by city, the phone
 // width, a Watch button pressed (the viewer playing the battle in Samford's town, then its "replay
 // checked" note), and the way back to the city. Prints what the page knows at each point.
+// M40: the room also holds the atom bomb's permanent record (a bomb finished, fired, fallen and stopped,
+// one of them by Hillburg, a city that has left and whose lines are gone from the ring of events), so the
+// panel's "The atom bomb" block is shown at the top of the list, narrowed to the Atom bomb kind, and
+// narrowed to the city that has left (the block's lines for a city that is in the record alone).
 // Usage: npm run build:test && npx tsx scripts/dev/historyshot.mjs outDir
 // Env: PORT=4396 (the preview), RELAY=8787 (where test builds look for the relay), QUALITY=low,
-//      ONLY=panel,filter,phone,viewer (the shots to take; viewer includes the bar at 360 px), PW_CHROMIUM=path to a Chromium to use,
+//      ONLY=panel,filter,atom,phone,viewer (the shots to take; viewer includes the bar at 360 px), PW_CHROMIUM=path to a Chromium to use,
 //      DIST=dist-test and BASE=/ (a build made with another --outDir/--base, e.g. DIST=dist-rev BASE=/CityBloom/).
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -22,7 +26,7 @@ const relayPort = Number(process.env.RELAY ?? 8787);
 const quality = process.env.QUALITY ?? 'low';
 const dist = process.env.DIST ?? 'dist-test';
 const base = process.env.BASE ?? '/';
-const only = new Set((process.env.ONLY ?? 'panel,filter,phone,viewer').split(','));
+const only = new Set((process.env.ONLY ?? 'panel,filter,atom,phone,viewer').split(','));
 const CODE = '7HSTRY';
 const t0 = Date.now();
 const log = (...a) => console.log(`[historyshot ${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
@@ -139,6 +143,32 @@ try {
       await panelShot(fay, 'history-6-former-city');
     }
     await fay.getByTestId('rh-city').selectOption('');
+  }
+
+  // 2b. The atom bomb's block (M40): at the top of the list, its lines the record's for good; the Atom bomb kind
+  // alone; and the city that has left, which only the record knows, chosen from the list of cities.
+  if (only.has('atom')) {
+    const block = await fay.evaluate(() => window.__game.getRegionHistory().atom);
+    log('atom block', JSON.stringify(block.lines.map((l) => `${l.kind}: ${l.text}`)));
+    if (block.lines.length < 6) throw new Error(`the atom block has ${block.lines.length} lines, not 6`);
+    await fay.getByTestId('rh-atom').waitFor();
+    await fay.evaluate(() =>
+      (document.querySelector('[data-testid="rh-atom"]') ?? document.body).scrollIntoView(),
+    );
+    await panelShot(fay, 'history-10-atom-block');
+    await fay.getByTestId('rh-kind-atom').click();
+    await panelShot(fay, 'history-11-atom-kind');
+    const gone = await fay.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="rh-city"] option')].map((o) => [o.value, o.textContent]),
+    );
+    log('cities to choose', JSON.stringify(gone));
+    const hill = gone.find(([, n]) => n.startsWith('Hillburg'));
+    if (!hill) throw new Error('the city that has left (Hillburg) cannot be chosen');
+    await fay.getByTestId('rh-city').selectOption(hill[0]);
+    await panelShot(fay, 'history-12-atom-city-that-left');
+    await fay.getByTestId('rh-kind-atom').click();
+    await fay.getByTestId('rh-city').selectOption('');
+    await fay.getByTestId('region-history').scrollIntoViewIfNeeded();
   }
 
   // 3. A phone's width.

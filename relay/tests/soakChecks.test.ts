@@ -880,7 +880,9 @@ describe('M40 step 13: the atom bomb between friends', () => {
       delete atom.impact;
       atom.boom = 0;
       g.checks.atomEnd();
-      expect(g.fails.map((f) => f.text).join('\n')).toMatch(/the bomb is nowhere/);
+      expect(g.fails.map((f) => f.text).join('\n')).toMatch(
+        /Sam's city took the strike from Ada and the bomb is nowhere/,
+      );
     });
 
     it('fails a firer whose city no longer holds that it fired, and a target that holds the strike twice', () => {
@@ -890,8 +892,10 @@ describe('M40 step 13: the atom bomb between friends', () => {
       (g.sam.sim.state.war.atom as { struck: number[] }).struck = [1, 1];
       g.checks.atomEnd();
       const texts = g.fails.map((f) => f.text).join('\n');
-      expect(texts).toMatch(/Ada's city fired Ada's atom strike at Sam and no longer holds it/);
-      expect(texts).toMatch(/holds 2 strikes from Ada/);
+      expect(texts).toMatch(/Ada's city fired its bomb at Sam and no longer holds it/);
+      expect(texts).toMatch(/Sam's city took the strike from Ada and holds 2 strikes from Ada/);
+      // (The strike is named once, by its firer and target: never "Ada's city fired Ada's atom strike".)
+      expect(texts).not.toMatch(/(city|Ada|Sam) (fired|took) (Ada|Sam)'s atom strike/);
     });
 
     it('fails an operation the region still holds for a target that is here', () => {
@@ -932,6 +936,50 @@ describe('M40 step 13: the atom bomb between friends', () => {
       g.checks.atomEnd();
       expect(g.fails.map((f) => f.text).join('\n')).toMatch(
         /1 atom bombs landed on Sam and the region began 0/,
+      );
+    });
+
+    it('fails a landing that began two winters in the room (the bomb counted twice), and passes the honest world', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.atomEnd();
+      expect(g.fails).toEqual([]);
+      // The room began a second winter for the one bomb that fell on Sam (it lands again in the city that came back
+      // from a crash, and the room took the second report for a second bomb); the other cities have it too.
+      g.meta.winters = [
+        { id: '2-1', at: 3, slots: [1, 3, 4] },
+        { id: '2-2', at: 9, slots: [1, 3, 4] },
+      ];
+      for (const p of [g.ada, g.kit, g.lou]) p.sim.state.weather.winters.push({ id: '2-2' });
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['winter-twice']);
+      expect(g.fails[0]!.text).toBe(
+        'the region began 2 nuclear winters (2-1, 2-2) for the bombs that fell on Sam, when 1 atom strike landed on it (a landing begins one winter)',
+      );
+    });
+
+    it('allows one more winter for a city whose own bomb fell on a computer neighbour (the room’s rival), and no more', () => {
+      const g = atomWorld();
+      g.play();
+      // Sam's own bomb fell on a computer neighbour: the room begins a winter for that landing too.
+      g.meta.winters = [
+        { id: '2-1', at: 3, slots: [1, 3, 4] },
+        { id: '2-2', at: 9, slots: [1, 3, 4] },
+      ];
+      (g.meta.cities as { slot: number; atom: Record<string, unknown> }[])[1]!.atom.rival = true;
+      for (const p of [g.ada, g.kit, g.lou]) p.sim.state.weather.winters.push({ id: '2-2' });
+      g.checks.atomEnd();
+      expect(g.fails).toEqual([]);
+      (g.meta.winters as { id: string; at: number; slots: number[] }[]).push({
+        id: '2-3',
+        at: 12,
+        slots: [1, 3, 4],
+      });
+      for (const p of [g.ada, g.kit, g.lou]) p.sim.state.weather.winters.push({ id: '2-3' });
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['winter-twice']);
+      expect(g.fails[0]!.text).toMatch(
+        /began 3 nuclear winters \(2-1, 2-2, 2-3\).*and its own bomb fell on a computer neighbour/,
       );
     });
 
@@ -1030,8 +1078,10 @@ describe('M40 step 13: the atom bomb between friends', () => {
       delete (g.ada.sim.state.war.diplomacy as Record<string, unknown>).pariah;
       g.checks.atomEnd();
       expect(kinds(g.fails)).toEqual(['pariah', 'pariah']);
-      expect(g.fails[0]!.text).toMatch(/does not hold it a pariah/);
-      expect(g.fails[1]!.text).toMatch(/is not a pariah with a reputation of 80/);
+      expect(g.fails[0]!.text).toMatch(/^Ada fired its bomb at Sam and the region does not hold it a pariah/);
+      expect(g.fails[1]!.text).toMatch(
+        /^Ada's city fired its bomb at Sam and is not a pariah with a reputation of 80/,
+      );
     });
 
     it('fails a record with a bomb fired or ready twice, no mark for the strike, or the first finisher on the wrong mark', () => {
@@ -1058,6 +1108,36 @@ describe('M40 step 13: the atom bomb between friends', () => {
       );
       expect(g.fails.map((f) => f.text).join('\n')).toMatch(/its record has 0 marks that Ada fired/);
       expect(g.fails.map((f) => f.text).join('\n')).toMatch(/no mark that it fell on Sam/);
+    });
+
+    it('fails a record that writes down the one landing on a city twice, and a landing on a city no strike landed on', () => {
+      const g = atomWorld();
+      g.play();
+      g.checks.atomEnd();
+      expect(g.fails).toEqual([]);
+      // (A city that came back from a crash was hit again, and the room took the second report for a second bomb.)
+      (g.meta.atoms as { slot: number; name: string; kind: string; at: number }[]).push({
+        slot: 2,
+        name: 'Samford',
+        kind: 'boom',
+        at: 9,
+      });
+      g.checks.atomEnd();
+      expect(kinds(g.fails)).toEqual(['atoms-record']);
+      expect(g.fails[0]!.text).toBe(
+        "the region's record of the bomb has 2 marks that a bomb fell on Sam, when 1 atom strike landed on it (a landing is one mark, however often the city lands it again)",
+      );
+      g.fails.length = 0;
+      (g.meta.atoms as { slot: number; name: string; kind: string; at: number }[]).push({
+        slot: 3,
+        name: 'Kitford',
+        kind: 'boom',
+        at: 10,
+      });
+      g.checks.atomEnd();
+      expect(g.fails.map((f) => f.text).filter((t) => /fell on Kit,/.test(t))).toEqual([
+        "the region's record of the bomb has 1 mark that a bomb fell on Kit, when 0 atom strikes landed on it (a landing is one mark, however often the city lands it again)",
+      ]);
     });
 
     it('fails a first finisher whose city was never given the word', () => {
@@ -1122,6 +1202,9 @@ describe('M40 step 13: the atom bomb between friends', () => {
 
     it('asks nothing of the cities when no bomb was kept', () => {
       const g = atomWorld();
+      // (No bomb was kept: the room holds no record of one either, so no landing is written down for a strike nobody followed.)
+      g.meta.atoms = [];
+      g.meta.winters = [];
       let asked = 0;
       g.checks.roundTrip = () => ((asked += 1), { before: 'a', after: 'b' });
       g.checks.atomEnd();

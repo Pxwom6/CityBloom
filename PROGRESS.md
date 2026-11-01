@@ -281,7 +281,16 @@ through the real commands, the plant sabotage, the dome stopping a bomb, the tow
 computer neighbour, the blast in six slices with the fire ring, 300 game hours of fallout hashed by the
 bits of every cell, the drift into the neighbours, a clean-up crew, the winter, the pariah and a Hard
 neighbour's launch), every command kind used; Node and Chromium agree, and CI runs WebKit and Firefox.
-Next: step 9, the room (protocol 7). Not yet run for steps 1-8: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+Step 9 is done (9df0be1, 92034b1): protocol 7 and the room's half (the race in each
+city's report, cleaned field by field and dropped if malformed; the room announcing each stage forward
+once, at most 8 a day, to pages on 7; `RegionMeta.atoms` kept for good outside the history ring and the
+first finisher marked and told; `RegionMeta.winters` for every other city; plumes routed to the right
+neighbour; the strike on a friend riding `op: 'atom'` with the room's own 20-minute preparation, every
+refusal in words; the firer flagged pariah among friends: pacts dropped, none new, declarations on it
+with no cooldown or shield; a modified client can't push fallout, winters or marks onto others beyond
+what the room can account for), `relay/tests/regionAtom.test.ts`, `tests/war/atomRegion.test.ts`; the
+free plan's rows with a race in four cities 63 an hour. Next: step 10, the pages. Not yet run for steps
+1-9: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
@@ -336,7 +345,8 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 8 are done. Next: step 9, the room (protocol 7); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   to 9 are done. Next: step 10, the pages (`friendFallout`, `friendWinter`, `atomFirst`, the strike
+   between friends); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
    need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

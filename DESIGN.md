@@ -1982,7 +1982,15 @@ some: DECISIONS "M40".
   on the 110k bench city is about 11 ms (`scripts/dev/atombench.ts`); a fallout update is under a millisecond, every
   three game hours, after a hit. The report grows by the race's few numbers, `atoms` and `winters` stay under 2 KB,
   and an hour of four cities racing writes about as many rows as one without (`relay/tests/freeplan.test.ts`).
-  Probes: `scripts/dev/atomprice.ts`, `fallout.ts`, `winter.ts`.
+  Probes: `scripts/dev/atomprice.ts`, `fallout.ts`, `winter.ts`. (`atombench.ts`'s worst whole tick, the blast with
+  the rest of the city's systems, is about 25 ms on this VM.)
+- **Through the real UI, and under load**: `e2e/m40-atom.spec.ts` (one player: the race from the toolbar, total war
+  from the Diplomacy tab, the launch by the real three-second hold, then a neighbour's bomb on the city for the
+  countdown, cloud, radiation map and winter) and `e2e/m40-friends.spec.ts` (two players and a real room; the local
+  relay's test-only `--atom-prep` shortens the room's 20 minutes). The region soak plays two strikes between friends
+  late in its story, with crashes in the countdown and the blast (`atomActs`, `scripts/lib/soak`); it found two
+  defects, both fixed: a page applied a welcome's older copy of the bomb's record over a newer one (the welcome's
+  copy now comes first), and a firing city wasn't saved when the room kept its strike (`RegionOps` now saves it).
 
 ## 4. Rendering
 

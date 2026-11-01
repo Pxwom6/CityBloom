@@ -44,10 +44,24 @@ export interface Settings {
   seenTips: string[];
   /** Step of the running tutorial, or -1 when none is running. */
   tutorialStep: number;
+  /**
+   * Tone down the atom bomb's flash (M40 step 11): a short fade in place of the white-out, and no shake.
+   * Its default follows the system's "reduce motion" setting. Read by the effects (`src/render/atom.ts`).
+   */
+  reduceFlashes: boolean;
   /** The first-launch graphics check has run (or the player chose graphics settings first). */
   graphicsChecked: boolean;
   /** The preset that check picked for this device, if it ran. */
   autoGraphics: Quality | null;
+}
+
+/** Does the system ask for less motion? False where there is no window to ask (tests, the worker). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -70,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tips: true,
   seenTips: [],
   tutorialStep: -1,
+  reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
 };
@@ -229,6 +244,7 @@ export function parseSettings(raw: unknown): Settings {
       ? r.seenTips.filter((t): t is string => typeof t === 'string').slice(0, 100)
       : [],
     tutorialStep: num(r.tutorialStep, d.tutorialStep, -1, 99),
+    reduceFlashes: bool(r.reduceFlashes, d.reduceFlashes),
     graphicsChecked: bool(r.graphicsChecked, d.graphicsChecked),
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,
   };

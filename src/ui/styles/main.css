@@ -4427,6 +4427,364 @@ body {
   margin: 0;
 }
 
+/* The atom bomb (M40 step 11): the Bomb tab, the countdown card, the clean-up bar, the map's marks. */
+.atom {
+  gap: var(--space-2);
+}
+.atom h4 {
+  margin: var(--space-2) 0 var(--space-1);
+}
+.atom-ladder {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.atom-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
+}
+.atom-dot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: 0.22rem;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong);
+}
+.atom-row.done .atom-dot {
+  background: var(--color-positive);
+  border-color: var(--color-positive);
+}
+.atom-row.now .atom-dot {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+.atom-row.wait .atom-dot {
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.atom-row.todo {
+  opacity: 0.7;
+}
+.atom-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.atom-row-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+.atom-row-head span {
+  color: var(--color-text-muted);
+  text-align: right;
+}
+.atom-row-body .war-bar {
+  /* (In a column, the bar's flex: 1 would give it no height at all.) */
+  flex: none;
+  width: 100%;
+}
+.atom-why {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.atom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.atom-actions p {
+  margin: 0;
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+}
+.atom-launch {
+  border-color: var(--color-negative);
+}
+.atom-targets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.atom-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+}
+.atom-target small {
+  flex: 1 1 10rem;
+}
+.atom-target.greyed .btn {
+  opacity: 0.5;
+}
+.atom-warning {
+  margin: var(--space-1) 0 0;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-negative);
+}
+.atom-consequences {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--font-size-sm);
+}
+.atom-consequences li {
+  margin-bottom: 2px;
+}
+/* The held button: a bar of its own colour fills across it while it is pressed. */
+.launch-hold {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: max(2.6rem, 40px);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.launch-hold-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+.launch-hold-label {
+  position: relative;
+  font-weight: var(--font-weight-bold);
+}
+.launch-hold.holding {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+.atom-inbound {
+  border-color: var(--color-negative);
+}
+.atom-inbound h4 {
+  margin: 0;
+}
+.atom-inbound p {
+  margin: 0;
+}
+.atom-first {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-bold);
+}
+.atom-race ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.atom-race-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.atom-race-row.ready {
+  border-color: var(--color-negative);
+}
+.atom-race-head,
+.atom-race-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+.atom-race-head {
+  justify-content: space-between;
+}
+.atom-race-body .atom-fuel {
+  flex: 0 1 6rem;
+}
+.atom-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+.atom-pips i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-strong);
+}
+.atom-pips i.on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.atom-pips i.on:nth-child(n + 5) {
+  background: var(--color-negative);
+  border-color: var(--color-negative);
+}
+.atom-fallout h4 {
+  margin-top: 0;
+}
+/* The card for a bomb on its way: top centre, between the war room on the left and the inspector on the right. */
+.atom-countdown {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2 * var(--space-3)));
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 2px solid var(--color-negative);
+  z-index: var(--z-panel);
+  font-size: var(--font-size-sm);
+}
+.atom-countdown header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.atom-countdown header strong {
+  font-size: var(--font-size-lg);
+}
+.atom-countdown p {
+  margin: 0;
+}
+.atom-eta {
+  font-size: var(--font-size-xl, 1.6rem);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-negative);
+}
+.atom-countdown .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-accent-strong);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.btn.atom-raise {
+  background: var(--color-negative);
+  border-color: var(--color-negative);
+  color: #fff;
+  font-weight: var(--font-weight-bold);
+}
+.atom-dome.good {
+  color: var(--color-positive);
+}
+.atom-dome.warn {
+  color: var(--color-warning);
+}
+.atom-dome.bad {
+  color: var(--color-negative);
+}
+.raid-chip.bomb {
+  animation: raid-pulse 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .raid-chip.bomb {
+    animation: none;
+  }
+}
+.atom-after {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  width: min(28rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: var(--z-modal);
+}
+.atom-after h2,
+.atom-after p {
+  margin: 0;
+}
+.cleanup-bar {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  max-width: min(36rem, calc(100vw - 2rem));
+  font-size: var(--font-size-sm);
+  z-index: var(--z-panel);
+}
+/* The region map's marks for the race (the 2D drawing in the war room's Map tab). */
+.war-map-pip {
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-width: 1;
+}
+.war-map-pip.on {
+  fill: var(--color-accent-strong);
+  stroke: var(--color-accent-strong);
+}
+.war-map-pip.on:nth-of-type(n + 5) {
+  fill: var(--color-negative);
+  stroke: var(--color-negative);
+}
+.war-map-fuel {
+  fill: var(--color-accent);
+}
+.war-map-ready {
+  fill: none;
+  stroke: var(--color-negative);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.war-map-star {
+  fill: var(--color-warning);
+  font-size: 12px;
+  stroke: var(--color-accent-soft);
+  stroke-width: 2px;
+  paint-order: stroke;
+}
+.war-map-cloud circle {
+  fill: #50505a;
+  stroke: #fff;
+  stroke-width: 1;
+}
+.war-map-strike-arc {
+  fill: none;
+  stroke: var(--color-negative);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.war-map-missile {
+  fill: var(--color-negative);
+  stroke: #fff;
+  stroke-width: 1;
+}
+@media (min-width: 1100px) {
+  /* (The war room stands at the left: the card sits to the right of it.) */
+  .atom-after {
+    margin-left: 1.5rem;
+  }
+}
+#ui[data-width='xs'] .atom-countdown {
+  width: calc(100vw - 2 * var(--space-2));
+  padding: var(--space-2) var(--space-3);
+}
+#ui[data-width='xs'] .atom-eta {
+  font-size: var(--font-size-lg);
+}
+
 /* The battle map (M39): a live battle from above, to command or to watch. */
 .battle-map {
   position: absolute;

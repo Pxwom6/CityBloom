@@ -560,7 +560,7 @@ describe('M40 rivals: the launch', () => {
     });
     expect(RIVAL_BOMB.prep).toBe(240);
     expect(rivalRaces(sim)).toEqual([
-      { id: n.id, name: n.name, stage: atomStageNo('preparing'), launchIn: 240 },
+      { id: n.id, name: n.name, stage: atomStageNo('preparing'), fuel: null, launchIn: 240 },
     ]);
     hours(sim, 100);
     expect(atomSummary(sim)!.rivals[0]).toMatchObject({ stage: 6, launchIn: 140 });
@@ -808,7 +808,7 @@ describe('M40 rivals: the cheat, the summary and the real clock', () => {
     ok(sim, { type: 'cheat', cheat: 'rivalBomb', neighbour: other, stage: 'bomb' });
     const n = rivals(sim).find((x) => x.id === other)!;
     expect(atomSummary(sim)!.rivals).toEqual([
-      { id: other, name: n.name, stage: atomStageNo('bomb'), launchIn: null },
+      { id: other, name: n.name, stage: atomStageNo('bomb'), fuel: null, launchIn: null },
     ]);
   });
 

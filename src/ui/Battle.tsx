@@ -13,6 +13,8 @@ import type { Command } from '../sim/commands';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH, dateOf, formatDate } from '../sim/time';
 import { newcomerNote, raidNote } from '../client/friendsWar';
 import { HelpButton } from './Help';
+import { PIPS, etaClock, pipsOf } from './atomView';
+import { ATOM, ATOM_STAGE_NAMES, ATOM_STAGES, atomStageNo } from '../data/atom';
 import { helpForceLine } from './helpView';
 import { formatNumber, useGameUpdates } from './hooks';
 
@@ -28,6 +30,21 @@ export function RaidChip() {
   const game = useGameUpdates(250);
   const w = game.world.stats.war;
   if (!w || (!w.incoming && !w.battle)) return null;
+  const r = w.incoming;
+  // An atom bomb on its way (M40) comes before everything: the clock, who, and one click to the card's
+  // war room tab (the countdown card itself is already on the screen).
+  if (r?.kind === 'bomb')
+    return (
+      <button
+        class="btn raid-chip bomb"
+        data-testid="raid-chip"
+        title={`${r.from} has fired an atom bomb at the city: click for the Bomb tab`}
+        onClick={() => game.openWarRoom('atom')}
+      >
+        Atom bomb from {r.from} in{' '}
+        <strong data-testid="raid-eta">{etaClock(r.arrive - game.world.displayTick)}</strong>
+      </button>
+    );
   if (w.battle)
     return (
       <button
@@ -39,24 +56,10 @@ export function RaidChip() {
         Battle: {w.battle.from}
       </button>
     );
-  const r = w.incoming!;
+  if (!r) return null;
   const hours = Math.max(0, (r.arrive - game.world.displayTick) / TICKS_PER_HOUR);
   const h = Math.floor(hours);
   const m = Math.floor((hours - h) * 60);
-  if (r.kind === 'bomb')
-    return (
-      <button
-        class="btn raid-chip"
-        data-testid="raid-chip"
-        title={`${r.from} has fired an atom bomb at the city`}
-        onClick={() => game.openPanel('war')}
-      >
-        Atom bomb from {r.from} in{' '}
-        <strong data-testid="raid-eta">
-          {h}:{String(m).padStart(2, '0')}
-        </strong>
-      </button>
-    );
   return (
     <button
       class="btn raid-chip"
@@ -632,6 +635,28 @@ export function RegionMap() {
   for (const [side, list] of Object.entries(sides))
     list.forEach((n, k) => (at[n.id] = place(side, k, list.length)));
   const me = { x: 210, y: 140 };
+  // The atom bomb (M40): each city's race as pips and a fuel bar, a frame once its bomb is ready, a star
+  // for the first to finish, and a strike as an arc with a cloud where it fell.
+  const atom = w.atom;
+  const marks = game.atomRegion.atoms;
+  const firstSlot = marks.find((m) => m.first)?.slot;
+  const raceOf = (n: (typeof ns)[number]): { stage: number; fuel: number | null; first: boolean } | null => {
+    const p = n.player?.atom;
+    if (p && p.stage > 0)
+      return { stage: p.stage, fuel: p.fuel ?? null, first: firstSlot === n.player!.slot };
+    const r = atom?.rivals.find((x) => x.id === n.id);
+    return r ? { stage: r.stage, fuel: r.fuel, first: false } : null;
+  };
+  const mine = atom && atomStageNo(atom.stage) > 0 ? atomStageNo(atom.stage) : 0;
+  const flightTicks = ATOM.flight.hours * TICKS_PER_HOUR;
+  const bez = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => {
+    // The arc's control point: half way, lifted above the higher end.
+    const c = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - 50 };
+    const u = 1 - t;
+    return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+  };
+  const arc = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${Math.min(a.y, b.y) - 50} ${b.x} ${b.y}`;
   // (Help given to a friend is no fight with it: its report makes no front on the road between the two.)
   const recent = new Set(
     w.reports.filter((r) => !r.help && tick - r.end < 3 * TICKS_PER_MONTH).map((r) => r.other),
@@ -697,6 +722,85 @@ export function RegionMap() {
                   front
                 </text>
               )}
+              {/* M40: the neighbour's race for the atom bomb, and a cloud where a bomb has fallen on it. */}
+              {(() => {
+                const race = raceOf(n);
+                const r = n.rival ? 13 : 10;
+                const struck =
+                  (atom?.fired?.to === n.id && tick >= atom.fired.tick + flightTicks) ||
+                  (n.rival?.fallout ?? 0) >= 0.5 ||
+                  (n.player?.atom?.hit ?? 0) > 0;
+                if (!race && !struck) return null;
+                const ready =
+                  !!race && (race.stage === atomStageNo('ready') || race.stage === atomStageNo('preparing'));
+                const names = race
+                  ? ATOM_STAGE_NAMES[ATOM_STAGES[Math.min(race.stage, ATOM_STAGES.length - 1)]!]
+                  : '';
+                return (
+                  <g class="war-map-race" data-testid={`map-race-${n.id}`}>
+                    {race && (
+                      <title>
+                        {`${n.name}: ${names}${race.fuel !== null && race.fuel > 0 && race.stage <= atomStageNo('bomb') ? `, ${race.fuel} % fuel` : ''}`}
+                      </title>
+                    )}
+                    {ready && (
+                      <rect
+                        x={p.x - r - 4}
+                        y={p.y - r - 4}
+                        width={2 * r + 8}
+                        height={2 * r + 8}
+                        rx={6}
+                        class="war-map-ready"
+                        data-testid={`map-ready-${n.id}`}
+                      />
+                    )}
+                    {race &&
+                      Array.from({ length: PIPS }, (_, k) => (
+                        <circle
+                          key={k}
+                          cx={p.x + r + 7 + k * 5}
+                          cy={p.y + 2}
+                          r={1.8}
+                          class={`war-map-pip ${k < pipsOf(race.stage) ? 'on' : ''}`}
+                        />
+                      ))}
+                    {race && race.fuel !== null && race.fuel > 0 && race.stage <= atomStageNo('bomb') && (
+                      <g data-testid={`map-fuel-${n.id}`}>
+                        <rect x={p.x + r + 5.5} y={p.y + 7} width={28} height={3} class="war-map-tier-bg" />
+                        <rect
+                          x={p.x + r + 5.5}
+                          y={p.y + 7}
+                          width={(28 * race.fuel) / 100}
+                          height={3}
+                          class="war-map-fuel"
+                        />
+                      </g>
+                    )}
+                    {race?.first && (
+                      <text
+                        x={p.x + r + 5}
+                        y={p.y - 5}
+                        class="war-map-star"
+                        data-testid={`map-first-${n.id}`}
+                      >
+                        ★
+                      </text>
+                    )}
+                    {struck && (
+                      <g
+                        class="war-map-cloud"
+                        data-testid={`map-cloud-${n.id}`}
+                        transform={`translate(${p.x} ${p.y - r - 10})`}
+                      >
+                        <title>{`An atom bomb has fallen on ${n.name}`}</title>
+                        <circle cx={-5} cy={0} r={4} />
+                        <circle cx={0} cy={-3} r={5} />
+                        <circle cx={6} cy={0} r={4} />
+                      </g>
+                    )}
+                  </g>
+                );
+              })()}
               {/* M37: a friend's research, from its last report: a bar per branch, a step per tier. */}
               {n.player?.tiers && (
                 <g class="war-map-tiers" data-testid={`map-tiers-${n.id}`}>
@@ -748,6 +852,74 @@ export function RegionMap() {
         <text x={me.x} y={me.y + 34} class="war-map-name">
           {game.world.stats.cityName}
         </text>
+        {/* M40: the city's own race, in the same marks as the others'. */}
+        {mine > 0 && (
+          <g class="war-map-race" data-testid="map-race-city">
+            {(mine === atomStageNo('ready') || mine === atomStageNo('preparing')) && (
+              <rect
+                x={me.x - 22}
+                y={me.y - 22}
+                width={44}
+                height={44}
+                rx={8}
+                class="war-map-ready"
+                data-testid="map-ready-city"
+              />
+            )}
+            {Array.from({ length: PIPS }, (_, k) => (
+              <circle
+                key={k}
+                cx={me.x + 27 + k * 5}
+                cy={me.y + 2}
+                r={1.8}
+                class={`war-map-pip ${k < pipsOf(mine) ? 'on' : ''}`}
+              />
+            ))}
+            {atom && atom.fuel > 0 && mine <= atomStageNo('bomb') && (
+              <g data-testid="map-fuel-city">
+                <rect x={me.x + 25.5} y={me.y + 7} width={28} height={3} class="war-map-tier-bg" />
+                <rect x={me.x + 25.5} y={me.y + 7} width={28 * atom.fuel} height={3} class="war-map-fuel" />
+              </g>
+            )}
+            {atom?.first && (
+              <text x={me.x + 25} y={me.y - 5} class="war-map-star" data-testid="map-first-city">
+                ★
+              </text>
+            )}
+          </g>
+        )}
+        {/* M40: a bomb the city fired, as an arc to its target with a dot flying along it. */}
+        {atom?.fired &&
+          (() => {
+            const f = atom.fired;
+            const p = at[f.to];
+            if (!p) return null;
+            const t = Math.min(1, Math.max(0, (tick - f.tick) / flightTicks));
+            const q = bez(me, p, t);
+            return (
+              <g data-testid="strike-arc" class="war-map-strike">
+                <path d={arc(me, p)} class="war-map-strike-arc" />
+                {t < 1 && (
+                  <circle cx={q.x} cy={q.y} r={3.2} class="war-map-missile" data-testid="strike-missile" />
+                )}
+              </g>
+            );
+          })()}
+        {/* M40: a bomb on its way to the city, from the neighbour that fired it. */}
+        {w.incoming?.kind === 'bomb' &&
+          (() => {
+            const n = ns.find((x) => x.name === w.incoming!.from);
+            const p = n && at[n.id];
+            if (!p) return null;
+            const t = 1 - Math.min(1, Math.max(0, (w.incoming.arrive - tick) / flightTicks));
+            const q = bez(p, me, t);
+            return (
+              <g data-testid="bomb-arc" class="war-map-strike incoming">
+                <path d={arc(p, me)} class="war-map-strike-arc" />
+                <circle cx={q.x} cy={q.y} r={3.2} class="war-map-missile" data-testid="bomb-missile" />
+              </g>
+            );
+          })()}
         {w.expeditions.map((e) => {
           const p = at[e.to];
           if (!p) return null;
@@ -831,6 +1003,13 @@ export function RegionMap() {
         with the hours a force takes each way, and by rail with a rail link. Squares are forces on the move:
         ours in blue, theirs in red. A front is where there's been fighting lately or feelings are hostile.
       </p>
+      {atom?.allowed && (
+        <p class="muted" data-testid="war-map-atom-note">
+          Dots beside a town show how far its atom bomb has got: plant, fuel, silo, the bomb, ready, a launch
+          being prepared. A frame is a bomb ready to use, a star the first to have one; an arc is a bomb in
+          flight, a cloud where one fell.
+        </p>
+      )}
       <p class="muted" data-testid="war-threat">
         {w.threat.open
           ? 'Your neighbours may raid the city: the more they outgun you and the worse their feelings, the sooner.'

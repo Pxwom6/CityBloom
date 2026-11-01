@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, parseSettings } from '../src/client/settings';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS, parseSettings, prefersReducedMotion } from '../src/client/settings';
 import { decodeSave } from '../src/client/saves';
 import { Sim } from '../src/sim/sim';
 import { checkInvariants } from '../src/sim/invariants';
@@ -39,6 +39,31 @@ describe('settings', () => {
     expect(s.autosaveMinutes).toBe(DEFAULT_SETTINGS.autosaveMinutes);
     expect(s.seenTips).toEqual(['noPower', 'money']);
     expect(s.tutorialStep).toBe(2);
+  });
+
+  describe('reduceFlashes (M40: the atom bomb’s flash, softened)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('is checked like the other switches: a stored true or false stands, anything else is the default', () => {
+      expect(parseSettings({ reduceFlashes: true }).reduceFlashes).toBe(true);
+      expect(parseSettings({ reduceFlashes: false }).reduceFlashes).toBe(false);
+      for (const junk of ['yes', 1, 0, null, {}, []])
+        expect(parseSettings({ reduceFlashes: junk }).reduceFlashes).toBe(DEFAULT_SETTINGS.reduceFlashes);
+      expect(parseSettings({}).reduceFlashes).toBe(DEFAULT_SETTINGS.reduceFlashes);
+    });
+
+    it('follows the system’s reduce-motion setting by default, and is off where there is nothing to ask', () => {
+      // (No window here: nothing asks, so the flash is as it was.)
+      expect(prefersReducedMotion()).toBe(false);
+      vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce') }));
+      expect(prefersReducedMotion()).toBe(true);
+      vi.stubGlobal('matchMedia', () => ({ matches: false }));
+      expect(prefersReducedMotion()).toBe(false);
+      vi.stubGlobal('matchMedia', () => {
+        throw new Error('no media');
+      });
+      expect(prefersReducedMotion()).toBe(false);
+    });
   });
 
   it('round-trip through JSON unchanged', () => {

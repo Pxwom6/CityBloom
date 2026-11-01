@@ -2489,3 +2489,87 @@ these are its calls and the reasons, with where they overturned the first draft.
     they asserted what the above replaces: the cloud tests of `atomFriends.test.ts` (first sight, waits
     for the wind, a lower total sets `seen` down), the pinned half of "called back to the silo", and
     `determinism.test.ts`'s `waiting` match.
+- **Step 11a (the interface; effects and sounds are 11b): calls the plan left open.**
+  - *The summary grew the facts the tab needs, nothing else moved.* `AtomSummary` gains `rules` (the rules' words),
+    `plantState`/`siloState` (none, going up, built), `siloWait`, `buildWhy` (the bomb's own gate in words, null while it
+    is being built or held), `launchWhy` (the gates before any target: rules, scenario, silo, treasury),
+    `targets` (every rival and friend's city with `targetWhy`'s reason, null when a launch could be aimed at it),
+    `launch.refused`/`launch.sent` (the region's last answer, and "with the room") and `fallout` (the city has a
+    raster); `RivalRace` gains `fuel` (percent while it is still on its fuel: elapsed over `1,500 + delay`). All are
+    pure reads, none is hashed or saved; the one test that compared the whole summary names them.
+  - *The ladder points at its next step.* Eight rungs (research, plant, fuel, silo, bomb, bomb ready, launch, used),
+    each `done`, `now`, `wait` (a reason, the sim's own: `fuelWait`, `bomb.wait`, `launch.held`) or `todo`; the first
+    rung not done is never a bare `todo` (it reads `now`), so the tab always says what to do next. The line above it
+    (`headline`) names that rung ("Fuel: 50 % of a full load") rather than the region's stage name, because with a silo
+    standing and the fuel half made `atomStage` says "Silo going up"; the region's race list keeps the stage names for
+    friends (all their report holds) and uses the headline for the city.
+  - *The launch card is the plan's, with one reading.* The hold commits `launchBomb` (the $1.2M and the preparation), not
+    the firing: the bomb leaves by itself when the bar is full (as at a computer neighbour in step 2), so the card says
+    so, lists the consequences before the button and says the preparation can be called off with half back. A
+    prepared bomb that can't leave shows the room's last answer (`launch.refused`) with Send again (a plain button: the
+    price is paid and the consequences were read at the hold); a strike with the room shows no cancel. The hold is
+    pointer events (mouse, finger, pen), 3 seconds on `performance.now` (the bar is drawn a frame at a time, but the
+    commit has a timer of its own, so a window with slow frames still commits at three seconds), ending on release,
+    sliding off, a lost touch, blur or the button going disabled; Space and Enter held do the same. The press is kept in `atomUi.hold` so
+    a test can read it, and `scripts/dev/atomshot.mjs` freezes the clock at 1.5 s for the picture.
+  - *Raising the dome sets it to "Superweapons only".* The card's button appears when the dome is charged and its mode
+    is off (the one case the sim says a charged dome won't stop the bomb); `super` stops a bomb and keeps the dome out
+    of ordinary raids, which is what a player who keeps it off to save its charge wants.
+  - *Countdown card.* Top centre, between the war room (left) and the inspector (right); the clock is the raid chip's h:mm of game time on the
+    display clock (whole minutes: float maths showed "1:00" for 61 ticks) with "about 3 minutes at normal speed"
+    under it; it is also the first section of the Bomb tab (own test ids), and on a narrow window the card steps aside
+    while the Bomb tab is open (and its Open the war room button goes while the room is on that tab). "Look at the missile" shows only when `game.atomUi.missile?.available()` (11b sets
+    `atomUi.missile = {available, look}`). The raid chip puts the bomb before a battle too and opens the war room on
+    the Bomb tab (`Game.openWarRoom(tab)`; the tab is `Game.warTab` now, not component state).
+  - *The card a bomb leaves behind* (`atom-after`, from `bombStopped` and the target's `atomImpact`): "N residents have
+    left the city; M buildings were levelled" or the dome's save, closed with OK (and "Show the fallout map"); it is
+    the page's, so a reload loses it (the Bomb tab keeps the same line under `impact`).
+  - *Clean-up is a click tool* (`CleanTool`, id `cleanup`, `src/tools/cleanTool.ts`): arming it opens the radiation
+    map (and puts the previous map back when it is put down), closes the war room, draws the 128 m ring from the
+    `cleanFallout` preview (amber when it would work, red with the sim's refusal in the hint otherwise) and the
+    price; a click hires a crew and the tool stays out for the next (three at a time). Its bar (`cleanup-bar`, Done)
+    is the way out on touch.
+  - *The race on the map.* Pips (six: plant, fuel, silo, bomb, ready, launch; the last two red), a fuel bar while the
+    bomb is unfinished, a dashed frame once a bomb is ready or being launched, a star on the first finisher, an arc
+    with a dot flying along it for the city's own strike (from `fired.tick`) and for a bomb inbound, a cloud on a
+    town a bomb has fallen on (the flight over, `rival.fallout` 0.5 or more, or a friend's `hit`).
+  - *`reduceFlashes`* is a settings key (default from `prefers-reduced-motion`, false where nothing can ask) and a
+    "Soften flashes" check in the Graphics block; 11b reads it.
+  - *Tips.* Six, each with its condition: `atomRace` (a neighbour or friend at fuel or beyond), `atomReady` (the bomb in
+    the silo), `atomLaunch` (a launch being prepared), `atomInbound` (a bomb in the air), `atomFallout` (fallout in the
+    city), `atomWinter` (the badge shows); the spy tip names the atom bomb works now.
+  - *Tone.* A test reads the interface files whole (comments too) and the six tips for "casualt", "killed", "dead",
+    "victim"; the view model's output is held to it at every stage.
+  - *Touch.* New controls are `.btn.small` (covered by the xs rule) except the hold button (`min-height: max(2.6rem,
+    40px)`, `touch-action: none`); `e2e/m39-touch-scale.spec.ts` covers the countdown card's buttons in a real rivals city
+    with a bomb sent by the cheat, the Bomb tab, and the hold button as a stand-in (a real one needs a bomb in the silo).
+  - *No new command or cheat,* so the lockstep lists and the cross-browser script are untouched. Test API: `getAtom()`,
+    `openAtomTab()`, `getFallout(x?, z?)`.
+  - *Found by looking at the pictures (all fixed in this step).* The small red buttons were red on red (`.btn.small.danger`
+    is a red-text rule from the room panel: the dome button is `.atom-raise` now); the ladder's bars had no height (the
+    war room's `.war-bar` is `flex: 1`, which in a column gives no height); the clean-up tool's hint and the radiation
+    map's reading sat on each other (the reading goes under the hint while the tool is out); the ladder said "Not built"
+    of a plant and silo a blast had taken after the bomb was used (it says "No longer standing"); the card for a
+    stopped or landed bomb covered the room's edge (it sits to the right of it).
+  - *A launch held on by touch cancelled itself (found by the dev scene's touch test, fixed).* The held button commits at
+    three seconds and the launch card gives way to the launch-under-way card, whose Cancel button then stands under
+    the finger that is still down; lifting it (a tap synthesised on release) pressed Cancel and called the launch off at
+    once. Now `AtomUi.commitPress()` guards what takes the button's place until the pointer that held it comes up (any
+    of pointer, touch, mouse, key or blur) and 700 ms after, and a button that has just mounted is inert for 400 ms
+    (`useArmed`); a lost release frees it after 15 s. The commit also has a timer of its own beside the frame loop (a
+    window drawing slowly, as software rendering does, committed at the next frame, seconds late).
+  - *Dev scene* `node scripts/dev/atomshot.mjs <out>` (after `npm run build:test`; env `ONLY=racing,map,ready,hold,prepared,phone,
+    countdown,raised,stopped,hit,used,clean,settings` picks scenes, earlier ones they need run first; `NOSHOT=1` plays
+    them and checks what the page reports without taking the pictures, about 80 s for `phone`; `PW_CHROMIUM` per CLAUDE.md in
+    a VM without Playwright's revision; `scripts/dev/montage.mjs` takes it too now): the battle-map scene's town plus
+    a nuclear plant, the HQ, the enrichment plant, the silo and a dome, every tier by cheat. It holds the launch
+    button by mouse (let go at 1.5 s with the clock frozen for the picture: no launch; held on: the launch starts) and by
+    touch (CDP touch events on the phone's width: a finger let go early starts nothing, a finger held on does), and throws
+    if either does the wrong thing. The pictures are 24 in all: racing, the map with races and with a strike, ready, the
+    hold halfway, prepared, the countdown (the dome off, raised from the card, in the room), stopped, landed, used,
+    the clean-up tool armed and after a click, and the phone and tablet widths.
+  - *Tests.* `tests/war/atomView.test.ts` (23: the view model at every stage of the race on a real town, the hold's
+    arithmetic, the dome's sentences against the sim's own answer, the countdown, the race rows, the tab's condition, the
+    fallout lines, the tone), `atomCleanTool.test.ts` (5: the tool with the real sim), `atomUi.test.ts` (7: the card, the missile hook, the held button, the guard after a committed press),
+    `atomState.test.ts` (the tone test now reads the interface files and the six tips; the summary's new keys),
+    `shell.test.ts` (`reduceFlashes`: 2), `atomRival.test.ts` (the rivals' new `fuel`). No golden moved.

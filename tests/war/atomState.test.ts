@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { TIPS } from '../../src/client/tutorial';
 import * as ATOM_DATA from '../../src/data/atom';
 import { ATOM, ATOM_STAGES, ATOM_STAGE_NAMES, atomStageNo } from '../../src/data/atom';
 import { CIVIC } from '../../src/data/civic';
@@ -116,6 +118,31 @@ describe('M40: the numbers', () => {
     for (const w of words) expect(w, w).not.toMatch(NOT_SAID);
   });
 
+  it('say nothing of anyone hurt in the page’s words either: the Bomb tab, its cards and tool, the tips', () => {
+    // (M40 step 11: the interface files are read whole, comments included, so a later edit can't slip one in.)
+    const files = [
+      'src/ui/Atom.tsx',
+      'src/ui/atomView.ts',
+      'src/ui/Battle.tsx',
+      'src/ui/Military.tsx',
+      'src/client/atomUi.ts',
+      'src/client/atomNotices.ts',
+      'src/client/atomRegion.ts',
+      'src/tools/cleanTool.ts',
+    ];
+    for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(NOT_SAID);
+    const tips = TIPS.filter((t) => t.id.startsWith('atom'));
+    expect(tips.map((t) => t.id)).toEqual([
+      'atomRace',
+      'atomReady',
+      'atomLaunch',
+      'atomInbound',
+      'atomFallout',
+      'atomWinter',
+    ]);
+    for (const t of tips) expect(t.text, t.id).not.toMatch(NOT_SAID);
+  });
+
   it('keep the two buildings out of the population unlock announcements, and the nuclear plant in', () => {
     expect(unlocksAt(40_000, true)).toContain('Nuclear power plant');
     expect(unlocksAt(40_000, true)).not.toContain('Enrichment plant');
@@ -185,20 +212,36 @@ describe('M40: the stage of the race', () => {
     const s0 = atomSummary(sim)!;
     expect(s0).toEqual({
       allowed: true,
+      rules: null,
       stage: 'none',
       research: { done: 24, total: 24, next: null },
       nuclear: true,
       plant: false,
+      plantState: 'none',
+      siloState: 'none',
+      siloWait: null,
       fuel: 0,
       fuelWait: null,
       bomb: null,
+      buildWhy: 'The bomb needs a full load of fuel (0 % made)',
       have: false,
       launch: null,
+      launchWhy: null,
+      // Every rival neighbour is listed, none can be aimed at without a total war (M40 step 11).
+      targets: sim.state.region.neighbours
+        .filter((n) => n.rival)
+        .map((n) => ({
+          id: n.id,
+          name: n.name,
+          friend: false,
+          why: `The bomb needs a total war with ${n.name}: you are not at war`,
+        })),
       fired: null,
       first: false,
       inbound: null,
       impact: null,
       rivals: [],
+      fallout: false,
     });
     const plant = place('enrichment');
     ok(sim, { type: 'cheat', cheat: 'finishStages', civic: plant });

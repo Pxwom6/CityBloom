@@ -64,6 +64,7 @@ import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite }
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps, resolveOp } from './client/ops';
 import { AtomRegion } from './client/atomRegion';
+import { AtomUi, type WarTab } from './client/atomUi';
 import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
@@ -189,6 +190,8 @@ export class Game {
   hint: ToolHint | null = null;
   /** A tool's question before it acts (P2), shown at the pointer with its two buttons. */
   question: ToolQuestion | null = null;
+  /** The war room's tab (kept here so a card, a chip or a key can open the room on the Bomb tab). */
+  warTab: WarTab = 'forces';
   /** Open side panel (budget, and later data maps, advisors...). */
   panel:
     | 'budget'
@@ -628,6 +631,11 @@ export class Game {
     now: () => performance.now(),
     changed: () => this.notify(),
   });
+  /**
+   * The atom bomb on the page (M40 step 11): the card a bomb leaves behind, and the missile the effects
+   * (step 11b) hand to the countdown card.
+   */
+  readonly atomUi: AtomUi = new AtomUi({ notify: () => this.notify() });
   /**
    * The region's replays (M39 step 7): which finished live battles it keeps, and getting one ready for
    * the viewer (the City history panel's Watch buttons).
@@ -1183,8 +1191,10 @@ export class Game {
    * Open the war room (M34) without closing it if it's open; on a narrow window the inspector
    * (which covers it) steps aside.
    */
-  openWarRoom(): void {
+  openWarRoom(tab?: WarTab): void {
+    if (tab) this.warTab = tab;
     if (this.panel !== 'war') this.openPanel('war');
+    else if (tab) this.notify();
     const w = typeof document === 'undefined' ? undefined : document.getElementById('ui')?.dataset.width;
     if (w === 'xs' || w === 's') this.select(null);
   }
@@ -1495,14 +1505,17 @@ export class Game {
         );
         this.audio?.play('raid');
         if (this.speed > 1) this.setSpeed(1);
+        // (An old card from the last bomb makes way for the countdown.)
+        this.atomUi.dismissAfter();
       } else if (e.kind === 'bombLanded') this.audio?.play('boom');
-      else if (e.kind === 'bombStopped')
+      else if (e.kind === 'bombStopped') {
         this.notice(
           `bomb:${e.id}`,
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
-      else if (atomEvent) this.notice(atomEvent.kind, atomEvent.text, atomEvent.tone);
+        this.atomUi.showAfter('stopped', { from: String(e.info?.from ?? '') });
+      } else if (atomEvent) this.notice(atomEvent.kind, atomEvent.text, atomEvent.tone);
       else if (e.kind === 'rivalBomb')
         // A computer neighbour's race for the bomb (M40, Hard): each stage is public.
         this.notice(
@@ -1522,7 +1535,7 @@ export class Game {
           'A clean-up crew has finished: the ground there has half the fallout it had.',
           'ok',
         );
-      else if (e.kind === 'atomImpact')
+      else if (e.kind === 'atomImpact') {
         this.notice(
           'atomImpact',
           e.info?.to !== undefined
@@ -1530,7 +1543,14 @@ export class Game {
             : `${formatNumber(Number(e.info?.fled ?? 0))} residents have left the city; ${formatNumber(Number(e.info?.levelled ?? 0))} buildings were levelled.`,
           'bad',
         );
-      else if (e.kind === 'battleStarted') {
+        // The card says the same in the middle of the screen, once the blast is over (a strike the city
+        // fired at a neighbour has no card: the event names its target).
+        if (e.info?.to === undefined)
+          this.atomUi.showAfter('hit', {
+            fled: Number(e.info?.fled ?? 0),
+            levelled: Number(e.info?.levelled ?? 0),
+          });
+      } else if (e.kind === 'battleStarted') {
         this.notice(
           `battle:${e.id}`,
           `${String(e.info?.from)}'s force has reached the city, and the defences are fighting back.`,

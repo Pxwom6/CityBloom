@@ -18,6 +18,9 @@ import { Research, warHours } from './Research';
 import { TIERS, type TierKey } from '../data/research';
 import { Intelligence } from './Intel';
 import { Trade } from './Trade';
+import { Bomb } from './Atom';
+import { bombTabShown } from './atomView';
+import type { WarTab } from '../client/atomUi';
 
 /** Training time in the game's own terms: hours, or months for longer (a month is a day and night). */
 export function trainingTime(hours: number): string {
@@ -373,18 +376,7 @@ function NewBuildings({ civicId }: { civicId: number }) {
   return null;
 }
 
-type Tab =
-  | 'forces'
-  | 'send'
-  | 'map'
-  | 'research'
-  | 'intel'
-  | 'diplomacy'
-  | 'trade'
-  | 'economy'
-  | 'readiness'
-  | 'reports';
-const TABS: { id: Tab; name: string }[] = [
+const TABS: { id: WarTab; name: string }[] = [
   { id: 'forces', name: 'Forces' },
   { id: 'send', name: 'Send' },
   { id: 'map', name: 'Map' },
@@ -392,6 +384,7 @@ const TABS: { id: Tab; name: string }[] = [
   { id: 'intel', name: 'Intelligence' },
   { id: 'diplomacy', name: 'Diplomacy' },
   { id: 'trade', name: 'Trade' },
+  { id: 'atom', name: 'Bomb' },
   { id: 'economy', name: 'Upkeep' },
   { id: 'readiness', name: 'Readiness' },
   { id: 'reports', name: 'Reports' },
@@ -400,9 +393,17 @@ const TABS: { id: Tab; name: string }[] = [
 /** The war room (M34): the city's forces, what they cost, how ready they are, and research. */
 export function WarRoomPanel() {
   const game = useGameUpdates(300);
-  const [tab, setTab] = useState<Tab>('forces');
   const w = game.world.stats.war;
   if (game.panel !== 'war' || !w) return null;
+  // The Bomb tab (M40) is there while the bomb is allowed or something of it exists; a room opened on it
+  // after the rules turned it off with nothing to show falls back to the forces.
+  const bombTab = bombTabShown(w.atom, game.world.stats.region.neighbours, game.atomRegion.atoms.length);
+  const tabs = TABS.filter((t) => t.id !== 'atom' || bombTab);
+  const tab: WarTab = tabs.some((t) => t.id === game.warTab) ? game.warTab : 'forces';
+  const setTab = (t: WarTab) => {
+    game.warTab = t;
+    game.notify();
+  };
   return (
     <aside class="advisors war-room panel" data-testid="war-room" role="dialog" aria-label="War room">
       <header>
@@ -416,7 +417,7 @@ export function WarRoomPanel() {
         </button>
       </header>
       <nav class="tabs" role="tablist">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
@@ -441,6 +442,7 @@ export function WarRoomPanel() {
         {tab === 'research' && <Research />}
         {tab === 'intel' && <Intelligence />}
         {tab === 'trade' && <Trade />}
+        {tab === 'atom' && <Bomb />}
       </div>
     </aside>
   );

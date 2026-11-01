@@ -25,6 +25,7 @@ import { WarRoomPanel } from './Military';
 import { FallenCard } from './Diplomacy';
 import { BattleBar, LiveBar, ViewerBar } from './Battle';
 import { BattleMapPanel } from './BattleMap';
+import { AtomAftermath, AtomCountdown, CleanupBar } from './Atom';
 import { EditorApp } from './Editor';
 import { typingIn } from '../client/keys';
 
@@ -125,6 +126,9 @@ export function App({ game }: { game: Game }) {
       <BattleBar />
       <LiveBar />
       <BattleMapPanel />
+      <AtomCountdown />
+      <AtomAftermath />
+      <CleanupBar />
       <ViewerBar />
       <RoomPanel />
       <MilestoneBanner />

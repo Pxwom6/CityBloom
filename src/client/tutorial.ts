@@ -295,8 +295,8 @@ export const TIPS: Tip[] = [
     id: 'intelligence',
     text:
       'Your spy agency sends agents from the war room’s Intelligence tab: to look round a rival, sabotage its ' +
-      'power or depot, or steal its research. The odds are shown before they go; a caught spy is an incident ' +
-      'that costs the city’s good name.',
+      'power, its depot or (where a neighbour is racing) its atom bomb works, or steal its research. The odds ' +
+      'are shown before they go; a caught spy is an incident that costs the city’s good name.',
     when: (g) => hasCivic(g, (d) => d === 'spyagency'),
   },
   {
@@ -364,6 +364,63 @@ export const TIPS: Tip[] = [
       'A neighbour sanctions the city: no trade with it, and your stake there is frozen until it lifts them. ' +
       'Broken pacts, a war on its ally or a poor reputation bring sanctions; the Trade tab says why.',
     when: (g) => (g.world.stats.war?.economy?.neighbours ?? []).some((n) => n.sanctionedBy !== null),
+  },
+  // The atom bomb (M40).
+  {
+    // Someone other than the city has begun enriching fuel: a friend's report, or a computer neighbour racing.
+    id: 'atomRace',
+    text:
+      'Someone has begun enriching fuel for an atom bomb. It takes years and a fortune, and every step is ' +
+      'public: the war room’s Bomb tab shows how far each city has got. Your spies can slow a race (the ' +
+      'Intelligence tab’s atom bomb works), and a charged dome shield stops one bomb.',
+    when: (g) => {
+      const war = g.world.stats.war;
+      return (
+        !!war?.atom &&
+        (war.atom.rivals.some((r) => r.stage >= 2) ||
+          g.world.stats.region.neighbours.some((n) => (n.player?.atom?.stage ?? 0) >= 2))
+      );
+    },
+  },
+  {
+    id: 'atomReady',
+    text:
+      'Your atom bomb is ready in the silo. Holding it is a deterrent: neighbours think twice before they ' +
+      'declare a total war on a city that has it. Using it is another matter, and the Bomb tab says what ' +
+      'it costs before you ever press the button.',
+    when: (g) => !!g.world.stats.war?.atom?.have,
+  },
+  {
+    id: 'atomLaunch',
+    text:
+      'A launch is being prepared. The bomb leaves by itself when the bar is full, and until then you can ' +
+      'call it off from the Bomb tab with half the money back. Once it has left there is no way back: your ' +
+      'word counts for nothing, every neighbour turns on the city and a nuclear winter falls on every city.',
+    when: (g) => !!g.world.stats.war?.atom?.launch,
+  },
+  {
+    id: 'atomInbound',
+    text:
+      'An atom bomb is on its way. A charged dome shield stops it whole (if it is switched off, raise it ' +
+      'from the card), and the shelters take in the people nearby. Pausing only holds the missile where it ' +
+      'is. The Bomb tab in the war room has the rest.',
+    when: (g) => g.world.stats.war?.incoming?.kind === 'bomb',
+  },
+  {
+    id: 'atomFallout',
+    text:
+      'Fallout lies on the ground. Switch on the Fallout map to see it: red ground is closed to building ' +
+      'for years, and people near it fall ill and leave. The Bomb tab hires clean-up crews, which halve the ' +
+      'dose within 128 metres.',
+    when: (g) => !!g.world.stats.war?.atom?.fallout,
+  },
+  {
+    id: 'atomWinter',
+    text:
+      'A nuclear winter has begun: ash dims the sky for about six game years. Solar plants give less, ' +
+      'heating costs more and even summer rain falls as snow. The badge by the date shows how far it has ' +
+      'got; keep ploughs, power and heating ready.',
+    when: (g) => g.world.stats.weather.winter > 0,
   },
   {
     id: 'noPower',

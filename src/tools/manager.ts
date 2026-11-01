@@ -12,6 +12,7 @@ import { DistrictTool } from './districtTool';
 import { TerrainTool } from './terrainTool';
 import { MapTool } from './mapTool';
 import { PingTool } from './pingTool';
+import { CleanTool } from './cleanTool';
 import { typingIn } from '../client/keys';
 
 export type ToolId =
@@ -25,7 +26,8 @@ export type ToolId =
   | 'district'
   | 'terrain'
   | 'map'
-  | 'ping';
+  | 'ping'
+  | 'cleanup';
 
 /** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
 const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
@@ -47,6 +49,8 @@ export class ToolManager {
   readonly map: MapTool;
   /** One tap on the map points the others in a shared city at it (F11). */
   readonly ping: PingTool;
+  /** Clean-up crews on the fallout map (M40). */
+  readonly cleanup: CleanTool;
   active: Tool;
   private rightDown: { x: number; y: number } | null = null;
   /** Where a left press began for a click-only tool (P3), until the button comes up. */
@@ -64,6 +68,7 @@ export class ToolManager {
     this.terrain = new TerrainTool(game);
     this.map = new MapTool(game);
     this.ping = new PingTool(game);
+    this.cleanup = new CleanTool(game);
     this.active = this.select;
     const canvas = game.renderer.canvas;
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));

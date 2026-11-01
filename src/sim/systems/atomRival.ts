@@ -289,6 +289,8 @@ export interface RivalRace {
   id: number;
   name: string;
   stage: number;
+  /** The fuel made, in percent, while the neighbour is still on its fuel (the first stage); null after. */
+  fuel: number | null;
   /** War hours until a launch being prepared leaves (only then). */
   launchIn: number | null;
 }
@@ -303,6 +305,12 @@ export function rivalRaces(sim: Sim): RivalRace[] {
         id: n.id,
         name: n.name,
         stage: atomStageNo(b.stage),
+        fuel:
+          b.stage === 'enriching'
+            ? Math.round(
+                Math.max(0, Math.min(1, (clock - b.at) / (RIVAL_BOMB.hours.enriching + b.delay))) * 100,
+              )
+            : null,
         launchIn: b.stage === 'preparing' ? Math.max(0, rivalBombDue(n)! - clock) : null,
       };
     });

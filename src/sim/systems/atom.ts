@@ -262,14 +262,22 @@ export function atomLock(sim: Sim, defId: string): string | null {
 
 /** The city's race as the page shows it (M40): what the build menu and the war room need to know. */
 export interface AtomSummary {
-  /** The rules (or the city's rivals) allow the bomb. */
+  /** The rules (or the city's rivals) allow the bomb; and, when they don't, why not in words. */
   allowed: boolean;
+  rules: string | null;
   stage: AtomStage;
   /** Tiers of the research tree done, in all, and the name of the first still to do. */
   research: { done: number; total: number; next: string | null };
   /** A nuclear plant is giving power; the enrichment plant is online. */
   nuclear: boolean;
   plant: boolean;
+  /**
+   * The enrichment plant and the silo as the city has them (M40 step 11): not at all, going up (a
+   * project still in its stages), or finished; and why a finished silo isn't working (null while it is).
+   */
+  plantState: SiteState;
+  siloState: SiteState;
+  siloWait: string | null;
   /** Fuel made, 0 to 1. */
   fuel: number;
   /** Why fuel isn't being made now, in words; null while it is, when the load is full, or before the race has begun. */
@@ -279,6 +287,11 @@ export interface AtomSummary {
    * silo can't work, or the next instalment can't be paid); null while it goes on.
    */
   bomb: { done: number; paid: number; of: number; wait: string | null } | null;
+  /**
+   * Why the bomb can't be started now (the bomb's gates, in words), or null when `buildBomb` would
+   * start it. Also null while one is being built or is in the silo: the bomb's own rows say so then.
+   */
+  buildWhy: string | null;
   /** The bomb is finished and in the silo. */
   have: boolean;
   /**
@@ -296,7 +309,18 @@ export interface AtomSummary {
     ready: boolean;
     wait: string | null;
     held: string | null;
+    /** The room's last refusal in its own words, kept until the bomb is sent again (a friend's city only). */
+    refused: string | null;
+    /** The strike is with the region's room, which has not answered yet. */
+    sent: boolean;
   } | null;
+  /**
+   * Why a launch can't be prepared or sent at all just now, whoever the target (the rules, a scenario,
+   * a silo that isn't working), or null; and each neighbour the bomb could be aimed at (a rival or a
+   * friend's city) with the reason it can't be (null: the city is in an open total war with it).
+   */
+  launchWhy: string | null;
+  targets: { id: number; name: string; friend: boolean; why: string | null }[];
   /** The bomb has left: when, and for whom. */
   fired: { tick: number; to: number; name: string } | null;
   /** The city finished the bomb before any other city in the race (M40 step 10: the region's word for friends). */
@@ -322,6 +346,16 @@ export interface AtomSummary {
    * (`atomStageNo`) and, for a launch being prepared, the war hours until it leaves. For the region map.
    */
   rivals: RivalRace[];
+  /** The city has fallout on its ground or in its air (the radiation map and the clean-up have something to show). */
+  fallout: boolean;
+}
+
+/** An enrichment plant or a silo, as the city has it: none, a project going up, or finished. */
+export type SiteState = 'none' | 'building' | 'built';
+
+function siteState(sim: Sim, def: string): SiteState {
+  const c = civicOfDef(sim, def);
+  return !c ? 'none' : c.build ? 'building' : 'built';
 }
 
 export function atomSummary(sim: Sim): AtomSummary | null {
@@ -333,10 +367,14 @@ export function atomSummary(sim: Sim): AtomSummary | null {
   const round = (v: number) => Math.round(v * 1000) / 1000;
   return {
     allowed: bombAllowed(sim),
+    rules: atomRulesWhy(sim),
     stage: atomStage(sim),
     research: { done: tree.done, total: tree.total, next: tree.next ?? null },
     nuclear: nuclearRunning(sim),
     plant: civicRunning(sim, 'enrichment'),
+    plantState: siteState(sim, 'enrichment'),
+    siloState: siteState(sim, 'atomsilo'),
+    siloWait: civicOfDef(sim, 'atomsilo') && !civicOfDef(sim, 'atomsilo')!.build ? siloBlock(sim) : null,
     fuel: round(Math.min(1, (a?.fuel ?? 0) / ATOM.fuel.hours)),
     fuelWait: !a?.fired && !full && (a || civicOfDef(sim, 'enrichment')) ? fuelBlock(sim) : null,
     bomb: a?.bomb
@@ -348,6 +386,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
             siloBlock(sim) ?? (instalmentShort(sim) ? 'The treasury can’t pay the next instalment' : null),
         }
       : null,
+    buildWhy: a?.bomb || a?.have || a?.fired ? null : buildRefusal(sim),
     have: !!a?.have,
     launch: a?.prep
       ? {
@@ -357,8 +396,12 @@ export function atomSummary(sim: Sim): AtomSummary | null {
           ready: a.prep.done >= ATOM.launch.prepHours,
           wait: a.prep.done >= ATOM.launch.prepHours ? null : siloBlock(sim),
           held: a.prep.send ? IN_THE_ROOM : (a.prep.refused ?? heldWhy(sim, a.prep.to)),
+          refused: a.prep.refused ?? null,
+          sent: !!a.prep.send,
         }
       : null,
+    launchWhy: a?.have || a?.prep ? launchBlock(sim) : null,
+    targets: launchTargets(sim),
     fired: a?.fired ? { tick: a.fired.tick, to: a.fired.to, name: a.fired.name } : null,
     first: a?.first === true,
     inbound: a?.inbound?.warned
@@ -382,6 +425,7 @@ export function atomSummary(sim: Sim): AtomSummary | null {
         }
       : null,
     rivals: rivalRaces(sim),
+    fallout: !!sim.state.fallout,
   };
 }
 
@@ -713,6 +757,33 @@ function targetWhy(sim: Sim, to: number): string | null {
   if (war.scale !== 'total')
     return `Only a total war can use the bomb: your war with ${n.name} is not a total war`;
   return null;
+}
+
+/**
+ * Why no launch can be prepared or sent just now, whoever it is aimed at, or null (M40 step 11, for the
+ * war room's launch card): the bomb's gates before the target's. The same checks `launchBomb` makes
+ * first, in its order, so the card and the command give the same words.
+ */
+function launchBlock(sim: Sim): string | null {
+  const a = sim.state.war?.atom;
+  const rules = atomRulesWhy(sim);
+  if (rules) return rules;
+  if (sim.state.scenario) return 'The atom bomb is not part of a scenario';
+  if (a?.prep?.send) return IN_THE_ROOM;
+  const silo = siloBlock(sim);
+  if (silo) return silo;
+  if (!a?.prep && !sim.state.options.sandbox && sim.state.treasury < ATOM.launch.cost)
+    return `Not enough money: ${dollars(ATOM.launch.cost)} to prepare a launch`;
+  return null;
+}
+
+/** Every neighbour a bomb could be aimed at, in the order the region lists them, and why it can't be (M40 step 11). */
+function launchTargets(sim: Sim): { id: number; name: string; friend: boolean; why: string | null }[] {
+  const out: { id: number; name: string; friend: boolean; why: string | null }[] = [];
+  for (const n of sim.state.region.neighbours)
+    if (n.player || n.rival)
+      out.push({ id: n.id, name: n.name, friend: !!n.player, why: targetWhy(sim, n.id) });
+  return out;
 }
 
 /** What a strike with the region's room is, in words: it has left the silo and the room decides. */

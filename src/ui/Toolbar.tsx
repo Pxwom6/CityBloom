@@ -958,7 +958,8 @@ export function RadiationTip() {
       data-testid="radiation-tip"
       style={{
         left: `${Math.max(8, Math.min(r.x + 14, window.innerWidth - 300))}px`,
-        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + 18}px`,
+        // (The clean-up tool's own hint sits at the pointer: the reading goes under it.)
+        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + (game.tools.activeId === 'cleanup' ? 58 : 18)}px`,
       }}
     >
       {r.text}

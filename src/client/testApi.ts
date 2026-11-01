@@ -4,6 +4,11 @@ import { historyRows, historyState, replayKey } from './regionHistory';
 import type { ResearchSummary } from '../sim/systems/research';
 import type { IntelSummary } from '../sim/systems/intel';
 import type { SupersSummary } from '../sim/systems/supers';
+import type { AtomSummary } from '../sim/systems/atom';
+import type { FalloutQuery } from '../sim/systems/fallout';
+import type { AftermathCard } from './atomUi';
+import type { RegionAtomMark, RegionWinter } from '../../relay/region';
+import { bombTabShown, countdown, raceRows, type Countdown, type RaceRow } from '../ui/atomView';
 import type { BudgetReport } from '../sim/protocol';
 import type { WeatherLook } from '../render/weather';
 import type { CivicData } from '../sim/protocol';
@@ -197,6 +202,30 @@ export interface TestApi {
   };
   /** The war room (M34): open, its top-bar button shown, the HQ's id. */
   getWarRoom(): { open: boolean; button: boolean; hq: number | null; war: boolean };
+  /**
+   * The atom bomb on the page (M40 step 11): the sim's summary, the Bomb tab (whether it is shown, which
+   * tab the war room is on), the held launch button, the race list and the region's record, the countdown
+   * card's content for a bomb on its way, the card a bomb left behind, the clean-up tool, and whether the
+   * effects (step 11b) have a missile in the sky to look at.
+   */
+  getAtom(): {
+    summary: AtomSummary | null;
+    tab: { shown: boolean; selected: string; open: boolean };
+    hold: { id: string; ms: number } | null;
+    race: RaceRow[];
+    atoms: RegionAtomMark[];
+    winters: RegionWinter[];
+    first: boolean;
+    countdown: Countdown | null;
+    after: AftermathCard | null;
+    cleanTool: boolean;
+    radiationMap: boolean;
+    missile: boolean;
+  };
+  /** Open the war room on the Bomb tab (what the countdown card's Open the war room does). */
+  openAtomTab(): void;
+  /** The fallout in the city and what the map's tooltip would say at a spot (the `fallout` query). */
+  getFallout(x?: number, z?: number): Promise<FalloutQuery>;
   /** Diplomacy (M36): wars, pacts, proposals, the neighbours' standing; null with war off. */
   getDiplomacy(): DiplomacySummary | null;
   /**
@@ -931,6 +960,57 @@ export function installTestApi(game: Game): TestApi {
         .map((u) => ({ id: u.id, kind: u.kind, away: !!u.away, ready: u.ready ?? null, hp: u.hp })),
     }),
     getLedger: () => game.client.query<BudgetReport>({ type: 'budget' }),
+    getAtom: () => {
+      const st = game.world.stats;
+      const a = st.war?.atom ?? null;
+      const ns = st.region?.neighbours ?? [];
+      return {
+        summary: a,
+        tab: {
+          shown: bombTabShown(a, ns, game.atomRegion.atoms.length),
+          selected: game.warTab,
+          open: game.panel === 'war' && game.warTab === 'atom',
+        },
+        hold: game.atomUi.hold
+          ? { id: game.atomUi.hold.id, ms: Math.max(0, performance.now() - game.atomUi.hold.since) }
+          : null,
+        race: a
+          ? raceRows(
+              st.cityName,
+              a,
+              ns.map((n) => ({
+                id: n.id,
+                name: n.name,
+                ...(n.player
+                  ? { player: { slot: n.player.slot, ...(n.player.atom ? { atom: n.player.atom } : {}) } }
+                  : {}),
+              })),
+              game.atomRegion.atoms,
+            )
+          : [],
+        atoms: [...game.atomRegion.atoms],
+        winters: [...game.atomRegion.winters],
+        first: game.atomRegion.first || a?.first === true,
+        countdown: a?.inbound
+          ? countdown(
+              a.inbound,
+              game.world.displayTick,
+              st.war?.supers?.dome ?? null,
+              !!st.war?.supers?.blackout,
+            )
+          : null,
+        after: game.atomUi.after ? { ...game.atomUi.after } : null,
+        cleanTool: game.tools.activeId === 'cleanup',
+        radiationMap: game.overlay.active === 'radiation',
+        missile: game.atomUi.canLook,
+      };
+    },
+    openAtomTab: () => game.openWarRoom('atom'),
+    getFallout: (x, z) =>
+      game.client.query<FalloutQuery>({
+        type: 'fallout',
+        ...(x !== undefined && z !== undefined ? { x, z } : {}),
+      }),
     getWarRoom: () => ({
       open: game.panel === 'war',
       button: !!document.querySelector('[data-testid="open-war"]'),

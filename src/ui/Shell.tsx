@@ -912,6 +912,13 @@ function SettingsScreen() {
             hint="when zoomed in"
             set={(tiltShift) => set({ tiltShift })}
           />
+          <Check
+            on={s.reduceFlashes}
+            testid="reduce-flashes"
+            label="Soften flashes"
+            hint="the atom bomb fades in place of a white flash, and the screen doesn’t shake"
+            set={(reduceFlashes) => set({ reduceFlashes })}
+          />
         </section>
         <section>
           <h3>Interface</h3>

@@ -14,11 +14,10 @@ rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still wor
 4. The next push to `main` deploys the relay and builds the site with its address. Please don't
    paste the token into a session.
 
-Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
-`main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
-SPEC-4.md, M29–M33) is complete on the `multiplayer` branch**, in pull requests #17–#20 and M33's
-for the owner to merge in order. Online rooms need the Cloudflare setup below; peer-to-peer works
-without it.
+Phases 1–4 (with phase 4's review follow-ups) and the war models (PR #22) are merged into `main`,
+which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 5 (war between cities,
+SPEC-5.md, M34–M40) is complete** on this branch, in pull request #23 for the owner to merge. Online
+rooms need the Cloudflare setup above; peer-to-peer works without it.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -62,8 +61,8 @@ without it.
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40.** What remains is the phase's end (In progress). Branch: this cloud session's
-`claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40.** What remains is the
+phase's end (In progress). Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
 it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
@@ -207,6 +206,31 @@ within the game hour and put right without a reload. Or up to four players each 
 side by side in a shared region, trading power, water and garbage, sharing commuters, paying
 together for Sunfield Commons and visiting each other's cities. Single player is unchanged.
 
+**Phase 5 (war between cities, M34–M40)** adds war as an option: a city without rivals plays and
+saves exactly as before, bit for bit. With rival neighbours ticked (or a region's host allowing
+war), each computer town along the highway takes a character and arms month by month. The city
+builds a military HQ, barracks, depots, airfields, a naval yard and defences, trains units with its own workers, power, goods,
+ore and oil, and pays for them on a Defence line and with war bonds (M34). Battles are a
+deterministic simulation fought on the defender's real streets. Raids come with a countdown and
+sirens, and expeditions go to the neighbours' towns, grown by the balance mayor. Damage is rubble
+that clears and regrows (M35). Wars are declared with a reason and a warning, and a war score leads
+to capitulation, treaties, pacts that cost reputation to break, total war with the military HQ as
+the seat of power, conquest and vassals (M36). Weapons labs research six branches of four tiers,
+each ending in a superweapon: a wind-up robot, a sky fortress, a clockwork whale, a dome shield, a
+blackout tower and an express gate. Spies scout, sabotage and steal (M37). Stakes in neighbours'
+industry, loans and arms for allies, sanctions both ways and war weariness make a war economy
+(M38). Between friends the region room keeps the truth. Live battles are commanded by both players
+from a tactical map, and allies send help. Wars and treaties are kept by the room and mirrored in
+each city's sim, with a region-wide war history and exact replays (M39). And at the very end of the
+research tree comes one atom bomb a city, ever. It is years of a big city's income to build, every
+rival sees it coming, and a dome can stop it. A landing leaves fallout for decades and a nuclear
+winter over the whole region, and the world shuns the city that fired for good (M40). Single player
+and peaceful regions are unchanged; every battle, treaty, research tier and bomb is part of the same
+deterministic, cross-browser-checked sim, and between friends the region room decides what stands
+within Cloudflare's free plan. Checked by 2,017 unit tests,
+the war specs in `e2e/` (two players through the real UI for war between friends), a two-hour four-player region
+soak and the cross-browser test on every push.
+
 ## Ideas for what's next
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
@@ -231,14 +255,15 @@ together for Sunfield Commons and visiting each other's cities. Single player is
 
 ## In progress
 **Phase 5's milestones M34 to M40 are complete**, in pull request #23 (its title names all seven).
-What is left of phase 5 is its end (SPEC-5.md, "When every milestone is done"): the summary at the
-top of this file, SPEC_REVIEW's phase-5 section and the README; then a war with a computer neighbour
-and one between two players through the real UI, a race for the bomb, and fixes for whatever feels
-off (best on the owner's Mac, where the real-UI runs are fast).
+What is left of phase 5 is its end (SPEC-5.md, "When every milestone is done"). The summary at the
+top of this file, SPEC_REVIEW's phase-5 section and the README are updated. Still to do: a war with
+a computer neighbour and one between two players through the real UI, a race for the bomb, and
+fixes for whatever feels off (on the owner's Mac, where the real-UI runs are fast; findings and
+fixes go in DECISIONS "Phase 5 end" and SPEC_REVIEW's "When every milestone is done (phase 5)").
 
 M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
 it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
-a silo and a bomb paid in twelve instalments (about $20M in all, some 5½ years of a 57,000-resident
+a silo and a bomb paid in twelve instalments (about $20M in all, some five years of a 57,000-resident
 city's taxes), a region whose host allows total war, superweapons and the bomb, a declared total war
 and a long preparation, launched by a three-second hold. The missile crosses the region with a
 countdown and sirens; a charged dome stops one, then is down 1,440 game hours; a landing levels 450 m
@@ -306,9 +331,8 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. Phase 5's end (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase-5 section and
-   the README; then play through the real UI: a war with a computer neighbour, a war between two
-   players, a race for the atom bomb; fix whatever feels off.
+1. Phase 5's end (SPEC-5.md), the summaries done: play through the real UI a war with a computer
+   neighbour, a war between two players and a race for the atom bomb; fix whatever feels off.
 2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
 
 ## Performance (M40)

@@ -220,14 +220,15 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are fourteen set challenges, each a ready-made city with goals, limits
+**Scenarios** (from the main menu) are seventeen set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke
 from a mill town, rebuild a lake town's waterworks after a flood, turn a coastal town into a
 resort, keep the lorries out of an old market street, see an alpine town through its first
 hard winter, keep a harbour town lit while opening it to the sea, and cut a hill town a way through
-its ridge. Each opens with a brief; the city's name in the top bar opens its goals (G),
+its ridge; three more are at war (see [War](#war)): hold a town through waves of invasion, win a war
+without losing a district, and free an allied town from an aggressive neighbour. Each opens with a brief; the city's name in the top bar opens its goals (G),
 showing each against its target and the time left. Goals are checked as each month closes. A win
 earns one to three stars (the card says what the second and third ask for), kept on this device;
 win or lose, the city plays on.
@@ -285,8 +286,9 @@ save files. The city autosaves every few minutes.
 
 War is off unless you ask for it, so everything above plays as a peaceful city builder. Turn it on and
 your city can raise an army, be raided, send raids of its own and go to war, against the towns along the
-highway or against a friend's city. Nothing is lost for good: a building knocked down by a battle is rubble
-that clears and regrows, a city building that is hit closes for repairs, and roads that are cratered mend.
+highway or against a friend's city. Short of the atom bomb ([below](#the-atom-bomb)), nothing is lost for good: a
+building knocked down by a battle is rubble that clears and regrows, a city building that is hit closes for
+repairs, and roads that are cratered mend.
 
 **Turning it on**
 
@@ -323,6 +325,10 @@ a fallen city can be taken as a **vassal**: it pays its overlord a fifth of its 
 to war only to rise against it. Research (six branches, the fourth tier a superweapon), spies
 (Intelligence) and trade (stakes in a neighbour's industry, loans and arms deals with allies) have tabs of
 their own.
+
+**War scenarios.** Three of the scenarios are at war against computer neighbours: **Hold the Line** (waves
+of invasion to see through), **A Clean War** (win a war without losing a district) and **Liberation** (free an
+allied town held by an aggressive neighbour).
 
 ### War with friends
 

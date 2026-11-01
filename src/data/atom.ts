@@ -279,10 +279,11 @@ export function rivalNotice(stage: AtomStage, who: string): string {
  */
 export const FALLOUT = {
   /**
-   * Half-life of the ground layer and of a computer neighbour's level, in game years: 8, so the
-   * core of a strike (1.0) falls below the ban (0.2) after 8 log2(5) = 18.6 years, 11 hours of play.
+   * Half-life of the ground layer and of a computer neighbour's level, in game years: 9, so the
+   * core of a strike (1.0) falls below the ban (0.2) after 9 log2(5) = 20.9 years, two decades (12.5
+   * hours of play at 1x).
    */
-  halfLifeYears: 8,
+  halfLifeYears: 9,
   /** Ground at or above this level is closed: nothing can be zoned, placed or grown on it. */
   ban: 0.2,
   /**

@@ -3,7 +3,7 @@
  * ground and in the air. Two rasters of the pollution's size (128 cells of 16 m):
  *
  * - the **ground** layer stays where it fell, spreads a very little and decays with a half-life of
- *   eight game years, so the core of a strike reopens after about 18 years (11 hours of play at 1x);
+ *   nine game years, so the core of a strike reopens after about 21 years (12.5 hours of play at 1x);
  *   at or above `FALLOUT.ban` nothing can be zoned, placed or grown on it;
  * - the **air** layer is the plume: it moves with the city's own wind (`windAngle`, the way the smoke
  *   does), spreads, leaves a little on the ground as it goes and fades. What the wind carries off the

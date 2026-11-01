@@ -210,7 +210,7 @@ describe('M40: the ground stays, the air moves', () => {
     expect(air / ground).toBeLessThan(FALLOUT.impact.plume * 1.3);
   });
 
-  it('the core of the strike falls below the ban in 17 to 20 game years, a 0.3 rim in about five', () => {
+  it('the core of the strike falls below the ban in two decades (20 to 22 game years), a 0.3 rim in about five', () => {
     const sim = bare('citybloom');
     depositFallout(sim, MID, MID);
     const f = falloutOf(sim);
@@ -222,17 +222,17 @@ describe('M40: the ground stays, the air moves', () => {
     expect(f.ground[rim]!).toBeLessThan(0.31);
     let core = -1;
     let rimOpened = -1;
-    for (let month = 1; month <= 12 * 22 && core < 0; month++) {
+    for (let month = 1; month <= 12 * 25 && core < 0; month++) {
       day(sim);
       if (rimOpened < 0 && f.ground[rim]! < FALLOUT.ban) rimOpened = month / 12;
       if (f.ground[cell(MID, MID)]! < FALLOUT.ban) core = month / 12;
     }
-    expect(core).toBeGreaterThanOrEqual(17);
-    expect(core).toBeLessThanOrEqual(20);
+    expect(core).toBeGreaterThanOrEqual(20);
+    expect(core).toBeLessThanOrEqual(22);
     expect(rimOpened).toBeGreaterThan(4);
     expect(rimOpened).toBeLessThan(6);
-    // (Hours of play at 1x: 11.)
-    expect(playTime(core)).toMatch(/^1[01] hours of play$/);
+    // (Hours of play at 1x: 12 to 13.)
+    expect(playTime(core)).toMatch(/^1[23] hours of play$/);
     checkInvariants(sim);
   });
 
@@ -359,15 +359,16 @@ describe('M40: fallout across the map’s edges', () => {
     }
   });
 
-  it('a neighbour’s level fades by half every eight game years and a trace is dropped', () => {
+  it('a neighbour’s level fades by half every half-life (nine game years) and a trace is dropped', () => {
     const sim = bare('f');
     const n = rivals(sim)[0]!;
     n.rival!.fallout = 0.8;
-    for (let m = 0; m < 12 * 8; m++) falloutTownMonth(n);
+    for (let m = 0; m < 12 * FALLOUT.halfLifeYears; m++) falloutTownMonth(n);
     expect(n.rival!.fallout).toBeGreaterThan(0.395);
     expect(n.rival!.fallout).toBeLessThan(0.405);
     n.rival!.fallout = 0.0051;
-    for (let m = 0; m < 3; m++) falloutTownMonth(n);
+    // (Under 0.005 within four months at a nine-year half-life.)
+    for (let m = 0; m < 4; m++) falloutTownMonth(n);
     expect(n.rival!.fallout).toBeUndefined();
     expect('fallout' in n.rival!).toBe(false);
   });
@@ -585,7 +586,7 @@ describe('M40: the words', () => {
       `Fallout lies on this ground. Nothing can be built here for about ${Math.round(years)} more game years.`,
     );
     // The worst point of a footprint decides.
-    expect(falloutRefusal(sim, 700, 500, [[500, 500]])).toMatch(/for about 11 more game years\.$/);
+    expect(falloutRefusal(sim, 700, 500, [[500, 500]])).toMatch(/for about 12 more game years\.$/);
     // Open ground says nothing; so does a city with no fallout.
     expect(falloutRefusal(sim, 900, 900)).toBeNull();
     expect(falloutRefusal(bare('citybloom'), 500, 500)).toBeNull();
@@ -603,7 +604,7 @@ describe('M40: the words', () => {
     expect(r.text).toBe(
       `Fallout 0.34. Closed for about ${Math.round(falloutYears(0.34))} more game years (${playTime(falloutYears(0.34))})`,
     );
-    expect(r.text).toMatch(/^Fallout 0\.34\. Closed for about 6 more game years \(4 hours of play\)$/);
+    expect(r.text).toMatch(/^Fallout 0\.34\. Closed for about 7 more game years \(4 hours of play\)$/);
     closeRect(sim, 400, 400, 600, 600, 0.1);
     expect(falloutReading(sim, 500, 500).text).toBe('Fallout 0.10. Open for building');
     expect(falloutReading(sim, 1500, 1500).text).toBe('No fallout here');
@@ -672,7 +673,7 @@ describe('M40: the radiation map', () => {
       summary: { closedArea: number; peak: number; price: number; relief: boolean; jobs: unknown[] };
     };
     expect(q.reading.closed).toBe(true);
-    expect(q.reading.text).toMatch(/^Fallout 1\.00\. Closed for about 19 more game years/);
+    expect(q.reading.text).toMatch(/^Fallout 1\.00\. Closed for about 21 more game years/);
     expect(q.summary.peak).toBeGreaterThan(0.95);
     expect(q.summary.closedArea).toBeGreaterThan(0.9e6);
     expect(q.summary.relief).toBe(true);
@@ -871,7 +872,7 @@ describe('M40: the bans', () => {
     expect(east.ok).toBe(false);
     if (!east.ok)
       expect(east.reason).toMatch(
-        /^Fallout lies on this ground\. Nothing can be built here for about 11 more game years\.$/,
+        /^Fallout lies on this ground\. Nothing can be built here for about 12 more game years\.$/,
       );
     // The preview and the move say the same.
     expect(sim.preview({ type: 'placeBuilding', def: 'firestation', ...pose(inEast) }).ok).toBe(false);

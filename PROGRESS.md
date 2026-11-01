@@ -251,8 +251,8 @@ levelled homes forgotten), bounded ticks; `tests/war/{atomStrike,atomImpact}.tes
 `scripts/dev/atombench.ts` on the 110k city: the worst blast tick 11 ms (370 buildings levelled,
 25,266 residents gone, about 66,000 left once the closed roads and civics take their toll). Next:
 Step 4 is done (cecd86e, 32b68fc): fallout in `src/sim/systems/fallout.ts` (a ground layer that stays,
-half-life 8 game years, and an air layer drifting with the city's wind; nothing zoned, built or grown on
-ground at 0.2 or more for about 18 years at the centre, 11 hours of play at 1x; sickness, "Fallout
+half-life 9 game years, and an air layer drifting with the city's wind; nothing zoned, built or grown on
+ground at 0.2 or more for about 21 years at the centre, 12.5 hours of play at 1x; sickness, "Fallout
 nearby", less work and land value under it; the `radiation` data map with a hazard ramp and a tooltip
 by hover or tap; `cleanFallout` crews and relief crews; the plume carried off the north, south and
 west edges into computer neighbours, and theirs blowing back in), `tests/war/atomFallout*.test.ts`,

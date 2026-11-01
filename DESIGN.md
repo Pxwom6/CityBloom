@@ -1845,8 +1845,8 @@ some: DECISIONS "M40".
   do: the smoke's shift empties the map in two to four game years and the brief wants decades. `depositFallout` lays
   `min(1, 1.3 (1 − d/720)^1.2)` on the ground (0.2 at about 570 m) and 0.3 of that mass in the air over the downwind
   side. Every three game hours (`updateFallout`) the air moves 4 cells along `windAngle`, spreads, leaves a little
-  on the ground and fades; the ground decays with a half-life of eight game years, so the core falls below the ban
-  after about 18.6 years (11 hours of play). Ground at or above 0.2 is closed: `zone`, `checkPlacement`,
+  on the ground and fades; the ground decays with a half-life of nine game years, so the core falls below the ban
+  after about 21 years, two decades (12.5 hours of play). Ground at or above 0.2 is closed: `zone`, `checkPlacement`,
   `growthPass` lots and the `lifecycle` upgrades refuse it (the first two in words, with the years left), while
   roads, bulldozing and clean-up are exempt and buildings already there stay as their people leave. The dose (ground
   plus half the air) has one reader per effect, each exactly 1 or 0 without fallout: sickness, a home's mood,

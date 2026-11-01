@@ -2754,3 +2754,9 @@ these are its calls and the reasons, with where they overturned the first draft.
     hidden (step 11a moved it below the clean-up tool's hint only; it now keeps clear of any tool's hint, measured, and
     the spec asserts the two don't overlap); the region map's cloud mark sat over the north town's travel times (it is
     drawn left of the town now, clear of the times above and the race's pips and star to the right).
+- **Wrap-up: fallout's half-life 9 game years, not 8.** The brief asks that "nothing can be built or zoned
+  for decades of game time"; at 8 years a strike's core reopened after 18.6, a little under two decades. At 9
+  it stays closed about 21 years (12.5 hours of play at 1x), the 0.3 rim about 5; a computer neighbour's
+  level halves on the same clock. Nothing else moves: no golden holds fallout, and the cross-browser test's
+  atom section compares each browser with Node as it runs. The tests that named the old years now name the
+  new ones (`tests/war/atomFallout.test.ts`), from the same formula.

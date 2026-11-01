@@ -261,9 +261,16 @@ six game years, colder by up to 18 C, solar down by up to 55 %, rain as snow eve
 only, so the weather's dice are the same with or without it; a struck city, the firing city and
 every computer neighbour get it; the forecast, a top-bar badge, an energy advisor line and the grey
 look; `scripts/dev/winter.ts` shows every climate playable: demand at most 1.19x the city's own
-January peak, ploughs coping, no shortfall), `tests/war/atomWinter.test.ts`. Next: step 6, the world
-reacts. Not yet run for steps 1-5: e2e, builds, balance, bench (run at step 13). Full unit suite after
-step 4: 1,642 tests in 163 files pass.
+January peak, ploughs coping, no shortfall), `tests/war/atomWinter.test.ts`. Step 6 is done (2c61851, afc0134): the
+world turns on a city that fires (`src/sim/systems/atomWorld.ts`: reputation pinned at 0 for good
+behind one accessor, every computer neighbour's "bomb" sanction that never lifts, every pact of
+friendship ended and no new one signed, no neutral stance, total war declared on it with no cooldown,
+even by neighbours once fond of it; a protest in approval and in every home: approval 57 % to 14 %
+and a third of the people gone in three game months; the chronicle keeping atom events forever) and
+the deterrent of a bomb ready (computer neighbours declare plain war, not total; a friend is warned
+before declaring total war), `tests/war/atomWorld.test.ts`. Next: step 7, the computer race and spies.
+Not yet run for steps 1-6: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -317,9 +324,9 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 5 are done. Next: step 6, the world reacts (fills `atomFired` in `atom.ts`); then the computer race and spies; cross-browser; the room (protocol 7); pages; UI and
-   effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
-   may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
+   to 6 are done. Next: step 7, the computer race and spies; then cross-browser; the room (protocol
+   7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real
    UI, a race for the bomb, and fixes for whatever feels off.

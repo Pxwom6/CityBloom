@@ -250,7 +250,14 @@ fires on their own dice, the rail link and Sunfield Commons only closed; open ca
 levelled homes forgotten), bounded ticks; `tests/war/{atomStrike,atomImpact}.test.ts`;
 `scripts/dev/atombench.ts` on the 110k city: the worst blast tick 11 ms (370 buildings levelled,
 25,266 residents gone, about 66,000 left once the closed roads and civics take their toll). Next:
-step 4, fallout. Not yet run for steps 1-3: e2e, builds, balance, bench (run at step 13).
+Step 4 is done (cecd86e, 32b68fc): fallout in `src/sim/systems/fallout.ts` (a ground layer that stays,
+half-life 8 game years, and an air layer drifting with the city's wind; nothing zoned, built or grown on
+ground at 0.2 or more for about 18 years at the centre, 11 hours of play at 1x; sickness, "Fallout
+nearby", less work and land value under it; the `radiation` data map with a hazard ramp and a tooltip
+by hover or tap; `cleanFallout` crews and relief crews; the plume carried off the north, south and
+west edges into computer neighbours, and theirs blowing back in), `tests/war/atomFallout*.test.ts`,
+`scripts/dev/fallout.ts`. Next: step 5, the nuclear winter. Not yet run for steps 1-4: e2e, builds,
+balance, bench (run at step 13).
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
 with owners; the region room paces each battle by both players' progress and stamps every order at
@@ -304,9 +311,9 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 3 are done. Next: step 4, fallout (fills `startFallout` in `atomImpact.ts`); then the nuclear
-   winter; the world reacts; the computer race and spies; cross-browser; the room (protocol
-   7); pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
+   to 4 are done. Next: step 5, the nuclear winter (fills `startWinter` in `atomImpact.ts`); then the
+   world reacts; the computer race and spies; cross-browser; the room (protocol 7); pages; UI and
+   effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons
    may need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

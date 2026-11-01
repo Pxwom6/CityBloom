@@ -60,6 +60,7 @@ test('the scripted town gives the same state hash at every month end as in Node'
   expect(got.economy, `${browserName}, the war economy (M38)`).toEqual(want.economy);
   expect(got.live, `${browserName}, a live battle with a friend (M39)`).toEqual(want.live);
   expect(got.friends, `${browserName}, wars and treaties with a friend (M39)`).toEqual(want.friends);
+  expect(got.atom, `${browserName}, the atom bomb, its strikes and fallout (M40)`).toEqual(want.atom);
   expect(got.used).toEqual(want.used);
   expect(got.refused).toEqual(want.refused);
 });
@@ -99,5 +100,6 @@ test('the scripted town gives the same hashes in the SpiderMonkey shell', async 
   expect(got.economy).toEqual(want.economy);
   expect(got.live).toEqual(want.live);
   expect(got.friends).toEqual(want.friends);
+  expect(got.atom).toEqual(want.atom);
   expect(got.refused).toEqual(want.refused);
 });

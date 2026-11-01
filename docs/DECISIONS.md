@@ -2009,3 +2009,71 @@ these are its calls and the reasons, with where they overturned the first draft.
     "its power or its depot" (M37's tests hold that text; the tip text is step 11's).
   - *Words.* `spanWords` says "under an hour" below half an hour (it read "0 hours", and the fuel line
     "spoiled 0 hours of fuel") and "1 day" from 23.5 hours (it read "24 hours"); 0 is "0 hours".
+- **Step 8 (cross-browser): calls the plan left open.**
+  - *Where it lives.* The `atom` section is `tests/lockstep/atomSection.ts` (`runAtomSection`), called from
+    `runDeterminism` after the war economy and returned as `DeterminismResult.atom` (60 entries), rather than
+    a fifth block inline in `determinism.ts`. Both browser tests (and the SpiderMonkey one) compare it with
+    Node's; the section touches no global (no data constant is changed to bring a case about).
+  - *The town and the difficulty.* The lab town of the bomb's own tests (`labTown(0, { length: 800, streets: 7
+    })`: the smallest that crews the plant, silo, dome and agency together), set to Hard after it is made
+    (`options.difficulty`, as `atomRival.test.ts` does) and its neighbours' alliances cleared. About 9 s in
+    Node alone (5 of them the town and its first days; 538 game hours in all, 370 after the race begins),
+    20 s for the whole run in Chromium (24 months), and the Node test went from 28 s to 37 s: inside the
+    15 s the step allowed.
+  - *What is real and what is skipped.* Real: the nuclear plant, the three buildings, the wars (two total
+    wars, declared and opened), six hours of fuel, `buildBomb` (the first instalment, three hours, called
+    off, started again), `launchBomb` (called off with half back and prepared again), the flight, both
+    strikes' warnings and landings, the blast tick by tick and hour by hour, the clean-up crew, the zone
+    ban, the Hard neighbour's own launch and three hundred game hours of fallout on the real clock. Skipped
+    by the cheat `atom`: a full load of fuel, the rest of the bomb's build, and the first half of the
+    launch's preparation. Skipped by calling the sim's own hourly functions by hand, as its war clock does:
+    `atomHour` for the preparation's second half (144 calls) and `supersHour` for the dome's remaining
+    charge (the real clock had given it 108 of its 240 hours: 132 calls). Nothing else is called by hand.
+  - *The city's own crews work before it fires.* The first draft fired the bomb first and the agency then
+    said "needs staff and power" and the dome stopped charging at 99 hours: the protest that follows the
+    launch empties homes (plan call 14), the workers go with them, and the dome and the agency, last in the
+    staffing order, lose their crews. That is the game working as designed, so the section sends its agents
+    and charges and uses the dome first, then fires.
+  - *The saboteurs.* Three missions at the third neighbour's race (the best odds of the three, 60 % to work
+    and 18 % to be caught), sent a few hours apart: a mission's dice are its own, keyed by its number, and
+    three sent in the same hour were all caught (numbers 772 to 774 roll 958, 777 and 836). The third got
+    through (`delay` 120, "put back 5 days"); the others were caught, which covers the caught branch too.
+    The race is then cleared with the cheat so the other neighbour may have its own (one at a time).
+  - *Three strikes on the town.* The first (`bombIn`, two hours, from the second neighbour) meets the
+    charged dome: stopped, `dome.down` 1,200, no winter, no fallout. The second (`bombIn`, one hour) finds it
+    down: it lands, a ground zero in the densest district, 273 buildings levelled, 1,905 residents gone, the
+    fires and the civic buildings over the next ticks. The third is the second neighbour's own launch, the
+    real Hard path: its race is put by the cheat two hours short of its launch, its war score set by hand
+    to just over the desperation line (the way the economy section sets a score), and it fires, lands a
+    game day later during the fallout window on ground that is bare already (ground zero then falls on the
+    middle of the map: nobody is left), and starts the third winter. The cheats stand in for the long waits;
+    the launch, the warning, the landing and the blast go the usual way.
+  - *What the entries hold.* The race's facts and the exact `checksum` (which holds the rasters' sums, the
+    `out` counters, the winters and the atom state) at each step, and the city's full `hash()` at the
+    milestones (town, bomb, stopped, launch, flown, levelled, afterwards). Every twelve hours of the
+    fallout window: the checksum, the ground and air rasters by the bits of every cell (`Mixer.int` over a
+    `Uint32Array` view of each `Float32Array`), the `out` totals and the clean-up crews. At the end: the
+    ground and dose where the bomb fell and a mile off, the ban, the radiation map by bits, the winters
+    with `winterDepth` and `solarShare` at seven ticks up to the long fall, the diplomacy (reputation,
+    pariah mark, pacts, wars, each neighbour's relation and sanction cause, the sanctions) at the launch,
+    after the landing and at the end, every event that tells the story, the chronicle's atom lines, and the
+    neighbours' fallout levels (at the end 0.92 north, 0.30 south and 0.16 west: the drift reaches the two
+    that were not hit, by their sides). The `zone` of the struck ground is refused with the fallout's words, so the
+    reason (with its "19 more game years" from the decay's logarithm) is compared too.
+  - *Not covered here.* A neighbour's declaration on the pariah and a hosted battle holding a bomb back:
+    the town has 2,600 residents, under the 3,000 raids and declarations need, and none came when the bar was
+    tried at 1,000 for the whole window (the wars ended instead). Both are integer logic and dice with their
+    unit tests (`atomWorld`, `atomStrike`); a case that fails to come in a section is not forced with a
+    changed constant. The room's half (reports, the strike on a friend) is steps 9 and 10.
+  - *The lists.* `PENDING_KINDS` and its guard in `determinism.test.ts` are gone; `ALL_KINDS` is
+    `COMMAND_TYPES`, and the section uses all five commands the pending list held (`buildBomb`,
+    `cancelBomb`, `launchBomb`, `cancelLaunch`, `cleanFallout`). `COMMAND_KINDS`, `CHECKS`/`PAGE_ONLY`,
+    `SAMPLES` and `NEED` had every kind already (steps 2 and 4).
+  - *Result.* Node: the lockstep tests (28) and the five goldens pass unchanged. Chromium (Playwright's
+    1194 build): the whole run equals Node's, the atom entries included. The SpiderMonkey shell can't be
+    fetched here (the proxy refuses `archive.mozilla.org`) and WebKit and Firefox aren't installed in this
+    VM: the shell's bundle was run in a bare `vm` context with only `print` and `structuredClone` (no DOM,
+    no Node globals) and gave the same 60 entries as the direct call, so nothing in the section needs a
+    browser API; WebKit and Firefox are reported by `.github/workflows/xbrowser.yml` on the pull request.
+    A deliberate error in `DMath.pow` (3e-16 relative) changes 30 of the 60 entries, so a libm difference
+    would show.

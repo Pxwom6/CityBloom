@@ -15,6 +15,7 @@ import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { recordInput } from '../../src/sim/battle/live';
 import { UNIT } from '../../src/data/war';
+import { runAtomSection } from './atomSection';
 
 export interface DeterminismResult {
   months: string[];
@@ -42,6 +43,12 @@ export interface DeterminismResult {
   live: string[];
   /** Wars and treaties with a friend (M39), mirrored in the lab town after its live battle. */
   friends: string[];
+  /**
+   * The atom bomb (M40), in a war town of its own: the race, a bomb the dome stops, the launch and the
+   * world's turn on the firer, a blast that levels the town in slices, a neighbour's launch, and three
+   * hundred game hours of fallout with its rasters hashed by their bits (`atomSection.ts`).
+   */
+  atom: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -617,6 +624,9 @@ export function runDeterminism(
   checkInvariants(bank);
   economy.push(bank.hash(), JSON.stringify([bank.state.war!.economy, bank.state.economy.history.at(-1)]));
 
+  // The atom bomb (M40), in a war town of its own too.
+  const atom = runAtomSection(note);
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -642,6 +652,7 @@ export function runDeterminism(
     economy,
     live: liveLog,
     friends,
+    atom,
     used: [...used].sort(),
     refused,
   };

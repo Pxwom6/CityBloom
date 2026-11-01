@@ -36,6 +36,11 @@ export interface AtomPage extends FwPage {
   toasts: string[];
   /** The player isn't able to take a strike now (the page answers `later`), as when the city is read-only or away. */
   hold: boolean;
+  /**
+   * The city's autosave as the game keeps it for the bomb: the city as the page last saved it after a strike was taken
+   * here or a strike of this city's was kept by the room (null: not yet). A page that crashes comes back from this.
+   */
+  autosave: SaveFile | null;
 }
 
 export interface AtomWorld {
@@ -98,13 +103,16 @@ const loaded = (save: SaveFile): Sim => {
  * A page of the game for the bomb: the wars and treaties, the operations road, the atom sink, the strike taken.
  * `onKeep` is told whenever the page saves the city for the room (`friendsPage`'s own); `afterTaken` runs
  * when the city has taken an operation and before the room is told (the game saves the city then: M40
- * step 13's soak keeps its autosave there, so a crash never loses a strike).
+ * step 13's soak keeps its autosave there, so a crash never loses a strike); `afterFired` runs when the room
+ * has kept a strike of this city's and the city has fired the bomb (`RegionOps`' `keep`: the game saves the city
+ * then too, so a crash never loses the firing).
  */
 export async function atomPage(
   o: Parameters<typeof friendsPage>[0],
   clock: Pick<Clock, 'now'>,
   onKeep?: () => void,
   afterTaken?: () => void,
+  afterFired?: () => void,
 ): Promise<AtomPage> {
   const sim = o.sim;
   const atom = new AtomRegion({
@@ -115,7 +123,7 @@ export async function atomPage(
   let strikes = 0;
   const toasts: string[] = [];
   // (A strike kept while the player was away is offered in the welcome, before the page exists: the handler needs only these.)
-  const ctl = { hold: false };
+  const ctl = { hold: false, autosave: null as SaveFile | null };
   let link!: RegionLink;
   const page = (await friendsPage(
     {
@@ -128,6 +136,7 @@ export async function atomPage(
         const answer = await resolveOp({ command: async (cmd) => sim.dispatch(cmd) }, opOn);
         if (answer === 'taken') {
           strikes++;
+          ctl.autosave = sim.save();
           afterTaken?.();
         }
         return answer;
@@ -144,6 +153,7 @@ export async function atomPage(
   )) as AtomPage;
   page.atom = atom;
   page.toasts = toasts;
+  Object.defineProperty(page, 'autosave', { get: () => ctl.autosave, enumerable: true });
   Object.defineProperty(page, 'hold', {
     get: () => ctl.hold,
     set: (v: boolean) => void (ctl.hold = v),
@@ -153,6 +163,12 @@ export async function atomPage(
     command: async (cmd) => sim.dispatch(cmd),
     post: (op) => page.link.sendOp(op, 5_000),
     fetchSave: (slot) => page.link.fetchSave(slot),
+    // As `Game.ops` does: a strike of this city's that the room kept is applied, and the city is saved then.
+    keep: async () => {
+      ctl.autosave = sim.save();
+      afterFired?.();
+      return true;
+    },
   });
   Object.defineProperty(page, 'strikes', { get: () => strikes, enumerable: true });
   // What the game does with each frame: the operations waiting for the region, and the race's stage.

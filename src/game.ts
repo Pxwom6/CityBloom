@@ -626,6 +626,9 @@ export class Game {
         : Promise.resolve(this.boundRegion ? null : { kept: false, reason: 'the city is in no region now' }),
     fetchSave: (slot) =>
       this.region ? this.region.fetchSave(slot) : Promise.reject(new Error('Not in a region')),
+    // The atom bomb the region kept at a friend (M40): the city has fired it, and is saved then, so a crash
+    // cannot take the firing back while the region holds the bomb as used.
+    keep: () => this.saveTo('auto', 'Autosave', true),
     changed: () => this.notify(),
   });
   /**

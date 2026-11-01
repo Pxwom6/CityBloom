@@ -436,6 +436,15 @@ export class RegionLink {
         this.misses = 0;
         if (this.state === 'reconnecting') this.onNotice?.('Back in the region');
         this.state = 'in';
+        // The bomb's record and the winters in the welcome are the room's word as of the welcome, and the
+        // room says them whole again whenever they change (`atoms`, `winters`), which it does when the report
+        // below tells it a bomb fell, while this handler is still waiting for the city's save. So the welcome's
+        // copy is taken first, before anything is awaited, in the order the room sent it: a later `atoms` or
+        // `winters` then replaces it, and the older copy can never be put back over the newer one (M40).
+        this.atom?.welcome({
+          ...(m.atoms ? { atoms: m.atoms } : {}),
+          ...(m.winters ? { winters: m.winters } : {}),
+        });
         {
           // (A treaty or proposal the room sends right after the welcome, or an event of the history,
           // is handled after the welcome has set what it changes; one from a link since lost is dropped.)
@@ -447,10 +456,6 @@ export class RegionLink {
             this.started = null;
             this.live?.welcome();
             this.friends?.welcome(m.friends);
-            this.atom?.welcome({
-              ...(m.atoms ? { atoms: m.atoms } : {}),
-              ...(m.winters ? { winters: m.winters } : {}),
-            });
           } finally {
             if (this.friendsHeld === held) {
               this.friendsHeld = null;

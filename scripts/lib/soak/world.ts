@@ -311,6 +311,8 @@ export class Soak {
       // A page that has died saves nothing, whatever its last message still does.)
       () => alive() && this.autosave(p, sim),
       () => alive() && this.autosave(p, sim),
+      // (And as the game saves the city when the region has kept a strike of its own: a crash never takes the firing back.)
+      () => alive() && this.autosave(p, sim),
     );
     p.page = page;
     p.slot = page.link.slot;

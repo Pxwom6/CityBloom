@@ -7,7 +7,9 @@
  * save in the region. With no word, it asks again later with the same id, and the region, which
  * remembers its verdicts, gives the same answer. The atom bomb aimed at a friend (M40 step 10) goes
  * this way too: the city's sim lists it among the operations waiting, and the region's `opKept`
- * is its `missionResult`. The other end, an operation against this city, is `resolveOp`.
+ * is its `missionResult`; the city is saved right after it has applied that (the region holds the bomb
+ * as used for good, so a crash must not take the firing back). The other end, an operation against this
+ * city, is `resolveOp`.
  */
 import type { Command, CommandResult } from '../sim/commands';
 import type { BattleAnswer, OpOn, OpOut, OpSent } from '../net/regionLink';
@@ -25,17 +27,41 @@ export interface OpsHost {
   post(op: OpOut): Promise<OpSent>;
   /** The latest save the region keeps of a friend's city. */
   fetchSave(slot: number): Promise<SaveFile>;
+  /**
+   * Save the city now (the game's autosave): whether it did (a save already under way says no). Called right after
+   * the city has applied the region's word that a strike of its own atom bomb was kept: the region has the bomb as
+   * used for good, so a page that crashed and came back from an older save would be a city that never fired, and
+   * could not send it again.
+   */
+  keep?(): Promise<boolean>;
   changed?(): void;
 }
 
 /** How long to wait before asking the region again when it didn't answer (ms). */
 const RETRY = 20_000;
 
+/** The city saved after a kept strike is tried this many times, this far apart (ms): a save already under way says no. */
+export const KEEP_TRIES = 5;
+export const KEEP_GAP = 1_000;
+
 export class RegionOps {
   private busy = new Set<string>();
   private waitUntil = new Map<string, number>();
 
   constructor(private readonly host: OpsHost) {}
+
+  /** The city saved, tried again a few times when a save was already under way; a save that still fails is the autosave's to make good. */
+  private async keepCity(): Promise<void> {
+    if (!this.host.keep) return;
+    for (let k = 0; k < KEEP_TRIES; k++) {
+      if (k) await new Promise((r) => setTimeout(r, KEEP_GAP));
+      try {
+        if (await this.host.keep()) return;
+      } catch {
+        /* tried again */
+      }
+    }
+  }
 
   /** Put every operation waiting for the region to it (call with the war summary's list). */
   check(waiting: FriendOpWaiting[]): void {
@@ -84,13 +110,16 @@ export class RegionOps {
         } catch {
           // The save couldn't be had: the agent still looked round, and says so.
         }
-      await this.host.command({
+      const r = await this.host.command({
         type: 'missionResult',
         mission: o.mission,
         outcome: answer.outcome,
         ...(answer.stole ? { stole: answer.stole } : {}),
         ...(dossier ? { dossier } : {}),
       });
+      // The bomb has left (the city fired, a pariah): saved now, as a city that takes a strike is saved before the
+      // region is told. (A failed save is the autosave's to make good in a few minutes; the room has the strike.)
+      if (r.ok && o.op === 'atom') await this.keepCity();
     } catch {
       this.waitUntil.set(o.key, performance.now() + RETRY);
     } finally {

@@ -2760,3 +2760,44 @@ these are its calls and the reasons, with where they overturned the first draft.
   level halves on the same clock. Nothing else moves: no golden holds fallout, and the cross-browser test's
   atom section compares each browser with Node as it runs. The tests that named the old years now name the
   new ones (`tests/war/atomFallout.test.ts`), from the same formula.
+- **Step 13 fixes: the bomb's record survives a welcome, and a firer's firing survives a crash** (both found by the
+  region soak's atom act; each has a test that fails without the fix).
+  - *The welcome's older copy no longer overwrites the room's newer word (`RegionLink`, case `rwelcome`).* The handler
+    awaited `take(region)` and `reportNow(true)` (which sends the report, then waits for the city's save) and only
+    then gave the welcome's `atoms` and `winters` to the `AtomRegion`. The report is what tells the room a bomb fell:
+    it adds the mark `boom`, sends `{t:'atoms'}` (and `winters`) whole, and that message is handled while the welcome
+    handler still waits for the save, so the welcome's older list was put over it and the page lacked the mark until
+    the record next changed or the page was reloaded (the soak: a target that lost its network in the countdown kept
+    `["2:ready","2:fired"]` for eleven minutes where the room had `["2:ready","2:fired","4:boom"]`). The sim never
+    lost a winter (each id is applied once, whichever list carries it); the page's `winters` list could. **Call: the
+    welcome's copy is taken first, synchronously, before anything in the handler is awaited**, which is the order the
+    room sent it in, instead of holding `atoms`/`winters`/`atomFirst` until the welcome is done as M39 holds friends'
+    messages (`friendsHeld`). That is the simpler fix that is correct for every interleaving, nothing is ever held
+    back or replayed (a held message from a link since lost would need the same "dropped" care `friendsHeld` takes),
+    and the two lists reach the page before the save rather than after it. `AtomRegion.welcome` has no dependence on
+    the region having been taken yet (`friendWinter` needs only the city's sim). The ordering is the whole guard; a
+    version or length check on the list was considered and not added, since a list that only the room's order can
+    make older has nothing a check could tell apart that the order does not. `atomFirst` was never affected (a
+    fact, not a list). Tests: `tests/war/atomWelcomeOrder.test.ts` (the room played by hand against a link whose
+    save waits: the record, the winters, the welcome alone, a return, the first finisher's word; the first two fail
+    without the fix) and `tests/war/atomWelcome.test.ts` (the soak's case through a real room: the target offline
+    when the bomb lands, back in the region with the room's whole record).
+  - *The city is saved right after the room keeps its strike and the firer's sim applies it (`RegionOps` `keep`).* The
+    room keeps one atom strike a city, ever, and answers `opKept` at once; the firer's page applied it
+    (`missionResult` → `fired`, the pariah, the reputation at 0, the winter later) but nothing saved the city, so a
+    crash restored an older autosave: a city that never fired and was no pariah, while the room held its bomb as used
+    for good and refused every later send. A city that *takes* a strike has always been saved before the room is told
+    (`Game.takeOp`); the firer is saved after it has applied the answer, the only order open to it (the room has
+    already decided). `OpsHost.keep` is called by `RegionOps.settle` when `missionResult` for an `atom` op was ok
+    (a strike the room turned away, an op the city could not apply, and every other operation save nothing);
+    `Game` wires it to `saveTo('auto', 'Autosave', true)`. `saveTo` answers false when a save is already under way,
+    and that save may have started before the firing was applied, so `RegionOps` tries again up to `KEEP_TRIES` (5)
+    times a second apart and then leaves it to the autosave; a save that throws is tried again the same way and
+    never breaks the settle. **Left as it was:** the window between the room's answer and the end of that save (a
+    crash in it loses the firing as before; the page asks again after a restore only if the sim kept the strike
+    pinned, which an autosave made before the send does not), and the soak's two `excused` lines for a firer restored
+    from a save older than its strike stay in the judge for that window. The soak's pages pass the same hook
+    (`atomPage`'s fifth argument, its world's autosave) and `AtomPage.autosave` is the city as the page last saved it
+    for the bomb. Tests: `tests/war/atomFirerSaved.test.ts` (a firer whose page applied a kept strike, restored from
+    its latest autosave, still holds `fired`, is a pariah and has reputation 0; fails without the fix; a strike
+    turned away leaves no save; `RegionOps` on its own: when it saves, when it does not, the retry).

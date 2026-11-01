@@ -305,8 +305,8 @@ opens the **war room** (Shift+M, or its button in the top bar) and the other mil
 for infantry, a vehicle depot for tanks, artillery and transports, then airfields and naval yards, bunkers,
 shelters, radar and the rest. Click a base to train units: they take workers from nearby homes (the forces
 may take a quarter of the city's workers at most), need power and a funded defence budget, and cost upkeep.
-The war room's tabs are Forces, Send, Map, Research, Intelligence, Diplomacy, Trade, Upkeep, Readiness and
-Reports.
+The war room's tabs are Forces, Send, Map, Research, Intelligence, Diplomacy, Trade, Bomb (where the atom bomb
+is allowed, see [below](#the-atom-bomb)), Upkeep, Readiness and Reports.
 
 **Raids.** Computer neighbours raid a city of at least 3,000 residents that is a year old, with an hour's
 warning (the red countdown in the top bar; a radar warns earlier). Bunkers, guns and units fight on their
@@ -368,6 +368,30 @@ In a region where war is on, the other players' cities are in the Send tab and t
 - **Roles in a shared city.** In a co-op city the host chooses who may **Wage war**, make **Treaties** and
   spend on **Defence** (the room panel's list of permissions, with taxes and the rest). A shared city can't
   stand in a region, so its wars are with the computer neighbours.
+
+### The atom bomb
+
+The last prize of the game, and the hardest to win: one bomb a city, ever, and nothing undoes it. Where it is
+allowed, the war room (Shift+M) gains a **Bomb** tab that shows the next step and what it is waiting for.
+
+- **What it takes.** Every research branch finished (all six superweapons included), a running nuclear power
+  plant, an **enrichment plant** that makes fuel over about four game years and an **atom silo** that builds the
+  bomb in twelve payments: several years of a big city's income, and no refund on either building.
+- **Everyone sees the race.** In a region the enrichment plant shows on every map the day it is placed, and each
+  step is announced and kept in the region's history. Spies, a won expedition or a raid that closes the silo can
+  slow a race. The host decides whether the bomb is in the game: tick **The atom bomb** in the Region panel
+  (it appears with total war and **Superweapons**, and is ticked with them).
+- **Launching.** Only in a declared total war. The launch card lists what will follow; hold its button for three
+  seconds and the silo prepares for about half an hour of play (in a region the room adds a wait of its own),
+  then the bomb leaves by itself. Call it off and half the price comes back. Only a shared city's host can launch.
+- **The countdown.** The city under it gets a game day (three minutes at normal speed): a siren, a countdown
+  card and a missile crossing the sky. A charged **dome** stops one bomb whole, then needs years to charge again.
+- **If it lands.** The busiest district is levelled under a toy mushroom cloud (**Soften flashes** in settings
+  fades the screen in place of the flash). Fallout closes the ground near it to building for decades and drifts
+  over borders; the **Fallout** data map shows it and **Clean up** crews halve it. A **nuclear winter** of grey
+  skies and snow, about six game years, falls on every city, the firing one included. And the world turns on the
+  city that fired, for good: neighbours sanction it, anyone may declare total war on it at once, and its own
+  people are ashamed.
 
 ## Develop
 

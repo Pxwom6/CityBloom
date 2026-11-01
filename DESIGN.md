@@ -1763,6 +1763,227 @@ it began from: `docs/plans/M39-codemap.md`; calls and their reasons: DECISIONS "
   war declared from the Diplomacy tab, a live battle both command, peace one offers and the other
   accepts.
 
+### 3.34 The final race: the atom bomb (phase 5, M40)
+
+The last prize cities race for: very dear and slow to get, public while it is made, terrible to use, and the world
+is not the same afterwards. It is not a unit and not a battle. `WarState.atom` (`src/sim/systems/atom.ts`, numbers
+in `src/data/atom.ts`) appears when its first fact is set, and the blast, fallout and winter have code of their own
+(`atomImpact.ts`, `fallout.ts`, `weather.ts`), so peace and M34–M39 cities are unchanged and `stampBattle` and the
+battle goldens cannot move. Every new field is optional and made on first use: save v32, protocol 7
+(`ATOM_PROTOCOL`). Times are war hours (the war clock, which the region's fair clock holds) unless called game hours
+(the city's own clock, which nothing holds: flight, blast, fallout, winter, shame); a game hour is 7.5 s of play at
+1×, a game year 288 hours (36 minutes). Plan: `docs/plans/M40-design.md`; calls and the review fixes that overturned
+some: DECISIONS "M40".
+
+- **State and stage**: `Atom` holds `fuel` (war hours, to 1,152), `bomb {done, paid, waiting?}` (the build), `have`
+  (the finished bomb), `prep {done, to, send?, refused?}` (a launch), `fired`, `inbound` (a bomb on its way here),
+  `impact` (the last blast), `first`, `struck`, `boom` and `stopped`. The stage is derived, never stored
+  (`atomStage`: none, plant, enriching, silo, bomb, ready, preparing, flying, spent; its number 0–8 is what the
+  region report carries); `enriching` is a finished plant with fuel above 0 whether or not damage has closed it this
+  hour, so stage and notices don't flicker. One bomb ever: once `fired` is set the gates refuse a plant, silo or
+  bomb. A plant destroyed with fuel halves it and a silo destroyed loses the build, the bomb and the launch
+  (`atomCivicRemoved`); damage alone only closes a building, which pauses the work and sets a preparation back to
+  nothing. A plant holding fuel and a silo holding the race can't be bulldozed, nor removed by undo or redo
+  (`atomKeeps`).
+- **The unlock and the region's rule**: every research branch maxed, all 24 tiers, the six superweapons' fourth
+  tiers among them (`allTiersDone`). `atomLock`, called from `civicLock` so that sandbox cannot skip it, names the
+  first missing step in words: the tree ("Needs every research branch maxed (21 of 24 done; …)"), the rules, no
+  scenario, the bomb not already used, then the building's own requirement (a nuclear plant running,
+  `nuclearRunning`, for the plant; the plant online for the silo). The region's rule `bomb` (`RegionWarRules.bomb`,
+  stored only when true like `supers`) stands only with total war and superweapons, since the dome is the one
+  counter: `cleanWarRules` drops it otherwise and `bombAllowed` checks the same in the state. Choosing total war
+  ticks both boxes (`rulesForScale`, `foundingRules`; checkbox `region-war-bomb`) and the host may untick them; a
+  city of its own with rivals allows the bomb. Turned off mid-race the works wait and a launch is refused in words;
+  a strike the room kept stands.
+- **The works and the bomb**: the enrichment plant (`enrichment`) and the atom silo (`atomsilo`) are unique war
+  projects behind the HQ (`warProject`: a stage also waits for the war clock) with no refund (`CivicDef.refundShare`
+  0). Plant: 5, 6 and 4 months at $1.1M, $1.5M and $1.0M; silo: 4, 5 and 3 months at $0.9M, $1.3M and $0.9M.
+  `atomHour` (in `warClockHour`, after `supersHour`) grows the fuel by the plant's rate (crew × power × defence
+  funding up to 1.25) each war hour, to 1,152 (four game years, 144 minutes of play), at $2,000 a war hour of full
+  work (`fuelBlock` says why it doesn't). `buildBomb` needs a full load (it takes none), a working silo and the
+  rules, and runs 720 war hours at the silo's rate, paid in 12 instalments of $650,000 with 50 goods, 200 ore and
+  167 oil, the first at the start and then every 60 hours, from `WarState.stock` first and the rest bought at
+  `importPrice` (`materialBill`), so mines and wells cut the bill and the treasury never needs the whole sum. The
+  hours never pass what the instalments paid cover; `cancelBomb` leaves what was paid spent. The silo and bomb come
+  to about 3 years of the taxes of the 57,000-resident careful city of the balance runs, the whole race ($18.2M) to
+  5 or so (`ATOM.priceCity`); on the critical path about 5¼ hours of play.
+- **Launch, flight and warning**: `launchBomb {to}` (role `war`; in a shared city the host alone, since it can't be
+  undone) needs the bomb, a working silo, the rules and a clear `targetWhy`: an open total war with a rival or
+  friend, the city neither neutral nor a vassal. It pays $1.2M and starts `prep`, 288 war hours at the silo's rate,
+  starting over if damage closes the silo; `cancelLaunch` gives half back. The bomb leaves when the preparation ends
+  if the war is open; otherwise it waits as long as it likes, the city is told once (`launchHeld`) and sends it
+  again, free. At a computer neighbour it sets `fired` and calls `atomFired`; a game day later `landFlight` cuts the
+  neighbour's people, forces and defences to 0.4×, its feeling to −100, swings the war score 60 and starts the
+  firer's own winter. The target's sim owns its city: `atomInbound` (a computer neighbour's launch, the room's
+  strike, the `bombIn` cheat) fixes ground zero at once from the city as it stands, never from a message, and stores
+  `inbound` with a flight of 24 game hours (3 minutes at 1×); one bomb is in the air at a time (`BOMB_IN_AIR`).
+  `atomTick` warns on the next tick (`bombWarning`: who, hours, the residents in the blast, the shelter places,
+  whether the dome will stop it); `incomingSummary` puts the bomb before any raid, no raid or battle starts
+  meanwhile, and the dread weighs on approval (`bombMood`). The page drops the game to 1× once and leaves the speed
+  buttons alone: a pause only holds the missile, and the sim runs only while a page does, so no one returns to a
+  flattened city.
+- **The dome stops one bomb whole** (`bombStopped`, a pure read; `domeTakesBomb`): the dome built and working,
+  superweapons allowed, its mode `all` or `super`, no blackout, not down, and charged (240 hours) or raised over a
+  battle. It is asked first at the landing. Then there is no blast, winter or fallout, and the dome is empty and
+  down for `ATOM.dome.down` (1,200 war hours, counted by `supersHour`) before it charges 240 more:
+  `DOME.bombRecharge`, 1,440 in all. A second bomb inside the window lands, as does one meeting mode `off` or an
+  uncharged, blacked-out or unstaffed dome. The card offers "Raise the dome now" only when that would help; the
+  achievement is `underTheDome`.
+- **The impact** (`atomImpact.ts`; not a `Disaster`, which would raise ambulances and casualty lines): ground zero
+  is the densest 520 m window of the city by people (`groundZero`). Everything within 450 m (15 % of the 2,048 m
+  map) is levelled, dealt out so that no tick pays for a whole city. The landing tick does slice 0 (`impactSlice`:
+  the nearest 400 buildings go to `toRubble`, homes' people counted into `impact.fled`; civic buildings out to 1.5×
+  close 72 hours; roads inside close 240; trees go; a crater of 90 m), each later hour at minute 1 the next 400.
+  From the next tick the fires start (`impactFires`: buildings from 450 to 675 m catch with a chance of 0.7 falling
+  to nothing, 120 a tick, 400 in all, on a die of the seed and the building's id so no shared stream moves), then
+  civic buildings inside come down three a tick (`impactCivics`; the rail link and Sunfield Commons are only
+  closed). A save in the middle resumes, every step reading the city again. Nothing counts the dead: the card says
+  "N residents have left the city; M buildings were levelled". A hosted battle holds the bomb back up to 12 game
+  hours, then ends as withdrawn. `impactOver` counts it (`boom`), lays the fallout and starts the winter `self:n`.
+- **Fallout: a ground layer that stays and an air layer that moves** (`fallout.ts`; `SimState.fallout` is
+  `{ground, air, out, seen, jobs}`, two `Float32Array`s of the pollution's 128 × 128 cells). One raster would not
+  do: the smoke's shift empties the map in two to four game years and the brief wants decades. `depositFallout` lays
+  `min(1, 1.3 (1 − d/720)^1.2)` on the ground (0.2 at about 570 m) and 0.3 of that mass in the air over the downwind
+  side. Every three game hours (`updateFallout`) the air moves 4 cells along `windAngle`, spreads, leaves a little
+  on the ground and fades; the ground decays with a half-life of eight game years, so the core falls below the ban
+  after about 18.6 years (11 hours of play). Ground at or above 0.2 is closed: `zone`, `checkPlacement`,
+  `growthPass` lots and the `lifecycle` upgrades refuse it (the first two in words, with the years left), while
+  roads, bulldozing and clean-up are exempt and buildings already there stay as their people leave. The dose (ground
+  plus half the air) has one reader per effect, each exactly 1 or 0 without fallout: sickness, a home's mood,
+  `radiationWork` in taxes, freight and the specialisations' income, land value. The map is `OverlayMap` `radiation`
+  (tooltip by hover or tap). `cleanFallout {x, z}` (role `defence`) hires a crew for 128 m and 96 game hours at
+  $350,000 (twice that as relief crews without `logistics2`), three at once, halving the ground.
+- **Fallout between cities: counters, never events.** What the air carries off the north, south or west edge is
+  counted by the flux (`carriedOff`; the east edge is a sink) into `out`, cumulative and rounded to a thousandth. A
+  computer neighbour on that side gains `rival.fallout` from it (halving every eight game years and slowing its
+  growth a little: a value, not a draw), and its own fallout blows back in as air beyond that edge. A friend's cloud
+  rides the report (`AtomReport.plume`); the page issues the page-only `friendFallout {from, total, base}` and the
+  sim keeps `seen` per sender as a high-water mark, deposits only the new part as air on the rows facing that friend
+  (spread thin, at most 700 a message) and sets `seen`. A repeated or lower total adds nothing, and `base` (what the
+  page first saw) spares a newcomer or a city away for the whole drift. A middle strike gives a downwind neighbour
+  about 0.28 and a friend a haze of a couple of hundredths: seen on the map, never a second strike.
+- **Nuclear winter changes values, never draws.** `WeatherState.winters` is a list of `{id, from, depth}` started
+  once for each id by `startWinter`: `self:n` in a struck city, `self:0` in a firing city whose bomb lands on a
+  computer neighbour, `slot-n` from the room for a friend's bomb (`friendWinter`). A first winter is depth 1, one
+  that begins inside another (`winterInForce`) 0.5, and they add to at most 1.5. Each rises 144 hours, holds 576 and
+  falls 1,008: six game years, 3.6 hours of play. At depth d `monthMean` is 18 °C × d colder in every month, seasons
+  off or on; `solarShare` gives 0.55 × d less sun; `nextSpell` lifts the snow line 6 °C × d, so July rain falls as
+  snow, and turns a heatwave into a cloudy spell after its draws. A spell keeps the length of the weather the
+  calendar would have brought (`lasts`), so `rng.weather` is in the same state with a winter or without; the one
+  limit is `riverFlood`, which draws by the river, and a winter keeps the river down. The page gets `winter` in the
+  weather summary (`worldLook`: grey sky, snow in any month), the badge `winter-badge` ("Nuclear winter, year 2 of
+  6, −7 °C"), an energy advisor line and a winter forecast that counts the cold and dim sun.
+- **The world turns on the firer** (`worldTurns`, `atomWorld.ts`, called once by `atomFired` when the bomb leaves,
+  stopped or not). `makePariah` sets `Diplomacy.pariah` and takes the reputation to 0 through its one accessor:
+  `reputationOf` says 0 and `reputationChange` does nothing while the mark stands (a test reads `src/sim` for any
+  other writer). Every computer neighbour's feeling falls (the target's to −100, the others' by 40); every pact of
+  friendship (`FRIENDSHIP`) ends with no breach counted and none can be signed; neutrality is refused.
+  `sanctionCause` returns the new cause `bomb` first and `sanctionsOnBomb` imposes it on every neighbour at once,
+  for good. In `computerMoves` any character may declare a total war on a pariah, with no cooldown, against a city
+  even half as strong as itself. At home `bombShame` (city-wide, −0.30) and "Ashamed of the bomb" in every home
+  (`homeShame`, −0.25) ease over 720 game hours to −0.05 and −0.06 and stay, and homes empty. The chronicle never
+  evicts an `atom` event (`atomChronicle`). The deterrent asks and never refuses: while the bomb is ready or being
+  prepared (`atomDeters`) computer neighbours declare plain war instead of total war and favour peace and pacts
+  more; a friend is asked first ("… has the atom bomb ready … Declare anyway?", `declareWarning`).
+- **Computer race and spies**: on Hard only (`WAR_DIFFICULTY.hard.bomb`, so Normal is M37's war to the bit) a
+  computer neighbour may race (`atomRival.ts`, `RivalNeighbour.bomb`): the city 20 game years old, `bombAllowed`,
+  the neighbour at tech 4 with 40,000 residents, one racing at a time, a monthly roll of 1.5 % × (½ + its
+  aggression) on dice of their own (`${seed}:bomb:${month}`). Fuel takes it 1,500 war hours, a silo 500 and the bomb
+  800 (`RIVAL_BOMB`), each stage told. A finished bomb waits until the neighbour is desperate (an open total war it
+  is losing by 45 or more), prepares for ten game days that the city is told of ("… is desperate and has the bomb.
+  Offer peace."), stands down if the war stops being desperate, and otherwise launches once through `atomInbound`.
+  The saboteur's new target `plant` (`SabotageTarget`: the silo while a bomb builds or waits, else the plant) costs
+  $45,000 like any sabotage and, if it gets through (`sabotagePlant`, for a computer spy and a friend's operation
+  alike), puts a building still going up back 120 war hours, takes 120 hours of fuel or of the bomb's build and
+  closes a finished one 12 hours; a plant standing adds 150 ‰ to the city's counter-intelligence. On a computer
+  racer a mission adds 120 to its `delay`, a won expedition 240.
+- **The room's half** (`relay/region.ts`; `PROTOCOL_VERSION` and `ATOM_PROTOCOL` are 7, `MIN_REGION_PROTOCOL` stays
+  5). The race rides the report with no new message: `RegionReport.atom` is
+  `AtomReport {stage 0–8, fuel?, fired?, boom?, hit?, stopped?, plume?}` (`atomReportField`), rebuilt field by field
+  by `cleanAtomReport` and dropped, the rest of the report kept, if any part is wrong. `raceReport` reads each
+  report against what the room last announced, forward only (a stage that drops re-arms it): a notice to pages on 7
+  and a history line for each step crossed (`raceLine`: "Ashford has begun building an enrichment plant" … "is
+  preparing a launch"), at most 8 a city a UTC day (`atomPerDay`); the bomb's own lines (`bombLine`) are never
+  capped, and the new `WarEventKind`s `race` and `bomb` go only to pages on 7. `RegionMeta.atoms` is the permanent
+  record outside the 100-event ring, at most 16 marks (`ATOM_MARKS`), the first finisher's never dropped and told
+  `atomFirst`. `RegionMeta.winters` gets an id `slot-n` for each rise in a city's count of landed bombs, naming
+  every other city then present (a newcomer is spared, a city away keeps its place).
+- **What the room believes**: a report is a friend's word, and a region may run in a player's browser, so the room
+  believes it only as far as it can account for it: bombs that fell on a city are news up to the strikes it kept at
+  it and the computer neighbours the city had when it joined (`incomingRoom`); a cloud only where a bomb is on
+  record (`bombsOnRecord`) and no thicker than those bombs make (`ATOM_WIRE.plumePerBomb`); pages check the room's
+  lists again (`cleanAtomMarks`, `cleanWinters`). Accepted: a lying friend can claim up to three winters, and a
+  forger who reports full tiers and stage 6 and waits 20 minutes can send one strike, paying with every pact and
+  shield it has.
+- **A strike on a friend rides `op: 'atom'`**, the blackout tower's road (`REGION_OPS`, `FRIEND_OPS`,
+  `friendOpsWaiting`, `missionResult`). The prepared bomb is put to the room when the preparation ends or the city
+  sends it again (`Atom.prep.send`; `launchBomb` and `cancelLaunch` are refused meanwhile). `atomRefusal` says no,
+  in words and with the connection kept, unless: the rules allow the bomb; both pages speak 7; the sender has not
+  used its bomb and reports stage 6 with every branch at tier 4; the room's own clock has seen stage 6 for
+  `REGION_LIMITS.atomPrep` (20 real minutes, so a report can't skip the wait); a total war is open between them
+  (`FriendsWar.totalWarOpen`) with no binding pact; neither is neutral; the target's player is here ("the bomb
+  waits") and is no newcomer that hasn't struck first. A kept strike waits in the target's `ops`, flags the sender
+  in `FriendsState.pariahs` (`markPariah`: its pacts of friendship dropped, no cooldown or shield against a
+  declaration on it) and writes a mark and a line. The sender's sim sets `fired` on the room's `success`
+  (`strikeResult`: the world turns on it as at a computer neighbour) and puts the bomb back to prepared on a
+  refusal, with the room's words in `prep.refused`. The target's page applies `opResolve` once, and its own sim
+  checks the room's word (`strikeProblem`: one bomb from a city ever, `Atom.struck`; its report at stage 6 or more;
+  a total war on its books; a bomb already in the air is answered `later`); `atomInbound` then starts a fresh full
+  countdown from the tick it takes it, however late, and that sim decides the dome and the damage.
+- **The pages and the interface**: `AtomRegion` (`src/client/atomRegion.ts`), hung on the region link, turns the
+  room's words into idempotent page-only commands: `friendWinter {id}`, `atomFirst` (the fact behind the achievement
+  `firstBomb`) and `friendFallout`. The war room's Bomb tab (`src/ui/Atom.tsx`, the pure `atomView.ts`) has a ladder
+  of eight rungs, each waiting with the sim's own reason; Build the bomb and Stop building (which asks first and
+  says what is lost); and the launch card, with a target per rival or friend and the sim's reason beside each it
+  can't aim at, then every consequence in plain words (reputation nothing for good, embargoes, pacts ended, total
+  war on the city at once, protest at home, a winter on every city, fallout for decades) before a **3-second hold**
+  (`launch-hold`, `HOLD_MS`; pointer events so it works by mouse, finger and pen, Space and Enter too, ending on
+  release, sliding off or blur). The countdown card (`atom-countdown`) stands top centre: who, the clock, the dome
+  in words, the shelter count, Raise the dome now, Look at the missile; the `raid-chip` carries the bomb before any
+  raid. The war room's `RegionMap` shows each city's race as pips and a fuel bar, a star on the first finisher, an
+  arc and a cloud for a strike; the Clean-up tool is `src/tools/cleanTool.ts`. Six tips (`atomRace` to
+  `atomWinter`); a test forbids "casualt", "killed", "dead" and "victim" in `src/data/atom.ts`, the interface and
+  the tips: toy look, no gore.
+- **Effects and sounds** (`src/render/atom.ts`, numbers in `src/render/atomFx.ts`; display only, read from the war
+  summary and the display clock). The missile flies a parabola 1.7 km high from 5.2 km out on the sender's side
+  (`inboundAt`) at 2.6× its model's size (`handmade.unit('atombomb')`, a generated rocket if the war models are
+  missing) and bursts 60 m over ground zero, circling there while the sim holds the landing back. The city's own
+  bomb waits in its silo under a hatch (an overlay) that opens as the preparation ends. The toy mushroom cloud is
+  camera-facing puffs shaded as small spheres, rising for 20 s of play, then drifting with the wind and fading over
+  game hours. The flash, ring and shake run on real time from the moment the display clock crosses the landing; with
+  `reduceFlashes` ("Soften flashes", defaulting from `prefers-reduced-motion`) the flash is a 0.8 s fade and nothing
+  shakes. Cost switches in `QUALITY_PARAMS.units`: `atomPuffs` (500 High, 300 Medium, 120 Low), `atomTrail` (60, 40,
+  24), `atomTint` (the fallout's stain on the ground, off at Low); the cloud is at most 3 draw calls and about 1,260
+  triangles, held to the plan's 6 and 4,000 by a test (`renderStats().atom`). Sounds, rendered offline and played
+  with the flash: `atomWarn` (a two-tone siren every 6 s of real time while the clock runs), `atomTick` each second
+  of the last ten, `atomBlast`, `atomWind` 2.2 s later, `atomStopped`.
+- **Determinism, saves and goldens**: all maths is `DMath`; rasters are walked in index order and every loop in
+  sorted id order; `out` is rounded to a thousandth before it crosses to a neighbour or a report; no atom code
+  touches a `sim.rng` stream (fires use `Rng.fromSeed` on the seed and a building's id, rivals
+  `${seed}:bomb:${month}`). `SAVE_VERSION` is 32 with `migrations[31]` the identity, and nothing is ever assigned
+  `undefined`, because `stateParts` walks every key and one would move the peace golden (`saveV32.test.ts` walks a
+  peace town's saved keys). `checksum` adds the winters, the rasters' sums, `out` and the race's facts only when
+  they exist. The goldens do not move: `peace-main.json`, `m36-war.json`, `v30-war.json`, `battle-v2.json` and
+  `tests/legacy/names.test.ts`; the fixture `tests/fixtures/war/v31-war.citybloom`, saved from the M39 tip before
+  any M40 change, loads and plays two months to its saved parts.
+- **Cross-browser and tests**: `runDeterminism` has an `atom` section (`tests/lockstep/atomSection.ts`) in the lab
+  town of the bomb's own tests (`labTown(0, { length: 800, streets: 7 })`, on Hard), played through the real
+  commands: the buildings, fuel, the build and a launch called off and begun again, agents against a computer
+  neighbour's race, a bomb the dome stops whole, the firing at a computer neighbour and the world's turn, a bomb
+  that finds the dome down and levels part of the town in slices with the fires lit over several ticks (two
+  throttles lowered for that strike, `THROTTLES`, since the town has about 300 buildings), a clean-up crew, a Hard
+  neighbour's own launch, and 300 game hours of fallout with both rasters hashed by the bits of every cell. It stops
+  with an error if a step of its story doesn't happen (`must`), so it cannot go green while covering less. The
+  friends section covers the page-only commands (`atomFirst`, a strike turned away and kept, winters by id, a
+  friend's cloud). Both are compared in every browser and in SpiderMonkey's shell (`e2e-xb/determinism.spec.ts`).
+  Unit tests: `tests/war/atomChain.test.ts` (a race through the real clock), `tests/war/atomFriends.test.ts` (three
+  cities in a real `RegionRoom`), `relay/tests/regionAtom.test.ts`.
+- **Budgets**: a blast is at most 400 buildings a slice, 3 civic buildings and 120 fires a tick, and its worst tick
+  on the 110k bench city is about 11 ms (`scripts/dev/atombench.ts`); a fallout update is under a millisecond, every
+  three game hours, after a hit. The report grows by the race's few numbers, `atoms` and `winters` stay under 2 KB,
+  and an hour of four cities racing writes about as many rows as one without (`relay/tests/freeplan.test.ts`).
+  Probes: `scripts/dev/atomprice.ts`, `fallout.ts`, `winter.ts`.
+
 ## 4. Rendering
 
 - **Scene**: WebGL2 renderer, ACES tone mapping, sRGB. Hemisphere + directional sun (PCF soft shadows,

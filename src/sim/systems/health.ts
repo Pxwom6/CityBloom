@@ -8,6 +8,7 @@ import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import type { Wealth } from '../../data/buildings';
 import { fieldAt } from './pollution';
+import { falloutSickness } from './fallout';
 
 /**
  * Sickness and learning, hourly (DESIGN §3.11). Pollution, dirty water and garbage make residents
@@ -53,11 +54,13 @@ export function sicknessRate(sim: Sim, b: Building): number {
   const k = sim.policyAt('healthyLiving', b.x, b.z) ? POLICY_EFFECTS.healthyLiving : 1;
   return (
     k *
-    (HEALTH.baseRate +
-      HEALTH.airRate * air +
-      HEALTH.groundRate * ground +
-      HEALTH.waterRate * water +
-      HEALTH.garbageRate * garbage)
+      (HEALTH.baseRate +
+        HEALTH.airRate * air +
+        HEALTH.groundRate * ground +
+        HEALTH.waterRate * water +
+        HEALTH.garbageRate * garbage) +
+    // Fallout (M40): exactly 0 without it.
+    falloutSickness(sim, b)
   );
 }
 

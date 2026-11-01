@@ -538,6 +538,8 @@ export type Query =
   | { type: 'chronicle' }
   | { type: 'civic'; id: number }
   | { type: 'overlay'; map: OverlayMap }
+  /** Fallout (M40): the radiation map's reading at a spot, and the city's fallout at a glance. */
+  | { type: 'fallout'; x?: number; z?: number }
   | { type: 'coveragePreview'; def: string; x: number; z: number; angle: number; side: 1 | -1 }
   | { type: 'advisors' }
   | { type: 'thoughts'; count?: number }

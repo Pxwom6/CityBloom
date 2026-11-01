@@ -291,6 +291,7 @@ import {
   cancelLaunch,
   launchBomb,
 } from './systems/atom';
+import { cleanFallout, falloutDue, falloutReading, falloutSummary, updateFallout } from './systems/fallout';
 import { awayCity } from './battle/away';
 import type { Battle } from './battle/battle';
 import type { BattleFrame } from './battle/types';
@@ -411,6 +412,8 @@ export type SimEvent = {
     | 'bombStopped'
     | 'bombLanded'
     | 'atomImpact'
+    // A clean-up crew has cleared its ground (M40 step 4).
+    | 'falloutCleaned'
     // Diplomacy (M36): `info.what` says what happened, `info.text` in words.
     | 'diplomacy';
   id: number;
@@ -1643,6 +1646,8 @@ export class Sim {
         return launchBomb(this, cmd.to, dryRun);
       case 'cancelLaunch':
         return cancelLaunch(this, dryRun);
+      case 'cleanFallout':
+        return cleanFallout(this, cmd.x, cmd.z, dryRun);
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
@@ -2086,11 +2091,14 @@ export class Sim {
         if (hour % 3 === 0) run('pollution', () => updateGroundPollution(this, 3));
         break;
       case HOURLY_AT.pollution + 1:
-        if (hour % 3 === 0)
+        if (hour % 3 === 0) {
           run('air', () => {
             updateAirPollution(this, 3);
             decayCrime(this, 3);
           });
+          // Fallout (M40), only once there is some (or a stream of it coming in from a neighbour).
+          if (s.fallout || (s.war && falloutDue(this))) run('fallout', () => updateFallout(this));
+        }
         break;
       case HOURLY_AT.matcher:
       case HOURLY_AT.matcher + 1:
@@ -2707,6 +2715,11 @@ export class Sim {
       }
       case 'overlay':
         return computeOverlay(this, q.map);
+      case 'fallout':
+        return {
+          reading: q.x !== undefined && q.z !== undefined ? falloutReading(this, q.x, q.z) : null,
+          summary: falloutSummary(this),
+        };
       case 'coveragePreview':
         return coveragePreview(this, q.def, q.x, q.z, q.angle, q.side);
       case 'advisors':

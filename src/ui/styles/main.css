@@ -2944,6 +2944,30 @@ body {
   margin-top: var(--space-1);
   font-size: var(--font-size-xs);
 }
+/* The fallout map (M40): three bands under the bar, and the tooltip that follows the pointer. */
+.legend-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+}
+.legend-bands i {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: var(--space-1);
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.radiation-tip {
+  position: fixed;
+  max-width: 18rem;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  pointer-events: none;
+  z-index: var(--z-hud);
+}
 
 /* Districts (M21): names over the map, the panel's list and the tool's swatches. */
 .district-labels {

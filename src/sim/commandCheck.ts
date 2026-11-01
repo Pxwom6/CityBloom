@@ -467,6 +467,8 @@ const CHECKS: Record<CommandType, Check> = {
   cancelBomb: () => ({ type: 'cancelBomb' }),
   launchBomb: (c) => (isInt(c.to) ? { type: 'launchBomb', to: c.to } : BAD),
   cancelLaunch: () => ({ type: 'cancelLaunch' }),
+  cleanFallout: (c) =>
+    isNum(c.x, 0, MAP_SIZE) && isNum(c.z, 0, MAP_SIZE) ? { type: 'cleanFallout', x: c.x, z: c.z } : BAD,
 };
 
 /**

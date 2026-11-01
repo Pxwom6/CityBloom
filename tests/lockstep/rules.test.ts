@@ -91,6 +91,8 @@ describe('the roles of war in a shared city (M39)', () => {
       // The atom bomb (M40): building it is defence spending.
       { type: 'buildBomb' },
       { type: 'cancelBomb' },
+      // Clearing fallout is defence spending too (M40 step 4).
+      { type: 'cleanFallout', x: 100, z: 100 },
     ],
   } as unknown as Record<'war' | 'treaties' | 'defence', Command[]>;
 

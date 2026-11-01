@@ -184,6 +184,8 @@ const SAMPLES: Record<CommandType, Command> = {
   cancelBomb: { type: 'cancelBomb' },
   launchBomb: { type: 'launchBomb', to: 2 },
   cancelLaunch: { type: 'cancelLaunch' },
+  // M40 step 4: clearing fallout.
+  cleanFallout: { type: 'cleanFallout', x: 640, z: 700 },
 };
 
 /** Values a field might carry instead of what it should. */

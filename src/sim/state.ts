@@ -19,6 +19,7 @@ import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
 import type { District } from './systems/districts';
 import type { WeatherState } from './systems/weather';
+import type { Fallout } from './systems/fallout';
 import type { MapData } from './terrain/customMap';
 import type { RegionState } from './systems/region';
 import type { WarState } from './systems/war';
@@ -171,4 +172,9 @@ export interface SimState {
    * with war on; a peaceful city has no such key.
    */
   war?: WarState;
+  /**
+   * Fallout (M40): what an atom bomb left on the ground and in the air. Made by the first strike or
+   * the first stream in from a neighbour; a city that never has any has no such key.
+   */
+  fallout?: Fallout;
 }

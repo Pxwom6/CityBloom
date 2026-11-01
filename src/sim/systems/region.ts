@@ -26,6 +26,7 @@ import { BATTLE } from '../../data/battle';
 import { MAP_SIZE } from '../../data/world';
 import { tierCounts } from './research';
 import { counterIntel } from './intel';
+import { falloutTownDrag, falloutTownMonth } from './fallout';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -362,8 +363,9 @@ export function regionMonth(sim: Sim): void {
     }
     const def = NEIGHBOUR_KIND[n.kind];
     n.trend = Math.max(def.trend[0], Math.min(def.trend[1], n.trend + rng.range(-1, 1) * REGION.trendStep));
-    // A town the city sanctions (M38) grows more slowly.
-    const drag = sanctionDrag(sim, n.id);
+    // A town the city sanctions (M38), or whose ground its fallout fell on (M40), grows more slowly.
+    const drag = sanctionDrag(sim, n.id) - falloutTownDrag(n);
+    falloutTownMonth(n);
     n.population = Math.max(
       REGION.minPopulation,
       Math.round(n.population * (drag ? 1 + n.trend + drag : 1 + n.trend)),

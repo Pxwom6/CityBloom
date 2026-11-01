@@ -1519,3 +1519,84 @@ these are its calls and the reasons, with where they overturned the first draft.
   - *Tests for what the blast does to a base, a plant and a silo* go through the real `removeCivic`
     (a bare delete fails them): units and orders gone and the books straight for days after; a silo in
     the blast loses the bomb, the build and the preparation; a plant halves the fuel.
+- **Step 4 (fallout, the computer-neighbour half): calls the plan left open.**
+  - *The dose.* The effects read one number, `dose = min(1, ground + 0.5 × air)`: the ground is what
+    stays and the passing cloud counts for half. The bans read the ground alone ("the ground is at or
+    above 0.2"). Sickness is `+0.04 × dose` new cases per resident per hour, on top of `HEALTH`'s and
+    outside the Healthy living policy (a policy about habits does nothing for radiation); the home's mood
+    term "Fallout nearby" is `−0.6 × dose` (shown from 0.005, homes only, as "Tired of war" is); work is
+    `1 − min(0.6, 1.2 × dose)`; land value `−0.6 × dose`. All in `FALLOUT.effect`; each has one reader
+    that returns exactly 1 or 0 with no raster, so no hash of a city without fallout moves (the goldens
+    and the v31 fixture pass unchanged).
+  - *The plume leaves less on the ground than the plan's first numbers did.* `air.deposit` is 0.02, not
+    0.05, and the snap floor 1e-5, not 1e-4. At 0.05 the plume laid 17 % of the strike's mass on the
+    ground along its way (a 1 km tail of 0.06 to 0.09 that moved the ground's centre of mass 60 m in
+    three days and made every home downwind ill for a decade); at 0.02 the tail is 0.035 to 0.045 a kilometre on, "a little".
+    The floor was lowered because a thin stream from a neighbour deposits about 1e-4 a update, which the
+    old floor snapped away each time. The core's 18.6 years do not depend on either.
+  - *A computer neighbour's fallout drifts back in as the air's boundary condition,* not as a source
+    along the edge: the semi-Lagrangian step reads `FALLOUT.town.inflow (0.006) × the neighbour's level`
+    for any sample beyond the edge on its side (the north neighbour beyond row 0, and so on; corners go
+    to north and south). So it comes in only while the wind blows from that side, in the share the
+    wind's component gives, with no striping, and a city whose wind blows away from a bombed neighbour
+    never gets a raster (`falloutDue`; the first stream in is what makes it). Measured with a neighbour
+    at 1.0 and a wind from its side: ground about 0.03 along the stream after ten years (0.02 to 0.03
+    for the next ten), never near the ban; a thin haze, not a second strike. The neighbour's level halves
+    every eight game years, so the stream does.
+  - *A trickle is haze.* Less than 1 unit of air crossing an edge in one update (`edge.trickle`) is
+    cleared but not counted. Without it the stream passing through the city (about 0.2 an update) was
+    counted at the edge it leaves by and fed a third town: a bombed west neighbour lifted the south
+    neighbour to 0.26 through the city's own accounting, more than a strike in the middle sends (the
+    probe showed it). A plume is tens to 190 an update, a stream 0.2. The friends' half (step 10)
+    inherits the rule: `out` only grows by clouds.
+  - *Edges are open only to the wind.* The two outermost rows or columns of air are cleared and counted
+    only on a side the wind blows towards (the east sink likewise). Clearing every update on every side,
+    the plan's wording, counted a stream that had just come in as leaving again and fed the neighbour's
+    own level back up to 1.0 for ever (the probe showed 882 "out" in twelve years from a neighbour that
+    should have faded to 0.35).
+  - *Numbers from the probe* (`scripts/dev/fallout.ts`, seed `f`, a strike in the middle of the map; the
+    table is in the step's summary): the core reopens after 18.6 game years (11.1 hours of play), the
+    closed area (0.2 and up) is 1.02 km² at the start and 0 at year 19, a neighbour on the downwind side
+    gets 0.27 to 0.28 from a middle strike (0.12 to 0.20 where the wind splits between two edges) and
+    0.33 to 0.47 from one 300 m from its edge, then halves every eight years (`town.scale` 400,
+    `town.share` 0.6); 25 years of updates take 1.7 to 1.9 s, 0.7 to 0.8 ms an update.
+  - *Neighbours' levels are rounded to a millionth and a trace is dropped.* `rival.fallout` is kept to
+    1e-6 (the old rounding to 1e-4 swallowed a trickle: 2e-6 an update never added up) and its key is
+    deleted below 0.005 at the month's fade, so a neighbour a trickle once touched is as it was.
+    `regionMonth` takes the growth drag (`town.drag` 0.01 × level) as a value added to the sanction's
+    before the same expression; the dice (`rng.region`) are rolled exactly as before.
+  - *Bans.* `zone` skips closed cells (clearing a zone is always allowed) and, if every cell the brush
+    found was closed, says why and paints nothing (`info.closed` counts what a mixed brush left);
+    `checkPlacement` refuses on the worst of the footprint's nine points (a move too), after the
+    water and slope checks and before the building's own requirements, so the words are the same
+    whatever else is wrong; `growthPass` skips a lot when any column's first cell is closed (before
+    the dice, so a city with fallout draws less from `rng.growth`, which is nobody's golden); the
+    hourly lifecycle treats closed ground as heritage (no retooling, no upgrading, `good` reset).
+    `cellStaticValid` and `revalidate` are untouched: buildings on closed ground stay, their people
+    leave on their own (mood), and a ruin there is not rebuilt. An abandoned building may still be
+    reoccupied (it is not new building).
+  - *The refusal's years* come from the decay alone, `8 × log2(ground / 0.2)`, rounded, at least one
+    ("about 1 more game year"); the spreading and what the air adds are ignored, so it can be a little
+    out, always on the side of "sooner" for ground nearer the edge of the closed zone.
+  - *Clean-up.* `cleanFallout {x, z}` (`defence`) is refused when there is no raster, when the ground
+    within 128 m is under 0.02 ("clean enough"), when three crews are out, when one is within 64 m, and
+    when the treasury is short (sandbox lets it run short, as other price checks do); the crew's hours
+    are counted in updates (96 h = 32), and when it is done every cell within 128 m has its ground
+    multiplied by 0.5 (the air is left to the wind), event `falloutCleaned`. A city that has not
+    researched Repair crews (`logistics2`) pays twice and the job is marked `relief`; the price is the
+    ledger line `cleanup`. Not undoable (it is a hire, not a placement).
+  - *The map.* `radiation` is the `hazard` ramp's three bands in one value: air alone 0.1 to 0.25,
+    open ground with fallout 0.3 to 0.55, closed ground 0.6 to 1, and the rim of the closed ground 1
+    (the outline). The maps menu offers it only in a city with war on. A pointer over the map asks the
+    `fallout` query (one question in flight, the last position wins) and a small tooltip follows it:
+    "Fallout 0.34. Closed for about 6 more game years (4 hours of play)", "…Open for building", or
+    nothing under 0.005. The query also carries the summary (closed area, peak, crews, price) for the
+    war room's Bomb tab and the clean-up tool, which come with step 11.
+  - *Saves, hashes, checks.* `SimState.fallout` is `{ground, air, out, seen, jobs}`; `seen` is empty
+    until step 10 (a friend's plume totals). The checksum adds the rasters' sums, the three counters and
+    the number of crews when the raster exists; `partHashes` already cover any key. `checkInvariants`
+    scans the rasters once an hour (they change only at an update or a strike), finite and in range.
+  - *Left for the steps that own them:* the friends' half (`friendFallout`, the report's `plume`,
+    `seen`) is step 10; the clean-up tool's UI, the Bomb tab's fallout block and the radiation tint in
+    3D are step 11; the cross-browser `atomSim` section (which uses `cleanFallout`: it is in
+    `PENDING_KINDS` with the bomb's four commands) is step 8.

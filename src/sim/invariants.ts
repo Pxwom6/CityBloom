@@ -1,6 +1,7 @@
 import type { Sim } from './sim';
 import { ATOM } from '../data/atom';
 import { MAP_SIZE } from '../data/world';
+import { TICKS_PER_HOUR } from './time';
 import { buildingCapacity } from './world/buildings';
 
 export class InvariantError extends Error {}
@@ -78,6 +79,26 @@ export function checkInvariants(sim: Sim): void {
     if (!Number.isFinite(v) || v < -1 || v > 1) throw new InvariantError(`demand ${k} = ${v}`);
   }
   checkAtom(sim);
+  checkFallout(sim);
+}
+
+/** Fallout (M40): finite rasters, the ground in [0, 1], the air not negative, the counters not negative. */
+function checkFallout(sim: Sim): void {
+  const f = sim.state.fallout;
+  if (!f) return;
+  // (The rasters are scanned once an hour, not every tick: they change only at an update or a strike.)
+  if (sim.state.tick % TICKS_PER_HOUR === 0)
+    for (let k = 0; k < f.ground.length; k++) {
+      const g = f.ground[k]!;
+      if (!Number.isFinite(g) || g < 0 || g > 1) throw new InvariantError(`fallout ground[${k}] = ${g}`);
+      const a = f.air[k]!;
+      if (!Number.isFinite(a) || a < 0 || a > 1) throw new InvariantError(`fallout air[${k}] = ${a}`);
+    }
+  for (const side of ['north', 'south', 'west'] as const)
+    if (!Number.isFinite(f.out[side]) || f.out[side] < 0) throw new InvariantError(`fallout out.${side}`);
+  for (const j of f.jobs)
+    if (![j.x, j.z, j.left].every(Number.isFinite) || j.left <= 0)
+      throw new InvariantError(`fallout clean-up job ${j.x},${j.z}: ${j.left}`);
 }
 
 /** The race for the atom bomb (M40): finite facts in range, one bomb, a flight with somewhere to go. */

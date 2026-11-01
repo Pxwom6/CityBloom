@@ -6,6 +6,7 @@ import { SERVICE_KINDS, type ServiceKind } from '../data/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { JUNCTION, TRAFFIC } from '../data/balance';
 import { hourOfDay } from '../sim/time';
+import type { FalloutQuery } from '../sim/systems/fallout';
 
 /** Colour ramps for data maps (see the data-viz reference palette). */
 const SEQUENTIAL = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'].map(
@@ -16,11 +17,23 @@ const DIV_MID = new Color('#f0efec');
 const DIV_GOOD = new Color('#2a78d6');
 const tmp = new Color();
 
+/** Fallout (M40): a haze in the air, amber on open ground, red where the ground is closed, dark at the core. */
+const HAZARD_RAMP = ['#fff0a8', '#ffd24a', '#f08a24', '#d12a1f', '#5a0f2e'].map((h) => new Color(h));
+
 /** Congestion: flowing → busy → jammed → gridlock (status colours, always with a legend). */
 const TRAFFIC_RAMP = ['#3a9e5c', '#9cc24a', '#e8b43a', '#e0662f', '#b3261e'].map((h) => new Color(h));
 
-export function rampColor(ramp: 'diverging' | 'sequential' | 'traffic', v: number, out = new Color()): Color {
+export function rampColor(
+  ramp: 'diverging' | 'sequential' | 'traffic' | 'hazard',
+  v: number,
+  out = new Color(),
+): Color {
   const t = Math.max(0, Math.min(1, v));
+  if (ramp === 'hazard') {
+    const f = t * (HAZARD_RAMP.length - 1);
+    const i = Math.min(HAZARD_RAMP.length - 2, Math.floor(f));
+    return out.copy(HAZARD_RAMP[i]!).lerp(HAZARD_RAMP[i + 1]!, f - i);
+  }
   if (ramp === 'traffic') {
     const f = t * (TRAFFIC_RAMP.length - 1);
     const i = Math.min(TRAFFIC_RAMP.length - 2, Math.floor(f));
@@ -54,6 +67,7 @@ export const MAPS: { id: OverlayMap; name: string; group: string }[] = [
   { id: 'airPollution', name: 'Air pollution', group: 'Environment' },
   { id: 'noise', name: 'Noise', group: 'Environment' },
   { id: 'groundPollution', name: 'Ground pollution', group: 'Environment' },
+  { id: 'radiation', name: 'Fallout', group: 'Environment' },
   { id: 'eduLevel', name: 'Education level', group: 'City' },
   { id: 'groundwater', name: 'Groundwater', group: 'Resources' },
   { id: 'resources', name: 'Ore and oil', group: 'Resources' },
@@ -65,7 +79,11 @@ export class OverlayController {
   /** Show only this district on data maps (M21), or everywhere (null). */
   district: number | null = null;
   last: OverlayResult | null = null;
+  /** The fallout map's tooltip (M40): what the pointer is over, where on the screen. */
+  reading: { text: string; x: number; y: number } | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private pointer: { x: number; z: number; cx: number; cy: number } | null = null;
+  private asking = false;
 
   constructor(private game: Game) {}
 
@@ -73,6 +91,10 @@ export class OverlayController {
     this.active = map;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    window.removeEventListener('pointermove', this.watch);
+    this.reading = null;
+    this.pointer = null;
+    if (map === 'radiation') window.addEventListener('pointermove', this.watch);
     const u = this.game.renderer.terrain.uniforms;
     this.game.renderer.coverageMap.show(null);
     this.roadsKey = '';
@@ -87,6 +109,42 @@ export class OverlayController {
     void this.refresh();
     this.timer = setInterval(() => void this.refresh(), 1000);
     this.game.notify();
+  }
+
+  /** The pointer moved: on the fallout map, ask the sim what it is over (one question at a time). */
+  private watch = (e: PointerEvent): void => {
+    if (e.target !== this.game.renderer.canvas) {
+      this.pointer = null;
+      if (this.reading) {
+        this.reading = null;
+        this.game.notify();
+      }
+      return;
+    }
+    const g = this.game.renderer.controller.screenToGround(e.clientX, e.clientY);
+    this.pointer = g ? { x: g.x, z: g.z, cx: e.clientX, cy: e.clientY } : null;
+    if (!this.asking) void this.read();
+  };
+
+  private async read(): Promise<void> {
+    this.asking = true;
+    try {
+      while (this.pointer && this.active === 'radiation') {
+        const p = this.pointer;
+        const res = await this.game.client.query<FalloutQuery>({
+          type: 'fallout',
+          x: Math.round(p.x),
+          z: Math.round(p.z),
+        });
+        if (this.active !== 'radiation') break;
+        this.reading =
+          res.reading && res.reading.dose >= 0.005 ? { text: res.reading.text, x: p.cx, y: p.cy } : null;
+        this.game.notify();
+        if (this.pointer === p) break;
+      }
+    } finally {
+      this.asking = false;
+    }
   }
 
   /** Filter data maps to one district (M21), or show the whole city again. */

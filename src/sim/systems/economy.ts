@@ -32,6 +32,7 @@ import { formatInt } from '../dmath';
 import { bondRates, forcesUpkeep } from './war';
 import { diplomacyRates } from './diplomacy';
 import { warEconomyRates } from './warEconomy';
+import { radiationWork } from './fallout';
 
 export interface Loan {
   id: number;
@@ -120,7 +121,8 @@ export function buildingTax(sim: Sim, b: Building): number {
   const rate = sim.state.economy.taxes[z][b.wealth]! / 100;
   let base = b.pop * TAX_BASE[z][b.wealth]!;
   if (z === 'C') base *= 0.5 + 0.5 * Math.min(1, b.shop);
-  return base * rate;
+  // Fallout (M40): work done under it is worth less (exactly 1 without it).
+  return base * rate * radiationWork(sim, b);
 }
 
 /**

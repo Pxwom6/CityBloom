@@ -316,7 +316,9 @@ export type Command =
   | { type: 'buildBomb' }
   | { type: 'cancelBomb' }
   | { type: 'launchBomb'; to: number }
-  | { type: 'cancelLaunch' };
+  | { type: 'cancelLaunch' }
+  /** Send a crew to clear the fallout within 128 m of a spot (M40): $350,000, 96 hours, three at a time. */
+  | { type: 'cleanFallout'; x: number; z: number };
 
 export type CommandType = Command['type'];
 
@@ -411,6 +413,7 @@ const COMMAND_KINDS = {
   cancelBomb: true,
   launchBomb: true,
   cancelLaunch: true,
+  cleanFallout: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

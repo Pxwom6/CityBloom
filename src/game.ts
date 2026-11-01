@@ -1485,6 +1485,12 @@ export class Game {
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
+      else if (e.kind === 'falloutCleaned')
+        this.notice(
+          'falloutCleaned',
+          'A clean-up crew has finished: the ground there has half the fallout it had.',
+          'ok',
+        );
       else if (e.kind === 'atomImpact')
         this.notice(
           'atomImpact',

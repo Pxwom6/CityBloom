@@ -23,6 +23,7 @@ import { railTerminals } from './rail';
 import { regionRound } from './regionFlows';
 import { militaryStaffing, type MilitaryStaff } from './war';
 import { REGION } from '../../data/region';
+import { radiationWork } from './fallout';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -407,14 +408,18 @@ function runFreight(
   for (const [node, list] of [...jobsAt].sort((a, b) => a[0] - b[0])) {
     for (const j of list) {
       if (j.b.zone === ZONE_C) {
-        const open = j.b.pop * TRAFFIC.freightPerCommercialJob;
+        const open = j.b.pop * TRAFFIC.freightPerCommercialJob * radiationWork(sim, j.b);
         if (open > 0) {
           const l = need.get(node) ?? [];
           l.push({ b: j.b, att: j.att, open });
           need.set(node, l);
         }
       } else if (j.b.zone === ZONE_I && j.b.pop > 0) {
-        makers.push({ node, b: j.b, out: j.b.pop * TRAFFIC.freightPerIndustrialJob });
+        makers.push({
+          node,
+          b: j.b,
+          out: j.b.pop * TRAFFIC.freightPerIndustrialJob * radiationWork(sim, j.b),
+        });
       }
     }
   }

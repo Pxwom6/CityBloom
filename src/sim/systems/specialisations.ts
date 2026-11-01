@@ -8,6 +8,7 @@ import { civicDef, civicOnline, civicRect, railSiding, resourceRichness, type Ci
 import { matchDayNow, openProject } from './projects';
 import { linkedToRegion } from './rail';
 import { REGION } from '../../data/region';
+import { radiationWork } from './fallout';
 
 /** Visitors a day and how many of them stay the night (saved; recomputed hourly). */
 export interface TourismState {
@@ -48,7 +49,7 @@ export function extractionPerDay(sim: Sim, c: Civic): number {
 export function highTechJobs(sim: Sim): number {
   let n = 0;
   for (const b of sim.state.buildings.values())
-    if (b.state === BState.Active && b.zone === ZONE_I && b.wealth === 2) n += b.pop;
+    if (b.state === BState.Active && b.zone === ZONE_I && b.wealth === 2) n += b.pop * radiationWork(sim, b);
   return n;
 }
 
@@ -56,7 +57,7 @@ export function highTechJobs(sim: Sim): number {
 function industrialJobs(sim: Sim): number {
   let n = 0;
   for (const b of sim.state.buildings.values())
-    if (b.state === BState.Active && b.zone === ZONE_I) n += b.pop;
+    if (b.state === BState.Active && b.zone === ZONE_I) n += b.pop * radiationWork(sim, b);
   return n;
 }
 

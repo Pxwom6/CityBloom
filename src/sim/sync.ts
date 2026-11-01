@@ -90,6 +90,16 @@ export function checksum(sim: Sim): string {
   m.num(sumArray(s.crime));
   m.num(sumArray(s.terrainDelta));
   m.num(s.weather.temp);
+  // Fallout (M40), only once there is some: the rasters' sums and what the air has carried out.
+  const fo = s.fallout;
+  if (fo) {
+    m.num(sumArray(fo.ground));
+    m.num(sumArray(fo.air));
+    m.num(fo.out.north);
+    m.num(fo.out.south);
+    m.num(fo.out.west);
+    m.int(fo.jobs.length);
+  }
   // War (M34), only where it's on: a peaceful city's checksum is as before.
   const w = s.war;
   if (w) {

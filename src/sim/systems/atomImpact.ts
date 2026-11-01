@@ -12,8 +12,8 @@
  * disaster line: homes that fall are residents who have left the city, and that is all the city is
  * told. It draws only from dice of its own (`Rng.fromSeed(seed:atom:id)`, a building's own id), never
  * from a `sim.rng` stream, and a slice done is rubble, so a slice is idempotent and a city saved in
- * the middle of an impact carries on exactly. Fallout and the nuclear winter, which follow the last
- * slice, are steps 4 and 5 (the two seams at the bottom).
+ * the middle of an impact carries on exactly. Fallout (`fallout.ts`) and the nuclear winter, which follow the last
+ * slice, are the two calls at the bottom (the winter is step 5's seam).
  */
 import { ATOM } from '../../data/atom';
 import { MAP_SIZE } from '../../data/world';
@@ -27,6 +27,7 @@ import { civicDef, civicRect } from '../world/civic';
 import type { Civic } from '../world/civic';
 import type { Atom } from './atom';
 import { buildingsNear, clearTrees, segmentsNear } from './disasters';
+import { depositFallout } from './fallout';
 import { ignite, toRubble } from './incidents';
 import { damageCivic } from './raids';
 
@@ -269,9 +270,9 @@ export function impactOver(sim: Sim, a: Atom, im: Impact): void {
   sim.warChanged();
 }
 
-/** The seam for step 4: the ground and the air carry the fallout from ground zero. */
-function startFallout(_sim: Sim, _im: Impact): void {
-  /* step 4 */
+/** The ground and the air carry the fallout from ground zero (`fallout.ts`). */
+function startFallout(sim: Sim, im: Impact): void {
+  depositFallout(sim, im.x, im.z);
 }
 
 /** The seam for step 5: a nuclear winter begins, here, at once. */

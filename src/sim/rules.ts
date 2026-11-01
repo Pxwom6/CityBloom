@@ -108,6 +108,8 @@ const NEED: Partial<Record<Command['type'], Permission>> = {
   cancelBomb: 'defence',
   launchBomb: 'war',
   cancelLaunch: 'war',
+  // Clearing fallout (M40) is defence spending: relief crews are the army's.
+  cleanFallout: 'defence',
   setPolicy: 'policies',
   setDistrictPolicy: 'policies',
   promise: 'policies',

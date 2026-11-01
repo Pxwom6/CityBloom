@@ -140,3 +140,70 @@ export const ATOM = {
    */
   warning: { mood: 0.08, days: 3 },
 };
+
+/**
+ * Fallout (M40 step 4, plan calls 11 and 12): a ground layer that stays and decays, and an air layer
+ * that moves with the city's wind. Rasters of the pollution's size (128 cells of 16 m); everything is
+ * "per update", an update being three game hours (the pollution's rhythm, run in the slot after it).
+ * The sim side is `src/sim/systems/fallout.ts`.
+ */
+export const FALLOUT = {
+  /**
+   * Half-life of the ground layer and of a computer neighbour's level, in game years: 8, so the
+   * core of a strike (1.0) falls below the ban (0.2) after 8 log2(5) = 18.6 years, 11 hours of play.
+   */
+  halfLifeYears: 8,
+  /** Ground at or above this level is closed: nothing can be zoned, placed or grown on it. */
+  ban: 0.2,
+  /**
+   * The strike's ground deposit: `min(1, peak (1 - d / reach)^shape)` at distance d metres from
+   * ground zero (0.2 at about 570 m), and the share of the mass that is put into the air instead,
+   * over the downwind side, to be carried off.
+   */
+  impact: { peak: 1.3, reach: 720, shape: 1.2, plume: 0.3 },
+  /**
+   * One update of the air: it moves `wind` cells along the city's wind (as the smoke does), diffuses
+   * (the share a cell takes from its four neighbours' mean), loses `deposit` of what it holds to the
+   * ground and decays; the ground diffuses a little. Cells below `floor` snap to 0.
+   */
+  air: { wind: 4, diffusion: 0.2, deposit: 0.02, decay: 0.97 },
+  ground: { diffusion: 0.02 },
+  floor: 1e-5,
+  /**
+   * What the air carries out across the map's edges (call 12): the outermost `rows` rows or columns
+   * on the north, south and west are cleared into a cumulative counter (rounded to `round`) when the
+   * wind blows towards that edge; the east edge is a sink. Less than `trickle` crossing in one update
+   * is haze, cleared but not counted (a neighbour's thin stream passing through the city must not make
+   * the next town ill). A computer neighbour on that side gains `town.share x counted / town.scale`
+   * fallout (at most 1); its growth is dragged by `town.drag` x its level a month. And from a
+   * neighbour with fallout upwind, `town.inflow` x its level is the air's concentration beyond that
+   * edge, drifting in when the wind blows from that side.
+   */
+  edge: { rows: 2, round: 0.001, trickle: 1 },
+  town: { share: 0.6, scale: 400, drag: 0.01, inflow: 0.006 },
+  /**
+   * What fallout does where people are, with `dose` = ground + `airDose` x air, at most 1: sickness
+   * (new cases per resident per hour, on top of HEALTH's), a home's mood, the share of its work that
+   * is lost (taxes, freight, specialisation income: at most `workMax`), and land value.
+   */
+  airDose: 0.5,
+  effect: { sickness: 0.04, mood: -0.6, work: 1.2, workMax: 0.6, landValue: 0.6 },
+  /**
+   * A clean-up job (call 11): `cost` dollars (`relief` times that for relief crews, hired by a city
+   * that hasn't researched `tier`), `hours` of the city's own time, `jobs` at a time, within `radius`
+   * metres the ground is multiplied by `keep`. A spot whose ground is below `min` is not worth a job.
+   */
+  cleanup: {
+    cost: 350_000,
+    relief: 2,
+    tier: 'logistics2',
+    hours: 96,
+    jobs: 3,
+    radius: 128,
+    keep: 0.5,
+    min: 0.02,
+  },
+  /** Game hours in a game year and seconds of play per game hour at 1x, for "hours of play". */
+  yearHours: 288,
+  secondsPerHour: 7.5,
+};

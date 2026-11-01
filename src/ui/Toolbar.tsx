@@ -858,7 +858,7 @@ function MapsMenu({ onClose }: { onClose: () => void }) {
       {groups.map((g) => (
         <div key={g} class="maps-group">
           <h4>{g}</h4>
-          {MAPS.filter((m) => m.group === g).map((m) => (
+          {MAPS.filter((m) => m.group === g && (m.id !== 'radiation' || game.world.stats.war)).map((m) => (
             <button
               key={m.id}
               class={`map-item ${game.overlay.active === m.id ? 'active' : ''}`}
@@ -893,7 +893,9 @@ export function MapLegend() {
       ? 'linear-gradient(90deg, #3a9e5c, #9cc24a, #e8b43a, #e0662f, #b3261e)'
       : res.ramp === 'diverging'
         ? 'linear-gradient(90deg, #e34948, #f0efec, #2a78d6)'
-        : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
+        : res.ramp === 'hazard'
+          ? 'linear-gradient(90deg, #fff0a8, #ffd24a, #f08a24, #d12a1f, #5a0f2e)'
+          : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
   return (
     <div
       class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''} ${
@@ -922,12 +924,41 @@ export function MapLegend() {
           </button>
         </div>
       )}
+      {game.overlay.active === 'radiation' && (
+        <div class="legend-bands" data-testid="radiation-bands">
+          <span>
+            <i style={{ background: '#fff0a8' }} /> In the air
+          </span>
+          <span>
+            <i style={{ background: '#f08a24' }} /> On open ground
+          </span>
+          <span>
+            <i style={{ background: '#d12a1f' }} /> Closed: nothing can be built
+          </span>
+        </div>
+      )}
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
           {game.world.roadIslands().list.length > 0 && ' · Red with no cars: no road link to the highway'}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The fallout map's tooltip (M40): the dose under the pointer and how long the ground stays closed. */
+export function RadiationTip() {
+  const game = useGameUpdates(150);
+  const r = game.overlay.reading;
+  if (game.overlay.active !== 'radiation' || !r) return null;
+  return (
+    <div
+      class="radiation-tip panel"
+      data-testid="radiation-tip"
+      style={{ left: `${Math.min(r.x + 14, window.innerWidth - 300)}px`, top: `${r.y + 18}px` }}
+    >
+      {r.text}
     </div>
   );
 }

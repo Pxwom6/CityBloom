@@ -18,8 +18,8 @@ export const TOWN_OPTIONS = { seed: 'lockstep', preset: 'river' as const, cityNa
 
 /**
  * Kinds the script does not issue yet, waiting for the section that will (M40: the atom bomb's four
- * commands need a war town with all 24 tiers researched, a plant and a silo, which step 8's `atom`
- * section builds). Step 8 empties this list; `determinism.test.ts` fails if a kind is listed here
+ * commands need a war town with all 24 tiers researched, a plant and a silo, and clearing fallout needs a
+ * struck city, all of which step 8's `atom` section builds). Step 8 empties this list; `determinism.test.ts` fails if a kind is listed here
  * and the script already uses it, so the list cannot be forgotten.
  */
 export const PENDING_KINDS: readonly CommandType[] = [
@@ -27,6 +27,7 @@ export const PENDING_KINDS: readonly CommandType[] = [
   'cancelBomb',
   'launchBomb',
   'cancelLaunch',
+  'cleanFallout',
 ];
 
 /**

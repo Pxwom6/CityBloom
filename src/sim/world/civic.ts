@@ -22,6 +22,7 @@ import { RAIL } from '../../data/balance';
 import { DMath, formatInt } from '../dmath';
 import { standsDown } from '../systems/diplomacy';
 import { civicLock } from '../systems/research';
+import { falloutRefusal } from '../systems/fallout';
 
 /** A player-placed civic building (utility, service, park, landmark). */
 export interface Civic {
@@ -315,6 +316,16 @@ export function checkPlacement(
   }
   if (hi - lo > GRADING.padMax * (def.seaport || def.waterfront ? 2 : 1))
     return { ...res, reason: 'Ground is too steep' };
+  // Ground that fallout has closed (M40): the worst point of the footprint decides.
+  const closed = sim.state.fallout
+    ? falloutRefusal(
+        sim,
+        x,
+        z,
+        pts.map((p): [number, number] => [p.x, p.z]),
+      )
+    : null;
+  if (closed) return { ...res, reason: closed };
   res.y = hi;
   if (def.nearWater !== undefined) {
     const i = Math.min(GRID_RES - 1, Math.max(0, Math.floor(x / GRID_CELL)));

@@ -191,6 +191,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   enrichment: 'Fuel enrichment',
   atomBomb: 'Atom bomb instalments',
   atomLaunch: 'Launch preparation',
+  cleanup: 'Fallout clean-up',
 };
 
 export function ledgerLabel(key: string): string {

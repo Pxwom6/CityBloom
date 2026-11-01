@@ -320,6 +320,30 @@ describe('rows', () => {
     expect(cities[2]).toMatchObject({ gone: true, name: 'A former city (#3)' });
     expect(cities[0]!.gone).toBeUndefined();
   });
+
+  it('never offers “city 0”: a line about one city (the atom bomb’s race) names none as its second', () => {
+    // The room writes a race line with `b: 0`: no second city. It is not a city that has left.
+    const race = ev(20, {
+      kind: 'race',
+      a: 1,
+      b: 0,
+      text: 'Adaville has begun building an enrichment plant',
+    });
+    const cities = historyCities(
+      [race, ...events],
+      [
+        { slot: 2, name: 'Samford' },
+        { slot: 1, name: 'Adaville' },
+      ],
+    );
+    expect(cities.map((c) => c.slot)).toEqual([1, 2, 3]);
+    expect(cities.some((c) => c.slot === 0)).toBe(false);
+    // ... and a line about a city that has left still offers it, alone or as the first of a line.
+    const gone = historyCities([ev(21, { kind: 'race', a: 9, b: 0 })], [{ slot: 1, name: 'Adaville' }]);
+    expect(gone.map((c) => c.slot)).toEqual([1, 9]);
+    // Narrowing by the city the line is about still finds it.
+    expect(historyRows([race], [], { city: 1, groups: [] })).toHaveLength(1);
+  });
 });
 
 describe('days', () => {

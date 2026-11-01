@@ -265,8 +265,9 @@ export function historyCities(
   const out: HistoryCity[] = inRegion.map((c) => ({ slot: c.slot, name: c.name }));
   const known = new Set(out.map((c) => c.slot));
   for (const e of events)
+    // (A line about one city, like the atom bomb's race, has 0 for its second: no city at all.)
     for (const slot of [e.a, e.b])
-      if (!known.has(slot)) {
+      if (slot > 0 && !known.has(slot)) {
         known.add(slot);
         out.push({ slot, name: `A former city (#${slot})`, gone: true });
       }

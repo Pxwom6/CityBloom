@@ -32,7 +32,14 @@ import {
   type SabotageTarget,
   type SpyOp,
 } from '../src/data/intel';
-import { bombLine, cleanAtomReport, raceLine, raceSlowWhy, type AtomMarkKind } from '../src/data/atom';
+import {
+  ATOM_WIRE,
+  bombLine,
+  cleanAtomReport,
+  raceLine,
+  raceSlowWhy,
+  type AtomMarkKind,
+} from '../src/data/atom';
 import { BRANCHES, BRANCH_IDS, cleanTiers, type Branch, type TierKey } from '../src/data/research';
 import {
   ATOM_PROTOCOL,
@@ -480,6 +487,13 @@ interface City {
   liveOwed?: string[];
   /** The protocol its page last said (M39): a war with a friend needs two pages that speak it. */
   v?: number;
+  /**
+   * How many of its three neighbours were the computer's when it joined (M40 review): three, less the
+   * cities already here. A city the region has not seen join (an older record) reads it from the cities
+   * that are here now. A computer neighbour that later gives its place to a friend could still have sent
+   * its bomb before, so this does not shrink as the region fills.
+   */
+  free?: number;
   /** What the region keeps of its race apart from its latest report (M40, call 16). */
   atom?: {
     /** The highest stage announced; a stage below it (a silo lost) re-arms the announcement. */
@@ -492,7 +506,17 @@ interface City {
     stopped: number;
     /** It has used its one bomb (a strike the region kept, or a report that says so): for good. */
     used?: true;
-    /** Announcements made on a UTC day. */
+    /**
+     * It fired at a computer neighbour (its own report said so, in a region whose rules allow the bomb):
+     * its own bomb's landing there counts as a bomb of its own (`boom` may be one above `hit`). A strike
+     * on a friend does not: the friend's sim lands that one.
+     */
+    rival?: true;
+    /** Strikes the region has kept at this city: bombs a friend's page may report as fallen here. */
+    struck?: number;
+    /** It has been marked ready: kept here because the mark can leave the list when it is full. */
+    ready?: true;
+    /** Race announcements made on a UTC day (the bomb's own lines are not counted: each is bounded by what can happen). */
     notes?: { day: number; n: number };
   };
 }
@@ -1451,6 +1475,10 @@ export class RegionRoom {
     const stage = from.report?.atom?.stage ?? 0;
     if (from.atom?.used || stage > 6) return `${from.name} has used its atom bomb: there is only ever one`;
     if (stage < 6) return `${from.name} has no launch prepared`;
+    // The research that opens the bomb is every branch to its end, which a launch has behind it (the
+    // report says so; it is no proof, but a report that does not even say it is not believed).
+    if (!from.report?.tiers?.every((t) => t >= 4))
+      return `${from.name} has not finished the research the atom bomb needs`;
     const wait = (from.atom?.prep ?? now) + this.limits.atomPrep - now;
     if (wait > 0)
       return `${from.name}’s launch is still being prepared: the region waits ${timeWords(wait)} more`;
@@ -1655,8 +1683,10 @@ export class RegionRoom {
         const p = this.meta.project;
         const built = m.report.projectBuilt && p.host === slot && !p.built;
         if (built) p.built = true;
-        this.broadcast();
+        // The race is read before the others are told: what the room believes of it (the cloud) is what
+        // they are sent.
         const atomKept = this.raceReport(city, firstReport, now);
+        this.broadcast();
         if (built || atomKept || matters(city) !== was) this.changed(slot);
         else if (kept() !== before) {
           this.dirty = true;
@@ -1996,6 +2026,7 @@ export class RegionRoom {
         report: null,
         thumb: null,
         heard: now,
+        free: Math.max(0, ATOM_WIRE.sides - this.meta.cities.length),
       };
       this.meta.cities.push(city);
       for (const c of this.conns.keys()) c.send({ t: 'notice', text: `${m.city} joined the region` });
@@ -2086,16 +2117,19 @@ export class RegionRoom {
 
   /**
    * A city's announcement: a notice to the pages that speak the bomb and a line of the region's
-   * history (kind `race` or `bomb`, sent to protocol 7 only), at most `limits.atomPerDay` a UTC day for
-   * a city (`capped`; a strike the region itself kept is not). `b` is the other city of the line, if any.
+   * history (kind `race` or `bomb`, sent to protocol 7 only). A city's *stages* (`race`) are at most
+   * `limits.atomPerDay` a UTC day, so a report that flaps cannot fill the history's ring; the bomb's own
+   * lines (`bomb`: fired, fallen, stopped) are never lost to that, each being bounded by what can happen
+   * (once, and the few bombs a city's three neighbours can send). `b` is the other city of the line, if any.
    */
-  private announce(city: City, kind: 'race' | 'bomb', text: string, b = 0, capped = true): boolean {
+  private announce(city: City, kind: 'race' | 'bomb', text: string, b = 0): boolean {
     const a = city.atom!;
-    const now = this.env.now();
-    const day = Math.floor(now / DAY_MS);
-    const n = a.notes?.day === day ? a.notes.n : 0;
-    if (capped && n >= this.limits.atomPerDay) return false;
-    a.notes = { day, n: n + 1 };
+    if (kind === 'race') {
+      const day = Math.floor(this.env.now() / DAY_MS);
+      const n = a.notes?.day === day ? a.notes.n : 0;
+      if (n >= this.limits.atomPerDay) return false;
+      a.notes = { day, n: n + 1 };
+    }
     this.toAtom({ t: 'notice', text });
     this.fwRun(city.slot, (fw) => fw.note(kind, city.slot, b, text), false);
     return true;
@@ -2104,7 +2138,12 @@ export class RegionRoom {
   /** The marks added since the pages were last told (sent together). */
   private marksNew = false;
 
-  /** A mark in the permanent record: at most `ATOM_MARKS`, the oldest but the first finisher's going first. */
+  /**
+   * A mark in the permanent record: at most `ATOM_MARKS`. When it is full the least of it goes: the
+   * oldest landed or stopped bomb of the city that holds the most of them, so one city's reports cannot
+   * overwrite the others' (a ready mark and a fired mark, which each city has once, are kept; the first
+   * finisher's is never dropped; only a record of nothing but those loses the oldest of them).
+   */
   private addMark(
     city: City,
     kind: AtomMarkKind,
@@ -2113,14 +2152,25 @@ export class RegionRoom {
   ): void {
     const list = (this.meta!.atoms ??= []);
     list.push({ slot: city.slot, name: city.name, kind, at: now, ...extra });
-    while (list.length > ATOM_MARKS)
-      list.splice(
-        Math.max(
+    while (list.length > ATOM_MARKS) {
+      const held = new Map<number, number>();
+      const least = (m: RegionAtomMark) => (m.kind === 'boom' || m.kind === 'stopped') && !m.first;
+      for (const m of list) if (least(m)) held.set(m.slot, (held.get(m.slot) ?? 0) + 1);
+      let drop = -1;
+      let most = 0;
+      list.forEach((m, k) => {
+        if (least(m) && held.get(m.slot)! > most) {
+          most = held.get(m.slot)!;
+          drop = k;
+        }
+      });
+      if (drop < 0)
+        drop = Math.max(
           0,
           list.findIndex((m) => !m.first),
-        ),
-        1,
-      );
+        );
+      list.splice(drop, 1);
+    }
     this.marksNew = true;
   }
 
@@ -2132,10 +2182,16 @@ export class RegionRoom {
 
   /** The city has fired its one bomb (`to`: at a friend the region kept the strike for): its mark, its flag, its line. */
   private fired(city: City, to: City | undefined, now: number): void {
-    (city.atom ??= { seen: 0, boom: 0, hit: 0, stopped: 0 }).used = true;
+    const a = (city.atom ??= { seen: 0, boom: 0, hit: 0, stopped: 0 });
+    a.used = true;
+    if (to) {
+      // A bomb the room kept: one more that may be reported as fallen on the target.
+      const t = (to.atom ??= { seen: 0, boom: 0, hit: 0, stopped: 0 });
+      t.struck = (t.struck ?? 0) + 1;
+    } else if (this.meta!.rules?.bomb) a.rival = true;
     this.addMark(city, 'fired', now, to ? { to: to.slot } : {});
     this.fwRun(city.slot, (fw) => fw.markPariah(city.slot), false);
-    this.announce(city, 'bomb', bombLine('fired', city.name, to?.name), to?.slot ?? 0, !to);
+    this.announce(city, 'bomb', bombLine('fired', city.name, to?.name), to?.slot ?? 0);
   }
 
   /**
@@ -2176,34 +2232,65 @@ export class RegionRoom {
   }
 
   /**
-   * Read a city's report for the race (call 16). Stages are announced forward only (once each, a stage
-   * that drops re-arms), the first city to reach `ready` is the region's first finisher and is told
-   * so, a bomb fired is flagged for good, and a rise in the bombs landed, here or anywhere, or stopped
-   * is announced, marked, and (landed) begins a winter. The first report a city ever makes is only a
-   * baseline for the counts: bombs from before it joined are not news. Returns whether something kept
-   * for good changed (the room then writes at once).
+   * How many more bombs the room can account for falling on (or stopped over) this city, besides those
+   * it has taken as news already: a city has three neighbours and each has one bomb, so a strike the room
+   * kept at it, and the neighbours that were the computer's when it joined (`City.free`; only when the
+   * rules allow the bomb) are all that can send one. A count past it is a report gone wrong,
+   * or a lie, and is not news.
+   */
+  private incomingRoom(city: City): number {
+    const a = city.atom;
+    const meta = this.meta!;
+    const computer = meta.rules?.bomb
+      ? (city.free ?? Math.max(0, ATOM_WIRE.sides - (meta.cities.length - 1)))
+      : 0;
+    return (a?.struck ?? 0) + computer - ((a?.hit ?? 0) + (a?.stopped ?? 0));
+  }
+
+  /** Bombs that have fallen in the region as far as the room has taken them as news: those on cities and those fired at a neighbour of the computer's. */
+  private bombsOnRecord(): number {
+    let n = 0;
+    for (const c of this.meta!.cities) n += (c.atom?.hit ?? 0) + (c.atom?.rival ? 1 : 0);
+    return n;
+  }
+
+  /**
+   * Read a city's report for the race (call 16). Stages are announced forward only (once each, every
+   * step a report jumps over too; a stage that drops re-arms), the first city to reach `ready` is the
+   * region's first finisher and is told so, a bomb fired is flagged for good, and a rise in the bombs
+   * landed, here or anywhere, or stopped is announced, marked, and (landed) begins a winter. The first
+   * report a city ever makes is only a baseline for the counts: bombs from before it joined are not news.
+   *
+   * A report is a friend's word, and what others act on is bounded by what the room knows (the review of
+   * step 9): bombs that fell *here* by `incomingRoom` (a strike it kept, a computer neighbour); a bomb of
+   * the city's own landing elsewhere only if it fired at a computer neighbour (`rival`), never for a strike
+   * on a friend (that one falls in the friend's city and is the friend's to report); the cloud it names
+   * (`plume`) only where a bomb is on record and no thicker than those bombs could make. Returns whether
+   * something kept for good changed (the room then writes at once).
    */
   private raceReport(city: City, firstReport: boolean, now: number): boolean {
     const r = city.report?.atom;
     if (!r && !city.atom) return false;
-    const a = (city.atom ??= {
-      seen: 0,
-      boom: firstReport ? (r?.boom ?? 0) : 0,
-      hit: firstReport ? (r?.hit ?? 0) : 0,
-      stopped: firstReport ? (r?.stopped ?? 0) : 0,
-    });
+    const a = (city.atom ??= { seen: 0, boom: 0, hit: 0, stopped: 0 });
+    // (The first report's counts are taken like any other, within the same bounds, but are no news.)
+    const quiet = firstReport;
     let changed = false;
     let kept = false;
     const stage = r?.stage ?? 0;
-    // Forward only: each step is announced once; a stage that falls (a silo lost) re-arms it.
+    // Forward only: each step is announced once; a stage that falls (a silo lost) re-arms it. A report can
+    // jump (the room saw no step between), and each step it crossed is announced; a city's first report
+    // says only where it is.
     if (stage < a.seen) {
       a.seen = stage;
       changed = true;
     } else if (stage > a.seen) {
+      const from = a.seen;
       a.seen = stage;
       changed = true;
-      const line = raceLine(stage, city.name);
-      if (line) this.announce(city, 'race', line);
+      for (let s = firstReport ? stage : from + 1; s <= stage; s++) {
+        const line = raceLine(s, city.name);
+        if (line) this.announce(city, 'race', line);
+      }
     }
     // The room's own clock of a launch being prepared: from the first report that says so.
     if (stage >= 6) {
@@ -2215,13 +2302,18 @@ export class RegionRoom {
       delete a.prep;
       changed = true;
     }
-    // The bomb is ready: the permanent record has it once for the city, and the first city to finish is
-    // the region's first (the page turns the word into the achievement).
-    const marks = this.meta!.atoms ?? [];
-    if (stage >= 5 && !marks.some((m) => m.kind === 'ready' && m.slot === city.slot)) {
-      const first = !marks.some((m) => m.kind === 'ready');
-      this.addMark(city, 'ready', now, first ? { first: true } : {});
-      if (first) for (const c of this.atomConns((x) => x === city.slot)) c.send({ t: 'atomFirst', at: now });
+    // The bomb is ready: the permanent record has it once for the city (a flag of the room's, for the mark
+    // can leave a full list), and the first city to finish is the region's first (the page turns the word
+    // into the achievement).
+    if (stage >= 5 && !a.ready) {
+      a.ready = true;
+      const marks = this.meta!.atoms ?? [];
+      if (!marks.some((m) => m.kind === 'ready' && m.slot === city.slot)) {
+        const first = !marks.some((m) => m.kind === 'ready');
+        this.addMark(city, 'ready', now, first ? { first: true } : {});
+        if (first)
+          for (const c of this.atomConns((x) => x === city.slot)) c.send({ t: 'atomFirst', at: now });
+      }
       kept = changed = true;
     }
     // The bomb has left (a launch at a computer neighbour, or a friend's strike the region kept first).
@@ -2229,25 +2321,50 @@ export class RegionRoom {
       this.fired(city, undefined, now);
       kept = changed = true;
     }
-    const hit = r?.hit ?? 0;
+    // Bombs that fell here, and bombs the dome stopped: only a rise is news, and only as far as the room
+    // can account for the bombs.
+    const hit = Math.min(r?.hit ?? 0, a.hit + Math.max(0, this.incomingRoom(city)));
     if (hit > a.hit) {
       a.hit = hit;
-      this.addMark(city, 'boom', now);
-      this.announce(city, 'bomb', bombLine('boom', city.name));
-      kept = changed = true;
+      changed = true;
+      if (!quiet) {
+        this.addMark(city, 'boom', now);
+        this.announce(city, 'bomb', bombLine('boom', city.name));
+        kept = true;
+      }
     }
-    const stopped = r?.stopped ?? 0;
+    const stopped = Math.min(r?.stopped ?? 0, a.stopped + Math.max(0, this.incomingRoom(city)));
     if (stopped > a.stopped) {
       a.stopped = stopped;
-      this.addMark(city, 'stopped', now);
-      this.announce(city, 'bomb', bombLine('stopped', city.name));
-      kept = changed = true;
+      changed = true;
+      if (!quiet) {
+        this.addMark(city, 'stopped', now);
+        this.announce(city, 'bomb', bombLine('stopped', city.name));
+        kept = true;
+      }
     }
-    const boom = r?.boom ?? 0;
+    // Bombs of this city's that landed anywhere begin a winter for the others. Those that fell here are
+    // counted above; one more is its own bomb on a computer neighbour. Nothing else explains a count.
+    const boom = Math.min(r?.boom ?? 0, a.hit + (a.rival ? 1 : 0));
     if (boom > a.boom) {
-      this.startWinters(city, a.boom, boom, now);
+      if (!quiet) {
+        this.startWinters(city, a.boom, boom, now);
+        kept = true;
+      }
       a.boom = boom;
-      kept = changed = true;
+      changed = true;
+    }
+    // The cloud it names: believed where a bomb is on record, no thicker than those bombs could make,
+    // and never over its own city.
+    if (r?.plume) {
+      const limit = Math.min(ATOM_WIRE.plumeMax, ATOM_WIRE.plumePerBomb * this.bombsOnRecord());
+      const plume = limit
+        ? r.plume
+            .filter((p) => p.slot !== city.slot)
+            .map((p) => ({ slot: p.slot, total: Math.min(p.total, limit) }))
+        : [];
+      if (plume.length) r.plume = plume;
+      else delete r.plume;
     }
     if (changed) this.dirty = true;
     this.flushMarks();

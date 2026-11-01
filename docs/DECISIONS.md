@@ -2229,3 +2229,58 @@ these are its calls and the reasons, with where they overturned the first draft.
     stages, what a city takes in, a race through the real link and room), the free-plan hour in
     `freeplan.test.ts`, and the history model accepts the two new kinds (`regionHistory.ts`: a group "Atom
     bomb" beside the others).
+- **Step 9 review (what the room believes of a report).** Nine findings; the step's premise, "a lying
+  report only harms its own city", was false for the numbers other cities *act on* (the cloud, the winters,
+  the permanent record), so the room now bounds each by what it knows. A report is still a friend's word:
+  what follows is a bound, not a proof, and the gaps that remain are listed at the end.
+  - *The cloud (`plume`).* `ATOM_WIRE.plumeMax` was 1e7, four orders above any real total. A strike puts
+    at most 0.3 of the ground it lays into the air, 698 at the middle of the map, and what crosses a border
+    is part of that, so `ATOM_WIRE.plumePerBomb` is 700 and `plumeMax` eight bombs' worth (a region has at
+    most six); a total past it drops the race (a test plays the clouds out from six places on four seeds
+    and checks nothing carries more than one bomb makes). The room then believes a cloud only **where a
+    bomb is on record** (`bombsOnRecord`: the hits it took as news and the cities that fired at a computer
+    neighbour) and cuts each total to `plumePerBomb` x those bombs, so a report with no bomb behind it
+    reaches no one. It does not require the *sender* to have been hit: a cloud passes through a city and
+    on to the next, and that is real. A city's own slot in its plume is dropped. The room reads the race
+    *before* it broadcasts the report (the others are sent the cut cloud). **For step 10:** `friendFallout`
+    must also clamp what it deposits per message (a few `plumePerBomb`-sized steps at most), since the room
+    can only bound the total, not verify the flow.
+  - *Bombs that fell (`hit`, `stopped`, `boom`).* Only a rise the room can account for is news (a mark, a
+    line, a winter): a city has three neighbours and each has one bomb, so the bombs that can fall on (or be
+    stopped over) it are the strikes the room **kept** at it (`City.atom.struck`) and the neighbours that
+    were the computer's when it joined (`City.free`, three less the cities already here, kept as it was so a
+    friend taking a computer neighbour's place does not cancel a bomb it may already have sent), the second
+    only while the rules allow the bomb. `hit` and `stopped` share that allowance (a bomb is one or the
+    other); a count past it is ignored, not an error. `boom` (the winter's trigger) is at most `hit` plus
+    one for the city's **own** bomb, and only if it fired at a computer neighbour (the report path, in a
+    region whose rules allow the bomb): a strike on a friend lands in the friend's city and is the
+    friend's to report. A city's first report is still a baseline (no news) but is cut to the same bounds.
+    A kept strike makes room even if the host turns the bomb off while it is in the air.
+    `ATOM_WINTERS_PER_CITY` (8) stays as a second line that a city's reports cannot now reach.
+  - *The record (`RegionMeta.atoms`).* A full list drops the oldest **landed or stopped** mark of the city
+    holding the most of them, never a ready or fired mark or the first finisher's (a list of nothing else
+    loses its oldest). A city is marked **ready once** by a flag of the room's (`City.atom.ready`): the
+    mark leaving a full list no longer lets the next stage-5 report make it again at a new time.
+  - *Announcements.* The 8 a day are the **stages'** (`race` lines): the bomb's own lines (fired, fallen,
+    stopped) are never lost to a flapping stage, each being bounded by what can happen. A report that
+    **jumps** announces every step it crossed that has a line, the red alert's (stage 5) included, within the
+    cap; a city's first report still says only where it is. (`breaks a tie by arrival` enshrined the jump
+    and now expects all six lines.)
+  - *The strike.* `atomRefusal` also wants every research branch at tier 4 in the sender's report (a launch
+    has them behind it; the report's `tiers` is what the room already reads for the war gate): "Adaton has
+    not finished the research the atom bomb needs". **Left as it was:** the stage-6 wait is the room's own
+    20 minutes, not the race's five hours, because a city moved into a region mid-race has a true stage 6 the
+    room never saw coming; the rest of the evidence is the sender's report, the same trust the blackout
+    tower has. A forger who reports full tiers and stage 6 and waits 20 minutes can still send one strike;
+    it is flagged pariah, its pacts end and everyone may declare on it at once, which is the price the plan
+    set for the real thing.
+  - *Page side.* `historyCities` skips slot 0: a race or bomb line about one city has `b: 0`, which the
+    panel listed as "A former city (#0)".
+  - *Remaining trust gaps, accepted:* a city may claim bombs from its computer neighbours (up to `free`;
+    the room cannot see another city's computer players), so a lying friend can start up to three winters;
+    a friend can exaggerate a real cloud's reach towards a named friend up to the bombs on record's mass.
+  - *Tests.* `relay/tests/regionAtom.test.ts` "M40 review" blocks (cloud, bombs, record, announcements,
+    the strike's evidence), `tests/war/atomRegion.test.ts` (the sides, the air a bomb makes against
+    `plumePerBomb`), `tests/war/regionHistory.test.ts`. Every new test fails on the code before the fix.
+    Older tests that used counts nothing could account for (a city hit thirty times) were changed to
+    possible ones (strikes kept by the room, regions of two); the test report's default tiers are full.

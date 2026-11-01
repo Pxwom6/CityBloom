@@ -2,11 +2,11 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { RegionRoom, MemoryRegionStore, type RegionConn } from '../../relay/region';
 import { loopbackPair, type Link } from '../../src/net/link';
 import { RegionLink, atomFor, type AtomSink, type CityPort } from '../../src/net/regionLink';
-import { ATOM, atomStageNo, cleanRegionAtom, raceSlowWhy } from '../../src/data/atom';
+import { ATOM, ATOM_WIRE, atomStageNo, cleanRegionAtom, raceSlowWhy } from '../../src/data/atom';
 import { TIER_KEYS } from '../../src/data/research';
 import { Sim } from '../../src/sim/sim';
 import { atomOf, atomReportField, atomStage } from '../../src/sim/systems/atom';
-import { falloutOf } from '../../src/sim/systems/fallout';
+import { depositFallout, falloutOf, updateFallout } from '../../src/sim/systems/fallout';
 import { regionReport, type RegionReport, type RegionUpdate } from '../../src/sim/systems/region';
 import { startWinter } from '../../src/sim/systems/weather';
 import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
@@ -353,5 +353,49 @@ describe('M40: a race through the link and the room', () => {
     expect(friend(ada).player!.atom).toEqual({ stage: 5, boom: 1, hit: 1, stopped: 1 });
     expect(heard).toContain('winters');
     expect(la.view).toBeTruthy();
+  });
+});
+
+describe('M40 review: the room’s bounds are the game’s own', () => {
+  it('a city has as many neighbours as a bomb has sides to come from', () => {
+    expect(warCity().state.region.neighbours).toHaveLength(ATOM_WIRE.sides);
+  });
+
+  it('one bomb puts no more air across a border than the room allows for it', () => {
+    // The air a strike makes (`FALLOUT.impact.plume` of the ground it lays) is at most `plumePerBomb`, and what
+    // the wind carries across the north, south and west edges is part of it, whatever the wind, wherever
+    // the bomb falls: the room cuts a report's cloud to this for each bomb on record.
+    const spots: [number, number][] = [
+      [1024, 1024],
+      [1024, 300],
+      [300, 1024],
+      [1024, 1750],
+      [1750, 1024],
+      [400, 400],
+    ];
+    let thickest = 0;
+    for (const seed of ['citybloom', 'f', 'b', 'c']) {
+      for (const [x, z] of spots) {
+        const sim = newSim({ seed, rivals: true, disasters: false });
+        depositFallout(sim, x, z);
+        const f = falloutOf(sim);
+        let injected = 0;
+        for (const v of f.air) injected += v;
+        expect(injected, `${seed} ${x},${z}: the air a bomb makes`).toBeLessThanOrEqual(
+          ATOM_WIRE.plumePerBomb,
+        );
+        for (let k = 0; k < 160; k++) {
+          sim.state.tick += 3 * TICKS_PER_HOUR;
+          updateFallout(sim);
+        }
+        const out = falloutOf(sim).out;
+        const sum = out.north + out.south + out.west;
+        expect(sum, `${seed} ${x},${z}: what crossed the borders`).toBeLessThanOrEqual(injected + 0.01);
+        thickest = Math.max(thickest, out.north, out.south, out.west);
+      }
+    }
+    // (And the bound is not loose by orders of magnitude: a bomb does carry hundreds across a border.)
+    expect(thickest).toBeGreaterThan(ATOM_WIRE.plumePerBomb / 10);
+    expect(ATOM_WIRE.plumeMax).toBeLessThanOrEqual(10 * ATOM_WIRE.plumePerBomb);
   });
 });

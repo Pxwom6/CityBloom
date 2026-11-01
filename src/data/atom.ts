@@ -431,8 +431,24 @@ export const ATOM_WIRE = {
   maxCount: 99,
   /** The most plume entries (a city has three neighbours; the report keeps four). */
   plume: 4,
-  /** A plume total is a thousandth-rounded cumulative amount of air, far below this. */
-  plumeMax: 1e7,
+  /**
+   * A city has three neighbours (the north, south and west edges: the east is a sink) and each has one
+   * bomb, ever: so at most this many bombs can fall on, or be stopped over, one city. The room believes
+   * no more than a kept strike and the city's computer neighbours can account for.
+   */
+  sides: 3,
+  /**
+   * The most air one bomb puts into a city's map: `FALLOUT.impact.plume` of the ground it lays, about 698
+   * at the middle of the map (a test plays the clouds out to the edges and checks nothing carries more).
+   * What a city has carried across an edge is part of that, less what fell and faded on the way, so a
+   * cloud's cumulative total is never above this for each bomb that has fallen in the region.
+   */
+  plumePerBomb: 700,
+  /**
+   * A plume total can never be above this: the air of eight bombs, more than a region can fire (a region
+   * of one to four cities has at most six bombs, a player city's own and its computer neighbours').
+   */
+  plumeMax: 8 * 700,
 };
 
 const whole = (v: unknown, lo: number, hi: number): v is number =>

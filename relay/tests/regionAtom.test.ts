@@ -55,6 +55,9 @@ const hello = (mayor: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+/** Every research branch done: what a city that may launch reports (the room checks it for a strike). */
+const FULL_TIERS = [4, 4, 4, 4, 4, 4];
+
 const report = (city: string, extra: Record<string, unknown> = {}) => ({
   t: 'report',
   city,
@@ -67,7 +70,7 @@ const report = (city: string, extra: Record<string, unknown> = {}) => ({
     offers: { buy: { power: 0, water: 0, garbage: 0 }, sell: { power: 0, water: 0, garbage: 0 } },
     deals: [],
     projectBuilt: false,
-    tiers: [0, 0, 0, 0, 2, 0],
+    tiers: FULL_TIERS,
     counter: 250,
     clock: 100,
     ...extra,
@@ -240,7 +243,7 @@ describe('M40: the race in the report', () => {
       hit: 1,
       stopped: 3,
       plume: [
-        { slot: 2, total: 12.3456 },
+        { slot: 1, total: 12.3456 },
         { slot: 3, total: 0 },
       ],
       extra: 'not kept',
@@ -253,7 +256,7 @@ describe('M40: the race in the report', () => {
       hit: 1,
       stopped: 3,
       plume: [
-        { slot: 2, total: 12.346 },
+        { slot: 1, total: 12.346 },
         { slot: 3, total: 0 },
       ],
     });
@@ -494,7 +497,10 @@ describe('M40: the race announced', () => {
     race(j, 'Sam', { stage: 2 });
     race(j, 'Sam', { stage: 6 });
     expect(j.meta().atoms!.map((m) => m.kind)).toEqual(['ready']);
-    expect(lines(j.ada, 'race').map((e) => e.text)).toEqual([raceLine(2, 'Samton'), raceLine(6, 'Samton')]);
+    // (and every step it jumped over is announced, the red alert's included: see the review block below)
+    expect(lines(j.ada, 'race').map((e) => e.text)).toEqual(
+      [1, 2, 3, 4, 5, 6].map((s) => raceLine(s, 'Samton')),
+    );
   });
 
   it('keeps sixteen marks at most, never the first finisher’s, and its lists under 2 KB', () => {
@@ -503,9 +509,15 @@ describe('M40: the race announced', () => {
     const long = 'Z'.repeat(40);
     w.kit.say(report(long, { atom: { stage: 5 } }));
     w.sam.say(report(long, { atom: { stage: 5 } }));
-    for (let k = 1; k <= 3 * ATOM_MARKS; k++)
-      w.sam.say(report(long, { atom: { stage: 5, hit: k, stopped: k } }));
+    // (A record as full as it can be: landed bombs are bounded by what a city’s neighbours can send, so
+    // the rest is put there by hand, as a room of an older version could have left it.)
     const atoms = w.meta().atoms!;
+    for (let k = 0; atoms.length < ATOM_MARKS; k++)
+      atoms.push({ slot: 1, name: long, kind: k % 2 ? 'boom' : 'stopped', at: w.clock.now() - 1000 + k });
+    for (let k = 0; k < 3; k++) {
+      w.clock.advance(1000);
+      w.sam.say(report(long, { atom: { stage: 5, stopped: 1 + k, hit: 0 } }));
+    }
     expect(atoms).toHaveLength(ATOM_MARKS);
     expect(atoms[0]).toMatchObject({ slot: 3, kind: 'ready', first: true });
     expect(JSON.stringify(atoms).length).toBeLessThan(2048);
@@ -535,7 +547,8 @@ describe('M40: bombs fired, landed and stopped', () => {
   });
 
   it('marks and announces a bomb that fell here and one the dome stopped, each when the count rises', () => {
-    const w = world();
+    // (A region of two: Sam has two neighbours that are the computer’s, so two bombs can be accounted for.)
+    const w = world({ who: ['Ada', 'Sam'] });
     race(w, 'Sam', { stage: 0, hit: 0, stopped: 0, boom: 0 });
     race(w, 'Sam', { stage: 0, stopped: 1 });
     race(w, 'Sam', { stage: 0, stopped: 1 });
@@ -582,11 +595,23 @@ describe('M40: the winters’ reach', () => {
     race(w, 'Kit', { stage: 0, boom: 1, hit: 1 });
     expect(w.meta().winters).toHaveLength(1);
     expect(all(w.ada, 'winters')).toHaveLength(1);
-    // The next bomb is the next id; two at once are two winters.
+    // The next bomb is the next id (here it is Ada’s strike, which the room kept, that explains it).
+    openTotalWar(w, 'Ada', 'Kit');
+    race(w, 'Ada', { stage: 6 });
+    w.clock.advance(61_000);
+    w.ada.say(strike(3, 'w-1'));
+    expect(last(w.ada, 'opKept')!.outcome).toBe('success');
     race(w, 'Kit', { stage: 0, boom: 2, hit: 2 });
-    race(w, 'Kit', { stage: 0, boom: 4, hit: 2 });
-    expect(w.meta().winters!.map((x) => x.id)).toEqual(['3-1', '3-2', '3-3', '3-4']);
-    expect(last(w.sam, 'winters')!.winters.map((x) => x.id)).toEqual(['3-1', '3-2', '3-3', '3-4']);
+    expect(w.meta().winters!.map((x) => x.id)).toEqual(['3-1', '3-2']);
+    expect(last(w.sam, 'winters')!.winters.map((x) => x.id)).toEqual(['3-1', '3-2']);
+    // Two at once are two winters, in one message.
+    const two = world({ who: ['Ada', 'Sam'] });
+    race(two, 'Sam', { stage: 0, boom: 2, hit: 2 });
+    expect(two.meta().winters!.map((x) => [x.id, x.slots])).toEqual([
+      ['2-1', [1]],
+      ['2-2', [1]],
+    ]);
+    expect(all(two.ada, 'winters')).toHaveLength(1);
   });
 
   it('counts a firer’s own bomb on a computer neighbour too (the city is not the one struck)', () => {
@@ -621,7 +646,11 @@ describe('M40: the winters’ reach', () => {
     expect(last(lou, 'rwelcome')).toMatchObject({ slot: 4, winters: [] });
     lou.say(report('Louton'));
     expect(all(lou, 'winters')).toEqual([]);
-    // ... but the next bomb includes it.
+    // ... but the next bomb includes it (a strike of Ada’s the room keeps at Kit explains it).
+    openTotalWar(w, 'Ada', 'Kit');
+    race(w, 'Ada', { stage: 6 });
+    w.clock.advance(61_000);
+    w.ada.say(strike(3, 'w-2'));
     race(w, 'Kit', { stage: 0, boom: 2, hit: 2 });
     expect(w.meta().winters!.map((x) => [x.id, x.slots])).toEqual([
       ['3-1', [1, 2]],
@@ -631,28 +660,60 @@ describe('M40: the winters’ reach', () => {
   });
 
   it('takes the first report as a baseline: bombs from before the city came are not news', () => {
-    const w = world({ who: ['Ada', 'Sam'] });
-    const kit = raw(w.room);
-    kit.say(hello('Kit'));
-    kit.say(report('Kitton', { atom: { stage: 0, boom: 2, hit: 2, stopped: 1 } }));
+    const w = world({ who: ['Ada'] });
+    const sam = raw(w.room);
+    sam.say(hello('Sam'));
+    sam.say(report('Samton', { atom: { stage: 0, boom: 1, hit: 1, stopped: 0 } }));
     expect(w.meta().winters ?? []).toEqual([]);
     expect(w.meta().atoms ?? []).toEqual([]);
-    kit.say(report('Kitton', { atom: { stage: 0, boom: 3, hit: 3, stopped: 1 } }));
-    expect(w.meta().winters!.map((x) => x.id)).toEqual(['3-3']);
+    sam.say(report('Samton', { atom: { stage: 0, boom: 2, hit: 2, stopped: 0 } }));
+    expect(w.meta().winters!.map((x) => x.id)).toEqual(['2-2']);
+    // (The baseline counts against what the room can account for, like any other: a first report that
+    // claims more than a city’s neighbours could have sent is cut to what they could.)
+    const big = world({ who: ['Ada'] });
+    const kit = raw(big.room);
+    kit.say(hello('Kit'));
+    kit.say(report('Kitton', { atom: { stage: 0, boom: 9, hit: 9, stopped: 9 } }));
+    kit.say(report('Kitton', { atom: { stage: 0, boom: 9, hit: 9, stopped: 9 } }));
+    expect(big.meta().winters ?? []).toEqual([]);
+    expect(big.meta().cities[1]!.atom).toMatchObject({ hit: 2, stopped: 0, boom: 2 });
   });
 
-  it('keeps eight a city and its list under 2 KB, whatever a page reports', () => {
-    const w = world({ who: ['Ada', 'Sam', 'Kit', 'Lou'] });
-    for (const who of WHO)
-      for (let k = 1; k <= 30; k++) race(w, who, { stage: 0, boom: k, hit: k, stopped: k });
-    const winters = w.meta().winters!;
-    for (const who of WHO)
-      expect(winters.filter((x) => x.id.startsWith(`${SLOT[who]}-`))).toHaveLength(ATOM_WINTERS_PER_CITY);
-    expect(winters).toHaveLength(4 * ATOM_WINTERS_PER_CITY);
+  it('keeps its list small and a city’s winters to what its bombs can account for, whatever a page reports', () => {
+    // Four cities, each reporting thirty bombs fallen on it: the winters are the neighbours the computer had
+    // when each joined (three, two, one, none).
+    const four = world({ who: ['Ada', 'Sam', 'Kit', 'Lou'] });
+    for (const who of WHO) for (let k = 1; k <= 30; k++) race(four, who, { stage: 0, boom: k, hit: k });
+    const ids = four.meta().winters!.map((x) => x.id);
+    expect(ids.filter((x) => x.startsWith('1-'))).toHaveLength(3);
+    expect(ids.filter((x) => x.startsWith('2-'))).toHaveLength(2);
+    expect(ids.filter((x) => x.startsWith('3-'))).toHaveLength(1);
+    expect(ids.filter((x) => x.startsWith('4-'))).toHaveLength(0);
+    expect(JSON.stringify(four.meta().winters).length).toBeLessThan(2048);
+    // Two cities, each having fired at a computer neighbour: its own bomb and those that fell on it (Ada,
+    // the first, had three computer neighbours when she joined, Sam two).
+    const two = world({ who: ['Ada', 'Sam'] });
+    for (const who of ['Ada', 'Sam'] as const)
+      for (let k = 1; k <= 30; k++) race(two, who, { stage: 8, fired: true, boom: k, hit: k });
+    const winters = two.meta().winters!;
+    expect(winters.filter((x) => x.id.startsWith('1-'))).toHaveLength(4);
+    expect(winters.filter((x) => x.id.startsWith('2-'))).toHaveLength(3);
     expect(JSON.stringify(winters).length).toBeLessThan(2048);
+    // The list a city is kept to (`ATOM_WINTERS_PER_CITY`) stands even if the record were full: no more.
+    const full = world();
+    const old = Array.from({ length: ATOM_WINTERS_PER_CITY }, (_, k) => ({
+      id: `3-${k + 11}`,
+      at: full.clock.now(),
+      slots: [1, 2],
+    }));
+    full.meta().winters = old;
+    race(full, 'Kit', { stage: 0, boom: 1, hit: 1 });
+    expect(full.meta().winters).toHaveLength(ATOM_WINTERS_PER_CITY);
+    expect(full.meta().winters!.map((x) => x.id)).not.toContain('3-1');
     // What a page is told is its own part of it.
-    expect(last(w.ada, 'winters')!.winters.every((x) => x.slots.includes(1))).toBe(true);
-    expect(last(w.ada, 'winters')!.winters).toHaveLength(3 * ATOM_WINTERS_PER_CITY);
+    expect(last(two.ada, 'winters')!.winters.every((x) => x.slots.includes(1))).toBe(true);
+    expect(last(two.ada, 'winters')!.winters).toHaveLength(3);
+    expect(last(two.sam, 'winters')!.winters).toHaveLength(4);
   });
 
   it('is written promptly, not lost with a room that restarts', () => {
@@ -967,5 +1028,294 @@ describe('M40: the plant as a saboteur’s target, with the protocol gate', () =
     w.clock.advance(DAY_MS);
     w.ada.say(plant(3, 'pl-4'));
     expect(last(w.ada, 'opRefused')!.reason).toBe('Kitton isn’t racing for the atom bomb');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The review of step 9: what the room believes of a report. A page is a friend's, but a report is
+// one number away from a lie, and these are the numbers the others act on: a cloud that falls on a
+// named friend's city, a winter that chills the whole region, the permanent record, the strike.
+// ---------------------------------------------------------------------------------------------
+
+describe('M40 review: the cloud a report names', () => {
+  const plumeSeenBy = (w: World, receiver: number, of: number) =>
+    regionUpdateFor(last(w.ada, 'region')!.region, receiver).cities.find((c) => c.slot === of)!.atom?.plume;
+  const storedPlume = (w: World, of: number) =>
+    last(w.ada, 'region')!.region.cities.find((c) => c.slot === of)!.report!.atom?.plume;
+
+  it('is never thicker than all the air a region’s bombs could make: a number past it drops the race', () => {
+    expect(ATOM_WIRE.plumeMax).toBeLessThan(1e5);
+    expect(ATOM_WIRE.plumePerBomb).toBeLessThan(ATOM_WIRE.plumeMax);
+    const top = [{ slot: 1, total: ATOM_WIRE.plumeMax }];
+    expect(cleanAtomReport({ stage: 0, plume: top })).not.toBeNull();
+    expect(cleanAtomReport({ stage: 0, plume: [{ slot: 1, total: ATOM_WIRE.plumeMax + 1 }] })).toBeNull();
+    // A forged total reaches no one: the race is dropped, the report and the connection stay.
+    const w = world();
+    race(w, 'Kit', { stage: 0, plume: [{ slot: 1, total: 9_999_999 }] });
+    expect(w.kit.closed).toBeNull();
+    const kit = regionUpdateFor(last(w.ada, 'region')!.region, 1).cities.find((c) => c.slot === 3)!;
+    expect(kit.atom).toBeUndefined();
+    expect(kit.population).toBe(5_000);
+  });
+
+  it('is not believed where no bomb has fallen in the region', () => {
+    const w = world();
+    race(w, 'Kit', { stage: 0, plume: [{ slot: 1, total: 300 }] });
+    expect(plumeSeenBy(w, 1, 3)).toBeUndefined();
+    expect(storedPlume(w, 3)).toBeUndefined();
+    // Not by a race either: a city racing, even one with the bomb ready, has dropped nothing.
+    race(w, 'Kit', { stage: 5, plume: [{ slot: 1, total: 300 }] });
+    expect(plumeSeenBy(w, 1, 3)).toBeUndefined();
+    // A region whose rules have no bomb has no bomb on record.
+    const none = world({ rules: { war: true, scale: 'total', supers: true } });
+    race(none, 'Sam', { stage: 0, hit: 1, boom: 1 });
+    race(none, 'Kit', { stage: 0, plume: [{ slot: 1, total: 300 }] });
+    expect(plumeSeenBy(none, 1, 3)).toBeUndefined();
+  });
+
+  it('is believed once a bomb is on record, but no thicker than the bombs on record could make', () => {
+    const w = world();
+    // A bomb has fallen on Sam (the room has no strike of its own to point to: a computer neighbour's).
+    race(w, 'Sam', { stage: 0, hit: 1, boom: 1 });
+    // A cloud passing through Kit, which was never hit itself, still goes on to its friends.
+    race(w, 'Kit', {
+      stage: 0,
+      plume: [
+        { slot: 1, total: 5_000 },
+        { slot: 2, total: 300 },
+        { slot: 3, total: 10 },
+      ],
+    });
+    // Too thick is cut to what one bomb could make; a thinner one stands; a city never names itself.
+    expect(storedPlume(w, 3)).toEqual([
+      { slot: 1, total: ATOM_WIRE.plumePerBomb },
+      { slot: 2, total: 300 },
+    ]);
+    expect(plumeSeenBy(w, 1, 3)).toBe(ATOM_WIRE.plumePerBomb);
+    expect(plumeSeenBy(w, 2, 3)).toBe(300);
+    // A second bomb (Ada's, at a computer neighbour) doubles what the region could have on the air.
+    race(w, 'Ada', { stage: 7, fired: true });
+    race(w, 'Kit', { stage: 0, plume: [{ slot: 1, total: 5_000 }] });
+    expect(plumeSeenBy(w, 1, 3)).toBe(2 * ATOM_WIRE.plumePerBomb);
+  });
+});
+
+describe('M40 review: the bombs a report may count', () => {
+  const winterIds = (w: World) => (w.meta().winters ?? []).map((x) => x.id);
+  const marks = (w: World, slot: number, kind: string) =>
+    (w.meta().atoms ?? []).filter((m) => m.slot === slot && m.kind === kind);
+
+  it('starts no winter for a bomb that fell nowhere: a count past what fell on the city is nothing', () => {
+    const w = world();
+    race(w, 'Kit', { stage: 0, boom: 1 });
+    expect(winterIds(w)).toEqual([]);
+    expect(all(w.ada, 'winters')).toEqual([]);
+    expect(w.meta().atoms ?? []).toEqual([]);
+    // Ahead of what fell on it (one bomb is all its sides allow in a region of three): only that one.
+    race(w, 'Kit', { stage: 0, boom: 3, hit: 1 });
+    expect(winterIds(w)).toEqual(['3-1']);
+    expect(marks(w, 3, 'boom')).toHaveLength(1);
+  });
+
+  it('takes none of it in a region whose rules have no bomb', () => {
+    const w = world({ rules: { war: true, scale: 'total', supers: true } });
+    race(w, 'Sam', { stage: 0, boom: 3, hit: 3, stopped: 1 });
+    race(w, 'Sam', { stage: 3 });
+    expect(winterIds(w)).toEqual([]);
+    expect(w.meta().atoms ?? []).toEqual([]);
+    expect(lines(w.ada, 'bomb')).toEqual([]);
+    expect(all(w.kit, 'winters')).toEqual([]);
+  });
+
+  it('takes no more than a strike the room kept and the city’s computer neighbours can account for', () => {
+    // Lou is the fourth to join: all three of its neighbours are players. Only a friend’s strike, kept,
+    // can fall on it.
+    const w = world({ who: ['Ada', 'Sam', 'Kit', 'Lou'] });
+    race(w, 'Lou', { stage: 0, hit: 1, boom: 1 });
+    expect(winterIds(w)).toEqual([]);
+    expect(marks(w, 4, 'boom')).toEqual([]);
+    // Ada’s strike at Lou is kept: one bomb can fall on Lou now, and no second.
+    openTotalWar(w, 'Ada', 'Lou');
+    race(w, 'Ada', { stage: 6 });
+    w.clock.advance(61_000);
+    w.ada.say(strike(4, 'review-1'));
+    expect(last(w.ada, 'opKept')).toMatchObject({ id: 'review-1', outcome: 'success' });
+    race(w, 'Lou', { stage: 0, hit: 2, boom: 2, stopped: 1 });
+    expect(winterIds(w)).toEqual(['4-1']);
+    expect(marks(w, 4, 'boom')).toHaveLength(1);
+    expect(marks(w, 4, 'stopped')).toEqual([]);
+    // Kit joined third, when one of its neighbours was the computer’s: it can account for one bomb more
+    // (and it still can once Lou has come and taken that neighbour’s place: the computer’s bomb may
+    // have been sent before).
+    race(w, 'Kit', { stage: 0, hit: 2, boom: 2, stopped: 1 });
+    expect(winterIds(w)).toEqual(['4-1', '3-1']);
+    // Sam, the second, had two; Ada, the first, three.
+    race(w, 'Sam', { stage: 0, hit: 9, boom: 9 });
+    race(w, 'Ada', { stage: 0, hit: 9, boom: 9 });
+    expect(winterIds(w).filter((x) => x.startsWith('2-'))).toHaveLength(2);
+    expect(winterIds(w).filter((x) => x.startsWith('1-'))).toHaveLength(3);
+  });
+
+  it('gives a firer’s own bomb a winter only when it fell on a computer neighbour, not for a strike on a friend', () => {
+    const w = world();
+    readyToStrike(w);
+    w.ada.say(strike(2, 'review-2'));
+    expect(last(w.ada, 'opKept')!.outcome).toBe('success');
+    // Ada’s bomb is on a friend (Sam’s sim lands it): her own sim lands nothing, and claims nothing.
+    race(w, 'Ada', { stage: 8, fired: true, boom: 1 });
+    expect(winterIds(w)).toEqual([]);
+    // Kit’s bomb the room never saw go: its report says it left, then that it landed at a computer neighbour.
+    race(w, 'Kit', { stage: 7, fired: true });
+    race(w, 'Kit', { stage: 8, fired: true, boom: 1 });
+    expect(winterIds(w)).toEqual(['3-1']);
+  });
+
+  it('keeps a bomb that fell as news when the rules were turned off after the strike was kept', () => {
+    const w = world();
+    readyToStrike(w);
+    w.ada.say(strike(2, 'review-3'));
+    expect(last(w.ada, 'opKept')!.outcome).toBe('success');
+    // The host turns the bomb off while it is in the air: the strike stands, and so does its landing.
+    w.ada.say({ t: 'rrules', rules: { war: true, scale: 'total', supers: true } });
+    race(w, 'Sam', { stage: 0, hit: 1, boom: 1 });
+    expect(winterIds(w)).toEqual(['2-1']);
+    expect(marks(w, 2, 'boom')).toHaveLength(1);
+    // ... but not a second.
+    race(w, 'Sam', { stage: 0, hit: 2, boom: 2 });
+    expect(winterIds(w)).toEqual(['2-1']);
+  });
+});
+
+describe('M40 review: the permanent record', () => {
+  /** Sam first to the bomb, then Kit, who has also fired: the marks that must be kept. */
+  function raced(): World {
+    const w = world();
+    race(w, 'Sam', { stage: 5 });
+    race(w, 'Kit', { stage: 5 });
+    race(w, 'Kit', { stage: 7, fired: true });
+    return w;
+  }
+  const names = (w: World) => (w.meta().atoms ?? []).map((m) => `${m.slot}:${m.kind}`);
+
+  it('cannot be flushed by one city’s reports, whatever counts it makes', () => {
+    const w = raced();
+    const before = names(w);
+    expect(before).toEqual(['2:ready', '3:ready', '3:fired']);
+    for (let k = 1; k <= 20; k++) race(w, 'Ada', { stage: 0, hit: k, stopped: k, boom: k });
+    expect(names(w).slice(0, 3)).toEqual(before);
+    expect((w.meta().atoms ?? []).filter((m) => m.slot === 1).length).toBeLessThanOrEqual(ATOM_WIRE.sides);
+    expect(w.meta().atoms![0]).toMatchObject({ slot: 2, kind: 'ready', first: true });
+  });
+
+  it('drops the oldest landed or stopped bomb of the city that holds the most when it is full, never a ready or fired mark', () => {
+    const w = raced();
+    // A record full of Ada’s marks (what an older room or a bug could have left): 3 + 13 = 16.
+    const atoms = w.meta().atoms!;
+    const at = w.clock.now();
+    for (let k = 0; atoms.length < ATOM_MARKS; k++)
+      atoms.push({ slot: 1, name: 'Adaton', kind: k % 2 ? 'boom' : 'stopped', at: at - 10_000 + k });
+    expect(atoms).toHaveLength(ATOM_MARKS);
+    // A bomb falls on Sam: one more than the record holds.
+    race(w, 'Sam', { stage: 5, hit: 1, boom: 1 });
+    expect(w.meta().atoms).toHaveLength(ATOM_MARKS);
+    expect(names(w).slice(0, 3)).toEqual(['2:ready', '3:ready', '3:fired']);
+    expect(names(w).at(-1)).toBe('2:boom');
+    // It is Ada’s oldest that went: twelve are left, and the first is not the one that was first.
+    const ada = w.meta().atoms!.filter((m) => m.slot === 1);
+    expect(ada).toHaveLength(12);
+    expect(ada[0]!.at).toBe(at - 10_000 + 1);
+    // The record that goes out is the whole of it.
+    expect(last(w.kit, 'atoms')!.atoms).toHaveLength(ATOM_MARKS);
+  });
+
+  it('marks a city ready once for good: a mark that has left the list is not made again, at a new time', () => {
+    const w = world();
+    race(w, 'Sam', { stage: 5 });
+    race(w, 'Kit', { stage: 5 });
+    expect(names(w)).toEqual(['2:ready', '3:ready']);
+    // Sam’s mark is gone from the list (it was the oldest of a full record).
+    w.meta().atoms!.shift();
+    w.clock.advance(60_000);
+    race(w, 'Sam', { stage: 6 });
+    race(w, 'Sam', { stage: 5 });
+    expect(names(w)).toEqual(['3:ready']);
+    // And it is not made first again, nor is Sam told it was.
+    expect(all(w.sam, 'atomFirst')).toHaveLength(1);
+    expect(w.meta().atoms![0]!.first).toBeUndefined();
+    // The flag is the room’s, kept with the city.
+    expect(w.store.meta!.cities[1]!.atom!.ready).toBe(true);
+  });
+});
+
+describe('M40 review: the announcements', () => {
+  it('keep the cap for a city’s stages to the stages: the line that says it fired is never lost to it', () => {
+    const w = world();
+    for (let k = 0; k < 10; k++) {
+      race(w, 'Sam', { stage: 3 });
+      race(w, 'Sam', { stage: 4 });
+    }
+    expect(lines(w.ada, 'race')).toHaveLength(REGION_LIMITS.atomPerDay);
+    race(w, 'Sam', { stage: 7, fired: true });
+    expect(lines(w.ada, 'bomb').map((e) => e.text)).toEqual(['Samton has fired the atom bomb']);
+    expect(notices(w.ada)).toContain('Samton has fired the atom bomb');
+    expect(w.meta().atoms!.map((m) => m.kind)).toContain('fired');
+    // Nor the lines for a bomb that fell and one the dome stopped (each is bounded by what can happen).
+    race(w, 'Sam', { stage: 8, fired: true, hit: 1, boom: 1 });
+    expect(lines(w.ada, 'bomb').map((e) => e.text)).toEqual([
+      'Samton has fired the atom bomb',
+      bombLine('boom', 'Samton'),
+    ]);
+  });
+
+  it('say every step a report jumps over, and a city’s first report only the step it is at', () => {
+    const w = world();
+    const step = (s: number) => raceLine(s, 'Samton')!;
+    const said = () => lines(w.ada, 'race').map((e) => e.text);
+    race(w, 'Sam', { stage: 4 });
+    // (The room saw no step before: it is told of each one the city has taken.)
+    expect(said()).toEqual([1, 2, 3, 4].map(step));
+    // Between two reports the city finishes the bomb and goes on to prepare a launch: the red alert is not skipped.
+    race(w, 'Sam', { stage: 6 });
+    expect(said()).toEqual([1, 2, 3, 4, 5, 6].map(step));
+    expect(notices(w.ada).filter((t) => /^Samton (has|is)/.test(t) && !/joined/.test(t))).toEqual(
+      [1, 2, 3, 4, 5, 6].map(step),
+    );
+    expect(step(5)).toBe('Samton has the atom bomb');
+    // A step that falls and is climbed again, over two steps at once, is said again, each step crossed
+    // (within the eight a day).
+    race(w, 'Sam', { stage: 4 });
+    race(w, 'Sam', { stage: 6 });
+    expect(said().slice(6)).toEqual([5, 6].map(step));
+    // A city whose first report is already at stage 5 says only where it is: the room saw no steps.
+    const two = world({ who: ['Ada', 'Sam'] });
+    const kit = raw(two.room);
+    kit.say(hello('Kit'));
+    kit.say(report('Kitton', { atom: { stage: 5 } }));
+    expect(lines(two.ada, 'race').map((e) => e.text)).toEqual([raceLine(5, 'Kitton')]);
+  });
+});
+
+describe('M40 review: the strike’s evidence', () => {
+  it('needs the research done: a city that says it is at stage 6 with its branches unfinished is turned away', () => {
+    const w = world();
+    openTotalWar(w, 'Ada', 'Sam');
+    const prepared = (tiers: number[]) => w.ada.say(report('Adaton', { tiers, atom: { stage: 6 } }));
+    prepared([0, 0, 0, 0, 0, 0]);
+    w.clock.advance(61_000);
+    w.ada.say(strike(2, 'tier-1'));
+    expect(last(w.ada, 'opRefused')).toMatchObject({
+      id: 'tier-1',
+      reason: 'Adaton has not finished the research the atom bomb needs',
+    });
+    prepared([4, 4, 4, 4, 4, 3]);
+    w.ada.say(strike(2, 'tier-2'));
+    expect(last(w.ada, 'opRefused')!.reason).toBe('Adaton has not finished the research the atom bomb needs');
+    expect(w.ada.closed).toBeNull();
+    expect(w.meta().friends?.pariahs).toBeUndefined();
+    expect(all(w.ada, 'opKept')).toEqual([]);
+    // The branches all done, the same report is the launch.
+    prepared(FULL_TIERS);
+    w.ada.say(strike(2, 'tier-3'));
+    expect(last(w.ada, 'opKept')).toMatchObject({ id: 'tier-3', outcome: 'success' });
   });
 });

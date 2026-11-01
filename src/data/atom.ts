@@ -212,14 +212,14 @@ export const RIVAL_BOMB = {
 /**
  * Why the city's saboteurs can't be sent for the atom bomb's works at this neighbour, or null (M40
  * step 7). A computer neighbour must be racing with its bomb not finished (a bomb waiting for its war,
- * or used, has nothing to slow); a friend's city, as its last report said (a stage from the plant to
- * a launch being prepared: the report carries it from step 9). Pure, so the war room's menu and the
- * sim's refusal read the same thing.
+ * or used, has nothing to slow; a conquered town's race is over with its fall); a friend's city, as its
+ * last report said (a stage from the plant to a launch being prepared: the report carries it from
+ * step 9). Pure, so the war room's menu and the sim's refusal read the same thing.
  */
 export function raceSlowWhy(n: {
   name: string;
   player?: { atom?: { stage: number } };
-  rival?: { bomb?: { stage: string } };
+  rival?: { bomb?: { stage: string }; vassal?: unknown };
 }): string | null {
   if (n.player) {
     const stage = n.player.atom?.stage ?? 0;
@@ -228,16 +228,19 @@ export function raceSlowWhy(n: {
       : `${n.name} isn’t racing for the atom bomb`;
   }
   const stage = n.rival?.bomb?.stage;
-  if (!stage) return `${n.name} isn’t racing for the atom bomb`;
+  if (!stage || (n.rival?.vassal && stage !== 'spent')) return `${n.name} isn’t racing for the atom bomb`;
   if (stage === 'ready') return `${n.name} has finished its atom bomb: there is nothing left to slow`;
   if (stage === 'spent') return `${n.name} has used its atom bomb`;
   return null;
 }
 
-/** A span of war hours in words: "5 days", or "9 hours" under a day. */
+/** A span of war hours in words: "5 days", "9 hours", or "under an hour" for a sliver of one. */
 export function spanWords(hours: number): string {
+  if (hours <= 0) return '0 hours';
+  if (hours < 0.5) return 'under an hour';
   const h = Math.round(hours);
-  if (hours < 24) return `${h} hour${h === 1 ? '' : 's'}`;
+  // (23.6 hours is a day, not "24 hours".)
+  if (h < 24) return `${h} hour${h === 1 ? '' : 's'}`;
   const days = Math.round(hours / 24);
   return `${days} day${days === 1 ? '' : 's'}`;
 }

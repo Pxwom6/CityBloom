@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { ATOM, spanWords } from '../../src/data/atom';
+import { ATOM, raceSlowWhy, spanWords } from '../../src/data/atom';
 import { INTEL, SABOTAGE_TARGETS } from '../../src/data/intel';
 import { TIER_KEYS } from '../../src/data/research';
 import { checkCommand } from '../../src/sim/commandCheck';
@@ -19,6 +19,7 @@ import { counterIntel, intelMonth } from '../../src/sim/systems/intel';
 import { checkOpInput, friendOpsWaiting, OP_TAKEN } from '../../src/sim/systems/regionOps';
 import { fightingWith } from '../../src/sim/systems/diplomacy';
 import { TICKS_PER_MONTH } from '../../src/sim/time';
+import { plantStrikeWords, raceMark, sabotageChoices } from '../../src/ui/warView';
 import { civicOnline } from '../../src/sim/world/civic';
 import { clone, rivals, toMonthStart } from './economyHelpers';
 import { labTown, ok, refusal } from './researchTown';
@@ -420,6 +421,79 @@ describe('M40 spies: the words and the checks', () => {
     ].join(' ');
     expect(words).toMatch(/undid 5 days of work on the bomb and closed the atom silo for 12 hours/);
     expect(words).not.toMatch(/casualt|killed|dead|victim|death/i);
+  });
+
+  it('says a sliver of an hour and a day short of a day as they are, never "0 hours" or "24 hours"', () => {
+    expect(spanWords(0.3)).toBe('under an hour');
+    expect(spanWords(0.49)).toBe('under an hour');
+    expect(spanWords(0.5)).toBe('1 hour');
+    expect(spanWords(1.4)).toBe('1 hour');
+    expect(spanWords(1.6)).toBe('2 hours');
+    expect(spanWords(23.4)).toBe('23 hours');
+    expect(spanWords(23.6)).toBe('1 day');
+    expect(spanWords(35)).toBe('1 day');
+    expect(spanWords(0)).toBe('0 hours');
+    // No hour a text can read as nothing.
+    for (let h = 0.01; h < 60; h += 0.07) expect(spanWords(h), String(h)).not.toMatch(/^(0|24) hours?$/);
+    const sim = clone(race);
+    crewed(sim);
+    atom(sim).fuel = 0.3;
+    const strike = sabotagePlant(sim)!;
+    expect(strike.hours).toBe(0.3);
+    expect(plantSabotageText(strike, 'Gravelford')).toBe(
+      'Saboteurs from Gravelford spoiled under an hour of fuel and closed the enrichment plant for 12 hours',
+    );
+  });
+});
+
+describe('M40 spies: the Intelligence menu', () => {
+  const rival = (stage?: string, vassal = false) => ({
+    name: 'Gravelford',
+    rival: { ...(stage ? { bomb: { stage } } : {}), ...(vassal ? { vassal: { since: 0 } } : {}) },
+  });
+  const plant = (n: Parameters<typeof sabotageChoices>[0]) =>
+    sabotageChoices(n).find((c) => c.value === 'plant')!;
+
+  it('always lists the atom bomb works; where there is no race to slow it is greyed out with the sim’s reason', () => {
+    for (const n of [rival(), rival('ready'), rival('spent'), rival('silo', true), undefined]) {
+      const choices = sabotageChoices(n);
+      expect(choices.map((c) => c.value)).toEqual(['power', 'depot', 'plant']);
+      expect(choices.slice(0, 2).every((c) => c.why === null)).toBe(true);
+      expect(plant(n).why, JSON.stringify(n)).not.toBeNull();
+      if (n) expect(plant(n).why).toBe(raceSlowWhy(n));
+    }
+    expect(plant(rival()).label).toBe('atom bomb works (no race to slow)');
+    expect(plant(rival('ready')).label).toBe('atom bomb works (its bomb is finished)');
+    expect(plant(rival('spent')).label).toBe('atom bomb works (its bomb is used)');
+    expect(plant(rival('silo', true)).label, 'a fallen town’s race is over').toBe(
+      'atom bomb works (no race to slow)',
+    );
+  });
+
+  it('is on offer, in plain label, where a race can be slowed: a rival at its stages, a friend at stages 1 to 6', () => {
+    for (const stage of ['enriching', 'silo', 'bomb', 'preparing']) {
+      expect(plant(rival(stage)), stage).toEqual({
+        value: 'plant',
+        label: 'atom bomb works',
+        why: raceSlowWhy(rival(stage)) as null,
+      });
+      expect(raceMark(rival(stage))).toBe(' (racing for the atom bomb)');
+    }
+    for (const atom of [1, 4, 6]) {
+      const friend = { name: 'Brookside', player: { atom: { stage: atom } } };
+      expect(plant(friend).why, `stage ${atom}`).toBeNull();
+    }
+    for (const friend of [
+      { name: 'Brookside', player: {} },
+      { name: 'Brookside', player: { atom: { stage: 7 } } },
+      { name: 'Brookside', player: { atom: { stage: 8 } } },
+    ])
+      expect(plant(friend).why).toBe('Brookside isn’t racing for the atom bomb');
+    expect(raceMark(rival())).toBe('');
+    expect(raceMark(rival('ready'))).toBe('');
+    expect(plantStrikeWords()).toBe(
+      'A strike puts its race back 5 days and closes the plant or silo for 12 hours.',
+    );
   });
 });
 

@@ -1937,9 +1937,9 @@ these are its calls and the reasons, with where they overturned the first draft.
     (0.5 + its aggression, Hard's +0.1 included): 2.1 % for an aggressive neighbour and 1.2 % for a
     mercantile one. On seed `citybloom` an eligible neighbour begins 23 game months after year 20, for
     every character (the same dice sequence); the stages then take 2,800 war hours (about 6 hours of
-    play). The race idles while the rules turn the bomb off and while the town is the city's vassal; a
-    blackout holds it hour by hour (`delay` grows by one for each hour dark), which the plan did not say
-    and which gives the tower a use; the fair clock holds it because it runs on the war clock.
+    play). A blackout holds it hour by hour (`delay` grows by one for each hour dark), which the plan did
+    not say and which gives the tower a use; the fair clock holds it because it runs on the war clock.
+    (The review below changed what happens while the rules turn the bomb off, and to a conquered town.)
   - *Spies and forces put it back.* A sabotage of `plant` that gets through adds 120 to `delay`; a
     launch being prepared starts over instead (as the city's own does when its silo is closed); a
     finished bomb waiting for its war has nothing to slow (the mission is refused when sent, and stands
@@ -1981,3 +1981,31 @@ these are its calls and the reasons, with where they overturned the first draft.
   - *Left for the steps that own them:* the report's race field and the protocol gate (9); the region
     map's pips and the Intel tab's word for a race on the region map (11); the tip text about spies
     (still "power or depot"); the cross-browser section for the rival's launch (8).
+- **Step 7 review fixes (five findings).**
+  - *Idle hours are held, not skipped.* Turning the bomb off in the rules used to leave a race untouched,
+    so a stage "long overdue" ended in the first hour back and a launch being prepared counted its ten
+    days as served. Now, while `bombAllowed` is false, every dated stage (fuel, silo, bomb and a launch
+    being prepared) adds one to `delay` an hour at a time, exactly as a blackout does, so what was left
+    when it stopped is what is left when it goes on, and the city is not told "desperate" again (it
+    was told at the start). A bomb that is only waiting (`ready`) has no date and makes no preparation
+    while the rules forbid it. `setBackRival` on a launch being prepared reports the hours served (clock
+    minus start minus the hours held), not the hours held too.
+  - *A conquered town's race ends.* The vassal used to freeze its race as it stood (`idle`), which kept
+    `rivalBombMonth`'s "one at a time" shut for every other neighbour for good, kept the race in
+    `rivalRaces` and the Intel menu, and let a rising vassal resume (or, if it was preparing, fire at
+    once when a new war made it desperate). Now the next war hour deletes the unfinished race of a
+    vassal (`fall`: one line in the diplomacy log, "X's race for the atom bomb ends with its fall", told
+    once because the race is gone); a town that rises later may begin again by the ordinary roll. Until
+    that hour a vassal's race counts for nothing (`standing`: not racing, not ahead, not listed, no
+    target, `setBackRival` slows nothing, `raceSlowWhy` says it isn't racing), so a conquest lets the
+    next neighbour begin the same month. A bomb it has already used stays on record (`spent`), and
+    `first` still reads it. This overturns the earlier "idles while the town is the city's vassal".
+  - *The Intelligence menu lists the atom bomb works always.* `sabotageChoices` (`src/ui/warView.ts`,
+    pure, tested) returns power, depot and the works; where `raceSlowWhy` has a reason the works are
+    greyed out with a short word in the label ("no race to slow", "its bomb is finished", "its bomb is
+    used") and the full reason as the tooltip, and a neighbour that is racing is marked in the "send an
+    agent to" list (`raceMark`). With the works picked, a line says what a strike does (`plantStrikeWords`:
+    5 days back, the plant or silo closed 12 hours). The generic refusal for a missing target still reads
+    "its power or its depot" (M37's tests hold that text; the tip text is step 11's).
+  - *Words.* `spanWords` says "under an hour" below half an hour (it read "0 hours", and the fuel line
+    "spoiled 0 hours of fuel") and "1 day" from 23.5 hours (it read "24 hours"); 0 is "0 hours".

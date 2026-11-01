@@ -6,12 +6,12 @@
  */
 import { useState } from 'preact/hooks';
 import { INTEL, SPY_OP, SPY_OPS, spyOdds, type SabotageTarget, type SpyOp } from '../data/intel';
-import { raceSlowWhy } from '../data/atom';
 import { BRANCHES, type Branch } from '../data/research';
 import { CIVIC } from '../data/civic';
 import { UNIT, type UnitKind } from '../data/war';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { warHours } from './Research';
+import { plantStrikeWords, raceMark, sabotageChoices } from './warView';
 
 type SpyCmd = Extract<Parameters<ReturnType<typeof useGameUpdates>['dispatch']>[0], { type: 'spyMission' }>;
 
@@ -65,9 +65,10 @@ export function Intelligence() {
   }
   const n = rivals.find((x) => x.id === to) ?? rivals[0];
   // The atom bomb's works are a target only where there is a race to slow (M40): a neighbour racing
-  // with its bomb unfinished, a friend whose last report showed one. Elsewhere the menu does not offer it.
-  const race = !!n && raceSlowWhy(n) === null;
-  const aim: SabotageTarget = target === 'plant' && !race ? 'power' : target;
+  // with its bomb unfinished, a friend whose last report showed one. Elsewhere the menu lists it
+  // greyed out, with the reason.
+  const choices = sabotageChoices(n);
+  const aim: SabotageTarget = choices.some((c) => c.value === target && !c.why) ? target : 'power';
   const form = JSON.stringify([n?.id, op, aim, branch]);
   // A friend's odds as the region room works them out (M37, step 9): the city's Intelligence tiers
   // against the counter-intelligence in the friend's last report.
@@ -133,6 +134,7 @@ export function Intelligence() {
               {rivals.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
+                  {raceMark(x)}
                 </option>
               ))}
             </select>
@@ -160,11 +162,18 @@ export function Intelligence() {
                 value={aim}
                 onChange={(e) => setTarget((e.target as HTMLSelectElement).value as SabotageTarget)}
               >
-                <option value="power">power</option>
-                <option value="depot">vehicle depot</option>
-                {race && <option value="plant">atom bomb works</option>}
+                {choices.map((c) => (
+                  <option key={c.value} value={c.value} disabled={!!c.why} title={c.why ?? undefined}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </label>
+          )}
+          {op === 'sabotage' && aim === 'plant' && (
+            <p class="muted" data-testid="intel-target-note">
+              {plantStrikeWords()}
+            </p>
           )}
           {op === 'steal' && (
             <label>

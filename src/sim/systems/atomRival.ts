@@ -5,7 +5,8 @@
  * enough begins in a month, by a roll of its own (`${seed}:bomb:${month}`: not `intelMonth`'s stream
  * nor any `sim.rng` stream), and then needs war hours (the war clock, so the region's fair clock holds
  * it as it holds the city's own race) for its fuel, its silo and its bomb. The city's spies and
- * expeditions set it back (`setBackRival`: its dates move), a blackout holds it hour by hour. A
+ * expeditions set it back (`setBackRival`: its dates move), and a blackout or the rules turning the
+ * bomb off hold it hour by hour; the city's conquest of the racer ends its race. A
  * finished bomb waits until the neighbour is desperate, then prepares for ten game days, which the
  * city is told of, and launches once, at the city, if it is still desperate; the strike is the same
  * `atomInbound` as any other (the dome stops it as it stops any bomb). Nothing here exists in a city
@@ -55,16 +56,26 @@ function computerNeighbours(sim: Sim): Neighbour[] {
   return sim.state.region.neighbours.filter((n) => n.rival && !n.player).sort((a, b) => a.id - b.id);
 }
 
+/**
+ * A neighbour's race as it stands. A conquered town's unfinished race is over (the next war hour
+ * clears it, `fall`): until then it counts for nothing, so the city's conquest of the racer lets
+ * another neighbour begin, and the war room neither lists nor offers it. A bomb it has used is a record.
+ */
+function standing(n: Neighbour): RivalBomb | undefined {
+  const b = n.rival?.bomb;
+  return b && (b.stage === 'spent' || !n.rival!.vassal) ? b : undefined;
+}
+
 /** Is this neighbour racing, with something left for the city's saboteurs to slow? (Not yet begun, or used, is no.) */
 export function rivalRacing(n: Neighbour): boolean {
-  const b = n.rival?.bomb;
+  const b = standing(n);
   return !!b && b.stage !== 'spent';
 }
 
 /** Some computer neighbour has finished its bomb (it is ready, being prepared for launch, or used). */
 export function rivalAhead(sim: Sim): boolean {
   return computerNeighbours(sim).some((n) => {
-    const stage = n.rival!.bomb?.stage;
+    const stage = standing(n)?.stage;
     return stage === 'ready' || stage === 'preparing' || stage === 'spent';
   });
 }
@@ -96,7 +107,7 @@ export function rivalDesperate(sim: Sim, n: Neighbour): boolean {
  * put back (0: nothing to slow).
  */
 export function setBackRival(sim: Sim, n: Neighbour, hours: number): number {
-  const b = n.rival?.bomb;
+  const b = standing(n);
   if (!b) return 0;
   if (b.stage === 'enriching' || b.stage === 'silo' || b.stage === 'bomb') {
     b.delay += hours;
@@ -104,7 +115,8 @@ export function setBackRival(sim: Sim, n: Neighbour, hours: number): number {
     return hours;
   }
   if (b.stage === 'preparing') {
-    const was = sim.state.war!.clock - b.at;
+    // What was served: the hours held (a blackout, the rules off) were not.
+    const was = Math.max(0, sim.state.war!.clock - b.at - b.delay);
     b.at = sim.state.war!.clock;
     b.delay = 0;
     sim.warChanged();
@@ -153,10 +165,20 @@ export function rivalBombMonth(sim: Sim): void {
 }
 
 /**
- * The races' hour on the war clock: each stage ends at its date, a blackout holds the race an hour
- * at a time, a finished bomb waits for its war, a launch is prepared, and the bomb leaves once, at
- * the city. A race idles while the rules turn the bomb off, as the city's own does, and while its
- * town is the city's vassal.
+ * A conquered town's race is over: its works are the city's now. Told in the diplomacy log, once (the
+ * race is gone, so there is nothing to tell again); a town that rises later may begin a race anew.
+ */
+function fall(sim: Sim, n: Neighbour): void {
+  delete n.rival!.bomb;
+  note(sim, n.id, 'rivalFallen', `${n.name}’s race for the atom bomb ends with its fall`, 'good');
+}
+
+/**
+ * The races' hour on the war clock: each stage ends at its date, a finished bomb waits for its war, a
+ * launch is prepared, and the bomb leaves once, at the city. Hours the race cannot work are not
+ * served: a blackout, and the rules turning the bomb off (as the city's own race waits), hold every
+ * dated stage, a launch being prepared included, an hour at a time (`delay`), so what is left when it
+ * goes on is what was left when it stopped. A conquered town's race ends (`fall`).
  */
 export function rivalBombHour(sim: Sim): void {
   const w = sim.state.war;
@@ -164,12 +186,19 @@ export function rivalBombHour(sim: Sim): void {
   for (const n of computerNeighbours(sim)) {
     const r = n.rival!;
     const b = r.bomb;
-    if (!b || b.stage === 'spent' || r.vassal || !bombAllowed(sim)) continue;
+    if (!b || b.stage === 'spent') continue;
+    if (r.vassal) {
+      fall(sim, n);
+      continue;
+    }
+    const allowed = bombAllowed(sim);
     const due = rivalBombDue(n);
-    if (due !== null && rivalBlackedOut(sim, n)) {
+    if (due !== null && (!allowed || rivalBlackedOut(sim, n))) {
       b.delay++;
       continue;
     }
+    // A finished bomb makes no preparation while the rules forbid it.
+    if (!allowed) continue;
     if (b.stage === 'ready') {
       if (rivalDesperate(sim, n)) {
         b.stage = 'preparing';
@@ -267,9 +296,9 @@ export interface RivalRace {
 export function rivalRaces(sim: Sim): RivalRace[] {
   const clock = sim.state.war?.clock ?? 0;
   return computerNeighbours(sim)
-    .filter((n) => n.rival!.bomb)
+    .filter((n) => standing(n))
     .map((n) => {
-      const b = n.rival!.bomb!;
+      const b = standing(n)!;
       return {
         id: n.id,
         name: n.name,

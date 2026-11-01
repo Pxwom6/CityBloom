@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { ATOM, RIVAL_BOMB, atomEventText, atomStageNo } from '../../src/data/atom';
+import { ATOM, RIVAL_BOMB, atomEventText, atomStageNo, raceSlowWhy } from '../../src/data/atom';
 import { DOME, TIER_KEYS } from '../../src/data/research';
 import { WAR_DIFFICULTY } from '../../src/data/warEconomy';
 import type { Command } from '../../src/sim/commands';
+import { checkInvariants } from '../../src/sim/invariants';
 import type { Sim } from '../../src/sim/sim';
 import { atomHour, atomInbound, atomOf, atomSummary } from '../../src/sim/systems/atom';
 import {
@@ -273,23 +274,71 @@ describe('M40 rivals: the stages', () => {
     expect(atomLines(sim)).toHaveLength(0);
   });
 
-  it('idles while the rules turn the bomb off, and while the town is the city’s vassal', () => {
+  it('holds while the rules turn the bomb off: the hours it cannot work are not served', () => {
     const sim = plainCity('hard');
     const n = rivals(sim)[0]!;
     sure(() => rivalBombMonth(sim));
     hours(sim, 1_000);
     const keep = { ...n.rival!.bomb! };
+    const due = rivalBombDue(n)!;
     sim.state.region.rules = { war: true, scale: 'total', supers: true };
     hours(sim, 2_000);
-    expect(n.rival!.bomb, 'rules off: idle').toEqual(keep);
+    expect(n.rival!.bomb, 'rules off: held, an hour at a time').toEqual({ ...keep, delay: 2_000 });
+    expect(rivalBombDue(n)).toBe(due + 2_000);
     sim.state.region.rules = { war: true, scale: 'total', supers: true, bomb: true };
-    n.rival!.vassal = { since: 0 };
-    hours(sim, 2_000);
-    expect(n.rival!.bomb, 'a vassal: idle').toEqual(keep);
-    delete n.rival!.vassal;
-    // The time spent idle is not owed: the stage is long overdue and goes on at once.
+    // What was left when it stopped is what is left now: 500 hours of fuel, not "long overdue".
+    hours(sim, 499);
+    expect(n.rival!.bomb!.stage).toBe('enriching');
     hours(sim, 1);
     expect(n.rival!.bomb!.stage).toBe('silo');
+  });
+
+  it('a conquered town’s race is over: it counts for nothing at once and is cleared with the next hour', () => {
+    const sim = plainCity('hard');
+    const [a, b] = [rivals(sim)[0]!, rivals(sim)[1]!];
+    eligible(sim, 1);
+    sure(() => rivalBombMonth(sim));
+    hours(sim, 1_600);
+    expect(a.rival!.bomb!.stage).toBe('silo');
+    expect(raceSlowWhy(a)).toBeNull();
+    expect(rivalRaces(sim)).toHaveLength(1);
+    a.rival!.vassal = { since: sim.state.tick };
+    // At once: not listed, not a target, not a reason for the others to wait.
+    expect(rivalRaces(sim)).toEqual([]);
+    expect(raceSlowWhy(a)).toBe(`${a.name} isn’t racing for the atom bomb`);
+    expect(setBackRival(sim, a, 120)).toBe(0);
+    expect(a.rival!.bomb!.delay).toBe(0);
+    sure(() => rivalBombMonth(sim));
+    expect(b.rival!.bomb?.stage, 'another neighbour may begin').toBe('enriching');
+    // The next war hour ends it, once, and tells the city.
+    hours(sim, 1);
+    expect(a.rival!.bomb).toBeUndefined();
+    expect(diplomacyNotes(sim, 'rivalFallen')).toMatchObject([
+      { id: a.id, info: { text: `${a.name}’s race for the atom bomb ends with its fall`, tone: 'good' } },
+    ]);
+    hours(sim, 100);
+    expect(diplomacyNotes(sim, 'rivalFallen')).toHaveLength(1);
+    // Freed again, it has no race to go on with.
+    delete a.rival!.vassal;
+    hours(sim, 2_000);
+    expect(a.rival!.bomb).toBeUndefined();
+    expect(() => checkInvariants(sim)).not.toThrow();
+  });
+
+  it('a conquered town’s finished bomb is gone with it, and one it has used stays on record', () => {
+    const sim = plainCity('hard');
+    const n = rivals(sim)[0]!;
+    n.rival!.bomb = { stage: 'ready', at: 0, delay: 0 };
+    expect(rivalAhead(sim)).toBe(true);
+    n.rival!.vassal = { since: 0 };
+    expect(rivalAhead(sim), 'a fallen town’s bomb is not ahead of the city').toBe(false);
+    hours(sim, 1);
+    expect(n.rival!.bomb).toBeUndefined();
+    n.rival!.bomb = { stage: 'spent', at: 0, delay: 0 };
+    hours(sim, 10);
+    expect(n.rival!.bomb).toMatchObject({ stage: 'spent' });
+    expect(rivalAhead(sim), 'it did use the bomb first').toBe(true);
+    expect(raceSlowWhy(n)).toBe(`${n.name} has used its atom bomb`);
   });
 
   it('a blackout holds it an hour at a time, and the clock the region holds holds it', () => {
@@ -545,6 +594,42 @@ describe('M40 rivals: the launch', () => {
     expect(stage(sim), 'a ceasefire keeps the bomb at home').toBe('ready');
     expect(atomOf(sim).inbound).toBeUndefined();
     expect(diplomacyNotes(sim, 'rivalDesperate')).toHaveLength(2);
+  });
+
+  it('a launch being prepared is held while the rules are off, and the rest of it is owed on resume', () => {
+    const sim = readyTown(60);
+    hours(sim, 1);
+    expect(stage(sim)).toBe('preparing');
+    hours(sim, 100);
+    const n = rival(sim);
+    const start = n.rival!.bomb!.at;
+    expect(sim.state.region.rules).toBeUndefined();
+    sim.state.region.rules = { war: true, scale: 'total', supers: true };
+    hours(sim, 600);
+    expect(stage(sim)).toBe('preparing');
+    expect(n.rival!.bomb).toMatchObject({ at: start, delay: 600 });
+    expect(atomOf(sim).inbound).toBeUndefined();
+    delete sim.state.region.rules;
+    // 140 hours of the ten days were still to come: it does not leave in the first hour back.
+    hours(sim, 139);
+    expect(stage(sim)).toBe('preparing');
+    expect(atomOf(sim).inbound).toBeUndefined();
+    expect(diplomacyNotes(sim, 'rivalDesperate'), 'told at the start, not again').toHaveLength(1);
+    hours(sim, 1);
+    expect(stage(sim)).toBe('spent');
+    expect(atomOf(sim).inbound).toMatchObject({ from: n.id });
+  });
+
+  it('a launch put back counts what was served, not the hours it was held', () => {
+    const sim = readyTown(60);
+    hours(sim, 1);
+    hours(sim, 100);
+    const n = rival(sim);
+    n.rival!.blackout = { from: clock(sim), until: clock(sim) + 51 };
+    hours(sim, 50);
+    expect(n.rival!.bomb!.delay).toBe(50);
+    expect(setBackRival(sim, n, 120), '100 served, 50 held').toBe(100);
+    expect(n.rival!.bomb).toMatchObject({ at: clock(sim), delay: 0 });
   });
 
   it('fires once, at the city, a game day out: the siren, one bomb in the air at a time', () => {

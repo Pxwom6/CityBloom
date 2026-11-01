@@ -34,6 +34,7 @@ import {
   type BattleRecord,
 } from './client/battles';
 import { LiveBattles } from './client/liveBattles';
+import { atomEventNotice, raceNotice } from './client/atomNotices';
 import { BattleMapState } from './client/battleMapState';
 import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput, ForceIn } from './sim/battle/types';
@@ -900,7 +901,13 @@ export class Game {
     this.friends.attach(link);
     this.atomRegion.attach(link);
     this.replays.attach(link);
-    link.onNotice = (t) => this.toast(t, 'info', 4500);
+    // The race among friends is in the notification log, and the bomb in hand, a launch, a bomb fired
+    // or fallen are red alerts (`raceNotice`); any other line of the room's is a toast.
+    link.onNotice = (t) => {
+      const race = raceNotice(t);
+      if (race) this.notice(race.kind, race.text, race.tone);
+      else this.toast(t, 'info', 4500);
+    };
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
     link.onBattleKept = (id) => void battlePosted(id);
@@ -1372,6 +1379,8 @@ export class Game {
         const c = this.world.civics.get(e.id);
         return (c && CIVIC.get(c.def)?.name) ?? 'building';
       };
+      // The city's own bomb: a strike put to the room, a launch held, a bomb gone (`atomNotices.ts`).
+      const atomEvent = atomEventNotice(e);
       if (e.kind === 'closed')
         this.notice('closed', 'A business closed: no power or water for half a day.', 'bad', at);
       else if (e.kind === 'abandoned')
@@ -1493,22 +1502,7 @@ export class Game {
           `The dome shield stopped ${String(e.info?.from)}’s atom bomb: it is down for a long while to recharge.`,
           'ok',
         );
-      else if (e.kind === 'strikeSent')
-        // The bomb is put to the region's room for a friend's city (M40 step 10): it leaves only if the room keeps it.
-        this.notice(
-          `strike:${e.id}`,
-          `The atom bomb is with the region’s room, which has to agree to the strike on ${String(e.info?.to)}.`,
-          'info',
-        );
-      else if (e.kind === 'launchHeld')
-        // A prepared bomb that can't leave (a war paused, or the room's refusal in its words): it waits in the silo.
-        this.notice(
-          `held:${e.id}`,
-          `The prepared bomb can’t leave: ${String(e.info?.why)}. It stays in the silo until it is sent again.`,
-          'bad',
-        );
-      else if (e.kind === 'bombFired')
-        this.notice(`fired:${e.id}`, `The atom bomb has left the silo for ${String(e.info?.to)}.`, 'bad');
+      else if (atomEvent) this.notice(atomEvent.kind, atomEvent.text, atomEvent.tone);
       else if (e.kind === 'rivalBomb')
         // A computer neighbour's race for the bomb (M40, Hard): each stage is public.
         this.notice(

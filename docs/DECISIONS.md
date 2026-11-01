@@ -2400,3 +2400,92 @@ these are its calls and the reasons, with where they overturned the first draft.
     wind comes from some and not others: deposited, waiting, repeated, set down), a bomb from the friend
     taken once, a repeat refused, a second refused while one is in the air. `determinism.test.ts` reads the
     entries for each of those. Chromium agrees with Node (24 months in 22 s).
+- **Step 10 review (seven findings; they overturn four of step 10's calls above).**
+  - *A pinned strike is never called back (it overturns "the tower's rule, 720 war hours pinned" and
+    removes the "known hole" listed there).* The room keeps a strike the moment it answers, and the
+    page asks again with the same key until it hears (`RegionOps`: every 20 s, the room giving the
+    stored verdict); only the sim's own timeout could lose the answer for good, by putting the bomb
+    back in the silo after `SETTLE_TIMEOUT_HOURS` while the room had it as used, and the room then
+    refused every new send ("has used its atom bomb") for ever. So `strikeHour` recalls a strike only
+    while the page has not put it to the room (`FIGHT_TIMEOUT_HOURS`, 72 war hours: the page was not
+    looking); once pinned (`settling`) the strike waits for the room's word however long, and the city
+    cannot call it off or send it again meanwhile ("with the region's room"). The way out of a room
+    that is gone for good is to leave the region: a city bound to no region is answered with a refusal
+    at once (`Game.ops.post`), which is `missionResult refused`, so the bomb is prepared again. The
+    blackout tower has the same timeout and keeps it (a blackout costs a day's recharge, not the only
+    bomb of the game).
+  - *A friend's cloud comes in whatever the city's own wind does (it overturns "waits for the wind").*
+    Each city's wind is a near-constant bearing of its own seed (`windAngle`: base + 0.35 rad), and
+    the cloud leaves the sender's edge only when the *sender's* wind blows towards it; asking the
+    receiver's wind to blow *from* that side as well passed for about a third of pairs of cities and
+    left the cloud at the border for ever for the rest. A cloud that has crossed the border is in this
+    city's sky; `friendFallout` no longer reads the wind (it does not return `waiting`, and
+    `AtomRegion` no longer hands a total over again). The fear in step 5's note (air put on the strip
+    facing a friend while the wind blows towards it leaves by that edge at once and would be counted
+    back to the sender as `out`) is real but bounded, and it dies out: what leaves is never more than
+    was deposited (a test measures it), the other end takes 0.6 of that, and air thinner than
+    `FALLOUT.town.inflow` is haze and is not counted. Probe (two cities whose winds both carry the cloud
+    out by the edge facing the other, the worst pair; a middle strike, 356): the exchange added 12 units
+    (3 %) to the sender's total and was over within three reports. A computer neighbour's stream is
+    unchanged (its level is kept and comes whenever the city's wind comes from its side: a level that
+    stays, not a flow that is lost).
+  - *`seen` is a high-water mark (it overturns "a lower total sets `seen` down").* Setting it down on
+    a lower total let any sender (a modified client, a peer-to-peer host, or an honest one that reloaded
+    an older save) alternate 1 and 700 and have the whole step deposited at every rise: the review's
+    probe closed 4,272 cells (1.09 km², more than a real strike) in 90 minutes of play. `seen` only rises, so
+    a total heard again or a lower one adds nothing until it passes what the city has already taken
+    in; the most any sender can put in over the city's life is `plumeMax` (and each message at most
+    `FALLOUT.friend.step`). The cost: a sender that reloads an older save and re-grows its cloud
+    adds nothing for the part it already had, which is right (it was counted).
+  - *The baseline of a friend's cloud is the page's (`friendFallout.base`).* "First sight takes
+    nothing" could never tell a city that was there from the start from one that came late: the
+    sender's report lists a plume entry only once it is above 0, so the receiver never saw 0, and its
+    first entry (a few units at 1×, ten percent of the cloud at 3×) was taken as already known. The
+    page knows what it saw first: `AtomRegion` keeps, per friend, the total as this page first saw it
+    (0 if the friend had no cloud for this city) and hands it as the optional `base` of
+    `friendFallout {from, total, base}`. With `seen` unset the sim starts from `base`: 0 takes all of
+    it (the city was there), the total itself takes nothing (a newcomer, or a city away for the whole
+    drift, is spared), a base above the total keeps the base; once `seen` is set `base` is not read
+    (a reload with the sim's `seen` kept takes only what is new). A call without `base` is the old
+    rule (the first total is known), which is what the cross-browser script and old callers get. A
+    baseline of 0 sets nothing (no fallout state is made for a friend that has sent none: a war city
+    in a region would otherwise carry two rasters and a three-hourly update for nothing). `base` is a
+    number in 0..`plumeMax` or the call is refused.
+  - *A strike is checked against the city's own books (`strikeProblem`, `Atom.struck`).* The sim took
+    an `opResolve` `atom` from any known friend with only the id and the bomb-in-the-air tests, so a
+    peer-to-peer host or a modified room could level a city again and again with fresh ids. The target
+    now keeps the places of the friends whose bomb it has taken (`Atom.struck`: one each, ever, as the
+    room's `City.atom.used`) and takes a strike only if (1) that city has not struck this one before
+    (refused for good, even while its first is in the air), (2) its last report shows a launch
+    prepared or the bomb gone (stage 6 or more), and (3) a total war with it is on this city's books.
+    (2) and (3) can be behind the room's word (a returning player is sent its operations before the
+    news: `hello` sends `ops` before the war and report messages), so they answer `later` like a bomb
+    already in the air (`strikeLater`, which `resolveOp` maps to `later`): the room keeps the strike,
+    the page offers it again with each report, and it is taken as soon as the city has been told. They
+    do not check the war's state (open, ceasefire) so a kept strike still stands once a treaty is
+    signed after it. What this cannot do: a host that forges the report and the war as well can
+    still send one strike from each friend slot a region can have (three), no more, and never from a
+    city it has not set up; the room's own checks are what stop a real city that is not at war.
+  - *The page's notices (`src/client/atomNotices.ts`).* `Game.notice` collapses repeats of a kind for a
+    minute, keeping the first text, and toasts a kind at most once in 20 s: a held launch's kind was
+    `held:<neighbour>`, so a second, different refusal inside the minute (the room's "still being
+    prepared", then "its player is not here") was neither toasted nor in the log. The kind now holds
+    the reason (`held:<neighbour>:<why>`): a reason said again still collapses, a different one is a
+    notice of its own. Whether the reason is still true is not for the sim to say: `launch.held` after
+    a refusal is *the region's last answer*, kept until the city sends the bomb again (the only way to
+    learn what the room would say now), and the notice says so ("It stays in the silo until it is sent
+    again"); the Bomb tab (step 11) should show it as the last answer with a Send again button. The
+    region's race lines (`link.onNotice`) were a 4.5 s info toast, the first finisher's "has the atom
+    bomb" among them; `raceNotice` gives each its own logged notice (kind `race:<text>`) and makes the
+    bomb in hand, a launch prepared, a bomb fired or fallen a red alert (`bad`: logged, toasted, the
+    alert sound), and the plant, fuel, silo and bomb being built news (`info`), a dome stopping a bomb
+    news. The first finisher's achievement notice was already there.
+  - *Tests.* `tests/war/atomFriends.test.ts` is 27 tests now: the new ones fail without the fixes
+    (nine of them verified against the step 10 tip). `tests/war/atomNotices.test.ts` (the kinds of the
+    held launch and the race lines). The cross-browser script sets the friend's report and total wars
+    by hand and plays a strike that is not taken yet, taken, repeated, a second from the same city
+    refused, and another city's refused while one is in the air; the cloud entries now start from a
+    baseline of 0 and a lower total changes nothing (`seen` ends at the highest). Changed because
+    they asserted what the above replaces: the cloud tests of `atomFriends.test.ts` (first sight, waits
+    for the wind, a lower total sets `seen` down), the pinned half of "called back to the silo", and
+    `determinism.test.ts`'s `waiting` match.

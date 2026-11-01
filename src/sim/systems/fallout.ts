@@ -403,46 +403,56 @@ function handOver(sim: Sim, f: Fallout, gone: Record<Side, number>): void {
 /**
  * A friend's cloud reaches the city (M40 step 10, plan call 12; page only, `friendFallout`). `total`
  * is the friend's cumulative air towards this city, as the region gave it; the sim keeps how much of
- * it it has taken in (`seen`) and puts what is new on the edge facing that friend, as air, only while
- * the city's own wind blows from that side (air put there while the wind blows away would leave by the
- * same edge at once, and be counted back to the sender as `out`). Idempotent: the same total twice
- * adds once; the first sight of a friend takes nothing (a newcomer, or a friend away for the whole
- * drift, is spared); a lower total (the friend went back to a save) sets `seen` down. When the wind is
- * wrong the cloud waits, `seen` where it was, and comes in the next time the wind is right. What one
+ * it it has taken in (`seen`) and puts what is new on the edge facing that friend, as air. The city's
+ * own wind does with it then what it does (a cloud that has crossed the border is in this city's sky,
+ * and each city's wind comes from its own seed: waiting for the two to match would, for most pairs of
+ * cities, never end).
+ *
+ * `seen` only ever rises. It is the most of the friend's cloud this city has been given, so a total
+ * heard again, or a lower one (the friend went back to an older save and its cloud is growing again),
+ * adds nothing until it passes what was already taken in: nothing a friend or a room can say, however
+ * often, puts in more than the largest total it has claimed (and that is bounded by `plumeMax`).
+ *
+ * The first sight of a friend decides where `seen` starts. `base` is the page's word: the friend's
+ * total when this page first saw it (0 if it had no cloud for this city then), so a city that was
+ * here as the cloud began takes all of it in, and a newcomer, or a city away for the whole drift, is
+ * spared what it never saw. With no `base` the first total is taken as already known. What one
  * message adds is bounded (`FALLOUT.friend.step`): the room bounds the total, not the flow.
  */
-export function friendFallout(sim: Sim, from: unknown, total: unknown, dryRun: boolean): CommandResult {
+export function friendFallout(
+  sim: Sim,
+  from: unknown,
+  total: unknown,
+  base: unknown,
+  dryRun: boolean,
+): CommandResult {
   const BAD = 'That cloud could not be read';
+  const cloud = (v: unknown): v is number =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= ATOM_WIRE.plumeMax;
   if (typeof from !== 'number' || !Number.isInteger(from) || from < 1 || from > ATOM_WIRE.slots)
     return fail(BAD);
-  if (typeof total !== 'number' || !Number.isFinite(total) || total < 0 || total > ATOM_WIRE.plumeMax)
-    return fail(BAD);
+  if (!cloud(total) || (base !== undefined && !cloud(base))) return fail(BAD);
   const s = sim.state;
   if (!s.war) return fail('War is off in this city');
   const n = s.region.neighbours.find((x) => x.player?.slot === from);
   if (!n) return fail('That came from a city this one doesn’t know');
   const t = round3(total);
-  const seen = s.fallout?.seen[from];
-  // First sight (or nothing from it yet): taken as already known, and nothing deposited.
+  let seen = s.fallout?.seen[from];
   if (seen === undefined) {
-    if (t <= 0) return ok(0);
-    if (dryRun) return ok(0);
-    falloutOf(sim).seen[from] = t;
-    sim.warChanged();
-    return ok(0, { info: { deposited: 0 } });
+    // First sight: from the page's baseline, or (with none) from the total itself, nothing deposited.
+    const start = base === undefined ? t : round3(base);
+    if (t > start) seen = start;
+    else {
+      if (start <= 0 || dryRun) return ok(0);
+      falloutOf(sim).seen[from] = start;
+      sim.warChanged();
+      return ok(0, { info: { deposited: 0 } });
+    }
   }
-  if (t === seen) return ok(0, { info: { deposited: 0 } });
-  if (t < seen) {
-    if (dryRun) return ok(0);
-    s.fallout!.seen[from] = t;
-    sim.warChanged();
-    return ok(0, { info: { deposited: 0 } });
-  }
-  // New cloud, but not on this city's wind: it waits at the border.
-  if (!windFrom(windAngle(s.options.seed, s.tick), n.side))
-    return ok(0, { info: { deposited: 0, waiting: true } });
+  // Not past what was already taken in: nothing is new (a high-water mark: it is never set down).
+  if (t <= seen) return ok(0, { info: { deposited: 0 } });
   if (dryRun) return ok(0);
-  const put = depositFromFriend(s.fallout!, n.side, t - seen);
+  const put = depositFromFriend(falloutOf(sim), n.side, t - seen);
   s.fallout!.seen[from] = t;
   sim.warChanged();
   return ok(0, { info: { deposited: put } });

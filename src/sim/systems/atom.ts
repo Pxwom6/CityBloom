@@ -10,7 +10,7 @@
  * nothing here draws from a random stream.
  */
 import { ATOM, atomStageNo, spanWords, type AtomReport, type AtomStage } from '../../data/atom';
-import { FIGHT_TIMEOUT_HOURS, SETTLE_TIMEOUT_HOURS } from '../../data/battle';
+import { FIGHT_TIMEOUT_HOURS } from '../../data/battle';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
 import { TIER_KEYS } from '../../data/research';
@@ -107,6 +107,12 @@ export interface Atom {
   };
   /** The city finished a bomb before every other city in its region (the achievement's fact). */
   first?: true;
+  /**
+   * The places of the friends whose bomb this city has taken (M40 step 10 review): the region lets a
+   * city fire one bomb, ever, so a second from the same place is not a bomb the room kept. Kept here
+   * too, because the room may be a player's browser.
+   */
+  struck?: number[];
   /** Bombs that have landed in this city, and bombs its dome has stopped. */
   boom: number;
   stopped: number;
@@ -818,12 +824,16 @@ const refusalWords = (reason: unknown): string =>
 
 /**
  * A strike the room has not answered for too long is called back to the silo (the tower's rule: the
- * war hours a page has to put it, `FIGHT_TIMEOUT_HOURS`, and longer once pinned, `SETTLE_TIMEOUT_HOURS`):
- * the bomb is prepared again and the city is told.
+ * war hours a page has to put it, `FIGHT_TIMEOUT_HOURS`): the bomb is prepared again and the city is
+ * told. Only while the page has not put it to the room. Once it is pinned (`settling`) the room may
+ * already have kept it and struck the target, with only its answer lost, and a bomb called back then
+ * could never be sent again (the room has it as used): the page asks again, with the same key, until
+ * the room answers, or until the city leaves the region, which answers it at once (a city in no
+ * region at all is turned away).
  */
 function strikeHour(sim: Sim, a: Atom, p: NonNullable<Atom['prep']>, send: StrikeSend): void {
-  const wait = send.settling ? SETTLE_TIMEOUT_HOURS : FIGHT_TIMEOUT_HOURS;
-  if (sim.state.war!.clock < send.at + wait) return;
+  if (send.settling) return;
+  if (sim.state.war!.clock < send.at + FIGHT_TIMEOUT_HOURS) return;
   strikeBack(sim, a, p, 'The region gave no answer: the bomb is prepared, send it again');
 }
 
@@ -926,6 +936,40 @@ export interface BombSender {
   /** Another player's city in the region. */
   slot?: number;
 }
+
+/**
+ * Why a strike a friend's city says the region kept can't be taken (M40 step 10 review). The room
+ * decides whether a strike stands, and a strike it kept stands; but a region in a player's browser has
+ * a host that is not trusted, and a strike levels the town. So the city's own sim checks the room's
+ * word against what it has been shown itself: a friend's city fires one bomb, ever (`Atom.struck`);
+ * the friend's last report says a launch is prepared or the bomb has gone; and a total war with it is
+ * on this city's books. The last two can be behind the room's word (a page that was away has not been
+ * told yet: the room sends a returning player its operations before the news), so they are `later`:
+ * the room keeps the strike and the page offers it again with each report. The first is final.
+ */
+export const STRIKE_STRUCK = 'That city has fired its one atom bomb at this one already';
+export const STRIKE_UNSEEN =
+  'The region has not shown this city the launch and the total war that go with that strike';
+
+export interface StrikeProblem {
+  why: string;
+  /** Not yet: the room keeps the strike and the page offers it again. Otherwise it is turned away for good. */
+  later: boolean;
+}
+
+export function strikeProblem(sim: Sim, n: Neighbour): StrikeProblem | null {
+  const slot = n.player?.slot;
+  if (slot === undefined) return { why: STRIKE_UNSEEN, later: true };
+  if (sim.state.war?.atom?.struck?.includes(slot)) return { why: STRIKE_STRUCK, later: false };
+  const atom = n.player!.atom;
+  if (!atom || atom.stage < atomStageNo('preparing')) return { why: STRIKE_UNSEEN, later: true };
+  if (warWith(sim, n.id)?.scale !== 'total') return { why: STRIKE_UNSEEN, later: true };
+  return null;
+}
+
+/** A refusal the page answers `later` to (the strike is kept by the room and offered again). */
+export const strikeLater = (reason: string | undefined): boolean =>
+  reason === BOMB_IN_AIR || reason === STRIKE_UNSEEN;
 
 /**
  * A bomb is on its way to this city (plan call 8). The senders are a Hard computer neighbour

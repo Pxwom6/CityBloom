@@ -331,7 +331,7 @@ export type Command =
    * cloud over the border (its cumulative air towards this city), a nuclear winter the region began
    * (by its id, applied once), and the region's word that this city finished the bomb first.
    */
-  | { type: 'friendFallout'; from: number; total: number }
+  | { type: 'friendFallout'; from: number; total: number; base?: number }
   | { type: 'friendWinter'; id: string }
   | { type: 'atomFirst' };
 

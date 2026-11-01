@@ -142,6 +142,8 @@ Code map: `docs/plans/M40-codemap.md`; reasons as made: DECISIONS "M40". Time: a
     `(total - seen) x 0.6` as **air** along the edge strip that faces that friend and sets `seen = total`. First sight of a
     sender sets `seen = total` and deposits nothing (a newcomer, or a friend away for the whole drift, is spared); a lower total
     sets `seen` down (the sender went back to a save). Idempotent and restart-safe. The receiver's own wind decides.
+    *(Step 10 review, DECISIONS: `seen` only rises, the page gives the first-sight baseline as `base`, and the receiver's
+    wind no longer decides.)*
 13. **Nuclear winter changes values, never draws.** `WeatherState.winters?: {id, from, depth}[]`. `winterDepth(w, tick)` per
     entry: rise 144 h, hold 576 h, fall 1,008 h (6 game years, 3.6 h of play); entries add, capped at 1.5; a later boom's depth
     is 0.5. Readers: `monthMean` (minus 18 C x depth, **before** the seasons-off early return, so a seasons-off city and a
@@ -191,11 +193,12 @@ Code map: `docs/plans/M40-codemap.md`; reasons as made: DECISIONS "M40". Time: a
     new (unless it struck first) or on protocol below 7 ("Ashford's game is older than this room"); `City.atom.used` (one per slot
     ever, in the record). Kept: the verdict stored for a resent id, the strike kept in the target's `ops`, `opOn` sent, the sender
     flagged pariah in `FriendsState` (pacts dropped by a public `dropPactsOf(slot)`, cooldown and shield skipped against it, new
-    pacts refused), a history line and an `atoms` mark. The target's page applies `opResolve` `op: 'atom'` once (`w.taken`) →
-    `atomInbound`; a strike that waited for a returning player starts a **fresh full countdown** when its sim takes it (no
+    pacts refused), a history line and an `atoms` mark. The target's page applies `opResolve` `op: 'atom'` once (`w.taken`, and one strike from a city, ever: `Atom.struck`; a
+    launch reported and a total war on the books, or kept for later) → `atomInbound`; a strike that waited for a returning player starts a **fresh full countdown** when its sim takes it (no
     real-time deadline: each city stays the authority over itself). Its sim decides dome and damage; its report carries the
     verdict and the room's mark, notice and winter follow. The attacker's sim marks `fired` on `opKept` and returns the bomb to
-    prepared after `SETTLE_TIMEOUT_HOURS` with no answer (the tower's rule).
+    prepared after `FIGHT_TIMEOUT_HOURS` with no answer, but never once the page has put it to the room (the tower's rule,
+    less its hole: Step 10 review).
 18. **Spies: a target of its own.** `SabotageTarget` gains `'plant'` (the plant, else the silo while the bomb builds): the
     shared `spyOdds`/`spyOutcome`, $45,000, 16 h. On success: a plant or silo still building gets `build.clock += 120` war
     hours; an online one loses 120 hours of work (fuel or bomb) and is closed 12 h. Sites: `relay/region.ts`

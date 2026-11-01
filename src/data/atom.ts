@@ -322,8 +322,9 @@ export const FALLOUT = {
    * middle strike's whole cloud (356) lies about 0.28 thick across the strip and crosses the map in
    * a few game days, leaving at most a couple of hundredths on the ground (the probe in the step's
    * summary): a haze, as a computer neighbour's stream is, that is seen on the radiation map and felt
-   * a little by those under it, and never closes ground. Only while the city's own wind blows from
-   * that friend's side.
+   * a little by those under it, and never closes ground. Whatever the city's own wind: the cloud has
+   * crossed the border, and the two cities' winds are their own (a gate on both would let most pairs
+   * of cities never share one).
    */
   friend: { share: 0.6, rows: 2, spread: 3, cell: 0.4, step: 700 },
   /**

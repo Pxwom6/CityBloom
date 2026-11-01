@@ -1641,7 +1641,7 @@ export class Sim {
       case 'friendPacts':
         return friendPacts(this, cmd, dryRun);
       case 'friendFallout':
-        return friendFallout(this, cmd.from, cmd.total, dryRun);
+        return friendFallout(this, cmd.from, cmd.total, cmd.base, dryRun);
       case 'friendWinter':
         return friendWinter(this, cmd.id, dryRun);
       case 'atomFirst':

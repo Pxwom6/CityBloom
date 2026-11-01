@@ -44,18 +44,27 @@ describe('the cross-browser determinism script', () => {
   });
 
   // The same for the bomb among friends (M40 step 10), at the end of the friends section: every browser is
-  // asked about a strike put to the region and turned away and kept, a cloud that is deposited where the
-  // wind comes from and waits where it does not, and a bomb from the friend that starts its flight here.
-  it("the friends' entries hold the bomb among friends: a strike kept, a cloud taken in and left waiting, a bomb coming", () => {
+  // asked about a strike put to the region and turned away and kept, a cloud that is deposited from the
+  // page's baseline whatever way the wind blows (and added to only past what was taken in), and a bomb from
+  // the friend that starts its flight here once: not before its launch is reported, not twice from one city.
+  it("the friends' entries hold the bomb among friends: a strike kept, a cloud taken in, a bomb coming", () => {
     const friends = run().friends;
     const all = friends.join('\n');
     expect(all).toMatch(/"op":"atom"/);
     expect(all).toMatch(/"fired":\{"tick":\d+,"to":\d+,"name":"Brookside","slot":2\}/);
     expect(all).toMatch(/"deposited":[1-9]/);
-    expect(all).toMatch(/"deposited":0,"waiting":true/);
+    // The cloud is never "waiting" for a wind, and a lower total sets nothing down: `seen` ends at the highest total.
+    expect(all).not.toMatch(/"waiting":true/);
+    expect(all).toMatch(/\{"2":97\.75\}/);
     expect(all).toMatch(/"inbound":\{"from":\d+,"name":"Brookside","slot":2/);
     expect(all).toMatch(/"id":"2-1","from":\d+,"depth":1/);
-    expect(run().refused).toContain('opResolve: A bomb is already on its way to the city');
+    const refused = run().refused;
+    expect(refused).toContain('opResolve: A bomb is already on its way to the city');
+    // Not taken until the friend's launch is reported, and a second bomb from one city is no bomb that city has.
+    expect(refused).toContain(
+      'opResolve: The region has not shown this city the launch and the total war that go with that strike',
+    );
+    expect(refused).toContain('opResolve: That city has fired its one atom bomb at this one already');
   });
 
   // What the browsers are asked to agree on has to be in the entries: a section that went green while the

@@ -15,7 +15,7 @@ import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
 import { Battle } from '../../src/sim/battle/battle';
 import { recordInput } from '../../src/sim/battle/live';
 import { UNIT } from '../../src/data/war';
-import { ATOM } from '../../src/data/atom';
+import { ATOM, atomStageNo } from '../../src/data/atom';
 import { atomOf } from '../../src/sim/systems/atom';
 import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
 import { runAtomSection } from './atomSection';
@@ -543,10 +543,12 @@ export function runDeterminism(
   // on. A city with no bomb is refused the first finisher's word; with a bomb held (a fact set by hand, as the
   // atom section sets its ground zero) it takes it, once. A launch prepared at the friend is put to the
   // region, turned away, put again and kept: the bomb has left, and the world turns on the city. The friend's
-  // winters are applied once by their ids. Its cloud arrives as a cumulative total on each side in turn
-  // (this town's own wind blows from some of them and not from others): the first sight takes nothing, new
-  // cloud is deposited where the wind comes from and waits where it does not, the same total twice adds
-  // once, and a lower one sets it down. And a strike from the friend starts a bomb's flight here once.
+  // winters are applied once by their ids. Its cloud arrives as a cumulative total on each side in turn: the
+  // page's baseline (the cloud it first saw, none here) decides where it starts, new cloud is deposited
+  // whatever way the town's own wind blows, the same total twice adds once, and a lower one adds nothing
+  // (what was taken in is a high-water mark). And a strike from the friend starts a bomb's flight here once,
+  // only with the friend's launch reported and a total war on the books, never a second from the same city,
+  // and not while another friend's bomb is in the air.
   const bomb = (cmd: Command) => {
     const r = lab(cmd);
     friends.push(JSON.stringify(r.ok ? [r.cost, r.info ?? null] : r.reason), labSim.hash());
@@ -577,38 +579,59 @@ export function runDeterminism(
   let total = 4;
   for (const side of ['north', 'south', 'west'] as const) {
     mate.side = side;
-    bomb({ type: 'friendFallout', from: 2, total });
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
     total += 31.25;
-    bomb({ type: 'friendFallout', from: 2, total });
-    bomb({ type: 'friendFallout', from: 2, total });
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
   }
   bomb({ type: 'friendFallout', from: 2, total: 1 });
-  bomb({ type: 'friendFallout', from: 3, total: 9 });
+  bomb({ type: 'friendFallout', from: 3, total: 9, base: 9 });
   friends.push(JSON.stringify(labSim.state.fallout?.seen ?? null));
-  bomb({
+  const strike = (from: number, id: string, late = false): Command => ({
     type: 'opResolve',
-    from: 2,
-    id: 'ao-00000000-9002',
+    from,
+    id,
     op: 'atom',
     outcome: 'success',
-    late: false,
+    late,
   });
-  bomb({
-    type: 'opResolve',
-    from: 2,
-    id: 'ao-00000000-9002',
-    op: 'atom',
-    outcome: 'success',
-    late: false,
+  // A strike with no launch reported by the friend (its stage is the silo's) is not taken yet: kept for later.
+  bomb(strike(2, 'ao-00000000-9001'));
+  // The friend's launch is reported, and a total war with it is on the books (facts set by hand, as the region tells them).
+  mate.player!.atom = { stage: atomStageNo('preparing') };
+  // A second friend, in the same case, for a bomb while the first is in the air.
+  lab({
+    type: 'regionUpdate',
+    update: {
+      cities: [
+        {
+          slot: 3,
+          name: 'Eastbrook',
+          mayor: 'Ed',
+          color: 2,
+          population: 3_000,
+          kind: 'suburb',
+          offers: { buy: { ...none }, sell: { ...none } },
+          workers: 0,
+          jobs: 0,
+          shoppers: 0,
+          online: true,
+          raid: 'open',
+          atom: { stage: atomStageNo('preparing') },
+        },
+      ],
+      contracts: [],
+      project: null,
+      rules: { war: true, scale: 'skirmish', supers: true },
+    },
   });
-  bomb({
-    type: 'opResolve',
-    from: 2,
-    id: 'ao-00000000-9003',
-    op: 'atom',
-    outcome: 'success',
-    late: true,
-  });
+  fr({ ...fwar, room: 9, slot: 3, state: 'open', score: 0, battles: 0 });
+  fr({ ...fwar, room: 10, slot: 2, state: 'open', score: 0, battles: 0 });
+  bomb(strike(2, 'ao-00000000-9002'));
+  bomb(strike(2, 'ao-00000000-9002'));
+  // The same city's second, with an id of its own, is no bomb it has; another city's waits for the first.
+  bomb(strike(2, 'ao-00000000-9003', true));
+  bomb(strike(3, 'ao-00000000-9004'));
   labSim.advance(TICKS_PER_HOUR);
   friends.push(JSON.stringify(labSim.state.war!.atom ?? null), labSim.hash());
 

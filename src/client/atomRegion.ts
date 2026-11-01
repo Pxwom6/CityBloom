@@ -99,6 +99,12 @@ export class AtomRegion implements AtomSink {
   /** Winters handed to the sim already (it applies each id once anyway), and each friend's cloud as last handed over. */
   private applied = new Set<string>();
   private cloud = new Map<number, number>();
+  /**
+   * Each friend's cloud as this page first saw it (0 when the friend had none for this city): the
+   * sim's baseline for it. A page that was here from the start sees the first trickle as new; one that
+   * arrives, or returns, when the cloud has begun is spared what it never saw.
+   */
+  private base = new Map<number, number>();
   /** Words in order: each is handled after the one before it. */
   private chain: Promise<void> = Promise.resolve();
   /** The city's own race stage as of the last frame, when the region was last asked for a report, and one is waiting for the gap. */
@@ -122,6 +128,7 @@ export class AtomRegion implements AtomSink {
     this.first = false;
     this.applied.clear();
     this.cloud.clear();
+    this.base.clear();
     this.stage = -1;
     this.asked = -Infinity;
     this.waiting = false;
@@ -180,17 +187,20 @@ export class AtomRegion implements AtomSink {
   /**
    * The region's news was taken into the city (called by the link after the city's `regionUpdate`): each
    * friend's cloud over the border towards this city goes to the sim as its cumulative total, whenever
-   * it is not what was last handed over. The sim keeps what it has taken in and deposits only what is new.
+   * it is not what was last handed over, with the total this page first saw of it (nothing, when the
+   * friend had no cloud for this city yet). The sim keeps what it has taken in and deposits only what is
+   * new, so a total heard again, a reload, or a friend that went back to an older save adds nothing.
    */
   async update(update: RegionUpdate): Promise<void> {
     for (const c of update.cities) {
-      const total = c.atom?.plume;
-      if (total === undefined || this.cloud.get(c.slot) === total) continue;
+      const total = c.atom?.plume ?? 0;
+      if (!this.base.has(c.slot)) this.base.set(c.slot, total);
+      if (total <= 0 || this.cloud.get(c.slot) === total) continue;
+      const base = this.base.get(c.slot)!;
       this.then(async () => {
-        const r = await this.host.command({ type: 'friendFallout', from: c.slot, total });
-        // (A cloud that waits at the border for the wind is handed over again with the next news, until
-        // the sim has taken it in; one it has taken in, or turned away in words, is not.)
-        if (!(r.ok && r.info?.waiting)) this.cloud.set(c.slot, total);
+        // (A refusal in words is final; a failure of the call is tried again with the next news.)
+        await this.host.command({ type: 'friendFallout', from: c.slot, total, base });
+        this.cloud.set(c.slot, total);
       });
     }
     await this.chain;

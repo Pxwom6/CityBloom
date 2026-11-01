@@ -164,6 +164,8 @@ function checkAtom(sim: Sim): void {
   if (a.fired && (a.have || a.prep)) throw new InvariantError('atom bomb fired and still held');
   if (a.fired && !(Number.isFinite(a.fired.tick) && Number.isFinite(a.fired.to) && a.fired.name))
     throw new InvariantError('atom flight without a target');
+  if (a.struck && !a.struck.every((slot) => Number.isInteger(slot) && slot >= 1))
+    throw new InvariantError('atom struck by a city that is no place');
   const hit = a.inbound;
   if (hit && ![hit.warn, hit.arrive, hit.x, hit.z].every(Number.isFinite))
     throw new InvariantError('atom flight without a landing');

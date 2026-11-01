@@ -43,7 +43,16 @@ import {
   TARGET_NAME,
   type Mission,
 } from './intel';
-import { atomInbound, BOMB_IN_AIR, plantSabotageText, sabotagePlant, strikeResult, strikeSend } from './atom';
+import {
+  atomInbound,
+  atomOf,
+  BOMB_IN_AIR,
+  plantSabotageText,
+  sabotagePlant,
+  strikeProblem,
+  strikeResult,
+  strikeSend,
+} from './atom';
 import { BATTLE_TAKEN_KEEP, damageCivic } from './raids';
 import type { Neighbour } from './region';
 import { bankPoints, tierCounts } from './research';
@@ -563,8 +572,15 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
   if (!n) return fail('That came from a city this one doesn’t know');
   const key = `${o.from}:op:${o.id}`;
   if (w.taken?.includes(key)) return fail(OP_TAKEN);
-  // A bomb in the air holds the next one back: not taken, so the page offers it again.
-  if (o.op === 'atom' && w.atom?.inbound) return fail(BOMB_IN_AIR);
+  if (o.op === 'atom') {
+    // Only a strike this city's own books can match with a bomb and a war (one a city, ever; a launch
+    // reported; a total war): the rest is turned away or, if it may just be news not heard yet, kept.
+    const bad = strikeProblem(sim, n);
+    if (bad && !bad.later) return fail(bad.why);
+    // A bomb in the air holds the next one back: not taken, so the page offers it again.
+    if (w.atom?.inbound) return fail(BOMB_IN_AIR);
+    if (bad) return fail(bad.why);
+  }
   if (dryRun) return ok(0);
   w.taken = [...(w.taken ?? []), key].slice(-BATTLE_TAKEN_KEEP);
   sim.warChanged();
@@ -573,7 +589,8 @@ export function opResolve(sim: Sim, o: OpInput, dryRun: boolean): CommandResult 
     // An atom bomb from a friend (M40, call 17): the region kept the strike, and this city's own sim
     // takes it with a full countdown from now (one that waited for the player's return starts when
     // it is taken), chooses ground zero and decides whether the dome stops it.
-    atomInbound(sim, { id: n.id, name: n.name, slot: o.from });
+    if (atomInbound(sim, { id: n.id, name: n.name, slot: o.from }) === null)
+      (atomOf(sim).struck ??= []).push(o.from);
     intelResult(sim, n.id, `${n.name} has fired the atom bomb at the city`, 'bad');
     return ok(0);
   }

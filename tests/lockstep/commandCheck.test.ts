@@ -187,7 +187,7 @@ const SAMPLES: Record<CommandType, Command> = {
   // M40 step 4: clearing fallout.
   cleanFallout: { type: 'cleanFallout', x: 640, z: 700 },
   // M40 step 10: the atom bomb among friends (page only).
-  friendFallout: { type: 'friendFallout', from: 2, total: 120.5 },
+  friendFallout: { type: 'friendFallout', from: 2, total: 120.5, base: 40 },
   friendWinter: { type: 'friendWinter', id: '2-1' },
   atomFirst: { type: 'atomFirst' },
 };

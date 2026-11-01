@@ -7,8 +7,11 @@ import { Sim } from '../../src/sim/sim';
 import { atomHour, atomStage, atomOf, atomSummary } from '../../src/sim/systems/atom';
 import { FIGHT_TIMEOUT_HOURS, SETTLE_TIMEOUT_HOURS } from '../../src/data/battle';
 import { fightingWith, isPariah, reputationOf } from '../../src/sim/systems/diplomacy';
-import { falloutOf } from '../../src/sim/systems/fallout';
+import { falloutOf, updateFallout } from '../../src/sim/systems/fallout';
 import { friendDeclareProblem, friendsSummary } from '../../src/sim/systems/friendsWar';
+import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
+import { resolveOp } from '../../src/client/ops';
+import { STRIKE_STRUCK, STRIKE_UNSEEN } from '../../src/sim/systems/atom';
 import { windAngle } from '../../src/sim/systems/pollution';
 import { winterDepth } from '../../src/sim/systems/weather';
 import { GRID_RES } from '../../src/data/world';
@@ -362,7 +365,7 @@ describe('M40 step 10: a strike the room turns away', () => {
     expect(isPariah(ada.sim)).toBe(false);
   });
 
-  it('is called back to the silo when the room never answers (the tower’s rule), and sent again', async () => {
+  it('is called back to the silo when the page never got to put it to the room (the tower’s rule), and sent again', async () => {
     const w = await openAtomWorld(saves, { atomPrep: 60_000 });
     const { ada, sam } = w;
     await totalWar(w, ada, sam);
@@ -378,12 +381,7 @@ describe('M40 step 10: a strike the room turns away', () => {
     war.clock = send.at + FIGHT_TIMEOUT_HOURS - 1;
     atomHour(ada.sim);
     expect(a.prep!.send).toBeDefined();
-    // Pinned (the page has put it to the room), it is waited for longer.
-    send.settling = true;
-    war.clock = send.at + SETTLE_TIMEOUT_HOURS - 1;
-    atomHour(ada.sim);
-    expect(a.prep!.send).toBeDefined();
-    war.clock = send.at + SETTLE_TIMEOUT_HOURS;
+    war.clock = send.at + FIGHT_TIMEOUT_HOURS;
     atomHour(ada.sim);
     expect(a.prep!.send).toBeUndefined();
     expect(a.prep!.refused).toMatch(/gave no answer/);
@@ -397,6 +395,105 @@ describe('M40 step 10: a strike the room turns away', () => {
     expect(a.prep!.send).toBeDefined();
     expect(a.prep!.send!.op).not.toBe(send.op);
     expect(a.prep!.refused).toBeUndefined();
+  });
+
+  it('is never called back once the page has put it to the room: the room may have kept it, and its late word settles it', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { ada, sam } = w;
+    const S = sam.link.slot;
+    await totalWar(w, ada, sam);
+    await ready(w, ada, sam);
+    const a = atomOf(ada.sim);
+    const send = a.prep!.send!;
+    // The page puts the strike to the room, which keeps it (Samford has a bomb coming) -- and the answer
+    // is lost on the way: the page never hears, and the sim has it pinned, still waiting.
+    const key = friendOpsWaiting(ada.sim).find((o) => o.op === 'atom')!.key;
+    ok(ada.sim, { type: 'spySettling', mission: send.op, on: true });
+    const kept = await ada.link.sendOp({ to: S, id: key, op: 'atom' }, 5_000);
+    expect(kept).toMatchObject({ kept: true });
+    await settle(8);
+    expect(sam.strikes).toBe(1);
+    // A very long time of the city's own hours goes by with no word (the link was down for ninety minutes of play).
+    const war = ada.sim.state.war!;
+    war.clock = send.at + SETTLE_TIMEOUT_HOURS * 3;
+    atomHour(ada.sim);
+    expect(a.prep!.send).toMatchObject({ op: send.op, settling: true });
+    expect(a.prep!.refused).toBeUndefined();
+    expect(atomStage(ada.sim)).toBe('preparing');
+    // Still not to be called off or sent again meanwhile: the room may have it.
+    expect(ada.sim.dispatch({ type: 'cancelLaunch' })).toMatchObject({ ok: false });
+    // The link is back: the page asks again with the same key, the room says the same, and the bomb has gone.
+    await look(ada);
+    expect(a.fired).toMatchObject({ slot: S, name: 'Samford' });
+    expect(a.have).toBeUndefined();
+    expect(a.prep).toBeUndefined();
+    expect(isPariah(ada.sim)).toBe(true);
+    expect(sam.strikes).toBe(1);
+  });
+});
+
+describe('M40 step 10 review: a strike the city can match with a bomb and a war', () => {
+  const strike = (from: number, id: string) => ({
+    from,
+    id,
+    op: 'atom' as const,
+    outcome: 'success' as const,
+    late: false,
+  });
+  /** The strike as the page hands it to the sim, and the answer it gives the room. */
+  const take = (p: AtomPage, o: ReturnType<typeof strike>) =>
+    resolveOp({ command: async (cmd) => p.sim.dispatch(cmd) }, o);
+
+  it('is not taken from a city with no total war and no launch behind it, but is kept for when they have', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { ada, sam } = w;
+    const A = ada.link.slot;
+    // A strike nobody made (a host that forges one): no war, no bomb. Not taken, nothing changes, and the
+    // page keeps it offered (it may be news not heard yet).
+    const before = sam.sim.hash();
+    expect(sam.sim.dispatch({ type: 'opResolve', ...strike(A, 'ao-1') })).toMatchObject({
+      ok: false,
+      reason: STRIKE_UNSEEN,
+    });
+    expect(await take(sam, strike(A, 'ao-1'))).toBe('later');
+    expect(sam.sim.hash()).toBe(before);
+    // A total war is on, but Adaville has reported no launch: still not.
+    await totalWar(w, ada, sam);
+    expect(await take(sam, strike(A, 'ao-1'))).toBe('later');
+    expect(sam.sim.state.war!.atom?.inbound).toBeUndefined();
+    // Her launch is reported to the region, and Samford has been told: the same strike is taken.
+    prepare(ada, sam);
+    await look(ada);
+    expect(stageOf(sam, ada)).toBe(atomStageNo('preparing'));
+    expect(await take(sam, strike(A, 'ao-1'))).toBe('taken');
+    expect(atomOf(sam.sim).inbound).toMatchObject({ name: 'Adaville', slot: A });
+    expect(atomOf(sam.sim).struck).toEqual([A]);
+  });
+
+  it('is turned away for good when that city has struck before, whatever became of the first bomb', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { ada, sam } = w;
+    const A = ada.link.slot;
+    chargeDome(sam.sim);
+    await totalWar(w, ada, sam);
+    prepare(ada, sam);
+    await look(ada);
+    expect(await take(sam, strike(A, 'ao-1'))).toBe('taken');
+    // While the first is in the air, a second from the same city is not "kept for later": it is no bomb that city has.
+    expect(sam.sim.dispatch({ type: 'opResolve', ...strike(A, 'ao-2') })).toMatchObject({
+      ok: false,
+      reason: STRIKE_STRUCK,
+    });
+    // The dome stops the first; a forged third, with an id of its own, is still turned away, and nothing flies.
+    sam.sim.advance(ATOM.flight.hours * H + 2 * H);
+    expect(atomOf(sam.sim)).toMatchObject({ stopped: 1 });
+    expect(atomOf(sam.sim).inbound).toBeUndefined();
+    const hash = sam.sim.hash();
+    expect(await take(sam, strike(A, 'ao-3'))).toBe('refused');
+    expect(await take(sam, strike(A, 'ao-4'))).toBe('refused');
+    expect(sam.sim.hash()).toBe(hash);
+    expect(atomOf(sam.sim).inbound).toBeUndefined();
+    expect(atomOf(sam.sim).struck).toEqual([A]);
   });
 });
 
@@ -510,22 +607,21 @@ describe('M40 step 10: a friend’s cloud', () => {
     await settle(8);
   }
 
-  it('is seen by the one it drifts towards, takes nothing the first time, and then only what is new', async () => {
+  it('is taken in from the first trickle by a city that was here as it began, and then only what is new', async () => {
     const w = await openAtomWorld(saves, { atomPrep: 60_000 });
     const { sam, cal } = w;
     const S = sam.link.slot;
-    // The wind blows into Calbury from the side Samford stands on.
-    friendOf(cal, S).side = sides(cal).from;
+    // (Calbury saw Samford with no cloud for it when the region opened, so its first trickle is new.)
     await cloud(w, 12);
     expect(friendOf(cal, S).player!.atom!.plume).toBe(12);
-    // A friend seen for the first time: its total is taken as known, and nothing is deposited.
     expect(falloutOf(cal.sim).seen[S]).toBe(12);
-    expect(airIn(cal)).toBe(0);
+    const first = airIn(cal);
+    expect(first).toBeGreaterThan(0);
     // More comes: the new part is deposited as air on the edge facing Samford, and the total is taken.
     await cloud(w, 40);
     expect(falloutOf(cal.sim).seen[S]).toBe(40);
     const put = airIn(cal);
-    expect(put).toBeGreaterThan(0);
+    expect(put).toBeGreaterThan(first);
     const side = friendOf(cal, S).side;
     const R = GRID_RES;
     const f = cal.sim.state.fallout!;
@@ -547,31 +643,141 @@ describe('M40 step 10: a friend’s cloud', () => {
     expect(Math.max(...f.air)).toBeLessThanOrEqual(FALLOUT.friend.cell + 1e-6);
   });
 
-  it('waits at the border while the city’s own wind blows away from that side, and comes in when it turns', async () => {
+  it('spares a city that was away for the whole drift: what it never saw is taken as known, and only what is new after it is deposited', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { sam, cal } = w;
+    const S = sam.link.slot;
+    // Calbury's player is away while the cloud comes; it returns to find 12 of it over the border.
+    await cal.link.leave();
+    await settle();
+    await cloud(w, 12);
+    const back = await returnPage(w, cal, 'Cal', 2);
+    await settle(12);
+    expect(friendOf(back, S).player!.atom!.plume).toBe(12);
+    expect(falloutOf(back.sim).seen[S]).toBe(12);
+    expect(airIn(back)).toBe(0);
+    await cloud(w, 40);
+    expect(falloutOf(back.sim).seen[S]).toBe(40);
+    expect(airIn(back)).toBeGreaterThan(0);
+  });
+
+  it('comes in whatever way the city’s own wind blows: the cloud has crossed the border, and two cities’ winds are their own', async () => {
     const w = await openAtomWorld(saves, { atomPrep: 60_000 });
     const { sam, cal } = w;
     const S = sam.link.slot;
     await cloud(w, 12);
-    expect(falloutOf(cal.sim).seen[S]).toBe(12);
-    // Calbury's wind blows away from Samford's side: more cloud has come, and none is deposited.
-    friendOf(cal, S).side = sides(cal).notFrom;
-    await cloud(w, 90);
-    expect(falloutOf(cal.sim).seen[S]).toBe(12);
-    expect(airIn(cal)).toBe(0);
-    await tick3(w);
-    expect(airIn(cal)).toBe(0);
-    // The wind comes round (here, the side is the one it blows from): the next news takes in all that waited.
-    friendOf(cal, S).side = sides(cal).from;
-    await tick3(w);
-    expect(falloutOf(cal.sim).seen[S]).toBe(90);
-    expect(airIn(cal)).toBeGreaterThan(0);
+    // Calbury's wind blows from Samford's side, then (the side being the one it blows away from) not.
+    let total = 12;
+    for (const side of [sides(cal).from, sides(cal).notFrom]) {
+      friendOf(cal, S).side = side;
+      const before = airIn(cal);
+      total += 80;
+      await cloud(w, total);
+      expect(falloutOf(cal.sim).seen[S], side).toBe(total);
+      expect(airIn(cal), `the cloud came in on the ${side} side`).toBeGreaterThan(before);
+    }
+  });
+
+  it('is not sent back and forth: what the wind carries back out of the city is no more than came in', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { sam, cal } = w;
+    const S = sam.link.slot;
+    await cloud(w, 12);
+    // Calbury's wind blows away from Samford: the air put on the edge facing it is carried straight out again.
+    const side = sides(cal).notFrom;
+    friendOf(cal, S).side = side;
+    await cloud(w, 356);
+    const f = falloutOf(cal.sim);
+    const put = airIn(cal);
+    const out0 = f.out[side];
+    expect(put).toBeGreaterThan(0);
+    for (let k = 0; k < 40; k++) updateFallout(cal.sim);
+    const sent = f.out[side] - out0;
+    expect(sent).toBeGreaterThan(0);
+    expect(sent).toBeLessThanOrEqual(put + 1e-6);
+    // Samford would take 0.6 of that, and send back less than the part it sent: each trip is smaller.
+    expect(sent * FALLOUT.friend.share).toBeLessThan(356 - 12);
+  });
+
+  it('adds nothing for a total it has had before, however it is told: lowering it and raising it again makes no new cloud', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { sam, cal } = w;
+    const S = sam.link.slot;
+    await cloud(w, 500);
+    expect(falloutOf(cal.sim).seen[S]).toBe(500);
+    const put = airIn(cal);
+    expect(put).toBeGreaterThan(0);
+    // A sender that goes back to an older save, or lies: low, high, low, high.
+    for (let k = 0; k < 6; k++) {
+      await cloud(w, 1);
+      expect(falloutOf(cal.sim).seen[S]).toBe(500);
+      await cloud(w, 500);
+    }
+    expect(falloutOf(cal.sim).seen[S]).toBe(500);
+    expect(airIn(cal)).toBeCloseTo(put, 5);
+    // And a cloud that regrows to more than it ever was adds only the part past it.
+    await cloud(w, ATOM_WIRE.plumePerBomb);
+    expect(falloutOf(cal.sim).seen[S]).toBe(ATOM_WIRE.plumePerBomb);
+    expect(airIn(cal)).toBeGreaterThan(put);
+    expect(airIn(cal) - put).toBeLessThan(put);
+  });
+
+  it('has its baseline from the page: a total it first saw is known, the cloud it saw begin is new, and nothing else is a baseline', async () => {
+    const w = await openAtomWorld(saves, { atomPrep: 60_000 });
+    const { sam, cal } = w;
+    const S = sam.link.slot;
+    const fresh = () => {
+      const sim = Sim.fromSave(JSON.parse(JSON.stringify(cal.sim.save())));
+      sim.testMode = true;
+      return sim;
+    };
+    const air = (sim: Sim) => [...(sim.state.fallout?.air ?? [])].reduce((a, b) => a + b, 0);
+    // Seen from nothing (base 0): all of it is new.
+    const a = fresh();
+    expect(a.dispatch({ type: 'friendFallout', from: S, total: 40, base: 0 })).toMatchObject({ ok: true });
+    expect(a.state.fallout!.seen[S]).toBe(40);
+    expect(air(a)).toBeGreaterThan(0);
+    // Seen at 40 when it began to count (a newcomer): nothing is new, and the baseline is kept.
+    const b = fresh();
+    expect(b.dispatch({ type: 'friendFallout', from: S, total: 40, base: 40 })).toMatchObject({
+      ok: true,
+      info: { deposited: 0 },
+    });
+    expect(b.state.fallout!.seen[S]).toBe(40);
+    expect(air(b)).toBe(0);
+    // A baseline above what is told now (the sender went back to a save): the baseline stands.
+    const c = fresh();
+    expect(c.dispatch({ type: 'friendFallout', from: S, total: 10, base: 40 })).toMatchObject({ ok: true });
+    expect(c.state.fallout!.seen[S]).toBe(40);
+    expect(air(c)).toBe(0);
+    // With no baseline the first total is taken as known (the old rule), and a baseline of nothing sets nothing.
+    const d = fresh();
+    expect(d.dispatch({ type: 'friendFallout', from: S, total: 40 })).toMatchObject({ ok: true });
+    expect(d.state.fallout!.seen[S]).toBe(40);
+    expect(air(d)).toBe(0);
+    const e = fresh();
+    expect(e.dispatch({ type: 'friendFallout', from: S, total: 0, base: 0 })).toMatchObject({ ok: true });
+    expect(e.state.fallout).toBeUndefined();
+    // Once the sim has taken a cloud in, the baseline is not read again.
+    expect(a.dispatch({ type: 'friendFallout', from: S, total: 60, base: 60 })).toMatchObject({ ok: true });
+    expect(a.state.fallout!.seen[S]).toBe(60);
+    expect(air(a)).toBeGreaterThan(0);
+    // A preview changes nothing, and a baseline that is not a cloud is refused.
+    const g = fresh();
+    const before = g.hash();
+    expect(g.preview({ type: 'friendFallout', from: S, total: 40, base: 0 })).toMatchObject({ ok: true });
+    expect(g.hash()).toBe(before);
+    for (const base of [-1, Number.NaN, Number.POSITIVE_INFINITY, ATOM_WIRE.plumeMax + 1, '3' as never])
+      expect(g.dispatch({ type: 'friendFallout', from: S, total: 40, base }), String(base)).toMatchObject({
+        ok: false,
+      });
+    expect(g.hash()).toBe(before);
   });
 
   it('is applied once by a city that reloaded, and a page that missed the news takes it all in one bounded step', async () => {
     const w = await openAtomWorld(saves, { atomPrep: 60_000 });
     const { sam, cal } = w;
     const S = sam.link.slot;
-    friendOf(cal, S).side = sides(cal).from;
     await cloud(w, 12);
     await cloud(w, 40);
     const put = airIn(cal);
@@ -594,12 +800,15 @@ describe('M40 step 10: a friend’s cloud', () => {
     expect(most).toBeGreaterThan(0);
     expect(most).toBeLessThanOrEqual(FALLOUT.friend.cell + 1e-6);
     expect(f.seen[S]).toBe(ATOM_WIRE.plumeMax);
-    // The sender went back to an earlier save: a lower total sets what was seen down, and deposits nothing.
+    // The sender went back to an earlier save: a lower total changes nothing (what was taken in is a high-water
+    // mark), so its cloud grown again adds nothing until it is past what was already had.
     const lower = again.hash();
-    expect(again.dispatch({ type: 'friendFallout', from: S, total: 5 })).toMatchObject({ ok: true });
-    expect(again.state.fallout!.seen[S]).toBe(5);
-    expect(again.hash()).not.toBe(lower);
-    expect(Float32Array.from(again.state.fallout!.air)).toEqual(Float32Array.from(f.air));
+    expect(again.dispatch({ type: 'friendFallout', from: S, total: 5 })).toMatchObject({
+      ok: true,
+      info: { deposited: 0 },
+    });
+    expect(again.state.fallout!.seen[S]).toBe(ATOM_WIRE.plumeMax);
+    expect(again.hash()).toBe(lower);
   });
 
   it('is not taken from a city that is not a friend, or in numbers that are not a cloud', () => {

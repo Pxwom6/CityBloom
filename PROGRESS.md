@@ -289,8 +289,14 @@ neighbour; the strike on a friend riding `op: 'atom'` with the room's own 20-min
 refusal in words; the firer flagged pariah among friends: pacts dropped, none new, declarations on it
 with no cooldown or shield; a modified client can't push fallout, winters or marks onto others beyond
 what the room can account for), `relay/tests/regionAtom.test.ts`, `tests/war/atomRegion.test.ts`; the
-free plan's rows with a race in four cities 63 an hour. Next: step 10, the pages. Not yet run for steps
-1-9: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
+free plan's rows with a race in four cities 63 an hour. Step 10 is done (ab360f3, 698a58d): the pages' half
+(`src/client/atomRegion.ts`: the page-only `friendFallout` (a friend's cloud in at the edge facing it,
+a high-water mark so repeats add nothing), `friendWinter` and `atomFirst` (the `firstBomb`
+achievement); the strike between friends end to end: sent through the ops road, fired only when the
+room keeps it, the target's own sim taking it once with a fresh countdown and checking it against its
+own books; race notices logged, the bomb's lines as red alerts), `tests/war/atomFriends.test.ts` (three
+cities in a real room), `tests/war/atomNotices.test.ts`; Chromium agrees with Node. Next: step 11, the
+UI and effects. Not yet run for steps 1-10: e2e, builds, balance, bench (run at step 13). Full unit suite after step 4:
 1,642 tests in 163 files pass.
 
 M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
@@ -345,8 +351,8 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 
 ## Next tasks
 1. M40 The final race: the atom bomb (SPEC-5.md), by the steps of `docs/plans/M40-design.md`; steps 0
-   to 9 are done. Next: step 10, the pages (`friendFallout`, `friendWinter`, `atomFirst`, the strike
-   between friends); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
+   to 10 are done. Next: step 11, the UI and effects (the Bomb tab, the countdown, the missile, the
+   flash and the cloud, the radiation map's look, the winter's look, sounds, tips); then pages; UI and effects; e2e; wrap-up. Layout specs that count the Military subbar's buttons may
    need a look at the first e2e run (it gains the two buildings wherever the bomb is allowed).
 2. When every milestone is done (SPEC-5.md): the summary at the top of PROGRESS, SPEC_REVIEW's phase
    5 and the README; a war with a computer neighbour and one between two players through the real

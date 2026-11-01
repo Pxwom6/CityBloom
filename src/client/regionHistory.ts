@@ -28,6 +28,9 @@ const KINDS: readonly WarEventKind[] = [
   'hold',
   'broken',
   'ended',
+  // M40 (protocol 7): a city's race for the atom bomb, and the bomb itself.
+  'race',
+  'bomb',
 ];
 
 const OUTCOMES: readonly BattleOutcome[] = ['raided', 'repelled', 'withdrew'];
@@ -91,8 +94,8 @@ export function mergeHistory(
 
 // ---- Kinds ---------------------------------------------------------------------------------
 
-/** What the list can be narrowed to (a player thinks in these, not in the room's eleven kinds). */
-export type HistoryGroup = 'battles' | 'declarations' | 'treaties' | 'conquests' | 'broken';
+/** What the list can be narrowed to (a player thinks in these, not in the room's thirteen kinds). */
+export type HistoryGroup = 'battles' | 'declarations' | 'treaties' | 'conquests' | 'broken' | 'atom';
 
 export const HISTORY_GROUPS: readonly { id: HistoryGroup; name: string; kinds: readonly WarEventKind[] }[] = [
   { id: 'battles', name: 'Battles', kinds: ['battle'] },
@@ -100,6 +103,7 @@ export const HISTORY_GROUPS: readonly { id: HistoryGroup; name: string; kinds: r
   { id: 'treaties', name: 'Treaties', kinds: ['treaty', 'ceasefire', 'ended'] },
   { id: 'conquests', name: 'Conquests', kinds: ['capitulated', 'hold', 'vassal', 'freed'] },
   { id: 'broken', name: 'Broken pacts', kinds: ['broken'] },
+  { id: 'atom', name: 'Atom bomb', kinds: ['race', 'bomb'] },
 ];
 
 export function groupOf(kind: WarEventKind): HistoryGroup {

@@ -31,6 +31,7 @@ import {
 } from '../src/data/diplomacy';
 import type { RegionWarRules } from '../src/data/war';
 import {
+  ATOM_PROTOCOL,
   FRIENDS,
   PACT_NAMES,
   BINDING_PACTS,
@@ -63,6 +64,12 @@ export interface FriendsState {
   ended: Record<string, number>;
   /** Proposals answered lately (their ids), so one sent again isn't signed twice. */
   done: string[];
+  /**
+   * Cities that fired the atom bomb (M40, plan calls 14 and 17), by place, with the ms the region
+   * learnt of it: for good. Their pacts of friendship ended, no new one is signed with them, and a war
+   * can be declared on them at once, with no cooldown and no newcomer's shield.
+   */
+  pariahs?: Record<number, number>;
 }
 
 /** Where the state lives: the region's record. */
@@ -99,6 +106,8 @@ export interface FwOut {
   to: number[] | 'all';
   except?: number[];
   msg: FriendsRoomMsg;
+  /** Only to pages that speak at least this protocol (M40: the bomb's history lines are for protocol 7). */
+  minV?: number;
 }
 
 /** Pacts that stand in the way of a war or a raid (a ceasefire, and M36's `BINDING`). */
@@ -118,6 +127,10 @@ export const FRIEND_TERM_KINDS: readonly string[] = [
   'vassal',
 ];
 const SCALE_RANK: Record<FriendScale, number> = { skirmish: 0, war: 1, total: 2 };
+/** The pacts of friendship a city that fired the atom bomb loses and cannot make again (M40; the sim's `FRIENDSHIP`). */
+const FRIENDSHIP: readonly PactKind[] = ['nonAggression', 'alliance', 'defensivePact'];
+/** The history lines only a page that speaks the atom bomb's protocol is sent. */
+const ATOM_KINDS: readonly WarEventKind[] = ['race', 'bomb'];
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -246,7 +259,11 @@ export class FriendsWar {
     const ev: WarEvent = { id: (log.at(-1)?.id ?? 0) + 1, at: this.now, kind, a, b, text, ...extra };
     log.push(ev);
     if (log.length > FRIENDS.history) log.splice(0, log.length - FRIENDS.history);
-    this.tellAll({ t: 'history', event: ev });
+    this.out.push({
+      to: 'all',
+      msg: { t: 'history', event: ev },
+      ...(ATOM_KINDS.includes(kind) ? { minV: ATOM_PROTOCOL } : {}),
+    });
     this.lazy();
     return ev;
   }
@@ -301,8 +318,10 @@ export class FriendsWar {
     if (!F.reported || !T.reported)
       return { why: `${F.reported ? T.name : F.name} isn’t in the region’s war yet` };
     if (F.shield === 'neutral') return { why: `${F.name} is neutral: a neutral city doesn’t go to war` };
-    if (T.shield === 'neutral') return { why: `${T.name} is neutral` };
-    if (T.shield === 'new' && !this.cx.struck(from, m.to))
+    // A city that fired the atom bomb has no shield (M40, call 14): not a newcomer's, and it can't be neutral.
+    const pariah = this.isPariah(m.to);
+    if (T.shield === 'neutral' && !pariah) return { why: `${T.name} is neutral` };
+    if (T.shield === 'new' && !pariah && !this.cx.struck(from, m.to))
       return { why: `${T.name} is too young or small to go to war with, unless it strikes first` };
     if (this.warOf(from, m.to)) return { why: `${F.name} is at war with ${T.name} already` };
     // A vassal goes to war only to rise against its overlord, and its overlord doesn't declare on it.
@@ -311,7 +330,7 @@ export class FriendsWar {
       return { why: 'A vassal can’t go to war, except to rise against its overlord' };
     if (this.vassalOf(m.to)?.overlord === from) return { why: `${T.name} is your vassal` };
     const ended = this.host.friends?.ended[pairKey(from, m.to)];
-    if (ended !== undefined && this.now - ended < FRIENDS.cooldown)
+    if (!pariah && ended !== undefined && this.now - ended < FRIENDS.cooldown)
       return {
         why: `The last war with ${T.name} ended too recently (${timeWords(ended + FRIENDS.cooldown - this.now)} to wait)`,
       };
@@ -382,6 +401,11 @@ export class FriendsWar {
       return `${F.proto < 6 ? F.name : T.name}’s page is an older version, which can’t sign treaties with friends`;
     if (!terms.length) return 'A treaty needs terms';
     if (terms.length > FRIENDS.maxTerms) return `A treaty has ${FRIENDS.maxTerms} terms at most`;
+    // No pact of friendship with a city that fired the atom bomb (M40, call 14): peace and ceasefires stay open.
+    if (terms.some((t) => FRIENDSHIP.includes(t.k as PactKind))) {
+      const bad = this.isPariah(from) ? F : this.isPariah(to) ? T : null;
+      if (bad) return `${bad.name} fired the atom bomb: no one signs a pact of friendship with it`;
+    }
     const kinds = terms.map((t) => t.k);
     for (const k of FRIEND_TERM_KINDS)
       if (kinds.filter((x) => x === k).length > 1) return `${termName(k as FriendTerm['k'])} is listed twice`;
@@ -1008,6 +1032,70 @@ export class FriendsWar {
     this.settle();
   }
 
+  // ---- The atom bomb (M40) -----------------------------------------------------------------
+
+  /** A line of the region's history the room writes itself (the bomb's: kinds `race` and `bomb`). */
+  note(kind: WarEventKind, a: number, b: number, text: string): WarEvent {
+    return this.event(kind, a, b, text);
+  }
+
+  /** Has this city fired the atom bomb (the region flags it for good)? */
+  isPariah(slot: number): boolean {
+    return this.host.friends?.pariahs?.[slot] !== undefined;
+  }
+
+  /**
+   * The city fired the atom bomb (M40, call 17): flagged for good, its pacts of friendship ended and the
+   * proposals waiting for one turned back. True the first time (a city is flagged once).
+   */
+  markPariah(slot: number): boolean {
+    if (this.isPariah(slot)) return false;
+    const st = this.st;
+    (st.pariahs ??= {})[slot] = this.now;
+    this.dropPactsOf(slot);
+    const A = this.name(slot);
+    for (const p of [...st.proposals])
+      if ((p.from === slot || p.to === slot) && p.terms.some((t) => FRIENDSHIP.includes(t.k as PactKind))) {
+        st.proposals = st.proposals.filter((x) => x !== p);
+        st.done = [...st.done, p.id].slice(-FRIENDS.done);
+        this.tell([p.from], {
+          t: 'trefused',
+          id: p.id,
+          why: `${A} fired the atom bomb: no one signs a pact of friendship with it`,
+        });
+      }
+    this.mark();
+    return true;
+  }
+
+  /** The pacts of friendship a city holds end, each with a line of history; true if any did. */
+  dropPactsOf(slot: number): boolean {
+    const gone = (this.host.friends?.pacts ?? []).filter(
+      (p) => (p.a === slot || p.b === slot) && FRIENDSHIP.includes(p.kind),
+    );
+    for (const p of gone) {
+      this.dropPact(p);
+      const other = p.a === slot ? p.b : p.a;
+      this.event(
+        'broken',
+        slot,
+        other,
+        `The ${PACT_NAMES[p.kind]} between ${this.name(slot)} and ${this.name(other)} ends: ${this.name(slot)} fired the atom bomb`,
+      );
+    }
+    if (gone.length) {
+      this.mark();
+      this.settle();
+    }
+    return gone.length > 0;
+  }
+
+  /** Is a total war open between these two now (the atom bomb may be aimed across it)? */
+  totalWarOpen(p: number, q: number): boolean {
+    const w = this.warOf(p, q);
+    return !!w && w.scale === 'total' && w.state === 'open' && this.now >= w.opens;
+  }
+
   // ---- What the room asks ------------------------------------------------------------------
 
   /** Is a war open between these two now (raids between them aren't held back by the newcomer shield)? */
@@ -1049,7 +1137,7 @@ export class FriendsWar {
   }
 
   /** What a city is told when it joins, and the messages that follow (proposals to answer, treaties to apply). */
-  welcome(slot: number): { info: FriendsWelcome; after: FriendsRoomMsg[] } {
+  welcome(slot: number, proto: number = ATOM_PROTOCOL): { info: FriendsWelcome; after: FriendsRoomMsg[] } {
     const st = this.host.friends ?? emptyFriends();
     const after: FriendsRoomMsg[] = [];
     for (const p of st.proposals)
@@ -1083,7 +1171,10 @@ export class FriendsWar {
         proposals: st.proposals
           .filter((p) => p.from === slot)
           .map((p) => ({ ...p, terms: p.terms.map((t) => ({ ...t })) })),
-        history: (this.host.history ?? []).map((e) => ({ ...e })),
+        // (The bomb's lines are for a page that speaks protocol 7.)
+        history: (this.host.history ?? [])
+          .filter((e) => proto >= ATOM_PROTOCOL || !ATOM_KINDS.includes(e.kind))
+          .map((e) => ({ ...e })),
       },
       after,
     };

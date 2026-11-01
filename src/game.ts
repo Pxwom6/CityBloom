@@ -692,6 +692,8 @@ export class Game {
   private async takeOp(o: OpOn): Promise<BattleAnswer> {
     if (this.readOnly) return 'later';
     if (!this.region?.view?.cities.some((c) => c.slot === o.from)) return 'refused';
+    // The atom bomb's strike (M40 step 10 gives the city's sim a way to take it): until then it waits in the region.
+    if (o.op === 'atom') return 'later';
     const r = await this.client.command({
       type: 'opResolve',
       from: o.from,

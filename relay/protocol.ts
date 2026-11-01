@@ -25,13 +25,20 @@ import type { Term } from '../src/data/diplomacy';
  * `battleResult` and the room's `war`, `tsign`, `pacts`, `history` (see `FriendsClientMsg`). A region
  * accepts protocol 5 pages as well (`MIN_REGION_PROTOCOL`): they never get a live or a friends'
  * message, a live battle against one falls back to the old way and a war against one is refused.
+ * 7: the atom bomb (M40, design calls 16 and 17): a race in the report (`RegionReport.atom`), which the
+ * region announces with `race` and `bomb` history lines and keeps in `RegionMeta.atoms`; the nuclear
+ * winter's reach (`winters`) and the first finisher (`atomFirst`); fallout between friends (the
+ * report's plume); and a strike on a friend (`op: 'atom'`). A page on 5 or 6 can neither race nor be
+ * struck, and every refusal says so; it is sent none of the new events, lists or messages.
  * A room (a shared city) is stricter: every player runs the same sim.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 /** The oldest page a region still serves (no live battles for it). */
 export const MIN_REGION_PROTOCOL = 5;
 /** The first protocol with live battles. */
 export const LIVE_PROTOCOL = 6;
+/** The first protocol with the atom bomb (M40): races, strikes, winters and fallout between friends. */
+export const ATOM_PROTOCOL = 7;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -849,7 +856,10 @@ export type WarEventKind =
   | 'freed'
   | 'hold'
   | 'broken'
-  | 'ended';
+  | 'ended'
+  /** M40 (protocol 7 only): a city's race for the atom bomb, stage by stage, and the bomb itself. */
+  | 'race'
+  | 'bomb';
 
 /** One line of the region's war history (design call 10). An event with an id seen again replaces the first. */
 export interface WarEvent {

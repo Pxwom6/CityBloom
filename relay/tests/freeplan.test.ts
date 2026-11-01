@@ -772,6 +772,63 @@ describe('F8: a region keeps within the free plan', () => {
     ]);
   });
 
+  it('an hour of four cities racing for the atom bomb (M40) writes about a hundred rows too, and its lists stay small', () => {
+    // The race rides the report (a stage a few minutes, the fuel with every report), the room announces
+    // each step, keeps its marks and winters for good and flags a firer: all of it written at the cities'
+    // pace, never a row a report. One city fires near the end and a bomb falls on another.
+    const clock = new FakeClock();
+    const store = new MemoryRegionStore();
+    const region = new RegionRoom('9HQATM', 'local', store, clock);
+    const names = ['Ada', 'Sam', 'Kit', 'Lee'];
+    const cities = names.map((mayor, i) => {
+      const c = rawRegion(region);
+      c.say(
+        rhello(
+          mayor,
+          i
+            ? {}
+            : { create: { name: 'Vale', rules: { war: true, scale: 'total', supers: true, bomb: true } } },
+        ),
+      );
+      return c;
+    });
+    const before = store.rowsWritten;
+    let power = 0;
+    const say = (c: RawRegion, i: number, s: number, atom?: Record<string, unknown>) => {
+      const m = report(++power, 1000 + s + i, `${names[i]}ton`);
+      if (atom) (m.report as Record<string, unknown>).atom = atom;
+      c.say(m);
+    };
+    for (let s = 0; s < 3600; s += 30)
+      cities.forEach((c, i) => {
+        clock.advance(30_000 / cities.length);
+        // A step every nine minutes, the cities a little apart; fuel climbs with every report.
+        const stage = Math.min(6, Math.floor((s + 120 * i) / 540));
+        const late = s >= 3300;
+        const atom: Record<string, unknown> | undefined =
+          i === 0 && late
+            ? { stage: 8, fired: true }
+            : i === 1 && late
+              ? { stage: 6, boom: 1, hit: 1 }
+              : stage
+                ? { stage, ...(stage <= 4 ? { fuel: Math.min(100, Math.floor(s / 30)) } : {}) }
+                : undefined;
+        say(c, i, s, atom);
+        if (s % 300 === 0) c.say({ t: 'save', id: `${i}-${s}`, part: 0, parts: 1, data: 'SAVE' });
+      });
+    const rows = store.rowsWritten - before;
+    console.log(`[F8] an hour of four cities racing for the atom bomb: ${rows} rows written`);
+    expect(rows).toBeLessThanOrEqual(130);
+    for (const c of cities) expect(c.closed).toBeNull();
+    // The record has what the pages were told: the marks and the winter, small.
+    for (const c of cities) region.closed(c.conn);
+    const meta = store.meta!;
+    expect(meta.atoms!.map((m) => m.kind)).toContain('fired');
+    expect(meta.winters!.map((w) => w.id)).toEqual(['2-1']);
+    expect(JSON.stringify(meta.atoms).length).toBeLessThan(2048);
+    expect(JSON.stringify(meta.winters).length).toBeLessThan(2048);
+  });
+
   it('stops storing at its daily row budget', () => {
     const clock = new FakeClock();
     const store = new MemoryRegionStore();

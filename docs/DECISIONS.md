@@ -2122,3 +2122,110 @@ these are its calls and the reasons, with where they overturned the first draft.
   - Tests: `determinism.test.ts` (the markers in the entries) and `atomSection.test.ts` (the section stops,
     saying what, when no fire catches, when the cap is the game's 400, and when no saboteur is ever caught;
     the throttles are the game's again after a stop). All four fail against the section as first written.
+- **Step 9 (room and protocol 7): calls the plan left open.** The pages' half (the sink's consumer,
+  `friendFallout`, `friendWinter`, `atomFirst`, the strike's `opResolve` and its sending) is step 10; what
+  is here is the room's messages and fields, final, and the seams.
+  - *Protocol.* `PROTOCOL_VERSION` 7 and `ATOM_PROTOCOL` 7; `MIN_REGION_PROTOCOL` stays 5, a shared city
+    still needs the same version as always (a page on 6 is locked out of co-op rooms, as every sim change
+    since M34 did). A page on 5 or 6 is sent none of the bomb's notices, history lines, lists or messages
+    (the history in its welcome leaves the `race` and `bomb` lines out too: `FwOut.minV`, and
+    `FriendsWar.welcome(slot, proto)`), its report's `atom` is dropped if it sends one, and it is refused
+    in words, with the connection kept, a strike *or* a `plant` sabotage aimed at it ("Samton’s game is
+    older than this room: it can neither race for the atom bomb nor be struck by it") and a strike from it.
+  - *The wire, `AtomReport` (src/data/atom.ts, shared by the sim and the room).* `{stage 0..8, fuel?,
+    fired?, boom?, hit?, stopped?, plume?}`. Two changes to the plan's `stage 1..8, fuel?, fired?, boom?,
+    stopped?, plume?`: **stage 0 is allowed** (a city that never raced but has been struck, had its dome
+    stop a bomb or sent a cloud over a border still has to say so; the room reads 0 as no race) and
+    **`hit` is added**, the bombs that landed *in* this city. `boom` is what the winter needs: every bomb of
+    this city's that landed anywhere, `Atom.boom` plus 1 once its own bomb has landed on a computer
+    neighbour (the sim's own winter `self:0` is the marker, so a flight at a neighbour that has gone, and the
+    test cheat's "spent", count nothing); `hit` is `Atom.boom` alone and is what the *mark* needs (a bomb
+    that fell on a city is a different moment from the city's own bomb landing elsewhere, and the winter
+    cares for neither). `fuel` is the percent of a full load while the bomb is still to come (stage 4 or
+    less), so a finished bomb carries no bar; `plume` is `Fallout.out` of the side each friend stands on
+    (`{slot, total}`, at most four, rounded to a thousandth); `fired` is redundant with stage 7 and 8 and
+    kept because the room's flag should not hang on a number.
+  - *A malformed race is dropped, never a reason to close.* `cleanAtomReport` rebuilds the field by field
+    and answers null for any wrong part (a stage outside 0..8, a count over 99, a fifth plume entry, two
+    entries for one slot, a total over 1e7, `fired: false`); `cleanReport` then keeps the rest of the
+    report. A city's page cuts a friend's plume to *its own* entry before the sim sees it (`atomFor`, in
+    `regionUpdateFor`; `RegionAtom.plume` is a number), so one friend's totals never reach another's sim.
+  - *What is announced, and when.* Stages are read against `City.atom.seen`, **forward only**; a lower
+    stage lowers `seen` (re-arms), and the same step is announced again after a drop. Stages 1 to 6 give
+    the plan's six texts as a `notice` and a `race` history line (`raceLine`). **Stage 7 is the `fired`
+    event, not a stage line of its own** (one `bomb` line, "X has fired the atom bomb", shared with the
+    strike on a friend so the same bomb is never announced twice) and stage 8 says nothing new: the plan's
+    test line "one notice and one history line per forward step from 1 to 8" is therefore six and one.
+    A city gives at most `REGION_LIMITS.atomPerDay` (8) announcements of all kinds in a UTC day (a
+    flapping report cannot fill the history's ring of 100); the marks, flags and winters are not
+    announcements and are not capped by it. **Notices go to the pages that speak protocol 7 only** (and not
+    to a visitor reading a city), not to every connection as other notices do: a page on 6 has no bomb to
+    make sense of "has begun enriching fuel". The plan's "a red alert to every city" at stage 5 is that
+    notice (the page's alert is step 10/11's).
+  - *The first report of a city is a baseline for the counts.* `boom`, `hit` and `stopped` seen on a
+    city's first report ever are taken as already known: bombs from before it joined are not news and
+    chill no one. Every later rise is news; **a count never falls in the room's eyes** (a city back on an
+    older save does not announce its bomb twice), unlike the stage.
+  - *The record, `RegionMeta.atoms`.* At most 16 marks (`ATOM_MARKS`), oldest first, outside the ring.
+    `ready` once per city; **the first `ready` the room sees has `first: true`** (a jump from stage 2 to 6
+    counts as ready; arrival order breaks a tie), and a full list drops the oldest mark that is not it.
+    `fired` (with `to` for a strike on a friend), `boom` (a rise in `hit`) and `stopped` (a rise in
+    `stopped`). Sent as `rwelcome.atoms` and, whole, as `{t:'atoms', atoms}` when it grows. The first
+    finisher's page is sent `{t:'atomFirst', at}` when the mark is made and again on every hello of that
+    city (idempotent for the sim); a page that was away finds `first` in its welcome list too.
+  - *The winters, `RegionMeta.winters`.* A rise in `boom` makes `{id: "<slot>-<n>", at, slots}` for each
+    new count (n is the count reached; three a report at most), `slots` = every *other* city of the region
+    at that moment, offline and on an older page included ("a returning slot keeps its place"; a city that
+    joins later is not in it). An id is made once however often the count is reported again, and **a city
+    can start eight at most** (`ATOM_WINTERS_PER_CITY`), so a lying report cannot flush the others': with
+    four cities the list is at most 32 entries, 1.5 KB. A page is sent only the entries naming it, in its
+    welcome (`winters`) and whole as `{t:'winters', winters}` when one begins (pages on 7 only); it applies
+    each id once (`startWinter`'s own idempotence), a late one on its return.
+  - *The plume reaches each friend as its own total* (`PlayerNeighbour.atom.plume`), cumulative; step 4's
+    review note stands for step 10 (`friendFallout` deposits only when the receiver's own wind blows from
+    that friend's side, the difference from `seen`).
+  - *The strike, `op: 'atom'`.* In `REGION_OPS`/`RegionOp` (the room's), **not** in the sim's `FRIEND_OPS`
+    (step 10 adds it with `opResolve`, `checkOpInput`, `opKey`, `friendOpsWaiting`, `spySettling` and
+    `missionResult`; until then `Game.takeOp` answers `later` to one, so the region keeps it for the
+    page that can take it, and a stub in `regionSpies.test.ts` does the same). Refusals, in the order the
+    room asks, each in words: the rules turn the bomb off; the sender's own page older than 7; the bomb
+    used already (`City.atom.used`, for good, or a report past stage 6); no launch prepared (the last
+    report is below stage 6); **the room has not itself seen the launch prepared for `atomPrep` (20 real
+    minutes; a test shrinks it)** from the first report at stage 6 or more without a drop below, so a
+    report cannot skip the wait; no *total* war *open* between the two (`FriendsWar.totalWarOpen`: a
+    declared war, a ceasefire, a capitulation or a smaller scale is none), then `raidBlock` (a vassal's
+    duty, a binding pact); the sender neutral; the target's player not here ("the bomb waits"); the target
+    neutral; the target a newcomer that has not struck the sender in the last day (the same rule as a
+    saboteur's, *without* the war's warning exception raids have: the plan's "new unless it struck first");
+    the target's page older than 7; the target already holding eight operations. When kept: the verdict is
+    stored for a resent id (outcome `success`, as the blackout's), the strike waits in the target's `ops`
+    until `opSeen` and `opOn` goes to its pages on 7 only (a page on 6 returning later is not sent it,
+    the strike waits for one that speaks it), it counts as no spy, saboteur or superweapon in the target's
+    day, the target may answer (`raidedBy`), and the sender is `used`, marked `fired` (with `to`), flagged
+    pariah and announced ("X has fired the atom bomb at Y", uncapped: it can happen once), all written at
+    once.
+  - *The pariah among friends, `FriendsState.pariahs`.* Set by a kept strike or by a report that says
+    `fired` or is past stage 6 (a launch at a computer neighbour: the room cannot see the target, and a
+    lying report only harms its own city). `markPariah` ends the city's pacts of friendship (the sim's
+    `FRIENDSHIP`: non-aggression, alliance, defensive pact; ceasefires, embargoes and trade stand, as in
+    the sim), turns back the proposals waiting for one and writes a `broken` line for each pact;
+    `declareRefusal` skips the neutral shield, the newcomer's shield and the cooldown for a declaration
+    *on* it (its own declarations keep every rule), and `termsProblem` refuses a pact of friendship with it
+    from either side, in words, in proposals, answers and imposed terms alike. The pages' sims learn of it
+    from the report (`PlayerNeighbour.atom.fired`) and the `pacts` message; the page's own pre-check
+    (`friendDeclareProblem`, which reads `raid: 'new'`) must skip the same shields for a friend that
+    fired: step 10.
+  - *Seams for step 10.* `RegionLink.atom: AtomSink` takes the room's `atoms`, `winters`, `atomFirst` and
+    the lists in the welcome (`welcome({atoms, winters})`), with nothing behind it yet; the sim has no
+    consumer of `RegionAtomMark`/`RegionWinter` (their types are the room's).
+  - *Free plan.* Four cities racing for an hour (a step every nine minutes, the fuel in every report, one
+    city firing and a bomb falling on another near the end) write 63 rows against 58 for the same hour
+    without a race: marks, flags and winters are written at the cities' pace, the stage notices ride the
+    slower one. Lists: `atoms` 16 marks of a 40-character name is under 2 KB, `winters` for four cities
+    1.5 KB.
+  - *Tests.* `relay/tests/regionAtom.test.ts` (32: the wire, the announcements, the record, the winters,
+    the strike's refusals and keeping, the pariah, the plant gate; each rule was taken out in turn and a
+    test failed), `tests/war/atomRegion.test.ts` (11: the sim's report from facts and from a real town's
+    stages, what a city takes in, a race through the real link and room), the free-plan hour in
+    `freeplan.test.ts`, and the history model accepts the two new kinds (`regionHistory.ts`: a group "Atom
+    bomb" beside the others).

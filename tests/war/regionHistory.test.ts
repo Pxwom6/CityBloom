@@ -179,6 +179,8 @@ describe('kinds', () => {
         'freed',
         'hold',
         'opened',
+        'bomb',
+        'race',
         'treaty',
         'vassal',
       ].sort(),
@@ -187,6 +189,8 @@ describe('kinds', () => {
     expect(groupOf('treaty')).toBe('treaties');
     expect(groupOf('vassal')).toBe('conquests');
     expect(groupOf('broken')).toBe('broken');
+    expect(groupOf('race')).toBe('atom');
+    expect(groupOf('bomb')).toBe('atom');
   });
 });
 

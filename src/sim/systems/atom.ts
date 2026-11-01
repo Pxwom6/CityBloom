@@ -9,7 +9,7 @@
  * `WarState.atom` appears when first used, so every city that never races is exactly as before;
  * nothing here draws from a random stream.
  */
-import { ATOM, atomStageNo, spanWords, type AtomStage } from '../../data/atom';
+import { ATOM, atomStageNo, spanWords, type AtomReport, type AtomStage } from '../../data/atom';
 import { CIVIC } from '../../data/civic';
 import { requirementStatus } from '../../data/projects';
 import { TIER_KEYS } from '../../data/research';
@@ -167,6 +167,42 @@ export function atomStage(sim: Sim): AtomStage {
   const plant = civicOfDef(sim, 'enrichment');
   if (plant && !plant.build && (a?.fuel ?? 0) > 0) return 'enriching';
   return plant ? 'plant' : 'none';
+}
+
+/**
+ * What the city's report to its region says of the bomb (M40 step 9, plan call 16), or nothing when
+ * there is nothing to say: no war, no race, no bomb landed or stopped, no cloud over a border.
+ * `boom` counts every bomb of this city that has landed anywhere (the city struck, and its own bomb
+ * on a computer neighbour, which the winter's own `self:0` marks), so the winter reaches its friends
+ * either way; `hit` those that landed in this city. `plume` is the cumulative air carried across the
+ * border to each friend, `Fallout.out` of the side the friend stands on. A pure read.
+ */
+export function atomReportField(sim: Sim): AtomReport | undefined {
+  const s = sim.state;
+  const a = s.war?.atom;
+  if (!s.war) return undefined;
+  const stage = atomStageNo(atomStage(sim));
+  const hit = a?.boom ?? 0;
+  const boom = hit + (s.weather.winters?.some((w) => w.id === 'self:0') ? 1 : 0);
+  const stopped = a?.stopped ?? 0;
+  const out = s.fallout?.out;
+  const plume: { slot: number; total: number }[] = [];
+  if (out)
+    for (const n of s.region.neighbours)
+      if (n.player && out[n.side] > 0) plume.push({ slot: n.player.slot, total: out[n.side] });
+  plume.sort((x, y) => x.slot - y.slot);
+  if (!stage && !boom && !stopped && !plume.length) return undefined;
+  const fuel = Math.round(Math.min(1, (a?.fuel ?? 0) / ATOM.fuel.hours) * 100);
+  return {
+    stage,
+    // The fuel is shown while the bomb is still to come; a finished bomb needs no bar.
+    ...(fuel > 0 && stage <= atomStageNo('bomb') ? { fuel } : {}),
+    ...(a?.fired ? { fired: true as const } : {}),
+    ...(boom ? { boom } : {}),
+    ...(hit ? { hit } : {}),
+    ...(stopped ? { stopped } : {}),
+    ...(plume.length ? { plume: plume.slice(0, 4) } : {}),
+  };
 }
 
 /** Why the rules don't let the city race or use the bomb now, in plain words, or null when they do. */

@@ -79,7 +79,10 @@ async function friends() {
     cityName: () => sim.state.cityName,
     // As the game takes it (`Game.takeOp`): once, by the city's own sim.
     op: async (o) => {
-      const r = sim.dispatch({ type: 'opResolve', ...o });
+      // (The atom bomb's strike waits for the city's sim to take it: step 10.)
+      const { op, ...rest } = o;
+      if (op === 'atom') return 'later';
+      const r = sim.dispatch({ type: 'opResolve', ...rest, op });
       return r.ok || r.reason === 'The city has taken that operation already' ? 'taken' : 'refused';
     },
   });

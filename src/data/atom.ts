@@ -392,3 +392,145 @@ export function atomEventText(ref: string | number): string {
       return 'The atom bomb';
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// The race in the region (M40 step 9, plan calls 16 and 17): what a city's report says of it, what
+// the region room keeps, and the words it announces it in. The room (`relay/region.ts`) and the sim
+// (`regionReport`, `applyRegionUpdate`) share these so neither can read the report differently.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * What a city's report carries of its race, in a region. `stage` is `atomStageNo` (0 to 8; 0 only for
+ * a city with no race that has been struck or whose cloud has crossed a border), `fuel` the percent
+ * of a full load while the bomb is not yet finished, `fired` that its one bomb has left (a friend's
+ * strike the region kept, or one at a computer neighbour). `boom` counts every bomb of this city
+ * that has landed anywhere (the city struck, or its own bomb on a computer neighbour: the winter
+ * reaches the friends either way), `hit` those that landed in this city, `stopped` those its dome
+ * stopped. `plume` is what its air has carried over each border to a friend (the friend's place and
+ * the cumulative total, `Fallout.out` of the side that friend stands on).
+ */
+export interface AtomReport {
+  stage: number;
+  fuel?: number;
+  fired?: true;
+  boom?: number;
+  hit?: number;
+  stopped?: number;
+  plume?: { slot: number; total: number }[];
+}
+
+/**
+ * A friend's race as the region passes it to one city: the report's, with the plume cut to what
+ * comes this way (a number: the friend's cumulative total towards this city).
+ */
+export type RegionAtom = Omit<AtomReport, 'plume'> & { plume?: number };
+
+/** The wire's limits (the room's own are in `REGION_LIMITS`). */
+export const ATOM_WIRE = {
+  /** The most bombs a report may count of any kind: a bigger number is a report gone wrong. */
+  maxCount: 99,
+  /** The most plume entries (a city has three neighbours; the report keeps four). */
+  plume: 4,
+  /** A plume total is a thousandth-rounded cumulative amount of air, far below this. */
+  plumeMax: 1e7,
+};
+
+const whole = (v: unknown, lo: number, hi: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** The fields a report's race and a friend's view of it share, or null if one is wrong. */
+function cleanAtomCommon(o: Record<string, unknown>): Omit<AtomReport, 'plume'> | null {
+  if (!whole(o.stage, 0, ATOM_STAGES.length - 1)) return null;
+  const out: Omit<AtomReport, 'plume'> = { stage: o.stage };
+  if (o.fuel !== undefined) {
+    if (!whole(o.fuel, 0, 100)) return null;
+    out.fuel = o.fuel;
+  }
+  if (o.fired !== undefined) {
+    if (o.fired !== true) return null;
+    out.fired = true;
+  }
+  for (const k of ['boom', 'hit', 'stopped'] as const) {
+    if (o[k] === undefined) continue;
+    if (!whole(o[k], 0, ATOM_WIRE.maxCount)) return null;
+    out[k] = o[k];
+  }
+  return out;
+}
+
+/**
+ * A report's race as the room reads it, rebuilt field by field, or null if any part is wrong: the
+ * room then drops the race and keeps the report (a malformed race never closes a connection).
+ */
+export function cleanAtomReport(v: unknown): AtomReport | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const out = cleanAtomCommon(o);
+  if (!out) return null;
+  if (o.plume !== undefined) {
+    const p = o.plume;
+    if (!Array.isArray(p) || p.length > ATOM_WIRE.plume) return null;
+    const plume: { slot: number; total: number }[] = [];
+    for (const e of p as Record<string, unknown>[]) {
+      if (!e || typeof e !== 'object' || !whole(e.slot, 1, 64)) return null;
+      const total = e.total;
+      if (typeof total !== 'number' || !Number.isFinite(total) || total < 0 || total > ATOM_WIRE.plumeMax)
+        return null;
+      if (plume.some((x) => x.slot === e.slot)) return null;
+      plume.push({ slot: e.slot, total: round3(total) });
+    }
+    if (plume.length) (out as AtomReport).plume = plume;
+  }
+  return out;
+}
+
+/** A friend's race as a city's sim takes it in (`applyRegionUpdate`): the same checks, or null. */
+export function cleanRegionAtom(v: unknown): RegionAtom | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const out = cleanAtomCommon(o);
+  if (!out) return null;
+  if (o.plume !== undefined) {
+    const t = o.plume;
+    if (typeof t !== 'number' || !Number.isFinite(t) || t < 0 || t > ATOM_WIRE.plumeMax) return null;
+    (out as RegionAtom).plume = round3(t);
+  }
+  return out;
+}
+
+/** The notice and history line a city's stage gives the region (call 16), or null for a stage with none. */
+export function raceLine(stage: number, who: string): string | null {
+  switch (stage) {
+    case 1:
+      return `${who} has begun building an enrichment plant`;
+    case 2:
+      return `${who} has begun enriching fuel`;
+    case 3:
+      return `${who} has begun a silo`;
+    case 4:
+      return `${who} is building the bomb`;
+    case 5:
+      return `${who} has the atom bomb`;
+    case 6:
+      return `${who} is preparing a launch`;
+    default:
+      return null;
+  }
+}
+
+/** What the region says when a bomb has left, landed or been stopped (`at` is the other city, if known). */
+export function bombLine(kind: 'fired' | 'boom' | 'stopped', who: string, at?: string): string {
+  switch (kind) {
+    case 'fired':
+      return at ? `${who} has fired the atom bomb at ${at}` : `${who} has fired the atom bomb`;
+    case 'boom':
+      return `An atom bomb has fallen on ${who}`;
+    case 'stopped':
+      return `${who}’s dome has stopped an atom bomb`;
+  }
+}
+
+/** A mark in the region's permanent record of the bomb (`RegionMeta.atoms`, kept outside the 100-event ring). */
+export type AtomMarkKind = 'ready' | 'fired' | 'boom' | 'stopped';
+export const ATOM_MARK_KINDS: readonly AtomMarkKind[] = ['ready', 'fired', 'boom', 'stopped'];

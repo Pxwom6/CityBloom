@@ -12,15 +12,18 @@ import {
   FAIR,
   type LiveRecord,
   type OpOutcome,
+  type RegionAtomMark,
   type RegionClientMsg,
   type RegionOp,
   type RegionRoomMsg,
   type RegionView,
+  type RegionWinter,
 } from '../../relay/region';
 import type { Link } from './link';
 import type { RegionWarRules, UnitKind } from '../data/war';
 import type { SabotageTarget } from '../data/intel';
 import type { Branch, TierKey } from '../data/research';
+import type { AtomReport, RegionAtom } from '../data/atom';
 import { decodeBattle, decodeSnapshot, encodeBattle, encodeSnapshot } from './snapshot';
 import { inputOfRecord } from './liveRecord';
 import type { BattleInput } from '../sim/battle/types';
@@ -111,6 +114,17 @@ export type BattleSent =
   | { kept: false; reason: string; again: boolean; later?: number }
   | null;
 
+/**
+ * A city's race as it reaches the city in `slot` (M40, call 16): the report's, with the plume cut down
+ * to the entry for this city (`friendFallout` takes the cumulative total from it). The others'
+ * entries are not this city's business and are not passed on.
+ */
+export function atomFor(atom: AtomReport, slot: number): RegionAtom {
+  const { plume, ...rest } = atom;
+  const mine = plume?.find((p) => p.slot === slot);
+  return { ...rest, ...(mine ? { plume: mine.total } : {}) };
+}
+
 /** The region's news as this city's `regionUpdate` (pure: tested on its own). */
 export function regionUpdateFor(
   view: RegionView,
@@ -142,6 +156,8 @@ export function regionUpdateFor(
       ...(view.rules?.war && c.report!.counter !== undefined ? { counter: c.report!.counter } : {}),
       // War (M39): what this city says it pays this one as its vassal.
       ...(view.rules?.war && c.report!.dues?.slot === slot ? { dues: c.report!.dues.amount } : {}),
+      // The atom bomb (M40): its race, with the plume cut to what its air sends this way.
+      ...(view.rules?.war && c.report!.atom ? { atom: atomFor(c.report!.atom, slot) } : {}),
     })),
     // The others' deals with this city, from this city's side.
     contracts: others.flatMap((c) =>
@@ -186,6 +202,17 @@ export function fairCap(view: RegionView, slot: number): number | null {
 export interface LiveSink {
   message(m: RegionRoomMsg): void;
   welcome(): void;
+}
+
+/**
+ * What takes the region's word on the atom bomb (M40, `docs/plans/M40-design.md` calls 16 and 17;
+ * the page's half is step 10): the room's `atoms` (the permanent record, in full), `winters` (this
+ * city's, in full: each id is applied once, a late one on return) and `atomFirst` (this city finished
+ * the bomb before any other), and the lists and the mark in the welcome.
+ */
+export interface AtomSink {
+  message(m: RegionRoomMsg): void;
+  welcome(info: { atoms?: RegionAtomMark[]; winters?: RegionWinter[] }): void;
 }
 
 /**
@@ -252,6 +279,8 @@ export class RegionLink {
   live: LiveSink | null = null;
   /** Wars and treaties with friends (M39): who takes the room's messages about them. */
   friends: FriendsSink | null = null;
+  /** The atom bomb (M40): who takes the room's word on the race, the winters and the first finisher. */
+  atom: AtomSink | null = null;
   /** The region's replays (M39 step 7): sees every message first, and takes the records it asked for. */
   replays: { message(m: RegionRoomMsg): boolean } | null = null;
   /**
@@ -411,6 +440,10 @@ export class RegionLink {
             this.started = null;
             this.live?.welcome();
             this.friends?.welcome(m.friends);
+            this.atom?.welcome({
+              ...(m.atoms ? { atoms: m.atoms } : {}),
+              ...(m.winters ? { winters: m.winters } : {}),
+            });
           } finally {
             if (this.friendsHeld === held) {
               this.friendsHeld = null;
@@ -512,6 +545,11 @@ export class RegionLink {
       case 'history':
         if (this.friendsHeld) this.friendsHeld.push(m);
         else this.friends?.message(m);
+        return;
+      case 'atoms':
+      case 'winters':
+      case 'atomFirst':
+        this.atom?.message(m);
         return;
       case 'bcall':
       case 'bliveoff':

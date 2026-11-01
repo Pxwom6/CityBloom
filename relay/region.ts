@@ -32,9 +32,10 @@ import {
   type SabotageTarget,
   type SpyOp,
 } from '../src/data/intel';
-import { raceSlowWhy } from '../src/data/atom';
+import { bombLine, cleanAtomReport, raceLine, raceSlowWhy, type AtomMarkKind } from '../src/data/atom';
 import { BRANCHES, BRANCH_IDS, cleanTiers, type Branch, type TierKey } from '../src/data/research';
 import {
+  ATOM_PROTOCOL,
   FRIENDS,
   LIVE,
   LIVE_PROTOCOL,
@@ -60,7 +61,7 @@ import {
   type FriendsWelcome,
   type WarEvent,
 } from './protocol';
-import { FriendsWar, type FriendsState, type FwContext, type FwOut } from './friendsWar';
+import { FriendsWar, timeWords, type FriendsState, type FwContext, type FwOut } from './friendsWar';
 import { DAY_MS, DailyRows, TokenBucket, dailyLimitText, type RowBudget } from './limits';
 import {
   LiveSession,
@@ -88,6 +89,11 @@ const MAX_BATTLE_PARTS = 8;
 /** Operations kept for a city at most (M37), apart from its battles, and verdicts a sender's kept. */
 export const MAX_PENDING_OPS = 8;
 const VERDICTS_KEEP = 24;
+/** The atom bomb's record (M40): marks kept, and winters kept for each city (four cities: 32 at most, under 2 KB each list). */
+export const ATOM_MARKS = 16;
+export const ATOM_WINTERS_PER_CITY = 8;
+/** Winters one report may begin (a second bomb landing between two reports is a second winter; a third is a report gone wrong). */
+const WINTERS_PER_REPORT = 3;
 /**
  * The fair clock (M37, design call 15): a city's war clock may run at most this far ahead of the
  * hours the region has seen it play at 1× (a game hour is 7.5 s), and a report adds at most two
@@ -95,9 +101,12 @@ const VERDICTS_KEEP = 24;
  */
 export const FAIR = { msPerHour: 7_500, gapMax: 120_000, bank: 48 };
 
-/** What a friend's spy or the blackout tower does in another city of the region (M37). */
-export type RegionOp = SpyOp | 'blackout';
-export const REGION_OPS: readonly RegionOp[] = [...SPY_OPS, 'blackout'];
+/**
+ * What a friend's spy or the blackout tower does in another city of the region (M37), and (M40, protocol
+ * 7) the atom bomb: a strike the region keeps for the city it is aimed at, as it keeps the blackout.
+ */
+export type RegionOp = SpyOp | 'blackout' | 'atom';
+export const REGION_OPS: readonly RegionOp[] = [...SPY_OPS, 'blackout', 'atom'];
 export type OpOutcome = 'success' | 'failed' | 'caught';
 
 /** The region project: what it costs all told, and the power it gives its contributors (MW). */
@@ -264,8 +273,22 @@ export type RegionRoomMsg =
        * and `tprop` messages.
        */
       friends?: FriendsWelcome;
+      /**
+       * Protocol 7 (M40): the atom bomb's permanent record, and the winters this city is to have had
+       * (each id applied once by its page; a city away is told when it returns).
+       */
+      atoms?: RegionAtomMark[];
+      winters?: RegionWinter[];
     }
   | { t: 'region'; region: RegionView }
+  /**
+   * The atom bomb's record grew (M40, protocol 7): the whole list, replacing the page's. A winter
+   * began that chills this city: its whole list (each id applied once, a repeat changes nothing). The
+   * city finished the bomb before any other of the region (`atomFirst`; also said again on joining).
+   */
+  | { t: 'atoms'; atoms: RegionAtomMark[] }
+  | { t: 'winters'; winters: RegionWinter[] }
+  | { t: 'atomFirst'; at: number }
   | { t: 'citysave'; slot: number; part: number; parts: number; data: string }
   /**
    * A battle fought against this city (M35); `late`: kept while it was away and offered on its
@@ -457,6 +480,21 @@ interface City {
   liveOwed?: string[];
   /** The protocol its page last said (M39): a war with a friend needs two pages that speak it. */
   v?: number;
+  /** What the region keeps of its race apart from its latest report (M40, call 16). */
+  atom?: {
+    /** The highest stage announced; a stage below it (a silo lost) re-arms the announcement. */
+    seen: number;
+    /** When the room first saw it at stage 6 or more without a drop below (ms): the launch's preparation, on the room's clock. */
+    prep?: number;
+    /** The most bombs the room has counted of its landing anywhere, here, and stopped: only a rise is news. */
+    boom: number;
+    hit: number;
+    stopped: number;
+    /** It has used its one bomb (a strike the region kept, or a report that says so): for good. */
+    used?: true;
+    /** Announcements made on a UTC day. */
+    notes?: { day: number; n: number };
+  };
 }
 
 /** A finished live battle the region keeps (M39): who fought, how it ended, and where its record is. */
@@ -473,6 +511,31 @@ export interface LiveReplay {
   seq?: number;
   /** Its row (0 to `LIVE.replays` − 1; the region's, not a city's). */
   k: number;
+}
+
+/**
+ * A moment of the atom bomb the region keeps for good (M40, call 16), outside the history's ring of a
+ * hundred: a city has the bomb (`ready`; `first` for the first city of the region to), fired it (`to`
+ * the city it was aimed at, when the region knows), had one fall on it, or had its dome stop one.
+ */
+export interface RegionAtomMark {
+  slot: number;
+  name: string;
+  kind: AtomMarkKind;
+  at: number;
+  to?: number;
+  first?: true;
+}
+
+/**
+ * The nuclear winter's reach (M40, call 16): a bomb landed (`id` is the place of the city whose count of
+ * landed bombs rose and which of them it was), and these are the cities it chills: every other city of
+ * the region at the time (a city that joins later is spared). Each page applies each id once.
+ */
+export interface RegionWinter {
+  id: string;
+  at: number;
+  slots: number[];
 }
 
 export interface RegionMeta {
@@ -492,6 +555,10 @@ export interface RegionMeta {
   friends?: FriendsState;
   /** The last 100 war events, oldest first (M39, design call 10). */
   history?: WarEvent[];
+  /** The atom bomb's permanent record, at most `ATOM_MARKS`, oldest first (M40); the first finisher's mark is never dropped. */
+  atoms?: RegionAtomMark[];
+  /** The winters bombs have brought, kept for good (M40): at most `ATOM_WINTERS_PER_CITY` for each city. */
+  winters?: RegionWinter[];
   /** When the record was last saved (ms): the region expires a while after (F8). */
   lastActive?: number;
   /** Rows written today (F8). */
@@ -579,6 +646,13 @@ export interface RegionLimits {
   supersPerDay: number;
   opEvery: number;
   opBurst: number;
+  /**
+   * M40: how long the room must have seen a city at stage 6 (preparing a launch) before it keeps its
+   * strike on a friend (ms), and the announcements (notices and history lines) one city's race may give
+   * in a UTC day.
+   */
+  atomPrep: number;
+  atomPerDay: number;
   /** Rows the region may write in a UTC day. */
   dailyRows: number;
   /** How long a region nobody comes back to is kept (ms). */
@@ -607,6 +681,8 @@ export const REGION_LIMITS: RegionLimits = {
   supersPerDay: 1,
   opEvery: 2 * 60_000,
   opBurst: 3,
+  atomPrep: 20 * 60_000,
+  atomPerDay: 8,
   dailyRows: 3000,
   ttl: 60 * DAY_MS,
   maxConns: 16,
@@ -667,6 +743,8 @@ function cleanReport(r: unknown): RegionReport | null {
   if (o.counter !== undefined && !wholeIn(o.counter, 0, 1000)) return null;
   if (o.coast !== undefined && o.coast !== true) return null;
   if (o.clock !== undefined && !wholeIn(o.clock, 0, 1e9)) return null;
+  // The atom bomb (M40): rebuilt field by field, and dropped (the report kept) if any part is wrong.
+  const atom = o.atom === undefined ? null : cleanAtomReport(o.atom);
   // War (M39): a friend's vassal says whom it pays and how much a month.
   const dues = o.dues as Record<string, unknown> | undefined;
   if (
@@ -693,6 +771,7 @@ function cleanReport(r: unknown): RegionReport | null {
     ...(o.coast === true ? { coast: true as const } : {}),
     ...(o.clock !== undefined ? { clock: o.clock as number } : {}),
     ...(dues ? { dues: { slot: dues.slot as number, amount: Math.round(dues.amount as number) } } : {}),
+    ...(atom ? { atom } : {}),
   };
 }
 
@@ -1348,13 +1427,47 @@ export class RegionRoom {
   }
 
   /**
-   * Why the atom bomb's targets can't be aimed at this city, or null: its page speaks a protocol
-   * older than the bomb's (M40 step 7's seam; step 9 fills it in with protocol 7, when a page on 5
-   * or 6 can neither race nor be struck, and says "<city>’s game is older than this room"). Until
-   * then no report carries a race (`RegionReport.atom` is set by step 9's reader), so `opRefusal`
-   * has already turned every plant sabotage away before it asks.
+   * Why the atom bomb's works can't be struck at this city, or the bomb aimed at it, or null: its page
+   * speaks a protocol older than the bomb's (M40: a page on 5 or 6 can neither race nor be struck).
    */
-  private atomProtocolWhy(_target: City): string | null {
+  private atomProtocolWhy(target: City): string | null {
+    return this.protoOf(target) < ATOM_PROTOCOL
+      ? `${target.name}’s game is older than this room: it can neither race for the atom bomb nor be struck by it`
+      : null;
+  }
+
+  /**
+   * Why the atom bomb can't be launched from this city at that one now, or null (M40, call 17). The
+   * region's rules allow it; the sender's last report is a launch being prepared and the room has seen
+   * it so for `limits.atomPrep` (its own clock: a report can't skip the wait); it has not used its one
+   * bomb; a total war is open between the two; the target's player is here, the city isn't neutral or
+   * a newcomer that hasn't struck first, and its page speaks protocol 7.
+   */
+  private atomRefusal(from: City, target: City, now: number): string | null {
+    if (!this.meta?.rules?.bomb) return 'The region’s rules turn the atom bomb off';
+    const old = this.protoOf(from) < ATOM_PROTOCOL ? from : null;
+    if (old)
+      return `${from.name}’s game is older than this room: it can neither race for the atom bomb nor use it`;
+    const stage = from.report?.atom?.stage ?? 0;
+    if (from.atom?.used || stage > 6) return `${from.name} has used its atom bomb: there is only ever one`;
+    if (stage < 6) return `${from.name} has no launch prepared`;
+    const wait = (from.atom?.prep ?? now) + this.limits.atomPrep - now;
+    if (wait > 0)
+      return `${from.name}’s launch is still being prepared: the region waits ${timeWords(wait)} more`;
+    const fw = new FriendsWar(this.meta, this.fwContext());
+    if (!fw.totalWarOpen(from.slot, target.slot))
+      return `There is no total war open between ${from.name} and ${target.name}`;
+    const stop = fw.raidBlock(from.slot, target.slot);
+    if (stop) return stop;
+    if (from.report?.shield === 'neutral') return `${from.name} is neutral: it goes to no war`;
+    if (!this.online(target.slot)) return `${target.name}’s player is not here: the bomb waits`;
+    if (target.report?.shield === 'neutral') return `${target.name} is neutral`;
+    if (target.report?.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
+      return `${target.name} is too young or small for that, unless it strikes first`;
+    const old2 = this.atomProtocolWhy(target);
+    if (old2) return old2;
+    if ((target.ops?.length ?? 0) >= MAX_PENDING_OPS)
+      return `${target.name} has ${MAX_PENDING_OPS} operations waiting for its player: no more until it takes them`;
     return null;
   }
 
@@ -1401,17 +1514,19 @@ export class RegionRoom {
     if (!target || target.slot === from.slot) return 'That city isn’t in the region';
     if (m.op === 'blackout' && !rules.supers) return 'The region’s rules turn superweapons off';
     if (!from.report?.tiers || !target.report?.tiers) return `${target.name} isn’t in the region’s war yet`;
+    // The atom bomb (M40, call 17) has rules of its own, in its own words.
+    if (m.op === 'atom') return this.atomRefusal(from, target, now);
     if (m.op !== 'reveal' && from.report.shield === 'neutral')
       return `${from.name} is neutral: its spies only look`;
     if (m.op !== 'reveal' && target.report.shield === 'neutral')
       return `${target.name} is neutral: spies may only look there`;
-    // The atom bomb's works (M40) need a race to slow, as the target's report shows one; a city
-    // whose report shows none is turned away in words, and the connection stays.
+    // The atom bomb's works (M40) need a race to slow, as the target's report shows one, and a page
+    // that speaks the bomb; a city that fails either is turned away in words, and the connection stays.
     if (m.op === 'sabotage' && m.target === 'plant') {
-      const why = raceSlowWhy({ name: target.name, player: { atom: target.report.atom } });
-      if (why) return why;
       const old = this.atomProtocolWhy(target);
       if (old) return old;
+      const why = raceSlowWhy({ name: target.name, player: { atom: target.report.atom } });
+      if (why) return why;
     }
     const harm = m.op === 'sabotage' || m.op === 'blackout';
     if (harm && target.report.shield === 'new' && !this.raidedBy(from, now).includes(target.slot))
@@ -1520,6 +1635,10 @@ export class RegionRoom {
         const kept = () => JSON.stringify([city.report, city.thumb, city.fair?.hours]);
         const before = kept();
         const was = matters(city);
+        // The atom bomb (M40): a page that doesn't speak it has no race to report (and a city's first
+        // report has no counts of the past to be news).
+        if (st.v < ATOM_PROTOCOL) delete m.report.atom;
+        const firstReport = city.report === null;
         city.name = m.city;
         city.report = m.report;
         // The fair clock (M37): started at the city's war clock, then moved on at 1× for the time
@@ -1537,7 +1656,8 @@ export class RegionRoom {
         const built = m.report.projectBuilt && p.host === slot && !p.built;
         if (built) p.built = true;
         this.broadcast();
-        if (built || matters(city) !== was) this.changed(slot);
+        const atomKept = this.raceReport(city, firstReport, now);
+        if (built || atomKept || matters(city) !== was) this.changed(slot);
         else if (kept() !== before) {
           this.dirty = true;
           if (now - this.lastSaved >= this.limits.keepEvery) this.save();
@@ -1893,7 +2013,7 @@ export class RegionRoom {
     let friends: ReturnType<FriendsWar['welcome']> | null = null;
     if (m.v >= LIVE_PROTOCOL) {
       if (this.meta.friends) this.fwRun(city.slot, (fw) => fw.tick());
-      friends = new FriendsWar(this.meta, this.fwContext()).welcome(city.slot);
+      friends = new FriendsWar(this.meta, this.fwContext()).welcome(city.slot, m.v);
     }
     conn.send({
       t: 'rwelcome',
@@ -1902,7 +2022,17 @@ export class RegionRoom {
       region: this.view(),
       ...(m.v >= LIVE_PROTOCOL ? { replays: (this.meta.replays ?? []).map((r) => ({ ...r })) } : {}),
       ...(m.v >= LIVE_PROTOCOL ? { friends: friends!.info } : {}),
+      // The atom bomb (M40, protocol 7): the permanent record, and the winters this city has to have had.
+      ...(m.v >= ATOM_PROTOCOL
+        ? {
+            atoms: (this.meta.atoms ?? []).map((x) => ({ ...x })),
+            winters: this.wintersOf(city.slot),
+          }
+        : {}),
     });
+    // Its page is told again that it finished first (it applies it once).
+    if (m.v >= ATOM_PROTOCOL && this.meta.atoms?.some((x) => x.slot === city.slot && x.first))
+      conn.send({ t: 'atomFirst', at: now });
     // Its fair clock carries on from now (M37): the time away isn't play.
     if (city.fair) city.fair = { ...city.fair, at: now };
     // Battles fought against it while it was away (M35), oldest first.
@@ -1926,12 +2056,202 @@ export class RegionRoom {
           }),
         );
     }
-    // Operations against it it hasn't seen (M37): late, so they bring only a notice.
-    for (const o of city.ops ?? []) conn.send(opOn(o, true));
+    // Operations against it it hasn't seen (M37): late, so they bring only a notice. (A strike by the
+    // atom bomb waits for a page that speaks it.)
+    for (const o of city.ops ?? []) if (o.op !== 'atom' || m.v >= ATOM_PROTOCOL) conn.send(opOn(o, true));
     if (m.v >= LIVE_PROTOCOL) this.liveWelcome(conn, city);
     // Proposals for it to answer and treaties it hasn't applied, oldest first.
     for (const msg of friends?.after ?? []) conn.send(msg);
     this.broadcast();
+  }
+
+  // ---- The atom bomb (M40, design calls 16 and 17) ---------------------------------------------
+  // The race rides the city's report. The room reads each report against what it last announced
+  // (forward only: a stage that drops re-arms its announcement), tells the pages that speak protocol
+  // 7 with a notice and a line of the history, keeps the permanent record (`atoms`), begins the
+  // winters (`winters`) and flags a city that fired (`FriendsWar.markPariah`). It reads the report's
+  // numbers only: what a bomb does in a city is that city's own sim's.
+
+  /** Connections of the cities' pages that speak the atom bomb (a visitor, slot 0, is not one). */
+  private atomConns(only?: (slot: number) => boolean): RegionConn[] {
+    const out: RegionConn[] = [];
+    for (const [c, s] of this.conns)
+      if (s.slot > 0 && s.v >= ATOM_PROTOCOL && (!only || only(s.slot))) out.push(c);
+    return out;
+  }
+
+  private toAtom(msg: RegionRoomMsg): void {
+    for (const c of this.atomConns()) c.send(msg);
+  }
+
+  /**
+   * A city's announcement: a notice to the pages that speak the bomb and a line of the region's
+   * history (kind `race` or `bomb`, sent to protocol 7 only), at most `limits.atomPerDay` a UTC day for
+   * a city (`capped`; a strike the region itself kept is not). `b` is the other city of the line, if any.
+   */
+  private announce(city: City, kind: 'race' | 'bomb', text: string, b = 0, capped = true): boolean {
+    const a = city.atom!;
+    const now = this.env.now();
+    const day = Math.floor(now / DAY_MS);
+    const n = a.notes?.day === day ? a.notes.n : 0;
+    if (capped && n >= this.limits.atomPerDay) return false;
+    a.notes = { day, n: n + 1 };
+    this.toAtom({ t: 'notice', text });
+    this.fwRun(city.slot, (fw) => fw.note(kind, city.slot, b, text), false);
+    return true;
+  }
+
+  /** The marks added since the pages were last told (sent together). */
+  private marksNew = false;
+
+  /** A mark in the permanent record: at most `ATOM_MARKS`, the oldest but the first finisher's going first. */
+  private addMark(
+    city: City,
+    kind: AtomMarkKind,
+    now: number,
+    extra: { to?: number; first?: true } = {},
+  ): void {
+    const list = (this.meta!.atoms ??= []);
+    list.push({ slot: city.slot, name: city.name, kind, at: now, ...extra });
+    while (list.length > ATOM_MARKS)
+      list.splice(
+        Math.max(
+          0,
+          list.findIndex((m) => !m.first),
+        ),
+        1,
+      );
+    this.marksNew = true;
+  }
+
+  private flushMarks(): void {
+    if (!this.marksNew) return;
+    this.marksNew = false;
+    this.toAtom({ t: 'atoms', atoms: (this.meta?.atoms ?? []).map((m) => ({ ...m })) });
+  }
+
+  /** The city has fired its one bomb (`to`: at a friend the region kept the strike for): its mark, its flag, its line. */
+  private fired(city: City, to: City | undefined, now: number): void {
+    (city.atom ??= { seen: 0, boom: 0, hit: 0, stopped: 0 }).used = true;
+    this.addMark(city, 'fired', now, to ? { to: to.slot } : {});
+    this.fwRun(city.slot, (fw) => fw.markPariah(city.slot), false);
+    this.announce(city, 'bomb', bombLine('fired', city.name, to?.name), to?.slot ?? 0, !to);
+  }
+
+  /**
+   * A bomb landed somewhere (a city's count of them rose from `from` to `to`): a winter for every
+   * other city of the region as it stands (the city's own is its sim's; a city that joins later is
+   * spared, one that is away keeps its place). One for each bomb, `WINTERS_PER_REPORT` at most, never
+   * the same id twice and `ATOM_WINTERS_PER_CITY` at most for a city.
+   */
+  private startWinters(city: City, from: number, to: number, now: number): void {
+    const meta = this.meta!;
+    const slots = meta.cities
+      .filter((c) => c.slot !== city.slot)
+      .map((c) => c.slot)
+      .sort((x, y) => x - y);
+    if (!slots.length) return;
+    const list = (meta.winters ??= []);
+    const mine = () => list.filter((w) => w.id.startsWith(`${city.slot}-`)).length;
+    let made = 0;
+    for (let k = from + 1; k <= to && made < WINTERS_PER_REPORT; k++) {
+      const id = `${city.slot}-${k}`;
+      if (list.some((w) => w.id === id) || mine() >= ATOM_WINTERS_PER_CITY) continue;
+      list.push({ id, at: now, slots: [...slots] });
+      made++;
+    }
+    if (!made) return;
+    // Each page chilled is told its whole list (each id is applied once, so a repeat changes nothing).
+    for (const [c, st] of this.conns) {
+      if (st.slot <= 0 || st.v < ATOM_PROTOCOL || !slots.includes(st.slot)) continue;
+      c.send({ t: 'winters', winters: this.wintersOf(st.slot) });
+    }
+  }
+
+  /** The winters that chill a city, copied. */
+  private wintersOf(slot: number): RegionWinter[] {
+    return (this.meta?.winters ?? [])
+      .filter((w) => w.slots.includes(slot))
+      .map((w) => ({ ...w, slots: [...w.slots] }));
+  }
+
+  /**
+   * Read a city's report for the race (call 16). Stages are announced forward only (once each, a stage
+   * that drops re-arms), the first city to reach `ready` is the region's first finisher and is told
+   * so, a bomb fired is flagged for good, and a rise in the bombs landed, here or anywhere, or stopped
+   * is announced, marked, and (landed) begins a winter. The first report a city ever makes is only a
+   * baseline for the counts: bombs from before it joined are not news. Returns whether something kept
+   * for good changed (the room then writes at once).
+   */
+  private raceReport(city: City, firstReport: boolean, now: number): boolean {
+    const r = city.report?.atom;
+    if (!r && !city.atom) return false;
+    const a = (city.atom ??= {
+      seen: 0,
+      boom: firstReport ? (r?.boom ?? 0) : 0,
+      hit: firstReport ? (r?.hit ?? 0) : 0,
+      stopped: firstReport ? (r?.stopped ?? 0) : 0,
+    });
+    let changed = false;
+    let kept = false;
+    const stage = r?.stage ?? 0;
+    // Forward only: each step is announced once; a stage that falls (a silo lost) re-arms it.
+    if (stage < a.seen) {
+      a.seen = stage;
+      changed = true;
+    } else if (stage > a.seen) {
+      a.seen = stage;
+      changed = true;
+      const line = raceLine(stage, city.name);
+      if (line) this.announce(city, 'race', line);
+    }
+    // The room's own clock of a launch being prepared: from the first report that says so.
+    if (stage >= 6) {
+      if (a.prep === undefined) {
+        a.prep = now;
+        changed = true;
+      }
+    } else if (a.prep !== undefined) {
+      delete a.prep;
+      changed = true;
+    }
+    // The bomb is ready: the permanent record has it once for the city, and the first city to finish is
+    // the region's first (the page turns the word into the achievement).
+    const marks = this.meta!.atoms ?? [];
+    if (stage >= 5 && !marks.some((m) => m.kind === 'ready' && m.slot === city.slot)) {
+      const first = !marks.some((m) => m.kind === 'ready');
+      this.addMark(city, 'ready', now, first ? { first: true } : {});
+      if (first) for (const c of this.atomConns((x) => x === city.slot)) c.send({ t: 'atomFirst', at: now });
+      kept = changed = true;
+    }
+    // The bomb has left (a launch at a computer neighbour, or a friend's strike the region kept first).
+    if ((stage >= 7 || r?.fired) && !a.used) {
+      this.fired(city, undefined, now);
+      kept = changed = true;
+    }
+    const hit = r?.hit ?? 0;
+    if (hit > a.hit) {
+      a.hit = hit;
+      this.addMark(city, 'boom', now);
+      this.announce(city, 'bomb', bombLine('boom', city.name));
+      kept = changed = true;
+    }
+    const stopped = r?.stopped ?? 0;
+    if (stopped > a.stopped) {
+      a.stopped = stopped;
+      this.addMark(city, 'stopped', now);
+      this.announce(city, 'bomb', bombLine('stopped', city.name));
+      kept = changed = true;
+    }
+    const boom = r?.boom ?? 0;
+    if (boom > a.boom) {
+      this.startWinters(city, a.boom, boom, now);
+      a.boom = boom;
+      kept = changed = true;
+    }
+    if (changed) this.dirty = true;
+    this.flushMarks();
+    return kept;
   }
 
   // ---- Wars and treaties between friends (M39, design calls 9 and 10) --------------------------
@@ -2006,7 +2326,7 @@ export class RegionRoom {
 
   private fwSend(o: FwOut): void {
     for (const [c, s] of this.conns) {
-      if (s.slot <= 0 || s.v < LIVE_PROTOCOL) continue;
+      if (s.slot <= 0 || s.v < LIVE_PROTOCOL || s.v < (o.minV ?? 0)) continue;
       if (o.to === 'all' ? o.except?.includes(s.slot) : !o.to.includes(s.slot)) continue;
       c.send(o.msg);
     }
@@ -2613,7 +2933,7 @@ export class RegionRoom {
     // computer neighbour's (the same whole-number odds); a blackout always lands.
     let outcome: OpOutcome = 'success';
     let stole: TierKey | undefined;
-    if (m.op !== 'blackout') {
+    if (m.op !== 'blackout' && m.op !== 'atom') {
       const intel = tiers[BRANCH_IDS.indexOf('intel')]!;
       outcome = spyOutcome(this.roll(), spyOdds(m.op, intel, to.report!.counter ?? 0, false, intel >= 3));
       if (outcome === 'success' && m.op === 'steal') {
@@ -2626,12 +2946,15 @@ export class RegionRoom {
     if (m.op === 'blackout') {
       this.countSuper(to, now);
       to.raids = { day, n: (to.raids?.day === day ? to.raids.n : 0) + 1 };
-    } else {
+    } else if (m.op !== 'atom') {
       const was = to.spied?.day === day ? to.spied : { day, n: 0, sabotage: 0 };
       to.spied = { day, n: was.n + 1, sabotage: was.sabotage + (m.op === 'sabotage' ? 1 : 0) };
     }
-    // A strike the target knows of (a spy caught, a saboteur's work, a blackout) lets it answer.
-    if (outcome === 'caught' || (outcome === 'success' && (m.op === 'sabotage' || m.op === 'blackout')))
+    // A strike the target knows of (a spy caught, a saboteur's work, a blackout, the bomb) lets it answer.
+    if (
+      outcome === 'caught' ||
+      (outcome === 'success' && (m.op === 'sabotage' || m.op === 'blackout' || m.op === 'atom'))
+    )
       to.raidedBy = { ...(to.raidedBy ?? {}), [from.slot]: now };
     from.verdicts = [
       ...(from.verdicts ?? []),
@@ -2650,14 +2973,20 @@ export class RegionRoom {
             at: now,
           };
     if (kept) (to.ops ??= []).push(kept);
+    // The bomb the region keeps is fired for good (M40, call 17): a mark, a flag, a line, at once.
+    if (m.op === 'atom') this.fired(from, to, now);
     this.save();
     conn.send({ t: 'opKept', id: m.id, outcome, ...(stole ? { stole } : {}) });
+    if (m.op === 'atom') this.flushMarks();
     if (outcome === 'caught')
       for (const c of this.conns.keys())
         c.send({ t: 'notice', text: `A spy from ${from.name} was caught in ${to.name}` });
     this.broadcast();
-    // The target playing now hears of it at once (kept until it says it has seen it).
-    if (kept) for (const [c, st] of this.conns) if (st.slot === to.slot) c.send(opOn(kept, false));
+    // The target playing now hears of it at once (kept until it says it has seen it); the bomb only
+    // to a page that speaks it.
+    if (kept)
+      for (const [c, st] of this.conns)
+        if (st.slot === to.slot && (m.op !== 'atom' || st.v >= ATOM_PROTOCOL)) c.send(opOn(kept, false));
   }
 }
 

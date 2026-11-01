@@ -28,6 +28,8 @@ import { MAP_SIZE } from '../../data/world';
 import { tierCounts } from './research';
 import { counterIntel } from './intel';
 import { falloutTownDrag, falloutTownMonth } from './fallout';
+import { atomReportField } from './atom';
+import { cleanRegionAtom, type AtomReport, type RegionAtom } from '../../data/atom';
 
 /**
  * The region (M23), DESIGN.md §3.24: neighbouring towns beyond the map edges that grow or shrink,
@@ -76,11 +78,13 @@ export interface PlayerNeighbour {
    */
   dues?: number;
   /**
-   * In a region with the atom bomb on (M40, from its report): how far its race has got, the stage's
-   * number (`atomStageNo`, 1 to 8; absent before it has begun). Step 9's report adds the rest (its
-   * fuel, the bomb fired, landed or stopped, its plume).
+   * In a region with the atom bomb (M40, call 16, from its report): how far its race has got (the
+   * stage's number, `atomStageNo`, 0 to 8), the percent of its fuel while the bomb is unfinished,
+   * whether its bomb has left, the bombs of its that have landed (`boom`), landed on it (`hit`) and
+   * been stopped by its dome, and the cumulative amount of its air carried over the border towards
+   * this city (`plume`: what `friendFallout` takes in). Absent for a city with nothing of it to say.
    */
-  atom?: { stage: number };
+  atom?: RegionAtom;
 }
 
 /** Why a friend's city can't be raided (M36): its own report says so. */
@@ -503,6 +507,8 @@ export interface RegionCity {
   counter?: number;
   /** What this city pays the one it reports to as its vassal each month (M39): the region passes it to its overlord. */
   dues?: number;
+  /** In a region at war (M40): its race for the atom bomb, with the plume cut to what comes this way. */
+  atom?: RegionAtom;
 }
 
 /** A deal another city signed with this one, from this city's side. */
@@ -538,6 +544,7 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
     n.name = c.name;
     n.kind = c.kind;
     n.population = Math.max(0, Math.round(c.population));
+    const atom = cleanRegionAtom(c.atom);
     n.player = {
       slot: c.slot,
       mayor: c.mayor,
@@ -560,6 +567,8 @@ export function applyRegionUpdate(sim: Sim, u: RegionUpdate): void {
       ...(typeof c.counter === 'number' && Number.isInteger(c.counter) && c.counter >= 0 && c.counter <= 1000
         ? { counter: c.counter }
         : {}),
+      // The atom bomb (M40): how far its race has got, what it has dropped, what its air sends this way.
+      ...(atom ? { atom } : {}),
       // Vassalage (M39): what this friend says it pays the city, within what its people could pay.
       ...(typeof c.dues === 'number' && c.dues > 0 && Number.isFinite(c.dues)
         ? {
@@ -631,12 +640,12 @@ export interface RegionReport {
    */
   dues?: { slot: number; amount: number };
   /**
-   * The race for the atom bomb (M40, call 16), in a region with the bomb on: how far this city has got,
-   * the stage's number (`atomStageNo`, 1 to 8; absent before it has begun). The room's report reader
-   * and `regionReport` fill it in step 9 (with the fuel, the launch and the plume): until then no
-   * report carries it, and the room refuses a plant sabotage against any city.
+   * The race for the atom bomb (M40, call 16), in a city at war with something of it to say: the
+   * stage, the fuel, the bomb fired, the bombs landed here or anywhere and stopped, and the plume
+   * (`AtomReport`, built by `atomReportField`). The room diffs it into notices, history lines, the
+   * permanent record and the winter's reach, and passes it to the others.
    */
-  atom?: { stage: number };
+  atom?: AtomReport;
 }
 
 /** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */
@@ -712,6 +721,11 @@ export function regionReport(sim: Sim): RegionReport {
           clock: s.war.clock,
         }
       : {}),
+    // The atom bomb (M40): the race, the bombs that have landed, and the air that has crossed a border.
+    ...(() => {
+      const atom = atomReportField(sim);
+      return atom ? { atom } : {};
+    })(),
     // War (M39): a friend's vassal says what it pays its overlord (not while it rises against it).
     ...(() => {
       const d = s.war?.diplomacy;

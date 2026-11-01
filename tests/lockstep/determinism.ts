@@ -302,6 +302,8 @@ export function runDeterminism(
           raid: 'open',
           tiers: [0, 1, 0, 0, 1, 0],
           counter: 200,
+          // The atom bomb (M40, step 9): the friend's race as the region passes it on (taken in, cleaned, rounded).
+          atom: { stage: 3, fuel: 40, boom: 1, hit: 1, plume: 2.5004 },
         },
       ],
       contracts: [],

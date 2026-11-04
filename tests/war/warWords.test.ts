@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { helpOverLine, helpOverNotice, shelterSentence, unitsKnockedOut } from '../../src/ui/warWords';
+import {
+  asSentence,
+  damageLine,
+  helpOverLine,
+  helpOverNotice,
+  objectiveName,
+  shelterSentence,
+  unitsKnockedOut,
+  warScoreLine,
+} from '../../src/ui/warWords';
 import { shelterLine } from '../../src/ui/atomView';
 
 /** Phase 5 end: the words the war's warnings, notices and cards share. */
@@ -73,5 +82,43 @@ describe('how an ally’s force came out of a battle (the Help card and its noti
     expect(helpOverNotice(4, 0, 0)).toBe(
       'Your force came through the battle unharmed and is on its way home.',
     );
+  });
+});
+
+describe('the battle bar and the battle report', () => {
+  it('names each objective: a city building by name, a zoned one by its kind', () => {
+    expect(objectiveName('Coal power plant', undefined)).toBe('Coal power plant');
+    expect(objectiveName(undefined, 3)).toBe('Industry');
+    expect(objectiveName(undefined, 1)).toBe('Homes');
+    expect(objectiveName(undefined, 2)).toBe('Business');
+    expect(objectiveName(undefined, undefined)).toBe('Target');
+  });
+
+  it('counts the damage in words that agree, and leaves out a move-out of nobody', () => {
+    expect(damageLine(1, 0, 1, 0)).toBe('1 building knocked down, 1 set on fire');
+    expect(damageLine(3, 12, 0, 1)).toBe(
+      '3 buildings knocked down (12 residents moved out), 1 road cratered',
+    );
+    expect(damageLine(1, 1, 0, 2)).toBe('1 building knocked down (1 resident moved out), 2 roads cratered');
+    expect(damageLine(0, 0, 0, 0)).toBe('No buildings knocked down');
+  });
+});
+
+describe('a diplomacy note as a notice', () => {
+  it('ends with a full stop, once', () => {
+    expect(asSentence('The city declares war on Wilwell: it opens in 12 hours')).toBe(
+      'The city declares war on Wilwell: it opens in 12 hours.',
+    );
+    expect(asSentence('Wilwell accepts.')).toBe('Wilwell accepts.');
+    expect(asSentence('Wilwell says: “Never”')).toBe('Wilwell says: “Never”');
+    expect(asSentence('')).toBe('');
+  });
+});
+
+describe('a war’s score on its card', () => {
+  it('counts battles in words that agree, and says plainly when there have been none', () => {
+    expect(warScoreLine(0, 0)).toBe('Score 0, no battles yet.');
+    expect(warScoreLine(-15.6, 1)).toBe('Score -16 after 1 battle.');
+    expect(warScoreLine(22.2, 3)).toBe('Score 22 after 3 battles.');
   });
 });

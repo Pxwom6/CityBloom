@@ -84,7 +84,7 @@ import {
 } from './client/settings';
 import { typingIn } from './client/keys';
 import { atomBeats, blastSounds } from './render/atomFx';
-import { shelterSentence, unitsKnockedOut } from './ui/warWords';
+import { asSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
 import type { OverlayResult } from './sim/systems/overlays';
 
 type Listener = () => void;
@@ -937,7 +937,7 @@ export class Game {
     link.onNotice = (t) => {
       const race = raceNotice(t);
       if (race) this.notice(race.kind, race.text, race.tone);
-      else this.toast(t, 'info', 4500);
+      else this.toast(asSentence(t), 'info', 4500);
     };
     // Battles between friends (M35): sent again until the region keeps them; a friend's force on
     // its way is announced, with the siren.
@@ -1625,7 +1625,7 @@ export class Game {
           tone === 'good' ||
           (!tone && ['theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what));
         // Keyed by its words too: two different notes of a kind (theirs and ours) never merge.
-        this.notice(`dip:${what}:${e.id}:${text}`, text, bad ? 'bad' : good ? 'ok' : 'info');
+        this.notice(`dip:${what}:${e.id}:${text}`, asSentence(text), bad ? 'bad' : good ? 'ok' : 'info');
         if (what === 'declaredOn' || what === 'fell' || (what === 'hold' && bad)) this.audio?.play('raid');
       }
       // Weapon development and intelligence (M37).

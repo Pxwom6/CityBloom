@@ -23,6 +23,7 @@ import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { FriendsDiplomacy } from './DiplomacyFriends';
+import { warScoreLine } from './warWords';
 
 type Neighbour = DiplomacySummary['neighbours'][number];
 
@@ -253,7 +254,7 @@ export function Diplomacy() {
                   {w.by === 'us' ? 'Declared by the city' : `Declared by ${w.name}`}: “{w.reason}”.{' '}
                   {now < w.opens
                     ? `It opens in ${hoursLeft(w.opens, now)} hours.`
-                    : `Score ${Math.round(w.score)} after ${w.battles} battle${w.battles === 1 ? '' : 's'}.`}
+                    : warScoreLine(w.score, w.battles)}
                   {w.ceasefire !== null && ` Ceasefire for ${hoursLeft(w.ceasefire, now)} more hours.`}
                   {w.helpers.length > 0 &&
                     ` ${w.helpers.join(' and ')} fight${w.helpers.length === 1 ? 's' : ''} at the city’s side.`}

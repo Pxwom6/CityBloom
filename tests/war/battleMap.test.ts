@@ -5,6 +5,7 @@ import { TAG } from '../../src/sim/battle/types';
 import {
   armedHint,
   battleClock,
+  orderAck,
   buildOrders,
   clickSelect,
   edgeMark,
@@ -301,5 +302,16 @@ describe('M39 battle map: the frame carries the structures’ states', () => {
     expect([...last.structs!].filter((c) => c === '2')).toHaveLength(down);
     expect([...last.structs!].filter((c) => c === '1').length).toBeGreaterThanOrEqual(0);
     expect(down + hurt).toBeGreaterThan(0);
+  });
+});
+
+describe('phase 5 end: an order’s place in the list, in a player’s words', () => {
+  it('says when the room heard it by the battle’s clock, never by step numbers', () => {
+    expect(orderAck('stamped', 56)).toBe('heard at 0:28');
+    expect(orderAck('stamped', 130)).toBe('heard at 1:05');
+    expect(orderAck('unheard', undefined)).toBe('not heard by the room');
+    expect(orderAck('sent', undefined)).toBe('sent…');
+    expect(orderAck('queued', undefined)).toBe('on its way…');
+    expect(orderAck('stamped', 56)).not.toMatch(/step|order \d/);
   });
 });

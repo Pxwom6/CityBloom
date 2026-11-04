@@ -16,6 +16,7 @@ import { HelpButton } from './Help';
 import { PIPS, cloudOnMap, etaClock, pipsOf } from './atomView';
 import { ATOM, ATOM_STAGE_NAMES, ATOM_STAGES, atomStageNo } from '../data/atom';
 import { helpForceLine } from './helpView';
+import { damageLine, objectiveName } from './warWords';
 import { formatNumber, useGameUpdates } from './hooks';
 
 const TARGETS: Record<string, string> = {
@@ -100,7 +101,7 @@ export function BattleBar() {
         <div class="battle-targets" data-testid="battle-targets">
           {f.targets.map((t) => {
             const c = game.world.civics.get(t.id);
-            const name = (c && CIVIC.get(c.def)?.name) ?? 'Target';
+            const name = objectiveName(c && CIVIC.get(c.def)?.name, game.world.buildings.get(t.id)?.zone);
             return (
               <button key={t.id} class="battle-target" title={name} onClick={() => game.flyTo(t)}>
                 <span>{name}</span>
@@ -267,11 +268,7 @@ export function ReportCard({ r }: { r: BattleReport }) {
           {lost.length ? lost.map(([k, n]) => `${n} ${unitName(k, n ?? 0)}`).join(', ') : 'none'}
         </li>
         <li data-testid={`report-${r.id}-damage`}>
-          {r.collapsed.length
-            ? `${formatNumber(r.collapsed.length)} buildings knocked down (${formatNumber(r.homeless)} residents moved out)`
-            : 'No buildings knocked down'}
-          {r.burning.length ? `, ${formatNumber(r.burning.length)} set on fire` : ''}
-          {r.craters ? `, ${formatNumber(r.craters)} roads cratered` : ''}
+          {damageLine(r.collapsed.length, r.homeless, r.burning.length, r.craters)}
         </li>
         {r.civics.length > 0 && (
           <li>

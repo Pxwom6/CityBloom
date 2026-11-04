@@ -69,3 +69,41 @@ export function helpOverNotice(units: number, lost: number, hurt: number): strin
     return 'Your force came through the battle, but its unit needs repairs. It is on its way home.';
   return `Your force came through the battle with none of its ${count(units)} units knocked out, but ${repairs(hurt)}. They are on their way home.`;
 }
+
+/**
+ * A battle's objective in the battle bar: a city building by its name, a zoned one by its kind (a raid on
+ * industry goes for factories, which have no civic name), never a row of "Target"s.
+ */
+export function objectiveName(civicName: string | undefined, zone: number | undefined): string {
+  if (civicName) return civicName;
+  return zone === 1 ? 'Homes' : zone === 2 ? 'Business' : zone === 3 ? 'Industry' : 'Target';
+}
+
+const some = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
+
+/** A battle report's damage line: "1 building knocked down (12 residents moved out), 2 set on fire". */
+export function damageLine(collapsed: number, homeless: number, burning: number, craters: number): string {
+  let s = collapsed
+    ? `${some(collapsed, 'building', 'buildings')} knocked down${homeless ? ` (${some(homeless, 'resident', 'residents')} moved out)` : ''}`
+    : 'No buildings knocked down';
+  if (burning) s += `, ${count(burning)} set on fire`;
+  if (craters) s += `, ${some(craters, 'road', 'roads')} cratered`;
+  return s;
+}
+
+/**
+ * A diplomacy note as a notice: the sim's notes are kept without a full stop (they are listed in the
+ * Diplomacy tab), the notices beside them end with one.
+ */
+export function asSentence(text: string): string {
+  const t = text.trimEnd();
+  return !t || /[.!?…”"’)]$/.test(t) ? t : `${t}.`;
+}
+
+/** A war's score on its card: "Score −16 after 1 battle.", and before any "Score 0, no battles yet." */
+export function warScoreLine(score: number, battles: number): string {
+  const s = Math.round(score);
+  return battles > 0
+    ? `Score ${s} after ${some(battles, 'battle', 'battles')}.`
+    : `Score ${s}, no battles yet.`;
+}

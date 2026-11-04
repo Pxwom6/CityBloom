@@ -1359,6 +1359,14 @@ body {
   /* Keep clear of the inspector on the right. */
   right: calc(20rem + var(--space-3) * 2);
 }
+.toasts.beside-map {
+  /* Keep clear of the battle map on the right: its orders and their log are at its foot (phase 5 end). */
+  right: calc(min(46rem, 100vw - 2 * var(--space-3)) + var(--space-3) * 2);
+}
+#ui[data-width='xs'] .toasts.beside-map {
+  /* (A phone's battle map takes the width: the notices stand where they always do.) */
+  right: var(--space-3);
+}
 .toast {
   overflow-wrap: anywhere;
   max-width: 30rem;

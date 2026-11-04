@@ -16,6 +16,7 @@ import { declareWarning, friendTermWords, friendTermsWords, newcomerNote } from 
 import { formatMoney } from './hooks';
 import { useGameUpdates } from './hooks';
 import { Feedback, ScoreBar, type Asked } from './Diplomacy';
+import { warScoreLine } from './warWords';
 
 type Friend = DiplomacySummary['friends'][number];
 type FriendWar = DiplomacySummary['wars'][number];
@@ -291,7 +292,7 @@ function FriendWarCard({
         {w.by === 'us' ? 'Declared by the city' : `Declared by ${w.name}`}: “{w.reason}”.{' '}
         {state === 'declared'
           ? `It opens in ${room ? timeWords(room.opens - now) : 'a moment'}.`
-          : `Score ${Math.round(w.score)} after ${w.battles} battle${w.battles === 1 ? '' : 's'}.`}
+          : warScoreLine(w.score, w.battles)}
         {state === 'ceasefire' &&
           ` Ceasefire${pact?.until !== undefined ? ` for ${timeWords(pact.until - now)} more` : ''}.`}
       </p>

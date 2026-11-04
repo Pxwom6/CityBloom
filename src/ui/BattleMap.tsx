@@ -16,6 +16,7 @@ import {
   ORDER_NAMES,
   armedHint,
   battleClock,
+  orderAck,
   buildOrders,
   clickSelect,
   fitView,
@@ -241,14 +242,11 @@ function BattleMap({ game }: { game: Game }) {
                     {e.units === 'all' ? 'all units' : `${e.units} unit${e.units === 1 ? '' : 's'}`}
                     {targetText(view, frame, side, e)}
                     {' · '}
-                    <span class="battle-map-ack">
-                      {e.state === 'stamped'
-                        ? `heard: order ${e.seq}, from step ${e.step}`
-                        : e.state === 'unheard'
-                          ? 'not heard by the room'
-                          : e.state === 'sent'
-                            ? 'sent…'
-                            : 'on its way…'}
+                    <span
+                      class="battle-map-ack"
+                      title={e.state === 'stamped' ? `Order ${e.seq}, from step ${e.step}` : undefined}
+                    >
+                      {orderAck(e.state, e.step)}
                     </span>
                   </li>
                 ))}
@@ -326,11 +324,13 @@ function Status(p: {
           </span>
         ))}
       </div>
-      <div class="battle-map-detail muted" data-testid="map-detail">
-        <span title="The step this page has run to, and the step the room lets both pages run to">
-          step {frame?.step ?? view.step} · frontier {view.allow}
-        </span>{' '}
-        · {view.orders} order{view.orders === 1 ? '' : 's'} so far
+      {/* (The step this page has run to and the room's frontier are for whoever looks: a tooltip.) */}
+      <div
+        class="battle-map-detail muted"
+        data-testid="map-detail"
+        title={`Step ${frame?.step ?? view.step}; the room lets both pages run to step ${view.allow}`}
+      >
+        {view.orders ? `${view.orders} order${view.orders === 1 ? '' : 's'} so far` : 'No orders yet'}
       </div>
       <div class="battle-map-flagrow">
         {view.over || p.outcome ? (

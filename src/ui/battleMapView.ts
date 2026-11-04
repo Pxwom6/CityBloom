@@ -470,6 +470,20 @@ export function battleClock(step: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/**
+ * Where an order in the map's list stands, in a player's words (phase 5 end): heard at a time of the
+ * battle's clock, not "order 3, from step 56" (the room's sequence and step stay for those who look).
+ */
+export function orderAck(state: string, step: number | undefined): string {
+  return state === 'stamped'
+    ? `heard at ${battleClock(step ?? 0)}`
+    : state === 'unheard'
+      ? 'not heard by the room'
+      : state === 'sent'
+        ? 'sent…'
+        : 'on its way…';
+}
+
 // ----------------------------------------------------------------------------- the battle shown
 
 /** The side this page commands in a battle: null for a watcher. */

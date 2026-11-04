@@ -55,18 +55,16 @@ const TIERS = ['land', 'air', 'sea', 'defence', 'intel', 'logistics'].flatMap((b
 const KEEP = new Set([
   'a-new-city',
   'a-raid',
-  'a-report',
   'a-declared',
-  'a-rival-race',
   'b-battle-attacker',
   'b-battle-defender',
+  'b-battle-watcher',
   'b-peace',
   'c-launch-hold',
   'c-countdown',
   'c-flash',
   'c-cloud',
   'c-radiation',
-  'c-cleanup',
   'c-winter',
   'c-pariah',
 ]);
@@ -102,6 +100,8 @@ async function readTips(page: Page, who: string): Promise<void> {
     const id = await page.evaluate(() => window.__game!.getShell().tip);
     log(`${who} tip ${id}: ${(await card.innerText()).replace(/\s+/g, ' ')}`);
     await page.getByTestId('tip-ok').click();
+    // (The card redraws up to 300 ms later: until it has gone, it is the one just read.)
+    await card.waitFor({ state: 'hidden', timeout: 3_000 }).catch(() => undefined);
   }
   const toasts = await page.locator('.toast').allInnerTexts();
   if (toasts.length) log(`${who} toasts: ${toasts.map((t) => t.replace(/\s+/g, ' ')).join(' | ')}`);
@@ -223,6 +223,17 @@ async function inspect(page: Page, def: string, testId: string): Promise<void> {
   await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20_000 });
 }
 
+/**
+ * A camera on a point `h` m above (x, z) from `distance` m at the steepest the camera's tilt allows there
+ * (atomshot.mjs's `aim`): something high in the sky, such as the mushroom cloud, stands in the frame.
+ */
+function aimAbove(x: number, z: number, distance = 2600, pitch = 0.66, yaw = 0.35, h = 450) {
+  const s = Math.min(1, Math.max(0, (distance - 25) / 2575));
+  const base = 0.32 + 0.68 * s * s * (3 - 2 * s);
+  const off = h / Math.tan(pitch);
+  return { x: x - Math.sin(yaw) * off, z: z - Math.cos(yaw) * off, distance, yaw, tilt: pitch - base };
+}
+
 /** Look away to empty ground (a software-drawn town holds a page up past the region's ten seconds of silence). */
 async function lookAway(page: Page): Promise<void> {
   const hz = (await state(page)).highwayZ;
@@ -296,6 +307,8 @@ test('phase 5 end, 1: a war with a computer neighbour, from the main menu @playt
   // --- A new city with rival neighbours. ---
   await page.getByTestId('main-new').click();
   await page.getByTestId('new-name').fill('Harrowgate');
+  // (A fixed map, so the town grows the same way each run: the screen offers a new seed every time.)
+  await page.getByTestId('new-seed').fill('cj67eb');
   await page.getByTestId('new-rivals').check();
   await page.getByTestId('new-tutorial').uncheck();
   await snap(page, 'a-new-city');
@@ -583,6 +596,10 @@ test('phase 5 end, 1: a war with a computer neighbour, from the main menu @playt
 
   /** An expedition from the Send tab: all but two squads, its battle fought in the neighbour's town. */
   const expedition = async (tag: string | null): Promise<void> => {
+    // A raid may have left the HQ under repair: forces go from a working one (the Send tab says so), so the
+    // crews are given their hours first.
+    for (let h = 0; h < 40 && (await page.evaluate(() => window.__game!.getDamage().civics)) > 0; h++)
+      await advance(page, 60 * 4);
     const reports0 = (await page.evaluate(() => window.__game!.getBattle())).reports.length;
     const n = Math.max(1, (await units()) - 2);
     await warTab(page, 'send');
@@ -1182,34 +1199,33 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   await sam.getByTestId('atom-look').click();
   await sam.evaluate(() => window.__game!.waitFrames(40));
   await snap(sam, 'c-countdown');
-  // The last 20 seconds at normal speed, as a player would watch them, from the side of ground zero (the
-  // missile's own camera ends looking straight down, where the toy mushroom is a heap of puffs).
+  // The last 20 seconds at normal speed, as a player would watch them, looking at a point 450 m above ground
+  // zero from 2.6 km (the pose atomshot.mjs's interface pictures use: the 900 m cloud stands in the frame).
   await advance(sam, inbound.arrive - (await state(sam)).tick - 160);
-  await sam.evaluate(
-    ([x, z]) => window.__game!.setCamera({ x, z: z + 250, yaw: 0.35, distance: 1100, tilt: 0.28 }),
-    [inbound.x, inbound.z],
-  );
+  await sam.evaluate(([x, z]) => window.__game!.setCamera(aimAbove(x!, z!)), [inbound.x, inbound.z]);
   await sam.evaluate(() => window.__game!.setSpeed(1));
   for (let k = 0; k < 600; k++) {
     if ((await sam.evaluate(() => window.__game!.getAtomFx())).flash > 0.3) break;
     await sam.waitForTimeout(50);
   }
   await snap(sam, 'c-flash');
-  await sam.waitForTimeout(12_000);
-  await snap(sam, 'c-cloud');
+  // Paused; the blast is over within the hour and its card comes. Read and put away, as a player would,
+  // then the cloud as it finishes rising (it rises for 20 s of real time, paused or not; it fades by game hours).
   await sam.evaluate(() => window.__game!.setSpeed(0));
   await expect
     .poll(
       async () => {
-        await advance(sam, 30);
+        await advance(sam, 10);
         return (await sam.evaluate(() => window.__game!.getAtom())).summary!.impact?.over ?? false;
       },
-      { timeout: 180_000, intervals: [1_000] },
+      { timeout: 180_000, intervals: [500] },
     )
     .toBe(true);
   await expect(sam.getByTestId('atom-after')).toBeVisible();
   await snap(sam, 'c-after');
   await sam.getByTestId('atom-after-ok').click();
+  await sam.waitForTimeout(12_000);
+  await snap(sam, 'c-cloud');
   await readTips(sam, 'Sam');
 
   // --- The aftermath on Samford: the radiation map, a clean-up crew. ---
@@ -1252,7 +1268,7 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
     .toBeGreaterThan(0);
   await expect(sam.getByTestId('winter-badge')).toBeVisible();
   await sam.evaluate(
-    ([x, z]) => window.__game!.setCamera({ x: x + 300, z: z + 500, yaw: 0.5, distance: 900, tilt: 0.2 }),
+    ([x, z]) => window.__game!.setCamera({ x: x + 300, z: z + 500, yaw: 0.5, distance: 1300, tilt: 0.1 }),
     [impact.x, impact.z],
   );
   await readTips(sam, 'Sam');

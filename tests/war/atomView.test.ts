@@ -553,7 +553,8 @@ describe('M40 step 11: the countdown', () => {
   it('tells what a bomb left behind: the count that left and the buildings levelled, or the dome’s save', () => {
     expect(aftermath('hit', { from: 'Calhaven', fled: 1234, levelled: 56 })).toEqual({
       title: 'The atom bomb landed',
-      text: '1,234 residents have left the city; 56 buildings were levelled. Fallout lies on the ground, and a nuclear winter is coming.',
+      // (Phase 5 end: "has begun", as the winter's own notice beside the card says, not "is coming".)
+      text: '1,234 residents have left the city; 56 buildings were levelled. Fallout lies on the ground, and a nuclear winter has begun.',
     });
     const saved = aftermath('stopped', { from: 'Calhaven' });
     expect(saved.title).toBe('The dome shield stopped the bomb');

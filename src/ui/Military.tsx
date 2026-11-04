@@ -62,7 +62,8 @@ export function MilitarySection({ civicId, m }: { civicId: number; m: MilitaryDe
         </dd>
         <dt>Power</dt>
         <dd data-testid="military-power">
-          {formatNumber(m.power)} units ({pct(m.powered)} served)
+          {/* (MW, as the Region panel says: "units" here read as soldiers, beside "Keeps 0 of 12 units".) */}
+          {formatNumber(m.power)} MW ({pct(m.powered)} served)
         </dd>
         {m.holds > 0 && (
           <>
@@ -749,7 +750,7 @@ function Readiness({ w }: { w: WarSummary }) {
         </dd>
         <dt>Power</dt>
         <dd>
-          {formatNumber(w.power.served)} of {formatNumber(w.power.need)} units
+          {formatNumber(w.power.served)} of {formatNumber(w.power.need)} MW
         </dd>
         <dt>Military buildings</dt>
         <dd>{w.bases}</dd>

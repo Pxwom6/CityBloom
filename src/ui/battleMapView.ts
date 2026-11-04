@@ -471,12 +471,13 @@ export function battleClock(step: number): string {
 }
 
 /**
- * Where an order in the map's list stands, in a player's words (phase 5 end): heard at a time of the
- * battle's clock, not "order 3, from step 56" (the room's sequence and step stay for those who look).
+ * Where an order in the map's list stands, in a player's words (phase 5 end): heard, and the time on the
+ * battle's clock it acts from (the room stamps it a moment ahead, at its frontier), not "order 3, from
+ * step 56" (the room's sequence and step stay in the tooltip for those who look).
  */
 export function orderAck(state: string, step: number | undefined): string {
   return state === 'stamped'
-    ? `heard at ${battleClock(step ?? 0)}`
+    ? `heard, from ${battleClock(step ?? 0)}`
     : state === 'unheard'
       ? 'not heard by the room'
       : state === 'sent'

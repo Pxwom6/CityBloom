@@ -21,7 +21,7 @@ import { UNIT, type UnitKind } from '../../data/war';
 import { fail, ok, type CommandErr, type CommandResult } from '../commands';
 import type { Sim } from '../sim';
 import { TICKS_PER_HOUR } from '../time';
-import { civicOnline } from '../world/civic';
+import { civicOnline, type Civic } from '../world/civic';
 import type { ForceIn, Outcome } from '../battle/types';
 import { travelHours, type BattleReport } from './raids';
 import { militaryCivics, militaryOf } from './war';
@@ -140,6 +140,19 @@ function superRefusal(sim: Sim, units: number[], n: Neighbour, route: BattleRout
 }
 
 /** Why a force can't go, or null. */
+
+/**
+ * Why the city's military HQ can't send a force (phase 5 end: "Forces are sent from a working military HQ"
+ * after a raid left a player looking at an HQ that stood, not knowing it was under repair).
+ */
+export function hqRefusal(hq: Civic | undefined): string {
+  if (!hq) return 'Forces are sent from a military HQ: build one first';
+  if (hq.build) return 'The military HQ is still being built: forces are sent from a working HQ';
+  if (hq.flooded) return 'The military HQ is under water: forces are sent from a working HQ';
+  if (hq.damage > 0)
+    return `The military HQ is being repaired (${hq.damage} h left): forces are sent from a working HQ`;
+  return 'The military HQ is short of staff: forces are sent from a working HQ';
+}
 export function sendRefusal(
   sim: Sim,
   units: number[],
@@ -177,7 +190,7 @@ function forceRefusal(
   if (target !== 'cityhall' && !SKIRMISH.targets.includes(target))
     return 'A skirmish strikes military buildings, industry or power';
   const hq = militaryCivics(sim).find((c) => militaryOf(c)!.hq);
-  if (!hq || !civicOnline(hq) || (hq.staff ?? 0) < 0.25) return 'Forces are sent from a working military HQ';
+  if (!hq || !civicOnline(hq) || (hq.staff ?? 0) < 0.25) return hqRefusal(hq);
   if (!units.length) return 'Choose the units to send';
   if (units.length > BATTLE.maxAttackers) return `A raid takes ${BATTLE.maxAttackers} units at most`;
   if (new Set(units).size !== units.length) return 'A unit is listed twice';

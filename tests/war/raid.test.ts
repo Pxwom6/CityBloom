@@ -212,3 +212,34 @@ describe('raids (M35)', () => {
     expect(warningHours(sim)).toBe(WARNING.base + WARNING.perRadar);
   });
 });
+
+describe('phase 5 end: why a force can’t be sent', () => {
+  it('says the HQ is being repaired, and for how long, not only that it must be working', () => {
+    const { sim } = raidTown();
+    const w = sim.state.war!;
+    const rival = sim.state.region.neighbours.find((n) => n.rival)!;
+    const send = () =>
+      sim.dispatch({
+        type: 'sendForce',
+        units: [...w.units.values()].map((u) => u.id),
+        to: rival.id,
+        route: 'highway',
+        target: 'military',
+        stance: 'bold',
+      });
+    const hq = [...sim.state.civics.values()].find((c) => c.def === 'militaryhq')!;
+    hq.damage = 18;
+    sim.civicStatusChanged(hq.id);
+    const r = send();
+    expect(r.ok).toBe(false);
+    if (!r.ok)
+      expect(r.reason).toBe(
+        'The military HQ is being repaired (18 h left): forces are sent from a working HQ',
+      );
+    hq.damage = 0;
+    hq.flooded = true;
+    const f = send();
+    if (!f.ok) expect(f.reason).toMatch(/^The military HQ is under water/);
+    expect(f.ok).toBe(false);
+  });
+});

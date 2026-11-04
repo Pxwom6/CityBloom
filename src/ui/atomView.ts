@@ -553,7 +553,8 @@ export function aftermath(
   const levelled = (info.levelled ?? 0).toLocaleString('en-US');
   return {
     title: 'The atom bomb landed',
-    text: `${fled} residents have left the city; ${levelled} buildings were levelled. Fallout lies on the ground, and a nuclear winter is coming.`,
+    // (The winter starts with the blast's last slice, as this card comes: "has begun", as its notice says.)
+    text: `${fled} residents have left the city; ${levelled} buildings were levelled. Fallout lies on the ground, and a nuclear winter has begun.`,
   };
 }
 

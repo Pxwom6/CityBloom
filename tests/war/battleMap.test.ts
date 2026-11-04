@@ -306,9 +306,9 @@ describe('M39 battle map: the frame carries the structures’ states', () => {
 });
 
 describe('phase 5 end: an order’s place in the list, in a player’s words', () => {
-  it('says when the room heard it by the battle’s clock, never by step numbers', () => {
-    expect(orderAck('stamped', 56)).toBe('heard at 0:28');
-    expect(orderAck('stamped', 130)).toBe('heard at 1:05');
+  it('says it was heard and when it acts by the battle’s clock, never by step numbers', () => {
+    expect(orderAck('stamped', 56)).toBe('heard, from 0:28');
+    expect(orderAck('stamped', 130)).toBe('heard, from 1:05');
     expect(orderAck('unheard', undefined)).toBe('not heard by the room');
     expect(orderAck('sent', undefined)).toBe('sent…');
     expect(orderAck('queued', undefined)).toBe('on its way…');

@@ -13,7 +13,7 @@
 import { LiveSession, cleanLiveOrder, type LiveOrder, type LiveSide } from '../../relay/live';
 import { LIVE, helpTravelOf, helpUnitId } from '../../relay/protocol';
 import type { RegionClientMsg, RegionRoomMsg } from '../../relay/region';
-import type { UnitKind } from '../data/war';
+import { UNIT, type UnitKind } from '../data/war';
 import type { Game } from '../game';
 import type { LiveSink } from '../net/regionLink';
 import { encodeBattle } from '../net/snapshot';
@@ -396,8 +396,10 @@ export async function stageLive(
     stage.hold = opts.hold ?? null;
     current = stage;
     game.live.attach(stage);
-    // The real call, as the room would pass it on.
-    game.live.message({ t: 'bcall', id, from: 2, force });
+    // The real call, as the room would pass it on: with `super` when a superweapon is in the force, as the
+    // room's call has it (phase 5 checks: without it the city declined a staged robot's battle).
+    const superweapon = units.some((k) => !!UNIT.get(k)?.super);
+    game.live.message({ t: 'bcall', id, from: 2, force, ...(superweapon ? { super: true as const } : {}) });
     return null;
   }
   // A picture of this city's own, which the page runs (the attacker's way, or a spectator's).

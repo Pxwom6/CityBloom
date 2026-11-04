@@ -2925,3 +2925,17 @@ and lint rerun; the fourteen pictures looked at)
   (a probe: the canvas laid out at 362 × 371 but still the default 300 × 150, the recorded size 0 × 0, then set a
   frame later). Not a game fault (the map draws on its next frame); the test now reads the size once the map has
   drawn (`drawn`, as its `pointsWhen` does for clicks), the check itself unchanged (wider than 300, taller than 150).
+- *Frame times for the war on the GPU* (`framebench.mjs bench-results/war.gz`, the war city `battlebench.ts --guards
+  --dome --super robot --save` keeps: 93k residents loaded, a charged dome): every view's average is inside SPEC-3's
+  budget at every quality (High: the battle 6.4–6.6 ms, with the battle map open 6.6, with the war room open 6.4,
+  units 7.7, aircraft 9.4–10.0, the plain city 10.0; the city view was 12.1 ms at High at model batch 5). New views,
+  each run in a page of its own (a battle left running refuses the next): `battle+map` stages the same force as a live
+  battle the city defends through the test builds' stand-in for the room and opens the map; `battle+room` opens the
+  war room; `units` and `aircraft` put 36 units at the war city's barracks, depot and an airfield (laid beside a new
+  avenue when no road has room: aircraft only fly from an airfield). The stand-in's call now carries `super` when a
+  superweapon is in the force, as the room's does (without it the city declined the robot's live battle).
+- *The aircraft view's long frames* (High p99 27–52 ms, one frame of 79–293 ms; Medium one of 95): the profile puts
+  them inside WebGL draw calls (driver stalls, mostly as the view warms up), not the game's own work, whose average is
+  inside the budget. No clear fix; left to watch.
+- *`supershot.mjs` and `unitshot.mjs` take `GPU=1`* (a real Chrome window, as `atomshot.mjs` does): the checks' command
+  for the dome, shields and units on the GPU assumed one.

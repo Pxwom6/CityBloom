@@ -4,7 +4,7 @@
 // generated look. Prints what the units cost to draw.
 // Usage: node scripts/dev/unitshot.mjs outDir   (after npm run build:test)
 // Env: ONLY=overview,barracks,drill,depot,pad,patrol,airfield,flying,heli,naval,sailing,night,gallery,dots
-//      QUALITY=medium (low|medium|high), PORT=4391, SEED=port
+//      QUALITY=medium (low|medium|high), PORT=4391, SEED=port, GPU=1 (a real Chrome window on the GPU)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -26,9 +26,21 @@ const server = spawn(
   },
 );
 await new Promise((r) => setTimeout(r, 2000));
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await chromium.launch(
+  process.env.GPU
+    ? {
+        // GPU=1 (phase 5 checks): a real Chrome window on the GPU, as atomshot.mjs does, to judge the look.
+        channel: 'chrome',
+        headless: false,
+        args: [
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-background-timer-throttling',
+          '--window-position=0,0',
+        ],
+      }
+    : { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] },
+);
 const t0 = Date.now();
 const log = (...a) => console.log(`[warshot ${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 try {

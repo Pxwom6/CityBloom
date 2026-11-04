@@ -4,7 +4,7 @@
 // parked at their bases, the gate's swirl and the tower's ring, a staged battle under the dome
 // (shield bubbles, interceptors) and the robot's stomp. Prints the draw cost of each view.
 // Usage: node scripts/dev/supershot.mjs outDir   (after npm run build:test)
-// Env: ONLY=trial,parked,gate,tower,dome,shields,low,robot   QUALITY=medium   PORT=4392   SEED=port
+// Env: ONLY=trial,parked,gate,tower,dome,shields,low,robot   QUALITY=medium   PORT=4392   SEED=port   GPU=1
 //   (`shields` also takes the interceptors' shot, `low` the Low dome; every shot is in clear
 //   weather with the interface and problem icons hidden.)
 // Notes on what the shots need (each learnt the hard way):
@@ -48,10 +48,24 @@ const server = spawn(
   { stdio: 'ignore', detached: true },
 );
 await new Promise((r) => setTimeout(r, 2000));
-const browser = await chromium.launch({
-  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await chromium.launch(
+  process.env.GPU
+    ? {
+        // GPU=1 (phase 5 checks): a real Chrome window on the GPU, as atomshot.mjs does, to judge the look.
+        channel: 'chrome',
+        headless: false,
+        args: [
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-background-timer-throttling',
+          '--window-position=0,0',
+        ],
+      }
+    : {
+        ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
+        args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+      },
+);
 const t0 = Date.now();
 const log = (...a) => console.log(`[supershot ${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 try {

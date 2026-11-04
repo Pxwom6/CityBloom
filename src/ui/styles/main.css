@@ -1430,6 +1430,7 @@ body {
   padding-bottom: var(--space-1);
 }
 
+/* (`.topbar.fold`: the bar measured itself too full for what it shows, a chip or a badge; phase 5 checks.) */
 /* A narrower screen or a larger interface (data-width, set from the width in scaled rem): the top bar
    tightens up, then drops what's least needed. */
 #ui:is([data-width='m'], [data-width='s'], [data-width='xs']) .topbar {
@@ -1518,18 +1519,18 @@ body {
 .topbar .btn.more-toggle {
   display: none;
 }
-#ui[data-bars='compact'] .topbar-more {
+:is(#ui[data-bars='compact'], .topbar.fold) .topbar-more {
   display: flex;
   position: relative;
   flex-shrink: 0;
 }
-#ui[data-bars='compact'] .more-toggle {
+:is(#ui[data-bars='compact'], .topbar.fold) .more-toggle {
   display: inline-grid;
   position: relative;
   font-size: var(--font-size-lg);
   line-height: 1;
 }
-#ui[data-bars='compact'] .topbar-panels {
+:is(#ui[data-bars='compact'], .topbar.fold) .topbar-panels {
   display: none;
   position: absolute;
   top: calc(100% + var(--space-3));
@@ -1539,7 +1540,7 @@ body {
   padding: var(--space-2);
   z-index: 5;
 }
-#ui[data-bars='compact'] .topbar-panels.open {
+:is(#ui[data-bars='compact'], .topbar.fold) .topbar-panels.open {
   display: flex;
 }
 /*
@@ -1557,7 +1558,7 @@ body {
   flex-wrap: wrap;
 }
 /* A folded button's badge (an urgent advisor, a new notification) still shows, as a dot. */
-#ui[data-bars='compact'] .more-toggle:has(~ .topbar-panels .badge)::after {
+:is(#ui[data-bars='compact'], .topbar.fold) .more-toggle:has(~ .topbar-panels .badge)::after {
   content: '';
   position: absolute;
   top: 3px;
@@ -1568,7 +1569,7 @@ body {
   background: var(--color-negative);
 }
 /* Over the panels the top bar's own pop-ups sit under (z-hud against z-panel). */
-#ui[data-bars='compact'] .topbar:has(.topbar-panels.open) {
+:is(#ui[data-bars='compact'] .topbar, .topbar.fold):has(.topbar-panels.open) {
   z-index: var(--z-modal);
 }
 
@@ -3164,11 +3165,13 @@ body {
 }
 .winter-badge .winter-short,
 #ui:is([data-width='s'], [data-width='xs']) .winter-badge .winter-long,
-.topbar.rows .winter-badge .winter-long {
+.topbar.rows .winter-badge .winter-long,
+.topbar.fold .winter-badge .winter-long {
   display: none;
 }
 #ui:is([data-width='s'], [data-width='xs']) .winter-badge .winter-short,
-.topbar.rows .winter-badge .winter-short {
+.topbar.rows .winter-badge .winter-short,
+.topbar.fold .winter-badge .winter-short {
   display: inline;
 }
 

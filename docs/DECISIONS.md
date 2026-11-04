@@ -2906,3 +2906,22 @@ and lint rerun; the fourteen pictures looked at)
 - `hqRefusal`'s commit had left `sendRefusal`'s comment above it: moved back.
 - *"Fallout 0.97" on the radiation map* stays: it is the sim's tested query format and the line goes on to say how
   long the ground stays closed, which is what a player needs.
+
+## Phase 5 checks (the Mac's GPU, after the phase's end)
+
+- *The playthrough in one go* needs `PLAYTHROUGH=1` beside `PHASE5_GPU=1`: the config leaves `@playthrough` tests
+  out otherwise (`grepInvert`), so the bare command runs nothing.
+- *The playthrough's kept pictures replaced*: the run after the cloud's two-row war room tabs drew them in the
+  current interface, so they replace the committed ones (same scenes).
+- *The top bar folds when what it shows doesn't fit*: a raid's or a bomb's chip, or a nuclear winter's badge,
+  pushed a war city's speed buttons and menu off a 1280 px window (and 1100). The bar now measures itself after each
+  drawing and on a resize and folds its lesser buttons into the More menu, as a narrow window's does, the badge in
+  its short form (`topbarFolds` in `src/ui/layout.ts`, tests/layout.test.ts; the playthrough checks the menu
+  button stays in the window). Measuring rather than a width class: the chip's words and the badge's vary.
+- *The phone battle map test's flake* (`m39-battlemap.spec.ts`, "on a phone", `m0.canvas.w` 0 at line 370; it failed
+  three runs of five here, and once in the full run before M40): the map's draw loop starts after the sheet's first
+  paint and records its picture's size on its first frame; Playwright's Chromium draws this page at about 8 frames a
+  second (SwiftShader), and the test read the size right after the sheet showed, before two frames had passed
+  (a probe: the canvas laid out at 362 × 371 but still the default 300 × 150, the recorded size 0 × 0, then set a
+  frame later). Not a game fault (the map draws on its next frame); the test now reads the size once the map has
+  drawn (`drawn`, as its `pointsWhen` does for clicks), the check itself unchanged (wider than 300, taller than 150).

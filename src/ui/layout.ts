@@ -57,3 +57,15 @@ export function tipShift(left: number, right: number, viewport: number, margin =
   if (right > viewport - margin) return viewport - margin - right;
   return 0;
 }
+
+/**
+ * Whether the top bar folds its lesser buttons into the More menu because they don't fit beside what
+ * it shows now (phase 5 checks: a raid's or a bomb's chip, a nuclear winter's badge, pushed the speed
+ * buttons and the menu off a 1280 px window). `content` is the bar's content width now (px), `room`
+ * the most it may be, `saved` what folding saves (measured when it last folded). Folded, it unfolds
+ * only once the unfolded bar would fit with a few px to spare, so it doesn't flicker at the edge.
+ */
+export function topbarFolds(folded: boolean, content: number, room: number, saved: number): boolean {
+  if (!folded) return content > room + 1;
+  return content + saved > room - 8;
+}

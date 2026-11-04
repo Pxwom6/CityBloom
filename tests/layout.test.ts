@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { barsClass, tipShift, topbarRows, widthClass } from '../src/ui/layout';
+import { barsClass, tipShift, topbarFolds, topbarRows, widthClass } from '../src/ui/layout';
 
 describe('interface size classes', () => {
   it('sorts a window by its width in scaled rem', () => {
@@ -36,5 +36,19 @@ describe('the top bar on a phone (F11)', () => {
     expect(topbarRows(768 / 16, false)).toBe(false);
     expect(topbarRows(768 / 16, true)).toBe(true);
     expect(topbarRows(1280 / 16, true)).toBe(false);
+  });
+});
+
+describe('the top bar folding when what it shows doesn’t fit (phase 5 checks)', () => {
+  it('folds when its content passes the room it has, and unfolds only with room to spare', () => {
+    // 1280 px window: room 1256 px. A war city's bar with a nuclear winter's badge: 1430 px.
+    expect(topbarFolds(false, 1180, 1256, 0)).toBe(false);
+    expect(topbarFolds(false, 1430, 1256, 0)).toBe(true);
+    // Folded it is 1120 px; folding saved 310 px. The badge still there: it stays folded.
+    expect(topbarFolds(true, 1120, 1256, 310)).toBe(true);
+    // The winter over (the bar 890 px folded, 1200 unfolded): it unfolds.
+    expect(topbarFolds(true, 890, 1256, 310)).toBe(false);
+    // At the edge it doesn't flicker: 4 px short of the room is still folded.
+    expect(topbarFolds(true, 1252 - 310, 1256, 310)).toBe(true);
   });
 });

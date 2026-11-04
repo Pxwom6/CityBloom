@@ -69,6 +69,24 @@ async function stage(
   expect(why, `stageLive ${role}`).toBeNull();
 }
 
+/**
+ * The map as it stands once it has drawn its picture (its size measured): the draw loop starts after the
+ * sheet's first paint and measures on its first frame, which on a software renderer (a few frames a
+ * second) can come after a test's next read. Phase 5 checks: the phone test read the size first and got
+ * the 0 × 0 it starts with, in three runs of five.
+ */
+async function drawn(page: Page) {
+  let m: Awaited<ReturnType<typeof map>> | null = null;
+  await expect
+    .poll(async () => (m = await map(page)).canvas.w, {
+      message: 'the map has drawn its picture',
+      timeout: 30_000,
+      intervals: [100],
+    })
+    .toBeGreaterThan(0);
+  return m!;
+}
+
 /** The battle has run to (about) a step: a battle held at a step is there within a few seconds. */
 async function reach(page: Page, step: number) {
   await expect
@@ -366,7 +384,7 @@ test.describe('on a phone', () => {
     // (A notice toast over the sheet's corner would cover a button for a few seconds.)
     await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 30_000 });
     expect(await unreachable(page, 'battle-map')).toEqual([]);
-    const m0 = await map(page);
+    const m0 = await drawn(page);
     expect(m0.canvas.w).toBeGreaterThan(300);
     expect(m0.canvas.h).toBeGreaterThan(150);
 

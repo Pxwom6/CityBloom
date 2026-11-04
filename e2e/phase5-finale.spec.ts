@@ -567,6 +567,7 @@ test('phase 5 end, 1: a war with a computer neighbour, from the main menu @playt
   await page.getByTestId('battle-follow').click();
   await page.evaluate(() => window.__game!.waitFrames(6));
   await snap(page, 'a-raid');
+  await barFits(page, 'Harrowgate (a battle on)');
   for (let k = 0; k < 60; k++) {
     const b = await page.evaluate(async () => {
       await window.__game!.advance(60);
@@ -830,6 +831,17 @@ async function stamped(page: Page, kind: string) {
     .toMatchObject({ kind, state: 'stamped' });
   return (await map(page)).log.at(-1)!;
 }
+/**
+ * The top bar's last control, the menu, inside the window (phase 5 checks: a bomb's chip or a nuclear
+ * winter's badge had pushed the speed buttons and the menu off a 1280 px window). The bar folds its
+ * lesser buttons into the More menu instead.
+ */
+async function barFits(page: Page, who: string): Promise<void> {
+  const menu = (await page.getByTestId('menu-button').boundingBox())!;
+  const width = page.viewportSize()?.width ?? (await page.evaluate(() => innerWidth));
+  expect(menu.x + menu.width, `${who}'s menu button inside the window`).toBeLessThanOrEqual(width);
+}
+
 /** The notices stand clear of the battle map (phase 5 end: at 1100 px they covered its orders and their log). */
 async function clearOfMap(page: Page, who: string): Promise<void> {
   const sheet = (await page.getByTestId('battle-map').boundingBox())!;
@@ -1199,6 +1211,7 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   await sam.getByTestId('atom-look').click();
   await sam.evaluate(() => window.__game!.waitFrames(40));
   await snap(sam, 'c-countdown');
+  await barFits(sam, 'Sam (a bomb on its way)');
   // The last 20 seconds at normal speed, as a player would watch them, looking at a point 450 m above ground
   // zero from 2.6 km (the pose atomshot.mjs's interface pictures use: the 900 m cloud stands in the frame).
   await advance(sam, inbound.arrive - (await state(sam)).tick - 160);
@@ -1273,11 +1286,13 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   );
   await readTips(sam, 'Sam');
   await snap(sam, 'c-winter');
+  await barFits(sam, 'Sam (a nuclear winter)');
   await ada.bringToFront();
   await readTips(ada, 'Ada');
   await warTab(ada, 'diplomacy');
   await expect(ada.getByTestId('dip-pariah')).toBeVisible();
   await snap(ada, 'c-pariah');
+  await barFits(ada, 'Ada (a nuclear winter, 1100 px)');
   adaErrs.check();
   samErrs.check();
 });

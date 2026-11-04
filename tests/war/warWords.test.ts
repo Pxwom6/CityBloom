@@ -6,6 +6,8 @@ import {
   helpOverNotice,
   nameInSentence,
   objectiveName,
+  scaleHint,
+  scaleName,
   shelterSentence,
   termPayer,
   unitsKnockedOut,
@@ -161,5 +163,23 @@ describe('a new season’s notice under a nuclear winter', () => {
     // Winter itself says what it always does.
     expect(seasonNotice(3, true)).toBe(seasonNotice(3, false));
     expect(seasonNotice(7, false)).toBeNull();
+  });
+});
+
+describe('the war scale in the declaration (phase 5 end)', () => {
+  it('names each scale in a word or two, so the drop-down never cuts an option off', () => {
+    expect(scaleName('skirmish')).toBe('Skirmish war');
+    expect(scaleName('war')).toBe('War');
+    expect(scaleName('total')).toBe('Total war');
+    expect(scaleName('total', true)).toBe('A rising');
+    for (const s of ['skirmish', 'war', 'total'] as const)
+      expect(scaleName(s).length).toBeLessThanOrEqual(12);
+  });
+
+  it('says beneath it what the chosen scale means, as the options used to', () => {
+    expect(scaleHint('skirmish')).toBe('Battles move the score.');
+    expect(scaleHint('war')).toBe('Battles move the score; a treaty ends it.');
+    expect(scaleHint('total')).toBe('Total war: hold their HQ and they fall.');
+    expect(scaleHint('total', true)).toBe('Total war on the overlord: hold its HQ and the city goes free.');
   });
 });

@@ -16,7 +16,7 @@ import { declareWarning, friendTermWords, friendTermsWords, newcomerNote } from 
 import { formatMoney } from './hooks';
 import { useGameUpdates } from './hooks';
 import { Feedback, ScoreBar, type Asked } from './Diplomacy';
-import { warScoreLine } from './warWords';
+import { scaleHint, scaleName, warScoreLine } from './warWords';
 
 type Friend = DiplomacySummary['friends'][number];
 type FriendWar = DiplomacySummary['wars'][number];
@@ -459,17 +459,14 @@ function FriendRow({
               value={picked}
               onChange={(e) => setScale((e.target as HTMLSelectElement).value as FriendScale)}
             >
-              {scales.includes('skirmish') && <option value="skirmish">Skirmish war: battles score</option>}
-              {scales.includes('war') && <option value="war">War: battles score, terms end it</option>}
-              {scales.includes('total') && (
-                <option value="total">
-                  {rising
-                    ? 'A rising: total war, hold their HQ and the city goes free'
-                    : 'Total war: hold their HQ and they fall'}
-                </option>
-              )}
+              {scales.includes('skirmish') && <option value="skirmish">{scaleName('skirmish')}</option>}
+              {scales.includes('war') && <option value="war">{scaleName('war')}</option>}
+              {scales.includes('total') && <option value="total">{scaleName('total', rising)}</option>}
             </select>
           </label>
+          <p class="muted" data-testid="dip-fscale-hint">
+            {scaleHint(picked, rising)}
+          </p>
           <label>
             Reason{' '}
             <input

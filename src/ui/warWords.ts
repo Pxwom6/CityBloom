@@ -130,3 +130,17 @@ export function nameInSentence(name: string): string {
   const proper = words.length > 1 && words.every((w) => /^[A-Z][a-z]/.test(w));
   return proper || !name ? name : `${name[0]!.toLowerCase()}${name.slice(1)}`;
 }
+
+/** A war's scale in the declaration's drop-down: short, so the option is never cut off (phase 5 end). */
+export function scaleName(scale: 'skirmish' | 'war' | 'total', rising = false): string {
+  return scale === 'skirmish' ? 'Skirmish war' : scale === 'war' ? 'War' : rising ? 'A rising' : 'Total war';
+}
+
+/** What the chosen scale means, in the line under the drop-down (the words its options used to carry). */
+export function scaleHint(scale: 'skirmish' | 'war' | 'total', rising = false): string {
+  if (scale === 'skirmish') return 'Battles move the score.';
+  if (scale === 'war') return 'Battles move the score; a treaty ends it.';
+  return rising
+    ? 'Total war on the overlord: hold its HQ and the city goes free.'
+    : 'Total war: hold their HQ and they fall.';
+}

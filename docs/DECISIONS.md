@@ -2888,10 +2888,21 @@ a project's stages, the fuel and the bomb, fast-forward, a raid brought near). O
   that is the sim's note text, hashed in the M36 golden, so it wants a deliberate golden update.
 - *The bomb doesn't move the war score between friends* (score 0 after the strike): the room could count a kept strike
   as a decisive battle.
-- *The war room's eleven tabs wrap to three rows at 1280* (Reports alone): taste; group them, or shorter names.
-- *The scale drop-down's "War: battles score, terms end it" is cut off*: taste; shorter options, the words beneath.
 - *"Fallout 0.97" on the radiation map*: the tested M40 format; "Fallout 97 % (heavy)" reads better.
 - *"Nuclear winter, year 1 of 6, 23 °C" as the card says one "is coming"*: factual (it cools as the ash spreads); left.
 - *A tip on screen whose moment has passed stays until dismissed*: P15's rule (cards don't vanish while read); left.
 - *The toy mushroom cloud's puffs read as hard balls close up* (flat-shaded spheres): the M40 look, fine from the side
   at a distance; softer puffs (a noise or rim-light term on the puff material) would read more as smoke.
+
+**Fixed in the cloud session, after the Mac's commits** (reviewed there: every commit's tests, the goldens, typecheck
+and lint rerun; the fourteen pictures looked at)
+- *The war room's eleven tabs wrapped to three rows* (Reports alone): the war room's tabs take a little less padding
+  (`.war-room .tab`), so the eleven sit in two rows at 1280 and 1100 px (measured in the browser: three rows before,
+  two after); narrow widths keep their own padding. `e2e/m39-touch-scale.spec.ts` passes.
+- *The scale drop-down's options were cut off*: the options are a word or two (`scaleName`: War, Total war, Skirmish
+  war, A rising) and what the chosen scale means stands beneath (`scaleHint`, `dip-scale-hint`, `dip-fscale-hint`),
+  in both declarations (computer neighbours and friends); `tests/war/warWords.test.ts`, `e2e/m36-diplomacy.spec.ts`.
+- The Military bar's tooltip said "25 power units" after the inspector moved to MW: now "25 MW of power".
+- `hqRefusal`'s commit had left `sendRefusal`'s comment above it: moved back.
+- *"Fallout 0.97" on the radiation map* stays: it is the sim's tested query format and the line goes on to say how
+  long the ground stays closed, which is what a player needs.

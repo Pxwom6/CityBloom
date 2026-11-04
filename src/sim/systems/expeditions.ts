@@ -139,8 +139,6 @@ function superRefusal(sim: Sim, units: number[], n: Neighbour, route: BattleRout
   return null;
 }
 
-/** Why a force can't go, or null. */
-
 /**
  * Why the city's military HQ can't send a force (phase 5 end: "Forces are sent from a working military HQ"
  * after a raid left a player looking at an HQ that stood, not knowing it was under repair).
@@ -153,6 +151,8 @@ export function hqRefusal(hq: Civic | undefined): string {
     return `The military HQ is being repaired (${hq.damage} h left): forces are sent from a working HQ`;
   return 'The military HQ is short of staff: forces are sent from a working HQ';
 }
+
+/** Why a force can't go, or null. */
 export function sendRefusal(
   sim: Sim,
   units: number[],

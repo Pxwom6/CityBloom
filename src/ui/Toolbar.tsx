@@ -1163,7 +1163,7 @@ function ProjectButton({ def }: { def: CivicDef }) {
 /** A military building's tooltip lines (M34): staff and power, what it trains, what it does. */
 function militaryLines(d: CivicDef): string[] {
   const m = d.military!;
-  const out = [`${m.jobs} staff · ${m.power} power units`];
+  const out = [`${m.jobs} staff · ${m.power} MW of power`];
   const trains = (m.trains ?? []).map((k) => UNIT.get(k)).filter((u) => u && !u.research);
   if (trains.length)
     out.push(`Trains ${trains.map((u) => u!.plural.toLowerCase()).join(', ')}; keeps ${m.holds ?? 0}`);

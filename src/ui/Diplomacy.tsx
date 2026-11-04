@@ -23,7 +23,7 @@ import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { FriendsDiplomacy } from './DiplomacyFriends';
-import { termPayer, warScoreLine } from './warWords';
+import { scaleHint, scaleName, termPayer, warScoreLine } from './warWords';
 
 type Neighbour = DiplomacySummary['neighbours'][number];
 
@@ -555,16 +555,13 @@ function NeighbourRow({
                 onEdit();
               }}
             >
-              {!rising && <option value="war">War: battles score, terms end it</option>}
-              {d.allowed === 'total' && (
-                <option value="total">
-                  {rising
-                    ? 'A rising: total war, hold their HQ and the city goes free'
-                    : 'Total war: hold their HQ and they fall'}
-                </option>
-              )}
+              {!rising && <option value="war">{scaleName('war')}</option>}
+              {d.allowed === 'total' && <option value="total">{scaleName('total', rising)}</option>}
             </select>
           </label>
+          <p class="muted" data-testid="dip-scale-hint">
+            {scaleHint(scale, rising)}
+          </p>
           <label>
             Reason{' '}
             <input

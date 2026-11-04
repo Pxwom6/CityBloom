@@ -276,7 +276,8 @@ refusal naming its cause, MW for power), then in the cloud the war room's tabs i
 war scales with their meaning beneath. Left with a proposal (DECISIONS "Phase 5 end", and "Ideas for
 what's next" below): a grace for a young city's first war, a raid that blacks out a town, odds in the
 Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs.
-Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at).
+Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at). Tests on the final code: the unit suite,
+2,039 tests in 185 files, typecheck, lint and prettier pass; the cross-browser test is green on every push.
 
 M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
 it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,

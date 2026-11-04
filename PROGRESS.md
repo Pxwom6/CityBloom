@@ -16,7 +16,8 @@ rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still wor
 
 Phases 1–4 (with phase 4's review follow-ups) and the war models (PR #22) are merged into `main`,
 which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 5 (war between cities,
-SPEC-5.md, M34–M40) is complete** on this branch, in pull request #23 for the owner to merge. Online
+SPEC-5.md, M34–M40) is complete, its end included** (the playthroughs through the real UI and their
+fixes), on this branch, in pull request #23 for the owner to merge. Online
 rooms need the Cloudflare setup above; peer-to-peer works without it.
 
 - [x] M0 Foundation
@@ -61,8 +62,7 @@ rooms need the Cloudflare setup above; peer-to-peer works without it.
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40.** What remains is the
-phase's end (In progress). Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40 and the phase's end.** Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
 in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
 `main` from this branch; a milestone finished while the last one's pull request is still open joins
 it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
@@ -232,6 +232,12 @@ the war specs in `e2e/` (two players through the real UI for war between friends
 soak and the cross-browser test on every push.
 
 ## Ideas for what's next
+0. **War, further** (from phase 5's playthroughs; DECISIONS "Phase 5 end"): a grace for a young city's
+   first war (no total war declared on a city under 3,000 residents or two years old); a wrecked power
+   plant keeping half its output while repaired, or an emergency import, so one raid doesn't black out a
+   town; a rough odds line in the Send tab; a computer neighbour's refusal naming its reason (its note is
+   hashed in the M36 golden, so a deliberate golden update); a kept atom strike counted in a friends'
+   war score; softer puffs on the toy cloud; "Fallout 97 % (heavy)" on the radiation map.
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
 2. **Terrain, further**: a water tool in running cities (dig a harbour basin or a canal, with the
@@ -254,12 +260,23 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**Phase 5's milestones M34 to M40 are complete**, in pull request #23 (its title names all seven).
-What is left of phase 5 is its end (SPEC-5.md, "When every milestone is done"). The summary at the
-top of this file, SPEC_REVIEW's phase-5 section and the README are updated. Still to do: a war with
-a computer neighbour and one between two players through the real UI, a race for the bomb, and
-fixes for whatever feels off (on the owner's Mac, where the real-UI runs are fast; findings and
-fixes go in DECISIONS "Phase 5 end" and SPEC_REVIEW's "When every milestone is done (phase 5)").
+**Phase 5 is complete, its end included**, in pull request #23 (its title names all seven milestones).
+Nothing is under way; what's left is the owner's: merge PR #23, the real-device list under "To check
+on the Mac", and the Cloudflare setup above for online rooms.
+
+Phase 5's end (SPEC-5.md, "When every milestone is done"): the summaries (this file's top, SPEC_REVIEW's
+phase 5 section, the README with two war pictures), then three playthroughs through the real UI on the
+owner's Mac on the GPU, kept as `e2e/phase5-finale.spec.ts` (`@playthrough`, ≈12 min): a war with a
+computer neighbour from the main menu, a war between two players with a third watching the live battle,
+and the atom bomb race between them to the fallout, the winter and the pariah. Nineteen findings fixed,
+each with a test (war words that agree with their numbers, the battle bar's targets named, notices kept
+off the battle map, the battle map in a player's words, a join told once, a strike's notices not
+tripled, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, the HQ's
+refusal naming its cause, MW for power), then in the cloud the war room's tabs in two rows and short
+war scales with their meaning beneath. Left with a proposal (DECISIONS "Phase 5 end", and "Ideas for
+what's next" below): a grace for a young city's first war, a raid that blacks out a town, odds in the
+Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs.
+Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at).
 
 M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
 it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
@@ -331,9 +348,9 @@ cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. Phase 5's end (SPEC-5.md), the summaries done: play through the real UI a war with a computer
-   neighbour, a war between two players and a race for the atom bomb; fix whatever feels off.
+1. The owner: merge PR #23 (phase 5) into `main`.
 2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
+3. Then, if wanted, the phase 5 ideas under "Ideas for what's next".
 
 ## Performance (M40)
 - **E2E through the real UI** (on the owner's Mac, Playwright's Chromium): `e2e/m40-atom.spec.ts` (one
@@ -1203,6 +1220,10 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 end: one whole `npm run playthrough` run of `e2e/phase5-finale.spec.ts` after its last fix
+  (each of its three tests passed on its own on the GPU; the last full run stopped at test 3 on a slip of
+  the spec's that was then fixed); frame times in the war room, the battle map and the blast were not
+  measured in the playthrough session.
 - Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
   the launch button by finger on a tablet and a phone; a strike between two real machines over
   peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;

@@ -23,7 +23,7 @@ import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import { TICKS_PER_HOUR, dateOf, formatDate } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
 import { FriendsDiplomacy } from './DiplomacyFriends';
-import { warScoreLine } from './warWords';
+import { termPayer, warScoreLine } from './warWords';
 
 type Neighbour = DiplomacySummary['neighbours'][number];
 
@@ -593,16 +593,22 @@ function NeighbourRow({
   );
 }
 
-/** The fields a term kind starts with (money measured against the payer's taxes). */
-function blankTerm(k: TermKind, theirTaxes: number, district: number | undefined, town?: number): Term {
-  const amount = Math.max(500, Math.round((theirTaxes * 0.1) / 100) * 100);
+/** The fields a term kind starts with (money measured against the payer's taxes, `payerTaxes`). */
+function blankTerm(
+  k: TermKind,
+  payerTaxes: number,
+  district: number | undefined,
+  town?: number,
+  payer: 'us' | 'them' = 'them',
+): Term {
+  const amount = Math.max(500, Math.round((payerTaxes * 0.1) / 100) * 100);
   switch (k) {
     case 'ceasefire':
       return { k, hours: 72 };
     case 'reparations':
-      return { k, payer: 'them', amount: amount * 3 };
+      return { k, payer, amount: amount * 3 };
     case 'tribute':
-      return { k, payer: 'them', amount, months: 12 };
+      return { k, payer, amount, months: 12 };
     case 'dmz':
       return { k, side: 'them', months: 12 };
     case 'occupy':
@@ -819,17 +825,20 @@ function TermsBuilder({
               ? `A treaty has ${DIPLOMACY.maxTerms} terms at most`
               : undefined
           }
-          onClick={() =>
+          onClick={() => {
+            // (A city offering peace in a war it is losing pays, by its own taxes.)
+            const payer = termPayer(mode, d.wars.find((w) => w.with === to)?.score);
             setTerms([
               ...terms,
               blankTerm(
                 kind,
-                theirs?.taxes ?? d.taxes,
+                payer === 'us' ? d.taxes : (theirs?.taxes ?? d.taxes),
                 kind === 'occupy' || kind === 'release' ? choices(kind, 'them')[0]?.id : undefined,
                 subjects[0]?.id,
+                payer,
               ),
-            ])
-          }
+            ]);
+          }}
         >
           Add term
         </button>

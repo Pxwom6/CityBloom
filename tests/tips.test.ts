@@ -41,6 +41,26 @@ describe('tips agree with the numbers (P15)', () => {
     expect(pickTip(earning, t, false, new Set(['money']))).toBe(t);
   });
 
+  it('put a moment that won’t wait before a general tip still waiting (phase 5 end)', () => {
+    // A war with a neighbour (the Diplomacy tip is due) and a bomb in the air (the bomb's tip is due).
+    const war = { wars: [{}], proposals: [] } as unknown as NonNullable<CityStats['war']>['diplomacy'];
+    const g = gameWith({
+      war: { diplomacy: war, incoming: { kind: 'bomb' } } as unknown as CityStats['war'],
+    });
+    const read = new Set(TIPS.filter((t) => !['diplomacy', 'atomInbound'].includes(t.id)).map((t) => t.id));
+    expect(tip('diplomacy').when(g)).toBe(true);
+    expect(tip('atomInbound').when(g)).toBe(true);
+    expect(pickTip(g, null, false, read)?.id).toBe('atomInbound');
+    // Then the general one, in its turn.
+    expect(pickTip(g, null, false, new Set([...read, 'atomInbound']))?.id).toBe('diplomacy');
+    // Only the moments that won't wait jump the queue.
+    expect(TIPS.filter((t) => t.urgent).map((t) => t.id)).toEqual([
+      'raidComing',
+      'liveBattle',
+      'atomInbound',
+    ]);
+  });
+
   it('call commutes long where the transport advisor does', () => {
     const traffic = tip('traffic');
     // avgCommute is in seconds: a 1-minute average isn't long, a 25-minute one is.

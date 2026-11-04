@@ -107,3 +107,25 @@ function winterLine(w: WeatherSummary): string {
   const list = says.length ? `${says.join(', ')} and ${last}` : last;
   return `${head} ${cap(list)}.`;
 }
+
+/**
+ * The notice a new season gives (M22), by its index (spring, summer, autumn, winter). Under a nuclear
+ * winter the warm seasons don't come as they would (phase 5 end: "Autumn: winter is three months away"
+ * popped up under heavy snow and an ash sky), so they say so.
+ */
+export function seasonNotice(season: number, nuclearWinter: boolean): string | null {
+  if (nuclearWinter && season >= 0 && season <= 2)
+    return [
+      'Spring has come, but not the warmth: the nuclear winter keeps the cold in, and heating keeps power demand up.',
+      'Summer under the ash: the sun is dimmed, solar plants give less, and it stays cold.',
+      'Autumn under the ash: the cold of the nuclear winter stays, and heating keeps power demand up.',
+    ][season]!;
+  return (
+    [
+      'Spring has come.',
+      'Summer is here: heatwaves raise power and water use.',
+      'Autumn: winter is three months away, and heating will push up power demand.',
+      'Winter has come: heating raises power demand, and snow slows traffic until it is ploughed.',
+    ][season] ?? null
+  );
+}

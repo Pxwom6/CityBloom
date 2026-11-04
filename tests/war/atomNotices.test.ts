@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bombLine, raceLine } from '../../src/data/atom';
-import { atomEventNotice, raceNotice } from '../../src/client/atomNotices';
+import { atomEventNotice, ownRaceLine, quietIntel, raceNotice } from '../../src/client/atomNotices';
 
 /**
  * M40 step 10 review: what the page says of the bomb. `Game.notice` collapses repeats of one kind for a
@@ -74,5 +74,31 @@ describe('the region’s lines about the race', () => {
       '',
     ])
       expect(raceNotice(text), text).toBeNull();
+  });
+});
+
+describe('phase 5 end: a race line about the city itself', () => {
+  it('is let pass on its own page, and heard on every other', () => {
+    for (let s = 1; s <= 6; s++) {
+      expect(ownRaceLine(raceLine(s, 'Adaville')!, 'Adaville')).toBe(true);
+      expect(ownRaceLine(raceLine(s, 'Adaville')!, 'Samford')).toBe(false);
+    }
+    expect(ownRaceLine(bombLine('fired', 'Adaville', 'Samford'), 'Adaville')).toBe(true);
+    // (A city whose name begins another's is not that city.)
+    expect(ownRaceLine(raceLine(2, 'Adaville North')!, 'Adaville')).toBe(false);
+    // A bomb on the city: its countdown, its card and its own notices say so.
+    expect(ownRaceLine(bombLine('fired', 'Adaville', 'Samford'), 'Samford')).toBe(true);
+    expect(ownRaceLine(bombLine('boom', 'Samford'), 'Samford')).toBe(true);
+    expect(ownRaceLine(bombLine('stopped', 'Samford'), 'Samford')).toBe(true);
+    // A third city hears all of it.
+    for (const line of [bombLine('fired', 'Adaville', 'Samford'), bombLine('boom', 'Samford')])
+      expect(ownRaceLine(line, 'Kitsbury')).toBe(false);
+    // Not a race line: the room's other words are toasted as ever.
+    expect(ownRaceLine('Adaville joined the region', 'Adaville')).toBe(false);
+  });
+
+  it('keeps the note of a bomb fired at the city in the log, without a toast beside the sirens', () => {
+    expect(quietIntel('Adaville has fired the atom bomb at the city')).toBe(true);
+    expect(quietIntel('Our spies saw Adaville’s silo')).toBe(false);
   });
 });

@@ -107,3 +107,26 @@ export function warScoreLine(score: number, battles: number): string {
     ? `Score ${s} after ${some(battles, 'battle', 'battles')}.`
     : `Score ${s}, no battles yet.`;
 }
+
+/**
+ * Who pays a money term (reparations, tribute) when it is first added to a treaty: the other side, but
+ * the city itself when it offers peace in a war it is losing (phase 5 end: a city behind had to turn
+ * every term round before a neighbour would listen).
+ */
+export function termPayer(
+  mode: 'propose' | 'counter' | 'offer' | 'impose',
+  score: number | undefined,
+): 'us' | 'them' {
+  return mode === 'offer' && (score ?? 0) < 0 ? 'us' : 'them';
+}
+
+/**
+ * A building's name inside a sentence ("The enrichment plant is open!", not "The Enrichment plant"):
+ * names are kept in sentence case, so the first letter falls, except in a proper name whose every word
+ * is capitalised ("Sunfield Commons"); an acronym is not a proper name ("the military HQ").
+ */
+export function nameInSentence(name: string): string {
+  const words = name.split(' ');
+  const proper = words.length > 1 && words.every((w) => /^[A-Z][a-z]/.test(w));
+  return proper || !name ? name : `${name[0]!.toLowerCase()}${name.slice(1)}`;
+}

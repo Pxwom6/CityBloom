@@ -4,12 +4,15 @@ import {
   damageLine,
   helpOverLine,
   helpOverNotice,
+  nameInSentence,
   objectiveName,
   shelterSentence,
+  termPayer,
   unitsKnockedOut,
   warScoreLine,
 } from '../../src/ui/warWords';
 import { shelterLine } from '../../src/ui/atomView';
+import { seasonNotice } from '../../src/ui/weather';
 
 /** Phase 5 end: the words the war's warnings, notices and cards share. */
 describe('the shelter line of a warning', () => {
@@ -120,5 +123,43 @@ describe('a war’s score on its card', () => {
     expect(warScoreLine(0, 0)).toBe('Score 0, no battles yet.');
     expect(warScoreLine(-15.6, 1)).toBe('Score -16 after 1 battle.');
     expect(warScoreLine(22.2, 3)).toBe('Score 22 after 3 battles.');
+  });
+});
+
+describe('who pays a money term when it is added', () => {
+  it('the other side, unless the city offers peace in a war it is losing', () => {
+    expect(termPayer('offer', -24)).toBe('us');
+    expect(termPayer('offer', 12)).toBe('them');
+    expect(termPayer('offer', undefined)).toBe('them');
+    expect(termPayer('propose', -40)).toBe('them');
+    expect(termPayer('impose', -5)).toBe('them');
+  });
+});
+
+describe('a building’s name inside a sentence', () => {
+  it('drops its capital, except in a proper name', () => {
+    expect(nameInSentence('Enrichment plant')).toBe('enrichment plant');
+    expect(nameInSentence('Atom silo')).toBe('atom silo');
+    expect(nameInSentence('City stadium')).toBe('city stadium');
+    expect(nameInSentence('Military HQ')).toBe('military HQ');
+    expect(nameInSentence('Sunfield Commons')).toBe('Sunfield Commons');
+    expect(nameInSentence('building')).toBe('building');
+  });
+});
+
+describe('a new season’s notice under a nuclear winter', () => {
+  it('does not promise warmth or a winter to come under the ash', () => {
+    expect(seasonNotice(2, false)).toBe(
+      'Autumn: winter is three months away, and heating will push up power demand.',
+    );
+    expect(seasonNotice(1, false)).toMatch(/heatwaves/);
+    for (const s of [0, 1, 2]) {
+      const t = seasonNotice(s, true)!;
+      expect(t).toMatch(/nuclear winter|ash/);
+      expect(t).not.toMatch(/heatwaves|three months away/);
+    }
+    // Winter itself says what it always does.
+    expect(seasonNotice(3, true)).toBe(seasonNotice(3, false));
+    expect(seasonNotice(7, false)).toBeNull();
   });
 });

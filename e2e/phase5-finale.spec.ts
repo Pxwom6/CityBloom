@@ -150,9 +150,20 @@ async function drag(page: Page, points: [number, number][]): Promise<void> {
   await page.waitForTimeout(300);
 }
 
+/**
+ * A milestone's banner (9 s, in the middle of the screen) clicked away, as a player would before building
+ * or opening the war room: the spec moves faster than a player, and the banner stood over the spots.
+ */
+async function clearBanner(page: Page): Promise<void> {
+  const banner = page.getByTestId('milestone-banner');
+  if (await banner.isVisible()) await banner.click();
+  await expect(banner).toHaveCount(0);
+}
+
 /** Place a building from a toolbar menu, trying spots beside the roads until one takes it. */
 async function place(page: Page, category: string, def: string, spots: [number, number][]): Promise<boolean> {
   const count = async () => (await civics(page, def)).length;
+  await clearBanner(page);
   const before = await count();
   const button = page.getByTestId(`place-${def}`);
   if (!(await page.getByTestId('place-options').isVisible()) || !(await button.isVisible()))
@@ -162,20 +173,26 @@ async function place(page: Page, category: string, def: string, spots: [number, 
     return false;
   }
   await button.click();
+  const why: string[] = [];
   for (const [x, z] of spots) {
     const p = await screenAt(page, x, z);
-    if (!p.onMap) continue;
+    if (!p.onMap) {
+      why.push(`(${x},${z}) under the interface`);
+      continue;
+    }
     await page.mouse.move(p.x, p.y, { steps: 3 });
     await page.waitForTimeout(250);
+    const hint = await page
+      .getByTestId('tool-hint')
+      .innerText({ timeout: 500 })
+      .catch(() => '');
     await page.mouse.click(p.x, p.y);
     await page.waitForTimeout(400);
     if ((await count()) > before) return true;
+    why.push(`(${x},${z}) ${hint.replace(/\s+/g, ' ')}`);
   }
-  const hint = await page
-    .getByTestId('tool-hint')
-    .innerText()
-    .catch(() => '');
-  log(`no spot took the ${def}; the hint said: ${hint}`);
+  log(`no spot took the ${def}: ${why.join('; ')}`);
+  await page.screenshot({ path: `${OUT}/no-room-${def}.png` });
   return false;
 }
 
@@ -183,6 +200,7 @@ const roomOpen = (page: Page) => page.evaluate(() => window.__game!.getWarRoom()
 
 /** The war room open on a tab (its shortcut toggles it: the game says whether it is open, and the page catches up). */
 async function warTab(page: Page, tab: string): Promise<void> {
+  await clearBanner(page);
   if (!(await roomOpen(page))) await page.keyboard.press('Shift+KeyM');
   await expect(page.getByTestId('war-room')).toBeVisible();
   await page.getByTestId(`war-tab-${tab}`).click();
@@ -1164,8 +1182,13 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   await sam.getByTestId('atom-look').click();
   await sam.evaluate(() => window.__game!.waitFrames(40));
   await snap(sam, 'c-countdown');
-  // The last 20 seconds at normal speed, as a player would watch them.
+  // The last 20 seconds at normal speed, as a player would watch them, from the side of ground zero (the
+  // missile's own camera ends looking straight down, where the toy mushroom is a heap of puffs).
   await advance(sam, inbound.arrive - (await state(sam)).tick - 160);
+  await sam.evaluate(
+    ([x, z]) => window.__game!.setCamera({ x, z: z + 250, yaw: 0.35, distance: 1100, tilt: 0.28 }),
+    [inbound.x, inbound.z],
+  );
   await sam.evaluate(() => window.__game!.setSpeed(1));
   for (let k = 0; k < 600; k++) {
     if ((await sam.evaluate(() => window.__game!.getAtomFx())).flash > 0.3) break;
@@ -1215,7 +1238,9 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   await snap(sam, 'c-cleanup');
   await sam.getByTestId('cleanup-done').click();
 
-  // --- The winter on both cities; Ada a pariah. ---
+  // --- The winter on both cities; Ada a pariah. (The fallout map off: the snow and the ash sky to see.) ---
+  const hideMap = sam.getByRole('button', { name: 'Hide data map' });
+  if (await hideMap.isVisible()) await hideMap.click();
   for (let k = 0; k < 8; k++) {
     await report(ada);
     await report(sam);

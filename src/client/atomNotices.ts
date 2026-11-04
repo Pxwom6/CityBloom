@@ -6,7 +6,7 @@
  * `notice`, which collapses repeats of one kind for a minute and toasts a kind at most once in twenty
  * seconds, so a kind has to stand for one thing said.
  */
-import { raceLine } from '../data/atom';
+import { bombLine, raceLine } from '../data/atom';
 
 export interface PageNotice {
   kind: string;
@@ -77,3 +77,27 @@ export function raceNotice(text: string): PageNotice | null {
   if (/.’s dome has stopped an atom bomb$/.test(text)) return { kind, text, tone: 'info' };
   return null;
 }
+
+/**
+ * A line the room says of the race or the bomb that is about this very city: its own steps ("Adaville has
+ * begun enriching fuel", "Adaville has fired the atom bomb at Samford") or a bomb on it ("… at Samford",
+ * "An atom bomb has fallen on Samford", "Samford’s dome has stopped an atom bomb"). The room tells every
+ * page; the city's own notices, its Bomb tab and its countdown have said it already, in its own voice
+ * (phase 5 end: a strike gave its target three notices at once), so the page lets it pass.
+ */
+export function ownRaceLine(text: string, city: string): boolean {
+  if (!city || raceNotice(text) === null) return false;
+  return (
+    text.startsWith(`${city} has `) ||
+    text.startsWith(`${city} is `) ||
+    text.startsWith(`${city}’s `) ||
+    text.endsWith(` at ${city}`) ||
+    text === bombLine('boom', city)
+  );
+}
+
+/**
+ * The intelligence note of a friend's bomb fired at the city: kept in the log, not toasted, since the
+ * sirens come with it and say more (when it lands, the shelters).
+ */
+export const quietIntel = (text: string): boolean => / has fired the atom bomb at the city$/.test(text);

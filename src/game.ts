@@ -34,7 +34,7 @@ import {
   type BattleRecord,
 } from './client/battles';
 import { LiveBattles } from './client/liveBattles';
-import { atomEventNotice, raceNotice } from './client/atomNotices';
+import { atomEventNotice, ownRaceLine, quietIntel, raceNotice } from './client/atomNotices';
 import { BattleMapState } from './client/battleMapState';
 import { awayCaps, BATTLE_BUSY, BATTLE_TAKEN } from './sim/systems/raids';
 import type { BattleInput, ForceIn } from './sim/battle/types';
@@ -84,7 +84,8 @@ import {
 } from './client/settings';
 import { typingIn } from './client/keys';
 import { atomBeats, blastSounds } from './render/atomFx';
-import { asSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
+import { asSentence, nameInSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
+import { seasonNotice } from './ui/weather';
 import type { OverlayResult } from './sim/systems/overlays';
 
 type Listener = () => void;
@@ -935,6 +936,7 @@ export class Game {
     // The race among friends is in the notification log, and the bomb in hand, a launch, a bomb fired
     // or fallen are red alerts (`raceNotice`); any other line of the room's is a toast.
     link.onNotice = (t) => {
+      if (ownRaceLine(t, this.world.stats.cityName)) return;
       const race = raceNotice(t);
       if (race) this.notice(race.kind, race.text, race.tone);
       else this.toast(asSentence(t), 'info', 4500);
@@ -1301,6 +1303,8 @@ export class Game {
     at?: { x: number; z: number },
     toast = true,
   ): void {
+    // (Every notice ends as a sentence: the sim's diplomacy notes and the room's lines are kept without a stop.)
+    text = asSentence(text);
     const now = performance.now();
     const head = this.notifications.find((n) => n.kind === kind && now - n.time < 60_000);
     if (head) {
@@ -1408,9 +1412,10 @@ export class Game {
   private onEvents(events: { kind: string; id: number; info?: Record<string, number | string> }[]): void {
     for (const e of events) {
       const at = this.placeOf(e.id);
+      // (Said inside a sentence: "The enrichment plant is open!")
       const civicName = () => {
         const c = this.world.civics.get(e.id);
-        return (c && CIVIC.get(c.def)?.name) ?? 'building';
+        return nameInSentence((c && CIVIC.get(c.def)?.name) ?? 'building');
       };
       // The city's own bomb: a strike put to the room, a launch held, a bomb gone (`atomNotices.ts`).
       const atomEvent = atomEventNotice(e);
@@ -1458,20 +1463,15 @@ export class Game {
         const where = e.info ? { x: Number(e.info.x), z: Number(e.info.z) } : undefined;
         this.notice(
           `civicDestroyed:${e.id}`,
-          `The ${name} was destroyed. It will have to be rebuilt.`,
+          `The ${nameInSentence(name)} was destroyed. It will have to be rebuilt.`,
           'bad',
           where,
         );
       } else if (e.kind === 'civicRepaired')
         this.notice('civicRepaired', `The ${civicName()} is repaired and back in service.`, 'ok', at, false);
       else if (e.kind === 'season') {
-        // Seasons and weather (M22).
-        const text = [
-          'Spring has come.',
-          'Summer is here: heatwaves raise power and water use.',
-          'Autumn: winter is three months away, and heating will push up power demand.',
-          'Winter has come: heating raises power demand, and snow slows traffic until it is ploughed.',
-        ][e.id];
+        // Seasons and weather (M22); under a nuclear winter (M40) the warm seasons stay cold.
+        const text = seasonNotice(e.id, this.world.stats.weather.winter > 0);
         if (text) this.notice('season', text, 'info', undefined, true);
       } else if (e.kind === 'weather') {
         // Kinds by their index in WEATHER_KINDS: 3 storm, 4 snow, 6 heat.
@@ -1625,7 +1625,7 @@ export class Game {
           tone === 'good' ||
           (!tone && ['theyCapitulate', 'conquered', 'tributeDone', 'boughtBack'].includes(what));
         // Keyed by its words too: two different notes of a kind (theirs and ours) never merge.
-        this.notice(`dip:${what}:${e.id}:${text}`, asSentence(text), bad ? 'bad' : good ? 'ok' : 'info');
+        this.notice(`dip:${what}:${e.id}:${text}`, text, bad ? 'bad' : good ? 'ok' : 'info');
         if (what === 'declaredOn' || what === 'fell' || (what === 'hold' && bad)) this.audio?.play('raid');
       }
       // Weapon development and intelligence (M37).
@@ -1735,6 +1735,8 @@ export class Game {
           `intel:${String(e.info?.text)}`,
           String(e.info?.text),
           tone === 'good' ? 'ok' : tone === 'bad' ? 'bad' : 'info',
+          undefined,
+          !quietIntel(String(e.info?.text)),
         );
       } else if (e.kind === 'sabotaged') this.audio?.play('raid');
       else if (e.kind === 'rivalTech')

@@ -101,6 +101,11 @@ export interface Tip {
   id: string;
   text: string;
   when: (g: Game) => boolean;
+  /**
+   * A moment that won't wait (a raid coming, a live battle, a bomb in the air): its tip goes before any
+   * general one still waiting its turn (phase 5 end: the Diplomacy tip came up as a bomb landed).
+   */
+  urgent?: true;
 }
 
 export const TIPS: Tip[] = [
@@ -150,6 +155,7 @@ export const TIPS: Tip[] = [
   },
   {
     id: 'raidComing',
+    urgent: true,
     text:
       'A raid is on its way: the red countdown in the top bar says when it arrives. Your bunkers, guns and ' +
       'units fight on their own; residents near the targets go to the shelters. A radar gives earlier ' +
@@ -217,6 +223,7 @@ export const TIPS: Tip[] = [
   {
     // A battle between two players' cities whose players are both here: both give orders as it happens.
     id: 'liveBattle',
+    urgent: true,
     text:
       'A live battle: the other player is here too, and you both command. Press O (or Command in the ' +
       'bar) for the battle map. Choose your units (click, drag a box round some, or All), then give an ' +
@@ -400,6 +407,7 @@ export const TIPS: Tip[] = [
   },
   {
     id: 'atomInbound',
+    urgent: true,
     text:
       'An atom bomb is on its way. A charged dome shield stops it whole (if it is switched off, raise it ' +
       'from the card), and the shelters take in the people nearby. Pausing only holds the missile where it ' +
@@ -613,7 +621,7 @@ export const TIPS: Tip[] = [
 /**
  * The tip to show (P15): one at a time, chosen only when nothing hides it, and dropped if it is
  * still waiting behind a panel when its moment passes, so it never contradicts the numbers. A tip
- * on screen stays until the player dismisses it.
+ * on screen stays until the player dismisses it. An urgent tip goes before the general ones.
  */
 export function pickTip(
   g: Game,
@@ -623,5 +631,6 @@ export function pickTip(
 ): Tip | null {
   if (current) return hidden && !current.when(g) ? null : current;
   if (hidden) return null;
-  return TIPS.find((t) => !seen.has(t.id) && t.when(g)) ?? null;
+  const due = (t: Tip) => !seen.has(t.id) && t.when(g);
+  return TIPS.find((t) => t.urgent && due(t)) ?? TIPS.find(due) ?? null;
 }

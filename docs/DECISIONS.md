@@ -2801,3 +2801,97 @@ these are its calls and the reasons, with where they overturned the first draft.
     for the bomb. Tests: `tests/war/atomFirerSaved.test.ts` (a firer whose page applied a kept strike, restored from
     its latest autosave, still holds `fired`, is a pariah and has reputation 0; fails without the fix; a strike
     turned away leaves no save; `RegionOps` on its own: when it saves, when it does not, the retry).
+
+## Phase 5 end (SPEC-5.md, "When every milestone is done")
+
+The three wars played as a player would, through the real UI on the Mac's GPU (headed Chrome, 1280×800, High on
+the page judged, Low at 1100×760 on the others, tips on), kept as `e2e/phase5-finale.spec.ts` (`@playthrough`;
+`PHASE5_GPU=1` plays it in a real Chrome window): 1, a city with rival neighbours from the main menu, grown with the
+mouse, an HQ and a barracks from the Military bar, a raid lived through, an expedition from the Send tab, war
+declared and peace proposed from the Diplomacy tab, every war room tab, a computer neighbour racing for the bomb;
+2, two players in a region on the local relay and a third watching, war turned on in the Region panel, declared
+from the Friends block, a live battle both command on the battle map, peace by treaty; 3, the race between two
+friends, the nuclear plant, enrichment plant and silo from the toolbar, the bomb from the Bomb tab, total war, the
+launch by the real three-second hold, the countdown, flash, cloud and landing on the target at High, the radiation
+map, a clean-up crew, the winter on both cities and the firer a pariah. Cheats only skip waits (money, research,
+a project's stages, the fuel and the bomb, fast-forward, a raid brought near). One line a finding:
+
+**Fixed**
+- *"0 of the 1,208 residents nearby head for the shelters"* (a raid's and a bomb's warning, the countdown card): with
+  none in reach, "None of the 1,208 residents nearby can reach a shelter" (`shelterSentence`, `src/ui/warWords.ts`;
+  `tests/war/warWords.test.ts`).
+- *"1 of our units were knocked out"* (an expedition's notice; "1 of your 4 units were" on an ally's Help card and
+  notice): the verb agrees, a whole force lost is "all 4 of its units" or "your only unit", "the rest" go home only
+  when some are left (`unitsKnockedOut`, `helpOverLine`, `helpOverNotice`; `tests/war/helpView.test.ts` had pinned
+  "1 … were" and now expects "was"). A raid's report says "none of theirs knocked out", not "0 of theirs".
+- *"No units yet"* in the Forces tab after a raid took them: "No units".
+- *A raid closed both power plants and the advisor said "Build a power plant"*: with a plant out of action it names
+  it and the hours left, and offers buying from a neighbour (Region panel) for power and water, only when the city
+  has neighbours (they never sell sewage) (`tests/advisors.test.ts`).
+- *The battle bar named a raid's six industrial objectives "Target"*: zoned objectives are named by kind (Industry,
+  Homes, Business; ids are one counter for buildings and civic buildings) (`objectiveName`).
+- *"1 buildings knocked down (0 residents moved out)"* in a battle report: `damageLine` counts agree and drops a
+  move-out of nobody.
+- *Notices stood over the battle map*, hiding the defender's order buttons and log at 1100 px: with the map open they
+  stand to its left (`.toasts.beside-map`), except at phone width where the map takes the screen; the playthrough
+  checks the boxes don't overlap.
+- *The battle map said "step 40 · frontier 64" and "heard: order 1, from step 56"*: "2 orders so far" and "heard,
+  from 0:28" on the battle's clock (the room stamps an order a moment ahead, so "heard at" would read as the future);
+  the step and frontier stay in the tooltips (`orderAck`, `tests/war/battleMap.test.ts`).
+- *A city joining a region was told twice* ("Kitsbury joined the region." from its page, again from the room): the
+  room no longer sends that notice to the city joining (`relay/tests/joinNotice.test.ts`, fails without the fix).
+- *Notices without a full stop* (diplomacy notes, the room's lines, the race lines): `Game.notice` and the room's
+  toasts end every notice as a sentence (`asSentence`); the sim's note texts are unchanged (they are hashed).
+- *"Score 0 after 0 battles"* on a war's card: "Score 0, no battles yet." (`warScoreLine`; m39-friends' "Score" holds).
+- *A strike gave its target three notices at once* (the room's "Adaville has fired the atom bomb at Samford", the
+  intelligence note "… at the city", the sirens), and the racer heard its own steps in the third person
+  ("Adaville has begun building an enrichment plant"): the page lets pass a race or bomb line the room says of the
+  city itself (`ownRaceLine`), and the intelligence note of a bomb is logged without a toast (`quietIntel`); the
+  room's broadcast is unchanged (M40's `regionAtom.test.ts` has every page hear it) (`tests/war/atomNotices.test.ts`).
+- *"The Enrichment plant is open!", "The Primary school was destroyed"*: names drop their capital inside a sentence,
+  except a proper name ("Sunfield Commons") (`nameInSentence`).
+- *The Diplomacy tip came up as the bomb landed* and stayed over the cloud: tips for a moment that won't wait (a raid
+  coming, a live battle, a bomb in the air) go before general ones still waiting (`Tip.urgent`, `pickTip`;
+  `tests/tips.test.ts`; the list's order is unchanged).
+- *"Autumn: winter is three months away"* under heavy snow and an ash sky: under a nuclear winter the warm seasons
+  say the cold stays (`seasonNotice`, `src/ui/weather.ts`).
+- *Offering peace while losing, reparations and tribute started as "the neighbour pays"*: in an offer of peace in a
+  war the city is losing they start as the city paying, by its own taxes (`termPayer`).
+- *"Power 25 units" beside "Keeps 0 of 12 units"* in a military inspector (and the Upkeep tab): power in MW there, as
+  the Region panel says.
+- *"Forces are sent from a working military HQ"* after a raid left the HQ under repair (it stood on the map, so the
+  player couldn't tell why): the refusal names the cause, "The military HQ is being repaired (18 h left): …", or
+  under water, still being built, short of staff (`hqRefusal`; `tests/war/raid.test.ts`).
+- *"… and a nuclear winter is coming"* on the aftermath card beside the notice "A nuclear winter has begun": the
+  winter starts with the blast's last slice, as the card comes, so "has begun" (`tests/war/atomView.test.ts` updated).
+
+**Not the game's** (the spec, now fixed in it)
+- The thoughts card over the war room (the earlier session): a window behind others was throttled and Shift+M
+  toggled the room shut; the spec asks the game whether the room is open and keeps its windows unthrottled.
+- Tips a step late: the game picks a tip every 2 s and the spec looked for 300 ms; and after "Got it" the card
+  redraws up to 300 ms later, so the spec waits for it to go before reading the next.
+- A milestone's banner over the build spots: the spec's first steps take 4 s of real time and the banner 9 s
+  (probes: it closes on time, behind another window and in a region too); the spec clicks it away, as a player would.
+- Research tips over the fallen city: the research cheat finishes 24 tiers at once and queues every research tip.
+- A different town and war every run of test 1: the New city screen offers a new map seed each time; the spec fills
+  in one (the earlier session's `cj67eb`), and gives a raid's repairs their hours before it sends a force.
+
+**Left, with a proposal**
+- *Young rival cities fall fast* (an aggressive neighbour raided, went to total war, took the HQ, a vassal within
+  days): a grace for a city's first war, no total war declared on a city under 3,000 residents or two years old.
+- *One raid blacks out the town* (both coal plants wrecked: 48–96 h without power, approval 16 %, jobs 0): a wrecked
+  plant keeps half its output while repaired, or an emergency import offered at a premium; the advisor now points
+  at buying.
+- *The Send tab gives no odds*: a rough odds line from the force against the town's defences at the last report
+  (or "unknown without a spy report").
+- *A refusal gives no reason* ("turns down the city's proposal"): the computer's answer should name its main reason;
+  that is the sim's note text, hashed in the M36 golden, so it wants a deliberate golden update.
+- *The bomb doesn't move the war score between friends* (score 0 after the strike): the room could count a kept strike
+  as a decisive battle.
+- *The war room's eleven tabs wrap to three rows at 1280* (Reports alone): taste; group them, or shorter names.
+- *The scale drop-down's "War: battles score, terms end it" is cut off*: taste; shorter options, the words beneath.
+- *"Fallout 0.97" on the radiation map*: the tested M40 format; "Fallout 97 % (heavy)" reads better.
+- *"Nuclear winter, year 1 of 6, 23 °C" as the card says one "is coming"*: factual (it cools as the ash spreads); left.
+- *A tip on screen whose moment has passed stays until dismissed*: P15's rule (cards don't vanish while read); left.
+- *The toy mushroom cloud's puffs read as hard balls close up* (flat-shaded spheres): the M40 look, fine from the side
+  at a distance; softer puffs (a noise or rim-light term on the puff material) would read more as smoke.

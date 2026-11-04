@@ -1202,7 +1202,7 @@ test('phase 5 end, 3: the race for the atom bomb between two friends, and its af
   // The last 20 seconds at normal speed, as a player would watch them, looking at a point 450 m above ground
   // zero from 2.6 km (the pose atomshot.mjs's interface pictures use: the 900 m cloud stands in the frame).
   await advance(sam, inbound.arrive - (await state(sam)).tick - 160);
-  await sam.evaluate(([x, z]) => window.__game!.setCamera(aimAbove(x!, z!)), [inbound.x, inbound.z]);
+  await sam.evaluate((pose) => window.__game!.setCamera(pose), aimAbove(inbound.x, inbound.z));
   await sam.evaluate(() => window.__game!.setSpeed(1));
   for (let k = 0; k < 600; k++) {
     if ((await sam.evaluate(() => window.__game!.getAtomFx())).flash > 0.3) break;

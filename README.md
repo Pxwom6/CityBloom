@@ -335,6 +335,8 @@ allied town held by an aggressive neighbour).
 In a region where war is on, the other players' cities are in the Send tab and the Diplomacy tab's
 **Friends in the region** list.
 
+![A live battle between two players' cities: the attacker's battle map, the whole force focused on Samford's HQ](docs/screenshots/phase5-b-battle-attacker.png)
+
 - **Raids and live battles.** A friend's city is raided like a neighbour. If its player is in the region
   when your force arrives, the battle is **live**: both of you watch it and command it on the **battle
   map** (the **O** key, or **Command** in the bar under the top bar). Choose units (click, drag a box, or
@@ -379,6 +381,8 @@ In a region where war is on, the other players' cities are in the Send tab and t
 
 The last prize of the game, and the hardest to win: one bomb a city, ever, and nothing undoes it. Where it is
 allowed, the war room (Shift+M) gains a **Bomb** tab that shows the next step and what it is waiting for.
+
+![A friend's atom bomb lands: the toy mushroom cloud over the city it was aimed at](docs/screenshots/phase5-c-cloud.png)
 
 - **What it takes.** Every research branch finished (all six superweapons included), a running nuclear power
   plant, an **enrichment plant** that makes fuel over about four game years and an **atom silo** that builds the

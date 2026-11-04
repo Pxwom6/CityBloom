@@ -6,6 +6,7 @@ import { BState } from '../src/sim/world/buildings';
 import { buildTown, newSim, placeAlong, serveTown } from './helpers';
 import { twoDistricts } from './trafficTown';
 import { windStreet } from './envTown';
+import { CIVIC } from '../src/data/civic';
 
 const find = (list: Advice[], advisor: Advice['advisor'], re: RegExp) =>
   list.find((a) => a.advisor === advisor && re.test(a.title));
@@ -29,6 +30,58 @@ describe('advisors', () => {
     // Sorted most urgent first.
     for (let i = 1; i < list.length; i++)
       expect(list[i]!.severity).toBeLessThanOrEqual(list[i - 1]!.severity);
+  });
+
+  it('a town whose power plant is under repair hears that, not "build a power plant" (phase 5 end)', () => {
+    const sim = newSim();
+    buildTown(sim);
+    serveTown(sim);
+    sim.advance(TICKS_PER_MONTH);
+    expect(find(advise(sim), 'utilities', /without power/i)).toBeUndefined();
+    // A raid closes every power plant for repairs.
+    for (const c of sim.state.civics.values())
+      if (CIVIC.get(c.def)?.output?.power) {
+        c.damage = 40;
+        sim.civicStatusChanged(c.id);
+      }
+    sim.advance(TICKS_PER_HOUR * 3);
+    const power = find(advise(sim), 'utilities', /without power/i)!;
+    expect(power).toBeDefined();
+    expect(power.text).toMatch(/power plant is being repaired \(\d+ h left\)/);
+    expect(power.text).toMatch(/buy power from a neighbour \(Region panel, Shift\+N\)/);
+    // Neighbours never sell sewage: a treatment works under repair is not "buy sewage from a neighbour".
+    for (const c of sim.state.civics.values())
+      if (CIVIC.get(c.def)?.output?.sewage) {
+        c.damage = 30;
+        sim.civicStatusChanged(c.id);
+      }
+    sim.advance(TICKS_PER_HOUR * 3);
+    const sewage = find(advise(sim), 'utilities', /without sewage/i)!;
+    expect(sewage.text).toMatch(/is being repaired \(\d+ h left\)\. Until then build septic tanks/);
+    expect(sewage.text).not.toMatch(/neighbour/);
+    // A city with no neighbours has no one to buy power from either.
+    const alone = newSim({ region: false });
+    buildTown(alone);
+    serveTown(alone);
+    alone.advance(TICKS_PER_MONTH);
+    for (const c of alone.state.civics.values())
+      if (CIVIC.get(c.def)?.output?.power) {
+        c.damage = 40;
+        alone.civicStatusChanged(c.id);
+      }
+    alone.advance(TICKS_PER_HOUR * 3);
+    const lonely = find(advise(alone), 'utilities', /without power/i)!;
+    expect(lonely.text).toMatch(
+      /power plant is being repaired \(\d+ h left\)\. Until then build a power plant/,
+    );
+    expect(lonely.text).not.toMatch(/neighbour/);
+    // With nothing under repair, the advice is to build one, as before.
+    const bare = newSim();
+    buildTown(bare);
+    bare.advance(TICKS_PER_MONTH);
+    expect(find(advise(bare), 'utilities', /without power/i)!.text).toMatch(
+      /^Build a power plant or connect/,
+    );
   });
 
   it('a served town hears about safety, health and schools until it has them', () => {

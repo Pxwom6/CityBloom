@@ -35,6 +35,7 @@ import { inputOfRecord } from '../net/liveRecord';
 import type { LiveSink } from '../net/regionLink';
 import type { BattleRecord } from './battles';
 import type { LiveEnd } from './liveRunner';
+import { helpOverNotice } from '../ui/warWords';
 
 /** The city, as a live battle needs it: its sim, its saves, and a way to tell the player. */
 export interface LiveCity {
@@ -1711,18 +1712,13 @@ export class LiveBattles implements LiveSink {
     if (!end && note && h.state !== 'refused') h.reason = note;
     if (h.state !== 'refused') h.state = 'done';
     if (r.ok && (end || note)) {
-      const were = (n: number) => `${n} ${n === 1 ? 'needs' : 'need'} repairs`;
       this.env.city.notice(
         `help-done:${h.battle}`,
         !end
           ? `${note} Your force is on its way home.`
           : !fought
             ? 'The battle ended before your force could get there. It is on its way home.'
-            : lost
-              ? `Your force came through the battle, but ${lost} of its ${h.units} units were knocked out${hurt ? ` and ${were(hurt)}` : ''}. The rest are on their way home.`
-              : hurt
-                ? `Your force came through the battle with none of its ${h.units} units knocked out, but ${were(hurt)}. They are on their way home.`
-                : 'Your force came through the battle unharmed and is on its way home.',
+            : helpOverNotice(h.units, lost, hurt),
         !end || lost || hurt ? 'info' : 'ok',
       );
     }

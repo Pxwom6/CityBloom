@@ -556,7 +556,8 @@ function Forces({ w }: { w: WarSummary }) {
         ) : w.training ? (
           `${w.training} in training. `
         ) : (
-          'No units yet: train them at a barracks, vehicle depot, airfield or naval yard (click one).'
+          // (Not "yet": a city that lost its units in a raid has none either.)
+          'No units: train them at a barracks, vehicle depot, airfield or naval yard (click one).'
         )}
       </p>
       <div class="war-groups" data-testid="war-groups">

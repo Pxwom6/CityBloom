@@ -5,6 +5,7 @@
  * a test can hold each to the sim's summary (`AtomSummary`, `SupersSummary`) and to the tone the game
  * keeps (no word of anyone hurt). `Atom.tsx` draws what these return.
  */
+import { shelterSentence } from './warWords';
 import type { RegionAtomMark } from '../../relay/region';
 import { ATOM, ATOM_STAGES, ATOM_STAGE_NAMES, FALLOUT, WINTER_YEARS, atomStageNo } from '../data/atom';
 import { atomMarkText } from '../client/regionHistory';
@@ -473,8 +474,7 @@ export function domeLine(dome: Dome, stops: boolean, blackout: boolean, canRaise
 
 /** The shelters in a line: how many of the residents in the blast's reach have a place. */
 export function shelterLine(near: number, sheltered: number): string | null {
-  if (near <= 0) return null;
-  return `${sheltered.toLocaleString('en-US')} of the ${near.toLocaleString('en-US')} residents in its path can reach a shelter.`;
+  return shelterSentence(near, sheltered, 'in its path', 'can reach a shelter');
 }
 
 /** Everything the countdown card shows, from the summary and the display clock. */

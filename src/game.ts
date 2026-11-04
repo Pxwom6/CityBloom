@@ -84,6 +84,7 @@ import {
 } from './client/settings';
 import { typingIn } from './client/keys';
 import { atomBeats, blastSounds } from './render/atomFx';
+import { shelterSentence, unitsKnockedOut } from './ui/warWords';
 import type { OverlayResult } from './sim/systems/overlays';
 
 type Listener = () => void;
@@ -1374,7 +1375,7 @@ export class Game {
     if (n(info.collapsed)) parts.push(`${plural(n(info.collapsed), 'building')} knocked down`);
     if (n(info.civics)) parts.push(`${plural(n(info.civics), 'city building')} to repair`);
     if (n(info.lost)) parts.push(`${plural(n(info.lost), 'of our units', 'of our units')} knocked out`);
-    parts.push(`${plural(n(info.theirLost), 'of theirs', 'of theirs')} knocked out`);
+    parts.push(`${n(info.theirLost) ? formatNumber(n(info.theirLost)) : 'none'} of theirs knocked out`);
     this.notice(
       'battleEnded',
       `${head}: ${parts.join(', ')}. Crews are repairing the damage; the war room has the report.`,
@@ -1503,9 +1504,8 @@ export class Game {
         );
       else if (e.kind === 'raidWarning') {
         const i = e.info ?? {};
-        const shelter = Number(i.near)
-          ? ` ${formatNumber(Number(i.sheltered))} of the ${formatNumber(Number(i.near))} residents nearby head for the shelters.`
-          : '';
+        const words = shelterSentence(Number(i.near), Number(i.sheltered), 'nearby', 'head for the shelters');
+        const shelter = words ? ` ${words}` : '';
         this.notice(
           `raid:${e.id}`,
           `Sirens! ${String(i.from)} is sending ${String(i.units)} unit${i.units === 1 ? '' : 's'} against the city: they arrive in ${String(i.hours)} hour${i.hours === 1 ? '' : 's'}.${shelter}`,
@@ -1517,9 +1517,13 @@ export class Game {
         // The speed buttons stay the player's (pausing only holds the missile: it flies on the city's
         // own clock, and the sim runs only while a page does).
         const i = e.info ?? {};
-        const shelter = Number(i.near)
-          ? ` ${formatNumber(Number(i.sheltered))} of the ${formatNumber(Number(i.near))} residents in its path head for the shelters.`
-          : '';
+        const words = shelterSentence(
+          Number(i.near),
+          Number(i.sheltered),
+          'in its path',
+          'head for the shelters',
+        );
+        const shelter = words ? ` ${words}` : '';
         this.notice(
           `bomb:${e.id}`,
           `Sirens! ${String(i.from)} has fired an atom bomb at the city: it lands in ${String(i.hours)} hour${i.hours === 1 ? '' : 's'}.${i.stops ? ' The dome shield is charged and will stop it.' : ''}${shelter}`,
@@ -1602,7 +1606,7 @@ export class Game {
               : `Our force pulled back from ${String(i.to)}`;
         this.notice(
           `force:${e.id}`,
-          `${head}${lost ? `, and ${lost} of our units were knocked out` : ''}. The war room has the report.`,
+          `${head}${lost ? `, and ${unitsKnockedOut(lost, 'our')}` : ''}. The war room has the report.`,
           i.outcome === 'raided' ? 'ok' : 'info',
         );
       } else if (e.kind === 'forceHome')

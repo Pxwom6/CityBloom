@@ -162,7 +162,8 @@ describe('M39 step 6 review: what the force’s line says', () => {
     expect(hurt).not.toMatch(/unharmed/);
     expect(helpLine(view({ hurt: 1 }), 'Samford')).toMatch(/but 1 needs repairs/);
     expect(helpLine(view({ lost: 1, hurt: 2 }), 'Samford')).toBe(
-      'The battle is over: 1 of your 4 units were knocked out and 2 need repairs, and the rest are on their way home.',
+      // (Phase 5 end: one unit "was", not "were".)
+      'The battle is over: 1 of your 4 units was knocked out and 2 need repairs, and the rest are on their way home.',
     );
     expect(helpLine(view({ lost: 2 }), 'Samford')).toBe(
       'The battle is over: 2 of your 4 units were knocked out, and the rest are on their way home.',

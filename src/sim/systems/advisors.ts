@@ -188,11 +188,19 @@ export function advise(sim: Sim): Advice[] {
     }
     utilOk = false;
     const share = without.length / Math.max(1, list.length);
+    // A plant out of action (a raid, a disaster, a flood) is the likely cause: say so, not "build one".
+    const down = [...s.civics.values()]
+      .filter((c) => (civicDef(c).output?.[u] ?? 0) > 0 && (c.damage > 0 || c.flooded))
+      .sort((a, b) => a.id - b.id)[0];
+    // (Neighbours sell power and water, never sewage; a city with none has no one to buy from.)
+    const buy = u !== 'sewage' && s.region.neighbours.length > 0;
     out.push({
       advisor: 'utilities',
       severity: share > 0.2 ? 3 : 2,
       title: `${plural(without.length, 'building')} without ${u}`,
-      text: `Build ${fix} or connect these buildings to one by road. They'll close or empty within a day or two.`,
+      text: down
+        ? `The ${civicDef(down).name.toLowerCase()} is ${down.flooded ? 'under water' : `being repaired (${down.damage} h left)`}. Until then ${buy ? `buy ${u} from a neighbour (Region panel, Shift+N) or ` : ''}build ${fix}: these buildings close or empty within a day or two.`
+        : `Build ${fix} or connect these buildings to one by road. They'll close or empty within a day or two.`,
       at: centre(without.slice(0, 20)),
       map: u,
     });

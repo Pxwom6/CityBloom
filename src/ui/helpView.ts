@@ -7,6 +7,7 @@
 import { BINDING_PACTS, LIVE, helpSideOf, type AidPact } from '../../relay/protocol';
 import type { HelpView } from '../client/liveBattles';
 import { UNIT } from '../data/war';
+import { helpOverLine } from './warWords';
 
 /** Seconds of play a battle step takes at the room's pace: 16 steps a second. */
 const STEPS_PER_SECOND = 16;
@@ -112,12 +113,7 @@ export function helpLine(h: HelpView, side: string): string {
       // (A battle the page could not follow to its end: the force came home as it went.)
       if (h.reason) return `${h.reason} Your force is on its way home.`;
       if (h.late) return 'The battle ended before your force could get there: it is on its way home.';
-      const repairs = h.hurt ? `${h.hurt} need${h.hurt === 1 ? 's' : ''} repairs` : '';
-      if (h.lost)
-        return `The battle is over: ${h.lost} of your ${h.units} units were knocked out${repairs ? ` and ${repairs}` : ''}, and the rest are on their way home.`;
-      return repairs
-        ? `The battle is over: none of your ${h.units} units were knocked out, but ${repairs}. They are on their way home.`
-        : 'The battle is over: your force came through unharmed and is on its way home.';
+      return helpOverLine(h.units, h.lost ?? 0, h.hurt ?? 0);
     }
     case 'refused':
       return `${h.reason ?? 'The help was turned down'}. Your force is home.`;

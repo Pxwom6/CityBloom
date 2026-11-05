@@ -2939,3 +2939,21 @@ and lint rerun; the fourteen pictures looked at)
   inside the budget. No clear fix; left to watch.
 - *`supershot.mjs` and `unitshot.mjs` take `GPU=1`* (a real Chrome window, as `atomshot.mjs` does): the checks' command
   for the dome, shields and units on the GPU assumed one.
+- *The war's looks on the GPU, by day and night* (`warshot.mjs --gpu` 41 pictures, `GPU=1 unitshot.mjs` 17,
+  `GPU=1 supershot.mjs` 11, `GPU=1 atomshot.mjs` with `ONLY=fx,fxnight,street,hatch,missile,tint,winter` 32; every one
+  looked at): nothing broken. Every war building by day and at night with lit windows, the pits, units parked, on
+  drills and at sea, the dome (a ring at Low, the bubble at High) with its shield bubbles and interceptors, the gate's
+  swirl, the tower's ring, the robot, fortress and whale parked, the bomb's hatch, launch, dive, flash, ring and cloud
+  by day, at night and from a street, the fallout's tint and the winter. Three of unitshot's frames (`heli`, `pad`,
+  `patrol`) and one of supershot's (`parked-fortress`) missed their subject on the GPU: the scripts were written for a
+  software renderer's slow frames, and the display clock moves the unit on between finding it and the picture (a
+  rerun of `parked` shows the fortress on the GPU and on SwiftShader). Left as they are: dev tools, not the game.
+  A matter of taste, already listed: the toy cloud's puffs read as hard balls close up.
+- *The bench against `main`* (`npx tsx scripts/bench.ts 6 --big`, the branch and a worktree of `origin/main` 6883790
+  back to back, three pairs, nothing else running): the same city on both (110,174 residents at month 6, a peaceful
+  city untouched by the war's code); months 4–6 tick average 0.269 ms on the branch against 0.267 on `main` (runs
+  0.286 / 0.262 / 0.259 against 0.253 / 0.265 / 0.282), p99 2.53 against 2.50, six months' total 1,517 against 1,500
+  ms, worst tick 12.4–15.0 against 14.1–16.5. The same within the runs' noise (a run is 4 s on this Mac).
+- *The shared-city snapshot* (`npx tsx scripts/dev/snapsize.ts`, `encodeSnapshot` on a saved city with no undo history
+  yet): the 110k bench city is JSON 2.99 MB, gzip 0.45 MB, 0.59 MB of base64, 3 parts of the 40 (7 % of the 8 MB cap);
+  the war city (93k residents, 300 civic buildings) the same, 3 parts.

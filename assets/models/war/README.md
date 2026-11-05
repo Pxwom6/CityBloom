@@ -1,9 +1,9 @@
 # War models (phase 5)
 
 Hand-made models for the war phase, made by the owner in Claude Design from `docs/models/PROMPTS-WAR.md`
-(the building spec v6 and the unit spec v1 are in it). They wait here until the war phase brings
-them in: the build reads only `assets/models/*.glb`, and only `PROMPTS-<number>.md` files give it
-budgets, so nothing in this folder reaches the game yet.
+(the building spec v6 and the unit spec v1 are in it). Since M34 the build checks and converts them
+into a file of their own (`war-models-<hash>.bin`), which only a city with war on downloads; the
+main models file (`assets/models/*.glb`) stays as it was. See "The war import" below.
 
 **Here: all 39**, unchanged from the owner's downloads.
 
@@ -45,33 +45,36 @@ The owner may send remade files under the same names.
 - **airfield, militaryhq**: two hair-thin rim faces of the helipad are reversed (cosmetic).
 - **domeshield**: two of its tree spots are 2.9 m from the base, not 3 m (no matter in practice).
 
-## For the war import
+## The war import (M34)
 
-- **Not in the game's data yet.** The war buildings aren't in `src/data`, so `npm run models:check`
-  rejects each one as "not a building in the game". It also skips the site and smoke checks, and
-  finds no budgets in `PROMPTS-WAR.md`.
-- **Facing check false alarms.** The facing check rejects three models that follow their prompts:
-  - airfield: the hangar doors face the apron;
-  - bunker: its only door is at the back;
-  - enrichment: the halls' roller doors are in their end walls.
+What the import needed, and what was done (`npm run models:check` now checks this folder with
+`assets/models`; all 39 pass, with notes for the faults above):
 
-  Exempt these three, or tell them apart another way.
-- **`light` on a building.** atomsilo's searchlights use `light`, as its prompt asks, but `light`
-  isn't a role in the building spec. Accept it on war buildings (it glows at night).
-- **Parts below ground**, all asked for by their prompts:
-  - the naval yard's quay goes to -8 m, and its dry dock holds water at -1 m;
-  - the coastal gun's quay goes to -3 m;
-  - the spy agency's basement ramp goes to -2.9 m.
-
-  Two things in the game get in their way:
-  - The lot base (a paved slab 4 cm up, with stone sides) would pave over the dock and the ramp. At
-    the quays, its back side would close off the dock's mouth.
-  - The lift for lawns would raise the naval yard's lawns and paving by 1.05 m, because it lifts them
-    by the depth of the lowest flat water, grass or paving.
-
-  These buildings need the base and the lift to leave them alone.
-- **The whale's mouth** is drawn from the inside on purpose (its faces look into the mouth), so
-  don't turn those faces round.
-- **Merged parts.** The W3 units merge some static details into larger meshes (for example, the
-  tank's headlights are part of its hull). Every part the game moves is still its own mesh, so they
-  work as they are.
+- **In the game's data.** The twelve war buildings M34 brings are in `CIVIC` (`src/data/war.ts`)
+  and are checked on their sites there, smoke included (the arms factory smokes). The other nine
+  (interceptor, shieldgen, militarylab, spyagency, domeshield, blackouttower, expressgate,
+  enrichment, atomsilo; M37 and M40) are checked and packed now on their prompts' sites ("Site W x
+  D m" in `PROMPTS-WAR.md`), and never smoke. `PROMPTS-WAR.md`'s budgets count as a batch after
+  batch 5. Units are checked on the unit spec (v1): roles, budget, size within 10 % of their
+  prompts' (`UNIT_DEFS`), origin under the middle, resting on 0 or a waterline at 0, the moving
+  parts and muzzles each prompt names, 0.3 m muzzle cubes, and each moving part's origin on it.
+  The superweapons and the atom bomb, which the game doesn't have as kinds yet, are packed too.
+- **Facing check false alarms.** airfield, bunker and enrichment are let through by name, with a
+  note.
+- **`light` on a building.** Accepted on war buildings only (the last role in the list, so the
+  main models file's role numbers don't move); it glows at night like a lit window and is never
+  repainted.
+- **Parts below ground.** Allowed at the naval yard (8 m), coastal gun (3 m, its quay) and spy
+  agency (2.9 m). What a war building builds below ground is recorded as boxes across its site
+  (`pits`); the lot base leaves its top out over them, and where one meets an edge its stone side
+  stops at the pit's foot, so the quays' own walls show and the dock's mouth is open. The lift for
+  lawns ignores ground lower than 5 cm below 0, so the naval yard's lawns and paving stay where
+  they are.
+- **The ground itself** still lies at the site's level over a pit: where the dock and the ramp are on
+  land, the game's graded terrain fills them to the top (see the screenshots of the M34 import).
+  Cutting the terrain under a pit is left for the milestone that places these buildings in play.
+- **The whale's mouth** is left as it is (never turned round).
+- **Winding faults.** In war models, an open part whose faces disagree has the smaller side turned
+  round (the tyre stacks, bollards, the HQ's radar drum, the helipad rims); the crane's open-topped
+  trolley, cab and counterweight are noted but not closed.
+- **Merged parts.** Fine as they are: every part the game moves is its own mesh.

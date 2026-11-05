@@ -5,7 +5,7 @@ name: Cross-browser and relay timing
 
 on:
   push:
-    branches: [m33-ready, multiplayer]
+    branches: [m33-ready, multiplayer, war]
   pull_request:
   workflow_dispatch:
 
@@ -19,7 +19,9 @@ concurrency:
 
 jobs:
   xbrowser:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 (pinned to match the cloud VM's browsers) can't install its browsers'
+    # dependencies on ubuntu-latest since that became Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

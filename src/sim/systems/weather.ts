@@ -10,6 +10,7 @@ import {
   type WeatherIntensity,
   type WeatherKind,
 } from '../../data/climate';
+import { WINTER, WINTER_HOURS } from '../../data/atom';
 import { isRail } from '../../data/roads';
 import type { MapPreset } from '../../data/world';
 import type { Sim } from '../sim';
@@ -53,6 +54,12 @@ export interface WeatherState {
    * winter, then ease in from `start` (the spring after it) to full at `until` (the next winter).
    */
   grace?: { from: number; start: number; until: number };
+  /**
+   * Nuclear winters (M40, plan call 13): each began at tick `from` with its `depth`, and runs its
+   * rise, hold and fall (`winterDepth`). Made by the first one (`startWinter`); a city never touched
+   * has no key. An `id` is applied once, whoever repeats it.
+   */
+  winters?: { id: string; from: number; depth: number }[];
 }
 
 /** Share of heating and cooling a city bears now (below 1 only while seasons are new to it). */
@@ -75,6 +82,109 @@ export function seasonsGrace(tick: number): { from: number; start: number; until
   const start = m;
   while (!winter(m)) m++;
   return { from: tick, start: month0 + start * TICKS_PER_MONTH, until: month0 + m * TICKS_PER_MONTH };
+}
+
+/**
+ * How far into its course a winter that began `since` ticks ago is, 0 to 1: rising for `WINTER.rise`
+ * hours, full for `WINTER.hold`, then falling back to nothing over `WINTER.fall`. Plain arithmetic,
+ * the same in every engine.
+ */
+function winterShape(since: number): number {
+  const rise = WINTER.rise * TICKS_PER_HOUR;
+  const hold = WINTER.hold * TICKS_PER_HOUR;
+  const total = WINTER_HOURS * TICKS_PER_HOUR;
+  if (since <= 0 || since >= total) return 0;
+  if (since < rise) return since / rise;
+  if (since < rise + hold) return 1;
+  return (total - since) / (WINTER.fall * TICKS_PER_HOUR);
+}
+
+/**
+ * How deep the nuclear winter is at `tick` (M40): 0 with none, up to 1 for a first bomb at its
+ * deepest; the winters in force add, capped at `WINTER.cap`. A pure read of the winters' starts and
+ * depths, so every reader of it (the month's mean, the sun, the snow line, the forecast, the look)
+ * agrees, and it costs a lookup in a city that never had one.
+ */
+export function winterDepth(w: WeatherState, tick: number): number {
+  const list = w.winters;
+  if (!list) return 0;
+  let sum = 0;
+  for (const e of list) sum += e.depth * winterShape(tick - e.from);
+  return Math.min(WINTER.cap, sum);
+}
+
+/**
+ * The deepest the winter gets from tick `from` to tick `to` (for a forecast): the depth is a
+ * piecewise-linear sum, so its greatest is at one end or where some winter's rise, hold or fall begins.
+ */
+export function maxWinterDepth(w: WeatherState, from: number, to: number): number {
+  const list = w.winters;
+  if (!list) return 0;
+  let top = Math.max(winterDepth(w, from), winterDepth(w, to));
+  for (const e of list)
+    for (const h of [WINTER.rise, WINTER.rise + WINTER.hold, WINTER_HOURS]) {
+      const at = e.from + h * TICKS_PER_HOUR;
+      if (at > from && at < to) top = Math.max(top, winterDepth(w, at));
+    }
+  return top;
+}
+
+/**
+ * Whether any winter is in force at `tick` (M40): one that has begun (this very tick included, when its
+ * depth is still nothing) and not yet run its course. The depth is not the test: it is 0 on a winter's
+ * first tick, and two bombs applied in the same tick are two winters of the same age.
+ */
+export function winterInForce(w: WeatherState, tick: number): boolean {
+  const total = WINTER_HOURS * TICKS_PER_HOUR;
+  return !!w.winters?.some((e) => tick >= e.from && tick - e.from < total);
+}
+
+/**
+ * Which of the winter's six years it is (1 to 6), counting from the oldest winter still in force;
+ * 0 with none.
+ */
+export function winterYear(w: WeatherState, tick: number): number {
+  const list = w.winters;
+  if (!list) return 0;
+  const total = WINTER_HOURS * TICKS_PER_HOUR;
+  let start = Infinity;
+  for (const e of list) if (tick >= e.from && tick - e.from < total) start = Math.min(start, e.from);
+  if (!Number.isFinite(start)) return 0;
+  return Math.min(
+    Math.round(WINTER_HOURS / WINTER.yearHours),
+    Math.floor((tick - start) / (WINTER.yearHours * TICKS_PER_HOUR)) + 1,
+  );
+}
+
+/**
+ * A nuclear winter begins now (M40), once for each `id` (a repeat changes nothing and says false):
+ * `self:n` for a bomb that fell in this city, `self:0` for the one this city's own bomb fell on a
+ * computer neighbour for, the region room's ids for a friend's. Its depth is 1 for the first, `WINTER.later`
+ * for one that begins while another is still in force (`winterInForce`, so two applied in the same tick
+ * are a first and a later one, as they are a tick apart; `depth` says otherwise, for tests). Draws nothing.
+ */
+export function startWinter(sim: Sim, id: string, depth?: number): boolean {
+  const w = sim.state.weather;
+  if (w.winters?.some((e) => e.id === id)) return false;
+  const d = Math.min(WINTER.cap, depth ?? (winterInForce(w, sim.state.tick) ? WINTER.later : 1));
+  if (!(d > 0)) return false;
+  (w.winters ??= []).push({ id, from: sim.state.tick, depth: d });
+  sim.events.push({ kind: 'nuclearWinter', id: 0, info: { depth: d } });
+  return true;
+}
+
+/**
+ * The mean temperature (°C) at or below which rain and storms fall as snow: the usual line, lifted by a
+ * nuclear winter of this `depth` (so its summer rain falls as snow once it is deep enough).
+ */
+export function snowLine(depth: number): number {
+  return WEATHER.snowBelow + WINTER.snowLine * depth;
+}
+
+/** What a nuclear winter takes off a computer neighbour's town's growth a month: a value, 0 with none. */
+export function winterTownDrag(sim: Sim): number {
+  const d = winterDepth(sim.state.weather, sim.state.tick);
+  return d > 0 ? WINTER.townDrag * d : 0;
 }
 
 export function initialWeather(preset: MapPreset, tick = 0, climate?: ClimateId): WeatherState {
@@ -106,8 +216,8 @@ export function seasonAt(w: WeatherState, tick: number): Season {
   return seasonOf(tempMonth(w, tick));
 }
 
-/** The month's mean temperature, eased between neighbouring months across the day. */
-function monthMean(w: WeatherState, tick: number): number {
+/** The calendar's mean temperature, eased between neighbouring months across the day. */
+function calendarMean(w: WeatherState, tick: number): number {
   const c = CLIMATES[w.climate];
   if (!w.seasons) return c.temps[WEATHER.seasonlessMonth]!;
   const d = dateOf(tick);
@@ -115,6 +225,11 @@ function monthMean(w: WeatherState, tick: number): number {
   const f = d.dayFraction - 0.5;
   const other = c.temps[(d.month + (f < 0 ? 11 : 1)) % 12]!;
   return c.temps[d.month]! + (other - c.temps[d.month]!) * Math.abs(f) * 0.5;
+}
+
+/** The month's mean temperature now: the calendar's, less a nuclear winter's chill, seasons on or off (M40). */
+function monthMean(w: WeatherState, tick: number): number {
+  return calendarMean(w, tick) - WINTER.chill * winterDepth(w, tick);
 }
 
 function updateTemperature(w: WeatherState, tick: number): void {
@@ -132,6 +247,7 @@ function nextSpell(sim: Sim): void {
   const w = s.weather;
   const rng = sim.rng.weather;
   const season = seasonAt(w, s.tick);
+  const depth = winterDepth(w, s.tick);
   const bad = WEATHER.intensityWeight[w.intensity]!;
   const weights = CLIMATES[w.climate].weights[season];
   const table: [WeatherKind, number][] = [
@@ -155,14 +271,25 @@ function nextSpell(sim: Sim): void {
   const off = kind === 'heat' ? WEATHER.heatOffset : WEATHER.offset;
   w.offset = Math.round(rng.range(off[0], off[1]) * 10) / 10;
   const drawn = kind;
-  // Rain and storms fall as snow when the spell is cold enough.
-  if ((kind === 'rain' || kind === 'storm') && monthMean(w, s.tick) + w.offset <= WEATHER.snowBelow)
-    kind = 'snow';
+  // Rain and storms fall as snow when the spell is cold enough. A spell's length is that of the
+  // weather the calendar alone would have brought (`lasts`), so a nuclear winter, which changes what
+  // falls (below) and how cold it is, moves no spell's end and no later draw (M40, plan call 13).
+  const mean = calendarMean(w, s.tick) + w.offset;
+  const falls = kind === 'rain' || kind === 'storm';
+  const lasts = falls && mean <= WEATHER.snowBelow ? 'snow' : kind;
+  // (A nuclear winter lifts the snow line: its summer rain falls as snow.)
+  if (falls && mean - WINTER.chill * depth <= snowLine(depth)) kind = 'snow';
+  // No heatwave under a nuclear winter's sky: the spell was drawn like any other (and so are its
+  // strength and length below), but it comes as a mild cloudy one.
+  if (kind === 'heat' && depth >= WINTER.noHeat) {
+    kind = 'cloudy';
+    w.offset = Math.min(w.offset, WEATHER.offset[1]);
+  }
   const strength =
     kind === 'clear' ? 0 : Math.min(1, rng.range(0.35, 1) * WEATHER.intensityStrength[w.intensity]!);
   w.strength = Math.round(strength * 100) / 100;
   w.kind = kind;
-  const [lo, hi] = WEATHER.hours[kind];
+  const [lo, hi] = WEATHER.hours[lasts];
   // A storm that falls as snow is a blizzard.
   if (kind === 'snow' && drawn === 'storm') w.strength = Math.max(w.strength, 0.85);
   w.until = s.tick + Math.round(rng.range(lo, hi)) * TICKS_PER_HOUR;
@@ -261,9 +388,11 @@ export function weatherUse(
   };
 }
 
-/** Solar output share in this weather and season. */
+/** Solar output share in this weather and season (and under a nuclear winter's dim sun, M40). */
 export function solarShare(w: WeatherState, tick: number): number {
-  return WEATHER.solar[w.kind] * WEATHER.solarSeason[seasonAt(w, tick)];
+  const share = WEATHER.solar[w.kind] * WEATHER.solarSeason[seasonAt(w, tick)];
+  const d = winterDepth(w, tick);
+  return d > 0 ? share * (1 - WINTER.solar * d) : share;
 }
 
 /** Groundwater pump output share after a dry spell. */
@@ -296,11 +425,23 @@ export function monthsToWinter(w: WeatherState, tick: number): number {
 }
 
 /** The weather as the top bar, tooltips and advisors see it. */
-export interface WeatherSummary extends WeatherState {
+export interface WeatherSummary extends Omit<WeatherState, 'winters'> {
   season: Season;
   /** Share of road length with snow on it, and with enough to slow traffic noticeably (≥ 0.3). */
   roadsSnowy: number;
   roadsDeep: number;
+  /**
+   * A nuclear winter (M40): how deep it is for the look, 0 (none) to 1 (full or more); the depth itself
+   * (up to `WINTER.cap`, for the words); and its year (0 with none).
+   */
+  winter: number;
+  winterDepth: number;
+  winterYear: number;
+  /**
+   * Whether, with a nuclear winter in force, rain and storms of the month's usual temperature (its chill
+   * taken off, the snow line lifted) fall as snow now: the tooltip says so only when it is so.
+   */
+  winterSnows: boolean;
 }
 
 export function weatherSummary(sim: Sim): WeatherSummary {
@@ -315,10 +456,19 @@ export function weatherSummary(sim: Sim): WeatherSummary {
     if ((seg.snow ?? 0) >= WEATHER.roadClear) snowy += len;
     if ((seg.snow ?? 0) >= 0.3) deep += len;
   }
+  // (The winters' own list stays in the sim: the page gets how deep it is and which year.)
+  const weather: Partial<WeatherState> = { ...s.weather };
+  delete weather.winters;
+  const exact = winterDepth(s.weather, s.tick);
+  const depth = Math.round(exact * 1000) / 1000;
   return {
-    ...s.weather,
+    ...(weather as Omit<WeatherState, 'winters'>),
     season: seasonAt(s.weather, s.tick),
     roadsSnowy: total ? Math.round((snowy / total) * 1000) / 1000 : 0,
     roadsDeep: total ? Math.round((deep / total) * 1000) / 1000 : 0,
+    winter: Math.min(1, depth),
+    winterDepth: depth,
+    winterYear: winterYear(s.weather, s.tick),
+    winterSnows: exact > 0 && monthMean(s.weather, s.tick) <= snowLine(exact),
   };
 }

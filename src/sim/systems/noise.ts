@@ -1,3 +1,4 @@
+import { spinoff } from './research';
 import { CIVIC } from '../../data/civic';
 import { GRID_CELL, GRID_RES } from '../../data/world';
 import { ZONE_I } from '../../data/zones';
@@ -45,19 +46,22 @@ export function computeNoise(sim: Sim): Float32Array {
         if (v > out[k]!) out[k] = v;
       }
   };
+  // Quiet jets (M37's Jet engines): planes' noise carries less far.
+  const jets = spinoff(sim, 'quietjets');
   for (const c of s.civics.values()) {
     const a = CIVIC.get(c.def)?.airport;
     if (!a || !civicOnline(c)) continue;
     const ux = DMath.cos(c.angle);
     const uz = DMath.sin(c.angle);
     const half = CIVIC.get(c.def)!.w / 2;
-    stamp(c.x, c.z, a.noise + half, (x, z) => {
+    const reach = a.noise * jets;
+    stamp(c.x, c.z, reach + half, (x, z) => {
       const dx = x - c.x;
       const dz = z - c.z;
       // Along the runway, measured from its nearer end; across it, from its centre line.
       const along = Math.max(0, Math.abs(dx * ux + dz * uz) - half);
       const across = Math.abs(-dx * uz + dz * ux);
-      const r = DMath.hypot(along / a.noise, across / (a.noise * NOISE.across));
+      const r = DMath.hypot(along / reach, across / (reach * NOISE.across));
       return r >= 1 ? 0 : NOISE.airport * DMath.pow(1 - r, 1.5);
     });
   }
@@ -75,6 +79,33 @@ export function computeNoise(sim: Sim): Float32Array {
         return d >= NOISE.roadReach ? 0 : level * (1 - d / NOISE.roadReach);
       });
     }
+  }
+  // Military buildings (M34): an airfield is loud along its runway like the airport; depots, ranges
+  // and factories round about them.
+  for (const c of s.war ? s.civics.values() : []) {
+    const def = CIVIC.get(c.def);
+    const m = def?.military;
+    if (!m || !civicOnline(c)) continue;
+    if (m.runway) {
+      const ux = DMath.cos(c.angle);
+      const uz = DMath.sin(c.angle);
+      const half = def.w / 2;
+      const reach = m.runway * jets;
+      stamp(c.x, c.z, reach + half, (x, z) => {
+        const dx = x - c.x;
+        const dz = z - c.z;
+        const along = Math.max(0, Math.abs(dx * ux + dz * uz) - half);
+        const across = Math.abs(-dx * uz + dz * ux);
+        const r = DMath.hypot(along / reach, across / (reach * NOISE.across));
+        return r >= 1 ? 0 : NOISE.airport * DMath.pow(1 - r, 1.5);
+      });
+    }
+    const n = m.noise;
+    if (n)
+      stamp(c.x, c.z, n.reach, (x, z) => {
+        const d = DMath.hypot(x - c.x, z - c.z);
+        return d >= n.reach ? 0 : n.level * (1 - d / n.reach);
+      });
   }
   for (const b of s.buildings.values()) {
     if (b.zone !== ZONE_I || b.state !== BState.Active || b.wealth !== 0) continue;

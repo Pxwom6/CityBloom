@@ -282,6 +282,7 @@ function poke(sim: Sim): unknown[] {
     'transit',
     'noise',
     'region',
+    'radiation',
   ];
   return [
     { type: 'hash' },
@@ -292,6 +293,9 @@ function poke(sim: Sim): unknown[] {
     { type: 'chronicle' },
     { type: 'civic', id: c?.id ?? 0 },
     ...maps.map((map) => ({ type: 'overlay', map })),
+    // The fallout map's tooltip and summary (M40).
+    { type: 'fallout', x: b?.x ?? 0, z: b?.z ?? 0 },
+    { type: 'fallout' },
     { type: 'coveragePreview', def: 'firestation', x: c?.x ?? 0, z: (c?.z ?? 0) + 40, angle: 0, side: 1 },
     { type: 'advisors' },
     { type: 'thoughts', count: 5 },

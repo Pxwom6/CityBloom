@@ -28,6 +28,9 @@ export const ROLES = [
   'asphalt',
   'water',
   'hedge',
+  // War buildings only (PROMPTS-WAR.md: the atom silo's searchlights): lamps that glow at night.
+  // Last, so every other role keeps its number in the models file.
+  'light',
 ] as const;
 export type Role = (typeof ROLES)[number];
 export const ROLE_INDEX = new Map<string, number>(ROLES.map((r, i) => [r, i]));
@@ -60,11 +63,67 @@ export type ModelTarget =
       /** Gives off smoke (heavy industry). */
       smokes: boolean;
     }
-  | { kind: 'civic'; def: string; design: number; w: number; d: number; label: string; smokes: boolean }
+  | {
+      kind: 'civic';
+      def: string;
+      design: number;
+      w: number;
+      d: number;
+      label: string;
+      smokes: boolean;
+      /** A war building (PROMPTS-WAR.md, phase 5): its model comes in the war models file. */
+      war?: true;
+    }
   | { kind: 'annex'; def: string; design: number; w: number; d: number; label: string; smokes: false };
 
-/** What a model file replaces, from its name without `.glb`; null when it names nothing in the game. */
-export function targetOf(base: string): ModelTarget | null {
+/** A war building's site from its prompt (PROMPTS-WAR.md): "Site W x D m". */
+export interface WarSite {
+  name: string;
+  w: number;
+  d: number;
+}
+
+/**
+ * The war buildings' sites from PROMPTS-WAR.md, by file name: every prompt that says "Save as
+ * <name>.glb" and "Site W x D m" (the units' prompts give sizes, not sites).
+ */
+export function parseSites(promptsMd: string): Map<string, WarSite> {
+  const out = new Map<string, WarSite>();
+  for (const s of promptsMd.split(/^### /m).slice(1)) {
+    const site = /Site ([\d.]+) x ([\d.]+) m/.exec(s);
+    const save = /Save as ([\w-]+)\.glb/.exec(s);
+    if (!site || !save) continue;
+    const name = (s.split('\n')[0] ?? '').replace(/\s*\(`.*$/, '').trim();
+    out.set(save[1]!, { name, w: Number(site[1]), d: Number(site[2]) });
+  }
+  return out;
+}
+
+/**
+ * What the check lets the war buildings do that the model spec doesn't (assets/models/war/README.md),
+ * each because its prompt asks for it.
+ */
+export const WAR_ALLOW = {
+  /** The facing check's false alarms: each faces the road as its prompt says. */
+  facing: {
+    airfield: 'its hangar doors face the apron',
+    bunker: 'its only door is at the back',
+    enrichment: "its halls' roller doors are in their end walls",
+  } as Record<string, string>,
+  /** Parts below ground, down to this deep (m). */
+  below: {
+    navalyard: { depth: 8, what: 'its quay walls and dry dock' },
+    coastalgun: { depth: 3, what: 'its quay' },
+    spyagency: { depth: 2.9, what: 'its basement ramp' },
+  } as Record<string, { depth: number; what: string }>,
+};
+
+/**
+ * What a model file replaces, from its name without `.glb`; null when it names nothing in the game.
+ * `war` are the war buildings' sites (PROMPTS-WAR.md): a war building the game doesn't have yet
+ * is checked and packed on its prompt's site (the war models file, phase 5).
+ */
+export function targetOf(base: string, war?: Map<string, WarSite>): ModelTarget | null {
   const m = /^(.+?)(?:-(\d+))?$/.exec(base);
   if (!m) return null;
   const id = m[1]!;
@@ -107,6 +166,20 @@ export function targetOf(base: string): ModelTarget | null {
       d: c.d,
       label: c.name,
       smokes: (c.airPollution ?? 0) > 0,
+      ...(c.category === 'military' || war?.has(id) ? { war: true as const } : {}),
+    };
+  const site = war?.get(id);
+  if (site)
+    return {
+      kind: 'civic',
+      def: id,
+      design,
+      w: site.w,
+      d: site.d,
+      label: `${site.name} (war, not in the game yet)`,
+      // Only a building the game has smokes (the arms factory); a cooling stack is a vent.
+      smokes: false,
+      war: true,
     };
   return null;
 }

@@ -14,11 +14,11 @@ rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still wor
 4. The next push to `main` deploys the relay and builds the site with its address. Please don't
    paste the token into a session.
 
-Phases 1–3, the playthrough fix round (PR #14) and the install button (PR #15) are merged into
-`main`, which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 4 (multiplayer,
-SPEC-4.md, M29–M33) is complete on the `multiplayer` branch**, in pull requests #17–#20 and M33's
-for the owner to merge in order. Online rooms need the Cloudflare setup below; peer-to-peer works
-without it.
+Phases 1–4 (with phase 4's review follow-ups) and the war models (PR #22) are merged into `main`,
+which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 5 (war between cities,
+SPEC-5.md, M34–M40) is complete, its end included** (the playthroughs through the real UI and their
+fixes), on this branch, in pull request #23 for the owner to merge. Online
+rooms need the Cloudflare setup above; peer-to-peer works without it.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -54,6 +54,19 @@ without it.
 - [x] M31 Building together
 - [x] M32 Shared regions
 - [x] M33 Ready for friends
+- [x] M34 Armed forces
+- [x] M35 Into battle
+- [x] M36 Diplomacy and the stakes of war
+- [x] M37 Weapon development and intelligence
+- [x] M38 Investments and the war economy
+- [x] M39 War with friends
+- [x] M40 The final race: the atom bomb
+
+**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40 and the phase's end.** Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
+in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
+`main` from this branch; a milestone finished while the last one's pull request is still open joins
+it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
+done in `docs/SPEC_REVIEW.md`, "Phase 5".
 
 ## Multiplayer review follow-ups (PRs #17–#21)
 The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
@@ -193,7 +206,38 @@ within the game hour and put right without a reload. Or up to four players each 
 side by side in a shared region, trading power, water and garbage, sharing commuters, paying
 together for Sunfield Commons and visiting each other's cities. Single player is unchanged.
 
+**Phase 5 (war between cities, M34–M40)** adds war as an option: a city without rivals plays and
+saves exactly as before, bit for bit. With rival neighbours ticked (or a region's host allowing
+war), each computer town along the highway takes a character and arms month by month. The city
+builds a military HQ, barracks, depots, airfields, a naval yard and defences, trains units with its own workers, power, goods,
+ore and oil, and pays for them on a Defence line and with war bonds (M34). Battles are a
+deterministic simulation fought on the defender's real streets. Raids come with a countdown and
+sirens, and expeditions go to the neighbours' towns, grown by the balance mayor. Damage is rubble
+that clears and regrows (M35). Wars are declared with a reason and a warning, and a war score leads
+to capitulation, treaties, pacts that cost reputation to break, total war with the military HQ as
+the seat of power, conquest and vassals (M36). Weapons labs research six branches of four tiers,
+each ending in a superweapon: a wind-up robot, a sky fortress, a clockwork whale, a dome shield, a
+blackout tower and an express gate. Spies scout, sabotage and steal (M37). Stakes in neighbours'
+industry, loans and arms for allies, sanctions both ways and war weariness make a war economy
+(M38). Between friends the region room keeps the truth. Live battles are commanded by both players
+from a tactical map, and allies send help. Wars and treaties are kept by the room and mirrored in
+each city's sim, with a region-wide war history and exact replays (M39). And at the very end of the
+research tree comes one atom bomb a city, ever. It is years of a big city's income to build, every
+rival sees it coming, and a dome can stop it. A landing leaves fallout for decades and a nuclear
+winter over the whole region, and the world shuns the city that fired for good (M40). Single player
+and peaceful regions are unchanged; every battle, treaty, research tier and bomb is part of the same
+deterministic, cross-browser-checked sim, and between friends the region room decides what stands
+within Cloudflare's free plan. Checked by 2,017 unit tests,
+the war specs in `e2e/` (two players through the real UI for war between friends), a two-hour four-player region
+soak and the cross-browser test on every push.
+
 ## Ideas for what's next
+0. **War, further** (from phase 5's playthroughs; DECISIONS "Phase 5 end"): a grace for a young city's
+   first war (no total war declared on a city under 3,000 residents or two years old); a wrecked power
+   plant keeping half its output while repaired, or an emergency import, so one raid doesn't black out a
+   town; a rough odds line in the Send tab; a computer neighbour's refusal naming its reason (its note is
+   hashed in the M36 golden, so a deliberate golden update); a kept atom strike counted in a friends'
+   war score; softer puffs on the toy cloud; "Fallout 97 % (heavy)" on the radiation map.
 1. **Real-hardware pass**: the rest of the list under "To check on the Mac" (the 100k city runs at
    60 fps and more on an M5 MacBook Pro, so per-building LOD isn't needed).
 2. **Terrain, further**: a water tool in running cities (dig a harbour basin or a canal, with the
@@ -216,16 +260,325 @@ together for Sunfield Commons and visiting each other's cities. Single player is
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-Nothing: the multiplayer review's follow-ups (F1–F14 and the minor items) are done on `m33-ready`
-and `multiplayer` (the same commits, pushed from a cloud session; PR #21 carries them). The owner:
-review them, merge #17–#21 in order, set up Cloudflare (above) for online rooms, then run the e2e
-specs the cloud VM couldn't and try a shared city with a friend on another computer and a phone
-("To check on the Mac").
+**Phase 5 is complete, its end included**, in pull request #23 (its title names all seven milestones).
+Nothing is under way; what's left is the owner's: merge PR #23, the real-device list under "To check
+on the Mac" (what needs a person: speakers, touch, two real machines, Cloudflare), and the Cloudflare
+setup above for online rooms. A round of checks on the Mac's GPU followed the phase's end (frame times,
+the bench, the playthrough in one run, the war's looks, the snapshot size): all inside the budgets, two
+fixes (the top bar folding in a war city, a flaky test); numbers under "Performance (phase 5 checks)".
+
+Phase 5's end (SPEC-5.md, "When every milestone is done"): the summaries (this file's top, SPEC_REVIEW's
+phase 5 section, the README with two war pictures), then three playthroughs through the real UI on the
+owner's Mac on the GPU, kept as `e2e/phase5-finale.spec.ts` (`@playthrough`, ≈12 min): a war with a
+computer neighbour from the main menu, a war between two players with a third watching the live battle,
+and the atom bomb race between them to the fallout, the winter and the pariah. Nineteen findings fixed,
+each with a test (war words that agree with their numbers, the battle bar's targets named, notices kept
+off the battle map, the battle map in a player's words, a join told once, a strike's notices not
+tripled, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, the HQ's
+refusal naming its cause, MW for power), then in the cloud the war room's tabs in two rows and short
+war scales with their meaning beneath. Left with a proposal (DECISIONS "Phase 5 end", and "Ideas for
+what's next" below): a grace for a young city's first war, a raid that blacks out a town, odds in the
+Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs.
+Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at). Tests on the final code: the unit suite,
+2,039 tests in 185 files, typecheck, lint and prettier pass; the cross-browser test is green on every push.
+
+M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
+it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
+a silo and a bomb paid in twelve instalments (about $20M in all, some five years of a 57,000-resident
+city's taxes), a region whose host allows total war, superweapons and the bomb, a declared total war
+and a long preparation, launched by a three-second hold. The missile crosses the region with a
+countdown and sirens; a charged dome stops one, then is down 1,440 game hours; a landing levels 450 m
+around the densest district (its residents leave; no one is hurt on screen) under a toy mushroom
+cloud. After it: fallout (two layers, nothing built on closed ground for about 21 game years, the
+radiation map, clean-up crews, drift into neighbours, friends included), a nuclear winter on every
+city in the region for six game years, and the world turning on the firer for good (reputation 0,
+every computer neighbour's sanction, pacts ended, total war declared on it with no cooldown, a
+protest that empties homes). Computer neighbours race on Hard only, after year 20; spies and war can
+slow any race. Between friends the region room keeps the truth (protocol 7: the race in each report,
+notices, the record kept for good, winters, the strike on the blackout tower's road, the pariah)
+within bounds a modified client can't push past. Save v32. Each step built, then reviewed by two
+reviewers and fixed; the soak, with a bomb race added, found two more defects (fixed). Calls:
+DECISIONS "M40"; design: DESIGN §3.34 (plan `docs/plans/M40-design.md`); SPEC_REVIEW "M40".
+Numbers: "Performance (M40)".
+
+M39 in short: live battles between friends (battle version 4: orders while a battle runs, helpers
+with owners; the region room paces each battle by both players' progress and stamps every order at
+a shared frontier, protocol 6; the defender's city hosts it, the attacker's page runs the same
+battle, both end on one hash), the tactical battle map (key O) for both sides and spectators, a
+player quiet for 10 s handing over to their defences, allies' help, wars and treaties between
+friends kept by the room and mirrored in each sim (declarations, the score, capitulation, vassals,
+proposals, pacts, money terms), the region's war history and replays in the City history panel,
+co-op roles (war, treaties, defence), three war scenarios (Hold the Line, A Clean War, Liberation),
+the four-player region soak, tips, the README's War section, and the lobby and war room by touch on
+a phone and a tablet. Each step was built, reviewed by two independent reviewers and fixed (59
+findings, all real, all fixed with tests); the soaks found three more (an attacker leaving
+mid-battle dodged its losses; a page that missed orders ran a battle out alone; a record standing in
+for a battle the city still hosted fought it twice), each fixed with a test that fails on the old
+code. Calls: DECISIONS "M39"; design: DESIGN §3.33 (plan `docs/plans/M39-design.md`); SPEC_REVIEW
+"M39". Numbers: "Performance (M39)".
+
+M38 in short: the war economy with computer neighbours (`WarState.economy`, save v31): stakes in
+their industries (dividends by the hour, frozen while fighting or under sanctions, seized on a
+capitulation, a fall or a treacherous declaration), loans to allies, money for an ally's war,
+munitions and units sold to allies (kept apart from M23's deals; M36's embargo now also checked at
+each hour's delivery), sanctions both ways, war weariness (approval, then growth) and the peace
+recovery, computer neighbours' offers by character (munitions, investment, loans), difficulty
+levers with rivals on (Normal is M37's war to the bit), and the balance mayor at war
+(`src/sim/ai/warMayor.ts`, `balance.ts --rivals`). The war room's Trade tab, weariness in the
+Diplomacy tab, tips. Calls: DECISIONS "M38"; design: DESIGN §3.32 (plan `docs/plans/M38-design.md`,
+balance `docs/plans/M38-balance.md`); SPEC_REVIEW "M38". Numbers: "Performance (M38)".
+
+M35 in short: the battle simulation (`src/sim/battle`), raids by computer neighbours (decided on
+their own past 3,000 residents and a year; retaliation), expeditions against towns grown by the
+balance mayor, battles between friends' cities through the region room, the battle viewer, the war
+room's Send / Map / Reports, effects, notices and sirens. Calls: DECISIONS "M35"; design: DESIGN
+§3.29; SPEC_REVIEW "M35".
+
+M36 in short: declarations with a warning and a reason, the war score and capitulation, treaties
+(proposals, counters, the computer's answers by character and the city's reputation), tribute and
+occupations in the ledger, pacts and breaking them (allies turn), total war with the military HQ as
+the seat of power, conquest, vassals and risings both ways, neutrality, newcomer protection,
+cooldowns; friends' raids decided by the region room, half damage while away (protocol 4), save
+v29; the war room's Diplomacy tab. Calls: DECISIONS "M36"; design: DESIGN §3.30; SPEC_REVIEW "M36".
+
+M37 in short: weapons research (labs and the research park, six branches of four tiers, a queue on
+the war clock, civilian spin-offs), prototypes tried at the proving ground, battles version 3
+(research's modifiers, interceptors, the dome's pool; older battles stay version 2), superweapons
+(the robot, sky fortress and clockwork whale as units; the dome, blackout tower and express gate as
+projects; a region's host allows them), spies and counter-intelligence against computer neighbours
+and, through the region room, friends (protocol 5), computer neighbours' own tech and spies, the
+fair clock, save v30; the war room's Research and Intelligence tabs, superweapon effects with a
+cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds, all fixed.
+Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
 
 ## Next tasks
-1. The real-device checks for multiplayer ("To check on the Mac"), then the balance round below.
-2. The balance round the brief parks (money piling up after Year 2, neglect's bite, school coverage,
-   empty tax bands): later, after phase 4.
+1. The owner: merge PR #23 (phase 5) into `main`.
+2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
+3. Then, if wanted, the phase 5 ideas under "Ideas for what's next".
+
+## Performance (phase 5 checks, the owner's Mac)
+- **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs` on `bench-results/war.gz`:
+  the bench city under a robot's raid with guards, interceptors and a charged dome; avg / p95 ms, calls,
+  triangles; High | Medium | Low):
+  - plain city: 10.0 / 19.4 | 3.3–3.5 / 5.5–6.5 | 2.25 / 3.9 (12.1 ms at High at model batch 5);
+  - battle (robot): 6.43 / 11.5, 145, 1.51M | 2.29 / 3.6, 81, 0.87M | 1.45 / 2.7, 75, 0.83M;
+  - battle (24 heaviest units): 6.53 / 8.5, 141, 1.50M | 2.30 / 3.4 | 1.45 / 2.7;
+  - battle with the battle map open: 6.55 / 11.5, 148, 1.45M | 2.42 / 3.7 | 1.79 / 3.0;
+  - battle with the war room open: 6.43 / 11.1, 144, 1.44M | 2.29 / 3.5 | 1.44 / 2.7;
+  - units parked and drilling: 7.71 / 8.8, 218, 2.18M | 2.83 / 4.7 | 1.62 / 2.8;
+  - aircraft flying: 10.04 / 11.3, 234, 2.50M | 3.90 / 6.5 | 2.19 / 3.9.
+  Every average is inside SPEC-3's 60 fps at High. The aircraft view has a few long frames (High p99
+  27–52 ms) that the profile puts inside WebGL's own draw calls, not the game's work: left to watch.
+- **Bench against `main`** (`bench.ts 6 --big`, three pairs back to back, the same 110,174-resident city):
+  months 4–6 tick avg 0.269 ms against 0.267, p99 2.53 against 2.50: the same within noise.
+- **Shared-city snapshot** (`scripts/dev/snapsize.ts`): the 110k bench city is 3 of the 40 parts (0.59 MB of
+  base64 against the 8 MB cap, 7 %); the war city also 3.
+- **The phase-5 playthrough in one run** on the GPU (`PHASE5_GPU=1 PLAYTHROUGH=1 npx playwright test
+  e2e/phase5-finale.spec.ts`): 3 passed in 12.9 min, and 13.0 min after the top bar fix (a war city's top
+  bar ran off a 1280 px window under a raid's or bomb's chip or the winter badge; it now folds into the More
+  menu). The flaky phone battle map test (3 of 5) read the canvas before its first frame; it now waits for
+  it, 5 of 5 pass. The war's looks on the GPU (101 pictures: every war building by day and night, units,
+  superweapons, the bomb's effects): nothing broken.
+
+## Performance (M40)
+- **E2E through the real UI** (on the owner's Mac, Playwright's Chromium): `e2e/m40-atom.spec.ts` (one
+  player, 1.9 min: the race built from the toolbar, total war from the Diplomacy tab, the bomb built
+  and launched by a real three-second hold, a hold let go early sending nothing, the region map's arc
+  and cloud mark, reputation 0 and the sanctions; then a neighbour's bomb on the city for the four
+  pictures the brief asks for: `docs/screenshots/m40-e2e-{countdown,cloud,radiation,winter}.png`, all
+  looked at) and `e2e/m40-friends.spec.ts` (two players against the local relay, 4.7 min: the race
+  seen by each other, the first finisher, a strike kept by the room, the target levelled, the winter
+  on the firer, the pariah; `m40-e2e-friends-*.png`). Every M34–M39 war spec passes alone; the full
+  `npm run e2e` ran for the first time (127 passed, 3 failed, none M40's: f2-trystero fails the same
+  on `main`, an m39-battlemap phone flake from before M40, m30-rooms passes alone).
+- **Frame times** (Mac, real Chrome, frame cap off, the 100k bench city, overview with the cloud and
+  missile filling the view against the plain city; avg / p95 ms): High 7.22 / 11.1 against 7.23 /
+  10.7, Medium 4.32 / 7.0 against 4.16 / 6.7, Low 3.01 / 3.9 against 2.99 / 3.9. The cloud is at most
+  3 draw calls and about 1,260 triangles (the caps: 6 and 4,000).
+- **Tick**: `atombench.ts` on the 100k city: the blast's worst tick 25.0 ms (15.2 ms in the atom
+  system; about the plan's 25 ms budget on this VM); the whole blast over in 120 ticks; ticks average
+  1.35 ms 12 hours after.
+- **Balance**: peace identical to `main` file for file (20 years: careful, greedy, neglectful); with
+  rivals at Easy, Normal and Hard identical to M38 at year 20 (Normal 65,786 residents, $1,707,414,
+  70 %, 30 raids). A 35-year Hard run saw no computer race: a computer neighbour's weapons only
+  advance once the city researches its own, and the careful mayor researches none.
+- **Bench** (`bench.ts 6 --big`, two pairs with `main`): 6.4–6.7 s against 6.3–6.6 s, months 4–6 tick
+  avg 0.93–1.30 ms on both: no cost from M40 in a city that never races.
+- **Network** (`netbudget.ts`, four players): 1.1 % of the free plan's requests, as before; the race
+  adds 20–80 bytes to a report in ordinary play. With a race advancing in four cities the room writes
+  63 rows an hour against 58 without one (`relay/tests/freeplan.test.ts`).
+- **Soak** (`regionsoak.ts 120 --virtual --crash`, the story now with two bomb strikes between friends
+  and crashes in the countdown and the blast): PASSED on seeds m40, m40b and after the fixes m40b
+  again with nothing excused (strikes fired, taken and landed once each, every winter taken once,
+  fallout within the room's bounds).
+- **Tests**: the unit suite, 2,017 tests in 183 files, passes on the final M40 code (with typecheck, lint and prettier). The cross-browser test (`xbrowser.yml`, Chromium,
+  WebKit, real Firefox) passes on every push with the atom section (the race, both strikes, 300 game
+  hours of fallout hashed by the bits of every cell, the winter, the pariah, a Hard neighbour's launch).
+- **Goldens**: the peace golden, the M36 golden, the v2 battle replays and the v31 fixture never moved.
+
+## Performance (M39)
+- **The soak** (done criterion; `npx tsx scripts/dev/regionsoak.ts 120 --crash`, four headless
+  players on the local relay at the game's 1× pace with the fair clock on, run alone): on the final
+  code (a19ae2b), **passed**: 121.0 min of room time; 11 live battles, all 11 agreed (both cities'
+  runs ended on one hash), 0 failed, each taken once by its defender and reported once by its
+  attacker; 1 fought the old way; 88 orders, 1 handover, 6 helps sent and 2 booked; 2 wars declared
+  and opened, 10 proposals, 8 treaties, 7 pacts, a conquest, 2 vassal dues; 8 drops, 8 outages, 8
+  reloads, 9 leaves, 8 crashes; a record stood in once for a battle its city still hosted and
+  finished it. The room: 158 rows (78 an hour), 163 requests (81 an hour), 908 GB-s, within the free
+  plan (an evening of 4 h is 10.4 % of the region's own 3,000 rows a day); log
+  `bench-results/regionsoak-m39.log`. Before the last fixes, on d5cd6cc, the same story passed (121.1 min: 10 live
+  battles, 5 agreed and 5 explained by a leave, crash or outage, 0 failed; 2 fought the old way; 69
+  orders, 5 handovers, 4 helps sent and 2 booked; 3 wars declared and opened, 4 treaties, a conquest,
+  2 vassal dues; 8 drops, 8 outages, 9 reloads, 9 leaves, 8 crashes; the room 173 rows and 139
+  requests, 86 and 69 an hour, within the free plan). Virtual soaks (`--virtual`, the same story on
+  a clock the script moves) on the final code pass on seeds m39final, s6 and s4: 10 live battles each,
+  0 failed; 7 records stood in for a battle a city still hosted and all 7 finished it rather than
+  re-running it. The virtual runs found the three faults the real ones missed (In progress).
+- **Balance**: peace identical to `main` line for line (careful 67,373 residents, $1,838,985, 73 %
+  at year 20; greedy 420; neglectful 354); with rivals at Normal identical to M38's row (65,786,
+  $1,707,414, 70 %, 30 raids). M39 adds nothing a city without friends runs.
+- **Bench** (`bench.ts 6 --big`, the 110,174-resident city, two pairs with `main` back to back): sim
+  totals 5,366 and 5,195 ms against 5,460 and 5,641; months 4–6 tick avg 0.79–1.05 ms on the branch,
+  0.78–1.21 on `main`; p99 7–10 ms on both: no cost from M39.
+- **Battles**: a live battle is a hosted battle with orders, so its tick cost is M37's (a raid on the
+  100k city 0.16 ms a tick of battle on average); the room's pacing adds no work to the sim.
+- **Network** (`netbudget.ts`, four players): 184 messages a minute from the host, 63–64 from guests,
+  1.1 % of the free plan's requests for an hour a day, as M38. A live battle adds at most two `bstep`
+  a second from each combatant and a `ballow` when the frontier moves; the soak's two hours of war in
+  four cities cost the room 908 GB-s, inside the free plan projected to a day.
+- **Tests**: the unit suite, 1,427 tests in 155 files, passes on the final code (1,058 in 130 at
+  M38). E2e on the wrap-up tip, one at a time: every war spec, M34–M39 (14 specs), passes;
+  `m39-friends` (two players through the real UI: a war declared from the Diplomacy tab, a live
+  battle with both commanding, peace one offers and the other accepts) 693 s; `m39-battlemap` failed
+  once on a timing flake (fixed: it waits for the map to show what a click needs) and passed. On the
+  final code the four live-battle specs again pass (`m39-friends` 790 s, `m39-history` 144 s,
+  `m39-battlemap` 236 s, `m39-help` 313 s). Screenshots reviewed.
+- **Cross-browser**: `xbrowser.yml` (Chromium, WebKit, real Firefox) green on every push, the final
+  code included, with the determinism script's `live` (a version-4 battle with orders from both
+  sides, a handover and a helper) and `friends` sections; Chromium locally too.
+- **Goldens**: the peace golden, the M36 golden and the v2 battle replays never moved; no save
+  version change (v31: every M39 field is optional).
+
+## Performance (M38)
+- **Balance** with rivals (`npx tsx scripts/balance.ts 20 careful --rivals --difficulty …`, the
+  mayor at war; `docs/plans/M38-balance.md`): Easy 83,179 residents, $1.30M, 75 % at year 20 (16
+  raids, 2 buildings lost); Normal 65,786, $1.71M, 70 % (30 raids); Hard held back three years by
+  the raids (8,647 residents at year 6 against 28,229 with rivals off), never bankrupt, 75,239,
+  $1.64M, 65 % (35 raids, a dip to 55 % in year 13). The military takes 2.2 / 3.3 / 4.1 % of
+  spending; stakes worth $2.39M by year 20, paying $336k a year. No neighbour declared war on the
+  careful mayor in any run (peak weariness 0.02), so weariness and treaties show in the tests only.
+  Peace (`balance.ts 20 careful`, rivals off): identical to the step 8 tip, line for line.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, the same 110,174-resident city): against the M37
+  tip back to back, whole runs 7.9 / 8.2 s against 8.1 / 8.4 s (no cost from M38: a peaceful city
+  reads two properties for it); against `main` three pairs 8.2–9.0 s against 7.2–8.7 s, months 4–6
+  tick avg 1.3–1.7 ms on both, within this VM's spread between runs (`main` alone 7.2–8.7 s): **an
+  A/B on the Mac** would settle it.
+- **Network** (`netbudget.ts`, four players): unchanged, 185 messages a minute from the host and 64
+  from guests, 1.1 % of the free plan's requests for an hour a day. M38 sends nothing between
+  friends beyond its commands.
+- **Tests**: the unit suite, 1,058 tests in 130 files, passes (M38's war economy 29, arms trade 17,
+  sanctions 15, weariness 14, offers 24, difficulty 9, the mayor at war 12, save v31). E2e: M34–M38's
+  single-player war specs (10 tests, 34 min) pass, `m38-economy` included (stakes, an ally's loan,
+  an offer taken, munitions and a unit sold, a war freezing a stake, weariness, a sanction;
+  screenshots reviewed). Two players: `m37-friends` passed (12.4 min) on its second run; on the
+  first, every check passed up to Sam's warning, then a screenshot of Sam's page timed out at 60 s
+  (two SwiftShader pages on this VM).
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every M38
+  push, with the determinism script's M38 section (every new command, the offer cheat). Found while
+  mapping M39: the browsers ran the diplomacy (M36), research (M37) and war economy (M38) sections
+  but the spec never compared their hashes with Node's (only the commands used, the war town and the
+  battles); it does now (`e2e-xb/determinism.spec.ts`), green in Chromium here, WebKit and Firefox
+  on GitHub.
+- **Goldens**: the peace golden and the v2 battle replays never moved; the M36 golden was rewritten
+  twice (weariness, then offers; DECISIONS "M38").
+
+## Performance (M37)
+- **Balance** (`npx tsx scripts/balance.ts 20`, this branch and `main` 6883790 back to back):
+  careful, greedy and neglectful byte for byte the same CSVs (year 20: careful 67,373 residents,
+  73 %; greedy 420; neglectful 354). Peaceful cities run none of M37.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, three pairs with `main` back to back): the same
+  city (110,174 residents, 2,158 buildings at month 6); whole runs 5.3–6.0 s on the branch and
+  5.3–5.7 s on `main`, months 4–6 tick avg 0.89–1.18 ms on both, p99 7–11 ms: no difference
+  beyond this VM's noise.
+- **Battles on the 100k city** (`battlebench.ts bench-results/city.gz`): a plain 24-unit raid's day
+  avg 3.3 ms a tick, p99 23 ms, of which the battle avg 0.16 ms (worst 4.2); the whole battle at
+  once 53 ms. Superweapon raids: the robot's battle avg 0.41 ms (worst 3.2), the fortress's 0.32
+  (3.4), the whale's 0.53 (3.2); each fought whole in 5–17 ms. The heaviest (`--guards --dome
+  --super robot`: four interceptors, two shield generators, a charged dome, 356 structures) avg
+  0.28 ms, worst 3.2 ms, whole 22 ms. A battle's message to a friend 10.4–11.6 KB, one part.
+- **Frame budget in the heaviest battle** (`framebench.mjs bench-results/war.gz --vm --views
+  battle`, the battle watched at 1×; SwiftShader, so only draw calls and triangles count): the
+  robot's raid under the dome Low 70 calls 0.70M triangles, Medium 118 / 1.09M, High 125 /
+  1.24M; 24 of the heaviest units (`--battle max`) Low 69 / 0.71M, Medium 115 / 1.10M, High 125
+  / 1.25M; the dome adds 0–3 calls. Below the city view at every quality (High 246 calls, 2.9M
+  triangles), so within the phase-3 frame budget. Real frame times: **to check on the Mac**.
+- **Network** (`netbudget.ts`, four players): 185 messages a minute sent by the host, 64 by
+  guests; an hour of it a day is 1.1 % of the free plan's requests, 3.5 % of its duration and 0.2 %
+  of its rows. Friends' operations are a few small messages each.
+- **Tests**: the unit suite, 934 tests in 122 files (917 unit, 17 live), passes; after the last
+  fixes the war, battle, lockstep and relay suites again (311 tests in 35 files). E2e: M34–M37's
+  war specs (10 tests, 31 min) and `m35-friends` (22.7 min) pass, screenshots reviewed; the
+  superweapon scene's eleven shots reviewed (`docs/screenshots/m37-scene-*.png`).
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit, real Firefox) green on every push,
+  with the determinism script's M37 sections (research, trials, superweapons, spies, the friends'
+  page-only commands).
+
+## Performance (M36)
+- **Balance** (`npx tsx scripts/balance.ts 20` on `main` and this branch back to back): careful, greedy
+  and neglectful line for line the same as `main` (only the run times differ).
+- **Cross-browser**: `xbrowser.yml` (Chromium, WebKit, real Firefox) green on 5152368 and after,
+  with the determinism script's new diplomacy section (every diplomacy command: a proposal taken
+  back, neutrality on and off, a declared war, a treaty with tribute and an occupied district, a
+  pact broken, a district bought back).
+- **E2e** (after the reviews' fixes): `e2e/m36-diplomacy.spec.ts` (3.1 min: proposals, a declared war,
+  a treaty with tribute, neutrality, a fall and play on as a vassal), `m35-battle` (2, 4.1 min) and
+  `m35-friends` (two players, 20.9 min) pass; screenshots reviewed.
+- **Unit**: 817 tests in 110 files pass (`tests/war/diplomacy.test.ts` 32, the relay's free-plan
+  tests 32 with the room answering every battle).
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM): the same city as M35 (110,174 residents,
+  2,158 buildings at month 6); tick avg months 4–6 0.87 / 0.87 / 0.80 ms, p99 7–8 ms, worst 56 ms
+  (month 1's first ticks). Peaceful cities run no diplomacy.
+- **Balance** rerun after the reviews: still line for line the same as `main`.
+- **Cross-browser**: green again on 367687c and 21ee89a, with `battleSettling` in the script.
+
+## Performance (M35)
+- **Balance** (`npx tsx scripts/balance.ts 20`, branch and `main` back to back): careful, greedy and
+  neglectful line for line the same as `main` (only the run times differ), with raids decided by
+  neighbours, retaliation and friends' battles in.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM): the same city as M34 (110,174 residents,
+  2,158 buildings at month 6); tick avg months 4–6 1.27 / 1.23 / 1.02 ms, p99 9–12 ms, worst 61 ms
+  (month 1's cold start). Peace runs no battle code.
+- **A raid on the 100k city** (`npx tsx scripts/dev/battlebench.ts bench-results/city.gz`: war on,
+  an HQ, barracks, depot, three bunkers and two anti-air guns, six units): its first day after
+  loading (cold caches) avg 4.1 ms a tick, p99 29 ms; the day of a 24-unit raid on its military
+  (286 structures, 743 ticks) avg 4.3 ms, p99 30 ms, of which the battle itself avg 0.28 ms, worst
+  4.6 ms; the whole battle at once (a raid taken while away) 103 ms; the battle's message to a
+  friend 10.4 KB (one part).
+- **Cross-browser**: `xbrowser.yml` on PR #23 (Chromium, WebKit and real Firefox) green on every
+  push through 924a3a3, with the expedition into a mayor-grown town and the raid in the war town.
+- **Tests**: the unit suite, 764 tests in 106 files, passes.
+- **E2e**: `e2e/m35-battle.spec.ts` 2 passed (a force sent from the war room, watched and repaired;
+  a neighbour's raid with its countdown, fought and repaired); `e2e/m35-friends.spec.ts` 1 passed
+  (26 min: two players, a raid on an absent friend, its report on both sides, the replay with the
+  same damage, back in the region). Run it alone: beside other work, its pages in SwiftShader miss
+  their waits.
+- **Network**: a battle between friends is one 10 KB message to the room, kept as one row until
+  seen; `forceOut` and `battleKept` are a few bytes. Within the free plan (a city may send a battle
+  every five minutes after three).
+
+## Performance (M34)
+- **Balance** (`npx tsx scripts/balance.ts 20`): careful, greedy and neglectful are line for line the
+  same as `main` (only the timings differ), with M34 and M35's work so far, and again after the
+  balance mayor moved into the sim with `DMath.hypot`.
+- **Bench** (`npx tsx scripts/bench.ts 6 --big`, this VM, branch then `main` back to back): the same
+  city (110,174 residents, 2,158 buildings at month 6); tick avg month 4–6 1.34 / 1.09 / 1.17 ms
+  against `main`'s 1.50 / 1.34 / 1.31, p99 10–12 against 13–15, worst 73 against 75 ms (month 1's
+  cold start). A city without war runs no war code.
+- **Cross-browser** (`XB_FIREFOX=0 npx playwright test -c playwright.xb.config.ts --project
+  chromium`): 24 months of the scripted town, the 12-month war town, an expedition into a grown town
+  and a raid, all matching Node (15.4 s); WebKit and Firefox run on the pull request (`xbrowser.yml`).
+- **Tests**: the unit suite, 737 tests in 101 files, passes; `e2e/m34-forces.spec.ts` 3 passed (9.9 min).
+- **Network budget**: M34 adds the `rrules` message only (once, when a host changes the rules).
 
 ## Models (phase 3)
 318 files in `assets/models/`: the first batch (136: every zoned type, `R103-2`, 8 annexes, 46 civic
@@ -474,6 +827,20 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- The atom bomb (M40): a computer neighbour races only on Hard after year 20, and only once its weapons
+  are at their top tier, which happens only after the city researches its own; computer neighbours
+  have no weather, so for them the nuclear winter is a drag on growth; the region keeps 16 marks of the
+  bomb, so a long-lived region can lose its oldest landings and stops from the record (not the
+  firings); a firing city that crashes in the moment between the room keeping its strike and its save
+  loses the firing on its side (the room still counts it); the protest and prices are measured on test
+  towns, not a played-out city.
+- War with friends (M39): an ally's force in a live battle fights on the battle's own judgement (its
+  owner watches but does not command it); replays are the room's last 20 battles rather than the
+  plan's 7 days; co-op roles are tested at command level, not through the room panel's checkboxes;
+  the three war scenarios are played by scripted moves in tests, not clicked through; a record that
+  cannot finish a battle the city still hosts (a different picture, or orders at steps already
+  played) still stands in for it and fights it whole, as before, logged with its reason (no soak has
+  met one since the fix).
 - A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
   the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
   machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
@@ -881,6 +1248,23 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
+- Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
+  the launch button by finger on a tablet and a phone; a strike between two real machines over
+  peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;
+  a long Hard game with a player who researches, to meet a computer neighbour's race.
+- Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
+  test runs the room in one process: the live site offers peer-to-peer only); the region room on
+  Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);
+  the lobby, war room and battle map
+  on a tablet in landscape and at 80 % interface size; an ally's help and a spectator with three
+  real players; a first pair of friends inviting each other, going to war and making peace with
+  only the tips to go by.
+- Phase 5 (M38): the Trade tab and weariness in a real window (the bench against `main` was run on the
+  Mac in the phase 5 checks: the same within noise).
+- Phase 5 (M37): the superweapons' and blackout's sounds through real speakers (their frame times and
+  looks on the GPU were checked in the phase 5 checks).
+- Phase 5 (M34): the raid siren and the gun pops through real speakers (the war models, units and their
+  frame times on the GPU were checked in the phase 5 checks).
 - Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
   app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
   to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),
@@ -905,9 +1289,6 @@ misses with either build (`startup-slow.log`).
 - Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
   `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
   WebKit results.
-- Multiplayer review (F8): how many snapshot parts the ~110k bench city needs against the 40-part
-  (8 MB) cap (`encodeSnapshot` on `bench-results/city.gz`'s save); a city past it is told it's too big
-  to share.
 - Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.

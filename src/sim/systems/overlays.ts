@@ -5,6 +5,7 @@ import { BState, footprint } from '../world/buildings';
 import { civicOutput } from './utilities';
 import { coverageOnSegment } from './services';
 import { DMath } from '../dmath';
+import { FALLOUT } from '../../data/atom';
 
 /** Data maps (DESIGN §4): values in [0, 1] per raster cell, −1 where there is nothing to show. */
 export type OverlayMap =
@@ -29,13 +30,17 @@ export type OverlayMap =
   | 'eduLevel'
   | 'transit'
   | 'noise'
-  | 'region';
+  | 'region'
+  | 'radiation';
 
 export interface OverlayResult {
   map: OverlayMap;
   values: Float32Array;
-  /** 'diverging' = bad (0) … good (1); 'sequential' = none (0) … lots (1); 'traffic' = free (0) … jammed (1). */
-  ramp: 'diverging' | 'sequential' | 'traffic';
+  /**
+   * 'diverging' = bad (0) … good (1); 'sequential' = none (0) … lots (1); 'traffic' = free (0) … jammed (1);
+   * 'hazard' = a haze in the air (0) … open ground with fallout … ground closed to building … the core (1).
+   */
+  ramp: 'diverging' | 'sequential' | 'traffic' | 'hazard';
   legend: [string, string];
 }
 
@@ -181,6 +186,9 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
       for (let k = 0; k < n; k++) values[k] = noise[k]! > 0.03 ? noise[k]! : -1;
       return { map, values, ramp: 'sequential', legend: ['Quiet', 'Loud'] };
     }
+    case 'radiation':
+      radiationValues(sim, values);
+      return { map, values, ramp: 'hazard', legend: ['Thin haze', 'Heavy fallout'] };
     case 'region':
       // Drawn on the roads by the client: traffic to and from the neighbours and visitors (M23).
       return { map, values, ramp: 'sequential', legend: ['Little', 'Busy with the region'] };
@@ -200,5 +208,38 @@ export function computeOverlay(sim: Sim, map: OverlayMap): OverlayResult {
       // Ridership (M20): drawn by the client over the roads and track, each line by how full it runs
       // and each stop or station by how many use it.
       return { map, values, ramp: 'sequential', legend: ['Few riders', 'Many riders'] };
+  }
+}
+
+/**
+ * The radiation map (M40): three bands along the hazard ramp, so the air reads lighter than the
+ * ground. Air with nothing on the ground under it is a pale haze (0.1 to 0.25); ground with fallout
+ * below the ban is amber (0.3 to 0.55); ground at or above the ban is red to dark (0.68 to 1), the
+ * edge of the closed ground drawn darkest as an outline. -1 where there is nothing.
+ */
+function radiationValues(sim: Sim, values: Float32Array): void {
+  const f = sim.state.fallout;
+  if (!f) return;
+  const R = GRID_RES;
+  const ban = FALLOUT.ban;
+  const closed = (k: number) => f.ground[k]! >= ban;
+  for (let k = 0; k < values.length; k++) {
+    const g = f.ground[k]!;
+    const a = f.air[k]!;
+    if (g >= ban) {
+      const i = k % R;
+      const j = Math.floor(k / R);
+      const rim =
+        i === 0 ||
+        j === 0 ||
+        i === R - 1 ||
+        j === R - 1 ||
+        !closed(k - 1) ||
+        !closed(k + 1) ||
+        !closed(k - R) ||
+        !closed(k + R);
+      values[k] = rim ? 1 : 0.6 + 0.4 * Math.min(1, g);
+    } else if (g >= 0.02) values[k] = 0.3 + (0.25 * g) / ban;
+    else if (a >= 0.01) values[k] = 0.1 + 0.15 * Math.min(1, a * 4);
   }
 }

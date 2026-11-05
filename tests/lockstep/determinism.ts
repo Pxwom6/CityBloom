@@ -6,16 +6,52 @@
 import { Sim } from '../../src/sim/sim';
 import type { Command, CommandResult, CommandType } from '../../src/sim/commands';
 import type { SaveFile } from '../../src/sim/save';
-import { TICKS_PER_MONTH } from '../../src/sim/time';
+import { TICKS_PER_HOUR, TICKS_PER_MONTH } from '../../src/sim/time';
 import { checkInvariants } from '../../src/sim/invariants';
 import { mapFromGenerator } from '../../src/sim/terrain/customMap';
-import { editorScript, growTown } from './scriptedTown';
+import { editorScript, growTown, newTown, placeAlong, roadIds } from './scriptedTown';
+import { growRivalTown } from '../../src/sim/ai/town';
+import { awayCity, awayInput, awayResult } from '../../src/sim/battle/away';
+import { Battle } from '../../src/sim/battle/battle';
+import { recordInput } from '../../src/sim/battle/live';
+import { UNIT } from '../../src/data/war';
+import { ATOM, atomStageNo } from '../../src/data/atom';
+import { atomOf } from '../../src/sim/systems/atom';
+import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
+import { runAtomSection } from './atomSection';
 
 export interface DeterminismResult {
   months: string[];
   population: number;
   editor: string;
   scenario: string[];
+  /** A town with rival neighbours (M34): its state hash at each month's end. */
+  war: string[];
+  /**
+   * Battles (M35): a neighbour's raid fought in the war town (its hash every game hour and how it
+   * ended), and a skirmish against a computer neighbour's town grown by the mayor (the town's hash,
+   * and the battle's result).
+   */
+  battle: { home: string[]; homeEnd: string; town: string; away: string };
+  /** The war town's diplomacy after its scripted declarations and treaties (M36). */
+  diplomacy: string;
+  /** Weapons research (M37), in a war town of its own: its hash each game day while its lab works. */
+  research: string[];
+  /** The war economy (M38), in a war town of its own: stakes, loans, aid, and what a war does to them. */
+  economy: string[];
+  /**
+   * A live battle with a friend (M39), hosted in the lab town: its picture, the town's hash as the
+   * room's frontier lets it run and as the room's orders arrive, and how it ends.
+   */
+  live: string[];
+  /** Wars and treaties with a friend (M39), mirrored in the lab town after its live battle. */
+  friends: string[];
+  /**
+   * The atom bomb (M40), in a war town of its own: the race, a bomb the dome stops, the launch and the
+   * world's turn on the firer, a blast that levels the west of the town in slices, a neighbour's launch, and three
+   * hundred game hours of fallout with its rasters hashed by their bits (`atomSection.ts`).
+   */
+  atom: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -41,6 +77,657 @@ export function runDeterminism(
     (s, cmd) => note(cmd, s.dispatch(cmd)),
   );
 
+  // The same town with rival neighbours (M34): military buildings, training, bonds.
+  const warHashes: string[] = [];
+  const { sim: warSim } = growTown(
+    Math.min(months, 12),
+    (s) => {
+      checkInvariants(s);
+      warHashes.push(s.hash());
+    },
+    (s, cmd) => note(cmd, s.dispatch(cmd)),
+    false,
+    true,
+  );
+
+  // Battles (M35).
+  // An expedition against a computer neighbour: sent, called back, sent again; fought in its town,
+  // grown by the balance mayor, and reported back; the battle then resolved in the town itself.
+  const rival = warSim.state.region.neighbours.find((n) => n.rival)!;
+  const force = () =>
+    [...warSim.state.war!.units.values()]
+      .filter((u) => !u.away && u.hp >= 0.5)
+      .sort((a, b) => a.id - b.id)
+      .map((u) => u.id);
+  const send: Command = {
+    type: 'sendForce',
+    units: force(),
+    to: rival.id,
+    route: 'highway',
+    target: 'military',
+    stance: 'bold',
+  };
+  const first = note(send, warSim.dispatch(send));
+  const firstId = first.ok ? first.created![0]! : -1;
+  note(
+    { type: 'recallForce', expedition: firstId },
+    warSim.dispatch({ type: 'recallForce', expedition: firstId }),
+  );
+  warSim.advance(3 * TICKS_PER_HOUR);
+  const again: Command = { ...send, units: force() } as Command;
+  note(again, warSim.dispatch(again));
+  for (let t = 0; t < 16 * 60 && !warSim.state.war!.expeditions?.some((e) => e.state === 'fighting'); t++)
+    warSim.step();
+  const e = warSim.state.war!.expeditions!.find((x) => x.state === 'fighting')!;
+  const town = growRivalTown({
+    citySeed: warSim.state.options.seed,
+    neighbour: rival.id,
+    name: rival.name,
+    kind: rival.kind,
+    personality: rival.rival!.personality,
+    population: rival.population,
+    cap: 1_500,
+  });
+  const input = awayInput(awayCity(warSim, e), town);
+  const result = awayResult(input, Battle.run(structuredClone(input)));
+  // Pinned while a region would decide on it (M36), then reported.
+  note(
+    { type: 'battleSettling', expedition: e.id, on: true },
+    warSim.dispatch({ type: 'battleSettling', expedition: e.id, on: true }),
+  );
+  note(
+    { type: 'battleReport', expedition: e.id, result },
+    warSim.dispatch({ type: 'battleReport', expedition: e.id, result }),
+  );
+  note(
+    { type: 'battleResolve', input, mode: 'instant' },
+    town.dispatch({ type: 'battleResolve', input, mode: 'instant' }),
+  );
+  const away = JSON.stringify([result, town.hash(), warSim.hash()]);
+  // Home again, then a neighbour's raid on the city, fought in its own sim to its end.
+  warSim.advance(12 * TICKS_PER_HOUR);
+  const home: string[] = [];
+  note(
+    { type: 'cheat', cheat: 'raidIn', hours: 0 },
+    warSim.dispatch({ type: 'cheat', cheat: 'raidIn', hours: 0 }),
+  );
+  for (let t = 1; t <= 24 * 60 && warSim.state.war?.battle; t++) {
+    warSim.step();
+    if (t % 60 === 0) home.push(warSim.hash());
+  }
+  const report = warSim.state.war?.reports?.at(-1);
+  const homeEnd = JSON.stringify([
+    warSim.hash(),
+    report?.outcome,
+    report?.collapsed,
+    report?.civics,
+    report?.lost,
+  ]);
+
+  // Diplomacy (M36): a proposal taken back, neutrality on and off, a declared war, a treaty the
+  // neighbour puts to the city and its terms in force, a pact broken, a district bought back.
+  const act = (cmd: Command) => note(cmd, warSim.dispatch(cmd));
+  const rivals = warSim.state.region.neighbours.filter((n) => n.rival && !n.player);
+  const foe = rivals[0]!;
+  const other = rivals[1] ?? foe;
+  warSim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 2_000_000 });
+  const offer = act({ type: 'propose', neighbour: other.id, terms: [{ k: 'nonAggression', months: 12 }] });
+  if (offer.ok) act({ type: 'withdrawProposal', proposal: offer.created![0]! });
+  warSim.advance(3 * TICKS_PER_MONTH);
+  act({ type: 'setNeutral', on: true });
+  act({ type: 'setNeutral', on: false });
+  warSim.advance(TICKS_PER_MONTH + 60);
+  act({ type: 'declareWar', neighbour: foe.id, scale: 'war', reason: 'Our border' });
+  warSim.advance(13 * TICKS_PER_HOUR);
+  // A district for the neighbour to occupy, round the town's first building.
+  const made = act({ type: 'createDistrict', name: 'Border Ward' });
+  const homes = [...warSim.state.buildings.values()].sort((a, b) => a.id - b.id);
+  if (made.ok && homes[0])
+    act({
+      type: 'paintDistrict',
+      district: made.created![0]!,
+      area: { kind: 'brush', points: [{ x: homes[0].x, z: homes[0].z }], radius: 120 },
+    });
+  const district = made.ok ? made.created![0]! : undefined;
+  warSim.dispatch({
+    type: 'cheat',
+    cheat: 'proposal',
+    neighbour: foe.id,
+    terms: [
+      { k: 'peace' },
+      { k: 'tribute', payer: 'us', amount: 500, months: 3 },
+      ...(district !== undefined ? [{ k: 'occupy' as const, side: 'us' as const, district }] : []),
+    ],
+  });
+  const theirs = warSim.state.war!.diplomacy?.proposals.find((p) => p.from === 'them' && p.with === foe.id);
+  if (theirs) act({ type: 'answerProposal', proposal: theirs.id, accept: true });
+  const pacts = warSim.state.war!.diplomacy?.pacts ?? [];
+  const tribute = pacts.find((p) => p.term.k === 'tribute');
+  if (tribute) act({ type: 'endPact', pact: tribute.id, breakPact: true });
+  const occupied = pacts.find((p) => p.term.k === 'occupy');
+  if (occupied) act({ type: 'buyBack', pact: occupied.id });
+  warSim.advance(2 * TICKS_PER_MONTH);
+  const diplomacy = JSON.stringify([warSim.hash(), warSim.state.war!.diplomacy]);
+
+  // Weapons research (M37), in a war town of its own so the sections above stay as at the M36 tip:
+  // a lab, tiers queued and one taken back, and the labs' days.
+  const research: string[] = [];
+  const { sim: labSim } = growTown(
+    Math.min(months, 6),
+    (s) => checkInvariants(s),
+    (s, cmd) => note(cmd, s.dispatch(cmd)),
+    false,
+    true,
+  );
+  const lab = (cmd: Command) => note(cmd, labSim.dispatch(cmd));
+  labSim.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 3_000_000 });
+  labSim.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+  placeAlong(labSim, lab, 'militarylab', roadIds(labSim).reverse());
+  lab({ type: 'queueResearch', key: 'logistics1' });
+  lab({ type: 'queueResearch', key: 'land1' });
+  lab({ type: 'queueResearch', key: 'land2' });
+  lab({ type: 'unqueueResearch', key: 'land2' });
+  for (let d = 0; d < 3; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    research.push(labSim.hash());
+  }
+  // Heavy armour done (points poured in), and its prototype on trial at a proving ground: started,
+  // called off, started again and run to its end.
+  lab({ type: 'queueResearch', key: 'land2' });
+  labSim.dispatch({ type: 'cheat', cheat: 'researchPoints', points: 2_000 });
+  const ground = placeAlong(labSim, lab, 'provingground', roadIds(labSim).reverse()) ?? -1;
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'startTrial', ground, kind: 'heavytank' });
+  labSim.advance(3 * TICKS_PER_HOUR);
+  lab({ type: 'stopTrial', ground });
+  lab({ type: 'startTrial', ground, kind: 'heavytank' });
+  for (let d = 0; d < 3; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    research.push(labSim.hash());
+  }
+  research.push(JSON.stringify(labSim.state.war!.research));
+  // The superweapon buildings (M37): a blackout tower and a dome, their stages cheated done; the
+  // dome's mode, and the tower aimed at a computer neighbour.
+  labSim.dispatch({
+    type: 'cheat',
+    cheat: 'research',
+    tiers: ['defence1', 'defence2', 'defence3', 'defence4'],
+  });
+  labSim.dispatch({ type: 'cheat', cheat: 'research', tiers: ['intel1', 'intel2', 'intel3', 'intel4'] });
+  for (const def of ['blackouttower', 'domeshield']) {
+    const c = placeAlong(labSim, lab, def, roadIds(labSim).reverse());
+    if (c !== null) labSim.dispatch({ type: 'cheat', cheat: 'finishStages', civic: c });
+  }
+  // Training called off, so the few workers this small town spares for its forces go to the tower.
+  for (const o of [...labSim.state.war!.orders.values()].sort((x, y) => x.id - y.id))
+    lab({ type: 'cancelTraining', order: o.id });
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'setDome', mode: 'super' });
+  const target = labSim.state.region.neighbours.find((n) => n.rival)?.id ?? -1;
+  lab({ type: 'useBlackout', neighbour: target, breakPact: true });
+  for (let h = 0; h < 3; h++) {
+    labSim.advance(TICKS_PER_HOUR);
+    research.push(labSim.hash());
+  }
+  research.push(JSON.stringify([labSim.state.war!.supers ?? null, labSim.state.region.neighbours]));
+  // Spies (M37): the superweapon buildings knocked down (their posts to an agency), and an agent
+  // sent to look round a computer neighbour (its own dice).
+  for (const c of [...labSim.state.civics.values()].sort((a, b) => a.id - b.id))
+    if (c.def === 'blackouttower' || c.def === 'domeshield')
+      lab({ type: 'bulldoze', target: { kind: 'civic', id: c.id } });
+  placeAlong(labSim, lab, 'spyagency', roadIds(labSim).reverse());
+  labSim.advance(TICKS_PER_MONTH);
+  lab({ type: 'spyMission', neighbour: target, op: 'reveal' });
+  for (let h = 0; h < 10; h++) labSim.advance(TICKS_PER_HOUR);
+  research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
+  // Between friends (M37, step 9): a friend's city takes a neighbour's place in a region at war. An
+  // agent waits there for the region's word (pinned, then turned back and refunded), the city takes
+  // a friend's saboteur once, and the region's fair clock caps its war clock, then lets it go.
+  const none = { power: 0, water: 0, garbage: 0 };
+  lab({
+    type: 'regionUpdate',
+    update: {
+      cities: [
+        {
+          slot: 2,
+          name: 'Brookside',
+          mayor: 'Sam',
+          color: 1,
+          population: 4_000,
+          kind: 'suburb',
+          offers: { buy: { ...none }, sell: { ...none } },
+          workers: 0,
+          jobs: 0,
+          shoppers: 0,
+          online: true,
+          raid: 'open',
+          tiers: [0, 1, 0, 0, 1, 0],
+          counter: 200,
+          // The atom bomb (M40, step 9): the friend's race as the region passes it on (taken in, cleaned, rounded).
+          atom: { stage: 3, fuel: 40, boom: 1, hit: 1, plume: 2.5004 },
+        },
+      ],
+      contracts: [],
+      project: null,
+      rules: { war: true, scale: 'skirmish', supers: true },
+    },
+  });
+  const friend = labSim.state.region.neighbours.find((n) => n.player?.slot === 2)?.id ?? -1;
+  lab({ type: 'spyMission', neighbour: friend, op: 'reveal' });
+  const agent = () => labSim.state.war!.intel?.missions.find((m) => m.slot === 2);
+  for (let h = 0; h < 8 && agent()?.state === 'out'; h++) labSim.advance(TICKS_PER_HOUR);
+  const waiting = agent()?.id ?? -1;
+  lab({ type: 'spySettling', mission: waiting, on: true });
+  lab({ type: 'missionResult', mission: waiting, outcome: 'refused', reason: 'Not now' });
+  lab({
+    type: 'opResolve',
+    from: 2,
+    id: 'op-00000000-1',
+    op: 'sabotage',
+    outcome: 'success',
+    target: 'power',
+    late: false,
+  });
+  lab({ type: 'warClock', cap: labSim.state.war!.clock + 30 });
+  for (let h = 0; h < 3; h++) {
+    labSim.advance(TICKS_PER_MONTH);
+    research.push(labSim.hash());
+  }
+  lab({ type: 'warClock', cap: null });
+  labSim.advance(TICKS_PER_MONTH);
+  research.push(labSim.hash(), JSON.stringify(labSim.state.war!.intel ?? null));
+
+  // A live battle with the friend (M39), in the same town: the friend's force asks, the town makes the
+  // battle of its own picture, hosts it up to the frontier the room gives it as the room's orders
+  // arrive (each side's, a handover among them), and the battle's end is compared in every browser.
+  const liveLog: string[] = [];
+  const unit = (id: number, kind: 'infantry' | 'tank' | 'artillery') => ({
+    id,
+    kind,
+    hp: 1,
+    x: 0,
+    z: 0,
+    base: -1,
+  });
+  const asked = labSim.query({
+    type: 'liveBattle',
+    call: {
+      id: 'exp-00000000-7',
+      from: 2,
+      force: {
+        name: 'Brookside',
+        color: 0x3a78c8,
+        units: [unit(11, 'tank'), unit(12, 'tank'), unit(13, 'infantry'), unit(14, 'artillery')],
+        route: 'highway',
+        target: 'military',
+        stance: 'bold',
+        readiness: 0.8,
+      },
+    },
+  }) as { input?: import('../../src/sim/battle/types').BattleInput; refused?: string };
+  if (asked.input) {
+    const input = asked.input;
+    const defenders = input.layout.defenders.map((u) => u.id);
+    liveLog.push(JSON.stringify([input.id, input.layout.structs.length, defenders.length]));
+    lab({ type: 'battleResolve', input: structuredClone(input), mode: 'live', from: 2 });
+    // As the room stamps them: at the frontier of the moment. Two allied forces join while it runs
+    // (M39 step 6): tanks and a squad on the city's side, stamped at step 96, and tanks on the raiders'
+    // side stamped at 128; each is taken up when the battle reaches the step it was stamped at, and
+    // arrives shortly after (the room puts 30 s between the two; the compared run needn't wait so long).
+    const ally = (owner: number, side: 0 | 1, arrive: number, kinds: ('tank' | 'infantry')[]) => ({
+      owner,
+      name: `Ally ${owner}`,
+      color: 0x33aa33,
+      side,
+      arrive,
+      units: kinds.map((kind, k) => ({ id: owner * 10_000 + k, kind, hp: 1 })),
+    });
+    const log: import('../../src/sim/battle/live').StampedOrder[] = [
+      { seq: 1, step: 32, side: 0, kind: 'hold', units: [11] },
+      { seq: 2, step: 64, side: 1, kind: 'guard', units: defenders.slice(0, 2), target: 0 },
+      { seq: 3, step: 96, side: 0, kind: 'focus', target: 0 },
+      { seq: 4, step: 96, side: 1, kind: 'focus', target: 12 },
+      { seq: 5, step: 96, side: 1, kind: 'help', helper: ally(7, 1, 150, ['tank', 'tank', 'infantry']) },
+      { seq: 6, step: 128, side: 0, kind: 'help', helper: ally(8, 0, 190, ['tank', 'tank']) },
+      { seq: 7, step: 160, side: 1, kind: 'free' },
+      { seq: 8, step: 224, side: 0, kind: 'withdraw' },
+    ];
+    let allow = 0;
+    for (let t = 0; t < 700 && labSim.state.war!.battle; t++) {
+      const step = labSim.state.war!.battle!.step;
+      if (step + 32 > allow) {
+        allow = step + 32;
+        lab({
+          type: 'battleLive',
+          id: input.id,
+          allow,
+          orders: log.filter((o) => o.step <= allow),
+        });
+      }
+      labSim.step();
+      if (t % 20 === 0) liveLog.push(`${step}:${labSim.hash()}`);
+    }
+    const ended = labSim.events.filter((e) => e.kind === 'battleEnded').at(-1);
+    liveLog.push(
+      JSON.stringify([ended?.info ?? null, labSim.state.war!.reports?.at(-1) ?? null, labSim.hash()]),
+    );
+    // The city's own part in a friend's battle (M39 step 6): two units go to help it, and the page
+    // reports how they fared when it ended (the last knocked out, the rest hurt): applied once.
+    const spare = [...labSim.state.war!.units.values()]
+      .filter((u) => !u.away && u.hp >= 0.5 && !UNIT.get(u.kind)?.super)
+      .sort((a, b) => a.id - b.id)
+      .slice(0, 2);
+    const helped = lab({
+      type: 'helpSend',
+      units: spare.map((u) => u.id),
+      to: friend,
+      battle: 'exp-00000000-8',
+      route: 'highway',
+    });
+    if (helped.ok) {
+      const done: Command = {
+        type: 'helpEnd',
+        expedition: helped.created![0]!,
+        result: {
+          outcome: 'repelled',
+          units: spare.map((u, k) => ({
+            id: u.id,
+            hp: k < spare.length - 1 ? 0.4 : 0,
+            out: k === spare.length - 1,
+          })),
+        },
+      };
+      lab(done);
+      lab(done);
+      liveLog.push(JSON.stringify([labSim.state.war!.reports?.at(-1) ?? null, labSim.hash()]));
+    } else liveLog.push(`no help: ${JSON.stringify(helped)}`);
+    // The battle as the room's record has it (the input with the whole log in it), played again on its
+    // own: its hash every 100 steps and its result, the allies' units by owner among them.
+    const record = recordInput(input, log);
+    const again = new Battle(record);
+    while (!again.outcome && again.step < 4_000) {
+      again.stepOnce();
+      if (again.step % 100 === 0) liveLog.push(`record ${again.step}:${again.hash()}`);
+    }
+    const result = again.result();
+    liveLog.push(
+      JSON.stringify([
+        record.helpers?.map((h) => [h.owner, h.side, h.at, h.arrive, h.units.length]),
+        result.outcome,
+        result.steps,
+        result.hash,
+        result.units.filter((u) => (u.owner ?? 0) > 0).map((u) => [u.owner, u.id, u.hp, u.out]),
+      ]),
+    );
+  }
+
+  // Wars and treaties with a friend (M39), in the same town after its live battle: the region's words
+  // as the page passes them on. A war declared on the city and opened (the same word twice changes
+  // nothing), its score and a seat of power held, a ceasefire from the region's list, the city's
+  // capitulation and the terms imposed (peace, reparations, tribute, vassalage), the dues of a vassal,
+  // and its freedom. Every step's hash is compared.
+  const friends: string[] = [];
+  const fr = (cmd: Command) => {
+    lab(cmd);
+    friends.push(labSim.hash());
+  };
+  const fwar = {
+    type: 'friendWar' as const,
+    room: 1,
+    slot: 2,
+    by: 'them' as const,
+    scale: 'total' as const,
+    reason: 'Your border',
+    score: 0,
+    battles: 0,
+  };
+  fr({ ...fwar, state: 'declared', opensIn: 120_000 });
+  fr({ ...fwar, state: 'declared', opensIn: 100_000 });
+  fr({ ...fwar, state: 'open', score: -22.5, battles: 2 });
+  for (let h = 0; h < 6; h++) labSim.advance(TICKS_PER_HOUR);
+  friends.push(labSim.hash());
+  fr({ ...fwar, state: 'open', score: -35, battles: 3, hold: 'them' });
+  fr({
+    type: 'friendPacts',
+    me: 1,
+    pacts: [{ room: 5, slot: 2, kind: 'nonAggression', months: 6 }],
+    vassals: [],
+    wars: [1],
+  });
+  fr({ ...fwar, state: 'capitulated', score: -62, battles: 4, capitulated: 'us' });
+  fr({
+    type: 'friendTreaty',
+    id: 'w1-t1',
+    slot: 2,
+    side: 'b',
+    terms: [
+      { k: 'peace' },
+      { k: 'reparations', payer: 'them', amount: 8_000 },
+      { k: 'tribute', payer: 'them', amount: 1_500, months: 3 },
+      { k: 'vassal' },
+    ],
+    imposed: true,
+  });
+  // (Applied again, as the region sends it until it hears it was seen: refused, nothing changes.)
+  fr({
+    type: 'friendTreaty',
+    id: 'w1-t1',
+    slot: 2,
+    side: 'b',
+    terms: [{ k: 'peace' }, { k: 'reparations', payer: 'them', amount: 8_000 }],
+    imposed: true,
+  });
+  fr({ ...fwar, state: 'ended', score: -62, battles: 4 });
+  fr({
+    type: 'friendPacts',
+    me: 1,
+    pacts: [],
+    vassals: [{ vassal: 1, overlord: 2 }],
+    wars: [],
+  });
+  for (let d = 0; d < 4; d++) {
+    labSim.advance(TICKS_PER_MONTH);
+    checkInvariants(labSim);
+    friends.push(labSim.hash());
+  }
+  // The city rises, wins and goes free; the region lists no vassal any more.
+  fr({ ...fwar, room: 2, by: 'us', state: 'declared', rebellion: true, opensIn: 120_000 });
+  fr({ ...fwar, room: 2, by: 'us', state: 'open', rebellion: true, score: 31, battles: 2 });
+  fr({ type: 'friendPacts', me: 1, pacts: [], vassals: [], wars: [] });
+  labSim.advance(TICKS_PER_MONTH);
+  friends.push(labSim.hash(), JSON.stringify(labSim.state.war!.diplomacy ?? null));
+
+  // The atom bomb among friends (M40 step 10), in the same town: the region's words as the page passes them
+  // on. A city with no bomb is refused the first finisher's word; with a bomb held (a fact set by hand, as the
+  // atom section sets its ground zero) it takes it, once. A launch prepared at the friend is put to the
+  // region, turned away, put again and kept: the bomb has left, and the world turns on the city. The friend's
+  // winters are applied once by their ids. Its cloud arrives as a cumulative total on each side in turn: the
+  // page's baseline (the cloud it first saw, none here) decides where it starts, new cloud is deposited
+  // whatever way the town's own wind blows, the same total twice adds once, and a lower one adds nothing
+  // (what was taken in is a high-water mark). And a strike from the friend starts a bomb's flight here once,
+  // only with the friend's launch reported and a total war on the books, never a second from the same city,
+  // and not while another friend's bomb is in the air.
+  const bomb = (cmd: Command) => {
+    const r = lab(cmd);
+    friends.push(JSON.stringify(r.ok ? [r.cost, r.info ?? null] : r.reason), labSim.hash());
+  };
+  const fa = atomOf(labSim);
+  bomb({ type: 'atomFirst' });
+  fa.have = true;
+  bomb({ type: 'atomFirst' });
+  bomb({ type: 'atomFirst' });
+  const mate = labSim.state.region.neighbours.find((n) => n.player?.slot === 2)!;
+  const labWar = labSim.state.war!;
+  for (const [op, word] of [
+    [9_001, 'refused'],
+    [9_002, 'success'],
+  ] as const) {
+    fa.prep = { done: ATOM.launch.prepHours, to: mate.id, send: { op, at: labWar.clock, slot: 2 } };
+    friends.push(JSON.stringify(friendOpsWaiting(labSim)));
+    bomb({ type: 'spySettling', mission: op, on: true });
+    friends.push(JSON.stringify(friendOpsWaiting(labSim)));
+    bomb({ type: 'missionResult', mission: op, outcome: word, reason: 'Not now' });
+    friends.push(JSON.stringify([fa.fired ?? null, fa.prep ?? null, fa.have ?? null]));
+  }
+  bomb({ type: 'friendWinter', id: '2-1' });
+  bomb({ type: 'friendWinter', id: '2-1' });
+  bomb({ type: 'friendWinter', id: '2-2' });
+  bomb({ type: 'friendWinter', id: 'self:0' });
+  friends.push(JSON.stringify(labSim.state.weather.winters ?? null));
+  let total = 4;
+  for (const side of ['north', 'south', 'west'] as const) {
+    mate.side = side;
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
+    total += 31.25;
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
+    bomb({ type: 'friendFallout', from: 2, total, base: 0 });
+  }
+  bomb({ type: 'friendFallout', from: 2, total: 1 });
+  bomb({ type: 'friendFallout', from: 3, total: 9, base: 9 });
+  friends.push(JSON.stringify(labSim.state.fallout?.seen ?? null));
+  const strike = (from: number, id: string, late = false): Command => ({
+    type: 'opResolve',
+    from,
+    id,
+    op: 'atom',
+    outcome: 'success',
+    late,
+  });
+  // A strike with no launch reported by the friend (its stage is the silo's) is not taken yet: kept for later.
+  bomb(strike(2, 'ao-00000000-9001'));
+  // The friend's launch is reported, and a total war with it is on the books (facts set by hand, as the region tells them).
+  mate.player!.atom = { stage: atomStageNo('preparing') };
+  // A second friend, in the same case, for a bomb while the first is in the air.
+  lab({
+    type: 'regionUpdate',
+    update: {
+      cities: [
+        {
+          slot: 3,
+          name: 'Eastbrook',
+          mayor: 'Ed',
+          color: 2,
+          population: 3_000,
+          kind: 'suburb',
+          offers: { buy: { ...none }, sell: { ...none } },
+          workers: 0,
+          jobs: 0,
+          shoppers: 0,
+          online: true,
+          raid: 'open',
+          atom: { stage: atomStageNo('preparing') },
+        },
+      ],
+      contracts: [],
+      project: null,
+      rules: { war: true, scale: 'skirmish', supers: true },
+    },
+  });
+  fr({ ...fwar, room: 9, slot: 3, state: 'open', score: 0, battles: 0 });
+  fr({ ...fwar, room: 10, slot: 2, state: 'open', score: 0, battles: 0 });
+  bomb(strike(2, 'ao-00000000-9002'));
+  bomb(strike(2, 'ao-00000000-9002'));
+  // The same city's second, with an id of its own, is no bomb it has; another city's waits for the first.
+  bomb(strike(2, 'ao-00000000-9003', true));
+  bomb(strike(3, 'ao-00000000-9004'));
+  labSim.advance(TICKS_PER_HOUR);
+  friends.push(JSON.stringify(labSim.state.war!.atom ?? null), labSim.hash());
+
+  // The war economy (M38), in a war town of its own (rivals, no buildings) so the sections above stay
+  // as they were: stakes bought, sold and bought again, dividends, an alliance and a loan to the ally,
+  // munitions and a tank sold to it, sanctions put on a town and lifted, aid for the war it fights at
+  // the city's side, a stake frozen by that war, a capitulation that seizes one, and sanctions on the city.
+  const economy: string[] = [];
+  const bank = newTown(false, true);
+  const eco = (cmd: Command) => note(cmd, bank.dispatch(cmd));
+  bank.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
+  const towns = bank.state.region.neighbours.filter((n) => n.rival && !n.player);
+  for (const n of towns) {
+    n.rival!.relation = 60;
+    n.rival!.allies = [];
+  }
+  const [partner, enemy, third] = [towns[0]!, towns[1] ?? towns[0]!, towns[2] ?? towns[0]!];
+  eco({ type: 'buyStake', neighbour: partner.id, share: 10 });
+  eco({ type: 'buyStake', neighbour: enemy.id, share: 15 });
+  eco({ type: 'buyStake', neighbour: third.id, share: 5 });
+  eco({ type: 'sellStake', neighbour: third.id });
+  eco({ type: 'buyStake', neighbour: third.id, share: 5 });
+  for (let d = 0; d < 2; d++) {
+    bank.advance(TICKS_PER_MONTH);
+    checkInvariants(bank);
+    economy.push(bank.hash());
+  }
+  // Sanctions: the city sanctions the third town (its stake freezes; it grows and arms more slowly) and lifts them.
+  eco({ type: 'setSanction', neighbour: third.id, on: true });
+  bank.advance(TICKS_PER_MONTH);
+  economy.push(bank.hash());
+  eco({ type: 'setSanction', neighbour: third.id, on: false });
+  bank.dispatch({
+    type: 'cheat',
+    cheat: 'proposal',
+    neighbour: partner.id,
+    terms: [{ k: 'alliance' }],
+  });
+  const treaty = bank.state.war!.diplomacy?.proposals.find((p) => p.from === 'them' && p.with === partner.id);
+  if (treaty) eco({ type: 'answerProposal', proposal: treaty.id, accept: true });
+  eco({ type: 'lendAlly', neighbour: partner.id, amount: 150_000 });
+  // Arms trade: munitions in the stores sold to the ally by the month (any town takes ten crates), and a
+  // tank (planted: the town has no base) sold to it outright.
+  bank.state.war!.stock.munitions = 300;
+  eco({ type: 'setArmsDeal', neighbour: partner.id, crates: 10 });
+  const tank = bank.state.nextId++;
+  bank.state.war!.units.set(tank, { id: tank, kind: 'tank', base: 0, hp: 1, born: bank.state.tick });
+  eco({ type: 'sellUnit', unit: tank, neighbour: partner.id });
+  bank.advance(TICKS_PER_MONTH);
+  economy.push(bank.hash());
+  // Offers from computer neighbours (M38 step 7), made by the test cheat: the ally offers to buy
+  // munitions (the city ends its small deal first and takes the offer up), a mercantile town offers to
+  // invest (turned down, then taken), and a lender offers when the city is short of cash (taken).
+  eco({ type: 'setArmsDeal', neighbour: partner.id, crates: 0 });
+  const offerOf = (neighbour: number, offer: 'arms' | 'invest' | 'loan') => {
+    eco({ type: 'cheat', cheat: 'offer', neighbour, offer });
+    return bank.state.war!.economy!.offers!.at(-1)!;
+  };
+  eco({ type: 'answerOffer', offer: offerOf(partner.id, 'arms').id, accept: true });
+  third.rival!.personality = 'mercantile';
+  bank.state.economy.history.push({ month: 0, lines: { taxI1: 8_000 }, treasury: bank.state.treasury });
+  eco({ type: 'answerOffer', offer: offerOf(third.id, 'invest').id, accept: false });
+  eco({ type: 'answerOffer', offer: offerOf(third.id, 'invest').id, accept: true });
+  // (The treasury is set the way the tests do, with the month's start moving with it.)
+  bank.state.economy.monthStartTreasury += 10_000 - bank.state.treasury;
+  bank.state.treasury = 10_000;
+  eco({ type: 'answerOffer', offer: offerOf(partner.id, 'loan').id, accept: true });
+  bank.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 5_000_000 });
+  bank.advance(TICKS_PER_MONTH);
+  checkInvariants(bank);
+  economy.push(bank.hash());
+  // The war with the enemy: its stake freezes when the war opens, and the ally fights at the city's side.
+  eco({ type: 'declareWar', neighbour: enemy.id, scale: 'war', reason: 'Our border' });
+  bank.advance(13 * TICKS_PER_HOUR);
+  eco({ type: 'fundAlly', neighbour: partner.id, perMonth: 50_000 });
+  for (let d = 0; d < 3; d++) {
+    bank.advance(TICKS_PER_MONTH);
+    checkInvariants(bank);
+    economy.push(bank.hash());
+  }
+  eco({ type: 'fundAlly', neighbour: partner.id, perMonth: 0 });
+  // The war goes against the city until it capitulates: the enemy keeps the stake it holds in its industry.
+  const war = bank.state.war!.diplomacy!.wars.find((w) => w.with === enemy.id);
+  if (war) war.score = -70;
+  bank.advance(3 * TICKS_PER_HOUR);
+  bank.advance(2 * TICKS_PER_MONTH);
+  checkInvariants(bank);
+  // The city's word is worth little by now: the towns it has stakes in and an arms deal with sanction it.
+  bank.state.war!.diplomacy!.reputation = 20;
+  bank.advance(TICKS_PER_MONTH);
+  checkInvariants(bank);
+  economy.push(bank.hash(), JSON.stringify([bank.state.war!.economy, bank.state.economy.history.at(-1)]));
+
+  // The atom bomb (M40), in a war town of its own too.
+  const atom = runAtomSection(note);
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -59,6 +746,14 @@ export function runDeterminism(
     population: sim.state.totals.population,
     editor: editor.hash(),
     scenario: scenarioHashes,
+    war: warHashes,
+    battle: { home, homeEnd, town: town.hash(), away },
+    diplomacy,
+    research,
+    economy,
+    live: liveLog,
+    friends,
+    atom,
     used: [...used].sort(),
     refused,
   };

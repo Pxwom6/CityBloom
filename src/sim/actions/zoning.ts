@@ -1,6 +1,7 @@
 import { ZONE_LETTERS, ZONE_NONE, type ZoneCode, type ZoneLetter } from '../../data/zones';
 import { fail, ok, type CommandResult, type ZoneArea } from '../commands';
 import type { Sim } from '../sim';
+import { falloutRefusal } from '../systems/fallout';
 import { cellKey, keyBlock, keyIdx } from '../world/network';
 
 /**
@@ -24,12 +25,27 @@ export function zone(sim: Sim, letter: ZoneLetter | 'none', area: ZoneArea, dryR
     }
   }
   const changes: [number, number, number][] = [];
+  // Ground that fallout has closed (M40) can't be zoned (clearing a zone is always allowed).
+  let closed: string | null = null;
+  let skipped = 0;
+  const fallout = code !== ZONE_NONE && sim.state.fallout;
   for (const k of keys) {
     const b = sim.state.net.blocks.get(keyBlock(k))!;
     const i = keyIdx(k);
     if (!b.valid[i] || b.bld[i] || b.zone[i] === code) continue;
+    if (fallout) {
+      const p = sim.net.cellCenter(b.id, i);
+      const why = falloutRefusal(sim, p.x, p.z);
+      if (why) {
+        closed ??= why;
+        skipped++;
+        continue;
+      }
+    }
     changes.push([b.id, i, b.zone[i]!]);
   }
+  // A brush that found only closed ground says why; one that found some open paints it.
+  if (closed && !changes.length) return fail(closed);
   if (!dryRun && changes.length) {
     for (const [bid, i] of changes) {
       const b = sim.state.net.blocks.get(bid)!;
@@ -37,5 +53,7 @@ export function zone(sim: Sim, letter: ZoneLetter | 'none', area: ZoneArea, dryR
       sim.net.dirty.blocks.add(bid);
     }
   }
-  return ok(0, { info: { cells: changes.length } });
+  return ok(0, {
+    info: { cells: changes.length, ...(skipped ? { closed: skipped, closedWhy: closed } : {}) },
+  });
 }

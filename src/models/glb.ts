@@ -26,7 +26,18 @@ export interface GlbPart {
 
 export interface GlbFile {
   parts: GlbPart[];
-  nodes: { name: string; parent: number; mesh: boolean }[];
+  /**
+   * Every node: its normalised name, its parent (−1 for a root), whether it holds a mesh, and its
+   * transform in model space (column-major, as glTF writes it) with the point its origin lands on
+   * (a unit's moving part turns about its node's origin, unit spec v1).
+   */
+  nodes: {
+    name: string;
+    parent: number;
+    mesh: boolean;
+    world: number[];
+    origin: [number, number, number];
+  }[];
   materials: string[];
   images: number;
   textures: number;
@@ -343,11 +354,22 @@ function readGltf(g: Json, bin: DataView | null): GlbFile {
 
   return {
     parts,
-    nodes: nodesJson.map((node, i) => ({
-      name: normaliseName(node.name as string | undefined),
-      parent: parent[i]!,
-      mesh: typeof node.mesh === 'number',
-    })),
+    nodes: nodesJson.map((node, i) => {
+      // A node outside the scene in a loop of its own has no place: it draws nothing either way.
+      let e: number[];
+      try {
+        e = worldOf(i).elements;
+      } catch {
+        e = new Matrix4().elements;
+      }
+      return {
+        name: normaliseName(node.name as string | undefined),
+        parent: parent[i]!,
+        mesh: typeof node.mesh === 'number',
+        world: Array.from(e),
+        origin: [e[12]!, e[13]!, e[14]!] as [number, number, number],
+      };
+    }),
     materials: materials.map((m) => (m.name as string | undefined) ?? ''),
     images: arr(g.images).length,
     textures: arr(g.textures).length,

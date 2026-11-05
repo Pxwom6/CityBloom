@@ -19,7 +19,7 @@ import {
   type PlayerInfo,
 } from '../../relay/protocol';
 import type { Game } from '../game';
-import { DEFAULT_PERMS, PERMISSIONS, type Permission } from '../sim/rules';
+import { PERMISSIONS, permsOf, type Permission } from '../sim/rules';
 
 function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
   const { profile, onChange } = props;
@@ -202,7 +202,8 @@ function RegionWays(props: { latestSlot: string | null; latestName: string | nul
       <h3>A shared region</h3>
       <p class="muted">
         Or each play your own city side by side (up to four): your cities take the neighbouring towns’ places,
-        trade power and water, share commuters and build a great work together.
+        trade power and water, share commuters and build a great work together, or, if the host turns war on,
+        raid each other, fight live battles and make peace.
       </p>
       <div class="friends-region-row">
         <button
@@ -392,7 +393,7 @@ export function RoomPanel() {
               {s.isHost && !p.host && open === p.id && room && (
                 <PlayerRules
                   player={p}
-                  perms={room.rules.perms[p.id] ?? DEFAULT_PERMS}
+                  perms={permsOf(room.rules, p.id)}
                   muted={room.muted.includes(p.id)}
                   onPerms={(perms) => s.setPermissions(p.id, perms)}
                   onMute={(m) => s.admin(m ? 'mute' : 'unmute', p.id)}

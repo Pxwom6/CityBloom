@@ -45,6 +45,9 @@ export interface TerrainUniforms {
   uLimitAlpha: { value: number };
   /** Fields, hedgerows and paths in the country (M27): their strength, 0 (off: the quality's cost switch, or the whole-city view) to 1. */
   uGroundDetail: { value: number };
+  /** Fallout on the ground (M40 step 11b): a tint per cell of the sim's 128² raster, and its strength (0: off, the quality's switch). */
+  uRad: { value: DataTexture };
+  uRadOn: { value: number };
 }
 
 /**
@@ -78,6 +81,16 @@ export class TerrainRenderer {
     urban.magFilter = LinearFilter;
     urban.minFilter = LinearFilter;
     urban.needsUpdate = true;
+    const rad = new DataTexture(
+      new Uint8Array(GRID_RES * GRID_RES),
+      GRID_RES,
+      GRID_RES,
+      RedFormat,
+      UnsignedByteType,
+    );
+    rad.magFilter = LinearFilter;
+    rad.minFilter = LinearFilter;
+    rad.needsUpdate = true;
     this.uniforms = {
       uOverlay: { value: overlay },
       uUrban: { value: urban },
@@ -89,6 +102,8 @@ export class TerrainRenderer {
       uLimitPx: { value: limitLook(false, false, 1).px },
       uLimitAlpha: { value: limitLook(false, false, 1).alpha },
       uGroundDetail: { value: 1 },
+      uRad: { value: rad },
+      uRadOn: { value: 0 },
     };
     this.material = new MeshLambertMaterial({ vertexColors: true });
     this.material.customProgramCacheKey = () => 'terrain-weather';
@@ -106,6 +121,8 @@ export class TerrainRenderer {
           `#include <common>
 varying vec3 vWorldPos;
 uniform sampler2D uOverlay;
+uniform sampler2D uRad;
+uniform float uRadOn;
 uniform sampler2D uUrban;
 uniform sampler2D uNoiseTex;
 // Smooth value noise in four channels from one lookup (the cell's own smoothstep applied to the
@@ -235,6 +252,17 @@ ${LIMIT_GLSL}`,
     float cover = smoothstep(0.0, 0.45, uSnow * 1.6 - n * 0.75 + 0.05) * level;
     diffuseColor.rgb = mix(diffuseColor.rgb, ${SNOW_COLOUR} * (0.93 + 0.07 * n), cover);
     diffuseColor.rgb = weatherGrade(diffuseColor.rgb);
+  }
+  // Fallout on the ground (M40): the grass goes a sickly straw yellow and loses its green, faintly
+  // speckled, thickest at the core. A toy's tint, not a map: the radiation map is the reading.
+  if (uRadOn > 0.0 && outside < 0.5) {
+    float rd = texture2D(uRad, p / uMapSize).r * uRadOn;
+    if (rd > 0.0) {
+      float l1 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 straw = vec3(l1) * vec3(1.18, 1.06, 0.62) + vec3(0.03, 0.02, -0.01);
+      float speck = 0.85 + 0.3 * wNoise(p * 0.11);
+      diffuseColor.rgb = mix(diffuseColor.rgb, straw, clamp(rd * 0.75 * speck, 0.0, 0.8));
+    }
   }
   // Data-map overlay.
   if (uOverlayOn > 0.5) {

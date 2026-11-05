@@ -8,6 +8,10 @@ import type { Factor } from './demand';
 import { landValueAt } from './landValue';
 import { fieldAt } from './pollution';
 import { parkShare } from './weather';
+import { safetyAt } from './war';
+import { tiredOfWar } from './weariness';
+import { falloutMood } from './fallout';
+import { homeShame } from './atomWorld';
 
 const ZONE_LETTER = ['R', 'R', 'C', 'I'] as const;
 
@@ -112,6 +116,18 @@ export function happinessFactors(sim: Sim, b: Building): Factor[] {
   if (b.zone === ZONE_R) {
     const loud = noiseMood(fieldAt(sim.noise(), b.x, b.z));
     if (loud < 0) f.push({ label: 'Noise', value: loud });
+    // Fallout (M40): people near it want out (move-outs follow happiness).
+    const radiation = falloutMood(sim, b);
+    if (radiation <= -0.005) f.push({ label: 'Fallout nearby', value: radiation });
+    // Military buildings nearby (M34): some residents sleep easier for them.
+    const safe = safetyAt(sim, b);
+    if (safe >= 0.005) f.push({ label: 'Feels safe (defences nearby)', value: safe });
+    // A long war wears people down (M38): past half weariness, homes grow less happy.
+    const tired = tiredOfWar(sim);
+    if (tired <= -0.001) f.push({ label: 'Tired of war', value: tired });
+    // The city fired the atom bomb (M40): its people are ashamed, and homes empty (move-outs follow).
+    const ashamed = homeShame(sim);
+    if (ashamed <= -0.001) f.push({ label: 'Ashamed of the bomb', value: ashamed });
   }
   if (b.zone === ZONE_R && b.pop > 0 && b.sick > 0.05) {
     const untreated = (b.sick * (1 - b.treated)) / b.pop;

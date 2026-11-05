@@ -1,3 +1,4 @@
+import { spinoff } from './research';
 import { CIVIC, SERVICES, type ServiceKind } from '../../data/civic';
 import { ZONE_I, ZONE_R } from '../../data/zones';
 import { rectsOverlap } from '../geom';
@@ -6,7 +7,7 @@ import { BState, footprint, type Building } from '../world/buildings';
 import { civicDef, civicOnline, civicVehicles } from '../world/civic';
 import { attachmentOf } from './commute';
 import { Dijkstra } from './graph';
-import { sicknessRate } from './health';
+import { usualSicknessRate } from './health';
 import { HEALTH } from '../../data/balance';
 import { POLICY_EFFECTS } from '../../data/policies';
 import {
@@ -105,6 +106,19 @@ export function ignite(sim: Sim, b: Building): void {
 }
 
 /**
+ * The chance an ambulance is called to a home this hour: a small base rate plus a share of the new
+ * cases the usual causes make (so pollution brings ambulances). Fallout's cases are left out: under a
+ * plume they would make a flood of calls, each unanswered one a resident lost.
+ */
+export function emergencyChance(sim: Sim, b: Building): number {
+  return Math.min(
+    0.3,
+    SERVICES.emergencyRate * b.pop +
+      SERVICES.emergencyPerCase * (b.pop - b.sick) * (usualSicknessRate(sim, b) - HEALTH.baseRate),
+  );
+}
+
+/**
  * Chance of a crime at an active home or business this hour: more with unemployment, poverty and
  * unhappiness, less with police coverage and a neighbourhood watch; scaled by how full it is.
  */
@@ -147,17 +161,7 @@ export function incidentsHour(sim: Sim): void {
       }
     }
     // Emergencies: a small base rate plus a share of new sickness (so pollution brings ambulances).
-    if (
-      b.zone === ZONE_R &&
-      b.pop > 0 &&
-      rng.chance(
-        Math.min(
-          0.3,
-          SERVICES.emergencyRate * b.pop +
-            SERVICES.emergencyPerCase * (b.pop - b.sick) * (sicknessRate(sim, b) - HEALTH.baseRate),
-        ),
-      )
-    ) {
+    if (b.zone === ZONE_R && b.pop > 0 && rng.chance(emergencyChance(sim, b))) {
       const inc: Incident = {
         id: s.nextId++,
         kind: 'emergency',
@@ -184,6 +188,8 @@ export function incidentsTick(sim: Sim): void {
   const s = sim.state;
   if (s.burning.length) {
     const spread = s.tick % SERVICES.fireSpreadEvery === 0;
+    // Fire-safe building (M37's Hardened buildings) lets fires spread less.
+    const chance = SERVICES.fireSpreadChance * spinoff(sim, 'firesafe');
     for (const id of [...s.burning]) {
       const b = s.buildings.get(id);
       if (!b || b.fire <= 0) {
@@ -200,8 +206,7 @@ export function incidentsTick(sim: Sim): void {
           if (nid === b.id) continue;
           const nb = s.buildings.get(nid)!;
           if (nb.fire > 0 || !rectsOverlap(r, footprint(nb))) continue;
-          if (sim.rng.events.chance(SERVICES.fireSpreadChance * b.fire * (1 - 0.5 * nb.covFire)))
-            ignite(sim, nb);
+          if (sim.rng.events.chance(chance * b.fire * (1 - 0.5 * nb.covFire))) ignite(sim, nb);
         }
       }
       if (b.burn >= SERVICES.fireDestroyTicks) toRubble(sim, b);
@@ -255,7 +260,9 @@ registerVehicleKind('fire', {
     const b = sim.state.buildings.get(v.target);
     if (b && b.fire > 0 && b.state !== BState.Rubble) {
       const before = Math.round(b.fire * 10);
-      b.fire = Math.max(0, b.fire - SERVICES.extinguishRate * Math.min(1.25, sim.fundingEff('fire')));
+      // Better fire engines (M37's Supply lines) put fires out faster.
+      const rate = SERVICES.extinguishRate * spinoff(sim, 'fireengines');
+      b.fire = Math.max(0, b.fire - rate * Math.min(1.25, sim.fundingEff('fire')));
       if (b.fire <= 0) {
         b.burn = 0;
         sim.state.burning = sim.state.burning.filter((x) => x !== b.id);

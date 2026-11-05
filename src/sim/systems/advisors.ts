@@ -1,4 +1,5 @@
 import { ROAD_TYPES, isPlayerRoad, isRail } from '../../data/roads';
+import { WINTER } from '../../data/atom';
 import { WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
@@ -12,7 +13,7 @@ import { BState, type Building } from '../world/buildings';
 import { civicDef, civicOnline } from '../world/civic';
 import { trucksFor } from './garbage';
 import { unploughable } from './ploughs';
-import { seasonEase } from './weather';
+import { seasonEase, weatherUse, winterDepth } from './weather';
 import { coldestDay, powerOutlook, winterOutlook } from './utilities';
 import { fieldAt } from './pollution';
 import { junctionKind, junctionVC, segVC } from './traffic';
@@ -187,11 +188,19 @@ export function advise(sim: Sim): Advice[] {
     }
     utilOk = false;
     const share = without.length / Math.max(1, list.length);
+    // A plant out of action (a raid, a disaster, a flood) is the likely cause: say so, not "build one".
+    const down = [...s.civics.values()]
+      .filter((c) => (civicDef(c).output?.[u] ?? 0) > 0 && (c.damage > 0 || c.flooded))
+      .sort((a, b) => a.id - b.id)[0];
+    // (Neighbours sell power and water, never sewage; a city with none has no one to buy from.)
+    const buy = u !== 'sewage' && s.region.neighbours.length > 0;
     out.push({
       advisor: 'utilities',
       severity: share > 0.2 ? 3 : 2,
       title: `${plural(without.length, 'building')} without ${u}`,
-      text: `Build ${fix} or connect these buildings to one by road. They'll close or empty within a day or two.`,
+      text: down
+        ? `The ${civicDef(down).name.toLowerCase()} is ${down.flooded ? 'under water' : `being repaired (${down.damage} h left)`}. Until then ${buy ? `buy ${u} from a neighbour (Region panel, Shift+N) or ` : ''}build ${fix}: these buildings close or empty within a day or two.`
+        : `Build ${fix} or connect these buildings to one by road. They'll close or empty within a day or two.`,
       at: centre(without.slice(0, 20)),
       map: u,
     });
@@ -653,6 +662,32 @@ function weatherAdvice(sim: Sim): Advice[] {
       text: `Winters now need heating. It counts for ${share} % now and in full in ${done} ${done === 1 ? 'month' : 'months'} (this first winter is spared). A full winter will lift power demand to about ${MW(full.need)}; we make ${MW(full.have)}.`,
       map: 'power',
     });
+  }
+  // A nuclear winter (M40): the sun is weak and the cold comes in any month. Each half is said only
+  // when it is so: solar plants to be dimmed, and homes heating (a mean under the heating line; in a
+  // warm month, at a depth too small to cool it enough, or in a heatwave, there is no heating to speak of).
+  const depth = winterDepth(w, s.tick);
+  if (depth >= 0.05 && power.demand > 0) {
+    const sun = [...s.civics.values()].some((c) => c.def === 'solar');
+    const more = Math.round((weatherUse(w, s.tick).power.R - 1) * 100);
+    const heating = w.mean < WEATHER.heatBelow && more > 0;
+    const solar = `Solar is down ${Math.round(WINTER.solar * depth * 100)} %`;
+    const heat = `homes use ${more} % more power than in mild weather`;
+    const said = sun
+      ? heating
+        ? `${solar}; heating is up: ${heat}.`
+        : `${solar}.`
+      : heating
+        ? `Heating is up: ${heat}.`
+        : null;
+    if (said)
+      out.push({
+        advisor: 'utilities',
+        severity: power.unserved > 0 ? 2 : 1,
+        title: 'Nuclear winter',
+        text: `${said} Plants that don't need the sun, and power bought from neighbours, carry the city through it.`,
+        map: 'power',
+      });
   }
   // Winter ahead: the city's own need on the coldest day (the coldest month in its deepest cold
   // spell, each zone heating by its own factor, eased in for a city new to seasons), against its

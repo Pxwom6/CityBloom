@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { WarRoomButton } from './Military';
+import { RaidChip } from './Battle';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { GoalsButton } from './Scenario';
 import { dateOf, formatDate, formatMonth, type Speed } from '../sim/time';
 import { formatMoney, formatNumber, useGameUpdates } from './hooks';
-import { WEATHER_ICON, weatherBrief, weatherLines, weatherName } from './weather';
+import { WEATHER_ICON, weatherBrief, weatherLines, weatherName, winterBadgeText } from './weather';
 import { IconPause, IconSpeed1, IconSpeed2, IconSpeed3 } from './icons';
 import { Rci } from './Rci';
 import { SystemMenu } from './SystemMenu';
@@ -12,7 +14,7 @@ import { HistoryButton } from './History';
 import { RegionButton } from './Region';
 import { NotificationsButton } from './Notifications';
 import { RoomChip } from './Friends';
-import { topbarRows } from './layout';
+import { topbarFolds, topbarRows } from './layout';
 import { uiRem } from '../game';
 
 const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[] = [
@@ -27,6 +29,7 @@ export function TopBar() {
   const st = game.world.stats;
   const date = dateOf(Math.floor(game.world.displayTick));
   const WeatherIcon = WEATHER_ICON[st.weather.kind];
+  const winter = winterBadgeText(st.weather);
   const [weatherOpen, setWeatherOpen] = useState(false);
   // On a narrow window the bar folds its lesser buttons into this menu (`#ui[data-bars='compact']`).
   const [moreOpen, setMoreOpen] = useState(false);
@@ -56,11 +59,42 @@ export function TopBar() {
       ui.style.removeProperty('--topbar-height');
     };
   }, [rows]);
+  // Too much to show on one bar (a raid's or a bomb's chip, a nuclear winter's badge beside a war city's
+  // buttons): it folds its lesser buttons into the More menu, as a narrow window's does, and the badge
+  // takes its short form (phase 5 checks). Measured after each drawing and on a resize; `saved` is what
+  // folding gave back, so it unfolds only once everything would fit again.
+  const [fold, setFold] = useState(false);
+  const saved = useRef(0);
+  const unfolded = useRef(0);
+  const [, resized] = useState(0);
+  useEffect(() => {
+    const on = () => resized((n) => n + 1);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!el || rows) {
+      if (fold) setFold(false);
+      return;
+    }
+    const room = parseFloat(getComputedStyle(el).maxWidth) || window.innerWidth - 24;
+    const content = el.scrollWidth;
+    // Just folded: what it gave back is the width before less the width now.
+    if (fold && unfolded.current) {
+      saved.current = Math.max(0, unfolded.current - content);
+      unfolded.current = 0;
+    }
+    const next = topbarFolds(fold, content, room, saved.current);
+    if (next && !fold) unfolded.current = content;
+    if (next !== fold) setFold(next);
+  });
   return (
     <div
       ref={bar}
-      class={`topbar panel ${st.scenario ? 'scenario' : ''} ${rows ? 'rows' : ''}`}
+      class={`topbar panel ${st.scenario ? 'scenario' : ''} ${rows ? 'rows' : ''} ${fold ? 'fold' : ''}`}
       data-testid="topbar"
+      data-fold={fold ? '1' : undefined}
     >
       {st.scenario ? <GoalsButton /> : <span class="city">{st.cityName}</span>}
       <RoomChip />
@@ -107,7 +141,7 @@ export function TopBar() {
           aria-label="More"
           aria-haspopup="true"
           aria-expanded={moreOpen}
-          title="More: city, history, region, advisors, notifications"
+          title={`More: city, history, region, advisors, notifications${game.world.stats.war?.hq != null ? ', war room' : ''}`}
           onClick={() => setMoreOpen(!moreOpen)}
         >
           ⋯
@@ -122,8 +156,22 @@ export function TopBar() {
           <RegionButton />
           <AdvisorsButton />
           <NotificationsButton />
+          <WarRoomButton />
         </div>
       </div>
+      <RaidChip />
+      {winter && (
+        <button
+          class="btn winter-badge"
+          data-testid="winter-badge"
+          aria-label={winter.long}
+          title={weatherLines(st.weather).join('\n')}
+          onClick={() => setWeatherOpen(!weatherOpen)}
+        >
+          <span class="winter-long">{winter.long}</span>
+          <span class="winter-short">{winter.short}</span>
+        </button>
+      )}
       <span class="divider" />
       <button
         class="stat stat-btn stat-date"

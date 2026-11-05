@@ -8,6 +8,7 @@ import type { Sim } from '../sim';
 import { BState, type Building } from '../world/buildings';
 import type { Wealth } from '../../data/buildings';
 import { fieldAt } from './pollution';
+import { falloutSickness } from './fallout';
 
 /**
  * Sickness and learning, hourly (DESIGN §3.11). Pollution, dirty water and garbage make residents
@@ -43,8 +44,12 @@ export function healthHour(sim: Sim): void {
   }
 }
 
-/** New cases per resident per hour for a home. */
-export function sicknessRate(sim: Sim, b: Building): number {
+/**
+ * New cases per resident per hour for a home from the usual causes: pollution, water, garbage and
+ * the base rate (what the Healthy living policy scales). Ambulance emergencies read this one: fallout
+ * makes people ill slowly and does not call out an ambulance, or end a resident, per case.
+ */
+export function usualSicknessRate(sim: Sim, b: Building): number {
   const s = sim.state;
   const air = fieldAt(s.airPollution, b.x, b.z);
   const ground = fieldAt(s.groundPollution, b.x, b.z);
@@ -59,6 +64,11 @@ export function sicknessRate(sim: Sim, b: Building): number {
       HEALTH.waterRate * water +
       HEALTH.garbageRate * garbage)
   );
+}
+
+/** New cases per resident per hour for a home: the usual causes, and fallout (M40: exactly 0 without it). */
+export function sicknessRate(sim: Sim, b: Building): number {
+  return usualSicknessRate(sim, b) + falloutSickness(sim, b);
 }
 
 /** Newcomers bring basic schooling: blend a home's education when residents move in. */

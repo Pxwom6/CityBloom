@@ -21,7 +21,9 @@ import { busShare, busTime, busTraffic, stopsNearNodes } from './transit';
 import { matchDayNow } from './projects';
 import { railTerminals } from './rail';
 import { regionRound } from './regionFlows';
+import { militaryStaffing, type MilitaryStaff } from './war';
 import { REGION } from '../../data/region';
+import { radiationWork } from './fallout';
 
 /** Where a building joins the graph: nearest end node and the travel seconds to it. */
 export interface Attachment {
@@ -92,6 +94,8 @@ export class MatchRound {
   private openShops = 0;
   /** Origins matched so far. */
   private k = 0;
+  /** Workers the military took this round, by home (M34; empty in a peaceful city). */
+  private readonly military: MilitaryStaff;
 
   constructor(private readonly sim: Sim) {
     const s = sim.state;
@@ -134,6 +138,14 @@ export class MatchRound {
       }
     }
     this.order = [...this.origins.keys()].sort((a, b) => a - b);
+    // The military's posts (M34) go first, to the workers nearest each base.
+    this.military = militaryStaffing(sim, {
+      g,
+      costs: this.costs,
+      flows: this.flows,
+      origins: this.origins,
+      car: this.car,
+    });
     // Buses: stops near each junction, riders per line this round.
     this.lines = sim.lines();
     this.near = this.lines.length ? stopsNearNodes(sim, this.lines) : new Map();
@@ -177,7 +189,10 @@ export class MatchRound {
     const at = sim.state.net.nodes.get(g.ids[node]!)!;
     const freeRide =
       this.freeAnywhere && sim.policyAt('freeTransit', at.x, at.z) ? POLICY_EFFECTS.freeTransitSeconds : 0;
-    let workersLeft = o.workers;
+    // Workers the military took (M34) aren't looking.
+    const mil = this.military.taken;
+    const enlisted = (e: Origin['list'][number]) => mil.get(e.b.id) ?? 0;
+    let workersLeft = mil.size ? o.workers - o.list.reduce((n, e) => n + enlisted(e), 0) : o.workers;
     let shoppersLeft = o.shoppers;
     let employed = 0;
     let commuteSum = 0;
@@ -279,12 +294,18 @@ export class MatchRound {
     distribute(
       o.list,
       employed,
-      (e) => e.workers,
-      (e, v) => (e.b.employed = v),
+      (e) => e.workers - enlisted(e),
+      (e, v) => (e.b.employed = v + enlisted(e)),
     );
     const shopShare = o.shoppers > 0 ? shopped / o.shoppers : 0;
     for (const e of o.list) {
-      e.b.commute = e.b.employed > 0 ? avgCommute : 0;
+      const m = enlisted(e);
+      e.b.commute =
+        e.b.employed <= 0
+          ? 0
+          : m > 0
+            ? (avgCommute * (e.b.employed - m) + this.military.seconds.get(e.b.id)!) / e.b.employed
+            : avgCommute;
       e.b.shop = shopShare;
       // Trips on the home's own street.
       const acc = accessOf(sim, e.b);
@@ -387,14 +408,18 @@ function runFreight(
   for (const [node, list] of [...jobsAt].sort((a, b) => a[0] - b[0])) {
     for (const j of list) {
       if (j.b.zone === ZONE_C) {
-        const open = j.b.pop * TRAFFIC.freightPerCommercialJob;
+        const open = j.b.pop * TRAFFIC.freightPerCommercialJob * radiationWork(sim, j.b);
         if (open > 0) {
           const l = need.get(node) ?? [];
           l.push({ b: j.b, att: j.att, open });
           need.set(node, l);
         }
       } else if (j.b.zone === ZONE_I && j.b.pop > 0) {
-        makers.push({ node, b: j.b, out: j.b.pop * TRAFFIC.freightPerIndustrialJob });
+        makers.push({
+          node,
+          b: j.b,
+          out: j.b.pop * TRAFFIC.freightPerIndustrialJob * radiationWork(sim, j.b),
+        });
       }
     }
   }

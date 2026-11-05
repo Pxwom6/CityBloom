@@ -22,7 +22,13 @@ export type ProjectRequirement =
   /** A civic building the city must already run (e.g. a research park). */
   | { kind: 'civic'; def: string; label: string }
   /** Visitors a day (tourism). */
-  | { kind: 'visitors'; min: number };
+  | { kind: 'visitors'; min: number }
+  /** A tier of weapons research done (M37: the superweapon buildings). */
+  | { kind: 'research'; key: string; label: string }
+  /** Every tier of weapons research done, all 24 (M40: the atom bomb's buildings). */
+  | { kind: 'researchAll' }
+  /** A civic building the city runs that works now, not only one finished (M40: a nuclear plant giving power). */
+  | { kind: 'civicOnline'; def: string; label: string };
 
 export interface ProjectInfo {
   stages: ProjectStage[];
@@ -48,6 +54,15 @@ export interface RequirementContext {
   visitors: number;
   /** Whether the city runs a finished building of this kind. */
   runs: (def: string) => boolean;
+  /** Whether the city has done this tier of weapons research (M37; absent: none). */
+  researched?: (key: string) => boolean;
+  /**
+   * How far through the whole research tree the city is (M40; absent: not at all): tiers done, tiers
+   * in all, and the name of the first still to do.
+   */
+  tree?: { done: number; total: number; next?: string };
+  /** Whether the city has a building of this kind that works now (M40; absent: none). */
+  online?: (def: string) => boolean;
 }
 
 export interface RequirementStatus {
@@ -87,6 +102,26 @@ export function requirementStatus(r: ProjectRequirement, ctx: RequirementContext
         met: ctx.visitors >= r.min,
         now: `${num(ctx.visitors)} now`,
       };
+    case 'research': {
+      const done = ctx.researched?.(r.key) ?? false;
+      return { label: `${r.label} research`, met: done, now: done ? 'done' : 'not yet' };
+    }
+    case 'researchAll': {
+      const { done, total, next } = ctx.tree ?? { done: 0, total: 0 };
+      return {
+        label: 'Every research branch maxed',
+        met: total > 0 && done >= total,
+        now: `${done} of ${total} done${next ? `; ${next} is next` : ''}`,
+      };
+    }
+    case 'civicOnline': {
+      const has = ctx.online?.(r.def) ?? false;
+      return {
+        label: `${r.label.charAt(0).toUpperCase()}${r.label.slice(1)}`,
+        met: has,
+        now: has ? 'yes' : 'not yet',
+      };
+    }
   }
 }
 

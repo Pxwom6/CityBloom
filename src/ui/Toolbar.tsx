@@ -1,4 +1,5 @@
 import { requirementStatus, type RequirementContext } from '../data/projects';
+import { treeProgress, type TierKey } from '../data/research';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
@@ -7,12 +8,14 @@ import type { RoadMode } from '../tools/roadTool';
 import type { ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { tipShift } from './layout';
-import { CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
+import { CIVIC, CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
+import { UNIT } from '../data/war';
 import { TRAM, TRANSIT } from '../data/balance';
 import { POLICY, type PolicyId } from '../data/policies';
 import { districtColour } from '../client/districtView';
 import { MAPS } from '../client/overlay';
 import {
+  IconMilitary,
   IconBolt,
   IconBulldozer,
   IconDrop,
@@ -397,7 +400,9 @@ export function Toolbar() {
             (d) =>
               d.category === (active === 'stop' ? 'transit' : tools.place.category) &&
               // The regional rail link only while the city has none (Phase 2 review).
-              (!d.railLink || game.world.stats.railLinkOffered),
+              (!d.railLink || game.world.stats.railLinkOffered) &&
+              // The atom bomb's buildings only where the rules allow the bomb (M40).
+              (!d.military?.atom || game.world.stats.war?.atom?.allowed),
           ).map((d) => {
             if (d.project) return <ProjectButton key={d.id} def={d} />;
             const locked = pop < d.unlockPopulation;
@@ -419,6 +424,7 @@ export function Toolbar() {
                     ...out,
                     ...(d.garbage ? [`${d.garbage.trucks} trucks`] : []),
                     ...(d.service ? [serviceLine(d.service)] : []),
+                    ...(d.military ? militaryLines(d) : []),
                     d.blurb,
                     ...(d.railLink
                       ? [
@@ -596,6 +602,17 @@ export function Toolbar() {
               'Big projects',
               'A stadium, a launch complex, a solar tower array, a garden expo, a convention centre: built in stages over months, each with a lasting perk.',
             ],
+            // Only in a city with war on (M34).
+            ...(game.world.stats.war
+              ? [
+                  [
+                    'military',
+                    IconMilitary,
+                    'Military',
+                    'Forces and defences: a military HQ first (it opens the war room), then barracks, depots, an airfield, a naval yard, defences and shelters. Each has upkeep, staff and power; neighbours feel safer for some and mind the noise of others.',
+                  ],
+                ]
+              : []),
           ] as [CivicCategory, typeof IconBolt, string, string][]
         ).map(([cat, Icon, name, blurb]) => (
           <ToolButton
@@ -841,7 +858,7 @@ function MapsMenu({ onClose }: { onClose: () => void }) {
       {groups.map((g) => (
         <div key={g} class="maps-group">
           <h4>{g}</h4>
-          {MAPS.filter((m) => m.group === g).map((m) => (
+          {MAPS.filter((m) => m.group === g && (m.id !== 'radiation' || game.world.stats.war)).map((m) => (
             <button
               key={m.id}
               class={`map-item ${game.overlay.active === m.id ? 'active' : ''}`}
@@ -876,7 +893,9 @@ export function MapLegend() {
       ? 'linear-gradient(90deg, #3a9e5c, #9cc24a, #e8b43a, #e0662f, #b3261e)'
       : res.ramp === 'diverging'
         ? 'linear-gradient(90deg, #e34948, #f0efec, #2a78d6)'
-        : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
+        : res.ramp === 'hazard'
+          ? 'linear-gradient(90deg, #fff0a8, #ffd24a, #f08a24, #d12a1f, #5a0f2e)'
+          : 'linear-gradient(90deg, #cde2fb, #9ec5f4, #6da7ec, #3987e5, #256abf, #184f95, #0d366b)';
   return (
     <div
       class={`legend panel ${game.panel === 'budget' ? 'beside-budget' : game.panel ? 'beside-panel' : ''} ${
@@ -905,12 +924,60 @@ export function MapLegend() {
           </button>
         </div>
       )}
+      {game.overlay.active === 'radiation' && (
+        <div class="legend-bands" data-testid="radiation-bands">
+          <span>
+            <i style={{ background: '#fff0a8' }} /> In the air
+          </span>
+          <span>
+            <i style={{ background: '#f08a24' }} /> On open ground
+          </span>
+          <span>
+            <i style={{ background: '#d12a1f' }} /> Closed: nothing can be built
+          </span>
+        </div>
+      )}
       {game.overlay.active === 'traffic' && (
         <div class="legend-note muted" data-testid="traffic-legend-note">
           Discs: junctions and roundabouts · Chevrons: one-way roads and ramps
           {game.world.roadIslands().list.length > 0 && ' · Red with no cars: no road link to the highway'}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The fallout map's tooltip (M40): the dose under the pointer and how long the ground stays closed. */
+export function RadiationTip() {
+  const game = useGameUpdates(150);
+  const r = game.overlay.reading;
+  const ref = useRef<HTMLDivElement>(null);
+  // A tool's hint sits at the pointer too (the zone tool's, the clean-up tool's): the reading goes under
+  // it, and clear of it where the hint has wrapped to more lines or moved above the pointer (step 12:
+  // the zone tool's hint stood over the reading's first line).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const hint = document.querySelector('[data-testid="tool-hint"]');
+    if (!el || !hint || r?.touch) return;
+    const h = hint.getBoundingClientRect();
+    const me = el.getBoundingClientRect();
+    if (me.top >= h.bottom + 2 || me.bottom <= h.top - 2 || me.right <= h.left || me.left >= h.right) return;
+    let y = h.bottom + 6;
+    if (y + me.height > window.innerHeight - 8) y = Math.max(8, h.top - 6 - me.height);
+    el.style.top = `${y}px`;
+  });
+  if (game.overlay.active !== 'radiation' || !r) return null;
+  return (
+    <div
+      ref={ref}
+      class="radiation-tip panel"
+      data-testid="radiation-tip"
+      style={{
+        left: `${Math.max(8, Math.min(r.x + 14, window.innerWidth - 300))}px`,
+        top: `${r.touch ? Math.max(8, r.y - 72) : r.y + (game.hint ? 58 : 18)}px`,
+      }}
+    >
+      {r.text}
     </div>
   );
 }
@@ -1050,10 +1117,21 @@ function ProjectButton({ def }: { def: CivicDef }) {
     education: st.eduWorkforce,
     visitors: st.visitors,
     runs: (id) => civics.some((c) => c.def === id && c.stage === undefined),
+    researched: (key) => !!st.war?.research?.done.includes(key as TierKey),
+    // The atom bomb's buildings (M40): the same two facts the sim's gate reads.
+    tree: {
+      ...treeProgress(st.war?.research?.done ?? []),
+      next: st.war?.atom?.research.next ?? undefined,
+    },
+    online: (id) =>
+      id === 'nuclear'
+        ? !!st.war?.atom?.nuclear
+        : civics.some((c) => c.def === id && c.stage === undefined && c.damage <= 0 && !c.flooded),
   };
   const reqs = p.requires.map((r) => requirementStatus(r, ctx));
   const built = civics.find((c) => c.def === def.id);
-  const blocked = !sandbox && reqs.some((r) => !r.met);
+  // Sandbox lifts a project's requirements, but not the atom bomb's (M40): the sim refuses those anyway.
+  const blocked = (!sandbox || !!def.military?.atom) && reqs.some((r) => !r.met);
   const total = p.stages.reduce((a, s) => a + s.cost, 0);
   const months = p.stages.reduce((a, s) => a + s.months, 0);
   return (
@@ -1080,4 +1158,22 @@ function ProjectButton({ def }: { def: CivicDef }) {
       <span class="tool-label">{def.name}</span>
     </ToolButton>
   );
+}
+
+/** A military building's tooltip lines (M34): staff and power, what it trains, what it does. */
+function militaryLines(d: CivicDef): string[] {
+  const m = d.military!;
+  const out = [`${m.jobs} staff · ${m.power} MW of power`];
+  const trains = (m.trains ?? []).map((k) => UNIT.get(k)).filter((u) => u && !u.research);
+  if (trains.length)
+    out.push(`Trains ${trains.map((u) => u!.plural.toLowerCase()).join(', ')}; keeps ${m.holds ?? 0}`);
+  if (m.shelters) out.push(`Shelters ${m.shelters} residents in a raid`);
+  if (m.defends) out.push(`Defends against ${m.defends.against.join(' and ')} forces on its own`);
+  if (m.radar) out.push(`Sees forces coming ${(m.radar / 1000).toFixed(0)} km out`);
+  if (m.safety) out.push('Homes nearby feel safer');
+  if (m.noise || m.runway) out.push('Loud: nearby homes mind the noise');
+  if (d.requires) out.push(`Needs a ${CIVIC.get(d.requires)?.name ?? d.requires} first`);
+  if (d.waterfront === 'deep') out.push('Its back must stand in deep water');
+  if (d.waterfront === 'shore') out.push('Stands on the shore, its back to the water');
+  return out;
 }

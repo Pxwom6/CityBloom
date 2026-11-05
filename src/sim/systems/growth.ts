@@ -1,3 +1,4 @@
+import { spinoff } from './research';
 import { EDUCATION, GROWTH } from '../../data/balance';
 import {
   DENSITY_UNLOCK_POPULATION,
@@ -27,6 +28,7 @@ import { computeHappiness } from './happiness';
 import { toRubble } from './incidents';
 import { landValueAt } from './landValue';
 import { educationCap, welcome } from './health';
+import { falloutBanned } from './fallout';
 
 const ZONE_KEY = ['R', 'R', 'C', 'I'] as const;
 
@@ -98,6 +100,15 @@ function lotFits(
   return hi - lo <= GROWTH.maxLotRise;
 }
 
+/** Does a lot of `w` cells from column `col` stand on ground fallout has closed (M40)? */
+function lotClosed(sim: Sim, block: ZoneBlock, col: number, w: number): boolean {
+  for (let c = col; c < col + w; c++) {
+    const p = sim.net.cellCenter(block.id, c * ROWS);
+    if (falloutBanned(sim, p.x, p.z)) return true;
+  }
+  return false;
+}
+
 function spawnDemand(sim: Sim, zone: ZoneCode, wealth: Wealth): number {
   const d = sim.state.demand;
   const base = zone === ZONE_R ? d.R : zone === ZONE_I ? d.I : d.C;
@@ -106,10 +117,11 @@ function spawnDemand(sim: Sim, zone: ZoneCode, wealth: Wealth): number {
   return base - 0.04 * (tax - 9) + 0.04 * (sim.avgTax(ZONE_KEY[zone]!) - 9);
 }
 
-function maxConstructions(sim: Sim): number {
-  return (
-    GROWTH.baseConstructions + Math.ceil(sim.state.totals.population * GROWTH.constructionsPerPopulation)
-  );
+export function maxConstructions(sim: Sim): number {
+  const n =
+    GROWTH.baseConstructions + Math.ceil(sim.state.totals.population * GROWTH.constructionsPerPopulation);
+  // Prefab panels (M37's Field workshops) put more up at once.
+  return Math.floor(n * spinoff(sim, 'prefab'));
 }
 
 export function createBuilding(sim: Sim, block: ZoneBlock, col: number, def: ZonedDef): Building {
@@ -213,6 +225,7 @@ export function growthPass(sim: Sim): void {
   let budget = maxConstructions(sim) - constructing;
   if (budget <= 0) return;
   const dens = unlockedDensity(sim);
+  const fallout = !!s.fallout;
   let idx = ids.findIndex((id) => id > s.cursors.growth);
   if (idx < 0) idx = 0;
   const n = Math.min(GROWTH.blocksPerPass, ids.length);
@@ -229,6 +242,8 @@ export function growthPass(sim: Sim): void {
       const zone = block.zone[i0] as ZoneCode;
       if (!zone || !block.valid[i0] || block.bld[i0]) continue;
       const cell = sim.net.cellCenter(block.id, i0);
+      // Ground that fallout has closed (M40) grows nothing.
+      if (fallout && lotClosed(sim, block, c, 1)) continue;
       const lv = landValueAt(sim, cell.x, cell.z);
       // Industry's "wealth" is its tier, set by the workforce's education; offices need it too.
       let wealth: Wealth =
@@ -248,6 +263,7 @@ export function growthPass(sim: Sim): void {
         if (lotFits(sim, block, c, cand.w, cand.d, zone)) def = cand;
       }
       if (!def) continue;
+      if (fallout && lotClosed(sim, block, c, def.w)) continue;
       if (!sim.rng.growth.chance(GROWTH.spawnChance * Math.min(1, demand))) continue;
       createBuilding(sim, block, c, def);
       budget--;
@@ -304,7 +320,8 @@ export function lifecycle(sim: Sim): void {
       sim.events.push({ kind: 'abandoned', id: b.id });
       continue;
     }
-    if (heritage) {
+    // Heritage keeps buildings as they are; so does ground that fallout has closed (M40).
+    if (heritage || (s.fallout && falloutBanned(sim, b.x, b.z))) {
       b.good = 0;
       continue;
     }

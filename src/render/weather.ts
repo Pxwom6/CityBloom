@@ -29,6 +29,8 @@ export interface WeatherLook {
   /** Snow lying on the ground and roofs, 0–1. */
   snow: number;
   wet: number;
+  /** A nuclear winter (M40), 0–1: grey sky and snow cover in any month while it holds. */
+  winter: number;
 }
 
 const SEASON_INDEX: Record<Season, number> = { spring: 0, summer: 1, autumn: 2, winter: 3 };
@@ -55,16 +57,68 @@ export function pureSeason(s: Season): [number, number, number, number] {
   return w;
 }
 
+/**
+ * A nuclear winter's look at full depth (M40): the sky as grey as a cloudy day's and the ground snowy
+ * under any season's colours, whatever the calendar says.
+ */
+export const WINTER_LOOK = { overcast: 0.6, snow: 0.9 };
+
+/** How overcast the sky is for a look: its weather's cloud, or a nuclear winter's ash if that is greyer. */
+export function overcastOf(look: Pick<WeatherLook, 'kind' | 'strength' | 'winter'>): number {
+  const st = look.kind === 'clear' ? 0 : look.strength;
+  return Math.max(OVERCAST[look.kind] * Math.min(1, 0.4 + st), WINTER_LOOK.overcast * look.winter);
+}
+
+/** Photo mode's season and weather over the city's own look (M22). */
+export function photoWeather(
+  p: { season: Season | null; weather: WeatherKind | null },
+  base: WeatherLook,
+): Partial<WeatherLook> {
+  const out: Partial<WeatherLook> = {};
+  // (A season or weather picked here is the look wanted: a nuclear winter's grey doesn't override it.)
+  if (p.season || p.weather) out.winter = 0;
+  if (p.season) {
+    out.season = pureSeason(p.season);
+    out.snow = p.season === 'winter' ? Math.max(0.7, base.snow) : 0;
+  }
+  if (p.weather) {
+    out.kind = p.weather;
+    out.strength = p.weather === 'clear' ? 0 : 0.85;
+    out.wet = p.weather === 'rain' || p.weather === 'storm' ? 1 : p.weather === 'heat' ? 0 : base.wet;
+    if (p.weather === 'snow') out.snow = Math.max(0.7, out.snow ?? base.snow);
+  }
+  return out;
+}
+
+/**
+ * The look to draw a frame with: the city's own, a test's override, then photo mode's pick. Data maps
+ * are read in clear weather and under no nuclear winter's grey, like the flat daylight they are read in.
+ */
+export function frameLook(
+  base: WeatherLook,
+  override: Partial<WeatherLook> | null,
+  photo: Partial<WeatherLook> | null,
+  mapOn: boolean,
+): WeatherLook {
+  const look = { ...base, ...(override ?? {}), ...(photo ?? {}) };
+  if (mapOn) Object.assign(look, { kind: 'clear', strength: 0, winter: 0 });
+  return look;
+}
+
 /** What the world's weather looks like at its display tick. */
 export function worldLook(world: ClientWorld): WeatherLook {
   const w = world.stats.weather;
   const d = dateOf(world.displayTick);
+  const season = w.seasons ? seasonWeights(d.month, d.dayFraction) : pureSeason('summer');
+  const k = w.winter ?? 0;
   return {
-    season: w.seasons ? seasonWeights(d.month, d.dayFraction) : pureSeason('summer'),
+    // (A nuclear winter is winter in every month: the season's colours blend towards it.)
+    season: k > 0 ? (season.map((x, i) => x + ((i === 3 ? 1 : 0) - x) * k) as WeatherLook['season']) : season,
     kind: w.kind,
     strength: w.strength,
-    snow: w.snow,
+    snow: k > 0 ? Math.max(w.snow, WINTER_LOOK.snow * k) : w.snow,
     wet: w.wet,
+    winter: k,
   };
 }
 
@@ -149,7 +203,14 @@ const MAX_DROPS = 9000;
 export class WeatherRenderer {
   readonly uniforms: WeatherUniforms;
   /** The look now (eased) and where it's heading. */
-  readonly look: WeatherLook = { season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 };
+  readonly look: WeatherLook = {
+    season: [0, 1, 0, 0],
+    kind: 'clear',
+    strength: 0,
+    snow: 0,
+    wet: 0,
+    winter: 0,
+  };
   /** Overcast 0–1, fog 0–1, heat haze 0–1 and a lightning flash 0–1, for the lighting. */
   overcast = 0;
   fog = 0;
@@ -282,6 +343,7 @@ void main() {
     for (let i = 0; i < 4; i++) L.season[i] = L.season[i]! + (target.season[i]! - L.season[i]!) * k;
     L.snow += (target.snow - L.snow) * k;
     L.wet += (target.wet - L.wet) * k;
+    L.winter += (target.winter - L.winter) * k;
     // The spell itself cross-fades: the old weather fades out as the new one fades in.
     if (target.kind !== L.kind) {
       L.strength -= Math.min(L.strength, dt / 2);
@@ -292,7 +354,7 @@ void main() {
     u.uWet.value = L.wet;
     u.uSeason.value.set(L.season[0], L.season[1], L.season[2], L.season[3]);
     const st = L.kind === 'clear' ? 0 : L.strength;
-    this.overcast = OVERCAST[L.kind] * Math.min(1, 0.4 + st);
+    this.overcast = overcastOf(L);
     this.fog =
       L.kind === 'fog' ? st : L.kind === 'rain' || L.kind === 'snow' || L.kind === 'storm' ? st * 0.45 : 0;
     this.haze = L.kind === 'heat' ? st : 0;

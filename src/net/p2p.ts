@@ -35,6 +35,16 @@ export function p2pFailed(online: boolean): string {
 export const TRYSTERO_APP = 'citybloom-rooms-v1';
 
 /**
+ * The clock of a region room that runs in a browser (the host's page): real time, in whole
+ * milliseconds since the epoch, that never goes back. `performance.now()` alone counts from the page's
+ * load and has fractions, so the war history's times would be the host's uptime (and an online room's,
+ * which is `Date.now()`, would look different from this one's).
+ */
+export function wallClock(): number {
+  return Math.round(performance.timeOrigin + performance.now());
+}
+
+/**
  * How a peer-to-peer room's players find each other: our relay's signalling, or Trystero over public
  * Nostr relays (`relays` overrides Trystero's own list: tests use a relay on this computer).
  */

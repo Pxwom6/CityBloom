@@ -807,3 +807,2153 @@ The owner's review of PRs #17–#21 before merging phase 4 (F1–F14).
   sockets and data channels keep order themselves, so their messages aren't numbered. Tested in
   `tests/p2pOrder.test.ts`, and through two pages over Trystero and a Nostr relay on this computer: a
   friend now joins a city held still, builds, and the two run on together with the same hash.
+
+## Phase 5 (SPEC-5.md)
+- **Branch:** the cloud session's `claude/new-session-a0qpy4` stands in for `war`, made from `main` at 6883790 (phase 4, its review follow-ups and the war models, PR #22, merged).
+
+### M34 Armed forces
+- **War lives in its own optional state** (`SimState.war`, `options.rivals`, `RegionState.rules`, `Neighbour.rival`, `Civic.staff/powered`, `economy.funding.defence`): every key is absent in a peaceful city, so its saves, checksum and every part of its state are as before (a golden of the scripted town's part hashes recorded on `main` at 6883790, `tests/fixtures/war/peace-main.json`; only `version` moves to 27). The save version still bumps (v27, an identity migration) so an older build refuses a war save rather than dropping its war.
+- **The defence department is war-only** (`DEPTS` entry `war: true`): `defaultEconomy` leaves it out and `fundingPct` reads a missing key as 100 %, so peaceful cities never carry it; setting it is refused with war off ("Defence funding is for a city with war on") and the budget hides its slider.
+- **War randomness has its own dice**: `WarState.rng` seeded `${seed}:war`, and the rivals' characters from `${seed}:rivals`; no war code draws from the city's streams or adds one, so a peaceful city's dice are untouched.
+- **The forces recruit first**: each military base takes the workers nearest it by road at the start of every matching round, before businesses look (a pass after matching left them unstaffed in a town with full employment, which is the usual case); businesses then compete for the rest, so a big military costs the civilian economy workers. Military posts count as employment for the homes they come from.
+- **The forces take at most a quarter of the city's workers** (`WAR.enlistShare` 0.25). Without a cap, recruiting first meant 820 military posts in a 300-person town took every worker: shops closed and the town emptied (the M34 e2e caught it). Under the cap the HQ is staffed first, then the bases with units in training (oldest order first), each in full while the quarter lasts, then the idle ones in build order. Sharing the cap evenly was tried first: a 1,500-person town then had every base at 23 %, under the 25 % training needs, and nothing trained. As a queue, the same town trains one of every kind within 11 months and keeps its population. The inspector says when the cap is what holds a base back. The airfield and naval yard unlock at 10,000 residents, where the cap rarely binds.
+- **Power for military buildings** is served in the same network order as everything else (merged into the queue by component, distance and id), so a shortage hits whoever is furthest from the plants; with no military the queue is exactly as before.
+- **Training runs on a war clock** that, in a city of its own, is its game hours (a shared region's fair clock caps it in M39); rate = staff × power × defence funding (capped at 125 %), none below 25 % staff, a quarter faster for vehicles with an arms factory working. One unit at a time per base, oldest order first. Calling training off refunds the money for the hours not yet done (materials stay spent: they were used).
+- **Unit numbers** (src/data/war.ts): infantry $1,500, 12 h; light tank $8,000, 48 h; artillery $9,000, 48 h; transport $3,000, 24 h; fighter $18,000, 72 h; helicopter $12,000, 48 h; drone $2,500, 12 h; patrol boat $14,000, 72 h; each with goods, ore and oil, extra power while training, and monthly upkeep ($30–$400). A game month is a day and a night (24 h; 3 minutes at 1×), so infantry train in about 90 s and a fighter in 9 minutes at 1×. Heavy tanks, repair trucks, bombers, gunboats, submarines and landing craft wait for research (M37). Battle stats (hp, attack, range, speed, armour, siege) are set now for M35 and will be tuned there.
+- **Building numbers**: HQ $45k ($900/month, 60 staff, unique, at 2,000 residents; the others need it, except shelters), barracks $18k, shelter $4k, bunker $6k (2,000); vehicle depot $32k, radar $20k, anti-air $12k, coastal gun $14k, arms factory $40k (5,000); proving ground $35k, airfield $120k ($2,000/month), naval yard $90k (10,000). Each base keeps 8–12 units. Sites are the prompts' (PROMPTS-WAR.md).
+- **Materials**: the stores (goods, ore, oil, munitions; 200/150/150/100, +400 each per arms factory) fill an hour at a time only once the city has a military building: free from arms factories (90 goods, 40 munitions a day at full staff), from industry at $12 a good (0.05 goods per filled industrial job a day) and from mines and wells (half their output, at their export price, so the net is the sale lost). Short materials are bought at $30 goods, $36 ore, $55 oil, $45 munitions. So a city with industry and a mine raises an army cheaper; one without pays the region.
+- **War bonds**: $40k at 4 % over 5 years (2,000 residents), $120k at 4.5 % over 8 (5,000), $300k at 5 % over 10 (20,000); three at most. Cheaper and bigger than the bank, but while owed they cost city-wide approval: 0.2 points per $1 owed per resident, at most 8 points (a $120k bond in a 10,000 town: 2.4 points). Not blocked by a lost election's council (it's the residents' money, lent willingly); they need the `money` permission in a shared city.
+- **Readiness** heads for staff × power × defence funding (capped at 1), at most 50 % without a working HQ, halved while the treasury is negative, plus up to 10 points from a proving ground's drills; it moves a tenth a day.
+- **Approval**: noise from depots (0.5, 100 m), ranges (0.55, 140 m), the arms factory (0.45, 70 m), barracks (0.42, 70 m), the coastal gun and the naval yard, and an airfield's runway like the airport's; feeling safe near shelters (+0.03 within 140 m), the HQ (+0.02, 220 m) and defences (+0.008–0.012), liked 0.7× by low-wealth homes, 1.25× by the wealthy. Small effects, so a military town is a choice, not a penalty.
+- **Rival neighbours** (the new-city option): every computer neighbour gets a character, different ones while they last (aggressive 2.4 forces and 0.8 defences per 1,000 residents; cautious 1/1.8; mercantile 0.8/1; honourable 1.4/1.2; treacherous 1.8/0.8), starting at 50–80 % of that and arming 6 % (±25 %) of the gap a month. Their aggression, pact-keeping and trading numbers are set now for M35–M38. The option is never remembered: each new city starts peaceful unless asked.
+- **A region's war rules**: the region's creator is its host (slot 1) and alone sets war on/off and the largest scale (skirmishes only, up to war, total war allowed); a new region's creator can choose them on the new-city screen, and change them in the Region panel. Turned off again, cities keep what they built and trained (they can't fight; M35+). PROTOCOL_VERSION is 2: an older build in a room or region is told to reload rather than miss war commands or rules.
+- **The war room's research tab** says research needs a weapons lab "your engineers haven't designed yet" and lists what it will unlock: M37 brings the lab and the tree.
+- **The Military toolbar button** widens the toolbar by one button (about 3.1 rem), so in a war city the bars fold that much sooner (`barsClassWith`); the peaceful city's layout is unchanged.
+- **The war models have a file of their own** (`war-models-<hash>.bin`, 0.9 MB raw), fetched once when a city with war on opens and kept out of the service worker's offline copy, so the menu, a peaceful city and the main models file (byte-identical, same hash) are untouched; until it arrives (or if it fails) the generated looks stand in. The nine buildings later milestones bring and the four superweapon and bomb units are checked and packed now, on their prompts' sites and sizes.
+- **The README's allowances are by name, war models only**: the facing check's three false alarms (airfield, bunker, enrichment), `light` (the last role, so the main file's role numbers don't move), parts below ground at the naval yard, coastal gun and spy agency (recorded as pits the lot base leaves open), the whale's mouth; open parts wound inside out are turned round the smaller side. The ground over a pit stays at the site's level for now: cutting it is left for the milestone that uses the dock.
+- **Every war building and unit has a generated look** in the toy style (`militaryModels.ts`, `unitModels.ts`), with the same roles, moving parts and pivots as the unit spec, so a missing or failing model never shows a white box; hand-made units win whenever the war file has one.
+- **Units on screen are a picture of the roster, not simulated movement** (M34): where each unit stands, drills, patrols or flies is a pure function of the display clock and its id (`unitPoses.ts`), so nothing about it touches the sim, saves or lockstep. M35's battles bring units that move in the sim. One instanced mesh per kind and level; beyond far range a dot in the owner's colour. The quality decides reach, moving parts, shadows and how many drill, patrol and fly per base (Low: 110/700 m, still parts, no shadows, 2/1/1).
+
+### M35 Into battle
+- **A battle is its own simulation, on a frozen picture of the defending city** (`src/sim/battle`): roads as a graph with points every 12 m, the structures near what matters (at most 4,000, military and targets first) with their strength and guns, a 32 m terrain grid over the map, the ways in, and the defenders' units. It steps half a game second at a time, two steps a city tick, so a skirmish takes a few game hours (a minute or so of real time at 1×); the city's speed buttons are the battle's.
+- **Where it runs**: a raid on the city is hosted in the city's own sim (`war.battle`, its input and the steps played, re-run after a load), and every event reaches the city through one handler, `applyWarDamage`; a battle fought elsewhere (a replay, the view of a neighbour's town, later an absent defender's) arrives as the page-only `battleResolve` command, and an expedition's result as `battleReport`. So each city stays the authority over itself, and a save made mid-battle plays on exactly as one never saved (tested).
+- **Damage goes through the disasters' machinery**: homes and shops under 60 % of their strength catch fire (`ignite`, the fire engines come), knocked down they're rubble (no ambulance: toys, not casualties) that clears and regrows; city buildings close for repairs (48 h) or are wrecked (96 h) and `disastersHour` repairs them and books the cost; roads crater for 12 h. Nothing is removed, so every loss mends itself. A skirmish knocks down 12 buildings and wrecks 3 city buildings at most (`SKIRMISH` caps).
+- **Units**: hit chance 0.65–0.9 by what fires, times 0.7 + 0.3 × readiness; damage = attack × (1 − armour) × (1 − cover), cover 0.4 for infantry and 0.2 for vehicles beside a building between them and the shooter; damage to buildings is attack × siege, a heavy miss (siege ≥ 1) lands near and harms what it hits, 15 % of heavy shots crater a road. Defences fire strength × 8 every 3 s at what they defend against, manned by staff × power. Units pulling out don't stop to shoot back. Cautious forces pull back at 30 % losses, bold ones at 60 %.
+- **Raids by computer neighbours** come with an hour's warning and three more per working radar (six at most); residents within 600 m of what they're after go to the shelters (as many as there are places); the share left out costs up to 4 points of approval for three days. A city is left alone under 3,000 residents or 12 months; a neighbour raids at most every 6 months, and any neighbour every 2; the chance an hour is aggression × its forces ÷ the city's strength (at most ×2) ÷ 150, doubled when hostile, quartered when friendly. Neighbours decide to raid on their own (`RAIDS.decide`, switched on once the battle view, war room and e2e were done). **A neighbour the city raided may answer within 3 months, four times as likely, even while the city is under the bar**: protection is for cities that haven't started anything. One notice (`raidsOpen`) says when the city passes the bar, and the war room's Map tab says whether raids may come and who may answer. Warnings and arrivals are checked every tick (an hourly check made the countdown up to an hour late).
+- **Computer neighbours' towns are grown, not drawn**: the balance mayor moved into the sim (`src/sim/ai/mayor.ts`, with `DMath.hypot`; `balance`, the scenarios and the legacy saves came out identical), and grows each neighbour's town from its own seed on a map for its kind (industry in the highlands, resorts on the coast, suburbs by a river), careful, on Easy, to its population or **8,000 residents**, whichever is less: about 15–20 s on this VM (12,000 took 22 s, the coast's first seed never grew, so a town that hasn't reached 1,000 in a year moves to a sister seed, then a river map). Sandbox would be faster but its towns are towers from day one and the careful mayor never zones its first district there. Then the town builds its military by the highway (HQ, barracks, depot, 4–8 bunkers by character, anti-air, coastal guns on a coast, an airfield for aggressive and honourable neighbours); the neighbour's forces man it as units at its bases and its defence points man its guns. The page grows a town once, in a worker, and keeps it in IndexedDB (database v3); test builds grow 1,500.
+- **Expeditions**: a force of up to 24 units leaves from a working HQ by road (land units, with air escorts), rail (land), sea (boats, with air escorts) or air (aircraft only), takes 6, 4, 10 or 1.5 game hours (north and south neighbours 1.2× further; infantry without trucks 1.4× slower, with a truck per four squads 0.8×), and strikes military buildings, or industry or power within 600 m of the town's way in (the city hall needs a declared war, M36). The page fights the battle when it arrives and hands the result back; knocked-out units are gone, the rest come home with their scars and mend 5 % an hour at a staffed, powered base; the neighbour's forces and defences drop by what it lost and it likes the city 20 points less. Shared cities can't send forces until war among friends (M39).
+- **Watching a battle in a neighbour's town** opens that town read-only in the page (`?battle=`), after saving the city: its sim plays the battle again from the kept input, so its fires, rubble and repairs show as any city's; "Back to my city" reopens the save.
+- **Battles between friends are fought by the attacker's page in the region's latest save of the defender's city** and passed through the region room (protocol 3), which keeps them for the defender until they say they've seen them (eight at most per city, stored as rows like saves). The defender's own sim then runs the same battle on that layout, instant if they were away, watched if they're playing. A city that changed since its save takes what still lands on what's there; the alternative (fighting only while both play) would make a friend who's offline untouchable, which the spec rules out.
+- **The save a city sends as its player leaves is kept whatever the save pace** (once a connection; `last` on the `save` message), and quitting to the menu now leaves the region properly first (keeping the city's place), so a raid while away is fought in the city as it was left, not as it was up to ten minutes earlier. A tab simply closed still leaves the last kept save.
+- **Replays are kept per browser**: each side keeps the battle's input and the town it was fought in (`replay:def-<id>` for a raid on the city: a copy of the city just before it, about the size of a save), so "Watch" works offline and nothing more is stored in the region.
+- **The region map** shows road and air times to every neighbour, rail with a rail link and the sea lane once the city has boats; labels are centred with a halo so lines don't cut through them.
+- **Watching a battle elsewhere**, the viewer bar takes the visit banner's place at the bottom of the screen (two bars said the same, and the top one covered the battle bar).
+- **An adversarial review of M35** (five reviewers on determinism, safety for friends, save/load, gameplay and the page; each finding checked by a skeptic: 39 confirmed, 5 refuted) led to these calls:
+  - **A battle plays the same however it's run**: its checks no longer depend on when the caller drains its events (Battle.run, the tick loop and a re-run after a load had diverged once anything happened). `BATTLE_VERSION` 2, so battles kept from before are refused, not misplayed.
+  - **A battle from outside the city is checked, then brought home** (`checkBattleInput`, `adoptBattle`): its course is kept as the attacker saw it (both cities see the same battle), but only structures that match the city's own picture (place, kind, guns, no weaker) and its own units at home (kind, base, no weaker) answer to its ids; anything else it names takes no damage. Rebuilding the picture from the defender's city instead would make the two sides disagree about the battle. The caps are the city's own (12 buildings, 3 city buildings, 12 craters), and each battle is taken once (`WarState.taken`, the last 32 ids, in the save), so a lost acknowledgement can't apply a raid twice.
+  - **A city never stops for a battle**: a hosted battle that can't be played ends (`withdrew`); one that can't be read is refused before anything changes.
+  - **Forces never stay away**: a force arriving while its city is shared turns back (only a page can report a battle fought away, and a shared city has several); one that hears nothing of its battle for 72 game hours comes home (long enough for a slow phone to grow a town at full speed); one at its target can be called back.
+  - **Between friends, nothing is lost or doubled**: the attacker keeps each battle as not yet sent until the region answers `battleKept`, and sends it again at each welcome; the defender saves its city before acknowledging (`battleSeen`); the region allows a city a battle every five minutes after the first three (rows within the free plan); the leaving save is kept once a connection even under the same name; a friend's force on its way is announced (`forceOut` → `incoming`, with the siren) and residents shelter when it arrives.
+  - **The name on a friend's raid is the region's name for the sending city**, not what its battle says.
+  - **The war room can send forces to friends' cities** where the region allows war, and its map shows them.
+  - **Replays are kept per city, the newest 24**; a replay's own copy of a town goes with it, computer neighbours' towns stay for their next battle. Towns and battles live in their own database (`citybloom-war`), so the saves' database stays at version 2 and a tab of another build never fails to save.
+  - **Smaller fixes**: units away don't defend, mend or count in the city's strength; industry and power raids strike only near the border, and count residents only there; raid moods read the newest raid on the city; travel to the half hour; expedition arrivals on the minute; undo can't revive a unit lost in battle; watching a battle the browser doesn't keep returns to the city instead of founding a new one over it.
+- **Shortcuts after ticking a box**: the game's keyboard shortcuts were ignored while any input had focus, so after ticking a checkbox (war on in the Region panel) Shift+N and Shift+M did nothing until the player clicked elsewhere (the two-player e2e found it). Now only typing holds them back (text fields, text areas, selects, editable text, sliders); a ticked box or radio keeps just Space and Enter (`typingIn`, src/client/keys.ts). Focused buttons behave as before.
+- **A socket on a busy page**: a city that has just opened can hold the page for a minute on a slow device (the e2e's SwiftShader pages); the socket's 8-second wait then ran after its own open event had queued, and closed a socket that had opened. Now a socket found open when the wait ends is taken, and a wait that ran late (the page was held, not the network) waits once more (`webSocketLink`; tests/wsLink.test.ts). A friend coming back to their city rejoins its region as soon as the page is free.
+
+### M36 Diplomacy and the stakes of war
+- **No city hall building: the military HQ is the seat of power.** Citybloom never had a city hall, and a war-only one would be a building players simply wouldn't build to stay unconquerable. Every rival town's mayor builds an HQ, a city needs one to send forces and to keep readiness above half, so "hold the city hall" is "hold the HQ": knocked down in a total war, it starts a 48-hour hold. A city without an HQ can't be held, but can still be beaten into capitulating by the score.
+- **Diplomacy lives in `WarState.diplomacy`**, made at a war city's first month close (its computer neighbours' daily dice must carry on from day to day, or a neighbour whose first roll said no would never move) or by an earlier declaration, proposal or stance: peace is unchanged, and it has dice of its own (`<seed>:diplomacy`) so the war's raids draw the same numbers as before.
+- **Scales**: skirmishes stay as M35 (no declaration, nothing changes hands, no score). A war is declared with a reason (80 characters at most) and opens after 12 game hours; it lets forces strike the seat of power and keeps a score. Total war adds conquest. The region's rules set the largest; a city founded with rivals allows total war.
+- **The score** (−100 to 100, from the city's side): a battle won 8–15 by how decisive it was (an attacker's objectives down, a defender's attackers knocked out), a point per $25,000 of buildings lost on the other side (a building in a neighbour's town counts $40,000; ours at what it held: $2,000 a resident or worker, city buildings at their price), a point an hour holding the other's seat, a point a day for each ally fighting at the city's side. At −60 a side capitulates: no more battles, and the winner's terms stand without its consent (the computer imposes peace, tribute of 15 % of the city's taxes for 36 months, and an occupied district or a demilitarised zone by character; the city has 7 days to set its own, then peace with three months of the loser's taxes stands). A held seat is settled by the hold, not the score (holds would otherwise turn into capitulations halfway).
+- **A game month is a game day** (the compressed calendar): tribute "for years" is counted in months; tribute starts at the next month's start, so each month's books show the full amount; proposals lapse after 48 game hours; the cooldown between wars with the same neighbour is three months.
+- **Occupied districts pay a fixed amount**: the district's taxes when it was occupied, a month, until returned or bought back for 24 of them (unpainting the district or knocking it down can't dodge it). A computer neighbour's "district" is one of three quarters, worth 15 % of its taxes.
+- **Computer neighbours weigh terms** by character (`DIPLOMATS`: peace, money, pacts, pride, trade, allies), the war score, their feelings and the city's reputation, with a little chance; they answer two game hours after a proposal: sign, counter (more money from the city, less from them, without the term they like least, or with tribute added) or refuse. They propose themselves once a day: peace with reparations when losing, peace for tribute when winning, a ceasefire, non-aggression (honourable and cautious ones that like the city), trade again (mercantile ones under embargo), buying back an occupied quarter. Aggressive and treacherous ones declare war on a city past the newcomer bar that they outgun 1.5× and dislike; treacherous ones may break a pact to do it.
+- **Allies**: computer neighbours pair up from their own dice (`<seed>:allies`; v29 gives older war saves the same alliances). Declaring war on one brings in its allies true to their word (keeps pacts ≥ 0.8); breaking a pact with one costs the city 30 reputation, makes every ally like it 40 points less and end its pacts with the city, and brings in allies that keep pacts at all (≥ 0.5). The city's own allies (and defensive partners against an aggressor) fight at its side abstractly: a point a day each and the enemy's forces worn 3 % a day.
+- **Breaking a pact is asked first**: a declaration, a force sent, or ending a pact that binds (ceasefire, non-aggression, an embargo, tribute the city pays, a demilitarised zone on its side, an alliance whose ally is fighting beside it) is refused with `info.breaks` until the page asks and sends it again with `breakPact`.
+- **Vassals**: a fallen city pays its overlord a fifth of its taxes each month, can't go to war or send forces except to rise, and may rise (a total war) once its strength is 1.2× its overlord's forces and defences. The page offers playing on as a vassal or starting again (the save stays loadable); the sim simply plays on, so a city whose player starts again is as it fell. A conquered computer neighbour pays a fifth of its taxes, keeps 40 % of its forces and rebuilds them only that far, raids no more, and rises when its forces reach 1.2× the city's strength (a rising takes an army: its walls regrow, and counting them let a vassal rise within days of falling).
+- **Declarations and treaties between friends come with M39**, with live battles: a war between two players' cities needs both sims to agree on it, which is M39's lockstep work. M36 brings the fairness limits for friends' raids (which M35 already allows) through the region room.
+- **An adversarial review of M36** (five reviewers on determinism, the rules, fairness between friends, the page and regressions; each finding checked by a skeptic: 32 confirmed, many twice over, 2 refuted) led to these calls on the rules:
+  - **A friend's city taking a computer neighbour's place ends whatever the city had with that town** (`forgetNeighbour`): its war, pacts, proposals and vassalage, and it's no one's ally (they could otherwise never end, and a capitulation to a player threw).
+  - **A battle with nothing to strike, or with no contact, isn't scored**, and a raid aims at the city's military when what it wants isn't there (a city with no HQ "won" every seat raid and made a stronger enemy capitulate).
+  - **A ceasefire freezes a hold on a seat of power** (signing one could otherwise guarantee a conquest).
+  - **An ally keeps its word to both sides**: a neighbour with a pact with the city doesn't join a war on its ally's side.
+  - **Conquest ends the fallen side's claims on the winner** (tribute owed to it, districts it held, a demilitarised zone it imposed, an embargo), and **a city that falls leaves all its wars** under its overlord's peace; peace with an overlord the city stays a vassal of ends its allies' wars too.
+  - **A computer vassal stays a vassal through its rising** until the rising wins (a hold, the city's capitulation, or a treaty with independence); a beaten rising leaves it a vassal; neither side pays or takes dues while a rising is on.
+  - **A neutral city that is attacked is neutral no more**, and may answer at once.
+- **The same review on fairness between friends: the region room decides whether a friend's raid stands.** Each city's sim refusing raids by its own view (neutral, new) let the two cities disagree (the attacker's sim had taken a battle the defender's refused, or one the room had already counted), so:
+  - **The attacker's sim takes a battle's result only once the room has kept it**: the page fights it, posts it and waits; a refusal forgets it and the force comes home, so a turned-away raid changes neither city. No answer (the room's burst limits, a dropped connection) means asking again in 20 s; the room acknowledges a battle it already holds or has delivered (the last 24 ids a city has seen) without counting it again.
+  - **The room's clock and the cities' reports decide**: a neutral city, a newcomer (unless it raided the sender within a real day: it may be answered), and a city raided three times this UTC day are refused. The page shows the same verdict per friend before a force leaves, from the room's view, so the sim's refusal and the room's agree.
+  - **Away is the attacker's to declare, the room's to check**: a battle fought as against a player who was here, arriving after the player left, is refused with `again` and fought again at half; the room never halves a battle the attacker fought at full.
+  - **A battle from a city the defender's sim doesn't know is refused** (a stale or forged slot).
+- **A second review, of those fixes** (three reviewers, each finding checked by a skeptic: 11 confirmed, 2 refuted, and four earlier findings only partly fixed) led to these calls:
+  - **A force is pinned while the region decides on its battle** (`battleSettling`, page only): it can't be called back, and waits up to 30 game days for the answer rather than 72 hours (a force called back while its page fought, or one that gave up waiting, had its battle kept and taken by the friend with nothing applied at home). A refusal frees it; a kept battle is reported; a force that gave up after 30 days loses its battle (if the room had kept it, only the friend takes it: a last gap, needing the room out of reach for that long).
+  - **The room answers every battle**: war off, a city that has left, the region's day spent (refused); its pace (refused with `later`: the page asks again then, the force still pinned). It **refuses rather than evicts** when eight battles wait for an absent player, so every battle kept is one its target takes; in a **peer-to-peer region** (which ends with its host) it refuses raids on a player who isn't there (`absent`, shown to the page before a force leaves); **a neutral city raids no one**.
+  - **Battles are known by sender and id** in the room (`pending`, `seen`), on the defender's page and in its sim (`taken`), so two cities whose battle ids match never shadow each other.
+  - **Contact is any unit hurt on either side, or anything hit** (a raid beaten off by wounds alone scores, and breaks a hold); an expedition that pulls out without touching anything isn't scored either.
+  - **A rising vassal offers its freedom or nothing** (peace with independence), and **rises again only after the cooldown** when a rising ends in a peace that leaves it a vassal; **a war a fall has just ended does nothing more** in the same hour.
+  - **The page**: a rising's scale is total whatever was picked before the fall; editing the declare form drops a question about what it said before; the builder stops at eight terms.
+  - **A third look** found four more, fixed: the room answers a battle it already holds as kept before anything else (war turned off since must not turn away a battle its target will take); a city in no region at all (its binding forgotten) frees a pinned force at once rather than after 30 days; a pin the sim refuses keeps the battle unless the force really stopped fighting (a bankrupt city re-fought it endlessly); a battle whose word came late is never cleaned up as unanswered.
+- **The same review on the page:** a command's answer (a refusal, or the question before breaking a pact) shows beside the button that sent it and scrolls into view, as does the terms builder; the builder opens afresh each time, says when terms are imposed, shows both sides' taxes, names a term out of bounds with its limits (`termProblem`, also the sim's refusal), and offers only districts that fit (free to occupy, occupied to hand back). "Send it anyway" sends the force it warned about, and the warning goes once the form changes. A vassal's war on its overlord reads as a rising, total by default. Diplomacy notices carry the sim's tone (a hold is good news for the side holding) and their words in the key, so ours and theirs never merge. A base in a demilitarised zone says it stands down and takes no training orders. The fallen city's card is answered once per browser (localStorage) and never shown to a visitor or in the battle viewer.
+
+
+### M37 Weapon development and intelligence
+_The plan is `docs/plans/M37-design.md`; these are the calls made while building it._
+- **Research numbers** are the plan's: 4 points a war hour per lab (staff × power × funding up to 1.25), ×1.5 with a research park, ×1.75 with the launch complex too, three labs at most, a queue of four, a tier's money paid when it reaches the head; tier 4 only while a research park is in service. One lab and no park does tier 1 in about 3 game days; three labs and a park the whole tree in about 118. M38 tunes them.
+- **Prototypes are tried before they're trained**: every unit a tier unlocks waits for a trial at a proving ground (half its money, max(12, hours/2) war hours; superweapons 10 % and 72 h; sea trials need a naval yard). A trial called off gives back the share not yet run. Proving grounds with a trial and labs with work are staffed after training bases, before the rest (an idle lab or ground took workers a training base needed).
+- **Repair trucks are a Repair crews prototype** (M34 had them in the depot's list doing nothing): a city that trained some before keeps them, and they mend only once the city has the research.
+- **Research's training speed counts by what's trained** (vehicles, aircraft, drones, boats); infantry and superweapons keep their pace (a superweapon's build is its own long race).
+- **Each factor is read in one place and is exactly 1 (or 0 for added ones) without research**, so peace and M34–M36 war cities play as before (the M36 war golden checks): training, an airfield's places, the stores, the radars' warning, the way out (to the half hour), mending (land ×2; each repair truck at home +0.5 for every unit, ×3 at most), war-damage repair hours (25 % sooner), readiness away (+0.1, 1 at most), and the spin-offs (constructions ×1.3 rounded down, fire spread ×0.6, putting out ×1.3, planes' noise reach ×0.75, sea trade ×1.15, licence fees ×1.15).
+- **A repair truck in a force mends the survivors 0.1 on the way home**, once, when it gets back (with Repair crews).
+- **Superweapons in forces** follow the plan: one a force, their own route (the robot by road and the fortress by air, each twice as long; the whale by sea to a coast), never lost (knocked out, wound down to 0.05 and towed home), and a cooldown of 240 war hours from coming home after a battle (480 when knocked out); a force called back or turned away spends none. Only a force with a superweapon keeps the `fought` mark, so older forces' state is as it was. **A superweapon counts in the city's strength** (the computer's raid odds and declarations weigh it) though it never defends at home: a deterrent is what it is.
+- **By sea only to a coast**: a computer neighbour's resort, or a friend whose report says so (`PlayerNeighbour.coast`, filled from step 9's report); M35 let boats sail to any town.
+- **Battles, version 3** (step 5, built by a helper and reviewed here): a battle that uses nothing new is still stamped version 2, so kept battles and the M36 golden replay unchanged (stamping every battle 3 moved the stored home battle). Bombs dropped by aircraft can be intercepted at any distance (bombers reach only 60 m, and the defence tier promises "shells and bombs"); "fired from 150 m" is measured to the building's footprint, as reach is; a battery cools down after every attempt. The robot leaves the road within 500 m of its objective and walks right up to it, firing as it goes, so its 16 m stamp reaches; the city's extra dome pool (a friend's stale picture) covers each structure once for its whole strength, and a structure it can't cover pops it. Computer neighbours' tech enters through `rivalMods()` (`src/sim/ai/tech.ts`), empty until step 8.
+- **Superweapon buildings** (step 7): their state appears when the first is finished (`WarState.supers`). The dome charges an hour for each war hour it works (staff ≥ 0.25, power ≥ 0.5) up to 240, stops in a blackout (a full dome holds 4 hours, then falls), rises over a battle at home when full and in the right mode (`all`, or `super` for a battle bringing a superweapon; computer raids bring none), and is empty after it whatever was left. The blackout tower charges at a computer neighbour for an hour, then darkens it for 12 (no raids from it; its posts manned at 0.3 in battles there; −15 relation through the diplomacy log), and recharges 240 hours from use; a friend's city waits for step 9. The express gate sends a land or air force in an hour (and home an hour after its battle) and charges 120 hours from departure. Built while allowed, each stands idle where the region's rules turn superweapons off. **A superweapon strike** costs the neighbour 40 relation and its allies 10.
+- **Superweapon buildings are staffed with working labs** (after the HQ and training bases, before idle bases): always at work, charging or ready, they shouldn't starve behind an idle barracks.
+- **Intelligence against computer neighbours** (step 8, `src/sim/systems/intel.ts`) follows the plan's odds (`spyOdds`, whole numbers per thousand, a mission's dice its own `<seed>:spy:<id>`) and numbers, every time on the war clock: a mission is out for half its hours, resolves there, and is home after the other half. Six "months" of a sabotaged depot are six game days (a month is a day); a computer spy that steals brings its next tech step six days sooner. A theft banks a quarter of the next tier's points, never the whole tier, and the tier is still paid for when it starts. A computer neighbour's spy sabotages at war, steals when the city is further on than its tech, and otherwise looks round; the city hears of a quiet look or theft only with counter-intelligence of 400 or more. **The spy agency is staffed with working labs** (counter-intelligence is always at work). **The agency's ramp pit isn't cut into the terrain**: the ground stays at the site's level, as M34 left it (the plan's fallback), because a terrain edit under a building would fight the held-ground rules for a cosmetic ramp.
+- **Computer neighbours' tech** (0–4) moves on at month close only once the city researches (dice `<seed>:tech:<month>`, at most a step per 12 game days): their battle mods from tier 1 (Jet engines, Hull design) and tier 3 (Composite armour, Swarm control, Submarines), heavy tanks and bombers in aggressive, honourable and treacherous raids from tech 2 (`RIVAL_MIX_TECH`), hardened buildings in their towns from tech 3; 50 counter-intelligence per step.
+- **An adversarial review of M37's sim** (five reviewers on determinism, research, battles, superweapons and intelligence; each finding checked by a skeptic: 13 confirmed, three of them the same, 4 refuted) led to these calls:
+  - **A friend's battle is held to the defender's own research**: where its picture of the defenders' battle mods is weaker than the city's (a save from before the research, or mods left out), those defenders fight as strangers, so their losses never reach the city (as weaker structures already did).
+  - **A base keeping a superweapon can't be bulldozed** (at home, away or in training): stand it down or call the order off first. Bulldozing and undoing could otherwise skip a cooldown or make a second one.
+  - **An arms factory speeds vehicles, not the robot**; **a superweapon building still going up has no posts** in the war room's staff count.
+  - **A theft never lowers a tier's points**, and one that adds nothing isn't used up.
+  - **Sabotage is checked again as the agent lands** (a pact signed, neutrality, a ceasefire or a conquest since it left stands it down), **a computer saboteur landing after peace only looks round**, **binding pacts** (not embargoes or tribute) halve a computer neighbour's spying, and **a ceasefire holds the score** for spies too.
+  - The robot's way off the road (stranded at water within 500 m; snapping back on a new objective) went to the superweapon balance work in the battle core.
+- **Between friends, the region room decides spies and blackouts** (step 9, protocol 5; the sims' side is `src/sim/systems/regionOps.ts`, the room's `RegionRoom.op`, the page's `src/client/ops.ts`), as it decides raids (M36). These calls were made building it:
+  - **Operations travel as their own messages** (`op`, `opKept`/`opRefused`, `opOn`, `opSeen`) with their own pending list (8 per city) in the region's record, so a spy never crowds out a battle and needs no storage row of its own; each is known by an id made like a battle's (`op-<seed hash>-<mission>`, the tower's `bo-…`).
+  - **The room remembers the verdict of each sender's last 24 operations in its record**, so an operation sent again (or after the object restarts) gets the same answer, and the same id for another operation is refused; every new id costs one of the target's four spies a day, quiet failures included.
+  - **A quiet failure isn't kept for its target**: nothing happens there, and the sender's verdict is remembered anyway.
+  - **A strike the target knows of lets it answer a newcomer**: a spy caught, a sabotage that worked and a blackout set the target's `raidedBy` (the plan named the caught spy; the other two are strikes as plain as a raid).
+  - **A blackout always lands once the region keeps it** (no spy roll); it counts as the target's superweapon and one of its three raids for the day, as a superweapon's battle does.
+  - **A battle flagged as bringing a superweapon is refused when its target's player isn't here, with no half-strength fight again**, and a defender's sim takes nothing from a friend's battle that brings one unflagged ("That battle brought a superweapon the region didn’t count").
+  - **The sender's agent waits at the friend's city for the verdict** (`arrived`), pinned once the page has put it to the region: 72 war hours unpinned, 30 game days pinned (as M36's forces), then it comes home with nothing and no refund (the region may have kept it). A refusal sends it home (the second half of its way) with the mission refunded in full.
+  - **The tower aimed at a friend is put to the region as it starts charging**, so the friend's own sim gives its hour of warning from its own clock; its recharge counts from the region's keeping it, a refusal leaves it ready, and with no word for as long as an agent waits it stands ready again. `missionResult` carries the tower's verdict as well as agents' (one page-only command for "the region's verdict on an operation").
+  - **The target's sim chooses what a saboteur closes** (its own largest working plant, or its vehicle depot, through `damageCivic`, as a computer spy's), and **one that came while its player was away brings only a notice**, sabotage and blackouts alike; a quiet look or theft is heard of only with counter-intelligence of 400, as from a computer neighbour.
+  - **A spy caught between friends costs no reputation or relations** (players' cities have none of the computer neighbours' feelings): both cities log the incident, the target notes a grievance, and the region tells everyone.
+  - **A theft from a friend banks a quarter of the tier the sender lacks next in that branch, once per friend and tier** (`Intel.stolen` by the friend's place); the room checks the target is further on from the cities' reports, and the sender's sim checks again from its last region update.
+  - **A look round's dossier is made by the sender's page from the friend's save the region keeps** (forces and defences by kind, research tiers, superweapons, the dome's charge), so it is as fresh as that save (one every ten minutes); the sim takes only a checked, bounded one.
+  - **The report's war fields** (`tiers`, `counter` without the war term, `coast`, `clock`) come from war cities only, and a malformed one rejects the report like any other field. **A coast** is deep water in an edge cell of the battles' terrain grid (as `battleLayout` finds a sea entry), worked out again only after earthworks.
+  - **A city shared in a room refuses spies and blackouts against friends** ("Spies from a shared city come with war among friends", and "Blackouts from a shared city…" for the tower): only its host's page could put them to a region, which waits for M39's roles.
+- **The fair clock** (step 10, pulled forward from M39 as the plan says): the room starts a war city's fair clock at the war clock in its first report and adds the time since its last report (two minutes at most) at 1×; **a city coming back starts counting from its hello**, so the time away is never play. It is kept with the region's five-minute keep (no rows of its own). The page caps the war clock at the fair clock plus a 48-hour bank (`warClock`), told again whenever the cap moves an hour, and lifts it when the city leaves its region for good or the region turns war off. Consequences accepted: **a paused city still banks fair hours** (its player is here), and **a guest in a peer-to-peer region banks none while the host is away** (the region exists only in the host's browser).
+  - **A shared co-op city never waits at a cap** (it can't be in a region; one shared from a save still bound to a region carries a cap it ignores): the stamped `warClock` the plan mentions waits for M39, when shared cities may stand in regions.
+  - **"Ahead of the region's clock" is said at most once a game day**, with the wait at 1× ("research waits about 6 minutes" for the 48-hour bank).
+  - **A war project's stage counts its war clock from the month's start** (`stageClock`): the first stage is placed mid-month but counts its months from month closes, so in a city of its own each stage ends at the same month close as before (a test checks it), and in a region ahead of its fair clock it waits.
+  - **Tests that fast-forward region cities turn the cap off** (`RegionLink`'s `fairClock: false`; in a test build, localStorage `citybloom.fairClock=off`, which `e2e/m35-friends.spec.ts` sets): they train forces in minutes, which is exactly what the fair clock stops.
+- **A region's host turns superweapons on in the Region panel** ("Superweapons", under War on; off by default, as the brief's "the region's rules can turn them off" asks): the rule was carried in every message, but no control set it, so no city in a region could ever build one (the friends' e2e found it).
+- **An independent review of steps 9–10** (three findings, all fixed with a test each; nothing exploitable found in the room):
+  - **A war-clock cap the city saved is never left standing**: a region link always tells its first cap, `null` included (a city capped in a war region that turned to peace while it was away kept a frozen war clock); a loaded city that won't stand in a region at boot (a peer-to-peer host's region closed with the page, a save without this browser's secret) drops it; and a region that no longer exists (`no-region`) lets the city go, like one whose host left it, but only the region the city is bound to (a mistyped code mustn't drop a real binding).
+  - **A war project placed while the clock is held counts from now** (`stageClock` under a cap): taking off the month's game hours so far gave up to a day of war-clock credit the region never allowed.
+  - **Leaving a region forgets what the city knew of friends by their places** (`warClock` with `left`: dossiers and thefts by slot, agents on their way or waiting come home refunded, a tower aimed at one the region hasn't kept stands ready): another region's city may stand in the same place.
+- **Superweapon battles, measured in nine grown computer towns** (`scripts/dev/superstrike.ts`; battles without a superweapon unchanged: pinned hashes, version 2 replays and the M36 golden all match):
+  - **A superweapon's force pulls out once every objective still standing is one the caps won't let fall** (`Battle.capsHold`): the caps allow five wrecked city buildings, so a robot that had taken five of six military objectives stood at the sixth until the clock ran out; a longer clock would only have kept it there.
+  - **The sky fortress carries bomb drones** (`carries.siege` 15, the siege of what it brings, for its carried units only; they dive on the force's objectives first): its sixteen drones hit buildings for 1 each before. 15 matches the robot in a town as grown and still lets a fully manned anti-air screen win (10 at 10, 25 at 15, 38 at 20 objectives of 54 down with every post manned).
+  - **The clockwork whale's torpedo pods reach 1,000 m** (`dives.reach`) and it chooses its own targets from the sea (units and guns that can answer within its 450 m guns first, then the force's objectives, then whatever stands nearest): a computer resort's buildings stand 480–840 m from where it surfaces, so with 450 m alone it never fired. A gun that can fire on it is never a pod target, so a coastal gun at 480 m still outranges it; pods are heavy shots that interceptors can stop.
+  - **The robot leaves the road only when the line to its objective is dry**, and walks (never jumps) to its next objective or the nearest road that leads there: it used to stand at a bridged river's bank for good, and once moved 446 m in one step back to where it had left the road.
+  - **Target searches walk the grid's cells unsorted where the answer doesn't depend on order** (a total order picks the best): the whale's raid on the 100k city fought at once went from 50–117 ms to 22–67 ms; results unchanged battle for battle.
+
+### M38 Investments and the war economy
+Plan: `docs/plans/M38-design.md` (eleven calls, steps 0–11).
+- **The war economy is with computer neighbours in M38**: friends can't sign treaties, so can't be allies, until M39, and arms trade, stakes, loans, war aid and sanctions all turn on that standing; they come to friends with M39's treaties. War weariness counts every open war, friends' raids included.
+- **A computer neighbour's industry is reckoned from what the sim knows of it** (its kind and population, its tech, a blackout or sabotage), since neighbours keep no economy of their own: a stake's dividends follow the town's size.
+- **Normal is today's war, exactly**: Easy and Hard scale rivals' arming, raids, aggression, terms and weariness around it, so the M36 golden (run at Normal) moves only for what M38 adds to every war (weariness, offers), and is rewritten once for that, deliberately.
+- **Stakes, steps 1–2** (numbers in `INVEST`, `src/data/warEconomy.ts`; code `src/sim/systems/warEconomy.ts`):
+  - **Buy in 5 % steps up to 25 %, sell the whole stake**: `buyStake {neighbour, share}` (a multiple of 5) pays the stake's value plus a premium (20 % from a neighbour that only just sells, straight down to nothing from relation 60 up) and `sellStake {neighbour}` gets 90 % of its value now. Every refusal says why (steps, the cap, feelings above −25, at war, sanctions, money, a friend's city, war off).
+  - **Frozen means `fightingWith`, as the plan says**: a ceasefire pauses the fighting, so it thaws the stake (dividends and sale) and the fighting freezes it again when the ceasefire ends. A war's twelve-hour warning doesn't freeze it, so the player has that window to sell; but a neighbour at war with the city (`warWith`, from the declaration) sells no new stake.
+  - **Seizure**: when the city capitulates to the neighbour; when a treacherous neighbour declares war (`INVEST.seizes`, at the declaration, not when the war opens: it strikes first); and when the city falls to the neighbour (a conquest is worse than a capitulation, and it would be odd to keep a stake in the conqueror). A stake in a neighbour the city conquers is kept. No money comes back from a seizure.
+  - **A friend's city taking a neighbour's place** (`forgetNeighbour`) pays stakes back what they cost and loans what is still owed: the town the city invested in is gone and the player did nothing wrong.
+  - **`sanctionsBetween(sim, id)` is the hook for step 5** and returns false until then; stakes, loans and new purchases already read it.
+  - **Ledger**: `dividends` through `monthlyRates` (accrued by the hour), `stakeBought`/`stakeSold` booked when it happens. The chronicle's income leaves out `stakeSold` and `allyRepaid`, as it leaves out loans taken: they're capital coming back, not earnings. The four commands (`buyStake`, `sellStake`, `lendAlly`, `fundAlly`) need the host's `money` permission in a shared city, like loans and bonds.
+- **Loans and aid, step 3**:
+  - **Loans (`lendAlly {neighbour, amount}`)**: $50k, $150k or $400k, one loan to an ally at a time (the region has three towns, so no total cap is needed), repaid over 24 months. The yearly rate runs from 4 % to 9 % with the ally's `DIPLOMATS` money weight (honourable and cautious 4 %, mercantile 9 %): the more a character cares about money, the more it pays. Like a bank loan and a war bond it is booked by the hour on the falling balance (not a monthly instalment), so the interest comes to a little under the annuity's schedule.
+  - **A loan is void, and written off with a notice, when its pact is gone (whoever ended or broke it) or the borrower has fallen to the city**: found by the war economy's hour, not by hooks at every place a pact can end, so no way of losing a pact can leave a loan running. It freezes like a stake (while the city fights the borrower, or under sanctions); with an alliance or defensive pact standing that can only be sanctions, so the freeze is tested with a planted war.
+  - **What "funding an ally" means in the code: an ally that M36 counts as fighting at the city's side** (`helpers()`: an alliance, or a defensive pact against an aggressor, with the war open and the ally itself at peace with the city and not allied with the enemy). `fundAlly {neighbour, perMonth}` takes $10,000 to $100,000 in steps of $10,000 (0 stops) and is refused for anyone else, with the reason (not an ally; no open war; not fighting at the city's side).
+  - **Money by the hour while the ally is fighting beside the city** (ledger `warAid`); the order stays while the pact stands and costs nothing when there is no war to help in. **The lift** is last month's funding as a share of $100,000 for the whole month (a 12-hour half month of full funding gives 0.5), counted at the month's start before the neighbours arm and the war score moves, and read there: arming closes the gap to the ally's forces `1 + lift` times as fast (twice at full funding), and its daily share of the war score is `1 + lift` times `allyPerDay` (double). Counting funding in hours stops buying a whole month's lift with an hour of money at the month's start. The enemy's loss of forces to a helping ally (×0.97 a month) is left as it is. A stopped order lingers one more month so the lift it earned is read.
+  - **The war economy's state is `WarState.economy`** ({stakes by neighbour, loans, aid by neighbour}), absent until the first stake, loan or aid and never made by a dry run; save v31 is an identity migration, tested with a real v30 war save (`tests/fixtures/war/v30-war.citybloom`, played on two months to the parts in `v30-war.json`).
+- **Arms trade, step 4** (numbers in `ARMS`):
+  - **Munitions are sold through a list of their own, not as an M23 deal resource**: a new `DealResource` would touch every `Record<DealResource, …>`, the Region panel, `setDeal`, the relay's report checks and the protocol (a bump). `WarState.economy.arms` (by buying neighbour) holds `ArmsDeal {neighbour, amount, sold, last, fill, since}`; the page shows it beside M23's deals later (the war summary's rows carry `arms`, `armsMax`, `armsBuy`, and the summary `munitions` and `cratePrice`). `setArmsDeal {neighbour, crates}` makes, changes (its record kept) or ends (0) one: steps of 10 crates a month up to 300, and up to what the town takes (`ARMS.demand` crates per 1,000 residents by character, aggressive 6 down to honourable and cautious 3, in whole steps; a 2,000-resident honourable town takes none).
+  - **Delivered by the hour from the stores**: `amount / 24` crates, no more than the stores hold, at $38 a crate (`ARMS.price`, about twice the stores' local value of $20), ledger `armsSales`. It is booked in the war economy's hour like the allies' instalments (so `economyHour` skips the line: the stores have what they have), and the projection in `monthlyRates` is `amount × fill × price`, `fill` being the share of last hour's crates the stores could spare. Buyers share the stores in neighbour order. The buyer uses the munitions up: its forces don't change (that is the unit sale's).
+  - **Buyers are allies only (alliance or defensive pact)**: the brief says "allies and neighbours with a `trade` pact", but M36's `trade` term only lifts an embargo and leaves no pact behind, and making it leave one would move M36's pacts and golden. When M39 brings treaties among friends a standing trade pact can join the buyers.
+  - **Unit sales (`sellUnit {unit, neighbour}`)**: 60 % of the unit's money cost times its health (a hurt unit fetches less, so damage can't be sold on at full price), ledger `unitsSold` (income); the unit leaves and the ally's forces rise by its strength times its health, then settle back towards what its character keeps, as after any gift (`rivalsMonth`). Refused for a unit away with a force, a superweapon (never sold), while a raid is on its way or a battle is on (a unit about to be lost could otherwise be sold for 60 % first, and the battle's picture of the city is fixed at its start), and for a buyer that isn't an ally or is under an embargo or sanctions. The city's last units can be sold in peace: its choice, as `disbandUnit` is.
+  - **An embargo or a sanction on either side ends arms deals**: signing an embargo ends them with the M23 deals at once, and the war economy's hour ends any deal whose pact, standing or trade has gone (so no way of losing a pact leaves one running), each with a notice (`armsEnded`).
+  - **M36's embargo is enforced where trade is delivered**: it was checked only in `setDeal` and at `sign`, so a deal that survived an embargo (however it came about) would run on. `regionImport`, `regionExport` and the garbage hour now deliver nothing, and so pay nothing, for a neighbour under embargo (`dealStopped` in `region.ts`). Without an embargo nothing changes; tests plant an embargo beside a running deal, and fail without the check.
+  - `setArmsDeal` and `sellUnit` need the host's `money` permission in a shared city. New ledger lines are labelled.
+- **Sanctions, step 5** (numbers in `SANCTION`):
+  - **The city's sanction (`setSanction {neighbour, on}`)** is unilateral and the city's to lift (`economy.sanctioned`): the regional and arms deals with that town end at once (and stay ended when the sanction is lifted), the city's stakes and loans there freeze and nothing new is bought, lent, dealt or sold (all through `sanctionsBetween`, the hook of step 2), the town grows 0.5 % a month less (added to its monthly growth in `regionMonth`), closes four fifths of its arming gap (forces and defences, `rivalsMonth`) and its feelings fall 15, once. A town that falls to the city as a vassal drops the sanction. It needs the host's `policies` permission in a shared city, like treaties.
+  - **Computer neighbours sanction the city** for three causes: a neighbour allied to one the city is at war with (while the war lasts; lifted by the next day's pass after peace, with no wait); a reputation below 35 (any neighbour; lifted 30 days after the last pass that needed it); a pact the city breaks (honourable and cautious neighbours, at once, in `breakPacts`; lifted 30 days after). "30 days" are 30 `months`, as every day in the war rules is. The causes are facts about the state, so no dice are needed and the dice streams are untouched.
+  - **Causes are read, not stored**: `sanctionCause` (the war's ally, the reputation) is a function of the state, so from the moment the cause holds a neighbour that would sanction the city refuses new dealings, and stakes and loans there freeze; the records (`economy.sanctionedBy[id] {since, cause, last}`) are for the cut, the notice and the 30-day tail. A pact broken has no trace in the state, so it is imposed on the spot (and the pass that finds it also finds every other neighbour's reputation cause, so a break costs the city the sanctions of every town it deals with, not only the honourable and cautious ones: one break is −30 reputation from a start of 60, below the bar of 35).
+  - **A neighbour's sanction is made official (recorded, its deals cut, a notice) only when the city has something with it to cut** (a regional or arms deal, a stake, a loan, aid). With nothing to cut it leaves no trace in the state and is felt only as refused new dealings. This is a design choice with a reason: a sanction is an economic measure and one that bites nothing needs no ceremony; and without it the M36 golden (its town breaks a tribute pact at 28 reputation) and the v30 save test (a war whose enemy has two allies) would move for every war city, by state alone, since the state hash covers the whole of it.
+  - **What a neighbour's sanction costs the city** is the trade: deals and arms deals with it end, stakes and loans there freeze, nothing new is agreed, unit sales are refused. No growth penalty on the city and no change in the neighbour's feelings: the brief gives sanctions on the city no stronger teeth, and the cut is felt where it is used.
+  - **Notices** are `diplomacy` events from `note()` (which takes an optional `extra`, here the `cause`), so the page's existing diplomacy notices show them with their tone: `sanctionedUs` (bad), `sanctionLifted` (good), `sanctionsOn`/`sanctionsOff` (the city's own). Each is in the diplomacy log too. The war summary's rows gain `sanctioning`, `sanctionedBy {since, cause, text}`, `stopped` (an embargo or sanctions) and `sanction` (why the city can't change its sanction, or null); step 10 words them.
+  - The v30 case in `tests/war/warEconomy.test.ts` now clears the neighbour it buys a stake in of its alliance with the city's enemy: allied to the enemy it sanctions the city and sells no stake, as designed.
+- **Every neighbour sanctions a city whose reputation is below 25, not 35**: one broken pact takes it from 60 to 30, and the plan means a single breach to anger only the honourable and cautious (who sanction for it themselves); universal sanctions are for a pattern, a second breach or a breach on top of a declared war.
+- **War weariness and the peace recovery, step 6** (numbers in `WEARINESS`; code `src/sim/systems/weariness.ts`):
+  - **State is `WarEconomy.weariness` (0 to 1) and `recoveryUntil`**, both optional and made by the first war hour or raid (`economy()` makes the war economy for them), so a peaceful city (no `WarState`) and a war city that never fights read 0 everywhere: the peace golden and the v2 replays don't move. Save v31 stays (an optional field no older save holds).
+  - **Rises by `perHour` (0.0005, about 0.012 a day) each hour a war is open with the city** (`fightingWith` for any neighbour: a ceasefire or a capitulation pauses it), ×1.5 if any open war is total, ×1.5 if any is at a score of −15 or less (both compound, 2.25×), and +0.02 for each raid that reaches the city: a computer neighbour's when the battle begins (`startHomeBattle`) and a friend's when the city takes it (`resolveBattle` with a sender; a raid that stopped coming when the war ended never counted). At a month a game day a plain war of twenty days leaves the city about a quarter weary before its raids. The difficulty scales every rise (`warDifficulty`, Normal 1).
+  - **Falls by 0.0015 an hour (0.036 a day) when no war is open**, and the field is dropped at zero. A ceasefire is no recovery (its weariness falls, but no cheer is given: the war isn't over); fighting again, or a raid, ends a recovery that is running.
+  - **Costs approval through the city-wide cheer** (`warCheer` in `computeTotals`): −0.12 × weariness plus the recovery's cheer. **Costs growth through a home happiness factor, "Tired of war"** (`tiredOfWar`, homes only): nothing up to 0.5, then −0.05 at 1 in a straight line; the cheer already carries the approval cost and the factor the growth cost, so the two overlap a little in the approval figure, which the brief asked for.
+  - **Recovery**: a war's end (a peace treaty, a conquest, a capitulation's terms, a friend taking a neighbour's place: everything that reaches `endWar`, and `conquer` when the city wins) starts ten days of +0.05 cheer easing away in a straight line, if the city's weariness is at least 0.1 and it fights no other war. A war a day old has nothing to recover from; and a city that falls gets the relief of a peace under its overlord only through `endWar` of its other wars, which is as good a call as any. A thaw needs no new code: stakes and loans freeze on `fightingWith` and sanctions, and the war's sanction is lifted by the day's pass after peace (step 5); `tests/war/weariness.test.ts` runs that through a peace treaty.
+  - **The M36 golden was rewritten once, deliberately** (`GOLDEN=write`, `tests/fixtures/war/m36-war.json`). A war is open in the scripted town, so the first raid makes the war economy and weariness, which moves every whole-state hash from then on. Read from the diff: months, population, the `war` hashes (before the raid), the away battle, the rival town's hash and the v29 save's parts did not move; the home battle's thirteen hourly hashes, the hash inside `homeEnd` (its outcome, wrecks and losses are identical) and the diplomacy section's state hash (its wars, pacts, log and dice are identical) did. The v30 fixture's hashes (`tests/fixtures/war/v30-war.json`) moved for the same reason (its war is still open): `totals`, `demand`, `chronicle` (all follow approval) and `war`, with `economy`, `buildings` and everything else the same; `saveV31.test.ts` now says that the one thing a v30 war city grows by itself is weariness. `sanctions.test.ts` likewise allows the war economy to hold weariness in a city at war.
+- **Computer neighbours' offers, step 7** (numbers in `OFFERS`, rate in `offerRate`; code `src/sim/systems/offers.ts`):
+  - **One offer a month at most, by dice of their own** (`Rng.fromSeed(`${seed}:econ:${month}`)`, so no other stream moves): at each month's start (after the sanctions pass, before the neighbours arm) every neighbour that could offer something rolls once per kind with `OFFERS.chance` (0.3) × its `PERSONALITY.trade` (mercantile 0.9, aggressive 0.3); of the rolls that came up one is picked by the same dice. A neighbour with an offer still open makes no other; a friend's city, a vassal, a neighbour at war with the city, one it feels −25 or worse about, or one under an embargo or sanctions offers nothing. Offers stay open three days (`openDays`, 72 game hours) and lapse with a notice.
+  - **`answerOffer {offer, accept}`** takes an offer up or turns it down (a refusal to take it says why and leaves the offer to be turned down; a turned-down or lapsed offer costs nothing, unlike a proposal turned down, which costs a point of feeling: an offer is a favour, not terms). It needs the host's `money` permission in a shared city. The test-mode cheat `offer {neighbour, offer}` makes one at once (for tests and the determinism script).
+  - **To buy munitions**: allies only (step 4's buyers), when the stores hold 20 crates or more and no deal stands; 50, 75 or 100 % of what the town takes (`armsCapacity`), by dice. Taking it up makes the same arms deal `setArmsDeal` would (`makeArmsDeal`, the one place), at the arms price.
+  - **To invest in the city**: only characters that `pays` (cautious 0.65, mercantile 0.75; the others don't invest abroad), never while the city is at war with anyone, one investor per neighbour, 30 % of the city's industrial taxes sold at most, and the taxes (last month's `taxI*` lines) at least $1,500 a month. The sum is the share (10, 15 or 20 %) of 24 months of those taxes times what the neighbour pays of it now (its profit is the rest), rounded to $100 and never over a year of the neighbour's own taxes. The neighbour then takes its share of the industrial taxes of the month, by the hour, for 24 months (ledger `investorShare`, accrued like every rate from `monthlyRates`, which passes the month's own `taxI` lines in); the lump sum is `investment`. Neither is "earnings": the chronicle leaves `investment` and `lenderLoan` out as it leaves out loans taken.
+  - **To lend**: when the bank holds under three months of last month's spending (and under $50,000) in a city that isn't a sandbox; $50,000, $100,000 or $250,000 (the smallest that covers the gap to that, or the largest the town can put up, a year of its taxes), 24 months, at `offerRate`: `0.10 − 0.05 × trade + 0.02 × (money − 1)`, which makes the mercantile cheapest (6.3 %), then honourable (6.6 %), cautious (7.1 %), treacherous (7.9 %) and aggressive (8.5 %). It is separate from the bank's three loans (`WarEconomy.debts`, ledger `lenderLoan`, `lenderInterest`, `lenderRepaid`, instalments booked by the hour like the bank's and so skipped by the generic accrual); there is no early repayment.
+  - **What outlives a town**: a friend's city taking a town's place drops its open offers and leaves an investment or a loan from it running (the records keep the lender's name; the money has to go somewhere and a windfall for the city would be odd). A lender or investor that falls to the city is wiped out with a notice, as a loan to a conquered ally is written off.
+  - **Notices** are the `diplomacy` events (`offer`, `offerAccepted`, `offerDeclined`, `offerLapsed`, `investmentEnded`, `debtRepaid`, `debtWiped`), each also in the log; the war summary has `offers` (open ones with `why` they can't be taken, investors, debts, what is owed, the share sold) and the three new ledger rates.
+  - **Ids come from the war economy's own counter (`WarEconomy.seq`), not the city's `nextId`**: an offer that lapses unanswered must not shift the id of every building, unit and war made after it, because battles are seeded by those ids (the first try, with `nextId`, changed the scripted town's away battle itself).
+  - **The M36 golden was rewritten a second time, for this step** (`GOLDEN=write`; the plan expected one rewrite, but offers are new behaviour in every war city and the scripted town draws one: a cautious or mercantile neighbour's offer of $6,800 for 20 % of its industrial taxes at its sixth month, then more). Read from the diff against step 6's file: not moved: months, population, the first five `war` hashes, the home battle's outcome, wrecks and losses, the away battle's units, outcome and hash, the rival town's hash, the v29 save's parts, and the diplomacy section's wars, pacts, proposals and dice. Moved: the `war` hashes from month six on, the home battle's hourly hashes and the hash inside `homeEnd`, the whole-state hash at the end of the away part, and the diplomacy section's state hash and log (the offers and their lapsing are in it). All of it because `economy.offers` and `seq` are in the state from the first offer.
+- **The difficulty levers, step 8** (`WAR_DIFFICULTY` in `src/data/warEconomy.ts`; `warDifficulty(sim)` reads `options.difficulty`):
+  - **Normal is today's war to the last bit**: every lever is 1 (or 0 for aggression) and is applied as a multiplication by 1 or an addition of 0 in the same order the old expression had, so the M36 golden (run at Normal) did not move in this step.
+  - **Arming 0.7 / 1.3 is the level they keep, not the pace**: forces and defences both aim at `k × character × arming` (and start at that share of the character's level), because the pace alone would leave Easy's rivals as strong as Hard's after three years, and the balance runs are twenty. The jitter and dice are the same at every difficulty.
+  - **Raids 0.6 / 1.4 scales the chance and the waits** (`raidChance`, and the gaps between one neighbour's raids and any two): in a declared war the half-day gap binds more than the chance, so a chance alone moved the raids of a forty-day war by a tenth (42 / 47 / 60); with the gaps scaled too it is 33 / 47 / 67, about 0.7× and 1.4×. **Aggression +0.1 on Hard** is added to every character's figure wherever it is read (the chance to raid, the chance to declare war and the bar to do so, and what a neighbour will sign: it values peace and non-aggression pacts a little less).
+  - **Terms 0.7 / 1.4 is the tribute a computer neighbour demands of the city** (`tributeDemand`: the terms imposed on a capitulation, the peace it offers when winning, the tribute it adds to a counter-offer), to the hundred and at least $500. Reparations it would pay and what it will accept from the city are left as they were: the lever is about what it asks.
+  - **Weariness 0.7 / 1.3** scales every rise (the hourly growth and each raid's), as step 6 built it. **Forces' upkeep already follows the difficulty** (`DIFFICULTY.upkeep` 0.8 / 1 / 1.25 through `upkeepScale`, which the forces' line shares with roads and services): nothing is added, and `tests/war/difficulty.test.ts` checks the ratios are exactly the upkeep scale's, so it can't be applied twice by mistake.
+- **The balance mayor at war, step 9** (`src/sim/ai/warMayor.ts`, `Player.warPlan`; `balance.ts --rivals`; the careful mayor only, idle when `sim.state.war` is absent, so a city with rivals off is played exactly as before: `balance.ts 20 careful` prints what it printed at the step-8 tip, header seconds apart):
+  - **What it does**, each round, first (before utilities and districts): counts the raids, wars and peace it sees; answers proposals and offers; sues for peace; from 1,500 residents insures its power; from 2,500 (`WAR_FROM`, ahead of the 3,000 that starts raids) builds a military HQ then a barracks (each tried once a month when it can be paid for; districts and goals wait, `Player.holdBack`, while the money is put by), then raises defences to 1.2× the biggest raid a neighbour could mount (`forces × RAIDS.share`): infantry squads at the barracks two orders at a time, bunkers and anti-air beside what the strongest neighbours' raids go for (`objectiveSpots` for their `RIVAL_TARGET`; anti-air where their mix flies, once unlocked at 5,000), a shelter for every 4,000 residents, another barracks per 12,000. The military may cost 12 % of taxes ($4,000 while the city is small). Defence funding 100 %, 120 % while a war is open and the bank holds a year of spending, 80 % when it holds under three months. It keeps $30,000 back for a rainy day once armed (see below).
+  - **Raids went for the power**: a treacherous neighbour's raid at month 14 wrecked the three plants near the highway's way in (raids go for plants within `SKIRMISH.border`, 600 m) and the city, with $3,000 in the bank, lost half its people in three days and was bankrupt by month 18. So: new power plants go out of that reach when a road there has room (`Player.awayFromEntry`, fallback anywhere, 0 in peace), a coal plant ($16,000) is built beyond it when the plants out of reach carry under 80 % of demand and a neighbour aims at power (`insurePower`), and districts wait for the reserve. A weak early city can still be hurt by one raid on its first plants; the insurance is the mayor's, not a guarantee.
+  - **Offers: a debt trap found with seed war2** (three neighbour loans and an investment, $10,000 a month of instalments out of $25,000, bankrupt in year 2): a loan is taken only when short of cash (under the smaller of the cash floor and a month's spending, $10,000 at least) and when all the instalments together stay within a fifth of its taxes; an investment (a third of its value off, two years of a share of the industrial taxes) only with the bank overdrawn and none out; an ally's arms offer when the stores hold the crates. Also from this: **lenders lend against the city's means** (`OFFERS.loan.taxMonths` 10, a $25,000 size added): without it a town of 250 residents was offered $100,000 in its first month and grew five times faster than peace; the M36 golden did not move.
+  - **Proposals**: peace or a ceasefire when the war's score is 0 or less, or weariness is past 0.4, or the neighbour pays; non-aggression and trade always; tribute only up to an eighth of its taxes a month (and half the bank over its term), reparations up to a quarter of the bank; never land, a demilitarised side, an embargo or an alliance. It sues for peace itself when a war's score is −20 or less (or weariness 0.5), a peace first and then with a little tribute.
+  - **Stakes**: when the bank holds the smaller of two years of spending and a million (`SURPLUS_CAP`; the careful mayor's goals keep a big city's bank near one or two million while its spending runs to hundreds of thousands a month, so two years alone never came), a step of 5 % at a time, up to six a round, in any neighbour it is not at war with and that is not sanctioning it (or being sanctioned by it) whose feelings are 0 or more, the friendliest first, to the 25 % most. This replaced a first rule of "feelings 20 or more": a careful mayor's neighbours sit at 3 to 14 and only signed treaties raise them, so the first three runs bought no stake at all and the war economy's income side never showed in the balance numbers. With 0 or more, stakes begin at year 9 on Easy and year 13 on Normal (none on Hard before the bank piles up), and the rule is the plan's "lend and invest where it is safe", not a chase for dividends: nothing is bought in a neighbour that is at war with the city, in one that has sanctioned it, or in one it has sanctioned. The $1 million cap is kept (a literal two years of spending never occurs).
+  - **The balance tool** prints, with rivals on, the war by year (raids, wars on the city, peace made, wars open, weariness, stakes' worth, dividends, the military's share of spending) and a summary; the numbers and what was tuned are in `docs/plans/M38-balance.md`.
+
+### M39 War with friends
+
+Plan: `docs/plans/M39-design.md`; code map `docs/plans/M39-codemap.md`.
+- **A live battle is an ordinary battle whose orders arrive while it runs** (battle version 4 when orders
+  or helpers are used; `stampBattle` keeps v2 and v3 battles as they were). Its final input, every order
+  in it, is the record the defender's sim resolves, the attacker's report comes from, replays re-run and the
+  cross-browser test checks. Why: one model for live, late and replayed battles; M35's async path stays the
+  fallback for an absent defender, and a live battle that loses a player carries on with fewer orders.
+- **The region room orders live battles in memory, paced by the players' progress, with no timers**: it
+  needs none in a Durable Object or a peer-to-peer host, writes no rows while a battle runs, and notices a
+  silent player on the next message from anyone (10 s: a handover to that side's defences).
+- **The defender hosts, the attacker runs a copy in its battle worker; each city's own run is its truth**
+  (as M35), with the hashes compared at the end and a mismatch recorded: a battle never waits on agreement
+  to change a city.
+- **Commanding is a tactical battle map**, not the 3D view of a friend's town: the attacker's page never has
+  to swap scenes (the viewer's reload was M35's way), spectators use the same map, and it works by touch.
+- **Wars and treaties between friends are kept by the room** (score, capitulation, vassals), each city
+  applying its own side once with a page-only command, as friends' spies and blackouts are (M37).
+- **M38's money with friends (stakes, loans, arms deals) stays with computer neighbours**: the money terms
+  of a treaty (reparations, tribute) are the trade between friends in M39. M38's call 1 had them arrive with
+  M39's treaties; the brief's M39 doesn't ask for them, and they would need a second two-sided ledger
+  beside the treaties'. Left for later, in "Ideas for what's next".
+- **A co-op city still can't stand in a region** (DECISIONS "M37"): roles in a shared city at war cover its
+  wars with computer neighbours (new permissions `war`, `treaties`, `defence`; absent reads as allowed).
+- **Hold the Line counts the factories, not every building** (90 % of the starting factories standing): a
+  battle aims at six objectives at most, so three waves cost about eighteen buildings, and with 335 in town
+  a goal over all of them could never be lost. The raids aim at the factories by the highway.
+- **A scenario with scripted waves keeps its neighbours from raiding or declaring on their own** (except in
+  a war the city is in): the waves are the test, and dice-driven raids on top would make it a lottery.
+- **"Liberate an occupied neighbour" is a subject town** (`RivalNeighbour.subjectOf`, set only by a
+  scenario's save) **freed by a `liberate` term** its overlord signs when losing badly (about +40), offers
+  from +30, or must accept on capitulation; it never appears without a subject town, so other cities and the
+  goldens are untouched. Freed, the town warms by 50 and offers an alliance.
+- **Scenario outcomes depend on the war's dice**: the shipped starts were calibrated so armed play won and
+  idle play lost in every probe (Clean War: 3 of 3 and 2 of 2), but earlier variants lost up to 60 % of armed
+  runs, so real players will see some spread.
+- **Friends' wars run on real time at the fair clock's pace** (a game hour 7.5 s at 1×): the war's warning 2
+  minutes, the cooldown after a war 9 minutes (M36's three game months), a seat of power held 48 game hours
+  (6 minutes); but a proposal stays open 24 hours and a winner has 24 hours to set terms (then plain peace),
+  because a friend may be away from the computer and M36's game-time numbers would be minutes.
+- **The defender's page reports each battle's result to the room** (`battleResult`), not `battleSeen`: a
+  watched battle is seen before it ends, and a live defender never sends `battleSeen`. Only the defender of
+  a battle the room kept or ran live may report it.
+- **The room can't check money terms against taxes** (reports carry none): the payer's sim refuses
+  reparations or tribute over M36's caps when proposing and accepting. A vassal's share is M36's fifth of its
+  taxes (`DIPLOMACY.vassal.taxShare`), not the tenth the plan said, so one rule holds for every vassal.
+- **Independence may be agreed between an overlord and its vassal by treaty**, beside a rising at +30.
+- **Declared wars at skirmish scale** are allowed where a region's rules stop at skirmishes; alliances and
+  defensive pacts with a neutral city are refused; turning war off ends every war in plain peace.
+- **Only declarations, treaties signed, scores and pacts ending are written at once**; proposals, declines and
+  history lines wait for the record's 5-minute pace: 1,800 proposals cycled in 2.5 hours wrote 30 rows, and an
+  evening of war between four cities 38 more rows than the same evening in peace (2.4 % of a day's 3,000).
+- **The room is the truth of a friend's war; each sim only mirrors it** (`friendWar`, idempotent): the sim
+  never scores a friend's war itself (`scoreBattle` returns early for players). Pacts and vassals come only
+  from the room's list (`friendPacts`, by the room's ids), and a treaty (`friendTreaty`, applied once) books
+  money, tribute, an embargo's end of deals and peace: order doesn't matter on a reconnect, and an old
+  `tsign` can't bring back a pact the room has since dropped. No save version: every field is optional.
+- **A vassal's report says what it pays its overlord** (`dues`), which the overlord counts only from a friend
+  the room lists as its vassal, with no war open between them, capped at three times the population
+  estimate: the overlord can't see the vassal's taxes, so its line may differ slightly from the vassal's.
+- **Breaking a pact with a friend**: ending it costs the city's word (reputation −30) and the room drops it; a
+  declaration under a pact asks first; a force sent at a friend under a pact is refused ("end it first").
+- **A friend's war counts as an open war for offers and aid, but not for computer neighbours' raid timing**,
+  which keeps its M36 rhythm; the defender's page reports only battles with contact (M36's rule).
+- **The UI asks the sim before sending a friend's terms** (`friendTerms` query): the money caps and the
+  room's rules show beside the control; the sim's own `declareWar` and `propose` point friends to the
+  Friends list. Leaving the region ends friends' wars, pacts and vassal mirrors; money already booked stays.
+- **Allies' help joins a live battle at the step the room stamped it** (`BattleHelper.at`), its units waiting
+  at the way in until they arrive (30 s of battle by road, rail or air, 45 s by sea, from the frontier):
+  created at that step rather than at arrival, so a pending helper keeps the battle alive, orders can name it
+  and a withdrawal sends it home, as for one given up front. An alliance helps either side, a defensive pact
+  only the defender, pacts with both sides neither; one force per city per battle, three per battle, 24
+  units. The room names and colours the helper (not the page), and helpers' unit ids are
+  `helpUnitId(slot, k)` from 0x4000_0000, a range no city's own ids reach. Helpers fight on their own
+  judgement: their owner watches but doesn't command them in M39.
+- **A helper's losses are booked only from a run that matches the room's end** (step and hash); otherwise,
+  or if the link was lost, the page reloaded or the battle ended before it arrived, the force comes home
+  untouched and the panel says why. A followed battle the room is silent about for five minutes frees it.
+- **The region's war history is its own real-time list** ("Region at war" in the City history panel, shown
+  only where war is on); the city's own chronicle doesn't change (it's in a war city's state hash). Any city
+  may watch any battle the room keeps (20); the browser keeps six region replays apart from the city's own
+  24 battles. A replay plays the battle as fought (`asFought`: every unit id and the caps as recorded) in
+  whatever town it's shown, and the viewer says whether it ended exactly as the room's record did.
+- **The room's friend messages wait for the page's welcome** (`RegionLink.friendsHeld`) and the history is
+  merged, not replaced: a proposal waiting for a returning city was otherwise lost. A browser-hosted region's
+  clock is whole milliseconds (`wallClock()`).
+- **A force asks for its live battle again with the force it first sent** (`Expedition.liveForce`, kept by
+  the pin `battleSettling` the first time): an attacker who left mid-battle and came back used to rebuild its
+  force from the city as it then was, and a moved readiness or a finished research tier made the region's
+  record "not its force", so the force came home untouched: leaving mid-battle dodged the losses (found by the
+  soak). The check against a forged record stays; it now compares with what was really sent.
+- **The soak's verdicts** (step 10): a battle or force applied twice fails unless a crash's restore from an
+  older save came between; a treaty must be applied by both cities; a record that stands in for a hosted
+  battle must not double its damage. A region's record writes changed offers with the numbers (every five
+  minutes), not at once: the soak measured 480 rows an hour with them prompt, now about 100.
+- **The friend-treaty tip is for whoever sent the terms too** (found closing out M39 by reading the tips
+  against the two-player e2e, which now plays with tips on): it said a treaty "waits for their answer for up
+  to a day, even if they are away", which is the sender's worry, but came up only for the one asked
+  (`incoming`), so the player who had just pressed Send never saw it. It now comes for a sent proposal
+  (`outgoing`) as well, and its words suit both ("waits for an answer ... if the other player is away").
+  `m39-friends` turns tips on for both players (the tips about building a town marked read, since the towns are
+  grown through the test API) and checks that each step's tip comes up in its own words and that the buttons it
+  names are the ones on screen; the region is now joined first and war turned on after, so the host meets
+  `regionWarOff` as a new host would. Looking at the cards in the screenshots, `friendsAtWar` and `friendPeace`
+  named their buttons without quotes (“each with Declare war….” ended in four dots): they are quoted now.
+- **A page that missed orders takes the room's whole log before it runs a battle out** (found by the
+  two-hour soak: `exp-ce747761-818`, a combatant whose network was down mid-battle). The room hands a
+  silent or gone side over (a stamped `free`) and ends the battle `solo` when the other finishes; the page
+  that comes back used to run its own battle out alone with the orders it had, missing the handover and the
+  other player's later orders, so its force's losses (or its city's damage) came from another battle than the
+  one the room recorded: a player's disconnect changed their own outcome. Now `bend` says how many orders the
+  room stamped in all (`seq`, optional: protocol 6 stays compatible; `LiveReplay.seq` keeps it for a page that
+  asks after the end), and a page whose run is not over when `bend` arrives checks its log against it
+  (`LiveBattles.lacks`). Missing none, it runs out at once as before. Missing some (or the room is an older one
+  and says nothing), it asks for the record (`breplay`) and waits, then takes the orders it lacks by number
+  and runs out: the attacker's runner is fed them, the defender's sim gets them in `battleLive` (idempotent:
+  the sim and the runner take each number once). Why this is sound: a page stalls at the last frontier it
+  heard of and the room stamps every order at its frontier, which is at or past that, so the orders it missed
+  lie at steps it has not run. The wait is bounded (`RECORD_WAIT`, 20 s of the page's clock): a record that
+  never comes, or one the region no longer keeps (`breplaygone`, now passed on to the live battles), falls
+  back to the old run-out with the log it has, written to the console. Two companions found on the way: a
+  page stops reporting its progress once the room has ended its battle (the room could only answer "no such
+  battle", which the page took for a reason to run out), and a defender whose sim no longer hosts a battle
+  the room ended (the region's copy, kept for the city while it was away, stood in for the hosted one through
+  `battleResolve` `instant`) lets its session go instead of holding an unfinished battle for ever (it blocked
+  watching and helping).
+- **The soak's judge no longer lets a disturbance explain two runs that ended differently** (found checking the
+  late-return fix): a battle the room ended `solo` or `abandoned` is still explained by the player who was away,
+  but only as far as the room having one verdict (or none). Two cities' runs that both finished and differ, a
+  finished run that is not the room's verdict (in a solo end that is the one finisher's), and a page that logs a
+  difference in a solo end are failures whatever was disturbed; only a run that never finished (a crash that lost
+  the page) stays excused, and the difference pages log in an abandoned battle (`agree: false` by construction).
+  `relay/tests/soakChecks.test.ts` holds the soak's `exp-ce747761-818` numbers (Sam step 1502, Ada step 491). The
+  old tests' room verdicts now carry the step and hash a real one always has. The virtual soak reproduces the gap:
+  `npx tsx scripts/dev/regionsoak.ts 120 --virtual --crash --seed s6` on the client before the fix (`d5cd6cc`)
+  with this judge fails `exp-995ec388-821` (Ada, away when the room ended it solo, ran out alone to step 509;
+  the room's verdict and Sam's run are step 441); with the fix both pages end at 441 and the run has no failures.
+  **Fixed: a record of a live battle the city still hosts finishes the hosted battle instead of re-running it**
+  (found by the same virtual soaks, older than the late-return fix: the commit before it failed the same way at
+  the same minute with seed `m39final`, battle 810, and a restore from an autosave made mid-battle did it at
+  battle 2418). `resolveBattle`'s stand-in (`instant`, from a friend, the record's id the one the city hosts) used
+  to replace the hosted battle and fight the whole record over a city that had taken the hosted part's damage: a
+  civic structure wrecked in the hosted part was wrecked again (`damageCivic` kept the larger repair clock, so its
+  repair hours began again and it was announced twice), and the hosted part's report (its losses, worth, collapsed
+  and burning lists) was dropped with it. The hosted battle and the record are the same battle: the record's input
+  is the hosted one apart from the orders and helpers, of which the hosted battle has the first (a page takes the
+  room's log in `seq` order and filters it the same way everywhere). So the city keeps the battle it has
+  (`continuation` in `src/sim/battle/live.ts`, `finishHosted` in `raids.ts`): it takes the orders and helpers it
+  lacks from the record, raises its allow to the end, and plays it out at once; it ends exactly as the record does
+  and as a city that hosted it all would, with its own report. Why this is sound: a page stalls at the last
+  frontier it heard of, the room stamps every order at its frontier or beyond, and the Battle applies an order when
+  its step is reached, so what the city lacks lies at steps it has not played. The sim checks rather than trusts:
+  it compares the two inputs (canonically, so key order cannot matter; the sides' shown names are left out, since
+  `Game.takeBattle` puts the region's name for the sender in), that the city's orders and helpers are a prefix of
+  the record's, each as it was, and that each one it lacks lies at a step the battle has not passed (an order at
+  the step the battle stands at is still to be applied). If any of that fails (a different picture, force, seed or
+  caps, orders that are not a prefix, an order or helper at a step already played, a hosted battle that will not
+  play again) it falls back to the old stand-in, which is no worse than before: the command's result carries
+  `info: { standIn: 'continued' | 'replaced', why? }`, the pages log a replacement with its reason
+  (`LiveBattles.takeRecord`, `Game.takeBattle`), and the soak counts both kinds and lists each fallback with its
+  reason. The command needs no seq, so no page-side change was needed beyond that log: the filtered orders are
+  compared as lists, and the battle ends in the same command, so the hosted `live.seq` is not read again. Two
+  consequences: a stand-in that continues counts the people's weariness once (the old path counted it twice) and
+  the battle's end event carries `live` as any hosted battle's does; a superweapon battle's record (no `super`
+  flag from `takeRecord`) can now continue the hosted battle, which the room counted when it began, instead of being
+  refused and left to run out alone (it cannot bring a superweapon the region did not count: the inputs are equal
+  apart from orders and helpers, and a helper's crew takes no superweapon; a record whose force carries one the
+  hosted battle lacks still fails `SUPER_UNCOUNTED` and leaves the hosted battle where it stood). The soak's
+  `damage-doubled` check stays for the fallback and, for a continuation, asks that no structure the hosted part
+  wrecked has its repair clock raised (`Before.hosted.clocks`). Tests: `tests/war/liveStandIn.test.ts` (the sim that
+  hosted it, the same city saved and loaded, a crash restored from an older autosave, help joining in the missing
+  part, six fallbacks, a superweapon battle both ways, a record told again or after the battle ended, no hosted
+  battle); the cases that compare the city with one that hosted it whole fail on the old code (repair clock 93
+  against 88, the wreck announced twice, the report's worth 0 against 18000, a lost tank dropped, the battle taken
+  twice) and pass now.
+
+### M40 The final race: the atom bomb
+Plan `docs/plans/M40-design.md` (calls 1–20), code map `docs/plans/M40-codemap.md`. The plan came from three designs made
+apart (reuse first, the player first, risk and tests first), judged by two readers against the brief and the code, and merged;
+these are its calls and the reasons, with where they overturned the first draft.
+
+- **The bomb is its own state (`WarState.atom`), not a unit and not a battle.** `UnitKind` is a closed union read by every
+  loop over `UNIT_DEFS`, training, staffing and `baseRemoved`, and a bomb fits none of it (one a city, never in a force, never
+  fights); as a battle it would have to stamp a new version and could move the battle goldens. Own state keeps both untouched;
+  the materials code is shared (`materialBill`). One bomb a city, ever: the brief's "only one can be built per city", and the
+  last prize of the game should stay rare.
+- **"Every branch maxed, all six superweapons included" means all 24 tiers researched**, the six superweapons' tier 4s among
+  them, not the six built: M37 kept tier-4 research open with superweapons off for this reason, and a city in a region that
+  turned superweapons off could otherwise never race. The test is `TIER_KEYS.every(researched)`, never `tierCounts` (the
+  `research` cheat skips prerequisites). The gate is hard (`civicLock`, so sandbox cannot skip it); the Toolbar's tooltip reads
+  the same function through two new requirement kinds.
+- **The region's rule `bomb` stands only with total war and superweapons allowed.** The dome is the one counter the brief
+  gives; a bomb in a region where nobody may build a dome would be a weapon with no answer. Stored only when true (as
+  `supers`), ticked by default when the host chooses total war, so "the region's rules can turn it off entirely" holds and old
+  regions read off. A city of its own with rivals allows it.
+- **The enrichment plant and the silo are war projects with prices in millions and no refund.** Projects already take money by
+  stages, wait for a short treasury and (as war projects) for the war clock; a 25 % bulldozing refund of millions would make a
+  bank of the race, so `CivicDef.refundShare` is 0 for both. The plant shows on every region map the day it is placed (the
+  brief: "the moment it's built").
+- **Prices: about $20M from the first stone, $10.9M of it the silo and bomb**, about three years of a 57,000-resident careful
+  city's taxes for the silo and bomb, five and a half for the whole race (the brief: "several years of a big city's entire
+  income"). The bomb is paid in twelve instalments from the war stores first (mines and wells cut the bill) so the treasury
+  need not hold the sum at once. Times: about 5¼ hours of play at 1× on the critical path after the research (about 6 more).
+  Step 0's `atomprice.ts` checks the prices against the bench city's taxes.
+- **The flight is the target's own clock (24 game hours, 3 minutes at 1×), and the warning drops the game to 1× once without
+  locking it** (the merged plan locked it at 1× and lifted a pause; overturned). A live battle locks the speed because a paused
+  player holds up another; a bomb's countdown is the target's alone, so a pause only holds it, and the sim runs only while a
+  page does, so nobody comes back to a flattened city.
+- **A charged dome stops one bomb whole, then is down for `DOME.bombRecharge` (1,440 h) in a field of its own** (`dome.down`;
+  `checkDossier` refuses a negative `hours`). Whole, not a yield against the battle pool: the brief says "stops one bomb".
+- **The impact is not a meteor.** Meteors raise ambulances and a casualty per home, sit in the disasters' advisors and the
+  chronicle as a disaster, and count against `maxActive`. The bomb reuses what `applyWarDamage` already reuses (`toRubble`,
+  `ignite`, `damageCivic`) in its own module, levelled in hourly slices of at most 400 buildings for the tick budget. Ground zero
+  is the densest district, chosen by the target's own sim. Residents of levelled homes are counted as having left; no one is
+  hurt and nothing says so.
+- **Fallout is two layers** (merged plan; a single drifting raster was the first draft): the air pollution's semi-Lagrangian
+  shift moves a whole field a fixed distance each update, which empties the map in two to four game years while the brief wants
+  decades; so a ground layer stays and decays (half-life 8 game years: the core reopens after about 18 years, 11 hours of play
+  at 1×) and an air layer drifts with the city's wind, leaking off the edges into neighbours.
+- **Fallout and winter cross cities as cumulative counters and ids, never as events.** A friend's report carries its plume's
+  totals by neighbour and the receiver deposits only the difference from what it last saw; winters are ids the room appends
+  and each page applies once. Both survive drops, reloads and replays without double counting, and a newcomer, or a friend
+  away for the whole drift, is spared rather than hit by a backlog.
+- **The nuclear winter changes values, never draws** on `sim.rng.weather` (which `riverFlood` shares), so every other weather
+  roll and every flood stays where it was.
+- **The firing city's reputation is pinned at 0 for good, with one accessor**; every computer neighbour sanctions it under a
+  new cause that never lifts and needs no ties; its pacts end (no breach penalty: the city broke nothing); computer neighbours
+  and the room's friends may declare total war on it with no cooldown and no newcomer shield; a protest acts through both the
+  city's approval and each home's happiness, so people really leave. The chronicle never evicts an atom event and the region
+  keeps the launches outside its 100-event ring (`RegionMeta.atoms`).
+- **The deterrent asks, never refuses.** Computer neighbours declare plain war instead of total war on a city holding a bomb; a
+  friend is warned in plain words before declaring total war on one. Refusing a friend's declaration would make the bomb a
+  shield against all war, which the brief does not ask.
+- **The race rides the region report** (an optional field the room diffs into notices and history lines), so no new message is
+  needed for it; the strike on a friend rides the blackout tower's `op` path (`op: 'atom'`), which already keeps a verdict, waits
+  for an online target and is applied once by the target's page, and the target's own sim decides the dome and the damage. The
+  room also holds its own 20 real minutes of preparation before it keeps a strike, so a page cannot skip the wait by its report.
+  Protocol 7 (pages on 5 and 6 can neither race nor be struck, and are told why); co-op rooms need the same version, as every
+  sim change since M34.
+- **In a shared co-op city only the host may launch**, by one line in `roomRefusal`, rather than a fourth role: a launch
+  cannot be undone and changes every player's city for years.
+- **Computer neighbours race on Hard only, after 20 game years, on their own dice** (`${seed}:bomb:${month}`), so Easy and
+  Normal stay M37's war to the bit and the 20-year balance runs do not move at any level; one launches only in a total war it
+  is losing badly, and a spy or a won expedition delays it.
+- **Left out:** a second bomb; anti-missile defences other than the dome; aiming ground zero by hand; a treaty that calls a
+  flight back; replaying a strike in a neighbour's cached town.
+- **The v31 fixture** (`tests/fixtures/war/v31-war.citybloom`, with what it plays on to in two months,
+  `v31-war.json`) was saved at the M39 tip before any M40 change: a war city with research done and
+  queued, a war ended by a treaty paying tribute, a neighbour's ally still at war with it (so a stake
+  there is refused, and none is held), war weariness and a sanction. M40's save test loads it and asks
+  that it plays on to the same parts.
+- **Step 1 (data, gates, state): calls the plan left open.**
+  - *The gate's words and order.* `atomLock` says the first missing step: the research tree, then the
+    rules, no scenario, the bomb not already used, and last the building's own requirement (a running
+    nuclear plant for the plant, the plant online for the silo). The research line names the first tier
+    still to do in tree order, which is always one that can be queued ("Needs every research branch maxed
+    (21 of 24 done; Dome shield is next)"). The two requirement lines are the buildings' own
+    (`ProjectRequirement` kinds `researchAll` and `civicOnline`), so the build menu's tooltip and the gate
+    read the same data through `requirementStatus`. The sim's test of "all 24" is `allTiersDone`, not the
+    lines' counts.
+  - *Sandbox.* The gate sits in `civicLock`, which sandbox never skips; the Toolbar disables the two
+    buttons in sandbox too (every other project's button opens there), so the player isn't offered a
+    click the sim will refuse. The Military menu shows them only when `bombAllowed`.
+  - *The rule is cleaned where it is read.* `cleanWarRules` keeps `bomb` only with total war and
+    superweapons, so no message can store a bomb that cannot stand (and `bombAllowed` checks the same
+    three things in the state, for rules that arrive by other ways). The host's Region panel follows the
+    plan: choosing total war ticks superweapons and the bomb together, either can be unticked, a smaller
+    scale or unticking superweapons drops the bomb, and the checkbox shows only with both.
+  - *The stage is derived, and "making fuel" doesn't flicker.* `enriching` is a finished plant with fuel
+    above 0, whether or not damage has closed it this hour (the plan's "plant online" would have the stage
+    drop and rise, and the room announce it each time). `flying` is the firing city's own picture: a game
+    day from `fired.tick`, then `spent`; the target's clock decides the real landing.
+  - *Facts' meanings.* `bomb.paid` counts instalments paid (of twelve); `boom` counts bombs that have
+    landed in this city, `stopped` those its dome stopped; `first` is the achievement's fact. The
+    invariants (test mode) hold the plan's contract: facts finite and in range, a bomb being built never
+    beside a finished, prepared or fired one, a preparation needs a bomb, a fired bomb has a target.
+  - *No announcement by size.* `unlocksAt` skips the two buildings: they open with research, not with
+    40,000 residents, which the city panel would otherwise announce.
+  - *Small things on the way.* The unique-building refusal now says "an" before a vowel ("an enrichment
+    plant"); `WarSummary.atom` (allowed, stage, the tree, the nuclear and enrichment plants, fuel) is
+    what the build menu reads; `warModels.test.ts` no longer treats `enrichment` as "not in the game
+    yet" (the fallback for a building the game lacks is tried with a stand-in).
+  - *Prices left as the plan has them, and held in its band.* The plan sized them on the 57,000-resident
+    careful city of the balance runs (`ATOM.priceCity`, $3.6M of taxes a year): the silo and bomb
+    ($10.9M) come to 3.0 years of its taxes, the whole race ($18.2M, $19.9M with the two buildings'
+    upkeep) to 5.1 (5.5): "several years of a big city's entire income", and the plan's 3 and 3 to 6.
+    `scripts/dev/atomprice.ts` on the sandbox bench city (110,174 residents, $618,257 a month, $7.4M a
+    year, twice the taxes) reads 1.47 and 2.46 years, which step 1's report took for half the target:
+    the script's "plan: about 3 years" labels were set against the wrong city. They now name the
+    reference city, and the script prints its years in a column beside the city read. A test holds the
+    prices in the band against the reference city's taxes (`atomState.test.ts`, with the sums in
+    `atomPrices`, which the script shares). Not retuned. If the balance step finds the race too quick or
+    too slow on the real careful cities, the lever is `ATOM.bomb.instalment.money`, with `priceCity`
+    and the test's band moved with it.
+- **Step 1 review fixes** (six findings). The inspector's Bulldoze button and its confirmation read the
+  refund from `civicDetails`, which still said a quarter of the cost for the plant and silo while the
+  command paid nothing: `civicRefund` (`world/civic.ts`) is now the one place the share is chosen, read by
+  the bulldozer, its preview and the inspector. The Region panel's scale segment calls `onChange` on the
+  active option too, so a host who unticked the bomb was put back by a second click on Total war:
+  `rulesForScale` returns nothing for the scale already set, and `foundingRules` gives the new-city
+  screen's region the same ticks (`main.ts`; the screen says so beside the choice). The staffing test
+  now builds the case where the forces' share of the workers runs short, so the plant and silo's rank
+  decides who is staffed (it fails without the rank clause), and the save test round-trips every state
+  the race has so far (plant going up, enriching, silo going up, bomb, ready, preparing, flying,
+  mid-impact, used). The test API types the region's `bomb` rule.
+- **Step 2 (fuel, bomb, preparation): calls the plan left open.**
+  - *Fuel is charged by the unit made, not by the hour.* `$2,000 × the hour's rate` on ledger line
+    `enrichment`, so a full load is the plan's $2.304M whatever the crew or funding (a flat charge would
+    have made a half-crewed plant dearer and left the price band in `atomState.test.ts` untrue), and
+    only while it works. It also waits when the treasury can't pay the hour (sandbox excepted) or defence
+    funding is 0, and says so (`AtomSummary.fuelWait`). A plain `accrue`, no dice.
+  - *Fuel is a gate, not a fuel.* Starting the bomb needs a full load but takes none, so a cancelled
+    bomb leaves the fuel as it was, and the plant "holds fuel" (can't be bulldozed) for as long as it has
+    any, until the bomb has left; then nothing is held and both buildings may be knocked down.
+  - *Losses.* A finished plant destroyed with fuel in it halves the fuel once (an unfinished
+    replacement, or a plant that never held any, costs nothing more); a silo destroyed clears the
+    build, the bomb and the launch and keeps the fuel. Both hang on `Sim.removeCivic`, the one funnel
+    (bulldozing is refused for what holds something, so this is damage, disasters and later the blast).
+    Event `atomLost {what: 'fuel' | 'bomb'}`.
+  - *What waits and what starts over.* The silo's build and a preparation wait (hours and instalments
+    kept) for rules turned off, a blackout, no crew (a quarter) or no power (a half), as the fuel does;
+    the plant also needs the nuclear plant running. Only a silo *closed* (damage or flood) sets a
+    preparation back to nothing, a complete one too ("a prepared bomb waits as long as it likes" but
+    cannot be left damaged).
+  - *Instalments.* The bomb's hours are capped at what the instalments paid so far cover
+    (`paid × 60`), so a missed instalment stops it exactly at the boundary, however fast the silo works
+    and no hour is lost to it (the rest of the hour that crossed a boundary goes on past it once the
+    instalment is paid; see the review fixes); the unpaid state is `bomb.waiting` (told once, event
+    `bombWaiting`, as a project's `projectWaiting`). Money on ledger line `atomBomb`, bought-in materials on `warImports`,
+    the launch on `atomLaunch` (labels added); the stores are taken first through the same
+    `materialBill`/`takeStock` as a unit's (`unitBill` is unchanged, the goldens agree).
+  - *The launch carries its target* (`prep {done, to}`, the plan had `prep {done}`): a launch is aimed.
+    Aiming needs the city neither neutral nor a vassal and the neighbour not its vassal, plus the plan's
+    open total war. At the end of the preparation the bomb leaves if the war is open then; if not (a
+    ceasefire, a surrender) it stays prepared and **does not go off by itself when the war resumes**:
+    the city sends it again with `launchBomb` (free, and it may name another neighbour in a total war).
+    For a friend's city the bomb is prepared and held: nothing fires in this step (step 9 and 10 make the
+    room's say), and sending it again is refused in words saying so.
+  - *The flight is a seam.* A bomb that leaves for a computer neighbour sets `fired` and event
+    `bombFired`, then calls `startFlight`, which is empty until step 3. The chronicle line the plan puts
+    at "bomb ready" waits for step 6 with the `'atom'` chronicle kind it needs; `bombReady` is an event
+    only for now. `first` (the achievement's fact) is set at completion in a city of its own, where no
+    computer neighbour races yet (step 7 will ask); in a region it is the room's (step 10).
+  - *Roles.* `buildBomb` and `cancelBomb` are `defence`, `cancelLaunch` is `war`; the host-only line for
+    `launchBomb` comes first in `roomRefusal`, so every guest hears it whatever roles they hold.
+  - *The test cheat `atom {stage, to?}`* sets facts only: every research tier from the plant stage on
+    (past the gate; `none` leaves research alone), the buildings the stage needs finished (they must be
+    placed: "Place the enrichment plant first"; a refusal changes nothing), fuel (none, half, full), the
+    bomb half built with 7 instalments paid, `have`, a launch half prepared at `to` or the first computer
+    neighbour, `fired` (now, or a game day ago for `spent`). It never touches money, rules or the war.
+  - *The cross-browser script.* The four new commands need a war town with all 24 tiers, a plant and a
+    silo, which is step 8's `atom` section; until then `tests/lockstep/scriptedTown.ts` lists them in
+    `PENDING_KINDS`, `ALL_KINDS` leaves them out, and `determinism.test.ts` fails if the script ever
+    uses one, so step 8 must empty the list. Every other list (`COMMAND_KINDS`, `CHECKS`, `SAMPLES`,
+    `NEED`, the roles test) has them now.
+  - *Tests are cheap by design.* One long run through the real clock (`atomChain.test.ts`, about 45 s);
+    everything else plays hour by hour with `atomHour` on copies of one base town, crews set by hand, so
+    the money is asserted to the dollar.
+- **Step 2 review fixes (nine findings from two reviewers, six distinct).**
+  - *A silo on no funding says so and pays nothing.* `siloBlock` now carries the funding wait the plant
+    always had ("Defence funding is too low to run the silo"), so `AtomSummary.bomb.wait` and
+    `.launch.wait` show it, `buildBomb` and `launchBomb` refuse in those words, and `bombHour` returns
+    before an instalment that falls due is paid for hours that cannot go by. The two `rate <= 0` returns
+    that stood behind it are gone (a crew of a quarter, power of a half and any funding at all always
+    give a rate above zero).
+  - *A launch held is told.* When a preparation completes and the bomb cannot leave (a ceasefire or
+    surrender, a war that ended, a friend's city that is the room's to agree to) the city gets event
+    `launchHeld {to, why}` once, and `AtomSummary.launch.held` carries the reason at all times: the
+    `targetWhy` text, or the room's, and null when sending it would fire it. A ready bomb with `held`
+    null is a bomb waiting to be sent again (nothing fires it by itself; call 7's deterrent). The
+    "bomb ready" chronicle line is still step 6's.
+  - *Undo and redo go through the same guards as the bulldozer.* `applyEdit` removes a building with
+    `map.delete`, round `removeCivic`, so an undone placement of a plant holding fuel kept all the fuel
+    and an undone placement of a silo kept the bomb with no silo. `atomUndoRefusal` (called in
+    `Sim.undoRedo` before anything changes) refuses an undo that would take a whole plant or silo away,
+    and a redo of a bulldozing that would, while `atomKeeps` says it holds something; a plant that has
+    made nothing and a silo that holds nothing still come away as any placement does. (The undo's
+    refund of the first stage's price is the ordinary undo of a placement; `refundShare` is the
+    bulldozer's. The same hole exists for a base keeping a superweapon, M37's `baseKeepsSuper`; left
+    alone here, as it is not M40's.) No invariant was added for "a bomb needs a silo": the three ways
+    a silo goes (damage and the blast through `removeCivic`, the bulldozer, undo) are all guarded now.
+  - *The cap on the bomb's hours loses no work.* The first version stopped `done` at the boundary and
+    threw the rest of the hour away, so a crew of 0.7 lost up to 0.7 of an hour at each of eleven
+    boundaries. `bombHour` now works through the hour in a loop: up to the boundary, then (the
+    instalment paid, or the build waiting if it can't be) on past it with what is left. The build takes
+    exactly `ceil(720 / rate)` hours at any rate; the hours still never pass `paid x 60`. The earlier test
+    only ran a rate of 1.25, which divides 60 and so never crossed a boundary part-way; a mutation
+    check (cap removed) now fails three tests.
+  - *Fuel is charged on the fuel gained.* Charging `made x $2,000` against a fuel that is rounded to
+    thousandths drifted by dollars at a rate that is not a whole number of thousandths (+$2,075 on a
+    full load at 0.3333, +$8,444 at worst). The charge is now the whole thousandths gained times the
+    price, so the sum is exact and a full load is $2,304,000 whatever the crew, power or funding, with
+    nothing left in the carry.
+- **Step 3 (flight, dome, impact): calls the plan left open.**
+  - *Who is warned, and how.* `atomInbound(sim, sender, hours)` is the one door (the test cheat
+    `bombIn {hours?, from?}` is the first caller; step 7's Hard rival and step 10's room are the others):
+    the target's own sim fixes ground zero now and stores the bomb in `Atom.inbound`; the warning is
+    given by `atomTick` on the next tick (flag `warned`, event `bombWarning` with who, hours, the homes in
+    the blast, the shelter places and whether the dome would stop it), so a bomb loaded from a save is
+    told once too. One bomb is in the air at a time: a second is refused to its sender, who may send it
+    again. The page drops the speed to 1x on the warning if it is faster and never locks or unpauses it;
+    the sound is the existing raid siren (the plan's `atomWarn` is step 11's).
+  - *The clock.* The flight, the landing, the blast's slices and the hosted-battle wait all count the
+    city's own ticks, not the war clock: the fair clock can hold the war clock for good, and a missile
+    (or a wait that must end) must not be held with it. The dome's long downtime is the opposite, war
+    hours (as its charge always was), so a held clock holds it. The plan's "12 war hours" for the battle
+    wait is therefore 12 game hours from the tick the bomb arrived.
+  - *Dome.* `bombStopped(sim)` is a pure read, `domeTakesBomb` the action. A blacked-out dome does not
+    stop a bomb, even on its four-hour reserve (the reserve holds it up for a battle, not for a missile).
+    Mode `super` stops it, mode `off` does not. The check comes before any wait, so a dome raised over
+    a battle stops a bomb that falls during it, and goes on over the battle (the battle keeps its own
+    pool; `lowerDome` leaves the downtime). `supersHour` counts `down` first, whatever else is going on
+    (a blackout, a raised dome, no crew), and charging starts the hour after it reaches 0, so the wait is
+    exactly `DOME.bombRecharge` = 1,440 war hours. `SupersSummary.dome.down` is the hours left.
+  - *The blast's timing: one heavy thing a tick.* The first version did everything on the landing
+    tick and cost 119 ms on the 110k bench city (taking a civic building away re-checks the lots round
+    it, about 4 ms each, 45 of them inside the blast; the fires cost 10 ms). Now the landing tick does
+    slice 0 (the nearest `ATOM.impact.slice` buildings, the ring's civic buildings closed, the roads, the
+    trees and the crater: 7 ms), the next tick sets the fires (11 ms), and from the one after the civic
+    buildings inside come down `civicsPerTick` (3) a tick, nearest first (5 to 14 ms); the later slices
+    of buildings are dealt at minute 1 of an hour (a quiet one), never twice in the landing hour. All of
+    it is read from the city each time, so it resumes from a save and is idempotent. `Impact.fires`,
+    `razed` (every building inside levelled) and `over` (and the civic buildings gone too) mark the
+    stages. A second bomb that lands while a blast is still being dealt out waits for it (after its own
+    dome check). The finished blast stays as `Atom.impact` with the buildings levelled and the residents
+    gone, for the card; a later bomb replaces it.
+  - *Ground zero.* The densest window of `ATOM.impact.window` (8 cells of 64 m) by the `pop` of every
+    active building, as `cityCentre` weighs them (so a downtown of shops counts, not only homes), its
+    centre; ties to the lowest cell, north first and then west; a map with nobody on it gives its middle.
+  - *What the blast does.* Civics whose centre is inside 450 m are removed (`removeCivic`: a base's units
+    and orders go with it, a plant or silo lose what they hold) over the first minutes; out to 1.5 times that they close for 72
+    hours through the war's own `damageCivic` (so Repair crews shorten it). Roads reaching into it close
+    for 240 hours, except the regional highway (the city's lifeline, as the war's craters spare it).
+    Trees go to 1.6 times the radius, and the crater joins the meteors' list, fading with theirs. Fires:
+    a building between 450 and 675 m catches fire with chance `ATOM.impact.fireChance` (0.7) falling
+    linearly to nothing at 675 m, on a die seeded by the game seed and that building's id, so no order
+    or shared stream matters; at most 400, nearest first.
+  - *What a landing at a computer neighbour is.* Its people, forces and defences are multiplied by 0.4
+    (rounded), its relation is -100, `RivalNeighbour.fallout` is 1 (a direct hit; step 4's level), and
+    the war score swings +60 through `scoreIntel`, which is the war's own scoring for a strike that is
+    not a battle: in an open war that is the score at which the neighbour capitulates, so a bomb ends a
+    war it was fired in (a ceasefire by then, or a war over, swings nothing). The allies' -40, the ended
+    pacts and the sanctions are step 6's, from `atomFired`. A flight aimed at a friend's slot lands
+    nothing here (its own sim does that, step 10); one at a neighbour that is gone lands nothing.
+  - *Approval.* `raidMood` takes the lower of the raid's dip and `bombMood`: the same formula (the
+    share of nearby residents the shelters can't take) at 0.08 instead of 0.04, in full while the bomb
+    is in the air, fading over three days from the landing; a stopped bomb leaves none.
+  - *No battle begins while one is in the air.* `raidsHour` decides no raid (before it draws a die),
+    `raidsTick` holds a raid that is due an hour at a time, the `raidIn` cheat refuses, and
+    `resolveBattle` answers a friend's battle with `BATTLE_BUSY` (the page offers it again), watch
+    modes excepted. A raid already on its way goes on after the bomb has landed or been stopped.
+  - *Seams and what was left.* `atomFired(sim)` (called when the bomb leaves for a computer neighbour;
+    step 10 adds the friend's way) for step 6, `startFallout` and `startWinter` (called when the blast is
+    over) for steps 4 and 5, all empty. The chronicle line waits for step 6's `'atom'` kind. Events
+    `bombWarning`, `bombStopped`, `bombLanded` (the landing tick, for the flash) and `atomImpact`
+    (the blast over, with who left and what fell; for the firing city, who it fell on).
+    `AtomSummary` gains `inbound` and `impact`, `WarSummary.incoming` a `kind` ('raid' or 'bomb') and a
+    bomb's ground zero (the chip says "Atom bomb from X"; the raid tip and the war map's raid token
+    ignore a bomb). The achievement `underTheDome` is "stopped at least one" (`ACHIEVEMENTS` has 13).
+  - *Tests are deliberately cheap.* The scripted town is only 750 m long, so the blast's rings are made
+    by moving ground zero by hand in a test (the densest-district rule is tested on its own) and the
+    multi-slice behaviour by lowering `ATOM.impact.slice` for a test; `atombench.ts` is the 400 on the
+    110k city. Mutations checked: no distance order, no cap, fires from a shared stream, charging while
+    down and ignoring a blackout each fail a test.
+- **Step 3 review fixes (seven findings).**
+  - *Calls for help at fallen buildings are called off.* `impactSlice` deletes the open incidents (an
+    emergency or a crime) of the buildings it levels and lets their responders go (`ref = 0`), as a missed
+    call does; `incidentsTick` itself is untouched (a house burnt down by a fire keeps its old behaviour,
+    and the peace golden with it). Before, each open call ran out its clock over the rubble and wrote a
+    `death` ("An ambulance could not reach a patient in time"), a `crime`, or an ambulance arrived and
+    wrote `patientSaved`, for ten game hours after the landing.
+  - *The rail link and the region's great work stand.* The blast leaves the regional rail link's junction
+    and Sunfield Commons alone (`endures`: `railLink` or `regionProject` civic defs), closed for the
+    roads' 240 hours instead of taken: a bulldozer is refused the one and the city can never place a
+    second link, and the room latches the other as built for good, so a lost one could not be put back
+    and its power share would still be paid. A meteor can still take them (as before); the bomb is not
+    a disaster and must not leave a half-state on purpose.
+  - *The blast is bounded by cost as well as by count.* Fires are set `firesPerTick` (120) a tick from the
+    tick after the landing, nearest first, with the place reached kept in `Impact.fireAfter` (distance and
+    building id) and the number lit in `Impact.lit`, so the next tick carries on, a fire put out in
+    between is not lit again, and the total is still `fires` (400); `Impact.fires` is set when the last
+    is done. Civic buildings come down at most `civicsPerTick` (3) a tick and no more once the lots round
+    those taken (the cells in `removeCivic`'s re-check box, a hash query: deterministic, about 1 ms to
+    100 cells on the 110k city) come to `civicCells` (500; a nuclear plant alone is about that), and
+    always at least one, so a big one is never put off. atombench: the landing 7.1 ms, the fires 11.1 ms,
+    the civic ticks 3 to 8 ms each (before: up to 24 ms), the worst atom tick 11.1 ms.
+  - *Slices count hours.* The next slice needs a later *hour* than the landing's, not a later tick, so a
+    landing on the top of an hour deals its next slice at the next hour's minute 1 and never on the tick
+    that sets the fires. And a flight (hours > 0) never lands on minute 0 of an hour: `atomInbound`
+    makes it a minute longer when it would (that tick is the day's heaviest: a month closes and the
+    utilities run; a bomb a computer neighbour fires at a month close always lands there). A bomb due
+    at once (`hours: 0`, the cheat) is not moved.
+  - *The `atom` cheat's `spent` is spent.* Stage 8 sets `fired.landed`, so the next tick does not strike
+    the neighbour it names (a stage meant for checking gates and cards was cutting a rival's people by
+    60 % and swinging an open war).
+  - *The dome inspector says it is down.* `domeStatus` (`src/ui/warView.ts`, pure, tested against the
+    summary) reads "Down for 50 days more" while `dome.down` counts, then Charging, Charged or Raised;
+    the blurb says what a bomb costs it, and the pre-battle notice says it is down rather than "0 %
+    charged". (`warHours` moved to the same file; `Research.tsx` still exports it.)
+  - *Tests for what the blast does to a base, a plant and a silo* go through the real `removeCivic`
+    (a bare delete fails them): units and orders gone and the books straight for days after; a silo in
+    the blast loses the bomb, the build and the preparation; a plant halves the fuel.
+- **Step 4 (fallout, the computer-neighbour half): calls the plan left open.**
+  - *The dose.* The effects read one number, `dose = min(1, ground + 0.5 × air)`: the ground is what
+    stays and the passing cloud counts for half. The bans read the ground alone ("the ground is at or
+    above 0.2"). Sickness is `+0.04 × dose` new cases per resident per hour, on top of `HEALTH`'s and
+    outside the Healthy living policy (a policy about habits does nothing for radiation); the home's mood
+    term "Fallout nearby" is `−0.6 × dose` (shown from 0.005, homes only, as "Tired of war" is); work is
+    `1 − min(0.6, 1.2 × dose)`; land value `−0.6 × dose`. All in `FALLOUT.effect`; each has one reader
+    that returns exactly 1 or 0 with no raster, so no hash of a city without fallout moves (the goldens
+    and the v31 fixture pass unchanged).
+  - *The plume leaves less on the ground than the plan's first numbers did.* `air.deposit` is 0.02, not
+    0.05, and the snap floor 1e-5, not 1e-4. At 0.05 the plume laid 17 % of the strike's mass on the
+    ground along its way (a 1 km tail of 0.06 to 0.09 that moved the ground's centre of mass 60 m in
+    three days and made every home downwind ill for a decade); at 0.02 the tail is 0.035 to 0.045 a kilometre on, "a little".
+    The floor was lowered because a thin stream from a neighbour deposits about 1e-4 a update, which the
+    old floor snapped away each time. The core's 18.6 years do not depend on either.
+  - *A computer neighbour's fallout drifts back in as the air's boundary condition,* not as a source
+    along the edge: the semi-Lagrangian step reads `FALLOUT.town.inflow (0.006) × the neighbour's level`
+    for any sample beyond the edge on its side (the north neighbour beyond row 0, and so on; corners go
+    to north and south). So it comes in only while the wind blows from that side, in the share the
+    wind's component gives, with no striping, and a city whose wind blows away from a bombed neighbour
+    never gets a raster (`falloutDue`; the first stream in is what makes it). Measured with a neighbour
+    at 1.0 and a wind from its side: ground about 0.03 along the stream after ten years (0.02 to 0.03
+    for the next ten), never near the ban; a thin haze, not a second strike. The neighbour's level halves
+    every eight game years, so the stream does.
+  - *A trickle is haze.* Less than 1 unit of air crossing an edge in one update (`edge.trickle`) is
+    cleared but not counted. Without it the stream passing through the city (about 0.2 an update) was
+    counted at the edge it leaves by and fed a third town: a bombed west neighbour lifted the south
+    neighbour to 0.26 through the city's own accounting, more than a strike in the middle sends (the
+    probe showed it). A plume is tens to 190 an update, a stream 0.2. The friends' half (step 10)
+    inherits the rule: `out` only grows by clouds.
+  - *Edges are open only to the wind.* The two outermost rows or columns of air are cleared and counted
+    only on a side the wind blows towards (the east sink likewise). Clearing every update on every side,
+    the plan's wording, counted a stream that had just come in as leaving again and fed the neighbour's
+    own level back up to 1.0 for ever (the probe showed 882 "out" in twelve years from a neighbour that
+    should have faded to 0.35).
+  - *Numbers from the probe* (`scripts/dev/fallout.ts`, seed `f`, a strike in the middle of the map; the
+    table is in the step's summary): the core reopens after 18.6 game years (11.1 hours of play), the
+    closed area (0.2 and up) is 1.02 km² at the start and 0 at year 19, a neighbour on the downwind side
+    gets 0.27 to 0.28 from a middle strike (0.12 to 0.20 where the wind splits between two edges) and
+    0.33 to 0.47 from one 300 m from its edge, then halves every eight years (`town.scale` 400,
+    `town.share` 0.6); 25 years of updates take 1.7 to 1.9 s, 0.7 to 0.8 ms an update.
+  - *Neighbours' levels are rounded to a millionth and a trace is dropped.* `rival.fallout` is kept to
+    1e-6 (the old rounding to 1e-4 swallowed a trickle: 2e-6 an update never added up) and its key is
+    deleted below 0.005 at the month's fade, so a neighbour a trickle once touched is as it was.
+    `regionMonth` takes the growth drag (`town.drag` 0.01 × level) as a value added to the sanction's
+    before the same expression; the dice (`rng.region`) are rolled exactly as before.
+  - *Bans.* `zone` skips closed cells (clearing a zone is always allowed) and, if every cell the brush
+    found was closed, says why and paints nothing (`info.closed` counts what a mixed brush left);
+    `checkPlacement` refuses on the worst of the footprint's nine points (a move too), after the
+    water and slope checks and before the building's own requirements, so the words are the same
+    whatever else is wrong; `growthPass` skips a lot when any column's first cell is closed (before
+    the dice, so a city with fallout draws less from `rng.growth`, which is nobody's golden); the
+    hourly lifecycle treats closed ground as heritage (no retooling, no upgrading, `good` reset).
+    `cellStaticValid` and `revalidate` are untouched: buildings on closed ground stay, their people
+    leave on their own (mood), and a ruin there is not rebuilt. An abandoned building may still be
+    reoccupied (it is not new building).
+  - *The refusal's years* come from the decay alone, `8 × log2(ground / 0.2)`, rounded, at least one
+    ("about 1 more game year"); the spreading and what the air adds are ignored, so it can be a little
+    out, always on the side of "sooner" for ground nearer the edge of the closed zone.
+  - *Clean-up.* `cleanFallout {x, z}` (`defence`) is refused when there is no raster, when the ground
+    within 128 m is under 0.02 ("clean enough"), when three crews are out, when one is within 64 m, and
+    when the treasury is short (sandbox lets it run short, as other price checks do); the crew's hours
+    are counted in updates (96 h = 32), and when it is done every cell within 128 m has its ground
+    multiplied by 0.5 (the air is left to the wind), event `falloutCleaned`. A city that has not
+    researched Repair crews (`logistics2`) pays twice and the job is marked `relief`; the price is the
+    ledger line `cleanup`. Not undoable (it is a hire, not a placement).
+  - *The map.* `radiation` is the `hazard` ramp's three bands in one value: air alone 0.1 to 0.25,
+    open ground with fallout 0.3 to 0.55, closed ground 0.6 to 1, and the rim of the closed ground 1
+    (the outline). The maps menu offers it only in a city with war on. A pointer over the map asks the
+    `fallout` query (one question in flight, the last position wins) and a small tooltip follows it:
+    "Fallout 0.34. Closed for about 6 more game years (4 hours of play)", "…Open for building", or
+    nothing under 0.005. The query also carries the summary (closed area, peak, crews, price) for the
+    war room's Bomb tab and the clean-up tool, which come with step 11.
+  - *Saves, hashes, checks.* `SimState.fallout` is `{ground, air, out, seen, jobs}`; `seen` is empty
+    until step 10 (a friend's plume totals). The checksum adds the rasters' sums, the three counters and
+    the number of crews when the raster exists; `partHashes` already cover any key. `checkInvariants`
+    scans the rasters once an hour (they change only at an update or a strike), finite and in range.
+  - *Left for the steps that own them:* the friends' half (`friendFallout`, the report's `plume`,
+    `seen`) is step 10; the clean-up tool's UI, the Bomb tab's fallout block and the radiation tint in
+    3D are step 11; the cross-browser `atomSim` section (which uses `cleanFallout`: it is in
+    `PENDING_KINDS` with the bomb's four commands) is step 8.
+- **Step 4 review fixes (eight findings from the reviewers, six distinct).** These override the step 4 block
+  above where they differ.
+  - *The air that leaves the map is counted by the flux, not by a band of rows.* The old `edges()` cleared the
+    outermost two rows or columns after the step and counted what lay there. The wind moves the air four cells
+    an update, so a parcel that started in the two rows behind the band was carried past the edge without ever
+    standing in it, and only about half of a plume reached `out` and the neighbour (a probe with no decay, no
+    deposit and no spreading counted 32 of 64 units on every seed). The count is now `carriedOff`: each cell's
+    air goes to the point the shift sends it and is shared over the four cells round it with the very weights
+    the bilinear step reads back with, so the share whose cells lie beyond the north, south or west edge is
+    exactly the mass the step drops (corners to north and south; the east edge is a sink, not counted); the
+    same probe now counts 62.4 to 64 of 64 on all seven seeds, wherever the cloud sits. `FALLOUT.edge.rows`
+    is gone. Because `out` and the neighbour's fallout were tuned on the lossy count, `town.scale` went from
+    400 to 750, which restores the numbers the step 4 block gave (a middle strike gives the downwind
+    neighbour about 0.28, one 300 m from its edge about 0.41); `out` itself is now about twice what that
+    block's table printed (356 for a middle strike on seed `f`, not 190). Step 10's report `plume` reads
+    `out`, so a friend now receives the whole cloud. Step 10 must also drop a friend's plume only when the
+    receiver's own wind blows from that friend's side, as for a computer neighbour: air put on the strip
+    facing a friend while the wind blows towards it leaves by that edge at once, and now would be counted
+    back to the sender as `out`.
+  - *A neighbour's stream is never counted as leaving.* `edge.trickle` (a floor of 1 unit an update) is
+    replaced by a floor on the air itself: air thinner than `town.inflow` (0.006, the thickest stream a
+    neighbour at level 1 can send) is haze and is not counted. That holds wherever the stream goes (60 seeds
+    by 3 sides, 96 cities with a stream in, 40 days: no unit counted on any side, where the band clearing
+    counted 1 to 2 units on the side the stream came by in 7 cases, and a flux count with the old floor
+    counted up to 6 units on another side in 7 more, because a stream is 3 units an update where it comes in).
+    A plume is hundreds of units in cells far above the floor, so it loses under 1 %. Cleared air is no longer
+    a thing: nothing is zeroed at the edges, the mass just leaves.
+  - *Fallout does not call an ambulance.* `sicknessRate` still adds the fallout term (it drives `b.sick`),
+    but the hourly emergency chance reads `usualSicknessRate`, the same expression without it, through the new
+    `emergencyChance`. Under a plume the emergency rate had jumped (35 `death` events in three game days
+    without fallout, 158 at ground 0.25, 213 at 0.6 on the lab town), each unanswered call a resident gone
+    with the "ambulance could not reach a patient" line, which is the casualty feel the step 3 review took out
+    of the blast. The slow sickness stays (its effect on the home's `sick` and the move-outs), so the plume
+    still costs people, quietly. No hash moves: with no fallout the two functions are the same expression.
+  - *The zone tool says what the sim said.* A brush that found only closed ground, or part of it, now shows a
+    toast with the sim's words and the error sound, once for a drag (a stroke dispatches every radius/3
+    metres); a shift-click on a road says it every time. The sim's mixed result carries `info.closedWhy`
+    beside `info.closed`. Any other refusal of the zone command (no road there, a shared city's rules) is
+    shown the same way, which it was not before.
+  - *The legend's pale end is "Thin haze", not "Clear".* The pale yellow means air with nothing on the ground,
+    as the band list says; ground with no fallout is not tinted.
+  - *The map's tooltip works by touch.* A tap (a touch or pen that comes up within a click's slop of where it
+    went down) on the fallout map reads the spot, the tip sits above the finger and stays until the next
+    touch; a touch that starts clears it, a drag (a pan) reads nothing, and a finger's moves no longer ask the
+    sim anything (a mouse and a hovering pen still do).
+  - *Tests that could not fail now can.* The move-out test compares runs with the mood and the sickness
+    switched off one at a time at ground 0.15 (below the ban, so growth and land value are alike in all four);
+    freight is tried with one matching round on two copies of the freight town with no time between them, so
+    only `runFreight`'s two hooks can differ (industry, shops, and homes, which must not); the specialisations'
+    income is tried on a town with a freight hub and a research park (`industrialJobs` is now exported). Each
+    was checked by taking its hook out and seeing the test fail. The edge and stream tests fail on the old
+    band clearing. `tests/war/atomFalloutTools.test.ts` drives the real `ZoneTool` and `OverlayController`
+    with a stand-in game.
+- **Step 5 (nuclear winter, the sim half): calls the plan left open.**
+  - *Where a winter begins, and its name.* `startWinter(sim, id, depth?)` (`weather.ts`) is the one door, once
+    for each `id`. A city struck in its own sim starts `self:n` when the blast is over (`n` its `boom`, so
+    `self:1`, `self:2`); the firing city, when its bomb lands on a computer neighbour, starts `self:0` (it
+    fires one bomb ever, and `boom` counts bombs that fell *in* a city, so it is not raised). A flight at a
+    neighbour that has gone lands nothing and starts nothing. The room's `slot-n` ids and `friendWinter`
+    (step 10) call the same function. **Seam for steps 9 and 10:** the firing city against a computer
+    neighbour does not raise its own `boom`, so the room's rule "a report whose `boom` rises" does not reach
+    a friend of a city whose bomb fell on a computer neighbour; if that should chill the friends too, the
+    report needs a landed mark to diff (the firer's `fired.landed`), not a new message.
+  - *Depth.* A first winter is depth 1; one that begins while another is in force (begun and not yet run its
+    course, `winterInForce`: the first tick of a winter counts, though its depth is still 0 then) is
+    `WINTER.later` (0.5); one that begins after the world has recovered is a first one again (1).
+    Winters add, to at most 1.5; a depth asked for is held to the cap. The list is kept for good (an id
+    must stay applied once, however late a repeat arrives), a few bytes a bomb. Linear rise, hold and fall
+    (`winterShape`, plain arithmetic).
+  - *Same dice, same days: a winter moves no spell's end.* The plan's "the same draws" would still have
+    drifted: a spell's length comes from its kind's range (rain 4–12 hours, snow 5–14), and rain made
+    snow by the winter would end at another hour, so every later spell would begin in another season with
+    other weights (clear is 3 draws, anything else 4) and the streams would part. A spell's length is now
+    that of the weather the *calendar* would have brought (`lasts`, the old rule, unchanged for a city
+    with no winter), and the winter changes only what it is and how cold. So the weather's dice are in
+    the same state at every tick of a year with a winter or without, and every spell ends on the same
+    tick (tests step a year tick by tick with one winter and with two). `riverFlood`'s dice follow the
+    river, which a winter does change (frozen snow does not melt into it), so a city with disasters on
+    draws there as the river dictates: that is the weather's value changing, not a draw added. **The limit
+    of "a winter draws nothing":** `riverFlood` draws on `rng.weather` every hour the river is over
+    `WEATHER.floodRise` (1.2 m) in a city of 1,500 with disasters on, and a winter keeps the river down
+    (snow adds no runoff), so such a city and its winter-free twin part streams from the first hour the
+    twin's river is over the line; every spell drawn after that comes from another point of the stream
+    (see the review fixes below).
+  - *Readers.* `monthMean` is the calendar's mean less `18 × depth` before the seasons-off return;
+    `solarShare` is × `1 − 0.55 depth`; `nextSpell` turns rain and storms into snow at the calendar mean
+    less the chill up to `1 °C + 6 × depth` (July rain falls as snow; in a seasons-off city too, so
+    "no snow spells" is the weather-off city's, which has no spells at all); a heatwave drawn at depth 0.25
+    or more comes as a cloudy spell with its offset held to the usual (`WINTER.noHeat`), after its draws.
+    A storm that falls as snow is a blizzard, as before.
+  - *Heating needed no new cap.* Heating reads `weather.mean` through `weatherUse`, whose `cold` share is
+    clamped to 0–1 (saturating at −10 °C), so a zone asks at most `1 + its heating` (1.6, 1.4, 1.2 times)
+    however deep the winter. That is under 1.3 times the coldest January of any climate (the alpine
+    January already saturates it) and far under the plan's "twice the January peak"; a test holds both
+    (the factors in every climate, and a served town's whole demand), and the probe prints the ratio.
+    Nothing was added to the code for a cap that cannot bind.
+  - *The forecast tells the truth about the winter.* `winterOutlook` takes the deepest the winter gets from
+    the coming winter season's start to three months later (`maxWinterDepth`: a piecewise-linear sum, so
+    the ends and the breakpoints), and counts on `winterSky(depth)` (the sun that much weaker) and
+    `coldestDay(w, depth)` (that much colder); a winter over by then changes the outlook not at all
+    (`toEqual`). The test checks the other direction too: in the hold, a snowy January's actual solar
+    output is the forecast's, and the actual demand at the coldest spell is its need.
+  - *Neighbours.* `regionMonth`'s drag is `0.008 × depth` added to the sanction's and the fallout's, read
+    from the city's own clock for every computer neighbour (a friend's city grows on its own machine).
+  - *The page.* The summary carries `winter` (0 to 1, for the look), `winterDepth` (to 1.5, for the words)
+    and `winterYear` (1 to 6, from the oldest winter in force), and not the list. `worldLook` blends the
+    season's colours towards winter and lifts the snow to `0.9 × winter` in any month, and the renderer
+    greys the sky to `0.6 × winter` overcast (the existing cloud grade, so the light and shadows follow);
+    photo mode's own season or weather wins over it. The badge `winter-badge` ("Nuclear winter, year 2 of
+    6, -7 °C") sits beside the weather chip rather than in it, because the chip's label is hidden on a
+    narrow bar; it has a short form ("Winter 2/6") for the narrow and wrapped bars and opens the weather
+    panel, whose lines gain the winter's. The energy advisor says "Solar is down 55 %; heating is up: homes
+    use 60 % more power than in mild weather", or only heating without a solar plant, from depth 0.05, and
+    each half only while it is so (see the review fixes below).
+    The event `nuclearWinter` gives one notice. Screenshots come with step 11.
+  - *Saves and checks.* Nothing to migrate: the key appears with the first winter, the checksum adds the
+    winters only when there are some (the temperature is hashed already), `partHashes` see the weather
+    part change, and `checkInvariants` holds each to a start in the past, a depth in (0, 1.5] and an id
+    of its own. The page's weather summary is cached by the hour *and* the number of winters.
+  - *The probe* `scripts/dev/winter.ts [months] [seed] [presets]` follows the test town (a depot, three
+    ploughs) in each climate with and without a winter that begins in June; the table is in the step's
+    summary. Nothing absurd: demand saturates at 505 MW (1.03 to 1.19 times each town's January peak,
+    1.29 times its own control at worst), snow lies at 1.0 in the cold months and thaws once the mean
+    is above freezing (never piling past the cap), three ploughs keep the busiest roads clear as in a
+    normal alpine winter, population is unchanged, and the winter fades out by its sixth year.
+  - **Review fixes (step 5).**
+    - *Same-tick winters.* Whether a winter is "in force" for `startWinter` was `winterDepth > 0` at the call,
+      and a winter's depth is 0 on its first tick, so two ids applied in the same tick were both depth 1
+      (1 + 1 + 1, held to 1.5) while the same ids a tick apart were 1, 0.5, 0.5. Step 10's returning player
+      takes the room's ids in a row on one tick, so the two would have risen at different speeds and held the
+      cap for different lengths. `winterInForce(w, tick)` (begun, and `WINTER_HOURS` not yet passed) is the
+      test now; the same tick and a tick apart give the same depths. A winter that has run its course is
+      still a first one again.
+    - *The advisor says what is so.* The "Nuclear winter" line was 'heating is up: N % more' from depth 0.05
+      in any month, and N was the whole residential factor: 0 % in a warm month at a faint depth, and
+      cooling in a heatwave. The solar half is said when the city has a solar plant, the heating half only
+      when the day's mean is under `WEATHER.heatBelow` (14 °C) and the homes really use more power; with
+      neither there is no line (a faint winter in July, without solar, has nothing to tell a city).
+    - *The tooltip says what is so.* "...and even summer rain falls as snow" was added at any depth. The
+      weather summary now carries `winterSnows` (a winter in force, and the month's mean less the chill at or
+      under `snowLine(depth)`, the same `snowLine` that `nextSpell` turns rain into snow by), and the line
+      names only the parts that round to something: a degree or a percent that rounds to nothing is left
+      out ("Nuclear winter, year 1 of 6: ash dims the sky." alone at the very start or end), "even summer
+      rain" only in summer. A temperate July needs depth 0.75 or so for its rain to fall as snow; at half
+      depth July rain is rain, and a test steps a year of spells at 0.5 and 1 to hold the flag to the draws.
+    - *Data maps read under no winter.* `renderer.ts` zeroed the weather's kind and strength for a data map
+      but left `winter`, so the sky stayed grey and the sun cut by 0.57. `frameLook` (render/weather.ts, with
+      `photoWeather` and `overcastOf` moved there from the renderer so the pieces can be tested without
+      WebGL) clears `winter` too. The season's colours and the snow cover a map is drawn on stay the ground's.
+    - *Tested.* The renderer's overcast floor (`overcastOf`, and a headless `WeatherRenderer.update`), the map
+      case, photo mode's override and the badge's text (`winterBadgeText`, which TopBar now uses, so the
+      visible-only-in-a-winter condition is the one tested) are in `atomWinter.test.ts`. What no test here
+      can reach is the badge's CSS (the short form on a narrow or wrapped bar) and the picture of the grey
+      sky and the snow: those are step 11's screenshots and narrow-width check, as before.
+    - *`rng.weather` and the river floods (a limit, not a bug).* The step's claim and its tests ("the weather's
+      dice are in the same state at every tick of a year") hold with disasters off, and in a city with them on
+      for as long as its river stays under the flood line (they use `Sim.create({ disasters: false })`). Over
+      the line, `riverFlood` draws on `rng.weather` each hour and the winter keeps the river down, so the
+      two timelines part there. It is not a cross-machine determinism problem (every sim with the same
+      winters has the same river and draws alike), and moving the flood draw to a stream of its own would
+      change the weather of every city that floods, in peace as well (phase 5 leaves peaceful play as it
+      is), so it stays. A disasters-on test
+      holds the limit exactly: a plain city in a long storm and a twin under a deep winter in the snow, whose
+      streams part only when the plain river passes 1.2 m, while the winter city's river and stream never
+      move.
+- **Step 6 (the world reacts, the sim half): calls the plan left open.**
+  - *One accessor for the reputation.* `reputationOf(sim)` is the figure everything reads (`weigh`,
+    `sanctionCause`, the war room's summary) and `reputationChange(sim, delta, cap = 100)` the only code
+    that writes it: the fall for a declaration (the sim's and the friends'), a broken pact, a spy caught,
+    and the monthly mend (which passes the cap `start`, so it stops where it always did). While
+    `Diplomacy.pariah` is set `reputationChange` does nothing (no rise ever applies; a fall has nowhere
+    to go) and `reputationOf` says 0 whatever the field holds. `makePariah` falls to 0 through the
+    accessor and then sets the mark, once. A grep test reads `src/sim` and fails if any other code
+    reads or writes `.reputation` (the data constants `DIPLOMACY.reputation` and the like are numbers).
+    `checkInvariants` holds a pariah to a raw 0 and a past tick. `DiplomacySummary.pariah` carries the
+    mark to the page.
+  - *The world's turn is `atomWorld.ts`, called from `atomFired`.* Every computer neighbour's feeling
+    falls: the target's to -100 (as the landing sets it later), its allies' by `ATOM.world.allies` (-40),
+    **every other neighbour's by `ATOM.world.others` (-40, not in the plan)**. The plan's waivers (the
+    aggression floor, the 0.5x forces ratio, no cooldown) all sit behind the old test that a neighbour's
+    feeling must be at or under `RAIDS.hostile` (-25) to declare at all, and a neighbour the city had
+    never wronged sits at 0 or higher: without a fall for the others the pariah would be declared on only
+    by the target and its allies, and "anyone may declare a total war" (the card's words, call 20) would
+    be false. (The relation test was first kept, so that a neighbour fond of the city did not declare;
+    the review overturned that: see "Step 6 review fixes" below. The fall for the others stays.)
+  - *Which pacts end.* The pacts of friendship: non-aggression, alliance and defensive pact, through
+    `endPactsWith` with no breach (nothing is broken, and the city's word is nothing already). A
+    ceasefire, a treaty's tribute, a demilitarised zone, an occupied district, an embargo and a trade
+    agreement stand: they are the settlement of a war, not a friendship, and ending a ceasefire would
+    reopen a war the bomb's firer did not choose to reopen. A friend's pacts are the room's (step 9).
+  - *The sanction.* `sanctionCause` returns `'bomb'` first, before the neighbour's own ally and
+    reputation tests; `sanctionsPass` takes the bomb ahead of `'broke'` and imposes it with or without
+    something to cut (`sanctionsOnBomb`, called at once from the world's turn, so the Trade tab and the
+    notices are right on the day, not at the next month close). It never lifts while the mark stands;
+    only a neighbour that has fallen to the city (a vassal, the city's own) is outside it, as for every
+    cause.
+  - *Declaring on a pariah.* In `computerMoves` the pariah branch replaces the three checks and the
+    cooldown with a forces ratio of `ATOM.world.ratio` (0.5) and a chance made with
+    `max(aggression, ATOM.world.floor)`; the scale is total whenever the region allows it (the usual
+    2.5x lead is waived too: a half-strength city is not declared on for a "limited" war); the reason is
+    "We will not stand for the atom bomb". Everything else (pacts held, the `caught` doubling, the die
+    that is drawn, one declaration a day) is as it was, and for a city that is not a pariah the code is
+    the old code, line for line and die for die (the goldens and `difficulty.test.ts` agree).
+  - *The deterrent.* `atomDeters(sim)` reads the facts (`have` or `prep`, no `fired`) rather than
+    `atomStage`, which looks for the buildings in a loop. `computerMoves` takes scale `war` for a declaration
+    on such a city, and for a vassal's rising too (both are a computer neighbour choosing its war), and
+    `weigh()` adds `ATOM.deter` (15) to peace, a ceasefire and the three pacts of friendship, and to
+    nothing else (an embargo, trade, money terms and territory are not about fear).
+  - *The protest is `bombShame` and `homeShame`, not `bombMood`* (the dread of a bomb on its way holds that
+    name in `atom.ts`). Both run on the city's own game hours from `pariah.tick` (the people's mood, not
+    the war economy's: the region's fair clock can hold the war clock for ever, and a held clock
+    must not hold shame), in a straight line over 720 game hours from -0.30 to -0.05 (approval) and
+    -0.25 to -0.06 (homes), and **stay** at the second figure: the plan's "easing to" read as a lasting
+    floor, "a record that stays". The home term is a happiness factor, so it also lowers the city's
+    approval (the residents' mean): the protest costs more than its -0.30. Both are exactly 0 for a city
+    with no mark, the cheer term is added last so the sum is bit-identical, and the factor is listed
+    only at -0.001 or lower.
+  - *The chronicle.* Kind `atom`, refs `ready`, `fired:Name`, `landed:Name`, `hit:Name`, `stopped:Name`
+    (`atomEventText` in `src/data/atom.ts` says them). `ready` is written when `bombHour` finishes the bomb
+    (the stage cheat sets facts only and writes none, as `finishStages` does not), `fired` from the world's
+    turn, `hit` and `stopped` at the landing tick (not when the blast is over, so a save made mid-blast
+    already has it), `landed` when a bomb of the city's falls on a computer neighbour. `chronicleEvent`
+    drops the oldest event that is not an `atom` one; with none in the ring it is the old splice, so no
+    other city's ring moves.
+  - *The warning to a friend.* `declareWarning(neighbour)` (`src/client/friendsWar.ts`) reads
+    `PlayerNeighbour.atom.stage` (the field is declared now as `{ stage }`; step 9's report fills it and
+    widens it) and asks for ready and preparing alike, in the plan's words. The declare form puts it as a
+    question only when the scale chosen is total (a smaller war cannot be met with the bomb), with
+    "Declare anyway" and "Not yet" (`Asked.no`, which was fixed to "Keep the city's word"), and
+    `FriendSummary.atom` carries the stage to the form.
+  - *The seam for step 9 and 10.* `worldTurns` changes computer neighbours only, and reads the target's
+    record by id; a friend as target changes nothing here, and the room flags the sender from its report's
+    `fired` (step 9). `atomFired` is called with `fired` already set, so the friend's way in step 10
+    needs only to set it first.
+  - *What the protest costs, measured* (the 2,600-resident test town, the mark alone with no bomb, same
+    dice for the control): approval 0.57 → 0.14 and population -32 % after 3 game months (-34 % at 2, the
+    worst), -35 % at 6, -20 % at one game year and -10 % at two; abandoned buildings 53 → 124 in the first
+    two months. The plan's tests ask for 25 points and 8 %, which this clears by a wide margin because the
+    two terms add (the home term lowers the mean the approval is made of) and a home at 0.55 happiness
+    loses a quarter of its occupancy at once. The figures are the plan's (`ATOM.shame`); if the balance step
+    finds a quarter of a city leaving in the first game days too hard, the lever is `ATOM.shame.home.start`.
+  - *Tests* (`atomWorld.test.ts`, 27, about 45 s): the town is `labTown(0, { length: 800, streets: 7 })`
+    with every tier, a plant, a silo, a dome and a total war on the first rival, pacts and a deal with the
+    other two. The test town tops out at 2,600 residents, under `RAIDS.minPopulation`, so the declaration
+    tests lower that bar for their own run as `raid.test.ts` does (`lowBar`); a control without the mark
+    shares every one of those runs and must not declare. Mutations checked: the pariah branch of
+    `computerMoves` off, the guard in `reputationChange` off (also caught by the invariant), the sanction
+    needing ties, the chronicle's atom exemption off, the cheer term off and the home factor off each fail
+    their tests.
+- **Step 6 review fixes (five findings; the decisions behind them).**
+  - *No way out by neutrality.* `setNeutral(on)` is refused for a pariah ("A city that fired the atom bomb
+    can't be neutral"), and `worldTurns` drops a neutral stance already held when the bomb leaves (the sim's own
+    launch refuses a neutral city, but step 10's way for a friend sets `fired` after a wait in which the city may
+    have gone neutral). Neutrality was the one shield that survived the pariah branch of `computerMoves`
+    (and cut raids to a quarter in `raidStance`); with it gone neither reader needed a change.
+  - *No new friends.* `termsRefusal` turns away any term of `FRIENDSHIP` (non-aggression, alliance, defensive
+    pact; now exported from `diplomacy.ts` and shared with `atomWorld.ts`) while the mark stands, in a city's own
+    proposal, a neighbour's, a counter and the cheat alike. A ceasefire, peace and the money terms stay open: they
+    end a war, they are not a friendship. `worldTurns` drops friendship proposals waiting at the launch (the
+    city's own would only have lapsed at the answer; the neighbours' could not have been accepted), and the
+    neighbours' own offer of a non-aggression pact (honourable and cautious, at 30 or more) is not made to a
+    pariah. A new pact would also have counted as binding in `computerMoves` and held that neighbour back.
+  - *The feeling no longer gates a declaration on the pariah.* The first reading kept `relation <= RAIDS.hostile`
+    (-25) for the pariah and only lowered every neighbour by 40: a neighbour the city had made friends with
+    (alliances need 40, defensive pacts 25, a pact partner at 50 ends at 10) never declared, however long it
+    waited, and nothing raises hostility later. The brief says every other city may declare, so the pariah branch
+    now asks only for the forces ratio (0.5x), and the daily chance (0.15 x max(aggression, 0.5)) still spaces
+    the declarations: one a day, a fond neighbour taking its turn. The -40 for the others stays: it is what
+    they feel in `weigh` for any peace or pact later. A city that did not fire is declared on as it always was
+    (-25 or lower, aggression 0.5 or more, 1.5x the forces, the cooldown): the goldens agree.
+  - *Wording.* The bomb's sanction reads "X sanctions the city for firing the atom bomb" and the notice
+    "...: their trade ends for good, and nothing new is agreed"; "will not lift it" is gone from the cause.
+  - *A stale comment* in `atomImpact.ts` (the chronicle line "waits for step 6") now says where `hit` and `stopped` are written.
+  - *Tests* (`atomWorld.test.ts`, 32): the pariah cannot go neutral and is declared on all the same (the
+    control can go neutral); a neutral stance is dropped when the bomb leaves; no friendship term is signed or
+    proposed after the bomb, from either side, and a ceasefire is; the waiting proposals lapse and the
+    neighbours' offers stop (with a control that is offered); a neighbour at 100 (60 after the bomb) declares on the pariah and leaves a
+    city that did not fire alone; the sanction's wording. Each fix was taken out in turn and its test failed.
+- **Step 7 (computer race and spies): calls the plan left open.**
+  - *What a saboteur finds for the target `plant`.* `plantTarget` (`atom.ts`): the silo while a bomb is
+    being built or waits in it (closing a silo is what hurts then: a launch being prepared starts again,
+    the existing rule), else the enrichment plant, else a silo with no plant; nothing once the bomb has
+    left. The plan's "the plant, else the silo while the bomb builds" read literally would have hit a
+    plant whose fuel no longer matters. An unfinished plant or silo is a target too (`inTheRace`).
+  - *What a strike does* (`sabotagePlant`, one function for the three ways in: a computer neighbour's
+    spy, a friend's operation as the region decided it, and nothing else): a building going up has its
+    stage clock put back 120 war hours (`build.clock += 120`, so its stage ends 5 game days later: a test
+    runs the months); a finished plant loses 120 hours of fuel and a finished silo 120 hours of the
+    bomb's build, neither below nothing, and either is closed 12 hours through `damageCivic` (repair crews
+    shorten it). "Never below an instalment already paid for" is decided as: the instalments paid
+    stay paid (`paid` never goes down) and the lost hours are done again without paying twice, so the
+    loss is time, not money; a `waiting` mark is cleared if the loss puts the count back under the
+    instalments paid. A plant with no fuel, a silo with no bomb under way, are only closed, and the
+    words say so. The words ("Saboteurs from X spoiled 5 days of fuel and closed the enrichment plant
+    for 12 hours") are `plantSabotageText`, shared by both ways in.
+  - *The guards.* `counterIntel` is 150 higher while any enrichment plant stands (built or going up),
+    in the sim itself, not only in the report: `regionReport.counter` calls the same function, so a
+    computer neighbour's spies and a friend's face the same odds (the plan said the report only,
+    which would have left the two disagreeing). Still capped at 750.
+  - *A computer neighbour's saboteur* keeps the draw `intelMonth` always made for it: heads was the
+    power plant and tails the depot, and in a city that has a plant or silo in the race heads is the
+    plant and tails still the depot (so the power plants are not touched there). No draw is added or
+    moved; the test runs 240 months side by side with and without the plant and compares who, what and
+    when. (The month's dice are seeded again each month and the pick is the last draw before the loop
+    ends, so an added draw there could not move a later roll; what the test can hold is the rest of the
+    spy and the mapping of the target, which is what it asserts.)
+  - *Sending an agent for the plant.* `raceSlowWhy` (`src/data/atom.ts`, pure) is the one question the
+    sim's refusal, the war room's menu and the region room ask: a computer neighbour must have a race
+    with its bomb not finished ("has finished its atom bomb: there is nothing left to slow", "has used
+    its atom bomb"); a friend's city, as its last report said, from the plant going up to a launch being
+    prepared (stages 1 to 6; its bomb in flight or used, and nothing, are "isn't racing for the atom
+    bomb"). A friend with a bomb ready can be struck because the silo is closed by it (the launch
+    starts again); a computer neighbour's finished bomb has no preparation yet to start again.
+    `Intel.tsx` offers "atom bomb works" only where that is null. `SabotageTarget` has one list,
+    `SABOTAGE_TARGETS`, which the command check, the operation check and the room's parse read.
+  - *The room's refusal and the seam for step 9.* `RegionReport.atom?: { stage }` is declared now (the
+    type only: `cleanReport` still drops it and `regionReport` does not fill it until step 9), so for now
+    every plant sabotage against a friend is refused in words by the room ("X isn't racing for the atom
+    bomb"), the connection stays, no verdict is kept and no day is counted; the room's check sits after
+    the neutral shields and before the newcomer and online ones. `atomProtocolWhy(target)` is the empty
+    seam for the protocol gate (a target on a page below protocol 7); step 9 fills it and the report's
+    reader, and `relay/tests/regionAtomOps.test.ts` already holds the accepting half (a report given a
+    stage by hand).
+  - *The Hard lever is a key that Easy and Normal do not have* (`WAR_DIFFICULTY.hard.bomb: true`;
+    `bomb?: true` in the type), so the Normal row of the table, and `difficulty.test.ts` that compares
+    it whole, are unchanged.
+  - *The rival's race* (`src/sim/systems/atomRival.ts`, `RivalNeighbour.bomb: { stage, at, delay }`). The
+    stages are the city's own from the fuel on (`enriching`, `silo`, `bomb`, `ready`, `preparing`,
+    `spent`): a neighbour builds no plant to see, so it starts at its fuel. A stage ends at `at + hours +
+    delay` (1,500, 500, 800 war hours) and `delay` is reset with each stage, so a setback hits the stage
+    it lands in. A start (`rivalBombMonth`, after `intelMonth`) needs Hard, `bombAllowed`, no scenario,
+    the city 20 game years old (ticks), no other neighbour racing (a neighbour that has used its bomb no
+    longer counts, and never starts twice), and, for the neighbour, tech 4, 40,000 residents and no
+    vassalage; one roll per candidate in id order on `${seed}:bomb:${month}`, the chance 1.5 % times
+    (0.5 + its aggression, Hard's +0.1 included): 2.1 % for an aggressive neighbour and 1.2 % for a
+    mercantile one. On seed `citybloom` an eligible neighbour begins 23 game months after year 20, for
+    every character (the same dice sequence); the stages then take 2,800 war hours (about 6 hours of
+    play). A blackout holds it hour by hour (`delay` grows by one for each hour dark), which the plan did
+    not say and which gives the tower a use; the fair clock holds it because it runs on the war clock.
+    (The review below changed what happens while the rules turn the bomb off, and to a conquered town.)
+  - *Spies and forces put it back.* A sabotage of `plant` that gets through adds 120 to `delay`; a
+    launch being prepared starts over instead (as the city's own does when its silo is closed); a
+    finished bomb waiting for its war has nothing to slow (the mission is refused when sent, and stands
+    down as "found nothing to slow" if the race ended on the way). A won expedition (`outcome: 'raided'`
+    in `battleReport`, any raid on a neighbour with a race) adds 240; both are told in the intelligence
+    log (`The raid put X's atom bomb race back 10 days`).
+  - *The launch.* A neighbour whose bomb is ready is desperate when it is in an open total war with the
+    city and the war score (the city's side) is 45 or more; a neighbour capitulates at 60. It then
+    prepares for 240 war hours, which the city is told once, in the plan's words, as a diplomacy note
+    (`rivalDesperate`: "X is desperate and has the bomb. Offer peace."; it is in the Diplomacy log too).
+    Each hour it is checked again: a ceasefire, a peace, a surrender or a war turned round calls the
+    launch off ("X has called off its launch, for now", `rivalStandDown`) and it waits as ready, the
+    next preparation starting from nothing. At the end it launches through `atomInbound` (the city's own
+    clock, a game day, the dome, the warning): if another bomb is in the air it waits and tries again
+    each hour. It fires once.
+  - *"The other neighbours' relation to it falls by 40" has nothing to fall.* Computer neighbours have
+    no feeling for each other, only alliances (`RivalNeighbour.allies`, which are what carry a war to
+    another neighbour). So the launch ends the firer's alliances, both ways, and the diplomacy log says so
+    ("X's allies turn from it over the atom bomb", `rivalShunned`); what the others feel for the city
+    is not touched, and the city is no pariah. The war score is not swung by a strike on the city (the
+    strike on a neighbour swings it by 60 for the city; the other way was not asked for).
+  - *Announcements.* Each stage (`rivalBomb` event with the words, a notice in `game.ts`, and in a city
+    of its own, where the room keeps no record, a chronicle line: `rivalFuel`, `rivalSilo`, `rivalBomb`,
+    `rivalReady` in `atomEventText`); the launch is told by the bomb's own warning and the chronicle's
+    `hit`/`stopped` line. `AtomSummary.rivals` carries each racing neighbour's stage number and the war
+    hours until a launch leaves, for the region map (step 11).
+  - *First.* In a city of its own the city's `first` is not set if a computer neighbour has a bomb ready,
+    being prepared or used when the city's bomb is done (`rivalAhead`); one that finishes after does not
+    take it back.
+  - *Cheat and checks.* `rivalBomb {neighbour, stage, hours?}` (stages `none` to `spent`; `hours` into the
+    stage; sets facts only, one race at a time, test mode); `checkInvariants` holds the stage known, the
+    times finite and at most one race going.
+  - *Tests.* `atomSpy.test.ts` (14: the effects on each building, the three ways in, the refusals, the
+    guards, the 240 months side by side) and `atomRival.test.ts` (24: the lever, Easy and Normal over 240
+    months with the chance forced to 1, nothing before year 20, who may start, the stages and their
+    words, the setbacks by real missions and a real battle report, the launch and its refusals, the dome,
+    the allies, `first`, the cheat, the real clock), `relay/tests/regionAtomOps.test.ts` (4). Taken out
+    in turn: the lever, the age bar and the pick's meaning each fail a test.
+  - *Left for the steps that own them:* the report's race field and the protocol gate (9); the region
+    map's pips and the Intel tab's word for a race on the region map (11); the tip text about spies
+    (still "power or depot"); the cross-browser section for the rival's launch (8).
+- **Step 7 review fixes (five findings).**
+  - *Idle hours are held, not skipped.* Turning the bomb off in the rules used to leave a race untouched,
+    so a stage "long overdue" ended in the first hour back and a launch being prepared counted its ten
+    days as served. Now, while `bombAllowed` is false, every dated stage (fuel, silo, bomb and a launch
+    being prepared) adds one to `delay` an hour at a time, exactly as a blackout does, so what was left
+    when it stopped is what is left when it goes on, and the city is not told "desperate" again (it
+    was told at the start). A bomb that is only waiting (`ready`) has no date and makes no preparation
+    while the rules forbid it. `setBackRival` on a launch being prepared reports the hours served (clock
+    minus start minus the hours held), not the hours held too.
+  - *A conquered town's race ends.* The vassal used to freeze its race as it stood (`idle`), which kept
+    `rivalBombMonth`'s "one at a time" shut for every other neighbour for good, kept the race in
+    `rivalRaces` and the Intel menu, and let a rising vassal resume (or, if it was preparing, fire at
+    once when a new war made it desperate). Now the next war hour deletes the unfinished race of a
+    vassal (`fall`: one line in the diplomacy log, "X's race for the atom bomb ends with its fall", told
+    once because the race is gone); a town that rises later may begin again by the ordinary roll. Until
+    that hour a vassal's race counts for nothing (`standing`: not racing, not ahead, not listed, no
+    target, `setBackRival` slows nothing, `raceSlowWhy` says it isn't racing), so a conquest lets the
+    next neighbour begin the same month. A bomb it has already used stays on record (`spent`), and
+    `first` still reads it. This overturns the earlier "idles while the town is the city's vassal".
+  - *The Intelligence menu lists the atom bomb works always.* `sabotageChoices` (`src/ui/warView.ts`,
+    pure, tested) returns power, depot and the works; where `raceSlowWhy` has a reason the works are
+    greyed out with a short word in the label ("no race to slow", "its bomb is finished", "its bomb is
+    used") and the full reason as the tooltip, and a neighbour that is racing is marked in the "send an
+    agent to" list (`raceMark`). With the works picked, a line says what a strike does (`plantStrikeWords`:
+    5 days back, the plant or silo closed 12 hours). The generic refusal for a missing target still reads
+    "its power or its depot" (M37's tests hold that text; the tip text is step 11's).
+  - *Words.* `spanWords` says "under an hour" below half an hour (it read "0 hours", and the fuel line
+    "spoiled 0 hours of fuel") and "1 day" from 23.5 hours (it read "24 hours"); 0 is "0 hours".
+- **Step 8 (cross-browser): calls the plan left open.**
+  - *Where it lives.* The `atom` section is `tests/lockstep/atomSection.ts` (`runAtomSection`), called from
+    `runDeterminism` after the war economy and returned as `DeterminismResult.atom` (66 entries after the review
+    fixes below; 60 as first written), rather than a fifth block inline in `determinism.ts`. Both browser
+    tests (and the SpiderMonkey one) compare it with Node's. It touches no global except two throttles of the
+    blast for the strike on the town (see the review fixes).
+  - *The town and the difficulty.* The lab town of the bomb's own tests (`labTown(0, { length: 800, streets: 7
+    })`: the smallest that crews the plant, silo, dome and agency together), set to Hard after it is made
+    (`options.difficulty`, as `atomRival.test.ts` does) and its neighbours' alliances cleared. About 9 s in
+    Node alone (5 of them the town and its first days; 538 game hours in all, 370 after the race begins),
+    20 s for the whole run in Chromium (24 months), and the Node test went from 28 s to 37 s: inside the
+    15 s the step allowed.
+  - *What is real and what is skipped.* Real: the nuclear plant, the three buildings, the wars (two total
+    wars, declared and opened), six hours of fuel, `buildBomb` (the first instalment, three hours, called
+    off, started again), `launchBomb` (called off with half back and prepared again), the flight, both
+    strikes' warnings and landings, the blast tick by tick and hour by hour, the clean-up crew, the zone
+    ban, the Hard neighbour's own launch and three hundred game hours of fallout on the real clock. Skipped
+    by the cheat `atom`: a full load of fuel, the rest of the bomb's build, and the first half of the
+    launch's preparation. Skipped by calling the sim's own hourly functions by hand, as its war clock does:
+    `atomHour` for the preparation's second half (144 calls) and `supersHour` for the dome's remaining
+    charge (the real clock had given it 108 of its 240 hours: 132 calls). Nothing else is called by hand.
+  - *The city's own crews work before it fires.* The first draft fired the bomb first and the agency then
+    said "needs staff and power" and the dome stopped charging at 99 hours: the protest that follows the
+    launch empties homes (plan call 14), the workers go with them, and the dome and the agency, last in the
+    staffing order, lose their crews. That is the game working as designed, so the section sends its agents
+    and charges and uses the dome first, then fires.
+  - *The saboteurs.* Three missions at the third neighbour's race (the best odds of the three, 60 % to work
+    and 18 % to be caught), sent a few hours apart: a mission's dice are its own, keyed by its number, and
+    three sent in the same hour were all caught (numbers 772 to 774 roll 958, 777 and 836). The third got
+    through (`delay` 120, "put back 5 days"); the others were caught, which covers the caught branch too.
+    The race is then cleared with the cheat so the other neighbour may have its own (one at a time).
+  - *Three strikes on the town.* The first (`bombIn`, two hours, from the second neighbour) meets the
+    charged dome: stopped, `dome.down` 1,200, no winter, no fallout. The second (`bombIn`, one hour) finds it
+    down: it lands, and the west of the town is levelled in slices (see the review fixes for where and how
+    many), the fires and the civic buildings over the next ticks. The third is the second neighbour's own launch, the
+    real Hard path: its race is put by the cheat two hours short of its launch, its war score set by hand
+    to just over the desperation line (the way the economy section sets a score), and it fires, lands a
+    game day later during the fallout window on what the second left standing (the east of the town: 28
+    buildings levelled, 40 residents gone), and starts the third winter. The cheats stand in for the long waits;
+    the launch, the warning, the landing and the blast go the usual way.
+  - *What the entries hold.* The race's facts and the exact `checksum` (which holds the rasters' sums, the
+    `out` counters, the winters and the atom state) at each step, and the city's full `hash()` at the
+    milestones (town, bomb, stopped, launch, flown, levelled, afterwards). Every twelve hours of the
+    fallout window: the checksum, the ground and air rasters by the bits of every cell (`Mixer.int` over a
+    `Uint32Array` view of each `Float32Array`), the `out` totals and the clean-up crews. At the end: the
+    ground and dose where the bomb fell and a mile off, the ban, the radiation map by bits, the winters
+    with `winterDepth` and `solarShare` at seven ticks up to the long fall, the diplomacy (reputation,
+    pariah mark, pacts, wars, each neighbour's relation and sanction cause, the sanctions) at the launch,
+    after the landing and at the end, every event that tells the story, the chronicle's atom lines, and the
+    neighbours' fallout levels (at the end 0.92 north, 0.12 south and 0.27 west: the drift reaches the two
+    that were not hit, by their sides). The `zone` of the struck ground is refused with the fallout's words, so the
+    reason (with its "19 more game years" from the decay's logarithm) is compared too.
+  - *Not covered here.* A neighbour's declaration on the pariah and a hosted battle holding a bomb back:
+    the town has 2,600 residents, under the 3,000 raids and declarations need, and none came when the bar was
+    tried at 1,000 for the whole window (the wars ended instead). Both are integer logic and dice with their
+    unit tests (`atomWorld`, `atomStrike`); a case that fails to come in a section is not forced with a
+    changed constant. The room's half (reports, the strike on a friend) is steps 9 and 10.
+  - *The lists.* `PENDING_KINDS` and its guard in `determinism.test.ts` are gone; `ALL_KINDS` is
+    `COMMAND_TYPES`, and the section uses all five commands the pending list held (`buildBomb`,
+    `cancelBomb`, `launchBomb`, `cancelLaunch`, `cleanFallout`). `COMMAND_KINDS`, `CHECKS`/`PAGE_ONLY`,
+    `SAMPLES` and `NEED` had every kind already (steps 2 and 4).
+  - *Result.* Node: the lockstep tests (28) and the five goldens pass unchanged. Chromium (Playwright's
+    1194 build): the whole run equals Node's, the atom entries included. The SpiderMonkey shell can't be
+    fetched here (the proxy refuses `archive.mozilla.org`) and WebKit and Firefox aren't installed in this
+    VM: the shell's bundle was run in a bare `vm` context with only `print` and `structuredClone` (no DOM,
+    no Node globals) and gave the same 60 entries (the section as first written) as the direct call, so nothing in the section needs a
+    browser API; WebKit and Firefox are reported by `.github/workflows/xbrowser.yml` on the pull request.
+    A deliberate error in `DMath.pow` (3e-16 relative) changes 30 of the 60 entries (31 of the 66 after the
+    review fixes), so a libm difference would show.
+- **Step 8 review fixes (two findings on the cross-browser section).**
+  - *The blast never ran a second slice or lit the fire ring (real).* At the game's numbers the section's
+    second strike levelled all 273 buildings inside 450 m in slice 0 (the cap is 400, the whole town has
+    301), so `blast+0..+7` and `slice 0` repeated one picture, `done` never passed 1 and the nearest-first cut
+    by `(distance, id)`, the sums over slices and the fires' resumption (`fireAfter`, `firesPerTick`) were
+    never compared between engines; no building stood in the 450 to 675 m ring either (4 of them, all
+    rubble), so `impactFires` lit nothing. A longer or denser town cannot fix it: `buildTown` zones a strip
+    about 310 m wide, so a disc of 450 m holds about 300 buildings whatever the length, and zoning more
+    would pass 3,000 residents and bring raids and declarations into a story that has none. So, as
+    `atomImpact.test.ts` does, the section lowers the two throttles for that one strike (`THROTTLES`: 40
+    buildings a slice, 5 fires a tick; the game's 400 and 120) with a `try/finally` that puts them back
+    (`throttled`), and moves ground zero by hand 240 m west of the densest district (`coming.x -= WEST`, the
+    state edit `atomImpact.test.ts` makes with `inbound.x`), where the town ends and the ring has houses.
+    Result: 207 buildings and 1,141 residents in six slices (an hour apart), 33 fires lit over seven
+    ticks (five a tick, the next tick resuming where the last stopped), the civic buildings over the same
+    ticks; the third strike now
+    lands on the east of the town (28 buildings, 40 residents) rather than on bare ground. This relaxes step
+    8's "no global is changed" for these two caps only, which are throttles on work per tick and hour, never
+    on what a blast does; every other number is the game's.
+  - *The section was a pure recorder (real).* It now stops with `Error: the atom section's story broke: ...`
+    (`must`) when a step of the story does not happen: the plant running, both wars open, fuel made, the
+    bomb built, called off and built again and ready, the dome charged and then down after stopping a bomb
+    whole, the bomb fired and landed, the pariah and the sanctions, the winter, the blast in more than one
+    slice and the fires over several ticks, a civic building down, the zone refusal in the fallout's words,
+    the crew, the second war still open for the neighbour's launch, two bombs landed and one stopped, the
+    levelling twice, the drift on both neighbours not hit, three winters and the ban. `determinism.test.ts`
+    also reads the returned entries for the same markers (slices, fires over ticks, a caught agent and a
+    success, the dome down, the race's end), so what the browsers compare is known to hold them.
+  - *Which sabotage branch runs.* A mission's dice are its own, keyed by its id, so extra buildings before the
+    agency (a probe placed one to six parks) changed the three first agents from caught, caught, through to
+    caught, caught, nothing, or through, caught, through, or three nothings. The section now sends rounds of
+    agents (up to six, three at a time, a day apart if all are lost) until one agent has been caught and
+    the race has been put back once; with the ids as they are the first three do it and nothing changes.
+    The same probe showed what else the id shift moves. The second neighbour holds the city's seat of power
+    from tick 13,676 (while the first bomb is in the air) and conquers the city at tick 16,608, which ends
+    every war of the city's; its own bomb lands at 16,068, nine game hours before, and with no war it is not
+    fired (the desperation line needs one). The longer the spies take, the nearer the story runs to that
+    fall. With one or three extra parks the section now stops at "the second neighbour is no longer at war
+    with the town"; with none, two, four, five or six it plays to the end. Re-declaring the war was tried and
+    is refused (the levelled town lacks the strength to rise), so the guard stands: that is the section
+    saying its story needs a retune, not a hole in what it compares.
+  - Tests: `determinism.test.ts` (the markers in the entries) and `atomSection.test.ts` (the section stops,
+    saying what, when no fire catches, when the cap is the game's 400, and when no saboteur is ever caught;
+    the throttles are the game's again after a stop). All four fail against the section as first written.
+- **Step 9 (room and protocol 7): calls the plan left open.** The pages' half (the sink's consumer,
+  `friendFallout`, `friendWinter`, `atomFirst`, the strike's `opResolve` and its sending) is step 10; what
+  is here is the room's messages and fields, final, and the seams.
+  - *Protocol.* `PROTOCOL_VERSION` 7 and `ATOM_PROTOCOL` 7; `MIN_REGION_PROTOCOL` stays 5, a shared city
+    still needs the same version as always (a page on 6 is locked out of co-op rooms, as every sim change
+    since M34 did). A page on 5 or 6 is sent none of the bomb's notices, history lines, lists or messages
+    (the history in its welcome leaves the `race` and `bomb` lines out too: `FwOut.minV`, and
+    `FriendsWar.welcome(slot, proto)`), its report's `atom` is dropped if it sends one, and it is refused
+    in words, with the connection kept, a strike *or* a `plant` sabotage aimed at it ("Samton’s game is
+    older than this room: it can neither race for the atom bomb nor be struck by it") and a strike from it.
+  - *The wire, `AtomReport` (src/data/atom.ts, shared by the sim and the room).* `{stage 0..8, fuel?,
+    fired?, boom?, hit?, stopped?, plume?}`. Two changes to the plan's `stage 1..8, fuel?, fired?, boom?,
+    stopped?, plume?`: **stage 0 is allowed** (a city that never raced but has been struck, had its dome
+    stop a bomb or sent a cloud over a border still has to say so; the room reads 0 as no race) and
+    **`hit` is added**, the bombs that landed *in* this city. `boom` is what the winter needs: every bomb of
+    this city's that landed anywhere, `Atom.boom` plus 1 once its own bomb has landed on a computer
+    neighbour (the sim's own winter `self:0` is the marker, so a flight at a neighbour that has gone, and the
+    test cheat's "spent", count nothing); `hit` is `Atom.boom` alone and is what the *mark* needs (a bomb
+    that fell on a city is a different moment from the city's own bomb landing elsewhere, and the winter
+    cares for neither). `fuel` is the percent of a full load while the bomb is still to come (stage 4 or
+    less), so a finished bomb carries no bar; `plume` is `Fallout.out` of the side each friend stands on
+    (`{slot, total}`, at most four, rounded to a thousandth); `fired` is redundant with stage 7 and 8 and
+    kept because the room's flag should not hang on a number.
+  - *A malformed race is dropped, never a reason to close.* `cleanAtomReport` rebuilds the field by field
+    and answers null for any wrong part (a stage outside 0..8, a count over 99, a fifth plume entry, two
+    entries for one slot, a total over 1e7, `fired: false`); `cleanReport` then keeps the rest of the
+    report. A city's page cuts a friend's plume to *its own* entry before the sim sees it (`atomFor`, in
+    `regionUpdateFor`; `RegionAtom.plume` is a number), so one friend's totals never reach another's sim.
+  - *What is announced, and when.* Stages are read against `City.atom.seen`, **forward only**; a lower
+    stage lowers `seen` (re-arms), and the same step is announced again after a drop. Stages 1 to 6 give
+    the plan's six texts as a `notice` and a `race` history line (`raceLine`). **Stage 7 is the `fired`
+    event, not a stage line of its own** (one `bomb` line, "X has fired the atom bomb", shared with the
+    strike on a friend so the same bomb is never announced twice) and stage 8 says nothing new: the plan's
+    test line "one notice and one history line per forward step from 1 to 8" is therefore six and one.
+    A city gives at most `REGION_LIMITS.atomPerDay` (8) announcements of all kinds in a UTC day (a
+    flapping report cannot fill the history's ring of 100); the marks, flags and winters are not
+    announcements and are not capped by it. **Notices go to the pages that speak protocol 7 only** (and not
+    to a visitor reading a city), not to every connection as other notices do: a page on 6 has no bomb to
+    make sense of "has begun enriching fuel". The plan's "a red alert to every city" at stage 5 is that
+    notice (the page's alert is step 10/11's).
+  - *The first report of a city is a baseline for the counts.* `boom`, `hit` and `stopped` seen on a
+    city's first report ever are taken as already known: bombs from before it joined are not news and
+    chill no one. Every later rise is news; **a count never falls in the room's eyes** (a city back on an
+    older save does not announce its bomb twice), unlike the stage.
+  - *The record, `RegionMeta.atoms`.* At most 16 marks (`ATOM_MARKS`), oldest first, outside the ring.
+    `ready` once per city; **the first `ready` the room sees has `first: true`** (a jump from stage 2 to 6
+    counts as ready; arrival order breaks a tie), and a full list drops the oldest mark that is not it.
+    `fired` (with `to` for a strike on a friend), `boom` (a rise in `hit`) and `stopped` (a rise in
+    `stopped`). Sent as `rwelcome.atoms` and, whole, as `{t:'atoms', atoms}` when it grows. The first
+    finisher's page is sent `{t:'atomFirst', at}` when the mark is made and again on every hello of that
+    city (idempotent for the sim); a page that was away finds `first` in its welcome list too.
+  - *The winters, `RegionMeta.winters`.* A rise in `boom` makes `{id: "<slot>-<n>", at, slots}` for each
+    new count (n is the count reached; three a report at most), `slots` = every *other* city of the region
+    at that moment, offline and on an older page included ("a returning slot keeps its place"; a city that
+    joins later is not in it). An id is made once however often the count is reported again, and **a city
+    can start eight at most** (`ATOM_WINTERS_PER_CITY`), so a lying report cannot flush the others': with
+    four cities the list is at most 32 entries, 1.5 KB. A page is sent only the entries naming it, in its
+    welcome (`winters`) and whole as `{t:'winters', winters}` when one begins (pages on 7 only); it applies
+    each id once (`startWinter`'s own idempotence), a late one on its return.
+  - *The plume reaches each friend as its own total* (`PlayerNeighbour.atom.plume`), cumulative; step 4's
+    review note stands for step 10 (`friendFallout` deposits only when the receiver's own wind blows from
+    that friend's side, the difference from `seen`).
+  - *The strike, `op: 'atom'`.* In `REGION_OPS`/`RegionOp` (the room's), **not** in the sim's `FRIEND_OPS`
+    (step 10 adds it with `opResolve`, `checkOpInput`, `opKey`, `friendOpsWaiting`, `spySettling` and
+    `missionResult`; until then `Game.takeOp` answers `later` to one, so the region keeps it for the
+    page that can take it, and a stub in `regionSpies.test.ts` does the same). Refusals, in the order the
+    room asks, each in words: the rules turn the bomb off; the sender's own page older than 7; the bomb
+    used already (`City.atom.used`, for good, or a report past stage 6); no launch prepared (the last
+    report is below stage 6); **the room has not itself seen the launch prepared for `atomPrep` (20 real
+    minutes; a test shrinks it)** from the first report at stage 6 or more without a drop below, so a
+    report cannot skip the wait; no *total* war *open* between the two (`FriendsWar.totalWarOpen`: a
+    declared war, a ceasefire, a capitulation or a smaller scale is none), then `raidBlock` (a vassal's
+    duty, a binding pact); the sender neutral; the target's player not here ("the bomb waits"); the target
+    neutral; the target a newcomer that has not struck the sender in the last day (the same rule as a
+    saboteur's, *without* the war's warning exception raids have: the plan's "new unless it struck first");
+    the target's page older than 7; the target already holding eight operations. When kept: the verdict is
+    stored for a resent id (outcome `success`, as the blackout's), the strike waits in the target's `ops`
+    until `opSeen` and `opOn` goes to its pages on 7 only (a page on 6 returning later is not sent it,
+    the strike waits for one that speaks it), it counts as no spy, saboteur or superweapon in the target's
+    day, the target may answer (`raidedBy`), and the sender is `used`, marked `fired` (with `to`), flagged
+    pariah and announced ("X has fired the atom bomb at Y", uncapped: it can happen once), all written at
+    once.
+  - *The pariah among friends, `FriendsState.pariahs`.* Set by a kept strike or by a report that says
+    `fired` or is past stage 6 (a launch at a computer neighbour: the room cannot see the target, and a
+    lying report only harms its own city). `markPariah` ends the city's pacts of friendship (the sim's
+    `FRIENDSHIP`: non-aggression, alliance, defensive pact; ceasefires, embargoes and trade stand, as in
+    the sim), turns back the proposals waiting for one and writes a `broken` line for each pact;
+    `declareRefusal` skips the neutral shield, the newcomer's shield and the cooldown for a declaration
+    *on* it (its own declarations keep every rule), and `termsProblem` refuses a pact of friendship with it
+    from either side, in words, in proposals, answers and imposed terms alike. The pages' sims learn of it
+    from the report (`PlayerNeighbour.atom.fired`) and the `pacts` message; the page's own pre-check
+    (`friendDeclareProblem`, which reads `raid: 'new'`) must skip the same shields for a friend that
+    fired: step 10.
+  - *Seams for step 10.* `RegionLink.atom: AtomSink` takes the room's `atoms`, `winters`, `atomFirst` and
+    the lists in the welcome (`welcome({atoms, winters})`), with nothing behind it yet; the sim has no
+    consumer of `RegionAtomMark`/`RegionWinter` (their types are the room's).
+  - *Free plan.* Four cities racing for an hour (a step every nine minutes, the fuel in every report, one
+    city firing and a bomb falling on another near the end) write 63 rows against 58 for the same hour
+    without a race: marks, flags and winters are written at the cities' pace, the stage notices ride the
+    slower one. Lists: `atoms` 16 marks of a 40-character name is under 2 KB, `winters` for four cities
+    1.5 KB.
+  - *Tests.* `relay/tests/regionAtom.test.ts` (32: the wire, the announcements, the record, the winters,
+    the strike's refusals and keeping, the pariah, the plant gate; each rule was taken out in turn and a
+    test failed), `tests/war/atomRegion.test.ts` (11: the sim's report from facts and from a real town's
+    stages, what a city takes in, a race through the real link and room), the free-plan hour in
+    `freeplan.test.ts`, and the history model accepts the two new kinds (`regionHistory.ts`: a group "Atom
+    bomb" beside the others).
+- **Step 9 review (what the room believes of a report).** Nine findings; the step's premise, "a lying
+  report only harms its own city", was false for the numbers other cities *act on* (the cloud, the winters,
+  the permanent record), so the room now bounds each by what it knows. A report is still a friend's word:
+  what follows is a bound, not a proof, and the gaps that remain are listed at the end.
+  - *The cloud (`plume`).* `ATOM_WIRE.plumeMax` was 1e7, four orders above any real total. A strike puts
+    at most 0.3 of the ground it lays into the air, 698 at the middle of the map, and what crosses a border
+    is part of that, so `ATOM_WIRE.plumePerBomb` is 700 and `plumeMax` eight bombs' worth (a region has at
+    most six); a total past it drops the race (a test plays the clouds out from six places on four seeds
+    and checks nothing carries more than one bomb makes). The room then believes a cloud only **where a
+    bomb is on record** (`bombsOnRecord`: the hits it took as news and the cities that fired at a computer
+    neighbour) and cuts each total to `plumePerBomb` x those bombs, so a report with no bomb behind it
+    reaches no one. It does not require the *sender* to have been hit: a cloud passes through a city and
+    on to the next, and that is real. A city's own slot in its plume is dropped. The room reads the race
+    *before* it broadcasts the report (the others are sent the cut cloud). **For step 10:** `friendFallout`
+    must also clamp what it deposits per message (a few `plumePerBomb`-sized steps at most), since the room
+    can only bound the total, not verify the flow.
+  - *Bombs that fell (`hit`, `stopped`, `boom`).* Only a rise the room can account for is news (a mark, a
+    line, a winter): a city has three neighbours and each has one bomb, so the bombs that can fall on (or be
+    stopped over) it are the strikes the room **kept** at it (`City.atom.struck`) and the neighbours that
+    were the computer's when it joined (`City.free`, three less the cities already here, kept as it was so a
+    friend taking a computer neighbour's place does not cancel a bomb it may already have sent), the second
+    only while the rules allow the bomb. `hit` and `stopped` share that allowance (a bomb is one or the
+    other); a count past it is ignored, not an error. `boom` (the winter's trigger) is at most `hit` plus
+    one for the city's **own** bomb, and only if it fired at a computer neighbour (the report path, in a
+    region whose rules allow the bomb): a strike on a friend lands in the friend's city and is the
+    friend's to report. A city's first report is still a baseline (no news) but is cut to the same bounds.
+    A kept strike makes room even if the host turns the bomb off while it is in the air.
+    `ATOM_WINTERS_PER_CITY` (8) stays as a second line that a city's reports cannot now reach.
+  - *The record (`RegionMeta.atoms`).* A full list drops the oldest **landed or stopped** mark of the city
+    holding the most of them, never a ready or fired mark or the first finisher's (a list of nothing else
+    loses its oldest). A city is marked **ready once** by a flag of the room's (`City.atom.ready`): the
+    mark leaving a full list no longer lets the next stage-5 report make it again at a new time.
+  - *Announcements.* The 8 a day are the **stages'** (`race` lines): the bomb's own lines (fired, fallen,
+    stopped) are never lost to a flapping stage, each being bounded by what can happen. A report that
+    **jumps** announces every step it crossed that has a line, the red alert's (stage 5) included, within the
+    cap; a city's first report still says only where it is. (`breaks a tie by arrival` enshrined the jump
+    and now expects all six lines.)
+  - *The strike.* `atomRefusal` also wants every research branch at tier 4 in the sender's report (a launch
+    has them behind it; the report's `tiers` is what the room already reads for the war gate): "Adaton has
+    not finished the research the atom bomb needs". **Left as it was:** the stage-6 wait is the room's own
+    20 minutes, not the race's five hours, because a city moved into a region mid-race has a true stage 6 the
+    room never saw coming; the rest of the evidence is the sender's report, the same trust the blackout
+    tower has. A forger who reports full tiers and stage 6 and waits 20 minutes can still send one strike;
+    it is flagged pariah, its pacts end and everyone may declare on it at once, which is the price the plan
+    set for the real thing.
+  - *Page side.* `historyCities` skips slot 0: a race or bomb line about one city has `b: 0`, which the
+    panel listed as "A former city (#0)".
+  - *Remaining trust gaps, accepted:* a city may claim bombs from its computer neighbours (up to `free`;
+    the room cannot see another city's computer players), so a lying friend can start up to three winters;
+    a friend can exaggerate a real cloud's reach towards a named friend up to the bombs on record's mass.
+  - *Tests.* `relay/tests/regionAtom.test.ts` "M40 review" blocks (cloud, bombs, record, announcements,
+    the strike's evidence), `tests/war/atomRegion.test.ts` (the sides, the air a bomb makes against
+    `plumePerBomb`), `tests/war/regionHistory.test.ts`. Every new test fails on the code before the fix.
+    Older tests that used counts nothing could account for (a city hit thirty times) were changed to
+    possible ones (strikes kept by the room, regions of two); the test report's default tiers are full.
+- **Step 10 (pages): calls the plan left open.** The pages' half of the race among friends: three page-only
+  commands, the strike put to the room and taken at the target, the sink that hands the room's words to the sim.
+  - *The strike is sent from the prepared bomb, on the road spies take.* A prepared bomb aimed at a friend's city
+    is put to the room when its preparation ends (or when the city sends it again with `launchBomb`): the sim
+    sets `Atom.prep.send = { op, at, slot, settling? }` (`op` an id from `nextId`, as the tower's, `at` the war
+    hour, `slot` the friend's place) and the event `strikeSent`. `friendOpsWaiting` lists it beside the agents
+    and the tower (key `ao-<seed hash>-<op>`, `opKey` kind `atom`), `spySettling` pins it, and the room's
+    verdict is `missionResult` for its number (`strikeResult` in `atom.ts`): `success` (the room kept it) sets
+    `fired` with the friend's place, takes `have` and `prep`, and calls `atomFired`, so the world turns on the
+    firer exactly as at a computer neighbour; `refused` takes `send` off, keeps the bomb prepared and puts the
+    room's reason in `prep.refused` (bounded to 160 characters; the summary's `launch.held` shows it, and the
+    event `launchHeld` carries it). `RegionOps` needed no change: `FriendOp` and `FRIEND_OPS` gained `'atom'`
+    and the page's `settle` already hands the outcome on. The preparation's early return is a new first line:
+    **a strike with the room no longer cares what happens to the silo** (it left it; the hours are not reset
+    by damage), and the silo being *removed* meanwhile (a blast on the firer) keeps `have`/`prep` for the
+    answer: kept, the bomb has gone; turned away or timed out, `strikeBack` finds no silo and loses the bomb
+    (`atomLost`). `launchBomb` and `cancelLaunch` are refused while it is with the room ("The strike is with
+    the region’s room, which has to agree"); the launch checks `prep.send` before the silo's own so the
+    reason is the right one. The plan's "after `SETTLE_TIMEOUT_HOURS` with no answer it goes back to prepared"
+    is the tower's rule exactly: 72 war hours unpinned (`FIGHT_TIMEOUT_HOURS`), 720 pinned. **Known hole,
+    accepted (the tower has it too):** if the room kept the strike and the answer was lost for those 720
+    hours (30 game days), the bomb goes back to prepared while the room has it as used; sending it again is
+    refused in the room's words ("has used its atom bomb") and the bomb is stuck. Invariants: a strike has a
+    number and a place and is of a fully prepared bomb.
+  - *A prepared bomb at a friend is put to the room once, by itself, and then waits for the city.* When the
+    preparation ends and the war is open (`targetWhy`) the sim sends it; a refusal is not retried by the page
+    or the sim (the room would say the same until something changes): the city sends it again with
+    `launchBomb` (free, as at a computer neighbour). `heldWhy` is the target's check only now; `roomWhy` is
+    gone. The step 2 test that expected "goes through the region’s room" and a refusal of sending again was
+    changed to the new behaviour (put to the room, in flight, nothing can call it off).
+  - *The target takes it with `opResolve` `op: 'atom'`.* `checkOpInput` allows `atom` with outcome `success` and
+    no target; the sim calls `atomInbound` (24 game hours, ground zero chosen by its own sim, the dome and
+    the damage its own) and writes the intelligence log line "X has fired the atom bomb at the city". **A
+    bomb already in the air is not taken**: `opResolve` fails with `BOMB_IN_AIR` *before* marking the operation
+    taken, `resolveOp` (`src/client/ops.ts`, shared by `Game.takeOp` and the tests) maps that one reason to
+    `later` (any other failure that is not `OP_TAKEN` is `refused`), so the room keeps the strike for it. This
+    exposed that `RegionLink` never offered a `later` operation again until the city rejoined (the room
+    re-sends them only on a hello): it keeps them now (`opsWaiting`) and offers them with each report, as it
+    does a battle; that also covers a visitor-mode or briefly busy page for the M37 operations. A strike that
+    waited for a player who was away has no real-time deadline: it starts its **full countdown from the tick
+    the sim takes it**, whether `late` or not (`late` is ignored for the bomb), and the rules are not checked
+    again at the target (a strike the room kept stands, as the plan says of the host turning the bomb off).
+  - *Cloud over the border: `friendFallout` waits for the wind.* The plan's "otherwise deposit ... only while this
+    city's own wind blows from that friend's side" left open what a message does when the wind is wrong. It
+    does nothing and leaves `seen` where it was, so the cloud waits at the border and the next news while the
+    wind is right takes in everything that waited (a computer neighbour's stream does the same: its level is
+    kept and the stream comes whenever the wind comes from its side). `AtomRegion` therefore hands a total over
+    again with each of the region's news until the sim has not answered `waiting`. A first sight sets `seen`
+    to the total and deposits nothing; a lower total sets `seen` down; the same total adds nothing.
+  - *How much, and where (`FALLOUT.friend`).* The new part of the total times `share` (0.6) is spread over the two
+    outermost rows or columns of the edge facing the friend (`R x rows` = 256 cells), `spread` (3) times
+    thinner than the strip would hold (the cloud has spread over two maps by the time it arrives), no cell
+    more than `cell` (0.4) and at most `step` (700 = `plumePerBomb`) of the total in one message (step 9's
+    note: the room bounds the total, not the flow). Probe (a middle strike's whole cloud, 356, as one
+    message, seeds `citybloom f b c a1..a6`, 120 updates): it lies 0.28 thick across the strip (71 of
+    air), crosses the map and leaves 0.002 to 0.018 on the ground at most, no closed cell on any seed,
+    where a computer neighbour's whole stream leaves 0.03 in ten years. A haze that shows on the radiation
+    map (air is drawn lighter) and costs those under it a little for a few game days, never a second
+    strike. The strip is walked in index order, the wind is `windAngle` of the city's own seed (the
+    helper `windFrom` now serves `falloutDue` too, the same expression), and no random stream is touched.
+    `friendFallout` needs war on and the sender a neighbour of the city; a total over `plumeMax` or not a
+    number is refused.
+  - *`friendWinter` and `atomFirst`.* A winter id must be the room's (`winterIdOk`: place 1 to 64, which bomb 1
+    to 8 -- `ATOM_WIRE.winters`, `.slots`, `.marks` are the page's copies of the room's limits); the sim
+    applies it once by id (`startWinter`), at the city's own tick, and keeps at most `ATOM_WIRE.winters x 5`
+    in all (a region's three friends and the city's own). `atomFirst` is refused for a city with no bomb
+    held, prepared or fired, ok for a city that has it already, and sets `Atom.first`. **The achievement
+    `firstBomb` ("First to the bomb") did not exist and is added** (14 achievements): `Atom.first`, which
+    the sim sets by itself in a city of its own and the room tells in a region. `AtomSummary.first` shows it.
+  - *`AtomRegion` (src/client/atomRegion.ts), the sink.* It cleans the room's lists again, because a region in
+    a player's browser has a host that is not trusted: marks that are well formed (place, a name cut to
+    40, kind, time), the last 16, one `first` (the earliest); winters whose ids pass `winterIdOk`, name this
+    city among those chilled, are not this city's own, once each, 8 from any one city at most, 32 in all, with
+    slots cut to 8. Each new winter id is `friendWinter` once (a failure of the call is tried again, a
+    refusal in words is final); `atomFirst` is the command; `RegionLink.take` hands the sink the region's news
+    after the city's `regionUpdate` is in (`AtomSink.update?`, optional so the step 9 sinks still fit) and the
+    sink turns each friend's `atom.plume` into `friendFallout`. Everything runs in order on one chain; a
+    failure of one word does not stop the next. `frame(stage)`, called from `Game`'s frame, asks the link for a
+    report when the city's own stage changes: the first frame only learns where the city stands (the link
+    reports on joining), and at most one ask every 5 seconds (`ASK_GAP`; the room takes a few messages a
+    second), a change inside the gap made on the first frame after it. It is not attached to a shared (co-op)
+    city (`!this.net`), where there is no region.
+  - *Declaring on a friend that fired.* The room flags a city pariah from its report's `fired` (or a stage past a
+    launch being prepared) and sends no list of them, so the page reads the same two facts
+    (`atomFiredBy`, `src/data/atom.ts`): `friendDeclareProblem` leaves out the newcomer's and the neutral's
+    shields for such a friend (the city's own rules above them stand: a neutral city still can't declare),
+    `FriendSummary.pariah` carries it, and the Diplomacy tab says "fired the atom bomb" beside the name and,
+    when a declaration is open, "The region lets any city declare war on it at once." The page has no
+    cooldown to skip: the cooldown was only ever the room's.
+  - *The page says what happened to the bomb.* `Game.onEvents` gives three notices that had none (the Bomb tab
+    that shows them in full is step 11): `strikeSent` ("The atom bomb is with the region’s room, which has to
+    agree to the strike on X"), `launchHeld` (the reason, the room's own words for a refusal: "The prepared
+    bomb can’t leave: ... It stays in the silo until it is sent again") and `bombFired` ("The atom bomb has
+    left the silo for X"). They are the same for a computer neighbour's launch.
+  - *Tests.* `tests/war/atomFriends.test.ts` (20), on three lab towns in a real `RegionRoom`
+    (`atomFriendsHarness.ts`: pages with `FriendsWarClient`, `RegionOps`, `AtomRegion` and `resolveOp`, `Clock`,
+    the room's `atomPrep` short): the race announced to the other two and the first finisher's mark, word and
+    achievement (and a second finisher gets none), a stage change told at once and inside the gap held, the first
+    finisher told again on return; the whole strike (a pact between two friends, a dome, total war, the room's
+    refusal before its own clock has run, sent again and kept, the firer a pariah in sim and room and its
+    pact gone from both, the target's countdown from the moment it took it and told again changing nothing, the
+    dome stopping one with no winter anywhere, then a second city's strike landing -- levelled, its report's
+    hit, the winter reaching the third city *and* the firer); refusals (target away, target on protocol 6,
+    the room never answering) leaving the bomb prepared with the reason; a friend who cannot take it now
+    (offered again with each report) and one who is gone (taken on return with a fresh countdown); a second
+    bomb waiting for the first; the cloud (first sight, new part only, repeats, a reload, a bounded big step, a
+    lower total, waiting for the wind and coming in when it turns, nothing from a stranger or a nonsense
+    number); the winter on a city's return, once; ids that are not winters; declaring on a pariah friend;
+    the cleaners on hostile lists. `tests/war/atomChain.test.ts` has the friend-target test changed as
+    above, `atomState.test.ts` the summary's new `first`. **The cross-browser script** (`determinism.ts`,
+    friends section, hash and answer of each step, 80 entries now) uses the three commands: `atomFirst`
+    refused and taken, a strike put to the region, turned away, put again and kept (the world turns on the
+    city), winters by id (one a repeat, one refused), a cloud on each of the three sides in turn (the town's
+    wind comes from some and not others: deposited, waiting, repeated, set down), a bomb from the friend
+    taken once, a repeat refused, a second refused while one is in the air. `determinism.test.ts` reads the
+    entries for each of those. Chromium agrees with Node (24 months in 22 s).
+- **Step 10 review (seven findings; they overturn four of step 10's calls above).**
+  - *A pinned strike is never called back (it overturns "the tower's rule, 720 war hours pinned" and
+    removes the "known hole" listed there).* The room keeps a strike the moment it answers, and the
+    page asks again with the same key until it hears (`RegionOps`: every 20 s, the room giving the
+    stored verdict); only the sim's own timeout could lose the answer for good, by putting the bomb
+    back in the silo after `SETTLE_TIMEOUT_HOURS` while the room had it as used, and the room then
+    refused every new send ("has used its atom bomb") for ever. So `strikeHour` recalls a strike only
+    while the page has not put it to the room (`FIGHT_TIMEOUT_HOURS`, 72 war hours: the page was not
+    looking); once pinned (`settling`) the strike waits for the room's word however long, and the city
+    cannot call it off or send it again meanwhile ("with the region's room"). The way out of a room
+    that is gone for good is to leave the region: a city bound to no region is answered with a refusal
+    at once (`Game.ops.post`), which is `missionResult refused`, so the bomb is prepared again. The
+    blackout tower has the same timeout and keeps it (a blackout costs a day's recharge, not the only
+    bomb of the game).
+  - *A friend's cloud comes in whatever the city's own wind does (it overturns "waits for the wind").*
+    Each city's wind is a near-constant bearing of its own seed (`windAngle`: base + 0.35 rad), and
+    the cloud leaves the sender's edge only when the *sender's* wind blows towards it; asking the
+    receiver's wind to blow *from* that side as well passed for about a third of pairs of cities and
+    left the cloud at the border for ever for the rest. A cloud that has crossed the border is in this
+    city's sky; `friendFallout` no longer reads the wind (it does not return `waiting`, and
+    `AtomRegion` no longer hands a total over again). The fear in step 5's note (air put on the strip
+    facing a friend while the wind blows towards it leaves by that edge at once and would be counted
+    back to the sender as `out`) is real but bounded, and it dies out: what leaves is never more than
+    was deposited (a test measures it), the other end takes 0.6 of that, and air thinner than
+    `FALLOUT.town.inflow` is haze and is not counted. Probe (two cities whose winds both carry the cloud
+    out by the edge facing the other, the worst pair; a middle strike, 356): the exchange added 12 units
+    (3 %) to the sender's total and was over within three reports. A computer neighbour's stream is
+    unchanged (its level is kept and comes whenever the city's wind comes from its side: a level that
+    stays, not a flow that is lost).
+  - *`seen` is a high-water mark (it overturns "a lower total sets `seen` down").* Setting it down on
+    a lower total let any sender (a modified client, a peer-to-peer host, or an honest one that reloaded
+    an older save) alternate 1 and 700 and have the whole step deposited at every rise: the review's
+    probe closed 4,272 cells (1.09 km², more than a real strike) in 90 minutes of play. `seen` only rises, so
+    a total heard again or a lower one adds nothing until it passes what the city has already taken
+    in; the most any sender can put in over the city's life is `plumeMax` (and each message at most
+    `FALLOUT.friend.step`). The cost: a sender that reloads an older save and re-grows its cloud
+    adds nothing for the part it already had, which is right (it was counted).
+  - *The baseline of a friend's cloud is the page's (`friendFallout.base`).* "First sight takes
+    nothing" could never tell a city that was there from the start from one that came late: the
+    sender's report lists a plume entry only once it is above 0, so the receiver never saw 0, and its
+    first entry (a few units at 1×, ten percent of the cloud at 3×) was taken as already known. The
+    page knows what it saw first: `AtomRegion` keeps, per friend, the total as this page first saw it
+    (0 if the friend had no cloud for this city) and hands it as the optional `base` of
+    `friendFallout {from, total, base}`. With `seen` unset the sim starts from `base`: 0 takes all of
+    it (the city was there), the total itself takes nothing (a newcomer, or a city away for the whole
+    drift, is spared), a base above the total keeps the base; once `seen` is set `base` is not read
+    (a reload with the sim's `seen` kept takes only what is new). A call without `base` is the old
+    rule (the first total is known), which is what the cross-browser script and old callers get. A
+    baseline of 0 sets nothing (no fallout state is made for a friend that has sent none: a war city
+    in a region would otherwise carry two rasters and a three-hourly update for nothing). `base` is a
+    number in 0..`plumeMax` or the call is refused.
+  - *A strike is checked against the city's own books (`strikeProblem`, `Atom.struck`).* The sim took
+    an `opResolve` `atom` from any known friend with only the id and the bomb-in-the-air tests, so a
+    peer-to-peer host or a modified room could level a city again and again with fresh ids. The target
+    now keeps the places of the friends whose bomb it has taken (`Atom.struck`: one each, ever, as the
+    room's `City.atom.used`) and takes a strike only if (1) that city has not struck this one before
+    (refused for good, even while its first is in the air), (2) its last report shows a launch
+    prepared or the bomb gone (stage 6 or more), and (3) a total war with it is on this city's books.
+    (2) and (3) can be behind the room's word (a returning player is sent its operations before the
+    news: `hello` sends `ops` before the war and report messages), so they answer `later` like a bomb
+    already in the air (`strikeLater`, which `resolveOp` maps to `later`): the room keeps the strike,
+    the page offers it again with each report, and it is taken as soon as the city has been told. They
+    do not check the war's state (open, ceasefire) so a kept strike still stands once a treaty is
+    signed after it. What this cannot do: a host that forges the report and the war as well can
+    still send one strike from each friend slot a region can have (three), no more, and never from a
+    city it has not set up; the room's own checks are what stop a real city that is not at war.
+  - *The page's notices (`src/client/atomNotices.ts`).* `Game.notice` collapses repeats of a kind for a
+    minute, keeping the first text, and toasts a kind at most once in 20 s: a held launch's kind was
+    `held:<neighbour>`, so a second, different refusal inside the minute (the room's "still being
+    prepared", then "its player is not here") was neither toasted nor in the log. The kind now holds
+    the reason (`held:<neighbour>:<why>`): a reason said again still collapses, a different one is a
+    notice of its own. Whether the reason is still true is not for the sim to say: `launch.held` after
+    a refusal is *the region's last answer*, kept until the city sends the bomb again (the only way to
+    learn what the room would say now), and the notice says so ("It stays in the silo until it is sent
+    again"); the Bomb tab (step 11) should show it as the last answer with a Send again button. The
+    region's race lines (`link.onNotice`) were a 4.5 s info toast, the first finisher's "has the atom
+    bomb" among them; `raceNotice` gives each its own logged notice (kind `race:<text>`) and makes the
+    bomb in hand, a launch prepared, a bomb fired or fallen a red alert (`bad`: logged, toasted, the
+    alert sound), and the plant, fuel, silo and bomb being built news (`info`), a dome stopping a bomb
+    news. The first finisher's achievement notice was already there.
+  - *Tests.* `tests/war/atomFriends.test.ts` is 27 tests now: the new ones fail without the fixes
+    (nine of them verified against the step 10 tip). `tests/war/atomNotices.test.ts` (the kinds of the
+    held launch and the race lines). The cross-browser script sets the friend's report and total wars
+    by hand and plays a strike that is not taken yet, taken, repeated, a second from the same city
+    refused, and another city's refused while one is in the air; the cloud entries now start from a
+    baseline of 0 and a lower total changes nothing (`seen` ends at the highest). Changed because
+    they asserted what the above replaces: the cloud tests of `atomFriends.test.ts` (first sight, waits
+    for the wind, a lower total sets `seen` down), the pinned half of "called back to the silo", and
+    `determinism.test.ts`'s `waiting` match.
+- **Step 11a (the interface; effects and sounds are 11b): calls the plan left open.**
+  - *The summary grew the facts the tab needs, nothing else moved.* `AtomSummary` gains `rules` (the rules' words),
+    `plantState`/`siloState` (none, going up, built), `siloWait`, `buildWhy` (the bomb's own gate in words, null while it
+    is being built or held), `launchWhy` (the gates before any target: rules, scenario, silo, treasury),
+    `targets` (every rival and friend's city with `targetWhy`'s reason, null when a launch could be aimed at it),
+    `launch.refused`/`launch.sent` (the region's last answer, and "with the room") and `fallout` (the city has a
+    raster); `RivalRace` gains `fuel` (percent while it is still on its fuel: elapsed over `1,500 + delay`). All are
+    pure reads, none is hashed or saved; the one test that compared the whole summary names them.
+  - *The ladder points at its next step.* Eight rungs (research, plant, fuel, silo, bomb, bomb ready, launch, used),
+    each `done`, `now`, `wait` (a reason, the sim's own: `fuelWait`, `bomb.wait`, `launch.held`) or `todo`; the first
+    rung not done is never a bare `todo` (it reads `now`), so the tab always says what to do next. The line above it
+    (`headline`) names that rung ("Fuel: 50 % of a full load") rather than the region's stage name, because with a silo
+    standing and the fuel half made `atomStage` says "Silo going up"; the region's race list keeps the stage names for
+    friends (all their report holds) and uses the headline for the city.
+  - *The launch card is the plan's, with one reading.* The hold commits `launchBomb` (the $1.2M and the preparation), not
+    the firing: the bomb leaves by itself when the bar is full (as at a computer neighbour in step 2), so the card says
+    so, lists the consequences before the button and says the preparation can be called off with half back. A
+    prepared bomb that can't leave shows the room's last answer (`launch.refused`) with Send again (a plain button: the
+    price is paid and the consequences were read at the hold); a strike with the room shows no cancel. The hold is
+    pointer events (mouse, finger, pen), 3 seconds on `performance.now` (the bar is drawn a frame at a time, but the
+    commit has a timer of its own, so a window with slow frames still commits at three seconds), ending on release,
+    sliding off, a lost touch, blur or the button going disabled; Space and Enter held do the same. The press is kept in `atomUi.hold` so
+    a test can read it, and `scripts/dev/atomshot.mjs` freezes the clock at 1.5 s for the picture.
+  - *Raising the dome sets it to "Superweapons only".* The card's button appears when the dome is charged and its mode
+    is off (the one case the sim says a charged dome won't stop the bomb); `super` stops a bomb and keeps the dome out
+    of ordinary raids, which is what a player who keeps it off to save its charge wants.
+  - *Countdown card.* Top centre, between the war room (left) and the inspector (right); the clock is the raid chip's h:mm of game time on the
+    display clock (whole minutes: float maths showed "1:00" for 61 ticks) with "about 3 minutes at normal speed"
+    under it; it is also the first section of the Bomb tab (own test ids), and on a narrow window the card steps aside
+    while the Bomb tab is open (and its Open the war room button goes while the room is on that tab). "Look at the missile" shows only when `game.atomUi.missile?.available()` (11b sets
+    `atomUi.missile = {available, look}`). The raid chip puts the bomb before a battle too and opens the war room on
+    the Bomb tab (`Game.openWarRoom(tab)`; the tab is `Game.warTab` now, not component state).
+  - *The card a bomb leaves behind* (`atom-after`, from `bombStopped` and the target's `atomImpact`): "N residents have
+    left the city; M buildings were levelled" or the dome's save, closed with OK (and "Show the fallout map"); it is
+    the page's, so a reload loses it (the Bomb tab keeps the same line under `impact`).
+  - *Clean-up is a click tool* (`CleanTool`, id `cleanup`, `src/tools/cleanTool.ts`): arming it opens the radiation
+    map (and puts the previous map back when it is put down), closes the war room, draws the 128 m ring from the
+    `cleanFallout` preview (amber when it would work, red with the sim's refusal in the hint otherwise) and the
+    price; a click hires a crew and the tool stays out for the next (three at a time). Its bar (`cleanup-bar`, Done)
+    is the way out on touch.
+  - *The race on the map.* Pips (six: plant, fuel, silo, bomb, ready, launch; the last two red), a fuel bar while the
+    bomb is unfinished, a dashed frame once a bomb is ready or being launched, a star on the first finisher, an arc
+    with a dot flying along it for the city's own strike (from `fired.tick`) and for a bomb inbound, a cloud on a
+    town a bomb has fallen on (the flight over, `rival.fallout` 0.5 or more, or a friend's `hit`).
+  - *`reduceFlashes`* is a settings key (default from `prefers-reduced-motion`, false where nothing can ask) and a
+    "Soften flashes" check in the Graphics block; 11b reads it.
+  - *Tips.* Six, each with its condition: `atomRace` (a neighbour or friend at fuel or beyond), `atomReady` (the bomb in
+    the silo), `atomLaunch` (a launch being prepared), `atomInbound` (a bomb in the air), `atomFallout` (fallout in the
+    city), `atomWinter` (the badge shows); the spy tip names the atom bomb works now.
+  - *Tone.* A test reads the interface files whole (comments too) and the six tips for "casualt", "killed", "dead",
+    "victim"; the view model's output is held to it at every stage.
+  - *Touch.* New controls are `.btn.small` (covered by the xs rule) except the hold button (`min-height: max(2.6rem,
+    40px)`, `touch-action: none`); `e2e/m39-touch-scale.spec.ts` covers the countdown card's buttons in a real rivals city
+    with a bomb sent by the cheat, the Bomb tab, and the hold button as a stand-in (a real one needs a bomb in the silo).
+  - *No new command or cheat,* so the lockstep lists and the cross-browser script are untouched. Test API: `getAtom()`,
+    `openAtomTab()`, `getFallout(x?, z?)`.
+  - *Found by looking at the pictures (all fixed in this step).* The small red buttons were red on red (`.btn.small.danger`
+    is a red-text rule from the room panel: the dome button is `.atom-raise` now); the ladder's bars had no height (the
+    war room's `.war-bar` is `flex: 1`, which in a column gives no height); the clean-up tool's hint and the radiation
+    map's reading sat on each other (the reading goes under the hint while the tool is out); the ladder said "Not built"
+    of a plant and silo a blast had taken after the bomb was used (it says "No longer standing"); the card for a
+    stopped or landed bomb covered the room's edge (it sits to the right of it).
+  - *A launch held on by touch cancelled itself (found by the dev scene's touch test, fixed).* The held button commits at
+    three seconds and the launch card gives way to the launch-under-way card, whose Cancel button then stands under
+    the finger that is still down; lifting it (a tap synthesised on release) pressed Cancel and called the launch off at
+    once. Now `AtomUi.commitPress()` guards what takes the button's place until the pointer that held it comes up (any
+    of pointer, touch, mouse, key or blur) and 700 ms after, and a button that has just mounted is inert for 400 ms
+    (`useArmed`); a lost release frees it after 15 s. The commit also has a timer of its own beside the frame loop (a
+    window drawing slowly, as software rendering does, committed at the next frame, seconds late).
+  - *Dev scene* `node scripts/dev/atomshot.mjs <out>` (after `npm run build:test`; env `ONLY=racing,map,ready,hold,prepared,phone,
+    countdown,raised,stopped,hit,used,clean,settings` picks scenes, earlier ones they need run first; `NOSHOT=1` plays
+    them and checks what the page reports without taking the pictures, about 80 s for `phone`; `PW_CHROMIUM` per CLAUDE.md in
+    a VM without Playwright's revision; `scripts/dev/montage.mjs` takes it too now): the battle-map scene's town plus
+    a nuclear plant, the HQ, the enrichment plant, the silo and a dome, every tier by cheat. It holds the launch
+    button by mouse (let go at 1.5 s with the clock frozen for the picture: no launch; held on: the launch starts) and by
+    touch (CDP touch events on the phone's width: a finger let go early starts nothing, a finger held on does), and throws
+    if either does the wrong thing. The pictures are 24 in all: racing, the map with races and with a strike, ready, the
+    hold halfway, prepared, the countdown (the dome off, raised from the card, in the room), stopped, landed, used,
+    the clean-up tool armed and after a click, and the phone and tablet widths.
+  - *Tests.* `tests/war/atomView.test.ts` (23: the view model at every stage of the race on a real town, the hold's
+    arithmetic, the dome's sentences against the sim's own answer, the countdown, the race rows, the tab's condition, the
+    fallout lines, the tone), `atomCleanTool.test.ts` (5: the tool with the real sim), `atomUi.test.ts` (7: the card, the missile hook, the held button, the guard after a committed press),
+    `atomState.test.ts` (the tone test now reads the interface files and the six tips; the summary's new keys),
+    `shell.test.ts` (`reduceFlashes`: 2), `atomRival.test.ts` (the rivals' new `fuel`). No golden moved.
+- **M40 step 11a review fixes** (20 findings from two readers, 15 distinct once the doubles are counted once).
+  - *Sending the bomb again is held like the first launch.* The prepared-and-held card's "Send it again" was a plain
+    button that put the one irreversible thing in the game in the air on a tap; it is the same `HoldButton` (three
+    seconds, keys, touch) and the consequences read before it are the card's. The first launch's hold may be long past by
+    the time a ceasefire ends, and the target can be changed on the card, so the hold is the guard each time.
+  - *A guest cannot launch, and the button says so.* The room allows `launchBomb` to the host alone (`roomRefusal`); the
+    launch card is dead for a guest in a shared city with the room's own words (`HOST_ONLY_LAUNCH`, exported from
+    `rules.ts` so the room and the card cannot drift) instead of letting the 3 s bar fill and then refusing.
+  - *Keys and fingers on the held button.* Every keydown of Space or Enter on it is swallowed, auto-repeat included, and
+    only the first begins the hold (the window's Space handler acts on any keydown that was not default-prevented, so the
+    repeats paused and resumed the game thirty times a second); a finger that slides off ends the hold on the move that
+    leaves the button's box (`pointerInside`), because a touch is captured by its button and never fires a leave. The mouse
+    still ends it on leave.
+  - *Stop building asks first,* in the house style (`dip-confirm`), and says what stopping costs: the build is lost, what was
+    paid stays spent, a restart begins from nothing and pays the first instalment again (`stopTerms`, and `buildTerms` says
+    it before the build starts). The caption "What has been paid stays spent" read as if the build could be picked up again.
+  - *The first bomb's tip does not cover the countdown card.* Both stood at the top left on a phone or tablet, the tip on top,
+    hiding the clock and the dome button the tip tells you to press. While a card is up (`.atom-countdown ~ .guide`) the tip
+    stands above the toolbar. Measured in Chromium on the real stylesheet at 390, 800 and 1280 px: no overlap.
+  - *The scenario refusal comes first.* A scenario city has the Bomb tab hidden unless something of the race exists
+    (`AtomSummary.allowed` is false there and `rules` says "The atom bomb is not part of a scenario"); the ladder's first rung
+    gives that reason instead of 24 tiers of research for a race that cannot finish. `atomRulesWhy` and `bombAllowed` are
+    untouched (the sim's gates keep their order); only the summary says it.
+  - *"Raise the dome now" is offered only when raising it helps,* and its result is read like every other action's. The
+    summary's `inbound.raisable` is `bombStopped(sim, true)` (the same read as `stops`, as if the mode were one that rises
+    for the bomb); a dome that is dark, unstaffed or unpowered says "isn't working", not "raise it". A refusal (a guest without
+    the `defence` role) is a toast with the sim's reason and a sound, as everywhere else.
+  - *Region map cloud.* A friend's city gets the cloud only from its own report (`hit`): the sender's flight timer proves
+    nothing about a friend (its dome, or its page not having taken the strike). A computer neighbour keeps the timer and its
+    fallout (`cloudOnMap`).
+  - *The countdown card is not a live region.* It was `role="alert"` round a clock that changes eight times a second. Now a
+    labelled group with one hidden alert whose words hold no figure (`announce`: the sender and the dome's state in a phrase),
+    so a screen reader hears it once and again only when the dome's state changes.
+  - *Words.* "1 seconds" is "1 second" (`playWords`); a computer neighbour's launch is counted in the war room's own unit,
+    months of a game day each ("leaves in about 10 months", `warTime`/`launchWords`; "leaves within the hour" at the last),
+    where it said days by dividing by 24, which read 30 times further off than it was; the embargo line says "computer
+    neighbour" (the sim embargoes those only).
+  - *Touch.* "Show where" has the phone's 24 px target (`#ui[data-width='xs'] .atom-countdown .link`) and `COVERED` in
+    the touch-scale e2e looks at it.
+  - *The clean-up tool after it is put down.* The answer to a click made just before Escape or Done no longer draws the ring
+    or a hint on the next tool: the click's `then` checks an epoch that `activate` and `deactivate` bump. The crew that went is
+    still announced; a refusal arriving late is a toast.
+  - *Not changed.* Nothing in the sim's hashed state moved: `bombStopped`'s new argument defaults to the old read and nothing
+    the sim runs passes it; the five goldens pass unchanged.
+  - *Tests.* `tests/war/atomComponents.test.ts` (10: components called without a browser, `preact/hooks` stood in for by
+    plain stores: the held button's keys and sliding finger, the again button, the guest, the stop question, the countdown's
+    live region, the stylesheet's rules), `atomView.test.ts` (+ the real dome's states against the card, the scenarios, the
+    words, the cloud), `atomCleanTool.test.ts` (+1).
+- **M40 step 11b: the effects** (`src/render/atom.ts`, the numbers in `src/render/atomFx.ts`), made and judged on the Mac
+  in real Chrome on the GPU.
+  - *Display only, from the summary and the display clock.* The summary gained three read-only facts the effects need
+    (`inbound.warn` and `inbound.side`, `fired.side`, `impact.at`, null from a save whose impact predates `at`); nothing
+    hashed moved. The missile's place is `inboundAt(flight, ground, displayTick)`: from 5.2 km out on the sender's side,
+    a parabola 1.7 km high, diving onto ground zero at `arrive`; a sender with no side comes from the east. Pausing
+    holds it where it is, as it holds the sim's flight.
+  - *The city's own bomb* stands in its silo with its nose out of the open hatch while it waits, then rises straight up
+    for 40 ticks and bends away towards the target's side (`outboundAt`). The hatch is an overlay (two half discs slid
+    apart over the model's own hatch, a dark shaft between), opening over the last 15 % of the preparation, open while a
+    prepared bomb waits, shut 160 ticks after it has gone. Its place is the hand-made silo's hatch (the middle of the
+    site, 4.3 m up, 4.9 m across) or the generated one's (3 m back, 6.4 m), by whether the war models have a silo.
+  - *The missile is drawn 2.6 times its model's size* (a toy, "comically huge") in flight, its model's own size in the
+    silo; `handmade.unit('atombomb')` when loaded, a generated rocket in the same colours otherwise.
+  - *The cloud is camera-facing puffs shaded as small spheres* (two triangles each, one draw call): 500 at High, 300 at
+    Medium, 120 at Low, bigger as they are fewer so the shape stays full; stem, cap (a rolling torus) and a ring round the
+    stem that shows only while the cap is up. A thinning part shrinks and drops its puffs one by one rather than going
+    see-through (a first try dithered them, which read as speckle), so nothing needs sorting. It rises and spreads for
+    20 s of play, glowing orange as it goes up and cooling to white in about ten; the stem goes between 3 and 9 game
+    hours, the cap drifts with the city's wind at 70 m an hour and is gone by 22. Its age is the landing's tick on the
+    display clock, or the real seconds since this page saw it land if more (a pause right after the landing doesn't
+    freeze the cloud half risen).
+  - *Flash, ring and shake run on real time from the moment the display clock crosses the landing* the page watched (a
+    page that loads after the landing shows the cloud, not a flash). The flash is a glow over ground zero plus the frame's
+    exposure (`1 + 2.4 x flash`): 0.3 s at full, gone by 0.9 s; with `reduceFlashes` a 0.8 s fade that never passes 0.45 and
+    never jumps, and no shake. A bomb the dome stops gets a smaller pale-blue flash high over the city, no ring, cloud or
+    shake. The camera shake is the disasters' way (added after the camera is placed), 9 m easing out over 1.6 s.
+  - *"Look at the missile"* follows it from the side of its way and a little behind, high enough to look down on it,
+    with the missile in the middle of the view (outside photo mode the camera can't look up into the sky); any move of
+    the player's own ends the follow, and at the landing it pulls back to 2.6 km over ground zero. The card is told when a
+    missile appears or goes (a paused city sends no updates to redraw it: found when the card had no button in the GPU
+    run).
+  - *The radiation tint* reads the radiation map's values (ground from its first amber band) every 4 s while the city
+    has fallout and the quality draws it, into a 128² texture the terrain shader turns into a straw-yellow, speckled
+    stain; the map itself stays the reading. Air alone tints nothing.
+  - *Cost switches* in `QUALITY_PARAMS.units`: `atomPuffs` (500/300/120), `atomTrail` (60/40/24), `atomTint` (off at Low).
+    `renderStats().atom` reports the cloud's calls, triangles and puffs (at most 3 calls and about 1,260 triangles: the
+    plan allowed 6 and 4,000; a unit test stages every moment at every quality against those caps).
+  - *Sounds:* `atomWarn` (a two-tone hee-haw siren, 2.5 s, as loud as the raid siren) every 6 s of play from the warning,
+    `atomTick` each second of the last ten (both on the display clock: a pause silences them, a jump plays at most one),
+    `atomBlast` and, 2.2 s later, `atomWind` at the `bombLanded` event (it was the meteor's `boom`). Offline renders:
+    peaks 0.079, 0.097, 0.528, 0.105; nothing clips.
+  - *The nuclear winter's look* (step 5's `worldLook`) was checked at full depth: snow over everything in what would be
+    July, a grey-blue sky; left as it was.
+  - *Frame times* (Mac, Chrome, frame cap off, the 100k bench city, cloud and missile staged with `showAtom` over the
+    city's middle, back to back with a plain run): High overview 7.23 → 7.22 ms average (p95 10.7 → 11.1), Medium 4.16 →
+    4.32 (6.7 → 7.0), Low 2.99 → 3.01 (3.9 → 3.9); 3 more draw calls. City and street views with the cloud off screen
+    unchanged within noise.
+  - *Test API* `showAtom(stage)` stages any moment for a picture (`AtomStage`), `getAtomFx()`; `atomshot.mjs` gained
+    `GPU=1` (real Chrome) and the scenes `fx`, `fxlow`, `fxnight`, `street`, `hatch` (staged, in photo mode for the low
+    camera and the hour) and `missile`, `tint`, `winter` (played for real).
+- **M40 step 11b review fixes** (eight findings from two readers, each with a test that drives the real `AtomEffects`
+  from the summary over ticks: `tests/war/atomFxLive.test.ts`, with a real `CameraController`).
+  - *A landing is shown when the display clock reaches the sim's real landing,* not its planned tick: the sim keeps
+    `inbound` past `arrive` while a battle or an earlier blast holds it back, and sets `impact.at` at the real landing.
+    The effects keep the flight until its end is shown (the summary drops it at the landing, which a trailing display
+    clock may not have reached), and flash, ring, shake, sound and the follow's pull-back come from that end. The dive
+    now ends `ATOM_FX.hover` (60 m) over ground zero, a moment before `arrive`, and circles there until then: a held
+    landing keeps the missile in the sky, and a normal one bursts in the air (the flash was already drawn 60 m up).
+    The cloud never shows before its flash (a trailing clock showed puffs at age 0). A landing the clock reaches more
+    than `flashWindow` (6 s of play) late, or one already there on the first frame (a page loaded after it), shows as
+    a cloud with no flash or sound.
+  - *A dome's stop* is seen from a new read-only `AtomSummary.stopped` (a count), timed between the last tick read and
+    the current one, never before `arrive`; it gets its pale flash and its own sound `atomStopped` (a muffled thump
+    and the dome ringing; offline peak in the probe's range), once.
+  - *Sounds come with the flash,* not the `bombLanded` event: `blastSounds(stopped)` is the one list (`atomBlast`, then
+    `atomWind` 2.2 s later, or `atomStopped`), played by `renderer.atom.onBlast`, which fires once per end shown. A
+    landing never shown (a page that wasn't watching) is silent, as it has no flash.
+  - *The siren is spaced in real time* (every 6 s, never closer than its own 2.5 s), and sounds only while the display
+    clock runs; at 3x that is every 18 s of play rather than overlapping itself.
+  - *"Look at the missile" roams:* `CameraController.roam` lifts the map-edge clamp and the zoom limit (to 6 km)
+    while it follows, so the missile is in the middle of the view from 5 km out (the clamp had it off screen for the
+    first 70 s). The follow remembers the pose it set; any other change (the player, "Show where", a preset, a
+    fly-to) ends it on the next frame, and the camera's limits apply again at once. At the landing it stands back over
+    ground zero at 2.4 km or the player's own distance, turned and tilted as the player had it; when the city's own bomb
+    it followed has gone, the player's whole view comes back.
+  - *Both missiles at once:* the bomb on its way in and the city's own (in its silo, or leaving) are two meshes sharing
+    one model, their trails in one draw call; "Look at the missile" prefers the one coming in.
+  - *The lift-off's scale eases* from the model's own size to the flight's over the first fifth of the turn
+    (`outboundScale`), where it jumped at the turn's first tick.
+  - *An independent check of these fixes* (a workflow: each fix undone in a worktree, nine of nine caught by a test;
+    three readers, a skeptic per finding) found seven more, all fixed with a test that fails without the fix:
+    - *A bomb warned while the last one's end is still waiting for the display clock* no longer takes its place: ends
+      are read against the flight as it was before the read, the waiting end keeps its own flight (drawn and followed
+      until its flash), and a dome's stop takes that flight's tick and place.
+    - *Each end is shown once:* a sim put back to before a landing or a stop (a co-op city's resync) and played on to
+      it again doesn't flash, shake or sound it twice (`AtomEffects.ends`, the last 16 shown).
+    - *The camera's limits ease back in after a roam* (`CameraController.release`, `home`): the allowed area and zoom
+      shrink from where the view is to the map's own over about a second, so a drag that ends the follow carries on
+      without the view jumping onto the map or the grabbed point being left kilometres away, and a wheel turn out
+      never zooms in (`zoomBy` reads the same limit). The roam is never ended by clearing the flag.
+    - *"Look at the missile" asked again* while following keeps the player's own view to give back.
+    - *A fly-to that ends the follow* ("Show where", a notice's Show, following a battle) builds on the pose it finds;
+      when it kept the follow's turn and tilt, the player's own are put back (a preset sets its own and keeps them).
+    - *In a shared city* "Look at the missile" stops following a friend's camera first, as every other camera command
+      does (`Game.following = 0`; a one-liner in `Game`, not covered by a unit test).
+    - *The siren goes on while the sim holds a landing back* (the missile circling overhead), not in the two seconds
+      at the planned landing; the countdown's ticks stay bounded by it. The countdown card says so too: past its
+      time and still in the air, "It is over the city now, and falls as soon as the fighting here, or the last blast,
+      is over" instead of "Lands in about 1 second" for up to 90 s (`Countdown.held`, `when`).
+- **M40 step 12: the end-to-end tests** (`e2e/m40-atom.spec.ts`, one player; `e2e/m40-friends.spec.ts`, two).
+  - *A shorter wait for a friend's strike, for tests only.* The region room keeps a friend's atom strike only once the
+    launch has been prepared for `REGION_LIMITS.atomPrep` (20 real minutes). The local relay takes `--atom-prep
+    <seconds>` (`RelayOptions.regionLimits`, passed to each `RegionRoom` the way relay tests pass limits), and the e2e
+    config starts it with `--atom-prep 20`. The Worker online has no such switch; nothing else reads it. A relay already
+    running on 8787 without the flag (the config reuses one) makes the spec read the room's refusal ("waits N minutes
+    more"), wait it out when it is two minutes or less, and send the bomb again with a second hold.
+  - *The war is kept still while the specs wait.* A launch's preparation is 288 war hours (twelve game days at full
+    defence funding). Across that wait any battle moves the war's score: a raid lost made the city a vassal, one won
+    made the neighbour capitulate, and either ended the total war the launch needs. The specs set the computer
+    neighbours' forces to nothing each day (`rival` cheat) and the city keeps only its HQ, so only the specs' own moves
+    decide the war.
+  - *Towns big enough to run the silo.* The forces take at most a quarter of a city's workers, the HQ first and the
+    plant and silo last. Adaville on m39's river map (about 1,500 residents) never staffed its silo, so it is founded
+    on the coast map m40-atom uses (about 2,200 then); Samford keeps the lakes map.
+  - *Samford's HQ stands east of the town,* beyond the blast and the closed ground: the war room opens only while a
+    city has a military HQ (it is the seat of power), and a city whose HQ the bomb took must build another before it can
+    make peace or declare war. Left as it is (the seat of power is the design), and noted here.
+  - *"Its dome down"* is a dome Samford builds once the war is open, too late to have charged; the card says "still
+    charging (0 %): it can't stop this bomb yet" and the bomb lands.
+  - *"Pacts gone"* is checked on Ada's pact with a computer neighbour, accepted from the Diplomacy tab before the war
+    and ended by the strike: the only pacts the room drops for a pariah are pacts of friendship, which are binding, and
+    a war between the two players has already ended theirs.
+  - *"May declare at once"* is shown by peace and a declaration straight after it: Samford offers peace, Adaville accepts,
+    the Friends row says the region lets any city declare war on Adaville at once, and Samford's declaration is
+    accepted with no cooldown.
+  - *The tips are checked by their conditions:* for each, the tips are turned on with every other tip marked read and
+    the war room shut, and the card must come up by itself with the tip's own words once the city reaches the moment
+    (a neighbour racing, the bomb in the silo, a launch prepared, a bomb on its way, fallout, the winter).
+  - *Found by the pictures and fixed:* the radiation map's reading stood under the zone tool's hint, its first line
+    hidden (step 11a moved it below the clean-up tool's hint only; it now keeps clear of any tool's hint, measured, and
+    the spec asserts the two don't overlap); the region map's cloud mark sat over the north town's travel times (it is
+    drawn left of the town now, clear of the times above and the race's pips and star to the right).
+- **Wrap-up: fallout's half-life 9 game years, not 8.** The brief asks that "nothing can be built or zoned
+  for decades of game time"; at 8 years a strike's core reopened after 18.6, a little under two decades. At 9
+  it stays closed about 21 years (12.5 hours of play at 1x), the 0.3 rim about 5; a computer neighbour's
+  level halves on the same clock. Nothing else moves: no golden holds fallout, and the cross-browser test's
+  atom section compares each browser with Node as it runs. The tests that named the old years now name the
+  new ones (`tests/war/atomFallout.test.ts`), from the same formula.
+- **Step 13 fixes: the bomb's record survives a welcome, and a firer's firing survives a crash** (both found by the
+  region soak's atom act; each has a test that fails without the fix).
+  - *The welcome's older copy no longer overwrites the room's newer word (`RegionLink`, case `rwelcome`).* The handler
+    awaited `take(region)` and `reportNow(true)` (which sends the report, then waits for the city's save) and only
+    then gave the welcome's `atoms` and `winters` to the `AtomRegion`. The report is what tells the room a bomb fell:
+    it adds the mark `boom`, sends `{t:'atoms'}` (and `winters`) whole, and that message is handled while the welcome
+    handler still waits for the save, so the welcome's older list was put over it and the page lacked the mark until
+    the record next changed or the page was reloaded (the soak: a target that lost its network in the countdown kept
+    `["2:ready","2:fired"]` for eleven minutes where the room had `["2:ready","2:fired","4:boom"]`). The sim never
+    lost a winter (each id is applied once, whichever list carries it); the page's `winters` list could. **Call: the
+    welcome's copy is taken first, synchronously, before anything in the handler is awaited**, which is the order the
+    room sent it in, instead of holding `atoms`/`winters`/`atomFirst` until the welcome is done as M39 holds friends'
+    messages (`friendsHeld`). That is the simpler fix that is correct for every interleaving, nothing is ever held
+    back or replayed (a held message from a link since lost would need the same "dropped" care `friendsHeld` takes),
+    and the two lists reach the page before the save rather than after it. `AtomRegion.welcome` has no dependence on
+    the region having been taken yet (`friendWinter` needs only the city's sim). The ordering is the whole guard; a
+    version or length check on the list was considered and not added, since a list that only the room's order can
+    make older has nothing a check could tell apart that the order does not. `atomFirst` was never affected (a
+    fact, not a list). Tests: `tests/war/atomWelcomeOrder.test.ts` (the room played by hand against a link whose
+    save waits: the record, the winters, the welcome alone, a return, the first finisher's word; the first two fail
+    without the fix) and `tests/war/atomWelcome.test.ts` (the soak's case through a real room: the target offline
+    when the bomb lands, back in the region with the room's whole record).
+  - *The city is saved right after the room keeps its strike and the firer's sim applies it (`RegionOps` `keep`).* The
+    room keeps one atom strike a city, ever, and answers `opKept` at once; the firer's page applied it
+    (`missionResult` → `fired`, the pariah, the reputation at 0, the winter later) but nothing saved the city, so a
+    crash restored an older autosave: a city that never fired and was no pariah, while the room held its bomb as used
+    for good and refused every later send. A city that *takes* a strike has always been saved before the room is told
+    (`Game.takeOp`); the firer is saved after it has applied the answer, the only order open to it (the room has
+    already decided). `OpsHost.keep` is called by `RegionOps.settle` when `missionResult` for an `atom` op was ok
+    (a strike the room turned away, an op the city could not apply, and every other operation save nothing);
+    `Game` wires it to `saveTo('auto', 'Autosave', true)`. `saveTo` answers false when a save is already under way,
+    and that save may have started before the firing was applied, so `RegionOps` tries again up to `KEEP_TRIES` (5)
+    times a second apart and then leaves it to the autosave; a save that throws is tried again the same way and
+    never breaks the settle. **Left as it was:** the window between the room's answer and the end of that save (a
+    crash in it loses the firing as before; the page asks again after a restore only if the sim kept the strike
+    pinned, which an autosave made before the send does not), and the soak's two `excused` lines for a firer restored
+    from a save older than its strike stay in the judge for that window. The soak's pages pass the same hook
+    (`atomPage`'s fifth argument, its world's autosave) and `AtomPage.autosave` is the city as the page last saved it
+    for the bomb. Tests: `tests/war/atomFirerSaved.test.ts` (a firer whose page applied a kept strike, restored from
+    its latest autosave, still holds `fired`, is a pariah and has reputation 0; fails without the fix; a strike
+    turned away leaves no save; `RegionOps` on its own: when it saves, when it does not, the retry).
+
+## Phase 5 end (SPEC-5.md, "When every milestone is done")
+
+The three wars played as a player would, through the real UI on the Mac's GPU (headed Chrome, 1280×800, High on
+the page judged, Low at 1100×760 on the others, tips on), kept as `e2e/phase5-finale.spec.ts` (`@playthrough`;
+`PHASE5_GPU=1` plays it in a real Chrome window): 1, a city with rival neighbours from the main menu, grown with the
+mouse, an HQ and a barracks from the Military bar, a raid lived through, an expedition from the Send tab, war
+declared and peace proposed from the Diplomacy tab, every war room tab, a computer neighbour racing for the bomb;
+2, two players in a region on the local relay and a third watching, war turned on in the Region panel, declared
+from the Friends block, a live battle both command on the battle map, peace by treaty; 3, the race between two
+friends, the nuclear plant, enrichment plant and silo from the toolbar, the bomb from the Bomb tab, total war, the
+launch by the real three-second hold, the countdown, flash, cloud and landing on the target at High, the radiation
+map, a clean-up crew, the winter on both cities and the firer a pariah. Cheats only skip waits (money, research,
+a project's stages, the fuel and the bomb, fast-forward, a raid brought near). One line a finding:
+
+**Fixed**
+- *"0 of the 1,208 residents nearby head for the shelters"* (a raid's and a bomb's warning, the countdown card): with
+  none in reach, "None of the 1,208 residents nearby can reach a shelter" (`shelterSentence`, `src/ui/warWords.ts`;
+  `tests/war/warWords.test.ts`).
+- *"1 of our units were knocked out"* (an expedition's notice; "1 of your 4 units were" on an ally's Help card and
+  notice): the verb agrees, a whole force lost is "all 4 of its units" or "your only unit", "the rest" go home only
+  when some are left (`unitsKnockedOut`, `helpOverLine`, `helpOverNotice`; `tests/war/helpView.test.ts` had pinned
+  "1 … were" and now expects "was"). A raid's report says "none of theirs knocked out", not "0 of theirs".
+- *"No units yet"* in the Forces tab after a raid took them: "No units".
+- *A raid closed both power plants and the advisor said "Build a power plant"*: with a plant out of action it names
+  it and the hours left, and offers buying from a neighbour (Region panel) for power and water, only when the city
+  has neighbours (they never sell sewage) (`tests/advisors.test.ts`).
+- *The battle bar named a raid's six industrial objectives "Target"*: zoned objectives are named by kind (Industry,
+  Homes, Business; ids are one counter for buildings and civic buildings) (`objectiveName`).
+- *"1 buildings knocked down (0 residents moved out)"* in a battle report: `damageLine` counts agree and drops a
+  move-out of nobody.
+- *Notices stood over the battle map*, hiding the defender's order buttons and log at 1100 px: with the map open they
+  stand to its left (`.toasts.beside-map`), except at phone width where the map takes the screen; the playthrough
+  checks the boxes don't overlap.
+- *The battle map said "step 40 · frontier 64" and "heard: order 1, from step 56"*: "2 orders so far" and "heard,
+  from 0:28" on the battle's clock (the room stamps an order a moment ahead, so "heard at" would read as the future);
+  the step and frontier stay in the tooltips (`orderAck`, `tests/war/battleMap.test.ts`).
+- *A city joining a region was told twice* ("Kitsbury joined the region." from its page, again from the room): the
+  room no longer sends that notice to the city joining (`relay/tests/joinNotice.test.ts`, fails without the fix).
+- *Notices without a full stop* (diplomacy notes, the room's lines, the race lines): `Game.notice` and the room's
+  toasts end every notice as a sentence (`asSentence`); the sim's note texts are unchanged (they are hashed).
+- *"Score 0 after 0 battles"* on a war's card: "Score 0, no battles yet." (`warScoreLine`; m39-friends' "Score" holds).
+- *A strike gave its target three notices at once* (the room's "Adaville has fired the atom bomb at Samford", the
+  intelligence note "… at the city", the sirens), and the racer heard its own steps in the third person
+  ("Adaville has begun building an enrichment plant"): the page lets pass a race or bomb line the room says of the
+  city itself (`ownRaceLine`), and the intelligence note of a bomb is logged without a toast (`quietIntel`); the
+  room's broadcast is unchanged (M40's `regionAtom.test.ts` has every page hear it) (`tests/war/atomNotices.test.ts`).
+- *"The Enrichment plant is open!", "The Primary school was destroyed"*: names drop their capital inside a sentence,
+  except a proper name ("Sunfield Commons") (`nameInSentence`).
+- *The Diplomacy tip came up as the bomb landed* and stayed over the cloud: tips for a moment that won't wait (a raid
+  coming, a live battle, a bomb in the air) go before general ones still waiting (`Tip.urgent`, `pickTip`;
+  `tests/tips.test.ts`; the list's order is unchanged).
+- *"Autumn: winter is three months away"* under heavy snow and an ash sky: under a nuclear winter the warm seasons
+  say the cold stays (`seasonNotice`, `src/ui/weather.ts`).
+- *Offering peace while losing, reparations and tribute started as "the neighbour pays"*: in an offer of peace in a
+  war the city is losing they start as the city paying, by its own taxes (`termPayer`).
+- *"Power 25 units" beside "Keeps 0 of 12 units"* in a military inspector (and the Upkeep tab): power in MW there, as
+  the Region panel says.
+- *"Forces are sent from a working military HQ"* after a raid left the HQ under repair (it stood on the map, so the
+  player couldn't tell why): the refusal names the cause, "The military HQ is being repaired (18 h left): …", or
+  under water, still being built, short of staff (`hqRefusal`; `tests/war/raid.test.ts`).
+- *"… and a nuclear winter is coming"* on the aftermath card beside the notice "A nuclear winter has begun": the
+  winter starts with the blast's last slice, as the card comes, so "has begun" (`tests/war/atomView.test.ts` updated).
+
+**Not the game's** (the spec, now fixed in it)
+- The thoughts card over the war room (the earlier session): a window behind others was throttled and Shift+M
+  toggled the room shut; the spec asks the game whether the room is open and keeps its windows unthrottled.
+- Tips a step late: the game picks a tip every 2 s and the spec looked for 300 ms; and after "Got it" the card
+  redraws up to 300 ms later, so the spec waits for it to go before reading the next.
+- A milestone's banner over the build spots: the spec's first steps take 4 s of real time and the banner 9 s
+  (probes: it closes on time, behind another window and in a region too); the spec clicks it away, as a player would.
+- Research tips over the fallen city: the research cheat finishes 24 tiers at once and queues every research tip.
+- A different town and war every run of test 1: the New city screen offers a new map seed each time; the spec fills
+  in one (the earlier session's `cj67eb`), and gives a raid's repairs their hours before it sends a force.
+
+**Left, with a proposal**
+- *Young rival cities fall fast* (an aggressive neighbour raided, went to total war, took the HQ, a vassal within
+  days): a grace for a city's first war, no total war declared on a city under 3,000 residents or two years old.
+- *One raid blacks out the town* (both coal plants wrecked: 48–96 h without power, approval 16 %, jobs 0): a wrecked
+  plant keeps half its output while repaired, or an emergency import offered at a premium; the advisor now points
+  at buying.
+- *The Send tab gives no odds*: a rough odds line from the force against the town's defences at the last report
+  (or "unknown without a spy report").
+- *A refusal gives no reason* ("turns down the city's proposal"): the computer's answer should name its main reason;
+  that is the sim's note text, hashed in the M36 golden, so it wants a deliberate golden update.
+- *The bomb doesn't move the war score between friends* (score 0 after the strike): the room could count a kept strike
+  as a decisive battle.
+- *"Fallout 0.97" on the radiation map*: the tested M40 format; "Fallout 97 % (heavy)" reads better.
+- *"Nuclear winter, year 1 of 6, 23 °C" as the card says one "is coming"*: factual (it cools as the ash spreads); left.
+- *A tip on screen whose moment has passed stays until dismissed*: P15's rule (cards don't vanish while read); left.
+- *The toy mushroom cloud's puffs read as hard balls close up* (flat-shaded spheres): the M40 look, fine from the side
+  at a distance; softer puffs (a noise or rim-light term on the puff material) would read more as smoke.
+
+**Fixed in the cloud session, after the Mac's commits** (reviewed there: every commit's tests, the goldens, typecheck
+and lint rerun; the fourteen pictures looked at)
+- *The war room's eleven tabs wrapped to three rows* (Reports alone): the war room's tabs take a little less padding
+  (`.war-room .tab`), so the eleven sit in two rows at 1280 and 1100 px (measured in the browser: three rows before,
+  two after); narrow widths keep their own padding. `e2e/m39-touch-scale.spec.ts` passes.
+- *The scale drop-down's options were cut off*: the options are a word or two (`scaleName`: War, Total war, Skirmish
+  war, A rising) and what the chosen scale means stands beneath (`scaleHint`, `dip-scale-hint`, `dip-fscale-hint`),
+  in both declarations (computer neighbours and friends); `tests/war/warWords.test.ts`, `e2e/m36-diplomacy.spec.ts`.
+- The Military bar's tooltip said "25 power units" after the inspector moved to MW: now "25 MW of power".
+- `hqRefusal`'s commit had left `sendRefusal`'s comment above it: moved back.
+- *"Fallout 0.97" on the radiation map* stays: it is the sim's tested query format and the line goes on to say how
+  long the ground stays closed, which is what a player needs.
+
+## Phase 5 checks (the Mac's GPU, after the phase's end)
+
+- *The playthrough in one go* needs `PLAYTHROUGH=1` beside `PHASE5_GPU=1`: the config leaves `@playthrough` tests
+  out otherwise (`grepInvert`), so the bare command runs nothing.
+- *The playthrough's kept pictures replaced*: the run after the cloud's two-row war room tabs drew them in the
+  current interface, so they replace the committed ones (same scenes).
+- *The top bar folds when what it shows doesn't fit*: a raid's or a bomb's chip, or a nuclear winter's badge,
+  pushed a war city's speed buttons and menu off a 1280 px window (and 1100). The bar now measures itself after each
+  drawing and on a resize and folds its lesser buttons into the More menu, as a narrow window's does, the badge in
+  its short form (`topbarFolds` in `src/ui/layout.ts`, tests/layout.test.ts; the playthrough checks the menu
+  button stays in the window). Measuring rather than a width class: the chip's words and the badge's vary.
+- *The phone battle map test's flake* (`m39-battlemap.spec.ts`, "on a phone", `m0.canvas.w` 0 at line 370; it failed
+  three runs of five here, and once in the full run before M40): the map's draw loop starts after the sheet's first
+  paint and records its picture's size on its first frame; Playwright's Chromium draws this page at about 8 frames a
+  second (SwiftShader), and the test read the size right after the sheet showed, before two frames had passed
+  (a probe: the canvas laid out at 362 × 371 but still the default 300 × 150, the recorded size 0 × 0, then set a
+  frame later). Not a game fault (the map draws on its next frame); the test now reads the size once the map has
+  drawn (`drawn`, as its `pointsWhen` does for clicks), the check itself unchanged (wider than 300, taller than 150).
+- *Frame times for the war on the GPU* (`framebench.mjs bench-results/war.gz`, the war city `battlebench.ts --guards
+  --dome --super robot --save` keeps: 93k residents loaded, a charged dome): every view's average is inside SPEC-3's
+  budget at every quality (High: the battle 6.4–6.6 ms, with the battle map open 6.6, with the war room open 6.4,
+  units 7.7, aircraft 9.4–10.0, the plain city 10.0; the city view was 12.1 ms at High at model batch 5). New views,
+  each run in a page of its own (a battle left running refuses the next): `battle+map` stages the same force as a live
+  battle the city defends through the test builds' stand-in for the room and opens the map; `battle+room` opens the
+  war room; `units` and `aircraft` put 36 units at the war city's barracks, depot and an airfield (laid beside a new
+  avenue when no road has room: aircraft only fly from an airfield). The stand-in's call now carries `super` when a
+  superweapon is in the force, as the room's does (without it the city declined the robot's live battle).
+- *The aircraft view's long frames* (High p99 27–52 ms, one frame of 79–293 ms; Medium one of 95): the profile puts
+  them inside WebGL draw calls (driver stalls, mostly as the view warms up), not the game's own work, whose average is
+  inside the budget. No clear fix; left to watch.
+- *`supershot.mjs` and `unitshot.mjs` take `GPU=1`* (a real Chrome window, as `atomshot.mjs` does): the checks' command
+  for the dome, shields and units on the GPU assumed one.
+- *The war's looks on the GPU, by day and night* (`warshot.mjs --gpu` 41 pictures, `GPU=1 unitshot.mjs` 17,
+  `GPU=1 supershot.mjs` 11, `GPU=1 atomshot.mjs` with `ONLY=fx,fxnight,street,hatch,missile,tint,winter` 32; every one
+  looked at): nothing broken. Every war building by day and at night with lit windows, the pits, units parked, on
+  drills and at sea, the dome (a ring at Low, the bubble at High) with its shield bubbles and interceptors, the gate's
+  swirl, the tower's ring, the robot, fortress and whale parked, the bomb's hatch, launch, dive, flash, ring and cloud
+  by day, at night and from a street, the fallout's tint and the winter. Three of unitshot's frames (`heli`, `pad`,
+  `patrol`) and one of supershot's (`parked-fortress`) missed their subject on the GPU: the scripts were written for a
+  software renderer's slow frames, and the display clock moves the unit on between finding it and the picture (a
+  rerun of `parked` shows the fortress on the GPU and on SwiftShader). Left as they are: dev tools, not the game.
+  A matter of taste, already listed: the toy cloud's puffs read as hard balls close up.
+- *The bench against `main`* (`npx tsx scripts/bench.ts 6 --big`, the branch and a worktree of `origin/main` 6883790
+  back to back, three pairs, nothing else running): the same city on both (110,174 residents at month 6, a peaceful
+  city untouched by the war's code); months 4–6 tick average 0.269 ms on the branch against 0.267 on `main` (runs
+  0.286 / 0.262 / 0.259 against 0.253 / 0.265 / 0.282), p99 2.53 against 2.50, six months' total 1,517 against 1,500
+  ms, worst tick 12.4–15.0 against 14.1–16.5. The same within the runs' noise (a run is 4 s on this Mac).
+- *The shared-city snapshot* (`npx tsx scripts/dev/snapsize.ts`, `encodeSnapshot` on a saved city with no undo history
+  yet): the 110k bench city is JSON 2.99 MB, gzip 0.45 MB, 0.59 MB of base64, 3 parts of the 40 (7 % of the 8 MB cap);
+  the war city (93k residents, 300 civic buildings) the same, 3 parts.

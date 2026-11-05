@@ -24,7 +24,19 @@ export function widthClass(rem: number): WidthClass {
  * fix-layout.spec.ts fails when the toolbar clips at 1160 px).
  */
 export function barsClass(rem: number): BarsClass {
-  return rem < COMPACT_BELOW_REM ? 'compact' : rem < SCENARIO_TIGHT_BELOW_REM ? 'tight' : 'full';
+  return barsClassWith(rem, 0);
+}
+
+/** Width of one toolbar button and its gap, in rem (23 buttons are about 70.7 rem). */
+export const TOOL_REM = 3.1;
+
+/**
+ * As `barsClass`, for a toolbar with `extra` buttons beyond the peaceful city's: a city with war on
+ * (M34) shows the Military category too, so its bar folds a button's width sooner.
+ */
+export function barsClassWith(rem: number, extra: number): BarsClass {
+  const compact = COMPACT_BELOW_REM + extra * TOOL_REM;
+  return rem < compact ? 'compact' : rem < Math.max(SCENARIO_TIGHT_BELOW_REM, compact) ? 'tight' : 'full';
 }
 
 /**
@@ -44,4 +56,16 @@ export function tipShift(left: number, right: number, viewport: number, margin =
   if (left < margin) return margin - left;
   if (right > viewport - margin) return viewport - margin - right;
   return 0;
+}
+
+/**
+ * Whether the top bar folds its lesser buttons into the More menu because they don't fit beside what
+ * it shows now (phase 5 checks: a raid's or a bomb's chip, a nuclear winter's badge, pushed the speed
+ * buttons and the menu off a 1280 px window). `content` is the bar's content width now (px), `room`
+ * the most it may be, `saved` what folding saves (measured when it last folded). Folded, it unfolds
+ * only once the unfolded bar would fit with a few px to spare, so it doesn't flicker at the edge.
+ */
+export function topbarFolds(folded: boolean, content: number, room: number, saved: number): boolean {
+  if (!folded) return content > room + 1;
+  return content + saved > room - 8;
 }

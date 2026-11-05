@@ -7,6 +7,8 @@ import {
   groupsNamed,
   onGround,
   orientFaces,
+  orientOpen,
+  PIT,
   under,
   type Box3,
   type ModelReport,
@@ -281,6 +283,28 @@ function bothSides(tris: Float32Array): Float32Array {
   return out;
 }
 
+/**
+ * What a war building builds below ground (its quay, dry dock or basement ramp): each part that
+ * reaches lower than a pit's depth, as its box across the site and its lowest point (x0, z0, x1, z1,
+ * bottom; cm), leaving out a box inside another that goes as deep.
+ */
+export function pitsOf(parts: GlbPart[]): number[] {
+  const cm = (v: number) => Math.round(v * 100) / 100;
+  const boxes = parts
+    .map((p) => growBox(emptyBox(), p.tris))
+    .filter((b) => b.min[1] < -PIT)
+    .map((b) => [cm(b.min[0]), cm(b.min[2]), cm(b.max[0]), cm(b.max[2]), cm(b.min[1])] as const);
+  const inside = (a: readonly number[], b: readonly number[]) =>
+    a[0]! >= b[0]! && a[1]! >= b[1]! && a[2]! <= b[2]! && a[3]! <= b[3]! && b[4]! <= a[4]!;
+  const out: number[] = [];
+  boxes.forEach((a, i) => {
+    // Inside another (the first of two the same).
+    if (boxes.some((b, j) => j !== i && inside(a, b) && (!inside(b, a) || j < i))) return;
+    out.push(...a);
+  });
+  return out;
+}
+
 /** `runs: false` leaves long windows whole (to compare with in tests and dev tools). */
 export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: boolean } = {}): BakedModel {
   const t = report.target;
@@ -311,7 +335,10 @@ export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: 
       return sheet;
     }
     const o = orientFaces(p.tris);
-    return o.turned ? { ...p, tris: o.tris } : p;
+    if (o.turned) return { ...p, tris: o.tris };
+    // War models (phase 5): an open part's odd faces too (a tyre stack's side, a drum's face).
+    const q = report.war ? orientOpen(p.tris) : o;
+    return q.turned ? { ...p, tris: q.tris } : p;
   });
   // The file's part each of those is (a doubled sheet or a part turned round is a copy).
   const original = new Map<GlbPart, GlbPart>(src.map((p, i) => [p, kept[i]!]));
@@ -713,6 +740,8 @@ export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: 
     });
   }
 
+  const pits = report.war ? pitsOf(kept) : [];
+
   return {
     id: report.id,
     kind: t.kind,
@@ -739,6 +768,8 @@ export function bakeModel(file: GlbFile, report: ModelReport, options: { runs?: 
     approach,
     trees,
     stacks,
+    // Only war buildings dig below ground: every other model's file stays as it was.
+    ...(pits.length ? { pits } : {}),
     counts: {
       file: report.triangles,
       near: flags.filter((f) => f & TRI_NEAR).length,

@@ -66,7 +66,7 @@ export function CityPanel() {
                     Next: <strong>{next.name}</strong> at {next.population.toLocaleString('en-US')} residents
                   </div>
                   <ul class="unlock-list" data-testid="next-unlocks">
-                    {unlocksAt(next.population).map((u) => (
+                    {unlocksAt(next.population, !!game.world.stats.war).map((u) => (
                       <li key={u}>{u}</li>
                     ))}
                   </ul>
@@ -327,7 +327,7 @@ export function MilestoneBanner() {
         {m.population.toLocaleString('en-US')} residents. {m.blurb}
       </p>
       <ul class="unlock-list">
-        {unlocksAt(m.population).map((u) => (
+        {unlocksAt(m.population, !!game.world.stats.war).map((u) => (
           <li key={u}>{u}</li>
         ))}
       </ul>

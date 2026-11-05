@@ -79,6 +79,18 @@ export class CivicRenderer {
     this.chunks.set(id, c);
   }
 
+  /**
+   * Draw again the civic buildings whose model may have changed though nothing about them did
+   * (the war models arriving in a city with war on, M34): those whose def passes `which`.
+   */
+  redraw(which: (def: string) => boolean): void {
+    for (const c of this.world.civics.values()) {
+      if (!which(c.def)) continue;
+      this.looks.delete(c.id);
+      this.place(c.id);
+    }
+  }
+
   /** Once a frame: the levels of detail for where the camera is, and any rebuilds. */
   update(eye: Vector3, range: LodRange, all = false): void {
     this.chunks.update(eye, range, all);

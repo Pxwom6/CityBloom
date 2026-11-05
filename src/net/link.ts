@@ -23,12 +23,28 @@ export function webSocketLink(url: string, timeoutMs = 8000): Promise<Link> {
     }
     let open = false;
     let closedHere = false;
-    const timer = setTimeout(() => {
-      if (!open) {
-        ws.close();
-        reject(new Error('timeout'));
+    let started = performance.now();
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      if (open) return;
+      // Opened already, its event still waiting behind a busy page (a big city loading on a slow
+      // device): it's open.
+      if (ws.readyState === 1) {
+        open = true;
+        resolve(link);
+        return;
       }
-    }, timeoutMs);
+      // The timer itself ran late (the page was busy, not the network): one more full wait.
+      const late = performance.now() - started > timeoutMs * 1.5;
+      if (late) {
+        started = performance.now();
+        timer = setTimeout(check, timeoutMs);
+        return;
+      }
+      ws.close();
+      reject(new Error('timeout'));
+    };
+    timer = setTimeout(check, timeoutMs);
     const link: Link = {
       send: (t) => {
         if (ws.readyState === 1) ws.send(t);

@@ -78,9 +78,66 @@ export interface BakedModel {
   trees: number[];
   /** Tops of smoke_stack parts: x, y, z each. */
   stacks: number[];
+  /**
+   * War buildings (phase 5) only: what they build below ground (a quay, a dry dock, a basement
+   * ramp), as boxes across the site, x0, z0, x1, z1 and the lowest point (m) each. The lot base
+   * leaves its top out over them and its stone sides open above that depth where one meets an
+   * edge. Absent on every other model.
+   */
+  pits?: number[];
   /** Triangles in the file, drawn near, and drawn far. */
   counts: { file: number; near: number; far: number; sky: number };
 }
 
 /** Groups whose parts the game moves, scales or holds back as one. */
 export const DRIVEN_GROUPS = ['mound', 'rotor', 'wheel_rotor', 'rocket', 'receiver', 'pumpjack_beam'];
+
+/** A unit's roles (unit spec v1, PROMPTS-WAR.md), in the order baked unit triangles index them. */
+export const UNIT_ROLES = [
+  'body',
+  'body_alt',
+  'trim',
+  'metal',
+  'rubber',
+  'glass',
+  'accent',
+  'light',
+  'wood',
+  'grass',
+] as const;
+export type UnitRole = (typeof UNIT_ROLES)[number];
+
+/**
+ * A unit as the game loads it (war, M34; unit spec v1): its triangles in model space (metres, y up,
+ * the front along −z, the origin on the ground under its middle, or at a ship's waterline), tagged
+ * by role and by the moving part they belong to, with each part's pivot so the game can turn
+ * turrets, barrels, rotors, propellers, wheels, tracks, hatches, ramps, dishes, keys and limbs.
+ */
+export interface BakedUnit {
+  /** File name without `.glb` (`unit-tank`). */
+  id: string;
+  /** The unit kind it stands for (`tank`; src/data/war.ts). */
+  kind: string;
+  /** Length (along z), width (x) and height above 0, as built; and how far its hull goes below 0. */
+  size: [number, number, number];
+  depth: number;
+  /** Unique vertices, and three indices per triangle (counter-clockwise from outside). */
+  positions: Float32Array;
+  index: Uint32Array;
+  /** Per triangle: role (index into UNIT_ROLES), part (0 = the body, k = parts[k − 1]), kept far (1). */
+  triRole: Uint8Array;
+  triPart: Uint8Array;
+  triFar: Uint8Array;
+  /** The file's colour for each role it uses, linear RGB (role index → colour). */
+  colors: Record<number, [number, number, number]>;
+  /**
+   * Moving parts by their spec names (`turret`, `barrel`, `rotor`, `wheel`…), each with its parent
+   * (0 = the body, k = parts[k − 1]: a barrel turns with its turret) and the point it turns about.
+   */
+  parts: { name: string; parent: number; pivot: [number, number, number] }[];
+  /** Where it fires from (muzzle cubes, not drawn) and where engine smoke comes out, by part. */
+  muzzles: { part: number; at: [number, number, number] }[];
+  exhausts: { part: number; at: [number, number, number] }[];
+  /** Triangles in the file, drawn near, and drawn far. */
+  counts: { file: number; near: number; far: number };
+}

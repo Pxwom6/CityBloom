@@ -3,6 +3,7 @@ import type { CivicDef } from '../../data/civic';
 import { ModelBuilder, SEASONAL, SURF_GRASS, modelRng, type ModelData } from './builder';
 import { buildSpecialModel, moduleAnnex } from './specialModels';
 import { buildProjectModel } from './projectModels';
+import { buildMilitaryModel } from './militaryModels';
 
 const C = (hex: string) => new Color(hex);
 const CONCRETE = C('#c9c6bf');
@@ -788,7 +789,7 @@ export function buildCivicModel(
       if (def.project) {
         const n = def.project.stages.length;
         buildProjectModel(def.model, m, W, D, stage ?? n, n, r);
-      } else if (!buildSpecialModel(def.model, m, W, D, r)) {
+      } else if (!buildSpecialModel(def.model, m, W, D, r) && !buildMilitaryModel(def.model, m, W, D, r)) {
         base(m, W, D, CONCRETE);
         m.box(-W / 2 + 2, W / 2 - 2, 0, 8, -D / 2 + 2, D / 2 - 2, WHITE);
       }

@@ -28,6 +28,33 @@
   --color-zone-i: #f2b233;
   --color-focus: #ffb000;
 
+  /* The battle map (M39): ground, the two sides (red and blue, and different marks), buildings by kind */
+  --map-ground: #ebe7d8;
+  --map-water: #bcd6e8;
+  --map-water-deep: #9fc2dc;
+  --map-steep: #ddd6c0;
+  --map-road: #fbf9f1;
+  --map-road-edge: #b9b29a;
+  --map-attacker: #d2493b;
+  --map-attacker-dark: #7d211a;
+  --map-defender: #2f7bc4;
+  --map-defender-dark: #173f6b;
+  --map-select: #ffb000;
+  --map-fallen: #77726a;
+  --map-damaged: #e8892b;
+  --map-objective: #c0392b;
+  --map-halo: #fffdf8;
+  --map-home: #cdbf93;
+  --map-job: #b2a8cf;
+  --map-industry: #c9a063;
+  --map-power: #e3c64a;
+  --map-civic: #a3a8ad;
+  --map-shelter: #67b0a6;
+  --map-base: #85945a;
+  --map-hq: #66762f;
+  --map-defence: #94603a;
+  --map-intercept: #7f6ca8;
+
   /* Charts (data-viz roles) */
   --chart-series-1: #2a78d6;
   --chart-positive: #2a78d6;

@@ -1,12 +1,17 @@
 import { CIVIC } from '../../data/civic';
 import { goalMet, SCENARIO, starMet, type ScenarioDef, type ScenarioGoal } from '../../data/scenarios';
+import { UNIT } from '../../data/war';
+import { ZONE_C, ZONE_I, ZONE_R } from '../../data/zones';
+import { objectiveSpots } from '../battle/layout';
 import type { CommandResult } from '../commands';
+import { Rng } from '../rng';
 import type { Sim } from '../sim';
 import { districtAt } from './districts';
-import { START_TICK_OFFSET, TICKS_PER_MONTH } from '../time';
+import { dateOf, START_TICK_OFFSET, TICKS_PER_MONTH } from '../time';
 import { BState } from '../world/buildings';
 import { CHRONICLE_SERIES, monthFigures, type SeriesKey } from './chronicle';
 import { openProject } from './projects';
+import { planRaid } from './raids';
 
 /**
  * Scenarios (M18): the city's scenario, if it's playing one. Goals are checked as each month closes
@@ -26,7 +31,16 @@ export interface ScenarioState {
   reason: '' | 'time' | 'bankrupt' | 'election';
   /** Month closes in a row each goal has held. */
   held: number[];
+  /** The buildings standing when it began (their ids, by zone), for a `standing` goal (M39). */
+  base?: Record<'R' | 'C' | 'I', number[]>;
+  /** The raids its script has sent, in order (M39: their ids). */
+  waves?: number[];
+  /** Things that happened since it began (M39): wars won, districts lost, towns freed. */
+  facts?: Partial<Record<ScenarioFact, number>>;
 }
+
+/** What the scenario keeps count of as it happens (M39). */
+export type ScenarioFact = 'warWon' | 'districtsLost' | 'liberated';
 
 export interface ScenarioSummary {
   id: string;
@@ -87,7 +101,91 @@ export function startScenario(sim: Sim, id: string, dryRun: boolean): CommandRes
     reason: '',
     held: def.goals.map(() => 0),
   };
+  // A goal over the buildings standing counts them as the scenario begins (M39).
+  if (
+    [...def.goals, ...def.stars.flatMap((r) => (r.goal ? [r.goal] : []))].some(
+      (g) => g.measure === 'standing',
+    )
+  )
+    s.scenario.base = standingBase(sim);
   return { ok: true, cost: 0 };
+}
+
+/** The buildings of the town, not in rubble, by zone (M39). */
+function standingBase(sim: Sim): NonNullable<ScenarioState['base']> {
+  const base: NonNullable<ScenarioState['base']> = { R: [], C: [], I: [] };
+  for (const b of sim.state.buildings.values()) {
+    if (b.state === BState.Rubble) continue;
+    if (b.zone === ZONE_R) base.R.push(b.id);
+    else if (b.zone === ZONE_C) base.C.push(b.id);
+    else if (b.zone === ZONE_I) base.I.push(b.id);
+  }
+  for (const ids of Object.values(base)) ids.sort((a, b) => a - b);
+  return base;
+}
+
+/** The share (%) of the buildings the scenario began with (of this zone, or all) that still stand, not in rubble (M39). */
+function standingShare(sim: Sim, g: ScenarioGoal): number {
+  const base = sim.state.scenario?.base;
+  if (!base) return 100;
+  const ids = g.zone ? base[g.zone] : [...base.R, ...base.C, ...base.I];
+  if (!ids.length) return 100;
+  let n = 0;
+  for (const id of ids) {
+    const b = sim.state.buildings.get(id);
+    if (b && b.state !== BState.Rubble) n++;
+  }
+  return Math.round((n / ids.length) * 1000) / 10;
+}
+
+/** Something the scenario counts happened (M39); nothing happens when no scenario is playing. */
+export function scenarioFact(sim: Sim, fact: ScenarioFact): void {
+  const sc = sim.state.scenario;
+  if (!sc || sc.status !== 'playing') return;
+  const facts = (sc.facts ??= {});
+  facts[fact] = (facts[fact] ?? 0) + 1;
+}
+
+/** Whether the city's scenario scripts its invasion: the neighbours raid and declare war only as it says (M39). */
+export function scriptedInvasion(sim: Sim): boolean {
+  const sc = sim.state.scenario;
+  if (!sc || sc.status !== 'playing') return false;
+  return !!SCENARIO.get(sc.id)?.script;
+}
+
+/** Waves of the script fought to an end: sent, and neither on their way nor being fought. */
+function wavesDone(sim: Sim): number {
+  const sc = sim.state.scenario;
+  const w = sim.state.war;
+  if (!sc?.waves || !w) return 0;
+  return sc.waves.filter((id) => w.battle?.id !== id && !w.incoming?.some((r) => r.id === id)).length;
+}
+
+/**
+ * The script's next wave, if it is due (M39): the neighbour sets off with the force the script
+ * names, on the war's own dice. A raid already on its way or being fought holds it to the next month.
+ */
+function fireScript(sim: Sim, sc: ScenarioState, def: ScenarioDef): void {
+  const w = sim.state.war;
+  const step = def.script?.[sc.waves?.length ?? 0];
+  if (!w || !step) return;
+  const elapsed = dateOf(sim.state.tick).totalMonths - dateOf(sc.start).totalMonths;
+  if (elapsed < step.month || w.battle || w.incoming?.length) return;
+  const n = sim.state.region.neighbours.filter((x) => x.rival && !x.player)[step.raid.rival];
+  if (!n?.rival) return;
+  const rng = new Rng(w.rng);
+  const raid = planRaid(sim, n, n.rival, rng, step.raid.hours);
+  w.rng = rng.getState();
+  const units = step.raid.units?.filter((k) => UNIT.has(k)).slice(0, 24);
+  if (units?.length) {
+    raid.units = units.map((kind) => ({ kind, hp: 1 }));
+    // Its warning (already given) counts the force it brings.
+    for (const e of sim.events)
+      if (e.kind === 'raidWarning' && e.id === raid.id && e.info) e.info.units = raid.units.length;
+  }
+  if (step.raid.target && (step.raid.target === 'military' || objectiveSpots(sim, step.raid.target).length))
+    raid.target = step.raid.target;
+  (sc.waves ??= []).push(raid.id);
 }
 
 /** A goal's current value (`figures` are the city history's figures, if already worked out). */
@@ -145,6 +243,14 @@ export function goalValue(sim: Sim, g: ScenarioGoal, figures?: number[]): number
         .lines()
         .filter((l) => l.mode !== 'bus')
         .reduce((n, l) => n + (s.transit.riders.get(l.depot) ?? 0), 0);
+    case 'standing':
+      return standingShare(sim, g);
+    case 'waves':
+      return wavesDone(sim);
+    case 'warWon':
+    case 'districtsLost':
+    case 'liberated':
+      return s.scenario?.facts?.[g.measure] ?? 0;
     default:
       return 0;
   }
@@ -186,6 +292,7 @@ export function scenarioMonth(sim: Sim): void {
   });
   if (all) finish(sim, sc, def, true, '');
   else if (sim.state.tick >= deadline(sc, def)) finish(sim, sc, def, false, 'time');
+  else if (def.script) fireScript(sim, sc, def);
 }
 
 /** The city went bankrupt: a scenario in play is lost. */

@@ -3,7 +3,9 @@
  * all hold at once as a month closes, limits on what the mayor may do, and a time limit. Winning
  * gives one star, and each of the two star rules met on the day adds another.
  */
+import type { BattleTarget } from './battle';
 import type { WeatherIntensity } from './climate';
+import type { UnitKind } from './war';
 
 /** What a goal measures. The first ten are the city history's monthly figures (M16). */
 export type GoalMeasure =
@@ -36,7 +38,17 @@ export type GoalMeasure =
   /** Share of buildings with all the power they need, % (M22). */
   | 'powered'
   /** Truckloads a day put on ships at the seaport (M23). */
-  | 'shipped';
+  | 'shipped'
+  /** Share of the buildings the town began with, % (M39): those standing now, not in rubble, over those at the start (of a `zone`, or all). */
+  | 'standing'
+  /** Scripted waves fought to an end (M39). */
+  | 'waves'
+  /** Declared wars won since it began (M39): the other side capitulated, or its seat of power fell. */
+  | 'warWon'
+  /** Districts of the city occupied by a neighbour at any time since it began (M39). */
+  | 'districtsLost'
+  /** Subject towns freed from their overlord since it began (M39). */
+  | 'liberated';
 
 export interface ScenarioGoal {
   measure: GoalMeasure;
@@ -47,6 +59,8 @@ export interface ScenarioGoal {
   def?: string;
   /** For `districtTraffic`: the district's id in the starting city. */
   district?: number;
+  /** For `standing`: only the buildings of this zone (residential, commercial, industrial); else all. */
+  zone?: 'R' | 'C' | 'I';
   /** Month closes in a row the goal must hold (default 1). */
   hold?: number;
   /** As the goals panel says it. */
@@ -64,6 +78,18 @@ export interface StarRule {
   months?: number;
   goal?: ScenarioGoal;
   label: string;
+}
+
+/**
+ * A scripted invasion (M39): at the start of month `month` after the scenario begins, the computer
+ * neighbour `raid.rival` (its place among the city's computer neighbours) sets off with `raid.units`
+ * (or its usual raid) and arrives `raid.hours` later. A wave whose way is blocked (a raid already on
+ * its way or being fought) waits for the next month; the next wave only follows once this one has gone.
+ * While a scenario has a script, the neighbours raid and declare war only as it says.
+ */
+export interface ScriptStep {
+  month: number;
+  raid: { rival: number; units?: UnitKind[]; hours: number; target?: BattleTarget };
 }
 
 export interface ScenarioDef {
@@ -91,6 +117,8 @@ export interface ScenarioDef {
   hints: string[];
   /** Losing the next election loses the scenario. */
   mustWinElection?: boolean;
+  /** Its scripted invasion (M39). */
+  script?: ScriptStep[];
 }
 
 export const SCENARIOS: ScenarioDef[] = [
@@ -504,6 +532,134 @@ export const SCENARIOS: ScenarioDef[] = [
     hints: [
       'Landmarks draw visitors; hotels keep them overnight, when they spend the most.',
       'The tourism campaign policy brings more, as does funding the tourism office; good approval makes the town more inviting.',
+    ],
+  },
+  {
+    id: 'holdline',
+    name: 'Hold the Line',
+    blurb: 'Three waves are coming for the factories by the highway. Dig in and stop them.',
+    brief:
+      'Stonegate sits where the highway comes in, and its neighbours have noticed. Ashbury’s army is ' +
+      'coming in three waves, each bigger than the last, and each aimed at the factories along the ' +
+      'highway. The town has a small garrison, a few bunkers and some money to spend. Beat all three ' +
+      'waves off with the town standing: nearly every building still up, and the people still here.',
+    save: 'holdline.citybloom',
+    months: 12,
+    stars: [
+      {
+        goal: { measure: 'standing', zone: 'I', min: 100, label: 'Every factory standing' },
+        label: 'Not one factory lost',
+      },
+      {
+        goal: { measure: 'treasury', min: 100_000, label: '$100,000 in the bank' },
+        label: '$100,000 still in the bank when you win',
+      },
+    ],
+    goals: [
+      { measure: 'waves', min: 3, label: 'All three waves fought off' },
+      { measure: 'standing', zone: 'I', min: 90, label: '90 % of the town’s factories still standing' },
+      { measure: 'population', min: 2_300, label: '2,300 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    region: true,
+    weather: { seasons: false, intensity: 2 },
+    script: [
+      {
+        month: 2,
+        raid: {
+          rival: 0,
+          hours: 4,
+          units: ['infantry', 'infantry', 'infantry', 'infantry'],
+          target: 'industry',
+        },
+      },
+      {
+        month: 4,
+        raid: {
+          rival: 0,
+          hours: 4,
+          units: ['tank', 'tank', 'infantry', 'infantry', 'infantry', 'infantry'],
+          target: 'industry',
+        },
+      },
+      {
+        month: 6,
+        raid: {
+          rival: 0,
+          hours: 4,
+          units: ['tank', 'tank', 'tank', 'artillery', 'infantry', 'infantry', 'infantry', 'infantry'],
+          target: 'industry',
+        },
+      },
+    ],
+    hints: [
+      'The raiders come in along the highway. Bunkers near the town’s way in stop them before they reach the factories; a bunker beside a factory is too late to save it from fire.',
+      'Infantry squads come from the barracks, which holds twelve. Each bunker adds guns of its own, and the war room (Shift+M) shows the strength on both sides.',
+      'Waves come at the start of months 2, 4 and 6, with an hour’s warning (a radar gives more once the town is big enough). Fire engines keep a hit factory from burning down.',
+    ],
+  },
+  {
+    id: 'cleanwar',
+    name: 'A Clean War',
+    blurb: 'Win a war with a hostile neighbour without losing a single district.',
+    brief:
+      'Norcombe has the bigger army, a long list of grievances and a way of taking what it wants. ' +
+      'Sooner or later it will go to war with Westmarch, and a city that loses takes the terms: ' +
+      'tribute, and the best of its districts in Norcombe’s hands. Arm the city, and win the war ' +
+      '(a score of +60, or Norcombe’s surrender) without a single district occupied.',
+    save: 'cleanwar.citybloom',
+    months: 40,
+    stars: [
+      { months: 24, label: 'Within 24 months' },
+      { months: 16, label: 'Within 16 months' },
+    ],
+    goals: [
+      { measure: 'warWon', min: 1, label: 'Win a war with Norcombe (a score of +60, or its surrender)' },
+      { measure: 'districtsLost', max: 0, label: 'No district of the city occupied' },
+      { measure: 'population', min: 5_500, label: '5,500 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    region: true,
+    weather: { seasons: false, intensity: 2 },
+    hints: [
+      'A war is won on the score: each raid beaten off and each strike that lands moves it, and at +60 the other side gives up. Bunkers near the way in and a full garrison win the raids.',
+      'Declare the war yourself (the war room, Shift+M, Diplomacy) once the forces are ready, or wait for Norcombe to; either way the score counts.',
+      'A city that loses the score capitulates and the winner takes its best district. Peace made early, with a ceasefire or a treaty, keeps what you have.',
+    ],
+  },
+  {
+    id: 'liberation',
+    name: 'Liberation',
+    blurb: 'An old friend is held by a bully. Beat the bully and make it let go.',
+    brief:
+      'Lark Spa, the little resort on Coldharbour’s western border, has been Dunford’s subject since ' +
+      'last spring: Dunford’s garrison sits in its town hall, it can’t trade with Coldharbour, sign ' +
+      'anything with it or come to its side, and its people are asking for help. Dunford is bigger, ' +
+      'angrier and well armed. Beat it in a war, and make it sign Lark Spa’s freedom in the peace. ' +
+      'Honourable Norcombe, to the south, would stand by a city that asked it.',
+    save: 'liberation.citybloom',
+    months: 40,
+    stars: [
+      { months: 22, label: 'Within 22 months' },
+      { months: 14, label: 'Within 14 months' },
+    ],
+    goals: [
+      { measure: 'liberated', min: 1, label: 'Lark Spa free of Dunford' },
+      { measure: 'population', min: 5_000, label: '5,000 residents or more' },
+    ],
+    limits: [],
+    disasters: false,
+    elections: false,
+    region: true,
+    weather: { seasons: false, intensity: 2 },
+    hints: [
+      'Lark Spa is Dunford’s subject, so a war on Lark Spa goes nowhere: the war room (Shift+M, Diplomacy) lets you declare on Dunford, and a treaty with a beaten Dunford can include Liberation.',
+      'A war is won on the score: each raid beaten off and each strike that lands moves it. At +60 Dunford gives up and you set the terms; at +40 or so it may offer peace itself, with Lark Spa thrown in.',
+      'An ally fighting at your side adds to the score every day and wears the enemy down: ask Norcombe for an alliance before you declare.',
     ],
   },
 ];

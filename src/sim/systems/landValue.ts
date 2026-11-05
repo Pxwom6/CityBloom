@@ -5,6 +5,8 @@ import type { Sim } from '../sim';
 import { BState } from '../world/buildings';
 import { civicDef } from '../world/civic';
 import { DMath } from '../dmath';
+import { FALLOUT } from '../../data/atom';
+import { doseAtCell } from './fallout';
 
 /** Distance (m) from each raster cell to the nearest water cell, capped. Derived from terrain. */
 export function waterDistance(sim: Sim): Float32Array {
@@ -115,6 +117,7 @@ export function updateLandValue(sim: Sim, instant = false): void {
   const ground = sim.state.groundPollution;
   const crime = sim.state.crime;
   const air = sim.state.airPollution;
+  const fallout = sim.state.fallout;
   // Average service coverage of nearby buildings (fire, police, health, education).
   const svcSum = new Float32Array(n);
   const svcW = new Float32Array(n);
@@ -141,6 +144,8 @@ export function updateLandValue(sim: Sim, instant = false): void {
     target -= 0.2 * ground[k]!;
     target -= 0.3 * Math.min(1, air[k]!);
     target -= 0.2 * Math.min(1, crime[k]!);
+    // Fallout (M40): nothing taken off without it.
+    if (fallout) target -= FALLOUT.effect.landValue * doseAtCell(fallout, k);
     if (svcWBlur[k]! > 0) target += 0.12 * (svcBlur[k]! / svcWBlur[k]!);
     if (heritage?.has(cells[k]!)) target += DISTRICT.heritageLandValue;
     target = Math.max(0, Math.min(1, target));

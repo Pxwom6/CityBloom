@@ -23,6 +23,12 @@ export class TokenBucket {
     this.last = now;
   }
 
+  /** Is there a token (without taking it)? */
+  has(now: number): boolean {
+    this.refill(now);
+    return this.tokens >= 1;
+  }
+
   /** Take a token if there is one. */
   take(now: number): boolean {
     this.refill(now);

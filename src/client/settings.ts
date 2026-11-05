@@ -3,6 +3,7 @@
  * and game options. DESIGN.md §5.
  */
 import type { WeatherIntensity } from '../data/climate';
+import type { UnitQuality } from '../render/units';
 
 export type Quality = 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
@@ -43,10 +44,24 @@ export interface Settings {
   seenTips: string[];
   /** Step of the running tutorial, or -1 when none is running. */
   tutorialStep: number;
+  /**
+   * Tone down the atom bomb's flash (M40 step 11): a short fade in place of the white-out, and no shake.
+   * Its default follows the system's "reduce motion" setting. Read by the effects (`src/render/atom.ts`).
+   */
+  reduceFlashes: boolean;
   /** The first-launch graphics check has run (or the player chose graphics settings first). */
   graphicsChecked: boolean;
   /** The preset that check picked for this device, if it ran. */
   autoGraphics: Quality | null;
+}
+
+/** Does the system ask for less motion? False where there is no window to ask (tests, the worker). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -69,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tips: true,
   seenTips: [],
   tutorialStep: -1,
+  reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
 };
@@ -100,6 +116,12 @@ export const QUALITY_PARAMS: Record<
     aoFar: number;
     ground: 0 | 1;
     closeShadowHz: number;
+    /**
+     * Units (M34): how far the near and far versions reach before dots, whether parts move, their
+     * shadows, and per base how many squads drill, vehicles and boats go out, and aircraft fly.
+     * M40: the atom bomb's cloud and trail puffs and the fallout's tint on the ground (off at Low).
+     */
+    units: UnitQuality;
   }
 > = {
   low: {
@@ -114,6 +136,20 @@ export const QUALITY_PARAMS: Record<
     aoFar: 0,
     ground: 0,
     closeShadowHz: 60,
+    units: {
+      near: 110,
+      far: 700,
+      animate: false,
+      shadows: false,
+      drill: 2,
+      patrol: 1,
+      fly: 1,
+      shields: 0,
+      dust: 0,
+      atomPuffs: 120,
+      atomTrail: 24,
+      atomTint: 0,
+    },
   },
   medium: {
     pixelRatio: 1,
@@ -127,6 +163,20 @@ export const QUALITY_PARAMS: Record<
     aoFar: 600,
     ground: 1,
     closeShadowHz: 60,
+    units: {
+      near: 180,
+      far: 1000,
+      animate: true,
+      shadows: true,
+      drill: 4,
+      patrol: 2,
+      fly: 2,
+      shields: 1,
+      dust: 0.5,
+      atomPuffs: 300,
+      atomTrail: 40,
+      atomTint: 1,
+    },
   },
   high: {
     pixelRatio: 2,
@@ -140,6 +190,20 @@ export const QUALITY_PARAMS: Record<
     aoFar: 900,
     ground: 1,
     closeShadowHz: 0,
+    units: {
+      near: 260,
+      far: 1400,
+      animate: true,
+      shadows: true,
+      drill: 8,
+      patrol: 3,
+      fly: 4,
+      shields: 2,
+      dust: 1,
+      atomPuffs: 500,
+      atomTrail: 60,
+      atomTint: 1,
+    },
   },
 };
 
@@ -190,6 +254,7 @@ export function parseSettings(raw: unknown): Settings {
       ? r.seenTips.filter((t): t is string => typeof t === 'string').slice(0, 100)
       : [],
     tutorialStep: num(r.tutorialStep, d.tutorialStep, -1, 99),
+    reduceFlashes: bool(r.reduceFlashes, d.reduceFlashes),
     graphicsChecked: bool(r.graphicsChecked, d.graphicsChecked),
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,
   };

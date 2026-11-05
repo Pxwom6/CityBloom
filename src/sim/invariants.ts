@@ -1,5 +1,7 @@
 import type { Sim } from './sim';
+import { ATOM, RIVAL_STAGES, WINTER } from '../data/atom';
 import { MAP_SIZE } from '../data/world';
+import { TICKS_PER_HOUR } from './time';
 import { buildingCapacity } from './world/buildings';
 
 export class InvariantError extends Error {}
@@ -76,4 +78,107 @@ export function checkInvariants(sim: Sim): void {
     const v = s.demand[k];
     if (!Number.isFinite(v) || v < -1 || v > 1) throw new InvariantError(`demand ${k} = ${v}`);
   }
+  checkAtom(sim);
+  checkRivalBombs(sim);
+  checkPariah(sim);
+  checkFallout(sim);
+  checkWinters(sim);
+}
+
+/** Computer neighbours' races for the bomb (M40 step 7): a known stage, finite times, at most one still racing. */
+function checkRivalBombs(sim: Sim): void {
+  if (!sim.state.war) return;
+  let racing = 0;
+  for (const n of sim.state.region.neighbours) {
+    const b = n.rival?.bomb;
+    if (!b) continue;
+    if (!RIVAL_STAGES.includes(b.stage)) throw new InvariantError(`${n.name}’s bomb race stage ${b.stage}`);
+    if (!Number.isFinite(b.at) || !Number.isFinite(b.delay) || b.delay < 0)
+      throw new InvariantError(`${n.name}’s bomb race at ${b.at}, delay ${b.delay}`);
+    if (b.stage !== 'spent') racing++;
+  }
+  if (racing > 1) throw new InvariantError('two neighbours race for the atom bomb');
+}
+
+/** Nuclear winters (M40): each has a name of its own, a start in the past and a depth in range. */
+function checkWinters(sim: Sim): void {
+  const list = sim.state.weather.winters;
+  if (!list) return;
+  const seen = new Set<string>();
+  for (const e of list) {
+    if (!e.id || seen.has(e.id))
+      throw new InvariantError(`nuclear winter ${e.id || '(no id)'} twice or nameless`);
+    seen.add(e.id);
+    if (!Number.isInteger(e.from) || e.from < 0 || e.from > sim.state.tick)
+      throw new InvariantError(`nuclear winter ${e.id} began at ${e.from}`);
+    if (!Number.isFinite(e.depth) || e.depth <= 0 || e.depth > WINTER.cap)
+      throw new InvariantError(`nuclear winter ${e.id} depth ${e.depth}`);
+  }
+}
+
+/** Fallout (M40): finite rasters, the ground in [0, 1], the air not negative, the counters not negative. */
+function checkFallout(sim: Sim): void {
+  const f = sim.state.fallout;
+  if (!f) return;
+  // (The rasters are scanned once an hour, not every tick: they change only at an update or a strike.)
+  if (sim.state.tick % TICKS_PER_HOUR === 0)
+    for (let k = 0; k < f.ground.length; k++) {
+      const g = f.ground[k]!;
+      if (!Number.isFinite(g) || g < 0 || g > 1) throw new InvariantError(`fallout ground[${k}] = ${g}`);
+      const a = f.air[k]!;
+      if (!Number.isFinite(a) || a < 0 || a > 1) throw new InvariantError(`fallout air[${k}] = ${a}`);
+    }
+  for (const side of ['north', 'south', 'west'] as const)
+    if (!Number.isFinite(f.out[side]) || f.out[side] < 0) throw new InvariantError(`fallout out.${side}`);
+  for (const j of f.jobs)
+    if (![j.x, j.z, j.left].every(Number.isFinite) || j.left <= 0)
+      throw new InvariantError(`fallout clean-up job ${j.x},${j.z}: ${j.left}`);
+}
+
+/** The race for the atom bomb (M40): finite facts in range, one bomb, a flight with somewhere to go. */
+function checkAtom(sim: Sim): void {
+  const a = sim.state.war?.atom;
+  if (!a) return;
+  const within = (what: string, v: number, max: number) => {
+    if (!Number.isFinite(v) || v < 0 || v > max) throw new InvariantError(`atom ${what} = ${v}`);
+  };
+  within('fuel', a.fuel, ATOM.fuel.hours);
+  within('boom', a.boom, Infinity);
+  within('stopped', a.stopped, Infinity);
+  if (a.bomb) {
+    within('bomb done', a.bomb.done, ATOM.bomb.hours);
+    within('bomb paid', a.bomb.paid, ATOM.bomb.hours / ATOM.bomb.every);
+  }
+  if (a.prep) {
+    within('prep done', a.prep.done, ATOM.launch.prepHours);
+    if (!Number.isFinite(a.prep.to)) throw new InvariantError('atom launch without a target');
+    // A strike with the region's room is only ever of a bomb fully prepared.
+    const send = a.prep.send;
+    if (send && !(Number.isFinite(send.op) && Number.isFinite(send.at) && Number.isInteger(send.slot)))
+      throw new InvariantError('atom strike without a number');
+    if (send && a.prep.done < ATOM.launch.prepHours) throw new InvariantError('atom strike sent unprepared');
+  }
+  // One bomb: being built, or finished and then prepared, or gone; never two of these at once.
+  if (a.bomb && (a.have || a.prep || a.fired)) throw new InvariantError('atom bomb built twice');
+  if (a.prep && !a.have) throw new InvariantError('atom launch prepared without a bomb');
+  if (a.fired && (a.have || a.prep)) throw new InvariantError('atom bomb fired and still held');
+  if (a.fired && !(Number.isFinite(a.fired.tick) && Number.isFinite(a.fired.to) && a.fired.name))
+    throw new InvariantError('atom flight without a target');
+  if (a.struck && !a.struck.every((slot) => Number.isInteger(slot) && slot >= 1))
+    throw new InvariantError('atom struck by a city that is no place');
+  const hit = a.inbound;
+  if (hit && ![hit.warn, hit.arrive, hit.x, hit.z].every(Number.isFinite))
+    throw new InvariantError('atom flight without a landing');
+  const im = a.impact;
+  if (im && ![im.done, im.fled, im.x, im.z].every(Number.isFinite))
+    throw new InvariantError('atom impact is not finite');
+}
+
+/** The firer of the bomb (M40): its reputation is nothing, for good, and the mark is a past tick. */
+function checkPariah(sim: Sim): void {
+  const d = sim.state.war?.diplomacy;
+  if (!d?.pariah) return;
+  if (!Number.isFinite(d.pariah.tick) || d.pariah.tick > sim.state.tick)
+    throw new InvariantError(`pariah since ${d.pariah.tick}`);
+  if (d.reputation !== 0) throw new InvariantError(`a pariah's reputation is ${d.reputation}`);
 }

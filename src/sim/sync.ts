@@ -18,7 +18,7 @@ import { RNG_STREAMS } from './state';
 const f64 = new Float64Array(1);
 const u32 = new Uint32Array(f64.buffer);
 
-class Mixer {
+export class Mixer {
   private h1 = 0x811c9dc5;
   private h2 = 0x01000193;
   num(v: number): void {
@@ -90,6 +90,59 @@ export function checksum(sim: Sim): string {
   m.num(sumArray(s.crime));
   m.num(sumArray(s.terrainDelta));
   m.num(s.weather.temp);
+  // Nuclear winters (M40), only once there is one: when each began and how deep it is.
+  const winters = s.weather.winters;
+  if (winters) {
+    m.int(winters.length);
+    for (const e of winters) {
+      m.int(e.from);
+      m.num(e.depth);
+    }
+  }
+  // Fallout (M40), only once there is some: the rasters' sums and what the air has carried out.
+  const fo = s.fallout;
+  if (fo) {
+    m.num(sumArray(fo.ground));
+    m.num(sumArray(fo.air));
+    m.num(fo.out.north);
+    m.num(fo.out.south);
+    m.num(fo.out.west);
+    m.int(fo.jobs.length);
+  }
+  // War (M34), only where it's on: a peaceful city's checksum is as before.
+  const w = s.war;
+  if (w) {
+    m.int(w.units.size);
+    m.int(w.orders.size);
+    for (const o of w.orders.values()) m.num(o.done);
+    m.num(w.readiness);
+    m.num(w.clock);
+    m.num(w.stock.goods + w.stock.ore + w.stock.oil + w.stock.munitions);
+    m.int(w.bonds.length);
+    // Battles (M35), only once there's been one.
+    if (w.battle) {
+      m.int(w.battle.step);
+      m.int(w.battle.report.collapsed.length + w.battle.report.burning.length);
+    }
+    if (w.incoming) m.int(w.incoming.length);
+    if (w.reports) m.int(w.reports.length);
+    // The race for the atom bomb (M40), only once it has begun.
+    const a = w.atom;
+    if (a) {
+      m.num(a.fuel);
+      m.num(a.bomb?.done ?? -1);
+      m.num(a.prep?.done ?? -1);
+      m.int((a.have ? 1 : 0) + (a.fired ? 2 : 0) + (a.inbound ? 4 : 0) + (a.impact ? 8 : 0));
+      if (a.impact) {
+        m.int(a.impact.done);
+        m.num(a.impact.fled);
+        // (How far the fires round the edge have been set, a few every tick.)
+        m.int(a.impact.lit ?? 0);
+      }
+      m.int(a.boom);
+      m.int(a.stopped);
+    }
+  }
   return m.hex();
 }
 

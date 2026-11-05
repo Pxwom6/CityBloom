@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { isMac, modKey } from '../client/platform';
 import { useGameUpdates } from './hooks';
+import { typingIn } from '../client/keys';
 
 type Row = [what: string, keys: string[]];
 
@@ -49,6 +50,8 @@ function sections(): [string, Row[]][] {
         ['Notifications, city', ['N', 'P']],
         ['City history, photo mode', ['Y', 'K']],
         ['Scenario goals', ['G']],
+        ['War room (with a military HQ)', ['Shift+M']],
+        ['Battle map (in a live battle with a friend)', ['O']],
         ['Shared city: look here', ['Shift+G']],
         ['Data maps', ['L']],
         ['Pause menu', ['Esc']],
@@ -62,8 +65,7 @@ export function ShortcutSheet() {
   const game = useGameUpdates(200);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (typingIn(e)) return;
       if (game.screen) return;
       if (e.key === '?') {
         e.preventDefault();

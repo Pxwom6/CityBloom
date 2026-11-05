@@ -6,13 +6,14 @@
  *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
  *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr]`: it listens on this computer
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds]`: it listens on this computer
  * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
  * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
  * socket opened with `?create=1`, and their codes start with a digit, signalling's with a letter.
  * Rooms and regions nobody comes back to are forgotten after `--ttl` days (60), empty signalling at
- * once.
+ * once. `--atom-prep` shortens the region's wait before it keeps a friend's atom strike (20 minutes
+ * online), for the end-to-end tests (M40 step 12); the Worker online has no such switch.
  */
 import { createServer, type Server } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -29,7 +30,7 @@ import {
 } from './room';
 import { CODE_ALPHABET, CODE_LENGTH } from './protocol';
 import { Signal } from './signal';
-import { RegionRoom, MemoryRegionStore, type RegionConn } from './region';
+import { RegionRoom, MemoryRegionStore, type RegionConn, type RegionLimits } from './region';
 import { route, type Route } from './objects';
 import { DAY_MS } from './limits';
 import type { Stamped } from '../src/sim/lockstep';
@@ -98,6 +99,11 @@ export interface RelayOptions {
   /** Rooms' message limits (tests' headless players may report faster than a game). */
   limits?: Partial<RoomLimits>;
   /**
+   * Regions' limits (M40 step 12): the e2e's relay shortens the wait before a friend's atom strike is
+   * kept (`atomPrep`, 20 real minutes online) with `--atom-prep`; nothing else sets them.
+   */
+  regionLimits?: Partial<RegionLimits>;
+  /**
    * The address to listen on: this computer only (127.0.0.1) unless told otherwise, e.g. 0.0.0.0 to
    * try a phone on the same network (review, minor).
    */
@@ -150,7 +156,7 @@ export function startRelay(
     let r = regions.get(code);
     if (!r) {
       const store = new MemoryRegionStore();
-      r = new RegionRoom(code, 'local', store, timers, ttl);
+      r = new RegionRoom(code, 'local', store, timers, { ...opts.regionLimits, ...ttl });
       regions.set(code, r);
       regionStores.set(r, store);
     }
@@ -282,14 +288,17 @@ if (process.argv[1]?.endsWith('local.ts')) {
   const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1]! : null);
   const days = option('--ttl');
   const host = option('--host') ?? '127.0.0.1';
+  const prep = option('--atom-prep');
   const port = Number(
-    args.find((a, i) => /^\d+$/.test(a) && !['--data', '--ttl', '--host'].includes(args[i - 1] ?? '')) ??
-      8787,
+    args.find(
+      (a, i) => /^\d+$/.test(a) && !['--data', '--ttl', '--host', '--atom-prep'].includes(args[i - 1] ?? ''),
+    ) ?? 8787,
   );
   void startRelay(port, option('--data'), {
     strict: true,
     host,
     ...(days ? { ttl: Number(days) * DAY_MS } : {}),
+    ...(prep ? { regionLimits: { atomPrep: Number(prep) * 1000 } } : {}),
   }).then((r) => {
     console.log(
       `Citybloom relay on ws://${host}:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,

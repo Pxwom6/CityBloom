@@ -40,6 +40,14 @@ const LINES: [RegExp, Line[]][] = [
     ],
   ],
   [/sewage/i, [() => 'The drains are backing up. The smell!', () => 'Who do we call about the sewers?']],
+  // War (M34): the defences nearby.
+  [
+    /feels safe/i,
+    [
+      () => 'With the shelter round the corner I sleep a little easier.',
+      () => 'Whatever the neighbours are up to, at least we are ready.',
+    ],
+  ],
   [/polluted tap water/i, [() => 'The tap water tastes of metal.', () => 'We only drink bottled water now.']],
   [
     /garbage/i,

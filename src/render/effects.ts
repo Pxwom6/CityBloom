@@ -145,6 +145,11 @@ const STACKS: Record<string, [number, number, number][]> = {
     [8, -12, 30],
   ],
   incinerator: [[12, 19, 40]],
+  // The arms factory's two stacks behind its hall (M34; generated look, 48 × 40 site).
+  armsfactory: [
+    [-13.3, 14.2, 19.5],
+    [-6.7, 14.2, 19.5],
+  ],
 };
 
 /**

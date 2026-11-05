@@ -19,8 +19,10 @@ import type { TourismState } from './systems/specialisations';
 import { TERRAIN_VERSION } from './terrain/generate';
 import type { District } from './systems/districts';
 import type { WeatherState } from './systems/weather';
+import type { Fallout } from './systems/fallout';
 import type { MapData } from './terrain/customMap';
 import type { RegionState } from './systems/region';
+import type { WarState } from './systems/war';
 
 export type { Difficulty };
 
@@ -45,6 +47,11 @@ export interface GameOptions {
    * forests and resources are edited by the map editor's brushes.
    */
   editor?: boolean;
+  /**
+   * Rival neighbours (M34): war is on for this city, with military buildings, forces and (later)
+   * battles. Off unless set; a peaceful city's options have no such key, so its saves are as before.
+   */
+  rivals?: boolean;
 }
 
 export const DEFAULT_OPTIONS: GameOptions = {
@@ -160,4 +167,14 @@ export interface SimState {
    * player who made it. Empty in single player.
    */
   builtBy: Map<number, number>;
+  /**
+   * War (M34): the city's forces, training, readiness, stores and war bonds. Present only in a city
+   * with war on; a peaceful city has no such key.
+   */
+  war?: WarState;
+  /**
+   * Fallout (M40): what an atom bomb left on the ground and in the air. Made by the first strike or
+   * the first stream in from a neighbour; a city that never has any has no such key.
+   */
+  fallout?: Fallout;
 }

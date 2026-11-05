@@ -9,8 +9,11 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
 
-/** Built files the offline copy leaves out: source maps, the share image and the worker itself. */
-const SKIP = [/\.map$/, /^social\.jpg$/, /^sw\.js$/];
+/**
+ * Built files the offline copy leaves out: source maps, the share image, the worker itself, and the
+ * war models (phase 5), which only a city with war on fetches: a peaceful player never downloads them.
+ */
+const SKIP = [/\.map$/, /^social\.jpg$/, /^sw\.js$/, /^assets\/war-models-[\w-]+\.bin$/];
 
 function walk(dir: string, root = dir): string[] {
   return readdirSync(dir).flatMap((name) => {

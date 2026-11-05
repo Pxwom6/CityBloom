@@ -1,6 +1,7 @@
 // Scenario previews (M18): opens each scenario's starting city in the test build, frames the town,
 // and saves the 3D view (no interface) as public/scenarios/<id>.jpg for the scenario screen.
 // Usage: npm run build:test && node scripts/dev/scenarioshots.mjs [id,id...] [hour]
+// (DIST=dir PORT=n use another build and port; PW_CHROMIUM=path launches that browser.)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -12,6 +13,8 @@ const hour = Number(process.argv[3] ?? 15.5);
 // Views that need more than the town's middle: the resort looks out to sea.
 const LOOK = {
   winter: { season: [0, 0, 0, 1], kind: 'snow', strength: 0.6, snow: 0.75, wet: 0.2 },
+  // The war scenarios play without seasons (late spring): a city saved in winter still has its snow.
+  liberation: { season: [0, 1, 0, 0], kind: 'clear', strength: 0, snow: 0, wet: 0 },
 };
 const VIEW = {
   resort: { x: 1150, yaw: 5.2, distance: 900 },
@@ -21,13 +24,20 @@ const VIEW = {
   terraces: { x: 640, z: 1024, yaw: 1.2, distance: 1000, tilt: -0.05 },
   // Market Town: the old market on the avenue in front, the works and estates behind it.
   market: { x: 330, z: 905, yaw: 0.55, distance: 460, tilt: 0.22 },
+  // The war scenarios (M39): the town with its garrison in view.
+  holdline: { x: 600, z: 1190, yaw: 0.55, distance: 640, tilt: 0.25 },
+  cleanwar: { x: 345, z: 1190, yaw: 0.6, distance: 430, tilt: 0.3 },
+  liberation: { x: 300, z: 1360, yaw: 0.6, distance: 430, tilt: 0.3 },
 };
-const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4197', '--strictPort'], {
+const dist = process.env.DIST ?? 'dist-test';
+const port = process.env.PORT ?? '4197';
+const server = spawn('npx', ['vite', 'preview', '--outDir', dist, '--port', port, '--strictPort'], {
   stdio: 'ignore',
   detached: true,
 });
 await new Promise((r) => setTimeout(r, 2000));
 const browser = await chromium.launch({
+  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
 });
 try {
@@ -36,7 +46,7 @@ try {
     await page.addInitScript(() =>
       localStorage.setItem('citybloom.settings', JSON.stringify({ graphicsChecked: true, tips: false })),
     );
-    await page.goto(`http://localhost:4197/?scenario=${id}`);
+    await page.goto(`http://localhost:${port}/?scenario=${id}`);
     await page.waitForFunction(() => window.__game?.ready, null, { timeout: 120000 });
     await page.addStyleTag({ content: '#ui { display: none !important; }' });
     // Frame the town: the middle of its buildings, far enough back to see most of them.
@@ -58,7 +68,7 @@ try {
     await page.evaluate(() => window.__game.waitFrames(3));
     await page
       .locator('#scene')
-      .screenshot({ path: `public/scenarios/${id}.jpg`, type: 'jpeg', quality: 72 });
+      .screenshot({ path: `public/scenarios/${id}.jpg`, type: 'jpeg', quality: 72, timeout: 240000 });
     console.log(id, JSON.stringify(pose));
     await page.close();
   }

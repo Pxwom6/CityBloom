@@ -34,4 +34,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'skyline', name: 'Skyline', blurb: 'Build three landmarks.' },
   { id: 'nestEgg', name: 'Nest egg', blurb: 'Save up $500,000.' },
   { id: 'metropolis', name: 'Metropolis', blurb: 'Reach 100,000 residents.' },
+  { id: 'underTheDome', name: 'Under the dome', blurb: 'Stop an atom bomb with the dome shield.' },
+  {
+    id: 'firstBomb',
+    name: 'First to the bomb',
+    blurb: 'Finish the atom bomb before any other city in the race.',
+  },
 ];

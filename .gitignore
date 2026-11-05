@@ -17,3 +17,6 @@ dist-*
 .cache
 .wrangler
 dist-coop
+
+# Agent worktrees (never part of the repo)
+.claude/worktrees/

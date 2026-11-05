@@ -34,8 +34,11 @@ export const CHRONICLE = {
 
 export interface ChronicleEvent {
   tick: number;
-  kind: 'milestone' | 'disaster' | 'project' | 'election';
-  /** Milestone index, the disaster's kind, or the finished project. */
+  kind: 'milestone' | 'disaster' | 'project' | 'election' | 'atom';
+  /**
+   * Milestone index, the disaster's kind, or the finished project; for the atom bomb (M40) what
+   * happened, `ready`, `fired:Name`, `landed:Name`, `hit:Name` or `stopped:Name` (`atomEventText`).
+   */
   ref: number | string;
 }
 
@@ -82,13 +85,23 @@ export function monthFigures(sim: Sim): number[] {
       commute += b.commute * b.employed;
     }
   }
-  // The month's ledger: income leaves out borrowing (loans taken) and cheats.
+  // The month's ledger: income leaves out borrowing (loans taken, war bonds sold), capital coming
+  // back (allies repaying, stakes sold, a neighbour's loan or investment; M38) and cheats.
   let income = 0;
   let spending = 0;
   const month = s.economy.history[s.economy.history.length - 1];
   for (const [line, v] of Object.entries(month?.lines ?? {})) {
     if (v < 0) spending -= v;
-    else if (line !== 'loans' && line !== 'cheats') income += v;
+    else if (
+      line !== 'loans' &&
+      line !== 'bonds' &&
+      line !== 'cheats' &&
+      line !== 'allyRepaid' &&
+      line !== 'stakeSold' &&
+      line !== 'lenderLoan' &&
+      line !== 'investment'
+    )
+      income += v;
   }
   const figures: Record<SeriesKey, number> = {
     population: t.population,
@@ -129,8 +142,20 @@ export function recordMonth(c: Chronicle, figures: number[]): void {
   }
 }
 
+/**
+ * The city's history gains an event. The ring keeps the newest `CHRONICLE.maxEvents`, but an atom
+ * event (M40) is never dropped: the record of the bomb stays for good, and the oldest of the others
+ * go in its place. (Without atom events this is the plain ring, the oldest first.)
+ */
 export function chronicleEvent(sim: Sim, kind: ChronicleEvent['kind'], ref: number | string): void {
   const ev = sim.state.chronicle.events;
   ev.push({ tick: sim.state.tick, kind, ref });
-  if (ev.length > CHRONICLE.maxEvents) ev.splice(0, ev.length - CHRONICLE.maxEvents);
+  let drop = ev.length - CHRONICLE.maxEvents;
+  for (let i = 0; drop > 0 && i < ev.length;) {
+    if (ev[i]!.kind === 'atom') i++;
+    else {
+      ev.splice(i, 1);
+      drop--;
+    }
+  }
 }

@@ -1,3 +1,4 @@
+import { MilitarySection } from './Military';
 import { snowFactor } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { CIVIC } from '../data/civic';
@@ -962,6 +963,7 @@ function CivicInspector({ id }: { id: number }) {
           ${d.upkeep.toLocaleString('en-US')}/month ({d.funding}% funding)
         </dd>
       </dl>
+      {d.military && <MilitarySection civicId={d.id} m={d.military} />}
       <ModuleList civicId={d.id} def={d.def} />
       {/* The regional rail link stays put: it belongs to the regional railway (Phase 2 review). */}
       {!d.railLink && (

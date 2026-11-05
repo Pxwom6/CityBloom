@@ -1,6 +1,7 @@
 import { PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { MAP_SIZE } from '../data/world';
 import { clamp, lerp, smoothstep } from '../sim/terrain/noise';
+import { typingIn } from '../client/keys';
 
 export interface CameraPose {
   x: number;
@@ -16,6 +17,8 @@ export type CameraPresetName = 'overview' | 'city' | 'street' | 'aerial' | 'high
 
 const MIN_DIST = 14;
 const MAX_DIST = 3400;
+/** How far out the camera may stand while it roams (following the atom bomb in). */
+const ROAM_DIST = 6000;
 /** Photo mode (M16) lets the camera come down to a person's eye level. */
 const PHOTO_MIN_DIST = 2.5;
 const EYE_HEIGHT = 1.6;
@@ -57,6 +60,39 @@ export class CameraController {
   private keys = new Set<string>();
   /** How many times the player has moved the camera themselves (a drag, the wheel, a pinch, the keys). */
   userMoves = 0;
+  /**
+   * Following something off the map (M40: the atom bomb on its way in, from 5 km out): the goal may go
+   * past the map's edge and further out than a player can zoom. Whoever sets it ends it with
+   * `release()`, never by clearing it, so the limits close in again without a jump.
+   */
+  roam = false;
+  /**
+   * Coming back from a roam (`release`): the limits the goal is held to, from where the view was when
+   * it ended (the map's own bounds and zoom at least), closing in on the map's over a second or so,
+   * so a drag or a wheel turn that ended the roam carries on smoothly instead of the view jumping
+   * back onto the map and the grabbed point being left kilometres away.
+   */
+  private home: { x0: number; x1: number; z0: number; z1: number; far: number } | null = null;
+
+  /** End a roam: the map's limits come back, eased in from where the view is now. */
+  release(): void {
+    if (!this.roam) return;
+    this.roam = false;
+    const g = this.goal;
+    const c = this.current;
+    this.home = {
+      x0: Math.min(-BOUND, g.x, c.x),
+      x1: Math.max(MAP_SIZE + BOUND, g.x, c.x),
+      z0: Math.min(-BOUND, g.z, c.z),
+      z1: Math.max(MAP_SIZE + BOUND, g.z, c.z),
+      far: Math.max(MAX_DIST, g.distance, c.distance),
+    };
+  }
+
+  /** The farthest the camera may be now: a player's zoom, a roam's, or one easing back from a roam. */
+  private far(): number {
+    return this.roam ? ROAM_DIST : (this.home?.far ?? MAX_DIST);
+  }
   private drag: { mode: 'pan' | 'rotate'; plane: Plane; grab: Vector3; lastX: number; lastY: number } | null =
     null;
   private ray = new Raycaster();
@@ -135,10 +171,12 @@ export class CameraController {
 
   private clampGoal(): void {
     const g = this.goal;
-    g.distance = clamp(g.distance, this.photo ? PHOTO_MIN_DIST : MIN_DIST, MAX_DIST);
-    g.x = clamp(g.x, -BOUND, MAP_SIZE + BOUND);
-    g.z = clamp(g.z, -BOUND, MAP_SIZE + BOUND);
+    g.distance = clamp(g.distance, this.photo ? PHOTO_MIN_DIST : MIN_DIST, this.far());
     g.tilt = clamp(g.tilt, this.photo ? -1.2 : -0.35, 0.6);
+    if (this.roam) return;
+    const h = this.home;
+    g.x = clamp(g.x, h ? h.x0 : -BOUND, h ? h.x1 : MAP_SIZE + BOUND);
+    g.z = clamp(g.z, h ? h.z0 : -BOUND, h ? h.z1 : MAP_SIZE + BOUND);
   }
 
   /** Ground point under a screen position (ray-marched against the terrain), or null. */
@@ -309,7 +347,7 @@ export class CameraController {
 
   zoomBy(f: number, clientX?: number, clientY?: number): void {
     const oldD = this.goal.distance;
-    const newD = clamp(oldD * f, MIN_DIST, MAX_DIST);
+    const newD = clamp(oldD * f, MIN_DIST, Math.max(MIN_DIST, this.far()));
     if (clientX !== undefined && clientY !== undefined && newD < oldD) {
       const a = this.screenToGround(clientX, clientY, this.tmp2);
       if (a) {
@@ -323,8 +361,7 @@ export class CameraController {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (typingIn(e)) return;
     if (!this.inputEnabled) return;
     this.keys.add(e.code);
   };
@@ -332,6 +369,25 @@ export class CameraController {
   update(dt: number): void {
     const k = this.keys;
     const g = this.goal;
+    // Back from a roam: the limits close in on the map's (most of the way in a second).
+    const h = this.home;
+    if (h) {
+      const a = 1 - Math.exp(-dt * 2.5);
+      h.x0 += (-BOUND - h.x0) * a;
+      h.x1 += (MAP_SIZE + BOUND - h.x1) * a;
+      h.z0 += (-BOUND - h.z0) * a;
+      h.z1 += (MAP_SIZE + BOUND - h.z1) * a;
+      h.far += (MAX_DIST - h.far) * a;
+      if (
+        h.x0 > -BOUND - 1 &&
+        h.x1 < MAP_SIZE + BOUND + 1 &&
+        h.z0 > -BOUND - 1 &&
+        h.z1 < MAP_SIZE + BOUND + 1 &&
+        h.far < MAX_DIST + 1
+      )
+        this.home = null;
+      this.clampGoal();
+    }
     const panSpeed = g.distance * 0.9 * dt;
     let fx = 0;
     let fz = 0;

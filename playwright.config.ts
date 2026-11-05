@@ -31,9 +31,10 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
     },
-    // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect.
+    // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect. A friend's
+    // atom strike is kept after 20 s of a launch being prepared rather than 20 minutes (M40 step 12).
     {
-      command: 'npx tsx relay/local.ts 8787',
+      command: 'npx tsx relay/local.ts 8787 --atom-prep 20',
       url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60_000,

@@ -461,3 +461,18 @@ export const IconRailEntry = (p: P) => (
     <path d="M7 8v8M11 8v8M15 8v8" />
   </svg>
 );
+
+/** Military (M34): a toy fort's tower with battlements (no insignia). */
+export const IconMilitary = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M5 21V9h2V6h2v3h2V6h2v3h2V6h2v3h2v12" />
+    <path d="M10 21v-4a2 2 0 0 1 4 0v4M4 21h16" />
+  </svg>
+);
+/** The war room (M34): a campaign map with an arrow across it. */
+export const IconWarRoom = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+    <path d="M7 14c2-3 5-4 9-4M14 8l2 2-2 2" />
+  </svg>
+);

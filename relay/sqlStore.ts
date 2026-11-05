@@ -127,6 +127,8 @@ export class SqlStore extends LazyTables implements RoomStore {
 
 /** Parts of a city's save are rows `slot * SLOT + part`. */
 const SLOT = 1000;
+/** Battles kept for cities (M35) are rows from here on, past every city's save. */
+const BATTLES = 1_000_000;
 
 /** A shared region's store (M32): its record and each city's latest save for visitors. */
 export class RegionSqlStore extends LazyTables implements RegionStore {
@@ -157,5 +159,30 @@ export class RegionSqlStore extends LazyTables implements RegionStore {
       (slot + 1) * SLOT,
     );
     return rows.length ? rows.map((r) => r.data) : null;
+  }
+  // Battles kept for a city (M35): rows from BATTLES on, a hundred to a battle.
+  saveBattle(slot: number, k: number, parts: string[]): void {
+    const base = BATTLES + (slot * 8 + k) * 100;
+    parts.forEach((data, part) =>
+      this.write(
+        'INSERT INTO saves (id, data) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET data = excluded.data',
+        base + part,
+        data,
+      ),
+    );
+    this.write('DELETE FROM saves WHERE id >= ? AND id < ?', base + parts.length, base + 100);
+  }
+  loadBattle(slot: number, k: number): string[] | null {
+    const base = BATTLES + (slot * 8 + k) * 100;
+    const rows = this.read<{ data: string }>(
+      'SELECT data FROM saves WHERE id >= ? AND id < ? ORDER BY id',
+      base,
+      base + 100,
+    );
+    return rows.length ? rows.map((r) => r.data) : null;
+  }
+  deleteBattle(slot: number, k: number): void {
+    const base = BATTLES + (slot * 8 + k) * 100;
+    this.write('DELETE FROM saves WHERE id >= ? AND id < ?', base, base + 100);
   }
 }

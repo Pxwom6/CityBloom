@@ -8,6 +8,16 @@
 // `--profile` also samples the main thread during each view and prints the costliest functions.
 // Views: overview, city and street (camera presets) by day (13:00) and @night (22:00), all at 3×
 // speed; `heavy` is the whole city at night at 3× with a tornado on screen (SPEC-3's frame budget).
+// `battle` (M37, a war city such as `battlebench.ts city.gz --guards --dome --save war.gz` keeps)
+// stages the heaviest raid the test API can (`--battle robot|max`: the giant robot and 23 units, or
+// 24 of the heaviest) and follows it, under the dome when the city has one. `--vm` runs headless in
+// Playwright's Chromium on SwiftShader (the cloud VM): frame times mean nothing there, but draw
+// calls, triangles and the game's own work per frame do.
+// `battle+map` stages the same force as a live battle (the test builds' one-page stand-in for the room,
+// the city defending) and opens the battle map (O) over it; `battle+room` is `battle` with the war room
+// open. `units` (phase 5 checks) puts a war city's forces on screen at its bases: an airfield placed
+// beside the depot, and infantry, tanks and aircraft added there (parked, drilling, flying), as the
+// e2e's `showUnits` does; the plain `city` view is the comparison.
 // Prints average and 95th-percentile frame intervals, the game's own work per frame, draw calls
 // and triangles, and writes them all to JSON.
 import { chromium } from '@playwright/test';
@@ -33,6 +43,8 @@ const shots = flag('shots', null);
 const profile = argv.includes('--profile');
 const dist = flag('dist', 'dist-test');
 const init = flag('init', null);
+const battleKind = flag('battle', 'robot');
+const vm = argv.includes('--vm');
 if (shots) mkdirSync(shots, { recursive: true });
 mkdirSync(dirname(out), { recursive: true });
 
@@ -103,18 +115,22 @@ const f2 = (v) => v.toFixed(2);
 const results = { label, file, date: new Date().toISOString(), seconds, runs: [] };
 try {
   for (const quality of qualities) {
-    const browser = await chromium.launch({
-      channel: 'chrome',
-      headless: false,
-      args: [
-        '--disable-gpu-vsync',
-        '--disable-frame-rate-limit',
-        '--window-size=1512,945',
-        '--window-position=0,0',
-      ],
-    });
+    const browser = await chromium.launch(
+      vm
+        ? { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] }
+        : {
+            channel: 'chrome',
+            headless: false,
+            args: [
+              '--disable-gpu-vsync',
+              '--disable-frame-rate-limit',
+              '--window-size=1512,945',
+              '--window-position=0,0',
+            ],
+          },
+    );
     try {
-      const page = await browser.newPage({ viewport: null });
+      const page = await browser.newPage({ viewport: vm ? { width: 1280, height: 800 } : null });
       page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
       // The whole preset, as the settings screen and the first-launch check apply it.
       await page.addInitScript(
@@ -164,18 +180,157 @@ try {
       const run = { quality, info, views: [] };
       results.runs.push(run);
       for (const view of views) {
-        const [name, when] = view.split('@');
+        const [full, when] = view.split('@');
+        const [name, panel] = full.split('+');
         const heavy = name === 'heavy';
-        const preset = heavy ? 'overview' : name;
+        const battle = name === 'battle' ? battleKind : null;
+        const units = name === 'units' || name === 'aircraft' ? name : null;
+        const preset = heavy ? 'overview' : battle || units ? 'city' : name;
         const hour = heavy || when === 'night' ? 22 : 13;
         await page.evaluate(
-          async ({ preset, hour, heavy, cx, cz, warmMs }) => {
+          async ({ preset, hour, heavy, battle, panel, units, cx, cz, warmMs }) => {
             const g = window.__game;
             g.setSpeed(0);
             const s = await g.getState();
             const now = (s.tick + 7 * 60) % 1440;
             await g.advance((hour * 60 - now + 1440) % 1440 || 1);
             g.setCamera(preset);
+            if (battle && panel === 'map') {
+              // The same force as `stageBattle`, as a live battle the city defends: the map opens over it.
+              const mix = [
+                'tank',
+                'tank',
+                'tank',
+                'heavytank',
+                'heavytank',
+                'artillery',
+                'artillery',
+                'artillery',
+                'infantry',
+                'infantry',
+                'transport',
+                'bomber',
+                'bomber',
+                'fighter',
+                'fighter',
+                'helicopter',
+                'helicopter',
+                'helicopter',
+                'drone',
+                'drone',
+                'drone',
+                'drone',
+                'tank',
+                'artillery',
+              ];
+              const force = battle === 'robot' ? ['windupbot', ...mix.slice(1)] : mix;
+              const why = await g.stageLive('defender', { units: force });
+              if (why) throw new Error(`stageLive: ${why}`);
+              // (A live battle reports through the live view and the map, not `getBattle`, as the e2e reads it.)
+              const going = () => g.getLive()?.role === 'defender' && (g.battleMap()?.step ?? 0) > 0;
+              // (The stand-in plays the room on the page's own timers: waited for in real time, as the e2e does.)
+              g.setSpeed(1);
+              for (let k = 0; k < 600 && !going(); k++) await new Promise((r) => setTimeout(r, 200));
+              if (!going())
+                throw new Error(`the staged live battle never started: ${JSON.stringify(g.getLive())}`);
+              g.followBattle();
+              if (!g.openBattleMap()) throw new Error('the battle map did not open');
+            } else if (battle) {
+              // The raid arrives now; follow it once its first frame is in.
+              const why = await g.stageBattle(battle);
+              if (why) throw new Error(`stageBattle: ${why}`);
+              for (let k = 0; k < 60 && !g.getBattle().frame; k++) await g.advance(1);
+              if (!g.getBattle().frame) throw new Error('the staged battle never started');
+              g.followBattle();
+              if (panel === 'room') g.openPanel('war');
+            }
+            if (units) {
+              // The forces at their bases (once a page): an airfield, then units added at each base.
+              const civ = (def) => g.getCivics().find((c) => c.def === def);
+              const dep = civ('vehicledepot');
+              const bar = civ('barracks');
+              if (!dep || !bar) throw new Error('no depot or barracks: use a war city (battlebench --save)');
+              if (!window.__units) {
+                await g.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 50_000_000 });
+                await g.dispatch({ type: 'cheat', cheat: 'unlockAll' });
+                let air = civ('airfield');
+                const hq = civ('militaryhq') ?? dep;
+                // A big lot in a dense city: tried outward from the HQ until one takes it.
+                for (let r = 0; !air && r <= 900; r += 150)
+                  for (let a = 0; !air && a < 8; a++) {
+                    const id = await g.placeCivic('airfield', {
+                      x: hq.x + Math.cos((a * Math.PI) / 4) * r,
+                      z: hq.z + Math.sin((a * Math.PI) / 4) * r,
+                    });
+                    if (id !== null) air = civ('airfield');
+                  }
+                // None takes it in a dense city: an avenue laid into open ground beyond the town, the airfield beside it.
+                for (let r = 500; !air && r <= 2000; r += 250)
+                  for (let a = 0; !air && a < 8; a++) {
+                    const ang = (a * Math.PI) / 4;
+                    const p0 = { x: hq.x + Math.cos(ang) * r, z: hq.z + Math.sin(ang) * r };
+                    const p1 = {
+                      x: p0.x + Math.cos(ang + Math.PI / 2) * 320,
+                      z: p0.z + Math.sin(ang + Math.PI / 2) * 320,
+                    };
+                    const road = { type: 'buildRoad', road: 'avenue', points: [p0, p1] };
+                    if (!(await g.preview(road)).ok) continue;
+                    if (!(await g.dispatch(road)).ok) continue;
+                    if (
+                      (await g.placeCivic('airfield', { x: (p0.x + p1.x) / 2, z: (p0.z + p1.z) / 2 })) !==
+                      null
+                    )
+                      air = civ('airfield');
+                  }
+                if (air) await g.advance(60);
+                const add = [];
+                for (let k = 0; k < 16; k++) add.push({ kind: 'infantry', base: bar.id });
+                for (const kind of [
+                  'tank',
+                  'tank',
+                  'tank',
+                  'tank',
+                  'heavytank',
+                  'heavytank',
+                  'artillery',
+                  'artillery',
+                ])
+                  add.push({ kind, base: dep.id });
+                if (air)
+                  for (const kind of [
+                    'fighter',
+                    'fighter',
+                    'fighter',
+                    'fighter',
+                    'bomber',
+                    'bomber',
+                    'helicopter',
+                    'helicopter',
+                    'helicopter',
+                    'drone',
+                    'drone',
+                    'drone',
+                  ])
+                    add.push({ kind, base: air.id });
+                g.showUnits(add);
+                window.__units = { airfield: !!air, added: add.length };
+              }
+              // `units`: the barracks and the depot close in (parked, drilling); `aircraft`: the airfield's
+              // planes and helicopters taking off and circling.
+              const air = civ('airfield');
+              if (units === 'aircraft' && !air) throw new Error('no airfield took: no aircraft to show');
+              const at = units === 'aircraft' ? [air] : [bar, dep];
+              const x = at.reduce((t, c) => t + c.x, 0) / at.length;
+              const z = at.reduce((t, c) => t + c.z, 0) / at.length;
+              const spread = Math.max(...at.map((c) => Math.hypot(c.x - x, c.z - z)));
+              g.setCamera({
+                x,
+                z,
+                distance: units === 'aircraft' ? 360 : Math.min(320, Math.max(140, spread * 2.4)),
+                yaw: 0.5,
+                tilt: 0,
+              });
+            }
             // A tornado lives about 2 s at 3×: whenever none is left, send another across the
             // city, so there is always one (and only one) on screen.
             let k = 0;
@@ -204,11 +359,12 @@ try {
             };
             if (heavy) await tornado();
             await g.waitFrames(20);
-            g.setSpeed(3);
+            // A battle is watched at 1× (at 3× a raid is over in seconds); everything else at 3×.
+            g.setSpeed(battle ? 1 : 3);
             await new Promise((res) => setTimeout(res, warmMs));
             funnels.length = 0;
           },
-          { preset, hour, heavy, cx: info.cx, cz: info.cz, warmMs: warm * 1000 },
+          { preset, hour, heavy, battle, panel, units, cx: info.cx, cz: info.cz, warmMs: warm * 1000 },
         );
         let cdp = null;
         if (profile) {
@@ -219,6 +375,9 @@ try {
         }
         const r = await page.evaluate(async (ms) => {
           const g = window.__game;
+          // The battle as recording starts (it may end during the recording).
+          const b0 = g.getBattle().frame;
+          const start = b0 ? { step: b0.step, units: b0.units } : null;
           const f = await g.recordFrames(ms);
           const { funnels, timers } = window.__bench;
           timers.forEach(clearInterval);
@@ -230,6 +389,27 @@ try {
             triangles: st.renderStats.triangles,
             funnels: funnels.length ? Math.min(...funnels) : st.renderStats.disasters.funnels,
             night: st.renderStats.night,
+            panel: document.querySelector('[data-testid="battle-map"]')
+              ? 'battle map'
+              : document.querySelector('[data-testid="war-room"]')
+                ? 'war room'
+                : null,
+            units: window.__units ?? null,
+            unitsShown: (g.getUnits?.() ?? []).length,
+            unitGroup: (() => {
+              const b = g.renderBreakdown?.().find((x) => x.name === 'units');
+              return b ? { meshes: b.meshes, shadow: b.shadow } : null;
+            })(),
+            battle: (() => {
+              const b = g.getBattle();
+              if (!start && !b.frame) return null;
+              return {
+                start,
+                end: b.frame ? { step: b.frame.step, units: b.frame.units } : 'over',
+                ...b.effects,
+                shown: g.getSupers().shown,
+              };
+            })(),
           };
         }, seconds * 1000);
         if (cdp) {
@@ -251,9 +431,14 @@ try {
           triangles: r.triangles,
           funnels: r.funnels,
           night: r.night,
+          battle: r.battle,
+          panel: r.panel,
+          units: r.units,
+          unitsShown: r.unitsShown,
+          unitGroup: r.unitGroup,
         });
         console.log(
-          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}`,
+          `  ${view.padEnd(15)} frame avg ${f2(iv.avg)} ms p95 ${f2(iv.p95)} p99 ${f2(iv.p99)} max ${f1(iv.max)} (${f1(1000 / iv.avg)} fps, ${iv.n} frames) | work avg ${f2(wk.avg)} p95 ${f2(wk.p95)} | ${r.calls} calls ${(r.triangles / 1e6).toFixed(2)}M tris${heavy ? ` | funnels on screen ≥ ${r.funnels}` : ''}${r.panel ? ` | ${r.panel} open` : ''}${r.units ? ` | units ${r.unitsShown} shown (${r.units.added} added, airfield ${r.units.airfield}), their group ${r.unitGroup ? `${r.unitGroup.meshes} meshes, ${r.unitGroup.shadow} in shadow` : '?'}` : ''}${r.battle ? ` | battle from ${JSON.stringify(r.battle.start)} to ${JSON.stringify(r.battle.end)}, ${r.battle.tracers} tracers, ${r.battle.puffs} puffs, shown ${JSON.stringify(r.battle.shown)}` : ''}`,
         );
       }
     } finally {

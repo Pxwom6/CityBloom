@@ -6,6 +6,8 @@ import { SERVICE_KINDS, type ServiceKind } from '../data/civic';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { JUNCTION, TRAFFIC } from '../data/balance';
 import { hourOfDay } from '../sim/time';
+import type { FalloutQuery } from '../sim/systems/fallout';
+import { clickSlop } from '../tools/tool';
 
 /** Colour ramps for data maps (see the data-viz reference palette). */
 const SEQUENTIAL = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'].map(
@@ -16,11 +18,23 @@ const DIV_MID = new Color('#f0efec');
 const DIV_GOOD = new Color('#2a78d6');
 const tmp = new Color();
 
+/** Fallout (M40): a haze in the air, amber on open ground, red where the ground is closed, dark at the core. */
+const HAZARD_RAMP = ['#fff0a8', '#ffd24a', '#f08a24', '#d12a1f', '#5a0f2e'].map((h) => new Color(h));
+
 /** Congestion: flowing → busy → jammed → gridlock (status colours, always with a legend). */
 const TRAFFIC_RAMP = ['#3a9e5c', '#9cc24a', '#e8b43a', '#e0662f', '#b3261e'].map((h) => new Color(h));
 
-export function rampColor(ramp: 'diverging' | 'sequential' | 'traffic', v: number, out = new Color()): Color {
+export function rampColor(
+  ramp: 'diverging' | 'sequential' | 'traffic' | 'hazard',
+  v: number,
+  out = new Color(),
+): Color {
   const t = Math.max(0, Math.min(1, v));
+  if (ramp === 'hazard') {
+    const f = t * (HAZARD_RAMP.length - 1);
+    const i = Math.min(HAZARD_RAMP.length - 2, Math.floor(f));
+    return out.copy(HAZARD_RAMP[i]!).lerp(HAZARD_RAMP[i + 1]!, f - i);
+  }
   if (ramp === 'traffic') {
     const f = t * (TRAFFIC_RAMP.length - 1);
     const i = Math.min(TRAFFIC_RAMP.length - 2, Math.floor(f));
@@ -54,6 +68,7 @@ export const MAPS: { id: OverlayMap; name: string; group: string }[] = [
   { id: 'airPollution', name: 'Air pollution', group: 'Environment' },
   { id: 'noise', name: 'Noise', group: 'Environment' },
   { id: 'groundPollution', name: 'Ground pollution', group: 'Environment' },
+  { id: 'radiation', name: 'Fallout', group: 'Environment' },
   { id: 'eduLevel', name: 'Education level', group: 'City' },
   { id: 'groundwater', name: 'Groundwater', group: 'Resources' },
   { id: 'resources', name: 'Ore and oil', group: 'Resources' },
@@ -65,7 +80,16 @@ export class OverlayController {
   /** Show only this district on data maps (M21), or everywhere (null). */
   district: number | null = null;
   last: OverlayResult | null = null;
+  /**
+   * The fallout map's tooltip (M40): what the pointer is over, where on the screen, and whether it
+   * was a finger's tap (the tip then sits above the finger, not under it).
+   */
+  reading: { text: string; x: number; y: number; touch?: true } | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private pointer: { x: number; z: number; cx: number; cy: number; touch?: true } | null = null;
+  private asking = false;
+  /** A touch or pen that is down on the fallout map: a tap reads the spot, a drag (a pan) does not. */
+  private tap: { id: number; x: number; y: number } | null = null;
 
   constructor(private game: Game) {}
 
@@ -73,6 +97,19 @@ export class OverlayController {
     this.active = map;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    window.removeEventListener('pointermove', this.watch);
+    window.removeEventListener('pointerdown', this.touchDown);
+    window.removeEventListener('pointerup', this.touchUp);
+    window.removeEventListener('pointercancel', this.touchCancel);
+    this.reading = null;
+    this.pointer = null;
+    this.tap = null;
+    if (map === 'radiation') {
+      window.addEventListener('pointermove', this.watch);
+      window.addEventListener('pointerdown', this.touchDown);
+      window.addEventListener('pointerup', this.touchUp);
+      window.addEventListener('pointercancel', this.touchCancel);
+    }
     const u = this.game.renderer.terrain.uniforms;
     this.game.renderer.coverageMap.show(null);
     this.roadsKey = '';
@@ -87,6 +124,82 @@ export class OverlayController {
     void this.refresh();
     this.timer = setInterval(() => void this.refresh(), 1000);
     this.game.notify();
+  }
+
+  /**
+   * The pointer moved: on the fallout map, ask the sim what it is over (one question at a time). A
+   * finger has no hover, so its moves (a pan) are left to `touchUp`, and so is a pen that is pressed.
+   */
+  private watch = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' || (e.pointerType === 'pen' && e.buttons !== 0)) return;
+    this.lookAt(e);
+  };
+
+  private lookAt(e: PointerEvent): void {
+    if (e.target !== this.game.renderer.canvas) {
+      this.pointer = null;
+      if (this.reading) {
+        this.reading = null;
+        this.game.notify();
+      }
+      return;
+    }
+    const g = this.game.renderer.controller.screenToGround(e.clientX, e.clientY);
+    const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    this.pointer = g
+      ? { x: g.x, z: g.z, cx: e.clientX, cy: e.clientY, ...(touch ? { touch: true as const } : {}) }
+      : null;
+    if (!this.asking) void this.read();
+  }
+
+  /**
+   * A finger has no hover, and a one-finger drag pans the camera: so on the fallout map a tap (a touch
+   * or pen that comes up within a click's slop of where it went down) reads the spot, and the tip
+   * stays until the next touch; a touch that starts clears it, and a drag leaves none.
+   */
+  private touchDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'mouse') return;
+    this.tap = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    this.pointer = null;
+    if (this.reading) {
+      this.reading = null;
+      this.game.notify();
+    }
+  };
+
+  private touchUp = (e: PointerEvent): void => {
+    const t = this.tap;
+    if (e.pointerType === 'mouse' || !t || t.id !== e.pointerId) return;
+    this.tap = null;
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > clickSlop(e.pointerType)) return;
+    this.lookAt(e);
+  };
+
+  private touchCancel = (): void => {
+    this.tap = null;
+  };
+
+  private async read(): Promise<void> {
+    this.asking = true;
+    try {
+      while (this.pointer && this.active === 'radiation') {
+        const p = this.pointer;
+        const res = await this.game.client.query<FalloutQuery>({
+          type: 'fallout',
+          x: Math.round(p.x),
+          z: Math.round(p.z),
+        });
+        if (this.active !== 'radiation') break;
+        this.reading =
+          res.reading && res.reading.dose >= 0.005
+            ? { text: res.reading.text, x: p.cx, y: p.cy, ...(p.touch ? { touch: true as const } : {}) }
+            : null;
+        this.game.notify();
+        if (this.pointer === p) break;
+      }
+    } finally {
+      this.asking = false;
+    }
   }
 
   /** Filter data maps to one district (M21), or show the whole city again. */

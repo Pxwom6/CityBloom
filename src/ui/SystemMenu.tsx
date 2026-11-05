@@ -26,7 +26,10 @@ export function SystemMenu() {
 export function Toasts() {
   const game = useGame();
   return (
-    <div class={`toasts ${game.selected ? 'beside-panel' : ''}`} aria-live="polite">
+    <div
+      class={`toasts ${game.panel === 'battleMap' ? 'beside-map' : game.selected ? 'beside-panel' : ''}`}
+      aria-live="polite"
+    >
       <UpdateNotice />
       {game.toasts.map((t) => (
         <div

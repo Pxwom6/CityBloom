@@ -262,7 +262,10 @@ soak and the cross-browser test on every push.
 ## In progress
 **Phase 5 is complete, its end included**, in pull request #23 (its title names all seven milestones).
 Nothing is under way; what's left is the owner's: merge PR #23, the real-device list under "To check
-on the Mac", and the Cloudflare setup above for online rooms.
+on the Mac" (what needs a person: speakers, touch, two real machines, Cloudflare), and the Cloudflare
+setup above for online rooms. A round of checks on the Mac's GPU followed the phase's end (frame times,
+the bench, the playthrough in one run, the war's looks, the snapshot size): all inside the budgets, two
+fixes (the top bar folding in a war city, a flaky test); numbers under "Performance (phase 5 checks)".
 
 Phase 5's end (SPEC-5.md, "When every milestone is done"): the summaries (this file's top, SPEC_REVIEW's
 phase 5 section, the README with two war pictures), then three playthroughs through the real UI on the
@@ -352,6 +355,30 @@ Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Perf
 1. The owner: merge PR #23 (phase 5) into `main`.
 2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
 3. Then, if wanted, the phase 5 ideas under "Ideas for what's next".
+
+## Performance (phase 5 checks, the owner's Mac)
+- **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs` on `bench-results/war.gz`:
+  the bench city under a robot's raid with guards, interceptors and a charged dome; avg / p95 ms, calls,
+  triangles; High | Medium | Low):
+  - plain city: 10.0 / 19.4 | 3.3–3.5 / 5.5–6.5 | 2.25 / 3.9 (12.1 ms at High at model batch 5);
+  - battle (robot): 6.43 / 11.5, 145, 1.51M | 2.29 / 3.6, 81, 0.87M | 1.45 / 2.7, 75, 0.83M;
+  - battle (24 heaviest units): 6.53 / 8.5, 141, 1.50M | 2.30 / 3.4 | 1.45 / 2.7;
+  - battle with the battle map open: 6.55 / 11.5, 148, 1.45M | 2.42 / 3.7 | 1.79 / 3.0;
+  - battle with the war room open: 6.43 / 11.1, 144, 1.44M | 2.29 / 3.5 | 1.44 / 2.7;
+  - units parked and drilling: 7.71 / 8.8, 218, 2.18M | 2.83 / 4.7 | 1.62 / 2.8;
+  - aircraft flying: 10.04 / 11.3, 234, 2.50M | 3.90 / 6.5 | 2.19 / 3.9.
+  Every average is inside SPEC-3's 60 fps at High. The aircraft view has a few long frames (High p99
+  27–52 ms) that the profile puts inside WebGL's own draw calls, not the game's work: left to watch.
+- **Bench against `main`** (`bench.ts 6 --big`, three pairs back to back, the same 110,174-resident city):
+  months 4–6 tick avg 0.269 ms against 0.267, p99 2.53 against 2.50: the same within noise.
+- **Shared-city snapshot** (`scripts/dev/snapsize.ts`): the 110k bench city is 3 of the 40 parts (0.59 MB of
+  base64 against the 8 MB cap, 7 %); the war city also 3.
+- **The phase-5 playthrough in one run** on the GPU (`PHASE5_GPU=1 PLAYTHROUGH=1 npx playwright test
+  e2e/phase5-finale.spec.ts`): 3 passed in 12.9 min, and 13.0 min after the top bar fix (a war city's top
+  bar ran off a 1280 px window under a raid's or bomb's chip or the winter badge; it now folds into the More
+  menu). The flaky phone battle map test (3 of 5) read the canvas before its first frame; it now waits for
+  it, 5 of 5 pass. The war's looks on the GPU (101 pictures: every war building by day and night, units,
+  superweapons, the bomb's effects): nothing broken.
 
 ## Performance (M40)
 - **E2E through the real UI** (on the owner's Mac, Playwright's Chromium): `e2e/m40-atom.spec.ts` (one
@@ -1221,10 +1248,6 @@ misses with either build (`startup-slow.log`).
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
 ## To check on the Mac
-- Phase 5 end: one whole `npm run playthrough` run of `e2e/phase5-finale.spec.ts` after its last fix
-  (each of its three tests passed on its own on the GPU; the last full run stopped at test 3 on a slip of
-  the spec's that was then fixed); frame times in the war room, the battle map and the blast were not
-  measured in the playthrough session.
 - Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
   the launch button by finger on a tablet and a phone; a strike between two real machines over
   peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;
@@ -1232,23 +1255,16 @@ misses with either build (`startup-slow.log`).
 - Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
   test runs the room in one process: the live site offers peer-to-peer only); the region room on
   Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);
-  the battle map's frame cost in a real window with many units; the lobby, war room and battle map
+  the lobby, war room and battle map
   on a tablet in landscape and at 80 % interface size; an ally's help and a spectator with three
   real players; a first pair of friends inviting each other, going to war and making peace with
   only the tips to go by.
-- Phase 5 (M38): the bench against `main` (`npx tsx scripts/bench.ts 6 --big`, branch and `main`
-  back to back, a few pairs): in the VM the branch ran within the noise of `main` but on its slow
-  side, and no slower than the M37 tip. The Trade tab and weariness in a real window.
-- Phase 5 (M37): frame times in the heaviest battle (`npx tsx scripts/dev/battlebench.ts
-  bench-results/city.gz --guards --dome --super robot --save bench-results/war.gz`, then
-  `framebench.mjs bench-results/war.gz --views battle` and `--battle max`, at each quality); the
-  dome, shield bubbles, the gate's swirl and the tower's ring by day and night in a real window
-  (`scripts/dev/supershot.mjs` shows each); the superweapons' and blackout's sounds.
-- Phase 5 (M34): the war models in a real Chrome window (the HQ, depot, airfield and naval yard
-  close up, by day and night, and the generated looks with `showWarModels`); units parked, drilling,
-  patrolling and flying at High; frame times with a war city's units on screen (`framebench.mjs` on
-  a war city: none measured yet, the VM's software renderer says nothing about it); the raid siren
-  and the gun pops through real speakers.
+- Phase 5 (M38): the Trade tab and weariness in a real window (the bench against `main` was run on the
+  Mac in the phase 5 checks: the same within noise).
+- Phase 5 (M37): the superweapons' and blackout's sounds through real speakers (their frame times and
+  looks on the GPU were checked in the phase 5 checks).
+- Phase 5 (M34): the raid siren and the gun pops through real speakers (the war models, units and their
+  frame times on the GPU were checked in the phase 5 checks).
 - Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
   app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
   to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),
@@ -1273,9 +1289,6 @@ misses with either build (`startup-slow.log`).
 - Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
   `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
   WebKit results.
-- Multiplayer review (F8): how many snapshot parts the ~110k bench city needs against the 40-part
-  (8 MB) cap (`encodeSnapshot` on `bench-results/city.gz`'s save); a city past it is told it's too big
-  to share.
 - Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.

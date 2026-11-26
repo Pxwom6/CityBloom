@@ -29,8 +29,9 @@ export type ToolId =
   | 'ping'
   | 'cleanup';
 
-/** A finger held this long without moving is a long press (M49). */
+/** A finger held this long without moving is a long press (M49), within this many px. */
 export const LONG_PRESS_MS = 500;
+export const LONG_PRESS_SLOP = 6;
 
 /** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
 const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
@@ -114,8 +115,12 @@ export class ToolManager {
     y: number;
     id: number;
     type: string;
-    /** The press's event time (ms): a release this long after it is a long press, timer or not. */
+    /**
+     * The press's event time (ms): a release this long after it, with the finger never having moved,
+     * is a long press, timer or not (a busy page runs the timer late, after the release).
+     */
     downAt: number;
+    moved: boolean;
   } | null = null;
   /** Long presses that fired (tests). */
   longPresses = 0;
@@ -194,7 +199,12 @@ export class ToolManager {
       (this.active.clickOnly || this.active === this.select)
     ) {
       const at = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType };
-      this.long = { ...at, downAt: e.timeStamp, timer: setTimeout(() => this.longPress(at), LONG_PRESS_MS) };
+      this.long = {
+        ...at,
+        downAt: e.timeStamp,
+        moved: false,
+        timer: setTimeout(() => this.longPress(at), LONG_PRESS_MS),
+      };
     }
     // A tool that acts on a click waits for the button to come up near where it went down: a longer
     // drag is the camera panning (P3).
@@ -214,8 +224,13 @@ export class ToolManager {
 
   private onMove(e: PointerEvent): void {
     const l = this.long;
-    if (l && e.pointerId === l.id && Math.hypot(e.clientX - l.x, e.clientY - l.y) > clickSlop(l.type))
-      this.endLong();
+    if (l && e.pointerId === l.id) {
+      const d = Math.hypot(e.clientX - l.x, e.clientY - l.y);
+      if (d > 0) l.moved = true;
+      // A long press holds closer than a tap may wander (a tap's 10 px): a slow page's tap whose
+      // moves take half a second to arrive mustn't turn into one.
+      if (d > LONG_PRESS_SLOP) this.endLong();
+    }
     if (e.isPrimary) this.game.pointerAt(e.clientX, e.clientY);
     if (this.game.photo || !e.isPrimary || this.pinch) return;
     if (this.game.renderer.controller.isDragging && !this.active.usesLeftDrag) return;
@@ -262,9 +277,9 @@ export class ToolManager {
   private held: number | null = null;
 
   private onUp(e: PointerEvent): void {
-    // Held long enough, but a busy page ran the timer late: it is a long press all the same.
+    // Held still long enough, but a busy page ran the timer late: it is a long press all the same.
     const l = this.long;
-    if (l && l.id === e.pointerId && e.timeStamp - l.downAt >= LONG_PRESS_MS) {
+    if (l && l.id === e.pointerId && !l.moved && e.timeStamp - l.downAt >= LONG_PRESS_MS) {
       clearTimeout(l.timer);
       this.longPress(l);
     }

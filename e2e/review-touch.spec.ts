@@ -22,7 +22,10 @@ async function fingers(page: Page) {
     /** A tap that wanders `dx` px between touching down and lifting off. */
     async tap(p: Pt, dx: number) {
       await send('touchStart', [{ ...p, id: 1 }]);
-      for (let k = 1; k <= 4; k++) await send('touchMove', [{ x: p.x + (dx * k) / 4, y: p.y, id: 1 }]);
+      // The moves go together, as a quick tap's do (M49: awaited one by one, each waits for a frame
+      // of a software-drawn page, and a "tap" lasting over half a second is a long press now).
+      const moves = [1, 2, 3, 4].map((k) => send('touchMove', [{ x: p.x + (dx * k) / 4, y: p.y, id: 1 }]));
+      await Promise.all(moves);
       await send('touchEnd', []);
     },
     /**
@@ -47,6 +50,13 @@ async function fingers(page: Page) {
 
 /** A street with pocket parks to place beside it; returns the next free spot on screen each call. */
 async function parkStreet(page: Page) {
+  // Light graphics (M49): a finger's moves arrive with the page's frames, and a tap whose moves take
+  // half a second to arrive on a software renderer is a long press now, not a tap.
+  await page.addInitScript(() => {
+    const key = 'citybloom.settings';
+    const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(key, JSON.stringify({ ...s, quality: 'low', shadows: false, drawDistance: 'near' }));
+  });
   await openGame(page);
   const cz = (await state(page)).highwayZ;
   await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 200_000 }));

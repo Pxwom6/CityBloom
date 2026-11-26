@@ -5,11 +5,37 @@ import { useGameUpdates } from './hooks';
 function useHighlight(testid: string | undefined) {
   useEffect(() => {
     if (!testid) return;
-    // A data attribute rather than a class: Preact owns the class list and may rewrite it.
-    const el = document.querySelector(`[data-testid="${testid}"]`);
-    el?.setAttribute('data-guide', '');
-    return () => el?.removeAttribute('data-guide');
+    // A data attribute rather than a class: Preact owns the class list and may rewrite it. Followed
+    // as the layout changes (M49: on a phone the button is in a sheet until Build or More opens it).
+    let el: Element | null = null;
+    const mark = () => {
+      const now = shownTarget(testid);
+      if (now === el) return;
+      el?.removeAttribute('data-guide');
+      el = now;
+      el?.setAttribute('data-guide', '');
+    };
+    mark();
+    const timer = setInterval(mark, 300);
+    return () => {
+      clearInterval(timer);
+      el?.removeAttribute('data-guide');
+    };
   }, [testid]);
+}
+
+/**
+ * The button a step points at, or, on a phone (M49), the bar's button that opens the sheet it's in:
+ * Build for a civic category, More for districts, terrain, disasters, photo mode and redo.
+ */
+export function shownTarget(testid: string): Element | null {
+  const el = document.querySelector(`[data-testid="${testid}"]`);
+  const r = el?.getBoundingClientRect();
+  if (el && r && r.width && r.height) return el;
+  if (document.getElementById('ui')?.dataset.phone === undefined) return el;
+  const MORE = ['tool-district', 'tool-terrain', 'tool-disasters', 'tool-photo', 'tool-redo'];
+  const via = MORE.includes(testid) ? 'tool-more' : testid.startsWith('tool-') ? 'tool-build' : null;
+  return via ? document.querySelector(`[data-testid="${via}"]`) : el;
 }
 
 /**
@@ -20,7 +46,7 @@ function GuidePointer({ testid }: { testid: string }) {
   const [at, setAt] = useState<{ x: number; y: number; below: boolean } | null>(null);
   useEffect(() => {
     const place = () => {
-      const el = document.querySelector(`[data-testid="${testid}"]`);
+      const el = shownTarget(testid);
       const r = el?.getBoundingClientRect();
       if (!r || !r.width || !r.height || r.bottom < 0 || r.top > window.innerHeight) return setAt(null);
       // Above the button when it sits low on the screen (the toolbar), below it when high (the top bar).

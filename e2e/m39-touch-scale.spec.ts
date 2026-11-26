@@ -116,12 +116,21 @@ test('M39: touch targets are 24 px at the smallest interface size (80 %) on a ph
   await expect(page.getByTestId('atom')).toBeVisible();
   await look('the Bomb tab');
 
-  // --- The map editor: a drop-down (the climate). ---
+  // --- The map editor: on a phone (M49) it says plainly it needs a bigger screen, with a way back. Its
+  // drop-down (the climate) is a tablet's and a computer's now, so a drop-down is stood in below. ---
   await page.goto('./?editor=new&flat=1');
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
   await page.evaluate(() => window.__game!.waitFrames(2));
   await atPhoneSize(page);
+  await expect(page.getByTestId('editor-phone')).toBeVisible();
   await look('the map editor');
+  await page.evaluate(() => {
+    const select = document.createElement('select');
+    select.dataset.testid = 'probe-select';
+    select.append(new Option('One'), new Option('Two'));
+    document.querySelector('#ui')!.appendChild(select);
+  });
+  await look('a drop-down');
 
   // --- A number field: the screens that have one (a room's spending limit, the war room's Send tab) need
   // a room or an army, so this stands one in the interface's own markup (the rule goes by element). ---

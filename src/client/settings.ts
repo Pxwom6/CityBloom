@@ -53,6 +53,13 @@ export interface Settings {
   graphicsChecked: boolean;
   /** The preset that check picked for this device, if it ran. */
   autoGraphics: Quality | null;
+  /**
+   * Send crash reports (M41): errors, failed saves and desyncs go to the game's maker, without names,
+   * chat, cities or anything typed. On unless the player turns it off.
+   */
+  crashReports: boolean;
+  /** The one sentence saying what crash reports send and where the switch is has been shown. */
+  reportsNotice: boolean;
 }
 
 /** Does the system ask for less motion? False where there is no window to ask (tests, the worker). */
@@ -87,6 +94,8 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
+  crashReports: true,
+  reportsNotice: false,
 };
 
 export const QUALITIES: Quality[] = ['low', 'medium', 'high'];
@@ -257,6 +266,8 @@ export function parseSettings(raw: unknown): Settings {
     reduceFlashes: bool(r.reduceFlashes, d.reduceFlashes),
     graphicsChecked: bool(r.graphicsChecked, d.graphicsChecked),
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,
+    crashReports: bool(r.crashReports, d.crashReports),
+    reportsNotice: bool(r.reportsNotice, d.reportsNotice),
   };
 }
 

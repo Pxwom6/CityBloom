@@ -9,6 +9,7 @@ import {
   reportKey,
   scrubText,
   stripAddresses,
+  firstFrame,
   REPORT_CAPS,
   type Report,
 } from '../reports';
@@ -165,6 +166,18 @@ describe('the report shape', () => {
     const c = error('Something else entirely', 'abc');
     expect(reportKey(a)).toBe(reportKey(b));
     expect(reportKey(a)).not.toBe(reportKey(c));
+  });
+});
+
+describe('where an error came from', () => {
+  it('names the first frame by its function, or its file without the build hash and line', () => {
+    expect(firstFrame('Error: x\n    at placeZone (https://a.b/assets/index-AbC123x.js:1:2345)')).toBe(
+      'placeZone',
+    );
+    expect(firstFrame('Error: x\n    at https://a.b/assets/index-AbC123x.js:1:2345')).toBe('index.js');
+    expect(firstFrame('Error: x\n    at e (https://a.b/assets/index-ZZZ999y.js:9:99)')).toBe('index.js');
+    expect(firstFrame('placeZone@https://a.b/assets/index-AbC123x.js:1:2345')).toBe('placeZone');
+    expect(firstFrame('@https://a.b/assets/worker-Qq12345.js:3:4')).toBe('worker.js');
   });
 });
 

@@ -967,7 +967,21 @@ export class Room {
       if (id === this.info.pacer || s === ref) continue;
       const q = this.players.get(id);
       if (!q?.conn || this.waiting.has(id) || q.joining) continue;
-      this.broadcast({ t: 'resync', player: id, text: `${q.name}'s game fell out of step; catching up` });
+      // Both sides' recent sums go with it, for the desync reports the two pages file (M41).
+      const sums: [number, string, string][] = [];
+      for (const [t, m] of this.sums) {
+        const a = m.get(this.info.pacer);
+        const b = m.get(id);
+        if (a !== undefined && b !== undefined && t <= tick) sums.push([t, a, b]);
+      }
+      this.broadcast({
+        t: 'resync',
+        player: id,
+        text: `${q.name}'s game fell out of step; catching up`,
+        tick,
+        pacer: this.info.pacer,
+        sums,
+      });
       q.joining = true;
       this.serveSnapshot(q, 'resync');
       this.broadcastPlayers();

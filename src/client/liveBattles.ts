@@ -36,6 +36,8 @@ import type { LiveSink } from '../net/regionLink';
 import type { BattleRecord } from './battles';
 import type { LiveEnd } from './liveRunner';
 import { helpOverNotice } from '../ui/warWords';
+import { reportProblem } from './reports';
+import { BATTLE_V4 } from '../sim/battle/types';
 
 /** The city, as a live battle needs it: its sim, its saves, and a way to tell the player. */
 export interface LiveCity {
@@ -1112,6 +1114,21 @@ export class LiveBattles implements LiveSink {
       if (m.agree === false) {
         s.desync = true;
         console.warn(`[live] ${m.id}: the two cities’ runs ended differently`, m);
+        // A desync between the two cities' runs of a battle (M41): the room's word on the defender's
+        // run, and this page's own as far as it has got.
+        reportProblem(
+          'desync',
+          { message: 'A live battle’s two runs ended differently', stack: '' },
+          {
+            desync: {
+              where: 'battle',
+              tick: m.step,
+              mine: s.mine?.hash ?? '',
+              theirs: m.hash,
+              battle: { v: BATTLE_V4, steps: s.mine?.step ?? s.step, theirSteps: m.step },
+            },
+          },
+        );
       }
       // Its own run still to finish (the room ended it, or the other side did): it runs out, with every
       // order the room stamped (which it fetches first if it was away while some were).

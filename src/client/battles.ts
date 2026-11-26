@@ -17,6 +17,7 @@ import { IS_TEST_BUILD } from '../config';
 import type { BattleJob, BattleJobReply } from './battleWorker';
 import type { LiveAttack, LiveRunnerHandlers, LiveRunnerPort } from './liveBattles';
 import { decodeSave, encodeSave } from './saves';
+import { reportProblem } from './reports';
 
 /**
  * The page's own database for battles (M35): the towns they were fought in and the battles to
@@ -248,12 +249,17 @@ export class AwayBattles {
           this.host.changed();
           return;
         }
+        if (m.type === 'error') reportProblem('battle', { message: m.message, stack: m.stack ?? '' });
         const done = this.waiting.get(m.id);
         this.waiting.delete(m.id);
         done?.(m);
       };
       // A worker that fails or dies: every job waiting on it is told, and the next starts afresh.
-      this.worker.onerror = () => {
+      this.worker.onerror = (e) => {
+        reportProblem('battle', {
+          message: e.message || 'The battle worker stopped',
+          stack: e.filename ? `at ${e.filename}:${e.lineno}:${e.colno}` : '',
+        });
         for (const [id, done] of [...this.waiting])
           done({ type: 'error', id, message: 'The battle worker stopped' });
         this.waiting.clear();
@@ -295,12 +301,17 @@ export class AwayBattles {
           this.streams.delete(m.id);
           h?.done(m.end);
         } else if (m.type === 'error') {
+          reportProblem('battle', { message: m.message, stack: m.stack ?? '' });
           const h = this.streams.get(m.id);
           this.streams.delete(m.id);
           h?.error(m.message);
         }
       };
-      w.onerror = () => {
+      w.onerror = (e) => {
+        reportProblem('battle', {
+          message: e.message || 'The live battle worker stopped',
+          stack: e.filename ? `at ${e.filename}:${e.lineno}:${e.colno}` : '',
+        });
         for (const [id, h] of [...this.streams]) {
           this.streams.delete(id);
           h.error('The battle worker stopped');

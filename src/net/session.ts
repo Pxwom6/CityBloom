@@ -103,6 +103,8 @@ export class RoomSession {
   /** Where the others are and what they're doing (M31), with when it was heard (ms). */
   readonly presence = new Map<number, Presence & { heard: number }>();
   onPing: ((from: number, at: [number, number]) => void) | null = null;
+  /** The room says a player fell out of step (M41: the page files a desync report). */
+  onResync: ((m: Extract<RoomMsg, { t: 'resync' }>) => void) | null = null;
   onChange: (() => void) | null = null;
   onNotice: ((n: NetNotice) => void) | null = null;
   /** Every command the room ordered, once this sim applied it (for "who did what"). */
@@ -322,6 +324,11 @@ export class RoomSession {
         this.changed();
         return;
       case 'resync':
+        try {
+          this.onResync?.(m);
+        } catch {
+          /* a report is never worth breaking the catching-up for */
+        }
         this.notice(m.player === this.you ? 'Your game fell out of step; catching up' : m.text, 'warn');
         if (m.player === this.you) {
           this.state = 'joining';

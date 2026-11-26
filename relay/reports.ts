@@ -65,6 +65,8 @@ export interface ReportFounding {
   elections?: boolean;
   rivals?: boolean;
   region?: boolean;
+  /** The terrain generator's version. */
+  terrain?: number;
 }
 
 /** Where a desync's replay starts: the last snapshot both sides agreed on. */
@@ -74,8 +76,10 @@ export interface ReportStart {
   seq: number;
   /** Its hourly checksum, so a save given to the replay can be checked as the right one. */
   sum: string;
-  /** Set when the city was founded here with nothing done before this start: the replay needs nothing more. */
+  /** Set when the city was founded on this machine: the replay needs nothing more than this. */
   founded?: ReportFounding;
+  /** The commands made before it was shared, each at its tick (`{ tick, cmd, by? }`), cleaned. */
+  pre?: unknown[];
 }
 
 /** A desync: where the hashes disagreed, and what to replay it from. */
@@ -254,6 +258,7 @@ function cleanFounding(v: unknown): ReportFounding | undefined {
   const f: ReportFounding = { seed: o.seed.slice(0, 40), preset: label(o.preset, 20) };
   if (typeof o.difficulty === 'string') f.difficulty = label(o.difficulty, 10);
   for (const k of FOUNDING_FLAGS) if (typeof o[k] === 'boolean') f[k] = o[k];
+  if (isInt(o.terrain)) f.terrain = o.terrain;
   return f;
 }
 
@@ -270,7 +275,22 @@ function cleanDesync(v: unknown): ReportDesync | undefined {
   if (s && typeof s === 'object' && isInt(s.tick) && isInt(s.seq)) {
     d.start = { tick: s.tick, seq: s.seq, sum: hex(s.sum) };
     const f = cleanFounding(s.founded);
-    if (f) d.start.founded = f;
+    // A founded start carries the commands before sharing; without them it isn't one.
+    const pre = Array.isArray(s.pre) ? s.pre.slice(0, REPORT_CAPS.eventsCount) : null;
+    const preOk =
+      !!pre &&
+      pre.length === (s.pre as unknown[]).length &&
+      pre.every((e) => {
+        const x = e as Record<string, unknown> | null;
+        return !!x && typeof x === 'object' && isInt(x.tick) && !!x.cmd && typeof x.cmd === 'object';
+      });
+    if (f && preOk) {
+      const cleaned = cleanEvents(pre);
+      if (JSON.stringify(cleaned).length <= REPORT_CAPS.events / 2) {
+        d.start.founded = f;
+        d.start.pre = cleaned;
+      }
+    }
   }
   if (Array.isArray(o.events)) {
     const list = o.events.slice(0, REPORT_CAPS.eventsCount);
@@ -370,7 +390,8 @@ export function normaliseMessage(message: string): string {
  */
 export function firstFrame(stack: string): string {
   for (const line of stack.split('\n')) {
-    const chrome = /^\s*at\s+(?:async\s+)?([^\s(]+)?\s*\(?([^)\s]*)\)?/.exec(line);
+    // V8: "at fn (file:1:2)" or "at file:1:2"; Gecko and WebKit: "fn@file:1:2".
+    const chrome = /^\s*at\s+(?:async\s+)?(?:(.+?)\s+\()?([^()\s]+)\)?\s*$/.exec(line);
     const gecko = /^\s*([^@\s]*)@(\S*)/.exec(line);
     const m = line.trim().startsWith('at ') ? chrome : gecko;
     if (!m) continue;

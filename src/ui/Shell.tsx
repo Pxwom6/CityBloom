@@ -32,6 +32,8 @@ import { decodeMapFile, listMaps, newMapId, readMap, writeMap, type MapInfo } fr
 import { checkMap, type MapData } from '../sim/terrain/customMap';
 import { MapsScreen } from './Maps';
 import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
+import { reportProblem } from '../client/reports';
+import { ReportScreen } from './Report';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
 const NAME_B = ['Marsh', 'Oak', 'Pine', 'Rowan', 'Sorrel', 'Thistle', 'Willow', 'Yarrow', 'Alder', 'Birch'];
@@ -158,13 +160,42 @@ function MainMenu() {
         <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        <button class="shell-btn quiet" data-testid="main-report" onClick={() => game.openScreen('report')}>
+          <span>Report a problem</span>
+        </button>
         <InstallButton />
       </nav>
+      <ReportsNotice />
       <footer class="shell-foot" data-testid="shell-foot">
         Version {GAME_VERSION} · build {BUILD_ID}
         {game.updates.offlineReady && ' · works offline'}
       </footer>
     </div>
+  );
+}
+
+/**
+ * The one sentence about crash reports (M41), shown the first time the main menu opens after the
+ * update that brought them (and to every new player once): what is sent, and where the switch is.
+ */
+function ReportsNotice() {
+  const game = useGame();
+  const [shown] = useState(() => !game.settings.reportsNotice);
+  const [open, setOpen] = useState(shown);
+  useEffect(() => {
+    if (shown) game.updateSettings({ reportsNotice: true });
+  }, []);
+  if (!open) return null;
+  return (
+    <p class="shell-notice" data-testid="reports-notice">
+      <span>
+        When something breaks, Citybloom sends a crash report (the error, the game’s version, your browser and
+        graphics; never your name, cities, chat or anything you type): switch it off in Settings → Game.
+      </span>
+      <button class="btn small" data-testid="reports-notice-ok" onClick={() => setOpen(false)}>
+        OK
+      </button>
+    </p>
   );
 }
 
@@ -546,6 +577,9 @@ function PauseMenu() {
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        <button class="shell-btn quiet" data-testid="pause-report" onClick={() => game.openScreen('report')}>
+          <span>Report a problem</span>
+        </button>
         {!game.net && !game.readOnly && !game.region && <InviteButtons />}
         <div class="shell-row">
           {!game.readOnly && (
@@ -636,6 +670,7 @@ function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | nul
           await writeSlot(slot, s, `${s.meta.cityName} (imported)`);
           openSlot(slot);
         } catch (err) {
+          reportProblem('load', err, { message: 'An imported file wouldn’t open' });
           game.toast(
             `That file isn't a readable save (${err instanceof Error ? err.message : String(err)})`,
             'bad',
@@ -1073,6 +1108,13 @@ function SettingsScreen() {
               onChange={(autosaveMinutes) => set({ autosaveMinutes })}
             />
           </div>
+          <Check
+            on={s.crashReports}
+            testid="set-crash-reports"
+            label="Send crash reports"
+            hint="the error, the game’s version, browser and graphics; never names, cities, chat or what you type"
+            set={(crashReports) => set({ crashReports })}
+          />
           {game.mode === 'play' && (
             <button
               class="btn small"
@@ -1127,6 +1169,7 @@ export function Shell() {
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'maps' && <MapsScreen />}
       {screen === 'friends' && <FriendsScreenWithLatest />}
+      {screen === 'report' && <ReportScreen />}
     </div>
   );
 }

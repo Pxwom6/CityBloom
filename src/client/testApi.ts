@@ -296,6 +296,11 @@ export interface TestApi {
   netDrop(): void;
   /** Knock this page's city out of step (the room should catch it and resync). */
   netPerturb(): void;
+  /** Problem reports (M41): throw an uncaught error, reject a promise, the reporter's counts, send now. */
+  throwError(message?: string): void;
+  rejectPromise(message?: string): void;
+  getReports(): Record<string, unknown> | null;
+  flushReports(): Promise<void> | undefined;
   lockstepShare(player: number): void;
   lockstepFeed(events: Stamped[], allow: number): void;
   lockstepState(): {
@@ -1061,6 +1066,29 @@ export function installTestApi(game: Game): TestApi {
     },
     netDrop: () => game.net?.session.dropForTest(),
     netPerturb: () => game.client.perturb(),
+    // Problem reports (M41): a deliberate error, a rejected promise, and what the reporter has done.
+    throwError: (message = 'A deliberate test error') => {
+      setTimeout(() => {
+        throw new Error(message);
+      }, 0);
+    },
+    rejectPromise: (message = 'A deliberate rejected promise') => {
+      void Promise.reject(new Error(message));
+    },
+    getReports: () => {
+      const r = game.reporter;
+      return r
+        ? {
+            ...r.stats,
+            waiting: r.waiting,
+            canSend: r.canSend,
+            last: r.last
+              ? { ...r.last, shot: r.last.shot ? `${r.last.shot.length} chars` : undefined }
+              : null,
+          }
+        : null;
+    },
+    flushReports: () => game.reporter?.flush(true),
     lockstepShare: (player) => {
       if (!shared.listening) {
         shared.listening = true;

@@ -14,6 +14,7 @@ import type { SaveFile } from '../sim/save';
 import type { GameOptions } from '../sim/state';
 import type { MapData } from '../sim/terrain/customMap';
 import type { Speed } from '../sim/time';
+import type { DesyncLogData } from '../sim/desyncLog';
 
 type FrameListener = (diff: FrameDiff, perf: WorkerPerf, speed: Speed) => void;
 /** What a shared city's worker reports (M29): applied events, checksums, snapshots, late events. */
@@ -148,6 +149,11 @@ export class SimClient implements SimDriver {
   }
 
   /** Test builds: knock this machine's city out of step. */
+  /** What a desync's replay needs (M41), asked before a catching-up snapshot replaces it. */
+  desyncLog(): Promise<DesyncLogData | null> {
+    return this.request((id) => ({ type: 'desyncLog', id }));
+  }
+
   perturb(): void {
     this.post({ type: 'perturb' });
   }

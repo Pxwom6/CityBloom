@@ -33,6 +33,8 @@ import { p2pConnect } from './net/p2p';
 import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
 import { WAR_SCALES, foundingRules, type WarScale } from './data/war';
+import { pageReporter } from './client/reportHost';
+import { reportProblem, workerError } from './client/reports';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -42,6 +44,12 @@ const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
  * page has loaded, which can be before the game has finished booting.
  */
 const install = new AppInstall(window);
+
+/**
+ * Hearing about problems (M41): listening from the start too, so an error while booting is heard. It
+ * sends nothing when the player has turned "Send crash reports" off.
+ */
+const reports = pageReporter();
 
 /**
  * A save shipped with the game as a static file: the small town growing behind the main menu (made
@@ -222,6 +230,11 @@ async function boot(): Promise<void> {
   ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
+  // Errors in the sim worker (M41): its message and stack, as one text.
+  client.onError = (m) => {
+    console.error(`[sim] ${m}`);
+    reportProblem('worker', workerError(m));
+  };
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
   let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : visitError;
@@ -262,13 +275,21 @@ async function boot(): Promise<void> {
     : battleTown
       ? battleTown
       : loadSlot
-        ? await readSlot(loadSlot).catch(() => null)
+        ? await readSlot(loadSlot).catch((err: unknown) => {
+            reportProblem('load', err, { message: 'A saved city couldn’t be read' });
+            return null;
+          })
         : scenario
           ? await shippedSave(`scenarios/${scenario.save}`)
           : menu
             ? await shippedSave('demo.citybloom')
             : null;
-  const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
+  const opened =
+    found &&
+    (await client.load(found, IS_TEST_BUILD).catch((err: unknown) => {
+      reportProblem('load', err, { message: 'A saved city wouldn’t open' });
+      return null;
+    }));
   // A battle this browser doesn't keep (or whose town won't open): back to the city it came from,
   // never a fresh city in its place (which would autosave over the player's).
   if (battleId && !(battleRecord && battleTown && opened)) {
@@ -305,6 +326,8 @@ async function boot(): Promise<void> {
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const renderer = new GameRenderer(canvas, world);
   const game = new Game(client, world, renderer, install);
+  reports.attach(game);
+  game.reporter = reports.reporter;
   game.audio = new AudioEngine(game.settings);
   if (editing) {
     game.mode = 'editor';

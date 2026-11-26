@@ -11,6 +11,8 @@ import { isMonthStart, SPEED_TICKS_PER_SECOND, type Speed } from './time';
 import { partHashes } from './sync';
 import { Lockstep, type Applied } from './lockstep';
 import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
+import { DesyncLog, type FoundingOptions } from './desyncLog';
+import { checksum } from './sync';
 
 interface WorkerScope {
   postMessage(msg: unknown, transfer: Transferable[]): void;
@@ -82,6 +84,7 @@ function runShared(elapsed: number): void {
   for (const [tick, sum] of ls.checksums)
     if (tick > lastChecksum) {
       post({ type: 'checksum', tick, sum });
+      desyncLog.sum(tick, sum);
       lastChecksum = tick;
     }
 }
@@ -104,6 +107,14 @@ function flush(): void {
   else delete perf.behind;
   post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
 }
+
+/**
+ * What a desync's replay needs (M41): this run's start, the room's events since and the hourly sums.
+ * `origin` is how the city was founded here, when it was (a fresh city, no custom map), so a city
+ * shared from its founding can be replayed from nothing at all.
+ */
+const desyncLog = new DesyncLog();
+let origin: FoundingOptions | null = null;
 
 /** The last error the loop reported, so a sim that fails every tick says so once, not 20 times a second. */
 let lastLoopError = '';
@@ -178,16 +189,23 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
 
 function handle(msg: MainToWorker): void {
   switch (msg.type) {
-    case 'init':
+    case 'init': {
       lockstep = null;
       player = 0;
+      desyncLog.clear();
       sim = Sim.create(msg.options, msg.map ?? null);
+      // Founded here from options alone: a replay can found it again (never its name).
+      const { cityName: _name, editor, ...founding } = msg.options;
+      origin = msg.map || editor ? null : founding;
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
+    }
     case 'load':
       lockstep = null;
       player = 0;
+      origin = null;
+      desyncLog.clear();
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
@@ -215,7 +233,9 @@ function handle(msg: MainToWorker): void {
       // A resync keeps the page's city and brings it up to date in the next frame.
       if (msg.resync && old) sim.takeOverFrom(old);
       player = msg.player;
+      origin = null;
       share(sim, msg.snapshot.seq, msg.snapshot.eventHash);
+      desyncLog.begin({ tick: sim.tick, seq: msg.snapshot.seq, sum: checksum(sim) });
       applied = [];
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
@@ -230,7 +250,17 @@ function handle(msg: MainToWorker): void {
       share(sim, msg.lastSeq);
       {
         // The city the room is made from: this machine carries on from it as the others will.
+        const pre = origin ? sim.log.slice() : undefined;
         const save = lockstep!.rebirth();
+        sim = lockstep!.sim;
+        desyncLog.begin({
+          tick: sim.tick,
+          seq: msg.lastSeq,
+          sum: checksum(sim),
+          ...(origin ? { founded: origin, pre } : {}),
+        });
+        // The reborn city's own log starts here: a later share isn't "from its founding" any more.
+        origin = null;
         post({
           type: 'snapshot',
           tick: sim.tick,
@@ -239,6 +269,9 @@ function handle(msg: MainToWorker): void {
         });
       }
       break;
+    case 'desyncLog':
+      post({ type: 'reply', id: msg.id, result: lockstep ? desyncLog.data() : null });
+      break;
     case 'perturb':
       // One draw from a random stream: nothing visible changes, but the next checksum differs.
       if (sim?.testMode) sim.rng.growth.next();
@@ -246,6 +279,7 @@ function handle(msg: MainToWorker): void {
     case 'unshare':
       // This copy is the player's own now (F9): their undo, no room rules, no other players.
       sim?.leaveShared();
+      desyncLog.clear();
       lockstep = null;
       player = 0;
       applied = [];
@@ -254,7 +288,9 @@ function handle(msg: MainToWorker): void {
     case 'stamped': {
       if (!lockstep) return;
       for (const e of msg.events) {
-        if (lockstep.push(e) === 'late') post({ type: 'late', tick: e.tick, seq: e.seq });
+        const r = lockstep.push(e);
+        if (r === 'late') post({ type: 'late', tick: e.tick, seq: e.seq });
+        if (r !== 'repeat') desyncLog.event(e);
       }
       lockstep.allow(msg.allow);
       break;

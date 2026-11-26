@@ -87,6 +87,9 @@ import { atomBeats, blastSounds } from './render/atomFx';
 import { asSentence, nameInSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
 import { seasonNotice } from './ui/weather';
 import type { OverlayResult } from './sim/systems/overlays';
+import { reportProblem, type Reporter } from './client/reports';
+import type { RoomMsg } from '../relay/protocol';
+import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
 
 type Listener = () => void;
 
@@ -160,7 +163,9 @@ export type Screen =
   | 'settings'
   | 'maps'
   /** Play with friends (M30). */
-  | 'friends';
+  | 'friends'
+  /** Report a problem (M41). */
+  | 'report';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -547,6 +552,44 @@ export class Game {
   private regionHost: P2PHost | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
+  /** Problem reports (M41): the page's reporter, set at boot (null in tests that make a Game alone). */
+  reporter: Reporter | null = null;
+
+  /**
+   * A desync in a shared city (M41): the page that fell out of step files a report, and so does the
+   * pacer's (whose run agrees with the room by definition, and which, for a city founded on its
+   * machine, carries everything a replay needs). Asked of the worker before the catching-up snapshot
+   * replaces this run.
+   */
+  private async reportCityDesync(m: Extract<RoomMsg, { t: 'resync' }>, you: number): Promise<void> {
+    const mine = m.player === you;
+    if (!mine && m.pacer !== you) return;
+    const log = await this.client.desyncLog().catch(() => null);
+    const sums = m.sums ?? [];
+    const last = sums.at(-1);
+    reportProblem(
+      'desync',
+      {
+        message: mine
+          ? 'A shared city fell out of step on this machine'
+          : 'A shared city fell out of step on another machine (this is the pacer’s side)',
+        stack: '',
+      },
+      {
+        desync: {
+          where: 'city',
+          tick: m.tick ?? last?.[0] ?? 0,
+          mine: last ? (mine ? last[2] : last[1]) : '',
+          theirs: last ? (mine ? last[1] : last[2]) : '',
+          ...(log ? { sums: log.sums, cut: log.cut } : {}),
+          theirSums: sums.map(([t, pacer, player]) => [t, mine ? pacer : player] as [number, string]),
+          // Checked again by the report's cleaning: founding options without a seed aren't a start.
+          ...(log?.start ? { start: log.start as unknown as NonNullable<ReportDesync['start']> } : {}),
+          ...(log && !log.cut ? { events: log.events } : {}),
+        },
+      },
+    );
+  }
   /** Battles away from the city (M35): fought by this page when the city's forces arrive. */
   readonly away = new AwayBattles({
     query: (q) => this.client.query(q),
@@ -814,6 +857,35 @@ export class Game {
     const link = this.region;
     if (!link) return;
     for (const r of await unpostedBattles()) if (r.postTo !== undefined) link.sendBattle(r.postTo, r.input);
+  }
+
+  /**
+   * A picture of the game for "Report a problem" (M41): the 3D view only (the interface is drawn over
+   * it, never in it), at most 960 pixels wide, as a JPEG small enough for the report's cap.
+   */
+  reportShot(): string | null {
+    try {
+      this.renderer.frame(0);
+      const src = this.renderer.canvas;
+      if (!src.width || !src.height) return null;
+      for (const [width, quality] of [
+        [960, 0.72],
+        [800, 0.6],
+        [640, 0.5],
+      ] as const) {
+        const c = document.createElement('canvas');
+        c.width = Math.min(width, src.width);
+        c.height = Math.round((c.width * src.height) / src.width);
+        const ctx = c.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(src, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', quality);
+        if (url.length <= REPORT_CAPS.shot) return url;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /** A small picture of the city as the camera sees it, for the region view. */
@@ -1130,6 +1202,8 @@ export class Game {
       this.audio?.play('alert');
       this.toast(`${p.name}: look here`, 'info', 4000, { x: at[0], z: at[1] });
     };
+    // A player fell out of step (M41): that page and the pacer's each file a desync report.
+    mp.session.onResync = (m) => void this.reportCityDesync(m, mp.session.you);
     // Menus and photo mode don't pause a shared city; it runs at the room's speed.
     this.speedBeforeMenu = null;
     mp.session.onNotice = (n) => {
@@ -1976,6 +2050,7 @@ export class Game {
       return true;
     } catch (e) {
       this.toast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'bad');
+      reportProblem('save', e, { message: slot === 'auto' ? 'An autosave failed' : 'A save failed' });
       return false;
     } finally {
       this.saving = false;

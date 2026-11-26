@@ -290,7 +290,19 @@ export type RoomMsg =
   | { t: 'room'; room: RoomInfo }
   | { t: 'snap'; meta: SnapshotMeta; part: number; data: string; reason: 'join' | 'resync' }
   /** A player fell out of step and is being caught up (shown to everyone). */
-  | { t: 'resync'; player: number; text: string }
+  | {
+      t: 'resync';
+      player: number;
+      text: string;
+      /**
+       * Where it was seen (M41, for the desync report): the hour's tick, the pacer whose sums are
+       * right by definition, and both sides' recent hourly sums the room kept (tick, pacer's, player's).
+       * Older pages ignore them.
+       */
+      tick?: number;
+      pacer?: number;
+      sums?: [number, string, string][];
+    }
   /** The room turned a command down before ordering it (roles, rate). */
   | { t: 'refused'; ref: number; reason: string }
   | { t: 'chat'; from: number; text: string }

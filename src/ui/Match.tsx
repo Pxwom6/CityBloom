@@ -377,6 +377,11 @@ function MatchBar() {
         {over ? 'Time!' : clockText(now < m.startAt ? m.endsAt - m.startAt : left)}
         {last && <small data-testid="match-last-minute">last minute</small>}
       </div>
+      {m.sittingOut && (
+        <span class="match-sitout muted" data-testid="match-sitting-out">
+          This round started without you
+        </span>
+      )}
       <ol class="match-chips">
         {rows.map((r, k) => {
           const said = recent.filter((x) => x.from === r.slot).at(-1);
@@ -391,7 +396,7 @@ function MatchBar() {
                 <span class="match-rank">{r.out ? '–' : k + 1}</span>
                 <i style={{ background: colorOf(r.color) }} />
                 <span class="match-name">{r.name}</span>
-                <b class="match-score">{r.out ? 'left' : r.fig ? matchScoreShort(s.mode, r.fig, s) : '…'}</b>
+                <b class="match-score">{r.out ? 'out' : r.fig ? matchScoreShort(s.mode, r.fig, s) : '…'}</b>
                 {said && (
                   <span class="match-said" data-testid={`match-said-${r.slot}`}>
                     {said.e !== undefined ? EMOTES[said.e] : said.text}
@@ -563,7 +568,7 @@ function MatchResults() {
                     <td>
                       <i class="match-dot" style={{ background: colorOf(row.color) }} />
                       {row.name}
-                      {row.out && <span class="muted"> (left)</span>}
+                      {row.out && <span class="muted"> (out)</span>}
                     </td>
                     <td>{matchScoreText(r.settings.mode, row, r.settings)}</td>
                     <td>{formatInt(row.population)}</td>

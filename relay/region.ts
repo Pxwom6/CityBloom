@@ -2420,6 +2420,9 @@ export class RegionRoom {
         const p = playerOf(match, slot);
         if (p.ready) return;
         p.ready = true;
+        // A rematch waits for the rest a minute from the latest city to come back (pages reload at once,
+        // and a slow one takes a while).
+        if (match.auto) match.lobbyAt = now;
         this.changed(slot);
         this.broadcast();
         this.advanceMatch(now);

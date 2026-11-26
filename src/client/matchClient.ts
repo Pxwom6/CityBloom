@@ -123,6 +123,12 @@ export class MatchClient implements MatchSink {
 
   constructor(private readonly host: MatchHost) {}
 
+  /** This round started without this city (it was still reloading into it): it sits the round out. */
+  get sittingOut(): boolean {
+    const p = this.info?.players.find((x) => x.slot === this.slot);
+    return !!p?.out && this.info?.phase !== 'over' && this.info?.round === this.round;
+  }
+
   /** This page's city is in a quick match. */
   get active(): boolean {
     return this.round > 0;
@@ -177,6 +183,7 @@ export class MatchClient implements MatchSink {
   refusal(now = performance.now()): string | null {
     if (!this.active || this.kept) return null;
     const p = this.phase;
+    if (this.sittingOut) return 'This round started without you: you’ll be in the next one';
     if (!p || p === 'lobby' || p === 'countdown' || (p === 'playing' && now < this.startAt))
       return 'The match hasn’t started yet: wait for the countdown';
     if (p === 'final' || p === 'over' || this.host.tick() >= this.endTick) return 'The match is over';
@@ -203,7 +210,12 @@ export class MatchClient implements MatchSink {
     if (m.phase === 'lobby' && this.link && this.readySent !== m.round) {
       if (this.link.sendMatch({ t: 'mready', round: m.round })) this.readySent = m.round;
     }
-    if ((m.phase === 'countdown' || m.phase === 'playing') && !this.clockOn && m.startIn !== undefined) {
+    if (
+      (m.phase === 'countdown' || m.phase === 'playing') &&
+      !this.clockOn &&
+      m.startIn !== undefined &&
+      !this.sittingOut
+    ) {
       this.clockOn = true;
       this.startAt = now + m.startIn;
       this.endsAt = now + (m.endsIn ?? 0);

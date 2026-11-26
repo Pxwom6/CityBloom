@@ -51,8 +51,8 @@ export const MATCH = {
   thumbMs: 60_000,
   saveMs: 120_000,
   /**
-   * A rematch waits this long for every player of the last round to found its new city before those
-   * here start without the rest (ms); and an online host whose page has gone keeps the host's part
+   * A rematch waits this long after the latest city came back for the others to found their new
+   * cities, before those here start without them (ms); and an online host whose page has gone keeps the host's part
    * this long (a reload, a dropped connection) before it passes on (ms).
    */
   rematchWaitMs: 60_000,

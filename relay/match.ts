@@ -76,7 +76,7 @@ export interface MatchState {
   endedBy?: MatchEnd;
   /** A rematch: the countdown starts by itself once every city here has founded its new city. */
   auto?: true;
-  /** When the rematch's lobby opened (the room's clock): its wait for players coming back runs from it. */
+  /** When the rematch's lobby opened, or the latest city came back to it (the room's clock): its wait runs from it. */
   lobbyAt?: number;
   /** When an online host's page went (the room's clock): the host's part passes on after a grace. */
   hostAway?: number;

@@ -269,8 +269,9 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M41 Hearing about problems is complete** (pull request "M41 complete: Hearing about problems" into
-`main`). Next: **M42 Learning to play**.
+**M41 Hearing about problems is complete**, in pull request #24 ("M41 complete: Hearing about
+problems", https://github.com/Pxwom6/CityBloom/pull/24). **M42 Learning to play is under way**
+(plan: `docs/plans/M42-design.md`); it joins #24 if that is still open when M42 is done.
 
 M41 in short: problem reports from the page (uncaught errors and rejections, the sim worker, both
 battle workers, failed saves, loads and imports, the models file failing at start-up) and desyncs (a

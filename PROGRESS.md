@@ -271,8 +271,12 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M42 Learning to play is complete**, joining M41 in pull request #24. **M49 Phones** is next
-(after M42, before M43; plan `docs/plans/M49-design.md`).
+**M49 Phones** is under way (after M42, before M43; plan `docs/plans/M49-design.md`). M41 and M42
+are complete, in pull request #24. Done so far: the measurements (below, "Performance (M49)") and
+the first fixes they showed (construction sites drawn in cells, building chunks sized beforehand and
+rebuilt at most every 0.25–1.5 s, tree regions a few a frame, chunk arrays let go once on the GPU
+and built again if the context comes back). Next: the Phone preset, 30 fps cap and battery saver,
+then touch, layout, memory, installing and slow joiners.
 
 M42 in short: the first-city tutorial grew from eight steps to eighteen, ending at 1,000 residents
 (roads, homes, jobs, power, water, the demand bars, the budget and taxes beside it, services and a
@@ -307,6 +311,23 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
    whole game by touch upright and sideways, a 30 fps cap and battery saver, memory, installing, and
    slow joiners catching up in shared cities.
 2. Then M43–M48 in order (SPEC-6.md).
+
+## Performance (M49)
+Measured with `scripts/dev/phoneprobe.mjs` (Playwright's iPhone 13 and Pixel 7 emulation, CPU
+throttled 4× by CDP, Low quality; SwiftShader draws on the CPU here, so frame intervals mean
+nothing; read the game's own work per frame, scripts per frame from a CPU profile, draw calls,
+triangles, heaps and the renderer process's private memory). Worker CPU isn't throttled by CDP.
+| city (iPhone, Low) | work/frame avg (overview, street) | private memory | page + worker heap | GPU |
+|---|---|---|---|---|
+| demo town, 27k, growing | 98, 61 ms → 61, 38 ms | 543 → 486 MB | 25 + 15 MB | 62 MB |
+| 20k (`Saves/Town20k.citybloom`) | 14, 13 ms → 16, 14 ms | 426 → 418 MB | 50 + 14 MB | 68 MB |
+| bench, 110k, sandbox | 268, 160 ms → 75, 55 ms | 897 → 742 MB | 38 + 24 MB | 111 MB |
+(before → after the first fixes). What it showed: in a growing city the one construction mesh was
+rebuilt every frame (40 % of the main thread in the bench city), stale skyline chunks were rebuilt
+every frame, and three.js kept a CPU copy of every uploaded chunk (the page's ArrayBuffers were
+164 MB in the demo town, 249 MB in the bench city; the sim worker's are 4 MB). Download: a first
+visit is 1.6 MB gzipped, but the service worker then fetches the scenarios (4.3 MB) and lessons
+(0.7 MB) in the background: to fix (extras on first use). Ticks at 1×: 1–3 ms (unthrottled worker).
 
 ## Performance (M42)
 - **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader): `e2e/m42-tutorial.spec.ts`,

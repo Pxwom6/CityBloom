@@ -164,6 +164,9 @@ export function lotTree(x: number, y: number, z: number): Placement {
 }
 
 /** Instanced low-poly trees placed deterministically from the tree-density grid. */
+/** Regions round new buildings rebuilt a frame (M49). */
+const REGIONS_A_FRAME = 2;
+
 export class TreeRenderer {
   readonly group = new Group();
   private geos: BufferGeometry[] = [coniferGeometry(), broadleafGeometry()];
@@ -198,8 +201,17 @@ export class TreeRenderer {
 
   private treesDirty = false;
 
+  /** Regions waiting to be rebuilt round new buildings (M49): `REGIONS_A_FRAME` of them a frame. */
+  private pending = new Set<number>();
+
   /** Rebuild the regions whose tree cells the sim changed since the last frame. */
   update(): void {
+    let n = REGIONS_A_FRAME;
+    for (const r of this.pending) {
+      if (n-- <= 0) break;
+      this.pending.delete(r);
+      this.rebuildRegion(r);
+    }
     if (!this.treesDirty) return;
     this.treesDirty = false;
     const cellsPer = REGION / GRID_CELL;
@@ -224,15 +236,24 @@ export class TreeRenderer {
       for (let i = r0(box.minX); i <= r0(box.maxX); i++) this.rebuildRegion(j * REGIONS + i);
   }
 
-  /** Rebuild the in-map regions that contain any of these points (after roads/buildings change). */
-  rebuildAround(points: { x: number; z: number }[]): void {
-    const set = new Set<number>();
+  /**
+   * Rebuild the in-map regions that contain any of these points (after roads/buildings change): a
+   * few a frame from `update` (M49: a busy city's new buildings touched many regions at once), or all
+   * now with `now`.
+   */
+  rebuildAround(points: { x: number; z: number }[], now = false): void {
     for (const p of points) {
       const i = Math.min(REGIONS - 1, Math.max(0, Math.floor(p.x / REGION)));
       const j = Math.min(REGIONS - 1, Math.max(0, Math.floor(p.z / REGION)));
-      set.add(j * REGIONS + i);
+      this.pending.add(j * REGIONS + i);
     }
-    for (const r of set) this.rebuildRegion(r);
+    if (now) this.flushPending();
+  }
+
+  /** Rebuild every region waiting its turn (tests and screenshots). */
+  flushPending(): void {
+    for (const r of this.pending) this.rebuildRegion(r);
+    this.pending.clear();
   }
 
   private placementsInRegion(r: number): Placement[] {

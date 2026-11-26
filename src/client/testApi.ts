@@ -483,6 +483,15 @@ export interface TestApi {
   setSpeed(speed: 0 | 1 | 2 | 3): void;
   /** Every frame's interval (from one animation frame to the next) and work (the game's own frame), in ms, over `ms`. */
   recordFrames(ms: number): Promise<{ interval: number[]; work: number[] }>;
+  /** The worker's tick times and the page's frame rate (M49's phone probe). */
+  getPerf(): {
+    tickMsAvg: number;
+    tickMsMax: number;
+    ticksPerSecond: number;
+    droppedTicks: number;
+    fps: number;
+    frameMs: number;
+  };
   /** Resolves after n rendered frames (lets screenshots settle). */
   waitFrames(n: number): Promise<void>;
   errors: string[];
@@ -584,6 +593,11 @@ export interface TestApi {
   renderSounds(): Promise<SoundCheck[]>;
   /** Visible meshes per top-level scene object, and how many of them cast shadows (dev). */
   renderBreakdown(): { name: string; meshes: number; shadow: number }[];
+  /**
+   * Bytes the page keeps for each top-level scene object (M49): geometry arrays still held on the CPU
+   * (each geometry once), and what they and the textures take on the GPU; total in MB.
+   */
+  memoryBreakdown(): { name: string; cpu: number; gpu: number; geometries: number }[];
   /**
    * Triangles and draw calls each top-level scene object costs in the colour pass and in the
    * shadow pass of one frame drawn now (phase 3; dev and benchmarks).
@@ -1449,6 +1463,14 @@ export function installTestApi(game: Game): TestApi {
     },
     hash: () => game.client.query<string>({ type: 'hash' }),
     setSpeed: (s) => game.setSpeed(s),
+    getPerf: () => ({
+      tickMsAvg: game.perf.tickMsAvg,
+      tickMsMax: game.perf.tickMsMax,
+      ticksPerSecond: game.perf.ticksPerSecond,
+      droppedTicks: game.perf.droppedTicks,
+      fps: game.fps,
+      frameMs: game.frameMs,
+    }),
     recordFrames: (ms) =>
       new Promise((resolve) => {
         game.frameSamples = [];
@@ -1486,6 +1508,41 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    memoryBreakdown: () => {
+      const seen = new Set<unknown>();
+      const MB = 1048576;
+      return game.renderer.scene.children.map((o, i) => {
+        let cpu = 0;
+        let gpu = 0;
+        let geometries = 0;
+        o.traverse((m) => {
+          const mesh = m as Mesh & { instanceMatrix?: { array: ArrayLike<number> & { byteLength: number } } };
+          const g = mesh.geometry;
+          if (!g || seen.has(g)) return;
+          seen.add(g);
+          geometries++;
+          const arrays = [...Object.values(g.attributes), ...(g.index ? [g.index] : [])];
+          for (const a of arrays) {
+            const arr = (a as { array?: { byteLength?: number } }).array;
+            const n = arr?.byteLength ?? 0;
+            cpu += n;
+            gpu += n;
+          }
+          const im = mesh.instanceMatrix?.array;
+          if (im && !seen.has(im)) {
+            seen.add(im);
+            cpu += im.byteLength;
+            gpu += im.byteLength;
+          }
+        });
+        return {
+          name: o.name || `${o.type}#${i}`,
+          cpu: Math.round((cpu / MB) * 10) / 10,
+          gpu: Math.round((gpu / MB) * 10) / 10,
+          geometries,
+        };
+      });
+    },
     setGround: (level) => {
       game.renderer.groundDetail = level;
     },

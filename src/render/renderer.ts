@@ -453,7 +453,7 @@ export class GameRenderer {
         const n = world.netState.nodes.get(id);
         if (n) pts.push(n);
       }
-      if (pts.length) this.trees.rebuildAround(pts);
+      if (pts.length) this.trees.rebuildAround(pts, true);
     });
     // Earthworks (M13): everything laid on the ground follows it.
     world.onTerrain((box) => {
@@ -466,6 +466,21 @@ export class GameRenderer {
     this.controller = new CameraController(this.camera, canvas, (x, z) => world.heightAt(x, z));
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // A phone may take the GPU's context away under memory pressure (M49). three.js brings back what
+    // it still holds; the meshes whose arrays were let go after upload (release.ts) are built again.
+    canvas.addEventListener('webglcontextrestored', () => this.redrawReleased());
+  }
+
+  /** Times the GPU's context came back (M49; tests). */
+  contextRestores = 0;
+
+  /** Build again every mesh whose arrays were let go once uploaded (the context came back, M49). */
+  redrawReleased(): void {
+    this.contextRestores++;
+    this.buildings.redrawAll();
+    this.civics.chunks.reset();
+    this.roads.redrawAll();
+    this.shadowAt = -1;
   }
 
   /** Car, zoned or civic building under a screen position. */
@@ -543,10 +558,9 @@ export class GameRenderer {
     this.buildings.flushAll();
     this.civics.update(this.camera.position, this.buildings.range, true);
     // Garden trees of buildings just built, too (normally planted within half a second).
-    if (this.treePoints.length) {
-      this.trees.rebuildAround(this.treePoints);
-      this.treePoints = [];
-    }
+    if (this.treePoints.length) this.trees.rebuildAround(this.treePoints);
+    this.treePoints = [];
+    this.trees.flushPending();
   }
 
   setShadows(on: boolean): void {

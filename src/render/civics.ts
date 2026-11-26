@@ -30,6 +30,7 @@ export class CivicRenderer {
     // Civic chunks rebuild as soon as they change (they change rarely, and a placed building
     // should appear at once).
     this.chunks = new LodChunks('civics', CHUNKS, materials, (id) => this.item(id), Infinity);
+    this.chunks.gapScale = 0;
     this.group.add(this.chunks.group);
     for (const c of world.civics.values()) this.place(c.id);
     world.onCivics((changed, removed) => {

@@ -422,8 +422,8 @@ describe('“Look at the missile”', () => {
       h.fx.look(h.controller);
       for (let i = 0; i < 240; i++) h.frame(500);
       const cam = h.controller as unknown as {
-        onPointerMove(e: { clientX: number; clientY: number }): void;
-        onPointerUp(): void;
+        onPointerMove(e: { clientX: number; clientY: number; pointerId: number }): void;
+        onPointerUp(e: { pointerId: number }): void;
       };
       // The player grabs the map in the middle of the view and drags it 400 px to the right.
       h.controller.beginDrag('pan', 800, 500, 1);
@@ -431,12 +431,13 @@ describe('“Look at the missile”', () => {
       let prev = before.clone();
       let most = 0;
       for (let i = 1; i <= 40; i++) {
-        cam.onPointerMove({ clientX: 800 + i * 10, clientY: 500 });
+        // (The pointer that began the drag: since M49 only it moves it, a second finger being a gesture.)
+        cam.onPointerMove({ clientX: 800 + i * 10, clientY: 500, pointerId: 1 });
         h.frame(500);
         most = Math.max(most, h.camera.position.distanceTo(prev));
         prev = h.camera.position.clone();
       }
-      cam.onPointerUp();
+      cam.onPointerUp({ pointerId: 1 });
       expect(h.fx.stats.following, `${side}`).toBe(false);
       // No jump from one frame to the next, and the drag moved the view.
       expect(most, `${side}`).toBeLessThan(250);

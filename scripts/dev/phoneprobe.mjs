@@ -354,7 +354,10 @@ try {
           const still = await page.evaluate(() => window.__game.recordFrames(3000));
           if (shots) {
             const { profile: paused } = await cdp.send('Profiler.stop');
-            writeFileSync(`${shots}/${dev}-${quality}-${city}-${v}-paused.cpuprofile`, JSON.stringify(paused));
+            writeFileSync(
+              `${shots}/${dev}-${quality}-${city}-${v}-paused.cpuprofile`,
+              JSON.stringify(paused),
+            );
           }
           await page.evaluate(() => window.__game.setSpeed(1));
           const x = row.views[v];

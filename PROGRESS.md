@@ -69,7 +69,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [ ] M46 Your own buildings
 - [ ] M47 Making buildings
 - [ ] M48 Send it in
-- [ ] M49 Phones (done after M42, before M43)
+- [x] M49 Phones (done after M42, before M43)
 
 **Phase 6 (playing with friends, SPEC-6.md, M41–M49) is under way.** M49 (phones) comes after M42
 and before M43, as the brief asks. Branch: this cloud session's
@@ -271,9 +271,8 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M49 Phones** is all but done (after M42, before M43; plan `docs/plans/M49-design.md`); M41 and M42
-are complete, in pull request #24, which M49 joins. Left: the last runs (the bench, the balance, the
-cross-browser test, the whole suite) and the `M49 complete:` commit.
+**M49 Phones is complete** (done after M42, before M43; plan `docs/plans/M49-design.md`), joining
+M41 and M42 in pull request #24. **M43 Quick match** is next.
 
 M49 in short: measured first in phone emulation with the CPU slowed 4× (`scripts/dev/phoneprobe.mjs`),
 and fixed what it showed for every preset: construction sites drawn in cells (one mesh of every site
@@ -328,10 +327,8 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. Close M49: bench, balance, the cross-browser test and the whole suite; `M49 complete:`; PR #24's
-   title and description name M49.
-2. Then M43–M48 in order (SPEC-6.md), each new screen working by touch on a phone upright and
-   sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+1. M43 Quick match (SPEC-6.md), then M44–M48 in order, each new screen working by touch on a phone
+   upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
 
 ## Performance (M49)
 Measured with `scripts/dev/phoneprobe.mjs` (Playwright's iPhone 13 and Pixel 7 emulation, CPU
@@ -357,8 +354,20 @@ the 110k bench city (target 80 %; one run's bench city view read 81 % before a p
 stopped posting empty frames that woke the interface); 62–174 draw calls and 0.57–1.88 M triangles.
 Memory, the 20k city: 328–339 MB private plus 65 MB on the GPU (budget 700 MB); the bench city 813–915
 MB plus 102–111 MB (over a phone's budget: it asks first). Canvas 390×664 (iPhone 13), 412×839 (Pixel 7).
-E2E: `m49-phone` (four towns by touch and the two-finger camera, 5 tests, 7.7 min), `m49-join` (a 4×
-throttled phone in step 18 s after opening the link).
+E2E: `m49-phone` (four towns by touch and the two-finger camera, 5 tests, 7.7–12 min), `m49-join` (a
+4× throttled phone in step 18–20 s after opening the link); every panel pictured both ways up
+(`phonepanels.mjs`, every control 44 px and on the screen after the fixes; kept
+`docs/screenshots/m49-*.png`); m11-shell, m15-publish, m30-rooms (online and peer-to-peer: passes on
+this VM now), m39-narrow, m39-touch-scale and review-touch pass; fix-layout's P13 and P14 time out here
+as on the M42 build (VM slowness).
+- **Bench** (`bench.ts 6 --big`): 4.5 s, months 4–6 tick avg 0.76–0.87 ms: as before (the sim didn't
+  change).
+- **Balance** (20 years): identical (careful 67,373 residents, $1,838,985, 73 %).
+- **Tests**: the whole unit project, 2,078 tests in 190 files, and the live project (25 tests, the new
+  slow-joiner tests included) pass; typecheck, lint and prettier pass. Cross-browser: Chromium here
+  passes; WebKit and real Firefox run on the pull request.
+- **Network**: a joiner's hold adds one optional field to the room's player list; nothing else
+  travels between players.
 
 ## Performance (M42)
 - **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader): `e2e/m42-tutorial.spec.ts`,

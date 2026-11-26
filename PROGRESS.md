@@ -271,9 +271,21 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M41 Hearing about problems is complete**, in pull request #24 ("M41 complete: Hearing about
-problems", https://github.com/Pxwom6/CityBloom/pull/24). **M42 Learning to play is under way**
-(plan: `docs/plans/M42-design.md`); it joins #24 if that is still open when M42 is done.
+**M42 Learning to play** is finishing (its e2e, then bench, balance, the unit suite and the
+cross-browser run); it joins pull request #24 with M41. Then **M49 Phones** (after M42, before M43).
+
+M42 in short: the first-city tutorial grew from eight steps to eighteen, ending at 1,000 residents
+(roads, homes, jobs, power, water, the demand bars, the budget and taxes beside it, services and a
+coverage map, the advisors, saving), with short sentences, a bouncing arrow at the button to press,
+the camera flying where it matters, the game holding still only while a card is read, first
+problems (a fire, a power cut, a jam) taught once each the moment they come, steps already done
+ticking themselves off, and Skip this step / Leave for now / Continue the tutorial / Skip tutorial.
+Learn on the main menu: seven lessons on small towns made for them (traffic, money, services,
+disasters, districts, friends, war marked opt-in) and making buildings marked as coming with the
+Workshop. A card for a player joining a friend's room the first time. The advisors count down
+before homes without power or water empty, and tell a town without services it will shrink and
+what to build first, said once in a notice when a day or less away. Calls: DECISIONS "M42";
+SPEC_REVIEW "M42"; plan `docs/plans/M42-design.md`.
 
 M41 in short: problem reports from the page (uncaught errors and rejections, the sim worker, both
 battle workers, failed saves, loads and imports, the models file failing at start-up) and desyncs (a
@@ -291,10 +303,9 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M42 Learning to play (SPEC-6.md): the first-city tutorial to about 1,000 residents, the Learn
-   lessons on small prepared towns, the first-time card in a friend's room, earlier warnings before
-   homes empty or a town without services shrinks; screenshots at 100 % and 140 % and on a phone.
-2. M49 Phones next (after M42, before M43): measure in phone emulation with CPU throttling, then the
+1. M42's last checks (bench, balance, the unit suite, the cross-browser run), then `M42 complete:` into
+   pull request #24 (title and description naming M41 and M42).
+2. M49 Phones (after M42, before M43): measure in phone emulation with CPU throttling, then the
    whole game by touch upright and sideways, a 30 fps cap and battery saver, memory, installing, and
    slow joiners catching up in shared cities.
 3. Then M43–M48 in order (SPEC-6.md).

@@ -348,7 +348,17 @@ rebuilt every frame (40 % of the main thread in the bench city), stale skyline c
 every frame, and three.js kept a CPU copy of every uploaded chunk (the page's ArrayBuffers were
 164 MB in the demo town, 249 MB in the bench city; the sim worker's are 4 MB). Download: a first
 visit is 1.6 MB gzipped, but the service worker then fetches the scenarios (4.3 MB) and lessons
-(0.7 MB) in the background: to fix (extras on first use). Ticks at 1×: 1–3 ms (unthrottled worker).
+(0.7 MB) in the background: fixed (extras on first use). Ticks at 1×: 1–3 ms (unthrottled worker).
+
+**At the Phone preset** (`phoneprobe.mjs --cities 20k,bench --devices iphone,pixel --quality phone
+--check`): the main thread's load projected to 30 fps on a CPU 4× slower (every frame's own work, 9–19
+ms paused, 30 times a second, plus the work paced by time) is 39–54 % in the 20k city and 61–79 % in
+the 110k bench city (target 80 %; one run's bench city view read 81 % before a paused city's worker
+stopped posting empty frames that woke the interface); 62–174 draw calls and 0.57–1.88 M triangles.
+Memory, the 20k city: 328–339 MB private plus 65 MB on the GPU (budget 700 MB); the bench city 813–915
+MB plus 102–111 MB (over a phone's budget: it asks first). Canvas 390×664 (iPhone 13), 412×839 (Pixel 7).
+E2E: `m49-phone` (four towns by touch and the two-finger camera, 5 tests, 7.7 min), `m49-join` (a 4×
+throttled phone in step 18 s after opening the link).
 
 ## Performance (M42)
 - **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader): `e2e/m42-tutorial.spec.ts`,

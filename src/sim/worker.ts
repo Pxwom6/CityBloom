@@ -40,6 +40,9 @@ const BULK_BEHIND = 240;
 const BULK_SECONDS = 8;
 let bulk = false;
 let lastFrameAt = 0;
+/** A paused city on its own tells the page this often (ms) unless asked something (M49). */
+const IDLE_FRAME_MS = 1000;
+let wake = true;
 const perf: WorkerPerf = { tickMsAvg: 0, tickMsMax: 0, ticksPerSecond: 0, droppedTicks: 0 };
 let perfWindowStart = performance.now();
 let perfWindowTicks = 0;
@@ -167,9 +170,15 @@ function step(): void {
     }
     if (n > 0) runTicks(n);
   }
-  // Far behind, the page hears every BULK_FRAME_MS; the frame then carries everything since.
-  if (sim && (!lockstep || !bulk || now - lastFrameAt >= BULK_FRAME_MS)) {
+  // Far behind, the page hears every BULK_FRAME_MS; the frame then carries everything since. A
+  // paused city on its own (M49) tells the page only after a message or every IDLE_FRAME_MS: its
+  // frames were empty, but each one woke the page's interface (a phone's battery).
+  const tell = lockstep
+    ? !bulk || now - lastFrameAt >= BULK_FRAME_MS
+    : speed > 0 || wake || now - lastFrameAt >= IDLE_FRAME_MS;
+  if (sim && tell) {
     lastFrameAt = now;
+    wake = false;
     flush();
   }
 }
@@ -386,6 +395,8 @@ function handle(msg: MainToWorker): void {
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
+  // Anything the page asks may change the city: the next loop tells the page at once.
+  wake = true;
   try {
     handle(e.data);
   } catch (err) {

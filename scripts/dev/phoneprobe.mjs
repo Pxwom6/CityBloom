@@ -350,7 +350,12 @@ try {
           // Paused: no building changes, so no rebuilds; what's left is what every frame costs.
           await page.evaluate(() => window.__game.setSpeed(0));
           await page.evaluate(() => window.__game.waitFrames(3));
+          if (shots) await cdp.send('Profiler.start');
           const still = await page.evaluate(() => window.__game.recordFrames(3000));
+          if (shots) {
+            const { profile: paused } = await cdp.send('Profiler.stop');
+            writeFileSync(`${shots}/${dev}-${quality}-${city}-${v}-paused.cpuprofile`, JSON.stringify(paused));
+          }
           await page.evaluate(() => window.__game.setSpeed(1));
           const x = row.views[v];
           x.frameCost = pct(still.work, 0.5);

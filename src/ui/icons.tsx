@@ -476,3 +476,15 @@ export const IconWarRoom = (p: P) => (
     <path d="M7 14c2-3 5-4 9-4M14 8l2 2-2 2" />
   </svg>
 );
+/** Three dots: more tools (M49, the phone's bottom bar). */
+export const IconMore = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.2" />
+  </svg>
+);
+/** A building with a plus: the phone's Build sheet (M49). */
+export const IconBuild = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 21V9l6-4 6 4v4M4 21h9M8 21v-5h4v5M18 15v6M15 18h6" />
+  </svg>
+);

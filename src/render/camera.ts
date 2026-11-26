@@ -309,8 +309,12 @@ export class CameraController {
       const [sa, sb] = gs.start;
       const da = { x: a.x - sa.x, y: a.y - sa.y };
       const db = { x: b.x - sb.x, y: b.y - sb.y };
-      const moved = Math.max(Math.hypot(da.x, da.y), Math.hypot(db.x, db.y));
-      if (moved < TOUCH.decide) return;
+      const ma = Math.hypot(da.x, da.y);
+      const mb = Math.hypot(db.x, db.y);
+      const moved = Math.max(ma, mb);
+      // A finger's move arrives before the other's: wait until both have moved (or one has moved
+      // far while the other stays, a pinch or a twist about it).
+      if (moved < TOUCH.decide || (Math.min(ma, mb) < TOUCH.decide / 2 && moved < TOUCH.decide * 2.5)) return;
       // Both fingers sliding the same way up or down, keeping their distance: a tilt.
       const vertical = (d: { x: number; y: number }) => Math.abs(d.y) > 2 * Math.abs(d.x);
       const together = Math.sign(da.y) === Math.sign(db.y) && da.y !== 0;

@@ -1,3 +1,4 @@
+import { installTouch } from './ui/touch';
 import { render, h } from 'preact';
 import './ui/styles/main.css';
 import { BUILD_ID, GAME_TITLE, IS_TEST_BUILD } from './config';
@@ -496,6 +497,8 @@ async function boot(): Promise<void> {
     game.updateSettings({ reportsNotice: true });
   }
   render(h(App, { game }), document.getElementById('ui')!);
+  // Long presses show titles, and phone sheets close by dragging (M49).
+  installTouch(document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);
   // Built pages keep a copy of the game for offline play and offer new versions (not the dev server).
   if (import.meta.env.PROD) game.updates.start(`${import.meta.env.BASE_URL}sw.js`, import.meta.env.BASE_URL);

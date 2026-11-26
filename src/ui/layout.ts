@@ -69,3 +69,12 @@ export function topbarFolds(folded: boolean, content: number, room: number, save
   if (!folded) return content > room + 1;
   return content + saved > room - 8;
 }
+
+/**
+ * The phone layout (M49, `#ui[data-phone]`): a touch screen whose short side is under 600 px, held
+ * either way. The bottom bar becomes one row with groups that open as sheets, and panels open as
+ * sheets from the bottom (upright) or the side (sideways).
+ */
+export function phoneLayout(width: number, height: number, coarse: boolean): boolean {
+  return coarse && Math.min(width, height) < 600;
+}

@@ -53,7 +53,7 @@ import {
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { pickTip, type Tip } from './client/tutorial';
 import { TutorialRunner } from './client/tutorialRunner';
-import { barsClassWith, widthClass } from './ui/layout';
+import { barsClassWith, phoneLayout, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
 import {
   RegionLink,
@@ -140,6 +140,18 @@ function layoutUi(): void {
   const rem = window.innerWidth / (16 * uiScale);
   ui.dataset.width = widthClass(rem);
   ui.dataset.bars = barsClassWith(rem, extraTools);
+  // Phones (M49): the bars and panels change shape, upright and sideways.
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  phone = phoneLayout(window.innerWidth, window.innerHeight, coarse);
+  if (phone) ui.dataset.phone = '';
+  else delete ui.dataset.phone;
+  ui.dataset.orient = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+}
+
+/** Whether the phone layout is on (M49), as last laid out. */
+let phone = false;
+export function isPhone(): boolean {
+  return phone;
 }
 
 /** Toolbar buttons beyond a peaceful city's (M34: the Military category with war on). */

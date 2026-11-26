@@ -5,9 +5,10 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BUILDABLE_ROADS, ROAD_TYPES, isRail, type RoadTypeId } from '../data/roads';
 import type { ZoneLetter } from '../data/zones';
 import type { RoadMode } from '../tools/roadTool';
-import type { ToolId } from '../tools/manager';
+import { LONG_PRESS_MS, type ToolId } from '../tools/manager';
 import { useGame, useGameUpdates } from './hooks';
 import { tipShift } from './layout';
+import { isPhone } from '../game';
 import { CIVIC, CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
 import { UNIT } from '../data/war';
 import { TRAM, TRANSIT } from '../data/balance';
@@ -58,6 +59,8 @@ import {
   IconDistrict,
   IconTerrain,
   IconRaise,
+  IconMore,
+  IconBuild,
   IconLower,
   IconLevel,
   IconSmooth,
@@ -76,6 +79,11 @@ interface TipContent {
 function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }) {
   const [open, setOpen] = useState(false);
   const tipRef = useRef<HTMLSpanElement>(null);
+  // By touch (M49) a tooltip opens on a long press, not on a tap (a tap's made-up mouse events
+  // opened it and nothing closed it), and the press that opened it doesn't also press the button.
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const opened = useRef(false);
+  const closeLater = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A tooltip is centred on its button: over a button at the edge of the window it would run off the
   // screen, so measure it where it opens (before it is drawn) and slide it back inside.
   useLayoutEffect(() => {
@@ -85,8 +93,47 @@ function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }
     const r = el.getBoundingClientRect();
     el.style.setProperty('--tip-shift', `${tipShift(r.left, r.right, window.innerWidth)}px`);
   }, [open]);
+  const endPress = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
   return (
-    <span class="tip-anchor" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <span
+      class="tip-anchor"
+      onPointerEnter={(e) => e.pointerType === 'mouse' && setOpen(true)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setOpen(false)}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse') return;
+        endPress();
+        opened.current = false;
+        press.current = {
+          x: e.clientX,
+          y: e.clientY,
+          timer: setTimeout(() => {
+            press.current = null;
+            opened.current = true;
+            setOpen(true);
+            if (closeLater.current) clearTimeout(closeLater.current);
+            closeLater.current = setTimeout(() => setOpen(false), TOUCH_TIP_MS);
+          }, LONG_PRESS_MS),
+        };
+      }}
+      onPointerMove={(e) => {
+        const p = press.current;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) endPress();
+      }}
+      onPointerUp={endPress}
+      onPointerCancel={endPress}
+      onClickCapture={(e) => {
+        // The long press showed the tooltip: lifting the finger is not a press of the button.
+        if (opened.current) {
+          opened.current = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {children}
       {open && (
         <span class="tip" role="tooltip" ref={tipRef}>
@@ -102,6 +149,9 @@ function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }
     </span>
   );
 }
+
+/** How long a tooltip opened by a long press stays (M49). */
+const TOUCH_TIP_MS = 4000;
 
 export function ToolButton(props: {
   id: string;
@@ -181,6 +231,66 @@ const ZONES: {
   },
 ];
 
+/** The civic categories on the bar (the phone's Build sheet), in order; Military only with war on. */
+type Category = [CivicCategory, typeof IconBolt, string, string];
+function categories(war: boolean): Category[] {
+  return [
+    ['power', IconBolt, 'Power', 'Power plants. Electricity flows along the roads.'],
+    [
+      'water',
+      IconDrop,
+      'Water and sewage',
+      'Pumps bring water in; outflows or treatment plants take sewage away.',
+    ],
+    [
+      'garbage',
+      IconTrash,
+      'Garbage and snow',
+      'Trucks collect garbage from buildings in reach; a public works depot sends ploughs to clear snow.',
+    ],
+    ['fire', IconFlame, 'Fire', 'Fire stations cover what their engines can reach quickly by road.'],
+    ['police', IconShield, 'Police', 'Police stations deter crime and answer calls along the roads.'],
+    ['health', IconHealth, 'Health', 'Clinics and hospitals treat the sick and run ambulances.'],
+    ['education', IconBook, 'Education', 'Schools seat the children of nearby homes; libraries help too.'],
+    ['parks', IconTree, 'Parks and plazas', 'Lift moods and land value in the streets around them.'],
+    [
+      'transit',
+      IconBus,
+      'Buses',
+      'A depot runs buses round the stops you place. Riders leave their cars at home.',
+    ],
+    [
+      'landmark',
+      IconLandmark,
+      'Tourism and landmarks',
+      'Landmarks draw visitors who spend money and shop; hotels keep them overnight.',
+    ],
+    [
+      'special',
+      IconCrate,
+      'Trade, research and ports',
+      'Freight, ore mines and oil wells earn export income; a research park grows high-tech industry; an airport brings visitors and a seaport ships goods.',
+    ],
+    [
+      'project',
+      IconCrane,
+      'Big projects',
+      'A stadium, a launch complex, a solar tower array, a garden expo, a convention centre: built in stages over months, each with a lasting perk.',
+    ],
+    // Only in a city with war on (M34).
+    ...(war
+      ? [
+          [
+            'military',
+            IconMilitary,
+            'Military',
+            'Forces and defences: a military HQ first (it opens the war room), then barracks, depots, an airfield, a naval yard, defences and shelters. Each has upkeep, staff and power; neighbours feel safer for some and mind the noise of others.',
+          ],
+        ]
+      : []),
+  ] as Category[];
+}
+
 export function Toolbar() {
   const game = useGameUpdates(100);
   const tools = game.tools;
@@ -190,8 +300,11 @@ export function Toolbar() {
   const use = (id: ToolId) => tools.use(active === id && id !== 'select' ? 'select' : id);
   const [mapsOpen, setMapsOpen] = useState(false);
   const [disastersOpen, setDisastersOpen] = useState(false);
+  // Phones (M49): one row along the bottom; Build and More open sheets above it.
+  const phone = isPhone();
+  const [sheet, setSheet] = useState<'build' | 'more' | null>(null);
   return (
-    <div class="toolbar-wrap">
+    <div class={`toolbar-wrap${phone ? ' phone' : ''}`}>
       {active === 'road' && (
         <div class="subbar panel" data-testid="road-options">
           {BUILDABLE_ROADS.map((id) => {
@@ -491,130 +604,320 @@ export function Toolbar() {
       )}
       {mapsOpen && <MapsMenu onClose={() => setMapsOpen(false)} />}
       {disastersOpen && <DisastersMenu onClose={() => setDisastersOpen(false)} />}
-      <div class="toolbar toolbar-main panel" data-testid="toolbar">
-        <ToolButton
-          id="tool-select"
-          active={active === 'select'}
-          onClick={() => use('select')}
-          tip={{ title: 'Select', lines: ['Drag to pan. Click things to inspect them.'], key: 'H / Esc' }}
-        >
-          <IconPointer />
-        </ToolButton>
-        <ToolButton
-          id="tool-road"
-          active={active === 'road'}
-          onClick={() => use('road')}
-          tip={{
-            title: 'Roads',
-            lines: ['Build roads off the highway. Buildings grow along them.'],
-            key: 'T',
+      {phone && sheet && (
+        <PhoneSheet
+          which={sheet}
+          close={() => setSheet(null)}
+          openDisasters={() => setDisastersOpen(!disastersOpen)}
+          disastersOpen={disastersOpen}
+        />
+      )}
+      {phone ? (
+        <PhoneBar
+          sheet={sheet}
+          setSheet={(v) => {
+            setSheet(v);
+            setMapsOpen(false);
+            setDisastersOpen(false);
           }}
-        >
-          <IconRoad />
-        </ToolButton>
-        <ToolButton
-          id="tool-zone"
-          active={active === 'zone'}
-          onClick={() => use('zone')}
-          tip={{
-            title: 'Zoning',
-            lines: ['Paint residential, commercial and industrial zones.'],
-            key: 'Z X C V',
+          mapsOpen={mapsOpen}
+          toggleMaps={() => {
+            setSheet(null);
+            setMapsOpen(!mapsOpen);
           }}
-        >
-          <IconZone />
-        </ToolButton>
-        <ToolButton
-          id="tool-district"
-          active={active === 'district'}
-          onClick={() => use('district')}
-          tip={{
-            title: 'Districts',
-            lines: [
-              'Paint named districts over the city, each with its own policies. The Districts panel shows their figures.',
-            ],
-            key: 'I',
-          }}
-        >
-          <IconDistrict />
-        </ToolButton>
-        <ToolButton
-          id="tool-terrain"
-          active={active === 'terrain'}
-          onClick={() => use('terrain')}
-          tip={{
-            title: 'Terrain',
-            lines: [
-              'Raise, lower, level or smooth the ground, paid for by the earth moved. Level a hillside before building for more lots.',
-              'Roads and buildings hold the ground they stand on; water is left alone.',
-            ],
-            key: 'Shift+T',
-          }}
-        >
-          <IconTerrain />
-        </ToolButton>
-        {(
-          [
-            ['power', IconBolt, 'Power', 'Power plants. Electricity flows along the roads.'],
-            [
-              'water',
-              IconDrop,
-              'Water and sewage',
-              'Pumps bring water in; outflows or treatment plants take sewage away.',
-            ],
-            [
-              'garbage',
-              IconTrash,
-              'Garbage and snow',
-              'Trucks collect garbage from buildings in reach; a public works depot sends ploughs to clear snow.',
-            ],
-            ['fire', IconFlame, 'Fire', 'Fire stations cover what their engines can reach quickly by road.'],
-            ['police', IconShield, 'Police', 'Police stations deter crime and answer calls along the roads.'],
-            ['health', IconHealth, 'Health', 'Clinics and hospitals treat the sick and run ambulances.'],
-            [
-              'education',
-              IconBook,
-              'Education',
-              'Schools seat the children of nearby homes; libraries help too.',
-            ],
-            ['parks', IconTree, 'Parks and plazas', 'Lift moods and land value in the streets around them.'],
-            [
-              'transit',
-              IconBus,
-              'Buses',
-              'A depot runs buses round the stops you place. Riders leave their cars at home.',
-            ],
-            [
-              'landmark',
-              IconLandmark,
-              'Tourism and landmarks',
-              'Landmarks draw visitors who spend money and shop; hotels keep them overnight.',
-            ],
-            [
-              'special',
-              IconCrate,
-              'Trade, research and ports',
-              'Freight, ore mines and oil wells earn export income; a research park grows high-tech industry; an airport brings visitors and a seaport ships goods.',
-            ],
-            [
-              'project',
-              IconCrane,
-              'Big projects',
-              'A stadium, a launch complex, a solar tower array, a garden expo, a convention centre: built in stages over months, each with a lasting perk.',
-            ],
-            // Only in a city with war on (M34).
-            ...(game.world.stats.war
-              ? [
-                  [
-                    'military',
-                    IconMilitary,
-                    'Military',
-                    'Forces and defences: a military HQ first (it opens the war room), then barracks, depots, an airfield, a naval yard, defences and shelters. Each has upkeep, staff and power; neighbours feel safer for some and mind the noise of others.',
-                  ],
-                ]
-              : []),
-          ] as [CivicCategory, typeof IconBolt, string, string][]
-        ).map(([cat, Icon, name, blurb]) => (
+        />
+      ) : (
+        <div class="toolbar toolbar-main panel" data-testid="toolbar">
+          <ToolButton
+            id="tool-select"
+            active={active === 'select'}
+            onClick={() => use('select')}
+            tip={{ title: 'Select', lines: ['Drag to pan. Click things to inspect them.'], key: 'H / Esc' }}
+          >
+            <IconPointer />
+          </ToolButton>
+          <ToolButton
+            id="tool-road"
+            active={active === 'road'}
+            onClick={() => use('road')}
+            tip={{
+              title: 'Roads',
+              lines: ['Build roads off the highway. Buildings grow along them.'],
+              key: 'T',
+            }}
+          >
+            <IconRoad />
+          </ToolButton>
+          <ToolButton
+            id="tool-zone"
+            active={active === 'zone'}
+            onClick={() => use('zone')}
+            tip={{
+              title: 'Zoning',
+              lines: ['Paint residential, commercial and industrial zones.'],
+              key: 'Z X C V',
+            }}
+          >
+            <IconZone />
+          </ToolButton>
+          <ToolButton
+            id="tool-district"
+            active={active === 'district'}
+            onClick={() => use('district')}
+            tip={{
+              title: 'Districts',
+              lines: [
+                'Paint named districts over the city, each with its own policies. The Districts panel shows their figures.',
+              ],
+              key: 'I',
+            }}
+          >
+            <IconDistrict />
+          </ToolButton>
+          <ToolButton
+            id="tool-terrain"
+            active={active === 'terrain'}
+            onClick={() => use('terrain')}
+            tip={{
+              title: 'Terrain',
+              lines: [
+                'Raise, lower, level or smooth the ground, paid for by the earth moved. Level a hillside before building for more lots.',
+                'Roads and buildings hold the ground they stand on; water is left alone.',
+              ],
+              key: 'Shift+T',
+            }}
+          >
+            <IconTerrain />
+          </ToolButton>
+          {categories(!!game.world.stats.war).map(([cat, Icon, name, blurb]) => (
+            <ToolButton
+              key={cat}
+              id={`tool-${cat}`}
+              active={
+                (active === 'place' && tools.place.category === cat) ||
+                (cat === 'transit' && active === 'stop')
+              }
+              onClick={() => {
+                if (
+                  (active === 'place' && tools.place.category === cat) ||
+                  (cat === 'transit' && active === 'stop')
+                )
+                  tools.use('select');
+                // Open the category to choose from; nothing is picked, so a stray click on the map builds
+                // nothing (P4).
+                else tools.place.browse(cat);
+              }}
+              tip={{ title: name, lines: [blurb] }}
+            >
+              <Icon />
+            </ToolButton>
+          ))}
+          <ToolButton
+            id="tool-bulldoze"
+            active={active === 'bulldoze'}
+            onClick={() => use('bulldoze')}
+            tip={{ title: 'Bulldoze', lines: ['Demolish roads and buildings. Roads refund 25%.'], key: 'B' }}
+          >
+            <IconBulldozer />
+          </ToolButton>
+          <ToolButton
+            id="tool-disasters"
+            active={disastersOpen || active === 'disaster'}
+            onClick={() => {
+              if (active === 'disaster') tools.use('select');
+              setDisastersOpen(!disastersOpen);
+            }}
+            tip={{
+              title: 'Disasters',
+              lines: [
+                'Set off an earthquake, tornado, flood or meteor strike, or switch random disasters off.',
+              ],
+            }}
+          >
+            <IconAlert />
+          </ToolButton>
+          <span class="sep" />
+          <ToolButton
+            id="tool-maps"
+            active={mapsOpen || game.overlay.active !== null}
+            onClick={() => setMapsOpen(!mapsOpen)}
+            tip={{
+              title: 'Data maps',
+              lines: ['See power, water, garbage, land value, pollution and resources at a glance.'],
+              key: 'L',
+            }}
+          >
+            <IconLayers />
+          </ToolButton>
+          <ToolButton
+            id="tool-undo"
+            active={false}
+            disabled={!game.world.stats.undoAvailable}
+            onClick={() => void game.undo()}
+            tip={{
+              title: game.world.stats.undoLabel ? `Undo the ${game.world.stats.undoLabel}` : 'Undo',
+              lines: [
+                'Take back the last action (up to 30), with its money: roads, zoning, buildings, bulldozing, moves.',
+              ],
+              key: `${modKey('Z')} or U`,
+            }}
+          >
+            <IconUndo />
+          </ToolButton>
+          <ToolButton
+            id="tool-redo"
+            active={false}
+            disabled={!game.world.stats.redoAvailable}
+            onClick={() => void game.redo()}
+            tip={{
+              title: game.world.stats.redoLabel ? `Redo the ${game.world.stats.redoLabel}` : 'Redo',
+              lines: ['Put back what you just undid.'],
+              key: modKey('Z', true),
+            }}
+          >
+            <IconRedo />
+          </ToolButton>
+          <ToolButton
+            id="tool-photo"
+            active={false}
+            onClick={() => game.enterPhoto()}
+            tip={{
+              title: 'Photo mode',
+              lines: [
+                'Hide the interface, bring the camera down to street level, set the light, lens and colour, ride along with a car, and save a picture.',
+              ],
+              key: 'K',
+            }}
+          >
+            <IconCamera />
+          </ToolButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The phone's bottom bar (M49): the tools a thumb wants most in one row with their names, Build and
+ * More opening sheets above it, and Undo always there.
+ */
+function PhoneBar(props: {
+  sheet: 'build' | 'more' | null;
+  setSheet: (s: 'build' | 'more' | null) => void;
+  mapsOpen: boolean;
+  toggleMaps: () => void;
+}) {
+  const game = useGameUpdates(100);
+  const tools = game.tools;
+  const active: ToolId = tools.activeId;
+  const use = (id: ToolId) => {
+    props.setSheet(null);
+    tools.use(active === id && id !== 'select' ? 'select' : id);
+  };
+  const building = active === 'place' || active === 'stop';
+  const more = active === 'district' || active === 'terrain' || active === 'disaster';
+  return (
+    <div class="toolbar toolbar-main phone-bar panel" data-testid="toolbar">
+      <ToolButton
+        id="tool-select"
+        active={active === 'select' && !props.sheet}
+        onClick={() => use('select')}
+        tip={{ title: 'Select', lines: ['Tap things to inspect them; hold a finger on one for the same.'] }}
+      >
+        <IconPointer />
+        <span class="phone-label">Select</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-road"
+        active={active === 'road'}
+        onClick={() => use('road')}
+        tip={{ title: 'Roads', lines: ['Tap twice, or drag, to draw a road. Two fingers move the map.'] }}
+      >
+        <IconRoad />
+        <span class="phone-label">Roads</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-zone"
+        active={active === 'zone'}
+        onClick={() => use('zone')}
+        tip={{ title: 'Zoning', lines: ['Paint zones with a finger. Two fingers move the map.'] }}
+      >
+        <IconZone />
+        <span class="phone-label">Zones</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-build"
+        active={props.sheet === 'build' || building}
+        onClick={() => {
+          if (props.sheet === 'build') props.setSheet(null);
+          else {
+            if (building) tools.use('select');
+            props.setSheet('build');
+          }
+        }}
+        tip={{ title: 'Build', lines: ['Power, water, services, parks, transport and more.'] }}
+      >
+        <IconBuild />
+        <span class="phone-label">Build</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-bulldoze"
+        active={active === 'bulldoze'}
+        onClick={() => use('bulldoze')}
+        tip={{ title: 'Bulldoze', lines: ['Tap roads and buildings to demolish them. Roads refund 25%.'] }}
+      >
+        <IconBulldozer />
+        <span class="phone-label">Clear</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-maps"
+        active={props.mapsOpen || game.overlay.active !== null}
+        onClick={props.toggleMaps}
+        tip={{ title: 'Data maps', lines: ['Power, water, land value, pollution and more at a glance.'] }}
+      >
+        <IconLayers />
+        <span class="phone-label">Maps</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-more"
+        active={props.sheet === 'more' || more}
+        onClick={() => props.setSheet(props.sheet === 'more' ? null : 'more')}
+        tip={{ title: 'More', lines: ['Districts, terrain, disasters, photo mode and redo.'] }}
+      >
+        <IconMore />
+        <span class="phone-label">More</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-undo"
+        active={false}
+        disabled={!game.world.stats.undoAvailable}
+        onClick={() => void game.undo()}
+        tip={{
+          title: game.world.stats.undoLabel ? `Undo the ${game.world.stats.undoLabel}` : 'Undo',
+          lines: ['Take back the last action, with its money.'],
+        }}
+      >
+        <IconUndo />
+        <span class="phone-label">Undo</span>
+      </ToolButton>
+    </div>
+  );
+}
+
+/** A sheet above the phone's bar (M49): Build's categories, or More's tools. */
+function PhoneSheet(props: {
+  which: 'build' | 'more';
+  close: () => void;
+  openDisasters: () => void;
+  disastersOpen: boolean;
+}) {
+  const game = useGameUpdates(100);
+  const tools = game.tools;
+  const active: ToolId = tools.activeId;
+  if (props.which === 'build')
+    return (
+      <div class="phone-sheet panel" data-testid="build-sheet">
+        {categories(!!game.world.stats.war).map(([cat, Icon, name, blurb]) => (
           <ToolButton
             key={cat}
             id={`tool-${cat}`}
@@ -622,100 +925,82 @@ export function Toolbar() {
               (active === 'place' && tools.place.category === cat) || (cat === 'transit' && active === 'stop')
             }
             onClick={() => {
-              if (
-                (active === 'place' && tools.place.category === cat) ||
-                (cat === 'transit' && active === 'stop')
-              )
-                tools.use('select');
-              // Open the category to choose from; nothing is picked, so a stray click on the map builds
-              // nothing (P4).
-              else tools.place.browse(cat);
+              tools.place.browse(cat);
+              props.close();
             }}
             tip={{ title: name, lines: [blurb] }}
           >
             <Icon />
+            <span class="phone-label">{name}</span>
           </ToolButton>
         ))}
-        <ToolButton
-          id="tool-bulldoze"
-          active={active === 'bulldoze'}
-          onClick={() => use('bulldoze')}
-          tip={{ title: 'Bulldoze', lines: ['Demolish roads and buildings. Roads refund 25%.'], key: 'B' }}
-        >
-          <IconBulldozer />
-        </ToolButton>
-        <ToolButton
-          id="tool-disasters"
-          active={disastersOpen || active === 'disaster'}
-          onClick={() => {
-            if (active === 'disaster') tools.use('select');
-            setDisastersOpen(!disastersOpen);
-          }}
-          tip={{
-            title: 'Disasters',
-            lines: [
-              'Set off an earthquake, tornado, flood or meteor strike, or switch random disasters off.',
-            ],
-          }}
-        >
-          <IconAlert />
-        </ToolButton>
-        <span class="sep" />
-        <ToolButton
-          id="tool-maps"
-          active={mapsOpen || game.overlay.active !== null}
-          onClick={() => setMapsOpen(!mapsOpen)}
-          tip={{
-            title: 'Data maps',
-            lines: ['See power, water, garbage, land value, pollution and resources at a glance.'],
-            key: 'L',
-          }}
-        >
-          <IconLayers />
-        </ToolButton>
-        <ToolButton
-          id="tool-undo"
-          active={false}
-          disabled={!game.world.stats.undoAvailable}
-          onClick={() => void game.undo()}
-          tip={{
-            title: game.world.stats.undoLabel ? `Undo the ${game.world.stats.undoLabel}` : 'Undo',
-            lines: [
-              'Take back the last action (up to 30), with its money: roads, zoning, buildings, bulldozing, moves.',
-            ],
-            key: `${modKey('Z')} or U`,
-          }}
-        >
-          <IconUndo />
-        </ToolButton>
-        <ToolButton
-          id="tool-redo"
-          active={false}
-          disabled={!game.world.stats.redoAvailable}
-          onClick={() => void game.redo()}
-          tip={{
-            title: game.world.stats.redoLabel ? `Redo the ${game.world.stats.redoLabel}` : 'Redo',
-            lines: ['Put back what you just undid.'],
-            key: modKey('Z', true),
-          }}
-        >
-          <IconRedo />
-        </ToolButton>
-        <ToolButton
-          id="tool-photo"
-          active={false}
-          onClick={() => game.enterPhoto()}
-          tip={{
-            title: 'Photo mode',
-            lines: [
-              'Hide the interface, bring the camera down to street level, set the light, lens and colour, ride along with a car, and save a picture.',
-            ],
-            key: 'K',
-          }}
-        >
-          <IconCamera />
-        </ToolButton>
       </div>
+    );
+  const use = (id: ToolId) => {
+    props.close();
+    tools.use(active === id ? 'select' : id);
+  };
+  return (
+    <div class="phone-sheet panel" data-testid="more-sheet">
+      <ToolButton
+        id="tool-district"
+        active={active === 'district'}
+        onClick={() => use('district')}
+        tip={{ title: 'Districts', lines: ['Paint named districts, each with its own policies.'] }}
+      >
+        <IconDistrict />
+        <span class="phone-label">Districts</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-terrain"
+        active={active === 'terrain'}
+        onClick={() => use('terrain')}
+        tip={{
+          title: 'Terrain',
+          lines: ['Raise, lower, level or smooth the ground: you see the price before anything moves.'],
+        }}
+      >
+        <IconTerrain />
+        <span class="phone-label">Terrain</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-disasters"
+        active={props.disastersOpen || active === 'disaster'}
+        onClick={() => {
+          if (active === 'disaster') tools.use('select');
+          props.close();
+          props.openDisasters();
+        }}
+        tip={{ title: 'Disasters', lines: ['Set one off, or switch random disasters off.'] }}
+      >
+        <IconAlert />
+        <span class="phone-label">Disasters</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-redo"
+        active={false}
+        disabled={!game.world.stats.redoAvailable}
+        onClick={() => void game.redo()}
+        tip={{
+          title: game.world.stats.redoLabel ? `Redo the ${game.world.stats.redoLabel}` : 'Redo',
+          lines: ['Put back what you just undid.'],
+        }}
+      >
+        <IconRedo />
+        <span class="phone-label">Redo</span>
+      </ToolButton>
+      <ToolButton
+        id="tool-photo"
+        active={false}
+        onClick={() => {
+          props.close();
+          game.enterPhoto();
+        }}
+        tip={{ title: 'Photo mode', lines: ['Hide the interface, set the light and save a picture.'] }}
+      >
+        <IconCamera />
+        <span class="phone-label">Photo</span>
+      </ToolButton>
     </div>
   );
 }
@@ -745,6 +1030,12 @@ export function ToolHintLabel() {
     const ht = el.offsetHeight;
     let x = h.x + 18;
     let y = h.y + 18;
+    // By touch (M49) the hint goes above the finger, where it isn't hidden by the hand.
+    if (game.pointerType === 'touch') {
+      x = Math.min(Math.max(8, h.x - w / 2), window.innerWidth - w - 8);
+      y = h.y - 64 - ht;
+      if (y < 8) y = h.y + 48;
+    }
     if (x + w > window.innerWidth - 8) x = Math.max(8, h.x - 18 - w);
     if (y + ht > window.innerHeight - 8) y = Math.max(8, h.y - 18 - ht);
     el.style.left = `${x}px`;

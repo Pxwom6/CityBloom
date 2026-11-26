@@ -85,7 +85,9 @@ export class ToolManager {
       if (this.photoDown?.id === e.pointerId) this.photoDown = null;
       if (!this.pressed.size) this.pinch = false;
     });
-    canvas.addEventListener('pointerleave', () => {
+    canvas.addEventListener('pointerleave', (e) => {
+      // A finger lifting isn't the cursor leaving (M49): what a long press showed stays to be read.
+      if (e.pointerType === 'touch') return;
       this.game.setHint(null);
       this.game.renderer.ghost.showBrush(null, 1);
     });

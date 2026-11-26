@@ -5413,3 +5413,281 @@ body {
 .help-status.refused {
   background: var(--color-surface-sunken);
 }
+
+/*
+ * Phones (M49): `#ui[data-phone]` is a touch screen whose short side is under 600 px, upright or
+ * sideways (`data-orient`). The bottom bar is one row with names under the icons, Build and More open
+ * sheets above it, panels open as sheets from the bottom (upright) or the right (sideways) and close
+ * when their header is dragged away, everything a finger presses is at least 44 px, small text is no
+ * smaller than 12 px, and the notch and the home bar are kept clear (safe areas).
+ */
+#ui[data-phone] {
+  --font-size-xs: 0.75rem;
+  --phone-bar-height: 3.6rem;
+  --toolbar-height: calc(var(--phone-bar-height) + env(safe-area-inset-bottom));
+}
+#ui[data-phone] .topbar {
+  top: max(var(--space-1), env(safe-area-inset-top));
+  max-width: calc(100vw - 2 * var(--space-2) - env(safe-area-inset-left) - env(safe-area-inset-right));
+}
+#ui[data-phone][data-orient='landscape'] .topbar .city {
+  display: none;
+}
+#ui[data-phone] .toolbar-wrap {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: auto;
+  max-width: none;
+  align-items: stretch;
+  gap: 0;
+}
+#ui[data-phone] .phone-bar {
+  justify-content: space-around;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0;
+  padding: var(--space-1) max(var(--space-1), env(safe-area-inset-right))
+    max(var(--space-1), env(safe-area-inset-bottom)) max(var(--space-1), env(safe-area-inset-left));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+  max-width: none;
+}
+#ui[data-phone] .phone-bar .tip-anchor {
+  flex: 1 1 0;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+#ui[data-phone] :is(.phone-bar, .phone-sheet) .tool-btn {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 44px;
+  width: 100%;
+  height: 3.1rem;
+  min-height: 44px;
+  padding: 2px 2px;
+}
+#ui[data-phone] :is(.phone-bar, .phone-sheet) .tool-btn svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.phone-label {
+  display: none;
+}
+#ui[data-phone] .phone-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#ui[data-phone] .phone-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right)) var(--space-2)
+    max(var(--space-2), env(safe-area-inset-left));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+#ui[data-phone] .phone-sheet .tip-anchor {
+  display: flex;
+}
+#ui[data-phone] .phone-sheet .tool-btn {
+  height: 3.6rem;
+}
+#ui[data-phone] .phone-sheet .phone-label {
+  white-space: normal;
+  text-align: center;
+  font-size: var(--font-size-xs);
+}
+/* A tool's options sit above the bar, one row that scrolls sideways (zones and brushes wrap). */
+#ui[data-phone] .subbar {
+  max-width: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right)) var(--space-2)
+    max(var(--space-2), env(safe-area-inset-left));
+  scrollbar-width: none;
+}
+#ui[data-phone] .subbar .tip-anchor,
+#ui[data-phone] .subbar > * {
+  flex: 0 0 auto;
+}
+#ui[data-phone] .subbar .tool-btn {
+  min-height: 44px;
+}
+/* A data map's or a disaster's menu: a sheet above the bar. */
+#ui[data-phone] .maps-menu {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--toolbar-height);
+  top: auto;
+  width: auto;
+  max-width: none;
+  max-height: 50vh;
+  overflow-y: auto;
+  transform: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  z-index: var(--z-panel);
+}
+/* Panels: sheets from the bottom, with a grab handle; sideways, from the right. */
+#ui[data-phone] aside.panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: var(--toolbar-height);
+  width: auto;
+  max-width: none;
+  max-height: min(62vh, calc(100vh - var(--topbar-height) - var(--toolbar-height) - 1.5rem));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding-left: max(var(--space-3), env(safe-area-inset-left));
+  padding-right: max(var(--space-3), env(safe-area-inset-right));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition: transform var(--duration-fast) var(--ease-out);
+  z-index: var(--z-panel);
+}
+#ui[data-phone] aside.inspector {
+  max-height: min(48vh, calc(100vh - var(--topbar-height) - var(--toolbar-height) - 1.5rem));
+}
+#ui[data-phone][data-orient='landscape'] aside.panel {
+  top: calc(var(--topbar-height) + var(--space-2) + env(safe-area-inset-top));
+  left: auto;
+  width: min(27rem, 58vw);
+  max-height: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  padding-right: max(var(--space-3), env(safe-area-inset-right));
+}
+#ui[data-phone] aside.panel > header {
+  position: relative;
+  padding-top: var(--space-3);
+  touch-action: none;
+}
+#ui[data-phone] aside.panel > header::before {
+  content: '';
+  position: absolute;
+  top: 0.3rem;
+  left: 50%;
+  width: 2.5rem;
+  height: 0.28rem;
+  margin-left: -1.25rem;
+  border-radius: 1rem;
+  background: var(--color-border-strong);
+}
+#ui[data-phone][data-orient='landscape'] aside.panel > header::before {
+  top: 50%;
+  left: 0.3rem;
+  width: 0.28rem;
+  height: 2.5rem;
+  margin: -1.25rem 0 0 0;
+}
+/* Every press is at least 44 px. */
+#ui[data-phone] :is(.btn, select, [role='tab'], .segmented button, summary) {
+  min-height: 44px;
+}
+#ui[data-phone] .btn.icon {
+  width: 44px;
+  height: 44px;
+}
+#ui[data-phone] input[type='range'] {
+  min-height: 44px;
+}
+#ui[data-phone] :is(input[type='checkbox'], input[type='radio']) {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+#ui[data-phone] label:has(> input[type='checkbox']),
+#ui[data-phone] label:has(> input[type='radio']) {
+  min-height: 44px;
+  align-items: center;
+}
+/* A tool's question waits above the bar, where the thumb is, not under the finger. */
+#ui[data-phone] .tool-question {
+  position: fixed;
+  left: max(var(--space-2), env(safe-area-inset-left)) !important;
+  right: max(var(--space-2), env(safe-area-inset-right));
+  top: auto !important;
+  bottom: calc(var(--toolbar-height) + var(--space-2));
+  max-width: none;
+  z-index: var(--z-modal);
+}
+#ui[data-phone] .tool-question .actions .btn {
+  flex: 1 1 0;
+}
+/* The residents' thoughts take room a phone hasn't got. */
+#ui[data-phone] .thoughts {
+  display: none;
+}
+/* A title's bubble, shown by a long press (touch.ts). */
+.touch-tip {
+  position: fixed;
+  z-index: var(--z-toast);
+  max-width: min(18rem, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-text);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}
+/* The top bar on a phone: the short date, no time; upright, the menu joins the first row. */
+#ui[data-phone] .topbar :is(.date-long, .stat-date .label, .divider) {
+  display: none;
+}
+#ui[data-phone] .topbar .date-short {
+  display: inline;
+}
+#ui[data-phone] .topbar {
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+#ui[data-phone] .topbar.rows .city {
+  display: none;
+}
+#ui[data-phone] .topbar.rows .topbar-break {
+  order: 1;
+}
+#ui[data-phone] .topbar.rows .topbar-break ~ * {
+  order: 2;
+}
+#ui[data-phone] .topbar.rows .topbar-break ~ .sysmenu {
+  order: 0;
+}
+#ui[data-phone] .topbar .speed {
+  gap: 2px;
+}
+#ui[data-phone] .maps-menu {
+  flex-wrap: wrap;
+  row-gap: var(--space-3);
+}
+#ui[data-phone] .maps-group {
+  min-width: 7rem;
+  flex: 1 1 7rem;
+}
+#ui[data-phone] .maps-group :is(button, .btn) {
+  min-height: 40px;
+}
+/* A few options (zones, brushes, districts, terrain): wrap rather than scroll. */
+#ui[data-phone]
+  .subbar:is(
+    [data-testid='zone-options'],
+    [data-testid='terrain-options'],
+    [data-testid='district-options']
+  ) {
+  flex-wrap: wrap;
+  justify-content: center;
+}

@@ -45,7 +45,8 @@ import type { AppInstall } from './client/install';
 import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
 import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
-import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
+import { pickTip, type Tip } from './client/tutorial';
+import { TutorialRunner } from './client/tutorialRunner';
 import { barsClassWith, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
 import {
@@ -2044,7 +2045,10 @@ export class Game {
       if (this.boundRegion) s.meta.region = { ...this.boundRegion };
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
-      if (slot !== 'auto') this.slot = slot;
+      if (slot !== 'auto') {
+        this.slot = slot;
+        this.manualSaves++;
+      }
       // The slot's name, as the load list shows it, not the city's (P22).
       if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;
@@ -2326,30 +2330,38 @@ export class Game {
     return saved;
   }
 
-  /** Start the first-city tutorial from its first step. */
+  /** The first-city tutorial (M42): its cards, pauses, camera moves and first-problem lessons. */
+  readonly tutorial: TutorialRunner = new TutorialRunner(this);
+  /** What the tutorial has seen the player open: the budget, the advisors, a coverage map. */
+  get tutorialSaw(): Set<string> {
+    return this.tutorial.saw;
+  }
+  /** Saves the player made themselves since the page opened (the tutorial's Save step). */
+  manualSaves = 0;
+
   startTutorial(): void {
-    this.updateSettings({ tutorialStep: 0 });
+    this.tutorial.start();
   }
-
-  /** Move to the next tutorial step (finishing after the last). */
+  tutorialCard() {
+    return this.tutorial.card();
+  }
   tutorialNext(): void {
-    const next = this.settings.tutorialStep + 1;
-    this.updateSettings({ tutorialStep: next >= TUTORIAL.length ? -1 : next });
+    this.tutorial.next();
   }
-
+  leaveTutorial(): void {
+    this.tutorial.leave();
+  }
+  continueTutorial(): void {
+    this.tutorial.resume();
+  }
   endTutorial(): void {
-    this.updateSettings({ tutorialStep: -1 });
+    this.tutorial.end();
   }
 
   /** Advance past tutorial steps the player has already done; show a tip whose moment has come. */
   private checkGuidance(): void {
     if (this.mode !== 'play') return;
-    let step = this.settings.tutorialStep;
-    while (step >= 0 && step < TUTORIAL.length && TUTORIAL[step]!.done?.(this)) step++;
-    if (step !== this.settings.tutorialStep) {
-      this.updateSettings({ tutorialStep: step >= TUTORIAL.length ? -1 : step });
-      this.audio?.play('good');
-    }
+    this.tutorial.check();
     // Tips wait for the tutorial, and come one at a time.
     if (!this.settings.tips || this.settings.tutorialStep >= 0) return;
     const tip = pickTip(this, this.tip, !!this.screen || !!this.panel, new Set(this.settings.seenTips));

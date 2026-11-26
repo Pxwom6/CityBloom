@@ -552,6 +552,20 @@ function PauseMenu() {
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
           <span>{game.net ? 'Back to the city' : 'Resume'}</span>
         </button>
+        {/* The tutorial left for now (M42) carries on from the step it was on. */}
+        {game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
+          <button
+            class="shell-btn"
+            data-testid="pause-tutorial"
+            onClick={() => {
+              game.continueTutorial();
+              game.resume();
+            }}
+          >
+            <span>Continue the tutorial</span>
+            <small>step {game.settings.tutorialStep + 1}</small>
+          </button>
+        )}
         {/* A neighbour's city seen read-only is never saved here (F5). */}
         {!game.readOnly && (
           <>
@@ -1112,6 +1126,18 @@ function SettingsScreen() {
             hint="the error, the game’s version, browser and graphics; never names, cities, chat or what you type"
             set={(crashReports) => set({ crashReports })}
           />
+          {game.mode === 'play' && game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
+            <button
+              class="btn small"
+              data-testid="continue-tutorial"
+              onClick={() => {
+                game.continueTutorial();
+                game.resume();
+              }}
+            >
+              Continue the tutorial
+            </button>
+          )}
           {game.mode === 'play' && (
             <button
               class="btn small"
@@ -1121,7 +1147,7 @@ function SettingsScreen() {
                 game.resume();
               }}
             >
-              Start the tutorial
+              {game.settings.tutorialStep >= 0 ? 'Start the tutorial again' : 'Start the tutorial'}
             </button>
           )}
         </section>

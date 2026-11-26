@@ -44,6 +44,10 @@ export interface Settings {
   seenTips: string[];
   /** Step of the running tutorial, or -1 when none is running. */
   tutorialStep: number;
+  /** The tutorial was left for now (M42): its card is hidden until "Continue the tutorial". */
+  tutorialAway: boolean;
+  /** The first-problem lessons already shown (M42: a fire, a power cut, a jam), each once. */
+  tutorialSeen: string[];
   /**
    * Tone down the atom bomb's flash (M40 step 11): a short fade in place of the white-out, and no shake.
    * Its default follows the system's "reduce motion" setting. Read by the effects (`src/render/atom.ts`).
@@ -91,6 +95,8 @@ export const DEFAULT_SETTINGS: Settings = {
   tips: true,
   seenTips: [],
   tutorialStep: -1,
+  tutorialAway: false,
+  tutorialSeen: [],
   reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
@@ -263,6 +269,10 @@ export function parseSettings(raw: unknown): Settings {
       ? r.seenTips.filter((t): t is string => typeof t === 'string').slice(0, 100)
       : [],
     tutorialStep: num(r.tutorialStep, d.tutorialStep, -1, 99),
+    tutorialAway: bool(r.tutorialAway, d.tutorialAway),
+    tutorialSeen: Array.isArray(r.tutorialSeen)
+      ? r.tutorialSeen.filter((t): t is string => typeof t === 'string').slice(0, 20)
+      : [],
     reduceFlashes: bool(r.reduceFlashes, d.reduceFlashes),
     graphicsChecked: bool(r.graphicsChecked, d.graphicsChecked),
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,

@@ -1104,6 +1104,75 @@ body {
 .guide.tip-card {
   width: 19rem;
 }
+/* The tutorial (M42): beside the panel a step teaches, a first problem's card, its arrow. */
+.guide.beside-panel {
+  left: calc(27rem + 2 * var(--space-3));
+}
+#ui[data-width='s'] .guide.beside-panel,
+#ui[data-width='xs'] .guide.beside-panel {
+  left: var(--space-3);
+  top: auto;
+  bottom: calc(var(--toolbar-height) + var(--space-4));
+}
+#ui[data-width='xs'] .guide {
+  width: min(21rem, calc(100% - 2 * var(--space-3)));
+}
+.guide.guide-event {
+  border-left: 4px solid var(--color-warning, #d98a00);
+}
+.guide-leave {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.guide-leave .btn {
+  padding-left: var(--space-1);
+  padding-right: var(--space-1);
+  font-size: var(--font-size-xs);
+}
+.guide-pointer {
+  position: fixed;
+  z-index: calc(var(--z-panel) + 2);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+.guide-pointer.above {
+  border-top: 16px solid rgb(255, 176, 0);
+  transform: translate(-50%, -100%);
+  animation: guide-bob-down 1s var(--ease-out) infinite;
+}
+.guide-pointer.below {
+  border-bottom: 16px solid rgb(255, 176, 0);
+  transform: translate(-50%, 0);
+  animation: guide-bob-up 1s var(--ease-out) infinite;
+}
+@keyframes guide-bob-down {
+  0%,
+  100% {
+    margin-top: -10px;
+  }
+  50% {
+    margin-top: -3px;
+  }
+}
+@keyframes guide-bob-up {
+  0%,
+  100% {
+    margin-top: 10px;
+  }
+  50% {
+    margin-top: 3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-pointer {
+    animation: none;
+  }
+}
 [data-guide] {
   position: relative;
   animation: guide-pulse 1.4s var(--ease-out) infinite;

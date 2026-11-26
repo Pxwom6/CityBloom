@@ -191,7 +191,8 @@ export type Screen =
   /** Report a problem (M41). */
   | 'report'
   /** Learn: short lessons on prepared towns (M42). */
-  | 'learn';
+  | 'learn'
+  | 'match';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {

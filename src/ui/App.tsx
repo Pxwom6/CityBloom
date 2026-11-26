@@ -1,4 +1,5 @@
 import { RegionPanel } from './Region';
+import { MatchHud } from './Match';
 import { RoomPanel } from './Friends';
 import { useEffect, useState } from 'preact/hooks';
 import { isPhone, type Game } from '../game';
@@ -133,6 +134,7 @@ export function App({ game }: { game: Game }) {
       <CleanupBar />
       <ViewerBar />
       <RoomPanel />
+      <MatchHud />
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />

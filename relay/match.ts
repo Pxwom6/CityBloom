@@ -272,8 +272,10 @@ export function decideMatch(m: MatchState, cities: MatchCity[]): MatchResult {
   const winner = players.find((p) => !p.out)?.slot ?? 0;
   const samples: Record<number, number[]> = {};
   for (const p of players) {
+    // Holes carry the value before them forward; the first ones (no report counted yet) the first value.
+    const first = p.samples.find((v) => v !== null && v !== undefined) ?? 0;
     const filled: number[] = [];
-    let last = 0;
+    let last = first;
     for (let k = 0; k < Math.max(p.samples.length, 1) && k < MATCH.samples; k++) {
       const v = p.samples[k];
       if (v !== null && v !== undefined) last = v;

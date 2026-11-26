@@ -1,3 +1,4 @@
+import { QuickMatchScreen } from './Match';
 import { isIOS } from '../client/platform';
 import { deviceMemory, tooBigFor } from '../client/memoryBudget';
 import { currentDevice } from '../client/graphicsCheck';
@@ -213,6 +214,15 @@ function MainMenu() {
         >
           <span>Play with friends</span>
           <small>build one city together</small>
+        </button>
+        <button
+          class="shell-btn"
+          data-testid="main-match"
+          title="Two to four of you, each with a small city on the same map, against the clock"
+          onClick={() => game.openScreen('match')}
+        >
+          <span>Quick match</span>
+          <small>race friends in 15 to 30 minutes</small>
         </button>
         <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
           <span>Learn</span>
@@ -1341,6 +1351,7 @@ export function Shell() {
       {screen === 'friends' && <FriendsScreenWithLatest />}
       {screen === 'report' && <ReportScreen />}
       {screen === 'learn' && <LearnScreen />}
+      {screen === 'match' && <QuickMatchScreen />}
       <BigCityCard />
     </div>
   );

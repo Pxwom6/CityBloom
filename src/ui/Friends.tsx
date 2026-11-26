@@ -21,7 +21,7 @@ import {
 import type { Game } from '../game';
 import { PERMISSIONS, permsOf, type Permission } from '../sim/rules';
 
-function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
+export function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
   const { profile, onChange } = props;
   return (
     <div class="friends-profile">

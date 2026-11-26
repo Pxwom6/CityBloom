@@ -154,6 +154,41 @@ export interface TestApi {
     tickMsAvg: number;
     tickMsMax: number;
   } | null;
+  /**
+   * A quick match (M43) as this page sees it: the room's match (phase, round, settings, players, the
+   * result), the scoreboard, this city's place, the page's clock (ms left), the hash it sent last,
+   * whether the results card is open, the city kept, or why the match ended without a result.
+   */
+  getMatch(): {
+    active: boolean;
+    phase: string | null;
+    round: number;
+    settings: unknown;
+    slot: number;
+    host: boolean;
+    invite: string | null;
+    players: { slot: number; ready: boolean; out?: true }[];
+    standings: {
+      slot: number;
+      name: string;
+      score: number;
+      me: boolean;
+      out: boolean;
+      population: number | null;
+    }[];
+    result: unknown;
+    timeLeft: number;
+    started: boolean;
+    hash: string | null;
+    reached: number | null;
+    resultsOpen: boolean;
+    kept: string | null;
+    cut: string | null;
+    said: { from: number; e?: number; text?: string }[];
+    tick: number;
+    speed: number;
+    sent: { messages: number; bytes: number } | null;
+  };
   /** The shared region this city stands in (M32), as this page sees it; null when none. */
   getRegion(): {
     code: string;
@@ -867,6 +902,44 @@ export function installTestApi(game: Game): TestApi {
         received: { ...s.received },
         tickMsAvg: game.perf.tickMsAvg,
         tickMsMax: game.perf.tickMsMax,
+      };
+    },
+    getMatch: () => {
+      const m = game.match;
+      const now = performance.now();
+      return {
+        active: m.active,
+        phase: m.phase,
+        round: m.round,
+        settings: m.settings,
+        slot: m.slot,
+        host: m.isHost,
+        invite: m.invite,
+        players: m.info?.players ?? [],
+        standings: m.standings().map((r) => ({
+          slot: r.slot,
+          name: r.name,
+          score: r.score,
+          me: r.me,
+          out: r.out,
+          population: r.fig?.population ?? null,
+        })),
+        result: m.info?.result ?? null,
+        timeLeft: m.timeLeft(now),
+        started: m.startAt > 0 && now >= m.startAt,
+        hash: m.hash,
+        reached: m.reached ?? null,
+        resultsOpen: m.resultsOpen,
+        kept: m.kept,
+        cut: m.cut,
+        said: m.said.map((x) => ({
+          from: x.from,
+          ...(x.e !== undefined ? { e: x.e } : {}),
+          ...(x.text ? { text: x.text } : {}),
+        })),
+        tick: game.world.stats.tick,
+        speed: game.speed,
+        sent: game.region ? { ...game.region.sent } : null,
       };
     },
     getRegion: () => {

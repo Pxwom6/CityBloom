@@ -26,6 +26,7 @@ const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[]
 
 export function TopBar() {
   const game = useGameUpdates(200);
+  const matchLocked = game.match.active && !game.match.kept;
   const st = game.world.stats;
   const date = dateOf(Math.floor(game.world.displayTick));
   const WeatherIcon = WEATHER_ICON[st.weather.kind];
@@ -210,9 +211,11 @@ export function TopBar() {
           <button
             key={s}
             class={`btn icon ${game.speed === s ? 'active' : ''}`}
-            title={`${label} (${key})`}
+            // A quick match runs at one speed for everyone (M43): the buttons show it, nothing more.
+            title={matchLocked ? 'A quick match runs at one speed for everyone' : `${label} (${key})`}
             aria-label={label}
             data-testid={`speed-${s}`}
+            disabled={matchLocked}
             onClick={() => game.setSpeed(s)}
           >
             <Icon />

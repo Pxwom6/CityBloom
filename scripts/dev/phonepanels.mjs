@@ -245,7 +245,7 @@ try {
         await act(page);
         await page.evaluate(() => window.__game.waitFrames(3));
         await page.waitForTimeout(300);
-        await page.screenshot({ path: `${out}/${name}-${orient}.png` });
+        await page.screenshot({ path: `${out}/${name}-${orient}.png`, scale: 'css' });
         const bad = await page.evaluate(() => {
           const out = [];
           const vw = innerWidth;

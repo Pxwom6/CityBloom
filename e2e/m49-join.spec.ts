@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, openGame, shot } from './helpers';
-import { phone } from './phone';
+import { closeContextsAfterEach, newContext, openGame } from './helpers';
+import { phone, phoneShot as shot } from './phone';
 
 closeContextsAfterEach();
 

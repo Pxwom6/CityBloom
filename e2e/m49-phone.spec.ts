@@ -1,6 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { shot, watchErrors } from './helpers';
-import { fingers, holdForSpot, phone, phoneProblems, pickBuilding, type Fingers, type Orient } from './phone';
+import { watchErrors } from './helpers';
+import {
+  fingers,
+  holdForSpot,
+  phone,
+  phoneProblems,
+  phoneShot as shot,
+  pickBuilding,
+  type Fingers,
+  type Orient,
+} from './phone';
 import { frames, screen, settings, state } from './ui';
 
 /**

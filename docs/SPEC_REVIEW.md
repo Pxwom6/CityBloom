@@ -721,7 +721,7 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 
 | Rule | Where |
 |---|---|
-| What's there doesn't change (single player, co-op, regions, war; saves; protocol bumps keep older clients out) | M41: no sim or save change; the room's `resync` gains optional fields older pages ignore (no bump) |
+| What's there doesn't change (single player, co-op, regions, war; saves; protocol bumps keep older clients out) | M41: no sim or save change; the room's `resync` gains optional fields older pages ignore (no bump). M49: no sim or save change (the Phone preset and phone layout are page-only); the room's player list gains an optional `catchUp` older pages ignore, and an older room simply holds no one (no bump) |
 | Phase 4's and 5's rules (deterministic maths and the cross-browser test, the sim pure, the free plan, budgets, plain refusals, tips) | per milestone below |
 | Safe for friends: no accounts, nothing personal, nothing a player writes shown to others before the owner approves, every upload checked and rate-limited, the owner can remove anything | M41: reports name nothing (`cleanReport`, `scrubText`, `cleanEvents`), are read by the owner only, capped and rate-limited; the owner deletes entries and items |
 | Phones from the start: every new screen by touch on a phone, upright and sideways, in phone emulation | M41: the owner area and Report a problem laid out for a phone (`docs/screenshots/m41-owner-phone.png`, `m41-report-phone.png`); M42: the tutorial's cards on a phone; M49: the rest |
@@ -769,3 +769,27 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* an e2e plays every lesson | `e2e/m42-learn.spec.ts` |
 | *Done:* skipping and resuming work | `e2e/m42-tutorial.spec.ts` "leaving the tutorial, skipping a step, and picking it up again after a reload" |
 | *Done:* each step's picture reviewed at 100 % and 140 % and on a phone | `e2e/m42-tutorial.spec.ts` "every tutorial card…" (63 pictures, contact sheets looked at); kept: `docs/screenshots/m42-*.png` |
+
+## M49 Phones
+
+| Item | Where |
+|---|---|
+| Measure first: the first download, memory on the demo town, a 20k city and the bench city, frame and tick times in phone emulation with CPU throttling; log them, fix what they show | `scripts/dev/download.mjs`, `scripts/dev/phoneprobe.mjs` (`--check`); numbers in PROGRESS "Performance (M49)"; fixes in DECISIONS "M49" (construction cells, chunk gaps and sizing, released arrays) |
+| One finger pans, pinch zooms, two fingers turn and tilt | `CameraController` two-finger gesture (`src/render/camera.ts`, `TOUCH`); `e2e/m49-phone.spec.ts` "two fingers" |
+| A tap selects or places; dragging draws roads, zones and areas with a confirm and cancel before money is spent | tools' tap and drag (P-fixes); `RoadTool.askFirst` asks by touch with the price, `TerrainTool.askStroke`; zones and districts are free |
+| A long press opens the inspector and shows what a tooltip would; nothing important hover-only | `ToolManager.longPress` (inspect, or the tool's preview and hint), `Tip` long press, `src/ui/touch.ts` (titles in a bubble) |
+| Undo one tap away; 44 px targets; every tool and panel without a keyboard | the phone bar's Undo; `#ui[data-phone]` sizes in `main.css`; road chain's Done; `phoneProblems` in `e2e/phone.ts`, `scripts/dev/phonepanels.mjs` |
+| Upright and sideways; a bottom bar with groups opening as sheets; panels as sheets dragged down to close; safe areas; readable text | `#ui[data-phone][data-orient]` (`src/ui/layout.ts` `phoneLayout`), `PhoneBar` and `PhoneSheet` in `Toolbar.tsx`, the sheet drag in `touch.ts`, `viewport-fit=cover` and `env(safe-area-inset-*)` |
+| Every panel checked, the war room and the map editor included; a screen that can't work says so | `scripts/dev/phonepanels.mjs` (pictures and a size check of each, both ways up); the editor's `PhoneEditorNotice` |
+| A Phone preset below Low; a 30 fps cap on by default for phones; a battery saver; the first-launch check knows phones and tablets; the same bright look | `QUALITY_PARAMS.phone`, `fpsCap`, `batterySaver` (`src/client/settings.ts`, `frameCap.ts`), `deviceKind` (`graphicsCheck.ts`); `tests/phoneGraphics.test.ts` |
+| Memory: within a measured budget; batches as needed; free what's off screen; warn before a city too big; a killed tab little lost and reported | `src/client/memoryBudget.ts` (big-city card in `Shell.tsx`), war models only with war (phase 5), arrays released after upload (`release.ts`), autosave, the closed-page marker (`src/client/alive.ts`) |
+| Battery: no drawing in the background or with the screen off; fewer frames when nothing moves; the sim off the main thread | the browser's animation frames; `Game.isStill` (10 fps, 5 with the saver); the worker |
+| Data: the first download's size; cached; extras only when needed | the boot screen (`scripts/vite-pwa.ts` fills it in), `src/pwa/sw.js` (`EXTRAS`: scenarios and lessons on first use) |
+| Installing: full screen with icon and splash; keep saves; iPhone backups suggested; export and import by the share sheet and Files | the manifest (either orientation), `keepSaves.ts`, `BackupCard` (`App.tsx`), `exportSave` share sheet and `saveAccept` (`saves.ts`) |
+| Slow phones in shared cities: the room waits for a joiner within a limit; catch-up off the frame budget | `JOIN_HOLD` and `catchUp` (`relay/room.ts`), `waitedFor` and `CATCH_UP_LEAD` (`src/net/session.ts`), bulk catch-up in `src/sim/worker.ts`; `relay/tests/slowJoin.test.ts` |
+| *Done:* a town from the main menu by touch alone, iPhone and Android, upright and sideways | `e2e/m49-phone.spec.ts` (four runs) |
+| *Done:* a throttled phone page joins a busy shared city and catches up | `e2e/m49-join.spec.ts` |
+| *Done:* the Phone preset holds its frame target on the bench city under throttling | `phoneprobe.mjs --check` (PROGRESS "Performance (M49)") |
+| *Done:* memory inside its logged budget on the 20k city | the same, `MEMORY_BUDGET_MB` |
+| *Done:* every panel pictured in phone emulation, upright and sideways, reviewed | `scripts/dev/phonepanels.mjs` contact sheets; kept: `docs/screenshots/m49-*.png` |
+| *Done:* real-phone checks under "To try with a mate" | PROGRESS |

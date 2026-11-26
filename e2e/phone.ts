@@ -141,3 +141,9 @@ export async function phoneProblems(page: Page, scope: string): Promise<string[]
     return bad;
   }, scope);
 }
+
+/** A picture for docs/screenshots at the phone's CSS size (a phone's 3× pixels would be ten times the file). */
+export async function phoneShot(page: Page, name: string): Promise<void> {
+  await frames(page, 2);
+  await page.screenshot({ path: `docs/screenshots/${name}.png`, scale: 'css' });
+}

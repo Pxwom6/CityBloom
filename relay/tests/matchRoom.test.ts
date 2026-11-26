@@ -136,6 +136,8 @@ describe('M43 a quick match in the region room', () => {
     report(d!, { population: 9000, tick: t + MATCH.slackTicks + 10, treasury: 9_000_000 });
     const scores = d!.got.filter((m) => m.t === 'mscores').at(-1) as Extract<RegionRoomMsg, { t: 'mscores' }>;
     expect(scores.rows.map((r) => r.slot).sort()).toEqual([1, 2, 3]);
+    // Each line says how long is left by the room's clock (a page that started late catches up to it).
+    expect(scores.left).toBe(10 * 60_000);
     // A late message (an older tick than counted) doesn't move the figures back.
     report(a!, { population: 10, tick: t - 100, treasury: 1 });
     // The timer ends: the room waits for the last reports (each with its hash).

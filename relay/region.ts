@@ -332,7 +332,11 @@ export type RegionRoomMsg =
    * with `matchScore`), sent as reports come in instead of the whole view; an emote, or a line of chat
    * (only when the host allows it), from a city.
    */
-  | { t: 'mscores'; round: number; rows: MatchRow[] }
+  /**
+   * `left`: ms until the timer ends by the room's clock as the line is sent, so a page that took the
+   * countdown late (its main thread busy) moves its clock up to the room's.
+   */
+  | { t: 'mscores'; round: number; rows: MatchRow[]; left?: number }
   | { t: 'memote'; from: number; e: number }
   | { t: 'mchat'; from: number; text: string }
   /**
@@ -2387,7 +2391,13 @@ export class RegionRoom {
         // The whole view (with pictures) only when something in it changed beyond the figures; the
         // counted figures go as a score line (the view's reports aren't checked against the clock).
         if (first || renamed || newThumb) this.broadcast();
-        if (counted) this.toAll({ t: 'mscores', round: match.round, rows: matchRows(match) });
+        if (counted)
+          this.toAll({
+            t: 'mscores',
+            round: match.round,
+            rows: matchRows(match),
+            ...(match.phase === 'playing' && match.endsAt !== undefined ? { left: match.endsAt - now } : {}),
+          });
         this.advanceMatch(now);
         if (this.dirty && now - this.lastSaved >= this.limits.keepEvery) this.save();
         return;

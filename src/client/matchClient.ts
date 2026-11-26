@@ -205,6 +205,7 @@ export class MatchClient implements MatchSink {
       this.endsAt = now + (m.endsIn ?? 0);
       this.host.matchClock({ startIn: m.startIn, endTick: this.endTick });
     }
+    if (this.clockOn && m.phase === 'playing' && m.endsIn !== undefined) this.correct(now + m.endsIn);
     // Stopped early (a Race won, or only one city left): the city holds where it is.
     if (m.phase === 'final' && m.endedBy !== 'time' && !this.stopped) {
       this.stopped = true;
@@ -221,7 +222,10 @@ export class MatchClient implements MatchSink {
   message(m: RegionRoomMsg): boolean {
     switch (m.t) {
       case 'mscores':
-        if (m.round === this.info?.round) for (const r of m.rows) this.rows.set(r.slot, r);
+        if (m.round === this.info?.round) {
+          for (const r of m.rows) this.rows.set(r.slot, r);
+          if (m.left !== undefined) this.correct(performance.now() + m.left);
+        }
         this.host.notify();
         return true;
       case 'memote':
@@ -292,6 +296,19 @@ export class MatchClient implements MatchSink {
       this.finalGoing = false;
     }
     this.host.notify();
+  }
+
+  /**
+   * The room says the timer ends at `end` (this page's clock, as the word arrived): a page that took
+   * the countdown late (a busy main thread) moves its clock up to it. Only ever earlier: a word that
+   * arrived late itself says less time is gone than is.
+   */
+  private correct(end: number): void {
+    if (!this.clockOn || this.stopped || end >= this.endsAt - 100) return;
+    const shift = this.endsAt - end;
+    this.startAt -= shift;
+    this.endsAt = end;
+    this.host.matchClock({ startIn: this.startAt - performance.now(), endTick: this.endTick });
   }
 
   /** Each city's figures and score, best first (the scoreboard); `me` marks this city. */

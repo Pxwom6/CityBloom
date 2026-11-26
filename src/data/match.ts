@@ -41,8 +41,11 @@ export const MATCH = {
   maxPlayers: 4,
   /** Between the host's Start and the clock starting (ms). */
   countdownMs: 5_000,
-  /** After the end, how long the room waits for final reports before deciding (ms). */
-  finalWaitMs: 10_000,
+  /**
+   * After the end, how long the room waits for the last reports of the cities still here before
+   * deciding (ms): a slow device catching up to the timer's last tick takes a few seconds.
+   */
+  finalWaitMs: 30_000,
   /** How often a match city reports (ms), sends its picture (ms) and a save to look round (ms). */
   reportMs: 5_000,
   thumbMs: 60_000,

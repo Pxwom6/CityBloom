@@ -7,6 +7,7 @@
  */
 import type { Game } from '../game';
 import { TUTORIAL, TUTORIAL_EVENTS, tutorialSaw, type TutorialStep } from './tutorial';
+import { lessonBase, LESSON, type Lesson, type LessonBase } from './lessons';
 
 export interface TutorialCardView {
   step: TutorialStep;
@@ -14,6 +15,8 @@ export interface TutorialCardView {
   index: number;
   total: number;
   event: boolean;
+  /** The lesson this card belongs to (Learn), if it's a lesson's. */
+  lesson?: Lesson;
 }
 
 export class TutorialRunner {
@@ -25,6 +28,10 @@ export class TutorialRunner {
   private shownId: string | null = null;
   /** The speed a card held the game still from, given back once it's passed. */
   private held: Game['speed'] | null = null;
+  /** A lesson being played (Learn), its step, and the town as it found it. */
+  lesson: Lesson | null = null;
+  lessonStep = 0;
+  base: LessonBase | null = null;
 
   constructor(private readonly g: Game) {}
 
@@ -33,8 +40,26 @@ export class TutorialRunner {
     this.g.updateSettings({ tutorialStep: 0, tutorialAway: false, tutorialSeen: [] });
   }
 
-  /** The card to show now: a first-problem lesson, or the running step (null: none, or left for now). */
+  /** Play a lesson (Learn) from its first step, on the town it opened. */
+  startLesson(id: string): boolean {
+    const l = LESSON.get(id);
+    if (!l || !l.steps.length) return false;
+    this.lesson = l;
+    this.lessonStep = 0;
+    this.base = lessonBase(this.g);
+    this.event = null;
+    this.check();
+    return true;
+  }
+
+  /** The card to show now: a lesson's step, a first-problem lesson, or the running step (null: none). */
   card(): TutorialCardView | null {
+    if (this.lesson) {
+      const step = this.lesson.steps[this.lessonStep];
+      return step
+        ? { step, index: this.lessonStep, total: this.lesson.steps.length, event: false, lesson: this.lesson }
+        : null;
+    }
     if (this.event) return { step: this.event, index: -1, total: TUTORIAL.length, event: true };
     const k = this.g.settings.tutorialStep;
     if (k < 0 || k >= TUTORIAL.length || this.g.settings.tutorialAway) return null;
@@ -43,6 +68,13 @@ export class TutorialRunner {
 
   /** Move on: a lesson is put away, or the step is passed (the last one finishes the tutorial). */
   next(): void {
+    if (this.lesson) {
+      this.lessonStep++;
+      if (this.lessonStep >= this.lesson.steps.length) this.finishLesson();
+      this.check();
+      this.g.notify();
+      return;
+    }
     if (this.event) {
       this.event = null;
       this.check();
@@ -72,6 +104,20 @@ export class TutorialRunner {
     this.check();
   }
 
+  /** A lesson played to its end: marked done for the Learn screen. */
+  private finishLesson(): void {
+    const l = this.lesson;
+    this.lesson = null;
+    if (l && !this.g.settings.lessonsDone.includes(l.id))
+      this.g.updateSettings({ lessonsDone: [...this.g.settings.lessonsDone, l.id] });
+  }
+
+  /** Leave a lesson part way (Keep playing, or the menu). */
+  endLesson(): void {
+    this.lesson = null;
+    this.check();
+  }
+
   /** A card held the game still: time runs again as it was (unless the player has set it going). */
   private giveBack(): void {
     if (this.held !== null && this.g.speed === 0 && !this.g.net) this.g.setSpeed(this.held);
@@ -85,7 +131,13 @@ export class TutorialRunner {
    */
   check(): void {
     const g = this.g;
-    for (const k of tutorialSaw(g.panel, g.overlay.active)) this.saw.add(k);
+    for (const k of tutorialSaw(g.panel, g.overlay.active, g.screen)) this.saw.add(k);
+    // A lesson's steps tick themselves off as the tutorial's do (no first-problem lessons in one).
+    if (this.lesson) {
+      while (this.lessonStep < this.lesson.steps.length && this.lesson.steps[this.lessonStep]!.done?.(g))
+        this.lessonStep++;
+      if (this.lessonStep >= this.lesson.steps.length) this.finishLesson();
+    }
     let step = g.settings.tutorialStep;
     while (step >= 0 && step < TUTORIAL.length && TUTORIAL[step]!.done?.(g)) step++;
     if (step !== g.settings.tutorialStep) {
@@ -97,7 +149,7 @@ export class TutorialRunner {
     if (this.event?.done?.(g)) this.event = null;
     // First problems come once the city is running (past "Let time run"), one at a time, each once.
     const timeStep = TUTORIAL.findIndex((t) => t.id === 'time');
-    if (running && !this.event && g.settings.tutorialStep > timeStep) {
+    if (running && !this.lesson && !this.event && g.settings.tutorialStep > timeStep) {
       const ev = TUTORIAL_EVENTS.find((e) => !g.settings.tutorialSeen.includes(e.id) && e.when?.(g));
       if (ev) {
         this.event = ev;

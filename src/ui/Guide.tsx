@@ -50,7 +50,7 @@ export function TutorialCard() {
   const visible =
     !!step &&
     game.mode === 'play' &&
-    !game.screen &&
+    (!game.screen || (!!step.screen && game.screen === step.screen)) &&
     (!game.panel || (!!step.panel && game.panel === step.panel));
   useHighlight(visible ? step.target : undefined);
   if (!visible || !card) return null;
@@ -66,7 +66,11 @@ export function TutorialCard() {
         aria-label="Tutorial"
       >
         <div class="guide-kicker">
-          {card.event ? 'Tutorial · something to know' : `Tutorial · step ${k + 1} of ${card.total}`}
+          {card.lesson
+            ? `Lesson · ${card.lesson.title} · ${k + 1} of ${card.total}`
+            : card.event
+              ? 'Tutorial · something to know'
+              : `Tutorial · step ${k + 1} of ${card.total}`}
         </div>
         <h3>{step.title}</h3>
         <p>{step.text}</p>
@@ -78,7 +82,36 @@ export function TutorialCard() {
           </div>
         )}
         <div class="guide-actions">
-          {card.event ? (
+          {card.lesson ? (
+            k === card.total - 1 ? (
+              <>
+                <button class="btn" data-testid="lesson-keep" onClick={() => game.tutorialNext()}>
+                  Keep playing
+                </button>
+                <button class="btn active" data-testid="lesson-learn" onClick={() => game.backToLearn()}>
+                  Back to Learn
+                </button>
+              </>
+            ) : (
+              <>
+                <button class="btn quiet" data-testid="lesson-leave" onClick={() => game.endLesson()}>
+                  Leave lesson
+                </button>
+                {step.done ? (
+                  <>
+                    <span class="guide-waiting">Waiting for you…</span>
+                    <button class="btn" data-testid="tutorial-skip-step" onClick={() => game.tutorialNext()}>
+                      Skip this step
+                    </button>
+                  </>
+                ) : (
+                  <button class="btn active" data-testid="tutorial-next" onClick={() => game.tutorialNext()}>
+                    Next
+                  </button>
+                )}
+              </>
+            )
+          ) : card.event ? (
             <button class="btn active" data-testid="tutorial-next" onClick={() => game.tutorialNext()}>
               Got it
             </button>

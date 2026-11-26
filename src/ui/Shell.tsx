@@ -34,6 +34,7 @@ import { MapsScreen } from './Maps';
 import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
 import { reportProblem, REPORTS_NOTICE } from '../client/reports';
 import { ReportScreen } from './Report';
+import { LESSONS } from '../client/lessons';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
 const NAME_B = ['Marsh', 'Oak', 'Pine', 'Rowan', 'Sorrel', 'Thistle', 'Willow', 'Yarrow', 'Alder', 'Birch'];
@@ -145,6 +146,10 @@ function MainMenu() {
           <span>Play with friends</span>
           <small>build one city together</small>
         </button>
+        <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
+          <span>Learn</span>
+          <small>short lessons, a few minutes each</small>
+        </button>
         <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
           <span>Scenarios</span>
           <small>{SCENARIOS.length} challenges</small>
@@ -193,6 +198,58 @@ function ReportsNotice() {
         OK
       </button>
     </p>
+  );
+}
+
+/**
+ * Learn (M42): short lessons, each a few minutes on a small prepared town; a tick for the ones done.
+ */
+function LearnScreen() {
+  const game = useGame();
+  const done = new Set(game.settings.lessonsDone);
+  return (
+    <div class="shell-card panel learn-screen" data-testid="learn-screen">
+      <header>
+        <h2>Learn</h2>
+        <span class="muted">
+          Short lessons, each on a small town made for it. Nothing here touches your own cities.
+        </span>
+      </header>
+      <ul class="learn-list">
+        {LESSONS.map((l) => (
+          <li key={l.id} class={`learn-item ${done.has(l.id) ? 'done' : ''}`} data-testid={`lesson-${l.id}`}>
+            <div class="learn-text">
+              <b>
+                {done.has(l.id) && (
+                  <span class="learn-tick" aria-label="done">
+                    ✓{' '}
+                  </span>
+                )}
+                {l.title}
+              </b>
+              <small class="muted">
+                {l.minutes} min · {l.blurb}
+              </small>
+              {l.optIn && <small class="learn-note">{l.optIn}</small>}
+              {l.soon && <small class="learn-note">{l.soon}</small>}
+            </div>
+            <button
+              class="btn"
+              data-testid={`lesson-start-${l.id}`}
+              disabled={!!l.soon}
+              onClick={() => (location.href = `${location.pathname}?lesson=${l.id}`)}
+            >
+              {done.has(l.id) ? 'Again' : 'Start'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <footer class="shell-actions">
+        <button class="btn active" data-testid="shell-back" onClick={() => game.closeScreen()}>
+          Back
+        </button>
+      </footer>
+    </div>
   );
 }
 
@@ -1193,6 +1250,7 @@ export function Shell() {
       {screen === 'maps' && <MapsScreen />}
       {screen === 'friends' && <FriendsScreenWithLatest />}
       {screen === 'report' && <ReportScreen />}
+      {screen === 'learn' && <LearnScreen />}
     </div>
   );
 }

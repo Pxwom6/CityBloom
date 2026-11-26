@@ -9,6 +9,7 @@ import { Game } from './game';
 import { App } from './ui/App';
 import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
+import { LESSON } from './client/lessons';
 import { decodeSave, readSlot } from './client/saves';
 import { loadBattle, loadTown } from './client/battles';
 import { BATTLE_V4 } from './sim/battle/types';
@@ -232,6 +233,7 @@ async function boot(): Promise<void> {
     'join',
     'visit',
     'battle',
+    'lesson',
   ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
@@ -275,6 +277,8 @@ async function boot(): Promise<void> {
   const loadSlot = params.get('load');
   // A scenario (M18) opens its starting city, shipped as a save beside the game.
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
+  // One of Learn's lessons (M42): its prepared town, shipped beside the game too.
+  const lesson = LESSON.get(params.get('lesson') ?? '');
   const found = visited
     ? visited
     : battleTown
@@ -286,9 +290,11 @@ async function boot(): Promise<void> {
           })
         : scenario
           ? await shippedSave(`scenarios/${scenario.save}`)
-          : menu
-            ? await shippedSave('demo.citybloom')
-            : null;
+          : lesson?.save
+            ? await shippedSave(`lessons/${lesson.save}`)
+            : menu
+              ? await shippedSave('demo.citybloom')
+              : null;
   const opened =
     found &&
     (await client.load(found, IS_TEST_BUILD).catch((err: unknown) => {
@@ -382,6 +388,7 @@ async function boot(): Promise<void> {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
+    if (params.get('screen') === 'learn') game.openScreen('learn');
     // A region's invite link: the friends screen, to choose the city to bring (M32).
     const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
     if (invited && !inviteProblem(invited)) {
@@ -411,6 +418,12 @@ async function boot(): Promise<void> {
     } else if (scenario)
       game.toast('That scenario could not be opened; here is a fresh map instead.', 'bad', 6000);
     if (params.get('tutorial') === '1') game.startTutorial();
+    // A lesson's town opens paused where the lesson starts; it isn't one of the player's saves.
+    if (lesson && save) {
+      game.slot = null;
+      game.startLesson(lesson.id);
+    } else if (lesson)
+      game.toast('That lesson’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
     if (!save && !scenario) {
       const { seasons, weather } = game.settings;
@@ -418,7 +431,7 @@ async function boot(): Promise<void> {
     }
     // A reload goes back to the main menu (Continue picks up the latest save) rather than
     // re-creating this city from scratch.
-    if (params.has('new') || params.has('load') || scenario)
+    if (params.has('new') || params.has('load') || scenario || lesson)
       history.replaceState(null, '', location.pathname);
     // Back from a battle this browser doesn't keep (M35).
     if (params.get('noreplay') === '1')

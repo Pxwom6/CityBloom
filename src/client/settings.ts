@@ -50,6 +50,8 @@ export interface Settings {
   tutorialSeen: string[];
   /** The card a player joining a friend's room sees the first time has been read (M42). */
   roomIntro: boolean;
+  /** Learn's lessons played to the end (M42). */
+  lessonsDone: string[];
   /**
    * Tone down the atom bomb's flash (M40 step 11): a short fade in place of the white-out, and no shake.
    * Its default follows the system's "reduce motion" setting. Read by the effects (`src/render/atom.ts`).
@@ -100,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tutorialAway: false,
   tutorialSeen: [],
   roomIntro: false,
+  lessonsDone: [],
   reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
@@ -274,6 +277,9 @@ export function parseSettings(raw: unknown): Settings {
     tutorialStep: num(r.tutorialStep, d.tutorialStep, -1, 99),
     tutorialAway: bool(r.tutorialAway, d.tutorialAway),
     roomIntro: bool(r.roomIntro, d.roomIntro),
+    lessonsDone: Array.isArray(r.lessonsDone)
+      ? r.lessonsDone.filter((t): t is string => typeof t === 'string').slice(0, 20)
+      : [],
     tutorialSeen: Array.isArray(r.tutorialSeen)
       ? r.tutorialSeen.filter((t): t is string => typeof t === 'string').slice(0, 20)
       : [],

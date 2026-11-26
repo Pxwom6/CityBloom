@@ -6,6 +6,7 @@ import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 import { LONG_COMMUTE, TRAM } from '../data/balance';
 import { RAIDS } from '../data/battle';
 import type { CameraPose } from '../render/camera';
+import type { Screen } from '../game';
 
 /**
  * The first-city tutorial and contextual tips (DESIGN.md §5, M42). Steps finish by themselves when the
@@ -29,6 +30,8 @@ export interface TutorialStep {
   camera?: (g: Game) => Partial<CameraPose> | null;
   /** The card stays beside this panel while it's open (other panels hide it). */
   panel?: Game['panel'];
+  /** The card shows over this screen (the pause menu, say) rather than hiding behind it. */
+  screen?: Screen;
   /** A first-problem lesson: its moment (checked only once the city is running). */
   when?: (g: Game) => boolean;
 }
@@ -271,10 +274,17 @@ export const TUTORIAL_EVENTS: TutorialStep[] = [
 export const TUTORIAL_IDS = [...TUTORIAL, ...TUTORIAL_EVENTS].map((s) => s.id);
 
 /** Is this panel or data map one the tutorial watches for (it remembers having seen it)? */
-export function tutorialSaw(panel: Game['panel'], overlay: string | null): string[] {
+export function tutorialSaw(
+  panel: Game['panel'],
+  overlay: string | null,
+  screen: string | null = null,
+): string[] {
   const out: string[] = [];
+  if (panel) out.push(`panel:${panel}`);
   if (panel === 'budget' || panel === 'advisors') out.push(panel);
+  if (overlay) out.push(`map:${overlay}`);
   if (overlay && SERVICE_MAPS.has(overlay)) out.push('coverage');
+  if (screen) out.push(`screen:${screen}`);
   return out;
 }
 

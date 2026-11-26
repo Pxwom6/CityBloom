@@ -166,7 +166,9 @@ export type Screen =
   /** Play with friends (M30). */
   | 'friends'
   /** Report a problem (M41). */
-  | 'report';
+  | 'report'
+  /** Learn: short lessons on prepared towns (M42). */
+  | 'learn';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -2056,6 +2058,8 @@ export class Game {
       if (!quiet) this.toast('You’re visiting a neighbour’s city: nothing here is saved.', 'info');
       return false;
     }
+    // A lesson's town is practice: autosaves leave the player's own cities alone (a save on purpose goes).
+    if (this.lessonTown && slot === 'auto') return false;
     if (this.saving) return false;
     this.saving = true;
     this.notify();
@@ -2389,6 +2393,23 @@ export class Game {
   }
   endTutorial(): void {
     this.tutorial.end();
+  }
+  /** A lesson's prepared town (M42): never autosaved over the player's own cities. */
+  lessonTown = false;
+
+  /** Play one of Learn's lessons on the town it opened (M42). */
+  startLesson(id: string): boolean {
+    this.lessonTown = true;
+    return this.tutorial.startLesson(id);
+  }
+
+  /** Back to the main menu's Learn screen, the lesson's town left as it is (it isn't saved). */
+  backToLearn(): void {
+    this.tutorial.next();
+    location.href = `${location.pathname}?screen=learn`;
+  }
+  endLesson(): void {
+    this.tutorial.endLesson();
   }
 
   /** Advance past tutorial steps the player has already done; show a tip whose moment has come. */

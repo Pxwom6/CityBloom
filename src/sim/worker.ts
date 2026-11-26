@@ -235,7 +235,13 @@ function handle(msg: MainToWorker): void {
       player = msg.player;
       origin = null;
       share(sim, msg.snapshot.seq, msg.snapshot.eventHash);
-      desyncLog.begin({ tick: sim.tick, seq: msg.snapshot.seq, sum: checksum(sim) });
+      desyncLog.begin({
+        tick: sim.tick,
+        seq: msg.snapshot.seq,
+        sum: checksum(sim),
+        eventHash: lockstep!.eventHash,
+        rules: sim.rules,
+      });
       applied = [];
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
@@ -257,6 +263,8 @@ function handle(msg: MainToWorker): void {
           tick: sim.tick,
           seq: msg.lastSeq,
           sum: checksum(sim),
+          eventHash: lockstep!.eventHash,
+          rules: sim.rules,
           ...(origin ? { founded: origin, pre } : {}),
         });
         // The reborn city's own log starts here: a later share isn't "from its founding" any more.

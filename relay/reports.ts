@@ -76,6 +76,10 @@ export interface ReportStart {
   seq: number;
   /** Its hourly checksum, so a save given to the replay can be checked as the right one. */
   sum: string;
+  /** The room's running fingerprint of events at the start (every hourly sum carries it). */
+  eventHash?: number;
+  /** Who could do what at the start (players by number, no names): commands are checked against it. */
+  rules?: unknown;
   /** Set when the city was founded on this machine: the replay needs nothing more than this. */
   founded?: ReportFounding;
   /** The commands made before it was shared, each at its tick (`{ tick, cmd, by? }`), cleaned. */
@@ -174,7 +178,8 @@ function label(input: unknown, max = 40): string {
 }
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-const hex = (v: unknown): string => (typeof v === 'string' ? v.replace(/[^0-9a-f]/gi, '').slice(0, 16) : '');
+/** A hash as the sims print them (a checksum and the event fingerprint: `0123abcd…:89ab`). */
+const hex = (v: unknown): string => (typeof v === 'string' ? v.replace(/[^0-9a-f:]/gi, '').slice(0, 40) : '');
 
 /**
  * Addresses without their query strings or fragments (a page's address can carry a city's name in
@@ -274,6 +279,9 @@ function cleanDesync(v: unknown): ReportDesync | undefined {
   const s = o.start as Record<string, unknown> | undefined;
   if (s && typeof s === 'object' && isInt(s.tick) && isInt(s.seq)) {
     d.start = { tick: s.tick, seq: s.seq, sum: hex(s.sum) };
+    if (isInt(s.eventHash)) d.start.eventHash = s.eventHash;
+    if (s.rules && typeof s.rules === 'object' && JSON.stringify(s.rules).length <= 4000)
+      d.start.rules = cleanEvents([s.rules])[0];
     const f = cleanFounding(s.founded);
     // A founded start carries the commands before sharing; without them it isn't one.
     const pre = Array.isArray(s.pre) ? s.pre.slice(0, REPORT_CAPS.eventsCount) : null;

@@ -11,6 +11,7 @@
 import type { CommandLogEntry } from './commands';
 import type { Stamped } from './lockstep';
 import type { GameOptions } from './state';
+import type { SharedRules } from './rules';
 
 export const DESYNC_LOG = {
   /** Events kept since the start; past this the replay is cut. */
@@ -30,6 +31,10 @@ export interface DesyncStart {
   seq: number;
   /** The city's hourly checksum function at the start (`checksum`), to check a save given to a replay. */
   sum: string;
+  /** The lockstep's event fingerprint at the start (hourly sums end with it). */
+  eventHash: number;
+  /** Who could do what at the start (players by number; no names). */
+  rules: SharedRules | null;
   /** For a city founded on this machine with only its own commands before sharing: how to found it again. */
   founded?: FoundingOptions;
   /** Those commands (single player's log, each at its tick). */

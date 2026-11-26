@@ -75,7 +75,9 @@ import { AtomUi, type WarTab } from './client/atomUi';
 import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
-import { IS_TEST_BUILD } from './config';
+import { BUILD_ID, IS_TEST_BUILD } from './config';
+import { isIOS } from './client/platform';
+import { markAlive } from './client/alive';
 import { frameCap, frameDue } from './client/frameCap';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
@@ -2745,6 +2747,49 @@ export class Game {
       });
   }
 
+  /**
+   * Suggest exporting a backup (M49): on an iPhone or iPad, after 20 minutes in a city the first time,
+   * then a week after the last export or answer. Shown as a card (App's BackupCard).
+   */
+  backupNudge = false;
+  private cityOpenedAt = 0;
+  private backupCheckAt = 0;
+
+  /**
+   * While a city is on screen, keep the marker that tells the next visit the page closed without
+   * warning (M49, `alive.ts`); it goes when the page is hidden (main.ts) or the city is left.
+   */
+  private aliveAt = 0;
+  private keepAlive(now: number): void {
+    if (now - this.aliveAt < 15_000) return;
+    this.aliveAt = now;
+    if (this.mode !== 'play' || document.visibilityState !== 'visible') return;
+    markAlive({
+      at: Date.now(),
+      build: BUILD_ID,
+      population: this.world.stats.population,
+      quality: this.settings.quality,
+    });
+  }
+
+  private checkBackup(now: number): void {
+    if (now - this.backupCheckAt < 10_000) return;
+    this.backupCheckAt = now;
+    if (this.backupNudge || this.net || this.readOnly || this.lessonTown || !isIOS()) return;
+    if (!this.cityOpenedAt) this.cityOpenedAt = now;
+    const last = this.settings.backupAt;
+    const due = last ? Date.now() - last > BACKUP.everyMs : now - this.cityOpenedAt > BACKUP.firstMs;
+    if (!due) return;
+    this.backupNudge = true;
+    this.notify();
+  }
+
+  /** A city was exported, or the backup card answered: the next suggestion is a week away. */
+  backedUp(): void {
+    this.backupNudge = false;
+    this.updateSettings({ backupAt: Date.now() });
+  }
+
   /** When the last frame was drawn (ms), for the frame cap (M49). */
   private drawnAt = -Infinity;
   /** When the player last pointed, tapped, scrolled or pressed a key (ms; M49's still scenes). */
@@ -2804,6 +2849,8 @@ export class Game {
     else {
       void this.autosave(now);
       this.warModels();
+      this.checkBackup(now);
+      this.keepAlive(now);
     }
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
@@ -2841,6 +2888,9 @@ function fairClockOff(): boolean {
     return false;
   }
 }
+
+/** When an iPhone is asked to export a backup (M49): after 20 minutes the first time, then weekly. */
+export const BACKUP = { firstMs: 20 * 60_000, everyMs: 7 * 24 * 3600_000 };
 
 /** A value kept in localStorage by a spec or a player's browser (null where storage is shut). */
 function localFlag(key: string): string | null {

@@ -1,3 +1,4 @@
+import { clearAlive, takeAlive } from './client/alive';
 import { installTouch } from './ui/touch';
 import { render, h } from 'preact';
 import './ui/styles/main.css';
@@ -517,6 +518,19 @@ async function boot(): Promise<void> {
     void game.keeper.ask(true);
   };
 
+  // A page closed while a city was showing (M49: a phone closing it for memory, most likely) is
+  // reported once, now; then the marker is kept again while a city is on screen, and taken away when
+  // the page is hidden or closed properly.
+  // (A test build reports it only when a spec asks, so specs that close pages don't report each other.)
+  const died = takeAlive();
+  if (died && (!IS_TEST_BUILD || localStorage.getItem('citybloom.aliveReports') === 'on'))
+    reportProblem('error', new Error('The page closed while a city was showing'), {
+      message: `The page closed while a city of ${died.population} residents was showing (graphics: ${died.quality}); the browser may have closed it for memory`,
+    });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') clearAlive();
+  });
+  window.addEventListener('pagehide', clearAlive);
   // Anything the player does counts as moving the scene (M49: a still one draws fewer frames).
   const touched = () => (game.lastInputAt = performance.now());
   for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)

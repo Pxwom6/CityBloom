@@ -81,7 +81,9 @@ function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }
   const tipRef = useRef<HTMLSpanElement>(null);
   // By touch (M49) a tooltip opens on a long press, not on a tap (a tap's made-up mouse events
   // opened it and nothing closed it), and the press that opened it doesn't also press the button.
-  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; at: number } | null>(
+    null,
+  );
   const opened = useRef(false);
   const closeLater = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A tooltip is centred on its button: over a button at the edge of the window it would run off the
@@ -106,23 +108,37 @@ function Tip({ tip, children }: { tip: TipContent; children: ComponentChildren }
         if (e.pointerType === 'mouse') return;
         endPress();
         opened.current = false;
+        const show = () => {
+          press.current = null;
+          opened.current = true;
+          setOpen(true);
+          if (closeLater.current) clearTimeout(closeLater.current);
+          closeLater.current = setTimeout(() => setOpen(false), TOUCH_TIP_MS);
+        };
         press.current = {
           x: e.clientX,
           y: e.clientY,
-          timer: setTimeout(() => {
-            press.current = null;
-            opened.current = true;
-            setOpen(true);
-            if (closeLater.current) clearTimeout(closeLater.current);
-            closeLater.current = setTimeout(() => setOpen(false), TOUCH_TIP_MS);
-          }, LONG_PRESS_MS),
+          at: e.timeStamp,
+          timer: setTimeout(show, LONG_PRESS_MS),
         };
       }}
       onPointerMove={(e) => {
         const p = press.current;
         if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) endPress();
       }}
-      onPointerUp={endPress}
+      onPointerUp={(e) => {
+        // Held long enough, but a busy page ran the timer late: a long press all the same.
+        const p = press.current;
+        if (p && e.timeStamp - p.at >= LONG_PRESS_MS) {
+          endPress();
+          opened.current = true;
+          setOpen(true);
+          if (closeLater.current) clearTimeout(closeLater.current);
+          closeLater.current = setTimeout(() => setOpen(false), TOUCH_TIP_MS);
+          return;
+        }
+        endPress();
+      }}
       onPointerCancel={endPress}
       onClickCapture={(e) => {
         // The long press showed the tooltip: lifting the finger is not a press of the button.
@@ -418,6 +434,19 @@ export function Toolbar() {
           >
             <IconDrawOneWay />
           </ToolButton>
+          {/* By touch there's no Escape (M49): Done ends the road being drawn, or the chain. */}
+          {(phone || game.pointerType === 'touch') && tools.road.drawing && (
+            <button
+              class="btn"
+              data-testid="road-done"
+              onClick={() => {
+                tools.road.cancel();
+                game.notify();
+              }}
+            >
+              Done
+            </button>
+          )}
           <ToolButton
             id="grid-snap"
             active={tools.road.grid}

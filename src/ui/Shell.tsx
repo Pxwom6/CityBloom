@@ -1,3 +1,7 @@
+import { isIOS } from '../client/platform';
+import { deviceMemory, tooBigFor } from '../client/memoryBudget';
+import { currentDevice } from '../client/graphicsCheck';
+import { isPhone } from '../game';
 import { FriendsScreen } from './Friends';
 import { relayUrl } from '../net/multiplayer';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
@@ -11,6 +15,7 @@ import { dateOf, formatDate } from '../sim/time';
 import {
   deleteSlot,
   exportSave,
+  saveAccept,
   importSaveFile,
   listSlots,
   newSlotId,
@@ -61,7 +66,65 @@ function ago(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const openSlot = (slot: string) => (location.href = `${location.pathname}?load=${encodeURIComponent(slot)}`);
+const goToSlot = (slot: string) => (location.href = `${location.pathname}?load=${encodeURIComponent(slot)}`);
+
+/**
+ * A city too big for this phone (M49), waiting for the player to say whether to open it anyway (the
+ * BigCityCard). A module-level signal, so any screen's Load or Continue can ask.
+ */
+let bigCity: { slot: string; name: string; population: number } | null = null;
+const bigCityListeners = new Set<() => void>();
+function askBigCity(v: typeof bigCity): void {
+  bigCity = v;
+  for (const f of bigCityListeners) f();
+}
+
+/** Open a saved city, asking first if it's too big for this phone or tablet (M49). */
+const openSlot = (slot: string, info?: { cityName: string; population: number }) => {
+  if (info && tooBigFor(info.population, currentDevice(), deviceMemory())) {
+    askBigCity({ slot, name: info.cityName, population: info.population });
+    return;
+  }
+  goToSlot(slot);
+};
+
+/** "This city is big for this phone": open it anyway, or not now (M49). */
+function BigCityCard() {
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const f = () => redraw((n) => n + 1);
+    bigCityListeners.add(f);
+    return () => void bigCityListeners.delete(f);
+  }, []);
+  const b = bigCity;
+  if (!b) return null;
+  return (
+    <div class="modal-backdrop" data-testid="big-city-card">
+      <div class="modal panel">
+        <h2>A big city for this {currentDevice() === 'tablet' ? 'tablet' : 'phone'}</h2>
+        <p>
+          {b.name} has {b.population.toLocaleString('en-US')} residents. Phones close a page that uses too
+          much memory, and a city this size may run slowly or close. Your saves are safe either way.
+        </p>
+        <div class="modal-actions">
+          <button class="btn" data-testid="big-city-cancel" onClick={() => askBigCity(null)}>
+            Not now
+          </button>
+          <button
+            class="btn active"
+            data-testid="big-city-open"
+            onClick={() => {
+              askBigCity(null);
+              goToSlot(b.slot);
+            }}
+          >
+            Open it anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Saved cities, newest first (null while loading). */
 function useSlots(): [SlotInfo[] | null, () => void] {
@@ -123,7 +186,11 @@ function MainMenu() {
       </div>
       <nav class="shell-nav">
         {latest && (
-          <button class="shell-btn primary" data-testid="main-continue" onClick={() => openSlot(latest.slot)}>
+          <button
+            class="shell-btn primary"
+            data-testid="main-continue"
+            onClick={() => openSlot(latest.slot, latest)}
+          >
             <span>Continue</span>
             <small>
               {latest.label !== latest.cityName && `${latest.label} · `}
@@ -157,7 +224,7 @@ function MainMenu() {
         </button>
         <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
           <span>Map editor</span>
-          <small>make and share your own maps</small>
+          <small>{isPhone() ? 'needs a tablet or a computer' : 'make and share your own maps'}</small>
         </button>
         <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
           <span>Load city</span>
@@ -655,7 +722,9 @@ function PauseMenu() {
             <button
               class="shell-btn"
               data-testid="pause-export"
-              onClick={async () => exportSave(await game.client.save())}
+              onClick={async () => {
+                if ((await exportSave(await game.client.save())) !== 'cancelled') game.backedUp();
+              }}
             >
               <span>Export to file</span>
             </button>
@@ -726,7 +795,7 @@ function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | nul
     <input
       ref={inputRef}
       type="file"
-      accept=".citybloom,application/octet-stream,application/json"
+      accept={saveAccept(isIOS())}
       style={{ display: 'none' }}
       data-testid="import-file"
       onChange={async (e) => {
@@ -737,7 +806,7 @@ function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | nul
           if (!s?.meta || !s.state) throw new Error('no city in it');
           const slot = newSlotId();
           await writeSlot(slot, s, `${s.meta.cityName} (imported)`);
-          openSlot(slot);
+          openSlot(slot, s.meta);
         } catch (err) {
           reportProblem('load', err, { message: 'An imported file wouldn’t open' });
           game.toast(
@@ -879,7 +948,7 @@ function LoadScreen() {
             </>
           ) : (
             <>
-              <button class="btn active" data-testid={`load-${s.slot}`} onClick={() => openSlot(s.slot)}>
+              <button class="btn active" data-testid={`load-${s.slot}`} onClick={() => openSlot(s.slot, s)}>
                 Load
               </button>
               <button
@@ -888,7 +957,7 @@ function LoadScreen() {
                 title="Download as a .citybloom file"
                 onClick={async () => {
                   const save = await readSlot(s.slot);
-                  if (save) exportSave(save);
+                  if (save && (await exportSave(save)) !== 'cancelled') game.backedUp();
                 }}
               >
                 Export
@@ -1272,6 +1341,7 @@ export function Shell() {
       {screen === 'friends' && <FriendsScreenWithLatest />}
       {screen === 'report' && <ReportScreen />}
       {screen === 'learn' && <LearnScreen />}
+      <BigCityCard />
     </div>
   );
 }

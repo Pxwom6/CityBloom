@@ -1336,8 +1336,20 @@ misses with either build (`startup-slow.log`).
 _Checks that need a real new player (phase 6). Each milestone adds its own._
 - (M42 onwards: a first-time player with no help; a quick match between real friends; a mate making a
   first building with the Workshop.)
+- M49 phones: an iPhone and an Android phone, each added to the home screen ("Add to Home Screen" in
+  Safari's share menu; "Install" in Chrome's menu): it should open full screen with the Citybloom icon
+  and splash, on the Phone preset at 30 fps. Play 20 minutes on each (a new city to a few thousand
+  residents) and note how warm the phone gets and how much battery goes; build roads, zones and
+  services by touch, open the budget and the inspector (a long press), undo, save, export a copy to
+  Files and import it back. Then a co-op game with a laptop (the phone joining the laptop's running
+  room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
+  imported) and see that it runs; the 110k bench city should ask first.
 
 ## To check on the Mac
+- Phase 6 (M49): the Phone preset beside Low in the uncapped Chrome window (`framebench.mjs
+  bench-results/city.gz --quality phone,low`): the frame times, and that it still looks like the game;
+  Safari's Responsive Design Mode on an iPhone size, upright and sideways (the safe areas only show on
+  a real phone or the simulator).
 - Phase 6 (M41): once `OWNER_KEY` is set and the next deploy is out, open the owner area on your phone
   (`https://pxwom6.github.io/CityBloom/#/owner`), sign in, and send yourself a report from the live
   game (pause → Report a problem, with a picture): it should arrive within a few seconds, from the

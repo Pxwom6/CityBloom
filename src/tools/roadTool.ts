@@ -191,6 +191,11 @@ export class RoadTool implements Tool {
     this.game.renderer.ghost.showClear(null);
   }
 
+  /** A road is being drawn: a start tapped, or a chain carrying on from the last road's end (M49). */
+  get drawing(): boolean {
+    return !!this.start || this.freePath.length > 0;
+  }
+
   cancel(): boolean {
     // A question about demolishing first (P2): Escape keeps the buildings, and the road stays drawn.
     if (this.game.question) {

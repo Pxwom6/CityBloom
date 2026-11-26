@@ -114,6 +114,8 @@ export class ToolManager {
     y: number;
     id: number;
     type: string;
+    /** The press's event time (ms): a release this long after it is a long press, timer or not. */
+    downAt: number;
   } | null = null;
   /** Long presses that fired (tests). */
   longPresses = 0;
@@ -192,7 +194,7 @@ export class ToolManager {
       (this.active.clickOnly || this.active === this.select)
     ) {
       const at = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType };
-      this.long = { ...at, timer: setTimeout(() => this.longPress(at), LONG_PRESS_MS) };
+      this.long = { ...at, downAt: e.timeStamp, timer: setTimeout(() => this.longPress(at), LONG_PRESS_MS) };
     }
     // A tool that acts on a click waits for the button to come up near where it went down: a longer
     // drag is the camera panning (P3).
@@ -260,6 +262,12 @@ export class ToolManager {
   private held: number | null = null;
 
   private onUp(e: PointerEvent): void {
+    // Held long enough, but a busy page ran the timer late: it is a long press all the same.
+    const l = this.long;
+    if (l && l.id === e.pointerId && e.timeStamp - l.downAt >= LONG_PRESS_MS) {
+      clearTimeout(l.timer);
+      this.longPress(l);
+    }
     this.endLong(e.pointerId);
     if (this.held === e.pointerId) {
       this.held = null;

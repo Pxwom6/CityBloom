@@ -126,18 +126,46 @@ export async function deleteSlot(slot: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(slot));
 }
 
-export function exportSave(save: SaveFile): void {
+/**
+ * Export a city to a file. On a phone or tablet whose browser can share files (M49), the share sheet
+ * opens (Save to Files on an iPhone, Drive or Files on Android); elsewhere, or if sharing is refused,
+ * the file downloads. Says which happened ('cancelled' when the player closed the share sheet).
+ */
+export async function exportSave(save: SaveFile): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const bytes = encodeSave(save);
+  const safe = save.meta.cityName.replace(/[^a-z0-9-_]+/gi, '_') || 'city';
+  const name = `${safe}.citybloom`;
+  const touch = typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0;
+  if (touch && typeof File === 'function' && navigator.canShare) {
+    const file = new File([bytes.slice().buffer as ArrayBuffer], name, { type: 'application/octet-stream' });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: save.meta.cityName });
+        return 'shared';
+      } catch (err) {
+        // Closed by the player: nothing more. Refused (no gesture left, say): download instead.
+        if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
+      }
+    }
+  }
   const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safe = save.meta.cityName.replace(/[^a-z0-9-_]+/gi, '_') || 'city';
   a.href = url;
-  a.download = `${safe}.citybloom`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'downloaded';
+}
+
+/**
+ * What a file picker for saves accepts: on an iPhone or iPad none (M49: Files greys out a type it
+ * doesn't know, and it doesn't know .citybloom), elsewhere saves only.
+ */
+export function saveAccept(ios: boolean): string | undefined {
+  return ios ? undefined : '.citybloom,application/octet-stream,application/json';
 }
 
 export async function importSaveFile(file: File): Promise<SaveFile> {

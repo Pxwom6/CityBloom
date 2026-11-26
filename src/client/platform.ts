@@ -23,3 +23,15 @@ export function modKey(key: string, shift = false): string {
 export function modDown(e: { ctrlKey: boolean; metaKey: boolean }): boolean {
   return e.metaKey || e.ctrlKey;
 }
+
+/**
+ * An iPhone or iPad (M49), where Safari may clear a site's storage after weeks unused, so the game
+ * suggests exporting a backup now and then. iPadOS says it is a Mac: its touch screen gives it away.
+ */
+export function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (
+    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && (navigator.maxTouchPoints || 0) > 1)
+  );
+}

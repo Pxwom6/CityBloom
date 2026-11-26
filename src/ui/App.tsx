@@ -1,7 +1,7 @@
 import { RegionPanel } from './Region';
 import { RoomPanel } from './Friends';
 import { useEffect, useState } from 'preact/hooks';
-import type { Game } from '../game';
+import { isPhone, type Game } from '../game';
 import { DebugPanel } from './DebugPanel';
 import { GameContext } from './hooks';
 import { TopBar } from './TopBar';
@@ -29,6 +29,7 @@ import { BattleMapPanel } from './BattleMap';
 import { AtomAftermath, AtomCountdown, CleanupBar } from './Atom';
 import { EditorApp } from './Editor';
 import { typingIn } from '../client/keys';
+import { exportSave } from '../client/saves';
 
 function Shortcuts({ game }: { game: Game }) {
   useEffect(() => {
@@ -87,11 +88,11 @@ export function App({ game }: { game: Game }) {
         <ToastLayer />
       </GameContext.Provider>
     );
-  // The map editor (M24) has its own bars.
+  // The map editor (M24) has its own bars; on a phone it says plainly it needs a bigger screen (M49).
   if (game.mode === 'editor')
     return (
       <GameContext.Provider value={game}>
-        <EditorApp />
+        {isPhone() ? <PhoneEditorNotice /> : <EditorApp />}
         <ToastLayer />
       </GameContext.Provider>
     );
@@ -135,6 +136,7 @@ export function App({ game }: { game: Game }) {
       <MilestoneBanner />
       <ThoughtsFeed />
       <MoneyBanner />
+      <BackupCard />
       <TutorialCard />
       <TipCard />
       <RoomIntroCard />
@@ -147,9 +149,67 @@ export function App({ game }: { game: Game }) {
   );
 }
 
+/**
+ * The map editor on a phone (M49): painting ground, water and forest by hand at map scale needs a
+ * bigger screen, so it says so rather than showing its bars squeezed.
+ */
+function PhoneEditorNotice() {
+  return (
+    <div class="modal-backdrop" data-testid="editor-phone">
+      <div class="modal panel">
+        <h2>The map editor needs a bigger screen</h2>
+        <p>
+          Painting land, water and forest across a whole map takes a tablet or a computer. Make your map
+          there, and your cities on it play on a phone too.
+        </p>
+        <div class="modal-actions">
+          <button
+            class="btn active"
+            data-testid="editor-phone-back"
+            onClick={() => (location.href = location.pathname)}
+          >
+            Back to the main menu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToastLayer() {
   useGameUpdates(100);
   return <Toasts />;
+}
+
+/**
+ * An iPhone's suggestion to export a backup (M49): Safari may clear a site's saved cities after a
+ * few weeks unused, and a file in Files is safe from that.
+ */
+function BackupCard() {
+  const game = useGameUpdates(1000);
+  if (!game.backupNudge || game.screen) return null;
+  return (
+    <div class="backup-card panel" data-testid="backup-card" role="status">
+      <p>
+        Safari may clear saved cities if Citybloom isn’t opened for a few weeks. Keep a copy of{' '}
+        <strong>{game.world.stats.cityName}</strong> in Files?
+      </p>
+      <div class="actions">
+        <button class="btn" data-testid="backup-later" onClick={() => game.backedUp()}>
+          Not now
+        </button>
+        <button
+          class="btn active"
+          data-testid="backup-export"
+          onClick={async () => {
+            if ((await exportSave(await game.client.save())) !== 'cancelled') game.backedUp();
+          }}
+        >
+          Export a copy
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** Escalating money warnings and the bankruptcy screen. */

@@ -79,6 +79,11 @@ export interface Settings {
    * even less often.
    */
   batterySaver: boolean;
+  /**
+   * When a city was last exported, or the suggestion to back up was last answered (ms since 1970;
+   * M49: an iPhone is asked now and then, as Safari may clear a site's storage).
+   */
+  backupAt: number;
 }
 
 export type FpsCap = 0 | 30 | 60;
@@ -124,6 +129,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reportsNotice: false,
   fpsCap: 0,
   batterySaver: false,
+  backupAt: 0,
 };
 
 export const QUALITIES: Quality[] = ['phone', 'low', 'medium', 'high'];
@@ -367,6 +373,7 @@ export function parseSettings(raw: unknown): Settings {
     reportsNotice: bool(r.reportsNotice, d.reportsNotice),
     fpsCap: oneOf(r.fpsCap, FPS_CAPS, d.fpsCap),
     batterySaver: bool(r.batterySaver, d.batterySaver),
+    backupAt: num(r.backupAt, d.backupAt, 0, 1e15),
   };
 }
 

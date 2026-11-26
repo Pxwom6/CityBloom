@@ -5,6 +5,7 @@
  * preview's absolute URLs to index.html when the site address is known (SITE_URL).
  */
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
@@ -22,6 +23,25 @@ const SKIP = [
   /^owner\.html$/,
   /^assets\/owner-[\w-]+\.(js|css)$/,
 ];
+
+/**
+ * Files the offline copy keeps only once they're first used (M49: a phone's data): the scenarios'
+ * starting cities and the lessons' towns, most of the download otherwise and most never opened.
+ */
+export const EXTRAS = [/^scenarios\//, /^lessons\//];
+
+/** What a first visit downloads, gzipped as Pages sends it (bytes): every file but the extras. */
+export function firstDownload(out: string, files: string[]): number {
+  let total = 0;
+  for (const f of files)
+    if (!EXTRAS.some((re) => re.test(f))) total += gzipSync(readFileSync(join(out, f)), { level: 9 }).length;
+  return total;
+}
+
+/** "1.6 MB", for the boot screen. */
+export function sizeText(bytes: number): string {
+  return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+}
 
 function walk(dir: string, root = dir): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -57,14 +77,21 @@ export function pwa(opts: PwaOptions = {}): Plugin {
       const files = walk(out)
         .filter((f) => !SKIP.some((re) => re.test(f)))
         .sort();
+      // The boot screen says what the first visit costs (M49), before the version is hashed.
+      const bytes = firstDownload(out, files);
+      const index = join(out, 'index.html');
+      writeFileSync(index, readFileSync(index, 'utf8').replace('__FIRST_DOWNLOAD__', sizeText(bytes)));
       const hash = createHash('sha256');
       for (const f of files) hash.update(f).update(readFileSync(join(out, f)));
       const version = hash.digest('hex').slice(0, 12);
       const sw = readFileSync(resolve(config.root, 'src/pwa/sw.js'), 'utf8')
         .replace("'__VERSION__'", JSON.stringify(version))
-        .replace('__FILES__', JSON.stringify(files));
+        .replace('__FILES__', JSON.stringify(files.filter((f) => !EXTRAS.some((re) => re.test(f)))))
+        .replace('__EXTRAS__', JSON.stringify(files.filter((f) => EXTRAS.some((re) => re.test(f)))));
       writeFileSync(join(out, 'sw.js'), sw);
-      config.logger.info(`sw.js: version ${version}, ${files.length} files kept for offline play`);
+      config.logger.info(
+        `sw.js: version ${version}, ${files.length} files kept for offline play (a first visit ${sizeText(bytes)})`,
+      );
     },
   };
 }

@@ -89,7 +89,8 @@ async function buildTown(page: Page, f: Fingers, orient: Orient, tag: string): P
     await pickBuilding(page, category, def);
     const p = await holdForSpot(page, f, spots, def);
     await f.tap(p);
-    await expect.poll(async () => (await counts(page)).civics, { timeout: 15_000 }).toBe(n + 1);
+    // (A wind farm may stand several turbines on the spot.)
+    await expect.poll(async () => (await counts(page)).civics, { timeout: 15_000 }).toBeGreaterThan(n);
   };
   // Spots facing the streets: beside the highway street, and beside the cross street.
   const beside = (side: 1 | -1): [number, number][] => [

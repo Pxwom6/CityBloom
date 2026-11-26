@@ -53,6 +53,20 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/* What a first visit downloads (M49), filled in by the build; the dev server has no number. */
+.boot {
+  align-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: 0 var(--space-4);
+}
+.boot-size {
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+.boot-size[data-size^='__'] {
+  display: none;
+}
 /* An invite link asks for a name before joining (F12). */
 .boot.asking {
   pointer-events: auto;
@@ -5690,4 +5704,23 @@ body {
   ) {
   flex-wrap: wrap;
   justify-content: center;
+}
+/* The suggestion to keep a backup (M49, iPhone and iPad). */
+.backup-card {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-5));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2 * var(--space-3)));
+  padding: var(--space-3) var(--space-4);
+  z-index: var(--z-panel);
+  font-size: var(--font-size-sm);
+}
+.backup-card p {
+  margin: 0 0 var(--space-2);
+}
+.backup-card .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }

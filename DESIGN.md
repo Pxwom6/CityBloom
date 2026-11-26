@@ -2006,18 +2006,21 @@ area. Nothing in the sim changed except what the shared-city worker keeps for a 
   the room's events (typed text in commands replaced: `cleanEvents`). `cleanReport` checks shape and
   cuts to caps on every hop (400 KB a report, a 260 KB picture, 120 KB of events). `reportKey` folds
   the same error across builds: kind, the message with numbers and hashes taken out, and the first
-  frame's function (or file without its build hash); desyncs fold by where; each written report is
-  an entry of its own.
+  frame's method without its (minified) class, or the file without its build hash; desyncs fold by
+  where; written reports are one entry of items. Quoted text that could be someone's words is
+  quieted ("…"), and a replay holding others' words (`OTHERS_COMMANDS`) isn't sent.
 - **The page** (`src/client/reports.ts`, `reportHost.ts`): a `Reporter` made at the top of `main.ts`
   listens for uncaught errors and rejections; `reportProblem()` is called by the sim worker's errors,
   both battle workers (errors now carry a stack), failed saves, loads and imports, the models file
-  failing at start-up, and desyncs. Off with "Send crash reports" (nothing kept); the same problem
+  failing at start-up, and desyncs. Nothing goes by itself until the player has seen the one sentence
+  (the main menu, or a toast in a city opened from a link). Off with "Send crash reports" (nothing kept); the same problem
   within 10 minutes is counted into the next report of it; 3 a minute; a queue of 20 in IndexedDB
   (`citybloom-reports`, a database of its own) that keeps written reports longest and is retried with
   backoff and when the browser comes online.
 - **Desyncs** (`src/sim/desyncLog.ts`): the shared-city worker keeps its run's start (tick, sequence,
   `checksum`, the event fingerprint, the rules; for a city founded on that machine its founding
-  options and its single-player command log), the room's events since and its hourly sums. The
+  options, when the seed was the game's own, and its single-player command log with its saves among
+  the commands, since a save settles the city), the room's events since and its hourly sums. The
   room's `resync` names the tick, the pacer and both sides' recent sums (optional fields); the page
   that fell out of step and the pacer's each file a report, asking the worker before the catching-up
   snapshot replaces the run. A live battle whose runs end differently reports both hashes.
@@ -2026,13 +2029,15 @@ area. Nothing in the sim changed except what the shared-city worker keeps for a 
   checksum), and sets each hour's checksum beside the two sides' to find the split and the side that
   left. Saves are never sent with a report.
 - **The desk** (`relay/reportDesk.ts`, `ReportsObject` in the Worker, Node's SQLite in the local
-  relay; HTTP in `relay/reportsHttp.ts`): `groups` (1,000 at most) and `items` (written reports and
-  replays: 300, 30 MB, 20 per desync kind), 6,000 rows written a UTC day, deleted 60 days after last
-  seen by a daily alarm; rate limits per address hashed with a salt held in memory (6 a minute) and
-  in all (2 a second). An entry marked fixed reopens when it comes back from a build the fix didn't
-  cover. `POST /report` takes JSON as text/plain (no preflight); `/owner/*` needs
+  relay; HTTP in `relay/reportsHttp.ts`): `groups` (1,000 at most; the one seen longest ago makes
+  room) and `items` (written reports and replays: 300, 30 MB, 20 per desync kind; the oldest make
+  room), 6,000 rows written a UTC day, deleted 60 days after last seen by a daily alarm; rate limits
+  per address hashed with a salt held in memory (6 a minute, 60 a day) and in all (2 a second); bodies
+  read no further than the cap. An entry marked fixed reopens when it comes back from a build made
+  after it was fixed (each build's commit time, `BUILD_TIME`). `POST /report` takes JSON as text/plain (no preflight); `/owner/*` needs
   `Authorization: Bearer OWNER_KEY`, compared in constant time on every request, wrong keys limited
-  per address. Without a key the owner area says it isn't set up.
+  per address and in all; a key under 20 characters isn't taken. Without a key the owner area says it
+  isn't set up.
 - **The owner area** (`owner.html`, `src/owner/`; `#/owner` on the game's address leads there): a
   page of its own the build includes and the offline copy leaves out. Sign in (the key kept on the
   device), entries by kind newest first, open/fixed/all, mark fixed or reopen, a written report's

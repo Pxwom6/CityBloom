@@ -80,7 +80,10 @@ const report = (p: P, extra: object = {}, withThumb = false) => {
   });
 };
 const save = (p: P) => {
-  const { parts } = encodeSnapshot({ save: p.mayor.sim.save('now'), history: [], seq: -1, eventHash: 0 }, `${p.slot}`);
+  const { parts } = encodeSnapshot(
+    { save: p.mayor.sim.save('now'), history: [], seq: -1, eventHash: 0 },
+    `${p.slot}`,
+  );
   const id = `${p.slot}-${clock.now()}`;
   parts.forEach((data, part) => say(p, { t: 'save', id, part, parts: parts.length, data }));
 };
@@ -137,5 +140,7 @@ console.log(`One match against the free plan's day:`);
 console.log(`  requests: ${messages} incoming messages = ${Math.round(messages / 20)} requests (of 100,000)`);
 console.log(`  duration: at most ${gbs} GB-s awake (of 13,000: ${((gbs / 13_000) * 100).toFixed(1)} %)`);
 console.log(`  rows written: ${rows} (of 100,000; the region's own day allows ${3000})`);
-console.log(`  matches a day within the free plan: about ${Math.floor(13_000 / gbs)} (duration is the limit)`);
+console.log(
+  `  matches a day within the free plan: about ${Math.floor(13_000 / gbs)} (duration is the limit)`,
+);
 process.exit(0);

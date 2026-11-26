@@ -593,6 +593,15 @@ export type MainToWorker =
   | { type: 'preview'; id: number; cmd: Command }
   | { type: 'query'; id: number; q: Query }
   | { type: 'setSpeed'; speed: Speed }
+  /**
+   * A quick match's clock (M43): run the city towards the tick the time since the match's start allows
+   * at the match speed (`startIn` ms from now, negative once begun), never past `endTick`, catching up
+   * as fast as the time budget lets it; `stop`: hold where it is now (a Race won); `off`: back to the
+   * chosen speed (the city is kept as an ordinary one).
+   */
+  | { type: 'matchClock'; startIn: number; endTick: number }
+  | { type: 'matchClock'; stop: true }
+  | { type: 'matchClock'; off: true }
   | { type: 'advance'; id: number; ticks: number }
   | { type: 'save'; id: number }
   /** Shared city (M29): from now on the room keeps time; `player` is who this machine is. */

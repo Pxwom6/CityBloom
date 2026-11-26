@@ -24,6 +24,7 @@ import type { RegionWarRules, UnitKind } from '../data/war';
 import type { SabotageTarget } from '../data/intel';
 import type { Branch, TierKey } from '../data/research';
 import type { AtomReport, RegionAtom } from '../data/atom';
+import type { MatchSettings } from '../data/match';
 import { decodeBattle, decodeSnapshot, encodeBattle, encodeSnapshot } from './snapshot';
 import { inputOfRecord } from './liveRecord';
 import type { BattleInput } from '../sim/battle/types';
@@ -241,14 +242,30 @@ export function roomBattleId(id: string): string {
   );
 }
 
+/**
+ * A quick match (M43): who takes the room's word on it. The city stands alone (no news from the
+ * others goes into its sim); its reports carry what the page adds (the round, Race's tick, the last
+ * report's hash), and the room's score lines, emotes and chat go here.
+ */
+export interface MatchSink {
+  /** The region's view changed (it carries the match). */
+  view(view: RegionView): void;
+  /** A message of the match's: taken here. */
+  message(m: RegionRoomMsg): boolean;
+  /** The city's report, with what the page adds. */
+  extend(r: RegionReport): Promise<RegionReport> | RegionReport;
+}
+
 export interface RegionLinkOptions {
   mayor: string;
   color: number;
-  create?: { name: string; rules?: RegionWarRules };
+  create?: { name: string; rules?: RegionWarRules; match?: MatchSettings };
   rejoin?: { slot: number; secret: string };
   /** How often to report (ms) and to keep a save for visitors. */
   reportEvery?: number;
   saveEvery?: number;
+  /** How often to send the city's picture with a report (ms; two minutes unless said). */
+  thumbEvery?: number;
   /**
    * Stop reconnecting after this many tries in a row that couldn't reach the region (F10): a region in
    * its host's browser is gone while the host isn't playing.
@@ -288,6 +305,8 @@ export class RegionLink {
   atom: AtomSink | null = null;
   /** The region's replays (M39 step 7): sees every message first, and takes the records it asked for. */
   replays: { message(m: RegionRoomMsg): boolean } | null = null;
+  /** A quick match (M43): see `MatchSink`. */
+  match: MatchSink | null = null;
   /**
    * The room's words about wars and treaties that came while a welcome was still being taken (the view
    * and the first report take a moment): they wait for it, because the welcome sets the lists they change.
@@ -347,6 +366,15 @@ export class RegionLink {
   /** A live battle's message to the region (M39): dropped while the link is down (the page asks again on its return). */
   sendLive(m: RegionClientMsg): void {
     if (this.state === 'in') this.send(m);
+  }
+
+  /** A quick match's word to the room (M43): dropped while the link is down. Whether it went. */
+  sendMatch(
+    m: Extract<RegionClientMsg, { t: 'mready' | 'mset' | 'mstart' | 'mnext' | 'mleave' | 'emote' | 'mchat' }>,
+  ): boolean {
+    if (this.state !== 'in' || !this.link) return false;
+    this.send(m);
+    return true;
   }
 
   /** A word about a war or a treaty to the region (M39): dropped while the link is down. Whether it went. */
@@ -428,6 +456,7 @@ export class RegionLink {
 
   private async receive(m: RegionRoomMsg): Promise<void> {
     if (this.replays?.message(m)) return;
+    if (this.match?.message(m)) return;
     switch (m.t) {
       case 'rwelcome':
         this.slot = m.slot;
@@ -754,6 +783,12 @@ export class RegionLink {
   /** The region's news into this city's sim. */
   private async take(view: RegionView): Promise<void> {
     this.view = view;
+    // A quick match's city stands alone (M43): the others are rivals, not neighbours it trades with.
+    if (this.match) {
+      this.match.view(view);
+      this.onChange?.();
+      return;
+    }
     if (this.slot) {
       const news = regionUpdateFor(view, this.slot, this.atWar);
       const update = this.city.command({ type: 'regionUpdate', update: news });
@@ -783,10 +818,14 @@ export class RegionLink {
     if (!last) for (const b of [...this.battlesWaiting.values()]) await this.takeBattle(b);
     if (!last) for (const o of [...this.opsWaiting.values()]) await this.takeOp(o);
     const now = performance.now();
-    const report = await this.city.report();
+    const raw = await this.city.report();
+    const report = this.match ? await this.match.extend(raw) : raw;
     // Leaving, the save goes first and no picture is drawn (a slow device could take seconds over
     // it, and the page is going): the region keeps the last one.
-    const thumb = !last && (force || now - this.lastThumb > 120_000) ? this.city.thumb?.() : null;
+    const thumb =
+      !last && (force || now - this.lastThumb > (this.opts.thumbEvery ?? 120_000))
+        ? this.city.thumb?.()
+        : null;
     if (thumb) this.lastThumb = now;
     this.send({ t: 'report', city: this.city.cityName(), report, ...(thumb ? { thumb } : {}) });
     if (force || now - this.lastSave > (this.opts.saveEvery ?? 300_000)) {
@@ -888,6 +927,54 @@ export function fetchCitySave(
           }
         };
         l.onclose = () => done(new Error('The region closed the connection'));
+        l.send(
+          JSON.stringify({
+            t: 'rhello',
+            v: PROTOCOL_VERSION,
+            mayor,
+            color: 0,
+            city: '',
+            visitor: true,
+          } satisfies RegionClientMsg),
+        );
+      },
+      (err: unknown) => done(err instanceof Error ? err : new Error(String(err))),
+    );
+  });
+}
+
+/**
+ * A region's view as a visitor sees it (M43: a quick match's settings, read before the player's city
+ * is founded on its seed). Rejects with the room's reason (no region, a newer version needed).
+ */
+export function fetchRegionView(
+  connect: () => Promise<Link>,
+  mayor: string,
+  timeoutMs = 20_000,
+): Promise<RegionView> {
+  return new Promise((resolve, reject) => {
+    let link: Link | null = null;
+    let over = false;
+    const timer = setTimeout(() => done(new Error('The match didn’t answer in time')), timeoutMs);
+    const done = (err: Error | null, view?: RegionView) => {
+      if (over) return;
+      over = true;
+      clearTimeout(timer);
+      link?.close();
+      if (err) reject(err);
+      else resolve(view!);
+    };
+    connect().then(
+      (l) => {
+        link = l;
+        if (over) return l.close();
+        l.onmessage = (t) => {
+          if (t === 'pong') return;
+          const m = JSON.parse(t) as RegionRoomMsg;
+          if (m.t === 'rwelcome') done(null, m.region);
+          else if (m.t === 'error') done(new Error(m.text));
+        };
+        l.onclose = () => done(new Error('The match closed the connection'));
         l.send(
           JSON.stringify({
             t: 'rhello',

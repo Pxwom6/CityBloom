@@ -6,14 +6,15 @@
  *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
  *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--owner-key key]`: it listens on this computer
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--test-matches] [--owner-key key]`: it listens on this computer
  * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
  * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
  * socket opened with `?create=1`, and their codes start with a digit, signalling's with a letter.
  * Rooms and regions nobody comes back to are forgotten after `--ttl` days (60), empty signalling at
  * once. `--atom-prep` shortens the region's wait before it keeps a friend's atom strike (20 minutes
- * online), for the end-to-end tests (M40 step 12); the Worker online has no such switch. It also
+ * online), for the end-to-end tests (M40 step 12), and `--test-matches` lets a quick match be one
+ * minute long (M43); the Worker online has neither switch. It also
  * serves the report desk and the owner area over plain HTTP (M41, `relay/reportsHttp.ts`), with the
  * owner key from `--owner-key` or OWNER_KEY; reports are kept in memory, or under `--data`.
  */
@@ -367,7 +368,10 @@ if (process.argv[1]?.endsWith('local.ts')) {
     strict: true,
     host,
     ...(days ? { ttl: Number(days) * DAY_MS } : {}),
-    ...(prep ? { regionLimits: { atomPrep: Number(prep) * 1000 } } : {}),
+    regionLimits: {
+      ...(prep ? { atomPrep: Number(prep) * 1000 } : {}),
+      ...(args.includes('--test-matches') ? { testMatches: true } : {}),
+    },
     ...(ownerKey ? { ownerKey } : {}),
   }).then((r) => {
     console.log(

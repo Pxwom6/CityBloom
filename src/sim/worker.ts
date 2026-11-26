@@ -48,6 +48,13 @@ let perfWindowStart = performance.now();
 let perfWindowTicks = 0;
 let perfWindowMax = 0;
 
+/**
+ * A quick match's clock (M43): when it started (this worker's performance clock) and the tick it ends
+ * at. The city runs towards the tick the time allows at the match speed; `stopAt` holds it.
+ */
+let match: { start: number; end: number } | null = null;
+const MATCH_TPS = SPEED_TICKS_PER_SECOND[3];
+
 /** The room's runner while the city is shared, and who this machine is. */
 let lockstep: Lockstep | null = null;
 let player = 0;
@@ -107,6 +114,20 @@ function runShared(elapsed: number): void {
     }
 }
 
+/**
+ * A quick match: run up to the tick the time since the start allows, never past it or the end, and
+ * catch up (a slow device, a background tab) as fast as the time budget lets.
+ */
+function runMatch(m: { start: number; end: number }): void {
+  if (!sim) return;
+  const t0 = performance.now();
+  const target = Math.min(m.end, Math.floor(((t0 - m.start) * MATCH_TPS) / 1000));
+  const behind = target - sim.tick;
+  bulk = behind > Math.max(BULK_BEHIND, MATCH_TPS * BULK_SECONDS);
+  const budget = bulk ? BULK_BUDGET_MS : SHARED_BUDGET_MS;
+  while (sim.tick < target && performance.now() - t0 < budget) timeTick(() => sim!.step());
+}
+
 function flush(): void {
   if (!sim) return;
   const now = performance.now();
@@ -123,7 +144,9 @@ function flush(): void {
   }
   if (lockstep) perf.behind = lockstep.behind;
   else delete perf.behind;
-  post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
+  // A quick match's city runs at the match speed between its start and its end (M43), whatever was chosen.
+  const shown: Speed = match ? (now >= match.start && sim.tick < match.end ? 3 : 0) : speed;
+  post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed: shown });
 }
 
 /**
@@ -158,6 +181,7 @@ function step(): void {
   const elapsed = Math.min(250, now - last);
   last = now;
   if (lockstep) runShared(elapsed);
+  else if (match) runMatch(match);
   else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);
@@ -173,9 +197,10 @@ function step(): void {
   // Far behind, the page hears every BULK_FRAME_MS; the frame then carries everything since. A
   // paused city on its own (M49) tells the page only after a message or every IDLE_FRAME_MS: its
   // frames were empty, but each one woke the page's interface (a phone's battery).
-  const tell = lockstep
-    ? !bulk || now - lastFrameAt >= BULK_FRAME_MS
-    : speed > 0 || wake || now - lastFrameAt >= IDLE_FRAME_MS;
+  const tell =
+    lockstep || match
+      ? !bulk || now - lastFrameAt >= BULK_FRAME_MS
+      : speed > 0 || wake || now - lastFrameAt >= IDLE_FRAME_MS;
   if (sim && tell) {
     lastFrameAt = now;
     wake = false;
@@ -221,6 +246,7 @@ function handle(msg: MainToWorker): void {
   switch (msg.type) {
     case 'init': {
       lockstep = null;
+      match = null;
       player = 0;
       desyncLog.clear();
       sim = Sim.create(msg.options, msg.map ?? null);
@@ -234,6 +260,7 @@ function handle(msg: MainToWorker): void {
     }
     case 'load':
       lockstep = null;
+      match = null;
       player = 0;
       origin = null;
       desyncLog.clear();
@@ -377,6 +404,12 @@ function handle(msg: MainToWorker): void {
     case 'setSpeed':
       speed = msg.speed;
       due = 0;
+      break;
+    case 'matchClock':
+      if ('off' in msg) match = null;
+      else if ('stop' in msg) match = sim ? { start: -Infinity, end: sim.tick } : null;
+      else match = { start: performance.now() + msg.startIn, end: msg.endTick };
+      bulk = false;
       break;
     case 'advance':
       if (!sim) return;

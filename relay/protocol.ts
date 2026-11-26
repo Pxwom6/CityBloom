@@ -30,15 +30,20 @@ import type { Term } from '../src/data/diplomacy';
  * winter's reach (`winters`) and the first finisher (`atomFirst`); fallout between friends (the
  * report's plume); and a strike on a friend (`op: 'atom'`). A page on 5 or 6 can neither race nor be
  * struck, and every refusal says so; it is sent none of the new events, lists or messages.
+ * 8: quick matches (M43): a region made with `create.match`, the match in its view, and `mready`,
+ * `mset`, `mstart`, `mnext`, `mleave`, `emote`, `mchat` and the room's `mscores`, `memote`, `mchat`. A
+ * match region turns away a page below 8; an ordinary region still takes 5 to 8.
  * A room (a shared city) is stricter: every player runs the same sim.
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 /** The oldest page a region still serves (no live battles for it). */
 export const MIN_REGION_PROTOCOL = 5;
 /** The first protocol with live battles. */
 export const LIVE_PROTOCOL = 6;
 /** The first protocol with the atom bomb (M40): races, strikes, winters and fallout between friends. */
 export const ATOM_PROTOCOL = 7;
+/** The first protocol with quick matches (M43). */
+export const MATCH_PROTOCOL = 8;
 export const MAX_PLAYERS = 8;
 /** Room codes: no look-alike characters (no I, L, O, 0 or 1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

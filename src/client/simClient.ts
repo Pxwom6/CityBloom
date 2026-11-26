@@ -131,6 +131,14 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'query', id, q }));
   }
 
+  /** A quick match's clock (M43): see the worker's `matchClock`. */
+  matchClock(clock: { startIn: number; endTick: number } | 'stop' | 'off'): void {
+    this.post({
+      type: 'matchClock',
+      ...(clock === 'stop' ? { stop: true as const } : clock === 'off' ? { off: true as const } : clock),
+    });
+  }
+
   setSpeed(speed: Speed): void {
     this.post({ type: 'setSpeed', speed });
   }

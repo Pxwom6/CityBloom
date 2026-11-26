@@ -47,6 +47,7 @@ import {
   LIVE,
   LIVE_PROTOCOL,
   MAX_SNAPSHOT_PARTS,
+  MATCH_PROTOCOL,
   MIN_REGION_PROTOCOL,
   PLAYER_COLORS,
   PROTOCOL_VERSION,
@@ -81,6 +82,27 @@ import {
   type LiveSide,
 } from './live';
 import type { RoomEnv } from './room';
+import {
+  autoStartDue,
+  clockPhase,
+  decideMatch,
+  finalDue,
+  finishMatch,
+  inPlay,
+  matchRows,
+  matchView,
+  newMatch,
+  playerOf,
+  raceWon,
+  readReport,
+  rematch,
+  startMatch,
+  startRefusal,
+  type MatchRow,
+  type MatchState,
+  type MatchView,
+} from './match';
+import { MATCH, cleanMatchSettings, matchSeed, type MatchSettings } from '../src/data/match';
 
 export type { LiveEnd, LiveOrder, LiveOrderIn, LiveRecord, LiveSide } from './live';
 export type { FriendsClientMsg, FriendsRoomMsg, FriendsWelcome } from './protocol';
@@ -170,6 +192,8 @@ export interface RegionView {
   host: number;
   /** War in the region (M34): on or off, and the largest scale; set by the host. */
   rules: RegionWarRules;
+  /** A quick match (M43, protocol 8): its settings, its clock and, once decided, its result. */
+  match?: MatchView;
 }
 
 export type RegionClientMsg =
@@ -179,13 +203,28 @@ export type RegionClientMsg =
       mayor: string;
       color: number;
       city: string;
-      create?: { name: string; rules?: RegionWarRules };
+      /** `match` (M43): the region is a quick match with these settings (war is never on in one). */
+      create?: { name: string; rules?: RegionWarRules; match?: MatchSettings };
       rejoin?: { slot: number; secret: string };
       /** Just looking (a visitor reading a city): no slot. */
       visitor?: boolean;
     }
   | { t: 'report'; city: string; report: RegionReport; thumb?: string }
   | { t: 'contribute'; amount: number }
+  /**
+   * A quick match (M43, protocol 8): the city is founded on this round's seed (`mready`); the host
+   * changes the settings in the lobby (`mset`: not the map), starts it (`mstart`) or, once it's over,
+   * asks for a rematch on a new seed (`mnext`, with any changes); a player leaves it (`mleave`: out,
+   * the match goes on); a fixed emote (an index into `MATCH.emotes`) or, if the host allows, a line of
+   * chat.
+   */
+  | { t: 'mready'; round: number }
+  | { t: 'mset'; settings: MatchSettings }
+  | { t: 'mstart' }
+  | { t: 'mnext'; settings?: MatchSettings }
+  | { t: 'mleave' }
+  | { t: 'emote'; e: number }
+  | { t: 'mchat'; text: string }
   /** A save for visitors; `last` marks the one a city sends as its player leaves. */
   | { t: 'save'; id: string; part: number; parts: number; data: string; last?: true }
   | { t: 'visit'; slot: number }
@@ -288,6 +327,14 @@ export type RegionRoomMsg =
       winters?: RegionWinter[];
     }
   | { t: 'region'; region: RegionView }
+  /**
+   * A quick match's score line (M43): each city's last counted figures (the pages work out the scores
+   * with `matchScore`), sent as reports come in instead of the whole view; an emote, or a line of chat
+   * (only when the host allows it), from a city.
+   */
+  | { t: 'mscores'; round: number; rows: MatchRow[] }
+  | { t: 'memote'; from: number; e: number }
+  | { t: 'mchat'; from: number; text: string }
   /**
    * The atom bomb's record grew (M40, protocol 7): the whole list, replacing the page's. A winter
    * began that chills this city: its whole list (each id applied once, a repeat changes nothing). The
@@ -583,6 +630,8 @@ export interface RegionMeta {
   atoms?: RegionAtomMark[];
   /** The winters bombs have brought, kept for good (M40): at most `ATOM_WINTERS_PER_CITY` for each city. */
   winters?: RegionWinter[];
+  /** A quick match (M43): the region is one, and this is where it stands. */
+  match?: MatchState;
   /** When the record was last saved (ms): the region expires a while after (F8). */
   lastActive?: number;
   /** Rows written today (F8). */
@@ -677,6 +726,8 @@ export interface RegionLimits {
    */
   atomPrep: number;
   atomPerDay: number;
+  /** Test builds' relay: a quick match may be one minute long (M43). */
+  testMatches?: boolean;
   /** Rows the region may write in a UTC day. */
   dailyRows: number;
   /** How long a region nobody comes back to is kept (ms). */
@@ -780,6 +831,9 @@ function cleanReport(r: unknown): RegionReport | null {
       finite(m.treasury, -1e10, 1e10) &&
       finite(m.assets, -1e10, 1e10) &&
       finite(m.approval, 0, 100) &&
+      (m.round === undefined || wholeIn(m.round, 0, 1e6)) &&
+      (m.reached === undefined || (wholeIn(m.reached, 0, 1e9) && m.reached <= (m.tick as number))) &&
+      (m.final === undefined || m.final === true) &&
       (m.hash === undefined || (typeof m.hash === 'string' && /^[\w:.-]{1,80}$/.test(m.hash)))
     )
   )
@@ -818,6 +872,9 @@ function cleanReport(r: unknown): RegionReport | null {
             treasury: Math.round(m.treasury as number),
             assets: Math.round(m.assets as number),
             approval: Math.round(m.approval as number),
+            ...(m.round !== undefined ? { round: m.round as number } : {}),
+            ...(m.reached !== undefined ? { reached: m.reached as number } : {}),
+            ...(m.final === true ? { final: true as const } : {}),
             ...(m.hash !== undefined ? { hash: m.hash as string } : {}),
           },
         }
@@ -845,6 +902,12 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
         const c = m.create as Record<string, unknown>;
         if (typeof c?.name !== 'string') return null;
         out.create = { name: cleanCityName(c.name) };
+        if (c.match !== undefined) {
+          // One-minute matches are refused by the room unless it runs for tests.
+          const match = cleanMatchSettings(c.match, true);
+          if (!match) return null;
+          out.create.match = match;
+        }
         if (c.rules !== undefined) {
           const rules = cleanWarRules(c.rules);
           if (!rules) return null;
@@ -876,6 +939,27 @@ export function parseRegionMsg(raw: string): RegionClientMsg | null {
     }
     case 'contribute':
       return finite(m.amount, 1, 1e8) ? { t: 'contribute', amount: Math.round(m.amount as number) } : null;
+    case 'mready':
+      return wholeIn(m.round, 1, 1e6) ? { t: 'mready', round: m.round as number } : null;
+    case 'mset': {
+      const settings = cleanMatchSettings(m.settings, true);
+      return settings ? { t: 'mset', settings } : null;
+    }
+    case 'mstart':
+      return { t: 'mstart' };
+    case 'mnext': {
+      if (m.settings === undefined) return { t: 'mnext' };
+      const settings = cleanMatchSettings(m.settings, true);
+      return settings ? { t: 'mnext', settings } : null;
+    }
+    case 'mleave':
+      return { t: 'mleave' };
+    case 'emote':
+      return wholeIn(m.e, 0, MATCH.emotes.length - 1) ? { t: 'emote', e: m.e as number } : null;
+    case 'mchat': {
+      const text = cleanChat(m.text);
+      return text ? { t: 'mchat', text } : null;
+    }
     case 'save':
       if (
         typeof m.id !== 'string' ||
@@ -1121,6 +1205,11 @@ interface LiveRun {
 }
 
 /** What a page says in a live battle (M39). */
+/** A quick match's messages (M43): ignored in an ordinary region. */
+const MATCH_MESSAGES = new Set<string>(['mready', 'mset', 'mstart', 'mnext', 'mleave', 'emote', 'mchat']);
+/** What a match city may still send of an ordinary region's messages (the rest, war and the project, isn't for one). */
+const MATCH_ALSO = new Set<string>(['save']);
+
 const LIVE_MESSAGES = new Set<string>([
   'blive',
   'binput',
@@ -1263,6 +1352,11 @@ export class RegionRoom {
     this.sweep(this.env.now());
     if (!st?.slot) return;
     if (!this.online(st.slot)) this.incoming.delete(st.slot);
+    // A quick match (M43): a host who has gone hands over; the clock may have something to do.
+    if (this.meta?.match && !this.online(st.slot)) {
+      this.handOver(st.slot);
+      this.advanceMatch(this.env.now());
+    }
     // A city leaving: what's changed is written now, not left to a timer that may never run.
     if (this.dirty) this.save(this.conns.size ? 'change' : 'empty');
     this.broadcast();
@@ -1407,6 +1501,7 @@ export class RegionRoom {
       },
       host: m.host ?? 1,
       rules: { ...(m.rules ?? PEACE_RULES) },
+      ...(m.match ? { match: matchView(m.match, now) } : {}),
     };
   }
 
@@ -1629,7 +1724,10 @@ export class RegionRoom {
   message(conn: RegionConn, raw: string): void {
     // The room has no timers: a silent combatant, an unanswered call or an abandoned battle is
     // noticed when anything reaches it, a ping included (M39).
-    if (raw === 'ping') return this.sweep(this.env.now(), this.conns.get(conn)?.slot);
+    if (raw === 'ping') {
+      this.sweep(this.env.now(), this.conns.get(conn)?.slot);
+      return this.advanceMatch(this.env.now());
+    }
     if (this.shut) {
       conn.send({ t: 'error', code: 'closed', text: this.shut });
       return conn.close(1000, 'closed');
@@ -1639,6 +1737,7 @@ export class RegionRoom {
     // A burst is fine, a flood is dropped, a torrent closes the connection.
     const now = this.env.now();
     this.sweep(now, st.slot);
+    this.advanceMatch(now);
     const left = st.all.spend(now);
     if (left < -this.limits.burst) return this.reject(conn, 'rate', 'Too many messages');
     if (left < 0) return;
@@ -1675,6 +1774,10 @@ export class RegionRoom {
     if (st.v < LIVE_PROTOCOL && LIVE_MESSAGES.has(m.t) && m.t !== 'blive') return;
     // Likewise wars and treaties with friends: a protocol-5 page doesn't know them.
     if (st.v < LIVE_PROTOCOL && FRIEND_MESSAGES.has(m.t)) return;
+    // A quick match (M43): its own messages and reports; nothing of war or the region's project.
+    if (this.meta.match) {
+      if (!MATCH_ALSO.has(m.t)) return this.matchMessage(city, m, now);
+    } else if (MATCH_MESSAGES.has(m.t)) return;
     switch (m.t) {
       case 'report': {
         // Every report goes to the others at once; only deals and the like are written promptly, the
@@ -1972,7 +2075,11 @@ export class RegionRoom {
         // save a city sends as its player leaves is kept whatever the pace, once a connection: in a
         // region at war, a raid on an absent friend is fought in the city as it was left (M35).
         if (m.last && !st.lastUsed && (st.lastSave ?? m.id) === m.id) st.lastSave = m.id;
-        else if (city.savedAt !== undefined && now - city.savedAt < this.limits.saveEvery) return;
+        else if (
+          city.savedAt !== undefined &&
+          now - city.savedAt < (this.meta.match ? MATCH.saveMs : this.limits.saveEvery)
+        )
+          return;
         let inc = this.incoming.get(slot);
         if (!inc || inc.id !== m.id)
           this.incoming.set(
@@ -1990,7 +2097,9 @@ export class RegionRoom {
         const first = !city.saved;
         city.saved = true;
         city.savedAt = now;
-        this.save();
+        // A match's peeks come every couple of minutes (M43): the record only learns of the first.
+        if (first || !this.meta.match) this.save();
+        else this.dirty = true;
         if (first) this.broadcast();
         return;
       }
@@ -2007,6 +2116,11 @@ export class RegionRoom {
         'This region runs a different version of Citybloom: reload to update',
       );
     st.v = m.v;
+    // A quick match (M43) is for pages that speak it.
+    if (m.v < MATCH_PROTOCOL && (m.create?.match || this.meta?.match))
+      return this.reject(conn, 'version', 'This quick match needs a newer Citybloom: reload to update');
+    if (m.create?.match?.minutes === MATCH.testMinutes && !this.limits.testMatches)
+      return this.reject(conn, 'bad-message', 'A match lasts 15, 20 or 30 minutes');
     if (m.create) {
       if (conn.mayCreate === false)
         return this.reject(conn, 'version', 'Making a region needs a newer Citybloom: reload to update');
@@ -2018,9 +2132,11 @@ export class RegionRoom {
         nextSlot: 1,
         cities: [],
         project: { total: 0, by: {}, host: 0, built: false },
-        // The city making it is its first and its host (M34); war only if it asked for it.
+        // The city making it is its first and its host (M34); war only if it asked for it, and
+        // never in a quick match (M43).
         host: 1,
-        ...(m.create.rules?.war ? { rules: m.create.rules } : {}),
+        ...(m.create.rules?.war && !m.create.match ? { rules: m.create.rules } : {}),
+        ...(m.create.match ? { match: newMatch(m.create.match) } : {}),
       };
     }
     if (!this.meta) return this.reject(conn, 'no-region', 'No region with that code');
@@ -2041,6 +2157,8 @@ export class RegionRoom {
           'full',
           `This region is full: it has places for ${MAX_CITIES} cities, and each keeps its place while its mayor is away`,
         );
+      if (this.meta.match && this.meta.match.phase !== 'lobby')
+        return this.reject(conn, 'full', 'This match has already started: ask for a place in the next one');
       if (this.budget.over(now)) return this.reject(conn, 'limit', dailyLimitText('region'));
       write = 'new';
       city = {
@@ -2065,6 +2183,8 @@ export class RegionRoom {
     city.heard = now;
     st.slot = city.slot;
     conn.bind?.(city.slot, m.v);
+    // A quick match (M43): the city is a player of it (founding until it says it's ready).
+    if (this.meta.match) playerOf(this.meta.match, city.slot);
     // A new city is written at once (four at most, ever); a change at the city's pace.
     if (write === 'new') this.save();
     else if (write === 'changed') this.changed(city.slot);
@@ -2122,6 +2242,234 @@ export class RegionRoom {
     // Proposals for it to answer and treaties it hasn't applied, oldest first.
     for (const msg of friends?.after ?? []) conn.send(msg);
     this.broadcast();
+  }
+
+  // ---- Quick matches (M43) ---------------------------------------------------------------------
+  // The room keeps the clock and decides; `relay/match.ts` holds the rules. Phase changes are written
+  // at once (a handful a match), figures with the rest now and then; a timer (where the room has one)
+  // moves the clock at the start, the end and the wait for last reports, and so does every message.
+
+  private matchTimerAt = 0;
+  private matchTimerOff: (() => void) | null = null;
+
+  /**
+   * A copy of the region's record (M43): a peer-to-peer host's page keeps it across the reload a
+   * rematch makes, and opens the region again from it, places and secrets and all.
+   */
+  record(): RegionMeta | null {
+    return this.meta ? (JSON.parse(JSON.stringify(this.meta)) as RegionMeta) : null;
+  }
+
+  /** Move a match's clock on now (tests; a timer calls it too). */
+  poke(): void {
+    this.advanceMatch(this.env.now());
+  }
+
+  private matchCities() {
+    return this.meta!.cities.map((c) => ({
+      slot: c.slot,
+      name: c.name,
+      mayor: c.mayor,
+      color: c.color,
+      online: this.online(c.slot),
+    }));
+  }
+
+  private advanceMatch(now: number): void {
+    const m = this.meta?.match;
+    if (!m) return;
+    const online = (slot: number) => this.online(slot);
+    let changed = false;
+    if (autoStartDue(m, online)) {
+      startMatch(m, now, online);
+      changed = true;
+    }
+    if (clockPhase(m, now) === 'start') {
+      m.phase = 'playing';
+      changed = true;
+    }
+    if (clockPhase(m, now) === 'time') {
+      finishMatch(m, 'time', now);
+      changed = true;
+    }
+    if (raceWon(m)) {
+      finishMatch(m, 'race', now);
+      changed = true;
+    }
+    if ((m.phase === 'playing' || m.phase === 'countdown') && inPlay(m).length <= 1) {
+      finishMatch(m, 'alone', now);
+      changed = true;
+    }
+    if (finalDue(m, now, online)) {
+      const r = decideMatch(m, this.matchCities());
+      const w = r.rows.find((x) => x.slot === r.winner);
+      this.toAll({ t: 'notice', text: w ? `${w.name} won the match` : 'The match is over' });
+      changed = true;
+    }
+    if (changed) {
+      this.save();
+      this.broadcast();
+    }
+    this.matchTimer(now);
+  }
+
+  /** One timer for the clock's next moment (the start, the end, the end of the wait for last reports). */
+  private matchTimer(now: number): void {
+    const m = this.meta?.match;
+    const later = this.env.later;
+    if (!m || !later) return;
+    const due =
+      m.phase === 'countdown'
+        ? m.startAt
+        : m.phase === 'playing'
+          ? m.endsAt
+          : m.phase === 'final'
+            ? (m.finalAt ?? now) + MATCH.finalWaitMs
+            : undefined;
+    if (due === undefined) {
+      this.matchTimerOff?.();
+      this.matchTimerOff = null;
+      return;
+    }
+    if (this.matchTimerOff && this.matchTimerAt === due) return;
+    this.matchTimerOff?.();
+    this.matchTimerAt = due;
+    // (A timer may fire a moment early by the clock it's read against: the moment it was set for.)
+    this.matchTimerOff = later(Math.max(0, due - now), () => {
+      this.matchTimerOff = null;
+      this.advanceMatch(Math.max(this.env.now(), due));
+    });
+  }
+
+  private toAll(msg: RegionRoomMsg): void {
+    for (const c of this.conns.keys()) c.send(msg);
+  }
+
+  /** The host (online) has gone or left the match: the next city still in it, here, takes over. */
+  private handOver(gone: number): void {
+    const meta = this.meta!;
+    const m = meta.match!;
+    if ((meta.host ?? 1) !== gone || meta.kind === 'p2p') return;
+    const next = meta.cities
+      .filter((c) => c.slot !== gone && this.online(c.slot) && !m.players.find((p) => p.slot === c.slot)?.out)
+      .sort((a, b) => a.slot - b.slot)[0];
+    if (!next) return;
+    meta.host = next.slot;
+    this.toAll({ t: 'notice', text: `${next.name} is the host now` });
+    this.changed(next.slot);
+    this.broadcast();
+  }
+
+  /** A city leaves a lobby: it isn't in this match at all (its place is free for someone else). */
+  private dropCity(slot: number): void {
+    const meta = this.meta!;
+    meta.cities = meta.cities.filter((c) => c.slot !== slot);
+    meta.match!.players = meta.match!.players.filter((p) => p.slot !== slot);
+  }
+
+  private matchMessage(city: City, m: RegionClientMsg, now: number): void {
+    const match = this.meta!.match!;
+    const slot = city.slot;
+    const isHost = slot === (this.meta!.host ?? 1);
+    switch (m.t) {
+      case 'report': {
+        const first = city.report === null;
+        const renamed = city.name !== m.city;
+        const newThumb = !!m.thumb && m.thumb !== city.thumb;
+        delete m.report.atom;
+        city.name = m.city;
+        city.report = m.report;
+        if (m.thumb) city.thumb = m.thumb;
+        const counted = m.report.match
+          ? readReport(match, slot, m.report.population, m.report.match, now)
+          : false;
+        this.dirty = true;
+        // The whole view (with pictures) only when something in it changed beyond the figures; the
+        // counted figures go as a score line (the view's reports aren't checked against the clock).
+        if (first || renamed || newThumb) this.broadcast();
+        if (counted) this.toAll({ t: 'mscores', round: match.round, rows: matchRows(match) });
+        this.advanceMatch(now);
+        if (this.dirty && now - this.lastSaved >= this.limits.keepEvery) this.save();
+        return;
+      }
+      case 'mready': {
+        if (match.phase !== 'lobby' || m.round !== match.round) return;
+        const p = playerOf(match, slot);
+        if (p.ready) return;
+        p.ready = true;
+        this.changed(slot);
+        this.broadcast();
+        this.advanceMatch(now);
+        return;
+      }
+      case 'mset': {
+        if (!isHost || match.phase !== 'lobby') return;
+        if (m.settings.minutes === MATCH.testMinutes && !this.limits.testMatches) return;
+        // The map stays the one every city was founded on.
+        match.settings = { ...m.settings, seed: match.settings.seed, preset: match.settings.preset };
+        this.changed(slot);
+        this.broadcast();
+        return;
+      }
+      case 'mstart': {
+        if (!isHost) return;
+        const online = (s: number) => this.online(s);
+        const why = startRefusal(match, online);
+        if (why) {
+          for (const [c, st] of this.conns) if (st.slot === slot) c.send({ t: 'notice', text: why });
+          return;
+        }
+        startMatch(match, now, online);
+        this.save();
+        this.broadcast();
+        this.advanceMatch(now);
+        return;
+      }
+      case 'mnext': {
+        if (!isHost || match.phase !== 'over') return;
+        const want = m.settings ?? match.settings;
+        if (want.minutes === MATCH.testMinutes && !this.limits.testMatches) return;
+        const seed = matchSeed(() => secureIndex(1_000_000) / 1_000_000);
+        const dropped = rematch(match, { ...want, seed }, (s) => this.online(s));
+        for (const s of dropped) this.dropCity(s);
+        // Each city here starts again: its report, picture and save are its old city's.
+        for (const c of this.meta!.cities) {
+          c.report = null;
+          c.thumb = null;
+          delete c.saved;
+          delete c.savedAt;
+        }
+        this.save();
+        this.broadcast();
+        return;
+      }
+      case 'mleave': {
+        const p = match.players.find((x) => x.slot === slot);
+        if (!p || p.out) return;
+        if (match.phase === 'lobby') this.dropCity(slot);
+        else if (match.phase !== 'over') p.out = true;
+        this.toAll({ t: 'notice', text: `${city.name} left the match` });
+        this.handOver(slot);
+        this.changed(slot);
+        this.broadcast();
+        this.advanceMatch(now);
+        return;
+      }
+      case 'emote':
+      case 'mchat': {
+        if (m.t === 'mchat' && !match.settings.chat) return;
+        const p = playerOf(match, slot);
+        if (p.said !== undefined && now - p.said < MATCH.emoteEveryMs) return;
+        p.said = now;
+        this.toAll(
+          m.t === 'emote' ? { t: 'memote', from: slot, e: m.e } : { t: 'mchat', from: slot, text: m.text },
+        );
+        return;
+      }
+      default:
+        // War, raids, spies and the region's project are not for a match.
+        return;
+    }
   }
 
   // ---- The atom bomb (M40, design calls 16 and 17) ---------------------------------------------

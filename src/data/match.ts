@@ -46,7 +46,7 @@ export const MATCH = {
   /** How often a match city reports (ms), sends its picture (ms) and a save to look round (ms). */
   reportMs: 5_000,
   thumbMs: 60_000,
-  saveMs: 60_000,
+  saveMs: 120_000,
   /** Game ticks a city may run ahead of the match's clock and still be counted (a slow message). */
   slackTicks: 240,
   /** Score samples kept per city for the results chart. */
@@ -165,6 +165,23 @@ export function matchScore(mode: MatchMode, f: MatchFigures, s: Pick<MatchSettin
       return Math.round(
         (pop / 1000) * 10 + (pop >= s.minPop ? f.approval : 0) * 10 + (matchMoney(f) / 10_000) * 10,
       );
+  }
+}
+
+/**
+ * What the results chart draws for a city in a mode: Race its population, Rich list its money, Happy
+ * town its approval (nothing below the minimum population), Mixed its points.
+ */
+export function matchValue(mode: MatchMode, f: MatchFigures, s: Pick<MatchSettings, 'minPop'>): number {
+  switch (mode) {
+    case 'race':
+      return Math.max(0, f.population);
+    case 'rich':
+      return Math.round(matchMoney(f));
+    case 'happy':
+      return f.population >= s.minPop ? f.approval : 0;
+    case 'mixed':
+      return matchScore('mixed', f, s) / 10;
   }
 }
 

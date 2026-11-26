@@ -30,6 +30,7 @@ import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
 import { loadProfile, regionRejoin, storedProfile } from './client/profile';
 import { askName } from './ui/JoinPrompt';
+import { planMatch, type MatchPlan } from './client/matchBoot';
 import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
@@ -220,6 +221,32 @@ async function boot(): Promise<void> {
       },
     );
   }
+  // A quick match (M43): the settings (from the Quick match screen, or read from the match's region)
+  // and the city to found on its seed.
+  let matchPlan: MatchPlan | null = null;
+  let matchError: string | null = null;
+  if (params.has('match')) {
+    const boot = document.getElementById('boot');
+    if (!storedProfile() && boot && params.get('match') !== 'new')
+      await askName(boot, 'Join a quick match', loadProfile());
+    const url = relayUrl();
+    matchPlan = await planMatch(
+      params,
+      IS_TEST_BUILD,
+      loadProfile().name,
+      ({ code, key }) =>
+        codeKind(code) === 'online'
+          ? () =>
+              url
+                ? webSocketLink(`${url}/region/${code}`)
+                : Promise.reject(new Error('Online matches aren’t set up'))
+          : () => p2pConnect(code, key!, signalling()),
+      bootStatus,
+    ).catch((err: unknown) => {
+      matchError = `That match couldn’t be opened: ${err instanceof Error ? err.message : String(err)}`;
+      return null;
+    });
+  }
   // Watching a battle fought in a neighbour's town (M35): its record and the town it was fought in.
   const battleId = params.get('battle');
   const battleRecord = battleId ? await loadBattle(battleId).catch(() => null) : null;
@@ -236,6 +263,7 @@ async function boot(): Promise<void> {
     'visit',
     'battle',
     'lesson',
+    'match',
   ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
@@ -246,7 +274,7 @@ async function boot(): Promise<void> {
   };
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
-  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : visitError;
+  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : (visitError ?? matchError);
   if (joinInvite && !joinError) {
     // A friend arriving for the first time picks the name the others will see (F12).
     const boot = document.getElementById('boot');
@@ -316,23 +344,25 @@ async function boot(): Promise<void> {
   const save = !menu && opened ? found : null;
   const snap = joined
     ? joined.snap
-    : editing
-      ? await client.init(
-          {
-            editor: true,
-            seed: editing.map.seed,
-            preset: editing.map.preset,
-            cityName: editing.map.name,
-            sandbox: true,
-            disasters: false,
-            elections: false,
-            region: false,
-          },
-          IS_TEST_BUILD,
-          editing.map,
-        )
-      : opened ||
-        (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
+    : matchPlan
+      ? await client.init(matchPlan.options, IS_TEST_BUILD)
+      : editing
+        ? await client.init(
+            {
+              editor: true,
+              seed: editing.map.seed,
+              preset: editing.map.preset,
+              cityName: editing.map.name,
+              sandbox: true,
+              disasters: false,
+              elections: false,
+              region: false,
+            },
+            IS_TEST_BUILD,
+            editing.map,
+          )
+        : opened ||
+          (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   if (joined || visited) bootStatus('Building the scene…');
   const world = new ClientWorld(snap);
   await models;
@@ -386,6 +416,23 @@ async function boot(): Promise<void> {
     game.setCamera('overview', true);
     game.toast(`You joined ${world.stats.cityName}.`, 'ok', 5000);
     history.replaceState(null, '', location.pathname);
+  } else if (matchPlan) {
+    // A quick match (M43): the city waits on the match's clock; a reload goes back to the main menu.
+    const plan = matchPlan;
+    game.match.begin({ invite: plan.invite ?? '', kind: plan.kind, round: plan.round, city: plan.city });
+    game.setCamera('overview', true);
+    history.replaceState(null, '', location.pathname);
+    void (async () => {
+      const ok = plan.host
+        ? await game.hostMatch(
+            plan.kind,
+            plan.settings,
+            plan.rejoin && plan.invite ? { invite: plan.invite, ...plan.rejoin, hub: plan.hub } : undefined,
+          )
+        : await game.joinMatch(plan.invite!, plan.rejoin ?? null);
+      if (ok && !plan.invite) game.match.invite = game.matchInvite();
+      if (!ok) setTimeout(() => location.replace(location.pathname), 4000);
+    })();
   } else if (menu || joinError) {
     game.mode = 'menu';
     game.openScreen('main');

@@ -659,6 +659,13 @@ export interface MatchReport {
   treasury: number;
   assets: number;
   approval: number;
+  /**
+   * Added by the page, never the sim: the match's round the city was founded for, the tick it first
+   * had Race's target population, `final` on the report it sends as the match ends, with its state hash.
+   */
+  round?: number;
+  reached?: number;
+  final?: true;
   hash?: string;
 }
 

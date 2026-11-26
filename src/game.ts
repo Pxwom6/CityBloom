@@ -66,7 +66,7 @@ import {
 } from './net/regionLink';
 import { P2PHost, p2pConnect, wallClock } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
-import { RegionRoom, MemoryRegionStore } from '../relay/region';
+import { RegionRoom, MemoryRegionStore, type RegionMeta } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps, resolveOp } from './client/ops';
@@ -74,6 +74,8 @@ import { AtomRegion } from './client/atomRegion';
 import { AtomUi, type WarTab } from './client/atomUi';
 import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
+import { MatchClient, saveMatchSession, type MatchSession } from './client/matchClient';
+import { MATCH, type MatchSettings } from './data/match';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
 import { BUILD_ID, IS_TEST_BUILD } from './config';
 import { isIOS } from './client/platform';
@@ -340,6 +342,8 @@ export class Game {
       // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
       const ops = diff.stats.war?.intel?.regionOps;
       if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
+      // A quick match (M43): the clock on screen, Race's target, the timer's end.
+      if (!this.inMenu() && !this.readOnly) this.match.frame(diff.stats.tick, diff.stats.population);
       // The city's own race for the atom bomb (M40): the region hears when its stage changes.
       if (!this.inMenu() && !this.readOnly && !this.net) this.atomRegion.frame(diff.stats.war?.atom?.stage);
       const sel = this.selected;
@@ -415,6 +419,9 @@ export class Game {
         ok: false,
         reason: 'You’re visiting a neighbour’s city: nothing can be changed here',
       });
+    // A quick match's city is built only while the match plays (M43).
+    const matchWhy = this.match.refusal();
+    if (matchWhy) return Promise.resolve({ ok: false, reason: matchWhy });
     // In a shared city the room orders every command, so all the players' games apply it alike;
     // until it comes back its outline shows as pending (M31).
     if (!this.net) return this.client.command(cmd);
@@ -576,6 +583,8 @@ export class Game {
     return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
   }
   private regionHost: P2PHost | null = null;
+  /** The region a peer-to-peer host's browser runs (M43: its record goes with a rematch's reload). */
+  private regionHub: RegionRoom | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
   /** Problem reports (M41): the page's reporter, set at boot (null in tests that make a Game alone). */
@@ -741,6 +750,22 @@ export class Game {
     keepTown,
     keepBattle,
     changed: () => this.notify(),
+  });
+  /**
+   * A quick match (M43): the match as the region room tells it, the city's clock, the scoreboard, and
+   * the rematch's reload into the next round.
+   */
+  readonly match: MatchClient = new MatchClient({
+    matchClock: (c) => this.client.matchClock(c),
+    hash: () => this.client.query<string>({ type: 'hash' }),
+    tick: () => this.world.stats.tick,
+    population: () => this.world.stats.population,
+    // The speed buttons show the match's speed while it plays (the player can't change it).
+    showSpeed: (playing) => {
+      this.speed = playing ? MATCH.speed : 0;
+    },
+    notify: () => this.notify(),
+    rematch: (next) => this.toNextRound(next),
   });
   /** In the battle viewer, a replay of a live battle: how its run ended against the battle as fought. */
   replayCheck: { verdict: ReplayVerdict; step: number; want: number } | null = null;
@@ -1019,6 +1044,10 @@ export class Game {
     const link = new RegionLink(this.cityPort(), connect, {
       mayor: profile.name,
       color: profile.color,
+      // A quick match's city reports every few seconds, its picture every minute (M43).
+      ...(this.match.active
+        ? { reportEvery: MATCH.reportMs, saveEvery: MATCH.saveMs, thumbEvery: MATCH.thumbMs }
+        : {}),
       // The region's fair clock caps the war clock (M37); a test build's spec that fast-forwards its
       // cities far past the region's 1× pace may turn it off (localStorage `citybloom.fairClock`).
       ...(IS_TEST_BUILD && fairClockOff() ? { fairClock: false } : {}),
@@ -1031,6 +1060,7 @@ export class Game {
     this.friends.attach(link);
     this.atomRegion.attach(link);
     this.replays.attach(link);
+    if (this.match.active) this.match.attach(link);
     // The race among friends is in the notification log, and the bomb in hand, a launch, a bomb fired
     // or fallen are red alerts (`raceNotice`); any other line of the room's is a toast.
     link.onNotice = (t) => {
@@ -1094,6 +1124,8 @@ export class Game {
         void this.repostBattles();
       } else if (link.state !== 'in') welcomed = false;
       if (link.state === 'closed' && this.region === link) {
+        // A quick match whose region went (its peer-to-peer host left): it ends here as it stood.
+        if (this.match.active && started) this.match.closed(link.error ?? 'The match’s region closed');
         if (link.error && started) this.toast(link.error, 'bad', 8000);
         // The region shut for good (its host left it): the city's saves no longer name it (F10). One
         // that no longer exists is let go too, if it's the one the city is bound to (M37: its fair
@@ -1132,12 +1164,14 @@ export class Game {
     this.friends.detach();
     this.atomRegion.detach();
     this.replays.detach();
+    this.match.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(
       `${loadProfile().name}’s region closed: it ran in their browser. Your city keeps its neighbours as they last were.`,
     );
     this.regionHost = null;
+    this.regionHub = null;
     if (say) {
       // Left for good: the city's saves no longer name the region.
       this.forgetRegion();
@@ -1145,6 +1179,138 @@ export class Game {
     }
     this.notify();
   }
+  // ---- Quick matches (M43) ----------------------------------------------------------------------
+
+  /**
+   * Open a quick match with this city, founded on the match's seed (online, or in this browser); a
+   * peer-to-peer host coming back for a rematch opens the region again from its record (`hub`).
+   */
+  async hostMatch(
+    kind: 'online' | 'p2p',
+    settings: MatchSettings,
+    again?: { invite: string; slot: number; secret: string; hub: unknown },
+  ): Promise<boolean> {
+    if (this.region || this.net || this.readOnly) return false;
+    const inv = again ? parseInvite(again.invite) : null;
+    const code = inv?.code ?? makeCode(kind);
+    const key = kind === 'p2p' ? (inv?.key ?? makeKey()) : null;
+    try {
+      let connect: () => Promise<Link>;
+      if (kind === 'online') {
+        const url = relayUrl();
+        if (!url) throw new Error("Online matches aren't set up yet: start one in this browser instead");
+        connect = () => webSocketLink(`${url}/region/${code}${again ? '' : '?create=1'}`);
+      } else {
+        const store = new MemoryRegionStore();
+        if (again?.hub) store.meta = again.hub as RegionMeta;
+        const hub = new RegionRoom(
+          code,
+          'p2p',
+          store,
+          {
+            now: wallClock,
+            later: (ms, fn) => {
+              const t = setTimeout(fn, ms);
+              return () => clearTimeout(t);
+            },
+          },
+          IS_TEST_BUILD ? { testMatches: true } : {},
+        );
+        this.regionHub = hub;
+        this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
+        await this.regionHost.listen();
+        const host = this.regionHost;
+        connect = () => host.connectSelf();
+      }
+      await this.attachRegion(
+        code,
+        key,
+        connect,
+        again
+          ? { rejoin: { slot: again.slot, secret: again.secret } }
+          : { create: { name: 'Quick match', match: settings } },
+        kind === 'p2p',
+      );
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  /** Bring this match city into its match by the invite (as its old self after a rematch's reload). */
+  async joinMatch(invite: string, rejoin: { slot: number; secret: string } | null): Promise<boolean> {
+    if (this.region || this.net || this.readOnly) return false;
+    const inv = parseInvite(invite);
+    if (!inv || inviteProblem(inv)) return false;
+    const { code, key } = inv;
+    const url = relayUrl();
+    const connect: () => Promise<Link> =
+      codeKind(code) === 'online'
+        ? url
+          ? () => webSocketLink(`${url}/region/${code}`)
+          : () => Promise.reject(new Error("Online matches aren't set up yet"))
+        : () => p2pConnect(code, key!, signalling());
+    try {
+      // A host's browser reloading for a rematch takes a few seconds to be there again.
+      await this.attachRegion(code, key, connect, {
+        ...(rejoin ? { rejoin } : {}),
+        ...(codeKind(code) === 'p2p' ? { giveUpAfter: 8 } : {}),
+      });
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  /** The invite friends join this match by (code, and the key of one in a browser). */
+  matchInvite(): string | null {
+    return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
+  }
+
+  /**
+   * The room started the next round (a rematch): this page reloads into a new city on the new seed,
+   * keeping its place in the region. A peer-to-peer host keeps the region's record too, and waits a
+   * moment so the others hear of the new round before its region goes with the page.
+   */
+  private toNextRound(next: MatchSession): void {
+    const host = !!this.regionHub;
+    saveMatchSession({ ...next, ...(host ? { hub: this.regionHub!.record() } : {}) });
+    setTimeout(
+      () => location.replace(`${location.pathname}?match=${encodeURIComponent(next.invite)}&again=1`),
+      host ? 1500 : 0,
+    );
+  }
+
+  /**
+   * Keep the match city as an ordinary save (M43): its fast start goes (`endMatch`), it's saved to a
+   * new slot, and the player may carry on with it (the match's result stays on screen until then).
+   */
+  async keepMatchCity(): Promise<string | null> {
+    if (!this.match.active || this.match.kept) return this.match.kept;
+    const r = await this.client.command({ type: 'endMatch' });
+    if (!r.ok) {
+      this.toast(r.reason, 'bad');
+      return null;
+    }
+    const label = `${this.world.stats.cityName} (match)`;
+    this.match.keptAs(label);
+    const slot = `s${Date.now().toString(36)}`;
+    if (!(await this.saveTo(slot, label, true))) return null;
+    this.toast(`Kept as “${label}”: open it from Load game any time.`, 'ok', 6000);
+    return label;
+  }
+
+  /** Leave the match (out of it if it's still on; it goes on without this city) and go to the main menu. */
+  leaveMatch(): void {
+    this.match.leave();
+    this.leaveRegion(false);
+    location.replace(location.pathname);
+  }
+
   /**
    * A new city founded from the friends screen is shared at once, online or from this browser; or it
    * goes into a region (`newregion=…` or `region=CODE`). Both last only while the friends and new-city
@@ -2104,6 +2270,8 @@ export class Game {
     }
     // A lesson's town is practice: autosaves leave the player's own cities alone (a save on purpose goes).
     if (this.lessonTown && slot === 'auto') return false;
+    // Likewise a quick match's city (M43): kept only when the player chooses to.
+    if (this.match.active && !this.match.kept && slot === 'auto') return false;
     if (this.saving) return false;
     this.saving = true;
     this.notify();
@@ -2521,6 +2689,8 @@ export class Game {
   }
 
   setSpeed(speed: Speed): void {
+    // A quick match runs at one speed for everyone, and nothing stops its clock (M43).
+    if (this.match.active && !this.match.kept) return;
     if (this.net) {
       // The room's speed: everyone's city changes together (the room says so back).
       this.net.session.setSpeed(speed);

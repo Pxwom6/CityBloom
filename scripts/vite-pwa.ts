@@ -13,7 +13,15 @@ import type { Plugin, ResolvedConfig } from 'vite';
  * Built files the offline copy leaves out: source maps, the share image, the worker itself, and the
  * war models (phase 5), which only a city with war on fetches: a peaceful player never downloads them.
  */
-const SKIP = [/\.map$/, /^social\.jpg$/, /^sw\.js$/, /^assets\/war-models-[\w-]+\.bin$/];
+// The owner area (phase 6) isn't part of the game played offline.
+const SKIP = [
+  /\.map$/,
+  /^social\.jpg$/,
+  /^sw\.js$/,
+  /^assets\/war-models-[\w-]+\.bin$/,
+  /^owner\.html$/,
+  /^assets\/owner-[\w-]+\.(js|css)$/,
+];
 
 function walk(dir: string, root = dir): string[] {
   return readdirSync(dir).flatMap((name) => {

@@ -183,6 +183,11 @@ async function joinRoom(invite: Invite, client: SimClient): Promise<{ mp: Multip
 }
 
 async function boot(): Promise<void> {
+  // The owner area (phase 6) is a page of its own; `#/owner` on the game's address leads there.
+  if (location.hash === '#/owner') {
+    location.replace(`${import.meta.env.BASE_URL}owner.html`);
+    return;
+  }
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
   // The hand-made building models download while the city is made, opened or fetched from a room.

@@ -789,7 +789,7 @@ body {
 }
 .report-preview {
   width: 100%;
-  max-height: 14rem;
+  max-height: 9rem;
   object-fit: contain;
   border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--color-border);
@@ -813,6 +813,7 @@ body {
   overflow-wrap: anywhere;
 }
 .shell-notice {
+  color: var(--color-text);
   display: flex;
   align-items: center;
   gap: var(--space-3);

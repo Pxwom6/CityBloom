@@ -28,7 +28,7 @@ export function reportLines(r: Report): [string, string][] {
     ['Shared city', SHARED[r.env.shared]],
     ['Where', WHERE[r.env.where]],
     ['Your message', r.note ?? '(none)'],
-    ['Picture of the game', r.shot ? 'yes, shown below' : 'no'],
+    ['Picture of the game', r.shot ? 'yes, the one above' : 'no'],
   ];
 }
 

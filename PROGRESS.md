@@ -344,6 +344,17 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
 1. M43 Quick match (SPEC-6.md), then M44–M48 in order, each new screen working by touch on a phone
    upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
 
+## Balance (M43)
+`npx tsx scripts/matchBalance.ts [minutes] [seeds]`: the careful mayor (and the greedy and neglectful
+ones) play matches on the fast start ($200,000, growth ×2, unlocks at half their population).
+- 20 minutes, six seeds: the careful mayor reaches 10,000 at 11.0–14.5 minutes and ends at
+  16,000–27,000 residents; Race, Rich list, Happy town and Mixed all won in their time 6/6. The
+  greedy and neglectful mayors, built for long play, stay at a few hundred residents (a poor plan loses).
+- 15 minutes: 10,000 at 11.0–14.5 minutes (6/6), the Rich list's winner richer than it started 5/6
+  (it spends on growing), Happy town 6/6. 30 minutes: 33,000–55,000 residents, every mode 6/6.
+- Without the fast start the careful mayor ends 20 minutes at 1,100–2,400 residents.
+- Ordinary cities don't move: the fast start is a multiplier of 1 without `GameOptions.match`.
+
 ## Performance (M49)
 Measured with `scripts/dev/phoneprobe.mjs` (Playwright's iPhone 13 and Pixel 7 emulation, CPU
 throttled 4× by CDP, Low quality; SwiftShader draws on the CPU here, so frame intervals mean

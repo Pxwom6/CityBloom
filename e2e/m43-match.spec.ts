@@ -38,13 +38,15 @@ async function chain(
       leavers,
       during: leavers.length
         ? async () => {
-            // A guest, then the host, leave from the pause menu: out, and the match goes on.
+            // A guest, then the host, leave from the pause menu: out, and the match goes on. (Both
+            // before either menu has loaded: on a software renderer that takes most of a minute.)
             for (const p of [pages[n - 1]!, pages[0]!]) {
               await p.keyboard.press('Escape');
               await expect(p.getByTestId('pause-quit')).toContainText('Leave the match');
               await p.getByTestId('pause-quit').click();
-              await expect(p.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
             }
+            for (const p of [pages[n - 1]!, pages[0]!])
+              await expect(p.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
             // The next city still in is the host now.
             await until(pages[1]!, (m) => m.host, 'the host’s part to pass on', 30_000);
           }

@@ -1168,6 +1168,9 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    // Joining a friend's room for the first time (M42): a short card on how rooms work.
+    // (A tip for new players: not for a player who has turned tips off.)
+    if (!this.settings.roomIntro && this.settings.tips && !mp.session.isHost) this.roomIntro = true;
     this.workerSpeed = -1;
     this.client.onPreview = (cmd) => {
       const shape = commandShape(cmd);
@@ -2356,6 +2359,18 @@ export class Game {
   }
   /** Saves the player made themselves since the page opened (the tutorial's Save step). */
   manualSaves = 0;
+  /** The card on how a friend's room works is open (M42). */
+  roomIntro = false;
+
+  openRoomIntro(): void {
+    this.roomIntro = true;
+    this.notify();
+  }
+
+  closeRoomIntro(): void {
+    this.roomIntro = false;
+    this.updateSettings({ roomIntro: true });
+  }
 
   startTutorial(): void {
     this.tutorial.start();

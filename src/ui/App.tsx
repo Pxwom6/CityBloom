@@ -16,6 +16,7 @@ import { ThoughtsFeed } from './Thoughts';
 import { CityPanel, MilestoneBanner } from './CityPanel';
 import { Shell } from './Shell';
 import { TipCard, TutorialCard } from './Guide';
+import { RoomIntroCard } from './RoomIntro';
 import { ShortcutSheet } from './ShortcutSheet';
 import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
@@ -136,6 +137,7 @@ export function App({ game }: { game: Game }) {
       <MoneyBanner />
       <TutorialCard />
       <TipCard />
+      <RoomIntroCard />
       <ShortcutSheet />
       <ScenarioBrief />
       <ScenarioEnd />

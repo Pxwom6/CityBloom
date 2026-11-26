@@ -331,6 +331,9 @@ export function RoomPanel() {
         </button>
       </header>
       <div class="advisors-list">
+        <button class="btn small" data-testid="room-intro-open" onClick={() => game.openRoomIntro()}>
+          How rooms work
+        </button>
         <p class="muted">
           {mp.kind === 'online'
             ? 'An online room: the city waits here between sessions, and friends can join any time with the code.'

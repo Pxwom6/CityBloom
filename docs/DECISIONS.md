@@ -2960,7 +2960,8 @@ and lint rerun; the fourteen pictures looked at)
 
 ## Phase 6 (SPEC-6.md)
 - **Branch:** the cloud session's `claude/ecstatic-brown-64m0nb` stands in for `friends`, made from `main` at 9490cb2 (phase 5 merged, PR #23).
-- **SPEC-6.md was pasted** into the session; it is saved with SPEC-5.md's layout (a title, `##` sections, `###` milestones) and every word as given.
+- **SPEC-6.md was pasted** into the session; it is saved with SPEC-5.md's layout (a title, `##` sections, `###` milestones) and every word as given. The owner later sent an updated SPEC-6.md as a file (M49 Phones, the "Phones from the start" rule, phone items in the goals and the finale): it replaces the first copy exactly as sent.
+- **M49 comes after M42 and before M43**, as the updated brief asks. It arrived while M42 was under way; M42 is finished first.
 - **The in-game "Online rooms aren't set up yet" refusals stay**: the live site has a relay now, but a copy built without `VITE_RELAY_URL` (a fork, a dev build) still has none, and the words are still true there. The README says so.
 
 ### M41 Hearing about problems

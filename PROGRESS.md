@@ -17,7 +17,7 @@ Please never paste the key into a session or commit it; to change it, update the
 
 Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
 https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6
-(playing with friends, SPEC-6.md, M41–M48) is under way** on this cloud session's branch
+(playing with friends, SPEC-6.md, M41–M49) is under way** on this cloud session's branch
 `claude/ecstatic-brown-64m0nb`, which stands in for `friends` (made from `main` at 9490cb2).
 
 - [x] M0 Foundation
@@ -69,8 +69,10 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [ ] M46 Your own buildings
 - [ ] M47 Making buildings
 - [ ] M48 Send it in
+- [ ] M49 Phones (done after M42, before M43)
 
-**Phase 6 (playing with friends, SPEC-6.md, M41–M48) is under way.** Branch: this cloud session's
+**Phase 6 (playing with friends, SPEC-6.md, M41–M49) is under way.** M49 (phones) comes after M42
+and before M43, as the brief asks. Branch: this cloud session's
 `claude/ecstatic-brown-64m0nb` stands in for `friends`. Each milestone ends with an `M<n> complete:`
 commit and a pull request into `main` from this branch; a milestone finished while the last one's pull
 request is still open joins it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
@@ -292,7 +294,10 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
 1. M42 Learning to play (SPEC-6.md): the first-city tutorial to about 1,000 residents, the Learn
    lessons on small prepared towns, the first-time card in a friend's room, earlier warnings before
    homes empty or a town without services shrinks; screenshots at 100 % and 140 % and on a phone.
-2. M43–M48 in order.
+2. M49 Phones next (after M42, before M43): measure in phone emulation with CPU throttling, then the
+   whole game by touch upright and sideways, a 30 fps cap and battery saver, memory, installing, and
+   slow joiners catching up in shared cities.
+3. Then M43–M48 in order (SPEC-6.md).
 
 ## Performance (M41)
 - **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader, against the local relay):

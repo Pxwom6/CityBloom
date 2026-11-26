@@ -702,9 +702,9 @@ are done, each with its rows below; the phase's end is the last section.
 
 # Phase 6 (SPEC-6.md)
 
-Playing with friends: hearing about problems, learning to play, quick matches, a weekly challenge,
-timelapses, players' own buildings, making buildings, and sending ideas and buildings in. Milestones
-M41–M48; each gets its rows below as it is done.
+Playing with friends: hearing about problems, learning to play, phones, quick matches, a weekly
+challenge, timelapses, players' own buildings, making buildings, and sending ideas and buildings in.
+Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows below as it is done.
 
 ## Before you start
 
@@ -714,8 +714,8 @@ M41–M48; each gets its rows below as it is done.
 | SPEC-6.md saved word for word | `SPEC-6.md` |
 | Online rooms are live: the Cloudflare request gone from PROGRESS, README and CLAUDE.md updated | `PROGRESS.md` (top), `README.md` "Play with friends", `CLAUDE.md` |
 | "Needed from the owner": how to make `OWNER_KEY` and store it as a GitHub secret | `PROGRESS.md` (top); the deploy workflow passes it to the Worker (M41) |
-| CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M48 | `CLAUDE.md` |
-| M41–M48 on PROGRESS.md's checklist; a phase 6 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 6" |
+| CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M49 | `CLAUDE.md` |
+| M41–M49 on PROGRESS.md's checklist (M49 after M42); a phase 6 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 6" |
 
 ## Rules for all of phase 6
 
@@ -724,6 +724,7 @@ M41–M48; each gets its rows below as it is done.
 | What's there doesn't change (single player, co-op, regions, war; saves; protocol bumps keep older clients out) | M41: no sim or save change; the room's `resync` gains optional fields older pages ignore (no bump) |
 | Phase 4's and 5's rules (deterministic maths and the cross-browser test, the sim pure, the free plan, budgets, plain refusals, tips) | per milestone below |
 | Safe for friends: no accounts, nothing personal, nothing a player writes shown to others before the owner approves, every upload checked and rate-limited, the owner can remove anything | M41: reports name nothing (`cleanReport`, `scrubText`, `cleanEvents`), are read by the owner only, capped and rate-limited; the owner deletes entries and items |
+| Phones from the start: every new screen by touch on a phone, upright and sideways, in phone emulation | M41: the owner area and Report a problem laid out for a phone (`docs/screenshots/m41-owner-phone.png`, `m41-report-phone.png`); M42: the tutorial's cards on a phone; M49: the rest |
 | Owner pages behind `OWNER_KEY`, checked by the Worker on every request, linked from nowhere, usable on a phone | `owner.html` + `relay/reportsHttp.ts` (M41) |
 | Storage in Durable Objects with SQLite within the free plan, logged, old data deleted on a schedule | M41: `ReportsObject`, caps and the 60-day sweep in DECISIONS "M41" |
 | Milestones playable and tested through the real UI, screenshots reviewed, `M<n> complete:` and a pull request, balance and bench | per milestone below |

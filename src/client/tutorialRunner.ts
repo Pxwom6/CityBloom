@@ -28,8 +28,14 @@ export class TutorialRunner {
   private shownId: string | null = null;
   /** The speed a card held the game still from, given back once it's passed. */
   private held: Game['speed'] | null = null;
+  /** The speed the showing card will give back when passed (null: it didn't stop time). */
+  get heldSpeed(): Game['speed'] | null {
+    return this.held;
+  }
   /** A lesson being played (Learn), its step, and the town as it found it. */
   lesson: Lesson | null = null;
+  /** Hold the card as it is (test builds' pictures of each step): nothing ticks off or interrupts. */
+  frozen = false;
   lessonStep = 0;
   base: LessonBase | null = null;
 
@@ -138,6 +144,7 @@ export class TutorialRunner {
         this.lessonStep++;
       if (this.lessonStep >= this.lesson.steps.length) this.finishLesson();
     }
+    if (this.frozen) return;
     let step = g.settings.tutorialStep;
     while (step >= 0 && step < TUTORIAL.length && TUTORIAL[step]!.done?.(g)) step++;
     if (step !== g.settings.tutorialStep) {

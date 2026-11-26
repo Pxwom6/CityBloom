@@ -51,7 +51,10 @@ export function TutorialCard() {
     !!step &&
     game.mode === 'play' &&
     (!game.screen || (!!step.screen && game.screen === step.screen)) &&
-    (!game.panel || (!!step.panel && game.panel === step.panel));
+    (!game.panel ||
+      (!!step.panel && game.panel === step.panel) ||
+      // A lesson's last card shows whatever panel the lesson left open.
+      (!!card?.lesson && card.index === card.total - 1));
   useHighlight(visible ? step.target : undefined);
   if (!visible || !card) return null;
   const k = card.index;
@@ -59,7 +62,7 @@ export function TutorialCard() {
     <>
       {step.target && <GuidePointer testid={step.target} />}
       <div
-        class={`guide panel ${card.event ? 'guide-event' : ''} ${step.panel ? 'beside-panel' : ''}`}
+        class={`guide panel ${card.event ? 'guide-event' : ''} ${step.panel && game.panel === step.panel ? 'beside-panel' : ''} ${step.screen && game.screen === step.screen ? 'over-screen' : ''}`}
         data-testid="tutorial"
         data-step={step.id}
         role="dialog"
@@ -94,9 +97,11 @@ export function TutorialCard() {
               </>
             ) : (
               <>
-                <button class="btn quiet" data-testid="lesson-leave" onClick={() => game.endLesson()}>
-                  Leave lesson
-                </button>
+                <span class="guide-leave">
+                  <button class="btn quiet" data-testid="lesson-leave" onClick={() => game.endLesson()}>
+                    Leave lesson
+                  </button>
+                </span>
                 {step.done ? (
                   <>
                     <span class="guide-waiting">Waiting for you…</span>

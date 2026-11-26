@@ -1163,13 +1163,33 @@ body {
 #ui[data-width='xs'] .guide {
   width: min(21rem, calc(100% - 2 * var(--space-3)));
 }
+/* A card that teaches a screen (the pause menu) stands above it, not under its dimming. */
+.guide.over-screen {
+  z-index: calc(var(--z-shell) + 1);
+}
 .guide.guide-event {
   border-left: 4px solid var(--color-warning, #d98a00);
 }
+.guide-actions {
+  flex-wrap: wrap;
+}
+/* The main action keeps its line; leaving and skipping are small links beneath it. */
 .guide-leave {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0;
+  gap: var(--space-2);
+  order: 2;
+  flex-basis: 100%;
+  margin-top: calc(-1 * var(--space-1));
+}
+.guide-waiting {
+  flex: 1;
+  white-space: nowrap;
+}
+.guide-actions > .btn {
+  white-space: nowrap;
+}
+.guide-actions > .btn:first-of-type {
+  margin-left: auto;
 }
 .guide-leave .btn {
   padding-left: var(--space-1);
@@ -1178,7 +1198,7 @@ body {
 }
 .guide-pointer {
   position: fixed;
-  z-index: calc(var(--z-panel) + 2);
+  z-index: calc(var(--z-shell) + 2);
   width: 0;
   height: 0;
   pointer-events: none;

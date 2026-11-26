@@ -120,8 +120,8 @@ export const LESSONS: Lesson[] = [
         id: 'trafficBus',
         title: 'Buses',
         text:
-          'One bus carries forty people. Open Transit and place two bus stops on busy streets: a line runs ' +
-          'between them.',
+          'One bus carries forty people. Open Transit, place a bus depot by a road, then bus stops on busy ' +
+          'streets. A line runs between them.',
         target: 'tool-transit',
         done: (g) => g.world.lines.filter((l) => l.mode === 'bus').length > base(g).busLines,
       },
@@ -298,15 +298,16 @@ export const LESSONS: Lesson[] = [
       {
         id: 'districtsPaint',
         title: 'Paint a district',
-        text: 'Pick the District tool and paint over some homes. Give it a name.',
+        text: 'Pick the District tool and paint over some homes. It takes the neighbourhood’s name.',
         target: 'tool-district',
+        panel: 'districts',
         done: (g) => g.world.districts.size > base(g).districts,
       },
       {
         id: 'districtsPolicy',
         title: 'Give it a rule',
         text: 'In the Districts panel, pick your district and switch on a policy, such as no heavy traffic.',
-        target: 'tool-district',
+        panel: 'districts',
         done: (g) => [...g.world.districts.values()].some((d) => d.policies.length > 0),
       },
       finish('districts and policies'),
@@ -387,7 +388,8 @@ export const LESSONS: Lesson[] = [
       {
         id: 'warTrain',
         title: 'Forces',
-        text: 'Click a barracks to train infantry. Units take workers and power, and cost upkeep each month.',
+        text: 'The war room lists your forces. Click a barracks to train infantry: units take workers and power.',
+        panel: 'war',
         pause: true,
       },
       {
@@ -396,6 +398,7 @@ export const LESSONS: Lesson[] = [
         text:
           'A raid comes with a countdown and a siren. Bunkers and anti-air guns fight on their own; rubble ' +
           'clears and regrows.',
+        panel: 'war',
         pause: true,
       },
       finish('war'),

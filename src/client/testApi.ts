@@ -1,3 +1,4 @@
+import { TUTORIAL, TUTORIAL_EVENTS } from './tutorial';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendsWarClient } from './friendsWar';
 import {
@@ -296,6 +297,18 @@ export interface TestApi {
   netDrop(): void;
   /** Knock this page's city out of step (the room should catch it and resync). */
   netPerturb(kind?: 'id'): void;
+  /** The tutorial (M42): the card showing, and a card shown on demand for pictures. */
+  getTutorial(): {
+    step: string | null;
+    index: number;
+    event: boolean;
+    lesson: string | null;
+    away: boolean;
+    saw: string[];
+    held: number | null;
+    speed: number;
+  };
+  showTutorialStep(id: string): boolean;
   /** Problem reports (M41): throw an uncaught error, reject a promise, the reporter's counts, send now. */
   throwError(message?: string): void;
   rejectPromise(message?: string): void;
@@ -1066,6 +1079,34 @@ export function installTestApi(game: Game): TestApi {
     },
     netDrop: () => game.net?.session.dropForTest(),
     netPerturb: (kind) => game.client.perturb(kind),
+    getTutorial: () => {
+      const c = game.tutorialCard();
+      return {
+        step: c?.step.id ?? null,
+        index: c?.index ?? -1,
+        event: !!c?.event,
+        lesson: c?.lesson?.id ?? null,
+        away: game.settings.tutorialAway,
+        saw: [...game.tutorialSaw],
+        held: game.tutorial.heldSpeed,
+        speed: game.speed,
+      };
+    },
+    showTutorialStep: (id) => {
+      // A picture of the card as it is: nothing ticks it off or interrupts it meanwhile.
+      game.tutorial.frozen = true;
+      const k = TUTORIAL.findIndex((t) => t.id === id);
+      if (k >= 0) {
+        game.tutorial.event = null;
+        game.updateSettings({ tutorialStep: k, tutorialAway: false });
+        return true;
+      }
+      const ev = TUTORIAL_EVENTS.find((t) => t.id === id);
+      if (!ev) return false;
+      game.tutorial.event = ev;
+      game.notify();
+      return true;
+    },
     // Problem reports (M41): a deliberate error, a rejected promise, and what the reporter has done.
     throwError: (message = 'A deliberate test error') => {
       setTimeout(() => {

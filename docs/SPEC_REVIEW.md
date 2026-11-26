@@ -751,3 +751,21 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* the setting off sends nothing | the e2e, `tests/reports/reporter.test.ts` |
 | *Done:* a modified client can't fill storage past its cap | `relay/tests/reports.test.ts` "can’t be filled past its caps" |
 | *Done:* the replay script finds the split tick for a forced desync | `tests/reports/desyncReplay.test.ts`, the e2e (a real browser city replayed in Node) |
+
+## M42 Learning to play
+
+| Item | Where |
+|---|---|
+| The first city to about 1,000 residents, pausing to teach as each thing matters: roads and zoning; power, water and sewage; demand bars; budget and taxes; services and coverage maps; the advisors; the first problem; saving | `TUTORIAL` (18 steps) and `TUTORIAL_EVENTS` (a fire, a power cut, a jam) in `src/client/tutorial.ts`, run by `src/client/tutorialRunner.ts` |
+| Short sentences | every card two or three sentences of 25 words at most (`tests/tutorial.test.ts`) |
+| A pointer at the button to press | `GuidePointer` in `src/ui/Guide.tsx` (an arrow that follows the layout) and the button's pulse |
+| The camera moves to where it matters | `TutorialStep.camera` (the highway's end, the town, a fire) |
+| Every step can be skipped; the tutorial left and picked up again | Skip this step, Leave for now, Continue the tutorial (pause menu, Settings), Skip tutorial; kept across a reload (`e2e/m42-tutorial.spec.ts`) |
+| Never in the way: steps already done finish themselves | the runner's check (`tests/tutorial.test.ts` "ticks off what the player has already done") |
+| Learn: short lessons on small prepared towns (traffic and transit, money and loans, happiness and services, disasters, districts and policies, playing with friends, war opt-in, making buildings later) | `src/client/lessons.ts`, towns from `scripts/lessons.ts` in `public/lessons/`, the main menu's Learn screen (`LearnScreen` in `src/ui/Shell.tsx`) |
+| New players in a friend's room: a first-time card | `src/ui/RoomIntro.tsx` |
+| Clearer first problems: homes emptying without power or water, towns without services shrinking, warned earlier and plainly through the advisors | `advise()` countdowns (`Advice.emptying`), the notice when a day or less away (`Game.adviceNotices`); `tests/warnings.test.ts` |
+| *Done:* an e2e plays the whole first-city tutorial through the real UI from the main menu to 1,000 residents | `e2e/m42-tutorial.spec.ts` "the first-city tutorial from the main menu to 1,000 residents" |
+| *Done:* an e2e plays every lesson | `e2e/m42-learn.spec.ts` |
+| *Done:* skipping and resuming work | `e2e/m42-tutorial.spec.ts` "leaving the tutorial, skipping a step, and picking it up again after a reload" |
+| *Done:* each step's picture reviewed at 100 % and 140 % and on a phone | `e2e/m42-tutorial.spec.ts` "every tutorial card…" (63 pictures, contact sheets looked at); kept: `docs/screenshots/m42-*.png` |

@@ -5885,11 +5885,27 @@ body {
   z-index: var(--z-panel);
 }
 .match-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: var(--font-size-lg);
+  line-height: 1.1;
   min-width: 3.4rem;
+  padding: 0.1rem var(--space-1);
+  border-radius: var(--radius-md);
   text-align: center;
+}
+.match-clock small {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.match-clock.last {
+  background: var(--color-warning);
+  color: #2a1e05;
 }
 .match-chips {
   display: flex;
@@ -6022,19 +6038,6 @@ body {
 .match-countdown.end {
   color: var(--color-warning);
 }
-.match-last {
-  position: absolute;
-  top: calc(var(--topbar-height) + 4rem);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill, 999px);
-  background: var(--color-warning);
-  color: #2a1e05;
-  font-weight: 700;
-  pointer-events: none;
-  z-index: var(--z-panel);
-}
 .match-results {
   width: min(36rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
@@ -6079,17 +6082,58 @@ body {
   flex-wrap: wrap;
   align-items: center;
 }
+/* The results' and the lobby's buttons stay in view while the card scrolls (a phone held sideways). */
+.match-results .modal-actions,
+.match-lobby .modal-actions {
+  --pad: var(--space-5);
+  position: sticky;
+  bottom: calc(-1 * var(--pad));
+  margin-bottom: calc(-1 * var(--pad));
+  padding: var(--space-2) 0 var(--pad);
+  background: var(--color-surface-strong);
+}
+.match-lobby .modal-actions {
+  --pad: var(--space-4);
+}
 .match-kept {
   margin: var(--space-2) 0 0;
 }
+/* On a phone the scoreboard runs the width of the screen, its cities scrolling sideways between the
+   timer and the reactions; the last minute's banner and the notices sit below it. */
 #ui[data-phone] .match-bar {
-  top: calc(var(--topbar-height) + var(--space-1));
-  max-width: calc(100vw - 1rem);
-  flex-wrap: wrap;
-  justify-content: center;
+  top: calc(var(--topbar-height) + var(--space-1) + env(safe-area-inset-top));
+  left: max(var(--space-2), env(safe-area-inset-left));
+  right: max(var(--space-2), env(safe-area-inset-right));
+  transform: none;
+  max-width: none;
+  flex-wrap: nowrap;
+}
+#ui[data-phone][data-orient='landscape'] .match-bar {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  max-width: min(44rem, calc(100vw - 1rem));
 }
 #ui[data-phone] .match-chips {
-  max-width: calc(100vw - 8rem);
+  flex: 1;
+  min-width: 0;
+}
+#ui[data-phone] .match-clock {
+  min-width: 3rem;
+}
+#ui[data-phone] .match-peek {
+  left: 0;
+  right: 0;
+  transform: none;
+  width: auto;
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 6rem);
+  overflow: auto;
+}
+#ui[data-phone]:has(.match-bar) .toasts {
+  top: calc(var(--topbar-height) + 4.6rem + env(safe-area-inset-top));
+}
+#ui[data-phone] .match-table td:nth-child(2) {
+  white-space: nowrap;
 }
 #ui[data-phone] .match-chip,
 #ui[data-phone] .match-react .btn {
@@ -6097,6 +6141,10 @@ body {
 }
 #ui[data-phone] .match-name {
   max-width: 5rem;
+}
+/* Upright, a city is its colour on the scoreboard (its name is in the peek): four fit across. */
+#ui[data-phone][data-orient='portrait'] .match-name {
+  display: none;
 }
 #ui[data-phone] .match-lobby {
   top: calc(var(--topbar-height) + var(--space-2));

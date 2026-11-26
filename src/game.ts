@@ -2323,6 +2323,8 @@ export class Game {
 
   /** Autosave, then go back to the main menu (if saving fails, a second try leaves without it). */
   async quitToMenu(): Promise<void> {
+    // A quick match's city (M43) isn't autosaved: its player leaves the match (out; it goes on).
+    if (this.match.active && !this.match.kept) return this.leaveMatch();
     if (
       !this.readOnly &&
       !this.world.stats.bankrupt &&

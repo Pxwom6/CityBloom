@@ -673,19 +673,23 @@ function PauseMenu() {
   const game = useGame();
   const file = useRef<HTMLInputElement>(null);
   const st = game.world.stats;
+  // A quick match's clock doesn't stop for menus (M43), and its city is kept only from the results.
+  const inMatch = game.match.active && !game.match.kept;
+  const running = !!game.net || inMatch;
   return (
     <div class="shell-card panel pause-menu" data-testid="pause-menu">
       <header>
         {/* A shared city doesn't pause for menus: it runs at the room's speed (review, minor). */}
-        <h2>{game.net ? 'Menu' : 'Paused'}</h2>
+        <h2>{running ? 'Menu' : 'Paused'}</h2>
         <span class="muted">
           {st.cityName} · {formatDate(dateOf(st.tick))}
           {game.net && ' · the city keeps running for everyone'}
+          {inMatch && ' · the match’s clock keeps running'}
         </span>
       </header>
       <nav class="shell-nav compact">
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
-          <span>{game.net ? 'Back to the city' : 'Resume'}</span>
+          <span>{running ? 'Back to the city' : 'Resume'}</span>
         </button>
         {/* The tutorial left for now (M42) carries on from the step it was on. */}
         {game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
@@ -701,8 +705,8 @@ function PauseMenu() {
             <small>step {game.settings.tutorialStep + 1}</small>
           </button>
         )}
-        {/* A neighbour's city seen read-only is never saved here (F5). */}
-        {!game.readOnly && (
+        {/* A neighbour's city seen read-only is never saved here (F5); nor a match city mid-match (M43). */}
+        {!game.readOnly && !inMatch && (
           <>
             <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
               <span>Save city…</span>
@@ -717,9 +721,11 @@ function PauseMenu() {
             </button>
           </>
         )}
-        <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
-          <span>Load city…</span>
-        </button>
+        {!inMatch && (
+          <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
+            <span>Load city…</span>
+          </button>
+        )}
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
@@ -728,7 +734,7 @@ function PauseMenu() {
         </button>
         {!game.net && !game.readOnly && !game.region && <InviteButtons />}
         <div class="shell-row">
-          {!game.readOnly && (
+          {!game.readOnly && !inMatch && (
             <button
               class="shell-btn"
               data-testid="pause-export"
@@ -739,20 +745,26 @@ function PauseMenu() {
               <span>Export to file</span>
             </button>
           )}
-          <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
-            <span>Import file</span>
-          </button>
+          {!inMatch && (
+            <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
+              <span>Import file</span>
+            </button>
+          )}
         </div>
         <button class="shell-btn quiet" data-testid="pause-quit" onClick={() => void game.quitToMenu()}>
-          <span>Quit to main menu</span>
+          <span>{inMatch ? 'Leave the match' : 'Quit to main menu'}</span>
           <small>
-            {game.readOnly
-              ? 'You were only visiting: nothing is saved.'
-              : game.net?.host
-                ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
-                : game.net
-                  ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
-                  : 'Your city is autosaved first.'}
+            {inMatch
+              ? game.match.kind === 'p2p' && game.match.isHost
+                ? 'The match ends for everyone: it runs in this browser.'
+                : 'You’re out of the match; it goes on for the others.'
+              : game.readOnly
+                ? 'You were only visiting: nothing is saved.'
+                : game.net?.host
+                  ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
+                  : game.net
+                    ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
+                    : 'Your city is autosaved first.'}
           </small>
         </button>
       </nav>

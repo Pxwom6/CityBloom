@@ -203,3 +203,28 @@ export function matchScoreText(mode: MatchMode, f: MatchFigures, s: Pick<MatchSe
       return `${n(matchScore('mixed', f, s) / 10)} points`;
   }
 }
+
+/** A score in a few characters, for the scoreboard's chips ("12,450", "$412k", "78 %", "286 pts"). */
+export function matchScoreShort(mode: MatchMode, f: MatchFigures, s: Pick<MatchSettings, 'minPop'>): string {
+  const n = formatInt;
+  switch (mode) {
+    case 'race':
+      return n(f.population);
+    case 'rich': {
+      const m = Math.round(matchMoney(f));
+      const a = Math.abs(m);
+      const tenths = Math.floor(a / 100_000);
+      const v =
+        a >= 1_000_000
+          ? `${n(Math.floor(tenths / 10))}.${tenths % 10}M`
+          : a >= 10_000
+            ? `${n(Math.floor(a / 1000))}k`
+            : n(a);
+      return `${m < 0 ? '−' : ''}$${v}`;
+    }
+    case 'happy':
+      return f.population >= s.minPop ? `${Math.round(f.approval)} %` : `${n(f.population)}/${n(s.minPop)}`;
+    case 'mixed':
+      return `${n(matchScore('mixed', f, s) / 10)} pts`;
+  }
+}

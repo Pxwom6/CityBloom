@@ -24,6 +24,7 @@ import {
   MATCH_MODE_INFO,
   MATCH_PRESETS,
   matchMoney,
+  matchScoreShort,
   matchScoreText,
   type MatchMode,
   type MatchSettings,
@@ -362,12 +363,19 @@ function MatchBar() {
   const recent = m.said.filter((x) => now - x.at < 5000);
   const left = m.timeLeft(now);
   const phase = m.phase;
+  const over = phase === 'final' || phase === 'over';
+  // The last minute: the timer turns to a warning, and counts down big from ten (MatchCountdown).
+  const last = !over && now >= m.startAt && left > 0 && left <= 60_000;
   return (
     <div class="match-bar panel" data-testid="match-bar">
-      <div class="match-clock" data-testid="match-timer" title="Time left in the match">
-        {phase === 'final' || phase === 'over'
-          ? 'Time!'
-          : clockText(now < m.startAt ? m.endsAt - m.startAt : left)}
+      <div
+        class={`match-clock ${last ? 'last' : ''}`}
+        data-testid="match-timer"
+        title={last ? 'The last minute of the match' : 'Time left in the match'}
+        aria-live={last ? 'polite' : undefined}
+      >
+        {over ? 'Time!' : clockText(now < m.startAt ? m.endsAt - m.startAt : left)}
+        {last && <small data-testid="match-last-minute">last minute</small>}
       </div>
       <ol class="match-chips">
         {rows.map((r, k) => {
@@ -377,13 +385,13 @@ function MatchBar() {
               <button
                 class={`match-chip ${r.me ? 'me' : ''} ${r.out ? 'out' : ''}`}
                 data-testid={`match-chip-${r.slot}`}
-                title={r.me ? 'Your city' : `Peek at ${r.name}`}
+                title={`${r.fig ? matchScoreText(s.mode, r.fig, s) : 'No score yet'}${r.me ? ' (your city)' : ` · peek at ${r.name}`}`}
                 onClick={() => setPeek(peek === r.slot ? null : r.slot)}
               >
                 <span class="match-rank">{r.out ? '–' : k + 1}</span>
                 <i style={{ background: colorOf(r.color) }} />
                 <span class="match-name">{r.name}</span>
-                <b class="match-score">{r.out ? 'left' : r.fig ? matchScoreText(s.mode, r.fig, s) : '…'}</b>
+                <b class="match-score">{r.out ? 'left' : r.fig ? matchScoreShort(s.mode, r.fig, s) : '…'}</b>
                 {said && (
                   <span class="match-said" data-testid={`match-said-${r.slot}`}>
                     {said.e !== undefined ? EMOTES[said.e] : said.text}
@@ -494,17 +502,11 @@ function MatchPeek(props: { slot: number; onClose: () => void }) {
   );
 }
 
-/** The big numbers: the start's countdown, and the last minute (counted down big from ten). */
+/** The big numbers: the start's countdown, and the last ten seconds (the timer warns for the whole last minute). */
 function MatchCountdown() {
   const game = useGame();
   const c = countdownShown(game.match);
-  if (!c) return null;
-  if (c.kind === 'end' && c.s > 10)
-    return (
-      <div class="match-last" data-testid="match-last-minute" aria-live="polite">
-        Last minute · {c.s} s
-      </div>
-    );
+  if (!c || (c.kind === 'end' && c.s > 10)) return null;
   return (
     <div class={`match-countdown ${c.kind}`} data-testid="match-countdown" aria-live="assertive">
       {c.s}

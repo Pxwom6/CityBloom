@@ -55,11 +55,9 @@ const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`,
 
 async function player(k) {
   const phone = process.env.PHONE === '1' && k === 1;
-  const ctx = await browser.newContext(
-    phone
-      ? { ...devices['iPhone 13'], defaultBrowserType: undefined }
-      : { viewport: { width: 1100, height: 720 } },
-  );
+  const profile = process.env.ORIENT === 'landscape' ? 'Pixel 7 landscape' : 'iPhone 13';
+  const { defaultBrowserType: _b, ...device } = devices[profile];
+  const ctx = await browser.newContext(phone ? device : { viewport: { width: 1100, height: 720 } });
   await ctx.addInitScript(
     ([n, c]) => {
       localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));
@@ -193,6 +191,12 @@ async function round(pages, n) {
   await rest[0].getByTestId('match-emote-1').click();
   await host.waitForTimeout(1500);
   log('emotes the host saw:', JSON.stringify((await match(host)).said));
+  // A peek at the host's city from the guest's scoreboard.
+  const hostSlot = (await match(host)).slot;
+  await rest[0].getByTestId(`match-chip-${hostSlot}`).click();
+  await rest[0].getByTestId('match-peek').waitFor();
+  await rest[0].screenshot({ path: `${out}/r${n}-peek.png` });
+  await rest[0].getByTestId(`match-chip-${hostSlot}`).click();
   await host.screenshot({ path: `${out}/r${n}-playing-host.png` });
   await rest[0].screenshot({ path: `${out}/r${n}-playing-guest.png` });
   // The last seconds, then the results.
@@ -211,6 +215,13 @@ async function round(pages, n) {
   }
   await host.screenshot({ path: `${out}/r${n}-results-host.png` });
   await rest[0].screenshot({ path: `${out}/r${n}-results-guest.png` });
+  // The guest keeps its match city as an ordinary save.
+  if (process.env.KEEP === '1') {
+    await rest[0].getByTestId('match-keep').click();
+    const kept = await until(rest[0], (m) => !!m.kept, 'the city kept', 60_000);
+    log(`round ${n}: kept as`, kept.kept);
+    await rest[0].screenshot({ path: `${out}/r${n}-kept.png` });
+  }
   return { same, results };
 }
 

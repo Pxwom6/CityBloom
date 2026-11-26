@@ -1305,6 +1305,19 @@ export class Game {
     return label;
   }
 
+  /**
+   * After keeping the match city (M43): leave the match's region and carry on with the city as an
+   * ordinary one, at the player's own speed (it's in its new slot, so it autosaves as any city does).
+   */
+  playOnAfterMatch(): void {
+    if (!this.match.kept) return;
+    this.match.leave();
+    this.leaveRegion(false);
+    this.match.resultsOpen = false;
+    this.toast(`Carry on with ${this.world.stats.cityName}: it’s yours now, at your own speed.`, 'ok', 6000);
+    this.notify();
+  }
+
   /** Leave the match (out of it if it's still on; it goes on without this city) and go to the main menu. */
   leaveMatch(): void {
     this.match.leave();

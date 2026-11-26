@@ -344,6 +344,8 @@ export class RegionLink {
     { id: string; input: BattleInput; from: number; late: boolean; away?: boolean; super?: boolean }
   >();
   sent = { messages: 0, bytes: 0 };
+  /** What the room sent this page (M43: a match's network budget). */
+  received = { messages: 0, bytes: 0 };
 
   constructor(
     private readonly city: CityPort,
@@ -404,6 +406,8 @@ export class RegionLink {
       this.link = link;
       link.onmessage = (t) => {
         if (t === 'pong') return;
+        this.received.messages++;
+        this.received.bytes += t.length;
         try {
           void this.receive(JSON.parse(t) as RegionRoomMsg);
         } catch {

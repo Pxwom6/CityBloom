@@ -6156,8 +6156,23 @@ body {
 }
 #ui[data-phone] .match-results .btn,
 #ui[data-phone] .match-lobby .btn,
-#ui[data-phone] .match-next-mode {
+#ui[data-phone] .match-lobby .segmented button,
+#ui[data-phone] .match-peek .btn,
+#ui[data-phone] .match-next-mode,
+#ui[data-phone] .match-chat input {
   min-height: 44px;
+}
+#ui[data-phone] .match-emotes {
+  width: 15rem;
+}
+#ui[data-phone] .match-emotes .btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+#ui[data-phone] .match-hashes summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }
 #ui[data-phone] .match-table {
   font-size: var(--font-size-xs, 0.75rem);

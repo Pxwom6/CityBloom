@@ -271,8 +271,22 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M43 Quick match** (plan `docs/plans/M43-design.md`, calls in DECISIONS "M43"). Done so far: the
+match data and scores (`src/data/match.ts`), the fast start in the sim (`GameOptions.match`: money,
+growth ×2, unlocks at half their population; `endMatch`), the region room's match (`relay/match.ts`,
+protocol 8: lobby, countdown, the room's clock, reports counted within the ticks the time allows,
+score lines, Race's finish, last reports with hashes, one result, leavers, online host hand-over,
+rematch rounds), the worker's match clock, the page (`src/client/matchClient.ts`, `matchBoot.ts`,
+`?match=`), the UI (`src/ui/Match.tsx`: Quick match screen, lobby, scoreboard, countdowns, emotes and
+chat, peek, results with chart, Rematch, Keep this city), phones upright and sideways, and the tuning
+(`scripts/matchBalance.ts`). `scripts/dev/matchshot.mjs` plays matches end to end (online and p2p,
+2–4 players, a phone, a rematch, keep): every page the same result, each page's hash the one listed.
+Left: the e2e specs (each mode, 2 and 4 players, online and p2p, rematch, leaving, phones), the
+network budget, the cross-browser test, bench and balance reruns, SPEC_REVIEW, then `M43 complete:`
+joining pull request #24.
+
 **M49 Phones is complete** (done after M42, before M43; plan `docs/plans/M49-design.md`), joining
-M41 and M42 in pull request #24. **M43 Quick match** is next.
+M41 and M42 in pull request #24.
 
 M49 in short: measured first in phone emulation with the CPU slowed 4× (`scripts/dev/phoneprobe.mjs`),
 and fixed what it showed for every preset: construction sites drawn in cells (one mesh of every site

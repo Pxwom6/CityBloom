@@ -793,3 +793,23 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* memory inside its logged budget on the 20k city | the same, `MEMORY_BUDGET_MB` |
 | *Done:* every panel pictured in phone emulation, upright and sideways, reviewed | `scripts/dev/phonepanels.mjs` contact sheets; kept: `docs/screenshots/m49-*.png` |
 | *Done:* real-phone checks under "To try with a mate" | PROGRESS |
+
+## M43 Quick match
+
+| Item | Where |
+|---|---|
+| "Quick match" from the main menu opens a room, online or peer-to-peer, for 2–4 players; join by code or invite link | `QuickMatchScreen` in `src/ui/Match.tsx` (`main-match`), `?match=<invite>` (`src/client/matchBoot.ts`), the lobby's Copy invite link; 2–4 in `MATCH` and `startRefusal` (`relay/match.ts`) |
+| Each player's own small city in a shared mini-region, side by side, on the same seed (M32's regions) | a region with a `match` (`relay/region.ts`, `relay/match.ts`); `matchOptions` founds every city on the match's seed and map; the cities stand alone (`RegionLink.match`) |
+| Modes chosen by the host: Race (10,000 by default), Rich list (treasury plus assets at the end), Happy town (approval with a minimum population), Mixed | `MATCH_MODES`, `matchScore` (`src/data/match.ts`), shared by the room and the pages; the host picks on the Quick match screen, in the lobby or for a rematch |
+| A timer of 15, 20 or 30 real minutes | `MATCH.minutes`; the room's clock (`startMatch`, `clockPhase`), the page's `MatchClient.timeLeft` |
+| One speed for everyone, no pausing that stops the clock; the fair clock | the worker's `matchClock` (towards the tick the time allows at 3×, never past it); `readReport` counts only reports within it (M37's fair clock generalised); speed buttons disabled, menus don't stop the city |
+| A faster start (money, growth, a short unlock path), every number in DECISIONS, tuned by the balance mayor playing matches | `GameOptions.match` (`Sim.growthPace`, `reached`, `startingFunds`), `MATCH.fastStart`; `scripts/matchBalance.ts`; DECISIONS "M43" |
+| War off in matches | `newMatch` never takes war rules; `rrules`, raids and the project ignored in a match region (`relay/tests/matchRoom.test.ts`) |
+| A live scoreboard along the top; a peek at a rival from the region view; a countdown for the last minute; fixed emotes, chat only if the host allows | `MatchBar`, `MatchPeek` (the city's picture each minute, its figures, Look round), the timer's last-minute warning and `MatchCountdown`, `emote`/`mchat` (`MATCH.emotes`, `settings.chat`) |
+| Results: the winner, each city's numbers and a small chart; Rematch with the same players, a new seed and one click; Back to menu; the match city kept as a normal save | `MatchResults` and `MatchChart`; `mnext` → `rematch` (the room's new seed, every page reloads into it, the round starts by itself); `Game.keepMatchCity` (`endMatch`, a new slot) |
+| A player who leaves is out, and the match goes on; a host who leaves hands over, as rooms do | `mleave` and the decision's "away" (`decideMatch`); `handOver` online; peer-to-peer the match ends with the host's browser (`MatchClient.closed`), as a peer-to-peer room does |
+| *Done:* each mode through the real UI with two and four players, online and peer-to-peer, every page on the same result and hashes | `e2e/m43-match.spec.ts` (four chains of four rounds: online and p2p, two and four players; each round every page's result the same and each page's own hash the one listed) |
+| *Done:* rematch works | the same chains (three rematches each, a mode change each time); `e2e/m43-phone.spec.ts` by touch |
+| *Done:* a match fits the network budget | `scripts/dev/matchbudget.ts` and the e2e's traffic lines (PROGRESS "Network (M43)") |
+| *Done:* a balance run shows each mode can be won in its time on Normal | `scripts/matchBalance.ts` (PROGRESS "Balance (M43)", DECISIONS "M43") |
+| Phones from the start: every new screen by touch, upright and sideways, iPhone and Android | `e2e/m43-phone.spec.ts` (`phoneProblems` on the Quick match screen's lobby, the scoreboard, reactions, peek and results) |

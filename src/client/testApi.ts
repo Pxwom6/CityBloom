@@ -188,6 +188,7 @@ export interface TestApi {
     tick: number;
     speed: number;
     sent: { messages: number; bytes: number } | null;
+    received: { messages: number; bytes: number } | null;
   };
   /** The shared region this city stands in (M32), as this page sees it; null when none. */
   getRegion(): {
@@ -940,6 +941,7 @@ export function installTestApi(game: Game): TestApi {
         tick: game.world.stats.tick,
         speed: game.speed,
         sent: game.region ? { ...game.region.sent } : null,
+        received: game.region ? { ...game.region.received } : null,
       };
     },
     getRegion: () => {

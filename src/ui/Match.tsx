@@ -594,6 +594,16 @@ function MatchResults() {
           </p>
         )}
         <div class="modal-actions match-actions">
+          {m.kept && (
+            <button
+              class="btn"
+              data-testid="match-play-on"
+              title="Leave the match and carry on with this city at your own speed"
+              onClick={() => game.playOnAfterMatch()}
+            >
+              Play on
+            </button>
+          )}
           {!m.kept && r && (
             <button
               class="btn"

@@ -1886,6 +1886,24 @@ export class Game {
     const keys = new Set<string>();
     let toasted = false;
     for (const a of this.advice) {
+      // Homes a day or less from emptying (M42): said once, plainly, while there's time to act.
+      if (a.emptying && a.emptying.hours <= 24) {
+        const key = `emptying:${a.emptying.why}`;
+        keys.add(key);
+        if (!this.lastAdviceKeys.has(key)) {
+          const what =
+            a.emptying.why === 'utility' ? a.title.toLowerCase() : 'unhappy homes without services';
+          this.notice(
+            key,
+            `Homes will start to empty soon (${what}). The advisors (J) say what to do: ${a.text}`,
+            'bad',
+            a.at,
+            !toasted,
+          );
+          toasted = true;
+        }
+        continue;
+      }
       // Disasters announce themselves; don't repeat them as advice.
       if (a.severity < 3 || a.title.endsWith('under way')) continue;
       const key = `${a.advisor}:${a.title.replace(/[0-9,]+/g, '#')}`;

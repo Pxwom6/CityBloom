@@ -145,6 +145,11 @@ interface Player {
   tick: number;
   visible: boolean;
   joining: boolean;
+  /**
+   * Until when the city waits for this player catching up after a snapshot (ms, the room's clock; 0:
+   * not waited for), M49: a slow phone joining a busy city fell behind for good.
+   */
+  holdUntil: number;
   conn: Conn | null;
 }
 
@@ -171,6 +176,12 @@ interface Incoming {
 export const MAX_CLOCK_STEP = 30 * 60;
 /** A joining player is in step once within this many ticks of the frontier (the city keeps moving). */
 const CAUGHT_UP = 120;
+/**
+ * How long the city waits for a player catching up after loading its snapshot (ms, M49): the pacer
+ * keeps time within its lead of them, as for anyone in step. Past it, the city carries on and they
+ * catch up as before (a page that can't, a tab put away, never holds a room up for longer).
+ */
+export const JOIN_HOLD = 30_000;
 /** How long to wait for the pacer's snapshot before falling back to the stored one (ms). */
 const SETTLE_WAIT = 8_000;
 /** Checksums kept for comparing (game hours). */
@@ -290,7 +301,7 @@ export class Room {
       muted: meta.info.muted ?? [],
     };
     for (const p of meta.players)
-      this.players.set(p.id, { ...p, visible: false, joining: false, conn: null });
+      this.players.set(p.id, { ...p, visible: false, joining: false, holdUntil: 0, conn: null });
     this.nextPlayer = meta.nextPlayer;
     this.allowed = meta.allowed;
     this.kicked = new Set(meta.kicked);
@@ -485,6 +496,7 @@ export class Room {
     const msg = parseClientMsg(raw);
     if (!msg) return this.reject(conn, 'bad-message', 'A message the room could not read');
     this.checkStall(now);
+    this.checkHolds(now);
     if (msg.t === 'hello') return this.hello(conn, msg);
     const p = st.player ? this.players.get(st.player) : null;
     if (!p) return this.reject(conn, 'bad-message', 'Say hello first');
@@ -584,6 +596,7 @@ export class Room {
       tick: this.allowed,
       visible: true,
       joining: false,
+      holdUntil: 0,
       conn,
     };
     this.players.set(p.id, p);
@@ -644,6 +657,7 @@ export class Room {
         if (moved) this.broadcast({ t: 'ticks', ticks: [[p.id, p.tick]] }, p.id);
         if (p.joining && !this.waiting.has(p.id) && m.tick >= this.allowed - CAUGHT_UP) {
           p.joining = false;
+          p.holdUntil = 0;
           this.choosePacer();
           this.broadcastPlayers();
         }
@@ -799,6 +813,7 @@ export class Room {
   }
 
   private playerList(): PlayerInfo[] {
+    const now = this.env.now();
     return [...this.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -808,6 +823,8 @@ export class Room {
       tick: p.tick,
       visible: p.visible,
       joining: p.joining,
+      // Catching up with its city loaded, and waited for (M49).
+      ...(p.joining && p.holdUntil > now && !this.waiting.has(p.id) ? { catchUp: true } : {}),
     }));
   }
 
@@ -892,6 +909,20 @@ export class Room {
     s.parts.forEach((data, part) => p.conn!.send({ t: 'snap', meta: s.meta, part, data, reason }));
     p.conn.send({ t: 'ev', list: this.events.filter((e) => e.seq > s.meta.seq), allow: this.allowed });
     p.joining = true;
+    // The city waits a while for them to catch up (M49); everyone hears so (the pacer counts them).
+    p.holdUntil = this.env.now() + JOIN_HOLD;
+    this.broadcastPlayers();
+  }
+
+  /** A player waited for too long: the city carries on without waiting (M49). */
+  private checkHolds(now: number): void {
+    let changed = false;
+    for (const p of this.players.values())
+      if (p.holdUntil && (now > p.holdUntil || !p.joining || !p.conn)) {
+        p.holdUntil = 0;
+        changed = true;
+      }
+    if (changed) this.broadcastPlayers();
   }
 
   private snapPart(p: Player, m: Extract<ClientMsg, { t: 'snap' }>): void {

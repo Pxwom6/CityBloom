@@ -28,6 +28,18 @@ let last = performance.now();
 const MAX_TICKS_PER_LOOP = 60;
 /** Shared city: milliseconds of ticks per loop when catching up (the loop runs every 50 ms). */
 const SHARED_BUDGET_MS = 35;
+/**
+ * Far behind (joining a busy city, M49): ticks run for most of each loop, and the page hears of them
+ * only every `BULK_FRAME_MS` (a frame's diff of everything changed since), so a slow phone spends its
+ * time catching up, not drawing each step on the way.
+ */
+const BULK_BUDGET_MS = 45;
+const BULK_FRAME_MS = 400;
+/** How far behind (ticks) counts as far, at least, and in seconds of the room's speed. */
+const BULK_BEHIND = 240;
+const BULK_SECONDS = 8;
+let bulk = false;
+let lastFrameAt = 0;
 const perf: WorkerPerf = { tickMsAvg: 0, tickMsMax: 0, ticksPerSecond: 0, droppedTicks: 0 };
 let perfWindowStart = performance.now();
 let perfWindowTicks = 0;
@@ -71,8 +83,10 @@ function runShared(elapsed: number): void {
   due += (elapsed / 1000) * tps;
   // Paused (the room stopped where it is) or far behind: straight there.
   const catchUp = tps === 0 || ls.behind > Math.max(48, tps * 2);
+  bulk = ls.behind > Math.max(BULK_BEHIND, tps * BULK_SECONDS);
+  const budget = bulk ? BULK_BUDGET_MS : SHARED_BUDGET_MS;
   let n = catchUp ? Infinity : Math.floor(due);
-  while (n > 0 && ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+  while (n > 0 && ls.behind > 0 && performance.now() - t0 < budget) {
     n--;
     if (!catchUp) due--;
     timeTick(() => ls.run(1));
@@ -153,7 +167,11 @@ function step(): void {
     }
     if (n > 0) runTicks(n);
   }
-  if (sim) flush();
+  // Far behind, the page hears every BULK_FRAME_MS; the frame then carries everything since.
+  if (sim && (!lockstep || !bulk || now - lastFrameAt >= BULK_FRAME_MS)) {
+    lastFrameAt = now;
+    flush();
+  }
 }
 
 setInterval(loop, 50);

@@ -177,6 +177,11 @@ export interface PlayerInfo {
   visible: boolean;
   /** Loading a snapshot and catching up (not waited for until they're in step). */
   joining: boolean;
+  /**
+   * Catching up with its city loaded, and waited for (M49): for a while after its snapshot the room
+   * has the pacer keep time within its lead of this player too. Absent from rooms before M49.
+   */
+  catchUp?: boolean;
 }
 
 export interface RoomInfo {

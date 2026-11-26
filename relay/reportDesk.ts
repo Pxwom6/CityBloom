@@ -67,6 +67,8 @@ export interface ItemView {
   id: number;
   at: number;
   note: string | null;
+  /** A desync's line: which side, where, and whether it replays from nothing more. */
+  summary: string | null;
   shot: boolean;
   replay: boolean;
   bytes: number;
@@ -101,6 +103,7 @@ interface ItemRow {
   key: string;
   at: number;
   note: string | null;
+  summary: string | null;
   shot: number;
   replay: number;
   bytes: number;
@@ -146,7 +149,7 @@ export class ReportDesk extends LazyTables {
         'fixed_at INTEGER, fixed_builds TEXT NOT NULL, reopened INTEGER NOT NULL, builds TEXT NOT NULL, ' +
         'browsers TEXT NOT NULL, env TEXT NOT NULL, dropped INTEGER NOT NULL) WITHOUT ROWID',
       items:
-        '(id INTEGER PRIMARY KEY, key TEXT NOT NULL, at INTEGER NOT NULL, note TEXT, shot INTEGER NOT NULL, ' +
+        '(id INTEGER PRIMARY KEY, key TEXT NOT NULL, at INTEGER NOT NULL, note TEXT, summary TEXT, shot INTEGER NOT NULL, ' +
         'replay INTEGER NOT NULL, bytes INTEGER NOT NULL, data TEXT NOT NULL)',
     });
     const saved = this.get('budget');
@@ -230,10 +233,11 @@ export class ReportDesk extends LazyTables {
       const data = JSON.stringify(r);
       if (counts.items < this.limits.maxItems && counts.bytes + data.length <= this.limits.itemBytes) {
         this.write(
-          'INSERT INTO items (key, at, note, shot, replay, bytes, data) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO items (key, at, note, summary, shot, replay, bytes, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           key,
           now,
           r.note ?? null,
+          desyncSummary(r),
           r.shot ? 1 : 0,
           r.desync?.events || r.desync?.start ? 1 : 0,
           data.length,
@@ -343,9 +347,17 @@ export class ReportDesk extends LazyTables {
 
   private items(key: string): ItemView[] {
     return this.read<ItemRow>(
-      'SELECT id, key, at, note, shot, replay, bytes FROM items WHERE key = ? ORDER BY id DESC',
+      'SELECT id, key, at, note, summary, shot, replay, bytes FROM items WHERE key = ? ORDER BY id DESC',
       key,
-    ).map((i) => ({ id: i.id, at: i.at, note: i.note, shot: !!i.shot, replay: !!i.replay, bytes: i.bytes }));
+    ).map((i) => ({
+      id: i.id,
+      at: i.at,
+      note: i.note,
+      summary: i.summary,
+      shot: !!i.shot,
+      replay: !!i.replay,
+      bytes: i.bytes,
+    }));
   }
 
   private view(g: GroupRow): GroupView {
@@ -390,6 +402,7 @@ export class ReportDesk extends LazyTables {
       key: i.key,
       at: i.at,
       note: i.note,
+      summary: i.summary,
       shot: !!i.shot,
       replay: !!i.replay,
       bytes: i.bytes,
@@ -443,6 +456,23 @@ export class ReportDesk extends LazyTables {
   } {
     return { ...this.counts(), rowsToday: this.budget.used(now), limits: this.limits };
   }
+}
+
+/** A desync's line in the owner area: the side, the tick, and what a replay needs. */
+export function desyncSummary(r: Report): string | null {
+  const d = r.desync;
+  if (!d) return null;
+  const replay =
+    d.where === 'battle'
+      ? 'hashes only'
+      : d.cut || !d.events
+        ? 'too many events to replay'
+        : d.start?.founded
+          ? 'replays from nothing more'
+          : d.start
+            ? `replays from the city saved at tick ${d.start.tick}`
+            : 'no start to replay from';
+  return `${r.message} · tick ${d.tick} · ${replay}`;
 }
 
 /** Compare two strings in time that doesn't depend on where they differ. */

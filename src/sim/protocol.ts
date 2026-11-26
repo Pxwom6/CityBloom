@@ -600,7 +600,7 @@ export type MainToWorker =
   /** Back to single player's own clock. */
   | { type: 'unshare' }
   /** Test mode only: knock this machine's city out of step (a desync for the tests to catch). */
-  | { type: 'perturb' }
+  | { type: 'perturb'; kind?: 'id' }
   /** What a desync's replay needs (M41): the run's start, events and hourly sums; null when not shared. */
   | { type: 'desyncLog'; id: number }
   /** The room's events, in order, and how far the sim may now run. */

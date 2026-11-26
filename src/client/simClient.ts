@@ -154,8 +154,8 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'desyncLog', id }));
   }
 
-  perturb(): void {
-    this.post({ type: 'perturb' });
+  perturb(kind?: 'id'): void {
+    this.post({ type: 'perturb', ...(kind ? { kind } : {}) });
   }
 
   unshare(): void {

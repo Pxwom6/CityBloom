@@ -11,10 +11,18 @@ const out = process.argv[2] ?? 'shots/owner';
 mkdirSync(out, { recursive: true });
 const KEY = 'owner-shot-key';
 const kids = [
-  spawn('npx', ['tsx', 'relay/local.ts', '8787', '--owner-key', KEY], { stdio: 'ignore' }),
-  spawn('node', ['e2e/serve.mjs', 'dist-test', '4180', '/'], { stdio: 'ignore' }),
+  spawn('npx', ['tsx', 'relay/local.ts', '8787', '--owner-key', KEY], { stdio: 'ignore', detached: true }),
+  spawn('node', ['e2e/serve.mjs', 'dist-test', '4180', '/'], { stdio: 'ignore', detached: true }),
 ];
-const stop = () => kids.forEach((k) => k.kill());
+// Each in a process group of its own, so npx's child goes with it.
+const stop = () =>
+  kids.forEach((k) => {
+    try {
+      process.kill(-k.pid);
+    } catch {
+      /* gone */
+    }
+  });
 process.on('exit', stop);
 
 async function waitFor(url) {

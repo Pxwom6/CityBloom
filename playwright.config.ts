@@ -31,10 +31,12 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
     },
-    // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect. A friend's
+    // The local relay (M30): online rooms and peer-to-peer signalling, as test builds expect, and the
+    // report desk (M41). A friend's
     // atom strike is kept after 20 s of a launch being prepared rather than 20 minutes (M40 step 12).
     {
-      command: 'npx tsx relay/local.ts 8787 --atom-prep 20',
+      // The owner area's key for the tests (M41): the local relay's only; production keeps OWNER_KEY secret.
+      command: 'npx tsx relay/local.ts 8787 --atom-prep 20 --owner-key e2e-owner-key',
       url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60_000,

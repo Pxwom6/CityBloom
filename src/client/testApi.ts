@@ -295,7 +295,7 @@ export interface TestApi {
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
   netDrop(): void;
   /** Knock this page's city out of step (the room should catch it and resync). */
-  netPerturb(): void;
+  netPerturb(kind?: 'id'): void;
   /** Problem reports (M41): throw an uncaught error, reject a promise, the reporter's counts, send now. */
   throwError(message?: string): void;
   rejectPromise(message?: string): void;
@@ -1065,7 +1065,7 @@ export function installTestApi(game: Game): TestApi {
       await game.region?.reportNow(true);
     },
     netDrop: () => game.net?.session.dropForTest(),
-    netPerturb: () => game.client.perturb(),
+    netPerturb: (kind) => game.client.perturb(kind),
     // Problem reports (M41): a deliberate error, a rejected promise, and what the reporter has done.
     throwError: (message = 'A deliberate test error') => {
       setTimeout(() => {

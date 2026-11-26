@@ -174,6 +174,11 @@ function Group(props: { g: GroupView; api: OwnerApi; changed: () => void; note: 
                   <li key={i.id} data-testid="owner-item">
                     <span class="muted">{ago(i.at)}</span>
                     {i.note && <p class="owner-note">{i.note}</p>}
+                    {i.summary && (
+                      <p class="owner-note" data-testid="owner-item-summary">
+                        {i.summary}
+                      </p>
+                    )}
                     {i.shot &&
                       (d?.report.shot ? (
                         <img

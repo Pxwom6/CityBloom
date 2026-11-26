@@ -281,8 +281,13 @@ function handle(msg: MainToWorker): void {
       post({ type: 'reply', id: msg.id, result: lockstep ? desyncLog.data() : null });
       break;
     case 'perturb':
-      // One draw from a random stream: nothing visible changes, but the next checksum differs.
-      if (sim?.testMode) sim.rng.growth.next();
+      // One draw from a random stream: nothing visible changes, but a later checksum differs (a draw
+      // can be absorbed for a while). Or an id skipped, which the next hourly checksum always shows
+      // (and no invariant minds, unlike a dollar that isn't in the ledger).
+      if (sim?.testMode) {
+        if (msg.kind === 'id') sim.state.nextId += 1;
+        else sim.rng.growth.next();
+      }
       break;
     case 'unshare':
       // This copy is the player's own now (F9): their undo, no room rules, no other players.

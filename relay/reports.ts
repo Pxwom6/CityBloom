@@ -353,7 +353,10 @@ function cleanDesync(v: unknown): ReportDesync | undefined {
       pre.every((e) => {
         const x = e as Record<string, unknown> | null;
         return (
-          !!x && typeof x === 'object' && isInt(x.tick) && ((!!x.cmd && typeof x.cmd === 'object') || x.settle === true)
+          !!x &&
+          typeof x === 'object' &&
+          isInt(x.tick) &&
+          ((!!x.cmd && typeof x.cmd === 'object') || x.settle === true)
         );
       });
     if (f && preOk && !holdsOthers(pre)) {
@@ -424,7 +427,10 @@ export function cleanReport(raw: unknown): Cleaned {
   const report: Report = {
     kind,
     env,
-    message: quietQuotes(stripAddresses(cleanText(r.message, REPORT_CAPS.message * 2))).slice(0, REPORT_CAPS.message),
+    message: quietQuotes(stripAddresses(cleanText(r.message, REPORT_CAPS.message * 2))).slice(
+      0,
+      REPORT_CAPS.message,
+    ),
     stack: quietQuotes(stripAddresses(cleanText(r.stack, REPORT_CAPS.stack * 2))).slice(0, REPORT_CAPS.stack),
     at: isInt(r.at) ? r.at : 0,
   };
@@ -474,7 +480,11 @@ export function firstFrame(stack: string): string {
     const m = line.trim().startsWith('at ') ? chrome : gecko;
     if (!m) continue;
     // A method keeps its name in a minified build; its class's name doesn't ("Xy.step" → "step").
-    const fn = (m[1] ?? '').replace(/^new\s+/, '').split('.').pop() ?? '';
+    const fn =
+      (m[1] ?? '')
+        .replace(/^new\s+/, '')
+        .split('.')
+        .pop() ?? '';
     if (fn.length >= 4 && fn !== '<anonymous>') return fn;
     const file = (m[2] ?? '')
       .split('/')

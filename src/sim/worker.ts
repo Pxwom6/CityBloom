@@ -266,7 +266,8 @@ function handle(msg: MainToWorker): void {
           pre = [];
           let k = 0;
           sim.log.forEach((e, i) => {
-            while (k < originSaves.length && originSaves[k]!.at <= i) pre!.push({ tick: originSaves[k++]!.tick, settle: true });
+            while (k < originSaves.length && originSaves[k]!.at <= i)
+              pre!.push({ tick: originSaves[k++]!.tick, settle: true });
             pre!.push(e);
           });
           while (k < originSaves.length) pre.push({ tick: originSaves[k++]!.tick, settle: true });

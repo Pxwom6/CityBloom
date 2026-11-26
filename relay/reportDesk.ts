@@ -135,7 +135,9 @@ function tally(json: string, key: string, n: number, max: number, now: number, b
 
 /** A tally's entries, most counted first. */
 const list = (json: string): [string, number][] =>
-  (JSON.parse(json || '[]') as Tally).map((e) => [e[0], e[1]] as [string, number]).sort((a, b) => b[1] - a[1]);
+  (JSON.parse(json || '[]') as Tally)
+    .map((e) => [e[0], e[1]] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
 
 export class ReportDesk extends LazyTables {
   private budget: DailyRows;
@@ -276,8 +278,13 @@ export class ReportDesk extends LazyTables {
       const data = JSON.stringify(r);
       // Full: the oldest kept items make room, so the newest reports are always there to read.
       let room = this.counts();
-      while (room.items > 0 && (room.items >= this.limits.maxItems || room.bytes + data.length > this.limits.itemBytes)) {
-        const o = this.read<{ id: number; bytes: number }>('SELECT id, bytes FROM items ORDER BY id ASC LIMIT 1')[0];
+      while (
+        room.items > 0 &&
+        (room.items >= this.limits.maxItems || room.bytes + data.length > this.limits.itemBytes)
+      ) {
+        const o = this.read<{ id: number; bytes: number }>(
+          'SELECT id, bytes FROM items ORDER BY id ASC LIMIT 1',
+        )[0];
         if (!o) break;
         this.dropItem(o.id, o.bytes);
         room = this.counts();
@@ -387,7 +394,13 @@ export class ReportDesk extends LazyTables {
   ): 'ok' | 'unset' | 'wrong' | 'busy' {
     const key = ownerKey?.trim() ?? '';
     if (key.length < this.limits.ownerKeyMin) return 'unset';
-    const b = this.bucket(this.ownerTries, address, this.limits.ownerTries.rate, this.limits.ownerTries.burst, now);
+    const b = this.bucket(
+      this.ownerTries,
+      address,
+      this.limits.ownerTries.rate,
+      this.limits.ownerTries.burst,
+      now,
+    );
     if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
     if (given !== null && safeEqual(given, key)) return 'ok';
     b.take(now);

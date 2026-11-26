@@ -85,7 +85,11 @@ async function copy(text: string): Promise<boolean> {
   }
 }
 
-function SignIn(props: { onKey: (k: string, remember: boolean) => void; error: string | null; busy: boolean }) {
+function SignIn(props: {
+  onKey: (k: string, remember: boolean) => void;
+  error: string | null;
+  busy: boolean;
+}) {
   const [key, setKey] = useState('');
   const [remember, setRemember] = useState(false);
   return (
@@ -400,7 +404,9 @@ export function OwnerApp(props: { base: string | null }) {
         </div>
       )}
       {state === 'checking' && <p class="muted owner-card">Checking…</p>}
-      {state === 'signin' && <SignIn onKey={(k, remember) => void check(k, remember)} error={error} busy={false} />}
+      {state === 'signin' && (
+        <SignIn onKey={(k, remember) => void check(k, remember)} error={error} busy={false} />
+      )}
       {state === 'in' && api && (
         <main>
           <nav class="owner-sections">

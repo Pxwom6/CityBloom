@@ -769,6 +769,21 @@ function cleanReport(r: unknown): RegionReport | null {
   if (o.clock !== undefined && !wholeIn(o.clock, 0, 1e9)) return null;
   // The atom bomb (M40): rebuilt field by field, and dropped (the report kept) if any part is wrong.
   const atom = o.atom === undefined ? null : cleanAtomReport(o.atom);
+  // A quick match (M43): the figures, checked; a report with a wrong one is turned away.
+  const m = o.match as Record<string, unknown> | undefined;
+  if (
+    m !== undefined &&
+    !(
+      m &&
+      typeof m === 'object' &&
+      wholeIn(m.tick, 0, 1e9) &&
+      finite(m.treasury, -1e10, 1e10) &&
+      finite(m.assets, -1e10, 1e10) &&
+      finite(m.approval, 0, 100) &&
+      (m.hash === undefined || (typeof m.hash === 'string' && /^[\w:.-]{1,80}$/.test(m.hash)))
+    )
+  )
+    return null;
   // War (M39): a friend's vassal says whom it pays and how much a month.
   const dues = o.dues as Record<string, unknown> | undefined;
   if (
@@ -796,6 +811,17 @@ function cleanReport(r: unknown): RegionReport | null {
     ...(o.clock !== undefined ? { clock: o.clock as number } : {}),
     ...(dues ? { dues: { slot: dues.slot as number, amount: Math.round(dues.amount as number) } } : {}),
     ...(atom ? { atom } : {}),
+    ...(m
+      ? {
+          match: {
+            tick: m.tick as number,
+            treasury: Math.round(m.treasury as number),
+            assets: Math.round(m.assets as number),
+            approval: Math.round(m.approval as number),
+            ...(m.hash !== undefined ? { hash: m.hash as string } : {}),
+          },
+        }
+      : {}),
   };
 }
 

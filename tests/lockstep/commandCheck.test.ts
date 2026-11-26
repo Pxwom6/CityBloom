@@ -140,6 +140,7 @@ const SAMPLES: Record<CommandType, Command> = {
     late: false,
   },
   warClock: { type: 'warClock', cap: 120 },
+  endMatch: { type: 'endMatch' },
   // M39, wars and treaties with friends (page only).
   friendWar: {
     type: 'friendWar',

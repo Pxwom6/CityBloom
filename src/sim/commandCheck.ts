@@ -53,6 +53,8 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'missionResult',
   'opResolve',
   'warClock',
+  // A quick match's city kept as an ordinary save (M43).
+  'endMatch',
   // Wars and treaties between friends (M39): the same.
   'friendWar',
   'friendTreaty',
@@ -365,6 +367,7 @@ const CHECKS: Record<CommandType, Check> = {
   missionResult: () => 'Only your own game hears from the region',
   opResolve: () => 'Only your own game hears from the region',
   warClock: () => 'Only your own game hears from the region',
+  endMatch: () => 'Only your own game keeps its match city',
   friendWar: () => 'Only your own game hears from the region',
   friendTreaty: () => 'Only your own game hears from the region',
   friendPacts: () => 'Only your own game hears from the region',

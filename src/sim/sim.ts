@@ -510,7 +510,7 @@ export class Sim {
       tick: 0,
       nextId: 1,
       rng,
-      treasury: options.sandbox ? SANDBOX_FUNDS : DIFFICULTY[options.difficulty].funds,
+      treasury: startingFunds(options),
       cityName: options.cityName,
       trees: terrain.initialTrees.slice(),
       net: { nodes: new Map(), segments: new Map(), blocks: new Map() },
@@ -521,7 +521,7 @@ export class Sim {
       demand: emptyDemand(),
       landValue: new Float32Array(GRID_RES * GRID_RES),
       cursors: { growth: 0, matchRound: 0 },
-      economy: defaultEconomy(options.sandbox ? SANDBOX_FUNDS : DIFFICULTY[options.difficulty].funds),
+      economy: defaultEconomy(startingFunds(options)),
       civics: new Map(),
       vehicles: new Map(),
       groundPollution: new Float32Array(GRID_RES * GRID_RES),
@@ -916,13 +916,21 @@ export class Sim {
     return this.state.unlockAll || this.reached(population);
   }
 
+  /** A quick match's growth (M43): spawning, moving in, building speed and how much at once; 1 otherwise. */
+  growthPace(): number {
+    return this.state.options.match?.growth ?? 1;
+  }
+
   /**
    * Has the city itself grown this big (sandbox counts)? Zone densities go by this: the unlock-all
    * cheat opens up things to build, not how tall the city grows.
    */
   reached(population: number): boolean {
     const s = this.state;
-    return s.options.sandbox || Math.max(s.progress.peak, s.totals.population) >= population;
+    // A quick match's short path (M43): unlocks and taller buildings at a share of their population.
+    const m = s.options.match;
+    const need = m ? Math.ceil(population * m.unlock) : population;
+    return s.options.sandbox || Math.max(s.progress.peak, s.totals.population) >= need;
   }
 
   /** Roads nothing can drive along right now: damaged by a disaster, or under flood water. */
@@ -1634,6 +1642,11 @@ export class Sim {
         );
       case 'warClock':
         return warClock(this, cmd.cap, dryRun, !!cmd.left);
+      case 'endMatch': {
+        if (!this.state.options.match) return fail('This city isn’t in a quick match');
+        if (!dryRun) delete this.state.options.match;
+        return ok(0);
+      }
       case 'friendWar':
         return friendWar(this, cmd, dryRun);
       case 'friendTreaty':
@@ -3026,4 +3039,10 @@ function blockData(b: ZoneBlock): BlockData {
     valid: b.valid.slice(),
     bld: b.bld.slice(),
   };
+}
+
+/** What a new city starts with: the sandbox's, a quick match's fast start (M43), or the difficulty's. */
+function startingFunds(options: GameOptions): number {
+  if (options.sandbox) return SANDBOX_FUNDS;
+  return options.match?.funds ?? DIFFICULTY[options.difficulty].funds;
 }

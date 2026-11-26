@@ -1,6 +1,7 @@
 import type { Chronicle } from './systems/chronicle';
 import type { ElectionState } from './systems/elections';
 import type { MapPreset } from '../data/world';
+import type { MatchStart } from '../data/match';
 import type { Difficulty } from '../data/economy';
 import type { RngState } from './rng';
 import type { NetworkState } from './world/network';
@@ -52,6 +53,11 @@ export interface GameOptions {
    * battles. Off unless set; a peaceful city's options have no such key, so its saves are as before.
    */
   rivals?: boolean;
+  /**
+   * A quick match's fast start (M43): more money, quicker growth and a short unlock path. Absent in
+   * every other city; taken away when a player keeps the city as an ordinary save (`endMatch`).
+   */
+  match?: MatchStart;
 }
 
 export const DEFAULT_OPTIONS: GameOptions = {

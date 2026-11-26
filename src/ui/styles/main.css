@@ -5766,3 +5766,23 @@ body {
   flex-wrap: wrap;
   justify-content: center;
 }
+/* Notices on a phone: under the top bar, out of the way of the sheets (M49); sideways, on the left. */
+#ui[data-phone] .toasts,
+#ui[data-phone] .toasts:is(.beside-panel, .beside-map) {
+  left: max(var(--space-2), env(safe-area-inset-left));
+  right: max(var(--space-2), env(safe-area-inset-right));
+  top: calc(var(--topbar-height) + var(--space-3) + env(safe-area-inset-top));
+  bottom: auto;
+  align-items: center;
+  pointer-events: none;
+}
+#ui[data-phone] .toast {
+  max-width: 100%;
+  pointer-events: auto;
+}
+#ui[data-phone][data-orient='landscape'] .toasts,
+#ui[data-phone][data-orient='landscape'] .toasts:is(.beside-panel, .beside-map) {
+  right: auto;
+  width: min(24rem, 40vw);
+  align-items: stretch;
+}

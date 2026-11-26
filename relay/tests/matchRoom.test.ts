@@ -384,7 +384,14 @@ describe('M43 a quick match in the region room', () => {
     const lines = w.cities[1]!.got.filter((m) => m.t === 'mscores').length;
     // A score line for each counted report; the whole view about once a minute a city (its picture).
     expect(lines).toBeGreaterThan(600);
-    expect(views).toBeLessThan(4 * 16 + 10);
+    // Each new picture goes on its own (a minute a city), and the views leave pictures out.
+    const thumbs = w.cities[1]!.got.filter((m) => m.t === 'mthumb').length;
+    expect(thumbs).toBe(4 * 15);
+    expect(views).toBeLessThan(20);
+    expect(view(w.cities[1]!).cities.every((c) => c.thumb === null)).toBe(true);
+    // A page arriving now (a visitor) gets the pictures in its welcome.
+    const look = hello(w.room, 0, { visitor: true });
+    expect(view(look).cities.every((c) => c.thumb?.startsWith('data:image/'))).toBe(true);
     expect(w.store.rowsWritten - rows0).toBeLessThan(15);
   });
 });

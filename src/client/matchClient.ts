@@ -94,6 +94,8 @@ export class MatchClient implements MatchSink {
   /** Each city's last counted figures, by slot (the room's score lines). */
   rows = new Map<number, MatchRow>();
   said: MatchSaid[] = [];
+  /** Each city's latest picture, by slot (a match's views leave them out: they come as `mthumb`). */
+  thumbs = new Map<number, string>();
   /** The round this city was founded for (0: not a match city). */
   round = 0;
   invite: string | null = null;
@@ -195,6 +197,11 @@ export class MatchClient implements MatchSink {
   view(v: RegionView): void {
     const m = v.match;
     if (!m) return;
+    // Pictures: the welcome's are kept, and put back into later views (which leave them out).
+    for (const c of v.cities) {
+      if (c.thumb) this.thumbs.set(c.slot, c.thumb);
+      else c.thumb = this.thumbs.get(c.slot) ?? null;
+    }
     this.region = v;
     const was = this.info;
     // Views come in the order the room sent them; an older round's is stale.
@@ -247,6 +254,13 @@ export class MatchClient implements MatchSink {
         }
         this.host.notify();
         return true;
+      case 'mthumb': {
+        this.thumbs.set(m.slot, m.thumb);
+        const c = this.region?.cities.find((x) => x.slot === m.slot);
+        if (c) c.thumb = m.thumb;
+        this.host.notify();
+        return true;
+      }
       case 'memote':
       case 'mchat': {
         const now = performance.now();

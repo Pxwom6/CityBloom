@@ -337,6 +337,8 @@ export type RegionRoomMsg =
    * countdown late (its main thread busy) moves its clock up to the room's.
    */
   | { t: 'mscores'; round: number; rows: MatchRow[]; left?: number }
+  /** A match city's new picture (M43), on its own rather than in the whole view. */
+  | { t: 'mthumb'; slot: number; thumb: string }
   | { t: 'memote'; from: number; e: number }
   | { t: 'mchat'; from: number; text: string }
   /**
@@ -1465,7 +1467,11 @@ export class RegionRoom {
     });
   }
 
-  view(): RegionView {
+  /**
+   * `thumbs`: with each city's picture. A quick match's broadcasts leave them out (M43): a picture goes
+   * on its own as it changes (`mthumb`), and the welcome carries them all.
+   */
+  view(thumbs = true): RegionView {
     const m = this.meta!;
     const now = this.env.now();
     const p = m.project;
@@ -1481,7 +1487,7 @@ export class RegionRoom {
         color: c.color,
         online: this.online(c.slot),
         report: c.report,
-        thumb: c.thumb,
+        thumb: thumbs || !m.match ? c.thumb : null,
         quietFor: Math.max(0, now - c.heard),
         visitable: !!c.saved,
         ...(m.rules?.war
@@ -1716,7 +1722,7 @@ export class RegionRoom {
 
   private broadcast(): void {
     if (!this.meta) return;
-    const msg: RegionRoomMsg = { t: 'region', region: this.view() };
+    const msg: RegionRoomMsg = { t: 'region', region: this.view(false) };
     for (const c of this.conns.keys()) c.send(msg);
   }
 
@@ -2403,7 +2409,8 @@ export class RegionRoom {
         this.dirty = true;
         // The whole view (with pictures) only when something in it changed beyond the figures; the
         // counted figures go as a score line (the view's reports aren't checked against the clock).
-        if (first || renamed || newThumb) this.broadcast();
+        if (first || renamed) this.broadcast();
+        if (newThumb) this.toAll({ t: 'mthumb', slot, thumb: m.thumb! });
         if (counted)
           this.toAll({
             t: 'mscores',

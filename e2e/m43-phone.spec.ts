@@ -20,7 +20,8 @@ async function check(p: Page, scope: string, where: string): Promise<void> {
 
 async function shot(p: Page, name: string): Promise<void> {
   await frames(p, 2);
-  await p.screenshot({ path: `test-results/m43-${name}.png`, scale: 'css' });
+  // Kept for review (`docs/screenshots`), at the phone's CSS size.
+  await p.screenshot({ path: `docs/screenshots/m43-${name}.png`, scale: 'css' });
 }
 
 async function phones(

@@ -62,7 +62,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
 - [x] M41 Hearing about problems
-- [ ] M42 Learning to play
+- [x] M42 Learning to play
 - [ ] M43 Quick match
 - [ ] M44 Weekly challenge
 - [ ] M45 Timelapse
@@ -271,8 +271,8 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M42 Learning to play** is finishing (its e2e, then bench, balance, the unit suite and the
-cross-browser run); it joins pull request #24 with M41. Then **M49 Phones** (after M42, before M43).
+**M42 Learning to play is complete**, joining M41 in pull request #24. **M49 Phones** is next
+(after M42, before M43; plan `docs/plans/M49-design.md`).
 
 M42 in short: the first-city tutorial grew from eight steps to eighteen, ending at 1,000 residents
 (roads, homes, jobs, power, water, the demand bars, the budget and taxes beside it, services and a
@@ -303,12 +303,29 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M42's last checks (bench, balance, the unit suite, the cross-browser run), then `M42 complete:` into
-   pull request #24 (title and description naming M41 and M42).
-2. M49 Phones (after M42, before M43): measure in phone emulation with CPU throttling, then the
+1. M49 Phones (after M42, before M43): measure in phone emulation with CPU throttling, then the
    whole game by touch upright and sideways, a 30 fps cap and battery saver, memory, installing, and
    slow joiners catching up in shared cities.
-3. Then M43–M48 in order (SPEC-6.md).
+2. Then M43–M48 in order (SPEC-6.md).
+
+## Performance (M42)
+- **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader): `e2e/m42-tutorial.spec.ts`,
+  three tests, 10.9 min: the whole tutorial from the main menu to 1,000 residents (1,196 at the end;
+  a power cut's lesson met on the way), leaving, skipping a step and resuming after a reload, and
+  all 21 cards at 100 % and 140 % and on a phone (63 pictures, contact sheets looked at);
+  `e2e/m42-learn.spec.ts`, two tests, 7.6 min: every lesson played from the Learn screen, and the room
+  card with two players. Kept pictures: `docs/screenshots/m42-*.png`.
+- **Bench** (`bench.ts 6 --big`): 4.5 s, months 4–6 tick avg 0.73–1.16 ms: as before (the sim's tick
+  didn't change; advice is read-only).
+- **Balance** (20 years, careful, greedy, neglectful): identical to phase 5 (careful 67,373 residents,
+  $1,838,985, 73 %).
+- **Tests**: the whole suite, 2,090 tests in 192 files (unit and live), passes; typecheck, lint and
+  prettier pass. Cross-browser: Chromium here passes; WebKit and real Firefox run on the pull request.
+- **Network**: nothing new travels between players (the room card reads the rules the page has).
+- **Download** (first measurement for M49, `scripts/dev/download.mjs`, a production build): a first
+  visit to the main menu and a new city fetches 1.6 MB gzipped (the game 594 KB, the models 515 KB,
+  the demo town 265 KB, the sim worker 224 KB); a second visit fetches nothing (the service worker).
+  The lesson towns (90–120 KB each) download only when a lesson opens.
 
 ## Performance (M41)
 - **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader, against the local relay):

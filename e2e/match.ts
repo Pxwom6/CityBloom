@@ -192,6 +192,19 @@ export async function playRound(
   round: number,
   o: { start?: boolean; tap?: boolean; during?: () => Promise<void>; leavers?: Page[] } = {},
 ): Promise<{ result: NonNullable<MatchView['result']>; views: MatchView[] }> {
+  try {
+    return await playRoundInner(pages, round, o);
+  } catch (err) {
+    console.log(`[m43] round ${round} failed; the pages' match clocks:\n${matchLogs(pages)}`);
+    throw err;
+  }
+}
+
+async function playRoundInner(
+  pages: Page[],
+  round: number,
+  o: { start?: boolean; tap?: boolean; during?: () => Promise<void>; leavers?: Page[] },
+): Promise<{ result: NonNullable<MatchView['result']>; views: MatchView[] }> {
   const [host, guest] = pages as [Page, Page];
   for (const p of pages) await until(p, (m) => m.round === round && m.phase !== null, `round ${round}`);
   if (o.start) {

@@ -406,7 +406,8 @@ export class MatchClient implements MatchSink {
 
   /** The player leaves the match (out; it goes on without them). */
   leave(): void {
-    if (this.phase && this.phase !== 'over') this.link?.sendMatch({ t: 'mleave' });
+    // After the result too: a rematch then doesn't wait for this city.
+    if (this.phase) this.link?.sendMatch({ t: 'mleave' });
     saveMatchSession(null);
   }
 

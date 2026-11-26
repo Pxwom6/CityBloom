@@ -55,7 +55,7 @@ export const MATCH = {
    * cities, before those here start without them (ms); and an online host whose page has gone keeps the host's part
    * this long (a reload, a dropped connection) before it passes on (ms).
    */
-  rematchWaitMs: 60_000,
+  rematchWaitMs: 120_000,
   hostGraceMs: 60_000,
   /** Game ticks a city may run ahead of the match's clock and still be counted (a slow message). */
   slackTicks: 240,

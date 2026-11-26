@@ -300,7 +300,25 @@ describe('M43 a quick match in the region room', () => {
     expect(view(d).match!.phase).toBe('playing');
   });
 
-  it('waits for every player of a rematch to come back, then a minute at most', () => {
+  it('doesn’t wait in a rematch for a player who went back to the menu after the result', () => {
+    const w = match({ mode: 'rich' }, 3);
+    const [a, b, c] = w.cities;
+    play(w);
+    w.clock.advance(15 * 60_000);
+    for (const r of [a!, b!, c!])
+      report(r, { population: 10, tick: matchEndTick(w.s) }, { final: true, hash: 'h' });
+    const before = JSON.stringify(result(a!));
+    // Back to menu from the results: the result stands, and the rematch goes on without it.
+    c!.say({ t: 'mleave' });
+    w.room.closed(c!.conn);
+    expect(JSON.stringify(result(a!))).toBe(before);
+    a!.say({ t: 'mnext' });
+    expect(view(a!).cities.map((x) => x.slot)).toEqual([1, 2]);
+    ready([a!, b!], 2);
+    expect(view(a!).match).toMatchObject({ phase: 'countdown', round: 2 });
+  });
+
+  it('waits for every player of a rematch to come back, then a while at most', () => {
     const w = match({ mode: 'rich' }, 3);
     const [a, b, c] = w.cities;
     play(w);

@@ -2479,8 +2479,9 @@ export class RegionRoom {
       case 'mleave': {
         const p = match.players.find((x) => x.slot === slot);
         if (!p || p.out) return;
+        // (After the result, out means only that a rematch won't wait for it: the result stands.)
         if (match.phase === 'lobby') this.dropCity(slot);
-        else if (match.phase !== 'over') p.out = true;
+        else p.out = true;
         this.toAll({ t: 'notice', text: `${city.name} left the match` });
         this.handOver(slot);
         this.changed(slot);

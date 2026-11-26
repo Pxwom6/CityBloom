@@ -24,7 +24,7 @@ export interface Sql {
 }
 
 /** Tables made on the first write; reads before then find nothing. */
-class LazyTables {
+export class LazyTables {
   private ready: boolean | null = null;
   rowsWritten = 0;
 
@@ -72,7 +72,7 @@ class LazyTables {
   }
 }
 
-const KV = '(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID';
+export const KV = '(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID';
 
 /** A room's store: its record, the latest snapshot and the events since, a batch to a row. */
 export class SqlStore extends LazyTables implements RoomStore {

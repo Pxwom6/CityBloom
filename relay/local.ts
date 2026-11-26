@@ -6,14 +6,16 @@
  *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
  *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds]`: it listens on this computer
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--owner-key key]`: it listens on this computer
  * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
  * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
  * socket opened with `?create=1`, and their codes start with a digit, signalling's with a letter.
  * Rooms and regions nobody comes back to are forgotten after `--ttl` days (60), empty signalling at
  * once. `--atom-prep` shortens the region's wait before it keeps a friend's atom strike (20 minutes
- * online), for the end-to-end tests (M40 step 12); the Worker online has no such switch.
+ * online), for the end-to-end tests (M40 step 12); the Worker online has no such switch. It also
+ * serves the report desk and the owner area over plain HTTP (M41, `relay/reportsHttp.ts`), with the
+ * owner key from `--owner-key` or OWNER_KEY; reports are kept in memory, or under `--data`.
  */
 import { createServer, type Server } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -34,6 +36,9 @@ import { RegionRoom, MemoryRegionStore, type RegionConn, type RegionLimits } fro
 import { route, type Route } from './objects';
 import { DAY_MS } from './limits';
 import type { Stamped } from '../src/sim/lockstep';
+import { ReportDesk, REPORT_LIMITS } from './reportDesk';
+import { corsHeaders, reportsHttp } from './reportsHttp';
+import { nodeSql } from './nodeSql';
 
 /** A store kept in one JSON file per room (`--data`), rewritten per batch of events. */
 class FileStore extends MemoryStore {
@@ -108,6 +113,13 @@ export interface RelayOptions {
    * try a phone on the same network (review, minor).
    */
   host?: string;
+  /**
+   * The owner key for the owner area (M41): `--owner-key`, or OWNER_KEY in the environment. Without
+   * one the owner area says it isn't set up, and reports are still taken.
+   */
+  ownerKey?: string;
+  /** The report desk's caps (tests make them small). */
+  reportLimits?: Partial<typeof REPORT_LIMITS>;
 }
 
 export interface LocalRelay {
@@ -116,12 +128,24 @@ export interface LocalRelay {
   rooms: Map<string, Room>;
   regions: Map<string, RegionRoom>;
   signals: Map<string, Signal>;
+  /** The report desk (M41). */
+  reports: ReportDesk;
   /** Forget rooms and regions that have expired by `now`, and any left holding nothing. */
   sweep(now?: number): void;
   close(): Promise<void>;
 }
 
-export function startRelay(
+/** The report desk in Node's SQLite: in memory, or in `reports.sqlite` under `--data`. */
+async function reportStore(
+  dataDir: string | null,
+  limits?: Partial<typeof REPORT_LIMITS>,
+): Promise<ReportDesk> {
+  if (dataDir) mkdirSync(dataDir, { recursive: true });
+  const db = await nodeSql(dataDir ? join(dataDir, 'reports.sqlite') : ':memory:');
+  return new ReportDesk(db.sql, Date.now(), { ...REPORT_LIMITS, ...limits });
+}
+
+export async function startRelay(
   port = 8787,
   dataDir: string | null = null,
   opts: RelayOptions = {},
@@ -132,13 +156,47 @@ export function startRelay(
   const regions = new Map<string, RegionRoom>();
   const regionStores = new Map<RegionRoom, MemoryRegionStore>();
   const ttl = opts.ttl !== undefined ? { ttl: opts.ttl } : {};
+  const reports = await reportStore(dataDir, opts.reportLimits);
   const server = createServer((req, res) => {
-    // A health check for scripts, and nothing else over plain HTTP.
-    res.writeHead(req.url === '/health' ? 200 : 404, {
-      'content-type': 'text/plain',
-      'access-control-allow-origin': '*',
-    });
-    res.end(req.url === '/health' ? 'citybloom relay' : 'not found');
+    const url = new URL(req.url ?? '/', 'http://x');
+    const cors = corsHeaders(String(req.headers.origin ?? ''), []) ?? {};
+    const send = (status: number, body: string, type = 'text/plain') => {
+      res.writeHead(status, { 'content-type': type, ...cors });
+      res.end(body);
+    };
+    if (url.pathname === '/health') return send(200, 'citybloom relay');
+    if (req.method === 'OPTIONS') return send(204, '');
+    // The report desk and the owner area (M41), as the Worker serves them.
+    void reportsHttp(
+      {
+        method: req.method ?? 'GET',
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => {
+          const v = req.headers[n.toLowerCase()];
+          return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+        },
+        text: () =>
+          new Promise((resolve, reject) => {
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (c: string) => {
+              body += c;
+              // Past the cap the rest isn't read (the desk refuses it as too big).
+              if (body.length > 1_000_000) req.destroy();
+            });
+            req.on('end', () => resolve(body));
+            req.on('error', reject);
+          }),
+        address: req.socket.remoteAddress ?? '',
+      },
+      reports,
+      opts.ownerKey,
+      Date.now(),
+    ).then(
+      (r) => (r ? send(r.status, JSON.stringify(r.json), 'application/json') : send(404, 'not found')),
+      () => send(500, 'error'),
+    );
   });
   const wss = new WebSocketServer({ server, maxPayload: 1 << 20 });
   if (dataDir) mkdirSync(dataDir, { recursive: true });
@@ -255,7 +313,10 @@ export function startRelay(
     }
     for (const [code, sig] of signals) if (!sig.size) signals.delete(code);
   };
-  const sweeper = setInterval(() => sweep(), SWEEP_EVERY);
+  const sweeper = setInterval(() => {
+    sweep();
+    reports.sweep(Date.now());
+  }, SWEEP_EVERY);
   sweeper.unref();
 
   return new Promise((resolve) => {
@@ -268,6 +329,7 @@ export function startRelay(
         rooms,
         regions,
         signals,
+        reports,
         sweep,
         close: () =>
           new Promise<void>((r) => {
@@ -289,9 +351,12 @@ if (process.argv[1]?.endsWith('local.ts')) {
   const days = option('--ttl');
   const host = option('--host') ?? '127.0.0.1';
   const prep = option('--atom-prep');
+  const ownerKey = option('--owner-key') ?? process.env.OWNER_KEY ?? undefined;
   const port = Number(
     args.find(
-      (a, i) => /^\d+$/.test(a) && !['--data', '--ttl', '--host', '--atom-prep'].includes(args[i - 1] ?? ''),
+      (a, i) =>
+        /^\d+$/.test(a) &&
+        !['--data', '--ttl', '--host', '--atom-prep', '--owner-key'].includes(args[i - 1] ?? ''),
     ) ?? 8787,
   );
   void startRelay(port, option('--data'), {
@@ -299,6 +364,7 @@ if (process.argv[1]?.endsWith('local.ts')) {
     host,
     ...(days ? { ttl: Number(days) * DAY_MS } : {}),
     ...(prep ? { regionLimits: { atomPrep: Number(prep) * 1000 } } : {}),
+    ...(ownerKey ? { ownerKey } : {}),
   }).then((r) => {
     console.log(
       `Citybloom relay on ws://${host}:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,

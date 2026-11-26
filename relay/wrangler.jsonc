@@ -9,9 +9,15 @@
       { "name": "ROOMS", "class_name": "RoomObject" },
       { "name": "SIGNALS", "class_name": "SignalObject" },
       { "name": "REGIONS", "class_name": "RegionObject" },
+      { "name": "REPORTS", "class_name": "ReportsObject" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject", "RegionObject"] }],
+  // Each new Durable Object class needs a migration of its own (phase 6 adds one per desk).
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject", "RegionObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["ReportsObject"] },
+  ],
+  // OWNER_KEY is a secret (M41): set by the deploy workflow from the GitHub secret, never written here.
   "vars": { "ALLOWED_ORIGINS": "https://pxwom6.github.io" },
   "observability": { "enabled": true },
 }

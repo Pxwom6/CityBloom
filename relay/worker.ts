@@ -4,6 +4,7 @@
  *   wss://<relay>/room/<CODE>[?create=1]    a room (the same Room class the local relay runs)
  *   wss://<relay>/region/<CODE>[?create=1]  a shared region (M32)
  *   wss://<relay>/signal/<CODE>             signalling for peer-to-peer rooms
+ *   https://<relay>/report, /owner/...      problem reports and the owner area (M41, `relay/reportsHttp.ts`)
  *
  * Rooms use the WebSocket Hibernation API, so a room nobody is talking to costs nothing; their
  * SQLite storage keeps the city between sessions (the latest snapshot and the events since). The
@@ -15,28 +16,44 @@
 import { DurableObject } from 'cloudflare:workers';
 import { RegionHost, RoomHost, SignalHost, route, type HostSocket, type SocketTag } from './objects';
 import type { RoomEnv } from './room';
+import { ReportDesk } from './reportDesk';
+import { corsHeaders, reportsHttp } from './reportsHttp';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
   SIGNALS: DurableObjectNamespace;
   REGIONS: DurableObjectNamespace;
+  /** The report desk (M41): one object holds every report. */
+  REPORTS: DurableObjectNamespace;
   /** Comma-separated origins allowed to connect (the site); empty allows any (development). */
   ALLOWED_ORIGINS?: string;
+  /** The owner area's key (M41), a Worker secret the deploy workflow sets from the GitHub secret. */
+  OWNER_KEY?: string;
 }
+
+const allowedOrigins = (env: Env): string[] =>
+  (env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health')
       return new Response('citybloom relay', { headers: { 'access-control-allow-origin': '*' } });
+    // Problem reports and the owner area (M41): plain HTTP to the one report desk.
+    if (url.pathname === '/report' || url.pathname.startsWith('/owner/')) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.REPORTS.get(env.REPORTS.idFromName('reports')).fetch(req);
+    }
     const r = route(url.pathname, url.search);
     if (!r) return new Response('not found', { status: 404 });
     if (req.headers.get('Upgrade') !== 'websocket')
       return new Response('expected a WebSocket', { status: 426 });
-    const allowed = (env.ALLOWED_ORIGINS ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const allowed = allowedOrigins(env);
     const origin = req.headers.get('Origin') ?? '';
     if (allowed.length && !allowed.includes(origin)) return new Response('forbidden', { status: 403 });
     const ns = r.kind === 'room' ? env.ROOMS : r.kind === 'region' ? env.REGIONS : env.SIGNALS;
@@ -161,5 +178,51 @@ export class SignalObject extends DurableObject<Env> {
 
   async webSocketClose(ws: CfWebSocket): Promise<void> {
     this.hub.closed(this.sockets.of(ws));
+  }
+}
+
+/**
+ * The report desk (M41, `ReportDesk`): every problem report and the owner area's requests. Reports
+ * not seen for 60 days are deleted by an alarm that rings once a day while anything is kept.
+ */
+export class ReportsObject extends DurableObject<Env> {
+  private readonly desk: ReportDesk;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.desk = new ReportDesk(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await reportsHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => req.text(),
+        // For the rate limit in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.desk,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && url.pathname === '/report' && (await this.ctx.storage.getAlarm()) === null) {
+      const at = this.desk.nextSweep(now);
+      if (at !== null) await this.ctx.storage.setAlarm(at);
+    }
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.desk.sweep(now)) await this.ctx.storage.setAlarm(now + 86_400_000);
   }
 }

@@ -76,6 +76,10 @@ export interface MatchState {
   endedBy?: MatchEnd;
   /** A rematch: the countdown starts by itself once every city here has founded its new city. */
   auto?: true;
+  /** When the rematch's lobby opened (the room's clock): its wait for players coming back runs from it. */
+  lobbyAt?: number;
+  /** When an online host's page went (the room's clock): the host's part passes on after a grace. */
+  hostAway?: number;
   players: MatchPlayer[];
   result?: MatchResult;
 }
@@ -316,12 +320,18 @@ export function decideMatch(m: MatchState, cities: MatchCity[]): MatchResult {
  * the next round. Cities that left or aren't here are dropped from the match; the others found their
  * new city and the countdown starts by itself once they all have.
  */
-export function rematch(m: MatchState, settings: MatchSettings, online: (slot: number) => boolean): number[] {
+export function rematch(
+  m: MatchState,
+  settings: MatchSettings,
+  online: (slot: number) => boolean,
+  now = 0,
+): number[] {
   const dropped = m.players.filter((p) => p.out || !online(p.slot)).map((p) => p.slot);
   m.settings = settings;
   m.round++;
   m.phase = 'lobby';
   m.auto = true;
+  m.lobbyAt = now;
   delete m.startAt;
   delete m.endsAt;
   delete m.finalAt;
@@ -333,9 +343,15 @@ export function rematch(m: MatchState, settings: MatchSettings, online: (slot: n
   return dropped;
 }
 
-/** A rematch starts by itself once every city here has founded its city (two at least). */
-export function autoStartDue(m: MatchState, online: (slot: number) => boolean): boolean {
-  return m.phase === 'lobby' && !!m.auto && startRefusal(m, online) === null;
+/**
+ * A rematch starts by itself once every player of it has founded its new city (each page reloads into
+ * it, a slow one takes a while); after `MATCH.rematchWaitMs`, those here start without the rest.
+ */
+export function autoStartDue(m: MatchState, online: (slot: number) => boolean, now: number): boolean {
+  if (m.phase !== 'lobby' || !m.auto) return false;
+  const everyone = m.players.every((p) => p.ready && online(p.slot));
+  const waited = now - (m.lobbyAt ?? now) >= MATCH.rematchWaitMs;
+  return (everyone || waited) && startRefusal(m, online) === null;
 }
 
 /** The phase the clock has reached: a countdown becomes play at the start; play stops at the timer. */

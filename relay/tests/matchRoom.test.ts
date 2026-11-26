@@ -237,6 +237,27 @@ describe('M43 a quick match in the region room', () => {
     ).toEqual([1, 2]);
   });
 
+  it('keeps an online host’s part through a reload, and passes it on after a minute away', () => {
+    const w = match({}, 3);
+    const [a, b] = w.cities;
+    play(w);
+    // The host's page goes (a reload): still the host meanwhile.
+    w.room.closed(a!.conn);
+    w.clock.advance(MATCH.hostGraceMs - 1_000);
+    expect(view(b!).host).toBe(1);
+    // Back in time: the part stays.
+    const back = hello(w.room, 0, {
+      rejoin: { slot: 1, secret: (a!.got.find((m) => m.t === 'rwelcome') as { secret: string }).secret },
+    });
+    expect(back.slot).toBe(1);
+    w.clock.advance(MATCH.hostGraceMs);
+    expect(view(b!).host).toBe(1);
+    // Gone for good: after the grace, the next city still in is the host.
+    w.room.closed(back.conn);
+    w.clock.advance(MATCH.hostGraceMs);
+    expect(view(b!).host).toBe(2);
+  });
+
   it('keeps a peer-to-peer host’s role (the room lives in its browser)', () => {
     const w = match({}, 3, { kind: 'p2p' });
     play(w);
@@ -277,6 +298,24 @@ describe('M43 a quick match in the region room', () => {
     expect(view(a!).match).toMatchObject({ phase: 'countdown', round: 2 });
     w.clock.advance(MATCH.countdownMs);
     expect(view(d).match!.phase).toBe('playing');
+  });
+
+  it('waits for every player of a rematch to come back, then a minute at most', () => {
+    const w = match({ mode: 'rich' }, 3);
+    const [a, b, c] = w.cities;
+    play(w);
+    w.clock.advance(15 * 60_000);
+    for (const r of [a!, b!, c!])
+      report(r, { population: 10, tick: matchEndTick(w.s) }, { final: true, hash: 'h' });
+    a!.say({ t: 'mnext' });
+    // Two pages are back with their new cities; the third is still reloading (not connected).
+    w.room.closed(c!.conn);
+    ready([a!, b!], 2);
+    expect(view(a!).match!.phase).toBe('lobby');
+    // A minute on, the two start without it; it's out of this round.
+    w.clock.advance(MATCH.rematchWaitMs);
+    expect(view(a!).match).toMatchObject({ phase: 'countdown', round: 2 });
+    expect(view(a!).match!.players.find((p) => p.slot === 3)).toMatchObject({ out: true });
   });
 
   it('turns away a late joiner, an older page, and a one-minute match outside tests', () => {

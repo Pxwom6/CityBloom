@@ -62,7 +62,25 @@ export async function matchPlayer(
     },
     [NAMES[k]!, k] as const,
   );
-  return ctx.newPage();
+  const page = await ctx.newPage();
+  // The match clock's lines (test builds), printed when a round's checks fail.
+  const lines: string[] = [];
+  logs.set(page, lines);
+  page.on('console', (m) => {
+    if (m.text().startsWith('[match]'))
+      lines.push(`${new Date().toISOString().slice(11, 23)} ${NAMES[k]} ${m.text()}`);
+  });
+  return page;
+}
+
+const logs = new WeakMap<Page, string[]>();
+
+/** Every page's match-clock lines, merged in time order. */
+export function matchLogs(pages: Page[]): string {
+  return pages
+    .flatMap((p) => logs.get(p) ?? [])
+    .sort()
+    .join('\n');
 }
 
 export const getMatch = (p: Page) => p.evaluate(() => window.__game!.getMatch() as unknown as MatchView);
@@ -206,6 +224,11 @@ export async function playRound(
   await expect(staying[0]!.getByTestId('match-results')).toBeVisible();
   const views = await Promise.all(staying.map((p) => getMatch(p)));
   const result = views[0]!.result!;
+  const missing = views.filter((v) => result.rows.find((r) => r.slot === v.slot)?.hash !== v.hash);
+  if (missing.length)
+    console.log(
+      `[m43] round ${round}: slots ${missing.map((v) => v.slot).join(', ')} not as listed\n${matchLogs(pages)}\n${JSON.stringify(result.rows)}`,
+    );
   expect(result.round).toBe(round);
   for (const v of views) {
     expect(JSON.stringify(v.result)).toBe(JSON.stringify(result));

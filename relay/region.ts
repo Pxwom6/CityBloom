@@ -1356,9 +1356,10 @@ export class RegionRoom {
     this.sweep(this.env.now());
     if (!st?.slot) return;
     if (!this.online(st.slot)) this.incoming.delete(st.slot);
-    // A quick match (M43): a host who has gone hands over; the clock may have something to do.
+    // A quick match (M43): a host whose page has gone keeps the part a while (a reload, a dropped
+    // connection), then it passes on; the clock may have something to do.
     if (this.meta?.match && !this.online(st.slot)) {
-      this.handOver(st.slot);
+      if ((this.meta.host ?? 1) === st.slot) this.meta.match.hostAway = this.env.now();
       this.advanceMatch(this.env.now());
     }
     // A city leaving: what's changed is written now, not left to a timer that may never run.
@@ -2284,7 +2285,14 @@ export class RegionRoom {
     if (!m) return;
     const online = (slot: number) => this.online(slot);
     let changed = false;
-    if (autoStartDue(m, online)) {
+    // The host is back, or has been away past the grace: the part passes on.
+    const host = this.meta!.host ?? 1;
+    if (m.hostAway !== undefined && online(host)) delete m.hostAway;
+    if (m.hostAway !== undefined && now - m.hostAway >= MATCH.hostGraceMs) {
+      delete m.hostAway;
+      this.handOver(host);
+    }
+    if (autoStartDue(m, online, now)) {
       startMatch(m, now, online);
       changed = true;
     }
@@ -2322,14 +2330,19 @@ export class RegionRoom {
     const m = this.meta?.match;
     const later = this.env.later;
     if (!m || !later) return;
-    const due =
+    const phaseDue =
       m.phase === 'countdown'
         ? m.startAt
         : m.phase === 'playing'
           ? m.endsAt
           : m.phase === 'final'
             ? (m.finalAt ?? now) + MATCH.finalWaitMs
-            : undefined;
+            : m.phase === 'lobby' && m.auto
+              ? (m.lobbyAt ?? now) + MATCH.rematchWaitMs
+              : undefined;
+    const graceDue = m.hostAway !== undefined ? m.hostAway + MATCH.hostGraceMs : undefined;
+    const due =
+      phaseDue === undefined ? graceDue : graceDue === undefined ? phaseDue : Math.min(phaseDue, graceDue);
     if (due === undefined) {
       this.matchTimerOff?.();
       this.matchTimerOff = null;
@@ -2440,7 +2453,7 @@ export class RegionRoom {
         const want = m.settings ?? match.settings;
         if (want.minutes === MATCH.testMinutes && !this.limits.testMatches) return;
         const seed = matchSeed(() => secureIndex(1_000_000) / 1_000_000);
-        const dropped = rematch(match, { ...want, seed }, (s) => this.online(s));
+        const dropped = rematch(match, { ...want, seed }, (s) => this.online(s), now);
         for (const s of dropped) this.dropCity(s);
         // Each city here starts again: its report, picture and save are its old city's.
         for (const c of this.meta!.cities) {

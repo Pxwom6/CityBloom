@@ -73,6 +73,8 @@ export interface MatchHost {
   notify(): void;
   /** The room asked for the next round: reload into it. */
   rematch(next: MatchSession): void;
+  /** Test builds: what the clock did, for a failing end-to-end test to print. */
+  log?(line: string): void;
 }
 
 /** A recent emote or line of chat, shown for a few seconds. */
@@ -196,6 +198,8 @@ export class MatchClient implements MatchSink {
       return this.host.notify();
     }
     const now = performance.now();
+    if (m.phase !== was?.phase)
+      this.host.log?.(`phase ${m.phase} (round ${m.round}, tick ${this.host.tick()})`);
     if (m.phase === 'lobby' && this.link && this.readySent !== m.round) {
       if (this.link.sendMatch({ t: 'mready', round: m.round })) this.readySent = m.round;
     }
@@ -204,6 +208,9 @@ export class MatchClient implements MatchSink {
       this.startAt = now + m.startIn;
       this.endsAt = now + (m.endsIn ?? 0);
       this.host.matchClock({ startIn: m.startIn, endTick: this.endTick });
+      this.host.log?.(
+        `clock: starts in ${Math.round(m.startIn)} ms, ends in ${Math.round(m.endsIn ?? 0)} ms`,
+      );
     }
     if (this.clockOn && m.phase === 'playing' && m.endsIn !== undefined) this.correct(now + m.endsIn);
     // Stopped early (a Race won, or only one city left): the city holds where it is.
@@ -291,7 +298,11 @@ export class MatchClient implements MatchSink {
     try {
       this.hash = await this.host.hash();
       this.final = true;
+      this.host.log?.(
+        `last report: tick ${this.host.tick()}, hash ${this.hash}, room phase ${this.info?.phase}, link ${this.link.state}`,
+      );
       await this.link.reportNow(true);
+      this.host.log?.('last report sent');
     } finally {
       this.finalGoing = false;
     }
@@ -306,6 +317,7 @@ export class MatchClient implements MatchSink {
   private correct(end: number): void {
     if (!this.clockOn || this.stopped || end >= this.endsAt - 100) return;
     const shift = this.endsAt - end;
+    this.host.log?.(`clock moved up ${Math.round(shift)} ms`);
     this.startAt -= shift;
     this.endsAt = end;
     this.host.matchClock({ startIn: this.startAt - performance.now(), endTick: this.endTick });

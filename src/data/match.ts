@@ -50,6 +50,13 @@ export const MATCH = {
   reportMs: 5_000,
   thumbMs: 60_000,
   saveMs: 120_000,
+  /**
+   * A rematch waits this long for every player of the last round to found its new city before those
+   * here start without the rest (ms); and an online host whose page has gone keeps the host's part
+   * this long (a reload, a dropped connection) before it passes on (ms).
+   */
+  rematchWaitMs: 60_000,
+  hostGraceMs: 60_000,
   /** Game ticks a city may run ahead of the match's clock and still be counted (a slow message). */
   slackTicks: 240,
   /** Score samples kept per city for the results chart. */

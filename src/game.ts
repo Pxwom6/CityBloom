@@ -767,6 +767,7 @@ export class Game {
     },
     notify: () => this.notify(),
     rematch: (next) => this.toNextRound(next),
+    ...(IS_TEST_BUILD ? { log: (line: string) => console.info(`[match] ${line}`) } : {}),
   });
   /** In the battle viewer, a replay of a live battle: how its run ended against the battle as fought. */
   replayCheck: { verdict: ReplayVerdict; step: number; want: number } | null = null;

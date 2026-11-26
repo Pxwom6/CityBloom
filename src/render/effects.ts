@@ -168,6 +168,8 @@ export class EffectsRenderer {
   fires = 0;
   /** Chimney smoke particles in use. */
   smokeParticles = 0;
+  /** Share of the particles drawn (the quality: Phone draws fewer, M49). */
+  scale = 1;
 
   constructor(
     private world: ClientWorld,
@@ -204,7 +206,8 @@ export class EffectsRenderer {
       .filter((b) => b.fire > 0 && b.state !== 3)
       .sort((a, b) => a.id - b.id)
       .slice(0, MAX_FIRES);
-    const key = burning.map((b) => `${b.id}:${b.fire}:${this.heights.get(b.id) ?? 0}`).join(',');
+    const key =
+      `${this.scale}|` + burning.map((b) => `${b.id}:${b.fire}:${this.heights.get(b.id) ?? 0}`).join(',');
     if (key === this.key) return;
     this.key = key;
     this.fires = burning.length;
@@ -222,7 +225,10 @@ export class EffectsRenderer {
         const hd = (b.d * CELL) / 2 - 1;
         const c = Math.cos(b.angle);
         const s = Math.sin(b.angle);
-        const count = Math.max(8, Math.round(per * Math.min(1, 0.45 + b.fire)));
+        const count = Math.max(
+          Math.round(8 * this.scale),
+          Math.round(per * this.scale * Math.min(1, 0.45 + b.fire)),
+        );
         let r = b.id * 9301 + 49297;
         const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
         for (let k = 0; k < count; k++) {
@@ -292,7 +298,9 @@ export class EffectsRenderer {
           });
       } else stacks.push({ x: b.x, y: b.y + (this.heights.get(b.id) ?? 8) + 1, z: b.z, size: 1 });
     }
-    const key = stacks.map((st) => `${st.x.toFixed(0)},${st.y.toFixed(0)},${st.z.toFixed(0)}`).join(';');
+    const key =
+      `${this.scale}|` +
+      stacks.map((st) => `${st.x.toFixed(0)},${st.y.toFixed(0)},${st.z.toFixed(0)}`).join(';');
     if (key === this.chimneyKey) return;
     this.chimneyKey = key;
     const g = this.chimneys.geometry;
@@ -300,10 +308,11 @@ export class EffectsRenderer {
     const seed = g.getAttribute('aSeed') as BufferAttribute;
     const size = g.getAttribute('aSize') as BufferAttribute;
     let n = 0;
+    const per = Math.max(3, Math.round(CHIMNEY_PER * this.scale));
     stacks.slice(0, MAX_CHIMNEYS).forEach((st, k) => {
       let r = (k + 1) * 7919;
       const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
-      for (let i = 0; i < CHIMNEY_PER; i++) {
+      for (let i = 0; i < per; i++) {
         pos.setXYZ(n, st.x, st.y, st.z);
         seed.setXYZW(n, rnd(), 0.12 + rnd() * 0.12, (rnd() - 0.5) * 1.2, (rnd() - 0.5) * 1.2);
         size.setX(n, st.size * (2 + rnd() * 1.5));

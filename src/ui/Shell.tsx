@@ -23,6 +23,7 @@ import {
   DRAW_DISTANCES,
   POINTER_DEVICES,
   QUALITIES,
+  FPS_CAPS,
   UI_SCALE,
   type Settings,
 } from '../client/settings';
@@ -995,8 +996,28 @@ function SettingsScreen() {
               testid="quality"
               onChange={(quality) => set({ quality })}
             />
-            <small class="muted">Resolution, shadow detail and crowd sizes.</small>
+            <small class="muted">
+              Resolution, shadow detail and crowd sizes. Phone is the lightest: fewer trees, cars and people.
+            </small>
           </div>
+          <div class="field">
+            <span>Frame rate</span>
+            <Segmented
+              value={s.fpsCap}
+              options={FPS_CAPS}
+              label={(f) => (f === 0 ? 'Screen' : `${f} fps`)}
+              testid="fps-cap"
+              onChange={(fpsCap) => set({ fpsCap })}
+            />
+            <small class="muted">30 frames a second keeps a phone cooler and its battery longer.</small>
+          </div>
+          <Check
+            on={s.batterySaver}
+            testid="battery-saver"
+            label="Battery saver"
+            hint="at most 30 frames a second, a lower resolution, and fewer still when nothing moves"
+            set={(batterySaver) => set({ batterySaver })}
+          />
           <div class="field">
             <span>Draw distance</span>
             <Segmented

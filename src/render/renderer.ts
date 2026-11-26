@@ -545,9 +545,25 @@ export class GameRenderer {
     return this.world.buildingAt(x, z, 1) !== null;
   }
 
+  /** The quality's pixel ratio and its cap on the drawing buffer's pixels (M49). */
+  private wantedRatio = 1;
+  private maxPixels = Infinity;
+
+  /** The pixel ratio to draw at: the quality's, at most the screen's, within `maxPixels`. */
+  private pixelRatioNow(): number {
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    const cap = Number.isFinite(this.maxPixels) ? Math.sqrt(this.maxPixels / Math.max(1, w * h)) : Infinity;
+    // Rounded so a resize by a pixel or two doesn't rebuild the post targets.
+    return Math.round(Math.min(window.devicePixelRatio || 1, this.wantedRatio, cap) * 100) / 100;
+  }
+
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
+    // Turning a phone changes nothing in pixels, but a tablet's window may grow past the cap.
+    const ratio = this.pixelRatioNow();
+    if (this.renderer.getPixelRatio() !== ratio) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -572,6 +588,12 @@ export class GameRenderer {
   /** Graphics settings: resolution, shadows and their detail, draw distance, crowd sizes. */
   applyGraphics(g: {
     pixelRatio: number;
+    maxPixels: number;
+    trees: number;
+    water: 0 | 1;
+    effects: number;
+    lodGap: number;
+    lodDistance: number;
     shadows: boolean;
     shadowMap: number;
     fogScale: number;
@@ -587,11 +609,26 @@ export class GameRenderer {
     this.groundDetail = g.ground;
     this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
     this.post.settings = { ...(this.postOverride ?? g.post) };
-    const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
+    this.wantedRatio = g.pixelRatio;
+    this.maxPixels = g.maxPixels;
+    const ratio = this.pixelRatioNow();
     if (this.renderer.getPixelRatio() !== ratio) {
       this.renderer.setPixelRatio(ratio);
       this.resize();
     }
+    // Phone (M49): half the trees, one gentle swell on the water, fewer smoke puffs, stale chunks
+    // built again less often.
+    if (this.trees.density !== g.trees) {
+      this.trees.density = g.trees;
+      this.trees.rebuildAll();
+    }
+    this.water.simple = g.water === 0;
+    this.effects.scale = g.effects;
+    this.buildings.chunks.gapScale = g.lodGap;
+    // A slow device builds stale chunks and tree regions a few times a second, not every frame.
+    this.buildings.chunks.staleEvery = g.lodGap > 1 ? 200 : 0;
+    this.trees.regionsAFrame = g.lodGap > 1 ? 1 : 2;
+    this.buildings.siteEvery = g.lodGap > 1 ? 250 : 0;
     this.setShadows(g.shadows);
     const shadow = this.lighting.shadow;
     if (shadow.mapSize.x !== g.shadowMap) {
@@ -602,7 +639,7 @@ export class GameRenderer {
     }
     this.fogScale = g.fogScale;
     // Coarser pixels show less: the levels of detail hand over sooner (High at 2× is the full range).
-    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7));
+    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7)) * g.lodDistance;
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
     this.weather.drops = Math.round(9000 * g.crowd);

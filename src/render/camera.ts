@@ -29,6 +29,12 @@ const BOUND = 300;
  * / Q E / Option-swipe / rotate gesture), zoom (wheel or pinch, towards the cursor). The pitch follows the zoom level, from a low street view to a
  * high overview, and the player can tilt on top of that.
  */
+/**
+ * Touch (M49): two fingers decide between moving (pinch, twist, pan) and tilting once one has moved
+ * `decide` px; a tilt turns `tilt` per px the fingers slide (as a right-drag does with a mouse).
+ */
+export const TOUCH = { decide: 8, tilt: 0.004 };
+
 export class CameraController {
   readonly goal: CameraPose = { x: MAP_SIZE / 2, z: MAP_SIZE / 2, distance: 2200, yaw: 0.3, tilt: 0 };
   readonly current: CameraPose = { ...this.goal };
@@ -93,8 +99,35 @@ export class CameraController {
   private far(): number {
     return this.roam ? ROAM_DIST : (this.home?.far ?? MAX_DIST);
   }
-  private drag: { mode: 'pan' | 'rotate'; plane: Plane; grab: Vector3; lastX: number; lastY: number } | null =
-    null;
+  private drag: {
+    mode: 'pan' | 'rotate';
+    plane: Plane;
+    grab: Vector3;
+    lastX: number;
+    lastY: number;
+    id: number;
+  } | null = null;
+  /** Fingers on the map (M49), by pointer id: where each is now. */
+  private touches = new Map<number, { x: number; y: number }>();
+  /**
+   * Two fingers on the map (M49): a pinch zooms, a twist turns, and both fingers sliding up or down
+   * together tilt. Which of the two it is is decided once the fingers have moved a little: `null`
+   * until then, `move` (pan, zoom and turn at once, the ground under the fingers staying under
+   * them) or `tilt`.
+   */
+  private twoFinger: {
+    ids: [number, number];
+    mode: 'move' | 'tilt' | null;
+    start: [{ x: number; y: number }, { x: number; y: number }];
+    dist: number;
+    angle: number;
+    midY: number;
+    grab: Vector3;
+    plane: Plane;
+    distance: number;
+    yaw: number;
+    tilt: number;
+  } | null = null;
   private ray = new Raycaster();
   private ndc = new Vector2();
   private tmp = new Vector3();
@@ -110,6 +143,7 @@ export class CameraController {
     dom.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerUp);
     dom.addEventListener('wheel', this.onWheel, { passive: false });
     // Safari (macOS) reports trackpad pinch and rotate as gesture events.
     dom.addEventListener('gesturestart', this.onGesture as EventListener);
@@ -219,11 +253,100 @@ export class CameraController {
   }
 
   private onPointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      // A second finger: whatever the first was doing (a pan, or a tool's stroke, which the tool
+      // manager cancels), the two now move the camera.
+      if (this.touches.size === 2) {
+        this.drag = null;
+        this.beginGesture();
+        return;
+      }
+      if (this.touches.size > 2) return;
+    }
     const pan = e.button === 1 || (e.button === 0 && this.leftDragPans);
     const rotate = e.button === 2;
     if (!pan && !rotate) return;
     this.beginDrag(pan ? 'pan' : 'rotate', e.clientX, e.clientY, e.pointerId);
   };
+
+  /** Two fingers came down: remember where they and the camera were. */
+  private beginGesture(): void {
+    this.userMoves++;
+    const [[ia, a], [ib, b]] = [...this.touches.entries()] as [
+      [number, { x: number; y: number }],
+      [number, { x: number; y: number }],
+    ];
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const grab = this.screenToGround(mx, my) ?? this.target.clone();
+    this.twoFinger = {
+      ids: [ia, ib],
+      mode: null,
+      start: [{ ...a }, { ...b }],
+      dist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      angle: Math.atan2(b.y - a.y, b.x - a.x),
+      midY: my,
+      grab,
+      plane: new Plane(new Vector3(0, 1, 0), -grab.y),
+      distance: this.goal.distance,
+      yaw: this.goal.yaw,
+      tilt: this.goal.tilt,
+    };
+  }
+
+  /** The two fingers moved: zoom, turn and pan, or tilt. */
+  private moveGesture(): void {
+    const gs = this.twoFinger!;
+    const a = this.touches.get(gs.ids[0]);
+    const b = this.touches.get(gs.ids[1]);
+    if (!a || !b) return;
+    const dist = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if (!gs.mode) {
+      const [sa, sb] = gs.start;
+      const da = { x: a.x - sa.x, y: a.y - sa.y };
+      const db = { x: b.x - sb.x, y: b.y - sb.y };
+      const moved = Math.max(Math.hypot(da.x, da.y), Math.hypot(db.x, db.y));
+      if (moved < TOUCH.decide) return;
+      // Both fingers sliding the same way up or down, keeping their distance: a tilt.
+      const vertical = (d: { x: number; y: number }) => Math.abs(d.y) > 2 * Math.abs(d.x);
+      const together = Math.sign(da.y) === Math.sign(db.y) && da.y !== 0;
+      const steady = Math.abs(dist - gs.dist) < moved * 0.35;
+      gs.mode = vertical(da) && vertical(db) && together && steady ? 'tilt' : 'move';
+    }
+    const g = this.goal;
+    if (gs.mode === 'tilt') {
+      g.tilt = gs.tilt + (my - gs.midY) * TOUCH.tilt;
+      this.clampGoal();
+      return;
+    }
+    // Pinch and twist, the camera following the fingers at once (no easing: it's under them).
+    g.distance = gs.distance * (gs.dist / dist);
+    g.yaw = gs.yaw + (angle - gs.angle);
+    this.clampGoal();
+    const c = this.current;
+    c.distance = g.distance;
+    c.yaw = g.yaw;
+    this.apply();
+    // The ground first under the fingers stays under them.
+    const p = this.rayPlane(mx, my, gs.plane, this.tmp);
+    if (p) {
+      g.x += gs.grab.x - p.x;
+      g.z += gs.grab.z - p.z;
+      this.clampGoal();
+      c.x = g.x;
+      c.z = g.z;
+      this.apply();
+    }
+  }
+
+  /** Fingers on the map now (M49; tests). */
+  get fingers(): number {
+    return this.touches.size;
+  }
 
   /**
    * Start dragging the map from a screen point: a press on the canvas does this itself, and so does
@@ -238,6 +361,7 @@ export class CameraController {
       grab,
       lastX: clientX,
       lastY: clientY,
+      id: pointerId,
     };
     this.dom.setPointerCapture?.(pointerId);
   }
@@ -251,8 +375,18 @@ export class CameraController {
       this.pointer.y >= 0 &&
       this.pointer.x < rect.width &&
       this.pointer.y < rect.height;
+    const t = this.touches.get(e.pointerId);
+    if (t) {
+      t.x = e.clientX;
+      t.y = e.clientY;
+      if (this.twoFinger) {
+        this.moveGesture();
+        return;
+      }
+    }
     const d = this.drag;
-    if (!d) return;
+    // Only the pointer that began a drag moves it (a second finger is a gesture, above).
+    if (!d || e.pointerId !== d.id) return;
     if (d.mode === 'pan') {
       const p = this.rayPlane(e.clientX, e.clientY, d.plane, this.tmp);
       if (p) {
@@ -272,8 +406,17 @@ export class CameraController {
     d.lastY = e.clientY;
   };
 
-  private onPointerUp = (): void => {
-    this.drag = null;
+  private onPointerUp = (e: PointerEvent): void => {
+    if (this.touches.delete(e.pointerId) && this.twoFinger) {
+      // One of two fingers lifted: the gesture ends, and the one left carries on panning (where a
+      // tool's stroke doesn't take a single finger).
+      this.twoFinger = null;
+      const [rest] = [...this.touches.entries()];
+      if (rest && this.touches.size === 1 && this.leftDragPans)
+        this.beginDrag('pan', rest[1].x, rest[1].y, rest[0]);
+      return;
+    }
+    if (!this.drag || e.pointerId === this.drag.id) this.drag = null;
   };
 
   private onWheel = (e: WheelEvent): void => {
@@ -476,5 +619,30 @@ export class CameraController {
 
   get isDragging(): boolean {
     return this.drag !== null;
+  }
+
+  /** Let go of a drag in progress (a long press took the finger, M49). */
+  endDrag(): void {
+    this.drag = null;
+  }
+
+  /**
+   * Is the camera at rest (M49: a still scene draws fewer frames)? Nothing held, no keys down, no
+   * roam, and the view where it is going to within a few centimetres.
+   */
+  settled(): boolean {
+    const g = this.goal;
+    const c = this.current;
+    return (
+      !this.drag &&
+      !this.roam &&
+      !this.home &&
+      this.keys.size === 0 &&
+      Math.abs(g.x - c.x) < 0.05 &&
+      Math.abs(g.z - c.z) < 0.05 &&
+      Math.abs(g.distance - c.distance) < 0.05 &&
+      Math.abs(g.yaw - c.yaw) < 1e-4 &&
+      Math.abs(g.tilt - c.tilt) < 1e-4
+    );
   }
 }

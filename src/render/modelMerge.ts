@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry, type Sphere } from 'three';
 import type { ModelData } from './assets/builder';
 
 /**
@@ -93,7 +93,8 @@ export class Arrays {
     return this.n + (this.rest?.n ?? 0);
   }
 
-  geometry(): BufferGeometry {
+  /** The merged geometry; `bounds` when its bounding sphere is known already (M49: no pass over every vertex). */
+  geometry(bounds?: Sphere): BufferGeometry {
     const g = new BufferGeometry();
     const r = this.rest;
     const w = this.whole;
@@ -116,7 +117,8 @@ export class Arrays {
       );
     // The vertices that cast shadows come first.
     g.userData.casters = this.n;
-    g.computeBoundingSphere();
+    if (bounds) g.boundingSphere = bounds;
+    else g.computeBoundingSphere();
     return g;
   }
 }

@@ -66,14 +66,17 @@ export class WaterRenderer {
         void main() {
           vec2 p = vWorld.xz;
           float t = uTime;
-          // Analytic ripples: sum of travelling waves; derivatives give the normal.
+          // Analytic ripples: sum of travelling waves; derivatives give the normal. The Phone preset
+          // (M49) keeps the two long swells.
           float dx = 0.0, dz = 0.0;
           dx += 0.050 * cos(p.x * 0.050 + t * 0.9) ;
           dz += 0.040 * cos(p.y * 0.063 - t * 0.7);
+          #ifndef WATER_SIMPLE
           dx += 0.030 * cos((p.x + p.y) * 0.110 + t * 1.4);
           dz += 0.030 * cos((p.x + p.y) * 0.110 + t * 1.4);
           dx += 0.020 * cos((p.x * 0.8 - p.y) * 0.21 - t * 1.9) * 0.8;
           dz -= 0.020 * cos((p.x * 0.8 - p.y) * 0.21 - t * 1.9);
+          #endif
           vec3 n = normalize(vec3(-dx, 1.0, -dz));
           vec3 v = normalize(cameraPosition - vWorld);
           float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
@@ -102,5 +105,16 @@ export class WaterRenderer {
 
   update(time: number): void {
     this.material.uniforms.uTime!.value = time;
+  }
+
+  /** The Phone preset's water (M49): the two long swells only. */
+  get simple(): boolean {
+    return 'WATER_SIMPLE' in this.material.defines;
+  }
+  set simple(on: boolean) {
+    if (on === this.simple) return;
+    if (on) this.material.defines.WATER_SIMPLE = '';
+    else delete this.material.defines.WATER_SIMPLE;
+    this.material.needsUpdate = true;
   }
 }

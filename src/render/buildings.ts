@@ -227,6 +227,12 @@ export class BuildingRenderer {
   private siteCells = new Map<number, { ids: Set<number>; mesh: Mesh | null; key: string; dirty: boolean }>();
   /** Scaffolds by size, height and step: alike sites at the same stage share one (M49). */
   private scaffolds = new Map<string, ModelData>();
+  /**
+   * The least time (ms) between two construction cells redrawn (M49: the Phone preset, 250, so a busy
+   * city's rising sites cost a slow phone a few redraws a second). 0: `SITE_BUDGET` a frame.
+   */
+  siteEvery = 0;
+  private siteAt = -Infinity;
   /** Model heights by building, for picking. */
   readonly heights = new Map<number, number>();
   /**
@@ -403,6 +409,11 @@ export class BuildingRenderer {
    * it came, went or rose a step (5 % of its progress).
    */
   private rebuildConstruction(budget = SITE_BUDGET): void {
+    const now = performance.now();
+    if (budget !== Infinity && this.siteEvery > 0) {
+      if (now - this.siteAt < this.siteEvery) return;
+      budget = 1;
+    }
     for (const [k, c] of this.siteCells) {
       if (budget <= 0) break;
       if (!c.dirty) continue;
@@ -415,6 +426,7 @@ export class BuildingRenderer {
       if (list.length && key === c.key && c.mesh) continue;
       c.key = key;
       budget--;
+      this.siteAt = now;
       if (c.mesh) {
         this.group.remove(c.mesh);
         c.mesh.geometry.dispose();

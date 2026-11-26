@@ -40,6 +40,11 @@ export class TerrainTool implements Tool {
   private previewing = false;
   private lastSound = 0;
   private pointer: ToolPointer | null = null;
+  /**
+   * By touch (M49) a stroke is gathered, not dug as the finger goes: its path is shown, then priced
+   * and asked about when the finger lifts, so nothing is spent without a yes.
+   */
+  private path: Vec2[] | null = null;
 
   constructor(private game: Game) {}
 
@@ -56,7 +61,14 @@ export class TerrainTool implements Tool {
   cancel(): boolean {
     const was = this.painting;
     this.stop();
+    this.path = null;
     return was;
+  }
+
+  /** A second finger came down: the stroke was the start of a pinch, so nothing is dug (M49). */
+  pointerCancel(): void {
+    this.stop();
+    this.path = null;
   }
 
   setMode(m: TerraformMode): void {
@@ -118,6 +130,11 @@ export class TerrainTool implements Tool {
     this.note = null;
     this.at = at;
     this.last = at;
+    if (p.type === 'touch') {
+      this.path = [at];
+      this.showHint(p);
+      return;
+    }
     this.apply([at]);
     // Holding still keeps working the ground under the brush.
     this.timer = setInterval(() => {
@@ -132,6 +149,14 @@ export class TerrainTool implements Tool {
     this.pointer = p;
     this.at = p.ground ? { x: p.ground.x, z: p.ground.z } : null;
     this.game.renderer.ghost.showBrush(p.ground, this.radius, COLOUR[this.mode]);
+    if (this.path && this.painting && this.at && this.last) {
+      if (Math.hypot(this.at.x - this.last.x, this.at.z - this.last.z) >= this.radius / 4) {
+        this.path.push(this.at);
+        this.last = this.at;
+      }
+      this.showHint(p);
+      return;
+    }
     if (this.painting && this.at && this.last && !this.busy) {
       if (Math.hypot(this.at.x - this.last.x, this.at.z - this.last.z) >= this.radius / 4) {
         this.apply([this.last, this.at]);
@@ -145,7 +170,45 @@ export class TerrainTool implements Tool {
   pointerUp(): void {
     if (!this.painting) return;
     this.stop();
+    if (this.path) {
+      const path = this.path;
+      this.path = null;
+      void this.askStroke(path);
+      return;
+    }
     if (this.spent > 0) this.game.toast(`Landscaping: ${money(this.spent)}`, 'info', 2000);
+  }
+
+  /** A finger lifted (M49): price the stroke it drew, and dig it if the player says yes. */
+  private async askStroke(path: Vec2[]): Promise<void> {
+    const cmd = this.command(path);
+    const pre = await this.game.client.preview(cmd);
+    if (!pre.ok) {
+      this.game.audio?.play('error');
+      this.game.toast(pre.reason, 'bad', 3000);
+      return;
+    }
+    const name = TERRAFORM_MODES.find((m) => m.id === this.mode)!.name;
+    const at = this.pointer ?? { clientX: innerWidth / 2, clientY: innerHeight / 2 };
+    this.game.ask({
+      x: at.clientX,
+      y: at.clientY,
+      text: `${name}: this stroke costs ${money(pre.cost)}.`,
+      yes: 'Do it',
+      no: 'Cancel',
+      onYes: () => {
+        void this.game.dispatch(cmd).then((r) => {
+          if (r.ok) {
+            this.game.audio?.play('earth');
+            this.game.toast(`Landscaping: ${money(r.cost)}`, 'info', 2000);
+          } else {
+            this.game.audio?.play('error');
+            this.game.toast(r.reason, 'bad', 3000);
+          }
+        });
+      },
+      onNo: () => {},
+    });
   }
 
   /** What one pass here would cost, or why the ground won't move (asked of the sim, throttled). */
@@ -183,7 +246,9 @@ export class TerrainTool implements Tool {
     const name = TERRAFORM_MODES.find((m) => m.id === this.mode)!.name;
     let text: string;
     let tone: 'info' | 'bad' = 'info';
-    if (this.painting) {
+    if (this.painting && this.path) {
+      text = `${name} · lift your finger to see the price`;
+    } else if (this.painting) {
       const what = this.mode === 'level' ? `Levelling to ${this.level.toFixed(1)} m` : name;
       text = `${what} · ${money(this.spent)} so far`;
       if (this.note) {

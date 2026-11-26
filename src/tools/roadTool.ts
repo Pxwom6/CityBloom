@@ -652,26 +652,35 @@ export class RoadTool implements Tool {
    */
   private async askFirst(cmd: Command, go: () => void, drop = false): Promise<boolean> {
     const epoch = this.epoch;
+    // By touch (M49), anything that costs money waits for a yes: a finger can't hover to see the
+    // price first, and a slip shouldn't spend.
+    const touch = this.game.pointerType === 'touch';
     const pre = await this.game.client.preview(cmd);
     const ids = pre.ok ? doomedOf(pre.info) : [];
-    // Nothing to demolish: built as clicked, even if Escape came meanwhile (P11).
-    if (!ids.length) return false;
-    // Demolishing needs a yes, and Escape, a mode change or leaving the tool came first: nothing.
+    const cost = pre.ok ? pre.cost : 0;
+    // Nothing to demolish (and nothing to pay by touch): built as clicked, even if Escape came
+    // meanwhile (P11). A road that can't be built is sent as it is, for the sim's reason.
+    if (!ids.length && !(touch && cost > 0)) return false;
+    // A yes is needed, and Escape, a mode change or leaving the tool came first: nothing.
     if (epoch !== this.epoch || this.game.tools.activeId !== 'road') return true;
     const n = ids.length;
     const what =
       cmd.type === 'upgradeRoad'
-        ? `Making this road ${articled(ROAD_TYPES[cmd.road].name)} demolishes`
+        ? `Making this road ${articled(ROAD_TYPES[cmd.road].name)}`
         : cmd.type === 'roundabout'
-          ? 'This roundabout demolishes'
-          : 'This road demolishes';
+          ? 'This roundabout'
+          : 'This road';
+    const price = '$' + cost.toLocaleString('en-US');
+    const undoWith = touch ? 'the undo arrow' : modKey('Z');
     this.showDoomed(ids);
     this.game.setHint(null);
     this.game.ask({
       ...this.pointer,
-      text: `${what} ${n} building${n === 1 ? '' : 's'} beside it. Undo (${modKey('Z')}) brings ${n === 1 ? 'it' : 'them'} back.`,
+      text: n
+        ? `${what} demolishes ${n} building${n === 1 ? '' : 's'} beside it${touch ? ' and costs ' + price : ''}. Undo (${undoWith}) brings ${n === 1 ? 'it' : 'them'} back.`
+        : `${what} costs ${price}.`,
       yes: cmd.type === 'upgradeRoad' ? 'Change it' : 'Build it',
-      no: n === 1 ? 'Keep it' : 'Keep them',
+      no: n ? (n === 1 ? 'Keep it' : 'Keep them') : 'Cancel',
       onYes: go,
       onNo: () => {
         if (drop) this.reset();

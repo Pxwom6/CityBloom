@@ -514,8 +514,14 @@ async function boot(): Promise<void> {
     void game.keeper.ask(true);
   };
 
+  // Anything the player does counts as moving the scene (M49: a still one draws fewer frames).
+  const touched = () => (game.lastInputAt = performance.now());
+  for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)
+    window.addEventListener(type, touched, { passive: true, capture: true });
+  // A hidden page draws nothing: the browser stops animation frames (and the audio engine suspends).
   const loop = (now: number) => {
-    game.frame(now);
+    // The frame cap, the battery saver and still scenes skip frames (M49).
+    if (game.frameDue(now)) game.frame(now);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

@@ -16,6 +16,14 @@ const arg = (name, d) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : d;
 };
+/**
+ * The Phone preset's frame target (M49): 30 fps on a phone 4× slower than this machine's CPU means
+ * the main thread at most 80 % busy (every frame's own work 30 times a second plus the work paced by
+ * time), and a GPU load a mid-range phone draws at 30 fps.
+ */
+const PHONE_TARGET = { load: 0.8, calls: 250, triangles: 2.5e6 };
+/** A phone's memory budget for the 20k city: the renderer's private memory plus what's on the GPU (MB). */
+const MEMORY_BUDGET_MB = 700;
 const CITIES = {
   demo: 'public/demo.citybloom',
   '20k': 'Saves/Town20k.citybloom',
@@ -29,6 +37,9 @@ const throttle = Number(arg('throttle', '4'));
 const views = arg('views', 'overview,city,street').split(',');
 const jsonOut = arg('json', '');
 const shots = arg('shots', '');
+/** --check: fail (exit 1) if the Phone preset's frame target or the 20k city's memory budget is missed. */
+const check = process.argv.includes('--check');
+const failures = [];
 const dist = process.env.DIST || 'dist-test';
 const PORT = Number(process.env.PORT || 4191);
 if (shots) mkdirSync(shots, { recursive: true });
@@ -321,7 +332,10 @@ try {
             intervalAvg: rec.interval.reduce((a, b) => a + b, 0) / Math.max(1, rec.interval.length),
             intervalP95: pct(rec.interval, 0.95),
             workAvg: rec.work.reduce((a, b) => a + b, 0) / Math.max(1, rec.work.length),
+            workP50: pct(rec.work, 0.5),
             workP95: pct(rec.work, 0.95),
+            // Of the recording, the share of the main thread busy (any script, WebGL call or GC).
+            busy: (split.js + split.gl + split.gc) / 5000,
             // Main-thread time a frame spent in the game's own scripts, and in WebGL calls (where a
             // software-drawn page waits for the GPU process), from the CPU profile.
             jsMs: split.js / Math.max(1, rec.interval.length),
@@ -333,6 +347,18 @@ try {
             walkers: r.walkers,
             trees: r.trees,
           };
+          // Paused: no building changes, so no rebuilds; what's left is what every frame costs.
+          await page.evaluate(() => window.__game.setSpeed(0));
+          await page.evaluate(() => window.__game.waitFrames(3));
+          const still = await page.evaluate(() => window.__game.recordFrames(3000));
+          await page.evaluate(() => window.__game.setSpeed(1));
+          const x = row.views[v];
+          x.frameCost = pct(still.work, 0.5);
+          // Projected main-thread load drawing 30 frames a second: every frame's cost 30 times, plus
+          // the work paced by time (rebuilds, the worker's messages, the interface) measured running.
+          const fps = x.frames / 5;
+          const paced = Math.max(0, x.busy * 1000 - fps * x.frameCost);
+          x.load30 = (30 * x.frameCost + paced) / 1000;
           if (shots) await page.screenshot({ path: `${shots}/${dev}-${quality}-${city}-${v}.png` });
         }
         const perf = await page.evaluate(() => window.__game.getPerf());
@@ -363,9 +389,26 @@ try {
             .map((g) => `${g.name} ${g.cpu}`)
             .join(', ')})`,
         );
-        for (const [v, x] of Object.entries(row.views))
+        for (const [v, x] of Object.entries(row.views)) {
+          if (
+            check &&
+            quality === 'phone' &&
+            (x.load30 > PHONE_TARGET.load ||
+              x.calls > PHONE_TARGET.calls ||
+              x.triangles > PHONE_TARGET.triangles)
+          )
+            failures.push(
+              `${dev} ${city} ${v}: load ${(x.load30 * 100).toFixed(0)} %, ${x.calls} calls, ${(x.triangles / 1e6).toFixed(2)}M triangles`,
+            );
           console.log(
-            `  ${v.padEnd(9)} work avg ${x.workAvg.toFixed(1)} p95 ${x.workP95.toFixed(1)} ms (scripts ${x.jsMs.toFixed(1)}, WebGL ${x.glMs.toFixed(1)}, GC ${x.gcMs.toFixed(1)}); interval avg ${x.intervalAvg.toFixed(0)} p95 ${x.intervalP95.toFixed(0)} ms (${x.frames} frames); calls ${x.calls}, tris ${(x.triangles / 1e6).toFixed(2)}M, cars ${x.cars}, walkers ${x.walkers}, trees ${x.trees}`,
+            `  ${v.padEnd(9)} frame ${x.frameCost.toFixed(1)} ms paused, load at 30 fps ${(x.load30 * 100).toFixed(0)} %; work p50 ${x.workP50.toFixed(1)} avg ${x.workAvg.toFixed(1)} p95 ${x.workP95.toFixed(1)} ms, main thread ${(x.busy * 100).toFixed(0)} % busy (scripts ${x.jsMs.toFixed(1)}, WebGL ${x.glMs.toFixed(1)}, GC ${x.gcMs.toFixed(1)}); interval avg ${x.intervalAvg.toFixed(0)} p95 ${x.intervalP95.toFixed(0)} ms (${x.frames} frames); calls ${x.calls}, tris ${(x.triangles / 1e6).toFixed(2)}M, cars ${x.cars}, walkers ${x.walkers}, trees ${x.trees}`,
+          );
+        }
+        // The memory budget (M49): the 20k city on a phone.
+        const total = row.memory.rss.private + row.memory.gpu;
+        if (check && city === '20k' && total > MEMORY_BUDGET_MB)
+          failures.push(
+            `${dev} ${quality} 20k: ${total} MB (private ${row.memory.rss.private} + GPU ${row.memory.gpu}) over ${MEMORY_BUDGET_MB} MB`,
           );
         await ctx.close();
       }
@@ -374,5 +417,12 @@ try {
 } finally {
   await browser.close();
   if (jsonOut) writeFileSync(jsonOut, JSON.stringify(results, null, 2));
+}
+if (check) {
+  if (failures.length) {
+    console.log(`\nmissed:\n  ${failures.join('\n  ')}`);
+    process.exit(1);
+  }
+  console.log('\nThe Phone preset holds its frame target, and the 20k city is inside its memory budget.');
 }
 process.exit(0);

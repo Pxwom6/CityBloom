@@ -43,7 +43,13 @@ import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import type { AppInstall } from './client/install';
 import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
-import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
+import {
+  GRAPHICS_PRESETS,
+  GraphicsCheck,
+  currentDevice,
+  gpuName,
+  type CheckResult,
+} from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
 import { pickTip, type Tip } from './client/tutorial';
 import { TutorialRunner } from './client/tutorialRunner';
@@ -70,6 +76,7 @@ import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
 import { IS_TEST_BUILD } from './config';
+import { frameCap, frameDue } from './client/frameCap';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -202,6 +209,8 @@ export class Game {
   hint: ToolHint | null = null;
   /** A tool's question before it acts (P2), shown at the pointer with its two buttons. */
   question: ToolQuestion | null = null;
+  /** The kind of pointer last pressed on the map: 'mouse', 'touch' or 'pen' (M49: touch confirms costs). */
+  pointerType = 'mouse';
   /** The war room's tab (kept here so a card, a chip or a key can open the room on the Bomb tab). */
   warTab: WarTab = 'forces';
   /** Open side panel (budget, and later data maps, advisors...). */
@@ -1958,15 +1967,29 @@ export class Game {
    */
   startGraphicsCheck(): void {
     const gl = this.renderer.renderer.getContext();
+    const device = currentDevice();
+    const check = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0, device);
+    // A phone needs no timing (M49): it starts on the Phone preset, never drawing High first.
+    if (device === 'phone') {
+      this.finishGraphicsCheck(check.frame(0, true)!);
+      return;
+    }
     this.updateSettings(GRAPHICS_PRESETS.high);
-    this.graphicsCheck = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0);
+    this.graphicsCheck = check;
     this.notify();
   }
 
   private finishGraphicsCheck(r: CheckResult): void {
     this.graphicsCheck = null;
     this.graphicsResult = r;
-    this.updateSettings({ ...GRAPHICS_PRESETS[r.preset], graphicsChecked: true, autoGraphics: r.preset });
+    // A phone, or a device light enough for the Phone preset, draws 30 frames a second (M49).
+    const cap = r.device === 'phone' || r.preset === 'phone' ? { fpsCap: 30 as const } : {};
+    this.updateSettings({
+      ...GRAPHICS_PRESETS[r.preset],
+      graphicsChecked: true,
+      autoGraphics: r.preset,
+      ...cap,
+    });
     const name = r.preset[0]!.toUpperCase() + r.preset.slice(1);
     this.toast(
       `Graphics set to ${name} for this device (${r.reason}). Change them any time in Settings.`,
@@ -1983,7 +2006,14 @@ export class Game {
     const d = DRAW_DISTANCE_PARAMS[s.drawDistance];
     this.renderer.tiltShiftOn = s.tiltShift;
     this.renderer.applyGraphics({
-      pixelRatio: q.pixelRatio,
+      // Battery saver (M49) draws three pixels in four (a ratio of 0.87 each way).
+      pixelRatio: q.pixelRatio * (s.batterySaver ? 0.87 : 1),
+      maxPixels: q.maxPixels * (s.batterySaver ? 0.75 : 1),
+      trees: q.trees,
+      water: q.water,
+      effects: q.effects,
+      lodGap: q.lodGap,
+      lodDistance: q.lodDistance,
       shadows: s.shadows,
       shadowMap: q.shadowMap,
       fogScale: d.fog,
@@ -2703,6 +2733,45 @@ export class Game {
       });
   }
 
+  /** When the last frame was drawn (ms), for the frame cap (M49). */
+  private drawnAt = -Infinity;
+  /** When the player last pointed, tapped, scrolled or pressed a key (ms; M49's still scenes). */
+  lastInputAt = 0;
+  /**
+   * Whether a still scene draws fewer frames (M49). Test builds keep every frame unless asked
+   * (localStorage `citybloom.idle=on`), so the e2e suite and the frame benchmarks aren't slowed.
+   */
+  idleFrames = !IS_TEST_BUILD || localFlag('citybloom.idle') === 'on';
+
+  /**
+   * Is nothing on screen moving (M49)? The city is paused (or under a menu), the camera is at
+   * rest, and nobody has touched anything for a moment and a half. A shared city, the main menu's
+   * turning view, photo mode and a battle on show always move.
+   */
+  isStill(now: number): boolean {
+    if (this.mode !== 'play' || this.photo || this.net || this.viewing) return false;
+    if (now - this.lastInputAt < 1500) return false;
+    if (this.speed !== 0 && this.screens.length === 0) return false;
+    if (this.world.stats.war?.battle) return false;
+    return this.renderer.controller.settled();
+  }
+
+  /** The most frames a second to draw now (0: every one the screen offers), M49. */
+  frameLimit(now: number): number {
+    return frameCap({
+      fpsCap: this.settings.fpsCap,
+      batterySaver: this.settings.batterySaver,
+      still: this.idleFrames && this.isStill(now),
+    });
+  }
+
+  /** Is a frame due at `now` (the animation frame's time)? The first-launch check times every frame. */
+  frameDue(now: number): boolean {
+    if (!frameDue(now, this.drawnAt, this.graphicsCheck ? 0 : this.frameLimit(now))) return false;
+    this.drawnAt = now;
+    return true;
+  }
+
   frame(now: number): void {
     const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
     const dt = this.lastFrameAt ? Math.min(0.1, interval / 1000) : 1 / 60;
@@ -2758,5 +2827,14 @@ function fairClockOff(): boolean {
     return localStorage.getItem('citybloom.fairClock') === 'off';
   } catch {
     return false;
+  }
+}
+
+/** A value kept in localStorage by a spec or a player's browser (null where storage is shut). */
+function localFlag(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
 }

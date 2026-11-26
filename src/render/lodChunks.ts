@@ -1,4 +1,4 @@
-import { Group, Mesh, type Material, type Vector3 } from 'three';
+import { Group, Mesh, Sphere, Vector3, type Material } from 'three';
 import type { ModelData } from './assets/builder';
 import { Arrays, appendModel, casterVertices, drawCastersOnly } from './modelMerge';
 import { releaseAfterUpload } from './release';
@@ -94,6 +94,12 @@ export class LodChunks {
   force: number | null = null;
   /** Scale on `GAP` (the Phone preset waits longer; 0 builds a stale chunk as soon as its turn comes). */
   gapScale = 1;
+  /**
+   * The least time (ms) between any two builds of stale chunks (M49: the Phone preset, 200, so a
+   * busy city's changes cost a slow phone a few builds a second, not one every frame). 0: no limit.
+   */
+  staleEvery = 0;
+  private staleAt = -Infinity;
   private turn = 0;
 
   constructor(
@@ -202,7 +208,9 @@ export class LodChunks {
     const arr = new Arrays(false, true, { casters, rest });
     for (const [it, m] of list) appendModel(arr, m, it.x, it.y, it.z, it.yaw, it.look, undefined, it.seed);
     if (!arr.total) return;
-    const geometry = arr.geometry();
+    // The chunk's own sphere (every building's lot and height) bounds its mesh: no pass over it.
+    if (!c.bounds) this.measure(c);
+    const geometry = arr.geometry(new Sphere(new Vector3(c.cx, c.cy, c.cz), c.r + 1));
     releaseAfterUpload(geometry);
     const mesh = new Mesh(geometry, this.materials.colour[level]);
     mesh.customDepthMaterial = this.materials.depth[level];
@@ -258,9 +266,12 @@ export class LodChunks {
           else if (
             (need || soon) &&
             budget > 0 &&
-            (all || !c.mesh || now - c.at >= GAP[l]! * this.gapScale)
+            (all ||
+              !c.mesh ||
+              (now - c.at >= GAP[l]! * this.gapScale && now - this.staleAt >= this.staleEvery))
           ) {
             budget--;
+            if (c.mesh) this.staleAt = now;
             this.rebuild(k, c, l, now);
           } else if (!need && !soon) this.drop(c);
         } else if (f === null && l === NEAR && c.mesh && dMin > range.nearEnd + EVICT) {

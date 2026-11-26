@@ -5,7 +5,8 @@
 import type { WeatherIntensity } from '../data/climate';
 import type { UnitQuality } from '../render/units';
 
-export type Quality = 'low' | 'medium' | 'high';
+/** Graphics quality; `phone` (M49) is below Low: lighter, for phones and small tablets. */
+export type Quality = 'phone' | 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
 /** How wheel input is read (M14): detected automatically, or fixed to a mouse or a trackpad. */
 export type PointerDevice = 'auto' | 'mouse' | 'trackpad';
@@ -68,7 +69,20 @@ export interface Settings {
   crashReports: boolean;
   /** The one sentence saying what crash reports send and where the switch is has been shown. */
   reportsNotice: boolean;
+  /**
+   * The most frames a second drawn (M49): 0 as many as the screen shows, else 30 or 60. The
+   * first-launch check sets 30 on a phone.
+   */
+  fpsCap: FpsCap;
+  /**
+   * Battery saver (M49): at most 30 frames a second, a lower resolution, and still scenes drawn
+   * even less often.
+   */
+  batterySaver: boolean;
 }
+
+export type FpsCap = 0 | 30 | 60;
+export const FPS_CAPS: FpsCap[] = [0, 60, 30];
 
 /** Does the system ask for less motion? False where there is no window to ask (tests, the worker). */
 export function prefersReducedMotion(): boolean {
@@ -108,15 +122,20 @@ export const DEFAULT_SETTINGS: Settings = {
   autoGraphics: null,
   crashReports: true,
   reportsNotice: false,
+  fpsCap: 0,
+  batterySaver: false,
 };
 
-export const QUALITIES: Quality[] = ['low', 'medium', 'high'];
+export const QUALITIES: Quality[] = ['phone', 'low', 'medium', 'high'];
 export const DRAW_DISTANCES: DrawDistance[] = ['near', 'medium', 'far'];
 export const AUTOSAVE_CHOICES = [0, 2, 5, 10];
 export const UI_SCALE = { min: 0.8, max: 1.4 };
 
 /**
- * Renderer knobs for each quality level. `shadowMap` is each of the sun's shadow cascades, of
+ * Renderer knobs for each quality level. `maxPixels` caps the drawing buffer (M49: a tablet's big
+ * screen at Phone); `trees` the share of trees drawn, `water` the water's full ripples (1) or one
+ * gentle swell (0), `effects` the share of smoke and flame particles, `lodGap` a scale on how long a
+ * stale building chunk waits before it is built again (M49). `shadowMap` is each of the sun's shadow cascades, of
  * which `cascades` are used (M26); `ao` the ambient occlusion's taps a pixel (0: off) and whether it is smoothed; `glow`
  * the soft glow round lights at night; `samples` the frame's multisampling while one of them is
  * on; `aoFar` how far off the occlusion has faded (the camera distance); `ground` the grass's
@@ -127,6 +146,13 @@ export const QUALITY_PARAMS: Record<
   Quality,
   {
     pixelRatio: number;
+    maxPixels: number;
+    trees: number;
+    water: 0 | 1;
+    effects: number;
+    lodGap: number;
+    /** Scale on where buildings hand over to their lighter versions (M49: Phone sooner). */
+    lodDistance: number;
     shadowMap: number;
     crowd: number;
     ao: number;
@@ -145,8 +171,47 @@ export const QUALITY_PARAMS: Record<
     units: UnitQuality;
   }
 > = {
+  phone: {
+    pixelRatio: 1,
+    maxPixels: 1_000_000,
+    trees: 0.5,
+    water: 0,
+    effects: 0.4,
+    lodGap: 2,
+    lodDistance: 0.7,
+    shadowMap: 512,
+    crowd: 0.25,
+    ao: 0,
+    aoBlur: false,
+    glow: false,
+    samples: 2,
+    cascades: 1,
+    aoFar: 0,
+    ground: 0,
+    closeShadowHz: 30,
+    units: {
+      near: 80,
+      far: 500,
+      animate: false,
+      shadows: false,
+      drill: 1,
+      patrol: 1,
+      fly: 1,
+      shields: 0,
+      dust: 0,
+      atomPuffs: 80,
+      atomTrail: 16,
+      atomTint: 0,
+    },
+  },
   low: {
     pixelRatio: 0.75,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 1024,
     crowd: 0.4,
     ao: 0,
@@ -174,6 +239,12 @@ export const QUALITY_PARAMS: Record<
   },
   medium: {
     pixelRatio: 1,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 1536,
     crowd: 0.7,
     ao: 4,
@@ -201,6 +272,12 @@ export const QUALITY_PARAMS: Record<
   },
   high: {
     pixelRatio: 2,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 2048,
     crowd: 1,
     ao: 12,
@@ -288,6 +365,8 @@ export function parseSettings(raw: unknown): Settings {
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,
     crashReports: bool(r.crashReports, d.crashReports),
     reportsNotice: bool(r.reportsNotice, d.reportsNotice),
+    fpsCap: oneOf(r.fpsCap, FPS_CAPS, d.fpsCap),
+    batterySaver: bool(r.batterySaver, d.batterySaver),
   };
 }
 

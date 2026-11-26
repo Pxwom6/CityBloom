@@ -201,12 +201,14 @@ export class TreeRenderer {
 
   private treesDirty = false;
 
-  /** Regions waiting to be rebuilt round new buildings (M49): `REGIONS_A_FRAME` of them a frame. */
+  /** Regions waiting to be rebuilt round new buildings (M49): `regionsAFrame` of them a frame. */
   private pending = new Set<number>();
+  /** Regions round new buildings rebuilt a frame (the Phone preset: one). */
+  regionsAFrame = REGIONS_A_FRAME;
 
   /** Rebuild the regions whose tree cells the sim changed since the last frame. */
   update(): void {
-    let n = REGIONS_A_FRAME;
+    let n = this.regionsAFrame;
     for (const r of this.pending) {
       if (n-- <= 0) break;
       this.pending.delete(r);

@@ -271,12 +271,33 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M49 Phones** is under way (after M42, before M43; plan `docs/plans/M49-design.md`). M41 and M42
-are complete, in pull request #24. Done so far: the measurements (below, "Performance (M49)") and
-the first fixes they showed (construction sites drawn in cells, building chunks sized beforehand and
-rebuilt at most every 0.25–1.5 s, tree regions a few a frame, chunk arrays let go once on the GPU
-and built again if the context comes back). Next: the Phone preset, 30 fps cap and battery saver,
-then touch, layout, memory, installing and slow joiners.
+**M49 Phones** is all but done (after M42, before M43; plan `docs/plans/M49-design.md`); M41 and M42
+are complete, in pull request #24, which M49 joins. Left: the last runs (the bench, the balance, the
+cross-browser test, the whole suite) and the `M49 complete:` commit.
+
+M49 in short: measured first in phone emulation with the CPU slowed 4× (`scripts/dev/phoneprobe.mjs`),
+and fixed what it showed for every preset: construction sites drawn in cells (one mesh of every site
+was rebuilt every frame in a growing city), stale building chunks rebuilt at most every 0.25–1.5 s and
+sized beforehand, tree regions a few a frame, chunk arrays let go once on the GPU (and built again if
+the context comes back). A **Phone** preset below Low (a capped resolution, no shadows, near draw
+distance, half the trees, a quarter of the cars and people, simpler water and smoke, sooner hand-overs,
+paced rebuilds; the same bright look), a frame-rate cap (30 on a phone by default) and a battery saver,
+still scenes drawn at 10 fps, and a first-launch check that knows phones and tablets. **Touch**: one
+finger pans, a pinch zooms, a twist turns, two fingers sliding up or down tilt; a long press inspects or
+shows what the tool would do (and opens tooltips; `title`s show in a bubble); roads and terrain ask
+with the price before spending by touch; Done ends a road chain. **The phone layout**: one bottom row
+with names (Select, Roads, Zones, Build, Clear, Maps, More, Undo), Build and More open sheets, panels
+open as sheets from the bottom (upright) or the right (sideways) and close by dragging, a one-row top
+bar sideways, 44 px presses, 12 px text at least, safe areas; the map editor says it needs a bigger
+screen. **Memory**: a measured 700 MB budget (the 20k city about 500 MB), a question before a phone
+opens a city too big for it, a page closed while a city showed reported on the next visit. **Data**:
+the first download's size on the boot screen; scenarios and lessons cached only once opened.
+**Installing**: either orientation; export through the share sheet (Save to Files) and an import
+picker iPhone's Files can use; on an iPhone a card suggests keeping a copy in Files. **Slow joiners**
+(the known issue since M33): the room holds the city up to 30 s for a joiner catching up, the pacer
+keeping within 60 ticks of them, and the worker catches up in bulk; a phone with its CPU slowed 4×
+joins a busy room and is in step in about 18 s (`e2e/m49-join.spec.ts`). Calls: DECISIONS "M49";
+SPEC_REVIEW "M49"; numbers: "Performance (M49)".
 
 M42 in short: the first-city tutorial grew from eight steps to eighteen, ending at 1,000 residents
 (roads, homes, jobs, power, water, the demand bars, the budget and taxes beside it, services and a
@@ -307,10 +328,10 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M49 Phones (after M42, before M43): measure in phone emulation with CPU throttling, then the
-   whole game by touch upright and sideways, a 30 fps cap and battery saver, memory, installing, and
-   slow joiners catching up in shared cities.
-2. Then M43–M48 in order (SPEC-6.md).
+1. Close M49: bench, balance, the cross-browser test and the whole suite; `M49 complete:`; PR #24's
+   title and description name M49.
+2. Then M43–M48 in order (SPEC-6.md), each new screen working by touch on a phone upright and
+   sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
 
 ## Performance (M49)
 Measured with `scripts/dev/phoneprobe.mjs` (Playwright's iPhone 13 and Pixel 7 emulation, CPU
@@ -926,13 +947,13 @@ crown into the wall (a few homes, and two at the back of the remade `C213`).
   cannot finish a battle the city still hosts (a different picture, or orders at steps already
   played) still stands in for it and fights it whole, as before, logged with its reason (no soak has
   met one since the fix).
-- A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
-  the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
-  machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
-  software-rendered pages that replay sometimes never catches the room up (m30-rooms, m31-together,
-  the Trystero spec's join): seen on the original M33 tip too. Worth a look on a slow phone; if it
-  shows, the room could wait for a joiner within a limit, or the pacer could settle off the main
-  thread's frame budget.
+- A player joining a city that's running catches up while the room holds the city for them, up to
+  30 s (M49); a joiner slower than that (a tab put away, a very old phone) is then left to catch up as
+  before. m30-rooms now passes on this VM. The pacer's snapshot is still gzipped on the main thread
+  (the 8 s fallback to the stored one remains for a pacer too busy to answer).
+- fix-layout's P13 (hovering every tooltip, 180 s) and P14 (data-map clicks with 5 s limits) time out
+  on this VM: a hover or click takes 3–5 s on the software renderer, the same on the M42 build. Run
+  them on the Mac.
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.

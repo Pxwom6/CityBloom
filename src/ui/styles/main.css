@@ -5724,3 +5724,45 @@ body {
   justify-content: flex-end;
   gap: var(--space-2);
 }
+/* Menus and screens on a phone: the whole width, clear of the notch. */
+#ui[data-phone] .shell {
+  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--space-2), env(safe-area-inset-right))
+    max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-2), env(safe-area-inset-left));
+}
+#ui[data-phone] .shell-card {
+  width: 100%;
+  max-width: 40rem;
+  padding: var(--space-3) var(--space-4);
+}
+#ui[data-phone] .shell.menu .shell-card {
+  justify-self: stretch;
+}
+/*
+ * Phones: every press at least 44 px, small buttons, fields, the top bar's figures and the menus'
+ * items included (the rules above for narrow windows give 24 px; these come later and weigh as much).
+ */
+#ui[data-phone]
+  :is(.btn.small, .btn.small.danger, .shell-btn, .map-item, .topbar .stat-btn, .topbar .goals-btn),
+#ui[data-phone] :is(input[type='text'], input[type='number'], input[type='search'], textarea) {
+  min-height: 44px;
+}
+#ui[data-phone] .btn.small {
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+#ui[data-phone] [data-testid^='friends-color-'] {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* The top bar's More menu sideways: under the bar and centred, not hung off its button. */
+#ui[data-phone] .topbar:not(.rows) .topbar-more {
+  position: static;
+}
+#ui[data-phone] .topbar:not(.rows) .topbar-panels {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2 * var(--space-2));
+  flex-wrap: wrap;
+  justify-content: center;
+}

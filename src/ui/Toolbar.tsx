@@ -319,8 +319,27 @@ export function Toolbar() {
   // Phones (M49): one row along the bottom; Build and More open sheets above it.
   const phone = isPhone();
   const [sheet, setSheet] = useState<'build' | 'more' | null>(null);
+  // On a phone, panels open as sheets above the bar and whatever options sit on it: they're placed
+  // by its height as it stands (M49).
+  const wrap = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    const ui = document.getElementById('ui');
+    if (!el || !ui || !phone) {
+      ui?.style.removeProperty('--toolbar-height');
+      return;
+    }
+    const fit = () => ui.style.setProperty('--toolbar-height', `${el.offsetHeight}px`);
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => {
+      watch.disconnect();
+      ui.style.removeProperty('--toolbar-height');
+    };
+  }, [phone]);
   return (
-    <div class={`toolbar-wrap${phone ? ' phone' : ''}`}>
+    <div class={`toolbar-wrap${phone ? ' phone' : ''}`} ref={wrap}>
       {active === 'road' && (
         <div class="subbar panel" data-testid="road-options">
           {BUILDABLE_ROADS.map((id) => {

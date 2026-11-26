@@ -204,7 +204,9 @@ test('a forced desync between two pages reaches the owner area, and its replay f
   // Each side's report says which it is and what its replay needs.
   const summaries = entry.getByTestId('owner-item-summary');
   await expect(summaries.filter({ hasText: 'the pacer’s side' })).toContainText('replays from nothing more');
-  await expect(summaries.filter({ hasText: 'on this machine' })).toContainText('replays from the city saved at tick');
+  await expect(summaries.filter({ hasText: 'on this machine' })).toContainText(
+    'replays from the city saved at tick',
+  );
   await owner.screenshot({ path: `${OUT}/owner-desync.png`, fullPage: true });
   const outputs: string[] = [];
   const items = entry.getByTestId('owner-item');

@@ -616,6 +616,15 @@ export const TIPS: Tip[] = [
       'built in stages over months, paid for as each stage starts, and gives the city a lasting perk.',
     when: (g) => g.world.stats.peak >= 20_000 && !g.world.options.sandbox,
   },
+  {
+    // Hearing about problems (M41): once a player has been at it a while, where to say something's wrong.
+    id: 'reportProblem',
+    text:
+      'Something not working as it should? Pause (Escape) → Report a problem sends a short note, and a ' +
+      'picture of the game if you like, to Citybloom’s maker. Crash reports go by themselves (never your ' +
+      'name, cities or chat) unless you switch them off in Settings → Game.',
+    when: (g) => g.mode === 'play' && !g.readOnly && !g.net && g.world.stats.tick > 2 * 24 * 60,
+  },
 ];
 
 /**

@@ -716,3 +716,37 @@ M41–M48; each gets its rows below as it is done.
 | "Needed from the owner": how to make `OWNER_KEY` and store it as a GitHub secret | `PROGRESS.md` (top); the deploy workflow passes it to the Worker (M41) |
 | CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M48 | `CLAUDE.md` |
 | M41–M48 on PROGRESS.md's checklist; a phase 6 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 6" |
+
+## Rules for all of phase 6
+
+| Rule | Where |
+|---|---|
+| What's there doesn't change (single player, co-op, regions, war; saves; protocol bumps keep older clients out) | M41: no sim or save change; the room's `resync` gains optional fields older pages ignore (no bump) |
+| Phase 4's and 5's rules (deterministic maths and the cross-browser test, the sim pure, the free plan, budgets, plain refusals, tips) | per milestone below |
+| Safe for friends: no accounts, nothing personal, nothing a player writes shown to others before the owner approves, every upload checked and rate-limited, the owner can remove anything | M41: reports name nothing (`cleanReport`, `scrubText`, `cleanEvents`), are read by the owner only, capped and rate-limited; the owner deletes entries and items |
+| Owner pages behind `OWNER_KEY`, checked by the Worker on every request, linked from nowhere, usable on a phone | `owner.html` + `relay/reportsHttp.ts` (M41) |
+| Storage in Durable Objects with SQLite within the free plan, logged, old data deleted on a schedule | M41: `ReportsObject`, caps and the 60-day sweep in DECISIONS "M41" |
+| Milestones playable and tested through the real UI, screenshots reviewed, `M<n> complete:` and a pull request, balance and bench | per milestone below |
+
+## M41 Hearing about problems
+
+| Item | Where |
+|---|---|
+| Uncaught errors and rejected promises | `Reporter.listen` (`src/client/reports.ts`), made at the top of `main.ts` (`reportHost.ts`) |
+| Errors in the sim worker and the battle workers | `client.onError` in `main.ts`; `battles.ts` (both workers' `onerror` and error replies, now with a stack) |
+| A failed save or load | `Game.saveTo`, `main.ts` (`readSlot`, `client.load`), the pause menu's import |
+| A model that fails at start-up | `loadModels`, `loadWarModels` (`src/client/models.ts`) |
+| Desyncs in a shared city or a battle | `Game.reportCityDesync` (the room's `resync`, both sides), `liveBattles.ts` (`agree === false`) |
+| Each report: version, browser and OS, graphics, save version, shared, the error and its stack | `ReportEnv` in `relay/reports.ts`, `envOf` in `reportHost.ts` |
+| A desync's tick, both sides' hashes, and the commands since the last agreed snapshot where they fit | `ReportDesync`; the worker's `DesyncLog`; cut past 120 KB (`cut`) |
+| Never sent: names, chat, city names, saves, typed text (but a written report's message) | `scrubText`, `stripAddresses`, `cleanEvents`; tests in `relay/tests/reports.test.ts`, `tests/reports/reporter.test.ts`, the e2e's "names nothing" |
+| Report a problem in the pause menu and the main menu, a short message, a picture of the game, what will be sent shown first | `src/ui/Report.tsx`; `e2e/m41-reports.spec.ts` |
+| "Send crash reports" on by default, can be turned off; one sentence the first time | Settings → Game (`set-crash-reports`); `ReportsNotice` on the main menu; tip `reportProblem` |
+| Folding, a few a minute, the size cap, an offline queue | `reportKey`, `REPORTER` (3 a minute, 20 queued in IndexedDB), `REPORT_CAPS.body` |
+| The owner area: sign in, grouped newest first with counts, versions, browsers, first seen; fixed and reopening; a desync's replay; Copy for Claude Code | `owner.html`, `src/owner/OwnerApp.tsx`, `relay/reportDesk.ts`; scene `scripts/dev/ownershot.mjs` |
+| A script that replays a desync in Node and says where the hashes split | `scripts/desync.ts` (`scripts/lib/desyncReplay.ts`) |
+| *Done:* a deliberate error, a forced desync and a written report reach the owner area through the real UI against the local relay | `e2e/m41-reports.spec.ts` (three tests) |
+| *Done:* duplicates fold | the e2e (two pages, ×2), `relay/tests/reports.test.ts`, `tests/reports/reporter.test.ts` |
+| *Done:* the setting off sends nothing | the e2e, `tests/reports/reporter.test.ts` |
+| *Done:* a modified client can't fill storage past its cap | `relay/tests/reports.test.ts` "can’t be filled past its caps" |
+| *Done:* the replay script finds the split tick for a forced desync | `tests/reports/desyncReplay.test.ts`, the e2e (a real browser city replayed in Node) |

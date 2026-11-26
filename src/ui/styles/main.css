@@ -616,7 +616,8 @@ body {
   place-items: center start;
   /* A window too short for the menu (a phone held sideways) scrolls to its last buttons. */
   overflow-y: auto;
-  padding: var(--space-4) 0 var(--space-4) clamp(var(--space-5), 7vw, 7rem);
+  /* A gutter on the right too, so a phone's buttons and cards don't run to the edge. */
+  padding: var(--space-4) var(--space-4) var(--space-4) clamp(var(--space-5), 7vw, 7rem);
   background: linear-gradient(90deg, rgba(18, 26, 36, 0.62) 0%, rgba(18, 26, 36, 0.28) 45%, transparent 75%);
 }
 @keyframes shell-in {

@@ -160,7 +160,7 @@ function MainMenu() {
         <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
-        <button class="shell-btn quiet" data-testid="main-report" onClick={() => game.openScreen('report')}>
+        <button class="shell-btn" data-testid="main-report" onClick={() => game.openScreen('report')}>
           <span>Report a problem</span>
         </button>
         <InstallButton />

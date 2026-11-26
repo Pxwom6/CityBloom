@@ -234,3 +234,36 @@ test('a forced desync between two pages reaches the owner area, and its replay f
   expect(pacer).toMatch(/The other side left the replay at tick \d+/);
   expect(outputs.some((o) => /--save/.test(o))).toBe(true);
 });
+
+test('the main menu says once what crash reports send, and opens Report a problem', async ({ browser }) => {
+  test.setTimeout(300_000);
+  const ctx = await newContext(browser, { viewport: { width: 1280, height: 800 } });
+  // A player from before this update: settings stored, the notice never seen.
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem('m41-seeded')) return;
+    sessionStorage.setItem('m41-seeded', '1');
+    localStorage.setItem(
+      'citybloom.settings',
+      JSON.stringify({ graphicsChecked: true, quality: 'low', tips: false }),
+    );
+  });
+  const page = await ctx.newPage();
+  await page.goto('./');
+  await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
+  const notice = page.getByTestId('reports-notice');
+  await expect(notice).toContainText('switch it off in Settings → Game');
+  await page.screenshot({ path: `${OUT}/menu-notice.png` });
+  await page.getByTestId('reports-notice-ok').click();
+  await expect(notice).toHaveCount(0);
+  await page.getByTestId('main-report').click();
+  await expect(page.getByTestId('report-screen')).toBeVisible();
+  // Nothing written and no picture: nothing to send yet.
+  await expect(page.getByTestId('report-send')).toBeDisabled();
+  await page.getByTestId('report-cancel').click();
+  await expect(page.getByTestId('main-menu')).toBeVisible();
+  // Once is enough: the menu opened again doesn't say it again.
+  await page.reload();
+  await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
+  await page.waitForTimeout(1000);
+  await expect(page.getByTestId('reports-notice')).toHaveCount(0);
+});

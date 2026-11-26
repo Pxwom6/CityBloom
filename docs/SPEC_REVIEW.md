@@ -699,3 +699,20 @@ are done, each with its rows below; the phase's end is the last section.
 | This brief's section in SPEC_REVIEW | the M34–M40 sections above and this one |
 | The README | `README.md`: War (raising forces, raids, diplomacy, war scenarios, war with friends, the atom bomb), the seventeen scenarios, and the war intro saying the bomb is the one thing that is lost for good |
 | Fight a war with a computer neighbour and one between two players through the real UI, race for the atom bomb, and fix whatever feels off | `e2e/phase5-finale.spec.ts` (`@playthrough`, so `npm run playthrough` runs it; about 12 minutes on the owner's Mac, headed Chrome on the GPU at 1280 x 800 and High, tips on): (1) a war with a computer neighbour from the main menu (New city with Rival neighbours, a town grown with the mouse, the HQ and barracks from the Military bar, a raid lived through, an expedition, a war declared from the Diplomacy tab and ended by treaty, every war room tab); (2) a war between two players on the local relay with a third watching (war turned on in the Region panel, declared from the Friends block, a live battle both command from the battle map, peace by treaty); (3) the atom bomb race between them (plants and silo from the toolbar, the Bomb tab, total war, the three-second hold, the countdown, flash and cloud on the target at High, the radiation map, a clean-up crew, the winter on both cities, the pariah). Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at; two in the README). The unit suite on the final code: 2,039 tests in 185 files pass. Fixed on the way, each with a test (DECISIONS "Phase 5 end"): nineteen findings from the Mac (shelters with none in reach, units knocked out agreeing with their number, the battle bar's targets named by kind, a report's damage line, notices kept off the battle map, the battle map's step and frontier in a player's words, a city told of its own joining twice, notices as sentences, a war's score before any battle, a strike's three notices at once, building names in sentences, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, power in MW, the HQ's refusal naming its cause, the aftermath card's winter, and the no-power advice naming a plant under repair), then in the cloud the war room's eleven tabs in two rows and the war scales' drop-down. Left with a proposal (DECISIONS, PROGRESS "Ideas for what's next"): a young city's first war, a raid that blacks out a town, odds in the Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs, the fallout reading's words |
+
+# Phase 6 (SPEC-6.md)
+
+Playing with friends: hearing about problems, learning to play, quick matches, a weekly challenge,
+timelapses, players' own buildings, making buildings, and sending ideas and buildings in. Milestones
+M41–M48; each gets its rows below as it is done.
+
+## Before you start
+
+| Item | Where |
+|---|---|
+| Start from the latest `main` (phase 5 merged, PR #23) | the session's branch `claude/ecstatic-brown-64m0nb` (standing in for `friends`), made from `main` at 9490cb2 |
+| SPEC-6.md saved word for word | `SPEC-6.md` |
+| Online rooms are live: the Cloudflare request gone from PROGRESS, README and CLAUDE.md updated | `PROGRESS.md` (top), `README.md` "Play with friends", `CLAUDE.md` |
+| "Needed from the owner": how to make `OWNER_KEY` and store it as a GitHub secret | `PROGRESS.md` (top); the deploy workflow passes it to the Worker (M41) |
+| CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M48 | `CLAUDE.md` |
+| M41–M48 on PROGRESS.md's checklist; a phase 6 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 6" |

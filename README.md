@@ -47,9 +47,8 @@ like `A7KQ2M-BCDF-GHJK-MNPQ`, which the invite link carries), and nobody sees an
 the name and colour you choose.
 
 - **One city together (co-op, up to 8).** Main menu → **Play with friends**: pick a name and a
-  colour, then **Host online** (the city lives in an online room and waits there between sessions;
-  once online rooms are set up for the site, until then the button says so) or **Host on this
-  computer** (your browser is the room; friends play while you're there). Or, in a
+  colour, then **Host online** (the city lives in an online room on Cloudflare and waits there between
+  sessions) or **Host on this computer** (your browser is the room; friends play while you're there). Or, in a
   city you're already playing, pause (Escape) → **Invite friends**. Send your friends the invite
   link from the room button by the city's name; opening it drops them straight into the city.
   Everyone builds on the same map with the same money; you see each other's cursors and what's in
@@ -70,8 +69,8 @@ the name and colour you choose.
 
 - **"Couldn't connect directly to the host's computer"**: some home, school and office networks
   block direct connections between browsers. Try another network (a phone's hotspot often works),
-  or let a friend on a different network host. Once online rooms are set up, **Host online** goes
-  through a server and works on any network.
+  or let a friend on a different network host, or use **Host online**, which goes through a server
+  and works on any network.
 - **"The host's game has closed, and the room with it"**: a room on someone's computer runs in
   their browser, so it closes when they leave; everyone keeps a copy of the city to play alone.
 - **"This room is full"**: 8 players are in it (players who are away don't count); try again when
@@ -87,8 +86,9 @@ the name and colour you choose.
   seconds for them. Games in a background tab aren't waited for, and catch up when they return.
 - **"Reconnecting…"**: the connection dropped; the game keeps trying by itself and carries on where
   it was.
-- **Online rooms aren't set up yet**: the online relay needs a one-time setup by whoever runs this
-  copy of the game (`PROGRESS.md`); hosting on your own computer works without it.
+- **Online rooms aren't set up yet**: the live site's online rooms run on Cloudflare; a copy of the
+  game you build yourself has none until you deploy the relay (`relay/wrangler.jsonc`, the deploy
+  workflow); hosting on your own computer works without it.
 
 ## Run it
 

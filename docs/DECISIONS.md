@@ -2957,3 +2957,8 @@ and lint rerun; the fourteen pictures looked at)
 - *The shared-city snapshot* (`npx tsx scripts/dev/snapsize.ts`, `encodeSnapshot` on a saved city with no undo history
   yet): the 110k bench city is JSON 2.99 MB, gzip 0.45 MB, 0.59 MB of base64, 3 parts of the 40 (7 % of the 8 MB cap);
   the war city (93k residents, 300 civic buildings) the same, 3 parts.
+
+## Phase 6 (SPEC-6.md)
+- **Branch:** the cloud session's `claude/ecstatic-brown-64m0nb` stands in for `friends`, made from `main` at 9490cb2 (phase 5 merged, PR #23).
+- **SPEC-6.md was pasted** into the session; it is saved with SPEC-5.md's layout (a title, `##` sections, `###` milestones) and every word as given.
+- **The in-game "Online rooms aren't set up yet" refusals stay**: the live site has a relay now, but a copy built without `VITE_RELAY_URL` (a fork, a dev build) still has none, and the words are still true there. The README says so.

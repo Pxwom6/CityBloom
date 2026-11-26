@@ -1,24 +1,24 @@
 # PROGRESS
 
-## Needed from the owner: Cloudflare for online rooms
-Online rooms (phase 4) run on Cloudflare's free plan. Until these exist the site builds with online
-rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still works.
-1. A free Cloudflare account (https://dash.cloudflare.com/sign-up). In Workers & Pages, open the
-   Workers overview once so the account gets its `workers.dev` subdomain.
-2. An API token: My Profile → API Tokens → Create Token → the **Edit Cloudflare Workers** template,
-   limited to that one account (it includes Account › Workers Scripts › Edit, which deploys the
-   Worker and its Durable Objects).
-3. In GitHub: Settings → Secrets and variables → Actions → New repository secret:
-   `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID` (shown on the Workers overview).
-   Optional: a repository *variable* `RELAY_URL` (e.g. `wss://relay.example.com`) for a custom domain.
-4. The next push to `main` deploys the relay and builds the site with its address. Please don't
-   paste the token into a session.
+## Needed from the owner: an owner key (`OWNER_KEY`)
+Phase 6's owner pages (bug reports from M41, and later the submissions and leaderboard entries) are
+for the owner alone. They open with a key only the owner knows, checked by the relay on every request.
+Until the key exists the owner pages say "The owner area isn't set up yet", and everything players
+see works as normal.
+1. Make a long random key on your Mac, e.g. `openssl rand -base64 32` in Terminal (or any password
+   manager's generator, 32 characters or more). Keep a copy in your password manager.
+2. In GitHub: Settings → Secrets and variables → Actions → New repository secret, named `OWNER_KEY`,
+   with the key as its value.
+3. The next push to `main` deploys the relay and passes the key to the Worker as a Worker secret
+   (`wrangler secret put OWNER_KEY`, done by the deploy workflow). Then open the site's owner area,
+   `https://pxwom6.github.io/CityBloom/#/owner`, and sign in with the key (the page keeps it on that
+   device until you sign out).
+Please never paste the key into a session or commit it; to change it, update the secret and push.
 
-Phases 1–4 (with phase 4's review follow-ups) and the war models (PR #22) are merged into `main`,
-which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 5 (war between cities,
-SPEC-5.md, M34–M40) is complete, its end included** (the playthroughs through the real UI and their
-fixes), on this branch, in pull request #23 for the owner to merge. Online
-rooms need the Cloudflare setup above; peer-to-peer works without it.
+Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
+https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6
+(playing with friends, SPEC-6.md, M41–M48) is under way** on this cloud session's branch
+`claude/ecstatic-brown-64m0nb`, which stands in for `friends` (made from `main` at 9490cb2).
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -61,12 +61,21 @@ rooms need the Cloudflare setup above; peer-to-peer works without it.
 - [x] M38 Investments and the war economy
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
+- [ ] M41 Hearing about problems
+- [ ] M42 Learning to play
+- [ ] M43 Quick match
+- [ ] M44 Weekly challenge
+- [ ] M45 Timelapse
+- [ ] M46 Your own buildings
+- [ ] M47 Making buildings
+- [ ] M48 Send it in
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40 and the phase's end.** Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
-in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
-`main` from this branch; a milestone finished while the last one's pull request is still open joins
-it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
-done in `docs/SPEC_REVIEW.md`, "Phase 5".
+**Phase 6 (playing with friends, SPEC-6.md, M41–M48) is under way.** Branch: this cloud session's
+`claude/ecstatic-brown-64m0nb` stands in for `friends`. Each milestone ends with an `M<n> complete:`
+commit and a pull request into `main` from this branch; a milestone finished while the last one's pull
+request is still open joins it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
+brief's items and where each is done in `docs/SPEC_REVIEW.md`, "Phase 6". Phase 5 is complete and
+merged (its notes stay below and in git).
 
 ## Multiplayer review follow-ups (PRs #17–#21)
 The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
@@ -260,27 +269,20 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**Phase 5 is complete, its end included**, in pull request #23 (its title names all seven milestones).
-Nothing is under way; what's left is the owner's: merge PR #23, the real-device list under "To check
-on the Mac" (what needs a person: speakers, touch, two real machines, Cloudflare), and the Cloudflare
-setup above for online rooms. A round of checks on the Mac's GPU followed the phase's end (frame times,
-the bench, the playthrough in one run, the war's looks, the snapshot size): all inside the budgets, two
-fixes (the top bar folding in a war city, a flaky test); numbers under "Performance (phase 5 checks)".
+**Phase 6, M41 Hearing about problems**: error and desync reports from the page and its workers, a
+"Report a problem" button, the "Send crash reports" setting, and the owner area (`#/owner`) behind
+`OWNER_KEY`, with a script that replays a downloaded desync.
 
-Phase 5's end (SPEC-5.md, "When every milestone is done"): the summaries (this file's top, SPEC_REVIEW's
-phase 5 section, the README with two war pictures), then three playthroughs through the real UI on the
-owner's Mac on the GPU, kept as `e2e/phase5-finale.spec.ts` (`@playthrough`, ≈12 min): a war with a
-computer neighbour from the main menu, a war between two players with a third watching the live battle,
-and the atom bomb race between them to the fallout, the winter and the pariah. Nineteen findings fixed,
-each with a test (war words that agree with their numbers, the battle bar's targets named, notices kept
-off the battle map, the battle map in a player's words, a join told once, a strike's notices not
-tripled, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, the HQ's
-refusal naming its cause, MW for power), then in the cloud the war room's tabs in two rows and short
-war scales with their meaning beneath. Left with a proposal (DECISIONS "Phase 5 end", and "Ideas for
-what's next" below): a grace for a young city's first war, a raid that blacks out a town, odds in the
-Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs.
-Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at). Tests on the final code: the unit suite,
-2,039 tests in 185 files, typecheck, lint and prettier pass; the cross-browser test is green on every push.
+## Next tasks
+1. M41: the reports' shape and cleaning (shared by page, local relay and Worker), the Worker's report
+   store (a Durable Object with SQLite, capped, deleted after 60 days), the page's reporter (queue in
+   IndexedDB, rate limit, fold duplicates), Report a problem, the setting and its one-time notice, the
+   owner area, the desync replay script, e2e against the local relay.
+2. M42–M48 in order (SPEC-6.md).
+
+## Phase 5 notes (complete, merged in PR #23)
+Phase 5's end and the checks on the Mac are described in git history and `docs/SPEC_REVIEW.md`,
+"Phase 5"; the per-milestone summaries below are kept for reference.
 
 M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
 it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
@@ -350,11 +352,6 @@ and, through the region room, friends (protocol 5), computer neighbours' own tec
 fair clock, save v30; the war room's Research and Intelligence tabs, superweapon effects with a
 cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds, all fixed.
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
-
-## Next tasks
-1. The owner: merge PR #23 (phase 5) into `main`.
-2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
-3. Then, if wanted, the phase 5 ideas under "Ideas for what's next".
 
 ## Performance (phase 5 checks, the owner's Mac)
 - **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs` on `bench-results/war.gz`:
@@ -1254,7 +1251,7 @@ misses with either build (`startup-slow.log`).
   a long Hard game with a player who researches, to meet a computer neighbour's race.
 - Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
   test runs the room in one process: the live site offers peer-to-peer only); the region room on
-  Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);
+  Cloudflare's runtime, now live (tests use Node's SQLite stand-in for a Durable Object);
   the lobby, war room and battle map
   on a tablet in landscape and at 80 % interface size; an ally's help and a spectator with three
   real players; a first pair of friends inviting each other, going to war and making peace with
@@ -1289,7 +1286,7 @@ misses with either build (`startup-slow.log`).
 - Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
   `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
   WebKit results.
-- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
+- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms on Cloudflare, now live (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.

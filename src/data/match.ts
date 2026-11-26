@@ -59,7 +59,7 @@ export const MATCH = {
    * at once) and the unlock path (each unlock at this share of its population), so a city gets
    * somewhere in 20 minutes at the fastest speed (28,800 ticks, 20 game months).
    */
-  fastStart: { funds: 250_000, growth: 3, unlock: 0.25 },
+  fastStart: { funds: 200_000, growth: 2, unlock: 0.5 },
 };
 
 /** The fast start a match city is founded with (GameOptions.match): read by the sim. */

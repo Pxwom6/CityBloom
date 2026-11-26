@@ -3,7 +3,7 @@
  * game and machine, the names to scrub, the setting, and the report desk's address. Errors while
  * booting are reported too (`where: 'boot'`); once the game is made, `attach` gives it the rest.
  */
-import { BUILD_ID } from '../config';
+import { BUILD_ID, BUILD_TIME } from '../config';
 import { SAVE_VERSION } from '../sim/save';
 import { relayUrl } from '../net/multiplayer';
 import type { Game } from '../game';
@@ -52,6 +52,7 @@ export function envOf(game: Game | null): ReportEnv {
   const { browser, os } = describeBrowser(typeof navigator === 'undefined' ? '' : navigator.userAgent);
   return {
     build: BUILD_ID,
+    ...(BUILD_TIME ? { built: BUILD_TIME } : {}),
     browser,
     os,
     quality: (game?.settings ?? loadSettings()).quality,
@@ -69,7 +70,12 @@ export function pageReporter(): { reporter: Reporter; attach(game: Game): void }
     {
       env: () => envOf(game),
       names: () => namesOf(game),
-      enabled: () => (game?.settings ?? loadSettings()).crashReports,
+      // Nothing goes by itself until the player has been told what is sent (the main menu's sentence,
+      // or the toast a city opened straight from a link shows).
+      enabled: () => {
+        const s = game?.settings ?? loadSettings();
+        return s.crashReports && s.reportsNotice;
+      },
       endpoint: () => reportEndpoint(relayUrl()),
     },
     queue,

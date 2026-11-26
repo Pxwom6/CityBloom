@@ -61,7 +61,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M38 Investments and the war economy
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
-- [ ] M41 Hearing about problems
+- [x] M41 Hearing about problems
 - [ ] M42 Learning to play
 - [ ] M43 Quick match
 - [ ] M44 Weekly challenge
@@ -269,16 +269,49 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**Phase 6, M41 Hearing about problems**: error and desync reports from the page and its workers, a
-"Report a problem" button, the "Send crash reports" setting, and the owner area (`#/owner`) behind
-`OWNER_KEY`, with a script that replays a downloaded desync.
+**M41 Hearing about problems is complete** (pull request "M41 complete: Hearing about problems" into
+`main`). Next: **M42 Learning to play**.
+
+M41 in short: problem reports from the page (uncaught errors and rejections, the sim worker, both
+battle workers, failed saves, loads and imports, the models file failing at start-up) and desyncs (a
+shared city's, from the page that fell out of step and from the pacer's; a live battle's two runs
+ending differently), cleaned so they name nothing (no names, city names, chat, saves or typed text;
+addresses without query strings), folded across builds, three a minute, queued in IndexedDB while
+offline. "Report a problem" in the main and pause menus (a message, a picture of the 3D view, what
+will be sent shown first); "Send crash reports" in Settings → Game with one sentence on the main menu
+once; a tip. The report desk on the relay (`ReportsObject`, SQLite: 1,000 entries, 300 items / 30 MB,
+6,000 rows a day, deleted 60 days after last seen) and the owner area (`owner.html`, `#/owner`) behind
+`OWNER_KEY`, checked on every request: entries newest first with counts, versions, browsers, first
+seen; fixed entries that reopen on a newer build; pictures; desync replays to download; Copy for
+Claude Code. `scripts/desync.ts` replays a downloaded desync in Node and finds the split (a city
+founded on the pacer's machine replays from nothing more; any other start from a save given by
+hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M41: the reports' shape and cleaning (shared by page, local relay and Worker), the Worker's report
-   store (a Durable Object with SQLite, capped, deleted after 60 days), the page's reporter (queue in
-   IndexedDB, rate limit, fold duplicates), Report a problem, the setting and its one-time notice, the
-   owner area, the desync replay script, e2e against the local relay.
-2. M42–M48 in order (SPEC-6.md).
+1. M42 Learning to play (SPEC-6.md): the first-city tutorial to about 1,000 residents, the Learn
+   lessons on small prepared towns, the first-time card in a friend's room, earlier warnings before
+   homes empty or a town without services shrinks; screenshots at 100 % and 140 % and on a phone.
+2. M43–M48 in order.
+
+## Performance (M41)
+- **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader, against the local relay):
+  `e2e/m41-reports.spec.ts`, four tests, 2.3 min: a deliberate error from two pages folds into one
+  entry (×2) naming nothing; with crash reports off an error and a rejection send nothing; a written
+  report with a picture from the pause menu reaches the owner area (phone size); a forced desync
+  between two players reaches it from both sides and the pacer's downloaded replay, run through
+  `scripts/desync.ts`, replays the browser city in Node bit for bit (17 game hours) and finds the
+  split; the main menu's one-time sentence. Pictures looked at: `docs/screenshots/m41-*.png`.
+- **Bench** (`bench.ts 6 --big`): 6.0 s, months 4–6 tick avg 1.01–1.16 ms, p99 9.5–10.7 ms: as in
+  phase 5 (6.3–6.7 s, 0.93–1.30 ms). Nothing in the sim's tick changed.
+- **Balance** (20 years, careful, greedy, neglectful): identical to phase 5 (careful 67,373 residents,
+  $1,838,985, 73 %; greedy 420, $566,259, 16 %; neglectful 354, $479,816, 36 %).
+- **Cross-browser**: Chromium here passes (24 months equal to Node); WebKit and real Firefox run in
+  `xbrowser.yml` on the pull request.
+- **Network**: rooms send nothing new but the room's `resync` word (at most 48 sums, about 2.5 KB,
+  only when a game falls out of step). A report is one HTTP request to the Worker and one to the desk,
+  about 3 rows written; a page sends three a minute at most.
+- **Storage**: the desk's worst case is about 35 MB of the free plan's 5 GB (DECISIONS "M41").
+- **Owner area**: about 4 KB gzipped, a page of its own, not in the offline copy.
 
 ## Phase 5 notes (complete, merged in PR #23)
 Phase 5's end and the checks on the Mac are described in git history and `docs/SPEC_REVIEW.md`,
@@ -1244,7 +1277,17 @@ misses with either build (`startup-slow.log`).
 - Night town (720 residents, M9): ~95 draw calls, ~0.75M triangles on SwiftShader. A tornado adds 3 point systems (~2,200 points); flood water is one mesh; dust bursts share one point system.
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
+## To try with a mate
+_Checks that need a real new player (phase 6). Each milestone adds its own._
+- (M42 onwards: a first-time player with no help; a quick match between real friends; a mate making a
+  first building with the Workshop.)
+
 ## To check on the Mac
+- Phase 6 (M41): once `OWNER_KEY` is set and the next deploy is out, open the owner area on your phone
+  (`https://pxwom6.github.io/CityBloom/#/owner`), sign in, and send yourself a report from the live
+  game (pause → Report a problem, with a picture): it should arrive within a few seconds, from the
+  Worker on Cloudflare's runtime (the tests use Node's SQLite stand-in for the Durable Object). Turn
+  Send crash reports off and on in Settings → Game in Safari and Chrome.
 - Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
   the launch button by finger on a tablet and a phone; a strike between two real machines over
   peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;

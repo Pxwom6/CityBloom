@@ -36,7 +36,7 @@ export default defineConfig({
     // atom strike is kept after 20 s of a launch being prepared rather than 20 minutes (M40 step 12).
     {
       // The owner area's key for the tests (M41): the local relay's only; production keeps OWNER_KEY secret.
-      command: 'npx tsx relay/local.ts 8787 --atom-prep 20 --owner-key e2e-owner-key',
+      command: 'npx tsx relay/local.ts 8787 --atom-prep 20 --owner-key e2e-owner-key-0123456789',
       url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60_000,

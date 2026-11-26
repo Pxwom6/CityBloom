@@ -82,12 +82,14 @@ export function replayDesync(d: ReportDesync, save: SaveFile | null = null): Rep
     const founded = Sim.create(options);
     founded.testMode = cheats;
     // The single-player commands before sharing, each at its tick (as Sim.replay, with test mode for cheats).
-    const pre = s.pre as CommandLogEntry[];
+    const pre = s.pre as (CommandLogEntry | { tick: number; settle: true })[];
     let i = 0;
     for (;;) {
       while (i < pre.length && pre[i]!.tick === founded.tick) {
         const e = pre[i++]!;
-        founded.dispatch(e.cmd, e.by ?? 0);
+        // A save in single player settled the city (finished the commute round under way).
+        if ('settle' in e) founded.save('', true);
+        else founded.dispatch(e.cmd, e.by ?? 0);
       }
       if (founded.tick >= s.tick) break;
       founded.step();

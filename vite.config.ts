@@ -16,11 +16,24 @@ function buildId(): string {
   }
 }
 
+/** When that commit was made (s since 1970), so reports can tell which of two builds is newer (M41). */
+function buildTime(): number {
+  try {
+    return Number(
+      execSync('git log -1 --format=%ct', { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim(),
+    );
+  } catch {
+    return 0;
+  }
+}
+
 export default defineConfig({
   // GitHub Pages serves a project site from /<repo>/ (the deploy workflow sets BASE_PATH);
   // `--base` on the command line wins over this.
   base: process.env.BASE_PATH || '/',
-  define: { __BUILD_ID__: JSON.stringify(buildId()) },
+  define: { __BUILD_ID__: JSON.stringify(buildId()), __BUILD_TIME__: JSON.stringify(buildTime()) },
   oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   worker: { format: 'es' },
   build: {

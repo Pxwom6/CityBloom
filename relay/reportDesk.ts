@@ -28,12 +28,16 @@ export const REPORT_LIMITS = {
   itemsPerDesync: 20,
   rowsPerDay: 6000,
   keepDays: 60,
-  /** Each address: 6 reports a minute (a page sends 3 at most). */
+  /** Each address: 6 reports a minute (a page sends 3 at most), and 60 a UTC day. */
   perAddress: { rate: 6 / 60, burst: 6 },
+  perAddressDay: 60,
   /** Everyone together: 2 a second, 120 at once. */
   everyone: { rate: 2, burst: 120 },
-  /** Wrong owner keys from one address: 10 a minute. */
+  /** Wrong owner keys from one address: 10 a minute; from everyone together, 100 an hour. */
   ownerTries: { rate: 10 / 60, burst: 10 },
+  ownerTriesAll: { rate: 100 / 3600, burst: 100 },
+  /** An owner key shorter than this isn't taken (the owner area says it isn't set up). */
+  ownerKeyMin: 20,
   builds: 30,
   browsers: 30,
 };
@@ -91,6 +95,7 @@ interface GroupRow {
   status: string;
   fixed_at: number | null;
   fixed_builds: string;
+  fixed_built: number | null;
   reopened: number;
   builds: string;
   browsers: string;
@@ -114,16 +119,23 @@ export type AddResult =
   | { ok: true; key: string; reopened: boolean; kept: boolean }
   | { ok: false; status: 400 | 413 | 429 | 503; why: string };
 
-/** Add one to a tally, keeping the `max` biggest entries. */
-function tally(json: string, key: string, n: number, max: number): string {
-  const t = JSON.parse(json || '{}') as Record<string, number>;
-  t[key] = (t[key] ?? 0) + n;
-  const entries = Object.entries(t).sort((a, b) => b[1] - a[1]);
-  return JSON.stringify(Object.fromEntries(entries.slice(0, max)));
+/** A tally as kept: `[key, count, last seen, built?]`, the most recently seen first. */
+type Tally = [string, number, number, number?][];
+
+/** Add to a tally, keeping the `max` most recently seen entries (a new build is never cut). */
+function tally(json: string, key: string, n: number, max: number, now: number, built?: number): string {
+  const t = JSON.parse(json || '[]') as Tally;
+  const old = t.find((e) => e[0] === key);
+  const rest = t.filter((e) => e[0] !== key);
+  const entry: Tally[number] = [key, (old?.[1] ?? 0) + n, now];
+  const b = built ?? old?.[3];
+  if (b !== undefined) entry.push(b);
+  return JSON.stringify([entry, ...rest].slice(0, max));
 }
 
-const list = (json: string) =>
-  Object.entries(JSON.parse(json || '{}') as Record<string, number>).sort((a, b) => b[1] - a[1]);
+/** A tally's entries, most counted first. */
+const list = (json: string): [string, number][] =>
+  (JSON.parse(json || '[]') as Tally).map((e) => [e[0], e[1]] as [string, number]).sort((a, b) => b[1] - a[1]);
 
 export class ReportDesk extends LazyTables {
   private budget: DailyRows;
@@ -131,7 +143,9 @@ export class ReportDesk extends LazyTables {
   private itemCount: number | null = null;
   private itemBytes: number | null = null;
   private addresses = new Map<string, TokenBucket>();
+  private daily = new Map<string, { day: number; n: number }>();
   private ownerTries = new Map<string, TokenBucket>();
+  private ownerTriesAll: TokenBucket;
   private everyone: TokenBucket;
   /** Addresses are hashed with this before they're used as keys; it never leaves memory. */
   private readonly salt = `${secureIndex(0x7fff_ffff)}-${secureIndex(0x7fff_ffff)}`;
@@ -146,7 +160,7 @@ export class ReportDesk extends LazyTables {
       groups:
         '(key TEXT PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, stack TEXT NOT NULL, ' +
         'first INTEGER NOT NULL, last INTEGER NOT NULL, count INTEGER NOT NULL, status TEXT NOT NULL, ' +
-        'fixed_at INTEGER, fixed_builds TEXT NOT NULL, reopened INTEGER NOT NULL, builds TEXT NOT NULL, ' +
+        'fixed_at INTEGER, fixed_builds TEXT NOT NULL, fixed_built INTEGER, reopened INTEGER NOT NULL, builds TEXT NOT NULL, ' +
         'browsers TEXT NOT NULL, env TEXT NOT NULL, dropped INTEGER NOT NULL) WITHOUT ROWID',
       items:
         '(id INTEGER PRIMARY KEY, key TEXT NOT NULL, at INTEGER NOT NULL, note TEXT, summary TEXT, shot INTEGER NOT NULL, ' +
@@ -160,6 +174,21 @@ export class ReportDesk extends LazyTables {
       now,
     );
     this.everyone = new TokenBucket(limits.everyone.rate, limits.everyone.burst, now);
+    this.ownerTriesAll = new TokenBucket(limits.ownerTriesAll.rate, limits.ownerTriesAll.burst, now);
+  }
+
+  /** An address's reports today, within its day's allowance (counted in memory only). */
+  private dayAllows(address: string, now: number): boolean {
+    const k = fnv1a(`${this.salt}|${address}`);
+    const day = Math.floor(now / DAY_MS);
+    let d = this.daily.get(k);
+    if (!d || d.day !== day) {
+      if (this.daily.size > 5000) this.daily.clear();
+      this.daily.set(k, (d = { day, n: 0 }));
+    }
+    if (d.n >= this.limits.perAddressDay) return false;
+    d.n++;
+    return true;
   }
 
   private bucket(map: Map<string, TokenBucket>, address: string, rate: number, burst: number, now: number) {
@@ -206,6 +235,8 @@ export class ReportDesk extends LazyTables {
       ).take(now)
     )
       return { ok: false, status: 429, why: 'Too many reports from here: try again in a minute' };
+    if (!this.dayAllows(address, now))
+      return { ok: false, status: 429, why: 'Too many reports from here today: try again tomorrow' };
     if (!this.everyone.take(now)) return { ok: false, status: 429, why: 'Too many reports at once' };
     if (this.budget.over(now)) return { ok: false, status: 503, why: 'The report desk is full for today' };
     const c = cleanReport(raw);
@@ -213,25 +244,45 @@ export class ReportDesk extends LazyTables {
     const r = c.report;
     const size = JSON.stringify(r).length;
     if (size > REPORT_CAPS.body) return { ok: false, status: 413, why: 'That report is too big' };
-    const key = reportKey(r, `${now.toString(36)}${secureIndex(0x7fff_ffff).toString(36)}`);
+    const key = reportKey(r);
     const n = r.count ?? 1;
-    const counts = this.counts();
     const old = this.read<GroupRow>('SELECT * FROM groups WHERE key = ?', key)[0];
-    if (!old && counts.groups >= this.limits.maxGroups)
-      return { ok: false, status: 503, why: 'The report desk is full' };
+    // Full: the entry seen longest ago makes room (a desk that filled up would turn every new
+    // problem away for 60 days).
+    if (!old && this.counts().groups >= this.limits.maxGroups) {
+      const oldest = this.read<{ key: string }>('SELECT key FROM groups ORDER BY last ASC LIMIT 1')[0];
+      if (oldest) this.deleteGroup(oldest.key);
+    }
+    const counts = this.counts();
     const browser = `${r.env.browser} · ${r.env.os}`;
     // An entry marked fixed reopens when it comes back from a build the fix didn't cover.
     let reopened = false;
     let status: GroupStatus = (old?.status as GroupStatus) ?? 'open';
-    if (old && status === 'fixed' && !(JSON.parse(old.fixed_builds) as string[]).includes(r.env.build)) {
-      status = 'open';
-      reopened = true;
+    if (old && status === 'fixed') {
+      // Newer: built after every build it had come from when it was fixed (from the build's commit
+      // time); a page too old to say when it was built counts as newer only if it's a build not seen.
+      const newer =
+        r.env.built !== undefined && old.fixed_built !== null
+          ? r.env.built > old.fixed_built
+          : !(JSON.parse(old.fixed_builds) as string[]).includes(r.env.build);
+      if (newer) {
+        status = 'open';
+        reopened = true;
+      }
     }
     const wantsItem = r.kind === 'user' || r.kind === 'desync';
     let kept = false;
     if (wantsItem) {
       const data = JSON.stringify(r);
-      if (counts.items < this.limits.maxItems && counts.bytes + data.length <= this.limits.itemBytes) {
+      // Full: the oldest kept items make room, so the newest reports are always there to read.
+      let room = this.counts();
+      while (room.items > 0 && (room.items >= this.limits.maxItems || room.bytes + data.length > this.limits.itemBytes)) {
+        const o = this.read<{ id: number; bytes: number }>('SELECT id, bytes FROM items ORDER BY id ASC LIMIT 1')[0];
+        if (!o) break;
+        this.dropItem(o.id, o.bytes);
+        room = this.counts();
+      }
+      if (room.items < this.limits.maxItems && room.bytes + data.length <= this.limits.itemBytes) {
         this.write(
           'INSERT INTO items (key, at, note, summary, shot, replay, bytes, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           key,
@@ -243,8 +294,8 @@ export class ReportDesk extends LazyTables {
           data.length,
           data,
         );
-        this.itemCount = counts.items + 1;
-        this.itemBytes = counts.bytes + data.length;
+        this.itemCount = room.items + 1;
+        this.itemBytes = room.bytes + data.length;
         kept = true;
         if (r.kind === 'desync') this.trimItems(key, this.limits.itemsPerDesync);
       }
@@ -257,8 +308,8 @@ export class ReportDesk extends LazyTables {
         n,
         status,
         reopened ? 1 : old.reopened,
-        tally(old.builds, r.env.build, n, this.limits.builds),
-        tally(old.browsers, browser, n, this.limits.browsers),
+        tally(old.builds, r.env.build, n, this.limits.builds, now, r.env.built),
+        tally(old.browsers, browser, n, this.limits.browsers, now),
         JSON.stringify(r.env),
         wantsItem && !kept ? 1 : 0,
         r.message || old.message,
@@ -268,7 +319,7 @@ export class ReportDesk extends LazyTables {
     } else {
       this.write(
         'INSERT INTO groups (key, kind, message, stack, first, last, count, status, fixed_at, fixed_builds, ' +
-          "reopened, builds, browsers, env, dropped) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NULL, '[]', 0, ?, ?, ?, ?)",
+          "fixed_built, reopened, builds, browsers, env, dropped) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NULL, '[]', NULL, 0, ?, ?, ?, ?)",
         key,
         r.kind,
         r.message,
@@ -276,8 +327,8 @@ export class ReportDesk extends LazyTables {
         now,
         now,
         n,
-        tally('{}', r.env.build, n, this.limits.builds),
-        tally('{}', browser, n, this.limits.browsers),
+        tally('[]', r.env.build, n, this.limits.builds, now, r.env.built),
+        tally('[]', browser, n, this.limits.browsers, now),
         JSON.stringify(r.env),
         wantsItem && !kept ? 1 : 0,
       );
@@ -324,24 +375,23 @@ export class ReportDesk extends LazyTables {
 
   // ------------------------------------------------------------------ the owner's side
 
-  /** Is this the owner's key? Wrong tries are limited per address. */
+  /**
+   * Is this the owner's key? Wrong tries are limited per address and for everyone together (rotating
+   * addresses don't buy more guesses); a key shorter than `ownerKeyMin` is taken as no key at all.
+   */
   owner(
     given: string | null,
     ownerKey: string | undefined,
     address: string,
     now: number,
   ): 'ok' | 'unset' | 'wrong' | 'busy' {
-    if (!ownerKey) return 'unset';
-    const b = this.bucket(
-      this.ownerTries,
-      address,
-      this.limits.ownerTries.rate,
-      this.limits.ownerTries.burst,
-      now,
-    );
-    if (!b.has(now)) return 'busy';
-    if (given !== null && safeEqual(given, ownerKey)) return 'ok';
+    const key = ownerKey?.trim() ?? '';
+    if (key.length < this.limits.ownerKeyMin) return 'unset';
+    const b = this.bucket(this.ownerTries, address, this.limits.ownerTries.rate, this.limits.ownerTries.burst, now);
+    if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
+    if (given !== null && safeEqual(given, key)) return 'ok';
     b.take(now);
+    this.ownerTriesAll.take(now);
     return 'wrong';
   }
 
@@ -416,9 +466,10 @@ export class ReportDesk extends LazyTables {
     if (!g) return false;
     if (status === 'fixed')
       this.write(
-        "UPDATE groups SET status = 'fixed', fixed_at = ?, fixed_builds = ?, reopened = 0 WHERE key = ?",
+        "UPDATE groups SET status = 'fixed', fixed_at = ?, fixed_builds = ?, fixed_built = ?, reopened = 0 WHERE key = ?",
         now,
         JSON.stringify(list(g.builds).map(([b]) => b)),
+        Math.max(0, ...(JSON.parse(g.builds || '[]') as Tally).map((e) => e[3] ?? 0)) || null,
         key,
       );
     else this.write("UPDATE groups SET status = 'open', reopened = 0 WHERE key = ?", key);

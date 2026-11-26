@@ -5,7 +5,7 @@ import { closeContextsAfterEach, newContext, openGame } from './helpers';
 
 /**
  * M41, hearing about problems, through the real interface against the local relay (started by the
- * e2e config with the owner key `e2e-owner-key`): a deliberate error from two pages folds into one
+ * e2e config with the owner key `e2e-owner-key-0123456789`): a deliberate error from two pages folds into one
  * entry, a page with crash reports switched off sends nothing, a written report with a picture goes
  * from the pause menu to the owner area, and a forced desync between two players reaches it too,
  * whose downloaded replay the script finds the split in.
@@ -14,7 +14,7 @@ closeContextsAfterEach();
 test.describe.configure({ mode: 'serial' });
 
 const RELAY = 'http://127.0.0.1:8787';
-const KEY = 'e2e-owner-key';
+const KEY = 'e2e-owner-key-0123456789';
 const OUT = 'test-results/m41';
 mkdirSync(OUT, { recursive: true });
 
@@ -171,7 +171,7 @@ test('a forced desync between two pages reaches the owner area, and its replay f
   test.setTimeout(600_000);
   const started = Date.now();
   const ada = await player(browser, 'Ada', 0, { width: 900, height: 640 });
-  await openGame(ada, '&seed=m41d&preset=river&name=Desyncford');
+  await openGame(ada, '&seed=m41dsx&preset=river&name=Desyncford');
   await ada.keyboard.press('Escape');
   await ada.getByTestId('pause-invite').click();
   const net = (p: Page) => p.evaluate(() => window.__game!.getNet());
@@ -266,4 +266,32 @@ test('the main menu says once what crash reports send, and opens Report a proble
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
   await page.waitForTimeout(1000);
   await expect(page.getByTestId('reports-notice')).toHaveCount(0);
+});
+
+test('a city opened straight from a link says it once too, and only then sends reports by itself', async ({
+  browser,
+}) => {
+  test.setTimeout(200_000);
+  const ctx = await newContext(browser, { viewport: { width: 1000, height: 700 } });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem('m41-link')) return;
+    sessionStorage.setItem('m41-link', '1');
+    localStorage.setItem(
+      'citybloom.settings',
+      JSON.stringify({ graphicsChecked: true, quality: 'low', tips: false }),
+    );
+  });
+  const page = await ctx.newPage();
+  await page.goto('./?paused=1&seed=m41e&reportsNotice=1');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
+  await expect(page.getByText('switch it off in Settings → Game')).toBeVisible();
+  const settings = await page.evaluate(
+    () => window.__game!.getShell().settings as { reportsNotice: boolean },
+  );
+  expect(settings.reportsNotice).toBe(true);
+  const message = `M41 after the notice ${Date.now().toString(36)}`;
+  await page.evaluate((m) => window.__game!.throwError(m), message);
+  await expect
+    .poll(async () => (await groups()).some((g) => g.message === message), { timeout: 30_000 })
+    .toBe(true);
 });

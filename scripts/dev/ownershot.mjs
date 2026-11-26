@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 
 const out = process.argv[2] ?? 'shots/owner';
 mkdirSync(out, { recursive: true });
-const KEY = 'owner-shot-key';
+const KEY = 'owner-shot-key-0123456789';
 const kids = [
   spawn('npx', ['tsx', 'relay/local.ts', '8787', '--owner-key', KEY], { stdio: 'ignore', detached: true }),
   spawn('node', ['e2e/serve.mjs', 'dist-test', '4180', '/'], { stdio: 'ignore', detached: true }),

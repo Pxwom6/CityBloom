@@ -90,6 +90,11 @@ export interface ReporterHost {
   endpoint(): string | null;
 }
 
+/** The one sentence on what crash reports send and where the switch is (M41). */
+export const REPORTS_NOTICE =
+  'When something breaks, Citybloom sends a crash report (the error, the game’s version, your browser and ' +
+  'graphics; never your name, cities, chat or anything you type): switch it off in Settings → Game.';
+
 export const REPORTER = {
   /** Reports a minute that leave this browser. */
   perMinute: 3,
@@ -196,6 +201,8 @@ export class Reporter {
       at: this.now(),
       ...extra,
     };
+    // A desync's replay too: any name the page knows of, wherever it sits (as JSON escapes it).
+    if (raw.desync) raw.desync = scrubJson(raw.desync, names);
     const c = cleanReport(raw);
     return c.ok ? c.report : null;
   }
@@ -252,13 +259,30 @@ export class Reporter {
     });
   }
 
-  /** Send a written report ("Report a problem"): sent at once if it can be, else kept until it can. */
+  /**
+   * Send a written report ("Report a problem"): at once, ahead of anything waiting and whatever the
+   * automatic reports' limit or back-off; kept to try again only if it can't reach the desk now.
+   */
   async send(report: Report): Promise<SendResult> {
-    if (!this.host.endpoint()) return 'off';
+    const url = this.host.endpoint();
+    if (!url) return 'off';
     this.last = report;
+    let status = 0;
+    try {
+      status = await this.post(url, JSON.stringify(report));
+    } catch {
+      status = 0;
+    }
+    if (status === 202) {
+      this.stats.sent++;
+      return 'sent';
+    }
+    if (status === 400 || status === 413) {
+      this.stats.dropped++;
+      return 'sent';
+    }
     this.enqueue(report, true);
-    await this.flush();
-    return this.queue.includes(report) ? 'queued' : 'sent';
+    return 'queued';
   }
 
   /** Can reports leave this copy of the game at all (does it have a relay)? */
@@ -289,6 +313,12 @@ export class Reporter {
     const url = this.host.endpoint();
     if (!url || this.flushing || !this.queue.length) return;
     if (!force && this.now() < this.retryAt) return;
+    // Switched off since they were kept: automatic reports waiting go unsent (written ones still go).
+    if (!this.host.enabled() && this.queue.some((r) => r.kind !== 'user')) {
+      this.queue = this.queue.filter((r) => r.kind === 'user');
+      void this.store.save(this.queue).catch(() => undefined);
+    }
+    if (!this.queue.length) return;
     this.flushing = true;
     try {
       while (this.queue.length) {
@@ -337,6 +367,16 @@ export class Reporter {
     // Anything waiting from an earlier visit goes once the page has settled, and again now and then.
     setTimeout(() => void this.flush(true), 8000);
     setInterval(() => void this.flush(), 60_000);
+  }
+}
+
+/** A value with every known name replaced, as JSON spells it, and read back. */
+function scrubJson<T>(v: T, names: string[]): T {
+  const escaped = names.map((n) => JSON.stringify(n.trim()).slice(1, -1)).filter((n) => n.length >= 3);
+  try {
+    return JSON.parse(scrubText(JSON.stringify(v), escaped)) as T;
+  } catch {
+    return v;
   }
 }
 

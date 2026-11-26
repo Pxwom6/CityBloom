@@ -12,6 +12,7 @@ import { partHashes } from './sync';
 import { Lockstep, type Applied } from './lockstep';
 import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
 import { DesyncLog, type FoundingOptions } from './desyncLog';
+import type { CommandLogEntry } from './commands';
 import { checksum } from './sync';
 
 interface WorkerScope {
@@ -115,6 +116,8 @@ function flush(): void {
  */
 const desyncLog = new DesyncLog();
 let origin: FoundingOptions | null = null;
+/** Single player's saves since founding (each finishes the commute round under way): where in the log. */
+let originSaves: { tick: number; at: number }[] = [];
 
 /** The last error the loop reported, so a sim that fails every tick says so once, not 20 times a second. */
 let lastLoopError = '';
@@ -197,6 +200,7 @@ function handle(msg: MainToWorker): void {
       // Founded here from options alone: a replay can found it again (never its name).
       const { cityName: _name, editor, ...founding } = msg.options;
       origin = msg.map || editor ? null : founding;
+      originSaves = [];
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
@@ -256,7 +260,17 @@ function handle(msg: MainToWorker): void {
       share(sim, msg.lastSeq);
       {
         // The city the room is made from: this machine carries on from it as the others will.
-        const pre = origin ? sim.log.slice() : undefined;
+        // Its commands since founding, with its saves among them (a save settles the city).
+        let pre: (CommandLogEntry | { tick: number; settle: true })[] | undefined;
+        if (origin) {
+          pre = [];
+          let k = 0;
+          sim.log.forEach((e, i) => {
+            while (k < originSaves.length && originSaves[k]!.at <= i) pre!.push({ tick: originSaves[k++]!.tick, settle: true });
+            pre!.push(e);
+          });
+          while (k < originSaves.length) pre.push({ tick: originSaves[k++]!.tick, settle: true });
+        }
         const save = lockstep!.rebirth();
         sim = lockstep!.sim;
         desyncLog.begin({
@@ -345,6 +359,8 @@ function handle(msg: MainToWorker): void {
       break;
     case 'save':
       if (!sim) return;
+      // A single player's save settles the city: a replay from its founding does the same here.
+      if (!lockstep && origin) originSaves.push({ tick: sim.tick, at: sim.log.length });
       post({ type: 'reply', id: msg.id, result: sim.save(new Date().toISOString(), !lockstep) });
       break;
   }

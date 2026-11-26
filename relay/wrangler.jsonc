@@ -19,5 +19,7 @@
   ],
   // OWNER_KEY is a secret (M41): set by the deploy workflow from the GitHub secret, never written here.
   "vars": { "ALLOWED_ORIGINS": "https://pxwom6.github.io" },
-  "observability": { "enabled": true },
+  // Logs keep what the code prints, never each request's details (its headers carry the caller's
+  // address, which phase 6 doesn't keep beyond rate limits in the moment).
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 }

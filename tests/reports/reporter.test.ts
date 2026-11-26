@@ -57,6 +57,56 @@ describe('the page reporter', () => {
     expect(reporter.stats.skipped).toBe(2);
   });
 
+  it('drops automatic reports still waiting once crash reports are turned off', async () => {
+    const { reporter, posted, state, settle } = setup({ down: true });
+    reporter.capture('error', new Error('Kept while offline'));
+    await reporter.send(reporter.preview('Mine to send', null)!);
+    await settle();
+    expect(reporter.waiting).toBe(2);
+    state.enabled = false;
+    state.down = false;
+    await reporter.flush(true);
+    expect(posted.map((r) => r.kind)).toEqual(['user']);
+    expect(reporter.waiting).toBe(0);
+  });
+
+  it('sends a written report at once, ahead of automatic ones and whatever their limit or back-off', async () => {
+    const { reporter, posted, state, settle } = setup();
+    for (let i = 0; i < 6; i++) reporter.capture('error', new Error(`Different ${'z'.repeat(i)}`));
+    await settle();
+    expect(posted).toHaveLength(3);
+    state.down = true;
+    await reporter.flush(true); // fails: a back-off starts
+    state.down = false;
+    expect(await reporter.send(reporter.preview('Look at this', null)!)).toBe('sent');
+    expect(posted.at(-1)!.note).toBe('Look at this');
+  });
+
+  it('scrubs known names from a desync’s replay, wherever they sit', async () => {
+    const { reporter, posted, settle } = setup();
+    reporter.capture(
+      'desync',
+      { message: 'out of step', stack: '' },
+      {
+        desync: {
+          where: 'city',
+          tick: 60,
+          mine: 'aa',
+          theirs: 'bb',
+          events: [
+            {
+              tick: 1,
+              seq: 0,
+              ev: { kind: 'cmd', by: 1, cmd: { type: 'setPolicy', note2: 'Adatown rules' } },
+            },
+          ],
+        },
+      },
+    );
+    await settle();
+    expect(JSON.stringify(posted[0])).not.toContain('Adatown');
+  });
+
   it('still sends a written report with crash reports off', async () => {
     const { reporter, posted } = setup({ enabled: false });
     const r = reporter.preview('The bridge vanished', null)!;

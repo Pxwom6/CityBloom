@@ -38,6 +38,7 @@ import { DAY_MS } from './limits';
 import type { Stamped } from '../src/sim/lockstep';
 import { ReportDesk, REPORT_LIMITS } from './reportDesk';
 import { corsHeaders, reportsHttp } from './reportsHttp';
+import { REPORT_CAPS } from './reports';
 import { nodeSql } from './nodeSql';
 
 /** A store kept in one JSON file per room (`--data`), rewritten per batch of events. */
@@ -183,7 +184,10 @@ export async function startRelay(
             req.on('data', (c: string) => {
               body += c;
               // Past the cap the rest isn't read (the desk refuses it as too big).
-              if (body.length > 1_000_000) req.destroy();
+              if (body.length > REPORT_CAPS.body) {
+                req.pause();
+                resolve(body);
+              }
             });
             req.on('end', () => resolve(body));
             req.on('error', reject);

@@ -18,6 +18,7 @@ import { RegionHost, RoomHost, SignalHost, route, type HostSocket, type SocketTa
 import type { RoomEnv } from './room';
 import { ReportDesk } from './reportDesk';
 import { corsHeaders, reportsHttp } from './reportsHttp';
+import { REPORT_CAPS } from './reports';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
@@ -182,6 +183,27 @@ export class SignalObject extends DurableObject<Env> {
 }
 
 /**
+ * A request's body read no further than `max` characters (the rest is left unread): a body sent in
+ * chunks has no length to refuse it by, and mustn't be read whole into the object's memory.
+ */
+async function boundedText(req: Request, max: number): Promise<string> {
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value, { stream: true });
+    if (out.length > max) {
+      await reader.cancel();
+      break;
+    }
+  }
+  return out;
+}
+
+/**
  * The report desk (M41, `ReportDesk`): every problem report and the owner area's requests. Reports
  * not seen for 60 days are deleted by an alarm that rings once a day while anything is kept.
  */
@@ -202,7 +224,7 @@ export class ReportsObject extends DurableObject<Env> {
         path: url.pathname,
         query: url.searchParams,
         header: (n) => req.headers.get(n),
-        text: () => req.text(),
+        text: () => boundedText(req, REPORT_CAPS.body + 1),
         // For the rate limit in the moment only: hashed in memory, never stored.
         address: req.headers.get('CF-Connecting-IP') ?? '',
       },

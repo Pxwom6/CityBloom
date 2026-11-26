@@ -9,12 +9,12 @@ import { Lockstep, type Stamped } from '../../src/sim/lockstep';
 import { DesyncLog } from '../../src/sim/desyncLog';
 import { checksum } from '../../src/sim/sync';
 import { TICKS_PER_HOUR } from '../../src/sim/time';
-import type { Command } from '../../src/sim/commands';
+import type { Command, CommandLogEntry } from '../../src/sim/commands';
 import { cleanReport, type Report, type ReportDesync } from '../../relay/reports';
 import { replayDesync } from '../../scripts/lib/desyncReplay';
 import { buildTown, connectPoint, serveTown } from '../helpers';
 
-const OPTIONS = { seed: 'desync', preset: 'river' as const, cityName: 'Adatown' };
+const OPTIONS = { seed: 'd3sy9c', preset: 'river' as const, cityName: 'Adatown' };
 /** Where the shared run starts: the host played alone this long first. */
 const T0 = TICKS_PER_HOUR * 3 + 2;
 
@@ -41,8 +41,17 @@ function play(perturbAt: number, hours: number) {
   buildTown(founded, { zone: false });
   serveTown(founded);
   founded.dispatch({ type: 'renameCity', name: 'Ada’s Town' });
+  // An autosave while it was played alone: a single player's save settles the city (the worker
+  // records it among the commands, and the replay does the same).
+  founded.advance(TICKS_PER_HOUR + 13);
+  const savedAt = { tick: founded.tick, at: founded.log.length };
+  founded.save('', true);
   founded.advance(T0 - founded.tick);
-  const pre = founded.log.slice();
+  const pre: (CommandLogEntry | { tick: number; settle: true })[] = [
+    ...founded.log.slice(0, savedAt.at),
+    { tick: savedAt.tick, settle: true },
+    ...founded.log.slice(savedAt.at),
+  ];
   // Sharing: the host carries on from a fresh copy of its save, as everyone will (worker 'share').
   const host = new Lockstep(founded, -1);
   const upload = host.rebirth();

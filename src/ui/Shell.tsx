@@ -32,7 +32,7 @@ import { decodeMapFile, listMaps, newMapId, readMap, writeMap, type MapInfo } fr
 import { checkMap, type MapData } from '../sim/terrain/customMap';
 import { MapsScreen } from './Maps';
 import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
-import { reportProblem } from '../client/reports';
+import { reportProblem, REPORTS_NOTICE } from '../client/reports';
 import { ReportScreen } from './Report';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
@@ -188,10 +188,7 @@ function ReportsNotice() {
   if (!open) return null;
   return (
     <p class="shell-notice" data-testid="reports-notice">
-      <span>
-        When something breaks, Citybloom sends a crash report (the error, the game’s version, your browser and
-        graphics; never your name, cities, chat or anything you type): switch it off in Settings → Game.
-      </span>
+      <span>{REPORTS_NOTICE}</span>
       <button class="btn small" data-testid="reports-notice-ok" onClick={() => setOpen(false)}>
         OK
       </button>

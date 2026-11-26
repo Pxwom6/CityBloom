@@ -43,6 +43,8 @@ export type ReportShared = (typeof REPORT_SHARED)[number];
 export interface ReportEnv {
   /** The commit the game was built from (`BUILD_ID`). */
   build: string;
+  /** When that commit was made (s since 1970): says which of two builds is newer. */
+  built?: number;
   /** "Chrome 142", "Safari 18.4", "Firefox 140" (from the browser's user agent, nothing finer). */
   browser: string;
   /** "macOS", "Windows", "iOS", "Android", "Linux", "ChromeOS". */
@@ -167,6 +169,16 @@ export function cleanText(input: unknown, max: number): string {
   return s.slice(0, max);
 }
 
+/**
+ * Quoted text that could be someone's words rather than a program's (it has a space in it, or runs
+ * long): an error parsing a file quotes the file ("My name is"... is not valid JSON), so it goes.
+ */
+export function quietQuotes(text: string): string {
+  return text.replace(/"[^"\n]*"|'[^'\n]*'|\u201c[^\u201d\n]*\u201d/g, (q) =>
+    /\s/.test(q) || q.length > 26 ? '"…"' : q,
+  );
+}
+
 /** A short label (build, browser, OS, quality): letters, digits, spaces and a few marks. */
 function label(input: unknown, max = 40): string {
   if (typeof input !== 'string') return '?';
@@ -221,29 +233,79 @@ const TYPED: Record<string, string[]> = {
   createDistrict: ['name'],
   renameDistrict: ['name'],
   setMapInfo: ['name'],
+  declareWar: ['reason'],
 };
+
+/** Fields that hold words someone wrote or a place's name, wherever they appear. */
+const WORDS = /^(name|text|title|note|message|reason|city|cityName|mayor|label|description|words)$/;
+
+/**
+ * Commands that carry what other players or other towns hold (a region's news with friends' names,
+ * battles fought in another town, a friend's war and its reason): a replay holding one isn't sent.
+ */
+export const OTHERS_COMMANDS = new Set([
+  'regionUpdate',
+  'battleResolve',
+  'battleReport',
+  'battleLive',
+  'battleSettling',
+  'missionResult',
+  'opResolve',
+  'spySettling',
+  'helpSend',
+  'helpEnd',
+  'friendWar',
+  'friendTreaty',
+  'friendPacts',
+  'friendFallout',
+  'friendWinter',
+  'warClock',
+  'atomFirst',
+]);
+
+/** How deep a replay's JSON may go (commands are a few levels deep; more is someone's mischief). */
+const MAX_DEPTH = 24;
+
+/** Does a list of events or commands hold a command with others' words in it? */
+export function holdsOthers(list: readonly unknown[]): boolean {
+  for (const e of list) {
+    const o = e as { cmd?: { type?: unknown }; ev?: { cmd?: { type?: unknown } } } | null;
+    const t = o?.cmd?.type ?? o?.ev?.cmd?.type;
+    if (typeof t === 'string' && OTHERS_COMMANDS.has(t)) return true;
+  }
+  return false;
+}
 
 /**
  * The room's events with every typed text replaced by a placeholder ("Name 1"): commands that carry a
- * name, and any string field named `name`, `text`, `title` or `note` deeper down. Hourly checksums
- * never read names, so a replay of the cleaned events reaches the same checksums.
+ * name or a reason, and any string field that holds words (`WORDS`) deeper down. Hourly checksums
+ * never read them, so a replay of the cleaned events reaches the same checksums. Throws on JSON
+ * deeper than `MAX_DEPTH`.
  */
 export function cleanEvents(events: readonly unknown[]): unknown[] {
   let k = 0;
-  const walk = (v: unknown, typed: string[]): unknown => {
-    if (Array.isArray(v)) return v.map((x) => walk(x, []));
+  const walk = (v: unknown, typed: string[], depth: number): unknown => {
+    if (depth > MAX_DEPTH) throw new Error('too deep');
+    if (Array.isArray(v)) return v.map((x) => walk(x, [], depth + 1));
     if (!v || typeof v !== 'object') return v;
     const o = v as Record<string, unknown>;
     const fields = typeof o.type === 'string' ? (TYPED[o.type] ?? []) : typed;
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(o)) {
-      if (typeof val === 'string' && (fields.includes(key) || /^(name|text|title|note|message)$/.test(key)))
-        out[key] = `Name ${++k}`;
-      else out[key] = walk(val, []);
+      if (typeof val === 'string' && (fields.includes(key) || WORDS.test(key))) out[key] = `Name ${++k}`;
+      else out[key] = walk(val, [], depth + 1);
     }
     return out;
   };
-  return events.map((e) => walk(e, []));
+  return events.map((e) => walk(e, [], 0));
+}
+
+/**
+ * A map seed that the game made up (six letters and digits from the new-city screen's dice, or a
+ * preset's word) rather than one a player typed, which could be their name: only those go in a report.
+ */
+export function generatedSeed(seed: string): boolean {
+  return /^[0-9a-z]{6}$/.test(seed) && /\d/.test(seed) && /[a-z]/.test(seed);
 }
 
 function cleanPairs(v: unknown, max: number): [number, string][] | undefined {
@@ -259,7 +321,7 @@ const FOUNDING_FLAGS = ['sandbox', 'disasters', 'elections', 'rivals', 'region']
 function cleanFounding(v: unknown): ReportFounding | undefined {
   if (!v || typeof v !== 'object') return undefined;
   const o = v as Record<string, unknown>;
-  if (typeof o.seed !== 'string' || typeof o.preset !== 'string') return undefined;
+  if (typeof o.seed !== 'string' || typeof o.preset !== 'string' || !generatedSeed(o.seed)) return undefined;
   const f: ReportFounding = { seed: o.seed.slice(0, 40), preset: label(o.preset, 20) };
   if (typeof o.difficulty === 'string') f.difficulty = label(o.difficulty, 10);
   for (const k of FOUNDING_FLAGS) if (typeof o[k] === 'boolean') f[k] = o[k];
@@ -290,9 +352,11 @@ function cleanDesync(v: unknown): ReportDesync | undefined {
       pre.length === (s.pre as unknown[]).length &&
       pre.every((e) => {
         const x = e as Record<string, unknown> | null;
-        return !!x && typeof x === 'object' && isInt(x.tick) && !!x.cmd && typeof x.cmd === 'object';
+        return (
+          !!x && typeof x === 'object' && isInt(x.tick) && ((!!x.cmd && typeof x.cmd === 'object') || x.settle === true)
+        );
       });
-    if (f && preOk) {
+    if (f && preOk && !holdsOthers(pre)) {
       const cleaned = cleanEvents(pre);
       if (JSON.stringify(cleaned).length <= REPORT_CAPS.events / 2) {
         d.start.founded = f;
@@ -309,8 +373,8 @@ function cleanDesync(v: unknown): ReportDesync | undefined {
       );
     });
     // Typed text is cleaned again here: a modified page mustn't slip a name through.
-    const cleaned = ok ? cleanEvents(list) : [];
-    if (ok && list.length === o.events.length && JSON.stringify(cleaned).length <= REPORT_CAPS.events)
+    const cleaned = ok && !holdsOthers(list) ? cleanEvents(list) : null;
+    if (cleaned && list.length === o.events.length && JSON.stringify(cleaned).length <= REPORT_CAPS.events)
       d.events = cleaned;
     else d.cut = true;
   }
@@ -348,6 +412,7 @@ export function cleanReport(raw: unknown): Cleaned {
   if (!e || typeof e !== 'object') return { ok: false, why: 'no env' };
   const env: ReportEnv = {
     build: label(e.build, 16),
+    ...(isInt(e.built) && e.built > 0 ? { built: e.built } : {}),
     browser: label(e.browser, 30),
     os: label(e.os, 20),
     quality: label(e.quality, 10),
@@ -359,8 +424,8 @@ export function cleanReport(raw: unknown): Cleaned {
   const report: Report = {
     kind,
     env,
-    message: stripAddresses(cleanText(r.message, REPORT_CAPS.message * 2)).slice(0, REPORT_CAPS.message),
-    stack: stripAddresses(cleanText(r.stack, REPORT_CAPS.stack * 2)).slice(0, REPORT_CAPS.stack),
+    message: quietQuotes(stripAddresses(cleanText(r.message, REPORT_CAPS.message * 2))).slice(0, REPORT_CAPS.message),
+    stack: quietQuotes(stripAddresses(cleanText(r.stack, REPORT_CAPS.stack * 2))).slice(0, REPORT_CAPS.stack),
     at: isInt(r.at) ? r.at : 0,
   };
   if (isInt(r.count) && r.count > 1) report.count = Math.min(r.count, 10_000);
@@ -372,7 +437,12 @@ export function cleanReport(raw: unknown): Cleaned {
     if (!note && !shot && !report.message) return { ok: false, why: 'an empty report' };
   } else if (!report.message && !report.stack) return { ok: false, why: 'no message' };
   if (kind === 'desync') {
-    const d = cleanDesync(r.desync);
+    let d: ReportDesync | undefined;
+    try {
+      d = cleanDesync(r.desync);
+    } catch {
+      return { ok: false, why: 'a malformed desync' };
+    }
     if (!d) return { ok: false, why: 'a desync without its hashes' };
     report.desync = d;
   }
@@ -403,13 +473,14 @@ export function firstFrame(stack: string): string {
     const gecko = /^\s*([^@\s]*)@(\S*)/.exec(line);
     const m = line.trim().startsWith('at ') ? chrome : gecko;
     if (!m) continue;
-    const fn = (m[1] ?? '').replace(/^Object\./, '');
+    // A method keeps its name in a minified build; its class's name doesn't ("Xy.step" → "step").
+    const fn = (m[1] ?? '').replace(/^new\s+/, '').split('.').pop() ?? '';
     if (fn.length >= 4 && fn !== '<anonymous>') return fn;
     const file = (m[2] ?? '')
       .split('/')
       .pop()
-      ?.replace(/[-.][A-Za-z0-9_]{6,}(?=\.js)/, '')
-      .replace(/:\d+/g, '');
+      ?.replace(/(:\d+)+$/, '')
+      .replace(/-[\w-]{6,}(?=\.\w+$)/, '');
     if (file) return file;
   }
   return '';
@@ -418,10 +489,11 @@ export function firstFrame(stack: string): string {
 /**
  * The key reports fold under: the same error from any version is one entry (with its versions
  * counted), so an entry marked fixed can reopen when it comes back on a newer build. Desyncs fold by
- * where they happened; each written report is an entry of its own.
+ * where they happened; written reports are one entry, each kept as an item.
  */
-export function reportKey(r: Report, unique = ''): string {
-  if (r.kind === 'user') return `user-${unique || fnv1a(`${r.at}|${r.note ?? ''}|${r.message}`)}`;
+export function reportKey(r: Report): string {
+  // Written reports are one entry, each kept as an item: one sender can't fill the desk with entries.
+  if (r.kind === 'user') return 'user';
   if (r.kind === 'desync') return `desync-${r.desync?.where ?? 'city'}`;
   return `${r.kind}-${fnv1a(`${r.kind}|${normaliseMessage(r.message)}|${firstFrame(r.stack)}`)}`;
 }

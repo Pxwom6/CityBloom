@@ -34,7 +34,7 @@ import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
 import { WAR_SCALES, foundingRules, type WarScale } from './data/war';
 import { pageReporter } from './client/reportHost';
-import { reportProblem, workerError } from './client/reports';
+import { reportProblem, workerError, REPORTS_NOTICE } from './client/reports';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -471,6 +471,17 @@ async function boot(): Promise<void> {
   // in a room or a visit an invite link opened straight into (F12).
   if (!game.settings.graphicsChecked && (game.mode === 'menu' || joined || visited))
     game.startGraphicsCheck();
+  // A page that opened straight into a city (an invite link, a saved city) says once what crash reports
+  // send, as the main menu does; until it has, nothing goes by itself. (Test builds only when asked,
+  // so the e2e suite's cities aren't covered by it.)
+  if (
+    game.mode !== 'menu' &&
+    !game.settings.reportsNotice &&
+    (!IS_TEST_BUILD || params.get('reportsNotice') === '1')
+  ) {
+    game.toast(REPORTS_NOTICE, 'info', 12_000);
+    game.updateSettings({ reportsNotice: true });
+  }
   render(h(App, { game }), document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);
   // Built pages keep a copy of the game for offline play and offer new versions (not the dev server).

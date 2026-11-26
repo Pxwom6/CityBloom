@@ -12,18 +12,31 @@ const KEY = 'citybloom.ownerKey';
 
 function storedKey(): string {
   try {
-    return localStorage.getItem(KEY) ?? '';
+    return localStorage.getItem(KEY) ?? sessionStorage.getItem(KEY) ?? '';
   } catch {
     return '';
   }
 }
 
-function storeKey(key: string | null): void {
+/**
+ * The key kept for this visit only, or on this device when asked (the site's address is shared with
+ * the game, so it isn't kept for good unless the owner wants it).
+ */
+function storeKey(key: string | null, remember = false): void {
   try {
-    if (key) localStorage.setItem(KEY, key);
-    else localStorage.removeItem(KEY);
+    localStorage.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
+    if (key) (remember ? localStorage : sessionStorage).setItem(KEY, key);
   } catch {
     /* private mode: signed in for this visit only */
+  }
+}
+
+function localStorageKey(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
   }
 }
 
@@ -72,19 +85,20 @@ async function copy(text: string): Promise<boolean> {
   }
 }
 
-function SignIn(props: { onKey: (k: string) => void; error: string | null; busy: boolean }) {
+function SignIn(props: { onKey: (k: string, remember: boolean) => void; error: string | null; busy: boolean }) {
   const [key, setKey] = useState('');
+  const [remember, setRemember] = useState(false);
   return (
     <form
       class="owner-card owner-signin"
       data-testid="owner-signin"
       onSubmit={(e) => {
         e.preventDefault();
-        if (key.trim()) props.onKey(key.trim());
+        if (key.trim()) props.onKey(key.trim(), remember);
       }}
     >
       <h2>Sign in</h2>
-      <p class="muted">Your owner key (OWNER_KEY). It stays on this device until you sign out.</p>
+      <p class="muted">Your owner key (OWNER_KEY).</p>
       <input
         type="password"
         autocomplete="current-password"
@@ -93,6 +107,15 @@ function SignIn(props: { onKey: (k: string) => void; error: string | null; busy:
         placeholder="Owner key"
         onInput={(e) => setKey((e.target as HTMLInputElement).value)}
       />
+      <label class="owner-remember">
+        <input
+          type="checkbox"
+          checked={remember}
+          data-testid="owner-remember"
+          onChange={(e) => setRemember((e.target as HTMLInputElement).checked)}
+        />
+        Keep me signed in on this device
+      </label>
       {props.error && (
         <p class="owner-error" data-testid="owner-error">
           {props.error}
@@ -314,14 +337,14 @@ export function OwnerApp(props: { base: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const api = props.base ? new OwnerApi(props.base, key) : null;
-  const check = async (k: string) => {
+  const check = async (k: string, remember = !!localStorageKey()) => {
     if (!props.base) return;
     setState('checking');
     try {
       const s = await new OwnerApi(props.base, k).status();
       if (!s.setUp) return setState('unset');
       if (s.ok) {
-        storeKey(k);
+        storeKey(k, remember);
         setKey(k);
         setError(null);
         return setState('in');
@@ -377,7 +400,7 @@ export function OwnerApp(props: { base: string | null }) {
         </div>
       )}
       {state === 'checking' && <p class="muted owner-card">Checking…</p>}
-      {state === 'signin' && <SignIn onKey={(k) => void check(k)} error={error} busy={false} />}
+      {state === 'signin' && <SignIn onKey={(k, remember) => void check(k, remember)} error={error} busy={false} />}
       {state === 'in' && api && (
         <main>
           <nav class="owner-sections">

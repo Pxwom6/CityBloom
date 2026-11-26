@@ -37,8 +37,8 @@ export interface DesyncStart {
   rules: SharedRules | null;
   /** For a city founded on this machine with only its own commands before sharing: how to found it again. */
   founded?: FoundingOptions;
-  /** Those commands (single player's log, each at its tick). */
-  pre?: CommandLogEntry[];
+  /** Those commands (single player's log, each at its tick), with its saves among them (`settle`). */
+  pre?: (CommandLogEntry | { tick: number; settle: true })[];
 }
 
 export interface DesyncLogData {

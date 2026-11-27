@@ -43,6 +43,15 @@ describe('the cross-browser determinism script', () => {
     expect(run().used).toEqual([...ALL_KINDS].sort());
   });
 
+  // A weekly challenge's run (M44): the town grew, the challenge ended, and the run replayed to the
+  // same hash and score from the challenge alone (the browsers then compare all three).
+  it('the challenge section plays a run to its end and replays it to the same city', () => {
+    const [, ended, replayed] = run().challenge;
+    const [status, end, hash, score] = ended!.split(' ');
+    expect(['won', 'lost']).toContain(status);
+    expect(replayed).toBe(`true ${hash} ${score} ${end}`);
+  });
+
   // The same for the bomb among friends (M40 step 10), at the end of the friends section: every browser is
   // asked about a strike put to the region and turned away and kept, a cloud that is deposited from the
   // page's baseline whatever way the wind blows (and added to only past what was taken in), and a bomb from

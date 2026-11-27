@@ -20,6 +20,7 @@ import { atomOf } from '../../src/sim/systems/atom';
 import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
 import { runAtomSection } from './atomSection';
 import { runMatchSection } from './matchSection';
+import { runChallengeSection } from './challengeSection';
 
 export interface DeterminismResult {
   months: string[];
@@ -55,6 +56,8 @@ export interface DeterminismResult {
   atom: string[];
   /** A quick match's city (M43): the fast start, then kept as an ordinary city (`matchSection.ts`). */
   match: string[];
+  /** A weekly challenge's run (M44): played, frozen at its end and replayed (`challengeSection.ts`). */
+  challenge: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -734,6 +737,9 @@ export function runDeterminism(
   // A quick match's city (M43), on a map of its own.
   const match = runMatchSection(note);
 
+  // A weekly challenge's run (M44), recorded and replayed.
+  const challenge = runChallengeSection(note);
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -761,6 +767,7 @@ export function runDeterminism(
     friends,
     atom,
     match,
+    challenge,
     used: [...used].sort(),
     refused,
   };

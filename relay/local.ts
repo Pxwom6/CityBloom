@@ -215,8 +215,10 @@ export async function startRelay(
     if (opts.testClock && url.pathname === '/__clock') {
       if (req.method === 'POST')
         void request.text().then((t) => {
-          const at = Number((JSON.parse(t || '{}') as { at?: unknown }).at);
-          clockShift = Number.isFinite(at) ? at - (opts.clock?.() ?? Date.now()) : 0;
+          // A time to read the board's clock at from now on, or anything else: the real time again.
+          const at = (JSON.parse(t || '{}') as { at?: unknown }).at;
+          clockShift =
+            typeof at === 'number' && Number.isFinite(at) ? at - (opts.clock?.() ?? Date.now()) : 0;
           send(200, JSON.stringify({ now: boardNow() }), 'application/json');
         });
       else send(200, JSON.stringify({ now: boardNow() }), 'application/json');

@@ -56,12 +56,14 @@ function useChallengeNow(): { now: ChallengeNow | null; left: number | null } {
     refreshedAt = performance.now();
     void game.refreshChallenge();
   }, []);
+  // Once the week is over, asked again every few seconds until the board has the new one.
+  const over = left !== null && left <= 0;
   useEffect(() => {
-    if (left !== null && left <= 0 && performance.now() - refreshedAt > 5000) {
+    if (over && performance.now() - refreshedAt > 4000) {
       refreshedAt = performance.now();
       void game.refreshChallenge();
     }
-  }, [left !== null && left <= 0]);
+  }, [over ? Math.floor(performance.now() / 5000) : -1]);
   return { now, left };
 }
 

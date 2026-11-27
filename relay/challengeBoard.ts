@@ -97,8 +97,17 @@ interface Row {
   at: number;
   status: EntryStatus;
   checks: number;
-  run: string | null;
+  /** The packed run itself: read only to hand one out (`run`), never to list the board. */
+  run?: string | null;
+  /** Whether a run is kept (1 or 0), as listings read it. */
+  kept?: number;
 }
+
+/**
+ * An entry's columns without its run (a run is up to 256 kB of text: a listing that read them would
+ * spend the Worker's few milliseconds of CPU on text it never shows).
+ */
+const META = 'id, week, player, name, groups, score, hash, at, status, checks, (run IS NOT NULL) AS kept';
 
 const SHOWN: EntryStatus[] = ['shown', 'checked', 'disputed'];
 const GROUP = /^[A-Z0-9]{6}$/;
@@ -108,6 +117,7 @@ export class ChallengeBoard extends LazyTables {
   private addresses = new Map<string, number>();
   private players = new Map<string, number>();
   private verdictBuckets = new Map<string, TokenBucket>();
+  private voted = new Set<string>();
   private readBuckets = new Map<string, TokenBucket>();
   private ownerTries = new Map<string, TokenBucket>();
   private ownerTriesAll: TokenBucket;
@@ -258,7 +268,11 @@ export class ChallengeBoard extends LazyTables {
     this.players.set(p, now);
     this.sweep(now);
     // The player's best counts: a lower score than their own leaves the board as it was.
-    const mine = this.read<Row>('SELECT * FROM entries WHERE week = ? AND player = ?', week, r.player)[0];
+    const mine = this.read<Row>(
+      `SELECT ${META} FROM entries WHERE week = ? AND player = ?`,
+      week,
+      r.player,
+    )[0];
     if (mine && mine.score >= score && mine.status !== 'dropped' && mine.status !== 'removed')
       return { ok: true, id: mine.id, rank: this.rankOf(mine), best: false };
     const count =
@@ -296,10 +310,23 @@ export class ChallengeBoard extends LazyTables {
         'shown',
         r.run,
       );
-    const row = this.read<Row>('SELECT * FROM entries WHERE week = ? AND player = ?', week, r.player)[0]!;
+    const row = this.read<Row>(
+      `SELECT ${META} FROM entries WHERE week = ? AND player = ?`,
+      week,
+      r.player,
+    )[0]!;
+    this.indexed();
     this.trimRuns(week as number);
     this.put('budget', JSON.stringify(this.budget.record(now)));
     return { ok: true, id: row.id, rank: this.rankOf(row), best: true };
+  }
+
+  private hasIndex = false;
+  /** A week's entries by score, indexed (a board view reads its week's rows, not every row kept). */
+  private indexed(): void {
+    if (this.hasIndex) return;
+    this.sql.exec('CREATE INDEX IF NOT EXISTS entries_week ON entries (week, score)');
+    this.hasIndex = true;
   }
 
   /** Only the best entries keep their runs (to watch); the rest let theirs go. */
@@ -327,7 +354,7 @@ export class ChallengeBoard extends LazyTables {
   /** The board for a week (its best first), all of it or a group's. */
   board(week: number, group: string | null, limit = 50): { rows: BoardRow[]; total: number } {
     const rows = this.read<Row>(
-      `SELECT * FROM entries WHERE week = ? AND status IN ('shown','checked','disputed') ORDER BY score DESC, at ASC`,
+      `SELECT ${META} FROM entries WHERE week = ? AND status IN ('shown','checked','disputed') ORDER BY score DESC, at ASC`,
       week,
     );
     const filtered = group ? rows.filter((r) => (JSON.parse(r.groups) as string[]).includes(group)) : rows;
@@ -339,7 +366,7 @@ export class ChallengeBoard extends LazyTables {
         name: r.name,
         score: r.score,
         checked: r.status === 'checked',
-        run: r.run !== null,
+        run: !!r.kept,
       })),
     };
   }
@@ -395,8 +422,14 @@ export class ChallengeBoard extends LazyTables {
       now,
     );
     if (!b.take(now)) return { ok: false, why: 'Too many verdicts: wait a while' };
-    const row = this.read<Row>('SELECT * FROM entries WHERE id = ?', r.id)[0];
+    const row = this.read<Row>(`SELECT ${META} FROM entries WHERE id = ?`, r.id)[0];
     if (!row || !SHOWN.includes(row.status)) return { ok: false, why: 'No such entry' };
+    // One verdict from an address on an entry counts (in memory: one address can't make a run "checked"
+    // twice over, which would shield a forged run from the next page's "no").
+    const vote = `${this.key(address)}:${row.id}`;
+    if (this.voted.has(vote)) return { ok: true, status: row.status };
+    if (this.voted.size > 20_000) this.voted.clear();
+    this.voted.add(vote);
     if (this.budget.over(now)) return { ok: false, why: 'The board is full for today' };
     let status: EntryStatus = row.status;
     if (r.ok) {
@@ -440,14 +473,17 @@ export class ChallengeBoard extends LazyTables {
 
   /** Every entry of a week, whatever its status, for the owner. */
   ownerRows(week: number): OwnerRow[] {
-    const rows = this.read<Row>('SELECT * FROM entries WHERE week = ? ORDER BY score DESC, at ASC', week);
+    const rows = this.read<Row>(
+      `SELECT ${META} FROM entries WHERE week = ? ORDER BY score DESC, at ASC`,
+      week,
+    );
     return rows.map((r, k) => ({
       id: r.id,
       rank: k + 1,
       name: r.name,
       score: r.score,
       checked: r.status === 'checked',
-      run: r.run !== null,
+      run: !!r.kept,
       week: r.week,
       status: r.status,
       groups: JSON.parse(r.groups) as string[],

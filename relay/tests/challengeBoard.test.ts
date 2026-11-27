@@ -125,6 +125,10 @@ describe('M44 the weekly challenge board', () => {
     expect(b.verdict({ id: forged.id, ok: false }, 'v1', T)).toEqual({ ok: true, status: 'dropped' });
     expect(b.board(46, null).rows.map((r) => r.name)).toEqual(['Honest']);
     expect(b.run(forged.id)).toBeNull();
+    // One address's verdicts count once: saying "yes" again doesn't make it trusted.
+    const sock = b.post(score({ name: 'Sock', score: 4000 }), 'f3', T) as { id: number };
+    for (let k = 0; k < 3; k++) b.verdict({ id: sock.id, ok: true }, 's1', T);
+    expect(b.verdict({ id: sock.id, ok: false }, 's2', T)).toEqual({ ok: true, status: 'dropped' });
     for (const v of ['v2', 'v3']) b.verdict({ id: honest.id, ok: true }, v, T);
     expect(b.board(46, null).rows[0]).toMatchObject({ name: 'Honest', checked: true });
     // Two pages found it right: one saying otherwise only puts it in dispute (the owner judges).

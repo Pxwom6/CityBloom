@@ -813,3 +813,27 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* a match fits the network budget | `scripts/dev/matchbudget.ts` and the e2e's traffic lines (PROGRESS "Network (M43)") |
 | *Done:* a balance run shows each mode can be won in its time on Normal | `scripts/matchBalance.ts` (PROGRESS "Balance (M43)", DECISIONS "M43") |
 | Phones from the start: every new screen by touch, upright and sideways, iPhone and Android | `e2e/m43-phone.spec.ts` (`phoneProblems` on the Quick match screen's lobby, the scoreboard, reactions, peek and results) |
+
+## M44 Weekly challenge
+
+| Item | Where |
+|---|---|
+| A new challenge every Monday, Adelaide time | `relay/week.ts` (`challengeWeek`, `weekStart`, `Intl` for Australia/Adelaide; tests either side of the change in both seasons, `relay/tests/week.test.ts`) |
+| A fixed map and starting city, goals, limits and a time limit as scenarios do, with a score | `ChallengeDef extends ScenarioDef` (`src/data/challenges.ts`), played by M18's scenario system (`startChallenge`, `challengeScore`, the score in the goals panel and the end card); the starting city is the map as founded (DECISIONS "M44") |
+| A deterministic generator seeded by the week: a map, a goal template, a twist (tight budget, no highways, early disaster, rail only, small map) | `challengeFor(week)` (five templates, six twists in rotation, maps from `CHALLENGE_MAPS`); limits `noRoad`, `noBusStops`, `area`, `ScenarioDef.disaster`; `tests/challenge.test.ts` |
+| A hand-made challenge pinned for a week from the owner area | `POST /owner/challenge/pin` (`cleanChallengeDef`, the same on the board, the screen and the city), the owner area's Weekly challenge section (`src/owner/OwnerChallenge.tsx`) |
+| "This week's challenge" on the main menu with the time left and the top score | `ChallengeMenuButton` (`src/ui/Challenge.tsx`, `main-challenge`) |
+| Solo, as many tries as wanted, the best counts | Play / Try again (`handChallenge`, `?challenge=<week>`); one best per player on the board (`ChallengeBoard.post`), the best on this device (`keepBest`) |
+| The city saved like any other, marked as a challenge city | its own autosave slot ("Challenge, week N", `Game.saveTo`), `SaveMeta.challenge` and the load list's mark (`SlotLine`); the challenge in `GameOptions.challenge` and the run in `SaveMeta.run` (save v33) |
+| The week's top scores with display names; a friends board by group code; last week's results until the next change | `ChallengeBoard.board` (`relay/challengeBoard.ts`), the screen's tabs This week / Friends / Last week (`ChallengeScreen`), groups made and joined by code (`newGroupCode`, `groupCode`) |
+| A score sent with its command log and final hash; the Worker's cheap checks (shape, size, week, bounds, one per player every few minutes) | `Game.postChallenge` → `ChallengeClient.post` (the run frozen at the challenge's end, packed); `ChallengeBoard.post` |
+| Anyone can watch a top run as a replay that must reach the same hash; a run that doesn't is dropped | `?challengeRun=<id>` (the worker's `watchRun`, `RunViewerBar`); pages replay the top runs they haven't checked (`checkBoard`, `runCheckWorker.ts`) and send verdicts (`ChallengeBoard.verdict`) |
+| What a modified client could still get away with, and what would close it | DECISIONS "M44", "What a modified client could still do" |
+| The owner can remove an entry | the owner area's Remove / Put back (`POST /owner/challenge/entry/<id>`) |
+| *Done:* 52 weeks the balance mayor can finish, logged with their scores | `npx tsx scripts/challenges.ts 52 46 careful --replay`: 52 of 52 won, each run replayed to the same hash and score (PROGRESS "Balance (M44)"; weeks 0–51 the same) |
+| *Done:* an e2e plays a challenge through the real UI, posts, sees it on the board and the friends board, and watches another run's replay | `e2e/m44-challenge.spec.ts` (two players: roads, zones and buildings with the mouse, a group made and joined, both posted, both boards, Kit's run watched to the same city) |
+| *Done:* a forged score with the wrong hash doesn't stay on the board | the same spec's second test (a real run posted with a wrong hash comes off once a page checks it; the owner sees it dropped); `relay/tests/challengeBoard.test.ts`, `tests/challengeRun.test.ts` |
+| *Done:* the week rolls over correctly at the boundary | the spec's third test (the board's clock and the page's moved across Monday 00:00 in Adelaide: the next week's challenge, last week's results kept); `relay/tests/week.test.ts`, the board's turnover test |
+| Phones from the start | `e2e/m44-phone.spec.ts` (iPhone and Pixel, upright and sideways: the screen, tabs and a group by touch; played to the end card and posted, the board and the run viewer, all with `phoneProblems`) |
+| The cross-browser test | its `challenge` section (`tests/lockstep/challengeSection.ts`): a run recorded, frozen and replayed alike in every engine |
+

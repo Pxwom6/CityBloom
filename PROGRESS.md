@@ -264,8 +264,14 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M47 Making buildings is under way**: plan `docs/plans/M47-design.md` (the Workshop's five steps,
+teacher's notes for each common mistake, the prompt writer, the readable spec generated from the
+check's own source, the guide `docs/making-buildings.md`). Steps: M47.1 data (prompt, notes, readable
+spec, bad models, tests), M47.2 the Workshop UI, M47.3 the guide and its screenshots, M47.4 e2e, phones
+and closing.
+
 **M46 Your own buildings is complete** (plan `docs/plans/M46-design.md`), joining M41, M42, M49, M43,
-M44 and M45 in pull request #24. Next: M47 Making buildings.
+M44 and M45 in pull request #24.
 
 M46 in short: My buildings (the landmarks row's My buildings…, or the panel `buildings`) takes a GLB or
 a `.citybloom-building` a friend sent, picked or dropped; it's measured to suggest what it fits (a

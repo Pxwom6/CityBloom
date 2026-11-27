@@ -5,9 +5,11 @@
 // challenge screen, the brief, the goals panel, the end card before and after posting, the board (all,
 // friends), the replay viewer, and the screen and end card on a phone both ways up.
 // Usage (after `npm run build:test`): node scripts/dev/challengeshot.mjs <outDir>
+// Env: GPU=1 (headed Chrome on the GPU at High: scripts/dev/gpuLaunch.mjs), QUALITY.
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { chromium, devices } from 'playwright';
+import { devices } from 'playwright';
+import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
 
 const out = process.argv[2] ?? 'shots/challenge';
 mkdirSync(out, { recursive: true });
@@ -62,11 +64,10 @@ const pinned = await fetch(`${RELAY}/owner/challenge/pin`, {
 if (!pinned.ok) throw new Error(`pin: ${await pinned.text()}`);
 console.log(`week ${owner.now}: ${pin.name} (${pin.twist}) on ${pin.preset} ${pin.seed}`);
 
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
-});
-const SETTINGS = { tips: false, graphicsChecked: true, quality: 'low', shadows: false };
+const browser = await launchBrowser(
+  process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {},
+);
+const SETTINGS = { tips: false, graphicsChecked: true, quality: QUALITY, shadows: SHADOWS };
 
 async function newPage(opts = { viewport: { width: 1280, height: 800 } }) {
   const ctx = await browser.newContext(opts);

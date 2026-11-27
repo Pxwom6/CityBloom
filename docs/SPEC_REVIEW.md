@@ -704,7 +704,8 @@ are done, each with its rows below; the phase's end is the last section.
 
 Playing with friends: hearing about problems, learning to play, phones, quick matches, a weekly
 challenge, timelapses, players' own buildings, making buildings, and sending ideas and buildings in.
-Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows below as it is done.
+All nine milestones (M41–M49, M49 Phones done after M42 and before M43) are done, each with its rows
+below; the phase's end is the last section.
 
 ## Before you start
 
@@ -925,3 +926,14 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* a modified client can't push past the caps or read another player's submissions | the same spec (six sends straight to the relay: five taken, the sixth refused; a 1.6 MB body refused; another token reads nothing); unit tests for the address cap, sizes and the inbox |
 | Phones from the start; the owner area on the owner's phone | `e2e/m48-phone.spec.ts` (iPhone and Pixel, upright and sideways: the form, the preview, What I sent, Accepted ideas, a building on two; the owner area on an iPhone both ways, every press 44 px) |
 
+
+## When every milestone is done (phase 6)
+
+| Item | Where |
+|---|---|
+| Update the summary at the top of PROGRESS.md | PROGRESS.md: the status above the checklist (phase 6 complete, in PR #24), the checklist's line, and the phase 6 paragraph in the Summary |
+| This brief's section in SPEC_REVIEW | the M41–M49 sections above and this one |
+| The README: a new "Play with friends" overview covering quick match, the weekly challenge, timelapses and custom buildings, with pictures | `README.md` "Play with friends": Quick match, This week's challenge, Timelapses, Your own buildings and sending them in, Playing on a phone, with four pictures taken in headed Chrome on the Mac's GPU at High (`docs/screenshots/friends-*.jpg`, from `matchshot.mjs`, `challengeshot.mjs`, `timelapseshot.mjs` and `buildingsshot.mjs` with `GPU=1`, looked at); the tutorial and Learn in "Play"; Report a problem and crash reports in "When something goes wrong" |
+| Play the phase through the real UI and fix whatever feels off: a new player's first city with the tutorial on desktop and in phone emulation; a four-player quick match with two on phones; a week's challenge; a timelapse of a grown city; a custom building made in the Workshop, shared with a friend and sent in; the owner area handling all of it | `e2e/phase6-finale.spec.ts` (`@playthrough`, so `npm run playthrough` runs it; `PHASE6_GPU=1` plays it in headed Chrome on the GPU); findings and fixes in DECISIONS "Phase 6 end" |
+| Keep the playthroughs as a spec tagged `@playthrough` | `e2e/phase6-finale.spec.ts` |
+| The real-world checks under "To check on the Mac" and "To try with a mate": a quick match between real friends on real machines, phones included; a first-time player with no help; a mate making their first building with the Workshop | PROGRESS "To try with a mate" (M42–M49 entries) and "To check on the Mac" (the phase 6 items, with what the Mac ran at the phase's end and what stays for real phones and friends) |

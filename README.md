@@ -65,6 +65,60 @@ the name and colour you choose.
   keeps its last offers. The region's host can also turn **war** on, so friends' cities can raid each
   other, fight live battles and make peace (see [War](#war)).
 
+### Quick match
+
+A short game against your mates, the length of a lunch break. Main menu → **Quick match**: the host
+picks **Race** (first to 5,000, 10,000 or 15,000 residents), **Rich list**, **Happy town** or **Mixed**,
+a 15-, 20- or 30-minute timer and a map, then hosts online or on their own computer; two to four friends
+join by the code or the invite link. Everyone founds their own small city on the same map, side by side,
+with a fast start (more money, quicker growth). After a five-second countdown the clock runs at 3× for
+everyone, with no pausing. A scoreboard along the top shows every city's score and the time left, six
+quick reactions (and chat, if the host allows it) keep it lively, and tapping a rival's name peeks at
+their city. When time is up (or someone wins the race) everyone sees the same result and a chart of
+the match; **Rematch** starts the next round in one click, **Keep this city** saves yours to play on.
+A player who leaves is out and the match goes on; online, if the host leaves, someone else takes over.
+
+![The lobby of a quick match: three players ready, a Race to 5,000, and the code to share](docs/screenshots/friends-match.jpg)
+
+### This week's challenge
+
+Every Monday (midnight in Adelaide) there's a new challenge, the same for everyone: a map, goals, a
+twist (a tight budget, no city highways, an early disaster, rail only or a small map) and four years.
+Main menu → **This week's challenge** shows it with the time left and the top score. Play it as often as
+you like; the city ends on a card with your score, and **Post score** puts it on the board with the name
+you choose. The **Friends** tab keeps a board just for your group: make one and share its code. Every
+score on the board is checked by replaying its run, and **Watch** replays anyone's city, at any speed or
+straight to its end.
+
+![This week's challenge: the goals, the twist and the board, each score checked by a replay](docs/screenshots/friends-challenge.jpg)
+
+### Timelapses
+
+While you play, the game quietly keeps a small picture of your city every few game hours, from above
+and circling its busiest part. **City history** (the chart button in the top bar) → **Make timelapse**
+turns them into a 15-, 30- or 60-second video of the city growing from its first road, with its name,
+the date, the population, milestones and disasters on it and music if you like. It's an MP4 that plays
+on phones and in group chats: share it straight from the card, or download it, along with the first and
+last pictures. Recording can be turned off in Settings.
+
+![Make a timelapse: a 30-second video of a town's first three years](docs/screenshots/friends-timelapse.jpg)
+
+### Your own buildings, and sending them in
+
+Bring buildings you've made into your city, and learn to make them inside the game: see
+[Your own buildings](#your-own-buildings) below. Friends in a shared city see them too, and a building
+can be shared as a file. Your best ones, and your ideas, can be sent to the game's maker with **Send it
+in** and **Send an idea**; only the maker sees them, and the ones picked come in an update with your name.
+
+![My buildings: a clock pavilion made in the Workshop, on its turntable, ready to place, share or send in](docs/screenshots/friends-buildings.jpg)
+
+### Playing on a phone
+
+Everything above works by touch on a phone, upright or sideways: one finger pans, two pinch, twist and
+tilt, a long press inspects; the phone layout puts the tools in one row along the bottom and opens panels
+as sheets. A phone starts on its own lighter graphics at 30 frames a second to keep cool, and **Add to
+Home Screen** makes Citybloom an app of its own.
+
 **When something goes wrong**
 
 - **"Couldn't connect directly to the host's computer"**: some home, school and office networks
@@ -86,6 +140,10 @@ the name and colour you choose.
   seconds for them. Games in a background tab aren't waited for, and catch up when they return.
 - **"Reconnecting…"**: the connection dropped; the game keeps trying by itself and carries on where
   it was.
+- **Something broke, or doesn't feel right?** Pause → **Report a problem** (also on the main menu):
+  a short message and, if you like, a picture of the game, shown in full before it goes. Crashes, errors
+  and games falling out of step are reported by themselves, with no names, city names, chat or saves in
+  them; Settings → Game → **Send crash reports** turns that off.
 - **Online rooms aren't set up yet**: the live site's online rooms run on Cloudflare; a copy of the
   game you build yourself has none until you deploy the relay (`relay/wrangler.jsonc`, the deploy
   workflow); hosting on your own computer works without it.
@@ -115,7 +173,10 @@ produced, so any change makes a new version.
 
 The main menu opens over a small town that keeps living in the background. Choose **New city**,
 pick a map (river, coast, lakes or highlands, or one of your own from the map editor), a seed, a difficulty, and whether you want sandbox
-money, random disasters or elections. The tutorial is on for your first city and walks through the basics:
+money, random disasters or elections. The tutorial is on for your first city: eighteen short steps to a
+town of 1,000, an arrow at the button to press, the camera flying to what matters, and a first fire, power
+cut or jam explained the moment it happens. **Learn** on the main menu has short lessons on small towns
+made for them (traffic, money, services, disasters, districts, friends, war, making buildings). The basics:
 
 1. **Roads** off the highway: drag to draw a straight road, or click point to point to keep going;
    the curve tool takes a start, a bend and an end, and the free tool follows the mouse. Over hills

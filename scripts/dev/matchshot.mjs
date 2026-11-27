@@ -4,10 +4,12 @@
 // with the chart; optionally a rematch. Prints each page's result and hashes, and checks they agree.
 // Usage (after `npm run build:test`): node scripts/dev/matchshot.mjs <outDir>
 //   env MODE=race|rich|happy|mixed (rich), PLAYERS=2..4 (2), KIND=online|p2p (online), REMATCH=1,
-//   PHONE=1 (the second player on a phone, upright), PORT (8787), WEB (4180)
+//   PHONE=1 (the second player on a phone, upright), PORT (8787), WEB (4180), GPU=1 (headed Chrome
+//   on the GPU at High: scripts/dev/gpuLaunch.mjs), QUALITY
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { chromium, devices } from 'playwright';
+import { devices } from 'playwright';
+import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
 
 const out = process.argv[2] ?? 'shots/match';
 mkdirSync(out, { recursive: true });
@@ -46,9 +48,7 @@ async function waitFor(url) {
 await waitFor(`http://127.0.0.1:${PORT}/health`);
 await waitFor(`http://localhost:${WEB}/index.html`);
 
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await launchBrowser();
 const base = `http://localhost:${WEB}/index.html`;
 const t0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
@@ -59,20 +59,20 @@ async function player(k) {
   const { defaultBrowserType: _b, ...device } = devices[profile];
   const ctx = await browser.newContext(phone ? device : { viewport: { width: 1100, height: 720 } });
   await ctx.addInitScript(
-    ([n, c]) => {
+    ([n, c, q, sh]) => {
       localStorage.setItem('citybloom.player', JSON.stringify({ name: n, color: c }));
       localStorage.setItem(
         'citybloom.settings',
         JSON.stringify({
           tips: false,
           graphicsChecked: true,
-          quality: 'low',
-          shadows: false,
+          quality: q,
+          shadows: sh,
           reportsNotice: true,
         }),
       );
     },
-    [NAMES[k], k],
+    [NAMES[k], k, QUALITY, SHADOWS],
   );
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`${NAMES[k]} page error:`, e.message));

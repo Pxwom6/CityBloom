@@ -10,8 +10,10 @@ the key, update the secret and push to `main`; never paste it into a session or 
 
 Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
 https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6
-(playing with friends, SPEC-6.md, M41–M49) is under way** on this cloud session's branch
-`claude/ecstatic-brown-64m0nb`, which stands in for `friends` (made from `main` at 9490cb2).
+(playing with friends, SPEC-6.md, M41–M49) is complete** on the branch `claude/ecstatic-brown-64m0nb`,
+which stands in for `friends` (made from `main` at 9490cb2), and waits in pull request #24 for the
+owner's merge. M41–M49 were done in a cloud session; the phase's end (this summary, SPEC_REVIEW, the
+README, the playthroughs and the Mac checks) on the owner's Mac.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -64,11 +66,10 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M48 Send it in
 - [x] M49 Phones (done after M42, before M43)
 
-**Phase 6 (playing with friends, SPEC-6.md, M41–M49) is under way.** M49 (phones) comes after M42
-and before M43, as the brief asks. Branch: this cloud session's
-`claude/ecstatic-brown-64m0nb` stands in for `friends`. Each milestone ends with an `M<n> complete:`
-commit and a pull request into `main` from this branch; a milestone finished while the last one's pull
-request is still open joins it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
+**Phase 6 (playing with friends, SPEC-6.md, M41–M49) is complete.** M49 (phones) came after M42
+and before M43, as the brief asks. Branch: `claude/ecstatic-brown-64m0nb` stands in for `friends`.
+Every milestone ended with an `M<n> complete:` commit and joined pull request #24 into `main`, which
+holds the phase's end too. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
 brief's items and where each is done in `docs/SPEC_REVIEW.md`, "Phase 6". Phase 5 is complete and
 merged (its notes stay below and in git).
 
@@ -235,6 +236,28 @@ within Cloudflare's free plan. Checked by 2,017 unit tests,
 the war specs in `e2e/` (two players through the real UI for war between friends), a two-hour four-player region
 soak and the cross-browser test on every push.
 
+**Phase 6 (playing with friends, M41–M49)** is for sharing Citybloom with mates from school. The game
+hears about problems by itself: crashes, errors and desyncs are reported with nothing that names anyone,
+beside a "Report a problem" button, and read in an owner area behind a key only the owner holds (M41). A
+new player's first city is an eighteen-step tutorial to 1,000 residents with an arrow at the button to
+press and first problems explained as they come, and Learn has short lessons on towns made for them
+(M42). It plays properly on a phone: a Phone preset at 30 fps, one finger to pan and two to pinch,
+twist and tilt, a long press to inspect, a bottom bar and sheets, a memory budget, and slow phones caught
+up when joining a friend (M49). A quick match puts two to four friends' cities side by side for 15–30
+minutes at 3×, Race, Rich list, Happy town or Mixed, with a scoreboard, emotes, peeks, one shared result
+and a one-click rematch (M43). A weekly challenge, the same for everyone, made from the week alone, has a
+board where every score is checked by replaying its run, a friends' board by group code, and Watch (M44).
+City history makes a timelapse video of the city from its first road in two clicks, an MP4 that plays in a
+group chat (M45). Players bring in their own buildings, checked against the model spec with the reasons
+in plain words and pictures, worn in their cities and shared rooms (M46), learn to make one in the
+Workshop's five steps with the prompt for an AI 3D tool written for them (M47), and send buildings and
+ideas to the owner, who accepts or declines them with a reply, crediting the player in Accepted ideas
+(M48). Nothing a player writes reaches another player before the owner approves it, there are no accounts,
+and everything new (three Durable Objects with SQLite) stays within Cloudflare's free plan with old data
+swept on a schedule. Single player, co-op, regions and war play as before; saves went from v32 to v34
+and the relay from protocol 7 to 9, each with migrations, tests and a plain message for older clients.
+The phase's end played it through the real UI (`e2e/phase6-finale.spec.ts`, see "In progress").
+
 ## Ideas for what's next
 0. **War, further** (from phase 5's playthroughs; DECISIONS "Phase 5 end"): a grace for a young city's
    first war (no total war declared on a city under 3,000 residents or two years old); a wrecked power
@@ -264,9 +287,13 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**Every phase-6 milestone is done (M41–M49); the phase's end is next** (SPEC-6.md, "When every
-milestone is done"): the summary here, SPEC_REVIEW's Phase 6 section, the README's "Play with friends",
-then the playthroughs as a `@playthrough` spec.
+**The phase's end, on the owner's Mac** (SPEC-6.md, "When every milestone is done"). Done: the summary
+here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with friends" overview
+(quick match, the weekly challenge, timelapses, custom buildings, phones) with four pictures from headed
+Chrome on the GPU (the picture scripts take `GPU=1` now: `scripts/dev/gpuLaunch.mjs`). Next: the
+playthroughs as `e2e/phase6-finale.spec.ts`, then the Mac checks, bench, balance and cross-browser, then
+PR #24's title and description for the whole phase. (A fresh checkout here needed `npm ci`: `ws`,
+`trystero` and `mp4-muxer` were missing from an older `node_modules`.)
 
 **M48 Send it in is complete** (plan `docs/plans/M48-design.md`), joining M41–M47 and M49 in pull
 request #24.
@@ -437,9 +464,7 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. The phase's end (SPEC-6.md, "When every milestone is done"): update the summary at the top of this
-   file and SPEC_REVIEW's Phase 6 section; the README's new "Play with friends" overview (quick match,
-   the weekly challenge, timelapses, custom buildings) with pictures.
+1. (Done) The summary, SPEC_REVIEW's phase-end section and the README's "Play with friends" overview.
 2. Play the phase through the real UI and fix what feels off, kept as a `@playthrough` spec (as
    `e2e/phase5-finale.spec.ts`): a new player's first city with the tutorial on desktop and in phone
    emulation; a four-player quick match with two on phones; a week's challenge; a timelapse of a grown

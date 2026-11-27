@@ -3,10 +3,11 @@
 // good one added and seen on the turntable by day, night and in winter, placed as a landmark from the
 // toolbar and worn by a pocket park through its inspector.
 // Usage (after `npm run build:test`): node scripts/dev/buildingsshot.mjs <outDir>
-// Env: PORT (4182), QUALITY (low), ONLY=row,empty,bad,added,preview,placed,look,phone
+// Env: PORT (4182), QUALITY (low; high with GPU=1), GPU=1 (headed Chrome on the GPU: gpuLaunch.mjs), ONLY=row,empty,bad,added,preview,placed,look,phone
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { chromium, devices } from 'playwright';
+import { devices } from 'playwright';
+import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
 
 const out = process.argv[2] ?? 'shots/buildings';
 const port = Number(process.env.PORT ?? 4182);
@@ -37,24 +38,26 @@ for (let i = 0; i < 50; i++) {
   }
   await new Promise((r) => setTimeout(r, 200));
 }
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await launchBrowser();
 
 async function open(ctxOpts) {
   const ctx = await browser.newContext(ctxOpts);
-  await ctx.addInitScript((q) => {
-    localStorage.setItem(
-      'citybloom.settings',
-      JSON.stringify({
-        tips: false,
-        graphicsChecked: true,
-        quality: q,
-        reportsNotice: true,
-        timelapse: false,
-      }),
-    );
-  }, process.env.QUALITY ?? 'low');
+  await ctx.addInitScript(
+    ([q, sh]) => {
+      localStorage.setItem(
+        'citybloom.settings',
+        JSON.stringify({
+          tips: false,
+          graphicsChecked: true,
+          quality: q,
+          shadows: sh,
+          reportsNotice: true,
+          timelapse: false,
+        }),
+      );
+    },
+    [QUALITY, SHADOWS],
+  );
   const page = await ctx.newPage();
   page.on('console', (m) => m.type() === 'error' && console.log(`[page] ${m.text()}`));
   await page.goto(`${game}?seed=mb1&preset=river&paused=1`);

@@ -2,11 +2,12 @@
 // with recording on (a frame every `STEP` game ticks, default a sixth of a month), then the stored
 // frames of each view are written out (first, a few between, last) and the capture times printed.
 // Usage (after `npm run build:test`): node scripts/dev/timelapseshot.mjs <outDir> [months=24]
-// Env: STEP (ticks between frames), PORT (4181), QUALITY (low), MAKE (the video's length: 15, 30 or
+// Env: STEP (ticks between frames), PORT (4181), QUALITY (low; high with GPU=1), GPU=1 (headed Chrome
+// on the GPU: scripts/dev/gpuLaunch.mjs), MAKE (the video's length: 15, 30 or
 // 60; 0 for none), MUSIC=1 (with the music).
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { chromium } from 'playwright';
+import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
 
 const out = process.argv[2] ?? 'shots/timelapse';
 const months = Number(process.argv[3] ?? 24);
@@ -33,16 +34,17 @@ for (let i = 0; i < 50; i++) {
   }
   await new Promise((r) => setTimeout(r, 200));
 }
-const browser = await chromium.launch({
-  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
-});
+const browser = await launchBrowser();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-await ctx.addInitScript((q) => {
-  localStorage.setItem(
-    'citybloom.settings',
-    JSON.stringify({ tips: false, graphicsChecked: true, quality: q, reportsNotice: true }),
-  );
-}, process.env.QUALITY ?? 'low');
+await ctx.addInitScript(
+  ([q, sh]) => {
+    localStorage.setItem(
+      'citybloom.settings',
+      JSON.stringify({ tips: false, graphicsChecked: true, quality: q, shadows: sh, reportsNotice: true }),
+    );
+  },
+  [QUALITY, SHADOWS],
+);
 const page = await ctx.newPage();
 page.on('console', (m) => m.type() === 'error' && console.log(`[page] ${m.text()}`));
 await page.goto(`${game}?seed=tl1&preset=river`);

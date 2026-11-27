@@ -61,7 +61,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M45 Timelapse
 - [x] M46 Your own buildings
 - [x] M47 Making buildings
-- [ ] M48 Send it in
+- [x] M48 Send it in
 - [x] M49 Phones (done after M42, before M43)
 
 **Phase 6 (playing with friends, SPEC-6.md, M41–M49) is under way.** M49 (phones) comes after M42
@@ -264,13 +264,12 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M48's closing checks are running** (the unit suite, bench, balance, the M41/M46/M47 e2e beside
-M48's own, which pass); then every phase-6 milestone is done and **the phase's end is next** (SPEC-6.md, "When every
+**Every phase-6 milestone is done (M41–M49); the phase's end is next** (SPEC-6.md, "When every
 milestone is done"): the summary here, SPEC_REVIEW's Phase 6 section, the README's "Play with friends",
 then the playthroughs as a `@playthrough` spec.
 
-**M48 Send it in** (plan `docs/plans/M48-design.md`) joins M41–M47 and M49 in pull request #24 once
-its checks are in.
+**M48 Send it in is complete** (plan `docs/plans/M48-design.md`), joining M41–M47 and M49 in pull
+request #24.
 
 M48 in short: "Send an idea" on the main and pause menus, and "Send it in" on each building in My
 buildings and the Workshop's last step, open one screen. An idea is a kind (a building, a feature, a
@@ -281,7 +280,7 @@ picture included, and that only the game's maker sees it unless it's picked. Wha
 own with statuses (Sent, Seen, "Coming in an update", "Not this time") and the owner's reply, through a
 private token in the browser (the relay keeps only its SHA-256); Accepted ideas shows only accepted ones
 with credits. The desk is a third Durable Object (`SubmissionsObject`, migration v4): 5 a day per
-browser and per address, capped fields and bodies, 2,000 kept and 400 MB of files, 3,000 rows a day,
+browser and per address and 300 in all, capped fields and bodies, 2,000 kept and 400 MB of files, 3,000 rows a day,
 declined ones deleted 30 days after the decision. The owner area's Submissions section: filters,
 idea text and picture, a building's turntable by day and night with the game's check run in the owner's
 browser, Seen/Accept/Decline with a reply, Delete, the word filter for credit names, Download GLB named
@@ -449,8 +448,37 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
    title and description for the whole phase.
 
 ## Tests (M48)
-- E2E: `e2e/m48-submit.spec.ts` (1.9 min) and `e2e/m48-phone.spec.ts` (four phone runs) pass; the
-  owner area on an iPhone (added to the phone spec) and the rest are being run.
+- Unit: 2,184 tests in 209 files pass (the unit and live projects). `relay/tests/submissions.test.ts`
+  (the desk: shapes, sizes, the model's hash and outside links, a GLB whose JSON isn't an object;
+  a token reading only its own and the accepted list only accepted; 5 a day per token and per address,
+  the address count surviving an evicted object and gone with the day, 300 a day in all, a full inbox
+  by count and by bytes; the 30-day sweep; every owner route refused without the key or with a wrong
+  one, and the owner's key still opening it while guessing is slowed). `tests/reports/owner.test.ts`
+  (players' words fenced for Claude Code, a fence they can't close); `relay/tests/reports.test.ts`
+  (the owner never locked out by wrong keys).
+- E2E: `e2e/m48-submit.spec.ts` (1.8 min): an idea with a picture from the pause menu and a building
+  from My buildings, each previewed then sent; the owner area accepts the idea with a reply, checks,
+  turns and downloads the building (`clock-pavilion-by-ada.glb`), declines it with a reply; What I sent
+  shows both statuses and replies; Accepted ideas and `GET /submit/accepted` show only the accepted one;
+  no key and a wrong key refused; another token reads nothing; six sends from one browser straight to
+  the relay: five taken, the sixth refused; a 1.6 MB body refused. `e2e/m48-phone.spec.ts` (iPhone and
+  Pixel, upright and sideways: the form, its picture, the preview, What I sent, Accepted ideas, a
+  building on two; the owner area on an iPhone both ways, an idea and a building opened, decided, every
+  press 44 px). Rerun beside them: `m41-reports`, `m46-buildings`, `m47-workshop`, `m47-phone` (12
+  passed). The pictures (`docs/screenshots/m48-*.png`) were reviewed; they led to the owner list's
+  title column, the owner area's buttons (the game's class it doesn't load) and 44 px presses on touch.
+- A security review by a fresh reader (DECISIONS "M48"): no way past the key, no leak; five fixes made.
+- Bench (`bench.ts 6 --big`): 5.0 s, month 6 tick avg 0.90 ms at 110,174 residents. Balance (20
+  years, careful): identical (67,373 residents, $1,838,985, 73 %). The sim is untouched since M47;
+  the pull request's cross-browser run (Chromium, WebKit, Firefox) and the relay's live tests pass.
+
+## Network and storage (M48)
+- A submission is one request (an idea a few kB, with a picture up to 400 kB of base64, the e2e's about
+  70 kB; a building up to 1.4 MB); opening What I sent or Accepted ideas is one small request each.
+  Rows written per submission: the row, its address count, the day's budget (and the salt on the day's
+  first send), so at most about 1,200 rows a day under the 300-a-day cap, within the desk's own 3,000.
+- Storage: at most 2,000 kept and 400 MB of pictures and models (with text, under half a GB) of the free
+  plan's 5 GB of Durable Object storage; declined ones go 30 days after the decision.
 
 ## Tests (M47)
 - Unit: 2,177 tests in 208 files pass (the unit and live projects). New `tests/workshop.test.ts`: the spec text held

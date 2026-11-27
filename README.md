@@ -282,6 +282,15 @@ The pause menu (Escape) has save, load, settings (graphics quality, shadows, dra
 interface size, pointing device, volumes, edge scrolling, disasters, elections, autosave) and export/import of `.citybloom`
 save files. The city autosaves every few minutes.
 
+### Your own buildings
+
+Make a building of your own and put it in your city: a landmark of 1×1 to 4×4 cells, or a new look for a
+building you place. **My buildings** (Tourism and landmarks → My buildings…) keeps them, and its
+**Workshop** walks you through it in five steps: pick what to make, make it (the prompt for an AI 3D tool
+written for you, or the basics in Blender), check it (what's wrong, why, and how to fix it), see it in a
+street by day and night, then place or share it. The guide, with a worked example:
+[docs/making-buildings.md](docs/making-buildings.md). Friends in a shared city see your buildings too.
+
 ## War
 
 War is off unless you ask for it, so everything above plays as a peaceful city builder. Turn it on and

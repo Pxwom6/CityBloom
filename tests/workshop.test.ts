@@ -131,4 +131,21 @@ describe('M47 the Workshop', () => {
     const guide = readFileSync('docs/making-buildings.md', 'utf8');
     expect(withPlayerSpec(guide), 'run npx tsx scripts/docs/modelSpec.ts').toBe(guide);
   });
+
+  it('keeps the guide’s worked example to the prompt the Workshop writes', () => {
+    const guide = readFileSync('docs/making-buildings.md', 'utf8');
+    const example = buildingPrompt(
+      workshopTarget({ kind: 'landmark', size: 2 }),
+      'A little clock tower on a paved square: cream walls with a red band, a slate roof, a clock face over the door, lawns in the corners and low hedges',
+      'Clock pavilion',
+    );
+    const indented = example
+      .split('\n')
+      .map((l) => `   ${l}`)
+      .join('\n');
+    expect(guide).toContain(indented);
+    // Every picture it shows is there.
+    for (const m of guide.matchAll(/\]\((screenshots\/[^)]+)\)/g))
+      expect(() => readFileSync(`docs/${m[1]}`), m[1]).not.toThrow();
+  });
 });

@@ -45,7 +45,7 @@ await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
 await ctx.addInitScript((q) => {
   localStorage.setItem(
     'citybloom.settings',
-    JSON.stringify({ tips: true, graphicsChecked: true, quality: q, reportsNotice: true, timelapse: false }),
+    JSON.stringify({ tips: false, graphicsChecked: true, quality: q, reportsNotice: true, timelapse: false }),
   );
 }, process.env.QUALITY ?? 'medium');
 const page = await ctx.newPage();
@@ -72,11 +72,11 @@ await page.getByTestId('workshop-pick-landmark2').click();
 await shot('workshop-1-pick');
 // 2 Make
 await page.getByTestId('workshop-next').click();
-await page.getByTestId('workshop-name').fill('Bandstand');
+await page.getByTestId('workshop-name').fill('Clock pavilion');
 await page
   .getByTestId('workshop-idea')
   .fill(
-    'A round bandstand with a striped red and white roof, white columns, and steps up to it on the front',
+    'A little clock tower on a paved square: cream walls with a red band, a slate roof, a clock face over the door, lawns in the corners and low hedges',
   );
 await shot('workshop-2-prompt');
 await page.getByTestId('workshop-copy').click();
@@ -116,8 +116,11 @@ await page.getByTestId('workshop-added').waitFor({ timeout: 30_000 });
 await shot('workshop-5-use');
 const spot = await page.evaluate(async () => {
   const g = window.__game;
-  const civics = g.getCivics();
-  const c = civics[Math.floor(civics.length / 2)] ?? { x: 400, z: 400 };
+  // Among the homes: the middle of the town's zoned buildings.
+  const b = g.getBuildings();
+  const c = b.length
+    ? { x: b.reduce((t, v) => t + v.x, 0) / b.length, z: b.reduce((t, v) => t + v.z, 0) / b.length }
+    : { x: 400, z: 400 };
   const id = await g.placeCivic('landmark2', { x: c.x, z: c.z });
   if (id === null) return null;
   const p = g.getCivics().find((x) => x.id === id);
@@ -126,7 +129,7 @@ const spot = await page.evaluate(async () => {
 });
 if (!spot) throw new Error('no spot for the landmark');
 await page.evaluate(
-  (p) => window.__game.setCamera({ x: p.x, z: p.z, distance: 170, yaw: 0.5, tilt: 0.62 }),
+  (p) => window.__game.setCamera({ x: p.x, z: p.z, distance: 125, yaw: 0.5, tilt: 0.6 }),
   spot,
 );
 await page.getByTestId('workshop-place').click();

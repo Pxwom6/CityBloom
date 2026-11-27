@@ -44,6 +44,8 @@ import { corsHeaders, reportsHttp } from './reportsHttp';
 import { REPORT_CAPS } from './reports';
 import { ChallengeBoard, BOARD_LIMITS } from './challengeBoard';
 import { challengeHttp, isBoardPath } from './challengeHttp';
+import { SubmissionsDesk, SUBMIT_LIMITS } from './submissions';
+import { isSubmitPath, submissionsHttp } from './submissionsHttp';
 import { nodeSql } from './nodeSql';
 
 /** A store kept in one JSON file per room (`--data`), rewritten per batch of events. */
@@ -128,6 +130,8 @@ export interface RelayOptions {
   reportLimits?: Partial<typeof REPORT_LIMITS>;
   /** The weekly challenge's board's limits (M44; tests make them small), and a clock to read it by (tests move it). */
   boardLimits?: Partial<typeof BOARD_LIMITS>;
+  /** The submissions desk's limits (M48; tests make them small). */
+  submitLimits?: Partial<typeof SUBMIT_LIMITS>;
   /**
    * Test builds' relays only (`--test-clock`): the board's clock can be moved with
    * `POST /__clock {"at": ms}` (the week rolling over in the end-to-end tests, M44).
@@ -176,6 +180,12 @@ export async function startRelay(
   // The weekly challenge's board (M44), in Node's SQLite like the report desk.
   const boardDb = await nodeSql(dataDir ? join(dataDir, 'challenges.sqlite') : ':memory:');
   const board = new ChallengeBoard(boardDb.sql, Date.now(), { ...BOARD_LIMITS, ...opts.boardLimits });
+  // Ideas and buildings players send in (M48), in Node's SQLite like the board.
+  const submitDb = await nodeSql(dataDir ? join(dataDir, 'submissions.sqlite') : ':memory:');
+  const submissions = new SubmissionsDesk(submitDb.sql, Date.now(), {
+    ...SUBMIT_LIMITS,
+    ...opts.submitLimits,
+  });
   let clockShift = 0;
   const boardNow = () => (opts.clock?.() ?? Date.now()) + clockShift;
   const server = createServer((req, res) => {
@@ -222,6 +232,31 @@ export async function startRelay(
           send(200, JSON.stringify({ now: boardNow() }), 'application/json');
         });
       else send(200, JSON.stringify({ now: boardNow() }), 'application/json');
+      return;
+    }
+    // Submissions and their owner pages (M48), as the Worker serves them (bodies up to a model's size).
+    if (isSubmitPath(url.pathname)) {
+      const big = {
+        ...request,
+        text: () =>
+          new Promise<string>((resolve, reject) => {
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (c: string) => {
+              body += c;
+              if (body.length > SUBMIT_LIMITS.body) {
+                req.pause();
+                resolve(body);
+              }
+            });
+            req.on('end', () => resolve(body));
+            req.on('error', reject);
+          }),
+      };
+      void submissionsHttp(big, submissions, opts.ownerKey, boardNow()).then(
+        (r) => (r ? send(r.status, JSON.stringify(r.json), 'application/json') : send(404, 'not found')),
+        () => send(500, 'error'),
+      );
       return;
     }
     // The weekly challenge's board and its owner pages (M44), as the Worker serves them.

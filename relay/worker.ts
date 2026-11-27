@@ -6,6 +6,7 @@
  *   wss://<relay>/signal/<CODE>             signalling for peer-to-peer rooms
  *   https://<relay>/report, /owner/...      problem reports and the owner area (M41, `relay/reportsHttp.ts`)
  *   https://<relay>/challenge/...           the weekly challenge's board (M44, `relay/challengeHttp.ts`)
+ *   https://<relay>/submit, /submit/...     ideas and buildings players send in (M48, `relay/submissionsHttp.ts`)
  *
  * Rooms use the WebSocket Hibernation API, so a room nobody is talking to costs nothing; their
  * SQLite storage keeps the city between sessions (the latest snapshot and the events since). The
@@ -22,6 +23,8 @@ import { corsHeaders, reportsHttp } from './reportsHttp';
 import { REPORT_CAPS } from './reports';
 import { ChallengeBoard, BOARD_LIMITS } from './challengeBoard';
 import { challengeHttp, isBoardPath } from './challengeHttp';
+import { SubmissionsDesk, SUBMIT_LIMITS } from './submissions';
+import { isSubmitPath, submissionsHttp } from './submissionsHttp';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
@@ -31,6 +34,7 @@ interface Env {
   REPORTS: DurableObjectNamespace;
   /** The weekly challenge's board (M44): one object holds every week's. */
   CHALLENGES: DurableObjectNamespace;
+  SUBMISSIONS: DurableObjectNamespace;
   /** Comma-separated origins allowed to connect (the site); empty allows any (development). */
   ALLOWED_ORIGINS?: string;
   /** The owner area's key (M41), a Worker secret the deploy workflow sets from the GitHub secret. */
@@ -54,6 +58,13 @@ export default {
       if (!cors) return new Response('forbidden', { status: 403 });
       if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
       return env.CHALLENGES.get(env.CHALLENGES.idFromName('challenges')).fetch(req);
+    }
+    // Ideas and buildings players send in, and their owner pages (M48): plain HTTP to the one desk.
+    if (isSubmitPath(url.pathname)) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.SUBMISSIONS.get(env.SUBMISSIONS.idFromName('submissions')).fetch(req);
     }
     // Problem reports and the owner area (M41): plain HTTP to the one report desk.
     if (url.pathname === '/report' || url.pathname.startsWith('/owner/')) {
@@ -303,5 +314,50 @@ export class ChallengeObject extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     const now = Date.now();
     if (this.board.sweep(now)) await this.ctx.storage.setAlarm(this.board.nextSweep(now));
+  }
+}
+
+/**
+ * Ideas and buildings players send in (M48, `SubmissionsDesk`): only the owner sees them, a player
+ * their own by a private token, everyone what the owner accepted. Declined ones are deleted 30 days
+ * after the decision, by an alarm that rings once a day while there are any, and on each submission.
+ */
+export class SubmissionsObject extends DurableObject<Env> {
+  private readonly desk: SubmissionsDesk;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.desk = new SubmissionsDesk(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await submissionsHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => boundedText(req, SUBMIT_LIMITS.body + 1),
+        // For rate limits in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.desk,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && (await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(this.desk.nextSweep(now));
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.desk.sweep(now)) await this.ctx.storage.setAlarm(this.desk.nextSweep(now));
   }
 }

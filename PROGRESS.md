@@ -487,6 +487,38 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
 3. The real-world checks under "To check on the Mac" and "To try with a mate", then the pull request's
    title and description for the whole phase.
 
+## Tests (phase 6 end)
+- **The playthroughs** (`PHASE6_GPU=1 PLAYTHROUGH=1 npx playwright test e2e/phase6-finale.spec.ts`, headed Chrome on
+  the M5): all seven pass; the whole file in one run 1 and 4–7 in 12.9 min (the two phone tests in their own run, 7.8
+  min). In one run: the laptop's first city reached 1,296 residents when the tutorial ended (a first power cut met on
+  the way) and made a 30 s timelapse with music in 3.9 s (11.7 MB); the iPhone's 1,364 and the Pixel's 1,287 by touch
+  alone (the Pixel met the jam lesson); a four-player match's two rounds, every page agreeing on each result and hash;
+  this week's challenge (week 47, "Happy town: tight budget" on Lakelands) ended after 49 months at 1,664 points, and
+  a Pixel replayed the run to the same city in under 30 s; the Workshop's first try got its two notes; the owner
+  area on an iPhone handled a report, the board and both submissions. Pictures `docs/screenshots/phase6-*.png`,
+  looked at.
+- **Unit tests**: 2,199 in 214 files pass (2,184 in 209 at the start of the phase end; new: touch words, the
+  tutorial's quick visits and first problems, the zone tool's front row, a fetched run replaying, visible cars on a
+  split road, the owner area's clock). M40's zone tool test's stand-in game gained the road network the front row
+  reads.
+- **E2E rerun beside them** (Playwright's Chromium on SwiftShader, as the suite runs, one file at a time): smoke,
+  m11-shell, m42-tutorial (3), m42-learn (2), m49-phone (5), m44-phone (4), m41-reports (5), m48-submit, m48-phone (6),
+  m47-workshop, m47-phone (4), m46-buildings (2), fix-layout (all 26, **P13 and P14 included**, which time out in the
+  cloud VM), fixes-ui (2), fix-input (6), review-touch (2), m33-narrow (2), **m30-rooms online** (it failed in the
+  VM), m30-lobby, m31-together and m49-join pass. In WebKit (`playwright.webkit.config.ts`): m47-workshop and
+  m48-submit pass. **Failing here, and the same on the build before the phase end (6eb76c5), so not the phase end's
+  doing**: every peer-to-peer join under Playwright on this Mac, in its Chromium and in Chrome (m30-rooms p2p,
+  f2-trystero, m43-phone's peer-to-peer match; the online ones pass; they passed in the cloud VM at M49): likely
+  macOS keeping headless pages' WebRTC off the local network; and m44-challenge's first test, whose page reaches
+  the main menu about 30 s late in that spec only, so the menu's challenge line isn't filled within the check's 30 s
+  (in a probe of the same steps it fills in a second after the menu; the challenge plays, posts and replays in the
+  playthrough and in m44-phone). Both under Known issues.
+- **Cross-browser** (`XB_FIREFOX=0 npm run xbrowser`): Chromium and WebKit give Node's state hash at every month end
+  for 24 months (10.5 s and 14.4 s); the SpiderMonkey shell isn't fetched on this Mac, so Firefox's engine waits for
+  the pull request's `xbrowser.yml` run.
+- **Bench** (`bench.ts 6 --big`): 110,174 residents at month 6, months 4–6 tick avg 0.24–0.27 ms, p99 2.1–2.6 ms,
+  1.46 s in all: as in the phase 5 checks on this Mac (0.27 / 2.5).
+
 ## Performance (phase 6 end, the owner's Mac)
 - **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs bench-results/city.gz --quality
   high,medium,low,phone`: the 110,174-resident bench city in a 1512×785 window at 2×, every view at 3× speed;
@@ -509,6 +541,22 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
   against 7.29, city 13.04 against 12.05, street 10.77 against 10.72, heavy 8.19 against 9.36. The city zoom's extra
   millisecond didn't survive a profile of each (`--profile`: 12.88 against 12.81 ms, the game's own work 12.54 ms in
   both, `bufferData` the top cost in both): the same within run-to-run noise.
+- **Timelapse captures on the GPU** (`GPU=1 node scripts/dev/timelapsebench.mjs bench-results/city.gz`, Medium, the
+  player at the city view): the player's frames 4.4 ms of work (115 calls, 1.49M triangles); a whole-map capture
+  3.6 ms of the main thread (worst 9.7; 221 calls, 2.36M); a busiest-area capture 25.5 ms (worst 70.9; 327 calls,
+  3.73M), most of it the orbit view's chunks uploaded the first time they're seen. At 3× that is one long frame
+  every 15 s (the views take turns every 7.5 s), 0.19 % of the main thread; the averages and p95 don't move. Left as
+  is; drawing the orbit capture from the far chunks would shorten it (an idea, not done).
+- **Players' own buildings on the GPU** (`npx tsx scripts/dev/customcity.ts 150`, then `GPU=1 node
+  scripts/dev/custombench.mjs`, High): 150 landmarks wearing a model at 85 % of their triangle budget against the same
+  buildings in the game's look: work per frame 1.93 / 2.05 / 2.66 ms (overview, city, street) against 1.97 / 2.35 /
+  2.74, the same calls; nothing measurable.
+- **Balance** (`balance.ts 20 careful,greedy,neglectful`): careful 67,373 residents, $1,838,985, 73 % at year 20,
+  identical to M48's (the sim is untouched at the phase end: the zone tool's front row is the page's, and replays
+  are unchanged); greedy 420, $566,259, 16 %; neglectful 354, $479,816, 36 %.
+- **The Workshop and Send it in in WebKit** (Safari's engine: `npx playwright test -c playwright.webkit.config.ts
+  m47-workshop m48-submit`): both pass after the Copy fix (DECISIONS "Phase 6 end"); in Chrome they're played through
+  in the phase-6 playthrough (tests 6 and 7, real Chrome on the GPU).
 
 ## Tests (M48)
 - Unit: 2,184 tests in 209 files pass (the unit and live projects). `relay/tests/submissions.test.ts`
@@ -1352,6 +1400,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- **Peer-to-peer joins under Playwright on the Mac** (phase 6 end): m30-rooms p2p, f2-trystero and m43-phone's
+  peer-to-peer match time out with the joining page never in the room, in Playwright's Chromium and in Chrome alike,
+  on the phase's end and on the build before it; online rooms pass. Probably macOS keeping headless pages' WebRTC
+  off the local network. The real test is two machines (PROGRESS "To check on the Mac", "To try with a mate").
+- **m44-challenge's first test on the Mac** (phase 6 end, and on the build before it): the page reaches the main menu
+  about 30 s late in that spec only, so its check of the menu's challenge line (30 s) fails; the same steps in a probe,
+  and the challenge in the playthrough and m44-phone, are fine. Not found in the time; it passes in the cloud VM.
 - The atom bomb (M40): a computer neighbour races only on Hard after year 20, and only once its weapons
   are at their top tier, which happens only after the city researches its own; computer neighbours
   have no weather, so for them the nuclear winter is a drag on growth; the region keeps 16 marks of the
@@ -1822,25 +1877,26 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   challenge feels too long (the balance mayor takes 3–43 months).
 
 ## To check on the Mac
+- **Ran at the phase-6 end on this Mac** (numbers under "Performance (phase 6 end, the owner's Mac)"): framebench at
+  High, Medium, Low and Phone (and against `main`); timelapsebench and custombench with `GPU=1`; the Workshop and Send
+  it in in WebKit and in real Chrome; fix-layout's P13 and P14 and the running-city joins (see "Tests (phase 6
+  end)"). What stays below needs a real phone, real Safari, the live relay (after the merge) or a friend.
 - Phase 6 (M48): the owner area's Submissions on your own phone against the live relay
   (`SubmissionsObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in): a building's
   turntable by night, its check, Download GLB (does Safari keep the name?) and Copy for Claude Code; the
   send screen's picture in Safari; bringing an accepted building in with `npm run models:check` and a
   pull request, its credit in CREDITS.md.
-- Phase 6 (M47): the Workshop in Safari and Chrome (copying the prompt to the clipboard, the style
-  sheet's download, the street preview by night); a model made in Blender itself following the
+- Phase 6 (M47): the Workshop in real Safari (copying the prompt to the clipboard, the style sheet's download,
+  the street preview by night; WebKit and real Chrome pass at the phase end); a model made in Blender itself following the
   Workshop's five steps, and one from Claude Design with the Workshop's prompt, both through the check;
   the guide as GitHub shows it once merged (pictures and the spec table).
-- Phase 6 (M46): `node scripts/dev/custombench.mjs 150` in headed Chrome on the GPU (the probe runs
-  headless here; on the Mac add frame times with `framebench.mjs` on a save of that city): 150 custom
-  landmarks against the same buildings in the game's look, to see the frame budget holds; the
-  turntable preview in Chrome and Safari (and a real phone), by night and in winter; a GLB exported
+- Phase 6 (M46): (custombench with `GPU=1` ran at the phase end: nothing measurable) the turntable preview in
+  real Safari and on a real phone, by night and in winter; a GLB exported
   from Blender itself (the tests' models are written by hand) through the checker; drag and drop of a
   `.glb` from Finder onto the panel.
-- Phase 6 (M45): `GPU=1 node scripts/dev/timelapsebench.mjs bench-results/city.gz` in headed Chrome on the
-  GPU (a capture's main-thread time against the player's frames), and `framebench.mjs` with a capture
-  forced every second (`--init "__game.setTimelapseStep(8)"` at 1×) against none, to see it stays inside
-  the frame budget; making a 60 s timelapse in Chrome and Safari (the hardware encoder's time, AAC music);
+- Phase 6 (M45): (timelapsebench with `GPU=1` ran at the phase end: a busiest-area capture is one 25 ms frame
+  every 15 s at 3×) making a 60 s timelapse in real Safari (the hardware encoder's time, AAC music; in Chrome a
+  30 s one with music takes 3.9 s);
   the MP4 sent through WhatsApp and iMessage to a phone, and saved to Photos.
 - Phase 6 (M44): the challenge screen and the run viewer in a real Chrome and Safari window against
   the live relay (`ChallengeObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in);
@@ -1850,10 +1906,9 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
 - Phase 6 (M43): a full 20-minute quick match between Chrome and Safari on the Mac against the live
   relay (two windows), to see the timer, the scoreboard and the last minute at real speed, and the
   results' chart over a whole match (the e2e here plays one-minute matches).
-- Phase 6 (M49): the Phone preset beside Low in the uncapped Chrome window (`framebench.mjs
-  bench-results/city.gz --quality phone,low`): the frame times, and that it still looks like the game;
-  Safari's Responsive Design Mode on an iPhone size, upright and sideways (the safe areas only show on
-  a real phone or the simulator).
+- Phase 6 (M49): (the Phone preset beside Low ran at the phase end: 1.8–3.0 ms, as Low on an M5) Safari's
+  Responsive Design Mode on an iPhone size, upright and sideways (the safe areas only show on a real phone
+  or the simulator).
 - Phase 6 (M41): once `OWNER_KEY` is set and the next deploy is out, open the owner area on your phone
   (`https://pxwom6.github.io/CityBloom/#/owner`), sign in, and send yourself a report from the live
   game (pause → Report a problem, with a picture): it should arrive within a few seconds, from the
@@ -1876,6 +1931,10 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   looks on the GPU were checked in the phase 5 checks).
 - Phase 5 (M34): the raid siren and the gun pops through real speakers (the war models, units and their
   frame times on the GPU were checked in the phase 5 checks).
+- **Ran on the Mac at the phase-6 end**: m30-rooms online, m30-lobby, m31-together and m49-join pass; m30-rooms p2p,
+  f2-trystero and m43-phone's peer-to-peer match fail under Playwright here (Chromium and Chrome, the build before
+  the phase end too: Known issues), so peer-to-peer between real machines stays below. fix-layout (all 26, P13 and
+  P14 included) and fixes-ui pass.
 - Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
   app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
   to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),

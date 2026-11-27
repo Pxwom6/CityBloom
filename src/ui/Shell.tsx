@@ -238,7 +238,7 @@ function MainMenu() {
         </button>
         <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
           <span>Scenarios</span>
-          <small>{SCENARIOS.length} challenges</small>
+          <small>{SCENARIOS.length} cities, each with goals to win</small>
         </button>
         <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
           <span>Map editor</span>

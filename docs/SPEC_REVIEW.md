@@ -880,3 +880,22 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* the frame budget holds with a city full of custom landmarks | `scripts/dev/custombench.mjs` (150 landmarks wearing a model at 85 % of the landmark's budget, against the same buildings in the game's look; PROGRESS "Performance (M46)"); the Mac's GPU under "To check on the Mac" |
 | Phones from the start | `e2e/m46-phone.spec.ts` (iPhone and Pixel, upright and sideways: My buildings from the Build sheet, a model refused and one added, checked with `phoneProblems`; placed by touch on two of them) |
 | The cross-browser test | its `looks` section (`tests/lockstep/looksSection.ts`); the browser spec now compares the match and challenge sections too |
+
+## M47 Making buildings
+
+| Item | Where |
+|---|---|
+| "Workshop": a section in My buildings and the Learn page, from nothing to a building in the city | `WorkshopTab` (`src/ui/Workshop.tsx`, My buildings' Workshop tab), `Game.workshop` (`src/client/workshopState.ts`); the Learn page's Making buildings lesson (`src/client/lessons.ts`, its town `public/lessons/buildings.citybloom`) |
+| 1. Pick: a building to give a new look or a landmark size; its footprint, height range and budget, with a picture | `PickStep`, `SitePicture`; `workshopTargets`/`workshopTarget` (`src/models/workshop.ts`), heights `src/models/heights.ts` (`scripts/workshopHeights.ts`) |
+| 2. Make with an AI 3D tool: the whole prompt written for them (spec, footprint, roles, file name), ready to copy, in the owner's prompt style; the style sheet to download | `workshopPrompt`, `buildingPrompt`, `SPEC_V6` (`src/models/specText.ts`, held to PROMPTS-5.md and PROMPTS-WAR.md by a test); `public/workshop/style-reference.png` |
+| 2. Make in Blender: scale in metres, the front, the ground at zero, naming parts with the roles, exporting a GLB | `BlenderSteps` (five steps, each with a picture) |
+| 3. Check it: results like a teacher's notes (what's wrong, why, how to fix it) with a picture; the common mistakes | `teacherNote`/`teacherNotes`; `CheckStep`; the picture from M46's worker; a default-names problem in `checkCustom` |
+| 4. See it: on its lot, by day and night, in each season, next to the buildings around it | `SeeStep`, `ModelPreview.showStreet` (`src/render/modelPreview.ts`) |
+| 5. Use it, share it, or send it in (M48) | `UseStep`: Add to My buildings, Place, Share; Send it in shown as coming |
+| The written guide: `docs/making-buildings.md`, linked from the README and the Workshop, a worked example with screenshots, short and friendly | `docs/making-buildings.md` (the clock pavilion from start to finish; pictures `docs/screenshots/workshop-*.png` from `scripts/dev/workshopshot.mjs --guide`) |
+| The model spec, readable, generated from the same source the check uses | `src/models/playerSpec.ts` (the check's own numbers), written into the guide by `scripts/docs/modelSpec.ts`; `tests/workshop.test.ts` fails if it's out of date |
+| *Done:* an e2e follows the Workshop from picking a landmark to placing a model, copies the prompt and checks its footprint, budget and roles | `e2e/m47-workshop.spec.ts` (from the main menu's Learn page; the copied prompt's site, budget, file and roles; placed in the lesson's town, which ends the lesson) |
+| *Done:* each common mistake gets its own plain-words fix, tested with a bad model for each | `mistakeModels()` (`scripts/lib/makeGlb.ts`); `tests/workshop.test.ts` and the e2e check each through the real check |
+| *Done:* the guide's screenshots are reviewed | reviewed in the session (DECISIONS "M47") |
+| *Done:* a mate who has never made a model tries it | PROGRESS, "To try with a mate" |
+| Phones from the start | `e2e/m47-phone.spec.ts` (iPhone and Pixel, upright and sideways, every step with `phoneProblems`; a model checked and added on two) |

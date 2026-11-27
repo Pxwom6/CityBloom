@@ -105,7 +105,8 @@ test('every Learn lesson, played on its town from the main menu', async ({ brows
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
   await page.getByTestId('main-learn').click();
   await expect(page.getByTestId('learn-screen')).toBeVisible();
-  await expect(page.getByTestId('lesson-start-buildings')).toBeDisabled();
+  // Making buildings is the Workshop's lesson since M47 (played through in e2e/m47-workshop.spec.ts).
+  await expect(page.getByTestId('lesson-start-buildings')).toBeEnabled();
   await expect(page.getByTestId('lesson-war')).toContainText('Rival neighbours');
   await page.screenshot({ path: `${OUT}/learn-screen.png` });
 

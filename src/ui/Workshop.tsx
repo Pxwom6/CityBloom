@@ -47,8 +47,8 @@ export function WorkshopTab() {
               class={`workshop-step ${w.step === i ? 'active' : ''} ${i < w.step ? 'done' : ''}`}
               aria-current={w.step === i ? 'step' : undefined}
               data-testid={`workshop-step-${i}`}
-              // Steps ahead open once there's a model that passed (or to read how to make one).
-              disabled={i > 1 && i > w.step && !w.check?.ok}
+              // See and Use open once a model has passed; Pick, Make and Check are always open.
+              disabled={i > 2 && i > w.step && !w.check?.ok}
               onClick={() => w.go(i as WorkshopStep)}
             >
               <span class="workshop-step-n">{i + 1}</span> {name}

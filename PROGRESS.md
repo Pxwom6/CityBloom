@@ -60,7 +60,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M44 Weekly challenge
 - [x] M45 Timelapse
 - [x] M46 Your own buildings
-- [ ] M47 Making buildings
+- [x] M47 Making buildings
 - [ ] M48 Send it in
 - [x] M49 Phones (done after M42, before M43)
 
@@ -264,11 +264,23 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M47 Making buildings is under way**: plan `docs/plans/M47-design.md` (the Workshop's five steps,
-teacher's notes for each common mistake, the prompt writer, the readable spec generated from the
-check's own source, the guide `docs/making-buildings.md`). Steps: M47.1 data (prompt, notes, readable
-spec, bad models, tests), M47.2 the Workshop UI, M47.3 the guide and its screenshots, M47.4 e2e, phones
-and closing.
+**M47 Making buildings is complete** (plan `docs/plans/M47-design.md`), joining M41–M46 and M49 in
+pull request #24. Next: M48 Send it in.
+
+M47 in short: the Workshop (My buildings' second tab, and the Learn page's Making buildings lesson, now
+ready on a small town of its own) takes a player from nothing to a building in their city in five
+steps. Pick: a landmark size or a building to give a new look, with a picture of its site from above and
+the side, its footprint, height range and triangle budget. Make: with an AI 3D tool, the whole prompt
+written for the building in the owner's own prompt style (the spec v6 word for word, the site, budget,
+file name and roles), copied in a click, the style sheet to download; or in Blender, five basics each
+with a picture. Check: the check's problems as a teacher's notes (what's wrong, why the game cares, how
+to fix it) with the picture; every common mistake has its own (centimetres, backwards, floating, too
+many triangles, unnamed parts, colours not named by role, and more). See: on its lot in a street beside
+two of the game's own buildings, by day and night, in each season. Use: into My buildings, placed,
+shared; sending in is M48. The guide `docs/making-buildings.md` (linked from the README and the
+Workshop): the five steps with pictures made through the real UI, a worked example from start to
+finish, the common mistakes, and the plain-words spec generated from the check's own numbers. Phones
+upright and sideways. Calls: DECISIONS "M47"; SPEC_REVIEW "M47"; numbers: "Tests (M47)".
 
 **M46 Your own buildings is complete** (plan `docs/plans/M46-design.md`), joining M41, M42, M49, M43,
 M44 and M45 in pull request #24.
@@ -402,10 +414,31 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M47 Making buildings (SPEC-6.md), then M48, each new screen working by touch on a phone upright
-   and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`). M47's Workshop can build on M46's
-   checker, picture and turntable (`src/models/customCheck.ts`, `modelCheckWorker.ts`,
-   `src/render/modelPreview.ts`) and the test models in `scripts/lib/makeGlb.ts`.
+1. M48 Send it in (SPEC-6.md), every new screen working by touch on a phone upright and sideways
+   (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`). The Workshop's Use step has the Send it in button
+   waiting (`workshop-send`, `src/ui/Workshop.tsx`); M41's report desk and owner area show how an
+   upload, its checks and caps, and the owner's review were done (`relay/reportDesk.ts`,
+   `relay/reportsHttp.ts`, `src/owner/`).
+2. Then the phase's end (SPEC-6.md).
+
+## Tests (M47)
+- Unit: 2,177 tests in 208 files pass (the unit and live projects). New `tests/workshop.test.ts`: the spec text held
+  to the prompt files, the targets, the prompt (site, budget, file, roles, a player's words cleaned), a
+  note of its own for each common mistake (each a model that makes it), the readable spec from the
+  check's numbers and the guide's copy current, the worked example's prompt and pictures.
+- E2E: `e2e/m47-workshop.spec.ts` (2.6 min): from the main menu's Learn page into the lesson's town on
+  the Workshop; a 2×2 landmark picked; the copied prompt names the site, budget, file and every role;
+  the style sheet downloads; the Blender steps; each of the six common mistakes checked and named by its
+  own note, a first try with two; the good model passes, is seen by night in winter, added and placed in
+  the town, which ends the lesson. `e2e/m47-phone.spec.ts` (iPhone and Pixel, upright and sideways,
+  every step with `phoneProblems`; a model checked and added on two). `e2e/m42-learn.spec.ts` now
+  expects the lesson enabled (not re-run: its 30 minutes of other lessons don't change).
+- Bench (`bench.ts 6 --big`): 5.8–6.0 s, month 6 tick avg 1.1 ms; the M46 tip run straight after in a
+  worktree took 6.4 s, so this hour's VM is slower than M46's 4.4 s run and the sim is unchanged (the
+  same populations month by month). Balance (20 years, careful): identical (67,373 residents,
+  $1,838,985, 73 %). Cross-browser: the sim is untouched; the pull request's xbrowser run checks it.
+- The guide's pictures (`docs/screenshots/workshop-*.png`) were reviewed: the five steps, the notes,
+  the street by day, night and winter, the pavilion placed among Maker's Green's homes.
 
 ## Performance (M46)
 `npx tsx scripts/dev/customcity.ts 150` then `npm run build:test && node scripts/dev/custombench.mjs`
@@ -1630,6 +1663,10 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
   imported) and see that it runs; the 110k bench city should ask first.
 
+- M47 making buildings: a mate who has never made a 3D model opens Learn → Making your own buildings
+  and follows the Workshop and the guide (`docs/making-buildings.md`) with no other help, once with an AI
+  3D tool and once in Blender: where do they get stuck, do the teacher's notes tell them what to do, and
+  does their building end up in the lesson's town? Note how long it takes.
 - M46 your own buildings: a mate who has never made a 3D model follows the model guide in Blender
   (free) to make a small building, exports a GLB and adds it in My buildings: do the refusals' words
   and pictures tell them what to fix? Then each of you sends the other a building as a
@@ -1658,6 +1695,10 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   challenge feels too long (the balance mayor takes 3–43 months).
 
 ## To check on the Mac
+- Phase 6 (M47): the Workshop in Safari and Chrome (copying the prompt to the clipboard, the style
+  sheet's download, the street preview by night); a model made in Blender itself following the
+  Workshop's five steps, and one from Claude Design with the Workshop's prompt, both through the check;
+  the guide as GitHub shows it once merged (pictures and the spec table).
 - Phase 6 (M46): `node scripts/dev/custombench.mjs 150` in headed Chrome on the GPU (the probe runs
   headless here; on the Mac add frame times with `framebench.mjs` on a save of that city): 150 custom
   landmarks against the same buildings in the game's look, to see the frame budget holds; the

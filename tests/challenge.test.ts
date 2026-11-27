@@ -68,6 +68,21 @@ describe('M44 the weekly challenge', () => {
     expect(cleanChallengeDef('nope', 45)).toBeNull();
   });
 
+  it('cleans a pin to the same challenge every time, with its own twist only', () => {
+    // A pin is cleaned by the board as it's kept, as it's served and as a city is founded on it: each
+    // must give the same challenge, or a run wouldn't replay on the board.
+    for (const week of weeks(12)) {
+      const once = cleanChallengeDef({ ...challengeFor(week), months: 12 }, week)!;
+      expect(once).not.toBeNull();
+      expect(cleanChallengeDef(JSON.parse(JSON.stringify(once)), week)).toEqual(once);
+      expect(JSON.stringify(cleanChallengeDef(once, week))).toBe(JSON.stringify(once));
+    }
+    // A week whose own challenge has an early disaster: a pin without that twist doesn't inherit it.
+    const quake = weeks(30).find((w) => challengeFor(w).twist === 'disaster')!;
+    const calm = cleanChallengeDef({ ...challengeFor(quake), twist: 'none', disaster: undefined }, quake)!;
+    expect(calm.disaster).toBeUndefined();
+  });
+
   it('scores goals’ progress, the win with months left, and the extra, within its maximum', () => {
     const def = {
       goals: [{ measure: 'population', min: 2000, label: '' }],
@@ -83,6 +98,20 @@ describe('M44 the weekly challenge', () => {
       months: 36,
     } as typeof def;
     expect(challengeScore(max, [16], 0, false, 36)).toBe(500);
+  });
+
+  it('gives nothing for an empty town’s approval or bank balance: other goals count as far as it has grown', () => {
+    const happy = challengeFor(weeks(10).find((w) => challengeFor(w).template === 'happy')!);
+    // An empty town: approval reads high, nobody lives there.
+    expect(challengeScore(happy, [55, 0], 55, false, happy.months)).toBe(0);
+    // Half grown: approval counts half, and so does its extra.
+    const pop = happy.goals[1]!.min!;
+    const half = challengeScore(happy, [60, pop / 2], 60, false, happy.months);
+    expect(half).toBe(Math.floor(((0.5 + 0.5) / 2) * 1000) + Math.floor(1800 * 0.5));
+    // Grown: everything counts.
+    expect(challengeScore(happy, [60, pop], 60, false, happy.months)).toBe(1000 + 1800);
+    const books = challengeFor(weeks(10).find((w) => challengeFor(w).template === 'books')!);
+    expect(challengeScore(books, [60_000, 0], 60_000, false, books.months)).toBe(0);
   });
 
   it('founds a challenge city from its options alone, with its money, and begins it', () => {

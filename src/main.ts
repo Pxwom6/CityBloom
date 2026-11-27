@@ -38,7 +38,10 @@ import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
 import { WAR_SCALES, foundingRules, type WarScale } from './data/war';
 import { pageReporter } from './client/reportHost';
-import { reportProblem, workerError, REPORTS_NOTICE } from './client/reports';
+import { relayHttpBase, reportProblem, workerError, REPORTS_NOTICE } from './client/reports';
+import { ChallengeClient, markChecked, takeChallenge, wasChecked, type FetchedRun } from './client/challenge';
+import { challengeOptions } from './data/challenges';
+import { CHALLENGE_TOWN } from './sim/runReplay';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -251,6 +254,22 @@ async function boot(): Promise<void> {
   const battleId = params.get('battle');
   const battleRecord = battleId ? await loadBattle(battleId).catch(() => null) : null;
   const battleTown = battleRecord?.townKey ? await loadTown(battleRecord.townKey).catch(() => null) : null;
+  // The weekly challenge (M44): a fresh city on the week's challenge (handed over by the challenge
+  // screen, or the generator's), or a run from the board to watch.
+  const challengeParam = params.get('challenge');
+  const challengeNo = challengeParam === null ? NaN : Number(challengeParam);
+  const challengePlay = Number.isInteger(challengeNo) && challengeNo >= 0 ? takeChallenge(challengeNo) : null;
+  let watched: FetchedRun | null = null;
+  let watchError: string | null = null;
+  if (params.has('challengeRun')) {
+    bootStatus('Fetching the run…');
+    watched = await new ChallengeClient(relayHttpBase(relayUrl()))
+      .fetchRun(Number(params.get('challengeRun')))
+      .catch((err: unknown) => {
+        watchError = `That run can’t be watched: ${err instanceof Error ? err.message : String(err)}`;
+        return null;
+      });
+  }
   const menu = ![
     'paused',
     'seed',
@@ -264,6 +283,8 @@ async function boot(): Promise<void> {
     'battle',
     'lesson',
     'match',
+    'challenge',
+    'challengeRun',
   ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
@@ -274,7 +295,9 @@ async function boot(): Promise<void> {
   };
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
-  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : (visitError ?? matchError);
+  let joinError: string | null = params.has('join')
+    ? inviteProblem(joinInvite)
+    : (visitError ?? matchError ?? watchError);
   if (joinInvite && !joinError) {
     // A friend arriving for the first time picks the name the others will see (F12).
     const boot = document.getElementById('boot');
@@ -346,23 +369,28 @@ async function boot(): Promise<void> {
     ? joined.snap
     : matchPlan
       ? await client.init(matchPlan.options, IS_TEST_BUILD)
-      : editing
+      : challengePlay || watched
         ? await client.init(
-            {
-              editor: true,
-              seed: editing.map.seed,
-              preset: editing.map.preset,
-              cityName: editing.map.name,
-              sandbox: true,
-              disasters: false,
-              elections: false,
-              region: false,
-            },
+            challengeOptions(challengePlay ?? watched!.run.def, CHALLENGE_TOWN),
             IS_TEST_BUILD,
-            editing.map,
           )
-        : opened ||
-          (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
+        : editing
+          ? await client.init(
+              {
+                editor: true,
+                seed: editing.map.seed,
+                preset: editing.map.preset,
+                cityName: editing.map.name,
+                sandbox: true,
+                disasters: false,
+                elections: false,
+                region: false,
+              },
+              IS_TEST_BUILD,
+              editing.map,
+            )
+          : opened ||
+            (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   if (joined || visited) bootStatus('Building the scene…');
   const world = new ClientWorld(snap);
   await models;
@@ -433,11 +461,42 @@ async function boot(): Promise<void> {
       if (ok && !plan.invite) game.match.invite = game.matchInvite();
       if (!ok) setTimeout(() => location.replace(location.pathname), 4000);
     })();
+  } else if (watched) {
+    // Watching a weekly challenge run (M44): the city founded from the challenge takes the run's
+    // commands at their ticks; at its end the worker says whether it came to the same city.
+    const w = watched;
+    game.readOnly = true;
+    game.watchingRun = {
+      id: w.id,
+      name: w.name,
+      week: w.run.week,
+      score: w.run.score,
+      end: w.run.end,
+      rush: false,
+      result: null,
+    };
+    client.onRunDone = (r) => {
+      if (!game.watchingRun) return;
+      game.watchingRun.result = { ok: r.ok, score: r.score };
+      game.watchingRun.rush = false;
+      game.setSpeed(0);
+      // Watching is checking: the board hears (once from this browser) whether it replayed.
+      if (!wasChecked(w.id)) {
+        markChecked(w.id);
+        void game.challenges.verdict(w.id, r.ok);
+      }
+      game.notify();
+    };
+    client.watchRun({ entries: w.run.entries, end: w.run.end, hash: w.run.hash, score: w.run.score });
+    game.setCamera('overview', true);
+    game.setSpeed(1);
+    history.replaceState(null, '', location.pathname);
   } else if (menu || joinError) {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
     if (params.get('screen') === 'learn') game.openScreen('learn');
+    if (params.get('screen') === 'challenge') game.openScreen('challenge');
     // A region's invite link: the friends screen, to choose the city to bring (M32).
     const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
     if (invited && !inviteProblem(invited)) {
@@ -474,13 +533,18 @@ async function boot(): Promise<void> {
     } else if (lesson)
       game.toast('That lesson’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
-    if (!save && !scenario) {
+    if (!save && !scenario && !challengePlay) {
       const { seasons, weather } = game.settings;
       if (!seasons || weather !== 2) void game.dispatch({ type: 'setWeather', seasons, intensity: weather });
     }
     // A reload goes back to the main menu (Continue picks up the latest save) rather than
     // re-creating this city from scratch.
-    if (params.has('new') || params.has('load') || scenario || lesson)
+    // A weekly challenge's city (M44) opens on its brief, paused until the player begins.
+    if (challengePlay) {
+      game.scenarioBrief = true;
+      game.setSpeed(0);
+    }
+    if (params.has('new') || params.has('load') || scenario || lesson || challengePlay)
       history.replaceState(null, '', location.pathname);
     // Back from a battle this browser doesn't keep (M35).
     if (params.get('noreplay') === '1')

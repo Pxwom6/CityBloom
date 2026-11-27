@@ -3,6 +3,7 @@ import { isIOS } from '../client/platform';
 import { deviceMemory, tooBigFor } from '../client/memoryBudget';
 import { currentDevice } from '../client/graphicsCheck';
 import { isPhone } from '../game';
+import { ChallengeMenuButton, ChallengeScreen } from './Challenge';
 import { FriendsScreen } from './Friends';
 import { relayUrl } from '../net/multiplayer';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
@@ -224,6 +225,7 @@ function MainMenu() {
           <span>Quick match</span>
           <small>race friends in 15 to 30 minutes</small>
         </button>
+        <ChallengeMenuButton />
         <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
           <span>Learn</span>
           <small>short lessons, a few minutes each</small>
@@ -1364,6 +1366,7 @@ export function Shell() {
       {screen === 'report' && <ReportScreen />}
       {screen === 'learn' && <LearnScreen />}
       {screen === 'match' && <QuickMatchScreen />}
+      {screen === 'challenge' && <ChallengeScreen />}
       <BigCityCard />
     </div>
   );

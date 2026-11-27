@@ -22,6 +22,7 @@ import { ShortcutSheet } from './ShortcutSheet';
 import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
+import { RunViewerBar } from './Challenge';
 import { DistrictsPanel } from './Districts';
 import { WarRoomPanel } from './Military';
 import { FallenCard } from './Diplomacy';
@@ -110,7 +111,8 @@ export function App({ game }: { game: Game }) {
       <TopBar />
       <DebugPanel />
       {/* Watching a battle (M35), the viewer bar takes the visit banner's place. */}
-      {game.readOnly ? !game.viewing && <VisitBanner /> : <Toolbar />}
+      {game.readOnly ? !game.viewing && !game.watchingRun && <VisitBanner /> : <Toolbar />}
+      <RunViewerBar />
       <ToolHintLabel />
       <ToolQuestionCard />
       <Inspector />

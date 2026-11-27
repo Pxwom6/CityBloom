@@ -20,6 +20,8 @@ export interface SlotInfo {
   tick: number;
   savedAt: string;
   bytes: number;
+  /** A weekly challenge city (M44): its week, and whether its challenge has ended. */
+  challenge?: { week: number; done: boolean };
 }
 
 interface SlotRecord extends SlotInfo {
@@ -97,6 +99,7 @@ export async function writeSlot(slot: string, save: SaveFile, label?: string): P
     tick: save.meta.tick,
     savedAt: save.meta.savedAt,
     bytes: data.byteLength,
+    ...(save.meta.challenge ? { challenge: { ...save.meta.challenge } } : {}),
     data,
   };
   await tx('readwrite', (s) => s.put(rec));

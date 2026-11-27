@@ -215,7 +215,14 @@ function hintsFor(template: ChallengeTemplate, twist: ChallengeTwist): string[] 
   return h;
 }
 
-/** The score a run has earned: goals' progress, the win and the months left, and the extra. */
+/** The measures a challenge's growth goal counts (every template has one). */
+const GROWTH: readonly GoalMeasure[] = ['population', 'jobs'];
+
+/**
+ * The score a run has earned: goals' progress, the win and the months left, and the extra. Every goal
+ * but the growth goal (residents, or jobs), and an extra that isn't growth, counts only as far as the
+ * town has grown: an empty town's approval or untouched bank balance earns nothing.
+ */
 export function challengeScore(
   def: Pick<ChallengeDef, 'goals' | 'extra' | 'months'>,
   values: number[],
@@ -223,17 +230,20 @@ export function challengeScore(
   won: boolean,
   monthsTaken: number,
 ): number {
-  let progress = 0;
-  def.goals.forEach((g, i) => {
+  const progress = def.goals.map((g, i) => {
     const v = values[i] ?? 0;
-    let p = 1;
-    if (g.min !== undefined) p = g.min > 0 ? Math.min(1, Math.max(0, v) / g.min) : v >= g.min ? 1 : 0;
-    else if (g.max !== undefined) p = v <= g.max ? 1 : g.max > 0 && v > 0 ? g.max / v : 0;
-    progress += p;
+    if (g.min !== undefined) return g.min > 0 ? Math.min(1, Math.max(0, v) / g.min) : v >= g.min ? 1 : 0;
+    if (g.max !== undefined) return v <= g.max ? 1 : g.max > 0 && v > 0 ? g.max / v : 0;
+    return 1;
   });
-  const goals = def.goals.length ? Math.floor((progress / def.goals.length) * SCORE.goals) : 0;
+  const gi = def.goals.findIndex((g) => GROWTH.includes(g.measure) && g.min !== undefined);
+  const growth = gi < 0 ? 1 : progress[gi]!;
+  let sum = 0;
+  progress.forEach((p, i) => (sum += i === gi ? p : Math.min(p, growth)));
+  const goals = def.goals.length ? Math.floor((sum / def.goals.length) * SCORE.goals) : 0;
   const win = won ? SCORE.win + SCORE.perMonthLeft * Math.max(0, def.months - monthsTaken) : 0;
-  const extra = Math.min(def.extra.cap, Math.floor((Math.max(0, extraValue) * def.extra.perMille) / 1000));
+  const raw = Math.min(def.extra.cap, Math.floor((Math.max(0, extraValue) * def.extra.perMille) / 1000));
+  const extra = GROWTH.includes(def.extra.measure) ? raw : Math.floor(raw * growth);
   return goals + win + extra;
 }
 
@@ -305,7 +315,8 @@ export function cleanChallengeDef(raw: unknown, week: number): ChallengeDef | nu
     !TEXT(e.label, 80)
   )
     return null;
-  const base = challengeFor(week);
+  // The generator's week for the rest (never its disaster: a pin has its own twist).
+  const { disaster: _generated, ...base } = challengeFor(week);
   const limits: ScenarioLimit[] =
     twist === 'noHighway' || twist === 'railOnly' || twist === 'smallMap' ? challengeLimits(twist) : [];
   const d = r.disaster as Record<string, unknown> | undefined;

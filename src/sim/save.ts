@@ -34,7 +34,20 @@ export interface SaveMeta {
    * kept beside the city by the worker so a challenge picked up again from a save can still be posted
    * (and replayed). Older saves, and every other city's, have none.
    */
-  run?: { entries: RunEntry[] };
+  run?: { entries: RunEntry[]; final?: RunFinal };
+  /** A weekly challenge city (M44): its week, and whether the challenge has ended (the load list's mark). */
+  challenge?: { week: number; done: boolean };
+}
+
+/**
+ * A challenge run as it stood when the challenge ended (M44): how many of the entries it had, the
+ * tick, and the city's hash and score there. Playing on afterwards adds entries, never changes these.
+ */
+export interface RunFinal {
+  count: number;
+  end: number;
+  hash: string;
+  score: number;
 }
 
 /** A city's place in a shared region: the region's invite (its key too, for one in a browser), its slot. */

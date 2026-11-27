@@ -99,7 +99,9 @@ import { atomBeats, blastSounds } from './render/atomFx';
 import { asSentence, nameInSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
 import { seasonNotice } from './ui/weather';
 import type { OverlayResult } from './sim/systems/overlays';
-import { reportProblem, type Reporter } from './client/reports';
+import { relayHttpBase, reportProblem, type Reporter } from './client/reports';
+import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostReply } from './client/challenge';
+import type { ChallengeDef } from './data/challenges';
 import type { RoomMsg } from '../relay/protocol';
 import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
 
@@ -192,7 +194,9 @@ export type Screen =
   | 'report'
   /** Learn: short lessons on prepared towns (M42). */
   | 'learn'
-  | 'match';
+  | 'match'
+  /** This week's challenge (M44). */
+  | 'challenge';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -775,6 +779,25 @@ export class Game {
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
   viewing: { record: BattleRecord; back: string | null } | null = null;
+  /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
+  readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
+  /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
+  challengeNow: ChallengeNow | null = null;
+  /** In a challenge city: posting its run, and what the board said (M44). */
+  challengePost: { busy: boolean; reply: PostReply | null } = { busy: false, reply: null };
+  /**
+   * Watching a weekly challenge run (M44, `?challengeRun=`): whose, what it claims, where it ends, and
+   * once it has, whether it came to the same city.
+   */
+  watchingRun: {
+    id: number;
+    name: string;
+    week: number;
+    score: number;
+    end: number;
+    rush: boolean;
+    result: { ok: boolean; score: number } | null;
+  } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
   boundRegion: RegionBinding | null = null;
 
@@ -2066,12 +2089,18 @@ export class Game {
           'The election is six months away. Make up to two promises in the city panel (P → Election).',
           'info',
         );
-      else if (e.kind === 'scenarioWon' || e.kind === 'scenarioLost') {
+      else if ((e.kind === 'scenarioWon' || e.kind === 'scenarioLost') && this.watchingRun) {
+        // Watching someone's challenge run (M44): its end is the viewer bar's, never this player's.
+      } else if (e.kind === 'scenarioWon' || e.kind === 'scenarioLost') {
         const sc = this.world.stats.scenario;
         const months = sc ? sc.monthsTaken : 0;
         const won = e.kind === 'scenarioWon';
         this.scenarioEnd = { won, stars: e.id, reason: String(e.info?.reason ?? ''), months };
-        if (won && sc) recordWin(sc.id, e.id, months);
+        // A weekly challenge (M44) keeps its best score on this device; a scenario its stars.
+        const ch = this.challengeDef;
+        if (ch) {
+          if (sc?.challenge) keepBest(ch.week, sc.challenge.score);
+        } else if (won && sc) recordWin(sc.id, e.id, months);
         this.setSpeed(0);
         this.notify();
       } else if (e.kind === 'electionWon' || e.kind === 'electionLost') {
@@ -2226,6 +2255,54 @@ export class Game {
     applyUiScale(s.uiScale);
   }
 
+  /** The weekly challenge this city plays (or played), if it's a challenge city (M44). */
+  get challengeDef(): ChallengeDef | null {
+    const ch = this.world.options.challenge;
+    return ch && this.world.stats.scenario?.id === ch.id ? ch : null;
+  }
+
+  /** Ask the board for this week's challenge (M44); offline, the generator's on the page's clock. */
+  async refreshChallenge(): Promise<ChallengeNow> {
+    const now = await this.challenges.current();
+    this.challengeNow = now;
+    this.notify();
+    return now;
+  }
+
+  /**
+   * Post this challenge city's run to the board (M44), under `name`, with the player's groups. Only a
+   * finished challenge's run goes: it is the run as it stood when the challenge ended.
+   */
+  async postChallenge(name: string): Promise<PostReply> {
+    const def = this.challengeDef;
+    const fail = (why: string): PostReply => ({ ok: false, why, status: 0 });
+    if (!def) return fail('This isn’t a challenge city');
+    if (this.challengePost.busy) return fail('Already posting');
+    this.challengePost = { busy: true, reply: this.challengePost.reply };
+    this.notify();
+    let reply: PostReply;
+    try {
+      const run = await this.client.challengeRun();
+      if (!run) reply = fail('This city has no run to post');
+      else if (!run.final) reply = fail('Finish the challenge first');
+      else if (!this.challenges.online) reply = fail('The board isn’t available right now');
+      else reply = await this.challenges.post(def.week, run, name, loadGroups());
+    } catch (e) {
+      reply = fail(e instanceof Error ? e.message : String(e));
+    }
+    this.challengePost = { busy: false, reply };
+    this.notify();
+    return reply;
+  }
+
+  /** Watching a run (M44): straight to its end, or back to watching it play. */
+  rushRun(on: boolean): void {
+    if (!this.watchingRun || this.watchingRun.result) return;
+    this.watchingRun.rush = on;
+    this.client.watchRush(on);
+    this.notify();
+  }
+
   inMenu(): boolean {
     return this.mode === 'menu';
   }
@@ -2287,6 +2364,13 @@ export class Game {
     if (this.lessonTown && slot === 'auto') return false;
     // Likewise a quick match's city (M43): kept only when the player chooses to.
     if (this.match.active && !this.match.kept && slot === 'auto') return false;
+    // A weekly challenge city (M44) autosaves to a slot of its own, leaving the player's city alone.
+    const auto = slot === 'auto';
+    const challenge = this.challengeDef;
+    if (challenge && auto) {
+      slot = 'challenge';
+      label = `Challenge, week ${challenge.week + 1}`;
+    }
     if (this.saving) return false;
     this.saving = true;
     this.notify();
@@ -2297,7 +2381,7 @@ export class Game {
       if (this.boundRegion) s.meta.region = { ...this.boundRegion };
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
-      if (slot !== 'auto') {
+      if (!auto) {
         this.slot = slot;
         this.manualSaves++;
       }
@@ -2306,7 +2390,7 @@ export class Game {
       return true;
     } catch (e) {
       this.toast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'bad');
-      reportProblem('save', e, { message: slot === 'auto' ? 'An autosave failed' : 'A save failed' });
+      reportProblem('save', e, { message: auto ? 'An autosave failed' : 'A save failed' });
       return false;
     } finally {
       this.saving = false;

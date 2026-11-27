@@ -353,13 +353,30 @@ export class ChallengeBoard extends LazyTables {
     return r ? { name: r.name, score: r.score } : null;
   }
 
-  /** A shown entry's run to watch, with what it claims. */
-  run(
-    id: number,
-  ): { id: number; week: number; name: string; score: number; hash: string; run: string } | null {
+  /**
+   * A shown entry's run to watch, with what it claims and the week's challenge as the board knows it
+   * (a replay plays that, never a challenge the run might bring along).
+   */
+  run(id: number): {
+    id: number;
+    week: number;
+    name: string;
+    score: number;
+    hash: string;
+    run: string;
+    def: ChallengeDef;
+  } | null {
     const r = this.read<Row>('SELECT * FROM entries WHERE id = ?', id)[0];
     if (!r || !r.run || !SHOWN.includes(r.status)) return null;
-    return { id: r.id, week: r.week, name: r.name, score: r.score, hash: r.hash, run: r.run };
+    return {
+      id: r.id,
+      week: r.week,
+      name: r.name,
+      score: r.score,
+      hash: r.hash,
+      run: r.run,
+      def: this.challenge(r.week),
+    };
   }
 
   /**

@@ -378,6 +378,8 @@ export interface TestApi {
       renderStats: RenderStats;
       tick: number;
       highwayZ: number;
+      /** Where the highway comes in, across (M44: a challenge's map). */
+      highwayX: number;
       /** Where the regional railway comes in (M20). */
       railway: { x: number; z: number } | null;
       segments: number;
@@ -1254,6 +1256,7 @@ export function installTestApi(game: Game): TestApi {
         ...stats,
         renderStats: game.renderer.lastStats,
         highwayZ: w.netState.nodes.get(w.highway.connect)?.z ?? w.gen.params.highway.connectZ,
+        highwayX: w.netState.nodes.get(w.highway.connect)?.x ?? 0,
         railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,

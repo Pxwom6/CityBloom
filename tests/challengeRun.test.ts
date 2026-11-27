@@ -147,6 +147,23 @@ describe('M44 a challenge run replays to the same city', () => {
     expect(runProblem({ ...run, end: 10_000_000 })).toBe('An end past the challenge');
   });
 
+  it('freezes the run where the challenge ended: playing on afterwards doesn’t change what replays', () => {
+    // A short challenge (as an owner's pin might be), played to its end and on.
+    const short = { ...def, months: 2, goals: [{ ...def.goals[0]!, min: 1e9 }] } as ChallengeDef;
+    const r = playSome(short);
+    while (r.sim.state.scenario!.status === 'playing') r.sim.step();
+    // What the worker keeps at that moment (`freezeRun`).
+    const frozen = { ...r.run(), entries: [...r.entries] };
+    expect(r.sim.state.scenario!.status).toBe('lost');
+    // Playing on: more commands, more months; the score stays as it ended.
+    const c = r.sim.state.scenario!.center!;
+    r.act({ type: 'buildRoad', road: 'street', points: [c, { x: c.x, z: c.z + 200 }] });
+    r.sim.advance(TICKS_PER_MONTH);
+    expect(challengeScoreNow(r.sim)).toBe(frozen.score);
+    expect(r.entries.length).toBeGreaterThan(frozen.entries.length);
+    expect(replayRun(frozen)).toMatchObject({ ok: true, tick: frozen.end, score: frozen.score });
+  });
+
   it('keeps names a player types out of a challenge city', () => {
     const r = recorder(def);
     expect(r.act({ type: 'renameCity', name: 'Rudeville' })).toMatchObject({ ok: false });

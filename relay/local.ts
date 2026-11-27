@@ -6,7 +6,7 @@
  *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
  *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--test-matches] [--owner-key key]`: it listens on this computer
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--test-matches] [--owner-key key] [--board-every seconds] [--test-clock]`: it listens on this computer
  * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
  * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
@@ -14,7 +14,9 @@
  * Rooms and regions nobody comes back to are forgotten after `--ttl` days (60), empty signalling at
  * once. `--atom-prep` shortens the region's wait before it keeps a friend's atom strike (20 minutes
  * online), for the end-to-end tests (M40 step 12), and `--test-matches` lets a quick match be one
- * minute long (M43); the Worker online has neither switch. It also
+ * minute long (M43); `--board-every` shortens the challenge board's wait between one address's
+ * scores (3 minutes) and `--test-clock` lets the tests move the board's clock (`POST /__clock`, M44);
+ * the Worker online has none of these switches. It also
  * serves the report desk and the owner area over plain HTTP (M41, `relay/reportsHttp.ts`), with the
  * owner key from `--owner-key` or OWNER_KEY; reports are kept in memory, or under `--data`.
  */
@@ -126,6 +128,11 @@ export interface RelayOptions {
   reportLimits?: Partial<typeof REPORT_LIMITS>;
   /** The weekly challenge's board's limits (M44; tests make them small), and a clock to read it by (tests move it). */
   boardLimits?: Partial<typeof BOARD_LIMITS>;
+  /**
+   * Test builds' relays only (`--test-clock`): the board's clock can be moved with
+   * `POST /__clock {"at": ms}` (the week rolling over in the end-to-end tests, M44).
+   */
+  testClock?: boolean;
   clock?: () => number;
 }
 
@@ -169,6 +176,8 @@ export async function startRelay(
   // The weekly challenge's board (M44), in Node's SQLite like the report desk.
   const boardDb = await nodeSql(dataDir ? join(dataDir, 'challenges.sqlite') : ':memory:');
   const board = new ChallengeBoard(boardDb.sql, Date.now(), { ...BOARD_LIMITS, ...opts.boardLimits });
+  let clockShift = 0;
+  const boardNow = () => (opts.clock?.() ?? Date.now()) + clockShift;
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const cors = corsHeaders(String(req.headers.origin ?? ''), []) ?? {};
@@ -202,9 +211,20 @@ export async function startRelay(
         }),
       address: req.socket.remoteAddress ?? '',
     };
+    // A test relay's clock for the board (M44): where it reads now, or set it.
+    if (opts.testClock && url.pathname === '/__clock') {
+      if (req.method === 'POST')
+        void request.text().then((t) => {
+          const at = Number((JSON.parse(t || '{}') as { at?: unknown }).at);
+          clockShift = Number.isFinite(at) ? at - (opts.clock?.() ?? Date.now()) : 0;
+          send(200, JSON.stringify({ now: boardNow() }), 'application/json');
+        });
+      else send(200, JSON.stringify({ now: boardNow() }), 'application/json');
+      return;
+    }
     // The weekly challenge's board and its owner pages (M44), as the Worker serves them.
     if (isBoardPath(url.pathname)) {
-      void challengeHttp(request, board, opts.ownerKey, opts.clock?.() ?? Date.now()).then(
+      void challengeHttp(request, board, opts.ownerKey, boardNow()).then(
         (r) => (r ? send(r.status, JSON.stringify(r.json), 'application/json') : send(404, 'not found')),
         () => send(500, 'error'),
       );
@@ -399,12 +419,15 @@ if (process.argv[1]?.endsWith('local.ts')) {
   const days = option('--ttl');
   const host = option('--host') ?? '127.0.0.1';
   const prep = option('--atom-prep');
+  const every = option('--board-every');
   const ownerKey = option('--owner-key') ?? process.env.OWNER_KEY ?? undefined;
   const port = Number(
     args.find(
       (a, i) =>
         /^\d+$/.test(a) &&
-        !['--data', '--ttl', '--host', '--atom-prep', '--owner-key'].includes(args[i - 1] ?? ''),
+        !['--data', '--ttl', '--host', '--atom-prep', '--owner-key', '--board-every'].includes(
+          args[i - 1] ?? '',
+        ),
     ) ?? 8787,
   );
   void startRelay(port, option('--data'), {
@@ -416,6 +439,8 @@ if (process.argv[1]?.endsWith('local.ts')) {
       ...(args.includes('--test-matches') ? { testMatches: true } : {}),
     },
     ...(ownerKey ? { ownerKey } : {}),
+    ...(every ? { boardLimits: { scoreEvery: Number(every) * 1000 } } : {}),
+    ...(args.includes('--test-clock') ? { testClock: true } : {}),
   }).then((r) => {
     console.log(
       `Citybloom relay on ws://${host}:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,

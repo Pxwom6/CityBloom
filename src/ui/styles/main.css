@@ -6181,3 +6181,161 @@ body {
 #ui[data-phone] .match-table td:nth-child(6) {
   display: none;
 }
+
+/* The weekly challenge (M44): its screen and board, the end card, and the bar while watching a run. */
+.challenge-btn small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.challenge-screen {
+  width: min(56rem, 100%);
+}
+.challenge-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  min-height: 0;
+}
+#ui[data-width='s'] .challenge-body,
+#ui[data-width='xs'] .challenge-body,
+#ui[data-phone] .challenge-body {
+  grid-template-columns: 1fr;
+}
+.challenge-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.challenge-detail p {
+  margin: 0 0 var(--space-2);
+}
+.challenge-detail .scenario-name {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text);
+}
+.challenge-pin {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-strong);
+}
+.challenge-score-rules {
+  font-size: var(--font-size-xs);
+}
+.challenge-best {
+  font-weight: var(--font-weight-medium);
+}
+.challenge-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+.challenge-tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.challenge-tabs .btn {
+  flex: 1;
+}
+.challenge-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.challenge-groups p {
+  margin: 0;
+}
+.challenge-group-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.challenge-group-actions {
+  gap: var(--space-2);
+}
+.challenge-group-actions input {
+  text-transform: uppercase;
+}
+.challenge-made strong {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+}
+.challenge-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 22rem;
+  overflow: auto;
+}
+.challenge-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto 1.2rem auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.challenge-rank {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  text-align: right;
+}
+.challenge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.challenge-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+}
+.challenge-check {
+  color: var(--color-positive);
+  text-align: center;
+}
+.challenge-final {
+  margin: var(--space-2) 0;
+  font-size: 2.4rem;
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.challenge-final small {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+.challenge-post {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.challenge-post p {
+  margin: 0;
+}
+.challenge-now {
+  margin: 0;
+}
+.run-viewer {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.run-viewer-bar {
+  width: 8rem;
+  margin: 0;
+}
+#ui[data-phone] .run-viewer {
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}

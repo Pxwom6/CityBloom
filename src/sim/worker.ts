@@ -10,11 +10,12 @@ import { Sim } from './sim';
 import { isMonthStart, SPEED_TICKS_PER_SECOND, type Speed } from './time';
 import { partHashes } from './sync';
 import { Lockstep, type Applied } from './lockstep';
-import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
+import type { MainToWorker, SharedSnapshot, WatchedRun, WorkerPerf, WorkerToMain } from './protocol';
 import { DesyncLog, type FoundingOptions } from './desyncLog';
 import type { Command, CommandLogEntry } from './commands';
 import type { RunEntry } from './runReplay';
-import { challengeScoreNow } from './systems/scenario';
+import { challengeDef, challengeScoreNow } from './systems/scenario';
+import type { RunFinal } from './save';
 import { checksum } from './sync';
 
 interface WorkerScope {
@@ -61,7 +62,47 @@ const MATCH_TPS = SPEED_TICKS_PER_SECOND[3];
  * A weekly challenge city's run (M44): the player's commands and the save points since it was founded,
  * at their ticks, so the run can be posted and replayed. Kept in its saves (`meta.run`).
  */
-let run: { entries: RunEntry[] } | null = null;
+let run: { entries: RunEntry[]; final?: RunFinal } | null = null;
+
+/**
+ * A challenge city whose challenge has just ended (M44): the run as it stood then, which is what gets
+ * posted (playing on afterwards adds entries, never changes it).
+ */
+function freezeRun(): void {
+  if (!run || run.final || !sim) return;
+  const sc = sim.state.scenario;
+  if (!sc || sc.status === 'playing' || !challengeDef(sim)) return;
+  run.final = { count: run.entries.length, end: sim.tick, hash: sim.hash(), score: challengeScoreNow(sim) };
+}
+
+/**
+ * Watching a challenge run (M44): the entries still to take, where it ends and what it claims; `rush`
+ * runs it to the end as fast as the worker can. Done once it reaches the end (the city then waits).
+ */
+let watching: (WatchedRun & { i: number; rush: boolean; done: boolean }) | null = null;
+/** How long a loop may spend rushing a watched run to its end before the page hears how it's going. */
+const RUSH_BUDGET_MS = 180;
+
+/** One tick of a watched run: the entries due now, then the tick (or, at the end, the verdict). */
+function watchTick(): boolean {
+  const w = watching!;
+  const s = sim!;
+  while (w.i < w.entries.length && w.entries[w.i]!.tick === s.tick) {
+    const e = w.entries[w.i++]!;
+    if ('settle' in e) s.save('', true);
+    else s.dispatch(e.cmd);
+  }
+  if (s.tick >= w.end) {
+    w.done = true;
+    speed = 0;
+    const hash = s.hash();
+    const score = challengeScoreNow(s);
+    post({ type: 'runDone', ok: hash === w.hash && score === w.score, hash, score, tick: s.tick });
+    return false;
+  }
+  timeTick(() => s.step());
+  return true;
+}
 
 /** The room's runner while the city is shared, and who this machine is. */
 let lockstep: Lockstep | null = null;
@@ -84,7 +125,14 @@ function timeTick(fn: () => void): void {
 
 function runTicks(n: number): void {
   if (!sim) return;
-  for (let i = 0; i < n; i++) timeTick(() => sim!.step());
+  if (watching) {
+    for (let i = 0; i < n && !watching.done; i++) watchTick();
+    return;
+  }
+  for (let i = 0; i < n; i++) {
+    timeTick(() => sim!.step());
+    if (run && !run.final) freezeRun();
+  }
 }
 
 /** Shared city: run towards the allowed tick within the time budget. */
@@ -190,7 +238,9 @@ function step(): void {
   last = now;
   if (lockstep) runShared(elapsed);
   else if (match) runMatch(match);
-  else if (sim && speed > 0) {
+  else if (sim && watching?.rush && !watching.done) {
+    while (performance.now() - now < RUSH_BUDGET_MS && watchTick());
+  } else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);
     if (n > MAX_TICKS_PER_LOOP) {
@@ -259,6 +309,7 @@ function handle(msg: MainToWorker): void {
       desyncLog.clear();
       sim = Sim.create(msg.options, msg.map ?? null);
       run = msg.options.challenge ? { entries: [] } : null;
+      watching = null;
       // Founded here from options alone: a replay can found it again (never its name).
       const { cityName: _name, editor, ...founding } = msg.options;
       origin = msg.map || editor ? null : founding;
@@ -277,10 +328,12 @@ function handle(msg: MainToWorker): void {
       try {
         sim = Sim.fromSave(msg.save);
         // A challenge city picks its run up where its save left it (M44).
+        const kept = msg.save.meta.run;
         run =
-          sim.state.options.challenge && msg.save.meta.run
-            ? { entries: [...msg.save.meta.run.entries] }
+          sim.state.options.challenge && kept
+            ? { entries: [...kept.entries], ...(kept.final ? { final: { ...kept.final } } : {}) }
             : null;
+        watching = null;
       } catch (err) {
         sim = null;
         post({ type: 'loadFailed', message: err instanceof Error ? err.message : String(err) });
@@ -405,7 +458,10 @@ function handle(msg: MainToWorker): void {
       const tick = sim.tick;
       const result = sim.dispatch(msg.cmd);
       // A challenge's run keeps what the city took (M44).
-      if (run && result.ok) run.entries.push({ tick, cmd: JSON.parse(JSON.stringify(msg.cmd)) as Command });
+      if (run && result.ok) {
+        run.entries.push({ tick, cmd: JSON.parse(JSON.stringify(msg.cmd)) as Command });
+        freezeRun();
+      }
       flush();
       post({ type: 'reply', id: msg.id, result });
       break;
@@ -444,7 +500,9 @@ function handle(msg: MainToWorker): void {
         // A challenge city's save settles it too, and carries its run (M44).
         if (run && !lockstep) {
           run.entries.push({ tick: sim.tick, settle: true });
-          file.meta.run = { entries: run.entries };
+          file.meta.run = { entries: run.entries, ...(run.final ? { final: run.final } : {}) };
+          const week = sim.state.options.challenge?.week;
+          if (week !== undefined) file.meta.challenge = { week, done: !!run.final };
         }
         post({ type: 'reply', id: msg.id, result: file });
       }
@@ -455,10 +513,27 @@ function handle(msg: MainToWorker): void {
       post({
         type: 'reply',
         id: msg.id,
-        result: run
-          ? { entries: run.entries, end: sim.tick, hash: sim.hash(), score: challengeScoreNow(sim) }
-          : null,
+        result: !run
+          ? null
+          : run.final
+            ? { ...run.final, entries: run.entries.slice(0, run.final.count), final: true }
+            : {
+                entries: run.entries,
+                end: sim.tick,
+                hash: sim.hash(),
+                score: challengeScoreNow(sim),
+                final: false,
+              },
       });
+      break;
+    case 'watchRun':
+      if (!sim) return;
+      // The run's own entries now; the player's city takes none of its own (the page is read-only).
+      run = null;
+      watching = { ...msg.run, i: 0, rush: false, done: false };
+      break;
+    case 'watchRush':
+      if (watching) watching.rush = msg.on;
       break;
   }
 }

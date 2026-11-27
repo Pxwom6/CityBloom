@@ -6,6 +6,7 @@ import type {
   Query,
   SharedSnapshot,
   Snapshot,
+  WatchedRun,
   WorkerPerf,
   WorkerToMain,
 } from '../sim/protocol';
@@ -40,6 +41,8 @@ export class SimClient implements SimDriver {
   /** Test builds pass test mode on to every city the worker opens. */
   testMode = false;
   onError: (message: string) => void = (m) => console.error(`[sim] ${m}`);
+  /** A watched challenge run reached its end (M44). */
+  onRunDone: ((r: { ok: boolean; hash: string; score: number; tick: number }) => void) | null = null;
 
   constructor() {
     this.worker = new Worker(new URL('../sim/worker.ts', import.meta.url), { type: 'module' });
@@ -70,6 +73,9 @@ export class SimClient implements SimDriver {
       }
       case 'error':
         this.onError(msg.message);
+        break;
+      case 'runDone':
+        this.onRunDone?.(msg);
         break;
       case 'applied':
       case 'checksum':
@@ -152,9 +158,28 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'save', id }));
   }
 
-  /** A weekly challenge city's run so far (M44), or null in any other city. */
-  challengeRun(): Promise<{ entries: RunEntry[]; end: number; hash: string; score: number } | null> {
+  /**
+   * A weekly challenge city's run (M44), or null in any other city: as it stood when the challenge
+   * ended (`final`), or so far.
+   */
+  challengeRun(): Promise<{
+    entries: RunEntry[];
+    end: number;
+    hash: string;
+    score: number;
+    final: boolean;
+  } | null> {
     return this.request((id) => ({ type: 'challengeRun', id }));
+  }
+
+  /** Watch a challenge run in the city just founded from its challenge (M44). */
+  watchRun(run: WatchedRun): void {
+    this.post({ type: 'watchRun', run });
+  }
+
+  /** Watching a run: straight to its end, or back to the chosen speed. */
+  watchRush(on: boolean): void {
+    this.post({ type: 'watchRush', on });
   }
 
   /** Shared city (M29): hand the clock to the room; this machine is `player`. */

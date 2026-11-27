@@ -40,6 +40,8 @@ import type { Stamped } from '../src/sim/lockstep';
 import { ReportDesk, REPORT_LIMITS } from './reportDesk';
 import { corsHeaders, reportsHttp } from './reportsHttp';
 import { REPORT_CAPS } from './reports';
+import { ChallengeBoard, BOARD_LIMITS } from './challengeBoard';
+import { challengeHttp, isBoardPath } from './challengeHttp';
 import { nodeSql } from './nodeSql';
 
 /** A store kept in one JSON file per room (`--data`), rewritten per batch of events. */
@@ -122,6 +124,9 @@ export interface RelayOptions {
   ownerKey?: string;
   /** The report desk's caps (tests make them small). */
   reportLimits?: Partial<typeof REPORT_LIMITS>;
+  /** The weekly challenge's board's limits (M44; tests make them small), and a clock to read it by (tests move it). */
+  boardLimits?: Partial<typeof BOARD_LIMITS>;
+  clock?: () => number;
 }
 
 export interface LocalRelay {
@@ -132,6 +137,8 @@ export interface LocalRelay {
   signals: Map<string, Signal>;
   /** The report desk (M41). */
   reports: ReportDesk;
+  /** The weekly challenge's board (M44). */
+  board: ChallengeBoard;
   /** Forget rooms and regions that have expired by `now`, and any left holding nothing. */
   sweep(now?: number): void;
   close(): Promise<void>;
@@ -159,6 +166,9 @@ export async function startRelay(
   const regionStores = new Map<RegionRoom, MemoryRegionStore>();
   const ttl = opts.ttl !== undefined ? { ttl: opts.ttl } : {};
   const reports = await reportStore(dataDir, opts.reportLimits);
+  // The weekly challenge's board (M44), in Node's SQLite like the report desk.
+  const boardDb = await nodeSql(dataDir ? join(dataDir, 'challenges.sqlite') : ':memory:');
+  const board = new ChallengeBoard(boardDb.sql, Date.now(), { ...BOARD_LIMITS, ...opts.boardLimits });
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const cors = corsHeaders(String(req.headers.origin ?? ''), []) ?? {};
@@ -168,6 +178,38 @@ export async function startRelay(
     };
     if (url.pathname === '/health') return send(200, 'citybloom relay');
     if (req.method === 'OPTIONS') return send(204, '');
+    const request = {
+      method: req.method ?? 'GET',
+      path: url.pathname,
+      query: url.searchParams,
+      header: (n: string) => {
+        const v = req.headers[n.toLowerCase()];
+        return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+      },
+      text: () =>
+        new Promise<string>((resolve, reject) => {
+          let body = '';
+          req.setEncoding('utf8');
+          req.on('data', (c: string) => {
+            body += c;
+            if (body.length > BOARD_LIMITS.body) {
+              req.pause();
+              resolve(body);
+            }
+          });
+          req.on('end', () => resolve(body));
+          req.on('error', reject);
+        }),
+      address: req.socket.remoteAddress ?? '',
+    };
+    // The weekly challenge's board and its owner pages (M44), as the Worker serves them.
+    if (isBoardPath(url.pathname)) {
+      void challengeHttp(request, board, opts.ownerKey, opts.clock?.() ?? Date.now()).then(
+        (r) => (r ? send(r.status, JSON.stringify(r.json), 'application/json') : send(404, 'not found')),
+        () => send(500, 'error'),
+      );
+      return;
+    }
     // The report desk and the owner area (M41), as the Worker serves them.
     void reportsHttp(
       {
@@ -335,6 +377,7 @@ export async function startRelay(
         regions,
         signals,
         reports,
+        board,
         sweep,
         close: () =>
           new Promise<void>((r) => {

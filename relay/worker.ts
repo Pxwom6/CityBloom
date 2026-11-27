@@ -5,6 +5,7 @@
  *   wss://<relay>/region/<CODE>[?create=1]  a shared region (M32)
  *   wss://<relay>/signal/<CODE>             signalling for peer-to-peer rooms
  *   https://<relay>/report, /owner/...      problem reports and the owner area (M41, `relay/reportsHttp.ts`)
+ *   https://<relay>/challenge/...           the weekly challenge's board (M44, `relay/challengeHttp.ts`)
  *
  * Rooms use the WebSocket Hibernation API, so a room nobody is talking to costs nothing; their
  * SQLite storage keeps the city between sessions (the latest snapshot and the events since). The
@@ -19,6 +20,8 @@ import type { RoomEnv } from './room';
 import { ReportDesk } from './reportDesk';
 import { corsHeaders, reportsHttp } from './reportsHttp';
 import { REPORT_CAPS } from './reports';
+import { ChallengeBoard, BOARD_LIMITS } from './challengeBoard';
+import { challengeHttp, isBoardPath } from './challengeHttp';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
@@ -26,6 +29,8 @@ interface Env {
   REGIONS: DurableObjectNamespace;
   /** The report desk (M41): one object holds every report. */
   REPORTS: DurableObjectNamespace;
+  /** The weekly challenge's board (M44): one object holds every week's. */
+  CHALLENGES: DurableObjectNamespace;
   /** Comma-separated origins allowed to connect (the site); empty allows any (development). */
   ALLOWED_ORIGINS?: string;
   /** The owner area's key (M41), a Worker secret the deploy workflow sets from the GitHub secret. */
@@ -43,6 +48,13 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === '/health')
       return new Response('citybloom relay', { headers: { 'access-control-allow-origin': '*' } });
+    // The weekly challenge's board and its owner pages (M44): plain HTTP to the one board.
+    if (isBoardPath(url.pathname)) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.CHALLENGES.get(env.CHALLENGES.idFromName('challenges')).fetch(req);
+    }
     // Problem reports and the owner area (M41): plain HTTP to the one report desk.
     if (url.pathname === '/report' || url.pathname.startsWith('/owner/')) {
       const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
@@ -246,5 +258,50 @@ export class ReportsObject extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     const now = Date.now();
     if (this.desk.sweep(now)) await this.ctx.storage.setAlarm(now + 86_400_000);
+  }
+}
+
+/**
+ * The weekly challenge's board (M44, `ChallengeBoard`): every week's scores, runs to watch, the
+ * owner's pins and word filter. Weeks before last are deleted on each write and by an alarm that rings
+ * once a week, at the change.
+ */
+export class ChallengeObject extends DurableObject<Env> {
+  private readonly board: ChallengeBoard;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.board = new ChallengeBoard(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await challengeHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => boundedText(req, BOARD_LIMITS.body + 1),
+        // For rate limits in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.board,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && (await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(this.board.nextSweep(now));
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.board.sweep(now)) await this.ctx.storage.setAlarm(this.board.nextSweep(now));
   }
 }

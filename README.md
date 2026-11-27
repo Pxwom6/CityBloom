@@ -119,7 +119,7 @@ tilt, a long press inspects; the phone layout puts the tools in one row along th
 as sheets. A phone starts on its own lighter graphics at 30 frames a second to keep cool, and **Add to
 Home Screen** makes Citybloom an app of its own.
 
-**When something goes wrong**
+### When something goes wrong
 
 - **"Couldn't connect directly to the host's computer"**: some home, school and office networks
   block direct connections between browsers. Try another network (a phone's hotspot often works),

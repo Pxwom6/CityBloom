@@ -287,28 +287,27 @@ The phase's end played it through the real UI (`e2e/phase6-finale.spec.ts`, see 
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**The phase's end, on the owner's Mac** (SPEC-6.md, "When every milestone is done").
-- Done: the summary here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with
-  friends" overview with four pictures from headed Chrome on the GPU (the picture scripts take `GPU=1`:
-  `scripts/dev/gpuLaunch.mjs`).
-- The playthroughs: `e2e/phase6-finale.spec.ts` (`@playthrough`; `PHASE6_GPU=1` for a real Chrome window;
-  helper script pattern in DECISIONS "Phase 6 end"), seven tests: 1 a new player's first city on a laptop
-  with a timelapse and a report; 2–3 the same by touch on an iPhone upright and a Pixel sideways; 4 a
-  four-player quick match (two laptops, two phones); 5 this week's real challenge played four years, posted,
-  watched to its end on a phone; 6 a building made in the Workshop, shared to a friend's phone, sent in with
-  an idea; 7 the owner area on an iPhone handling reports, the board and the submissions, then the player
-  sees the answers. Tests 6 and 7 rely on what 1 and 6 leave in `test-results/phase6` (run the file whole).
-- Fixed on the way (each in DECISIONS "Phase 6 end"): a generator week's honest runs replayed to another city
-  and would have been dropped (`fetchRun`); zone strokes off the kerb grew nothing (the zone tool paints the
-  front row); first problems explained from "Let time run"; the tutorial on phones (touch words everywhere,
-  a card that folds while the player acts, compact beside a sheet, notices clear of it and letting a finger
-  through, the arrow into More and to a panel's tab); panels opened and closed quickly count; zone paint over a
-  data map; the lesson's last card beside the panel; four cities on a phone's scoreboard; "Load city".
-- Next: a final whole run of the playthroughs, the touched e2e specs, the Mac checks (framebench with
-  `--quality high,medium,low,phone`, custombench and timelapsebench with `GPU=1`, the Workshop and Send it in
-  in WebKit and Chrome, fix-layout P13/P14, the running-city joins), bench, balance, cross-browser, then PR
-  #24's title and description. (A fresh checkout needed `npm ci`: `ws`, `trystero` and `mp4-muxer` were
-  missing from an older `node_modules`.)
+**Phase 6 is complete, its end included** (SPEC-6.md, "When every milestone is done"), done on the owner's Mac
+and waiting in pull request #24 (title and description cover the whole phase).
+- Docs: the summary here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with friends"
+  overview with pictures from headed Chrome on the GPU (the picture scripts take `GPU=1`: `scripts/dev/gpuLaunch.mjs`).
+- The playthroughs: `e2e/phase6-finale.spec.ts` (`@playthrough`; `PHASE6_GPU=1` for a real Chrome window), seven
+  tests, all passing ("Tests (phase 6 end)"): a new player's first city on a laptop with a timelapse and a report; the
+  same by touch on an iPhone upright and a Pixel sideways; a four-player quick match with two on phones; this week's
+  real challenge played four years, posted and watched on a phone; a building made in the Workshop, shared to a
+  friend's phone and sent in with an idea; the owner area on an iPhone handling it all. Tests 6 and 7 read what 1
+  and 6 leave in `test-results/phase6`, so run the file whole.
+- Fixed on the way (each in DECISIONS "Phase 6 end", with a test where it can): a generator week's honest runs
+  replayed to another city and would have been dropped (`fetchRun`); zone strokes off the kerb grew nothing (the zone
+  tool paints the front row); "no curve" thrown by visible cars on a split road; the Workshop's Copy missing a name
+  just typed (WebKit); first problems from "Let time run"; the tutorial on phones (touch words everywhere, a card
+  that folds while the player acts and stays folded, compact beside a sheet, notices clear of it and letting a
+  finger through, arrows into More and onto a panel's tab); quick panel visits counted; zone paint over a data map;
+  the lesson card beside its panel; four cities on a phone's scoreboard; the owner area's clock; "Load city".
+- The Mac checks: frame times at High, Medium, Low and Phone and against `main`, the timelapse and custom-building
+  benches on the GPU, the Workshop and Send it in in WebKit and Chrome, fix-layout's P13 and P14, the online joins,
+  bench, balance and cross-browser ("Performance (phase 6 end, the owner's Mac)", "Tests (phase 6 end)"). Two known
+  issues seen only on this Mac, the same on the build before the phase end (Known issues).
 
 **M48 Send it in is complete** (plan `docs/plans/M48-design.md`), joining M41–M47 and M49 in pull
 request #24.
@@ -479,24 +478,22 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. (Done) The summary, SPEC_REVIEW's phase-end section and the README's "Play with friends" overview.
-2. Play the phase through the real UI and fix what feels off, kept as a `@playthrough` spec (as
-   `e2e/phase5-finale.spec.ts`): a new player's first city with the tutorial on desktop and in phone
-   emulation; a four-player quick match with two on phones; a week's challenge; a timelapse of a grown
-   city; a building made in the Workshop, shared with a friend and sent in; the owner area handling it all.
-3. The real-world checks under "To check on the Mac" and "To try with a mate", then the pull request's
-   title and description for the whole phase.
+1. The owner merges pull request #24 (it deploys the relay with `OWNER_KEY`: the owner area, the weekly board and
+   the submissions switch on).
+2. The real-world checks: "To check on the Mac" (real phones, real Safari, the live relay) and "To try with a mate"
+   (a quick match between real friends, phones included; a first-time player with no help; a mate's first building
+   with the Workshop).
+3. What's next is the owner's call ("Ideas for what's next").
 
 ## Tests (phase 6 end)
 - **The playthroughs** (`PHASE6_GPU=1 PLAYTHROUGH=1 npx playwright test e2e/phase6-finale.spec.ts`, headed Chrome on
-  the M5): all seven pass; the whole file in one run 1 and 4–7 in 12.9 min (the two phone tests in their own run, 7.8
-  min). In one run: the laptop's first city reached 1,296 residents when the tutorial ended (a first power cut met on
-  the way) and made a 30 s timelapse with music in 3.9 s (11.7 MB); the iPhone's 1,364 and the Pixel's 1,287 by touch
-  alone (the Pixel met the jam lesson); a four-player match's two rounds, every page agreeing on each result and hash;
-  this week's challenge (week 47, "Happy town: tight budget" on Lakelands) ended after 49 months at 1,664 points, and
-  a Pixel replayed the run to the same city in under 30 s; the Workshop's first try got its two notes; the owner
-  area on an iPhone handled a report, the board and both submissions. Pictures `docs/screenshots/phase6-*.png`,
-  looked at.
+  the M5): all seven pass in one run on the final code, 20.3 min. The laptop's first city had 1,218 residents when
+  the tutorial ended (a first power cut met on the way) and made a 30 s timelapse with music in 3.9 s; the iPhone's
+  reached 1,058 and the Pixel's 1,241 by touch alone (the Pixel met the fire lesson); a four-player match's two
+  rounds, every page agreeing on each result and hash; this week's challenge (week 47, "Happy town: tight budget" on
+  Lakelands) ended after 49 months at 1,664 points, and a Pixel replayed it to the same city in under 30 s; the
+  Workshop's first try got its two notes; the owner area on an iPhone handled a report, the board and both
+  submissions, and the player read both answers. Pictures `docs/screenshots/phase6-*.png`, looked at.
 - **Unit tests**: 2,199 in 214 files pass (2,184 in 209 at the start of the phase end; new: touch words, the
   tutorial's quick visits and first problems, the zone tool's front row, a fetched run replaying, visible cars on a
   split road, the owner area's clock). M40's zone tool test's stand-in game gained the road network the front row

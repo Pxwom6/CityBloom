@@ -23,6 +23,7 @@ import { shareOrDownload } from '../client/shareFile';
 import { NO_CUSTOM } from '../sim/rules';
 import type { Game } from '../game';
 import { useGameUpdates } from './hooks';
+import { WorkshopTab } from './Workshop';
 
 const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 const SEASON_WORDS: Record<Season, string> = {
@@ -225,179 +226,220 @@ export function MyBuildingsPanel() {
           ×
         </button>
       </header>
-      <div class="advisors-list">
-        {off && (
-          <div class="warn" data-testid="buildings-off">
-            {NO_CUSTOM}: buildings of your own show as the game's while you play here.
-          </div>
-        )}
-        <div class="buildings-add">
-          <button class="btn primary" data-testid="buildings-pick" onClick={() => fileInput.current?.click()}>
-            Add a model…
-          </button>
-          <span class="muted">
-            A GLB file up to 1 MB, or a building a friend sent. You can drop it here too.
-          </span>
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".glb,.citybloom-building,model/gltf-binary"
-            hidden
-            data-testid="buildings-file"
-            onChange={(e) => {
-              const input = e.currentTarget;
-              const f = input.files?.[0];
-              if (f) void readFile(f);
-              input.value = '';
+      <div class="workshop-tabs buildings-tabs" role="tablist">
+        {(
+          [
+            ['mine', 'My buildings'],
+            ['workshop', 'Workshop'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            class={`btn ${game.buildingsTab === id ? 'active' : ''}`}
+            aria-selected={game.buildingsTab === id}
+            data-testid={`buildings-tab-${id}`}
+            onClick={() => {
+              game.buildingsTab = id;
+              game.notify();
             }}
-          />
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {game.buildingsTab === 'workshop' ? (
+        <div class="advisors-list">
+          <WorkshopTab />
         </div>
-        {importing && (
-          <ImportCard
-            importing={importing}
-            set={setImporting}
-            onAdd={() => void add()}
-            onCancel={() => setImporting(null)}
-          />
-        )}
-        {!importing && !list.length && (
-          <p class="muted" data-testid="buildings-empty">
-            Make a building in any 3D program that saves GLB files (Blender is free), following the game's
-            model guide: plain colours, the front facing the road, sized to its site. Add it here to see it on
-            a turntable, then place it as a landmark of your own, or as a new look for one of the city's
-            buildings.
-          </p>
-        )}
-        {shown && !importing && <PreviewBox model={shown} look={look} setLook={setLook} />}
-        {list.length > 0 && (
-          <ul class="buildings-list" data-testid="buildings-list">
-            {list.map((m) => (
-              <li key={m.hash} class={`buildings-row ${shown?.hash === m.hash ? 'active' : ''}`}>
-                <button
-                  class="buildings-row-main"
-                  data-testid={`buildings-row-${m.hash}`}
-                  aria-pressed={shown?.hash === m.hash}
-                  onClick={() => {
-                    setPicked(m.hash);
-                    setImporting(null);
-                  }}
-                >
-                  {renaming === m.hash ? null : <span class="buildings-name">{m.name}</span>}
-                  <span class="muted">
-                    {shortTarget(m.target)} · {m.size.w} × {m.size.d} m
-                  </span>
-                  {(() => {
-                    const also = targetsFor(m).slice(1);
-                    if (!also.length) return null;
-                    const names = also.slice(0, 3).map(shortTarget);
-                    return (
-                      <span class="muted" data-testid={`buildings-also-${m.hash}`}>
-                        Also fits: {names.join(', ')}
-                        {also.length > 3 ? ` and ${also.length - 3} more` : ''}
-                      </span>
-                    );
-                  })()}
-                </button>
-                {renaming === m.hash && (
-                  <input
-                    type="text"
-                    class="buildings-rename"
-                    maxLength={CUSTOM.nameChars}
-                    defaultValue={m.name}
-                    data-testid="buildings-rename-input"
-                    ref={(el) => el?.focus()}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                      if (e.key === 'Escape') setRenaming(null);
+      ) : (
+        <div class="advisors-list">
+          {off && (
+            <div class="warn" data-testid="buildings-off">
+              {NO_CUSTOM}: buildings of your own show as the game's while you play here.
+            </div>
+          )}
+          <div class="buildings-add">
+            <button
+              class="btn primary"
+              data-testid="buildings-pick"
+              onClick={() => fileInput.current?.click()}
+            >
+              Add a model…
+            </button>
+            <span class="muted">
+              A GLB file up to 1 MB, or a building a friend sent. You can drop it here too.
+            </span>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".glb,.citybloom-building,model/gltf-binary"
+              hidden
+              data-testid="buildings-file"
+              onChange={(e) => {
+                const input = e.currentTarget;
+                const f = input.files?.[0];
+                if (f) void readFile(f);
+                input.value = '';
+              }}
+            />
+          </div>
+          {importing && (
+            <ImportCard
+              importing={importing}
+              set={setImporting}
+              onAdd={() => void add()}
+              onCancel={() => setImporting(null)}
+            />
+          )}
+          {!importing && !list.length && (
+            <p class="muted" data-testid="buildings-empty">
+              Make a building in any 3D program that saves GLB files (Blender is free), following the game's
+              model guide: plain colours, the front facing the road, sized to its site. Add it here to see it
+              on a turntable, then place it as a landmark of your own, or as a new look for one of the city's
+              buildings.
+            </p>
+          )}
+          {!importing && !list.length && (
+            <button
+              class="btn primary"
+              data-testid="buildings-open-workshop"
+              onClick={() => game.openWorkshop()}
+            >
+              New to this? Open the Workshop
+            </button>
+          )}
+          {shown && !importing && <PreviewBox model={shown} look={look} setLook={setLook} />}
+          {list.length > 0 && (
+            <ul class="buildings-list" data-testid="buildings-list">
+              {list.map((m) => (
+                <li key={m.hash} class={`buildings-row ${shown?.hash === m.hash ? 'active' : ''}`}>
+                  <button
+                    class="buildings-row-main"
+                    data-testid={`buildings-row-${m.hash}`}
+                    aria-pressed={shown?.hash === m.hash}
+                    onClick={() => {
+                      setPicked(m.hash);
+                      setImporting(null);
                     }}
-                    onBlur={(e) => {
-                      const v = (e.target as HTMLInputElement).value;
-                      setRenaming(null);
-                      if (v.trim() && v !== m.name) void game.buildings.rename(m.hash, v);
-                    }}
-                  />
-                )}
-                <div class="buildings-actions">
-                  <button
-                    class="btn primary"
-                    data-testid={`buildings-place-${m.hash}`}
-                    disabled={off}
-                    title={
-                      m.target.kind === 'landmark'
-                        ? 'Place it as a landmark: it works like a park of its size'
-                        : `Place a new ${CIVIC.get(m.target.def)?.name.toLowerCase() ?? 'building'} wearing it (pick one on the map to change its look)`
-                    }
-                    onClick={() => placeOwn(game, m)}
                   >
-                    Place
+                    {renaming === m.hash ? null : <span class="buildings-name">{m.name}</span>}
+                    <span class="muted">
+                      {shortTarget(m.target)} · {m.size.w} × {m.size.d} m
+                    </span>
+                    {(() => {
+                      const also = targetsFor(m).slice(1);
+                      if (!also.length) return null;
+                      const names = also.slice(0, 3).map(shortTarget);
+                      return (
+                        <span class="muted" data-testid={`buildings-also-${m.hash}`}>
+                          Also fits: {names.join(', ')}
+                          {also.length > 3 ? ` and ${also.length - 3} more` : ''}
+                        </span>
+                      );
+                    })()}
                   </button>
-                  <button
-                    class="btn"
-                    data-testid={`buildings-renamebtn-${m.hash}`}
-                    onClick={() => setRenaming(m.hash)}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    class="btn"
-                    data-testid={`buildings-share-glb-${m.hash}`}
-                    title="Save the model as a GLB file"
-                    onClick={() => void share(m, 'glb')}
-                  >
-                    .glb
-                  </button>
-                  <button
-                    class="btn"
-                    data-testid={`buildings-share-${m.hash}`}
-                    title="Share it as a building file: the model and its name, for a friend to add"
-                    onClick={() => void share(m, 'building')}
-                  >
-                    Share
-                  </button>
-                  {deleting === m.hash ? (
-                    <button
-                      class="btn danger"
-                      data-testid={`buildings-delete-yes-${m.hash}`}
-                      onClick={() => {
-                        setDeleting(null);
-                        void game.buildings.remove(m.hash, game.looksInCity().includes(m.hash));
+                  {renaming === m.hash && (
+                    <input
+                      type="text"
+                      class="buildings-rename"
+                      maxLength={CUSTOM.nameChars}
+                      defaultValue={m.name}
+                      data-testid="buildings-rename-input"
+                      ref={(el) => el?.focus()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        if (e.key === 'Escape') setRenaming(null);
                       }}
+                      onBlur={(e) => {
+                        const v = (e.target as HTMLInputElement).value;
+                        setRenaming(null);
+                        if (v.trim() && v !== m.name) void game.buildings.rename(m.hash, v);
+                      }}
+                    />
+                  )}
+                  <div class="buildings-actions">
+                    <button
+                      class="btn primary"
+                      data-testid={`buildings-place-${m.hash}`}
+                      disabled={off}
+                      title={
+                        m.target.kind === 'landmark'
+                          ? 'Place it as a landmark: it works like a park of its size'
+                          : `Place a new ${CIVIC.get(m.target.def)?.name.toLowerCase() ?? 'building'} wearing it (pick one on the map to change its look)`
+                      }
+                      onClick={() => placeOwn(game, m)}
                     >
-                      Delete it
+                      Place
                     </button>
-                  ) : (
                     <button
                       class="btn"
-                      data-testid={`buildings-delete-${m.hash}`}
-                      onClick={() => setDeleting(m.hash)}
+                      data-testid={`buildings-renamebtn-${m.hash}`}
+                      onClick={() => setRenaming(m.hash)}
                     >
-                      Delete
+                      Rename
                     </button>
+                    <button
+                      class="btn"
+                      data-testid={`buildings-share-glb-${m.hash}`}
+                      title="Save the model as a GLB file"
+                      onClick={() => void share(m, 'glb')}
+                    >
+                      .glb
+                    </button>
+                    <button
+                      class="btn"
+                      data-testid={`buildings-share-${m.hash}`}
+                      title="Share it as a building file: the model and its name, for a friend to add"
+                      onClick={() => void share(m, 'building')}
+                    >
+                      Share
+                    </button>
+                    {deleting === m.hash ? (
+                      <button
+                        class="btn danger"
+                        data-testid={`buildings-delete-yes-${m.hash}`}
+                        onClick={() => {
+                          setDeleting(null);
+                          void game.buildings.remove(m.hash, game.looksInCity().includes(m.hash));
+                        }}
+                      >
+                        Delete it
+                      </button>
+                    ) : (
+                      <button
+                        class="btn"
+                        data-testid={`buildings-delete-${m.hash}`}
+                        onClick={() => setDeleting(m.hash)}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  {deleting === m.hash && (
+                    <p class="muted buildings-note">
+                      It goes from My buildings.
+                      {game.looksInCity().includes(m.hash)
+                        ? ' Buildings in this city still wear it, and its save keeps it.'
+                        : ' Cities already saved with it keep it.'}
+                    </p>
                   )}
-                </div>
-                {deleting === m.hash && (
-                  <p class="muted buildings-note">
-                    It goes from My buildings.
-                    {game.looksInCity().includes(m.hash)
-                      ? ' Buildings in this city still wear it, and its save keeps it.'
-                      : ' Cities already saved with it keep it.'}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <label class="buildings-setting">
-          <input
-            type="checkbox"
-            checked={game.settings.showFriendsBuildings}
-            data-testid="buildings-friends"
-            onChange={(e) => game.updateSettings({ showFriendsBuildings: e.currentTarget.checked })}
-          />
-          <span>Show friends' custom buildings (off: theirs show as the game's own)</span>
-        </label>
-      </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label class="buildings-setting">
+            <input
+              type="checkbox"
+              checked={game.settings.showFriendsBuildings}
+              data-testid="buildings-friends"
+              onChange={(e) => game.updateSettings({ showFriendsBuildings: e.currentTarget.checked })}
+            />
+            <span>Show friends' custom buildings (off: theirs show as the game's own)</span>
+          </label>
+        </div>
+      )}
     </aside>
   );
 }

@@ -8,7 +8,7 @@ import { SAVE_VERSION } from '../src/sim/save';
 import { TICKS_PER_HOUR } from '../src/sim/time';
 
 describe('Learn', () => {
-  it('covers what the brief asks, war marked opt-in and making buildings to come', () => {
+  it('covers what the brief asks, war marked opt-in and making buildings with the Workshop (M47)', () => {
     expect(LESSONS.map((l) => l.id)).toEqual([
       'traffic',
       'money',
@@ -20,7 +20,9 @@ describe('Learn', () => {
       'buildings',
     ]);
     expect(LESSONS.find((l) => l.id === 'war')!.optIn).toBeTruthy();
-    expect(LESSONS.find((l) => l.id === 'buildings')!.soon).toBeTruthy();
+    // Ready since M47: the Workshop's lesson, on a town of its own.
+    expect(LESSONS.find((l) => l.id === 'buildings')!).toMatchObject({ save: 'buildings.citybloom' });
+    expect(LESSONS.every((l) => !l.soon)).toBe(true);
     for (const l of LESSONS) expect(l.minutes).toBeGreaterThanOrEqual(2);
   });
 

@@ -26,9 +26,9 @@ const SKIP = [
 
 /**
  * Files the offline copy keeps only once they're first used (M49: a phone's data): the scenarios'
- * starting cities and the lessons' towns, most of the download otherwise and most never opened.
+ * starting cities, the lessons' towns and the Workshop's style sheet (M47), most of the download otherwise and most never opened.
  */
-export const EXTRAS = [/^scenarios\//, /^lessons\//];
+export const EXTRAS = [/^scenarios\//, /^lessons\//, /^workshop\//];
 
 /** What a first visit downloads, gzipped as Pages sends it (bytes): every file but the extras. */
 export function firstDownload(out: string, files: string[]): number {

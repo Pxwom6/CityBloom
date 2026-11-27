@@ -105,6 +105,7 @@ import type { ChallengeDef } from './data/challenges';
 import { TimelapseRecorder } from './client/timelapse';
 import { MyBuildings, REGION_MODEL_CHARS } from './client/myBuildings';
 import { RoomModels } from './client/roomModels';
+import { WorkshopState } from './client/workshopState';
 import { fitsTarget, targetOfDef } from './models/customCheck';
 import type { BakedModel } from './models/baked';
 import type { RoomMsg } from '../relay/protocol';
@@ -403,6 +404,7 @@ export class Game {
     // Players' own models (M46): drawn when here, and a friend's only with friends' buildings shown.
     renderer.civics.customLook = (hash, def) => this.customModel(hash, def);
     this.buildings.inUse = () => this.looksInCity();
+    this.workshop.onChange = () => this.notify();
     this.buildings.onChange = () => {
       this.renderer.civics.redrawLooks();
       this.notify();
@@ -801,6 +803,17 @@ export class Game {
   readonly buildings = new MyBuildings();
   /** Models passed between players in a shared city (M46). */
   readonly roomModels = new RoomModels(this);
+  /** My buildings' tab (M47): the player's models, or the Workshop. */
+  buildingsTab: 'mine' | 'workshop' = 'mine';
+  /** Where the player is in the Workshop (M47). */
+  readonly workshop = new WorkshopState();
+
+  /** Open the Workshop (M47): My buildings on its Workshop tab. */
+  openWorkshop(): void {
+    this.buildingsTab = 'workshop';
+    if (this.panel !== 'buildings') this.openPanel('buildings');
+    else this.notify();
+  }
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
@@ -2770,7 +2783,13 @@ export class Game {
   /** Play one of Learn's lessons on the town it opened (M42). */
   startLesson(id: string): boolean {
     this.lessonTown = true;
-    return this.tutorial.startLesson(id);
+    const ok = this.tutorial.startLesson(id);
+    // Making buildings (M47) is the Workshop's lesson: it opens on the Workshop's first step.
+    if (ok && id === 'buildings') {
+      this.workshop.go(0);
+      this.openWorkshop();
+    }
+    return ok;
   }
 
   /** Back to the main menu's Learn screen, the lesson's town left as it is (it isn't saved). */

@@ -407,11 +407,38 @@ export const LESSONS: Lesson[] = [
   {
     id: 'buildings',
     title: 'Making your own buildings',
-    blurb: 'Make a building of your own and bring it into your city.',
-    minutes: 4,
-    save: null,
-    soon: 'Coming with the Workshop in a later update.',
-    steps: [],
+    blurb: 'Make a building of your own and bring it into your city, with the Workshop.',
+    minutes: 10,
+    save: 'buildings.citybloom',
+    steps: [
+      {
+        id: 'workshopOpen',
+        title: 'The Workshop',
+        text:
+          'The Workshop takes you from nothing to a building in this town in five steps: pick what to make, ' +
+          'make it (an AI 3D tool or Blender), check it, see it, use it. Close it any time: it keeps your place.',
+        panel: 'buildings',
+        pause: true,
+        done: (g) => g.panel === 'buildings' && g.buildingsTab === 'workshop' && g.workshop.step >= 1,
+      },
+      {
+        id: 'workshopCheck',
+        title: 'Make it, then check it',
+        text:
+          'Copy the prompt into your AI 3D tool, or follow the Blender steps. Then drop your GLB in step 3: the ' +
+          'check says what to fix, why, and how.',
+        panel: 'buildings',
+        done: (g) => !!g.workshop.check?.ok,
+      },
+      {
+        id: 'workshopUse',
+        title: 'See it, then use it',
+        text: 'See it in a street by day and night, then add it to My buildings and place it in this town.',
+        panel: 'buildings',
+        done: (g) => [...g.world.civics.values()].some((c) => !!c.look && g.buildings.get(c.look)?.mine),
+      },
+      finish('making a building of your own'),
+    ],
   },
 ];
 

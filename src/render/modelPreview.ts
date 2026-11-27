@@ -13,7 +13,9 @@ import {
   DataTexture,
   DirectionalLight,
   Fog,
+  Group,
   HemisphereLight,
+  PlaneGeometry,
   Mesh,
   MeshLambertMaterial,
   PerspectiveCamera,
@@ -83,6 +85,12 @@ export class ModelPreview {
   private ambient = new AmbientLight(0xffffff, 0.15);
   private ground: Mesh<CircleGeometry, MeshLambertMaterial>;
   private mesh: Mesh | null = null;
+  /** What turns on the table: the model, and in street mode its road and neighbours (M47). */
+  private group = new Group();
+  private street: Mesh[] = [];
+  /** In a street the table sways a little either side of the front instead of turning right round. */
+  private sway = false;
+  private clock = 0;
   private building: BuildingUniforms = {
     uNight: { value: 0 },
     uWindow: { value: new Color(1.0, 0.8, 0.5) },
@@ -120,25 +128,73 @@ export class ModelPreview {
     this.ground = new Mesh(new CircleGeometry(1, 48), new MeshLambertMaterial({ color: GROUND.summer }));
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -0.02;
-    this.scene.add(this.sun, this.sun.target, this.sky, this.ambient, this.ground);
+    this.scene.add(this.sun, this.sun.target, this.sky, this.ambient, this.ground, this.group);
     this.scene.fog = this.fog;
     this.setLook({ night: false, season: 'summer' });
   }
 
   /** Show a model (as `civicLook` builds it: centred on its site, front to −z). */
   show(m: ModelData): void {
+    this.clearStreet();
+    this.sway = false;
     if (this.mesh) {
-      this.scene.remove(this.mesh);
+      this.group.remove(this.mesh);
       this.mesh.geometry.dispose();
     }
     const g = geometryOf(m);
     this.mesh = new Mesh(g, this.material);
-    this.scene.add(this.mesh);
+    this.group.add(this.mesh);
     const s = g.boundingSphere!;
     this.radius = Math.max(4, s.radius);
     this.height = Math.max(2, m.height);
     this.ground.scale.setScalar(this.radius * 8);
     this.draw();
+  }
+
+  /**
+   * The model on its lot in a street (M47, the Workshop's See step): a road along its front and the
+   * game's own buildings either side, fronts in line with its site's. `site` is the model's site (m).
+   */
+  showStreet(
+    m: ModelData,
+    site: { w: number; d: number },
+    neighbours: { model: ModelData; w: number; d: number }[],
+  ): void {
+    this.show(m);
+    let left = -site.w / 2 - 2;
+    let right = site.w / 2 + 2;
+    neighbours.forEach((n, i) => {
+      const mesh = new Mesh(geometryOf(n.model), this.material);
+      const onLeft = i % 2 === 0;
+      const x = onLeft ? left - n.w / 2 : right + n.w / 2;
+      if (onLeft) left -= n.w + 2;
+      else right += n.w + 2;
+      mesh.position.set(x, 0, n.d / 2 - site.d / 2);
+      this.group.add(mesh);
+      this.street.push(mesh);
+    });
+    const road = new Mesh(
+      new PlaneGeometry(right - left + 16, 9),
+      new MeshLambertMaterial({ color: 0x6b7178 }),
+    );
+    road.rotation.x = -Math.PI / 2;
+    road.position.set((left + right) / 2, 0.01, -site.d / 2 - 5.5);
+    this.group.add(road);
+    this.street.push(road);
+    // The camera stays on the model (the street runs out of the picture); the ground reaches past it.
+    this.ground.scale.setScalar(Math.max(this.radius * 8, (right - left) * 2));
+    this.sway = true;
+    this.clock = 0;
+    this.draw();
+  }
+
+  private clearStreet(): void {
+    for (const m of this.street) {
+      this.group.remove(m);
+      m.geometry.dispose();
+      if (m.material !== this.material) (m.material as MeshLambertMaterial).dispose();
+    }
+    this.street = [];
   }
 
   setLook(look: PreviewLook): void {
@@ -182,7 +238,7 @@ export class ModelPreview {
     this.sun.position.set(Math.sin(sun) * dist, dist * 1.3, -Math.cos(sun) * dist);
     this.fog.near = dist * 1.6;
     this.fog.far = dist * 4;
-    if (this.mesh) this.mesh.rotation.y = this.angle;
+    this.group.rotation.y = this.angle;
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -193,7 +249,10 @@ export class ModelPreview {
     const step = (t: number) => {
       const dt = Math.min(0.1, (t - this.last) / 1000);
       this.last = t;
-      if (this.spinning) this.angle += dt * 0.5;
+      if (this.spinning && this.sway) {
+        this.clock += dt;
+        this.angle = Math.sin(this.clock * 0.35) * 0.55;
+      } else if (this.spinning) this.angle += dt * 0.5;
       if (t - this.drawn >= 1000 / PREVIEW_FPS - 2) {
         this.drawn = t;
         this.draw();
@@ -216,6 +275,7 @@ export class ModelPreview {
 
   dispose(): void {
     this.stop();
+    this.clearStreet();
     this.mesh?.geometry.dispose();
     this.material.dispose();
     this.ground.geometry.dispose();

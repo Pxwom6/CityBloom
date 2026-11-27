@@ -38,6 +38,8 @@ const RECIPES: Record<string, () => Sim> = {
   disasters: () => town('lessondisasters', 'Steadfield', true, 6, true),
   districts: () => town('lessondistricts', 'Quarterly', true, 6),
   friends: () => town('lessonfriends', 'Twinbury', true, 6),
+  // A small served town for the Workshop (M47): somewhere to place what's made.
+  buildings: () => town('lessonbuildings', 'Maker’s Green', true, 5),
   // A town with rivals and a garrison (the HQ, barracks, bunkers, squads): Hold the Line's starting town.
   war: () => Sim.fromSave(decodeSave(readFileSync('public/scenarios/holdline.citybloom'))),
 };

@@ -6716,3 +6716,61 @@ body {
   display: block;
   margin: var(--space-1) 0;
 }
+
+/* Send it in (M48). */
+.submit-screen {
+  width: min(38rem, 100%);
+  max-height: calc(100% - var(--space-4));
+  overflow: auto;
+}
+.submit-form,
+.submit-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.submit-review h3 {
+  margin: 0;
+}
+.submit-text {
+  white-space: pre-wrap;
+}
+.submit-who {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+}
+.submit-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.submit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.submit-status {
+  font-weight: 600;
+}
+.submit-row.accepted .submit-status {
+  color: var(--color-positive);
+}
+.submit-row.declined .submit-status {
+  color: var(--color-text-muted);
+}
+.submit-reply {
+  flex-basis: 100%;
+  margin: 0;
+  font-style: italic;
+}

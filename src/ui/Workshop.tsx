@@ -678,7 +678,12 @@ function UseStep({ game, t }: { game: Game; t: WorkshopTarget }) {
             >
               Share with a friend
             </button>
-            <button class="btn" data-testid="workshop-send" disabled title="Coming in a later update">
+            <button
+              class="btn"
+              data-testid="workshop-send"
+              title="Send it to the game's maker: if it's picked, it goes in the game with your name"
+              onClick={() => game.openSubmit({ building: stored.hash })}
+            >
               Send it in
             </button>
           </div>
@@ -688,7 +693,10 @@ function UseStep({ game, t }: { game: Game; t: WorkshopTarget }) {
               the map and choose it under Look in its panel.
             </p>
           )}
-          <p class="muted">Sending your building in for everyone's game is coming in a later update.</p>
+          <p class="muted">
+            Send it in for everyone's game: only the game's maker sees it, and if it's picked it goes in with
+            your name.
+          </p>
           <button class="btn" data-testid="workshop-again" onClick={() => w.again()}>
             Make another
           </button>

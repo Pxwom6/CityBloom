@@ -396,6 +396,14 @@ export function MyBuildingsPanel() {
                     >
                       Share
                     </button>
+                    <button
+                      class="btn"
+                      data-testid={`buildings-send-${m.hash}`}
+                      title="Send it to the game's maker: if it's picked, it goes in the game with your name"
+                      onClick={() => game.openSubmit({ building: m.hash })}
+                    >
+                      Send it in
+                    </button>
                     {deleting === m.hash ? (
                       <button
                         class="btn danger"

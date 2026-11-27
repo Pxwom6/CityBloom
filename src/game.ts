@@ -106,6 +106,7 @@ import { TimelapseRecorder } from './client/timelapse';
 import { MyBuildings, REGION_MODEL_CHARS } from './client/myBuildings';
 import { RoomModels } from './client/roomModels';
 import { WorkshopState } from './client/workshopState';
+import { SubmitClient } from './client/submissions';
 import { fitsTarget, targetOfDef } from './models/customCheck';
 import type { BakedModel } from './models/baked';
 import type { RoomMsg } from '../relay/protocol';
@@ -202,7 +203,9 @@ export type Screen =
   | 'learn'
   | 'match'
   /** This week's challenge (M44). */
-  | 'challenge';
+  | 'challenge'
+  /** Send an idea or a building in, my submissions, accepted ideas (M48). */
+  | 'submit';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -816,6 +819,16 @@ export class Game {
   }
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
+  /** Ideas and buildings sent in (M48). */
+  readonly submissions = new SubmitClient(relayHttpBase(relayUrl()));
+  /** What the Send it in screen opens on: a tab, and a building of the player's to send. */
+  submitDraft: { tab: 'send' | 'mine' | 'accepted'; building: string | null } = { tab: 'send', building: null };
+
+  /** Open Send it in (M48), on a tab or with a building of the player's ready to send. */
+  openSubmit(o: { tab?: 'send' | 'mine' | 'accepted'; building?: string } = {}): void {
+    this.submitDraft = { tab: o.tab ?? 'send', building: o.building ?? null };
+    this.openScreen('submit');
+  }
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
   challengeNow: ChallengeNow | null = null;
   /** In a challenge city: posting its run, and what the board said (M44). */

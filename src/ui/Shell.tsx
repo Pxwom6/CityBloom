@@ -42,6 +42,7 @@ import { MapsScreen } from './Maps';
 import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
 import { reportProblem, REPORTS_NOTICE } from '../client/reports';
 import { ReportScreen } from './Report';
+import { SubmitScreen } from './Submit';
 import { LESSONS } from '../client/lessons';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
@@ -250,6 +251,10 @@ function MainMenu() {
         </button>
         <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
+        </button>
+        <button class="shell-btn" data-testid="main-submit" onClick={() => game.openSubmit()}>
+          <span>Send an idea</span>
+          <small>ideas and buildings for the game</small>
         </button>
         <button class="shell-btn" data-testid="main-report" onClick={() => game.openScreen('report')}>
           <span>Report a problem</span>
@@ -736,6 +741,9 @@ function PauseMenu() {
         )}
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
+        </button>
+        <button class="shell-btn quiet" data-testid="pause-submit" onClick={() => game.openSubmit()}>
+          <span>Send an idea</span>
         </button>
         <button class="shell-btn quiet" data-testid="pause-report" onClick={() => game.openScreen('report')}>
           <span>Report a problem</span>
@@ -1377,6 +1385,7 @@ export function Shell() {
       {screen === 'maps' && <MapsScreen />}
       {screen === 'friends' && <FriendsScreenWithLatest />}
       {screen === 'report' && <ReportScreen />}
+      {screen === 'submit' && <SubmitScreen />}
       {screen === 'learn' && <LearnScreen />}
       {screen === 'match' && <QuickMatchScreen />}
       {screen === 'challenge' && <ChallengeScreen />}

@@ -129,7 +129,7 @@ test('the Workshop, from Learn to a model placed in the town', async ({ page }) 
   // 5 Use: into My buildings, then placed in the town.
   await page.getByTestId('workshop-add').click();
   await expect(page.getByTestId('workshop-added')).toContainText('Clock pavilion');
-  await expect(page.getByTestId('workshop-send')).toBeDisabled();
+  await expect(page.getByTestId('workshop-send')).toBeEnabled();
   const mine = (await page.evaluate(() => window.__game!.getMyBuildings())).models;
   expect(mine.map((m) => [m.name, m.mine])).toEqual([['Clock pavilion', true]]);
   // A spot the sim takes, among the town's homes.

@@ -162,7 +162,10 @@ export function OwnerSubmissions(props: { api: OwnerApi; note: (t: string) => vo
       <ul class="owner-list">
         {rows.map((r) => (
           <li key={r.id} class={`owner-entry ${r.status}`} data-testid={`owner-sub-${r.id}`}>
-            <button class="owner-entry-line" onClick={() => setOpen(open === r.id ? null : r.id)}>
+            <button
+              class="owner-entry-line owner-sub-line"
+              onClick={() => setOpen(open === r.id ? null : r.id)}
+            >
               <b>{r.title}</b>
               <span class="muted">
                 {r.kind === 'idea' ? `idea: ${IDEA_WORDS[r.about] ?? r.about}` : 'building'} ·{' '}

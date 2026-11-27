@@ -289,6 +289,21 @@ body {
 .owner-entry-line > * {
   grid-area: auto;
 }
+/* A submission's line: the title gets the room, the details and status after it. */
+.owner-entry-line.owner-sub-line {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  width: 100%;
+  text-align: left;
+}
+@media (max-width: 600px) {
+  .owner-entry-line.owner-sub-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .owner-entry-line.owner-sub-line > .muted {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
 .owner-entry .owner-actions {
   margin-top: 4px;
 }

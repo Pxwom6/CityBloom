@@ -37,7 +37,7 @@ export default defineConfig({
     {
       // The owner area's key for the tests (M41): the local relay's only; production keeps OWNER_KEY secret.
       command:
-        'npx tsx relay/local.ts 8787 --atom-prep 20 --test-matches --owner-key e2e-owner-key-0123456789 --board-every 1 --test-clock',
+        'npx tsx relay/local.ts 8787 --atom-prep 20 --test-matches --owner-key e2e-owner-key-0123456789 --board-every 1 --test-clock --submit-per-address 40',
       url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60_000,

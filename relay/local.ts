@@ -6,7 +6,7 @@
  *   ws://127.0.0.1:8787/region/<CODE>[?create=1]  a shared region (M32)
  *   ws://127.0.0.1:8787/signal/<CODE>             signalling for peer-to-peer (offers, answers, candidates)
  *
- * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--test-matches] [--owner-key key] [--board-every seconds] [--test-clock]`: it listens on this computer
+ * `npx tsx relay/local.ts [port] [--data dir] [--ttl days] [--host addr] [--atom-prep seconds] [--test-matches] [--owner-key key] [--board-every seconds] [--test-clock] [--submit-per-address n]`: it listens on this computer
  * only unless `--host` says otherwise (0.0.0.0 to try a phone on the same network). With --data, rooms
  * are kept in files and survive a restart, as online rooms survive everyone leaving. Run so (as `npm run relay` and the e2e
  * tests run it), it holds to the online Worker's rules (F8): rooms and regions are made only on a
@@ -16,7 +16,8 @@
  * online), for the end-to-end tests (M40 step 12), and `--test-matches` lets a quick match be one
  * minute long (M43); `--board-every` shortens the challenge board's wait between one address's
  * scores (3 minutes) and `--test-clock` lets the tests move the board's clock (`POST /__clock`, M44);
- * the Worker online has none of these switches. It also
+ * `--submit-per-address` raises the submissions desk's day cap per address (5, M48: every test page
+ * shares 127.0.0.1; the cap per browser stays); the Worker online has none of these switches. It also
  * serves the report desk and the owner area over plain HTTP (M41, `relay/reportsHttp.ts`), with the
  * owner key from `--owner-key` or OWNER_KEY; reports are kept in memory, or under `--data`.
  */
@@ -457,14 +458,21 @@ if (process.argv[1]?.endsWith('local.ts')) {
   const host = option('--host') ?? '127.0.0.1';
   const prep = option('--atom-prep');
   const every = option('--board-every');
+  const perAddress = option('--submit-per-address');
   const ownerKey = option('--owner-key') ?? process.env.OWNER_KEY ?? undefined;
   const port = Number(
     args.find(
       (a, i) =>
         /^\d+$/.test(a) &&
-        !['--data', '--ttl', '--host', '--atom-prep', '--owner-key', '--board-every'].includes(
-          args[i - 1] ?? '',
-        ),
+        ![
+          '--data',
+          '--ttl',
+          '--host',
+          '--atom-prep',
+          '--owner-key',
+          '--board-every',
+          '--submit-per-address',
+        ].includes(args[i - 1] ?? ''),
     ) ?? 8787,
   );
   void startRelay(port, option('--data'), {
@@ -478,6 +486,7 @@ if (process.argv[1]?.endsWith('local.ts')) {
     ...(ownerKey ? { ownerKey } : {}),
     ...(every ? { boardLimits: { scoreEvery: Number(every) * 1000 } } : {}),
     ...(args.includes('--test-clock') ? { testClock: true } : {}),
+    ...(perAddress ? { submitLimits: { perAddress: Number(perAddress) } } : {}),
   }).then((r) => {
     console.log(
       `Citybloom relay on ws://${host}:${r.port} (rooms at /room/CODE, signalling at /signal/CODE)`,

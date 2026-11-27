@@ -22,8 +22,13 @@ import { safeEqual } from './reportDesk';
 import { fnv1a } from '../src/sim/hash';
 
 export const SUBMIT_LIMITS = {
-  /** Submissions a UTC day, per browser token and per address. */
+  /** Submissions a UTC day, per browser token. */
   perDay: 5,
+  /**
+   * And per address (in memory): the same few online. Only the local relay's tests raise it
+   * (`--submit-per-address`), as every page there comes from 127.0.0.1.
+   */
+  perAddress: 5,
   titleChars: 80,
   textChars: 1_500,
   lineChars: 200,
@@ -338,7 +343,7 @@ export class SubmissionsDesk extends LazyTables {
     const ak = this.key(address);
     const a = this.addresses.get(ak);
     const byAddress = a && a.day === day ? a.n : 0;
-    if (byToken >= this.limits.perDay || byAddress >= this.limits.perDay)
+    if (byToken >= this.limits.perDay || byAddress >= this.limits.perAddress)
       return { ok: false, status: 429, why: `That’s ${this.limits.perDay} for today: try again tomorrow` };
     this.sweep(now);
     const kept = this.read<{ n: number }>('SELECT count(*) AS n FROM subs')[0]?.n ?? 0;

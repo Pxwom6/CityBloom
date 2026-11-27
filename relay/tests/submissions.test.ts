@@ -149,6 +149,7 @@ describe('M48 submissions', () => {
       expect(await d.submit(idea({ title: `Idea ${i}` }), '10.0.0.9', T)).toMatchObject({ ok: true });
     expect(await d.submit(idea(), '10.0.0.10', T)).toMatchObject({ ok: false, status: 429 });
     // A new token from the same address: still that address's five.
+    expect(SUBMIT_LIMITS.perAddress).toBe(SUBMIT_LIMITS.perDay);
     expect(await d.submit(idea({ token: tokenB }), '10.0.0.9', T)).toMatchObject({ ok: false, status: 429 });
     // Tomorrow, both may send again.
     expect(await d.submit(idea(), '10.0.0.9', T + DAY)).toMatchObject({ ok: true });

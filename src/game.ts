@@ -822,7 +822,10 @@ export class Game {
   /** Ideas and buildings sent in (M48). */
   readonly submissions = new SubmitClient(relayHttpBase(relayUrl()));
   /** What the Send it in screen opens on: a tab, and a building of the player's to send. */
-  submitDraft: { tab: 'send' | 'mine' | 'accepted'; building: string | null } = { tab: 'send', building: null };
+  submitDraft: { tab: 'send' | 'mine' | 'accepted'; building: string | null } = {
+    tab: 'send',
+    building: null,
+  };
 
   /** Open Send it in (M48), on a tab or with a building of the player's ready to send. */
   openSubmit(o: { tab?: 'send' | 'mine' | 'accepted'; building?: string } = {}): void {

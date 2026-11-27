@@ -194,6 +194,8 @@ export interface TestApi {
     inCity: string[];
     drawn: number;
   }>;
+  /** The tool that's out, and the place tool's building (M46: a player's own model by its hash). */
+  getTools(): { active: string; place: { armed: boolean; def: string; look: string | null; category: string } };
   /** Add a model as an import would (a base64 GLB, checked in the worker): its hash, or the problems. */
   addMyBuilding(
     glb: string,
@@ -1004,6 +1006,13 @@ export function installTestApi(game: Game): TestApi {
         })),
         inCity,
         drawn,
+      };
+    },
+    getTools: () => {
+      const p = game.tools.place;
+      return {
+        active: game.tools.activeId,
+        place: { armed: p.armed, def: p.def, look: p.look, category: p.category },
       };
     },
     addMyBuilding: async (glb, name, target, mine = true) => {

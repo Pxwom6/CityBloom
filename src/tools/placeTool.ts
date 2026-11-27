@@ -297,6 +297,7 @@ export class PlaceTool implements Tool {
     const cmd = this.command();
     if (!cmd) return;
     const moving = this.moving;
+    const name = this.nameOf();
     void this.game.dispatch(cmd).then((r) => {
       if (r.ok && cmd.type === 'buildRailLink') {
         // One link a city: done, and the button leaves the toolbar.
@@ -307,7 +308,7 @@ export class PlaceTool implements Tool {
       }
       if (r.ok) {
         this.game.audio?.play('place');
-        this.game.toast(`${CIVIC.get(this.def)!.name} ${moving !== null ? 'moved' : 'built'}`, 'ok', 2000);
+        this.game.toast(`${name} ${moving !== null ? 'moved' : 'built'}`, 'ok', 2000);
         if (moving !== null) {
           this.stopMove();
           return;

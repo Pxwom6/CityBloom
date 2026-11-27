@@ -367,7 +367,13 @@ export class ChallengeClient {
       run: string;
       def: unknown;
     }>(`/challenge/run?id=${id}`);
-    const def = cleanChallengeDef(r.def, r.week);
+    // The week's challenge as the run was played: the owner's pin if the board says so, else the
+    // generator's own (phase 6 end: every served one was read as a pin, so a generator week's honest runs
+    // replayed to another city, `pinned` being part of the city's options, and checkers dropped them).
+    const def =
+      (r.def as { pinned?: unknown } | null)?.pinned === true
+        ? cleanChallengeDef(r.def, r.week)
+        : challengeFor(r.week);
     const packed = await unpackRun(r.run);
     if (!def) throw new Error('That run’s challenge can’t be read');
     if (!packed) throw new Error('That run can’t be read');

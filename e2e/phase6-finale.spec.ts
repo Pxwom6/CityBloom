@@ -3,6 +3,7 @@ import { expect, test, type Browser, type BrowserContextOptions, type Page } fro
 import { closeContextsAfterEach, newContext, watchErrors } from './helpers';
 import { fingers, onMap, phone, phoneProblems, type Fingers, type Orient } from './phone';
 import { getMatch, matchLogs, until, type MatchView } from './match';
+import { testModels, goodModelParts, transformParts, writeGlb } from '../scripts/lib/makeGlb';
 import { frames, settledHint } from './ui';
 
 /**
@@ -1455,17 +1456,27 @@ async function mouseTown(page: Page, streets: number[]) {
   await frames(page, 2);
   await page.getByTestId('tool-road').click();
   await page.getByTestId('road-street').click();
-  await dragMouse(page, [
-    [24, cz],
-    [200, cz],
-    [400, cz],
-  ]);
-  for (const x of streets)
-    await dragMouse(page, [
+  const roads: [number, number][][] = [
+    [
+      [24, cz],
+      [200, cz],
+      [400, cz],
+    ],
+    ...streets.map((x): [number, number][] => [
       [x, cz - 140],
       [x, cz],
       [x, cz + 140],
-    ]);
+    ]),
+  ];
+  // (A smaller window shows less: the camera stands back until the streets are all in view.)
+  await frameOn(page, roads.flat(), { x: 220, z: cz, d: 640 });
+  for (const r of roads)
+    if (!(await dragMouse(page, r))) {
+      const where = await Promise.all(r.map(([x, z]) => screenAt(page, x, z)));
+      log(
+        `a laptop road ${JSON.stringify(r)} not built: ${where.map((p) => `${Math.round(p.x)},${Math.round(p.y)} ${p.onMap ? 'map' : 'covered'}`).join('; ')}`,
+      );
+    }
   await page.getByTestId('tool-select').click();
   await page.getByTestId('tool-zone').click();
   const fill = async (zone: string, spots: [number, number][]) => {
@@ -1498,6 +1509,10 @@ async function mouseTown(page: Page, streets: number[]) {
   await placeMouse(page, 'power', 'coal', spots);
   await placeMouse(page, 'water', 'pump', spots);
   await page.getByTestId('tool-select').click();
+  const t = await state(page);
+  log(
+    `a laptop town: ${t.segments - s.segments} roads, zoned ${JSON.stringify(t.zoned)}, ${await civicCount(page)} buildings placed`,
+  );
 }
 
 /** A phone player's town, by touch: a street and a cross street, homes and shops, a wind turbine and a pump. */
@@ -1612,6 +1627,7 @@ test('phase 6 end, 4: a four-player quick match, two on laptops and two on phone
     await lou.goto('./');
     await ready(lou);
     await lou.getByTestId('main-match').tap();
+    await expect(lou.getByTestId('match-screen')).toBeVisible();
     expect(
       await phoneProblems(lou, '[data-testid=match-screen]'),
       'the Quick match screen on a Pixel',
@@ -1651,6 +1667,17 @@ test('phase 6 end, 4: a four-player quick match, two on laptops and two on phone
     await lou.getByTestId(`match-chip-${adaSlot}`).tap();
     await snap(ada, 'd-scoreboard');
     await snap(kit, 'd-phone-scoreboard');
+    // All four cities on the iPhone's scoreboard at once, none scrolled out of sight.
+    const cut = await kit.evaluate(() => {
+      const list = document.querySelector('.match-chips')!.getBoundingClientRect();
+      return [...document.querySelectorAll<HTMLElement>('.match-chip')]
+        .filter((c) => {
+          const r = c.getBoundingClientRect();
+          return r.left < list.left - 1 || r.right > list.right + 1 || r.right > innerWidth;
+        })
+        .map((c) => c.dataset.testid);
+    });
+    expect(cut, 'scoreboard chips cut off on an iPhone').toEqual([]);
 
     // Time's up: every page has the same result, and its own hash in it.
     for (const p of pages) await until(p, (m) => m.phase === 'over' && m.resultsOpen, 'the results', 180_000);
@@ -1698,4 +1725,601 @@ test('phase 6 end, 4: a four-player quick match, two on laptops and two on phone
   }
   log(`findings: ${findings.length ? findings.join(' | ') : 'none'}`);
   for (const e of errs) e.check();
+});
+
+// ———————————————————————————————————————— 5. This week's challenge ————————————————————————————————————————
+
+const RELAY = 'http://127.0.0.1:8787';
+const OWNER_KEY = 'e2e-owner-key-0123456789';
+
+/** The owner area, signed in (the local relay's key: playwright.config.ts). */
+async function ownerArea(
+  browser: Browser,
+  device: BrowserContextOptions = { viewport: { width: 1200, height: 900 } },
+) {
+  const page = await (await newContext(browser, device)).newPage();
+  await page.goto('./owner.html');
+  await page.getByTestId('owner-key').fill(OWNER_KEY);
+  await page.getByTestId(device.hasTouch ? 'owner-signin-go' : 'owner-signin-go').click();
+  await expect(page.getByTestId('owner-area')).toHaveAttribute('data-state', /./);
+  return page;
+}
+
+/**
+ * A challenge city built with the mouse, whatever the week's map: a main street off the highway (the
+ * way the preview takes), three cross streets, homes, shops and industry block by block, coal, a pump
+ * and septic tanks; then each month the player keeps power, water and sewage ahead and adds services.
+ */
+async function challengeCity(page: Page): Promise<number> {
+  const s = await state(page);
+  const hx = s.highwayX;
+  const hz = s.highwayZ;
+  // Which way from the highway's end there's room (a player sees the ghost turn red the other way).
+  const dir = await page.evaluate(
+    async ([hx, hz]) => {
+      for (const d of [1, -1])
+        if (
+          (
+            await window.__game!.preview({
+              type: 'buildRoad',
+              road: 'street',
+              points: [
+                { x: hx!, z: hz! },
+                { x: hx! + 380 * d, z: hz! },
+              ],
+            })
+          ).ok
+        )
+          return d;
+      return 0;
+    },
+    [hx, hz],
+  );
+  expect(dir, 'room for a main street either way from the highway').not.toBe(0);
+  const at = (dx: number, dz: number): [number, number] => [hx + dx * dir, hz + dz];
+  const roads: [number, number][][] = [
+    [at(0, 0), at(190, 0), at(380, 0)],
+    ...[100, 200, 300].map((x) => [at(x, -150), at(x, 0), at(x, 150)]),
+  ];
+  await frameOn(page, roads.flat(), { x: hx + 200 * dir, z: hz, d: 700 });
+  await page.getByTestId('tool-road').click();
+  await page.getByTestId('road-street').click();
+  for (const r of roads)
+    if (!(await dragMouse(page, r))) log(`challenge road ${JSON.stringify(r)} not built`);
+  await page.getByTestId('tool-select').click();
+  await page.getByTestId('tool-zone').click();
+  const fill = async (zone: string, spots: [number, number][]) => {
+    await page.getByTestId(`zone-${zone}`).click();
+    for (const [x, z] of spots) {
+      const p = await screenAt(page, x, z);
+      if (!p.onMap) continue;
+      await page.mouse.move(p.x, p.y, { steps: 2 });
+      await page.keyboard.down('Shift');
+      await page.mouse.click(p.x, p.y);
+      await page.keyboard.up('Shift');
+    }
+  };
+  await fill('R', [at(100, -80), at(200, -80), at(300, -80), at(100, 80)]);
+  await fill('C', [at(60, 0), at(150, 0), at(250, 0)]);
+  await fill('I', [at(300, 80), at(200, 80)]);
+  await page.getByTestId('tool-select').click();
+  const z = (await state(page)).zoned;
+  log(`challenge city: ${(await state(page)).segments - s.segments} roads, zoned ${JSON.stringify(z)}`);
+  const beside: [number, number][] = [340, 360, 380, 320, 160, 240].flatMap((x) => [at(x, 30), at(x, -30)]);
+  const ends: [number, number][] = [100, 200, 300].flatMap((x) => [
+    at(x + 30, 130),
+    at(x - 30, 130),
+    at(x + 30, -130),
+    at(x - 30, -130),
+  ]);
+  const services: [string, string][] = [
+    ['fire', 'firestation'],
+    ['health', 'clinic'],
+    ['parks', 'park_small'],
+    ['education', 'primary'],
+    ['police', 'police'],
+    ['garbage', 'landfill'],
+  ];
+  const keepUp = async () => {
+    const st = await state(page);
+    await frameOn(page, [at(0, 0), at(380, 0), at(200, 150), at(200, -150)], {
+      x: hx + 200 * dir,
+      z: hz,
+      d: 700,
+    });
+    const u = st.utilities;
+    if (u.power.supply < u.power.demand * 1.2 + 10)
+      await placeMouse(page, 'power', st.treasury > 25_000 ? 'coal' : 'wind', [...beside, ...ends]);
+    if (u.water.supply < u.water.demand * 1.2 + 10)
+      await placeMouse(page, 'water', 'pump', [...ends, ...beside]);
+    if (u.sewage.supply < u.sewage.demand * 1.2 + 10)
+      await placeMouse(page, 'water', 'septic', [...beside, ...ends]);
+    if (services.length && st.treasury > 15_000 && st.population > 150) {
+      const [cat, def] = services[0]!;
+      if (await placeMouse(page, cat, def, [...ends, ...beside])) services.shift();
+    }
+    await page.getByTestId('tool-select').click();
+  };
+  // The months, played out: the end card comes as the last one closes.
+  let m = 0;
+  for (; m < 60 && !(await page.getByTestId('challenge-end').isVisible()); m++) {
+    if (m % 2 === 0) await keepUp();
+    await advance(page, 1440);
+    await readTips(page, 'e');
+    if (m % 6 === 5) {
+      const st = await state(page);
+      log(
+        `challenge month ${m + 1}: ${st.population} residents, $${st.treasury}, approval ${Math.round(st.approval * 100)} %`,
+      );
+    }
+  }
+  return m;
+}
+
+test('phase 6 end, 5: this week’s challenge played and posted, and a friend on a phone watches it @playthrough @phase6', async ({
+  browser,
+}) => {
+  test.setTimeout(40 * 60_000);
+  // The owner takes away any pin: the week's challenge is the generator's, as players get it.
+  const owner = await ownerArea(browser);
+  await owner.getByTestId('owner-section-challenge').click();
+  await expect(owner.getByTestId('owner-challenge-name')).toBeVisible();
+  if (await owner.getByTestId('owner-unpin').isVisible()) {
+    await owner.getByTestId('owner-unpin').click();
+    await expect(owner.getByTestId('owner-toast')).toContainText('generator');
+  }
+  const weekName = (await owner.getByTestId('owner-challenge-name').textContent())!;
+  log(`owner: ${weekName}`);
+  await owner.context().close();
+
+  // Ada, on a laptop: the main menu's entry, the screen, a friends' group, Play, the brief.
+  const ada = await matchPage(browser, 0, { viewport: { width: 1280, height: 800 } }, GPU ? 'high' : 'low');
+  const errs = watchErrors(ada);
+  await ada.goto('./');
+  await ada.waitForFunction(
+    () => window.__game?.ready === true && window.__game.getShell().mode === 'menu',
+    null,
+    {
+      timeout: 120_000,
+    },
+  );
+  await expect(ada.getByTestId('main-challenge-line')).toContainText('left');
+  log(`menu: ${(await ada.getByTestId('main-challenge-line').textContent())!}`);
+  await ada.getByTestId('main-challenge').click();
+  await expect(ada.getByTestId('challenge-detail')).toBeVisible();
+  log(
+    `challenge: ${(await ada.getByTestId('challenge-name').textContent())!} · ${(await ada.getByTestId('challenge-twist').textContent())!}`,
+  );
+  await ada.getByTestId('board-tab-friends').click();
+  await ada.getByTestId('group-make').click();
+  const code = (await ada.getByTestId('group-made').locator('strong').textContent())!.trim();
+  await snap(ada, 'e-challenge');
+  await ada.getByTestId('challenge-play').click();
+  await ada.waitForFunction(
+    () => window.__game?.ready === true && window.__game.getShell().mode === 'play',
+    null,
+    {
+      timeout: 120_000,
+    },
+  );
+  await expect(ada.getByTestId('scenario-brief')).toBeVisible();
+  log(`brief: ${(await ada.getByTestId('scenario-brief').innerText()).replace(/\s+/g, ' ').slice(0, 400)}`);
+  await ada.getByTestId('scenario-begin').click();
+  await ada.evaluate(() => window.__game!.setSpeed(0));
+  const months = await challengeCity(ada);
+  await expect(ada.getByTestId('challenge-end')).toBeVisible({ timeout: 60_000 });
+  const score = Number((await ada.getByTestId('challenge-score').textContent())!.replace(/\D/g, ''));
+  log(
+    `challenge over after ${months} months: ${score} points; ${(await ada.getByTestId('challenge-end').innerText()).replace(/\s+/g, ' ').slice(0, 300)}`,
+  );
+  await ada.getByTestId('challenge-name-input').fill('Ada');
+  await ada.getByTestId('challenge-post').click();
+  await expect(ada.getByTestId('challenge-post-result')).toContainText('On the board');
+  await snap(ada, 'e-end');
+
+  // Kit, on an Android phone upright: the menu's entry by touch, Ada's group by its code, Ada's run watched.
+  const kit = await matchPage(browser, 2, phone('Pixel 7', 'portrait'), 'phone');
+  await kit.goto('./');
+  await kit.waitForFunction(
+    () => window.__game?.ready === true && window.__game.getShell().mode === 'menu',
+    null,
+    {
+      timeout: 120_000,
+    },
+  );
+  await kit.getByTestId('main-challenge').tap();
+  await expect(kit.getByTestId('challenge-detail')).toBeVisible();
+  expect(
+    await phoneProblems(kit, '[data-testid=challenge-screen]'),
+    'the challenge screen on a Pixel',
+  ).toEqual([]);
+  await kit.getByTestId('board-tab-friends').tap();
+  await kit.getByTestId('group-code').fill(code.toLowerCase());
+  await kit.getByTestId('group-join').tap();
+  const row = kit.getByTestId('board-row').filter({ hasText: 'Ada' });
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await snap(kit, 'e-phone-board');
+  await row.getByRole('button', { name: 'Watch' }).tap();
+  await kit.waitForFunction(
+    () => window.__game?.ready === true && window.__game.getShell().mode === 'play',
+    null,
+    {
+      timeout: 120_000,
+    },
+  );
+  await expect(kit.getByTestId('run-viewer')).toContainText('Ada');
+  const t0 = Date.now();
+  await kit.getByTestId('run-rush').tap();
+  // How far the replay has got, every half minute (a four-year run on a phone is the slow case).
+  for (let k = 0; k < 40 && !(await kit.getByTestId('run-result').isVisible()); k++) {
+    await kit.waitForTimeout(30_000);
+    const v = await kit
+      .getByTestId('run-viewer')
+      .innerText()
+      .catch(() => '');
+    const s = await state(kit).catch(() => null);
+    log(
+      `replay after ${((Date.now() - t0) / 1000).toFixed(0)} s: ${v.replace(/\s+/g, ' ').slice(0, 160)}; tick ${s?.tick ?? '?'}`,
+    );
+  }
+  await expect(kit.getByTestId('run-result')).toContainText('replayed to the same city', {
+    timeout: 60_000,
+  });
+  log(
+    `Kit watched Ada's ${months}-month run to its end in ${((Date.now() - t0) / 1000).toFixed(0)} s: same city`,
+  );
+  await snap(kit, 'e-watched');
+  // The board says so too.
+  const board = (await fetch(
+    `${RELAY}/challenge/board?week=${(await fetch(`${RELAY}/challenge/current`).then((r) => r.json())).week}`,
+  ).then((r) => r.json())) as { rows: { name: string; checked: boolean }[] };
+  log(`board: ${JSON.stringify(board.rows.slice(0, 5))}`);
+  log(`findings: ${findings.length ? findings.join(' | ') : 'none'}`);
+  errs.check();
+});
+
+// ———————————————————————————— 6. A building made in the Workshop, shared and sent in ————————————————————————————
+
+const PLAYER_STATE = `${OUT}/player-state.json`;
+const glbFile = (name: string, bytes: Uint8Array) => ({
+  name,
+  mimeType: 'model/gltf-binary',
+  buffer: Buffer.from(bytes),
+});
+
+test('phase 6 end, 6: a building made in the Workshop, shared with a friend on a phone, and sent in @playthrough @phase6', async ({
+  browser,
+}) => {
+  test.setTimeout(20 * 60_000);
+  const ctx = await newContext(browser, {
+    viewport: { width: 1280, height: 860 },
+    acceptDownloads: true,
+    permissions: ['clipboard-read', 'clipboard-write'],
+  });
+  await ctx.addInitScript(() => {
+    const key = 'citybloom.settings';
+    const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(
+      key,
+      JSON.stringify({ ...s, graphicsChecked: true, reportsNotice: true, timelapse: false }),
+    );
+  });
+  const ada = await ctx.newPage();
+  const errs = watchErrors(ada);
+  // Learn → Making your own buildings: the lesson's town opens on the Workshop.
+  await ada.goto('./');
+  await expect(ada.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
+  await ada.getByTestId('main-learn').click();
+  await ada.getByTestId('lesson-start-buildings').click();
+  await ada.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
+    timeout: 120_000,
+  });
+  await expect(ada.getByTestId('workshop')).toBeVisible();
+  // 1 Pick: a 2×2 landmark.
+  await ada.getByTestId('workshop-pick-landmark2').click();
+  await expect(ada.getByTestId('workshop-facts')).toContainText('16 × 16 m');
+  await snap(ada, 'f-workshop-pick');
+  await ada.getByTestId('workshop-next').click();
+  // 2 Make: the prompt for an AI 3D tool, written for it and copied.
+  await ada.getByTestId('workshop-name').fill('Clock pavilion');
+  await ada.getByTestId('workshop-idea').fill('A little clock tower on a paved square, lawns in the corners');
+  await ada.getByTestId('workshop-copy').click();
+  const prompt = await ada.evaluate(() => navigator.clipboard.readText());
+  expect(prompt).toContain('Save as landmark2.glb.');
+  log(
+    `the Workshop's prompt: ${prompt.length} characters, starting "${prompt.slice(0, 80).replace(/\s+/g, ' ')}"`,
+  );
+  await ada.getByTestId('workshop-next').click();
+  // 3 Check: a first try turned round and floating gets two notes; the fixed model passes.
+  await ada
+    .getByTestId('workshop-file')
+    .setInputFiles(
+      glbFile('first-try.glb', writeGlb(transformParts(goodModelParts(16), { turn: Math.PI, lift: 1.2 }))),
+    );
+  await expect(ada.getByTestId('workshop-note')).toHaveCount(2, { timeout: 60_000 });
+  log(
+    `first try's notes: ${(await ada.getByTestId('workshop-note').locator('h4').allTextContents()).join(' | ')}`,
+  );
+  await snap(ada, 'f-workshop-notes');
+  await ada.getByTestId('workshop-file').setInputFiles(glbFile('pavilion.glb', testModels().good));
+  await expect(ada.getByTestId('workshop-ok')).toBeVisible({ timeout: 60_000 });
+  await ada.getByTestId('workshop-next').click();
+  // 4 See: in a street, by night.
+  await ada.getByTestId('workshop-night').click();
+  await frames(ada, 4);
+  await snap(ada, 'f-workshop-see');
+  await ada
+    .getByTestId('workshop-day')
+    .click()
+    .catch(() => undefined);
+  await ada.getByTestId('workshop-next').click();
+  // 5 Use: into My buildings, and placed in the lesson's town.
+  await ada.getByTestId('workshop-add').click();
+  await expect(ada.getByTestId('workshop-added')).toContainText('Clock pavilion');
+  const mine = (await ada.evaluate(() => window.__game!.getMyBuildings())).models;
+  const hash = mine.find((m) => m.name === 'Clock pavilion')!.hash;
+  const near = await ada.evaluate(async () => {
+    const g = window.__game!;
+    const b = g.getBuildings();
+    const c = { x: b.reduce((t, v) => t + v.x, 0) / b.length, z: b.reduce((t, v) => t + v.z, 0) / b.length };
+    g.setCamera({ x: c.x, z: c.z, distance: 260, yaw: 0, tilt: 0.65 });
+    return c;
+  });
+  await ada.getByTestId('workshop-place').click();
+  await expect(ada.getByTestId('buildings-panel')).toHaveCount(0);
+  const spots: [number, number][] = [];
+  for (let r = 20; r <= 120; r += 20)
+    for (let a = 0; a < 8; a++)
+      spots.push([near.x + r * Math.cos((a * Math.PI) / 4), near.z + r * Math.sin((a * Math.PI) / 4)]);
+  const pick = await (await import('./ui')).findSpot(ada, spots, 'the pavilion');
+  const p = await screenAt(ada, pick[0], pick[1]);
+  await ada.mouse.click(p.x, p.y);
+  await expect
+    .poll(
+      async () =>
+        (await ada.evaluate(() => window.__game!.getCivics())).filter((c) => c.look === hash).length,
+      {
+        timeout: 20_000,
+      },
+    )
+    .toBe(1);
+  await ada.getByTestId('tool-select').click();
+  await frames(ada, 4);
+  await snap(ada, 'f-placed');
+  // The lesson's last card stands beside My buildings when it's opened (not on its tabs); then Keep playing.
+  await expect(ada.getByTestId('tutorial')).toHaveAttribute('data-step', 'lessonDone');
+  await ada.getByTestId('tool-landmark').click();
+  await ada.getByTestId('place-mybuildings').click();
+  await ada.getByTestId('buildings-tab-mine').click({ timeout: 5_000 });
+  await expect(ada.getByTestId('tutorial')).toHaveClass(/beside-panel/);
+  await ada.getByTestId('lesson-keep').click();
+
+  // Shared with a friend: the building as a file (a download on a laptop), sent through a chat.
+  if (!(await ada.getByTestId('buildings-panel').isVisible())) {
+    await ada.getByTestId('tool-landmark').click();
+    await ada.getByTestId('place-mybuildings').click();
+  }
+  await ada.getByTestId('buildings-tab-mine').click();
+  const [download] = await Promise.all([
+    ada.waitForEvent('download'),
+    ada.getByTestId(`buildings-share-${hash}`).click(),
+  ]);
+  const shared = readFileSync((await download.path())!);
+  log(`shared as ${download.suggestedFilename()} (${shared.length} bytes)`);
+  expect(download.suggestedFilename()).toBe('Clock_pavilion.citybloom-building');
+
+  // Sam, on an iPhone upright, adds it to My buildings and places it in his own town, by touch.
+  const sam = await matchPage(browser, 1, phone('iPhone 13', 'portrait'), 'phone');
+  await sam.goto('./?seed=samtown&preset=river&paused=1');
+  await sam.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120_000 });
+  const scz = (await state(sam)).highwayZ;
+  // (His town: a street, laid by the game's own command; this test is about the building.)
+  await sam.evaluate(
+    (cz) =>
+      window.__game!.dispatch({
+        type: 'buildRoad',
+        road: 'street',
+        points: [
+          { x: 24, z: cz },
+          { x: 300, z: cz },
+        ],
+      }),
+    scz,
+  );
+  const fs = await fingers(sam);
+  await sam.getByTestId('tool-build').tap();
+  await sam.getByTestId('tool-landmark').tap();
+  await sam.getByTestId('place-mybuildings').tap();
+  await expect(sam.getByTestId('buildings-empty')).toBeVisible();
+  await sam.getByTestId('buildings-file').setInputFiles({
+    name: 'Clock_pavilion.citybloom-building',
+    mimeType: 'application/json',
+    buffer: shared,
+  });
+  await expect(sam.getByTestId('buildings-name')).toHaveValue('Clock pavilion');
+  await sam.getByTestId('buildings-add').tap();
+  await expect(sam.getByTestId(`buildings-row-${hash}`)).toBeVisible({ timeout: 30_000 });
+  expect(await phoneProblems(sam, '[data-testid=buildings-panel]'), 'My buildings on an iPhone').toEqual([]);
+  await snap(sam, 'f-friend-added');
+  await sam.getByTestId(`buildings-place-${hash}`).tap();
+  await expect(sam.getByTestId('buildings-panel')).toHaveCount(0);
+  const c = { x: 160, z: scz, d: 360 };
+  const spot = await (async () => {
+    for (const [x, z] of [80, 120, 160, 200, 240].flatMap((x): [number, number][] => [
+      [x, scz - 22],
+      [x, scz + 22],
+    ])) {
+      await frameOn(sam, [[x, z]], c);
+      const q = await screenAt(sam, x, z);
+      if (!q.onMap) continue;
+      await fs.hold(q, 650);
+      const h = await settledHint(sam);
+      if (/\bok\b/.test(h.tone)) return q;
+    }
+    return null;
+  })();
+  expect(spot, 'somewhere for the pavilion in Sam’s town').not.toBeNull();
+  await fs.tap(spot!);
+  await expect
+    .poll(
+      async () =>
+        (await sam.evaluate(() => window.__game!.getCivics())).filter((x) => x.look === hash).length,
+      {
+        timeout: 20_000,
+      },
+    )
+    .toBe(1);
+  await sam.getByTestId('tool-select').tap();
+  await frames(sam, 4);
+  await snap(sam, 'f-friend-placed');
+
+  // Sent in: the building from its row in My buildings, then an idea with a picture from the pause menu.
+  await ada.getByTestId(`buildings-send-${hash}`).click();
+  await expect(ada.getByTestId('submit-model')).toHaveValue(hash);
+  await ada.getByTestId('submit-line').fill('A little clock tower for a town square');
+  await ada.getByTestId('submit-credit').fill('Ada');
+  await ada.getByTestId('submit-review').click();
+  await expect(ada.getByTestId('submit-preview-title')).toContainText('Clock pavilion');
+  await expect(ada.getByTestId('submit-who')).toContainText("Only the game's maker will see it");
+  await ada.getByTestId('submit-send').click();
+  await expect(ada.getByTestId('submit-mine-row').filter({ hasText: 'Clock pavilion' })).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await snap(ada, 'f-sent');
+  await ada.getByTestId('submit-close').click();
+  await ada.getByTestId('menu-button').click();
+  await ada.getByTestId('pause-submit').click();
+  await ada
+    .getByTestId('submit-tab-form')
+    .click()
+    .catch(() => undefined);
+  await ada
+    .getByTestId('submit-kind-idea')
+    .click()
+    .catch(() => undefined);
+  await ada.getByTestId('submit-about').selectOption('feature');
+  await ada.getByTestId('submit-title').fill('A clock that chimes the hour');
+  await ada
+    .getByTestId('submit-text')
+    .fill('The clock pavilion could chime on the hour, quietly, if you zoom in.');
+  await ada.getByTestId('submit-shot').check();
+  await expect(ada.getByTestId('submit-shot-preview')).toBeVisible();
+  await ada.getByTestId('submit-credit').fill('Ada');
+  await ada.getByTestId('submit-review').click();
+  await ada.getByTestId('submit-send').click();
+  await expect(
+    ada.getByTestId('submit-mine-row').filter({ hasText: 'A clock that chimes the hour' }),
+  ).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await expect(
+    ada
+      .getByTestId('submit-mine-row')
+      .filter({ hasText: 'A clock that chimes the hour' })
+      .getByTestId('submit-status'),
+  ).toHaveText('Sent');
+  // The player's browser is kept for the owner's answers (test 7).
+  await ctx.storageState({ path: PLAYER_STATE });
+  log(`findings: ${findings.length ? findings.join(' | ') : 'none'}`);
+  errs.check();
+});
+
+// —————————————————————————————— 7. The owner area, on the owner's phone ——————————————————————————————
+
+test('phase 6 end, 7: the owner area on a phone handles the reports, the challenge board and the submissions @playthrough @phase6', async ({
+  browser,
+}) => {
+  test.setTimeout(10 * 60_000);
+  const owner = await ownerArea(browser, phone('iPhone 13', 'portrait'));
+  const notes = JSON.parse(readFileSync(NOTES, 'utf8')) as { report: string };
+  // Problem reports: the written one from the first city, with its picture; marked fixed.
+  await expect(owner.getByTestId('owner-reports')).toBeVisible();
+  await owner.getByTestId('owner-filter-all').tap();
+  const report = owner.getByTestId('owner-group').filter({ hasText: notes.report });
+  await expect(report).toHaveCount(1, { timeout: 20_000 });
+  await report.locator('.owner-group-head').tap();
+  await report.getByTestId('owner-show-shot').tap();
+  await expect(report.getByTestId('owner-shot')).toBeVisible();
+  expect(await phoneProblems(owner, '[data-testid=owner-area]'), 'the owner area on an iPhone').toEqual([]);
+  await snap(owner, 'g-owner-reports');
+  await report.getByTestId('owner-fixed').tap();
+  await expect(owner.getByTestId('owner-toast')).toHaveText('Marked fixed.');
+  const others = await owner.getByTestId('owner-group').count();
+  log(`owner: ${others} report entries (crash reports from the playthrough's pages, if any, included)`);
+
+  // The challenge board: Ada's entry removed (off the public board), then put back; a word for the filter.
+  await owner.getByTestId('owner-section-challenge').tap();
+  const entry = owner.getByTestId('owner-entry').filter({ hasText: 'Ada' }).first();
+  await expect(entry).toBeVisible({ timeout: 20_000 });
+  await snap(owner, 'g-owner-challenge');
+  const week = (await fetch(`${RELAY}/challenge/current`).then((r) => r.json())) as { week: number };
+  const onBoard = async () =>
+    (
+      (await fetch(`${RELAY}/challenge/board?week=${week.week}`).then((r) => r.json())) as {
+        rows: { name: string }[];
+      }
+    ).rows.some((r) => r.name === 'Ada');
+  await entry.getByTestId('owner-entry-remove').tap();
+  await expect(owner.getByTestId('owner-toast')).toContainText('Removed');
+  expect(await onBoard()).toBe(false);
+  await owner
+    .getByTestId('owner-entry')
+    .filter({ hasText: 'Ada' })
+    .first()
+    .getByTestId('owner-entry-restore')
+    .tap();
+  await expect(owner.getByTestId('owner-toast')).toContainText('Back on the board');
+  expect(await onBoard()).toBe(true);
+  const words = owner.getByTestId('owner-words');
+  await words.fill(`${await words.inputValue()}\npoop`.trim());
+  await owner.getByTestId('owner-words-save').tap();
+  await expect(owner.getByTestId('owner-toast')).toContainText('Word filter saved');
+
+  // The submissions: the building accepted with a reply (checked and seen on its turntable first), the idea
+  // declined with one.
+  await owner.getByTestId('owner-section-submissions').tap();
+  const building = owner.locator('.owner-entry', { hasText: 'Clock pavilion' }).first();
+  await expect(building).toBeVisible({ timeout: 20_000 });
+  await building.locator('.owner-entry-line').tap();
+  await expect(owner.getByTestId('owner-sub-check')).toContainText("passes the game's check", {
+    timeout: 30_000,
+  });
+  await snap(owner, 'g-owner-submission');
+  await owner
+    .getByTestId('owner-sub-reply')
+    .fill('Lovely! It comes in the next update, with your name on it.');
+  await owner.getByTestId('owner-sub-accept').tap();
+  await expect(owner.getByTestId('owner-toast')).toContainText('accepted');
+  const idea = owner.locator('.owner-entry', { hasText: 'A clock that chimes the hour' }).first();
+  await idea.locator('.owner-entry-line').tap();
+  await expect(owner.getByTestId('owner-sub-text')).toContainText('chime on the hour');
+  await expect(owner.getByTestId('owner-sub-shot')).toBeVisible();
+  await owner
+    .getByTestId('owner-sub-reply')
+    .fill('Not this time: the game stays quiet unless you turn the sound up.');
+  await owner.getByTestId('owner-sub-decline').tap();
+  await expect(owner.getByTestId('owner-toast')).toContainText('declined');
+  expect(await phoneProblems(owner, '[data-testid=owner-area]'), 'the submissions on an iPhone').toEqual([]);
+
+  // Ada, back in her browser: What I sent shows both answers; Accepted ideas has the pavilion with her name.
+  const ada = await (
+    await newContext(browser, { storageState: PLAYER_STATE, viewport: { width: 1280, height: 860 } })
+  ).newPage();
+  await ada.goto('./');
+  await expect(ada.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
+  await ada.getByTestId('main-submit').click();
+  await ada.getByTestId('submit-tab-mine').click();
+  const accepted = ada.locator('[data-testid="submit-mine-row"][data-status="accepted"]', {
+    hasText: 'Clock pavilion',
+  });
+  await expect(accepted).toContainText('Coming in an update');
+  await expect(accepted).toContainText('with your name on it');
+  const declined = ada.locator('[data-testid="submit-mine-row"][data-status="declined"]', {
+    hasText: 'A clock that chimes the hour',
+  });
+  await expect(declined).toContainText('Not this time');
+  await snap(ada, 'g-player-answers');
+  await ada.getByTestId('submit-tab-accepted').click();
+  await expect(ada.getByTestId('accepted-row').filter({ hasText: 'Clock pavilion' })).toContainText('Ada');
+  await expect(ada.getByTestId('accepted-list')).not.toContainText('A clock that chimes the hour');
 });

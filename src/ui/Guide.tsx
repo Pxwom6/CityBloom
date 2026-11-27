@@ -139,6 +139,11 @@ export function TutorialCard() {
   const tool = game.tools.activeId !== 'select' && game.tools.activeId !== fold.current.tool;
   const acting = sheet || (tool && !card.event);
   const folded = phone && (fold.current.open === null ? acting : !fold.current.open);
+  // Beside the panel the step teaches, or (a lesson's last card) whatever panel the lesson left open:
+  // over it, it covered the panel's tabs (phase 6 end: the Workshop lesson's "Lesson done").
+  const beside =
+    (!!step.panel && game.panel === step.panel) ||
+    (!!card.lesson && card.index === card.total - 1 && !!game.panel);
   if (folded)
     return (
       <>
@@ -163,7 +168,7 @@ export function TutorialCard() {
     <>
       {step.target && <GuidePointer testid={step.target} />}
       <div
-        class={`guide panel ${card.event ? 'guide-event' : ''} ${step.panel && game.panel === step.panel ? 'beside-panel' : ''} ${step.screen && game.screen === step.screen ? 'over-screen' : ''}`}
+        class={`guide panel ${card.event ? 'guide-event' : ''} ${beside ? 'beside-panel' : ''} ${step.screen && game.screen === step.screen ? 'over-screen' : ''}`}
         data-testid="tutorial"
         data-step={step.id}
         role="dialog"

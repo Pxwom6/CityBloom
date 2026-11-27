@@ -6213,6 +6213,30 @@ body {
 #ui[data-phone][data-orient='portrait'] .match-name {
   display: none;
 }
+/* (Phase 6 end: with four cities the fourth ran off an iPhone's scoreboard. The chips are in order, so
+   their rank numbers go; the chips and the clock tighten.) */
+#ui[data-phone][data-orient='portrait'] .match-bar {
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+}
+#ui[data-phone][data-orient='portrait'] .match-rank {
+  display: none;
+}
+#ui[data-phone][data-orient='portrait'] .match-chips {
+  gap: 3px;
+}
+#ui[data-phone][data-orient='portrait'] .match-chip {
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+}
+#ui[data-phone][data-orient='portrait'] .match-clock {
+  min-width: 0;
+  font-size: var(--font-size-md);
+  padding: 0.1rem 0.3rem;
+}
+#ui[data-phone][data-orient='portrait'] .match-clock small {
+  font-size: 0.5rem;
+}
 #ui[data-phone] .match-lobby {
   top: calc(var(--topbar-height) + var(--space-2));
   width: calc(100vw - 1rem);

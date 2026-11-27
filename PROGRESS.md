@@ -287,13 +287,28 @@ The phase's end played it through the real UI (`e2e/phase6-finale.spec.ts`, see 
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**The phase's end, on the owner's Mac** (SPEC-6.md, "When every milestone is done"). Done: the summary
-here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with friends" overview
-(quick match, the weekly challenge, timelapses, custom buildings, phones) with four pictures from headed
-Chrome on the GPU (the picture scripts take `GPU=1` now: `scripts/dev/gpuLaunch.mjs`). Next: the
-playthroughs as `e2e/phase6-finale.spec.ts`, then the Mac checks, bench, balance and cross-browser, then
-PR #24's title and description for the whole phase. (A fresh checkout here needed `npm ci`: `ws`,
-`trystero` and `mp4-muxer` were missing from an older `node_modules`.)
+**The phase's end, on the owner's Mac** (SPEC-6.md, "When every milestone is done").
+- Done: the summary here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with
+  friends" overview with four pictures from headed Chrome on the GPU (the picture scripts take `GPU=1`:
+  `scripts/dev/gpuLaunch.mjs`).
+- The playthroughs: `e2e/phase6-finale.spec.ts` (`@playthrough`; `PHASE6_GPU=1` for a real Chrome window;
+  helper script pattern in DECISIONS "Phase 6 end"), seven tests: 1 a new player's first city on a laptop
+  with a timelapse and a report; 2–3 the same by touch on an iPhone upright and a Pixel sideways; 4 a
+  four-player quick match (two laptops, two phones); 5 this week's real challenge played four years, posted,
+  watched to its end on a phone; 6 a building made in the Workshop, shared to a friend's phone, sent in with
+  an idea; 7 the owner area on an iPhone handling reports, the board and the submissions, then the player
+  sees the answers. Tests 6 and 7 rely on what 1 and 6 leave in `test-results/phase6` (run the file whole).
+- Fixed on the way (each in DECISIONS "Phase 6 end"): a generator week's honest runs replayed to another city
+  and would have been dropped (`fetchRun`); zone strokes off the kerb grew nothing (the zone tool paints the
+  front row); first problems explained from "Let time run"; the tutorial on phones (touch words everywhere,
+  a card that folds while the player acts, compact beside a sheet, notices clear of it and letting a finger
+  through, the arrow into More and to a panel's tab); panels opened and closed quickly count; zone paint over a
+  data map; the lesson's last card beside the panel; four cities on a phone's scoreboard; "Load city".
+- Next: a final whole run of the playthroughs, the touched e2e specs, the Mac checks (framebench with
+  `--quality high,medium,low,phone`, custombench and timelapsebench with `GPU=1`, the Workshop and Send it in
+  in WebKit and Chrome, fix-layout P13/P14, the running-city joins), bench, balance, cross-browser, then PR
+  #24's title and description. (A fresh checkout needed `npm ci`: `ws`, `trystero` and `mp4-muxer` were
+  missing from an older `node_modules`.)
 
 **M48 Send it in is complete** (plan `docs/plans/M48-design.md`), joining M41–M47 and M49 in pull
 request #24.

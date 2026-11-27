@@ -8,6 +8,7 @@
 import { UNTRUSTED_NOTE, fenced } from './untrusted';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OwnerApi, SubmissionItem, SubmissionRow, SubmissionUsage } from './api';
+import { localWhen } from './time';
 import type { SubmissionStatus } from '../../relay/submissions';
 import { CIVIC } from '../data/civic';
 import { cleanTarget } from '../client/myBuildings';
@@ -67,7 +68,7 @@ export function submissionForClaude(row: SubmissionRow, notes: TeacherNote[] | n
   if (row.kind === 'idea')
     return [
       UNTRUSTED_NOTE,
-      `A player's idea, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)}): ${IDEA_WORDS[row.about] ?? row.about}.`,
+      `A player's idea, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)} UTC): ${IDEA_WORDS[row.about] ?? row.about}.`,
       fenced('Title', row.title),
       fenced('In full', row.text),
       credit,
@@ -84,7 +85,7 @@ export function submissionForClaude(row: SubmissionRow, notes: TeacherNote[] | n
       : `assets/models/ under the name of the building it becomes (it was made as ${t ? targetLabel(t) : 'a landmark'}: choose which of the game's landmarks or a new civic building)`;
   return [
     UNTRUSTED_NOTE,
-    `A player's building, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)}).`,
+    `A player's building, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)} UTC).`,
     fenced('Name', row.title),
     `What it's for: ${t ? targetLabel(t) : 'a landmark'}`,
     row.text ? fenced('A line about it', row.text) : '',
@@ -174,7 +175,7 @@ export function OwnerSubmissions(props: { api: OwnerApi; note: (t: string) => vo
               <b>{r.title}</b>
               <span class="muted">
                 {r.kind === 'idea' ? `idea: ${IDEA_WORDS[r.about] ?? r.about}` : 'building'} ·{' '}
-                {r.credit || 'no name'} · {when(r.at)}
+                {r.credit || 'no name'} · {localWhen(r.at)}
               </span>
               <span class="owner-badge">{STATUS_WORDS[r.status]}</span>
             </button>

@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'preact/hooks';
 import { OwnerApi, groupForClaude, type Usage } from './api';
+import { localDay } from './time';
 import { OwnerChallenge } from './OwnerChallenge';
 import { OwnerSubmissions } from './OwnerSubmissions';
 import type { GroupStatus, GroupView, ItemFull } from '../../relay/reportDesk';
@@ -49,8 +50,6 @@ function ago(ms: number): string {
   if (s < 129600) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} days ago`;
 }
-
-const date = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 const KIND_NAMES: Record<string, string> = {
   error: 'Error',
@@ -169,7 +168,7 @@ function Group(props: { g: GroupView; api: OwnerApi; changed: () => void; note: 
           ×{g.count}
         </span>
         <span class="owner-meta">
-          {ago(g.last)} · since {date(g.first)} ·{' '}
+          {ago(g.last)} · since {localDay(g.first)} ·{' '}
           {g.builds
             .slice(0, 2)
             .map((b) => b.build)
@@ -184,7 +183,7 @@ function Group(props: { g: GroupView; api: OwnerApi; changed: () => void; note: 
           <dl class="owner-facts">
             <dt>Seen</dt>
             <dd>
-              {g.count} {g.count === 1 ? 'time' : 'times'}, first {date(g.first)}, last {ago(g.last)}
+              {g.count} {g.count === 1 ? 'time' : 'times'}, first {localDay(g.first)}, last {ago(g.last)}
             </dd>
             <dt>Versions</dt>
             <dd>{g.builds.map((b) => `${b.build} ×${b.count}`).join(' · ')}</dd>

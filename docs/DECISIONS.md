@@ -3126,6 +3126,14 @@ player's first city with the tutorial follows each card's arrow and checks the b
 and uncovered. One line a finding:
 
 **Fixed**
+- *Every honest run of an ordinary week would have been dropped from the board.* A page fetching a run to watch or
+  check it read the board's copy of the week's challenge through `cleanChallengeDef`, which marks a challenge as the
+  owner's pin; `pinned` is part of the city's options, so a run of the generator's challenge (every week the owner
+  doesn't pin) replayed to another city, "It didn't replay to the same city", and the first browser to check it
+  dropped it. Found by the playthrough's four-year run on week 46, which replayed fine in Node; M44's tests only ever
+  used pinned weeks. `fetchRun` now takes the generator's challenge unless the board's copy is a pin, as starting a
+  challenge already did (`tests/challengeFetch.test.ts`: an ordinary week's run and a pinned week's both replay; the
+  first failed before). Nothing was deployed with it: the live board comes with this pull request.
 - *The Taxes card drew no arrow* (it pointed at the R1 slider while the budget showed its Overview): a control on
   a panel's tab that isn't showing points at the tab (`IN_TAB` in `src/ui/Guide.tsx`: taxes, funding, loans);
   the playthrough follows the arrow to the tab, then to the slider.
@@ -3163,4 +3171,11 @@ and uncovered. One line a finding:
   grow). A sim-side answer (a brush always zoning down to the kerb) would have changed every recorded run's replay.
 - *Zones painted blind over a data map*: a player who'd opened the fire coverage map, as the tutorial asks, then
   painted zones they couldn't see (zone paint hides under a data map). It shows while the zone tool is out.
+- *The owner area showed times in UTC* (a report sent at 3:47 one morning in Adelaide read "2026-11-27 17:17"): its
+  lists use the owner's own clock (`src/owner/time.ts`); what's copied for Claude Code stays in UTC and says so.
 - *"Kept as … open it from Load game"*: the menu's button is Load city (the results card already said so).
+- *The Workshop lesson's "Lesson done" card covered My buildings' tabs* (a lesson's last card shows over whatever
+  panel the lesson left open): it stands beside that panel, as a step's card does beside its own.
+- *A four-player match's fourth city ran off an iPhone's scoreboard* (the row scrolled sideways): held upright, the
+  chips drop their rank numbers (they're in order already) and tighten, and the clock shrinks, so four cities fit
+  across a 390 px phone (a 360 px one scrolls the last few pixels). The playthrough checks every chip is in view.

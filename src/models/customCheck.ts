@@ -205,3 +205,45 @@ export function suggestTargets(size: { w: number; d: number }, most = 8): Custom
   }
   return out;
 }
+
+/** A target's site (m). */
+export function siteOf(t: CustomTarget): { w: number; d: number } | null {
+  const d = CIVIC.get(targetId(t));
+  return d ? { w: d.w, d: d.d } : null;
+}
+
+/** A military building's site is checked with the war allowances (lights, pits): kept apart. */
+const isWar = (t: CustomTarget) => t.kind === 'look' && !!CIVIC.get(t.def)?.military;
+
+/**
+ * Whether a model that passed the check for its own target passes for another too: the checks
+ * depend on the target only through its site, its triangle budget and whether it's a military
+ * building, so the same site, within that budget, and as much a war building as its own.
+ */
+export function fitsTarget(
+  m: { target: CustomTarget; size: { w: number; d: number }; tris: number },
+  t: CustomTarget,
+): boolean {
+  if (t.kind === 'look' && !canHaveLook(t.def)) return false;
+  const site = siteOf(t);
+  if (!site || !fits(site.w, m.size.w) || !fits(site.d, m.size.d)) return false;
+  return isWar(t) === isWar(m.target) && m.tris <= budgetOf(t);
+}
+
+/** Every target a model passes for: its own first, then the landmark and buildings of its size. */
+export function targetsFor(m: {
+  target: CustomTarget;
+  size: { w: number; d: number };
+  tris: number;
+}): CustomTarget[] {
+  const out: CustomTarget[] = [m.target];
+  const same = (a: CustomTarget, b: CustomTarget) => targetId(a) === targetId(b);
+  for (const t of suggestTargets(m.size, 64)) if (!same(t, m.target) && fitsTarget(m, t)) out.push(t);
+  return out;
+}
+
+/** The target a civic building is, for its looks: a landmark of the player's own, or a look. */
+export function targetOfDef(def: string): CustomTarget {
+  const n = /^landmark([1-4])$/.exec(def);
+  return n ? { kind: 'landmark', size: Number(n[1]) as LandmarkSize } : { kind: 'look', def };
+}

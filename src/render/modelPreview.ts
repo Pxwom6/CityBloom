@@ -12,6 +12,7 @@ import {
   Color,
   DataTexture,
   DirectionalLight,
+  Fog,
   HemisphereLight,
   Mesh,
   MeshLambertMaterial,
@@ -40,6 +41,12 @@ const GROUND: Record<Season, number> = {
   autumn: 0x9a9a4e,
   winter: 0xe8edf2,
 };
+
+/** Where the camera stands, from the front (radians to its right), and the sun, from the camera. */
+const CAMERA_SIDE = 0.55;
+const SUN_SIDE = -0.9;
+/** Frames a second at most: a small view beside the city needn't take a whole frame's worth. */
+const PREVIEW_FPS = 30;
 
 /** A window's chance of being lit, the same each time it's drawn (a hash of its number). */
 function lit(n: number, chance: number): boolean {
@@ -92,9 +99,12 @@ export class ModelPreview {
   private material;
   private radius = 10;
   private height = 6;
-  private angle = 0.7;
+  /** The turntable's angle: the model turns, the camera and sun stay (its lit side always shows). */
+  private angle = 0;
   private frame = 0;
   private last = 0;
+  private drawn = 0;
+  private fog = new Fog(0xbcd8f0, 40, 90);
   /** The turntable turns (off for a still picture). */
   spinning = true;
 
@@ -111,6 +121,7 @@ export class ModelPreview {
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -0.02;
     this.scene.add(this.sun, this.sun.target, this.sky, this.ambient, this.ground);
+    this.scene.fog = this.fog;
     this.setLook({ night: false, season: 'summer' });
   }
 
@@ -126,7 +137,7 @@ export class ModelPreview {
     const s = g.boundingSphere!;
     this.radius = Math.max(4, s.radius);
     this.height = Math.max(2, m.height);
-    this.ground.scale.setScalar(this.radius * 1.6);
+    this.ground.scale.setScalar(this.radius * 8);
     this.draw();
   }
 
@@ -138,11 +149,14 @@ export class ModelPreview {
     this.weather.uSnow.value = look.season === 'winter' ? 0.8 : 0;
     this.ground.material.color.setHex(GROUND[look.season]);
     if (night) this.ground.material.color.multiplyScalar(0.35);
-    this.scene.background = new Color(night ? 0x141c2e : look.season === 'winter' ? 0xd9e2ec : 0xbcd8f0);
-    this.sun.intensity = night ? 0.12 : look.season === 'winter' ? 1.6 : 2.2;
+    const sky = new Color(night ? 0x141c2e : look.season === 'winter' ? 0xd9e2ec : 0xbcd8f0);
+    this.scene.background = sky;
+    this.fog.color.copy(sky);
+    // By night a moon's light and the sky's glow, enough to see its shape by its windows.
+    this.sun.intensity = night ? 0.3 : look.season === 'winter' ? 1.6 : 2.2;
     this.sun.color.setHex(night ? 0x8fa6d9 : 0xfff4e0);
-    this.sky.intensity = night ? 0.25 : 1.1;
-    this.ambient.intensity = night ? 0.06 : 0.15;
+    this.sky.intensity = night ? 0.45 : 1.1;
+    this.ambient.intensity = night ? 0.1 : 0.15;
     this.draw();
   }
 
@@ -155,12 +169,20 @@ export class ModelPreview {
     this.camera.aspect = w / h;
     const dist = this.radius * 2.6;
     const look = new Vector3(0, this.height * 0.4, 0);
-    // The front faces −z: the turntable starts looking at it from the front, a little to one side.
-    this.camera.position.set(Math.sin(this.angle) * dist, look.y + dist * 0.45, -Math.cos(this.angle) * dist);
+    // The front faces −z: the table starts with it towards the camera, a little to one side.
+    this.camera.position.set(
+      Math.sin(CAMERA_SIDE) * dist,
+      look.y + dist * 0.45,
+      -Math.cos(CAMERA_SIDE) * dist,
+    );
     this.camera.lookAt(look);
     this.camera.updateProjectionMatrix();
     this.building.uLodEye.value.copy(this.camera.position);
-    this.sun.position.set(dist * 0.6, dist * 1.2, -dist * 0.8);
+    const sun = CAMERA_SIDE + SUN_SIDE;
+    this.sun.position.set(Math.sin(sun) * dist, dist * 1.3, -Math.cos(sun) * dist);
+    this.fog.near = dist * 1.6;
+    this.fog.far = dist * 4;
+    if (this.mesh) this.mesh.rotation.y = this.angle;
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -172,7 +194,10 @@ export class ModelPreview {
       const dt = Math.min(0.1, (t - this.last) / 1000);
       this.last = t;
       if (this.spinning) this.angle += dt * 0.5;
-      this.draw();
+      if (t - this.drawn >= 1000 / PREVIEW_FPS - 2) {
+        this.drawn = t;
+        this.draw();
+      }
       this.frame = requestAnimationFrame(step);
     };
     this.frame = requestAnimationFrame(step);

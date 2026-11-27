@@ -104,6 +104,7 @@ import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostRepl
 import type { ChallengeDef } from './data/challenges';
 import { TimelapseRecorder } from './client/timelapse';
 import { MyBuildings } from './client/myBuildings';
+import { fitsTarget, targetOfDef } from './models/customCheck';
 import type { BakedModel } from './models/baked';
 import type { RoomMsg } from '../relay/protocol';
 import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
@@ -399,7 +400,7 @@ export class Game {
     this.districts = new DistrictView(this);
     this.regionView = new RegionView(this);
     // Players' own models (M46): drawn when here, and a friend's only with friends' buildings shown.
-    renderer.civics.customLook = (hash) => this.customModel(hash);
+    renderer.civics.customLook = (hash, def) => this.customModel(hash, def);
     this.buildings.onChange = () => {
       this.renderer.civics.redrawLooks();
       this.notify();
@@ -2204,10 +2205,14 @@ export class Game {
     this.notify();
   }
 
-  /** A player's own model to draw (M46): here, and a friend's only with friends' buildings shown. */
-  customModel(hash: string): BakedModel | null {
+  /**
+   * A player's own model to draw (M46): here, a friend's only with friends' buildings shown, and (with
+   * `def`) only on a building it fits (its site, budget and kind: a room could name any model).
+   */
+  customModel(hash: string, def?: string): BakedModel | null {
     const m = this.buildings.get(hash);
     if (!m || (!m.mine && !this.settings.showFriendsBuildings)) return null;
+    if (def && !fitsTarget(m, targetOfDef(def))) return null;
     return m.baked;
   }
 

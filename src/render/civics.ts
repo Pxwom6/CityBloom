@@ -27,7 +27,7 @@ export class CivicRenderer {
    * A player's own model by its hash (M46), or null: not on this device yet, or a friend's with
    * friends' buildings hidden. Set by the game.
    */
-  customLook: ((hash: string) => BakedModel | null) | null = null;
+  customLook: ((hash: string, def: string) => BakedModel | null) | null = null;
 
   constructor(
     private world: ClientWorld,
@@ -47,13 +47,13 @@ export class CivicRenderer {
 
   private look(c: CivicData): string {
     // Fill by the steps the model has (a landfill's mound), so a truckload doesn't rebuild the chunk.
-    const own = c.look && this.customLook?.(c.look) ? c.look : '';
+    const own = c.look && this.customLook?.(c.look, c.def) ? c.look : '';
     return `${c.def}:${c.variant}:${Math.round((c.fill ?? 0) * 4)}:${(c.modules ?? []).join('+')}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}:${own}`;
   }
 
   /** The model a civic building is drawn with: a player's own (M46) when it's here and shown. */
   model(c: CivicData): ModelData {
-    const own = c.look ? this.customLook?.(c.look) : null;
+    const own = c.look ? this.customLook?.(c.look, c.def) : null;
     if (c.look && own) return assets.civicLook(c.def, c.variant, c.look, own);
     return assets.civic(c.def, c.variant, c.fill, c.modules ?? [], c.stage);
   }

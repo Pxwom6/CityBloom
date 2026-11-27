@@ -676,8 +676,8 @@ function BuiltBy({ id }: { id: number }) {
 
 /** A building wearing a player's own model (M46) goes by the model's name, when it's drawn. */
 function ownName(game: Game, id: number): string | null {
-  const look = game.world.civics.get(id)?.look;
-  return look && game.customModel(look) ? (game.buildings.get(look)?.name ?? null) : null;
+  const c = game.world.civics.get(id);
+  return c?.look && game.customModel(c.look, c.def) ? (game.buildings.get(c.look)?.name ?? null) : null;
 }
 
 function CivicInspector({ id }: { id: number }) {

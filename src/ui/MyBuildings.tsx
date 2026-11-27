@@ -5,6 +5,9 @@ import type { Season } from '../data/climate';
 import {
   CUSTOM,
   canHaveLook,
+  fitsTarget,
+  targetOfDef,
+  targetsFor,
   suggestTargets,
   targetId,
   targetLabel,
@@ -50,13 +53,16 @@ export function customOff(game: Game): boolean {
   return game.net?.session.room?.rules.customBuildings === false;
 }
 
-/** Arm the place tool with one of the player's models: a landmark, or a new building wearing it. */
-export function placeOwn(game: Game, m: StoredModel): void {
+/**
+ * Arm the place tool with one of the player's models: a landmark, or a new building wearing it (as
+ * its own target, or `as` another it fits).
+ */
+export function placeOwn(game: Game, m: StoredModel, as: CustomTarget = m.target): void {
   if (customOff(game)) {
     game.toast(NO_CUSTOM, 'bad');
     return;
   }
-  const def = CIVIC.get(targetId(m.target));
+  const def = CIVIC.get(targetId(as));
   if (!def) return;
   if (game.panel === 'buildings') game.openPanel('buildings');
   game.tools.place.setOwn(def.id, m.hash);
@@ -280,6 +286,17 @@ export function MyBuildingsPanel() {
                   <span class="muted">
                     {shortTarget(m.target)} · {m.size.w} × {m.size.d} m
                   </span>
+                  {(() => {
+                    const also = targetsFor(m).slice(1);
+                    if (!also.length) return null;
+                    const names = also.slice(0, 3).map(shortTarget);
+                    return (
+                      <span class="muted" data-testid={`buildings-also-${m.hash}`}>
+                        Also fits: {names.join(', ')}
+                        {also.length > 3 ? ` and ${also.length - 3} more` : ''}
+                      </span>
+                    );
+                  })()}
                 </button>
                 {renaming === m.hash && (
                   <input
@@ -577,13 +594,13 @@ export function LookChooser(props: { civicId: number; def: string }) {
   const c = game.world.civics.get(props.civicId);
   // A landmark of the player's own (M46) may wear any of their landmarks of its size.
   if (!c || !(canHaveLook(props.def) || CIVIC.get(props.def)?.category === 'custom')) return null;
-  const mine = game.buildings.list().filter((m) => targetId(m.target) === props.def);
+  const mine = game.buildings.list().filter((m) => fitsTarget(m, targetOfDef(props.def)));
   const wearing = c.look ? game.buildings.get(c.look) : undefined;
   if (!mine.length && !c.look) return null;
   const off = customOff(game);
   const options = [...mine];
   if (wearing && !options.some((m) => m.hash === wearing.hash)) options.push(wearing);
-  const hidden = !!c.look && !game.customModel(c.look);
+  const hidden = !!c.look && !game.customModel(c.look, c.def);
   return (
     <div class="inspector-look">
       <label>

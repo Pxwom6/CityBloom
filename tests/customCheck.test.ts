@@ -7,9 +7,12 @@ import {
   checkCustom,
   CUSTOM,
   externalLinks,
+  fitsTarget,
   probeCustom,
   suggestTargets,
   targetLabel,
+  targetOfDef,
+  targetsFor,
 } from '../src/models/customCheck';
 import { readBudgets } from '../scripts/lib/modelPipeline';
 import { goodModelParts, testModels, writeGlb } from '../scripts/lib/makeGlb';
@@ -90,5 +93,27 @@ describe('M46 checking a player’s model', () => {
     const out = probeCustom(m.outside);
     expect('why' in out && out.why).toMatch(/points to files outside itself/);
     expect('why' in probeCustom(new Uint8Array([1, 2, 3, 4]))).toBe(true);
+  });
+
+  it('lets a model serve every target it passes for: the same site, within budget, war apart', () => {
+    const r = checkCustom(m.good, { kind: 'landmark', size: 2 }).result;
+    const good = {
+      target: { kind: 'landmark', size: 2 } as const,
+      size: { w: 16, d: 16 },
+      tris: r.report!.triangles,
+    };
+    const all = targetsFor(good);
+    expect(all[0]).toEqual(good.target);
+    expect(all).toContainEqual({ kind: 'look', def: 'park_small' });
+    // Each one it's offered for passes that target's own check.
+    for (const t of all) expect(checkCustom(m.good, t).result.ok, JSON.stringify(t)).toBe(true);
+    // Military buildings of the same size are checked with the war allowances: never offered.
+    expect(fitsTarget(good, { kind: 'look', def: 'bunker' })).toBe(false);
+    // Over another target's budget, or another size: not offered.
+    expect(fitsTarget({ ...good, tris: 1_000 }, { kind: 'look', def: 'park_small' })).toBe(false);
+    expect(fitsTarget({ ...good, tris: 1_000 }, { kind: 'landmark', size: 2 })).toBe(true);
+    expect(fitsTarget(good, { kind: 'landmark', size: 3 })).toBe(false);
+    expect(targetOfDef('landmark3')).toEqual({ kind: 'landmark', size: 3 });
+    expect(targetOfDef('park_small')).toEqual({ kind: 'look', def: 'park_small' });
   });
 });

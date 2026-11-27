@@ -10,7 +10,7 @@ import { useGame, useGameUpdates } from './hooks';
 import { tipShift } from './layout';
 import { isPhone } from '../game';
 import { CIVIC, CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
-import { targetId } from '../models/customCheck';
+import { targetId, targetsFor } from '../models/customCheck';
 import { NO_CUSTOM } from '../sim/rules';
 import { customOff, placeOwn } from './MyBuildings';
 import { UNIT } from '../data/war';
@@ -1334,18 +1334,22 @@ function OwnLandmarks() {
   const game = useGameUpdates(300);
   const tools = game.tools;
   const off = customOff(game);
-  const own = game.buildings.list().filter((m) => m.target.kind === 'landmark');
+  // Every model of a landmark's size (its own target, or one it fits as well).
+  const own = game.buildings.list().flatMap((m) => {
+    const t = targetsFor(m).find((x) => x.kind === 'landmark');
+    return t ? [{ m, t }] : [];
+  });
   return (
     <>
-      {own.map((m) => {
-        const def = CIVIC.get(targetId(m.target))!;
+      {own.map(({ m, t }) => {
+        const def = CIVIC.get(targetId(t))!;
         return (
           <ToolButton
             key={m.hash}
             id={`place-own-${m.hash}`}
             active={tools.place.armed && tools.place.look === m.hash}
             disabled={off}
-            onClick={() => placeOwn(game, m)}
+            onClick={() => placeOwn(game, m, t)}
             tip={{
               title: m.name,
               lines: [

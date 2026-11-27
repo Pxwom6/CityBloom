@@ -16,6 +16,8 @@ export interface StoredModel {
   target: CustomTarget;
   /** Its footprint (m): what else it fits (a landmark of that size, a building with that site). */
   size: { w: number; d: number };
+  /** Triangles it draws: what else it fits within budget (`fitsTarget`). */
+  tris: number;
   bytes: Uint8Array;
   baked: BakedModel;
   /** Imported by this player (shown in My Buildings); otherwise a friend's. */
@@ -172,6 +174,7 @@ export class MyBuildings {
         w: Math.round((b.max[0] - b.min[0]) * 100) / 100,
         d: Math.round((b.max[2] - b.min[2]) * 100) / 100,
       },
+      tris: result.report?.triangles ?? Number.MAX_SAFE_INTEGER,
       bytes: bytes.slice(),
       baked: result.baked,
       mine: mine || !!had?.mine,

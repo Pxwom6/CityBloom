@@ -452,7 +452,7 @@ export interface TestApi {
   /** Id of the first civic building with this def, or null. */
   findCivic(def: string): number | null;
   /** Civic buildings on the client mirror. */
-  getCivics(): { id: number; def: string; x: number; z: number; angle: number; stage?: number }[];
+  getCivics(): { id: number; def: string; x: number; z: number; angle: number; stage?: number; look?: string }[];
   /** Vehicles as last drawn. */
   getVehicles(): { id: number; kind: string; phase: string; x: number; z: number }[];
   /** Road segment nearest (x, z) within 20 m. */
@@ -1629,6 +1629,7 @@ export function installTestApi(game: Game): TestApi {
         z: c.z,
         angle: c.angle,
         stage: c.stage,
+        look: c.look,
       })),
     getVehicles: () =>
       [...game.renderer.vehicles.positions].map(([id, v]) => ({

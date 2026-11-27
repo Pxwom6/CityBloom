@@ -6476,6 +6476,8 @@ body {
 .buildings-preview canvas {
   width: 100%;
   aspect-ratio: 16 / 10;
+  /* A phone keeps the list in reach below it (M49's sheets). */
+  max-height: 34vh;
   border-radius: var(--radius-md);
   background: #bcd8f0;
   display: block;

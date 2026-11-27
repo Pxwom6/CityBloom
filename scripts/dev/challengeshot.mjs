@@ -234,7 +234,16 @@ for (const [name, dev] of [
     const p = await newPage({ ...profile, viewport: vp, screen: vp });
     await p.page.goto(`${GAME}?screen=challenge`);
     await ready(p.page, 'menu');
-    await p.page.getByTestId('challenge-detail').waitFor();
+    await p.page
+      .getByTestId('challenge-detail')
+      .waitFor({ timeout: 60_000 })
+      .catch(async () => {
+        await p.page.screenshot({ path: `${out}/${name}-failed.png` });
+        console.log(
+          'phone screens:',
+          JSON.stringify(await p.page.evaluate(() => window.__game.getShell().screens)),
+        );
+      });
     await p.page
       .getByTestId('board-row')
       .first()
@@ -246,6 +255,15 @@ for (const [name, dev] of [
     await p.ctx.close();
   }
 }
+// The owner area: the week's entries, the pin and the word filter.
+const o = await newPage({ viewport: { width: 900, height: 1100 } });
+await o.page.goto('http://localhost:4180/owner.html');
+await o.page.fill('[data-testid=owner-key]', KEY);
+await o.page.click('[data-testid=owner-signin-go]');
+await o.page.getByTestId('owner-section-challenge').click();
+await o.page.getByTestId('owner-entry').first().waitFor();
+await o.page.screenshot({ path: `${out}/owner.png`, fullPage: true });
+console.log('shot owner');
 await browser.close();
 stop();
 process.exit(0);

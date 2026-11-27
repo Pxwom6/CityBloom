@@ -6190,6 +6190,10 @@ body {
 .challenge-screen {
   width: min(56rem, 100%);
 }
+/* The card scrolls as a whole (its parts never squeeze under the footer). */
+.challenge-screen > * {
+  flex-shrink: 0;
+}
 .challenge-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -6260,6 +6264,13 @@ body {
 }
 .challenge-group-actions input {
   text-transform: uppercase;
+}
+.challenge-group-actions input::placeholder {
+  text-transform: none;
+}
+.slot-tag {
+  color: var(--color-accent-strong);
+  font-weight: var(--font-weight-medium);
 }
 .challenge-made strong {
   font-family: var(--font-mono, monospace);

@@ -817,6 +817,23 @@ export const TIPS: Tip[] = [
       'name, cities or chat) unless you switch them off in Settings → Game.',
     when: (g) => g.mode === 'play' && !g.readOnly && !g.net && g.world.stats.tick > 2 * 24 * 60,
   },
+  {
+    // The weekly challenge (M44): what the score is and where it goes, once the city is under way.
+    id: 'challenge',
+    text:
+      'This is this week’s challenge: the same map, goals and twist for everyone. Your score grows with ' +
+      'the goals (G shows it so far); when they’re met or time’s up, post it to the board. Try as often ' +
+      'as you like: your best counts, and anyone can watch your run.',
+    when: (g) => g.mode === 'play' && !g.readOnly && !!g.challengeDef && !g.scenarioBrief,
+  },
+  {
+    // A challenge's board (M44): once a score is posted, the friends board.
+    id: 'challengeFriends',
+    text:
+      'Want a board just for you and your friends? On the challenge screen, Friends → Make a group gives ' +
+      'a code to share; scores you post from then on show on that group’s board too.',
+    when: (g) => g.mode === 'play' && !!g.challengeDef && g.challengePost.reply?.ok === true,
+  },
 ];
 
 /**

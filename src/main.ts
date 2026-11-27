@@ -488,7 +488,9 @@ async function boot(): Promise<void> {
       game.notify();
     };
     client.watchRun({ entries: w.run.entries, end: w.run.end, hash: w.run.hash, score: w.run.score });
-    game.setCamera('overview', true);
+    // Framed on where the town grows: from the highway's end, inland.
+    const hw = world.netState.nodes.get(world.highway.connect);
+    game.setCamera(hw ? { x: hw.x + 300, z: hw.z, distance: 1100, yaw: 0.28, tilt: 0 } : 'overview', true);
     game.setSpeed(1);
     history.replaceState(null, '', location.pathname);
   } else if (menu || joinError) {

@@ -3,6 +3,8 @@
  * checks each time; the page never decides on its own that the key is right.
  */
 import type { GroupStatus, GroupView, ItemFull, REPORT_LIMITS } from '../../relay/reportDesk';
+import type { OwnerRow } from '../../relay/challengeBoard';
+import type { ChallengeDef } from '../data/challenges';
 
 export interface OwnerStatus {
   setUp: boolean;
@@ -16,6 +18,19 @@ export interface Usage {
   bytes: number;
   rowsToday: number;
   limits: typeof REPORT_LIMITS;
+}
+
+/** The weekly challenge's board as the owner sees a week of it (M44). */
+export interface ChallengeWeekView {
+  week: number;
+  /** This week's number. */
+  now: number;
+  entries: OwnerRow[];
+  pin: ChallengeDef | null;
+  /** The challenge played that week: the pin, or the generator's. */
+  challenge: ChallengeDef;
+  words: string[];
+  usage: { entries: number; runs: number; runChars: number; rowsToday: number; rowsPerDay: number };
 }
 
 export class OwnerApi {
@@ -57,6 +72,34 @@ export class OwnerApi {
 
   deleteItem(id: number): Promise<{ ok: true }> {
     return this.call(`/owner/reports/item/${id}`, { method: 'DELETE' });
+  }
+
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return this.call(path, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'text/plain' },
+    });
+  }
+
+  /** A week of the challenge board (M44): every entry whatever its status, the pin, the word filter. */
+  challenge(week?: number): Promise<ChallengeWeekView> {
+    return this.call(`/owner/challenge${week === undefined ? '' : `?week=${week}`}`);
+  }
+
+  /** Take an entry off the board, or put one back (a run pages found didn't replay, too). */
+  setEntry(id: number, action: 'remove' | 'restore'): Promise<{ ok: true }> {
+    return this.post(`/owner/challenge/entry/${id}`, { action });
+  }
+
+  /** Pin a hand-made challenge for a week, or take the pin away (null: the generator's again). */
+  pin(week: number, def: unknown): Promise<{ ok: true }> {
+    return this.post('/owner/challenge/pin', { week, def });
+  }
+
+  /** The words a name on the board may not contain. */
+  setWords(words: string[]): Promise<{ ok: true; words: string[] }> {
+    return this.post('/owner/challenge/words', { words });
   }
 }
 

@@ -255,3 +255,58 @@ body {
     grid-template-columns: 1fr;
   }
 }
+/* The weekly challenge (M44). */
+.owner-challenge-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+.owner-challenge-head p {
+  margin: 0;
+}
+.owner-h3 {
+  margin: 18px 0 6px;
+  font-size: 0.95rem;
+}
+.owner-entry {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.owner-entry.removed,
+.owner-entry.dropped {
+  opacity: 0.7;
+}
+.owner-entry.disputed {
+  box-shadow: inset 3px 0 0 #c9871a;
+}
+.owner-entry-line {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+}
+.owner-entry-line > * {
+  grid-area: auto;
+}
+.owner-entry .owner-actions {
+  margin-top: 4px;
+}
+a.owner-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.owner-json {
+  width: 100%;
+  font:
+    0.85rem/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+}

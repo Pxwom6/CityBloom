@@ -1,11 +1,12 @@
 /**
  * The owner area (phase 6): the owner's own page, linked from nowhere in the game. Signed in with
  * OWNER_KEY, which the relay checks on every request; kept on this device until signing out. M41's
- * problem reports live here; later milestones add their tabs (submissions, the challenge board).
+ * problem reports live here, and M44's weekly challenge board; later milestones add their tabs.
  * Laid out for a phone first.
  */
 import { useEffect, useState } from 'preact/hooks';
 import { OwnerApi, groupForClaude, type Usage } from './api';
+import { OwnerChallenge } from './OwnerChallenge';
 import type { GroupStatus, GroupView, ItemFull } from '../../relay/reportDesk';
 
 const KEY = 'citybloom.ownerKey';
@@ -340,6 +341,7 @@ export function OwnerApp(props: { base: string | null }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [section, setSection] = useState<'reports' | 'challenge'>('reports');
   const api = props.base ? new OwnerApi(props.base, key) : null;
   const check = async (k: string, remember = !!localStorageKey()) => {
     if (!props.base) return;
@@ -409,10 +411,30 @@ export function OwnerApp(props: { base: string | null }) {
       )}
       {state === 'in' && api && (
         <main>
-          <nav class="owner-sections">
-            <span class="owner-tab on">Problem reports</span>
+          <nav class="owner-sections" role="tablist">
+            {(
+              [
+                ['reports', 'Problem reports'],
+                ['challenge', 'Weekly challenge'],
+              ] as const
+            ).map(([t, label]) => (
+              <button
+                key={t}
+                role="tab"
+                aria-selected={section === t}
+                class={`owner-tab ${section === t ? 'on' : ''}`}
+                data-testid={`owner-section-${t}`}
+                onClick={() => setSection(t)}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
-          <Reports api={api} note={note} />
+          {section === 'reports' ? (
+            <Reports api={api} note={note} />
+          ) : (
+            <OwnerChallenge api={api} note={note} />
+          )}
         </main>
       )}
       {toast && (

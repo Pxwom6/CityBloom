@@ -3,7 +3,7 @@ import { isIOS } from '../client/platform';
 import { deviceMemory, tooBigFor } from '../client/memoryBudget';
 import { currentDevice } from '../client/graphicsCheck';
 import { isPhone } from '../game';
-import { ChallengeMenuButton, ChallengeScreen } from './Challenge';
+import { ChallengeMenuButton, ChallengeScreen, weekName } from './Challenge';
 import { FriendsScreen } from './Friends';
 import { relayUrl } from '../net/multiplayer';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
@@ -142,6 +142,12 @@ function useSlots(): [SlotInfo[] | null, () => void] {
 function SlotLine({ s, city = true }: { s: SlotInfo; city?: boolean }) {
   return (
     <span class="slot-meta">
+      {/* A weekly challenge city (M44) says so, and whether its challenge is over. */}
+      {s.challenge && (
+        <span class="slot-tag" data-testid="slot-challenge">
+          {`Challenge · ${weekName(s.challenge.week)}${s.challenge.done ? ', finished' : ''} · `}
+        </span>
+      )}
       {city && `${s.cityName} · `}
       {s.population.toLocaleString('en-US')} residents · {formatDate(dateOf(s.tick))} · {ago(s.savedAt)}
     </span>

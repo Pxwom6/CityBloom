@@ -62,6 +62,11 @@ export interface Civic {
    */
   staff?: number;
   powered?: number;
+  /**
+   * A player's own model for it (M46): the model's hash (16 hex digits). The sim never sees the model:
+   * the building is the same building whatever it looks like. Absent: the game's own look.
+   */
+  look?: string;
 }
 
 /** A day of garbage collection at one facility: units unloaded, rounds finished, their minutes and stops. */

@@ -15,7 +15,7 @@ import { rivalAllies } from './systems/war';
 import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 33;
+export const SAVE_VERSION = 34;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -315,6 +315,9 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // (`GameOptions.challenge` and the challenge's parts of `ScenarioState` appear only in one), so
   // nothing changes but the version.
   32: (s) => s,
+  // v33 → v34 (M46): players' own models for civic buildings (a civic’s optional `look`). An older city
+  // has none: every building wears the game's own look.
+  33: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

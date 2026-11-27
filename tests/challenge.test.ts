@@ -197,13 +197,14 @@ describe('M44 the weekly challenge', () => {
     expect(sim.state.scenario!.disasterDone).toBe(true);
     const file = sim.save('now');
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(33);
+    // The challenge arrived with v33 (later versions keep it).
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(33);
     const back = Sim.fromSave(file);
     expect(back.hash()).toBe(sim.hash());
     expect(back.state.options.challenge?.id).toBe(def.id);
-    // A v32 save reads as v33 with nothing else changed.
+    // A v32 save reads as the current version with nothing else changed.
     const old = { ...back.save('now'), version: 32 };
-    expect(readSaveFile(old).version).toBe(33);
+    expect(readSaveFile(old).version).toBe(SAVE_VERSION);
     expect(Sim.fromSave(old).hash()).toBe(back.hash());
   });
 });

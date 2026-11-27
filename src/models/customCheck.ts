@@ -4,7 +4,7 @@
  * player needs on top: at most 1 MB, and nothing inside it that points outside the file. A model
  * that passes is baked as the build bakes the game's own. Pure, so it runs in a worker and in Node.
  */
-import { CIVIC } from '../data/civic';
+import { CIVIC, takesLook } from '../data/civic';
 import type { BakedModel } from './baked';
 import { bakeModel } from './bake';
 import { CIVIC_BUDGETS } from './budgets';
@@ -38,8 +38,7 @@ export function targetLabel(t: CustomTarget): string {
 
 /** Civic buildings a player's model can stand in for: placed ones, not big projects or landmarks. */
 export function canHaveLook(def: string): boolean {
-  const d = CIVIC.get(def);
-  return !!d && d.category !== 'custom' && d.category !== 'project' && !d.project;
+  return takesLook(def) && CIVIC.get(def)?.category !== 'custom';
 }
 
 /** A target's triangle budget: its prompt's, else one by the site's size. */

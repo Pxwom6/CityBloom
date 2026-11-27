@@ -543,6 +543,15 @@ export const CIVIC_DEFS: CivicDef[] = [
   },
 ];
 
+/** Can a player's own model stand in for this civic building (M46)? Any but a big project. */
+export function takesLook(def: string): boolean {
+  const d = CIVIC.get(def);
+  return !!d && d.category !== 'project' && !d.project;
+}
+
+/** A model's hash as rooms, saves and the sim know it (M46). */
+export const LOOK_HASH = /^[0-9a-f]{16}$/;
+
 // A player's own landmark (M46): a decorative building of their making on 1×1 to 4×4 cells, which
 // works like a park of its size (nothing new in the economy). Placed from My Buildings with a model;
 // without one (a friend's hidden, or not arrived) it shows the plaza's generated look.

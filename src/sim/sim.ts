@@ -212,7 +212,7 @@ import { extractionPerDay, specialisationsHour } from './systems/specialisations
 import { POLICY, type PolicyId } from '../data/policies';
 import { decayCrime, splatField } from './systems/pollution';
 import type { ServiceKind } from '../data/civic';
-import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
+import { CIVIC, GARBAGE, takesLook, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
@@ -1460,8 +1460,27 @@ export class Sim {
         if (!dryRun) this.earn(cmd.amount, 'cheats');
         return ok(0);
       }
-      case 'placeBuilding':
-        return placeCivic(this, cmd.def, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
+      case 'placeBuilding': {
+        // A player's own model for it (M46): the building is the same; only its look is theirs.
+        if (cmd.look !== undefined && !takesLook(cmd.def)) return fail(NO_LOOK);
+        const r = placeCivic(this, cmd.def, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
+        if (r.ok && !dryRun && cmd.look) {
+          const c = this.state.civics.get(r.created?.[0] ?? -1);
+          if (c) c.look = cmd.look;
+        }
+        return r;
+      }
+      case 'setLook': {
+        const c = this.state.civics.get(cmd.civic);
+        if (!c) return fail('No such building');
+        if (!takesLook(c.def)) return fail(NO_LOOK);
+        if (!dryRun) {
+          if (cmd.look) c.look = cmd.look;
+          else delete c.look;
+          this.dirtyCivics.add(c.id);
+        }
+        return ok(0);
+      }
       case 'renameCity': {
         // A weekly challenge's run is replayed for everyone to watch (M44): nothing typed goes in it.
         if (challengeDef(this)) return fail(NO_NAMES);
@@ -2524,6 +2543,7 @@ export class Sim {
       flooded: c.flooded,
       modules: [...c.modules],
       stage: c.build?.stage,
+      ...(c.look ? { look: c.look } : {}),
     };
   }
 
@@ -3068,6 +3088,7 @@ function blockData(b: ZoneBlock): BlockData {
 /** What a new city starts with: the sandbox's, a quick match's fast start (M43), or the difficulty's. */
 /** Why names can't be typed in a weekly challenge (M44). */
 const NO_NAMES = 'Names can’t be changed in the weekly challenge: its replays are shown to everyone';
+const NO_LOOK = 'That building can’t take a model of your own';
 
 function startingFunds(options: GameOptions): number {
   if (options.sandbox) return SANDBOX_FUNDS;

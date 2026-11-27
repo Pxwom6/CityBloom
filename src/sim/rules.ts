@@ -47,7 +47,12 @@ export interface SharedRules {
    * from then on every list is read as it stands. Before, a list naming no role allows them all.
    */
   roles?: true;
+  /** The host has turned players' own buildings off for the room (M46): absent, they're on. */
+  customBuildings?: false;
 }
+
+/** What the room says when the host has turned custom buildings off (M46). */
+export const NO_CUSTOM = 'The host has turned custom buildings off in this room';
 
 /** New players' permissions: friends trust each other until the host says otherwise (DECISIONS). */
 export const DEFAULT_PERMS: readonly Permission[] = [
@@ -171,6 +176,12 @@ export function roomRefusal(rules: SharedRules | null, player: number, cmd: Comm
   // A launch of the atom bomb (M40) cannot be undone and changes every player's city for years: the
   // host's alone, whatever roles the host has given.
   if (cmd.type === 'launchBomb' && rules && player && player !== rules.host) return HOST_ONLY_LAUNCH;
+  // Players' own buildings (M46), when the host has turned them off: nothing new may wear one.
+  if (
+    rules?.customBuildings === false &&
+    ((cmd.type === 'setLook' && cmd.look) || (cmd.type === 'placeBuilding' && cmd.look))
+  )
+    return NO_CUSTOM;
   const need = needOf(cmd);
   if (need && !may(rules, player, need)) return `The host hasn't let you ${WORDS[need]}`;
   if (cmd.type === 'placeBuilding' && CIVIC.get(cmd.def)?.project && !may(rules, player, 'projects'))

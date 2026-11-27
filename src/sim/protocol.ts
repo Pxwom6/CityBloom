@@ -423,6 +423,8 @@ export interface CivicData {
   modules: string[];
   /** Big projects (M17): the stage under construction, absent once finished. */
   stage?: number;
+  /** A player's own model for it (M46), by hash. */
+  look?: string;
 }
 
 export interface VehicleData {

@@ -61,7 +61,10 @@ export type Command =
   | { type: 'promise'; promise: PromiseId; on: boolean }
   | { type: 'repayLoan'; id: number }
   /** Place a civic building: centre, road tangent angle and which side of the road it stands on. */
-  | { type: 'placeBuilding'; def: string; x: number; z: number; angle: number; side: 1 | -1 }
+  /** `look`: a player's own model for it (M46), by hash. */
+  | { type: 'placeBuilding'; def: string; x: number; z: number; angle: number; side: 1 | -1; look?: string }
+  /** A player's own model for a civic building (M46), by hash; null: the game's own look again. */
+  | { type: 'setLook'; civic: number; look: string | null }
   | { type: 'cheat'; cheat: 'unlockAll' }
   /** Start a fire in a building (debug panel, tests). */
   | { type: 'cheat'; cheat: 'ignite'; id: number }
@@ -438,6 +441,7 @@ const COMMAND_KINDS = {
   friendFallout: true,
   friendWinter: true,
   atomFirst: true,
+  setLook: true,
 } as const satisfies Record<CommandType, true>;
 
 export const COMMAND_TYPES = Object.keys(COMMAND_KINDS) as CommandType[];

@@ -1,4 +1,5 @@
 import { UNIT, type RegionWarRules, type UnitKind } from './data/war';
+import { touchScreen, touchWords } from './client/touchWords';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -434,6 +435,9 @@ export class Game {
   }
 
   notify(): void {
+    // What the tutorial waits for is noted as it opens, not at the next two-second check (phase 6 end).
+    // (Absent while the constructor runs.)
+    this.tutorial?.noteSeen();
     this.listeners.forEach((l) => l());
   }
 
@@ -1382,7 +1386,7 @@ export class Game {
     this.match.keptAs(label);
     const slot = `s${Date.now().toString(36)}`;
     if (!(await this.saveTo(slot, label, true))) return null;
-    this.toast(`Kept as “${label}”: open it from Load game any time.`, 'ok', 6000);
+    this.toast(`Kept as “${label}”: open it from Load city any time.`, 'ok', 6000);
     return label;
   }
 
@@ -2855,7 +2859,8 @@ export class Game {
 
   setHint(h: ToolHint | null): void {
     if (!h && !this.hint) return;
-    this.hint = h;
+    // The tools' words are a mouse's: a finger reads them as taps (phase 6 end).
+    this.hint = h && touchScreen() ? { ...h, text: touchWords(h.text) } : h;
     this.notify();
   }
 

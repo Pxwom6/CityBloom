@@ -4,7 +4,8 @@
  * continued, skipped a step at a time and ended. A stand-in game holds just what the runner reads.
  */
 import { describe, expect, it } from 'vitest';
-import { TUTORIAL, TUTORIAL_EVENTS, TUTORIAL_IDS } from '../src/client/tutorial';
+import { TIPS, TUTORIAL, TUTORIAL_EVENTS, TUTORIAL_IDS, wordsFor } from '../src/client/tutorial';
+import { LESSONS } from '../src/client/lessons';
 import { TutorialRunner } from '../src/client/tutorialRunner';
 import type { Game } from '../src/game';
 import { ZONE_C, ZONE_I, ZONE_R } from '../src/data/zones';
@@ -146,6 +147,20 @@ describe('the first-city tutorial', () => {
     expect(f.camera).toHaveLength(2);
   });
 
+  it('counts the advisors opened and closed between two checks (phase 6 end)', () => {
+    const { f, runner, at } = setup();
+    runner.start();
+    f.settings.tutorialStep = TUTORIAL.findIndex((t) => t.id === 'advisors');
+    runner.check();
+    expect(at()).toBe('advisors');
+    // Opened (the game notes it as the panel opens) and closed again before the next check.
+    f.panel = 'advisors';
+    runner.noteSeen();
+    f.panel = null;
+    runner.check();
+    expect(at()).toBe('grow500');
+  });
+
   it('waits for the budget and a coverage map to be opened, and stays beside the budget for taxes', () => {
     const { f, runner, at } = setup();
     runner.start();
@@ -197,6 +212,20 @@ describe('the first-city tutorial', () => {
     expect(f.settings.tutorialSeen).toEqual(['firstFire', 'firstPowerCut', 'firstJam']);
   });
 
+  it('explains a fire that comes while the first families are still arriving (phase 6 end)', () => {
+    const { f, runner, at } = setup();
+    runner.start();
+    f.settings.tutorialStep = TUTORIAL.findIndex((t) => t.id === 'water');
+    f.world.buildings.set(1, { x: 50, z: 60, flags: 128 });
+    runner.check();
+    // Still building: the fire waits.
+    expect(at()).toBe('water');
+    // Time runs: the card waits for 40 residents, and the fire is explained.
+    f.settings.tutorialStep = TUTORIAL.findIndex((t) => t.id === 'time');
+    runner.check();
+    expect(at()).toBe('firstFire');
+  });
+
   it('can be left and continued at the same step, skipped a step at a time, and ended', () => {
     const { f, runner, at } = setup();
     runner.start();
@@ -228,5 +257,52 @@ describe('the first-city tutorial', () => {
     expect(at()).toBe('finish');
     runner.next();
     expect(f.settings.tutorialStep).toBe(-1);
+  });
+});
+
+describe('the words on a touch screen (phase 6 end)', () => {
+  // A mouse's or a keyboard's words: a phone's first city was told to right-drag, scroll and press Esc.
+  const MOUSE =
+    /\b(click|clicks|clicking|right-drag|scroll|hover|space bar|Esc|Escape|Shift\+\w)\b|\([A-Z0-9]\)/i;
+  const everything = [
+    ...TUTORIAL.map((t) => ({ where: `tutorial ${t.id}`, ...t })),
+    ...TUTORIAL_EVENTS.map((t) => ({ where: `lesson ${t.id}`, ...t })),
+    ...LESSONS.flatMap((l) => l.steps.map((t) => ({ where: `${l.id} ${t.id}`, ...t }))),
+    ...TIPS.map((t) => ({ where: `tip ${t.id}`, ...t })),
+  ];
+
+  it('every card, lesson and tip reads without a mouse or keys on a touch screen', () => {
+    for (const c of everything) expect(wordsFor(c, true), c.where).not.toMatch(MOUSE);
+  });
+
+  it('leaves out the keys and makes clicks taps where a card has no touch words of its own', () => {
+    const t = (text: string) => wordsFor({ text }, true);
+    expect(t('Pause (Escape) → Report a problem sends a note.')).toBe(
+      'Pause → Report a problem sends a note.',
+    );
+    expect(t('City history (Y) → Make timelapse.')).toBe('City history → Make timelapse.');
+    expect(t('Open the war room (Shift+M, or its button in the top bar).')).toBe(
+      'Open the war room (its button in the top bar).',
+    );
+    expect(t('Click a barracks; or click one.')).toBe('Tap a barracks; or tap one.');
+    expect(wordsFor({ text: 'Click it (Y).' }, false)).toBe('Click it (Y).');
+  });
+
+  it('touch words never speak of a mouse or keys, and keep the cards short', () => {
+    for (const c of everything) {
+      if (!c.touch) continue;
+      expect(c.touch, c.where).not.toMatch(MOUSE);
+      const sentences = c.touch.split(/(?<=[.!?:])\s+/);
+      expect(sentences.length, c.where).toBeLessThanOrEqual(4);
+      for (const x of sentences) expect(x.split(/\s+/).length, `${c.where}: ${x}`).toBeLessThanOrEqual(25);
+    }
+  });
+
+  it('a card shows its touch words on a touch screen and its own words otherwise', () => {
+    const welcome = TUTORIAL.find((t) => t.id === 'welcome')!;
+    expect(wordsFor(welcome, false)).toContain('right-drag');
+    expect(wordsFor(welcome, true)).toContain('pinch to zoom');
+    const homes = TUTORIAL.find((t) => t.id === 'homes')!;
+    expect(wordsFor(homes, true)).toBe(homes.text);
   });
 });

@@ -3116,3 +3116,51 @@ and lint rerun; the fourteen pictures looked at)
 - **The owner's review** is a third section of the owner area (`src/owner/OwnerSubmissions.tsx`): filters by kind and status, newest first, the day's usage; an idea's text and picture; a building's turntable (M46's `ModelPreview`, day and night) and the check's results as the Workshop's teacher's notes; Seen, Accept, Decline with an optional reply; Delete; the word filter for credit names; Download GLB, named for the building and its credit (`clock-pavilion-by-ada.glb`); Copy for Claude Code (what it is, where it goes under `assets/models/`, the credit line for CREDITS.md, an idea in full, and that it comes in through the normal pipeline and a pull request, never automatically). On a touch screen every press is at least 44 px (the owner's phone, as the brief asks).
 - **Statuses are the owner's to set**: sent, seen, accepted or declined, in any order (a decline can be turned into an accept, which saves it from the sweep: only declined rows are deleted, 30 days after the latest decision); the reply goes with the decision and is shown only to its sender.
 - **The review** (a fresh reader on the security surface) found no way past the key and no leak; it found five things, all fixed: the per-address count was in memory (now in SQL, above); wrong keys from anywhere could keep the owner out, since the buckets were checked before the key (now the right key always opens it and only wrong ones are slowed: the same fix in the report desk and the challenge board); the text for Claude Code carried players' words unmarked (now a note first, and each player-written piece in a fence longer than any run of backticks in it, labelled as player-written: the problem reports' messages, stacks and notes too); a GLB whose JSON was `null` or held a list that wasn't one threw a 500 (now refused); and the token rode in the address (now in the body).
+
+## Phase 6 end (SPEC-6.md, "When every milestone is done")
+
+The phase played as players would, through the real UI on the Mac's GPU (headed Chrome; a laptop at 1280×800,
+an iPhone 13 held upright and a Pixel 7 held sideways in Playwright's phone emulation, by touch alone), kept as
+`e2e/phase6-finale.spec.ts` (`@playthrough`; `PHASE6_GPU=1` plays it in a real Chrome window). A brand-new
+player's first city with the tutorial follows each card's arrow and checks the button it points at is on screen
+and uncovered. One line a finding:
+
+**Fixed**
+- *The Taxes card drew no arrow* (it pointed at the R1 slider while the budget showed its Overview): a control on
+  a panel's tab that isn't showing points at the tab (`IN_TAB` in `src/ui/Guide.tsx`: taxes, funding, loans);
+  the playthrough follows the arrow to the tab, then to the slider.
+- *The Advisors card waited for good* when the advisors were opened and closed inside the tutorial's two-second
+  check: what the tutorial waits for (a panel, a screen, a data map) is noted as it opens (`TutorialRunner.noteSeen`,
+  from `Game.notify`; `tests/tutorial.test.ts`).
+- *A phone's tutorial spoke of a mouse and keys* ("right-drag to turn, scroll to zoom", "Click your money", "Open the
+  menu (Esc)", "Pause (Escape)", "City history (Y)") and so did the tools' hints ("Click or drag to draw · pan with
+  middle-drag, WASD or a swipe", "brush 24 m ([ ]) · shift-click fills a road"): on a touch screen cards, tips,
+  lessons and hints speak of taps, pinches and two fingers, with the keys' shortcuts left out (`touchWords` in
+  `src/client/touchWords.ts`, `wordsFor`, `TutorialStep.touch`, `Tip.touch`; `Game.setHint` reads hints through it;
+  `tests/tutorial.test.ts` checks every card, lesson and tip, `tests/touchWords.test.ts` the hints).
+- *A phone held upright had half its map under the tutorial card*: on a phone the card folds to one line ("Tutorial ·
+  step 3 of 18 · Zone homes ▾") once the player acts on it (picks a tool, or opens the Build, More or Maps sheet) or
+  taps Hide (▴), and unfolds for the next card or at a tap; a first problem's card folds only for a sheet (its
+  arrow's button is in one). Sideways it had covered the Build sheet's buttons, and the Coverage card the Fire map's.
+- *The Taxes card stood on the sliders it pointed at* on a phone: beside a sheet the card is compact (no progress bar
+  or leave/skip links), and upright it stands at the top while the sheet makes room below it.
+- *The Advisors card had no arrow on a phone*: a top-bar button folded into its More menu points at More
+  (`shownTarget`).
+- *Notices covered the tutorial card's words* on a phone (a fire's, a crime's): they keep clear of a card or tip,
+  just under it upright and beside it sideways (under it while a sheet takes the right) (`useClearOfCard` in
+  `src/ui/SystemMenu.tsx`).
+- *A finger stroke or road begun on a notice did nothing* ("Achievement: Breaking ground" sat where the player drew):
+  on a phone plain notices let a finger through to the map; only those that do something when tapped (fly to the
+  spot, reload) take it.
+- *A fire in a town's first weeks went unexplained*: the tutorial's first-problem lessons came only after "Let time
+  run", so a phone's small town burnt down while that card waited for 40 residents. They come from that step on
+  (`tests/tutorial.test.ts`).
+- *Zone paint that never grew*: lots grow only from the row of cells against the kerb, and a brush stroke painted
+  a little way off a road (as a finger paints, beside the street) zoned the rows behind it; the town on a phone
+  stalled at 44–117 with homes in demand. The zone tool now paints the front row in front of such a stroke as part of
+  the same stroke (`kerbPoint`, `ZoneTool.paintKerb`): the sim's rules are unchanged, so replays, shared cities and
+  challenge runs aren't touched (`tests/zoneKerb.test.ts`: the brush alone grows nothing, with the front row homes
+  grow). A sim-side answer (a brush always zoning down to the kerb) would have changed every recorded run's replay.
+- *Zones painted blind over a data map*: a player who'd opened the fire coverage map, as the tutorial asks, then
+  painted zones they couldn't see (zone paint hides under a data map). It shows while the zone tool is out.
+- *"Kept as … open it from Load game"*: the menu's button is Load city (the results card already said so).

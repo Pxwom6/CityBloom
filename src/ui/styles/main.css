@@ -1177,6 +1177,68 @@ body {
 #ui[data-width='xs'] .guide {
   width: min(21rem, calc(100% - 2 * var(--space-3)));
 }
+/* A phone's card folds to one line while the player acts on it (phase 6 end), and has a Hide button. */
+.guide-fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md, 1rem);
+  cursor: pointer;
+}
+.guide.guide-folded {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: auto;
+  max-width: calc(100% - 2 * var(--space-3));
+  min-height: 44px;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.guide.guide-folded .guide-kicker {
+  margin: 0;
+  white-space: nowrap;
+}
+.guide.guide-folded strong {
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guide-unfold {
+  color: var(--color-text-muted);
+}
+/*
+ * Beside a sheet on a phone (phase 6 end: the Taxes card stood on the tax sliders it pointed at), the card
+ * is compact at the foot: no progress bar, no leaving or skipping (they're on the next card).
+ */
+#ui[data-phone] .guide.beside-panel .guide-progress,
+#ui[data-phone] .guide.beside-panel .guide-leave {
+  display: none;
+}
+#ui[data-phone] .guide.beside-panel {
+  padding: var(--space-2) var(--space-3);
+}
+#ui[data-phone] .guide.beside-panel h3 {
+  font-size: var(--font-size-md);
+}
+/* Upright, it stands at the top and the sheet makes room for it below. */
+#ui[data-phone][data-orient='portrait'] .guide.beside-panel {
+  top: calc(var(--topbar-height) + var(--space-2) + env(safe-area-inset-top));
+  bottom: auto;
+}
+#ui[data-phone][data-orient='portrait']:has(.guide.beside-panel) aside.panel {
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 12.5rem);
+}
 /* A card that teaches a screen (the pause menu) stands above it, not under its dimming. */
 .guide.over-screen {
   z-index: calc(var(--z-shell) + 1);
@@ -5778,6 +5840,11 @@ body {
 }
 #ui[data-phone] .toast {
   max-width: 100%;
+  /* A finger landing on a notice reaches the map beneath (phase 6 end: a stroke or a road begun on
+     "Achievement: Breaking ground" did nothing); notices that do something when tapped still take it. */
+  pointer-events: none;
+}
+#ui[data-phone] .toast:is(.clickable, .update-notice) {
   pointer-events: auto;
 }
 #ui[data-phone][data-orient='landscape'] .toasts,

@@ -131,13 +131,23 @@ export class TutorialRunner {
   }
 
   /**
+   * Remember what the player has open now: called as panels, screens and data maps open (the game's
+   * `notify`), so one opened and closed between two checks still counts (phase 6 end: advisors opened
+   * and closed within the check's two seconds left the card waiting for good).
+   */
+  noteSeen(): void {
+    const g = this.g;
+    for (const k of tutorialSaw(g.panel, g.overlay?.active ?? null, g.screen)) this.saw.add(k);
+  }
+
+  /**
    * Called with the game's guidance check: remember what the player opened, finish steps already
    * done, raise a first-problem lesson when its moment comes, and give each new card its pause and
    * camera once.
    */
   check(): void {
     const g = this.g;
-    for (const k of tutorialSaw(g.panel, g.overlay.active, g.screen)) this.saw.add(k);
+    this.noteSeen();
     // A lesson's steps tick themselves off as the tutorial's do (no first-problem lessons in one).
     if (this.lesson) {
       while (this.lessonStep < this.lesson.steps.length && this.lesson.steps[this.lessonStep]!.done?.(g))
@@ -154,9 +164,11 @@ export class TutorialRunner {
     const running = g.settings.tutorialStep >= 0 && !g.settings.tutorialAway;
     if (!running) this.event = null;
     if (this.event?.done?.(g)) this.event = null;
-    // First problems come once the city is running (past "Let time run"), one at a time, each once.
+    // First problems come once the city is running (from "Let time run": a fire in the first weeks burnt
+    // a phone's small town down while that card waited for 40 residents, unexplained; phase 6 end), one
+    // at a time, each once.
     const timeStep = TUTORIAL.findIndex((t) => t.id === 'time');
-    if (running && !this.lesson && !this.event && g.settings.tutorialStep > timeStep) {
+    if (running && !this.lesson && !this.event && g.settings.tutorialStep >= timeStep) {
       const ev = TUTORIAL_EVENTS.find((e) => !g.settings.tutorialSeen.includes(e.id) && e.when?.(g));
       if (ev) {
         this.event = ev;

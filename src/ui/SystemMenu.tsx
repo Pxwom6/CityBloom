@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'preact/hooks';
 import { useGame, useGameUpdates } from './hooks';
 
 /** The menu button: opens the pause menu (save, load, settings, quit); shows autosaves happening. */
@@ -23,11 +24,48 @@ export function SystemMenu() {
   );
 }
 
+/**
+ * On a phone, notices keep clear of a tutorial card or a tip, which stand under the top bar too (phase 6
+ * end: a fire's notices covered the tutorial card's words). Upright, they go just under the card (but
+ * stay put over a sheet, whose tabs they'd cover); sideways, beside it, or under it while a sheet takes
+ * the right-hand side.
+ */
+function useClearOfCard(): { top?: string; left?: string } | null {
+  const [at, setAt] = useState<{ top?: string; left?: string } | null>(null);
+  useEffect(() => {
+    const place = () => {
+      const ui = document.getElementById('ui');
+      const r =
+        ui?.dataset.phone !== undefined
+          ? document.querySelector('.guide')?.getBoundingClientRect()
+          : undefined;
+      // (Only a card at the top: one at the foot leaves the notices where they are.)
+      if (!ui || !r || !r.height || r.top > innerHeight / 2) return setAt((was) => (was ? null : was));
+      const sheet = !!ui.querySelector('aside.panel');
+      const next =
+        ui.dataset.orient === 'portrait'
+          ? sheet
+            ? null
+            : { top: `${Math.round(r.bottom + 8)}px` }
+          : sheet
+            ? { top: `${Math.round(r.bottom + 8)}px` }
+            : { left: `${Math.round(r.right + 8)}px` };
+      setAt((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+    };
+    place();
+    const timer = setInterval(place, 250);
+    return () => clearInterval(timer);
+  }, []);
+  return at;
+}
+
 export function Toasts() {
   const game = useGame();
+  const clear = useClearOfCard();
   return (
     <div
       class={`toasts ${game.panel === 'battleMap' ? 'beside-map' : game.selected ? 'beside-panel' : ''}`}
+      style={clear ?? undefined}
       aria-live="polite"
     >
       <UpdateNotice />

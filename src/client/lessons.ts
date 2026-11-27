@@ -153,6 +153,7 @@ export const LESSONS: Lesson[] = [
         id: 'moneyBudget',
         title: 'The budget',
         text: 'Click your money to open the budget. Income is on top, costs below.',
+        touch: 'Tap your money to open the budget. Income is on top, costs below.',
         target: 'open-budget',
         done: (g) => saw(g, 'budget'),
       },
@@ -331,6 +332,8 @@ export const LESSONS: Lesson[] = [
         id: 'friendsMenu',
         title: 'Inviting friends',
         text: 'Open the menu (Esc). Invite friends shares this city: online, or straight from this computer.',
+        touch:
+          'Open the menu (the ☰ button). Invite friends shares this city: online, or straight from this device.',
         target: 'menu-button',
         done: (g) => g.tutorialSaw.has('screen:pause'),
       },
@@ -357,6 +360,9 @@ export const LESSONS: Lesson[] = [
         text:
           'Or start a region from the Region panel (Shift+N): up to four cities side by side, trading power ' +
           'and water and sharing commuters.',
+        touch:
+          'Or start a region from the Region panel: up to four cities side by side, trading power and water ' +
+          'and sharing commuters.',
       },
       finish('playing with friends'),
     ],
@@ -382,6 +388,7 @@ export const LESSONS: Lesson[] = [
         id: 'warRoom',
         title: 'The war room',
         text: 'This town has a military HQ. Open the war room (Shift+M, or its button in the top bar).',
+        touch: 'This town has a military HQ. Open the war room with its button in the top bar.',
         target: 'open-war',
         done: (g) => saw(g, 'panel:war'),
       },
@@ -389,6 +396,8 @@ export const LESSONS: Lesson[] = [
         id: 'warTrain',
         title: 'Forces',
         text: 'The war room lists your forces. Click a barracks to train infantry: units take workers and power.',
+        touch:
+          'The war room lists your forces. Tap a barracks to train infantry: units take workers and power.',
         panel: 'war',
         pause: true,
       },

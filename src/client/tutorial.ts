@@ -1,4 +1,5 @@
 import { ROAD_TYPES, isPlayerRoad } from '../data/roads';
+import { touchScreen, touchWords } from './touchWords';
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
@@ -20,6 +21,11 @@ export interface TutorialStep {
   id: string;
   title: string;
   text: string;
+  /**
+   * The words on a touch screen where `text` speaks of a mouse or keys (phase 6 end: a phone's first
+   * city was told to right-drag, scroll and press Esc). Shown by `wordsFor`.
+   */
+  touch?: string;
   /** Test id of the button to point at. */
   target?: string;
   /** The step is done once this holds; steps without it wait for "Next". */
@@ -82,6 +88,9 @@ export const TUTORIAL: TutorialStep[] = [
     text:
       'This valley is yours to build. Drag to move around, right-drag to turn, scroll to zoom. ' +
       'Settlers arrive along the highway.',
+    touch:
+      'This valley is yours to build. Drag a finger to move around, pinch to zoom, twist two fingers to ' +
+      'turn. Settlers arrive along the highway.',
     camera: highwayEnd,
   },
   {
@@ -128,6 +137,7 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'time',
     title: 'Let time run',
     text: 'Press play (or the space bar). Speed up with 2 and 3. Watch the first families move in.',
+    touch: 'Press play. The faster buttons beside it speed time up. Watch the first families move in.',
     target: 'speed-1',
     done: (g) => pop(g) >= 40,
   },
@@ -152,6 +162,7 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'budget',
     title: 'Your budget',
     text: 'Money matters now. Click your money in the top bar to open the budget.',
+    touch: 'Money matters now. Tap your money in the top bar to open the budget.',
     target: 'open-budget',
     pause: true,
     done: (g) => g.tutorialSaw.has('budget'),
@@ -206,6 +217,9 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'save',
     title: 'Save your city',
     text: 'Open the menu (Esc) and choose Save city or Quick save. The game also saves by itself every few minutes.',
+    touch:
+      'Open the menu (the ☰ button) and choose Save city or Quick save. The game also saves by itself every ' +
+      'few minutes.',
     target: 'menu-button',
     pause: true,
     done: (g) => g.manualSaves > 0,
@@ -270,6 +284,18 @@ export const TUTORIAL_EVENTS: TutorialStep[] = [
   },
 ];
 
+/**
+ * A card's or tip's words for this screen: on a touch screen its own touch words where it has them,
+ * else its words read for a finger (`touchWords`: "Pause (Escape) → Report a problem", "City history
+ * (Y)", "Click it" read as "Pause → Report a problem", "City history", "Tap it").
+ */
+export function wordsFor(c: { text: string; touch?: string }, touch: boolean): string {
+  if (!touch) return c.text;
+  return c.touch ?? touchWords(c.text);
+}
+
+export { touchScreen };
+
 /** Every tutorial card's id (steps and first-problem lessons). */
 export const TUTORIAL_IDS = [...TUTORIAL, ...TUTORIAL_EVENTS].map((s) => s.id);
 
@@ -292,6 +318,8 @@ export function tutorialSaw(
 export interface Tip {
   id: string;
   text: string;
+  /** The words on a touch screen, where `text` speaks of a mouse or keys (see `TutorialStep.touch`). */
+  touch?: string;
   when: (g: Game) => boolean;
   /**
    * A moment that won't wait (a raid coming, a live battle, a bomb in the air): its tip goes before any
@@ -307,6 +335,9 @@ export const TIPS: Tip[] = [
       'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
       'shows who is here, the invite link and the chat; its Point button (or Shift+G over the map) shows ' +
       'the others a spot.',
+    touch:
+      'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
+      'shows who is here, the invite link and the chat; its Point button shows the others a spot.',
     when: (g) => !!g.net && g.net.session.state === 'playing',
   },
   {
@@ -647,6 +678,7 @@ export const TIPS: Tip[] = [
   {
     id: 'abandoned',
     text: 'A building was abandoned. Click it: the inspector says why (no power, no jobs, crime, pollution…).',
+    touch: 'A building was abandoned. Tap it: the inspector says why (no power, no jobs, crime, pollution…).',
     when: (g) => g.world.stats.abandoned > 0,
   },
   {
@@ -670,6 +702,10 @@ export const TIPS: Tip[] = [
       'A junction is jammed at the rush hour (the traffic map shows junctions as discs). A roundabout ' +
       'passes far more traffic: pick Roundabout in the road tool, or click one of its roads. One-way ' +
       'streets (O while drawing) carry a quarter more.',
+    touch:
+      'A junction is jammed at the rush hour (the traffic map shows junctions as discs). A roundabout ' +
+      'passes far more traffic: pick Roundabout in the road tool, or tap one of its roads. One-way ' +
+      'streets carry a quarter more.',
     when: (g) => g.world.stats.population > 1_000 && g.world.worstJunctionVC() > 1.1,
   },
   {
@@ -698,6 +734,10 @@ export const TIPS: Tip[] = [
       'Your city has neighbours along the highway. Their people commute in to jobs you can’t fill, yours ' +
       'take jobs there, and they’ll buy or sell power, water and garbage processing: see the Region panel ' +
       '(Shift+N, top bar).',
+    touch:
+      'Your city has neighbours along the highway. Their people commute in to jobs you can’t fill, yours ' +
+      'take jobs there, and they’ll buy or sell power, water and garbage processing: see the Region panel ' +
+      '(top bar).',
     when: (g) => g.world.stats.population >= 1_500 && g.world.stats.region.neighbours.length > 0,
   },
   {
@@ -720,6 +760,10 @@ export const TIPS: Tip[] = [
     text:
       'Snow slows every car on the roads it lies on until it melts. A public works depot (in the Garbage ' +
       'and snow bar) sends ploughs out to clear the busiest roads first. Hover the date for the weather.',
+    touch:
+      'Snow slows every car on the roads it lies on until it melts. A public works depot (in the Garbage ' +
+      'and snow bar) sends ploughs out to clear the busiest roads first. Press and hold the date for the ' +
+      'weather.',
     when: (g) => g.world.stats.weather.roadsSnowy > 0.2 && !hasCivic(g, (def) => def === 'works'),
   },
   {

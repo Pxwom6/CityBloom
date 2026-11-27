@@ -1,19 +1,12 @@
 # PROGRESS
 
-## Needed from the owner: an owner key (`OWNER_KEY`)
-Phase 6's owner pages (bug reports from M41, and later the submissions and leaderboard entries) are
-for the owner alone. They open with a key only the owner knows, checked by the relay on every request.
-Until the key exists the owner pages say "The owner area isn't set up yet", and everything players
-see works as normal.
-1. Make a long random key on your Mac, e.g. `openssl rand -base64 32` in Terminal (or any password
-   manager's generator, 32 characters or more). Keep a copy in your password manager.
-2. In GitHub: Settings → Secrets and variables → Actions → New repository secret, named `OWNER_KEY`,
-   with the key as its value.
-3. The next push to `main` deploys the relay and passes the key to the Worker as a Worker secret
-   (`wrangler secret put OWNER_KEY`, done by the deploy workflow). Then open the site's owner area,
-   `https://pxwom6.github.io/CityBloom/#/owner`, and sign in with the key (the page keeps it on that
-   device until you sign out).
-Please never paste the key into a session or commit it; to change it, update the secret and push.
+## Owner key (`OWNER_KEY`): set, waiting on the merge
+The owner added the `OWNER_KEY` repository secret (27 November 2026). The deploy workflow passes it to the
+Worker as a Worker secret on the next push to `main`, so the owner area (problem reports from M41, the
+weekly challenge's board from M44, and later the submissions) switches on when pull request #24 is
+merged and deployed: then open `https://pxwom6.github.io/CityBloom/#/owner` and sign in with the key
+(kept on that device until signing out). Until then the live owner area says it isn't set up. To change
+the key, update the secret and push to `main`; never paste it into a session or commit it.
 
 Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
 https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6

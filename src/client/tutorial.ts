@@ -818,6 +818,17 @@ export const TIPS: Tip[] = [
     when: (g) => g.mode === 'play' && !g.readOnly && !g.net && g.world.stats.tick > 2 * 24 * 60,
   },
   {
+    // The timelapse (M45): once a city has a year or two behind it, where its video is made.
+    id: 'timelapse',
+    text:
+      'Your city has been recording a timelapse as it grows. City history (Y) → Make timelapse turns it ' +
+      'into a short video, with its name, the date and its milestones on it, to keep or send to friends.',
+    when: (g) => {
+      const t = g.timelapse.info();
+      return g.mode === 'play' && !g.readOnly && !!t && Math.min(t.frames.wide, t.frames.orbit) >= 24;
+    },
+  },
+  {
     // The weekly challenge (M44): what the score is and where it goes, once the city is under way.
     id: 'challenge',
     text:

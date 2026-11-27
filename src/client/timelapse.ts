@@ -45,9 +45,12 @@ export class TimelapseRecorder {
   private rec: CityRecord | null = null;
   /** Game ticks between frames (test builds may take a longer one: `setTimelapseStep`). */
   step: number = TIMELAPSE.step;
+  /** A view's frames and a city's bytes at most (test builds may make them small: `setTimelapseLimits`). */
+  limits = { perView: TIMELAPSE.perView as number, cityBytes: TIMELAPSE.cityBytes as number };
   private nextTick = -1;
   private turn = 0;
-  private busy = false;
+  /** A frame is being encoded and kept (the next waits for it). */
+  busy = false;
   private orbit: { x: number; z: number; score: number } | null = null;
   private orbitMonth = -1;
   private yaw = 0.3;
@@ -56,6 +59,8 @@ export class TimelapseRecorder {
   lastMs = 0;
   worstMs = 0;
   captures = 0;
+  /** The last capture's draw calls and triangles, and its view. */
+  lastDraw: { calls: number; triangles: number; view: TimelapseView } | null = null;
   /** Why the last frame wasn't kept (an encoder or a store that failed), for the tests. */
   error: string | null = null;
 
@@ -157,6 +162,8 @@ export class TimelapseRecorder {
     this.game.renderer.captureView(this.pose(view), ctx, TIMELAPSE.width, TIMELAPSE.height, FRAME_HOUR);
     if (view === 'orbit') this.yaw += TIMELAPSE.orbitTurn;
     this.lastMs = performance.now() - t0;
+    const st = this.game.renderer.lastStats;
+    this.lastDraw = { calls: st.calls, triangles: st.triangles, view };
     this.worstMs = Math.max(this.worstMs, this.lastMs);
     this.captures++;
     const tick = this.game.world.stats.tick;
@@ -168,7 +175,7 @@ export class TimelapseRecorder {
         await this.store.putFrame({ city: key, view, tick, population, bytes: blob.size, blob }, rec);
         // Within the view's limits: its older frames thinned evenly.
         const frames = await this.store.frames(key, view);
-        const drop = new Set(thinFrames(frames, TIMELAPSE.perView, TIMELAPSE.cityBytes / 2));
+        const drop = new Set(thinFrames(frames, this.limits.perView, this.limits.cityBytes / 2));
         if (drop.size)
           await this.store.dropFrames(
             key,

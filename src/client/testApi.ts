@@ -170,6 +170,8 @@ export interface TestApi {
     worstMs: number;
     captures: number;
     error: string | null;
+    busy: boolean;
+    lastDraw: { calls: number; triangles: number; view: 'wide' | 'orbit' } | null;
     stored: {
       wide: { tick: number; population: number; bytes: number }[];
       orbit: { tick: number; population: number; bytes: number }[];
@@ -179,6 +181,8 @@ export interface TestApi {
   timelapseMusicLevels(seconds: number): Promise<{ peakDb: number; rmsDb: number }>;
   /** Test builds: game ticks between timelapse frames (a longer step grows years of city in fewer frames). */
   setTimelapseStep(ticks: number): void;
+  /** Test builds: a view's frames and a city's bytes at most (the thinning on a "long" city, quickly). */
+  setTimelapseLimits(perView: number, cityBytes: number): void;
   /** Draw and keep the next timelapse frame now. */
   captureTimelapse(): void;
   /**
@@ -955,6 +959,8 @@ export function installTestApi(game: Game): TestApi {
         worstMs: t.worstMs,
         captures: t.captures,
         error: t.error,
+        busy: t.busy,
+        lastDraw: t.lastDraw,
         stored: { wide: await list('wide'), orbit: await list('orbit') },
       };
     },
@@ -974,6 +980,9 @@ export function installTestApi(game: Game): TestApi {
       game.timelapse.step = ticks;
     },
     captureTimelapse: () => game.timelapse.capture(),
+    setTimelapseLimits: (perView, cityBytes) => {
+      game.timelapse.limits = { perView, cityBytes };
+    },
     getMatch: () => {
       const m = game.match;
       const now = performance.now();

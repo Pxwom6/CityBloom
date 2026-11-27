@@ -74,7 +74,10 @@ export class WorkshopState {
         hash: '',
       };
     } else {
-      const [{ result, picture }, hash] = await Promise.all([checkModelFile(bytes, target), modelHash(bytes)]);
+      const [{ result, picture }, hash] = await Promise.all([
+        checkModelFile(bytes, target),
+        modelHash(bytes),
+      ]);
       out = {
         ok: result.ok,
         notes: teacherNotes(result.problems, site),

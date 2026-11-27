@@ -67,6 +67,10 @@ export interface CustomCheck {
   box: Box3 | null;
 }
 
+/** A part still wearing a 3D program's own name (Blender's Cube.001, an exporter's mesh_0), or none. */
+export const DEFAULT_NAME =
+  /^(?:(?:cube|plane|cylinder|u?v?sphere|icosphere|cone|torus|circle|suzanne|mesh|object|node|untitled|group|primitive|geometry)[._ -]?\d*)?$/i;
+
 const MB = (n: number) => `${(n / 1_048_576).toFixed(n < 10 * 1_048_576 ? 1 : 0)} MB`;
 
 /**
@@ -142,6 +146,19 @@ export function checkCustom(
   const links = externalLinks(bytes);
   if (links) problems.push({ words: links, parts: [] });
   const { report, file } = inspectModel(bytes, `${id}.glb`, new Map([[id, budgetOf(target)]]));
+  // Parts left with a 3D program's own names (M47): the game finds doors, windows and roofs by name.
+  if (file && file.parts.length >= 3) {
+    const plain = file.parts.filter((p) => DEFAULT_NAME.test(p.rawName)).length;
+    if (plain / file.parts.length >= 0.75)
+      problems.push({
+        words: `Its parts keep their default names (${[
+          ...new Set(file.parts.map((p) => p.rawName || '(no name)')),
+        ]
+          .slice(0, 3)
+          .join(', ')}…): name each by what it is, like door, window_glass, roof or wall`,
+        parts: [],
+      });
+  }
   for (const e of report.errors) {
     // The link problem above says it in plainer words.
     if (links && /outside the GLB/i.test(e)) continue;

@@ -315,7 +315,7 @@ export interface ModelReport {
   war: boolean;
 }
 
-const EXACT = 0.05;
+export const EXACT = 0.05;
 /** How far trim, awnings, steps and the like may overhang a wall-to-wall building's footprint. */
 const OVERHANG_FRONT = 1.6;
 const OVERHANG_SIDE = 0.75;

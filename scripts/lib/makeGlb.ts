@@ -223,6 +223,48 @@ export function heavyModelParts(size = 16, planters = 100): Part[] {
   return parts;
 }
 
+/** Parts moved, turned about the up axis (radians) and scaled, as a mistake in a 3D program would. */
+export function transformParts(parts: Part[], o: { scale?: number; turn?: number; lift?: number }): Part[] {
+  const k = o.scale ?? 1;
+  const c = Math.cos(o.turn ?? 0);
+  const s = Math.sin(o.turn ?? 0);
+  return parts.map((p) => {
+    const tris = p.tris.slice();
+    for (let i = 0; i < tris.length; i += 3) {
+      const x = tris[i]!;
+      const z = tris[i + 2]!;
+      tris[i] = (x * c + z * s) * k;
+      tris[i + 1] = tris[i + 1]! * k + (o.lift ?? 0);
+      tris[i + 2] = (-x * s + z * c) * k;
+    }
+    return { ...p, tris };
+  });
+}
+
+/**
+ * The common mistakes the Workshop teaches (M47), each a bad copy of the good pavilion: made in
+ * centimetres, facing backwards, floating, too many triangles, parts left with Blender's names, colours
+ * not named by role.
+ */
+export function mistakeModels(): Record<
+  'centimetres' | 'backwards' | 'floating' | 'triangles' | 'unnamed' | 'colours',
+  Uint8Array
+> {
+  const good = goodModelParts(16);
+  return {
+    centimetres: writeGlb(transformParts(good, { scale: 100 })),
+    backwards: writeGlb(transformParts(good, { turn: Math.PI })),
+    floating: writeGlb(transformParts(good, { lift: 1.5 })),
+    triangles: writeGlb(heavyModelParts(16, 400)),
+    unnamed: writeGlb(
+      good.map((p, i) => ({ ...p, name: i ? `Cube.${String(i).padStart(3, '0')}` : 'Cube' })),
+    ),
+    colours: writeGlb(
+      good.map((p, i) => ({ ...p, material: i % 2 ? `Material.${String(i).padStart(3, '0')}` : 'Red' })),
+    ),
+  };
+}
+
 /** The test models: a good one and the bad ones the e2e imports. */
 export function testModels(): Record<'good' | 'tooBig' | 'tooWide' | 'outside' | 'textured', Uint8Array> {
   const good = goodModelParts(16);

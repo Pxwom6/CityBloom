@@ -13,7 +13,9 @@ closeContextsAfterEach();
  * good model passes, is seen in its street, added to My buildings and placed in the town, which ends the
  * lesson.
  */
-test.use({ permissions: ['clipboard-read', 'clipboard-write'], viewport: { width: 1280, height: 860 } });
+// (What the page copies is recorded rather than read from the clipboard, so the spec runs in WebKit too,
+// which grants a test no clipboard permissions: `playwright.webkit.config.ts`.)
+test.use({ viewport: { width: 1280, height: 860 } });
 
 const glb = (name: string, bytes: Uint8Array) => ({
   name,
@@ -25,6 +27,12 @@ const tut = (page: Page) => page.evaluate(() => window.__game!.getTutorial());
 test('the Workshop, from Learn to a model placed in the town', async ({ page }) => {
   test.setTimeout(420_000);
   await page.addInitScript(() => {
+    const w = window as unknown as { __copied: string };
+    w.__copied = '';
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (t: string) => void (w.__copied = t), readText: async () => w.__copied },
+      configurable: true,
+    });
     const key = 'citybloom.settings';
     const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
     localStorage.setItem(

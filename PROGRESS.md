@@ -487,6 +487,29 @@ hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers
 3. The real-world checks under "To check on the Mac" and "To try with a mate", then the pull request's
    title and description for the whole phase.
 
+## Performance (phase 6 end, the owner's Mac)
+- **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs bench-results/city.gz --quality
+  high,medium,low,phone`: the 110,174-resident bench city in a 1512×785 window at 2×, every view at 3× speed;
+  avg / p95 ms, then draw calls and triangles; `bench-results/frames-phase6-end.json`):
+
+  | | whole city | city | street | whole city, night | city, night | street, night | heavy |
+  |---|---|---|---|---|---|---|---|
+  | High | 7.6 / 13.4 | 13.1 / 29.4 | 10.8 / 12.2 | 8.7 / 12.2 | 13.2 / 30.0 | 10.9 / 12.3 | **9.1 / 15.9** |
+  | Medium | 3.9 / 6.7 | 3.8 / 6.7 | 3.4 / 6.0 | 4.2 / 6.8 | 4.2 / 6.9 | 3.5 / 5.4 | 4.4 / 7.2 |
+  | Low | 2.9 / 3.8 | 2.4 / 3.9 | 1.6 / 2.8 | 2.8 / 3.8 | 2.4 / 3.9 | 1.7 / 2.8 | 2.8 / 4.1 |
+  | Phone | 2.9 / 4.2 | 2.7 / 3.3 | 1.8 / 2.9 | 2.9 / 4.2 | 2.7 / 3.4 | 1.8 / 2.9 | 3.0 / 4.4 |
+
+  Calls and triangles at the whole city: High 236 / 2.45M, Medium and Low 176 / 1.88M, Phone 174 / 1.85M; at street
+  level High 235 / 2.25M, Medium 99 / 1.07M, Low 87 / 1.01M, Phone 84 / 0.97M. Every average is inside SPEC-3's
+  60 fps (16.7 ms) at High; the city zoom's p95 at High (29–30 ms) was there before (batch 5: 12.1 avg). The Phone
+  preset (uncapped here; 30 fps on a phone) costs about what Low does on this GPU: its savings are in the GPU's
+  fill (a capped resolution) and memory, which a phone feels and an M5 doesn't. It looks like the game (the
+  playthroughs' phone pictures, `docs/screenshots/phase6-b-*.png`, `phase6-c-*.png`).
+- **Against `main`** (built from 9490cb2 to `dist-main`, High, two runs each back to back, avg ms): whole city 7.95
+  against 7.29, city 13.04 against 12.05, street 10.77 against 10.72, heavy 8.19 against 9.36. The city zoom's extra
+  millisecond didn't survive a profile of each (`--profile`: 12.88 against 12.81 ms, the game's own work 12.54 ms in
+  both, `bufferData` the top cost in both): the same within run-to-run noise.
+
 ## Tests (M48)
 - Unit: 2,184 tests in 209 files pass (the unit and live projects). `relay/tests/submissions.test.ts`
   (the desk: shapes, sizes, the model's hash and outside links, a GLB whose JSON isn't an object;

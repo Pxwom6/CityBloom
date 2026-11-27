@@ -78,7 +78,7 @@ their city. When time is up (or someone wins the race) everyone sees the same re
 the match; **Rematch** starts the next round in one click, **Keep this city** saves yours to play on.
 A player who leaves is out and the match goes on; online, if the host leaves, someone else takes over.
 
-![The lobby of a quick match: three players ready, a Race to 5,000, and the code to share](docs/screenshots/friends-match.jpg)
+![The end of a four-player quick match: everyone's result, the chart of the match, and Rematch](docs/screenshots/friends-match.jpg)
 
 ### This week's challenge
 

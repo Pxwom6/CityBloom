@@ -324,7 +324,9 @@ function MakeStep({ game, t }: { game: Game; t: WorkshopTarget }) {
             <button
               class="btn primary"
               data-testid="workshop-copy"
-              onClick={() => void copyText(game, prompt, box.current)}
+              // (Written as it's pressed: the panel redraws on a timer, and a name typed just before
+              // pressing went missing from the prompt in Safari's engine; phase 6 end.)
+              onClick={() => void copyText(game, workshopPrompt(t, w.idea, w.name), box.current)}
             >
               Copy the prompt
             </button>

@@ -3177,6 +3177,11 @@ and uncovered. One line a finding:
 - *A phone's tutorial card unfolded under the finger*: a card that came while a building was still in hand unfolded
   again when the Build sheet closed on the next building, over the spot about to be tapped (and its Skip tutorial).
   Once the player acts on a card it stays folded until tapped.
+- *The Workshop's copied prompt could miss the name just typed* (WebKit, Safari's engine, copied "Landmark 2×2" for
+  "Clock pavilion"): the Copy button used the prompt from the panel's last redraw, which comes on a timer. It writes
+  the prompt as it's pressed. `e2e/m47-workshop.spec.ts` now records what the page copies (WebKit grants a test no
+  clipboard permissions), and `playwright.webkit.config.ts` runs any spec in WebKit; the Workshop and Send it in pass
+  there.
 - *The owner area showed times in UTC* (a report sent at 3:47 one morning in Adelaide read "2026-11-27 17:17"): its
   lists use the owner's own clock (`src/owner/time.ts`); what's copied for Claude Code stays in UTC and says so.
 - *"Kept as … open it from Load game"*: the menu's button is Load city (the results card already said so).

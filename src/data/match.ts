@@ -49,7 +49,7 @@ export const MATCH = {
   /** How often a match city reports (ms), sends its picture (ms) and a save to look round (ms). */
   reportMs: 5_000,
   thumbMs: 60_000,
-  saveMs: 120_000,
+  saveMs: 300_000,
   /**
    * A rematch waits this long after the latest city came back for the others to found their new
    * cities, before those here start without them (ms); and an online host whose page has gone keeps the host's part

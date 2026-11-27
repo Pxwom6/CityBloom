@@ -63,7 +63,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M40 The final race: the atom bomb
 - [x] M41 Hearing about problems
 - [x] M42 Learning to play
-- [ ] M43 Quick match
+- [x] M43 Quick match
 - [ ] M44 Weekly challenge
 - [ ] M45 Timelapse
 - [ ] M46 Your own buildings
@@ -271,19 +271,25 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M43 Quick match** (plan `docs/plans/M43-design.md`, calls in DECISIONS "M43"). Done so far: the
-match data and scores (`src/data/match.ts`), the fast start in the sim (`GameOptions.match`: money,
-growth ×2, unlocks at half their population; `endMatch`), the region room's match (`relay/match.ts`,
-protocol 8: lobby, countdown, the room's clock, reports counted within the ticks the time allows,
-score lines, Race's finish, last reports with hashes, one result, leavers, online host hand-over,
-rematch rounds), the worker's match clock, the page (`src/client/matchClient.ts`, `matchBoot.ts`,
-`?match=`), the UI (`src/ui/Match.tsx`: Quick match screen, lobby, scoreboard, countdowns, emotes and
-chat, peek, results with chart, Rematch, Keep this city), phones upright and sideways, and the tuning
-(`scripts/matchBalance.ts`). `scripts/dev/matchshot.mjs` plays matches end to end (online and p2p,
-2–4 players, a phone, a rematch, keep): every page the same result, each page's hash the one listed.
-Left: the e2e specs (each mode, 2 and 4 players, online and p2p, rematch, leaving, phones), the
-network budget, the cross-browser test, bench and balance reruns, SPEC_REVIEW, then `M43 complete:`
-joining pull request #24.
+**M43 Quick match is complete** (plan `docs/plans/M43-design.md`), joining M41, M42 and M49 in pull
+request #24. **M44 Weekly challenge** is next.
+
+M43 in short: "Quick match" on the main menu: the host picks Race (to 5,000, 10,000 or 15,000), Rich
+list, Happy town or Mixed, a 15-, 20- or 30-minute timer and a map, and hosts online or in this
+browser; two to four friends join by code or link, each founding their own small city on the same
+seed, side by side in a shared region (their cities don't trade). The room keeps the clock: a
+5-second countdown, then each page runs its city towards the tick the time allows at 3× (no pausing,
+building only while it plays; a page that started late catches up to the room's clock), and the room
+counts a report only within that allowance. A fast start ($200,000, growth ×2, unlocks at half their
+population) tuned by the balance mayor playing matches. A scoreboard along the top with the timer
+(warning for the last minute, big numbers for the last ten seconds), six emotes (chat if the host
+allows), a peek at a rival (its picture each minute, its figures, Look round). At the end every page
+stops and sends its state hash; the room decides one result (winner, numbers, hashes, a chart).
+Rematch in one click (a new seed; pages reload into it and it starts once everyone's back), Keep this
+city and Play on, Back to menu. Leavers are out and the match goes on; an online host who leaves
+hands over (a reload keeps the part a minute); peer-to-peer, the match ends with the host's browser.
+Protocol 8. Phones upright and sideways. Calls: DECISIONS "M43"; SPEC_REVIEW "M43"; numbers:
+"Network (M43)", "Balance (M43)".
 
 **M49 Phones is complete** (done after M42, before M43; plan `docs/plans/M49-design.md`), joining
 M41 and M42 in pull request #24.
@@ -341,8 +347,36 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M43 Quick match (SPEC-6.md), then M44–M48 in order, each new screen working by touch on a phone
-   upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+1. M44 Weekly challenge (SPEC-6.md), then M45–M48 in order, each new screen working by touch on a
+   phone upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+
+## Tests (M43)
+- Unit: 2,096 tests in 193 files pass (new: `tests/match.test.ts`, `tests/matchClient.test.ts`,
+  `relay/tests/matchRoom.test.ts`); live: 25 pass. Cross-browser (Chromium here, WebKit and Firefox
+  on the pull request's CI) with the new `match` section.
+- E2E: `e2e/m43-match.spec.ts`, four chains of four rounds (every mode; two and four players; online
+  against the local relay and peer-to-peer; three rematches each; two players leaving the last round of
+  the four-player online chain, the host among them), every page on the same result and each page's
+  hash the one listed, 40 min; `e2e/m43-phone.spec.ts`, an iPhone and a Pixel by touch, upright and
+  sideways, online and peer-to-peer, with a rematch, Keep this city and Play on, 8 min. Pictures kept:
+  `docs/screenshots/m43-*.png`.
+- Bench (`bench.ts 6 --big`): 4.2 s, months 4–6 tick avg 0.69–0.79 ms, as before. Balance (20 years):
+  identical (careful 67,373 residents, $1,838,985, 73 %): the fast start is only for match cities.
+
+## Network (M43)
+`npx tsx scripts/dev/matchbudget.ts 20 4` (four careful mayors' cities on the fast start, a 20-minute
+match in a region room, sending what a match page sends):
+- Each player: 12 messages a minute sent (a report every 5 s, the picture each minute, a save to look
+  round every 5 minutes), 70 kB a minute (1.36 MB a match, mostly the saves of a 15,000-resident
+  city); 48 messages a minute received (the score lines), 20 kB a minute (385 kB a match). Fewer
+  messages than a co-op player at 3× (64 a minute, M33).
+- One match against the free plan's day: 993 incoming messages = 50 requests (of 100,000); at most
+  154 GB-s of duration (1.2 % of 13,000: the room is awake for the match); 39 rows written (of 100,000;
+  the region's own day allows 3,000). About 84 four-player matches a day fit the free plan, the same
+  rate as co-op hours (duration is the limit).
+- In the e2e's one-minute rounds a page receives 30–55 kB with two players and 80–145 kB with four
+  (pictures go on their own as they change: before, each new picture resent the whole view with all
+  four, 380–550 kB a round).
 
 ## Balance (M43)
 `npx tsx scripts/matchBalance.ts [minutes] [seeds]`: the careful mayor (and the greedy and neglectful
@@ -1410,7 +1444,19 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
   imported) and see that it runs; the 110k bench city should ask first.
 
+- M43 quick match: two to four friends on their own devices, at least one a phone, over the internet
+  (the live site, an online match, then one hosted in a browser): Quick match from the main menu,
+  the host picks Race, 20 minutes; the others join from the invite link. Does a newcomer understand
+  the lobby, the scoreboard and the results without help? Is a Race to 10,000 in 20 minutes close
+  (a good player should just make it; the balance mayor takes 11–15 minutes)? Try a rematch in
+  another mode, a player leaving mid-match, the host leaving (online: someone else hosts; in a
+  browser: the match ends), Keep this city and Play on, and a phone locked for a minute mid-match
+  (it should catch up when unlocked).
+
 ## To check on the Mac
+- Phase 6 (M43): a full 20-minute quick match between Chrome and Safari on the Mac against the live
+  relay (two windows), to see the timer, the scoreboard and the last minute at real speed, and the
+  results' chart over a whole match (the e2e here plays one-minute matches).
 - Phase 6 (M49): the Phone preset beside Low in the uncapped Chrome window (`framebench.mjs
   bench-results/city.gz --quality phone,low`): the frame times, and that it still looks like the game;
   Safari's Responsive Design Mode on an iPhone size, upright and sideways (the safe areas only show on

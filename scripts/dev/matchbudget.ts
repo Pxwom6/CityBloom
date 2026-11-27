@@ -1,7 +1,7 @@
 /**
  * The network budget of a quick match (M43): four players in a region room (in this process, on a
  * clock this script moves), each city grown by the careful mayor on the fast start, sending what a
- * match page sends: a report every 5 s, its picture every 60 s, a save to look round every 2 minutes,
+ * match page sends: a report every 5 s, its picture every 60 s, a save to look round every 5 minutes,
  * and its last report at the end. Prints each player's messages and bytes sent and received per
  * minute and for the whole match, and what a match costs a Durable Object against Cloudflare's free
  * plan (requests, duration, rows written).

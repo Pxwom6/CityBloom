@@ -2186,7 +2186,8 @@ export class RegionRoom {
       this.meta.cities.push(city);
       // (Not to the city joining: its page says so itself, and the player heard it twice. Phase 5 end.)
       for (const c of this.conns.keys())
-        if (c !== conn) c.send({ t: 'notice', text: `${m.city} joined the region` });
+        if (c !== conn)
+          c.send({ t: 'notice', text: `${m.city} joined the ${this.meta.match ? 'match' : 'region'}` });
     } else if (city.mayor !== m.mayor || city.color !== m.color || (city.v ?? 0) !== m.v) write = 'changed';
     city.mayor = m.mayor;
     city.color = m.color;

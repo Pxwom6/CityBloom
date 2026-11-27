@@ -264,8 +264,13 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M48 Send it in is under way**: plan `docs/plans/M48-design.md` (the submissions desk on the relay,
+the player's screens with a private token, the owner's review, the accepted list, limits). Steps:
+M48.1 the desk and its HTTP API with tests, M48.2 the page (send an idea or a building, my submissions,
+accepted ideas), M48.3 the owner area, M48.4 e2e, phones, closing.
+
 **M47 Making buildings is complete** (plan `docs/plans/M47-design.md`), joining M41–M46 and M49 in
-pull request #24. Next: M48 Send it in.
+pull request #24.
 
 M47 in short: the Workshop (My buildings' second tab, and the Learn page's Making buildings lesson, now
 ready on a small town of its own) takes a player from nothing to a building in their city in five

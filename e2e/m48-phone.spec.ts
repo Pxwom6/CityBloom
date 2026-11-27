@@ -163,9 +163,9 @@ for (const orient of ['portrait', 'landscape'] as Orient[]) {
       await page.getByTestId('owner-sub-night').tap();
       expect(await phoneProblems(page, '[data-testid=owner-area]'), `${tag}: a building open`).toEqual([]);
       await page.screenshot({ path: `docs/screenshots/m48-owner-phone-${orient}.png`, scale: 'css' });
-      await page.getByTestId('owner-sub-reply').fill('Lovely: it goes in next time');
-      await page.getByTestId('owner-sub-accept').tap();
-      await expect(page.getByTestId('owner-toast')).toContainText('accepted');
+      await page.getByTestId('owner-sub-reply').fill('Not this time: the market has a hall already');
+      await page.getByTestId('owner-sub-decline').tap();
+      await expect(page.getByTestId('owner-toast')).toContainText('declined');
     });
   });
 }

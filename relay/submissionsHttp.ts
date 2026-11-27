@@ -2,7 +2,8 @@
  * Submissions over HTTP (M48), the same for the Worker (`SubmissionsObject`) and the local relay:
  *
  *   POST /submit                               an idea or a building (JSON as text/plain: no preflight)
- *   GET  /submit/mine?token=                   the token's own submissions and their status
+ *   POST /submit/mine                          { token }: the token's own submissions and their status
+ *                                              (in the body, never the address, which logs may keep)
  *   GET  /submit/accepted                      what the owner accepted (only that)
  *   GET  /owner/submissions?kind=&status=      every submission, newest first (no files)
  *   GET  /owner/submissions/<id>               one, with its screenshot or model
@@ -48,13 +49,20 @@ export async function submissionsHttp(
     const r = await desk.submit(raw, req.address, now);
     return r.ok ? reply(200, r) : reply(r.status, { error: r.why });
   }
+  if (path === '/submit/mine' && method === 'POST') {
+    if (!desk.mayRead(req.address, now)) return reply(429, { error: 'Slow down a little' });
+    let raw: { token?: unknown } | null;
+    try {
+      raw = (await body(req, 200)) as { token?: unknown } | null;
+    } catch {
+      return reply(400, { error: 'Not a token' });
+    }
+    const rows = await desk.mine(raw?.token);
+    return rows ? reply(200, { mine: rows }) : reply(400, { error: 'Not a token' });
+  }
   if (path.startsWith('/submit/')) {
     if (method !== 'GET') return reply(404, { error: 'Not found' });
     if (!desk.mayRead(req.address, now)) return reply(429, { error: 'Slow down a little' });
-    if (path === '/submit/mine') {
-      const rows = await desk.mine(query.get('token'));
-      return rows ? reply(200, { mine: rows }) : reply(400, { error: 'Not a token' });
-    }
     if (path === '/submit/accepted')
       return reply(200, { accepted: desk.accepted(Number(query.get('limit') ?? 200)) });
     return reply(404, { error: 'Not found' });

@@ -5,6 +5,7 @@
  * accepted or declined with a short reply the player sees; delete; the word filter for credit names;
  * download an accepted building as a GLB with its credit; copy what a Claude Code session needs.
  */
+import { UNTRUSTED_NOTE, fenced } from './untrusted';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OwnerApi, SubmissionItem, SubmissionRow, SubmissionUsage } from './api';
 import type { SubmissionStatus } from '../../relay/submissions';
@@ -60,19 +61,21 @@ export function glbName(row: { title: string; credit: string }): string {
 
 /** What a Claude Code session needs to bring an accepted submission in. */
 export function submissionForClaude(row: SubmissionRow, notes: TeacherNote[] | null = null): string {
-  const credit = row.credit || 'a player (no name given)';
+  // Everything a player wrote goes in fenced, labelled blocks (DECISIONS "M48": a paste must not carry
+  // a player's instructions); what the owner wrote and the game's own facts stay outside them.
+  const credit = row.credit ? fenced('Credit', row.credit) : 'Credit: a player (no name given)';
   if (row.kind === 'idea')
     return [
+      UNTRUSTED_NOTE,
       `A player's idea, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)}): ${IDEA_WORDS[row.about] ?? row.about}.`,
-      `Title: ${row.title}`,
-      `Credit: ${credit} (add to CREDITS.md when it's built)`,
+      fenced('Title', row.title),
+      fenced('In full', row.text),
+      credit,
+      "Add the credit to CREDITS.md when it's built.",
       row.reply ? `My reply to them: ${row.reply}` : '',
-      '',
-      'In full:',
-      row.text,
-      row.file ? '\n(A picture of the game came with it: it is in the owner area.)' : '',
+      row.file ? '(A picture of the game came with it: it is in the owner area.)' : '',
     ]
-      .filter((l, i) => l !== '' || i === 4)
+      .filter(Boolean)
       .join('\n');
   const t = targetOf(row);
   const where =
@@ -80,11 +83,13 @@ export function submissionForClaude(row: SubmissionRow, notes: TeacherNote[] | n
       ? `assets/models/${targetId(t)}.glb (a new look for the ${CIVIC.get(t.def)?.name.toLowerCase() ?? t.def})`
       : `assets/models/ under the name of the building it becomes (it was made as ${t ? targetLabel(t) : 'a landmark'}: choose which of the game's landmarks or a new civic building)`;
   return [
+    UNTRUSTED_NOTE,
     `A player's building, accepted for Citybloom (submission #${row.id}, ${when(row.decided ?? row.at)}).`,
-    `Name: ${row.title}`,
-    `What it's for: ${t ? targetLabel(t) : row.about}`,
-    `A line about it: ${row.text || '(none)'}`,
-    `Credit: ${credit}: add "${row.title} by ${credit}" to CREDITS.md`,
+    fenced('Name', row.title),
+    `What it's for: ${t ? targetLabel(t) : 'a landmark'}`,
+    row.text ? fenced('A line about it', row.text) : '',
+    credit,
+    'Add it to CREDITS.md as "<name> by <credit>" (or "by a player" with no credit).',
     `The model: ${glbName(row)} (download it from the owner area), ${Math.round(row.bytes / 1024)} kB, hash ${row.hash}.`,
     `Where it goes: ${where}.`,
     'Bring it in through the normal pipeline: `npm run models:check`, look at it with scripts/dev/modelshot.mjs, then a pull request. Nothing goes in automatically.',
@@ -186,7 +191,7 @@ export function OwnerSubmissions(props: { api: OwnerApi; note: (t: string) => vo
           onInput={(e) => setWords(e.currentTarget.value)}
         />
         <button
-          class="btn"
+          class="owner-btn"
           data-testid="owner-sub-words-save"
           onClick={() =>
             void api.setSubmissionWords(words.split(/\s+/).filter(Boolean)).then(
@@ -299,14 +304,14 @@ function Detail(props: { api: OwnerApi; row: SubmissionRow; note: (t: string) =>
           <canvas ref={canvas} class="owner-turntable" data-testid="owner-sub-preview" />
           <div class="owner-actions">
             <button
-              class={`btn ${night ? '' : 'on'}`}
+              class={`owner-tab ${night ? '' : 'on'}`}
               data-testid="owner-sub-day"
               onClick={() => setNight(false)}
             >
               Day
             </button>
             <button
-              class={`btn ${night ? 'on' : ''}`}
+              class={`owner-tab ${night ? 'on' : ''}`}
               data-testid="owner-sub-night"
               onClick={() => setNight(true)}
             >
@@ -339,25 +344,30 @@ function Detail(props: { api: OwnerApi; row: SubmissionRow; note: (t: string) =>
         />
       </label>
       <div class="owner-actions">
-        <button class="btn" data-testid="owner-sub-seen" onClick={() => decide('seen')}>
+        <button class="owner-btn" data-testid="owner-sub-seen" onClick={() => decide('seen')}>
           Seen
         </button>
-        <button class="btn on" data-testid="owner-sub-accept" onClick={() => decide('accepted')}>
+        <button class="owner-btn primary" data-testid="owner-sub-accept" onClick={() => decide('accepted')}>
           Accept
         </button>
-        <button class="btn" data-testid="owner-sub-decline" onClick={() => decide('declined')}>
+        <button class="owner-btn" data-testid="owner-sub-decline" onClick={() => decide('declined')}>
           Decline
         </button>
-        <button class="btn" data-testid="owner-sub-copy" onClick={copy}>
+        <button class="owner-btn" data-testid="owner-sub-copy" onClick={copy}>
           Copy for Claude Code
         </button>
         {row.kind === 'building' && (
-          <button class="btn" data-testid="owner-sub-download" disabled={!item?.data} onClick={download}>
+          <button
+            class="owner-btn"
+            data-testid="owner-sub-download"
+            disabled={!item?.data}
+            onClick={download}
+          >
             Download GLB
           </button>
         )}
         <button
-          class="btn danger"
+          class="owner-btn danger"
           data-testid="owner-sub-delete"
           onClick={() =>
             void api.deleteSubmission(row.id).then(

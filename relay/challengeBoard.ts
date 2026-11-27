@@ -464,8 +464,10 @@ export class ChallengeBoard extends LazyTables {
       this.limits.ownerTries.burst,
       now,
     );
-    if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
+    // The right key always opens it (M48 review: wrong keys from anywhere mustn't lock the owner out);
+    // only wrong ones are slowed, per address and for everyone.
     if (given !== null && safeEqual(given, key)) return 'ok';
+    if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
     b.take(now);
     this.ownerTriesAll.take(now);
     return 'wrong';

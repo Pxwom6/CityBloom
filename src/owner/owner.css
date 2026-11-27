@@ -79,6 +79,14 @@ body {
   border-color: var(--color-accent-strong);
   color: #fff;
 }
+.owner-btn.danger {
+  border-color: var(--color-negative, #b3261e);
+  color: var(--color-negative, #b3261e);
+}
+.owner-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .owner-btn.quiet {
   background: transparent;
   border-color: transparent;

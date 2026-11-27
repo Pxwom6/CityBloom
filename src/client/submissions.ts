@@ -122,7 +122,12 @@ export class SubmitClient {
     if (!this.base) return null;
     if (!this.hasSent()) return [];
     try {
-      const res = await fetch(`${this.base}/submit/mine?token=${this.token()}`);
+      // The token in the body, never the address (logs may keep addresses); text/plain: no preflight.
+      const res = await fetch(`${this.base}/submit/mine`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body: JSON.stringify({ token: this.token() }),
+      });
       if (!res.ok) return null;
       return ((await res.json()) as { mine: MineRow[] }).mine;
     } catch {

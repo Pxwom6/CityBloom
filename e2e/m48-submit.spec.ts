@@ -131,11 +131,12 @@ test('an idea and a building sent, one accepted and one declined, and the player
     'Not this time',
   );
   await page.screenshot({ path: 'docs/screenshots/m48-mine.png' });
-  // Accepted ideas: only the accepted one, with its credit.
+  // Accepted ideas: the accepted one with its credit, never the declined one (nor the phone runs'
+  // sends, none of them accepted: the test relay is shared by the whole run).
   await page.getByTestId('submit-tab-accepted').click();
-  await expect(page.getByTestId('accepted-row')).toHaveCount(1);
-  await expect(page.getByTestId('accepted-row')).toContainText('Roof gardens on tram depots');
-  await expect(page.getByTestId('accepted-row')).toContainText('from Ada');
+  const ours = page.getByTestId('accepted-row').filter({ hasText: 'Roof gardens on tram depots' });
+  await expect(ours).toHaveCount(1);
+  await expect(ours).toContainText('from Ada');
   await expect(page.getByTestId('accepted-list')).not.toContainText('Clock pavilion');
 
   // Nothing reachable without the owner key; a token reads only its own; the day's cap holds.
@@ -150,11 +151,21 @@ test('an idea and a building sent, one accepted and one declined, and the player
   ).toBe(401);
   // Another browser's token, new each run.
   const other = randomBytes(16).toString('hex');
-  expect(await (await r.get(`${RELAY}/submit/mine?token=${other}`)).json()).toEqual({ mine: [] });
+  expect(
+    await (
+      await r.post(`${RELAY}/submit/mine`, {
+        headers: { 'content-type': 'text/plain' },
+        data: JSON.stringify({ token: other }),
+      })
+    ).json(),
+  ).toEqual({ mine: [] });
   const accepted = (await (await r.get(`${RELAY}/submit/accepted`)).json()) as {
     accepted: { title: string }[];
   };
-  expect(accepted.accepted.map((a) => a.title)).toEqual(['Roof gardens on tram depots']);
+  const titles = accepted.accepted.map((a) => a.title);
+  expect(titles.filter((t) => t === 'Roof gardens on tram depots')).toHaveLength(1);
+  // Nothing accepted but what the owner accepted: not the declined building, not the waiting ones.
+  for (const t of titles) expect(t).not.toMatch(/Clock pavilion|ferry|Ferry|Night markets|Market hall/);
   // A modified client sending as fast as it likes: refused once the day's few are used (5 a browser;
   // the cap per address, 5 online too, is raised for the test relay, where every page is 127.0.0.1).
   const statuses: number[] = [];

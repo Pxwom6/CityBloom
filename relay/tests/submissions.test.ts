@@ -23,6 +23,23 @@ const JPEG = b64(
 const good = testModels().good;
 const goodHash = createHash('sha256').update(good).digest('hex').slice(0, 16);
 
+/** A browser token for the i-th player. */
+const tokenOf = (i: number) => i.toString(16).padStart(32, 'c');
+
+/** A GLB holding only a JSON chunk. */
+function glbWithJson(json: string): Uint8Array {
+  const text = new TextEncoder().encode(json.padEnd(Math.ceil(json.length / 4) * 4, ' '));
+  const out = new Uint8Array(20 + text.length);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, 0x46546c67, true);
+  v.setUint32(4, 2, true);
+  v.setUint32(8, out.length, true);
+  v.setUint32(12, text.length, true);
+  v.setUint32(16, 0x4e4f534a, true);
+  out.set(text, 20);
+  return out;
+}
+
 async function deskAt(limits: Partial<typeof SUBMIT_LIMITS> = {}) {
   const db = await nodeSql(':memory:');
   return new SubmissionsDesk(db.sql, T, { ...SUBMIT_LIMITS, ...limits });
@@ -91,6 +108,11 @@ describe('M48 submissions', () => {
     expect(glbProblem(outside)).toMatch(/outside itself/);
     expect(await d.submit(building({ glb: b64(outside) }), 'x', T)).toMatchObject({ ok: false });
     expect(await d.submit(building({ glb: b64(new Uint8Array(64)) }), 'x', T)).toMatchObject({ ok: false });
+    // A GLB whose JSON isn't an object, or whose lists aren't lists, is refused, not a crash.
+    for (const json of ['null', '[]', '7', '{"buffers":5}', '{"images":{"uri":"x"}}', '{"buffers":[null]}'])
+      expect(glbProblem(glbWithJson(json))).toBe(
+        json === '{"buffers":[null]}' ? null : 'The model can’t be read',
+      );
     expect(await d.submit(building({ glb: 'A'.repeat(SUBMIT_LIMITS.glbChars + 4) }), 'x', T)).toMatchObject({
       status: 413,
     });
@@ -141,6 +163,36 @@ describe('M48 submissions', () => {
       .map((r) => JSON.stringify(r))
       .join();
     expect(stored).not.toContain(tokenA);
+  });
+
+  it('remembers each address’s sends after the object is put away, and forgets them with the day', async () => {
+    const db = await nodeSql(':memory:');
+    const first = new SubmissionsDesk(db.sql, T, SUBMIT_LIMITS);
+    for (let i = 0; i < SUBMIT_LIMITS.perAddress; i++)
+      expect(await first.submit(idea({ token: tokenOf(i) }), '10.0.0.9', T)).toMatchObject({ ok: true });
+    // Evicted while idle: a new object on the same storage, new tokens, the same address.
+    const second = new SubmissionsDesk(db.sql, T + 120_000, SUBMIT_LIMITS);
+    expect(await second.submit(idea({ token: tokenOf(9) }), '10.0.0.9', T + 120_000)).toMatchObject({
+      ok: false,
+      status: 429,
+    });
+    // Nothing stored names the address; the day's salt and counts go once the day is over.
+    const dump =
+      JSON.stringify(db.sql.exec('SELECT * FROM rates').toArray()) +
+      JSON.stringify(db.sql.exec('SELECT * FROM kv').toArray());
+    expect(dump).not.toContain('10.0.0.9');
+    second.sweep(T + DAY);
+    expect(db.sql.exec('SELECT * FROM rates').toArray()).toEqual([]);
+    expect(db.sql.exec("SELECT * FROM kv WHERE k LIKE 'salt%'").toArray()).toEqual([]);
+    expect(await second.submit(idea({ token: tokenOf(9) }), '10.0.0.9', T + DAY)).toMatchObject({ ok: true });
+    // And so many in all a day, from any number of tokens and addresses.
+    const capped = await deskAt({ perDayAll: 3 });
+    for (let i = 0; i < 3; i++)
+      expect(await capped.submit(idea({ token: tokenOf(i) }), `10.2.0.${i}`, T)).toMatchObject({ ok: true });
+    expect(await capped.submit(idea({ token: tokenOf(5) }), '10.2.0.5', T)).toMatchObject({
+      ok: false,
+      status: 503,
+    });
   });
 
   it('holds a browser and an address to a few a day, and keeps within its size', async () => {
@@ -209,8 +261,19 @@ describe('M48 submissions', () => {
       expect((await http(req('POST', path, wrong)))!.status).toBe(401);
     }
     expect(d.ownerItem(id)).toMatchObject({ status: 'sent', reply: '' });
+    // Wrong keys slow guessing from an address, but never lock the owner out, from there or anywhere.
+    for (let i = 0; i < 40; i++)
+      await http(req('GET', '/owner/submissions', { key: `guess-${i}-0123456789x` }));
+    expect((await http(req('GET', '/owner/submissions', { key: 'guess-last-0123456789x' })))!.status).toBe(
+      429,
+    );
+    expect((await http(req('GET', '/owner/submissions', { key: KEY })))!.status).toBe(200);
     // Players reach only their own and the accepted list.
-    expect((await http(req('GET', `/submit/mine?token=${tokenB}`)))!.json).toEqual({ mine: [] });
+    const mine = (token: string) => http(req('POST', '/submit/mine', { body: { token } }));
+    expect((await mine(tokenB))!.json).toEqual({ mine: [] });
+    expect((await http(req('POST', '/submit/mine', { body: { token: 'nope' } })))!.status).toBe(400);
+    // The token goes in the body only: an address naming it reaches nothing.
+    expect((await http(req('GET', `/submit/mine?token=${tokenA}`)))!.status).toBe(404);
     expect((await http(req('GET', '/submit/accepted')))!.json).toEqual({ accepted: [] });
     expect((await http(req('GET', `/submit/${id}`)))!.status).toBe(404);
     // The owner: the list without files, one with its file, a decision with a reply, a delete.
@@ -226,7 +289,7 @@ describe('M48 submissions', () => {
       ))!.status,
     ).toBe(200);
     const mineA = (
-      (await http(req('GET', `/submit/mine?token=${tokenA}`)))!.json as {
+      (await mine(tokenA))!.json as {
         mine: { id: number; reply: string }[];
       }
     ).mine;

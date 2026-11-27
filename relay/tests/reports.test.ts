@@ -428,6 +428,13 @@ describe('the owner area', () => {
     expect(
       (await reportsHttp(request('GET', '/owner/reports', null, 'g-last', '10.9.9.9'), d, K, 4))?.status,
     ).toBe(429);
+    // The owner's own key still opens it, from a guessing address too (wrong keys can't lock them out).
+    expect((await reportsHttp(request('GET', '/owner/reports', null, K, '10.9.9.9'), d, K, 4))?.status).toBe(
+      200,
+    );
+    expect((await reportsHttp(request('GET', '/owner/reports', null, K, '9.9.9.9'), d, K, 4))?.status).toBe(
+      200,
+    );
   });
 
   it('marks fixed, reopens, deletes an item and an entry', async () => {

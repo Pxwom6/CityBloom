@@ -2,6 +2,7 @@
  * The owner area's requests to the relay (M41): every one carries the owner key, which the relay
  * checks each time; the page never decides on its own that the key is right.
  */
+import { UNTRUSTED_NOTE, fenced } from './untrusted';
 import type {
   OwnerItem as OwnerSubmissionItem,
   OwnerRow as OwnerSubmissionRow,
@@ -156,21 +157,22 @@ const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T'
  * the stack, the written reports' messages, and for a desync how to replay it.
  */
 export function groupForClaude(g: GroupView, details: ItemFull[] = []): string {
+  // The message, stack and written notes come from players' pages (cleaned, but a changed client can
+  // send any text), so they go in fenced, labelled blocks (DECISIONS "M48").
   const lines = [
+    UNTRUSTED_NOTE,
     'Citybloom problem report (from the owner area)',
     `Kind: ${g.kind} · Status: ${g.status}${g.reopened ? ' (came back on a newer build)' : ''}`,
-    `Message: ${g.message || '(none)'}`,
+    g.message ? fenced('Message', g.message) : 'Message: (none)',
     `Seen ${g.count} time${g.count === 1 ? '' : 's'}, first ${day(g.first)}, last ${when(g.last)} UTC`,
     `Builds: ${g.builds.map((b) => `${b.build} (${b.count})`).join(', ')}`,
     `Browsers: ${g.browsers.map((b) => `${b.browser} (${b.count})`).join(', ')}`,
     `Latest: graphics ${g.env.quality}, save v${g.env.save}, shared city: ${g.env.shared}, where: ${g.env.where}`,
   ];
-  if (g.stack) lines.push('Stack:', g.stack);
+  if (g.stack) lines.push(fenced('Stack', g.stack));
   const notes = g.items.filter((i) => i.note);
-  if (notes.length) {
-    lines.push('Written reports:');
-    for (const i of notes) lines.push(`- ${when(i.at)}: ${i.note}`);
-  }
+  if (notes.length)
+    lines.push(fenced('Written reports', notes.map((i) => `- ${when(i.at)}: ${i.note}`).join('\n')));
   for (const d of details) {
     const ds = d.report.desync;
     if (!ds) continue;

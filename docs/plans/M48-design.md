@@ -20,7 +20,7 @@ game; the owner reviews, replies, downloads and copies for Claude Code; caps, ra
     the decision (the sweep, an alarm and on each write); accepted ones kept until deleted.
 - `relay/submissionsHttp.ts`:
   - `POST /submit` (JSON as text/plain: no preflight) → `{ id }`.
-  - `GET /submit/mine?token=` → the token's submissions: id, kind, title or name, status, reply, times.
+  - `POST /submit/mine` `{ token }` (built as `GET ?token=`, moved to the body after the review) → the token's submissions: id, kind, title or name, status, reply, times.
     Never anyone else's: the token is 32 random hex digits from the browser, stored only as its hash.
   - `GET /submit/accepted` → accepted ones only: kind, title or name, credit, line, when.
   - `GET /owner/submissions?kind=&status=` → every submission newest first, without the files.

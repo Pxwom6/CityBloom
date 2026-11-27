@@ -25,10 +25,13 @@ export const SUBMIT_LIMITS = {
   /** Submissions a UTC day, per browser token. */
   perDay: 5,
   /**
-   * And per address (in memory): the same few online. Only the local relay's tests raise it
-   * (`--submit-per-address`), as every page there comes from 127.0.0.1.
+   * And per address: the same few online. Counted in SQL under a hash with a salt renewed each UTC
+   * day (both gone with the day), so an object evicted while idle doesn't forget them. Only the local
+   * relay's tests raise it (`--submit-per-address`), as every page there comes from 127.0.0.1.
    */
   perAddress: 5,
+  /** And in all, a UTC day: a flood from many tokens and addresses can't fill the inbox in a day. */
+  perDayAll: 300,
   titleChars: 80,
   textChars: 1_500,
   lineChars: 200,
@@ -196,7 +199,15 @@ export function glbProblem(bytes: Uint8Array): string | null {
   } catch {
     return 'The model can’t be read';
   }
-  if ([...(json.buffers ?? []), ...(json.images ?? [])].some((x) => x && x.uri !== undefined))
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return 'The model can’t be read';
+  const list = (x: unknown) => (Array.isArray(x) ? (x as unknown[]) : x === undefined ? [] : null);
+  const parts = [list(json.buffers), list(json.images)];
+  if (parts.some((p) => p === null)) return 'The model can’t be read';
+  if (
+    parts
+      .flat()
+      .some((x) => x !== null && typeof x === 'object' && (x as { uri?: unknown }).uri !== undefined)
+  )
     return 'The model points to files outside itself';
   return null;
 }
@@ -206,7 +217,6 @@ const isJpeg = (b: Uint8Array) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8
 
 export class SubmissionsDesk extends LazyTables {
   private budget: DailyRows;
-  private addresses = new Map<string, { day: number; n: number }>();
   private readBuckets = new Map<string, TokenBucket>();
   private ownerTries = new Map<string, TokenBucket>();
   private ownerTriesAll: TokenBucket;
@@ -223,6 +233,9 @@ export class SubmissionsDesk extends LazyTables {
         '(id INTEGER PRIMARY KEY, token TEXT NOT NULL, kind TEXT NOT NULL, about TEXT NOT NULL, ' +
         'title TEXT NOT NULL, text TEXT NOT NULL, credit TEXT NOT NULL, status TEXT NOT NULL, ' +
         'reply TEXT NOT NULL, at INTEGER NOT NULL, decided INTEGER, hash TEXT, bytes INTEGER NOT NULL, file TEXT)',
+      // Sends per address today: a salted hash (the salt renewed each UTC day), never the address.
+      rates:
+        '(day INTEGER NOT NULL, key TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, key)) WITHOUT ROWID',
     });
     const saved = this.get('budget');
     this.budget = new DailyRows(
@@ -273,9 +286,25 @@ export class SubmissionsDesk extends LazyTables {
   /** Delete what's due: declined submissions 30 days after the decision. Says whether to look again. */
   sweep(now: number): boolean {
     this.write("DELETE FROM subs WHERE status = 'declined' AND decided < ?", now - this.limits.declinedMs);
+    // Yesterday's counts per address go, and their salt with them.
+    const day = Math.floor(now / DAY_MS);
+    this.write('DELETE FROM rates WHERE day < ?', day);
+    if (Number(this.get('saltDay') ?? day) < day) this.write("DELETE FROM kv WHERE k IN ('salt', 'saltDay')");
     return (
-      (this.read<{ n: number }>("SELECT count(*) AS n FROM subs WHERE status = 'declined'")[0]?.n ?? 0) > 0
+      (this.read<{ n: number }>("SELECT count(*) AS n FROM subs WHERE status = 'declined'")[0]?.n ?? 0) > 0 ||
+      (this.read<{ n: number }>('SELECT count(*) AS n FROM rates')[0]?.n ?? 0) > 0
     );
+  }
+
+  /** An address's key for today's counts: a hash under today's salt (made on the day's first send). */
+  private async rateKey(address: string, day: number): Promise<string> {
+    let salt = this.get('salt');
+    if (!salt || Number(this.get('saltDay')) !== day) {
+      salt = [0, 1, 2].map(() => secureIndex(0x7fff_ffff)).join('-');
+      this.put('salt', salt);
+      this.put('saltDay', String(day));
+    }
+    return (await sha256(`${salt}|${address}`)).slice(0, 32);
   }
 
   /** When the sweep should next look (a day from now). */
@@ -336,7 +365,8 @@ export class SubmissionsDesk extends LazyTables {
       hash = r.hash;
       file = r.glb;
     }
-    // Rates: a few a day, per token (kept, so a restart doesn't reset it) and per address (in memory).
+    // Rates: a few a day per token and per address, and so many in all; all kept in SQL, so an object
+    // evicted while idle forgets none of them.
     const token = await sha256(r.token);
     const day = Math.floor(now / DAY_MS);
     const byToken =
@@ -345,12 +375,16 @@ export class SubmissionsDesk extends LazyTables {
         token,
         day * DAY_MS,
       )[0]?.n ?? 0;
-    const ak = this.key(address);
-    const a = this.addresses.get(ak);
-    const byAddress = a && a.day === day ? a.n : 0;
+    this.sweep(now);
+    const rateKey = await this.rateKey(address, day);
+    const byAddress =
+      this.read<{ n: number }>('SELECT n FROM rates WHERE day = ? AND key = ?', day, rateKey)[0]?.n ?? 0;
     if (byToken >= this.limits.perDay || byAddress >= this.limits.perAddress)
       return { ok: false, status: 429, why: `That’s ${this.limits.perDay} for today: try again tomorrow` };
-    this.sweep(now);
+    const today =
+      this.read<{ n: number }>('SELECT count(*) AS n FROM subs WHERE at >= ?', day * DAY_MS)[0]?.n ?? 0;
+    if (today >= this.limits.perDayAll)
+      return { ok: false, status: 503, why: 'Lots have come in today: try again tomorrow' };
     const held = this.read<{ n: number; b: number | null }>(
       'SELECT count(*) AS n, sum(bytes) AS b FROM subs',
     )[0];
@@ -372,8 +406,11 @@ export class SubmissionsDesk extends LazyTables {
       size,
       file,
     );
-    if (this.addresses.size > 5000) this.addresses.clear();
-    this.addresses.set(ak, { day, n: byAddress + 1 });
+    this.write(
+      'INSERT INTO rates (day, key, n) VALUES (?, ?, 1) ON CONFLICT (day, key) DO UPDATE SET n = n + 1',
+      day,
+      rateKey,
+    );
     const id = this.read<{ id: number }>('SELECT last_insert_rowid() AS id')[0]!.id;
     this.put('budget', JSON.stringify(this.budget.record(now)));
     return { ok: true, id };
@@ -429,8 +466,10 @@ export class SubmissionsDesk extends LazyTables {
       this.limits.ownerTries.burst,
       now,
     );
-    if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
+    // The right key always opens it (M48 review: wrong keys from anywhere mustn't lock the owner out);
+    // only wrong ones are slowed, per address and for everyone.
     if (given !== null && safeEqual(given, key)) return 'ok';
+    if (!b.has(now) || !this.ownerTriesAll.has(now)) return 'busy';
     b.take(now);
     this.ownerTriesAll.take(now);
     return 'wrong';

@@ -1,4 +1,5 @@
 import { TUTORIAL, TUTORIAL_EVENTS } from './tutorial';
+import { cleanTarget, fromBase64 } from './myBuildings';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendsWarClient } from './friendsWar';
 import {
@@ -177,6 +178,29 @@ export interface TestApi {
       orbit: { tick: number; population: number; bytes: number }[];
     };
   }>;
+  /**
+   * My buildings (M46): every model on this device (the player's own and friends'), the models the
+   * city's buildings wear, and how many buildings are drawn wearing one now.
+   */
+  getMyBuildings(): Promise<{
+    models: {
+      hash: string;
+      name: string;
+      target: unknown;
+      size: { w: number; d: number };
+      mine: boolean;
+      bytes: number;
+    }[];
+    inCity: string[];
+    drawn: number;
+  }>;
+  /** Add a model as an import would (a base64 GLB, checked in the worker): its hash, or the problems. */
+  addMyBuilding(
+    glb: string,
+    name: string,
+    target: unknown,
+    mine?: boolean,
+  ): Promise<{ ok: boolean; hash: string | null; problems: string[] }>;
   /** The timelapse's music rendered for `seconds`: its peak and average level (dB below full scale). */
   timelapseMusicLevels(seconds: number): Promise<{ peakDb: number; rmsDb: number }>;
   /** Test builds: game ticks between timelapse frames (a longer step grows years of city in fewer frames). */
@@ -963,6 +987,32 @@ export function installTestApi(game: Game): TestApi {
         lastDraw: t.lastDraw,
         stored: { wide: await list('wide'), orbit: await list('orbit') },
       };
+    },
+    getMyBuildings: async () => {
+      await game.buildings.ready;
+      const inCity = game.looksInCity();
+      let drawn = 0;
+      for (const c of game.world.civics.values()) if (c.look && game.customModel(c.look)) drawn++;
+      return {
+        models: game.buildings.all().map((m) => ({
+          hash: m.hash,
+          name: m.name,
+          target: m.target,
+          size: m.size,
+          mine: m.mine,
+          bytes: m.bytes.length,
+        })),
+        inCity,
+        drawn,
+      };
+    },
+    addMyBuilding: async (glb, name, target, mine = true) => {
+      const t = cleanTarget(target);
+      if (!t) return { ok: false, hash: null, problems: ['no such target'] };
+      const r = await game.buildings.add(fromBase64(glb), name, t, mine);
+      return r.ok
+        ? { ok: true, hash: r.model.hash, problems: [] }
+        : { ok: false, hash: null, problems: r.problems.map((p) => p.words) };
     },
     timelapseMusicLevels: async (seconds) => {
       const buf = await renderTimelapseMusic(seconds);

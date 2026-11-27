@@ -25,6 +25,7 @@ import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { RunViewerBar } from './Challenge';
 import { TimelapseCard } from './Timelapse';
 import { DistrictsPanel } from './Districts';
+import { MyBuildingsPanel } from './MyBuildings';
 import { WarRoomPanel } from './Military';
 import { FallenCard } from './Diplomacy';
 import { BattleBar, LiveBar, ViewerBar } from './Battle';
@@ -127,6 +128,7 @@ export function App({ game }: { game: Game }) {
       <HistoryPanel />
       <GoalsPanel />
       <DistrictsPanel />
+      <MyBuildingsPanel />
       <RegionPanel />
       <WarRoomPanel />
       <FallenCard />

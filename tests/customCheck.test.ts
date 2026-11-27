@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { CIVIC } from '../src/data/civic';
 import { CIVIC_BUDGETS } from '../src/models/budgets';
-import { budgetOf, checkCustom, CUSTOM, externalLinks, targetLabel } from '../src/models/customCheck';
+import {
+  budgetOf,
+  canHaveLook,
+  checkCustom,
+  CUSTOM,
+  externalLinks,
+  probeCustom,
+  suggestTargets,
+  targetLabel,
+} from '../src/models/customCheck';
 import { readBudgets } from '../scripts/lib/modelPipeline';
-import { testModels } from '../scripts/lib/makeGlb';
+import { goodModelParts, testModels, writeGlb } from '../scripts/lib/makeGlb';
 
 /**
  * M46: a player's own model is checked as the game's own are (spec v6, the site and budget of what
@@ -33,9 +42,11 @@ describe('M46 checking a player’s model', () => {
     expect(big.problems.map((p) => p.words).join('\n')).toMatch(/up to 1 MB/);
     const wide = checkCustom(m.tooWide, { kind: 'landmark', size: 2 }).result;
     expect(wide.ok).toBe(false);
-    expect(wide.problems.map((p) => p.words).join('\n')).toMatch(/24 × 24|24 m|site/);
-    // The same model is right for a 3×3 landmark.
-    expect(checkCustom(m.tooWide, { kind: 'landmark', size: 3 }).result.ok).toBe(true);
+    expect(wide.problems.map((p) => p.words).join('\n')).toMatch(/is 19 × 19 m; its site is 16 × 16 m/);
+    // Nor any other size: no landmark is 19 m across.
+    expect(checkCustom(m.tooWide, { kind: 'landmark', size: 3 }).result.ok).toBe(false);
+    // The same pavilion built 24 m across is right for a 3×3 landmark.
+    expect(checkCustom(writeGlb(goodModelParts(24)), { kind: 'landmark', size: 3 }).result.ok).toBe(true);
     const out = checkCustom(m.outside, { kind: 'landmark', size: 2 }).result;
     expect(out.ok).toBe(false);
     expect(out.problems[0]!.words).toMatch(/points to files outside itself \("building\.bin"\)/);
@@ -63,5 +74,21 @@ describe('M46 checking a player’s model', () => {
       [...CIVIC.keys()].filter((id) => all.has(id)).map((id) => [id, all.get(id)]),
     );
     expect(CIVIC_BUDGETS).toEqual(want);
+  });
+
+  it('measures a file before it is checked and suggests what it could be', () => {
+    expect(probeCustom(m.good)).toEqual({ w: 16, d: 16, h: 12.5 });
+    const t = suggestTargets({ w: 16, d: 16 });
+    expect(t[0]).toEqual({ kind: 'landmark', size: 2 });
+    // Civic buildings on a 16 m square come next (a wind turbine, the pocket park…), never landmarks or projects.
+    expect(t.slice(1).every((x) => x.kind === 'look' && canHaveLook(x.def))).toBe(true);
+    expect(t.some((x) => x.kind === 'look' && x.def === 'park_small')).toBe(true);
+    // A size nothing fits: the nearest landmark, for the check to explain.
+    expect(suggestTargets({ w: 19, d: 19 })).toEqual([{ kind: 'landmark', size: 2 }]);
+    expect(suggestTargets({ w: 60, d: 60 })).toEqual([{ kind: 'landmark', size: 4 }]);
+    // A file pointing outside itself is refused in plain words before anything is parsed.
+    const out = probeCustom(m.outside);
+    expect('why' in out && out.why).toMatch(/points to files outside itself/);
+    expect('why' in probeCustom(new Uint8Array([1, 2, 3, 4]))).toBe(true);
   });
 });

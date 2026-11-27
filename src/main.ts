@@ -432,6 +432,8 @@ async function boot(): Promise<void> {
     history.replaceState(null, '', location.pathname);
   } else if (visited) {
     game.readOnly = true;
+    // A friend's city brings the models its buildings wear (M46), checked as any are.
+    if (visited.meta.models) void game.buildings.ready.then(() => game.buildings.adopt(visited.meta.models));
     game.setSpeed(0);
     game.setCamera('overview', true);
     game.toast(
@@ -539,6 +541,8 @@ async function boot(): Promise<void> {
     // The city's timelapse (M45): a new city's from its founding; a saved one under the key its save
     // keeps, or (saved before timelapses, or on another device) from now. Never a lesson's town.
     if (!lesson) void game.timelapse.begin(save?.meta.timelapse ?? null, !save);
+    // The players' own models the city's buildings wear (M46), checked and kept as a friend's would be.
+    if (save?.meta.models) void game.buildings.ready.then(() => game.buildings.adopt(save.meta.models));
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
     if (!save && !scenario && !challengePlay) {
       const { seasons, weather } = game.settings;

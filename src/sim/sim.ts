@@ -1888,6 +1888,7 @@ export class Sim {
       case 'addModule':
       case 'moveBuilding':
       case 'buildRailLink':
+      case 'setLook':
         return FULL_SCOPE;
       default:
         return null;
@@ -1935,6 +1936,8 @@ export class Sim {
         return (MODULE.get(cmd.module)?.name ?? 'add-on').toLowerCase();
       case 'moveBuilding':
         return 'move';
+      case 'setLook':
+        return 'look';
       default:
         return cmd.type;
     }

@@ -6,19 +6,21 @@
  */
 import type { GlbFile } from '../models/glb';
 import { growBox, emptyBox } from '../models/check';
-import { checkCustom, type CustomCheck, type CustomTarget } from '../models/customCheck';
+import {
+  checkCustom,
+  probeCustom,
+  type CustomCheck,
+  type CustomTarget,
+  type ModelSize,
+} from '../models/customCheck';
 
-export interface ModelCheckJob {
-  id: number;
-  bytes: ArrayBuffer;
-  target: CustomTarget;
-}
+/** Check a model for a target, or (`probe`) only measure it, to suggest what it could be. */
+export type ModelCheckJob =
+  { id: number; bytes: ArrayBuffer; target: CustomTarget } | { id: number; bytes: ArrayBuffer; probe: true };
 
-export interface ModelCheckReply {
-  id: number;
-  result: CustomCheck;
-  picture: Blob | null;
-}
+export type ModelCheckReply =
+  | { id: number; result: CustomCheck; picture: Blob | null }
+  | { id: number; probe: ModelSize | { why: string } };
 
 const COLOURS: Record<string, string> = {
   wall: '#e6d8bb',
@@ -123,8 +125,16 @@ async function picture(file: GlbFile, r: CustomCheck): Promise<Blob | null> {
 }
 
 self.onmessage = async (e: MessageEvent<ModelCheckJob>) => {
-  const { id, bytes, target } = e.data;
-  const { result, file } = checkCustom(new Uint8Array(bytes), target);
+  const job = e.data;
+  const { id, bytes } = job;
+  if ('probe' in job) {
+    (self as unknown as Worker).postMessage({
+      id,
+      probe: probeCustom(new Uint8Array(bytes)),
+    } satisfies ModelCheckReply);
+    return;
+  }
+  const { result, file } = checkCustom(new Uint8Array(bytes), job.target);
   let pic: Blob | null = null;
   if (!result.ok && file?.parts.length) pic = await picture(file, result).catch(() => null);
   (self as unknown as Worker).postMessage({ id, result, picture: pic } satisfies ModelCheckReply);

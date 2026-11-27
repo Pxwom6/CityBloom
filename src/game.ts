@@ -103,6 +103,8 @@ import { relayHttpBase, reportProblem, type Reporter } from './client/reports';
 import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostReply } from './client/challenge';
 import type { ChallengeDef } from './data/challenges';
 import { TimelapseRecorder } from './client/timelapse';
+import { MyBuildings } from './client/myBuildings';
+import type { BakedModel } from './models/baked';
 import type { RoomMsg } from '../relay/protocol';
 import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
 
@@ -253,6 +255,8 @@ export class Game {
     | 'war'
     /** The battle map (M39): commanding a live battle with a friend, or watching one. */
     | 'battleMap'
+    /** My Buildings (M46): the player's own models. */
+    | 'buildings'
     | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
@@ -394,6 +398,12 @@ export class Game {
     this.overlay = new OverlayController(this);
     this.districts = new DistrictView(this);
     this.regionView = new RegionView(this);
+    // Players' own models (M46): drawn when here, and a friend's only with friends' buildings shown.
+    renderer.civics.customLook = (hash) => this.customModel(hash);
+    this.buildings.onChange = () => {
+      this.renderer.civics.redrawLooks();
+      this.notify();
+    };
     renderer.controller.focus = () => {
       const hw = this.world.gen.params.highway;
       return { x: 260, z: hw.connectZ };
@@ -784,6 +794,8 @@ export class Game {
   readonly timelapse = new TimelapseRecorder(this);
   /** Make timelapse's card is open (M45). */
   timelapseCard = false;
+  /** The player's own models, and friends' that came with a city or a room (M46). */
+  readonly buildings = new MyBuildings();
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
@@ -2184,10 +2196,26 @@ export class Game {
       this.graphicsCheck = null;
       patch = { ...patch, graphicsChecked: true };
     }
+    const friends = this.settings.showFriendsBuildings;
     this.settings = { ...this.settings, ...patch };
     saveSettings(this.settings);
     this.applySettings();
+    if (friends !== this.settings.showFriendsBuildings) this.renderer.civics.redrawLooks();
     this.notify();
+  }
+
+  /** A player's own model to draw (M46): here, and a friend's only with friends' buildings shown. */
+  customModel(hash: string): BakedModel | null {
+    const m = this.buildings.get(hash);
+    if (!m || (!m.mine && !this.settings.showFriendsBuildings)) return null;
+    return m.baked;
+  }
+
+  /** The hashes of the models the city's buildings wear (M46). */
+  looksInCity(): string[] {
+    const out = new Set<string>();
+    for (const c of this.world.civics.values()) if (c.look) out.add(c.look);
+    return [...out];
   }
 
   /**
@@ -2386,6 +2414,9 @@ export class Game {
       if (this.boundRegion) s.meta.region = { ...this.boundRegion };
       // The key its timelapse is kept under on this device goes with the city (M45).
       if (this.timelapse.key) s.meta.timelapse = this.timelapse.key;
+      // And the players' own models its buildings wear, so it opens anywhere with them (M46).
+      const models = this.buildings.forSave(this.looksInCity());
+      if (models.length) s.meta.models = models;
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (!auto) {

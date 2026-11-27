@@ -10,6 +10,9 @@ import { useGame, useGameUpdates } from './hooks';
 import { tipShift } from './layout';
 import { isPhone } from '../game';
 import { CIVIC, CIVIC_DEFS, type CivicCategory, type CivicDef } from '../data/civic';
+import { targetId } from '../models/customCheck';
+import { NO_CUSTOM } from '../sim/rules';
+import { customOff, placeOwn } from './MyBuildings';
 import { UNIT } from '../data/war';
 import { TRAM, TRANSIT } from '../data/balance';
 import { POLICY, type PolicyId } from '../data/policies';
@@ -648,6 +651,7 @@ export function Toolbar() {
               <span class="tool-label">Tram stop</span>
             </ToolButton>
           )}
+          {active === 'place' && tools.place.category === 'landmark' && <OwnLandmarks />}
         </div>
       )}
       {mapsOpen && <MapsMenu onClose={() => setMapsOpen(false)} />}
@@ -1322,6 +1326,56 @@ export function RadiationTip() {
 }
 
 /** The district tool's options (M21): the district to paint, a new one, the eraser, the brush. */
+/**
+ * The player's own landmarks among the city's (M46), each placed as it is, and My buildings, where
+ * models are added and kept.
+ */
+function OwnLandmarks() {
+  const game = useGameUpdates(300);
+  const tools = game.tools;
+  const off = customOff(game);
+  const own = game.buildings.list().filter((m) => m.target.kind === 'landmark');
+  return (
+    <>
+      {own.map((m) => {
+        const def = CIVIC.get(targetId(m.target))!;
+        return (
+          <ToolButton
+            key={m.hash}
+            id={`place-own-${m.hash}`}
+            active={tools.place.armed && tools.place.look === m.hash}
+            disabled={off}
+            onClick={() => placeOwn(game, m)}
+            tip={{
+              title: m.name,
+              lines: [
+                `$${def.cost.toLocaleString('en-US')} to build · $${def.upkeep.toLocaleString('en-US')}/month upkeep`,
+                `Your own landmark, ${m.size.w} × ${m.size.d} m: it works like a park of its size.`,
+                ...(off ? [NO_CUSTOM] : []),
+              ],
+            }}
+          >
+            <span class="tool-label">{m.name}</span>
+          </ToolButton>
+        );
+      })}
+      <ToolButton
+        id="place-mybuildings"
+        active={game.panel === 'buildings'}
+        onClick={() => game.openPanel('buildings')}
+        tip={{
+          title: 'My buildings',
+          lines: [
+            'Add buildings you made yourself (GLB files): landmarks of your own, or new looks for the city’s buildings.',
+          ],
+        }}
+      >
+        <span class="tool-label">My buildings…</span>
+      </ToolButton>
+    </>
+  );
+}
+
 function DistrictOptions() {
   const game = useGameUpdates(200);
   const t = game.tools.district;

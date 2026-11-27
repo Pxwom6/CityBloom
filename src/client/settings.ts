@@ -71,6 +71,8 @@ export interface Settings {
   reportsNotice: boolean;
   /** Record a timelapse of each city as it plays (M45): small frames kept on this device. On by default. */
   timelapse: boolean;
+  /** Draw friends' own buildings (M46): off, a friend's custom building shows as the game's own. */
+  showFriendsBuildings: boolean;
   /**
    * The most frames a second drawn (M49): 0 as many as the screen shows, else 30 or 60. The
    * first-launch check sets 30 on a phone.
@@ -130,6 +132,7 @@ export const DEFAULT_SETTINGS: Settings = {
   crashReports: true,
   reportsNotice: false,
   timelapse: true,
+  showFriendsBuildings: true,
   fpsCap: 0,
   batterySaver: false,
   backupAt: 0,
@@ -375,6 +378,7 @@ export function parseSettings(raw: unknown): Settings {
     crashReports: bool(r.crashReports, d.crashReports),
     reportsNotice: bool(r.reportsNotice, d.reportsNotice),
     timelapse: bool(r.timelapse, d.timelapse),
+    showFriendsBuildings: bool(r.showFriendsBuildings, d.showFriendsBuildings),
     fpsCap: oneOf(r.fpsCap, FPS_CAPS, d.fpsCap),
     batterySaver: bool(r.batterySaver, d.batterySaver),
     backupAt: num(r.backupAt, d.backupAt, 0, 1e15),

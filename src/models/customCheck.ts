@@ -4,12 +4,12 @@
  * player needs on top: at most 1 MB, and nothing inside it that points outside the file. A model
  * that passes is baked as the build bakes the game's own. Pure, so it runs in a worker and in Node.
  */
-import { CIVIC, takesLook } from '../data/civic';
+import { CIVIC, CIVIC_DEFS, takesLook } from '../data/civic';
 import type { BakedModel } from './baked';
 import { bakeModel } from './bake';
 import { CIVIC_BUDGETS } from './budgets';
 import { boxOf, inspectModel, type Box3, type ModelReport } from './check';
-import type { GlbFile, GlbPart } from './glb';
+import { parseGlb, type GlbFile, type GlbPart } from './glb';
 
 export const CUSTOM = {
   /** The biggest file the game takes. */
@@ -155,4 +155,53 @@ export function checkCustom(
       problems.push({ words: `It couldn’t be made ready for the game (${(e as Error).message})`, parts: [] });
     }
   return result(file, report, baked);
+}
+
+/** A model's size (m): how wide (x), deep (z) and tall it is. */
+export interface ModelSize {
+  w: number;
+  d: number;
+  h: number;
+}
+
+/**
+ * A quick look at a file before it's checked: its size, to suggest what it could be; or why it
+ * can't be read at all.
+ */
+export function probeCustom(bytes: Uint8Array): ModelSize | { why: string } {
+  if (bytes.length > CUSTOM.maxParse)
+    return { why: `It is ${MB(bytes.length)}: the game takes models up to 1 MB` };
+  const links = externalLinks(bytes);
+  if (links) return { why: links };
+  try {
+    const file = parseGlb(bytes);
+    if (!file.parts.length) return { why: 'There’s nothing in it to draw' };
+    const b = boxOf(file.parts);
+    const r = (n: number) => Math.round(n * 100) / 100;
+    return { w: r(b.max[0] - b.min[0]), d: r(b.max[2] - b.min[2]), h: r(b.max[1] - b.min[1]) };
+  } catch (e) {
+    return { why: `It isn’t a GLB the game can read (${(e as Error).message})` };
+  }
+}
+
+/** Within the checker's tolerance (a model fills its site exactly). */
+const fits = (a: number, b: number) => Math.abs(a - b) <= 0.05;
+
+/**
+ * What a model of this size could be, best first: the landmark it fills (or, if none, the nearest
+ * size, for the check to explain), then the civic buildings whose site it fills (at most `most`).
+ */
+export function suggestTargets(size: { w: number; d: number }, most = 8): CustomTarget[] {
+  const out: CustomTarget[] = [];
+  const square = ([1, 2, 3, 4] as const).find((n) => fits(size.w, n * 8) && fits(size.d, n * 8));
+  const looks = CIVIC_DEFS.filter((d) => canHaveLook(d.id) && fits(d.w, size.w) && fits(d.d, size.d))
+    .slice(0, most)
+    .map((d): CustomTarget => ({ kind: 'look', def: d.id }));
+  if (square) out.push({ kind: 'landmark', size: square });
+  out.push(...looks);
+  if (!square && !looks.length) {
+    const n = Math.min(4, Math.max(1, Math.round(Math.max(size.w, size.d) / 8))) as LandmarkSize;
+    out.push({ kind: 'landmark', size: n });
+  }
+  return out;
 }

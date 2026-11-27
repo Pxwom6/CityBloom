@@ -207,8 +207,8 @@ export function testModels(): Record<'good' | 'tooBig' | 'tooWide' | 'outside' |
     good: writeGlb(good),
     // Over 1 MB.
     tooBig: writeGlb(good, { pad: 1_200_000 }),
-    // 24 m across for a 16 m site.
-    tooWide: writeGlb(goodModelParts(24)),
+    // 19 m across: no site that size (a 2×2 landmark's is 16 m).
+    tooWide: writeGlb(goodModelParts(19)),
     // Its data in an outside file.
     outside: writeGlb(good, { outside: true }),
     // A texture (plain colours only).

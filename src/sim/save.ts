@@ -40,6 +40,11 @@ export interface SaveMeta {
    * beside the city (never the sim's state). Older saves have none: their recording starts when opened.
    */
   timelapse?: string;
+  /**
+   * The players' own models its buildings wear (M46), written by the page beside the city so it opens
+   * anywhere with them: each checked again when the city opens. Older saves have none.
+   */
+  models?: { hash: string; name: string; target: unknown; glb: string }[];
   /** A weekly challenge city (M44): its week, and whether the challenge has ended (the load list's mark). */
   challenge?: { week: number; done: boolean };
 }

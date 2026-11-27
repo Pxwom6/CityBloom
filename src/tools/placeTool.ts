@@ -21,6 +21,8 @@ export class PlaceTool implements Tool {
    * from: the map does nothing until a building button is pressed.
    */
   armed = false;
+  /** A player's own model the building wears (M46: a landmark of their own), by its hash. */
+  look: string | null = null;
   private pose: { x: number; z: number; angle: number; side: 1 | -1 } | null = null;
   private seq = 0;
   private last: { seq: number; res: CommandResult } | null = null;
@@ -115,6 +117,7 @@ export class PlaceTool implements Tool {
   setDef(id: string): void {
     this.clearLinkGhost();
     this.def = id;
+    this.look = null;
     this.armed = true;
     this.category = CIVIC.get(id)!.category;
     this.last = null;
@@ -124,11 +127,26 @@ export class PlaceTool implements Tool {
     this.game.notify();
   }
 
+  /** Place a building wearing a player's own model (M46): a landmark of theirs, by its hash. */
+  setOwn(def: string, hash: string): void {
+    this.setDef(def);
+    this.look = hash;
+    // A landmark of the player's own is chosen among the city's landmarks.
+    if (CIVIC.get(def)?.category === 'custom') this.category = 'landmark';
+    this.game.notify();
+  }
+
+  /** The building's name in hints: a player's own model goes by its name. */
+  private nameOf(): string {
+    const own = this.look ? this.game.buildings.get(this.look) : undefined;
+    return own?.name ?? CIVIC.get(this.def)!.name;
+  }
+
   private command(): Command | null {
     if (!this.armed || !this.pose) return null;
     if (this.railLink) return { type: 'buildRailLink', z: Math.round(this.pose.z) };
     if (this.moving !== null) return { type: 'moveBuilding', id: this.moving, ...this.pose };
-    return { type: 'placeBuilding', def: this.def, ...this.pose };
+    return { type: 'placeBuilding', def: this.def, ...this.pose, ...(this.look ? { look: this.look } : {}) };
   }
 
   /** The hint for the current preview: what it costs, or why it can't go here. */
@@ -154,14 +172,14 @@ export class PlaceTool implements Tool {
     if (!res)
       this.game.setHint({
         ...this.pointer,
-        text: `${def.name} · ${price}`,
+        text: `${this.nameOf()} · ${price}`,
         tone: 'info',
       });
     else if (res.ok) {
       const demolish = (res.info?.demolish as number) ?? 0;
       this.game.setHint({
         ...this.pointer,
-        text: `${def.name} · ${price} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
+        text: `${this.nameOf()} · ${price} · ${upkeep}${demolish ? ` · replaces ${demolish} building${demolish > 1 ? 's' : ''}` : ''}`,
         tone: 'ok',
       });
     } else this.game.setHint({ ...this.pointer, text: res.reason, tone: 'bad' });

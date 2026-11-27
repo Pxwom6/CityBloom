@@ -6409,3 +6409,145 @@ body {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+
+/* My buildings (M46). */
+.buildings-panel {
+  width: 27rem;
+}
+.buildings-panel.dragging {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -6px;
+}
+.buildings-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+.buildings-add .muted {
+  flex: 1;
+  min-width: 12rem;
+}
+.buildings-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.buildings-import h3 {
+  margin: 0;
+}
+.buildings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.buildings-field input,
+.buildings-field select {
+  width: 100%;
+}
+.buildings-refused {
+  margin: 0;
+  font-weight: 600;
+}
+.buildings-problems {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--color-negative);
+}
+.buildings-problems li + li {
+  margin-top: 2px;
+}
+.buildings-picture {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: #f6f4ee;
+}
+.buildings-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.buildings-preview canvas {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-md);
+  background: #bcd8f0;
+  display: block;
+}
+.buildings-looks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+.buildings-looks .sep {
+  width: var(--space-2);
+}
+.buildings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.buildings-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.buildings-row.active {
+  border-color: var(--color-border-strong);
+}
+.buildings-row-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.buildings-name {
+  font-weight: 600;
+}
+.buildings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.buildings-note {
+  margin: 0;
+}
+.buildings-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.inspector-look label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
+}
+.inspector-look select {
+  flex: 1;
+}
+.inspector-look p {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+}

@@ -4,6 +4,7 @@ import type { CivicData } from '../sim/protocol';
 import { CIVIC } from '../data/civic';
 import { assets } from './assets/registry';
 import type { ModelData } from './assets/builder';
+import type { BakedModel } from '../models/baked';
 import { buildingYaw } from './buildings';
 import { LodChunks, type ChunkItem, type LodMaterials, type LodRange } from './lodChunks';
 
@@ -22,6 +23,11 @@ export class CivicRenderer {
   readonly chunks: LodChunks;
   /** What each civic's model depends on; unchanged means no rebuild. */
   private looks = new Map<number, string>();
+  /**
+   * A player's own model by its hash (M46), or null: not on this device yet, or a friend's with
+   * friends' buildings hidden. Set by the game.
+   */
+  customLook: ((hash: string) => BakedModel | null) | null = null;
 
   constructor(
     private world: ClientWorld,
@@ -41,12 +47,24 @@ export class CivicRenderer {
 
   private look(c: CivicData): string {
     // Fill by the steps the model has (a landfill's mound), so a truckload doesn't rebuild the chunk.
-    return `${c.def}:${c.variant}:${Math.round((c.fill ?? 0) * 4)}:${(c.modules ?? []).join('+')}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}`;
+    const own = c.look && this.customLook?.(c.look) ? c.look : '';
+    return `${c.def}:${c.variant}:${Math.round((c.fill ?? 0) * 4)}:${(c.modules ?? []).join('+')}:${c.stage ?? '-'}:${c.x}:${c.y}:${c.z}:${c.angle}:${c.side}:${own}`;
   }
 
-  /** The model a civic building is drawn with. */
+  /** The model a civic building is drawn with: a player's own (M46) when it's here and shown. */
   model(c: CivicData): ModelData {
+    const own = c.look ? this.customLook?.(c.look) : null;
+    if (c.look && own) return assets.civicLook(c.def, c.variant, c.look, own);
     return assets.civic(c.def, c.variant, c.fill, c.modules ?? [], c.stage);
+  }
+
+  /** Draw again the buildings wearing players' own models (one arrived, or friends' were shown or hidden). */
+  redrawLooks(): void {
+    for (const c of this.world.civics.values()) {
+      if (!c.look) continue;
+      this.looks.delete(c.id);
+      this.place(c.id);
+    }
   }
 
   private item(id: number): ChunkItem | null {

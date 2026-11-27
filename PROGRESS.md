@@ -271,8 +271,13 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M44 Weekly challenge** (plan `docs/plans/M44-design.md`): steps M44.1 the week clock, the generator
+and the challenge in the sim (save v33); M44.2 run logs and replays; M44.3 the board on the relay;
+M44.4 the page (Challenge screen, board, groups, replay viewer, owner area); M44.5 the 52-week mayor
+run, the e2e, budgets. Nothing of it committed yet beyond the plan.
+
 **M43 Quick match is complete** (plan `docs/plans/M43-design.md`), joining M41, M42 and M49 in pull
-request #24. **M44 Weekly challenge** is next.
+request #24.
 
 M43 in short: "Quick match" on the main menu: the host picks Race (to 5,000, 10,000 or 15,000), Rich
 list, Happy town or Mixed, a 15-, 20- or 30-minute timer and a map, and hosts online or in this

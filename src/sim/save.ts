@@ -35,6 +35,11 @@ export interface SaveMeta {
    * (and replayed). Older saves, and every other city's, have none.
    */
   run?: { entries: RunEntry[]; final?: RunFinal };
+  /**
+   * The city's timelapse (M45): the key its frames are kept under on this device, written by the page
+   * beside the city (never the sim's state). Older saves have none: their recording starts when opened.
+   */
+  timelapse?: string;
   /** A weekly challenge city (M44): its week, and whether the challenge has ended (the load list's mark). */
   challenge?: { week: number; done: boolean };
 }

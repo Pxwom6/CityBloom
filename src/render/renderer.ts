@@ -19,7 +19,7 @@ import { CIVIC } from '../data/civic';
 import { CELL } from '../data/zones';
 import { hourOfDay } from '../sim/time';
 import { windAngle } from '../sim/systems/pollution';
-import { CameraController } from './camera';
+import { CameraController, type CameraPose } from './camera';
 import { Lighting } from './lighting';
 import { TerrainRenderer } from './terrain';
 import { TreeRenderer, lotTree, type Placement } from './trees';
@@ -708,6 +708,55 @@ export class GameRenderer {
     return { blob, width: size.x, height: size.y };
   }
 
+  /**
+   * One frame from another camera, for the timelapse (M45): drawn through the ordinary pipeline from
+   * `pose` at the frame's own shape (`w` × `h`, whatever the screen's), with the interface's marks
+   * hidden as photo mode hides them, copied into `into`, and the player's camera put back before the
+   * frame they see is drawn. Nothing is resized (the post pipeline's targets stay as they are).
+   */
+  captureView(
+    pose: CameraPose,
+    into: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    w: number,
+    h: number,
+    hour: number | null = null,
+  ): void {
+    const c = this.controller;
+    const goal = { ...c.goal };
+    const current = { ...c.current };
+    const hide = new Set(['icons', 'ghost', 'routeTint', 'coverageMap', 'zones']);
+    const was = this.scene.children
+      .filter((k) => hide.has(k.name) || k === this.presence.group)
+      .map((k) => [k, k.visible] as const);
+    for (const [k] of was) k.visible = false;
+    const overlay = this.terrain.uniforms.uOverlayOn.value;
+    this.terrain.uniforms.uOverlayOn.value = 0;
+    const aspect = this.camera.aspect;
+    this.hourOverride = hour;
+    try {
+      c.setPose(pose, true);
+      // Drawn at the frame's shape across the whole canvas, then copied at that shape: on a phone held
+      // upright the picture is squeezed into the canvas and comes out right in the copy.
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      // Shadows fitted to this view (and again to the player's on their next frame).
+      this.shadowAt = -Infinity;
+      this.frame(0);
+      into.drawImage(this.canvas, 0, 0, this.canvas.width, this.canvas.height, 0, 0, w, h);
+    } finally {
+      Object.assign(c.goal, goal);
+      Object.assign(c.current, current);
+      this.hourOverride = null;
+      this.shadowAt = -Infinity;
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
+      for (const [k, v] of was) k.visible = v;
+      this.terrain.uniforms.uOverlayOn.value = overlay;
+    }
+  }
+
+  /** An hour to light the frame at instead of the city's (the timelapse's frames are all by day). */
+  private hourOverride: number | null = null;
   /** When the shadow maps were last drawn (s of frame time). */
   private shadowAt = -1;
   /** Seconds between shadow map redraws close up (0: every frame; the graphics quality's). */
@@ -739,7 +788,9 @@ export class GameRenderer {
     this.controller.update(dt);
     // Data maps are read in flat daylight, whatever the time; photo mode can pick its own hour.
     const hour =
-      this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : (p?.hour ?? hourOfDay(this.world.displayTick));
+      this.terrain.uniforms.uOverlayOn.value > 0.5
+        ? 13
+        : (p?.hour ?? this.hourOverride ?? hourOfDay(this.world.displayTick));
     const l = this.lighting;
     const bufH0 = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     const pxm = bufH0 / (2 * Math.tan((this.camera.fov * Math.PI) / 360));

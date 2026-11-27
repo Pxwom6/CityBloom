@@ -1303,6 +1303,13 @@ function SettingsScreen() {
             hint="the error, the game’s version, browser and graphics; never names, cities, chat or what you type"
             set={(crashReports) => set({ crashReports })}
           />
+          <Check
+            on={s.timelapse}
+            testid="set-timelapse"
+            label="Record a timelapse"
+            hint="small pictures of each city as it grows, kept on this device, for a video in City history"
+            set={(timelapse) => set({ timelapse })}
+          />
           {game.mode === 'play' && game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
             <button
               class="btn small"

@@ -102,6 +102,7 @@ import type { OverlayResult } from './sim/systems/overlays';
 import { relayHttpBase, reportProblem, type Reporter } from './client/reports';
 import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostReply } from './client/challenge';
 import type { ChallengeDef } from './data/challenges';
+import { TimelapseRecorder } from './client/timelapse';
 import type { RoomMsg } from '../relay/protocol';
 import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
 
@@ -779,6 +780,8 @@ export class Game {
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
   viewing: { record: BattleRecord; back: string | null } | null = null;
+  /** The city's timelapse (M45): small frames from fixed views, kept on this device as it plays. */
+  readonly timelapse = new TimelapseRecorder(this);
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
@@ -2379,6 +2382,8 @@ export class Game {
       // A city in a shared region rejoins it when this save is opened again (M32); the binding is the
       // city's, so another city saved over this slot later doesn't inherit it (F6).
       if (this.boundRegion) s.meta.region = { ...this.boundRegion };
+      // The key its timelapse is kept under on this device goes with the city (M45).
+      if (this.timelapse.key) s.meta.timelapse = this.timelapse.key;
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
       if (!auto) {
@@ -3135,6 +3140,8 @@ export class Game {
       this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
     }
     if (this.mode !== 'menu') this.atomFrame(now);
+    // A timelapse frame, when one is due, drawn before the player's own (M45).
+    this.timelapse.frame();
     this.renderer.frame(dt);
     if (this.viewerStart > 0 && --this.viewerStart === 0) {
       this.setSpeed(1);

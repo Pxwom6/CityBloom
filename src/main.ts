@@ -442,6 +442,8 @@ async function boot(): Promise<void> {
   } else if (joined) {
     game.attachNet(joined.mp);
     game.setCamera('overview', true);
+    // A friend's city records on this machine under the room's code; nothing is sent (M45).
+    if (joinInvite) void game.timelapse.begin(`room-${joinInvite.code}`, false);
     game.toast(`You joined ${world.stats.cityName}.`, 'ok', 5000);
     history.replaceState(null, '', location.pathname);
   } else if (matchPlan) {
@@ -534,6 +536,9 @@ async function boot(): Promise<void> {
       game.startLesson(lesson.id);
     } else if (lesson)
       game.toast('That lesson’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
+    // The city's timelapse (M45): a new city's from its founding; a saved one under the key its save
+    // keeps, or (saved before timelapses, or on another device) from now. Never a lesson's town.
+    if (!lesson) void game.timelapse.begin(save?.meta.timelapse ?? null, !save);
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
     if (!save && !scenario && !challengePlay) {
       const { seasons, weather } = game.settings;

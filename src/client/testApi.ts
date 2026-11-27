@@ -155,6 +155,30 @@ export interface TestApi {
     tickMsMax: number;
   } | null;
   /**
+   * The timelapse (M45): the city's key, when its recording started and whether the city is older,
+   * frames and bytes kept per view, the last and slowest capture's main-thread time, and each view's
+   * stored frames (tick, population, bytes).
+   */
+  getTimelapse(): Promise<{
+    key: string | null;
+    startTick: number;
+    late: boolean;
+    frames: { wide: number; orbit: number };
+    bytes: number;
+    lastMs: number;
+    worstMs: number;
+    captures: number;
+    error: string | null;
+    stored: {
+      wide: { tick: number; population: number; bytes: number }[];
+      orbit: { tick: number; population: number; bytes: number }[];
+    };
+  }>;
+  /** Test builds: game ticks between timelapse frames (a longer step grows years of city in fewer frames). */
+  setTimelapseStep(ticks: number): void;
+  /** Draw and keep the next timelapse frame now. */
+  captureTimelapse(): void;
+  /**
    * A quick match (M43) as this page sees it: the room's match (phase, round, settings, players, the
    * result), the scoreboard, this city's place, the page's clock (ms left), the hash it sent last,
    * whether the results card is open, the city kept, or why the match ended without a result.
@@ -907,6 +931,34 @@ export function installTestApi(game: Game): TestApi {
         tickMsMax: game.perf.tickMsMax,
       };
     },
+    getTimelapse: async () => {
+      const t = game.timelapse;
+      const info = t.info();
+      const list = async (view: 'wide' | 'orbit') =>
+        t.key
+          ? (await t.store.frames(t.key, view)).map((f) => ({
+              tick: f.tick,
+              population: f.population,
+              bytes: f.bytes,
+            }))
+          : [];
+      return {
+        key: t.key,
+        startTick: info?.startTick ?? 0,
+        late: info?.late ?? false,
+        frames: info?.frames ?? { wide: 0, orbit: 0 },
+        bytes: info?.bytes ?? 0,
+        lastMs: t.lastMs,
+        worstMs: t.worstMs,
+        captures: t.captures,
+        error: t.error,
+        stored: { wide: await list('wide'), orbit: await list('orbit') },
+      };
+    },
+    setTimelapseStep: (ticks) => {
+      game.timelapse.step = ticks;
+    },
+    captureTimelapse: () => game.timelapse.capture(),
     getMatch: () => {
       const m = game.match;
       const now = performance.now();

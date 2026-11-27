@@ -310,3 +310,55 @@ a.owner-btn {
   background: #fff;
   color: var(--color-text);
 }
+
+/* Submissions (M48). */
+.owner-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0;
+}
+.owner-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8e4da;
+}
+.owner-entry.accepted .owner-badge {
+  background: #d6efdf;
+}
+.owner-entry.declined .owner-badge {
+  background: #eee;
+  color: #777;
+}
+.owner-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+.owner-text {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.owner-turntable {
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  background: #bcd8f0;
+}
+.owner-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.owner-reply input {
+  min-height: 40px;
+}
+.owner-words textarea {
+  width: 100%;
+  margin: 8px 0;
+}

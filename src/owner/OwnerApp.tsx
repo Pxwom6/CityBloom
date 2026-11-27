@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { OwnerApi, groupForClaude, type Usage } from './api';
 import { OwnerChallenge } from './OwnerChallenge';
+import { OwnerSubmissions } from './OwnerSubmissions';
 import type { GroupStatus, GroupView, ItemFull } from '../../relay/reportDesk';
 
 const KEY = 'citybloom.ownerKey';
@@ -341,7 +342,7 @@ export function OwnerApp(props: { base: string | null }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [section, setSection] = useState<'reports' | 'challenge'>('reports');
+  const [section, setSection] = useState<'reports' | 'challenge' | 'submissions'>('reports');
   const api = props.base ? new OwnerApi(props.base, key) : null;
   const check = async (k: string, remember = !!localStorageKey()) => {
     if (!props.base) return;
@@ -416,6 +417,7 @@ export function OwnerApp(props: { base: string | null }) {
               [
                 ['reports', 'Problem reports'],
                 ['challenge', 'Weekly challenge'],
+                ['submissions', 'Submissions'],
               ] as const
             ).map(([t, label]) => (
               <button
@@ -430,11 +432,9 @@ export function OwnerApp(props: { base: string | null }) {
               </button>
             ))}
           </nav>
-          {section === 'reports' ? (
-            <Reports api={api} note={note} />
-          ) : (
-            <OwnerChallenge api={api} note={note} />
-          )}
+          {section === 'reports' && <Reports api={api} note={note} />}
+          {section === 'challenge' && <OwnerChallenge api={api} note={note} />}
+          {section === 'submissions' && <OwnerSubmissions api={api} note={note} />}
         </main>
       )}
       {toast && (

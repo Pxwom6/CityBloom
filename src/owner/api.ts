@@ -2,6 +2,11 @@
  * The owner area's requests to the relay (M41): every one carries the owner key, which the relay
  * checks each time; the page never decides on its own that the key is right.
  */
+import type {
+  OwnerItem as OwnerSubmissionItem,
+  OwnerRow as OwnerSubmissionRow,
+  SubmissionStatus,
+} from '../../relay/submissions';
 import type { GroupStatus, GroupView, ItemFull, REPORT_LIMITS } from '../../relay/reportDesk';
 import type { OwnerRow } from '../../relay/challengeBoard';
 import type { ChallengeDef } from '../data/challenges';
@@ -101,7 +106,47 @@ export class OwnerApi {
   setWords(words: string[]): Promise<{ ok: true; words: string[] }> {
     return this.post('/owner/challenge/words', { words });
   }
+
+  /** Every submission (M48), newest first, by kind and status (no files), the word filter, the desk's usage. */
+  submissions(
+    kind: 'idea' | 'building' | 'all',
+    status: SubmissionStatus | 'all',
+  ): Promise<{ submissions: SubmissionRow[]; words: string[]; usage: SubmissionUsage }> {
+    const q = new URLSearchParams();
+    if (kind !== 'all') q.set('kind', kind);
+    if (status !== 'all') q.set('status', status);
+    return this.call(`/owner/submissions?${q}`);
+  }
+
+  /** One submission with its screenshot or model. */
+  submission(id: number): Promise<SubmissionItem> {
+    return this.call(`/owner/submissions/${id}`);
+  }
+
+  /** Mark one seen, accepted or declined, with a short reply the player sees. */
+  decide(id: number, status: SubmissionStatus, reply: string): Promise<{ ok: true }> {
+    return this.post(`/owner/submissions/${id}`, { status, reply });
+  }
+
+  deleteSubmission(id: number): Promise<{ ok: true }> {
+    return this.post(`/owner/submissions/${id}`, { action: 'delete' });
+  }
+
+  /** The words a credit name may not contain. */
+  setSubmissionWords(words: string[]): Promise<{ ok: true; words: string[] }> {
+    return this.post('/owner/submissions/words', { words });
+  }
 }
+
+export type SubmissionRow = OwnerSubmissionRow;
+export type SubmissionItem = OwnerSubmissionItem;
+export type SubmissionUsage = {
+  kept: number;
+  bytes: number;
+  rowsToday: number;
+  rowsPerDay: number;
+  byStatus: Record<string, number>;
+};
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');

@@ -1,3 +1,4 @@
+import type { RunEntry } from './runReplay';
 import { emptyChronicle } from './systems/chronicle';
 import { emptyTotals } from './systems/totals';
 import { newElectionState } from './systems/elections';
@@ -14,7 +15,7 @@ import { rivalAllies } from './systems/war';
 import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 32;
+export const SAVE_VERSION = 33;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -28,6 +29,12 @@ export interface SaveMeta {
    * the sim: the city rejoins it when this save is opened again. Older saves have none.
    */
   region?: RegionBinding;
+  /**
+   * A weekly challenge city's run so far (M44): every command and save point since it was founded,
+   * kept beside the city by the worker so a challenge picked up again from a save can still be posted
+   * (and replayed). Older saves, and every other city's, have none.
+   */
+  run?: { entries: RunEntry[] };
 }
 
 /** A city's place in a shared region: the region's invite (its key too, for one in a browser), its slot. */
@@ -286,6 +293,10 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // (`WarState.atom`, and with later steps the fallout, the nuclear winters, a pariah's mark and a
   // computer neighbour's race, appear when first used), so nothing changes but the version.
   31: (s) => s,
+  // v32 → v33 (M44): the weekly challenge. A city saved before it isn't a challenge city
+  // (`GameOptions.challenge` and the challenge's parts of `ScenarioState` appear only in one), so
+  // nothing changes but the version.
+  32: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {

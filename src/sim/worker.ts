@@ -12,7 +12,9 @@ import { partHashes } from './sync';
 import { Lockstep, type Applied } from './lockstep';
 import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
 import { DesyncLog, type FoundingOptions } from './desyncLog';
-import type { CommandLogEntry } from './commands';
+import type { Command, CommandLogEntry } from './commands';
+import type { RunEntry } from './runReplay';
+import { challengeScoreNow } from './systems/scenario';
 import { checksum } from './sync';
 
 interface WorkerScope {
@@ -54,6 +56,12 @@ let perfWindowMax = 0;
  */
 let match: { start: number; end: number } | null = null;
 const MATCH_TPS = SPEED_TICKS_PER_SECOND[3];
+
+/**
+ * A weekly challenge city's run (M44): the player's commands and the save points since it was founded,
+ * at their ticks, so the run can be posted and replayed. Kept in its saves (`meta.run`).
+ */
+let run: { entries: RunEntry[] } | null = null;
 
 /** The room's runner while the city is shared, and who this machine is. */
 let lockstep: Lockstep | null = null;
@@ -250,6 +258,7 @@ function handle(msg: MainToWorker): void {
       player = 0;
       desyncLog.clear();
       sim = Sim.create(msg.options, msg.map ?? null);
+      run = msg.options.challenge ? { entries: [] } : null;
       // Founded here from options alone: a replay can found it again (never its name).
       const { cityName: _name, editor, ...founding } = msg.options;
       origin = msg.map || editor ? null : founding;
@@ -267,6 +276,11 @@ function handle(msg: MainToWorker): void {
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
+        // A challenge city picks its run up where its save left it (M44).
+        run =
+          sim.state.options.challenge && msg.save.meta.run
+            ? { entries: [...msg.save.meta.run.entries] }
+            : null;
       } catch (err) {
         sim = null;
         post({ type: 'loadFailed', message: err instanceof Error ? err.message : String(err) });
@@ -388,7 +402,10 @@ function handle(msg: MainToWorker): void {
         });
         return;
       }
+      const tick = sim.tick;
       const result = sim.dispatch(msg.cmd);
+      // A challenge's run keeps what the city took (M44).
+      if (run && result.ok) run.entries.push({ tick, cmd: JSON.parse(JSON.stringify(msg.cmd)) as Command });
       flush();
       post({ type: 'reply', id: msg.id, result });
       break;
@@ -422,7 +439,26 @@ function handle(msg: MainToWorker): void {
       if (!sim) return;
       // A single player's save settles the city: a replay from its founding does the same here.
       if (!lockstep && origin) originSaves.push({ tick: sim.tick, at: sim.log.length });
-      post({ type: 'reply', id: msg.id, result: sim.save(new Date().toISOString(), !lockstep) });
+      {
+        const file = sim.save(new Date().toISOString(), !lockstep);
+        // A challenge city's save settles it too, and carries its run (M44).
+        if (run && !lockstep) {
+          run.entries.push({ tick: sim.tick, settle: true });
+          file.meta.run = { entries: run.entries };
+        }
+        post({ type: 'reply', id: msg.id, result: file });
+      }
+      break;
+    case 'challengeRun':
+      // The run so far (M44): its entries, the tick now, and the city's hash and score there.
+      if (!sim) return;
+      post({
+        type: 'reply',
+        id: msg.id,
+        result: run
+          ? { entries: run.entries, end: sim.tick, hash: sim.hash(), score: challengeScoreNow(sim) }
+          : null,
+      });
       break;
   }
 }

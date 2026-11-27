@@ -71,7 +71,11 @@ export type ScenarioLimit =
   | { kind: 'noCivic'; defs: string[]; label: string }
   | { kind: 'noLoans'; label: string }
   | { kind: 'noZone'; zone: 'R' | 'C' | 'I'; label: string }
-  | { kind: 'maxTax'; rate: number; label: string };
+  | { kind: 'maxTax'; rate: number; label: string }
+  /** The weekly challenge's twists (M44): road types that can't be built, no bus stops, and building only within `size` metres (a square) of the highway's end. */
+  | { kind: 'noRoad'; roads: string[]; label: string }
+  | { kind: 'noBusStops'; label: string }
+  | { kind: 'area'; size: number; label: string };
 
 /** A star for winning within so many months, or with a bonus goal met on the day. */
 export interface StarRule {
@@ -119,6 +123,8 @@ export interface ScenarioDef {
   mustWinElection?: boolean;
   /** Its scripted invasion (M39). */
   script?: ScriptStep[];
+  /** A disaster as this many months close after it begins (M44: a weekly challenge's twist). */
+  disaster?: { month: number; kind: 'earthquake' | 'tornado' };
 }
 
 export const SCENARIOS: ScenarioDef[] = [

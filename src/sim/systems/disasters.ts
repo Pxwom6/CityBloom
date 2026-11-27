@@ -525,6 +525,32 @@ function hasWet(sim: Sim): boolean {
 }
 
 /** Rarely, if disasters are on and the city is big enough, something happens by itself. */
+/**
+ * A scenario's scripted disaster (M44: a weekly challenge's twist): this kind, at one of the town's
+ * homes (a tornado touching down outside and heading in), whatever the disaster setting. Whether it
+ * started (it needs homes, and nothing else going wrong).
+ */
+export function scriptedDisaster(sim: Sim, kind: 'earthquake' | 'tornado'): boolean {
+  const s = sim.state;
+  if (s.disasters.length) return false;
+  const homes = [...s.buildings.values()]
+    .filter((b) => b.state === BState.Active)
+    .sort((a, b) => a.id - b.id);
+  if (!homes.length) return false;
+  const rng = sim.rng.disasters;
+  const target = homes[Math.floor(rng.next() * homes.length)]!;
+  let at = { x: target.x, z: target.z };
+  if (kind === 'tornado') {
+    const a = rng.next() * Math.PI * 2;
+    at = {
+      x: clamp(target.x + DMath.cos(a) * 450, 20, MAP_SIZE - 20),
+      z: clamp(target.z + DMath.sin(a) * 450, 20, MAP_SIZE - 20),
+    };
+  }
+  // A moderate one: the town is young (a 5.8 quake, a narrow tornado).
+  return startDisaster(sim, kind, at, { size: kind === 'earthquake' ? 5.8 : 22 }).ok;
+}
+
 function randomDisaster(sim: Sim): void {
   const s = sim.state;
   if (!s.options.disasters) return;

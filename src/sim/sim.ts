@@ -188,6 +188,8 @@ import {
   scenarioForbids,
   scenarioMonth,
   scenarioSummary,
+  challengeDef,
+  startChallenge,
   startScenario,
   type ScenarioSummary,
 } from './systems/scenario';
@@ -563,6 +565,8 @@ export class Sim {
     sim.buildRailway();
     updateLandValue(sim, true);
     updateDemand(sim);
+    // A weekly challenge (M44) begins as its city is founded.
+    if (options.challenge) startChallenge(sim);
     return sim;
   }
 
@@ -1459,13 +1463,18 @@ export class Sim {
       case 'placeBuilding':
         return placeCivic(this, cmd.def, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
       case 'renameCity': {
+        // A weekly challenge's run is replayed for everyone to watch (M44): nothing typed goes in it.
+        if (challengeDef(this)) return fail(NO_NAMES);
         const name = cmd.name.trim().slice(0, 40);
         if (!name) return fail('Name cannot be empty');
         if (!dryRun) this.state.cityName = name;
         return ok(0);
       }
-      case 'buildRoad':
-        return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      case 'buildRoad': {
+        // A weekly challenge's twists (M44): road types it forbids, and a small map.
+        const no = scenarioForbids(this, { road: cmd.road, at: cmd.points });
+        return no ? fail(no) : buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      }
       case 'setOneWay':
         return setOneWay(this, cmd.seg, cmd.dir, dryRun);
       case 'setTram':
@@ -1476,12 +1485,22 @@ export class Sim {
         return removeRoundabout(this, cmd.node, dryRun);
       case 'bulldoze':
         return bulldoze(this, cmd.target, dryRun);
-      case 'upgradeRoad':
-        return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
-      case 'placeStop':
-        return placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
+      case 'upgradeRoad': {
+        const no = scenarioForbids(this, { road: cmd.road });
+        return no ? fail(no) : upgradeRoad(this, cmd.seg, cmd.road, dryRun);
+      }
+      case 'placeStop': {
+        const no = scenarioForbids(this, { busStop: !cmd.tram, at: [{ x: cmd.x, z: cmd.z }] });
+        return no ? fail(no) : placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
+      }
       case 'zone': {
-        const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
+        const no =
+          cmd.zone === 'none'
+            ? null
+            : scenarioForbids(this, {
+                zone: cmd.zone,
+                ...(cmd.area.kind === 'brush' ? { at: cmd.area.points } : {}),
+              });
         return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
       }
       case 'undo':
@@ -1688,7 +1707,12 @@ export class Sim {
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
-        return createDistrict(this, cmd.name, dryRun);
+        // (In a weekly challenge, districts are named by number: M44.)
+        return createDistrict(
+          this,
+          challengeDef(this) ? `District ${this.state.districts.size + 1}` : cmd.name,
+          dryRun,
+        );
       case 'paintDistrict':
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
       case 'terraform':
@@ -1702,7 +1726,7 @@ export class Sim {
       case 'setMapInfo':
         return setMapInfo(this, cmd.name, cmd.climate, dryRun);
       case 'renameDistrict':
-        return renameDistrict(this, cmd.district, cmd.name, dryRun);
+        return challengeDef(this) ? fail(NO_NAMES) : renameDistrict(this, cmd.district, cmd.name, dryRun);
       case 'removeDistrict':
         return removeDistrict(this, cmd.district, dryRun);
       case 'setDistrictPolicy':
@@ -3042,7 +3066,10 @@ function blockData(b: ZoneBlock): BlockData {
 }
 
 /** What a new city starts with: the sandbox's, a quick match's fast start (M43), or the difficulty's. */
+/** Why names can't be typed in a weekly challenge (M44). */
+const NO_NAMES = 'Names can’t be changed in the weekly challenge: its replays are shown to everyone';
+
 function startingFunds(options: GameOptions): number {
   if (options.sandbox) return SANDBOX_FUNDS;
-  return options.match?.funds ?? DIFFICULTY[options.difficulty].funds;
+  return options.challenge?.funds ?? options.match?.funds ?? DIFFICULTY[options.difficulty].funds;
 }

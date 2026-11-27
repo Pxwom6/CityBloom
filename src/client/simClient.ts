@@ -1,3 +1,4 @@
+import type { RunEntry } from '../sim/runReplay';
 import type { Command, CommandResult } from '../sim/commands';
 import type {
   FrameDiff,
@@ -149,6 +150,11 @@ export class SimClient implements SimDriver {
 
   save(): Promise<SaveFile> {
     return this.request((id) => ({ type: 'save', id }));
+  }
+
+  /** A weekly challenge city's run so far (M44), or null in any other city. */
+  challengeRun(): Promise<{ entries: RunEntry[]; end: number; hash: string; score: number } | null> {
+    return this.request((id) => ({ type: 'challengeRun', id }));
   }
 
   /** Shared city (M29): hand the clock to the room; this machine is `player`. */

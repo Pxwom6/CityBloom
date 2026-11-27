@@ -269,7 +269,7 @@ export function checkPlacement(
   // The regional rail link is laid with its track on the west edge (buildRailLink), and stays put.
   if (def.railLink) return { ...res, reason: 'The regional rail link goes on the west edge with its track' };
   // A scenario's limits (M18) come first: no spot would do.
-  const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id });
+  const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id, at: [{ x, z }] });
   if (forbidden) return { ...res, reason: forbidden };
   // Military buildings (M34) only where war is on: rival neighbours, or a region at war.
   if (def.military && !sim.state.war)

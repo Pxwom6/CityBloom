@@ -12,6 +12,8 @@ import { BState } from '../world/buildings';
 import { CHRONICLE_SERIES, monthFigures, type SeriesKey } from './chronicle';
 import { openProject } from './projects';
 import { planRaid } from './raids';
+import { challengeScore, type ChallengeDef } from '../../data/challenges';
+import { scriptedDisaster } from './disasters';
 
 /**
  * Scenarios (M18): the city's scenario, if it's playing one. Goals are checked as each month closes
@@ -37,6 +39,13 @@ export interface ScenarioState {
   waves?: number[];
   /** Things that happened since it began (M39): wars won, districts lost, towns freed. */
   facts?: Partial<Record<ScenarioFact, number>>;
+  /**
+   * A weekly challenge (M44): where the highway comes in (the small map's middle), whether its
+   * disaster has struck, and its score once it's over.
+   */
+  center?: { x: number; z: number };
+  disasterDone?: true;
+  score?: number;
 }
 
 /** What the scenario keeps count of as it happens (M39). */
@@ -50,6 +59,8 @@ export interface ScenarioSummary {
   /** Months left (fractional) while playing; months taken once it's over. */
   monthsLeft: number;
   monthsTaken: number;
+  /** A weekly challenge (M44): its week, and the score (so far, or at the end). */
+  challenge?: { week: number; score: number; final: boolean };
   goals: {
     measure: ScenarioGoal['measure'];
     label: string;
@@ -64,7 +75,59 @@ export interface ScenarioSummary {
 
 export function scenarioDef(sim: Sim): ScenarioDef | undefined {
   const sc = sim.state.scenario;
-  return sc ? SCENARIO.get(sc.id) : undefined;
+  if (!sc) return undefined;
+  // A weekly challenge's definition travels in the city's options (M44).
+  const ch = sim.state.options.challenge;
+  return ch && ch.id === sc.id ? ch : SCENARIO.get(sc.id);
+}
+
+/** The city's weekly challenge, if it's playing (or played) one (M44). */
+export function challengeDef(sim: Sim): ChallengeDef | undefined {
+  const ch = sim.state.options.challenge;
+  return ch && sim.state.scenario?.id === ch.id ? ch : undefined;
+}
+
+/**
+ * Start the weekly challenge the city was founded for (M44, from `Sim.create`): a scenario whose
+ * definition is the city's own, with the highway's end as the small map's middle.
+ */
+export function startChallenge(sim: Sim): void {
+  const def = sim.state.options.challenge;
+  if (!def || sim.state.scenario) return;
+  const s = sim.state;
+  s.weather.seasons = def.weather?.seasons ?? true;
+  s.weather.intensity = def.weather?.intensity ?? 2;
+  s.region = { neighbours: [], deals: [], nextDeal: s.region.nextDeal };
+  s.election.nextMonth = -1;
+  s.election.promises = [];
+  const hw = s.net.nodes.get(s.highway.connect);
+  s.scenario = {
+    id: def.id,
+    start: s.tick,
+    status: 'playing',
+    stars: 0,
+    end: -1,
+    reason: '',
+    held: def.goals.map(() => 0),
+    ...(hw ? { center: { x: hw.x, z: hw.z } } : {}),
+  };
+}
+
+/** A weekly challenge's score as things stand (M44): what it would be if it ended now (or what it was). */
+export function challengeScoreNow(sim: Sim): number {
+  const sc = sim.state.scenario;
+  const def = challengeDef(sim);
+  if (!sc || !def) return 0;
+  if (sc.score !== undefined) return sc.score;
+  const figures = monthFigures(sim);
+  const months = Math.ceil((sim.state.tick - sc.start) / TICKS_PER_MONTH - 1e-9);
+  return challengeScore(
+    def,
+    def.goals.map((g) => goalValue(sim, g, figures)),
+    goalValue(sim, { measure: def.extra.measure, label: '' }, figures),
+    false,
+    months,
+  );
 }
 
 /** Tick the scenario's time runs out: the first month close on or after its months are up. */
@@ -267,11 +330,21 @@ function finish(
   sc.status = won ? 'won' : 'lost';
   sc.end = sim.state.tick;
   sc.reason = reason;
-  if (won) {
-    const months = Math.ceil((sc.end - sc.start) / TICKS_PER_MONTH - 1e-9);
-    const figures = monthFigures(sim);
+  const months = Math.ceil((sc.end - sc.start) / TICKS_PER_MONTH - 1e-9);
+  const figures = monthFigures(sim);
+  if (won)
     sc.stars = 1 + def.stars.filter((r) => starMet(r, months, (g) => goalValue(sim, g, figures))).length;
-  }
+  // A weekly challenge's score (M44), kept with the city: its goals' progress, the win and the months
+  // left, and its extra measure.
+  const ch = challengeDef(sim);
+  if (ch)
+    sc.score = challengeScore(
+      ch,
+      ch.goals.map((g) => goalValue(sim, g, figures)),
+      goalValue(sim, { measure: ch.extra.measure, label: '' }, figures),
+      won,
+      months,
+    );
   sim.events.push({ kind: won ? 'scenarioWon' : 'scenarioLost', id: sc.stars, info: { reason } });
 }
 
@@ -293,6 +366,11 @@ export function scenarioMonth(sim: Sim): void {
   if (all) finish(sim, sc, def, true, '');
   else if (sim.state.tick >= deadline(sc, def)) finish(sim, sc, def, false, 'time');
   else if (def.script) fireScript(sim, sc, def);
+  // A weekly challenge's early disaster (M44): as its month closes, or the first after with homes to hit.
+  if (def.disaster && !sc.disasterDone && sc.status === 'playing') {
+    const closed = Math.floor((sim.state.tick - sc.start) / TICKS_PER_MONTH + 1e-9);
+    if (closed >= def.disaster.month && scriptedDisaster(sim, def.disaster.kind)) sc.disasterDone = true;
+  }
 }
 
 /** The city went bankrupt: a scenario in play is lost. */
@@ -305,18 +383,33 @@ export function scenarioBankrupt(sim: Sim): void {
 /** Why the scenario's limits forbid something, or null. */
 export function scenarioForbids(
   sim: Sim,
-  what: { civic?: string; loan?: boolean; zone?: string; tax?: number },
+  what: {
+    civic?: string;
+    loan?: boolean;
+    zone?: string;
+    tax?: number;
+    /** M44: a road of this type, a bus stop, and where (every point must be inside a small map). */
+    road?: string;
+    busStop?: boolean;
+    at?: readonly { x: number; z: number }[];
+  },
 ): string | null {
   const sc = sim.state.scenario;
   const def = scenarioDef(sim);
   if (!sc || !def || sc.status !== 'playing') return null;
+  const where = challengeDef(sim) ? 'in this challenge' : 'in this scenario';
   for (const l of def.limits) {
-    if (l.kind === 'noCivic' && what.civic && l.defs.includes(what.civic))
-      return `${l.label} in this scenario`;
-    if (l.kind === 'noLoans' && what.loan) return `${l.label} in this scenario`;
-    if (l.kind === 'noZone' && what.zone === l.zone) return `${l.label} in this scenario`;
-    if (l.kind === 'maxTax' && what.tax !== undefined && what.tax > l.rate)
-      return `${l.label} in this scenario`;
+    if (l.kind === 'noCivic' && what.civic && l.defs.includes(what.civic)) return `${l.label} ${where}`;
+    if (l.kind === 'noLoans' && what.loan) return `${l.label} ${where}`;
+    if (l.kind === 'noZone' && what.zone === l.zone) return `${l.label} ${where}`;
+    if (l.kind === 'maxTax' && what.tax !== undefined && what.tax > l.rate) return `${l.label} ${where}`;
+    if (l.kind === 'noRoad' && what.road && l.roads.includes(what.road)) return `${l.label} ${where}`;
+    if (l.kind === 'noBusStops' && what.busStop) return `${l.label} ${where}`;
+    if (l.kind === 'area' && what.at && sc.center) {
+      const c = sc.center;
+      if (what.at.some((p) => Math.abs(p.x - c.x) > l.size || Math.abs(p.z - c.z) > l.size))
+        return `Only within ${l.size} m of where the highway comes in ${where}`;
+    }
   }
   return null;
 }
@@ -335,6 +428,15 @@ export function scenarioSummary(sim: Sim): ScenarioSummary | null {
     reason: sc.reason,
     monthsLeft: Math.max(0, (deadline(sc, def) - now) / TICKS_PER_MONTH),
     monthsTaken: (now - sc.start) / TICKS_PER_MONTH,
+    ...(challengeDef(sim)
+      ? {
+          challenge: {
+            week: challengeDef(sim)!.week,
+            score: challengeScoreNow(sim),
+            final: sc.score !== undefined,
+          },
+        }
+      : {}),
     goals: def.goals.map((g, i) => {
       const value = goalValue(sim, g, figures);
       return {

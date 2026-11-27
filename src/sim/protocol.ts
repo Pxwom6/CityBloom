@@ -604,6 +604,8 @@ export type MainToWorker =
   | { type: 'matchClock'; off: true }
   | { type: 'advance'; id: number; ticks: number }
   | { type: 'save'; id: number }
+  /** A weekly challenge city's run so far (M44): its entries, the tick, the hash and score; null in any other city. */
+  | { type: 'challengeRun'; id: number }
   /** Shared city (M29): from now on the room keeps time; `player` is who this machine is. */
   | { type: 'share'; player: number; lastSeq: number }
   /** Back to single player's own clock. */

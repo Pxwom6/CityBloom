@@ -3171,6 +3171,12 @@ and uncovered. One line a finding:
   grow). A sim-side answer (a brush always zoning down to the kerb) would have changed every recorded run's replay.
 - *Zones painted blind over a data map*: a player who'd opened the fire coverage map, as the tutorial asks, then
   painted zones they couldn't see (zone paint hides under a data map). It shows while the zone tool is out.
+- *"no curve 23" thrown in the render loop*: visible cars on a road that was just rebuilt or split under them (a
+  street drawn across a busy one) were queued by lane from the gone road's curve before being dropped. They're left
+  out of the queues (`TrafficRenderer.step`; `tests/trafficGone.test.ts` splits every road with a car on it).
+- *A phone's tutorial card unfolded under the finger*: a card that came while a building was still in hand unfolded
+  again when the Build sheet closed on the next building, over the spot about to be tapped (and its Skip tutorial).
+  Once the player acts on a card it stays folded until tapped.
 - *The owner area showed times in UTC* (a report sent at 3:47 one morning in Adelaide read "2026-11-27 17:17"): its
   lists use the owner's own clock (`src/owner/time.ts`); what's copied for Claude Code stays in UTC and says so.
 - *"Kept as … open it from Load game"*: the menu's button is Load city (the results card already said so).

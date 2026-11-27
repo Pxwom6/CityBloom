@@ -104,7 +104,7 @@ export function TutorialCard() {
   useHighlight(visible ? step.target : undefined);
   // On a phone (phase 6 end) the card covered half the map held upright, and sideways the Build sheet's
   // buttons: it folds to one line once the player acts on it (picks a tool, or opens one of the bar's
-  // sheets) or taps Hide, and unfolds for the next card or at a tap. A first problem's card folds only
+  // sheets) or taps Hide, and stays so until the next card or a tap. A first problem's card folds only
   // for a sheet (its arrow's button is in one).
   const fold = useRef<{ id: string | undefined; tool: string; open: boolean | null }>({
     id: undefined,
@@ -138,6 +138,9 @@ export function TutorialCard() {
     !!document.querySelector('[data-testid=maps-menu], [data-testid=build-sheet], [data-testid=more-sheet]');
   const tool = game.tools.activeId !== 'select' && game.tools.activeId !== fold.current.tool;
   const acting = sheet || (tool && !card.event);
+  // Once folded by acting it stays folded until tapped: closing the Build sheet on a building to place
+  // unfolded it over the very spot the finger was going to (and its Skip tutorial).
+  if (phone && acting && fold.current.open === null) fold.current.open = false;
   const folded = phone && (fold.current.open === null ? acting : !fold.current.open);
   // Beside the panel the step teaches, or (a lesson's last card) whatever panel the lesson left open:
   // over it, it covered the panel's tabs (phase 6 end: the Workshop lesson's "Lesson done").

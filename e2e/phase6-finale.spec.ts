@@ -234,6 +234,16 @@ async function card(
     }
     if (t.step === id) break;
     if (o.orLater && t.step && ORDER.indexOf(t.step) > ORDER.indexOf(id)) return false;
+    if (!t.step) {
+      const st = (await page.evaluate(() => window.__game!.getShell().settings)) as {
+        tutorialStep: number;
+        tutorialAway: boolean;
+      };
+      expect(
+        t.step,
+        `${who}: the tutorial went (step ${st.tutorialStep}, away ${st.tutorialAway})`,
+      ).not.toBeNull();
+    }
     if (Date.now() > end) expect(t.step, `${who} waiting for the card ${id}`).toBe(id);
     await readTips(page, who, o.tap);
     await page.waitForTimeout(300);
@@ -647,8 +657,8 @@ async function frameOn(page: Page, pts: [number, number][], at: { x: number; z: 
     z: pts.reduce((t, p) => t + p[1], 0) / pts.length,
     d: at.d,
   };
-  for (const k of [1, 1.3, 1.7, 2.2])
-    for (const dz of [0, 90, -90, 180, -180])
+  for (const k of [1, 1.3, 1.7, 2.2, 2.8])
+    for (const dz of [0, 90, -90, 180, -180, 270, -270])
       for (const dx of [0, 80, -80]) {
         await page.evaluate(
           ([x, z, d]) => window.__game!.setCamera({ x: x!, z: z!, distance: d!, yaw: 0, tilt: 0.55 }),
@@ -792,6 +802,12 @@ async function fingerPlace(
   }
   let at = await screenAt(page, pick[0], pick[1]);
   if (!at.onMap && (await frameOn(page, [pick], c))) at = await screenAt(page, pick[0], pick[1]);
+  // (Never a tap on something covering the spot.)
+  if (!at.onMap) {
+    log(`${def}: its spot is covered now`);
+    await page.getByTestId('tool-select').tap();
+    return false;
+  }
   await f.tap(at);
   const ok = await expect
     .poll(() => civicCount(page), { timeout: 15_000 })
@@ -1006,10 +1022,10 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
   await card(page, who, 'power', opts);
   expect(await arrow(page, 'power')).toBe('tool-build');
   expect(await fingerPlace(page, f, 'power', 'wind', south, c)).toBe(true);
-  expect(await fingerPlace(page, f, 'power', 'wind', [...south, ...north], c)).toBe(true);
+  expect(await fingerPlace(page, f, 'power', 'wind', [...south, ...north, ...around], c)).toBe(true);
   await card(page, who, 'water', opts);
-  expect(await fingerPlace(page, f, 'water', 'pump', north, c)).toBe(true);
-  expect(await fingerPlace(page, f, 'water', 'septic', [...south, ...north], c)).toBe(true);
+  expect(await fingerPlace(page, f, 'water', 'pump', [...north, ...around], c)).toBe(true);
+  expect(await fingerPlace(page, f, 'water', 'septic', [...south, ...north, ...around], c)).toBe(true);
 
   // 7–8. Time, in a phone's words; the demand bars.
   await snap(page, `${who}-utilities`);
@@ -1114,7 +1130,7 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
     if (u.water.supply < u.water.demand * 1.2 + 10)
       await fingerPlace(page, f, 'water', 'pump', [...north, ...farNorth, ...around], c);
     if (u.sewage.supply < u.sewage.demand * 1.2 + 10)
-      await fingerPlace(page, f, 'water', 'septic', [...east, ...south], c);
+      await fingerPlace(page, f, 'water', 'septic', [...east, ...south, ...around], c);
     if (services.length && s.treasury > 16_000) {
       const [cat, def] = services[0]!;
       if (
@@ -1131,104 +1147,6 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
       await card(page, who, ORDER[Math.max(0, t.index)] ?? 'grow150', opts).catch(() => undefined);
     await readTips(page, who, true);
   };
-  for (let m = 0; m < 12 && (await state(page)).population < 150; m++) {
-    await keepUp();
-    await month();
-    const s = await state(page);
-    log(
-      `${who} month ${Math.floor(s.tick / 1440)}: ${s.population} residents, $${s.treasury}, zoned ${JSON.stringify(s.zoned)}, jobs ${s.jobsFilled}/${s.jobs}, buildings ${s.buildings}, abandoned ${s.abandoned}, demand ${JSON.stringify(s.demand)} ${JSON.stringify(s.demandFactors).slice(0, 300)}, sewage ${Math.round(s.utilities.sewage.supply)}/${Math.round(s.utilities.sewage.demand)}`,
-    );
-  }
-
-  // 10–11. The budget by a tap on the money, in a phone's words; the Taxes tab where the arrow points.
-  await card(page, who, 'budget', { ...opts, timeout: 60_000 });
-  await expect(page.getByTestId('tutorial')).toContainText('Tap your money');
-  expect(await arrow(page, 'budget')).toBe('open-budget');
-  await page.getByTestId('open-budget').tap();
-  await card(page, who, 'taxes', opts);
-  expect(await arrow(page, 'taxes')).toBe('budget-tab-taxes');
-  await page.getByTestId('budget-tab-taxes').tap();
-  await expect.poll(() => arrow(page, 'taxes'), { timeout: 3_000 }).toBe('tax-R1');
-  await snap(page, `${who}-taxes`);
-  expect(await phoneProblems(page, '[data-testid=tutorial]'), `${who}: the taxes card`).toEqual([]);
-  await press(page, 'tutorial-next', true);
-  await closeBudget(page);
-
-  // 12. Services (money handed over, as on the laptop).
-  await card(page, who, 'services', opts);
-  expect(await arrow(page, 'services')).toBe('tool-build');
-  await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 30_000 }));
-  expect(await fingerPlace(page, f, 'fire', 'firestation', [...north, ...farNorth, ...around], c)).toBe(true);
-  expect(await fingerPlace(page, f, 'health', 'clinic', [...north, ...farNorth, ...around], c)).toBe(true);
-
-  // 13. A coverage map from the bar's Maps.
-  await card(page, who, 'coverage', opts);
-  expect(await arrow(page, 'coverage')).toBe('tool-maps');
-  await page.getByTestId('tool-maps').tap();
-  await page.getByTestId('map-fire').tap();
-  await snap(page, `${who}-coverage`);
-  await card(page, who, 'advisors', opts);
-  const advisorsAt = await arrow(page, 'advisors');
-  if (await page.getByTestId('map-fire').isVisible()) await page.getByTestId('map-fire').tap();
-  if (await page.getByTestId('map-fire').isVisible()) await page.getByTestId('tool-maps').tap();
-
-  // 14. The advisors, where the arrow points.
-  if (advisorsAt === 'open-more') await page.getByTestId('open-more').tap();
-  await page.getByTestId('open-advisors').tap();
-  await expect(page.getByTestId('advisors')).toBeVisible();
-  await snap(page, `${who}-advisors`);
-  expect(await phoneProblems(page, '[data-testid=advisors]'), `${who}: the advisors`).toEqual([]);
-  await page.getByTestId('advisors').getByRole('button', { name: 'Close' }).tap();
-
-  // 15. Grow to 500, with two more streets.
-  await card(page, who, 'grow500', { ...opts, orLater: true });
-  await page.getByTestId('tool-road').tap();
-  await fingerRoad(
-    page,
-    f,
-    [
-      [150, cz - 110],
-      [240, cz - 110],
-      [330, cz - 110],
-    ],
-    c,
-  );
-  await fingerRoad(
-    page,
-    f,
-    [
-      [150, cz + 110],
-      [240, cz + 110],
-      [330, cz + 110],
-    ],
-    c,
-  );
-  await page.getByTestId('tool-select').tap();
-  await page.getByTestId('tool-zone').tap();
-  // The zone paint shows while zoning, even with the fire map from the Coverage card still on.
-  await expect(page.getByTestId('zone-options')).toBeVisible();
-  expect(await page.evaluate(() => window.__game!.groupShown('zones'))).toBe(true);
-  await fingerZone(
-    page,
-    f,
-    'R',
-    [
-      [170, cz - 125],
-      [310, cz - 125],
-    ],
-    c,
-  );
-  await fingerZone(
-    page,
-    f,
-    'I',
-    [
-      [170, cz + 125],
-      [310, cz + 125],
-    ],
-    c,
-  );
-  await page.getByTestId('tool-select').tap();
   // More streets when the town stops growing with homes wanted (the bars ask for them), homes beside.
   const more: { road: [number, number][]; homes: [number, number][][] }[] = [
     {
@@ -1359,6 +1277,105 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
     for (const h of next.homes) await fingerZone(page, f, want, h, c);
     await page.getByTestId('tool-select').tap();
   };
+  for (let m = 0; m < 12 && (await state(page)).population < 150; m++) {
+    await keepUp();
+    await growMore();
+    await month();
+    const s = await state(page);
+    log(
+      `${who} month ${Math.floor(s.tick / 1440)}: ${s.population} residents, $${s.treasury}, zoned ${JSON.stringify(s.zoned)}, jobs ${s.jobsFilled}/${s.jobs}, buildings ${s.buildings}, abandoned ${s.abandoned}, demand ${JSON.stringify(s.demand)} ${JSON.stringify(s.demandFactors).slice(0, 300)}, sewage ${Math.round(s.utilities.sewage.supply)}/${Math.round(s.utilities.sewage.demand)}`,
+    );
+  }
+
+  // 10–11. The budget by a tap on the money, in a phone's words; the Taxes tab where the arrow points.
+  await card(page, who, 'budget', { ...opts, timeout: 60_000 });
+  await expect(page.getByTestId('tutorial')).toContainText('Tap your money');
+  expect(await arrow(page, 'budget')).toBe('open-budget');
+  await page.getByTestId('open-budget').tap();
+  await card(page, who, 'taxes', opts);
+  expect(await arrow(page, 'taxes')).toBe('budget-tab-taxes');
+  await page.getByTestId('budget-tab-taxes').tap();
+  await expect.poll(() => arrow(page, 'taxes'), { timeout: 3_000 }).toBe('tax-R1');
+  await snap(page, `${who}-taxes`);
+  expect(await phoneProblems(page, '[data-testid=tutorial]'), `${who}: the taxes card`).toEqual([]);
+  await press(page, 'tutorial-next', true);
+  await closeBudget(page);
+
+  // 12. Services (money handed over, as on the laptop).
+  await card(page, who, 'services', opts);
+  expect(await arrow(page, 'services')).toBe('tool-build');
+  await page.evaluate(() => window.__game!.dispatch({ type: 'cheat', cheat: 'addMoney', amount: 30_000 }));
+  expect(await fingerPlace(page, f, 'fire', 'firestation', [...north, ...farNorth, ...around], c)).toBe(true);
+  expect(await fingerPlace(page, f, 'health', 'clinic', [...north, ...farNorth, ...around], c)).toBe(true);
+
+  // 13. A coverage map from the bar's Maps.
+  await card(page, who, 'coverage', opts);
+  expect(await arrow(page, 'coverage')).toBe('tool-maps');
+  await page.getByTestId('tool-maps').tap();
+  await page.getByTestId('map-fire').tap();
+  await snap(page, `${who}-coverage`);
+  await card(page, who, 'advisors', opts);
+  const advisorsAt = await arrow(page, 'advisors');
+  if (await page.getByTestId('map-fire').isVisible()) await page.getByTestId('map-fire').tap();
+  if (await page.getByTestId('map-fire').isVisible()) await page.getByTestId('tool-maps').tap();
+
+  // 14. The advisors, where the arrow points.
+  if (advisorsAt === 'open-more') await page.getByTestId('open-more').tap();
+  await page.getByTestId('open-advisors').tap();
+  await expect(page.getByTestId('advisors')).toBeVisible();
+  await snap(page, `${who}-advisors`);
+  expect(await phoneProblems(page, '[data-testid=advisors]'), `${who}: the advisors`).toEqual([]);
+  await page.getByTestId('advisors').getByRole('button', { name: 'Close' }).tap();
+
+  // 15. Grow to 500, with two more streets.
+  await card(page, who, 'grow500', { ...opts, orLater: true });
+  await page.getByTestId('tool-road').tap();
+  await fingerRoad(
+    page,
+    f,
+    [
+      [150, cz - 110],
+      [240, cz - 110],
+      [330, cz - 110],
+    ],
+    c,
+  );
+  await fingerRoad(
+    page,
+    f,
+    [
+      [150, cz + 110],
+      [240, cz + 110],
+      [330, cz + 110],
+    ],
+    c,
+  );
+  await page.getByTestId('tool-select').tap();
+  await page.getByTestId('tool-zone').tap();
+  // The zone paint shows while zoning, even with the fire map from the Coverage card still on.
+  await expect(page.getByTestId('zone-options')).toBeVisible();
+  expect(await page.evaluate(() => window.__game!.groupShown('zones'))).toBe(true);
+  await fingerZone(
+    page,
+    f,
+    'R',
+    [
+      [170, cz - 125],
+      [310, cz - 125],
+    ],
+    c,
+  );
+  await fingerZone(
+    page,
+    f,
+    'I',
+    [
+      [170, cz + 125],
+      [310, cz + 125],
+    ],
+    c,
+  );
+  await page.getByTestId('tool-select').tap();
   for (let m = 0; m < 24 && (await state(page)).population < 500; m++) {
     await keepUp();
     await growMore();
@@ -1380,7 +1397,12 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
 
   // 17–18. Grow to 1,000; the last card.
   await card(page, who, 'grow1000', { ...opts, orLater: true });
-  for (let m = 0; m < 36 && (await state(page)).population < 1000; m++) {
+  // (Until the last card shows: a town that touches 1,000 between checks can dip below again.)
+  const growing = async () => {
+    const t = await tut(page);
+    return t.event || t.step === 'grow1000';
+  };
+  for (let m = 0; m < 36 && (await growing()); m++) {
     await keepUp();
     await growMore();
     await month();

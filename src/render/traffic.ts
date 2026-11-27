@@ -503,6 +503,10 @@ export class TrafficRenderer {
     const progress = (c: Car) => c.t;
     for (const c of this.cars) {
       if (c.leg >= c.legs.length) continue;
+      // A car on a road just rebuilt or split is dropped below; queued here, its lane's spacing read
+      // the gone road's curve and the frame threw "no curve" (phase 6 end: a street drawn across one
+      // with cars on it, on a phone).
+      if (!c.ring && !this.world.netState.segments.has(c.legs[c.leg]!.seg)) continue;
       if (c.ring) {
         const list = rings.get(c.ring.node) ?? [];
         list.push(c);

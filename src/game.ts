@@ -782,6 +782,8 @@ export class Game {
   viewing: { record: BattleRecord; back: string | null } | null = null;
   /** The city's timelapse (M45): small frames from fixed views, kept on this device as it plays. */
   readonly timelapse = new TimelapseRecorder(this);
+  /** Make timelapse's card is open (M45). */
+  timelapseCard = false;
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */

@@ -2,7 +2,8 @@
 // with recording on (a frame every `STEP` game ticks, default a sixth of a month), then the stored
 // frames of each view are written out (first, a few between, last) and the capture times printed.
 // Usage (after `npm run build:test`): node scripts/dev/timelapseshot.mjs <outDir> [months=24]
-// Env: STEP (ticks between frames), PORT (4181), QUALITY (low).
+// Env: STEP (ticks between frames), PORT (4181), QUALITY (low), MAKE (the video's length: 15, 30 or
+// 60; 0 for none), MUSIC=1 (with the music).
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -146,5 +147,59 @@ for (const view of ['wide', 'orbit']) {
   }
 }
 console.log(`frames written to ${out}`);
+// Through City history: Make timelapse, a length (env MAKE, default 15) and the whole map, then the
+// video's length and its first and last frames.
+const len = Number(process.env.MAKE ?? 15);
+if (len > 0) {
+  await page.getByTestId('open-history').click();
+  await page.getByTestId('timelapse-section').waitFor();
+  await page.screenshot({ path: `${out}/history.png` });
+  await page.getByTestId('timelapse-open').click();
+  await page.getByTestId(`timelapse-length-${len}`).click();
+  if (process.env.MUSIC === '1') await page.getByTestId('timelapse-music').check();
+  await page.screenshot({ path: `${out}/card.png` });
+  const m0 = Date.now();
+  await page.getByTestId('timelapse-make').click();
+  await page.getByTestId('timelapse-result').waitFor({ timeout: 600_000 });
+  console.log(`made a ${len} s video in ${((Date.now() - m0) / 1000).toFixed(1)} s`);
+  const v = await page.evaluate(async () => {
+    const el = document.querySelector('[data-testid=timelapse-video]');
+    if (el.readyState < 1) await new Promise((r) => el.addEventListener('loadedmetadata', r, { once: true }));
+    const shot = async (t) => {
+      el.currentTime = t;
+      await new Promise((r) => el.addEventListener('seeked', r, { once: true }));
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 90;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(el, 0, 0, 160, 90);
+      const d = ctx.getImageData(0, 0, 160, 90).data;
+      // Pixels that aren't grass or forest green: roads, roofs, water.
+      let town = 0;
+      for (let i = 0; i < d.length; i += 4) if (!(d[i + 1] > d[i] + 12 && d[i + 1] > d[i + 2] + 12)) town++;
+      return town;
+    };
+    const res = await fetch(el.src);
+    const bytes = (await res.arrayBuffer()).byteLength;
+    return {
+      duration: el.duration,
+      width: el.videoWidth,
+      height: el.videoHeight,
+      bytes,
+      first: await shot(0.1),
+      last: await shot(el.duration - 0.1),
+    };
+  });
+  console.log('video', JSON.stringify(v));
+  await page.screenshot({ path: `${out}/result.png` });
+  const b64 = await page.evaluate(async () => {
+    const el = document.querySelector('[data-testid=timelapse-video]');
+    const buf = new Uint8Array(await (await fetch(el.src)).arrayBuffer());
+    let s = '';
+    for (let j = 0; j < buf.length; j += 0x8000) s += String.fromCharCode(...buf.subarray(j, j + 0x8000));
+    return btoa(s);
+  });
+  writeFileSync(`${out}/timelapse-${len}s.mp4`, Buffer.from(b64, 'base64'));
+}
 await browser.close();
 process.exit(0);

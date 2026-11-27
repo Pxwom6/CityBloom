@@ -88,3 +88,27 @@ describe('M45 the timelapse', () => {
     expect(orbitCentre(null, here)).toBe(here);
   });
 });
+
+describe('M45 the timelapse video’s overlays', () => {
+  it('says the name, the date and the population as chosen, and each milestone for a moment', async () => {
+    const { overlayText, captionAt } = await import('../src/client/timelapseVideo');
+    const all = { name: true, date: true, population: true, events: true };
+    const t = overlayText(all, 'Bloomfield', 3 * TICKS_PER_MONTH, 12_345.6, 'Became a town');
+    expect(t.name).toBe('Bloomfield');
+    expect(t.date).toMatch(/^[A-Z][a-z]{2}, Year \d+$/);
+    expect(t.population).toBe('12,346 residents');
+    expect(t.caption).toBe('Became a town');
+    expect(overlayText({ ...all, name: false, events: false }, 'Bloomfield', 0, 0, 'x')).toMatchObject({
+      name: null,
+      caption: null,
+    });
+    const events = [
+      { tick: 1000, label: 'Became a village' },
+      { tick: 5000, label: 'Earthquake' },
+    ];
+    expect(captionAt(events, 900, 500)).toBeNull();
+    expect(captionAt(events, 1200, 500)).toBe('Became a village');
+    expect(captionAt(events, 1600, 500)).toBeNull();
+    expect(captionAt(events, 5100, 500)).toBe('Earthquake');
+  });
+});

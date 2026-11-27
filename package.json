@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
+    "mp4-muxer": "5.2.2",
     "preact": "^10.29.8",
     "three": "^0.186.0",
     "trystero": "^0.26.0"

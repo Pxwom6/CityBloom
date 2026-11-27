@@ -23,6 +23,7 @@ import { HistoryPanel } from './History';
 import { PhotoMode } from './PhotoMode';
 import { GoalsPanel, ScenarioBrief, ScenarioEnd } from './Scenario';
 import { RunViewerBar } from './Challenge';
+import { TimelapseCard } from './Timelapse';
 import { DistrictsPanel } from './Districts';
 import { WarRoomPanel } from './Military';
 import { FallenCard } from './Diplomacy';
@@ -113,6 +114,7 @@ export function App({ game }: { game: Game }) {
       {/* Watching a battle (M35), the viewer bar takes the visit banner's place. */}
       {game.readOnly ? !game.viewing && !game.watchingRun && <VisitBanner /> : <Toolbar />}
       <RunViewerBar />
+      <TimelapseCard />
       <ToolHintLabel />
       <ToolQuestionCard />
       <Inspector />

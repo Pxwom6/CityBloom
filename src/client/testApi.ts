@@ -44,6 +44,7 @@ import type { BuildingData, CityStats, DisasterData } from '../sim/protocol';
 import { ZONED_DEFS } from '../data/buildings';
 import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
+import { renderTimelapseMusic } from '../audio/timelapseMusic';
 import type { AtomStage, AtomStats } from '../render/atom';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
@@ -174,6 +175,8 @@ export interface TestApi {
       orbit: { tick: number; population: number; bytes: number }[];
     };
   }>;
+  /** The timelapse's music rendered for `seconds`: its peak and average level (dB below full scale). */
+  timelapseMusicLevels(seconds: number): Promise<{ peakDb: number; rmsDb: number }>;
   /** Test builds: game ticks between timelapse frames (a longer step grows years of city in fewer frames). */
   setTimelapseStep(ticks: number): void;
   /** Draw and keep the next timelapse frame now. */
@@ -954,6 +957,18 @@ export function installTestApi(game: Game): TestApi {
         error: t.error,
         stored: { wide: await list('wide'), orbit: await list('orbit') },
       };
+    },
+    timelapseMusicLevels: async (seconds) => {
+      const buf = await renderTimelapseMusic(seconds);
+      let peak = 0;
+      let sum = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++)
+        for (const v of buf.getChannelData(c)) {
+          peak = Math.max(peak, Math.abs(v));
+          sum += v * v;
+        }
+      const db = (x: number) => Math.round(20 * Math.log10(Math.max(x, 1e-9)) * 10) / 10;
+      return { peakDb: db(peak), rmsDb: db(Math.sqrt(sum / (buf.length * buf.numberOfChannels))) };
     },
     setTimelapseStep: (ticks) => {
       game.timelapse.step = ticks;

@@ -42,6 +42,11 @@ export const SUBMIT_LIMITS = {
   body: 1_500_000,
   /** Submissions kept at once: past it, "the inbox is full". */
   kept: 2_000,
+  /**
+   * And the bytes of their pictures and models (as sent, before base64): 400 MB, well within the free
+   * plan's 5 GB of Durable Object storage beside the rooms', regions' and other desks'.
+   */
+  fileBytes: 400_000_000,
   rowsPerDay: 3_000,
   /** Declined submissions go this long after the decision. */
   declinedMs: 30 * DAY_MS,
@@ -346,8 +351,11 @@ export class SubmissionsDesk extends LazyTables {
     if (byToken >= this.limits.perDay || byAddress >= this.limits.perAddress)
       return { ok: false, status: 429, why: `That’s ${this.limits.perDay} for today: try again tomorrow` };
     this.sweep(now);
-    const kept = this.read<{ n: number }>('SELECT count(*) AS n FROM subs')[0]?.n ?? 0;
-    if (kept >= this.limits.kept)
+    const held = this.read<{ n: number; b: number | null }>(
+      'SELECT count(*) AS n, sum(bytes) AS b FROM subs',
+    )[0];
+    const size = file ? Math.floor((file.length * 3) / 4) : 0;
+    if ((held?.n ?? 0) >= this.limits.kept || (held?.b ?? 0) + size > this.limits.fileBytes)
       return { ok: false, status: 503, why: 'The inbox is full: try again another day' };
     if (this.budget.over(now)) return { ok: false, status: 503, why: 'Too busy today: try again tomorrow' };
     this.write(
@@ -361,7 +369,7 @@ export class SubmissionsDesk extends LazyTables {
       credit,
       now,
       hash,
-      file ? Math.floor((file.length * 3) / 4) : 0,
+      size,
       file,
     );
     if (this.addresses.size > 5000) this.addresses.clear();

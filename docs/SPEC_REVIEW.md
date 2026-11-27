@@ -891,7 +891,7 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | 2. Make in Blender: scale in metres, the front, the ground at zero, naming parts with the roles, exporting a GLB | `BlenderSteps` (five steps, each with a picture) |
 | 3. Check it: results like a teacher's notes (what's wrong, why, how to fix it) with a picture; the common mistakes | `teacherNote`/`teacherNotes`; `CheckStep`; the picture from M46's worker; a default-names problem in `checkCustom` |
 | 4. See it: on its lot, by day and night, in each season, next to the buildings around it | `SeeStep`, `ModelPreview.showStreet` (`src/render/modelPreview.ts`) |
-| 5. Use it, share it, or send it in (M48) | `UseStep`: Add to My buildings, Place, Share; Send it in shown as coming |
+| 5. Use it, share it, or send it in (M48) | `UseStep`: Add to My buildings, Place, Share, Send it in (opens M48's screen on the building) |
 | The written guide: `docs/making-buildings.md`, linked from the README and the Workshop, a worked example with screenshots, short and friendly | `docs/making-buildings.md` (the clock pavilion from start to finish; pictures `docs/screenshots/workshop-*.png` from `scripts/dev/workshopshot.mjs --guide`) |
 | The model spec, readable, generated from the same source the check uses | `src/models/playerSpec.ts` (the check's own numbers), written into the guide by `scripts/docs/modelSpec.ts`; `tests/workshop.test.ts` fails if it's out of date |
 | *Done:* an e2e follows the Workshop from picking a landmark to placing a model, copies the prompt and checks its footprint, budget and roles | `e2e/m47-workshop.spec.ts` (from the main menu's Learn page; the copied prompt's site, budget, file and roles; placed in the lesson's town, which ends the lesson) |
@@ -899,3 +899,29 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* the guide's screenshots are reviewed | reviewed in the session (DECISIONS "M47") |
 | *Done:* a mate who has never made a model tries it | PROGRESS, "To try with a mate" |
 | Phones from the start | `e2e/m47-phone.spec.ts` (iPhone and Pixel, upright and sideways, every step with `phoneProblems`; a model checked and added on two) |
+
+## M48 Send it in
+
+| Item | Where |
+|---|---|
+| "Send an idea" on the main menu and in the pause menu; "Send it in" from My Buildings | `main-submit`, `pause-submit` (`src/ui/Shell.tsx`); each row's `buildings-send-<hash>` (`src/ui/MyBuildings.tsx`) and the Workshop's `workshop-send`; `Game.openSubmit` |
+| An idea: a short title, a capped description, a kind (building, feature, fix, scenario or challenge, something else), an optional screenshot from the game | `SubmitScreen` (`src/ui/Submit.tsx`); `IDEA_KINDS`, `SUBMIT_LIMITS` (80 / 1,500 characters, a 400 kB JPEG from `Game.reportShot()`) in `relay/submissions.ts` |
+| A building: a custom model that passes the check, its name, what it's for, a line about it | a model from My buildings (checked when it went in, `checkCustom`), its name and target, a line of 200 characters; the relay's `glbProblem` and hash check; the full check again in the owner's browser |
+| An optional "credit me as" name; nothing else about the player asked for or stored | `credit` (40 characters, cleaned, through the owner's word filter); the token kept only as its SHA-256; the address only in memory for rates (DECISIONS "M48") |
+| Before sending: exactly what will be sent, and that only the owner sees it unless picked | the review card (`submit-preview`, `submit-who`: "Only the game's maker will see it…") with the picture as it goes |
+| After sending: their submissions with status (sent, seen, "coming in an update", not this time), kept with a private browser token, not an account | What I sent (`submit-mine-row`, `STATUS_WORDS`); `SubmitClient.token()` (`citybloom.submitToken`, `src/client/submissions.ts`); `GET /submit/mine` |
+| Owner area: all submissions newest first, filters by kind and status | `OwnerSubmissions` (`src/owner/OwnerSubmissions.tsx`, `owner-sub-kind`, `owner-sub-status`); `GET /owner/submissions` |
+| Ideas show their text and screenshot; buildings a 3D preview with the turntable, day and night, and the check's results | `Detail`: `owner-sub-text`, `owner-sub-shot`; `ModelPreview` with Day / Night; `checkModelFile` and the teacher's notes (`owner-sub-check`) |
+| Mark seen, accepted or declined, with an optional reply the player sees | `owner-sub-seen/accept/decline`, `owner-sub-reply`; `SubmissionsDesk.decide` |
+| Delete anything; add words to the filter | `owner-sub-delete`; `owner-sub-words` (`setWords`) |
+| An accepted building as a GLB with its credit | Download GLB, named `<name>-by-<credit>.glb` (`glbName`) |
+| "Copy for Claude Code": what it is, where in `assets/models/`, its credit for CREDITS.md, an idea in full | `submissionForClaude` (also: in through the normal pipeline and a pull request) |
+| Nothing goes into the game automatically | nothing reads the desk but the owner area and the accepted list (DECISIONS "M48") |
+| An "Accepted ideas" list in the game, only ever what was accepted, with credits | Accepted ideas (`accepted-list`, `accepted-row`); `GET /submit/accepted` (`SubmissionsDesk.accepted`: accepted rows only) |
+| A few a day per browser, capped sizes, the free plan's storage; declined deleted after 30 days; accepted kept until deleted | 5 a day per token and per address, caps on every field and the body, 2,000 kept and 400 MB of files, 3,000 rows a day; the sweep (an alarm and each write); `relay/tests/submissions.test.ts` |
+| *Done:* an e2e sends an idea with a screenshot and a building through the real UI against the local relay, sees them in the owner area, accepts one with a reply and declines the other, and the player sees both statuses | `e2e/m48-submit.spec.ts` (the idea from the pause menu with its picture, the building from My buildings; the owner area accepts the idea with a reply, checks and downloads the building, declines it; What I sent shows both with their replies) |
+| *Done:* the accepted list shows only the accepted one | the same spec (the screen's Accepted ideas and `GET /submit/accepted`) |
+| *Done:* nothing submitted is reachable without `OWNER_KEY` unless accepted | the same spec (no key and a wrong key refused, 401); `relay/tests/submissions.test.ts` (every owner route, the files, the list) |
+| *Done:* a modified client can't push past the caps or read another player's submissions | the same spec (six sends straight to the relay: five taken, the sixth refused; a 1.6 MB body refused; another token reads nothing); unit tests for the address cap, sizes and the inbox |
+| Phones from the start; the owner area on the owner's phone | `e2e/m48-phone.spec.ts` (iPhone and Pixel, upright and sideways: the form, the preview, What I sent, Accepted ideas, a building on two; the owner area on an iPhone both ways, every press 44 px) |
+

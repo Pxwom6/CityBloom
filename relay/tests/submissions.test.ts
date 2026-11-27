@@ -157,6 +157,11 @@ describe('M48 submissions', () => {
     const small = await deskAt({ kept: 1 });
     expect(await small.submit(idea(), '1', T)).toMatchObject({ ok: true });
     expect(await small.submit(idea({ token: tokenB }), '2', T)).toMatchObject({ ok: false, status: 503 });
+    // And so does one whose pictures and models fill their share of the storage.
+    const full = await deskAt({ fileBytes: 30_000 });
+    expect(await full.submit(building(), '1', T)).toMatchObject({ ok: true });
+    expect(await full.submit(building({ token: tokenB }), '2', T)).toMatchObject({ ok: false, status: 503 });
+    expect(await full.submit(idea({ token: tokenB }), '2', T)).toMatchObject({ ok: true });
     // A credit name the owner's filter catches is refused.
     d.setWords(['rude']);
     expect(await d.submit(idea({ token: tokenB, credit: 'Mr Rude' }), '3', T + DAY)).toMatchObject({
@@ -191,6 +196,19 @@ describe('M48 submissions', () => {
       (await http(req('GET', `/owner/submissions/${id}`, { key: 'wrong-key-0123456789x' })))!.status,
     ).toBe(401);
     expect((await http(req('GET', '/owner/submissions', { key: KEY }), null))!.status).toBe(503);
+    // Nor can anything be changed: deciding, deleting, the word filter (each try from its own address:
+    // one address's wrong keys are slowed to a few a minute, a 429).
+    let n = 20;
+    for (const [path, body] of [
+      [`/owner/submissions/${id}`, { status: 'accepted', reply: 'Mine now' }],
+      [`/owner/submissions/${id}`, { action: 'delete' }],
+      ['/owner/submissions/words', { words: [] }],
+    ] as const) {
+      expect((await http(req('POST', path, { body, address: `10.1.0.${n++}` })))!.status).toBe(401);
+      const wrong = { body, key: 'wrong-key-0123456789x', address: `10.1.0.${n++}` };
+      expect((await http(req('POST', path, wrong)))!.status).toBe(401);
+    }
+    expect(d.ownerItem(id)).toMatchObject({ status: 'sent', reply: '' });
     // Players reach only their own and the accepted list.
     expect((await http(req('GET', `/submit/mine?token=${tokenB}`)))!.json).toEqual({ mine: [] });
     expect((await http(req('GET', '/submit/accepted')))!.json).toEqual({ accepted: [] });

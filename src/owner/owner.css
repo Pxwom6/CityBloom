@@ -377,3 +377,21 @@ a.owner-btn {
   width: 100%;
   margin: 8px 0;
 }
+/* On the owner's phone: every press at least 44 px (M48, as the game's phone layout). */
+@media (pointer: coarse) {
+  .owner-btn,
+  .owner-tab,
+  .owner select,
+  .owner input:not([type='checkbox']),
+  .owner-reply input,
+  .owner-entry-line,
+  .owner-group summary {
+    min-height: 44px;
+  }
+  .owner label:has(> input[type='checkbox']) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}

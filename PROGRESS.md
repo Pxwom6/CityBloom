@@ -3,7 +3,7 @@
 ## Owner key (`OWNER_KEY`): set, waiting on the merge
 The owner added the `OWNER_KEY` repository secret (27 November 2026). The deploy workflow passes it to the
 Worker as a Worker secret on the next push to `main`, so the owner area (problem reports from M41, the
-weekly challenge's board from M44, and later the submissions) switches on when pull request #24 is
+weekly challenge's board from M44, and the submissions from M48) switches on when pull request #24 is
 merged and deployed: then open `https://pxwom6.github.io/CityBloom/#/owner` and sign in with the key
 (kept on that device until signing out). Until then the live owner area says it isn't set up. To change
 the key, update the secret and push to `main`; never paste it into a session or commit it.
@@ -264,10 +264,29 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M48 Send it in is under way**: plan `docs/plans/M48-design.md` (the submissions desk on the relay,
-the player's screens with a private token, the owner's review, the accepted list, limits). Steps:
-M48.1 the desk and its HTTP API with tests, M48.2 the page (send an idea or a building, my submissions,
-accepted ideas), M48.3 the owner area, M48.4 e2e, phones, closing.
+**M48's closing checks are running** (the unit suite, bench, balance, the M41/M46/M47 e2e beside
+M48's own, which pass); then every phase-6 milestone is done and **the phase's end is next** (SPEC-6.md, "When every
+milestone is done"): the summary here, SPEC_REVIEW's Phase 6 section, the README's "Play with friends",
+then the playthroughs as a `@playthrough` spec.
+
+**M48 Send it in** (plan `docs/plans/M48-design.md`) joins M41–M47 and M49 in pull request #24 once
+its checks are in.
+
+M48 in short: "Send an idea" on the main and pause menus, and "Send it in" on each building in My
+buildings and the Workshop's last step, open one screen. An idea is a kind (a building, a feature, a
+fix, a scenario or challenge, something else), a title, a description and, if ticked, a picture of the
+game; a building is a model from My buildings (so it has passed the check) with its name, target and a
+line; either may carry a "credit me as" name. Before it goes the player sees exactly what will be sent,
+picture included, and that only the game's maker sees it unless it's picked. What I sent lists their
+own with statuses (Sent, Seen, "Coming in an update", "Not this time") and the owner's reply, through a
+private token in the browser (the relay keeps only its SHA-256); Accepted ideas shows only accepted ones
+with credits. The desk is a third Durable Object (`SubmissionsObject`, migration v4): 5 a day per
+browser and per address, capped fields and bodies, 2,000 kept and 400 MB of files, 3,000 rows a day,
+declined ones deleted 30 days after the decision. The owner area's Submissions section: filters,
+idea text and picture, a building's turntable by day and night with the game's check run in the owner's
+browser, Seen/Accept/Decline with a reply, Delete, the word filter for credit names, Download GLB named
+with its credit, Copy for Claude Code; every press 44 px on a touch screen. Calls: DECISIONS "M48";
+SPEC_REVIEW "M48"; numbers: "Tests (M48)".
 
 **M47 Making buildings is complete** (plan `docs/plans/M47-design.md`), joining M41–M46 and M49 in
 pull request #24.
@@ -419,12 +438,19 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M48 Send it in (SPEC-6.md), every new screen working by touch on a phone upright and sideways
-   (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`). The Workshop's Use step has the Send it in button
-   waiting (`workshop-send`, `src/ui/Workshop.tsx`); M41's report desk and owner area show how an
-   upload, its checks and caps, and the owner's review were done (`relay/reportDesk.ts`,
-   `relay/reportsHttp.ts`, `src/owner/`).
-2. Then the phase's end (SPEC-6.md).
+1. The phase's end (SPEC-6.md, "When every milestone is done"): update the summary at the top of this
+   file and SPEC_REVIEW's Phase 6 section; the README's new "Play with friends" overview (quick match,
+   the weekly challenge, timelapses, custom buildings) with pictures.
+2. Play the phase through the real UI and fix what feels off, kept as a `@playthrough` spec (as
+   `e2e/phase5-finale.spec.ts`): a new player's first city with the tutorial on desktop and in phone
+   emulation; a four-player quick match with two on phones; a week's challenge; a timelapse of a grown
+   city; a building made in the Workshop, shared with a friend and sent in; the owner area handling it all.
+3. The real-world checks under "To check on the Mac" and "To try with a mate", then the pull request's
+   title and description for the whole phase.
+
+## Tests (M48)
+- E2E: `e2e/m48-submit.spec.ts` (1.9 min) and `e2e/m48-phone.spec.ts` (four phone runs) pass; the
+  owner area on an iPhone (added to the phone spec) and the rest are being run.
 
 ## Tests (M47)
 - Unit: 2,177 tests in 208 files pass (the unit and live projects). New `tests/workshop.test.ts`: the spec text held
@@ -1668,6 +1694,11 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
   imported) and see that it runs; the 110k bench city should ask first.
 
+- M48 send it in: once the next deploy is out, a mate sends you an idea with a picture from their
+  phone, and later a building they made in the Workshop, with no help: do they find "Send an idea" and
+  "Send it in", and does the preview make clear only you will see it? You review both in the owner
+  area on your phone (accept one with a reply, decline the other); they open What I sent a day later and
+  see the statuses and your reply, and the accepted one in Accepted ideas with their name.
 - M47 making buildings: a mate who has never made a 3D model opens Learn → Making your own buildings
   and follows the Workshop and the guide (`docs/making-buildings.md`) with no other help, once with an AI
   3D tool and once in Blender: where do they get stuck, do the teacher's notes tell them what to do, and
@@ -1700,6 +1731,11 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   challenge feels too long (the balance mayor takes 3–43 months).
 
 ## To check on the Mac
+- Phase 6 (M48): the owner area's Submissions on your own phone against the live relay
+  (`SubmissionsObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in): a building's
+  turntable by night, its check, Download GLB (does Safari keep the name?) and Copy for Claude Code; the
+  send screen's picture in Safari; bringing an accepted building in with `npm run models:check` and a
+  pull request, its credit in CREDITS.md.
 - Phase 6 (M47): the Workshop in Safari and Chrome (copying the prompt to the clipboard, the style
   sheet's download, the street preview by night); a model made in Blender itself following the
   Workshop's five steps, and one from Claude Design with the Workshop's prompt, both through the check;

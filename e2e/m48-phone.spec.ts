@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { closeContextsAfterEach } from './helpers';
 import { phone, phoneProblems, phoneShot, type Orient } from './phone';
@@ -97,6 +98,74 @@ for (const [device, orient, full] of cases) {
       await page.getByTestId('submit-send').tap();
       await expect(page.getByTestId('submit-mine-row')).toHaveCount(2, { timeout: 20_000 });
       await phoneShot(page, `m48-phone-${tag}-mine`);
+    });
+  });
+}
+
+/**
+ * The owner area on the owner's phone (SPEC-6: "make it usable on my phone"): an idea and a building
+ * sent straight to the test relay, then signed in, the submissions listed, each opened (the building's
+ * turntable and check), decided, and every press checked for a finger, upright and sideways.
+ */
+const RELAY = 'http://127.0.0.1:8787';
+const KEY = 'e2e-owner-key-0123456789';
+for (const orient of ['portrait', 'landscape'] as Orient[]) {
+  test.describe(`owner area, iPhone 13 ${orient}`, () => {
+    test.use({ ...phone('iPhone 13', orient) });
+    test('submissions reviewed by touch', async ({ page }) => {
+      test.setTimeout(150_000);
+      const token = randomBytes(16).toString('hex');
+      const tag = `iPhone13-${orient}`;
+      const send = (body: Record<string, unknown>) =>
+        page.request.post(`${RELAY}/submit`, {
+          headers: { 'content-type': 'text/plain' },
+          data: JSON.stringify({ token, ...body }),
+        });
+      expect(
+        (
+          await send({
+            kind: 'idea',
+            about: 'feature',
+            title: `Night markets (${tag})`,
+            text: 'Stalls in the square after dark.',
+          })
+        ).status(),
+      ).toBe(200);
+      const glb = testModels().good;
+      expect(
+        (
+          await send({
+            kind: 'building',
+            about: { kind: 'landmark', size: 2 },
+            title: `Market hall (${tag})`,
+            text: 'Where the night market goes when it rains',
+            credit: 'Sam',
+            glb: Buffer.from(glb).toString('base64'),
+            hash: createHash('sha256').update(glb).digest('hex').slice(0, 16),
+          })
+        ).status(),
+      ).toBe(200);
+      await page.goto('./owner.html');
+      await page.getByTestId('owner-key').fill(KEY);
+      await page.getByTestId('owner-signin-go').tap();
+      await page.getByTestId('owner-section-submissions').tap();
+      const idea = page.locator('.owner-entry', { hasText: `Night markets (${tag})` });
+      await idea.locator('.owner-entry-line').tap();
+      await expect(page.getByTestId('owner-sub-text')).toContainText('Stalls in the square');
+      expect(await phoneProblems(page, '[data-testid=owner-area]'), `${tag}: an idea open`).toEqual([]);
+      await page.getByTestId('owner-sub-seen').tap();
+      await expect(page.getByTestId('owner-toast')).toContainText('seen');
+      const building = page.locator('.owner-entry', { hasText: `Market hall (${tag})` });
+      await building.locator('.owner-entry-line').tap();
+      await expect(page.getByTestId('owner-sub-check')).toContainText("passes the game's check", {
+        timeout: 30_000,
+      });
+      await page.getByTestId('owner-sub-night').tap();
+      expect(await phoneProblems(page, '[data-testid=owner-area]'), `${tag}: a building open`).toEqual([]);
+      await page.screenshot({ path: `docs/screenshots/m48-owner-phone-${orient}.png`, scale: 'css' });
+      await page.getByTestId('owner-sub-reply').fill('Lovely: it goes in next time');
+      await page.getByTestId('owner-sub-accept').tap();
+      await expect(page.getByTestId('owner-toast')).toContainText('accepted');
     });
   });
 }

@@ -64,7 +64,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M41 Hearing about problems
 - [x] M42 Learning to play
 - [x] M43 Quick match
-- [ ] M44 Weekly challenge
+- [x] M44 Weekly challenge
 - [ ] M45 Timelapse
 - [ ] M46 Your own buildings
 - [ ] M47 Making buildings
@@ -271,10 +271,25 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**M44 Weekly challenge** (plan `docs/plans/M44-design.md`): steps M44.1 the week clock, the generator
-and the challenge in the sim (save v33); M44.2 run logs and replays; M44.3 the board on the relay;
-M44.4 the page (Challenge screen, board, groups, replay viewer, owner area); M44.5 the 52-week mayor
-run, the e2e, budgets. Nothing of it committed yet beyond the plan.
+**M44 Weekly challenge is complete** (plan `docs/plans/M44-design.md`), joining M41, M42, M49 and M43
+in pull request #24. Next: M45 Timelapse.
+
+M44 in short: a new challenge every Monday at midnight in Adelaide, made from the week alone (a map
+from a pool of 83 the balance mayor grows a town on, one of five goal templates with a growth goal,
+and a twist: a tight budget, no city highways, an early disaster, rail only or a small map; four
+years), or a hand-made one the owner pins. "This week's challenge" on the main menu (its name, time
+left, top score) opens the challenge screen: the map, goals, twist, money, time and how it scores;
+Play (as often as wanted) or Continue your try; the board this week, by friends' group code and last
+week, with Watch beside each kept run. A challenge city opens on its brief, shows its score in the
+goals panel, autosaves to a slot of its own (marked in the load list) and ends on a card with the
+score, Post score, Try again and the board. A score goes with its run (every command and save at its
+tick, frozen the moment the challenge ends, packed) and the hash and score it claims; the board checks
+what it can cheaply and keeps each player's best; players' pages replay the top runs they haven't
+checked and a run that doesn't replay is dropped (the owner can put it back). Watching a run replays
+it in the game, at any speed or straight to its end, and says whether it came to the same city. The
+owner area lists each week's entries (remove, put back, watch), pins a challenge and filters names.
+Save v33. Phones upright and sideways. Calls: DECISIONS "M44" (with what a modified client could still
+do); SPEC_REVIEW "M44"; numbers: "Tests (M44)", "Network and storage (M44)", "Balance (M44)".
 
 **M43 Quick match is complete** (plan `docs/plans/M43-design.md`), joining M41, M42 and M49 in pull
 request #24.
@@ -352,8 +367,51 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M44 Weekly challenge (SPEC-6.md), then M45–M48 in order, each new screen working by touch on a
-   phone upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+1. M45 Timelapse (SPEC-6.md), then M46–M48 in order, each new screen working by touch on a phone
+   upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+
+## Tests (M44)
+- Unit: 2,147 tests in 203 files pass (the unit and live projects; new: `tests/challenge.test.ts`, `tests/challengeRun.test.ts`,
+  `tests/challengeClient.test.ts`, `relay/tests/week.test.ts`, `relay/tests/challengeBoard.test.ts`).
+  Cross-browser: Chromium here passes (24 months and the new `challenge` section equal to Node: a run
+  recorded, frozen at its end and replayed); WebKit and real Firefox run on the pull request.
+- E2E: `e2e/m44-challenge.spec.ts` (6.6 min): two players play a pinned six-month challenge from the
+  main menu, laying roads and zones with the mouse and placing power, water and a septic tank from the
+  toolbar, a group made and joined; both post; both boards show both, each ticked by a replay; Kit's run
+  watched to the end replays to the same city; a forged score (a real run with a wrong hash) comes off
+  the board once a page checks it, dropped in the owner's list; the board's clock and the page's moved
+  across Monday 00:00 in Adelaide show the next week's challenge with last week's results kept.
+  `e2e/m44-phone.spec.ts` (6.5 min): iPhone and Pixel, upright and sideways, by touch, `phoneProblems`
+  on the screen, the friends tab, the brief, the end card, the board and the run viewer; played and
+  posted on two of them. Pictures kept: `docs/screenshots/m44-*.png`. Re-run and passing beside the
+  new main-menu entry and the scenario screens it shares: m11-shell, m18-scenarios, m42-learn,
+  app-install and review-followups (11 tests, 18.6 min).
+- Bench (`bench.ts 6 --big`): 4.3 s, months 4–6 tick avg 0.75–0.77 ms, as before (a first run read
+  5.0 s; the second matched M43). Balance (20 years): identical (careful 67,373 residents, $1,838,985,
+  73 %): a city that never plays a challenge is unchanged. The lesson towns were rebuilt at save v33
+  (`scripts/lessons.ts`): the same cities, only the version moved.
+
+## Network and storage (M44)
+- A visit to the challenge screen: `GET /challenge/current` (about 2 kB with a pin), `GET
+  /challenge/board` (about 4 kB for 50 rows), and up to two runs fetched and replayed (one on a phone)
+  with a verdict each: at most 6 requests. A post is one request carrying the packed run.
+- Runs: the mayor's are 30–70 commands, 1.2–1.4 kB packed; a busy, scattered player's 2,000 commands
+  are about 75 kB (5,000 about 185 kB); the cap is 256 kB of text. Replaying a four-year run takes
+  1–3.4 s here (the mayor's 52 weeks), in a worker of its own.
+- The free plan's day: about 8,000 screen visits fit the requests (2 each for the Worker and the
+  object, 100,000 a day); rows written are capped at 5,000 a day (a post writes about 3, a verdict
+  1–2: some 1,500 posts), of the object's 100,000; a board view reads its week's rows by an index (at
+  most 500), so 5 million rows read allow about 10,000 views. Storage: at most 2 weeks × (500 entries
+  and 100 runs of at most 256 kB) ≈ 51 MB, about 15 MB with busy players' runs, of 5 GB.
+
+## Balance (M44)
+`npx tsx scripts/challenges.ts 52 <first> careful --replay` (the careful mayor plays each week's
+challenge as a player's city is founded; each run recorded, packed and replayed):
+- Weeks 46–97 (the coming year): 52 of 52 won, in 3–43 months; scores 4,387–9,352 (median 6,910);
+  every run replayed to the same hash and score (at most 70 commands, 1.4 kB packed, 3.4 s); 149 s.
+- Weeks 0–51: 52 of 52 won, in 3–36 months; scores 4,724–9,352 (median 7,009); every run replayed
+  (at most 54 commands, 1.2 kB, 3.0 s).
+- Each template and twist pairing turns up once or twice a year. Logs: `bench-results/challenges-52*.log`.
 
 ## Tests (M43)
 - Unit: 2,096 tests in 193 files pass (new: `tests/match.test.ts`, `tests/matchClient.test.ts`,
@@ -1458,7 +1516,19 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   browser: the match ends), Keep this city and Play on, and a phone locked for a minute mid-match
   (it should catch up when unlocked).
 
+- M44 weekly challenge: once the next deploy is out, a mate plays this week's challenge on the live
+  site from their own phone with no help: do they find it on the main menu, understand the goals,
+  the twist and how it scores, post a score and find it on the board? Make a group, give them the
+  code, and see both scores on the friends board; each watch the other's run (Skip to the end) and
+  see it say "same city". Note how long the replay takes on their phone, and whether a four-year
+  challenge feels too long (the balance mayor takes 3–43 months).
+
 ## To check on the Mac
+- Phase 6 (M44): the challenge screen and the run viewer in a real Chrome and Safari window against
+  the live relay (`ChallengeObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in);
+  the owner area's Weekly challenge on your phone (pin a challenge for next week, remove and put back
+  an entry); typing a name on a real phone's keyboard on the end card; replaying a busy run (a
+  real four-year city, not the mayor's 70 commands) on the Mac and on a phone, for the time it takes.
 - Phase 6 (M43): a full 20-minute quick match between Chrome and Safari on the Mac against the live
   relay (two windows), to see the timer, the scoreboard and the last minute at real speed, and the
   results' chart over a whole match (the e2e here plays one-minute matches).

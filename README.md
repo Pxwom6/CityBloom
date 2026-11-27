@@ -291,6 +291,12 @@ written for you, or the basics in Blender), check it (what's wrong, why, and how
 street by day and night, then place or share it. The guide, with a worked example:
 [docs/making-buildings.md](docs/making-buildings.md). Friends in a shared city see your buildings too.
 
+**Send it in**: a building from My buildings, or an idea from the main menu's **Send an idea** (a
+building, a feature, a fix, a scenario; a picture of the game if you like). You see exactly what goes
+before it goes; only the game's maker sees it, and if it's picked it comes in an update with the name
+you chose. **What I sent** shows where each has got to, and **Accepted ideas** lists the ones picked.
+No account: a private code in your browser keeps track.
+
 ## War
 
 War is off unless you ask for it, so everything above plays as a peaceful city builder. Turn it on and

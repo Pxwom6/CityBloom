@@ -837,3 +837,21 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | Phones from the start | `e2e/m44-phone.spec.ts` (iPhone and Pixel, upright and sideways: the screen, tabs and a group by touch; played to the end card and posted, the board and the run viewer, all with `phoneProblems`) |
 | The cross-browser test | its `challenge` section (`tests/lockstep/challengeSection.ts`): a run recorded, frozen and replayed alike in every engine |
 
+
+## M45 Timelapse
+
+| Item | Where |
+|---|---|
+| While a city plays, small frames from a few fixed views at regular game-time steps: a wide view of the whole map and an orbit of the busiest district | `TimelapseRecorder` (`src/client/timelapse.ts`: every 3 game hours, the views taking turns, by day), `GameRenderer.captureView`, `busiestCell`/`orbitCentre` (`src/client/timelapseThin.ts`) |
+| Kept in IndexedDB within a size limit, older frames thinned so a long city fits | `TimelapseStore` (`citybloom-timelapse`), `thinFrames` (400 a view, 32 MB a city, 160 MB in all); `tests/timelapse.test.ts` (a twenty-year city), the e2e's long city with the limits made small |
+| On by default for new cities, can be turned off, costs nothing noticeable on the frame budget; measured and logged | Settings → Game → Record a timelapse (`settings.timelapse`); `scripts/dev/timelapsebench.mjs` (PROGRESS "Performance (M45)"; the Mac's GPU under "To check on the Mac") |
+| City history (Y): Make timelapse, 15, 30 or 60 s, a view, overlays (name, date, population, milestones and disasters) | `TimelapseSection` and `TimelapseCard` (`src/ui/Timelapse.tsx`); `makeTimelapseVideo` (`src/client/timelapseVideo.ts`: `frameMix`, `overlayText`, `captionAt`) |
+| Optional music from the game's own audio | `renderTimelapseMusic` (`src/audio/timelapseMusic.ts`, the synthesiser the sound effects use); AAC where encoded, else Opus in the MP4 |
+| A video file that plays on phones and in group chats, in Chrome, Edge and Safari; the format chosen and why logged | MP4 with H.264 by WebCodecs + `mp4-muxer`, MediaRecorder as the fallback; DECISIONS "M45" |
+| The first and last frames saved as pictures | First picture / Last picture (JPEG, overlays on) in the card |
+| Cities already running start from when the update arrives, and say so plainly | `SaveMeta.timelapse` (a saved city without one starts recording when opened, `late`); City history's note (`timelapse-late`) |
+| Shared cities record on each player's own machine; nothing extra is sent | a joined city records under `room-<code>` locally (`main.ts`); `e2e/m45-timelapse.spec.ts`'s shared-city test |
+| *Done:* an e2e grows a city for several game years, makes each length through the real UI, checks the file plays and shows growth | `e2e/m45-timelapse.spec.ts` (three game years; 15, 30 and 60 s made through City history; each plays its length at 960×540, shows more town at its end, downloads as an MP4 with H.264) |
+| *Done:* recording stays inside the frame budget on the bench city (measured on the Mac's GPU too) | `timelapsebench.mjs` on the bench city here (a capture draws what one ordinary frame does); the Mac's run under "To check on the Mac" |
+| *Done:* storage stays under its limit on a long city | `tests/timelapse.test.ts` (twenty years, within 400 frames and 16 MB a view, every year still there) and the e2e (the real store's thinning with small limits) |
+| Phones from the start | `e2e/m45-phone.spec.ts` (iPhone and Pixel, upright and sideways, by touch; a video made on two of them) |

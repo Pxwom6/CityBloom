@@ -58,7 +58,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M42 Learning to play
 - [x] M43 Quick match
 - [x] M44 Weekly challenge
-- [ ] M45 Timelapse
+- [x] M45 Timelapse
 - [ ] M46 Your own buildings
 - [ ] M47 Making buildings
 - [ ] M48 Send it in
@@ -264,8 +264,24 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M45 Timelapse is complete** (plan `docs/plans/M45-design.md`), joining M41, M42, M49, M43 and M44 in
+pull request #24. Next: M46 Your own buildings.
+
+M45 in short: while a city plays, every 3 game hours the game draws one small frame (960×540, always
+by day) from one of two views in turn, the whole map and an orbit of the busiest part of town, through
+the ordinary pipeline with the interface hidden, and keeps it in IndexedDB with the population then. A
+view keeps 400 frames and a city 32 MB (thinned evenly past that, so a long city keeps every year), 160
+MB for all cities. On by default ("Record a timelapse" in Settings). The key goes beside the city in its
+saves; a city from before the update starts recording when opened and City history says so; a joined
+shared city records on each player's own machine. City history's Make timelapse: 15, 30 or 60 seconds,
+the whole map or the busiest area, overlays (name, date, population, milestones and disasters), music
+from the game's own synthesiser; an MP4 with H.264 (WebCodecs, else MediaRecorder) that plays on
+phones and in chats, shared through the share sheet or downloaded, with the first and last frames as
+pictures. Phones upright and sideways. Calls: DECISIONS "M45"; SPEC_REVIEW "M45"; numbers: "Tests
+(M45)", "Performance (M45)".
+
 **M44 Weekly challenge is complete** (plan `docs/plans/M44-design.md`), joining M41, M42, M49 and M43
-in pull request #24. Next: M45 Timelapse.
+in pull request #24.
 
 M44 in short: a new challenge every Monday at midnight in Adelaide, made from the week alone (a map
 from a pool of 83 the balance mayor grows a town on, one of five goal templates with a growth goal,
@@ -360,8 +376,40 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M45 Timelapse (SPEC-6.md), then M46–M48 in order, each new screen working by touch on a phone
-   upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+1. M46 Your own buildings (SPEC-6.md), then M47–M48 in order, each new screen working by touch on a
+   phone upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+
+## Tests (M45)
+- Unit: 2,153 tests in 204 files pass (the unit and live projects; new: `tests/timelapse.test.ts`: the thinning on a twenty-year city, the video's frame
+  schedule, the orbit, the overlays).
+- E2E: `e2e/m45-timelapse.spec.ts` (17 min + the shared city's 1 min): three game years recording, then a
+  15, 30 and 60 s timelapse made through City history, each playing its length at 960×540, more town at
+  its end than its start, downloaded as an MP4 with H.264, the first and last pictures as JPEG; a long
+  city within its limit (the real store thinning with small limits); a scenario's city older than its
+  recording, saying so; recording off; a shared city recording on both machines. `e2e/m45-phone.spec.ts`
+  (8.4 min): iPhone and Pixel, upright and sideways, by touch, `phoneProblems` on the Timelapse line and
+  the card, a video made on two. Pictures kept: `docs/screenshots/m45-*.png`.
+- Re-run beside City history's new line: m16-photo-history (it found photo mode's 2× pictures saving at
+  1× since M49: fixed, passes), m39-history, and review-legacy's first two saves (Ashton, v19-highlands;
+  the rest, the same panels on older saves, weren't re-run).
+- Videos here: a 15 s video of a year's town is 2.7–4.7 MB (H.264 Baseline, 30 fps, 960×540), made in
+  about a minute on this VM's software encoder (a 60 s one in about four); music is Opus here (Linux
+  Chromium has no AAC encoder), peaking −5 dB.
+- Bench (`bench.ts 6 --big`): 4.2 s, months 4–6 tick avg 0.67–0.82 ms, as before. Balance (20 years):
+  identical (careful 67,373 residents, $1,838,985, 73 %): the timelapse is page-side only. Cross-browser:
+  Chromium here passes (24 months equal to Node); WebKit and real Firefox run on the pull request.
+
+## Performance (M45)
+`npm run build:test && node scripts/dev/timelapsebench.mjs bench-results/city.gz` (the 110k bench
+city, Medium, the player at the city view):
+- The player's view: 234 draw calls, 2.59 M triangles. A capture of the whole map: 221 calls, 2.36 M
+  triangles; of the busiest area: 254 calls, 2.97 M. A capture draws what one ordinary frame does, once
+  every 7.5 s of real time at 3× (22.5 s at 1×); its JPEG is encoded off the frame.
+- SwiftShader's main-thread time for a capture (0.9–1.1 s) is the software renderer drawing it (an
+  ordinary frame here takes about a second too), so it says nothing; the Mac's numbers are under "To
+  check on the Mac".
+- Frames: about 65 kB for a small town, 112 kB for the bench city; a big city's 32 MB keeps about 140
+  frames a view (thinned evenly).
 
 ## Tests (M44)
 - Unit: 2,147 tests in 203 files pass (the unit and live projects; new: `tests/challenge.test.ts`, `tests/challengeRun.test.ts`,
@@ -1509,6 +1557,10 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   browser: the match ends), Keep this city and Play on, and a phone locked for a minute mid-match
   (it should catch up when unlocked).
 
+- M45 timelapse: a mate who has played a city for an evening makes a 30 s timelapse on their phone
+  without help (City history → Make timelapse) and sends it to you in a group chat: does it play there,
+  is it clear and smooth enough, is the music welcome? Do they find the busiest-area view worth it?
+
 - M44 weekly challenge: once the next deploy is out, a mate plays this week's challenge on the live
   site from their own phone with no help: do they find it on the main menu, understand the goals,
   the twist and how it scores, post a score and find it on the board? Make a group, give them the
@@ -1517,6 +1569,11 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   challenge feels too long (the balance mayor takes 3–43 months).
 
 ## To check on the Mac
+- Phase 6 (M45): `GPU=1 node scripts/dev/timelapsebench.mjs bench-results/city.gz` in headed Chrome on the
+  GPU (a capture's main-thread time against the player's frames), and `framebench.mjs` with a capture
+  forced every second (`--init "__game.setTimelapseStep(8)"` at 1×) against none, to see it stays inside
+  the frame budget; making a 60 s timelapse in Chrome and Safari (the hardware encoder's time, AAC music);
+  the MP4 sent through WhatsApp and iMessage to a phone, and saved to Photos.
 - Phase 6 (M44): the challenge screen and the run viewer in a real Chrome and Safari window against
   the live relay (`ChallengeObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in);
   the owner area's Weekly challenge on your phone (pin a challenge for next week, remove and put back

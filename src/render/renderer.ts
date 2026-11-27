@@ -551,6 +551,8 @@ export class GameRenderer {
 
   /** The pixel ratio to draw at: the quality's, at most the screen's, within `maxPixels`. */
   private pixelRatioNow(): number {
+    // A photo being saved at a few times the screen's resolution (M16) keeps its own while it's drawn.
+    if (this.captureRatio !== null) return this.captureRatio;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     const cap = Number.isFinite(this.maxPixels) ? Math.sqrt(this.maxPixels / Math.max(1, w * h)) : Infinity;
@@ -697,12 +699,15 @@ export class GameRenderer {
     // Up to `scale` × the screen's pixels, within what the GPU can hold (and ~36 MP).
     let ratio = (window.devicePixelRatio || 1) * scale;
     ratio = Math.min(ratio, maxSide / Math.max(w, h), Math.sqrt(36e6 / (w * h)));
+    // (`resize` keeps the phone preset's cap on the pixel ratio since M49: the photo's ratio holds over it.)
+    this.captureRatio = ratio;
     this.renderer.setPixelRatio(ratio);
     this.resize();
     this.frame(0);
     const size = this.renderer.getDrawingBufferSize(new Vector2());
     // toBlob copies the canvas as it is now, so the size can go back straight away.
     const blob = new Promise<Blob | null>((res) => this.canvas.toBlob(res, 'image/png'));
+    this.captureRatio = null;
     this.renderer.setPixelRatio(prev);
     this.resize();
     return { blob, width: size.x, height: size.y };
@@ -755,6 +760,8 @@ export class GameRenderer {
     }
   }
 
+  /** A photo's pixel ratio while it is drawn (M16), over the screen's capped one. */
+  private captureRatio: number | null = null;
   /** An hour to light the frame at instead of the city's (the timelapse's frames are all by day). */
   private hourOverride: number | null = null;
   /** When the shadow maps were last drawn (s of frame time). */

@@ -33,6 +33,12 @@ export interface SavedModel {
   glb: string;
 }
 
+/**
+ * Base64 of models a region's copy of a city may carry (M46): visitors see them, and the copy stays
+ * well within the region's cap on a city's save (`MAX_SNAPSHOT_PARTS`, 8 MB of base64).
+ */
+export const REGION_MODEL_CHARS = 3_000_000;
+
 export type AddResult =
   | { ok: true; model: StoredModel; existed: boolean }
   | { ok: false; problems: CustomProblem[]; picture: Blob | null };
@@ -206,12 +212,22 @@ export class MyBuildings {
     this.onChange?.();
   }
 
-  /** The models a city's buildings wear, as its save carries them. */
-  forSave(hashes: Iterable<string>): SavedModel[] {
+  /**
+   * The models a city's buildings wear, as its save carries them; with `maxChars`, only as many as fit
+   * in that much base64 (smallest first: a region's copy of the city must stay within its cap).
+   */
+  forSave(hashes: Iterable<string>, maxChars = Infinity): SavedModel[] {
     const out: SavedModel[] = [];
-    for (const h of new Set(hashes)) {
-      const m = this.models.get(h);
-      if (m) out.push({ hash: m.hash, name: m.name, target: m.target, glb: toBase64(m.bytes) });
+    const list = [...new Set(hashes)]
+      .map((h) => this.models.get(h))
+      .filter((m): m is StoredModel => !!m)
+      .sort((a, b) => a.bytes.length - b.bytes.length);
+    let chars = 0;
+    for (const m of list) {
+      const glb = toBase64(m.bytes);
+      if (chars + glb.length > maxChars) break;
+      chars += glb.length;
+      out.push({ hash: m.hash, name: m.name, target: m.target, glb });
     }
     return out;
   }

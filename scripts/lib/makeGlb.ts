@@ -200,6 +200,29 @@ export function goodModelParts(size = 16): Part[] {
   return parts;
 }
 
+/**
+ * A heavy good model for the frame budget: the pavilion with a garden of `planters` small hedge boxes
+ * in rows round the tower (12 triangles each), to come near a landmark's triangle budget.
+ */
+export function heavyModelParts(size = 16, planters = 100): Part[] {
+  const parts = goodModelParts(size);
+  const h = size / 2 - 1;
+  const n = Math.ceil(Math.sqrt(planters));
+  let k = 0;
+  for (let i = 0; i < n && k < planters; i++)
+    for (let j = 0; j < n && k < planters; j++) {
+      const x = -h + ((i + 0.5) * 2 * h) / n;
+      const z = -h + ((j + 0.5) * 2 * h) / n;
+      // Clear of the tower and the steps in front of it.
+      if (Math.abs(x) < 3.4 && z < 3.4) continue;
+      parts.push(
+        part(`planter_${i}_${j}`, 'hedge', box([x - 0.25, 0.16, z - 0.25], [x + 0.25, 0.7, z + 0.25])),
+      );
+      k++;
+    }
+  return parts;
+}
+
 /** The test models: a good one and the bad ones the e2e imports. */
 export function testModels(): Record<'good' | 'tooBig' | 'tooWide' | 'outside' | 'textured', Uint8Array> {
   const good = goodModelParts(16);

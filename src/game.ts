@@ -103,7 +103,7 @@ import { relayHttpBase, reportProblem, type Reporter } from './client/reports';
 import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostReply } from './client/challenge';
 import type { ChallengeDef } from './data/challenges';
 import { TimelapseRecorder } from './client/timelapse';
-import { MyBuildings } from './client/myBuildings';
+import { MyBuildings, REGION_MODEL_CHARS } from './client/myBuildings';
 import { RoomModels } from './client/roomModels';
 import { fitsTarget, targetOfDef } from './models/customCheck';
 import type { BakedModel } from './models/baked';
@@ -861,7 +861,13 @@ export class Game {
     return {
       command: (cmd) => this.client.command(cmd),
       report: () => this.client.query<RegionReport>({ type: 'regionReport' }),
-      save: () => this.client.save(),
+      save: async () => {
+        const s = await this.client.save();
+        // The models its buildings wear, so a friend visiting sees them (M46), within the region's cap.
+        const models = this.buildings.forSave(this.looksInCity(), REGION_MODEL_CHARS);
+        if (models.length) s.meta.models = models;
+        return s;
+      },
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
       battle: (input, meta) => this.takeBattle(input, meta),

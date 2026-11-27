@@ -572,8 +572,8 @@ export class RoomSession {
   }
 
   /** Ask the others for a model the city's buildings wear (M46). */
-  askModel(hash: string): void {
-    this.send({ t: 'mneed', hash });
+  askModel(hash: string, not?: number[]): void {
+    this.send({ t: 'mneed', hash, ...(not?.length ? { not } : {}) });
   }
 
   /** A part of a model another page asked for. */

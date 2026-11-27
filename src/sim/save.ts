@@ -8,6 +8,7 @@ import { Rng } from './rng';
 import { initialWeather, seasonsGrace } from './systems/weather';
 import { initialRegion } from './systems/region';
 import { GAME_TITLE } from '../config';
+import { LOOK_HASH } from '../data/civic';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
@@ -362,6 +363,10 @@ function repairState(state: SimState): void {
   const totals = state.totals as unknown as Record<string, unknown>;
   for (const [k, v] of Object.entries(emptyTotals())) if (totals[k] === undefined) totals[k] = v;
   state.tourism.by ??= { road: 0, rail: 0, air: 0, sea: 0 };
+  // A player's own model is named by a hash (M46): anything else a hand-edited or hostile save carries
+  // is dropped, so no page asks a room for a name it would refuse (every player loads the same save).
+  for (const c of state.civics.values())
+    if (c.look !== undefined && !(typeof c.look === 'string' && LOOK_HASH.test(c.look))) delete c.look;
 }
 
 export function stateToCanonicalJson(state: SimState): string {

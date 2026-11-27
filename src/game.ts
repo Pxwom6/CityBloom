@@ -8,7 +8,7 @@ import type { Command, CommandResult } from './sim/commands';
 import type { WorkerPerf } from './sim/protocol';
 import { MONTH_NAMES, SPEED_TICKS_PER_SECOND, dateOf, type Speed } from './sim/time';
 import { ToolManager } from './tools/manager';
-import { CIVIC } from './data/civic';
+import { CIVIC, LOOK_HASH } from './data/civic';
 import { MILESTONES } from './data/progression';
 import { ACHIEVEMENTS } from './data/achievements';
 import type { Advice } from './sim/systems/advisors';
@@ -402,6 +402,7 @@ export class Game {
     this.regionView = new RegionView(this);
     // Players' own models (M46): drawn when here, and a friend's only with friends' buildings shown.
     renderer.civics.customLook = (hash, def) => this.customModel(hash, def);
+    this.buildings.inUse = () => this.looksInCity();
     this.buildings.onChange = () => {
       this.renderer.civics.redrawLooks();
       this.notify();
@@ -2232,7 +2233,7 @@ export class Game {
   /** The hashes of the models the city's buildings wear (M46). */
   looksInCity(): string[] {
     const out = new Set<string>();
-    for (const c of this.world.civics.values()) if (c.look) out.add(c.look);
+    for (const c of this.world.civics.values()) if (c.look && LOOK_HASH.test(c.look)) out.add(c.look);
     return [...out];
   }
 

@@ -59,7 +59,7 @@ https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online roo
 - [x] M43 Quick match
 - [x] M44 Weekly challenge
 - [x] M45 Timelapse
-- [ ] M46 Your own buildings
+- [x] M46 Your own buildings
 - [ ] M47 Making buildings
 - [ ] M48 Send it in
 - [x] M49 Phones (done after M42, before M43)
@@ -264,8 +264,28 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
+**M46 Your own buildings is complete** (plan `docs/plans/M46-design.md`), joining M41, M42, M49, M43,
+M44 and M45 in pull request #24. Next: M47 Making buildings.
+
+M46 in short: My buildings (the landmarks row's My buildings…, or the panel `buildings`) takes a GLB or
+a `.citybloom-building` a friend sent, picked or dropped; it's measured to suggest what it fits (a
+landmark of 1×1 to 4×4, or the civic buildings whose site it fills), then checked in a worker by the
+build's own check (spec v6, the target's site and triangle budget) plus a 1 MB cap and nothing pointing
+outside the file; a refusal lists each problem in plain words with a picture (from above and the front,
+the site in green, the problem parts in red). A model is kept with its name and shown on a turntable by
+day or night in each season (the game's own building material); Place (a landmark of the player's own,
+a park of its size in the sim, or a new civic building wearing it), Rename, .glb, Share, Delete. Any
+civic building but a big project changes look in its inspector; a model serves every target it fits.
+The sim holds only the model's hash on the building (save v34); saves carry the models their city
+wears, so a city opens anywhere with them (and a region's copy carries up to 3 MB of them for
+visitors). In a shared city a page that lacks a model asks the room by hash (protocol 9) and the first
+page that has it answers in capped parts the room passes on and never keeps; everything arriving is
+checked again. "Show friends' custom buildings" (on by default) and the host's Custom buildings switch
+for the room. Phones upright and sideways. Calls: DECISIONS "M46"; SPEC_REVIEW "M46"; numbers: "Tests
+(M46)", "Network (M46)", "Performance (M46)".
+
 **M45 Timelapse is complete** (plan `docs/plans/M45-design.md`), joining M41, M42, M49, M43 and M44 in
-pull request #24. Next: M46 Your own buildings.
+pull request #24.
 
 M45 in short: while a city plays, every 3 game hours the game draws one small frame (960×540, always
 by day) from one of two views in turn, the whole map and an orbit of the busiest part of town, through
@@ -376,8 +396,64 @@ founded on the pacer's machine replays from nothing more; any other start from a
 hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
 
 ## Next tasks
-1. M46 Your own buildings (SPEC-6.md), then M47–M48 in order, each new screen working by touch on a
-   phone upright and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`).
+1. M47 Making buildings (SPEC-6.md), then M48, each new screen working by touch on a phone upright
+   and sideways (`e2e/phone.ts`, `scripts/dev/phonepanels.mjs`). M47's Workshop can build on M46's
+   checker, picture and turntable (`src/models/customCheck.ts`, `modelCheckWorker.ts`,
+   `src/render/modelPreview.ts`) and the test models in `scripts/lib/makeGlb.ts`.
+
+## Performance (M46)
+`npx tsx scripts/dev/customcity.ts 150` then `npm run build:test && node scripts/dev/custombench.mjs`
+(High, 1280×800, SwiftShader): a town with 150 2×2 landmarks all wearing a heavy model (1,276
+triangles, 85 % of the landmark's budget, 116 kB), loaded from its save (the model arriving with it and
+checked again), against the same city with "Show friends' custom buildings" off (the game's own plaza
+on each):
+
+| View | Draw calls (custom / plain) | Triangles (custom / plain) | Page's work a frame (ms) |
+|---|---|---|---|
+| Overview | 115 / 115 | 481 k / 617 k | 3.1 / 3.1 |
+| City (650 m) | 126 / 126 | 1.09 M / 1.30 M | 2.9 / 2.4 |
+| Street (140 m) | 146 / 146 | 1.48 M / 1.42 M | 2.7 / 2.2 |
+
+- Draw calls don't change: a player's model is merged into the same level-of-detail chunks as the
+  game's own buildings. From afar a custom landmark is lighter than the generated plaza (whose trees
+  are drawn as trees); close up, 4 % more triangles. The page's own work stays within half a
+  millisecond (SwiftShader frames: seven a view, so noisy). The frame budget holds; frame times on the
+  Mac's GPU are under "To check on the Mac" (`GPU=1`, and `framebench.mjs` on the same save).
+- Checking a model: the check and bake take 7 ms for the 19 kB pavilion and 22 ms for the 116 kB heavy
+  one (Node, the same code the worker runs); in the page a worker's start-up and the copy come on top
+  (the e2e's imports come back within a couple of seconds on SwiftShader).
+
+## Network (M46)
+- A model passes through a room once per page that lacks it, in parts of up to 160,000 base64
+  characters: the 19 kB pavilion is one message of 25 kB, a 1 MB model nine messages, 1.4 MB in all
+  (one per page asking; the room sends each part only to those waiting). Nothing is stored: no rows
+  written, no storage. On Cloudflare a model costs at most nine incoming messages (under half a request
+  on the free plan's 20:1 count) per page that asks; the caps (40 asks and 6 million characters a
+  minute a player, 64 models waiting a room) bound a page that asks or sends too much.
+- Snapshots never carry models (the snapshot cap is untouched); a region's copy of a city carries at
+  most 3 MB of base64 of models, within its 8 MB cap.
+
+## Tests (M46)
+- Unit: 2,169 tests in 207 files pass (the unit and live projects), then the review's fixes' tests
+  (relay and lockstep suites again: 377 in 32 files). New: `tests/customCheck.test.ts` (the check, the
+  probe, suggestions, what a model fits), `tests/customLook.test.ts` (looks and landmarks in the sim, save
+  v34, a hostile save's looks dropped), `relay/tests/roomModels.test.ts` (the room's relay, its caps, a
+  wrong answer skipped, stale transfers forgotten, the host's switch), the cross-browser `looks` section.
+- Bench (`bench.ts 6 --big`): 4.4 s, months 4–6 tick avg 0.71–0.83 ms, as before. Balance (20 years,
+  careful): identical (67,373 residents, $1,838,985, 73 %): the landmarks are new buildings the mayor
+  never builds, and looks change nothing in the sim.
+- E2E: `e2e/m46-buildings.spec.ts` (3.5 min): four refused files (too wide: "It is 19 × 19 m; its site
+  is 16 × 16 m" and the parts outside it; data in another file; a texture; 1.2 MB), each with its
+  picture; the good pavilion added, on the turntable by night and in winter, shared as a building file,
+  placed as a 2×2 landmark from the landmarks row and as a pocket park's look from its inspector, saved
+  and opened as on another device (My buildings emptied: the save brings the model, drawn on both
+  buildings, and the shared file makes it the player's own again); then a friend joins a shared city,
+  fetches the model through the room and draws it, hides it with the setting off, and nobody sees it
+  while the host has custom buildings off (Sam's `setLook` refused then). `e2e/m46-phone.spec.ts` (1.5
+  min): iPhone and Pixel, upright and sideways, by touch (`phoneProblems` on the panel empty, with a
+  refusal and with a model; placed by touch on two). Pictures: `docs/screenshots/m46-*.png`.
+- Cross-browser: the `looks` section passes in Chromium here and in Chromium, WebKit and real Firefox
+  on the pull request (the browser spec now compares the match and challenge sections too).
 
 ## Tests (M45)
 - Unit: 2,153 tests in 204 files pass (the unit and live projects; new: `tests/timelapse.test.ts`: the thinning on a twenty-year city, the video's frame
@@ -1548,6 +1624,13 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
   imported) and see that it runs; the 110k bench city should ask first.
 
+- M46 your own buildings: a mate who has never made a 3D model follows the model guide in Blender
+  (free) to make a small building, exports a GLB and adds it in My buildings: do the refusals' words
+  and pictures tell them what to fix? Then each of you sends the other a building as a
+  `.citybloom-building` through a chat, imports it on a phone, and places it; and in a shared city
+  (one of you hosting on a laptop, the other on a phone), each other's buildings arrive and show, the
+  phone's setting hides them, and the host's switch turns them off for both.
+
 - M43 quick match: two to four friends on their own devices, at least one a phone, over the internet
   (the live site, an online match, then one hosted in a browser): Quick match from the main menu,
   the host picks Race, 20 minutes; the others join from the invite link. Does a newcomer understand
@@ -1569,6 +1652,12 @@ _Checks that need a real new player (phase 6). Each milestone adds its own._
   challenge feels too long (the balance mayor takes 3–43 months).
 
 ## To check on the Mac
+- Phase 6 (M46): `node scripts/dev/custombench.mjs 150` in headed Chrome on the GPU (the probe runs
+  headless here; on the Mac add frame times with `framebench.mjs` on a save of that city): 150 custom
+  landmarks against the same buildings in the game's look, to see the frame budget holds; the
+  turntable preview in Chrome and Safari (and a real phone), by night and in winter; a GLB exported
+  from Blender itself (the tests' models are written by hand) through the checker; drag and drop of a
+  `.glb` from Finder onto the panel.
 - Phase 6 (M45): `GPU=1 node scripts/dev/timelapsebench.mjs bench-results/city.gz` in headed Chrome on the
   GPU (a capture's main-thread time against the player's frames), and `framebench.mjs` with a capture
   forced every second (`--init "__game.setTimelapseStep(8)"` at 1×) against none, to see it stays inside

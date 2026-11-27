@@ -155,14 +155,14 @@ describe('players’ models through a room (M46)', () => {
   it('holds each player to a share of asks and of bytes, and asks again what nobody answered', () => {
     const { clock, room, ada, bo } = room3();
     for (let i = 0; i < 30; i++) bo.say({ t: 'mneed', hash: i.toString(16).padStart(16, 'a') });
-    // A burst of ten asks, then a trickle.
-    expect(of(ada, 'mneed').length).toBeLessThanOrEqual(11);
-    expect(of(ada, 'mneed').length).toBeGreaterThanOrEqual(10);
-    // Unanswered for half a minute: asked again.
+    // One player waits for at most eight models at once (nobody can fill the room's slots alone).
+    expect(of(ada, 'mneed')).toHaveLength(MODEL_LIMITS.waitingEach);
+    // Unanswered for half a minute: forgotten, so it can be asked for again.
     clock.t += 31_000;
     const before = of(ada, 'mneed').length;
     bo.say({ t: 'mneed', hash: 'a'.repeat(16) });
     expect(of(ada, 'mneed').length).toBe(before + 1);
+    expect(waiting(room)).toBe(1);
     // Bytes: a player sending far past its share in a minute stops the transfer.
     const big = 'A'.repeat(MODEL_PART);
     const asks = Math.ceil(MODEL_LIMITS.charsPerMinute / 2 / MODEL_PART / MODEL_PARTS) + 2;
@@ -188,5 +188,38 @@ describe('players’ models through a room (M46)', () => {
     const old = raw(room);
     old.say(hello('Old', { v: PROTOCOL_VERSION - 1 }));
     expect(of(old, 'error')[0]?.text).toMatch(/different version of Citybloom: reload to update/);
+  });
+
+  it('skips a player whose answer was wrong, forgets a transfer that stops, and stops when the host turns them off', () => {
+    const { clock, room, ada, bo, cy, ids } = room3();
+    // Cy answers first with bytes that aren't the model; Bo's page says so and asks again without Cy.
+    bo.say({ t: 'mneed', hash: HASH });
+    cy.say(part(HASH, 0, 1, 'SlVOSw=='));
+    expect(of(bo, 'mpart').map((m) => m.from)).toEqual([ids.cy]);
+    bo.say({ t: 'mneed', hash: HASH, not: [ids.cy] });
+    expect(of(ada, 'mneed')).toHaveLength(2);
+    cy.say(part(HASH, 0, 1, 'SlVOSw=='));
+    ada.say(part(HASH, 0, 1, 'R09PRA=='));
+    expect(of(bo, 'mpart').map((m) => [m.from, m.data])).toEqual([
+      [ids.cy, 'SlVOSw=='],
+      [ids.ada, 'R09PRA=='],
+    ]);
+    expect(waiting(room)).toBe(0);
+    // A transfer that stops part-way is forgotten after half a minute: the slot is free again.
+    bo.say({ t: 'mneed', hash: HASH2 });
+    ada.say(part(HASH2, 0, 3));
+    expect(waiting(room)).toBe(1);
+    clock.t += 31_000;
+    bo.say({ t: 'mneed', hash: HASH2 });
+    expect(of(ada, 'mneed').filter((m) => m.hash === HASH2)).toHaveLength(2);
+    // The host turns custom buildings off mid-transfer: nothing more is passed on.
+    ada.say(part(HASH2, 0, 2));
+    const got = of(bo, 'mpart').length;
+    ada.say({ t: 'rules', customBuildings: false });
+    ada.say(part(HASH2, 1, 2));
+    expect(of(bo, 'mpart')).toHaveLength(got);
+    expect(waiting(room)).toBe(0);
+    // A list of players to skip is checked like anything else a page sends.
+    expect(parseClientMsg(JSON.stringify({ t: 'mneed', hash: HASH, not: ['x'] }))).toBeNull();
   });
 });

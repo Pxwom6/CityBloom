@@ -855,3 +855,28 @@ Milestones M41–M49 (M49 Phones done after M42, before M43); each gets its rows
 | *Done:* recording stays inside the frame budget on the bench city (measured on the Mac's GPU too) | `timelapsebench.mjs` on the bench city here (a capture draws what one ordinary frame does); the Mac's run under "To check on the Mac" |
 | *Done:* storage stays under its limit on a long city | `tests/timelapse.test.ts` (twenty years, within 400 frames and 16 MB a view, every year still there) and the e2e (the real store's thinning with small limits) |
 | Phones from the start | `e2e/m45-phone.spec.ts` (iPhone and Pixel, upright and sideways, by touch; a video made on two of them) |
+
+## M46 Your own buildings
+
+| Item | Where |
+|---|---|
+| A new look for a building the player placed; the sim still sees the original building | `Civic.look` (a hash, save v34), `placeBuilding`'s `look`, `setLook` (`src/sim/sim.ts`); the inspector's Look (`LookChooser`, `src/ui/MyBuildings.tsx`); `tests/customLook.test.ts` |
+| A custom landmark of 1×1 to 4×4 that works like a plaza or park of that size | `landmark1`…`landmark4` in `src/data/civic.ts` (category `custom`, a park's service and land value); the landmarks row's own buttons (`OwnLandmarks`, `src/ui/Toolbar.tsx`) |
+| Zoned buildings stay as they are | `canHaveLook`/`takesLook` (civic buildings only, never big projects) |
+| A GLB dropped on the game or picked from the player's files | My buildings' Add a model… and drop zone (`buildings-file`) |
+| Checked in the browser by `src/models/check.ts`'s check, spec v6, the target's footprint and budget | `checkCustom` (`src/models/customCheck.ts`: `inspectModel`, `budgetOf`, `CIVIC_BUDGETS` in `src/models/budgets.ts`); `tests/customCheck.test.ts` |
+| Refused with each problem in plain words and a picture of where | the import card's problems and picture (`src/client/modelCheckWorker.ts` draws it: the site in green, the problem parts in red); `e2e/m46-buildings.spec.ts` |
+| A size cap (about 1 MB), no external files or links, parsed in a worker | `CUSTOM.maxBytes`, `externalLinks`, `probeCustom`; one worker a file, stopped after 20 s (`src/client/modelCheck.ts`) |
+| My Buildings: a turntable preview by day and night and in each season; place, rename, delete | `MyBuildingsPanel` (`src/ui/MyBuildings.tsx`), `ModelPreview` (`src/render/modelPreview.ts`: the game's building material, its lit windows, seasonal lawns and snow) |
+| Models travel to the other players in a room within the network budget and the snapshot cap, sent once, cached by hash | protocol 9's `mneed`/`mpart` (`relay/room.ts` passes them on, keeps nothing; caps in `MODEL_LIMITS`), `RoomModels` (`src/client/roomModels.ts`); never in snapshots; `relay/tests/roomModels.test.ts`; PROGRESS "Network (M46)" |
+| Regions: a visited friend's city shows its custom buildings | a region's copy of a city carries its models up to `REGION_MODEL_CHARS` (`Game.cityPort`), adopted on a visit (`main.ts`) |
+| "Show friends' custom buildings" (on by default); off, the original building or a plain generated landmark | `settings.showFriendsBuildings` (also in the panel), `Game.customModel`; nothing fetched while off |
+| The host can turn custom buildings off for the room | the room panel's Custom buildings (`room-custom-toggle`), rule `customBuildings: false` (`roomRefusal`, ordered into every sim) |
+| Nothing goes to the server but the copy passed through the room | the relay keeps no model (in memory only while it passes); DECISIONS "M46" |
+| Saves keep the models their city uses (a save version bump) | `SaveMeta.models` (`Game.saveTo`), adopted on load; save v34 for the looks themselves (`tests/customLook.test.ts`, the v33 migration) |
+| Share as `.glb` or a small `.citybloom-building`; the mate imports it the same way, through the same check | the row's .glb and Share (`buildingFile`, `readBuildingFile` in `src/client/myBuildings.ts`); the e2e imports the shared file on "another device" |
+| *Done:* an e2e imports a good model and three bad ones through the UI, each refused with the right reasons, places the good one as a look and as a landmark, saves and reloads | `e2e/m46-buildings.spec.ts`'s first test (too wide, data in another file, a texture, and a file over 1 MB; the pavilion as a 2×2 landmark and as a pocket park's look; saved, then opened with My buildings emptied as on another device) |
+| *Done:* a second player in a shared city sees it, and doesn't with the setting off | the same spec's second test (Sam's page fetches it through the room and draws it; off, it's the plaza; the host's switch hides it for everyone) |
+| *Done:* the frame budget holds with a city full of custom landmarks | `scripts/dev/custombench.mjs` (150 landmarks wearing a model at 85 % of the landmark's budget, against the same buildings in the game's look; PROGRESS "Performance (M46)"); the Mac's GPU under "To check on the Mac" |
+| Phones from the start | `e2e/m46-phone.spec.ts` (iPhone and Pixel, upright and sideways: My buildings from the Build sheet, a model refused and one added, checked with `phoneProblems`; placed by touch on two of them) |
+| The cross-browser test | its `looks` section (`tests/lockstep/looksSection.ts`); the browser spec now compares the match and challenge sections too |

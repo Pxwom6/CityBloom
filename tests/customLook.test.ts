@@ -98,4 +98,19 @@ describe('M46 players’ own models in the sim', () => {
     expect(roomRefusal(rules, 2, { ...place, look: undefined })).toBeNull();
     expect(roomRefusal({ ...rules, customBuildings: undefined }, 2, place)).toBeNull();
   });
+
+  it('drops a look that isn’t a model’s hash when a save is loaded (a hand-edited or hostile save)', () => {
+    const { sim, street } = town();
+    const a = placeAlong(sim, 'firestation', street);
+    const b = placeAlong(sim, 'police', street);
+    sim.dispatch({ type: 'setLook', civic: a, look: HASH });
+    const save = JSON.parse(JSON.stringify(sim.save())) as ReturnType<Sim['save']>;
+    // Edited by hand: one look a word, the other kept.
+    const civics = (save.state as { civics: { $m: [number, { look?: unknown }][] } }).civics;
+    const entry = civics.$m.find(([id]) => id === b)!;
+    entry[1].look = 'zz<script>';
+    const back = Sim.fromSave(save);
+    expect(back.state.civics.get(a)!.look).toBe(HASH);
+    expect(back.state.civics.get(b)!.look).toBeUndefined();
+  });
 });

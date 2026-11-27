@@ -195,7 +195,10 @@ export interface TestApi {
     drawn: number;
   }>;
   /** The tool that's out, and the place tool's building (M46: a player's own model by its hash). */
-  getTools(): { active: string; place: { armed: boolean; def: string; look: string | null; category: string } };
+  getTools(): {
+    active: string;
+    place: { armed: boolean; def: string; look: string | null; category: string };
+  };
   /** Add a model as an import would (a base64 GLB, checked in the worker): its hash, or the problems. */
   addMyBuilding(
     glb: string,
@@ -454,7 +457,15 @@ export interface TestApi {
   /** Id of the first civic building with this def, or null. */
   findCivic(def: string): number | null;
   /** Civic buildings on the client mirror. */
-  getCivics(): { id: number; def: string; x: number; z: number; angle: number; stage?: number; look?: string }[];
+  getCivics(): {
+    id: number;
+    def: string;
+    x: number;
+    z: number;
+    angle: number;
+    stage?: number;
+    look?: string;
+  }[];
   /** Vehicles as last drawn. */
   getVehicles(): { id: number; kind: string; phase: string; x: number; z: number }[];
   /** Road segment nearest (x, z) within 20 m. */

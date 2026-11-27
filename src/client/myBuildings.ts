@@ -39,6 +39,13 @@ export interface SavedModel {
  */
 export const REGION_MODEL_CHARS = 3_000_000;
 
+/**
+ * Friends' models kept on this device (M46): at most this many and this many bytes; past either, the
+ * ones added longest ago go first (never one the open city wears). A save's models are checked for at
+ * most `adoptMs` in all.
+ */
+export const FRIENDS_KEPT = { count: 48, bytes: 24 * 1_048_576, adoptMs: 60_000 } as const;
+
 export type AddResult =
   | { ok: true; model: StoredModel; existed: boolean }
   | { ok: false; problems: CustomProblem[]; picture: Blob | null };
@@ -114,6 +121,8 @@ export class MyBuildings {
   private opening: Promise<IDBDatabase> | null = null;
   /** Called when a model is added, renamed or removed (the renderer draws again). */
   onChange: (() => void) | null = null;
+  /** The models the open city wears (never let go to make room). */
+  inUse: () => Iterable<string> = () => [];
   readonly ready: Promise<void>;
 
   constructor() {
@@ -187,7 +196,23 @@ export class MyBuildings {
       added: Date.now(),
     };
     await this.put(model);
+    if (!model.mine) await this.trimFriends();
     return { ok: true, model, existed: false };
+  }
+
+  /** Friends' models past the device's share go, the ones added longest ago first. */
+  private async trimFriends(): Promise<void> {
+    const keep = new Set(this.inUse());
+    const friends = [...this.models.values()].filter((m) => !m.mine).sort((a, b) => a.added - b.added);
+    let count = friends.length;
+    let bytes = friends.reduce((t, m) => t + m.bytes.length, 0);
+    for (const m of friends) {
+      if (count <= FRIENDS_KEPT.count && bytes <= FRIENDS_KEPT.bytes) break;
+      if (keep.has(m.hash)) continue;
+      count--;
+      bytes -= m.bytes.length;
+      await this.remove(m.hash);
+    }
   }
 
   async rename(hash: string, name: string): Promise<void> {
@@ -239,7 +264,10 @@ export class MyBuildings {
   async adopt(list: unknown): Promise<number> {
     if (!Array.isArray(list)) return 0;
     let n = 0;
+    const start = Date.now();
     for (const raw of list.slice(0, 64) as Partial<SavedModel>[]) {
+      // A save full of slow models doesn't keep the page checking for minutes.
+      if (Date.now() - start > FRIENDS_KEPT.adoptMs) break;
       if (typeof raw?.hash !== 'string' || !LOOK_HASH.test(raw.hash) || this.models.has(raw.hash)) continue;
       const target = cleanTarget(raw.target);
       if (!target || typeof raw.glb !== 'string' || raw.glb.length > (CUSTOM.maxBytes * 4) / 3 + 8) continue;

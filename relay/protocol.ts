@@ -68,7 +68,17 @@ export const MODEL_PARTS = Math.ceil(Math.ceil((1_048_576 * 4) / 3) / MODEL_PART
  * What a room relays of players' models: asks a player may make a minute, base64 characters a player
  * may send a minute (about four 1 MB models), and models a room waits for at once. Nothing is kept.
  */
-export const MODEL_LIMITS = { asksPerMinute: 40, charsPerMinute: 6_000_000, waiting: 64 } as const;
+export const MODEL_LIMITS = {
+  asksPerMinute: 40,
+  charsPerMinute: 6_000_000,
+  waiting: 64,
+  /** Models one player may wait for at once. */
+  waitingEach: 8,
+  /** Base64 characters the whole room passes on a minute, whoever sends them. */
+  roomCharsPerMinute: 12_000_000,
+  /** An ask nobody answers, or a transfer that stops, is forgotten after this long (ms). */
+  staleMs: 30_000,
+} as const;
 /** A model's hash (M46): the first 16 hex digits of its SHA-256. */
 const MODEL_HASH = /^[0-9a-f]{16}$/;
 export const MAX_NAME = 20;
@@ -296,8 +306,11 @@ export type ClientMsg =
       spendLimit?: number | null;
       customBuildings?: boolean;
     }
-  /** This page lacks a model the city's buildings wear (M46): who has it? */
-  | { t: 'mneed'; hash: string }
+  /**
+   * This page lacks a model the city's buildings wear (M46): who has it? `not`: players whose answer
+   * for it was wrong (bytes that aren't the model its hash names), not to be passed on again.
+   */
+  | { t: 'mneed'; hash: string; not?: number[] }
   /**
    * A part of a model another page asked for (M46): `parts` in all, the first with its name and what
    * it was made for (the receiving page cleans and checks both, and the model, again).
@@ -717,8 +730,16 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       }
       return out;
     }
-    case 'mneed':
-      return typeof m.hash === 'string' && MODEL_HASH.test(m.hash) ? { t: 'mneed', hash: m.hash } : null;
+    case 'mneed': {
+      if (typeof m.hash !== 'string' || !MODEL_HASH.test(m.hash)) return null;
+      const out: ClientMsg = { t: 'mneed', hash: m.hash };
+      if (m.not !== undefined) {
+        if (!Array.isArray(m.not) || m.not.length > MAX_PLAYERS * 2 || !m.not.every((x) => isInt(x, 1, 1e6)))
+          return null;
+        out.not = [...new Set(m.not as number[])];
+      }
+      return out;
+    }
     case 'mpart':
       return cleanModelPart(m);
     case 'admin': {

@@ -35,8 +35,13 @@ export class RoomModels {
   private asked = new Map<string, number>();
   private answered = new Map<string, number>();
   private arriving = new Map<string, Arriving>();
-  /** Models that came but failed (their hash or the check): not asked for again this session. */
+  /**
+   * Models that came whole, the bytes their hash names, and failed the check: any player would send the
+   * same bytes, so they aren't asked for again this session.
+   */
   private refused = new Set<string>();
+  /** Players whose answer for a model wasn't the model its hash names: the room is told to skip them. */
+  private wrong = new Map<string, Set<number>>();
   private session: Session | null = null;
   private lastLook = 0;
   private wasOn = true;
@@ -51,6 +56,7 @@ export class RoomModels {
     this.asked.clear();
     this.answered.clear();
     this.arriving.clear();
+    this.wrong.clear();
     session.onModelNeed = (from, hash) => void this.answer(from, hash);
     session.onModelPart = (m) => void this.part(m);
   }
@@ -82,7 +88,10 @@ export class RoomModels {
     }
     for (const [hash, a] of this.arriving) if (now - a.at > STALLED_MS) this.arriving.delete(hash);
     if (!this.allowed() || !this.game.settings.showFriendsBuildings) return;
-    let flying = this.arriving.size;
+    // In flight: arriving, or asked lately and not here yet.
+    let flying = 0;
+    for (const [hash, at] of this.asked)
+      if (!this.game.buildings.get(hash) && (this.arriving.has(hash) || now - at < ASK_AGAIN_MS)) flying++;
     for (const hash of this.game.looksInCity()) {
       if (flying >= IN_FLIGHT) break;
       if (this.game.buildings.get(hash) || this.refused.has(hash) || this.arriving.has(hash)) continue;
@@ -91,7 +100,8 @@ export class RoomModels {
       this.asked.set(hash, now);
       this.stats.asked++;
       flying++;
-      s.askModel(hash);
+      const not = this.wrong.get(hash);
+      s.askModel(hash, not ? [...not] : undefined);
     }
   }
 
@@ -144,28 +154,35 @@ export class RoomModels {
     }
     if (a.got < a.parts.length) return;
     this.arriving.delete(m.hash);
-    const ok = await this.take(m.hash, a);
-    if (ok) this.stats.received++;
-    else {
+    const r = await this.take(m.hash, a);
+    if (r === 'kept') this.stats.received++;
+    else if (r === 'wrong') {
+      // Not the model its hash names: that player is skipped, and the model asked for again soon.
+      let w = this.wrong.get(m.hash);
+      if (!w) this.wrong.set(m.hash, (w = new Set()));
+      w.add(a.from);
+      this.asked.set(m.hash, performance.now() - ASK_AGAIN_MS + 2000);
+      this.stats.refused++;
+    } else {
       this.refused.add(m.hash);
       this.stats.refused++;
     }
   }
 
   /** A whole model: the bytes its hash names, then the check, then kept as a friend's. */
-  private async take(hash: string, a: Arriving): Promise<boolean> {
+  private async take(hash: string, a: Arriving): Promise<'kept' | 'wrong' | 'failed'> {
     let bytes: Uint8Array;
     try {
       bytes = fromBase64(a.parts.join(''));
     } catch {
-      return false;
+      return 'wrong';
     }
-    if (bytes.length > CUSTOM.maxBytes || (await modelHash(bytes)) !== hash) return false;
+    if (bytes.length > CUSTOM.maxBytes || (await modelHash(bytes)) !== hash) return 'wrong';
     // What it was made for: as its sender said, else the building wearing it here.
     const wearer = [...this.game.world.civics.values()].find((c) => c.look === hash);
     const target = cleanTarget(a.target) ?? (wearer ? targetOfDef(wearer.def) : null);
-    if (!target) return false;
+    if (!target) return 'wrong';
     const r = await this.game.buildings.add(bytes, a.name ?? 'A friend’s building', target, false);
-    return r.ok;
+    return r.ok ? 'kept' : 'failed';
   }
 }

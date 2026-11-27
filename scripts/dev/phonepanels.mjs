@@ -145,6 +145,8 @@ const SCENES = [
   ['history', 'town', 'play', (p) => panel(p, 'history')],
   ['districts', 'town', 'play', (p) => panel(p, 'districts')],
   ['region', 'town', 'play', (p) => panel(p, 'region')],
+  // My buildings (M46), empty (the import card and a kept model are checked by e2e/m46-phone.spec.ts).
+  ['buildings', 'town', 'play', (p) => panel(p, 'buildings')],
   ['weather', 'town', 'play', (p) => tap(p, 'weather')],
   ['inspector', 'town', 'play', (p) => tapThing(p, 'building')],
   ['inspector-civic', 'town', 'play', (p) => tapThing(p, 'civic')],

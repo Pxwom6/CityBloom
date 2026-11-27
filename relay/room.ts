@@ -217,7 +217,12 @@ export class Room {
    * parts are relayed (the first to answer) and when it was asked for. Only in memory: a room
    * that sleeps forgets, and a page asks again.
    */
-  private models = new Map<string, { waiting: Set<number>; from: number | null; at: number }>();
+  private models = new Map<
+    string,
+    { waiting: Set<number>; from: number | null; at: number; not: Set<number> }
+  >();
+  /** What the whole room passes on of players' models (M46), whoever sends it. */
+  private modelRoom: TokenBucket | null = null;
   private nextPlayer = 1;
   private seq = -1;
   allowed = 0;
@@ -736,7 +741,7 @@ export class Room {
         this.broadcast({ t: 'ping', from: p.id, at: m.at }, p.id);
         return;
       case 'mneed':
-        return this.needModel(p.id, m.hash, st, now);
+        return this.needModel(p.id, m.hash, st, now, m.not);
       case 'mpart':
         return this.modelPart(p.id, m, st, now);
       case 'chat':
@@ -833,33 +838,52 @@ export class Room {
    * A page lacks a model (M46): the others are asked once (a page that has it answers), unless the
    * room is already waiting for it. With custom buildings off, nobody is asked.
    */
-  private needModel(player: number, hash: string, st: ConnState, now: number): void {
+  private needModel(player: number, hash: string, st: ConnState, now: number, not?: number[]): void {
     if (this.info.rules.customBuildings === false || !st.asks.take(now)) return;
-    let w = this.models.get(hash);
-    // An ask nobody answered in half a minute (whoever had it left, or a page dropped it) goes out again.
-    if (w && w.from === null && now - w.at > 30_000) {
-      this.models.delete(hash);
-      w = undefined;
+    // Forget what went quiet: an ask nobody answered, or a transfer that stopped, for half a minute
+    // (whoever had it left, a page dropped it, or a player asked for models nobody has).
+    for (const [h, x] of this.models) if (now - x.at > MODEL_LIMITS.staleMs) this.models.delete(h);
+    const w = this.models.get(hash);
+    // A page that found an answer wrong asks again without that player: the transfer starts afresh.
+    if (w && not?.length) {
+      for (const id of not) w.not.add(id);
+      if (w.from !== null && w.not.has(w.from)) {
+        w.from = null;
+        w.at = now;
+        this.broadcast({ t: 'mneed', from: player, hash }, player);
+      }
     }
     if (w) {
       w.waiting.add(player);
       return;
     }
-    if (this.models.size >= MODEL_LIMITS.waiting) return;
-    this.models.set(hash, { waiting: new Set([player]), from: null, at: now });
+    let mine = 0;
+    for (const x of this.models.values()) if (x.waiting.has(player)) mine++;
+    if (this.models.size >= MODEL_LIMITS.waiting || mine >= MODEL_LIMITS.waitingEach) return;
+    this.models.set(hash, { waiting: new Set([player]), from: null, at: now, not: new Set(not ?? []) });
     this.broadcast({ t: 'mneed', from: player, hash }, player);
   }
 
   /** A part of a model someone asked for: passed to them from the first player to answer, never kept. */
   private modelPart(player: number, m: ModelPartMsg, st: ConnState, now: number): void {
     const w = this.models.get(m.hash);
-    if (!w || w.waiting.has(player)) return;
+    if (!w || w.waiting.has(player) || w.not.has(player)) return;
+    // Custom buildings turned off mid-transfer: nothing more is passed on.
+    if (this.info.rules.customBuildings === false) {
+      this.models.delete(m.hash);
+      return;
+    }
     if (w.from === null) {
       if (m.part !== 0) return;
       w.from = player;
     }
     if (w.from !== player) return;
-    if (!st.modelChars.takeMany(now, m.data.length)) {
+    this.modelRoom ??= new TokenBucket(
+      MODEL_LIMITS.roomCharsPerMinute / 60,
+      MODEL_LIMITS.roomCharsPerMinute / 2,
+      now,
+    );
+    if (!st.modelChars.takeMany(now, m.data.length) || !this.modelRoom.takeMany(now, m.data.length)) {
       // Over this player's share: the transfer stops, and an ask later starts it again.
       this.models.delete(m.hash);
       return;

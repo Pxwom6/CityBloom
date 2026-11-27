@@ -460,6 +460,18 @@ export function RoomPanel() {
                 }}
               />
             </label>
+            <label
+              class="check"
+              title="Buildings players made themselves (My buildings): off, nothing new may wear one and everyone sees the game's own"
+            >
+              <input
+                type="checkbox"
+                checked={room.rules.customBuildings !== false}
+                data-testid="room-custom-toggle"
+                onChange={(e) => s.setCustomBuildings((e.target as HTMLInputElement).checked)}
+              />
+              <span>Custom buildings</span>
+            </label>
           </div>
         )}
         <button class="shell-btn quiet" data-testid="room-leave" onClick={() => game.leaveRoom()}>

@@ -18,6 +18,7 @@ import {
   type Presence,
   type RoomInfo,
   type RoomMsg,
+  type ModelPartMsg,
   type Speed,
 } from '../../relay/protocol';
 import type { SharedMessage } from '../client/simClient';
@@ -123,6 +124,9 @@ export class RoomSession {
   onNotice: ((n: NetNotice) => void) | null = null;
   /** Every command the room ordered, once this sim applied it (for "who did what"). */
   onApplied: ((a: Applied) => void) | null = null;
+  /** Players' own models (M46): another page lacks one; a part of one this page asked for. */
+  onModelNeed: ((from: number, hash: string) => void) | null = null;
+  onModelPart: ((m: ModelPartMsg & { from: number }) => void) | null = null;
 
   constructor(
     private readonly driver: SimDriver,
@@ -326,6 +330,12 @@ export class RoomSession {
       }
       case 'ping':
         this.onPing?.(m.from, m.at);
+        return;
+      case 'mneed':
+        this.onModelNeed?.(m.from, m.hash);
+        return;
+      case 'mpart':
+        this.onModelPart?.(m);
         return;
       case 'ticks':
         for (const [id, tick] of m.ticks) {
@@ -554,6 +564,21 @@ export class RoomSession {
 
   setSpendLimit(limit: number | null): void {
     this.send({ t: 'rules', spendLimit: limit });
+  }
+
+  /** The host: players' own buildings on or off in the room (M46). */
+  setCustomBuildings(on: boolean): void {
+    this.send({ t: 'rules', customBuildings: on });
+  }
+
+  /** Ask the others for a model the city's buildings wear (M46). */
+  askModel(hash: string): void {
+    this.send({ t: 'mneed', hash });
+  }
+
+  /** A part of a model another page asked for. */
+  sendModelPart(m: ModelPartMsg): void {
+    this.send(m);
   }
 
   admin(action: AdminAction, player?: number): void {

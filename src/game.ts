@@ -104,6 +104,7 @@ import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostRepl
 import type { ChallengeDef } from './data/challenges';
 import { TimelapseRecorder } from './client/timelapse';
 import { MyBuildings } from './client/myBuildings';
+import { RoomModels } from './client/roomModels';
 import { fitsTarget, targetOfDef } from './models/customCheck';
 import type { BakedModel } from './models/baked';
 import type { RoomMsg } from '../relay/protocol';
@@ -797,6 +798,8 @@ export class Game {
   timelapseCard = false;
   /** The player's own models, and friends' that came with a city or a room (M46). */
   readonly buildings = new MyBuildings();
+  /** Models passed between players in a shared city (M46). */
+  readonly roomModels = new RoomModels(this);
   /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
   readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
   /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
@@ -1415,6 +1418,7 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    this.roomModels.attach(mp.session);
     // Joining a friend's room for the first time (M42): a short card on how rooms work.
     // (A tip for new players: not for a player who has turned tips off.)
     if (!this.settings.roomIntro && this.settings.tips && !mp.session.isHost) this.roomIntro = true;
@@ -1490,6 +1494,7 @@ export class Game {
     const mp = this.net;
     if (!mp) return;
     this.net = null;
+    this.roomModels.detach();
     mp.leave();
     this.client.setSpeed(0);
     this.speed = 0;
@@ -2212,6 +2217,8 @@ export class Game {
   customModel(hash: string, def?: string): BakedModel | null {
     const m = this.buildings.get(hash);
     if (!m || (!m.mine && !this.settings.showFriendsBuildings)) return null;
+    // The host turned custom buildings off in this room: everyone sees the game's own.
+    if (this.net?.session.room?.rules.customBuildings === false) return null;
     if (def && !fitsTarget(m, targetOfDef(def))) return null;
     return m.baked;
   }
@@ -3156,6 +3163,7 @@ export class Game {
     }
     if (this.photo) this.photoFrame(dt);
     this.presenceFrame(now);
+    if (this.net) this.roomModels.frame(now);
     const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.

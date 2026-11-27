@@ -61,6 +61,11 @@ test('the scripted town gives the same state hash at every month end as in Node'
   expect(got.live, `${browserName}, a live battle with a friend (M39)`).toEqual(want.live);
   expect(got.friends, `${browserName}, wars and treaties with a friend (M39)`).toEqual(want.friends);
   expect(got.atom, `${browserName}, the atom bomb, its strikes and fallout (M40)`).toEqual(want.atom);
+  expect(got.match, `${browserName}, a quick match's city (M43)`).toEqual(want.match);
+  expect(got.challenge, `${browserName}, a weekly challenge's run and its replay (M44)`).toEqual(
+    want.challenge,
+  );
+  expect(got.looks, `${browserName}, players' own buildings (M46)`).toEqual(want.looks);
   expect(got.used).toEqual(want.used);
   expect(got.refused).toEqual(want.refused);
 });
@@ -101,5 +106,8 @@ test('the scripted town gives the same hashes in the SpiderMonkey shell', async 
   expect(got.live).toEqual(want.live);
   expect(got.friends).toEqual(want.friends);
   expect(got.atom).toEqual(want.atom);
+  expect(got.match).toEqual(want.match);
+  expect(got.challenge).toEqual(want.challenge);
+  expect(got.looks).toEqual(want.looks);
   expect(got.refused).toEqual(want.refused);
 });

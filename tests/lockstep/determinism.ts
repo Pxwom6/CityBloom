@@ -21,6 +21,7 @@ import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
 import { runAtomSection } from './atomSection';
 import { runMatchSection } from './matchSection';
 import { runChallengeSection } from './challengeSection';
+import { runLooksSection } from './looksSection';
 
 export interface DeterminismResult {
   months: string[];
@@ -58,6 +59,8 @@ export interface DeterminismResult {
   match: string[];
   /** A weekly challenge's run (M44): played, frozen at its end and replayed (`challengeSection.ts`). */
   challenge: string[];
+  /** Players' own buildings (M46): landmarks and looks by hash, undo, a month, a save (`looksSection.ts`). */
+  looks: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -739,6 +742,8 @@ export function runDeterminism(
 
   // A weekly challenge's run (M44), recorded and replayed.
   const challenge = runChallengeSection(note);
+  // Players' own buildings (M46).
+  const looks = runLooksSection(note);
 
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
@@ -768,6 +773,7 @@ export function runDeterminism(
     atom,
     match,
     challenge,
+    looks,
     used: [...used].sort(),
     refused,
   };

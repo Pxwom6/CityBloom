@@ -198,8 +198,9 @@ function readyToStrike(w: World, extra: Record<string, unknown> = {}): void {
 
 describe('M40: protocol 7', () => {
   it('is the room’s version; a region still serves 5 and 6, a shared city only the same', () => {
-    // Quick matches (M43) took the protocol to 8; the bomb's messages are for pages on 7 and later.
-    expect(PROTOCOL_VERSION).toBe(8);
+    // Quick matches (M43) took the protocol to 8, players' own buildings (M46) to 9; the bomb's
+    // messages are for pages on 7 and later.
+    expect(PROTOCOL_VERSION).toBe(9);
     expect(ATOM_PROTOCOL).toBe(7);
     expect(MIN_REGION_PROTOCOL).toBe(5);
     expect(REGION_LIMITS.atomPrep).toBe(20 * 60_000);

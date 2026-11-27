@@ -45,6 +45,14 @@ describe('the cross-browser determinism script', () => {
 
   // A weekly challenge's run (M44): the town grew, the challenge ended, and the run replayed to the
   // same hash and score from the challenge alone (the browsers then compare all three).
+  // Players' own buildings (M46): a landmark, a park and a fire station wearing models by hash (the
+  // park's taken off and put back by undo), and the save loads to the same city a month on.
+  it('the looks section dresses three buildings and saves them to the same city', () => {
+    const [worn, , , [loaded, kept]] = [...run().looks.slice(0, 3), run().looks[3]!.split(' ')];
+    expect(worn).toMatch(/^\d+:0123456789abcdef \d+:c581231f80504240 \d+:c581231f80504240$/);
+    expect(loaded).toBe(kept);
+  });
+
   it('the challenge section plays a run to its end and replays it to the same city', () => {
     const [, ended, replayed] = run().challenge;
     const [status, end, hash, score] = ended!.split(' ');

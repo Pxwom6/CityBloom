@@ -17,6 +17,8 @@ import type { Stamped } from '../src/sim/lockstep';
 import {
   MAX_PLAYERS,
   PROTOCOL_VERSION,
+  MODEL_LIMITS,
+  type ModelPartMsg,
   makeSecret,
   parseClientMsg,
   type ClientMsg,
@@ -160,6 +162,9 @@ interface ConnState {
   cmds: TokenBucket;
   ctl: TokenBucket;
   chat: TokenBucket;
+  /** Players' own models (M46): asks for one, and base64 characters of them sent. */
+  asks: TokenBucket;
+  modelChars: TokenBucket;
   /** Order of opening, to drop the oldest silent socket when full. */
   n: number;
 }
@@ -207,6 +212,12 @@ export class Room {
   info: RoomInfo;
   private players = new Map<number, Player>();
   private conns = new Map<Conn, ConnState>();
+  /**
+   * Players' own models being passed on (M46), by hash: who waits for each, the one player whose
+   * parts are relayed (the first to answer) and when it was asked for. Only in memory: a room
+   * that sleeps forgets, and a page asks again.
+   */
+  private models = new Map<string, { waiting: Set<number>; from: number | null; at: number }>();
   private nextPlayer = 1;
   private seq = -1;
   allowed = 0;
@@ -334,6 +345,8 @@ export class Room {
       cmds: new TokenBucket(l.cmdRate, l.cmdBurst, now),
       ctl: new TokenBucket(l.ctlRate, l.ctlBurst, now),
       chat: new TokenBucket(1, 3, now),
+      asks: new TokenBucket(MODEL_LIMITS.asksPerMinute / 60, 10, now),
+      modelChars: new TokenBucket(MODEL_LIMITS.charsPerMinute / 60, MODEL_LIMITS.charsPerMinute / 2, now),
       n: ++this.opened,
     };
   }
@@ -472,6 +485,7 @@ export class Room {
     p.conn = null;
     this.waiting.delete(p.id);
     if (this.incoming?.from === p.id) this.incoming = null;
+    this.forgetModels(p.id);
     this.choosePacer();
     this.broadcastPlayers();
     this.broadcastRoom();
@@ -703,6 +717,9 @@ export class Room {
         // Lists set before the roles of war (M39) keep the roles they were read as allowing.
         if (m.player !== undefined && m.perms) setPerms(r, m.player, m.perms);
         if (m.spendLimit !== undefined) r.spendLimit = m.spendLimit;
+        // Players' own buildings (M46): absent means on, so rooms made before keep them.
+        if (m.customBuildings === true) delete r.customBuildings;
+        else if (m.customBuildings === false) r.customBuildings = false;
         if (JSON.stringify(r) === before) return;
         // Every game applies the same rules at the same tick: the sim checks what the room can't.
         this.order({ kind: 'rules', rules: JSON.parse(JSON.stringify(r)) as SharedRules });
@@ -718,6 +735,10 @@ export class Room {
       case 'ping':
         this.broadcast({ t: 'ping', from: p.id, at: m.at }, p.id);
         return;
+      case 'mneed':
+        return this.needModel(p.id, m.hash, st, now);
+      case 'mpart':
+        return this.modelPart(p.id, m, st, now);
       case 'chat':
         if (!this.info.chat || this.info.muted.includes(p.id) || !st.chat.take(now)) return;
         this.broadcast({ t: 'chat', from: p.id, text: m.text });
@@ -806,6 +827,55 @@ export class Room {
   private broadcastEvents(list: Stamped[]): void {
     const msg: RoomMsg = { t: 'ev', list, allow: this.allowed };
     for (const p of this.players.values()) if (p.conn && !this.waiting.has(p.id)) p.conn.send(msg);
+  }
+
+  /**
+   * A page lacks a model (M46): the others are asked once (a page that has it answers), unless the
+   * room is already waiting for it. With custom buildings off, nobody is asked.
+   */
+  private needModel(player: number, hash: string, st: ConnState, now: number): void {
+    if (this.info.rules.customBuildings === false || !st.asks.take(now)) return;
+    let w = this.models.get(hash);
+    // An ask nobody answered in half a minute (whoever had it left, or a page dropped it) goes out again.
+    if (w && w.from === null && now - w.at > 30_000) {
+      this.models.delete(hash);
+      w = undefined;
+    }
+    if (w) {
+      w.waiting.add(player);
+      return;
+    }
+    if (this.models.size >= MODEL_LIMITS.waiting) return;
+    this.models.set(hash, { waiting: new Set([player]), from: null, at: now });
+    this.broadcast({ t: 'mneed', from: player, hash }, player);
+  }
+
+  /** A part of a model someone asked for: passed to them from the first player to answer, never kept. */
+  private modelPart(player: number, m: ModelPartMsg, st: ConnState, now: number): void {
+    const w = this.models.get(m.hash);
+    if (!w || w.waiting.has(player)) return;
+    if (w.from === null) {
+      if (m.part !== 0) return;
+      w.from = player;
+    }
+    if (w.from !== player) return;
+    if (!st.modelChars.takeMany(now, m.data.length)) {
+      // Over this player's share: the transfer stops, and an ask later starts it again.
+      this.models.delete(m.hash);
+      return;
+    }
+    w.at = now;
+    const out: RoomMsg = { ...m, from: player };
+    for (const id of w.waiting) this.players.get(id)?.conn?.send(out);
+    if (m.part === m.parts - 1) this.models.delete(m.hash);
+  }
+
+  /** A player gone: off every list it waits on, and what it was sending can be asked for again. */
+  private forgetModels(player: number): void {
+    for (const [hash, w] of this.models) {
+      w.waiting.delete(player);
+      if (!w.waiting.size || w.from === player) this.models.delete(hash);
+    }
   }
 
   private broadcast(msg: RoomMsg, except = 0): void {

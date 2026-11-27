@@ -33,9 +33,12 @@ import type { Term } from '../src/data/diplomacy';
  * 8: quick matches (M43): a region made with `create.match`, the match in its view, and `mready`,
  * `mset`, `mstart`, `mnext`, `mleave`, `emote`, `mchat` and the room's `mscores`, `memote`, `mchat`. A
  * match region turns away a page below 8; an ordinary region still takes 5 to 8.
+ * 9: players' own buildings (M46): a shared city's commands may carry a model's hash (`placeBuilding`'s
+ * `look`, `setLook`), the host's `customBuildings` rule, and the models themselves pass between
+ * players through the room by hash (`mneed`, `mpart`), relayed and never kept. A region takes 5 to 9.
  * A room (a shared city) is stricter: every player runs the same sim.
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 /** The oldest page a region still serves (no live battles for it). */
 export const MIN_REGION_PROTOCOL = 5;
 /** The first protocol with live battles. */
@@ -57,6 +60,17 @@ export const SNAPSHOT_PART = 200_000;
  * gzipped city. Rooms and regions refuse more, so a script can't fill an object's 128 MB.
  */
 export const MAX_SNAPSHOT_PARTS = 40;
+/** A player's own model through a room (M46): parts of base64 at most this long. */
+export const MODEL_PART = 160_000;
+/** The most parts a model comes in: 1 MB of base64, and a part to spare. */
+export const MODEL_PARTS = Math.ceil(Math.ceil((1_048_576 * 4) / 3) / MODEL_PART) + 1;
+/**
+ * What a room relays of players' models: asks a player may make a minute, base64 characters a player
+ * may send a minute (about four 1 MB models), and models a room waits for at once. Nothing is kept.
+ */
+export const MODEL_LIMITS = { asksPerMinute: 40, charsPerMinute: 6_000_000, waiting: 64 } as const;
+/** A model's hash (M46): the first 16 hex digits of its SHA-256. */
+const MODEL_HASH = /^[0-9a-f]{16}$/;
 export const MAX_NAME = 20;
 export const MAX_CHAT = 280;
 
@@ -274,9 +288,33 @@ export type ClientMsg =
   | { t: 'ping'; at: [number, number] }
   | { t: 'chat'; text: string }
   | { t: 'admin'; action: AdminAction; player?: number }
-  /** The host sets a player's permissions, or the spending limit (M31). */
-  | { t: 'rules'; player?: number; perms?: Permission[]; spendLimit?: number | null }
+  /** The host sets a player's permissions, or the spending limit (M31), or custom buildings on or off (M46). */
+  | {
+      t: 'rules';
+      player?: number;
+      perms?: Permission[];
+      spendLimit?: number | null;
+      customBuildings?: boolean;
+    }
+  /** This page lacks a model the city's buildings wear (M46): who has it? */
+  | { t: 'mneed'; hash: string }
+  /**
+   * A part of a model another page asked for (M46): `parts` in all, the first with its name and what
+   * it was made for (the receiving page cleans and checks both, and the model, again).
+   */
+  | ModelPartMsg
   | { t: 'bye' };
+
+/** A part of a player's model passing through a room (M46). */
+export interface ModelPartMsg {
+  t: 'mpart';
+  hash: string;
+  part: number;
+  parts: number;
+  data: string;
+  name?: string;
+  target?: { kind: 'landmark'; size: number } | { kind: 'look'; def: string };
+}
 
 // ---------------------------------------------------------------- room → player
 
@@ -318,6 +356,10 @@ export type RoomMsg =
   | { t: 'chat'; from: number; text: string }
   | ({ t: 'here'; from: number } & Presence)
   | { t: 'ping'; from: number; at: [number, number] }
+  /** A player's page lacks this model (M46): a page that has it answers with `mpart`. */
+  | { t: 'mneed'; from: number; hash: string }
+  /** A part of a model this page asked for, from the player answering. */
+  | (ModelPartMsg & { from: number })
   | { t: 'notice'; text: string }
   | { t: 'error'; code: ErrorCode; text: string };
 
@@ -669,8 +711,16 @@ export function parseClientMsg(raw: string): ClientMsg | null {
         if (m.spendLimit !== null && !isInt(m.spendLimit, 0, 1e9)) return null;
         out.spendLimit = m.spendLimit as number | null;
       }
+      if (m.customBuildings !== undefined) {
+        if (typeof m.customBuildings !== 'boolean') return null;
+        out.customBuildings = m.customBuildings;
+      }
       return out;
     }
+    case 'mneed':
+      return typeof m.hash === 'string' && MODEL_HASH.test(m.hash) ? { t: 'mneed', hash: m.hash } : null;
+    case 'mpart':
+      return cleanModelPart(m);
     case 'admin': {
       const actions: AdminAction[] = ['lock', 'unlock', 'chatOff', 'chatOn', 'kick', 'mute', 'unmute'];
       if (typeof m.action !== 'string' || !actions.includes(m.action as AdminAction)) return null;
@@ -978,4 +1028,28 @@ export function termsFor(terms: readonly FriendTerm[], mine: 'a' | 'b'): FriendT
   return terms.map((t) =>
     t.k === 'reparations' || t.k === 'tribute' ? { ...t, payer: flip(t.payer) } : { ...t },
   );
+}
+
+/** A model's part as a room takes it (M46): the hash, a part within the cap, its base64; or null. */
+export function cleanModelPart(m: Record<string, unknown>): ModelPartMsg | null {
+  if (typeof m.hash !== 'string' || !MODEL_HASH.test(m.hash)) return null;
+  if (!isInt(m.parts, 1, MODEL_PARTS) || !isInt(m.part, 0, (m.parts as number) - 1)) return null;
+  if (typeof m.data !== 'string' || !m.data.length || m.data.length > MODEL_PART) return null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(m.data)) return null;
+  const out: ModelPartMsg = {
+    t: 'mpart',
+    hash: m.hash,
+    part: m.part as number,
+    parts: m.parts as number,
+    data: m.data,
+  };
+  if (m.part === 0) {
+    if (typeof m.name === 'string') out.name = cleanCityName(m.name).slice(0, 40);
+    const t = m.target as { kind?: unknown; size?: unknown; def?: unknown } | undefined;
+    if (t?.kind === 'landmark' && isInt(t.size, 1, 4))
+      out.target = { kind: 'landmark', size: t.size as number };
+    else if (t?.kind === 'look' && typeof t.def === 'string' && /^[a-z0-9_]{1,32}$/.test(t.def))
+      out.target = { kind: 'look', def: t.def };
+  }
+  return out;
 }

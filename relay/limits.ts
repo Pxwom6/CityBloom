@@ -37,6 +37,14 @@ export class TokenBucket {
     return true;
   }
 
+  /** Take `n` tokens if there are that many (a big message counted by its size). */
+  takeMany(now: number, n: number): boolean {
+    this.refill(now);
+    if (this.tokens < n) return false;
+    this.tokens -= n;
+    return true;
+  }
+
   /**
    * Spend a token whether there is one or not, and say what's left: below zero the message is
    * dropped, and a connection that keeps going until `-burst` is closed (dropped messages are
